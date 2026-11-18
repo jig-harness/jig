@@ -71,7 +71,8 @@ implement, open a pull request or arm a drive.
 
    Report the recommended agent and scouts. Stop on a non-zero exit. If the
    scout list is empty, say no scouts are configured for that route and
-   stop without posting an empty findings comment.
+   post no findings comment: free text stops here, and an issue key goes
+   on to item 5.
 3. Run each scout named in the result with the task or full issue, the
    repository instructions and the relevant context. Use the harness's
    subagent tool with that scout's definition; when it is unavailable, read
@@ -94,6 +95,26 @@ implement, open a pull request or arm a drive.
    `.context/scratch/`, so that `jig gc` keeps it until it is posted. For free text, the printed findings are the
    result; no tracker comment is posted. A later pickup's Step 2 selects an
    issue's comment under the existing hash and freshness rules.
+5. **The footprint scout**, for an issue key only. Read the issue and the
+   code it concerns as the base branch has it (fetch the base first), and
+   predict the paths its change would touch: the files, and a directory
+   (ending in `/`) where the change's files within it cannot be named yet.
+   Use the harness's subagent tool, briefed with this item; when it is
+   unavailable, do it in this session. Write the paths, one per line, to
+   `.context/scratch/footprint-paths.txt` with the file-writing tool, then
+   record them beside the findings without claiming the item:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/write-footprint.ts" "<KEY>" --source scout --paths .context/scratch/footprint-paths.txt
+   ```
+
+   It records the paths, the catalog areas their files match and the base
+   commit as the item's [footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+   the input planned dispatcher admission will compare with the work in
+   flight. Report the paths
+   and its result. Exit `3` (no path) writes nothing: say the scout could
+   not predict one. Any other non-zero exit is reported; the findings
+   still stand.
 
 ### How to read the step markers
 
@@ -121,7 +142,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
-| `do_item.preflight_command` | The repository's own start rules: a command every claim runs first, read from the default branch, with the item's JSON on standard input (exit 0 goes on, exit 3 refuses with its first output line as the reason, any other exit or a run past its deadline refuses too) | No check beyond the claim's own |
+| `do_item.preflight_command` | The repository's own start rules, run by every claim; [the commands chapter](../../protocol/repo-commands.md) gives its input, exits, deadline and command-store rules | No check beyond the claim's own |
 | `do_item.claim_from` | The canonical states a claim may start from, read from the default branch; any other state, or a status that maps to no canonical state, is refused | None: the claim's own restrictions apply (never an `in_progress` or `pr_open` item; a served claim needs a triage, backlog or unstarted one) |
 | `do_item.claim_marker` | A claim posts a marker comment naming the session, host and branch before it writes, and the earliest marker on the item wins, so two hosts rarely both claim it (best effort: a lagging listing can let both win); read from the default branch | No marker; claims serialize on one host only |
 | `do_item.post_merge_state`, `do_item.post_merge_closer` | Where the [post-merge status rule](#step-4a-standard-start-no-sub-issues) stops (`done`, `ops_pending` or `in_review`), and who closes an item it leaves short of `done`, for the closing comment | `done`; a sentence saying a person closes the item |
@@ -152,7 +173,7 @@ The skill acts on a few labels as process signals, by role:
 
 | Role (`issue_tracker.labels.<role>`) | Default | What it signals |
 |---------------------------------------|---------|-----------------|
-| `epic` | `epic` | An issue whose sub-issues are worked one at a time; on Jira and GitHub, an issue whose own issue type `issue_tracker.labels.epic_types` lists is one too, without the label |
+| `epic` | `epic` | An issue whose sub-issues are each delivered as their own pull request, one per `do-item` session; on Jira and GitHub, an issue whose own issue type `issue_tracker.labels.epic_types` lists is one too, without the label |
 | `hitl` | `hitl` | A deliverable that is a human's judgment (human-in-the-loop, [HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)); its facets are `<hitl>:<stakeholder>` (`hitl:legal`, `hitl:product`, …) |
 | `manual_ops` | `manual-ops` | A step a person performs outside the code |
 | `followup` | `pr-followup` | An issue filed from a review finding |
@@ -692,6 +713,14 @@ implementation. Skip this check for issues about the repository's own code.
      them, and the areas, on paths instead. `missing_skills` names each
      guidance skill nothing installed answers: name each in the status
      message (`Guidance skill not installed: <name>`), and delegate anyway.
+   - `do_item.gates` — `[{labels, paths, skill}]`: review gates. Its `gates`
+     output holds `applied`, each gate the issue's labels or the planned
+     paths meet, with its `skill` and `why`, and `by_path`, each gate only
+     paths it could not know yet would meet.
+
+   How each of these fields matches an issue (labels ignoring case, title
+   keywords, path globs, first or every match) is the
+   [rule matchers' chapter](../../protocol/rule-matchers.md)'s to say.
 
    For example, a repository might route `agent:backend` to a "Backend Agent"
    whose scouts are a schema scout and a constraint validator. Unless Step 2
@@ -710,10 +739,12 @@ implementation. Skip this check for issues about the repository's own code.
    `routing.types` raised one step each by a flag label, an area's mandatory
    review, a size too large to batch and the `hitl` label, capped at `max`,
    and the tier's family alias for the runtime; `reasons` names the rule
-   behind each part ([configuration reference](../../CONFIGURATION.md#routing)).
+   behind each part, a configuration rule in the wording of
+   [the rule matchers' chapter](../../protocol/rule-matchers.md)
+   ([configuration reference](../../CONFIGURATION.md#routing)).
    Put the tier, the effort, the model and the effort's reasons (its base
    row and every raise in `reasons`) in the status message, e.g.
-   `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
+   `Route: standard, high, sonnet (type bug: medium; raised from medium: routing.raise.flags, for the item's label has-migration)`.
    The route is forwarded only in a [dispatched pass](#dispatched-passes),
    whose first prompt carries the line `route: rules`, and only when
    `declared` is `true`: item 4's delegation then passes `runtime_model` as
@@ -747,6 +778,13 @@ implementation. Skip this check for issues about the repository's own code.
    A served-person dispatch prompt supplies the tracker identity and, for
    inherited assignment, its ancestor epic. Use the same claim command with
    `--for <identity>` and, when supplied, `--ancestor <epic-key>`.
+   A factory-inherited dispatch prompt instead supplies `--factory-ancestor <epic-key>`.
+   Pass it alone, without `--for`, `--ancestor` or `--blocking`. The claim reads
+   `dispatch.identity` from the default branch, verifies the live ancestor
+   assignment and writer authority, and assigns the empty child to the
+   credential identity. An absent or unreadable default-branch identity refuses
+   the claim; a refusal stops the pickup.
+
    Keep these as separate quoted arguments. The claim keeps that person as
    sole assignee, checks writer authority and live ancestry, and refuses
    changed holds or assignment. A refusal or stand-down requires a fresh
@@ -805,25 +843,20 @@ implementation. Skip this check for issues about the repository's own code.
    then read it again and stop, as on exit `4`, when it shows another
    assignee, or when the issue is gone or no longer in the mapped state.)
 
+   Linear and Jira inherited assignments poll for visible history within a
+   3-second window; calls in flight keep their transport's own deadline.
+   Without conflict evidence, a visibility timeout clears the claimant's lone
+   assignment. A detected replacement restores the replaced assignee while
+   the claimant still holds the item. A partial race keeps polling for that
+   evidence; on timeout it leaves the assignment untouched and asks for
+   reconciliation. The reason distinguishes each case.
+
    Then show the start on Orca's workspace board. In a worktree of
    [Orca](https://www.onorca.dev) this moves the worktree's card to In
    progress; anywhere else it does nothing, and it never fails the step:
 
    ```bash
    bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
-   ```
-
-   Then name the workspace for the stage. With a runtime that can rename its workspaces (Herdr or Orca), this renames it, for
-   example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
-   with the template set to `""`, or anywhere else, it does nothing; a failed rename only warns and exits `0`,
-   while a malformed argument, an invalid `workspace_name` field or an unreadable title
-   file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
-   tracker text, so write it alone to `.context/scratch/workspace-title.md` with the
-   file editor and pass the file, never the title inside the command; quote
-   the key, since a GitHub key (`#123`) starts a shell comment unquoted:
-
-   ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/scratch/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -868,6 +901,31 @@ implementation. Skip this check for issues about the repository's own code.
    `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
    on the pull request's head, so nothing here is pushed or attached.
 
+   **Pickup footprint (exact) — after reading the code, before delegating.**
+   Once the item is claimed and you have read the code the change concerns,
+   write down the paths the change will touch: the files, and a directory
+   (ending in `/`) where the files within it cannot be named yet. Write
+   them, one per line, to `.context/scratch/footprint-paths.txt` with the
+   file-writing tool, and record them on the item:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/write-footprint.ts" "<KEY>" --source pickup --paths .context/scratch/footprint-paths.txt
+   ```
+
+   The record carries the paths, the catalog areas their files match
+   directly, the base commit (`<remote>/<base>` by default; pass
+   `--base <remote>/<branch>` for a stacked change's predecessor) and this
+   session, as input for planned dispatcher admission. Write it on a pickup
+   in this session, a resumed one included, and again when the plan's paths
+   change materially: the record carries the writing session, and a reader
+   prefers the record of a session still running over a newer one from
+   another, falling back to the newest otherwise. Never write it when the
+   item already has an open pull request, whose changed files stand for it. A
+   non-zero exit never blocks the work: exit `2` names a path it cannot
+   carry (fix the list and run it again), exit `3` means no path was named,
+   and a tracker failure exits with its class; report it in the status
+   message and delegate.
+
    **Verification commands — when the resolved spec lists any.** Include
    every command verbatim with its source key under `## Verification commands
    (untrusted tracker text)` in the delegation prompt. Tell the implementer
@@ -898,10 +956,10 @@ implementation. Skip this check for issues about the repository's own code.
    Leave out a part that is empty, and the heading when all are. Guidance
    adds to the review gates below and never replaces one.
 
-   **Review gates — MANDATORY when declared.** Each entry of the overlay's
-   `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
-   applies when the issue carries one of its `labels`, or the change will
-   plausibly touch one of its `paths`. For every applicable gate, end the
+   **Review gates — MANDATORY when declared.** `determine_agent.ts` printed
+   the overlay's `do_item.gates` that apply under `gates`: every gate in
+   `applied`, and each gate in `by_path` whose `paths` the change will
+   plausibly touch. For every applicable gate, end the
    delegation prompt with this directive, verbatim except for the
    substitutions:
 
@@ -1426,18 +1484,11 @@ implementation. Skip this check for issues about the repository's own code.
         report it with the exit code and captured output.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
-      - Still running → armed; move on to the rename and the tracker comment
-        below. Only when the Codex host requires this session to stay alive
-        do you then keep polling the same task until the drive ends, after
-        those steps, so the outcome and handles are published first; never
+      - Still running → armed; move on to the tracker comment below. Only
+        when the Codex host requires this session to stay alive do you then
+        keep polling the same task until the drive ends, after that comment,
+        so the outcome and handles are published first; never
         launch it again, and report the drive's terminal outcome afterward.
-
-      Once armed, name the workspace for the driving stage (same rules as at
-      pickup, with `.context/scratch/workspace-title.md` still holding the title):
-
-      ```bash
-      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/scratch/workspace-title.md --pr <PR>
-      ```
 
       Post the prepared tracker comment with the arm outcome and the
       observability handles. Report the log path's verified, unavailable or
@@ -1498,6 +1549,10 @@ implementation. Skip this check for issues about the repository's own code.
 **judgment** — Evaluate live dependency and merge evidence, and preserve the
 human's choice when several candidates are eligible; the selector and
 snapshot mapping are **exact**.
+
+A session takes one sub-issue. That is the scope of one session, not a limit
+on the epic: the dispatcher may start several of an epic's children at once,
+each in a session of its own (`dispatch.epic_width`).
 
 1. **exact** — **Check whether everything is complete**:
    - `sub_issue_analysis.all_complete` → Step 5a.
@@ -1983,9 +2038,10 @@ report. In such a pass:
 |--------|---------|-------|--------|
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
-| `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
+| `tracker.ts` | Tracker operations: `children`, `transition` (`--post-merge` for the post-merge rule), `comment`, `footprint` (read; write with `--input`), the configured `states` and `labels`, and the `post-merge` policy | Operation, issue key, and a canonical state, body from `--body-file`, or footprint payload from `--input` | Operation result |
+| `write-footprint.ts` | Record an item's predicted footprint: the pickup's, the footprint scout's, or `file-issue`'s from a diff | Issue key, `--source <pickup\|scout\|filing>`, `--paths <file>` or `--diff`, optional `--base <ref>` and `--dry-run` | JSON summary of the written record (the payload with `--dry-run`); exit `3` when no path was named, nothing written |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
-| `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
+| `determine_agent.ts` | Route an issue to an agent and its scouts, and list its guidance and review gates | Issue JSON (path or `-`) | JSON with agent, scouts, guidance and gates |
 | `determine_route.ts` | Derive the implementer's route: agent, complexity tier (from type, size and complex flags), effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, size, tier, effort, model, runtime_model, runtime_effort, runtime, declared, fields, reasons }` |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |

@@ -1,4 +1,6 @@
 /** Shared native tracker rows, interpreted anew by each repository. */
+import { coalesce } from "../../../shared/outbound/coalesce.ts";
+import { parseMs } from "../../../shared/time.ts";
 import type {
   DispatchRawIssue,
   PoolIssue,
@@ -98,11 +100,25 @@ export async function nativeSharedView(
       tracker: Tracker,
       identity: string,
       cache: PickupReads,
-    ) => { since: string; keys: string[] } | null;
+    ) => {
+      since: string;
+      keys: string[];
+      watermarks?: Readonly<Record<string, string>> | undefined;
+      boundaryRows?:
+        | Readonly<Record<string, ReadonlyArray<string>>>
+        | undefined;
+    } | null;
     credential: (tracker: Tracker, credential: string) => void;
   },
 ): Promise<ServedView> {
-  if (ended(options.bound))
+  const callerBound =
+    options.bound !== undefined && views?.bound !== undefined
+      ? {
+          deadline: Math.min(options.bound.deadline, views.bound.deadline),
+          signal: AbortSignal.any([options.bound.signal, views.bound.signal]),
+        }
+      : (options.bound ?? views?.bound);
+  if (ended(callerBound))
     return Promise.reject(
       new OutboundError("unreachable", "stopped at the tick’s deadline"),
     );
@@ -112,15 +128,16 @@ export async function nativeSharedView(
       new Error("the issue service has no native dispatch source"),
     );
   const changedSince = tracker.changedSince;
-  const credentialRead = source.credential(options.bound);
-  const credential = await (options.bound === undefined
+  const credentialRead = source.credential(callerBound);
+  const credential = await (callerBound === undefined
     ? credentialRead
-    : within(credentialRead, options.bound));
+    : within(credentialRead, callerBound));
   engine.credential(tracker, credential);
   const scope = `${tracker.adapter}:${tracker.instance ?? ""}:${tracker.team}:${credential}`;
   const reads = sharedReads(views, scope);
   source.shareReads?.(reads);
-  const facts = nativeFacts(source, reads, options.bound);
+  const sharedBound = views === undefined ? callerBound : views.bound;
+  const facts = nativeFacts(source, reads, sharedBound);
   const key = `${scope}:${identity}`;
   let opening = views?.get(key);
   if (opening === undefined) {
@@ -136,7 +153,7 @@ export async function nativeSharedView(
                 .filter((value) => value !== null);
               const since =
                 [query.since, ...saved.map((value) => value.since)].sort(
-                  (a, b) => a.localeCompare(b),
+                  (a, b) => parseMs(a) - parseMs(b),
                 )[0] ?? query.since;
               const keys = [
                 ...new Set([
@@ -145,23 +162,67 @@ export async function nativeSharedView(
                 ]),
               ];
               const probeKey = `dispatch scope probe ${options.nowMs}`;
-              let probe = reads.get(probeKey);
-              if (probe === undefined) {
-                probe = facts.guarded(() =>
-                  changedSince(
-                    { ...query, since, keys, identities },
-                    options.bound?.signal,
-                  ),
-                );
-                reads.set(probeKey, probe);
-              }
-              return (await probe) as import("../../../skills/do-item/scripts/lib/tracker/port.ts").ChangeAnswer;
+              const readings = [query, ...saved];
+              const partitions = new Set(
+                readings.flatMap((value) =>
+                  Object.keys(value.watermarks ?? {}),
+                ),
+              );
+              const watermarks = Object.fromEntries(
+                [...partitions].map((name) => [
+                  name,
+                  readings
+                    .map((value) => value.watermarks?.[name] ?? value.since)
+                    .sort((a, b) => parseMs(a) - parseMs(b))[0] ?? since,
+                ]),
+              );
+              const boundaryRows = Object.fromEntries(
+                [...partitions].map((name) => {
+                  // A newer reading covers the older boundary already. At
+                  // the selected boundary, every reading must cover a row
+                  // before the shared probe may suppress it.
+                  const atBoundary = readings.filter(
+                    (value) =>
+                      parseMs(value.watermarks?.[name] ?? value.since) ===
+                      parseMs(watermarks[name] ?? since),
+                  );
+                  const seen = atBoundary[0]?.boundaryRows?.[name] ?? [];
+                  return [
+                    name,
+                    seen.filter((row) =>
+                      atBoundary.every(
+                        (value) =>
+                          value.boundaryRows?.[name]?.includes(row) === true,
+                      ),
+                    ),
+                  ];
+                }),
+              );
+              return coalesce(reads, probeKey, () =>
+                facts.guarded(
+                  () =>
+                    changedSince(
+                      {
+                        ...query,
+                        since,
+                        keys,
+                        identities,
+                        ...(partitions.size === 0 ? {} : { watermarks }),
+                        ...(partitions.size === 0 ? {} : { boundaryRows }),
+                      },
+                      callerBound?.signal,
+                    ),
+                  false,
+                  callerBound,
+                ),
+              );
             },
           }),
       configKey: `native-v1:${credential}`,
       stateName: () => null,
       stateMaps: () => [],
-      queueIssues: async () => (await facts.queue(identity)).map(queued),
+      queueIssues: async () =>
+        (await facts.queue(identity, callerBound)).map(queued),
       poolIssue: async (key) => {
         const row = await facts.issue(key);
         return row === null ? null : carrier(row);
@@ -186,17 +247,29 @@ export async function nativeSharedView(
     opening = engine.open(
       nativeTracker,
       identity,
-      // The shared snapshot must not retain one repository's read allowance.
-      // Each caller applies its own bound while awaiting or projecting it.
-      { nowMs: options.nowMs, headroom: options.headroom },
+      // The view's lazy facts belong to the tick. Its queue/probe methods
+      // retain callerBound above, so the initial transport keeps its facet
+      // allowance without shortening later shared reads.
+      {
+        nowMs: options.nowMs,
+        headroom: options.headroom,
+        ...(sharedBound === undefined ? {} : { bound: sharedBound }),
+      },
       cache,
       source.shape,
     );
     views?.set(key, opening);
   }
-  const native = await (options.bound === undefined
+  const native = await (callerBound === undefined
     ? opening
-    : within(opening, options.bound));
+    : within(opening, callerBound));
+  const forCaller = <T>(read: () => Promise<T>): Promise<T> => {
+    if (ended(callerBound))
+      return Promise.reject(
+        new OutboundError("unreachable", "stopped at the tick’s deadline"),
+      );
+    return callerBound === undefined ? read() : within(read(), callerBound);
+  };
   const projected = new Map<string, PoolIssue>();
   const parents = new Map<string, QueueParent>();
   const held = new Map<string, HeldIssue>();
@@ -204,14 +277,14 @@ export async function nativeSharedView(
     const previous = projected.get(value.identifier);
     if (previous !== undefined) return previous;
     const raw = (value as NativePool).nativeRow;
-    if (ended(options.bound))
+    if (ended(callerBound))
       return Promise.reject(
         new OutboundError("unreachable", "stopped at the tick’s deadline"),
       );
-    const read = source.project(raw, options.bound);
-    const issue = await (options.bound === undefined
+    const read = source.project(raw, callerBound);
+    const issue = await (callerBound === undefined
       ? read
-      : within(read, options.bound));
+      : within(read, callerBound));
     projected.set(issue.identifier, issue);
     if (raw.parent) {
       const parent = await project(carrier(raw.parent.issue));
@@ -229,11 +302,14 @@ export async function nativeSharedView(
   };
   const queue = [...native.open().map((h) => h.issue), ...native.progress()];
   const projectedRows = async () => {
+    const includes = source.includes;
     const included = await Promise.all(
       queue.map(
         async (row) =>
-          source.includes === undefined ||
-          (await source.includes((row as NativePool).nativeRow, options.bound)),
+          includes === undefined ||
+          (await forCaller(() =>
+            includes((row as NativePool).nativeRow, callerBound),
+          )),
       ),
     );
     return await Promise.all(queue.filter((_, i) => included[i]).map(project));
@@ -271,8 +347,10 @@ export async function nativeSharedView(
   const progress = rows.filter((i) => isWorkingIssue(tracker, i));
   return {
     ...native,
-    // The snapshot is shared; each caller's own bound governs its projections.
-    ...(options.bound === undefined ? {} : { bound: options.bound }),
+    // The snapshot's fact transport is shared, but the returned view belongs
+    // to this caller. Metadata projections use bound, so do not extend them
+    // to the lifetime of the shared tick.
+    ...(callerBound === undefined ? {} : { bound: callerBound }),
     scope,
     get limited() {
       const failure = facts.failure();
@@ -296,17 +374,24 @@ export async function nativeSharedView(
       );
     },
     all: () => rows,
-    once: (key, read) => facts.once(key, () => native.once(key, read)),
+    once: (key, read) =>
+      forCaller(() =>
+        facts.once(key, () =>
+          native.once(key, (bound) => facts.guarded(() => read(bound), true)),
+        ),
+      ),
     open: () => open,
     progress: () => progress,
-    raw: async (key) => {
-      const row = await native.pool(key);
-      return row === null ? null : (row as NativePool).nativeRow;
-    },
-    pool: async (key) => {
-      const row = await native.pool(key);
-      return row === null ? null : project(row);
-    },
+    raw: (key) =>
+      forCaller(async () => {
+        const row = await native.pool(key);
+        return row === null ? null : (row as NativePool).nativeRow;
+      }),
+    pool: (key) =>
+      forCaller(async () => {
+        const row = await native.pool(key);
+        return row === null ? null : project(row);
+      }),
     held: (key) => held.get(key),
     parentBody: (key) => parents.get(key),
   };

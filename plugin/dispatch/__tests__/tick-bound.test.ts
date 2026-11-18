@@ -125,6 +125,15 @@ function fakeTracker(
       assigners.push({ key, signal });
       return assigner();
     },
+    async listRelations() {
+      return [];
+    },
+    async poolIssue(key: string) {
+      return issues.find((issue) => issue.identifier === key) ?? null;
+    },
+    async getIssue(key: string) {
+      return { identifier: key, description: "", parent: null };
+    },
   } as unknown as Tracker;
   return { tracker, assigners, claimed };
 }
@@ -230,6 +239,27 @@ describe("the tracker's reads under the tick's bound", () => {
     );
   });
 
+  it("stops new factory metadata reads at the same tick deadline", async () => {
+    const fake = fakeTracker([item("#1")], trusted);
+    fake.tracker.listRelations = () =>
+      new Promise(() => {
+        /* The shared view must stop waiting at the deadline. */
+      });
+    const tick = endsIn(50);
+    const reading = await readPickups(() => fake.tracker, section, {
+      bound: () => facetBound(undefined),
+      tick,
+    });
+    expect(reading.wanted).toEqual([]);
+    expect(reading.claimed).toBeNull();
+    expect(
+      reading.unplaced.some((row) =>
+        row.reason.includes("stopped at the tick's deadline"),
+      ),
+    ).toBe(true);
+    expect(fake.assigners).toEqual([{ key: "#1", signal: tick.signal }]);
+  });
+
   it("reads every assigner and the claimed items with no signal when the tick has no bound", async () => {
     const fake = fakeTracker([item("#1"), item("#2")], trusted);
     const reading = await readPickups(() => fake.tracker, section, {
@@ -301,7 +331,7 @@ describe("the runtime's read under the tick's bound", () => {
   it("reads as before when the tick has no bound", async () => {
     const answer: SessionsReport = { ok: true, source: "fake", workspaces: [] };
     const { runtime, signals } = fakeRuntime(async () => answer);
-    expect(await readSessions(runtime, REPO, JOIN)).toBe(answer);
+    expect(await readSessions(runtime, REPO, JOIN)).toMatchObject(answer);
     expect(signals).toEqual([undefined]);
   });
 
@@ -433,7 +463,11 @@ describe("a paged forge query under the tick's bound", () => {
               number: from + i + 1,
               headRefName: `feature/${from + i + 1}`,
               labels: { pageInfo: { hasNextPage: false }, nodes: [] },
-              comments: { pageInfo: { hasNextPage: false }, nodes: [] },
+              comments: {
+                totalCount: 0,
+                pageInfo: { hasNextPage: false },
+                nodes: [],
+              },
             })),
           },
         },

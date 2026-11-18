@@ -401,7 +401,7 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
     expect(waiting).toMatchObject({
       outcome: "waits",
       detail:
-        "no account has a free slot: a 0/2 (walled until 2099-01-01T00:00:00.000Z)",
+        "no account has a free slot: a weight 100 (effective 0), 0/2 (walled until 2099-01-01T00:00:00.000Z)",
     });
   });
 });

@@ -69,7 +69,9 @@ describe("frameStationDecision", () => {
       expect(checkParkedDecision(decision, decision.class)).toEqual([]);
       expect(decision.class).toBe(STATION_CLASSES[key]);
       expect(actOfClass(decision.class)).toBe("Decide");
-      expect(decision.call.options.at(-1)?.name).toBe("Leave it to me");
+      expect(decision.call.options.at(-1)?.name).toBe(
+        "I'll handle it — hide this card",
+      );
       for (const option of decision.call.options)
         expect(stationOptionId(option.name)).toBe(
           option.id as ReturnType<typeof stationOptionId>,
@@ -94,7 +96,9 @@ describe("frameStationDecision", () => {
 
   it("recommends running a follow-up again only when its pass asked nothing", () => {
     expect(recommendedName(EVERY[0] as StationFacts)).toBe("Run it again");
-    expect(recommendedName(EVERY[1] as StationFacts)).toBe("Leave it to me");
+    expect(recommendedName(EVERY[1] as StationFacts)).toBe(
+      "I'll handle it — hide this card",
+    );
     expect(
       frameStationDecision(EVERY[1] as StationFacts).decision.alreadyDone,
     ).toContain('"Which consumer repositories should receive the migration?"');
@@ -110,10 +114,10 @@ describe("frameStationDecision", () => {
       "Release the claim",
     );
     expect(recommendedName({ ...stalled, carriedBy: [793] })).toBe(
-      "Leave it to me",
+      "I'll handle it — hide this card",
     );
     expect(recommendedName({ ...stalled, carriedBy: null })).toBe(
-      "Leave it to me",
+      "I'll handle it — hide this card",
     );
     expect(
       frameStationDecision({ ...stalled, carriedBy: [793] }).decision
@@ -122,8 +126,12 @@ describe("frameStationDecision", () => {
   });
 
   it("leaves a busy checkout and a stopped drive to a person, and clears a stuck record", () => {
-    expect(recommendedName(EVERY[6] as StationFacts)).toBe("Leave it to me");
-    expect(recommendedName(EVERY[7] as StationFacts)).toBe("Leave it to me");
+    expect(recommendedName(EVERY[6] as StationFacts)).toBe(
+      "I'll handle it — hide this card",
+    );
+    expect(recommendedName(EVERY[7] as StationFacts)).toBe(
+      "I'll handle it — hide this card",
+    );
     expect(recommendedName(EVERY[9] as StationFacts)).toBe("Clear the record");
   });
 });

@@ -1,4 +1,5 @@
 /** A tick's receipt as the terminal reads it. */
+import { priorityLines } from "./priorities-lines.ts";
 import { spendingLines } from "./outbound-report.ts";
 import { upgradeLine } from "../../runtime/upgrade-record.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -125,6 +126,7 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
     ...labelLines(r.labels),
     ...serialLines(r.serialized),
     ...sharedLines(r.shared),
+    ...priorityLines(r, verb),
     ...took,
   );
   return lines;
@@ -245,6 +247,10 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
           `--apply withheld, nothing was started: ${receipt.applyWithheld}`,
           "",
         ]),
+    ...(receipt.accountWeights ?? []).map(
+      (a) =>
+        `account ${a.account} weight ${a.configured ?? "unreadable"}, effective ${a.effective}: ${a.reason}`,
+    ),
     ...(receipt.accountsNotAdmitted ?? []).map(
       (a) =>
         `account ${a.account} (vendor ${a.vendor}) accepted, not admitted: ${a.reason}`,

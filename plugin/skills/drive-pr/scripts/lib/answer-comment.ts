@@ -1,28 +1,8 @@
 /**
  * A person's answer to a parked question as `jig send … answer` writes it
- * (`drive-answer`): one pull-request comment,
- *
- *   answer <key>: <text>
- *   note <key>: <note>
- *
- *   <!-- jig-send-answer
- *   {"kind":"drive-answer","v":1,"key":"answer:<key>","writer":{…},"at":"…","pr":<PR>,"decision":"<digest>","choice":{"option":"<name>","form":"approve|choose"}}
- *   -->
- *
- * The first line is what the re-arm reads (`driver/rearm.ts`): an
- * `answer <key>:` line, from an author the forge vouches for, after the
- * park. A structured answer's text is `approve` or `choose <option>`, ending
- * with the digest of the framing the person read (`approve [<digest>]`)
- * when the park has one, and may have a `note <key>:` line beside it; its
- * record then carries the digest (`decision`) and the option chosen and its
- * form (`choice`) as payload fields. The record stays at version 1: a reader
- * that does not know a payload field ignores it. The hidden marker holds the record envelope, which names the writer
- * and its host (as a digest, like every record on the forge). A comment
- * carrying any other hidden marker is a script's and never a person's
- * answer; this record is the one marker an answer may carry, so the readers
- * take it out (`withoutAnswerRecord`) before they apply that rule and before
- * they hand the comment to a pass. It adds no authority: who may answer is
- * still the re-arm's rule for an author.
+ * (`drive-answer`): the comment and its record are
+ * `shared/decisions/answer-record.ts`'s, which the dispatch dashboard's Send
+ * writes too; this file posts it through the forge's command line.
  *
  * The text is the person's own words and reaches the drive's passes as
  * their verdict, so it is checked before it is written (`answerTextFault`):
@@ -30,30 +10,24 @@
  * characters (line breaks and the marks that reorder text among them) and
  * no hidden marker.
  */
-import {
-  type Envelope,
-  decodeMarker,
-  encode,
-} from "../../../../shared/records/envelope.ts";
-import type { Writer } from "../../../../shared/records/writer.ts";
-import { isRecord } from "../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 import { ghCall, ghRepoEnv } from "./proc.ts";
 import { ANSWER_TEXT_MAX } from "../../../../shared/decisions/answer-limits.ts";
 import { answerTextFault } from "../../../../shared/decisions/answer-text.ts";
 import {
   answerLine,
-  noteLine,
   structuredAnswerText,
   type WrittenChoice,
 } from "../../../../shared/decision-card.ts";
 
-/** The record's kind in the records registry. */
-export const ANSWER_KIND = "drive-answer";
-/** The hidden marker the record sits in. */
-const ANSWER_MARKER = "jig-send-answer";
-const ANSWER_OPEN = `<!-- ${ANSWER_MARKER}`;
-const ANSWER_CLOSE = "\n-->";
+/** The comment and its record are shared with the dashboard's Send. */
+export {
+  ANSWER_KIND,
+  answerComment,
+  type StructuredParts,
+  withoutAnswerRecord,
+} from "../../../../shared/decisions/answer-record.ts";
 /** The longest answer, in characters: a sentence or two, which every pass's notice carries whole. */
 export { ANSWER_TEXT_MAX, answerTextFault };
 /** The answer line and a structured answer's text are written as the dashboard's card writes them (`shared/decision-card.ts`). */
@@ -66,62 +40,6 @@ export function answerKeyFault(key: string): string | null {
     !key.includes("<!--")
     ? null
     : `${JSON.stringify(key)} cannot be written in an answer line, which names its key without spaces`;
-}
-
-/** What a structured answer adds to its comment: the note line and the record's payload fields. */
-export interface StructuredParts {
-  note?: string;
-  /** The digest of the framing the person read; absent on a park from before digests. */
-  decision?: string;
-  choice: WrittenChoice;
-}
-
-/**
- * The comment that answers parked `key` of pull request `pr` with `text`,
- * as `writer` at `at`; a structured answer's note line and payload fields
- * from `structured`.
- */
-export function answerComment(
-  key: string,
-  text: string,
-  pr: number,
-  writer: Writer,
-  at: string,
-  structured?: StructuredParts,
-): string {
-  const envelope: Envelope = {
-    kind: ANSWER_KIND,
-    v: 1,
-    key: `answer:${key}`,
-    writer,
-    at,
-  };
-  const note =
-    structured?.note === undefined ? "" : `\n${noteLine(key, structured.note)}`;
-  const payload =
-    structured === undefined
-      ? { pr }
-      : {
-          pr,
-          ...(structured.decision === undefined
-            ? {}
-            : { decision: structured.decision }),
-          choice: structured.choice,
-        };
-  return `${answerLine(key, text)}${note}\n\n${ANSWER_OPEN}\n${encode(envelope, payload)}${ANSWER_CLOSE}`;
-}
-
-/**
- * `body` without its answer record, when it carries one that reads; as it
- * is otherwise, so a comment with any other hidden marker still carries it.
- */
-export function withoutAnswerRecord(body: string): string {
-  if (!body.includes(ANSWER_OPEN)) return body;
-  const text = body.replaceAll("\r", "");
-  if (!decodeMarker(text, ANSWER_MARKER, ANSWER_KIND).ok) return body;
-  const start = text.indexOf(`${ANSWER_OPEN}\n`);
-  const end = text.indexOf(ANSWER_CLOSE, start) + ANSWER_CLOSE.length;
-  return `${text.slice(0, start)}${text.slice(end)}`.trimEnd();
 }
 
 /** Post `body` as a comment on pull request `pr` of `repo`: its link (`null` when the forge named none), or why the forge did not take it. */

@@ -6,76 +6,17 @@ import type {
   Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
-import type { PickupReads } from "../lib/pickup-reads.ts";
-import { freshServedPickup, readServedPickups } from "../lib/sources/served.ts";
+import { dispatchSection } from "../lib/section.ts";
+import { freshServedPickup } from "../lib/sources/served.ts";
+import { readPickups } from "../lib/sources/tracker.ts";
 import { issue } from "./served-fixtures.ts";
 
-const people = [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }];
-
-const started = (key: string, assignee: string | null = null): PoolIssue => ({
-  ...issue(key, [], assignee),
-  state: { id: "s", name: "In Progress", type: "started" },
-});
-
-interface Spec {
-  /** What the served person is assigned. */
-  assigned: PoolIssue[];
-  /** Every other item a read can reach. */
-  others?: PoolIssue[];
-  /** `blocked_by` links: item to the items it waits on. */
-  waits?: Record<string, string[]>;
-  children?: Record<string, PoolIssue[]>;
-  descriptions?: Record<string, string>;
-}
-
-function world(spec: Spec) {
-  const store = new Map<string, unknown>();
-  const cache: PickupReads = {
-    get: <T>(k: string) => (store.get(k) as T) ?? null,
-    set: (k, v) => {
-      store.set(k, v);
-    },
-  };
-  const all = [
-    ...spec.assigned,
-    ...(spec.others ?? []),
-    ...Object.values(spec.children ?? {}).flat(),
-  ];
-  const parent = new Map<string, string>();
-  for (const [epic, kids] of Object.entries(spec.children ?? {}))
-    for (const kid of kids) parent.set(kid.identifier, epic);
-  const tracker = {
-    adapter: "github",
-    team: "example/repo",
-    stateName: (state: string) => state,
-    assignUnassigned: async () => true,
-    assignedIssues: async (_: string, states: string[]) =>
-      states.includes("in_progress") ? [] : spec.assigned,
-    assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
-    openChildren: async (k: string) => spec.children?.[k] ?? [],
-    listRelations: async (k: string) => [
-      ...(spec.waits?.[k] ?? []).map((i) => ({ type: "blocked_by", issue: i })),
-      ...Object.entries(spec.waits ?? {})
-        .filter(([, on]) => on.includes(k))
-        .map(([i]) => ({ type: "blocks", issue: i })),
-    ],
-    poolIssue: async (k: string) => all.find((i) => i.identifier === k) ?? null,
-    getIssue: async (k: string) => ({
-      identifier: k,
-      description: spec.descriptions?.[k] ?? "",
-      parent: parent.has(k) ? { identifier: parent.get(k) } : null,
-    }),
-    user: async () => ({ id: "alex", name: "alex" }),
-  } as unknown as Tracker;
-  const read = (extra: Record<string, unknown> = {}) =>
-    readServedPickups(tracker, people, {
-      cache,
-      nowMs: 1,
-      headroom: true,
-      ...extra,
-    });
-  return { tracker, read };
-}
+import {
+  people,
+  started,
+  world,
+  type Spec,
+} from "./served-blocker-fixtures.ts";
 
 const reasons = (read: Awaited<ReturnType<ReturnType<typeof world>["read"]>>) =>
   Object.fromEntries(read.unplaced.map((u) => [u.target, u.reason]));
@@ -272,27 +213,169 @@ describe("launch-time recheck of a pulled blocker", () => {
 describe("an assigned epic's children", () => {
   const kids = (...keys: string[]) => keys.map((k) => issue(k, [], null));
 
-  it("starts one child at a time when the epic has no execution plan", async () => {
+  const parallelPlan = () =>
+    "## Execution Plan\n" +
+    renderExecutionPlan({
+      epic: "#1",
+      intent: "deliver",
+      steps: [
+        { issue: "#2", band: 1, lane: "a", gate: "agent" },
+        { issue: "#3", band: 1, lane: "b", gate: "agent" },
+      ],
+      edges: [],
+      gates: [],
+    });
+
+  const one = { epicWidth: 1 };
+
+  it("starts ready children up to the epic's width when it has no execution plan", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3", "#4", "#5", "#6") },
+    }).read({ epicWidth: 4 });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3", "#4", "#5"]);
+    expect(reasons(read)["#6"]).toBe(
+      "#1 works at most 4 children at once (dispatch.epic_width): starting #2, #3, #4, #5",
+    );
+  });
+
+  it("expands a factory epic without served people and applies its width", async () => {
+    const section = dispatchSection({
+      dispatch: { identity: "factory", epic_width: 1 },
+    });
+    if (!section.ok) throw new Error(section.failure.reason);
+    const w = world({
+      assigned: [issue("#1", ["epic"], "factory")],
+      children: { "#1": kids("#2", "#3") },
+    });
+    const read = await readPickups(() => w.tracker, section.value, undefined, {
+      people: [],
+      cache: w.cache,
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+    expect(read.wanted[0]).toMatchObject({ factoryAncestor: "#1" });
+    expect(read.wanted[0]?.servedPerson).toBeUndefined();
+  });
+
+  it("expands factory epics when no served options are supplied", async () => {
+    const section = dispatchSection({
+      dispatch: { identity: "factory", epic_width: 1 },
+    });
+    if (!section.ok) throw new Error(section.failure.reason);
+    const w = world({
+      assigned: [issue("#91", ["epic"], "factory")],
+      children: { "#91": kids("#92", "#93") },
+    });
+    const read = await readPickups(() => w.tracker, section.value);
+    expect(read.wanted.map((i) => i.key)).toEqual(["#92"]);
+    expect(read.wanted[0]).toMatchObject({ factoryAncestor: "#91" });
+  });
+
+  it("keeps blocked factory work held without pulling blockers on served authority", async () => {
+    const section = dispatchSection({
+      dispatch: { identity: "factory", epic_width: 1 },
+    });
+    if (!section.ok) throw new Error(section.failure.reason);
+    const w = world({
+      assigned: [issue("#1", ["epic"], "factory")],
+      children: { "#1": kids("#2") },
+      others: kids("#9"),
+      waits: { "#1": ["#9"] },
+    });
+    const read = await readPickups(() => w.tracker, section.value, undefined, {
+      people: [],
+      cache: w.cache,
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.wanted).toEqual([]);
+    expect(read.unplaced.find((u) => u.target === "#1")?.reason).toContain(
+      "waiting on #9",
+    );
+  });
+
+  it("does not reappend a factory child rejected by shared epic admission", async () => {
+    const section = dispatchSection({
+      dispatch: { identity: "factory", epic_width: 1 },
+    });
+    if (!section.ok) throw new Error(section.failure.reason);
+    const w = world({
+      assigned: [issue("#1", ["epic"]), issue("#2", [], "factory")],
+      children: { "#1": [issue("#2", [], "factory"), started("#5")] },
+    });
+    const read = await readPickups(() => w.tracker, section.value, undefined, {
+      people,
+      cache: w.cache,
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.wanted).toEqual([]);
+    expect(read.unplaced.find((u) => u.target === "#2")?.reason).toContain(
+      "working #5",
+    );
+  });
+
+  it("reads the width from the repository's dispatch section", async () => {
+    const section = dispatchSection({ dispatch: { epic_width: 2 } });
+    if (!section.ok) throw new Error(section.failure.reason);
+    const w = world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3", "#4") },
+    });
+    const read = await readPickups(() => w.tracker, section.value, undefined, {
+      people,
+      cache: w.cache,
+      nowMs: 1,
+      headroom: true,
+    });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3"]);
+    expect(read.unplaced.find((u) => u.target === "#4")?.reason).toBe(
+      "#1 works at most 2 children at once (dispatch.epic_width): starting #2, #3",
+    );
+  });
+
+  it("starts four children of a plan-less epic when no width is set", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3", "#4", "#5", "#6") },
+    }).read();
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3", "#4", "#5"]);
+  });
+
+  it("starts one child at a time under a width of 1", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
       children: { "#1": kids("#2", "#3", "#4") },
-    }).read();
+    }).read(one);
     expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
     expect(reasons(read)).toMatchObject({
-      "#3": "waiting on #2; #1 takes one child at a time",
-      "#4": "waiting on #2; #1 takes one child at a time",
+      "#3": "#1 works at most 1 child at once (dispatch.epic_width): starting #2",
+      "#4": "#1 works at most 1 child at once (dispatch.epic_width): starting #2",
     });
   });
 
-  it("starts no child while another is in progress", async () => {
+  it("counts the children under way against the width", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
       children: { "#1": [...kids("#2", "#3"), started("#5")] },
-    }).read();
+    }).read({ epicWidth: 2 });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+    expect(reasons(read)["#3"]).toBe(
+      "#1 works at most 2 children at once (dispatch.epic_width): working #5; starting #2",
+    );
+  });
+
+  it("starts no child while the children under way fill the width", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [...kids("#2", "#3"), started("#5")] },
+    }).read(one);
     expect(read.wanted).toEqual([]);
     expect(reasons(read)).toMatchObject({
-      "#2": "#1 is working #5; it takes one child at a time",
-      "#3": "#1 is working #5; it takes one child at a time",
+      "#2": "#1 works at most 1 child at once (dispatch.epic_width): working #5",
+      "#3": "#1 works at most 1 child at once (dispatch.epic_width): working #5",
     });
     expect(reasons(read)["#1"]).toBeUndefined();
   });
@@ -312,10 +395,10 @@ describe("an assigned epic's children", () => {
       const read = await world({
         assigned: [issue("#1", ["epic"])],
         children: { "#1": [...kids("#2", "#3"), child] },
-      }).read();
+      }).read(one);
       expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
       expect(reasons(read)["#3"]).toBe(
-        "waiting on #2; #1 takes one child at a time",
+        "#1 works at most 1 child at once (dispatch.epic_width): starting #2",
       );
     }
   });
@@ -339,7 +422,11 @@ describe("an assigned epic's children", () => {
         type: StateContext = null,
       ) =>
         state === "ops_pending" && type === "Task" ? "Awaiting check" : state;
-      const read = await w.read({ hitl: "approval", manualOps: "operator" });
+      const read = await w.read({
+        hitl: "approval",
+        manualOps: "operator",
+        ...one,
+      });
       expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
     }
   });
@@ -361,10 +448,10 @@ describe("an assigned epic's children", () => {
       ["pr_open", "in_review", "ops_pending"].includes(state)
         ? "Review"
         : state) as Tracker["stateName"];
-    const read = await w.read();
+    const read = await w.read(one);
     expect(read.wanted).toEqual([]);
     expect(reasons(read)["#2"]).toBe(
-      "#1 is working #5; it takes one child at a time",
+      "#1 works at most 1 child at once (dispatch.epic_width): working #5",
     );
   });
 
@@ -385,7 +472,7 @@ describe("an assigned epic's children", () => {
       ["in_review", "ops_pending"].includes(state)
         ? "Review"
         : state) as Tracker["stateName"];
-    const read = await w.read();
+    const read = await w.read(one);
     expect(read.wanted.map((item) => item.key)).toEqual(["#2"]);
   });
 
@@ -395,11 +482,11 @@ describe("an assigned epic's children", () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
       children: { "#1": kids("#2", "#3", "#4") },
-    }).read({ passOver: held });
+    }).read({ passOver: held, ...one });
     // The held child stays wanted, so the pickup plan reports it; it takes no slot.
     expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3"]);
     expect(reasons(read)["#4"]).toBe(
-      "waiting on #3; #1 takes one child at a time",
+      "#1 works at most 1 child at once (dispatch.epic_width): starting #3",
     );
     expect(reasons(read)["#1"]).toBe(
       "#2 is held, so it does not hold its siblings: launch record r1 ended",
@@ -413,6 +500,7 @@ describe("an assigned epic's children", () => {
     }).read({
       passOver: (i: { identifier: string }) =>
         i.identifier === "#3" ? "launch record r1 ended" : null,
+      ...one,
     });
     expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#3"]);
     expect(reasons(read)["#3"]).toBeUndefined();
@@ -477,10 +565,10 @@ describe("an assigned epic's children", () => {
           ...kids("#2"),
         ],
       },
-    }).read();
+    }).read(one);
     expect(read.wanted).toEqual([]);
     expect(reasons(read)["#2"]).toBe(
-      "#1 is working #6; it takes one child at a time",
+      "#1 works at most 1 child at once (dispatch.epic_width): working #6",
     );
     expect(reasons(read)["#1"]).toBeUndefined();
   });
@@ -504,14 +592,108 @@ describe("an assigned epic's children", () => {
     expect(reasons(read)["#1"]).toBeUndefined();
   });
 
-  it("starts no sibling while a child cannot be read, since it may be the one in progress", async () => {
+  it("counts a child that cannot be read as under way, since it may be", async () => {
     const unread = { ...issue("#3", [], null), truncated: ["labels"] };
+    const children = { "#1": [...kids("#2", "#4"), unread] };
+    const held = await world({
+      assigned: [issue("#1", ["epic"])],
+      children,
+    }).read(one);
+    expect(held.wanted).toEqual([]);
+    expect(reasons(held)["#2"]).toContain("#3 cannot be read");
+    const wider = await world({
+      assigned: [issue("#1", ["epic"])],
+      children,
+    }).read({ epicWidth: 2 });
+    expect(wider.wanted.map((i) => i.key)).toEqual(["#2"]);
+    expect(reasons(wider)["#4"]).toBe(
+      "#1 works at most 2 children at once (dispatch.epic_width): #3 cannot be read and may be under way; starting #2",
+    );
+  });
+
+  it("takes one slot for a child whose relations cannot be read and starts its siblings", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
-      children: { "#1": [issue("#2", [], null), unread] },
-    }).read();
-    expect(read.wanted).toEqual([]);
-    expect(reasons(read)["#2"]).toContain("#3 cannot be read");
+      children: { "#1": kids("#2", "#3", "#4", "#5") },
+      failing: ["#3"],
+    }).read({ epicWidth: 3 });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2", "#4"]);
+    expect(reasons(read)["#5"]).toBe(
+      "#1 works at most 3 children at once (dispatch.epic_width): #3 cannot be read and may be under way; starting #2, #4",
+    );
+  });
+
+  it("counts a started child whose relations cannot be read once, and records the failed read", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [started("#3"), ...kids("#2", "#4")] },
+      failing: ["#3"],
+    }).read({ epicWidth: 2 });
+    expect(read.wanted.map((i) => i.key)).toEqual(["#2"]);
+    expect(reasons(read)["#3"]).toContain(
+      "the queue metadata could not be read",
+    );
+    expect(read.incomplete).toBe(true);
+  });
+
+  const failedRecordCases: [string, Spec][] = [
+    [
+      "records a failed open child's read once",
+      {
+        assigned: [issue("#1", ["epic"])],
+        children: { "#1": kids("#2", "#3") },
+        failing: ["#3"],
+      },
+    ],
+    [
+      "keeps a failed child's record when another epic meets a rate limit",
+      {
+        assigned: [issue("#1", ["epic"]), issue("#5", ["epic"])],
+        children: { "#1": kids("#2", "#3"), "#5": kids("#6") },
+        failing: ["#3"],
+        limiting: ["#6"],
+      },
+    ],
+    [
+      "keeps a failed child's record when a sibling of the same epic meets a rate limit",
+      {
+        assigned: [issue("#1", ["epic"])],
+        children: { "#1": kids("#2", "#3") },
+        failing: ["#3"],
+        limiting: ["#2"],
+        slow: ["#3"],
+      },
+    ],
+  ];
+  for (const [name, spec] of failedRecordCases) {
+    it(name, async () => {
+      const read = await world(spec).read({ epicWidth: 2 });
+      expect(read.unplaced.filter((u) => u.target === "#3")).toHaveLength(1);
+    });
+  }
+
+  it("reports a rate limit from a later child of a planned epic beside an earlier ordinary failure", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": kids("#2", "#3") },
+      descriptions: { "#1": parallelPlan() },
+      failing: ["#2"],
+      limiting: ["#3"],
+      slow: ["#3"],
+    }).read({ epicWidth: 2 });
+    expect(read.limitedUntil).toBeDefined();
+    expect(read.incomplete).toBe(true);
+    expect(read.failures).toHaveLength(1);
+  });
+
+  it("keeps an epic working while its started child cannot be read", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: { "#1": [started("#3"), ...kids("#2")] },
+      failing: ["#3"],
+    }).read(one);
+    const summary = read.unplaced.filter((u) => u.target === "#1");
+    expect(summary).toEqual([]);
   });
 
   it("holds a directly assigned child while a sibling cannot be read", async () => {
@@ -519,19 +701,19 @@ describe("an assigned epic's children", () => {
     const read = await world({
       assigned: [issue("#1", ["epic"]), issue("#2", [], "alex")],
       children: { "#1": [issue("#2", [], "alex"), unread] },
-    }).read();
+    }).read(one);
     expect(read.wanted).toEqual([]);
     expect(reasons(read)["#2"]).toContain("#3 cannot be read");
   });
 
-  it("holds a directly assigned child to its epic's one-at-a-time order", async () => {
+  it("holds a directly assigned child to its epic's width", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"]), issue("#2", [], "alex")],
       children: { "#1": [issue("#2", [], "alex"), started("#5")] },
-    }).read();
+    }).read(one);
     expect(read.wanted).toEqual([]);
     expect(reasons(read)["#2"]).toBe(
-      "#1 is working #5; it takes one child at a time",
+      "#1 works at most 1 child at once (dispatch.epic_width): working #5",
     );
   });
 
@@ -557,22 +739,10 @@ describe("an assigned epic's children", () => {
   });
 
   it("keeps an execution plan's own order and parallelism", async () => {
-    const description =
-      "## Execution Plan\n" +
-      renderExecutionPlan({
-        epic: "#1",
-        intent: "deliver",
-        steps: [
-          { issue: "#2", band: 1, lane: "a", gate: "agent" },
-          { issue: "#3", band: 1, lane: "b", gate: "agent" },
-        ],
-        edges: [],
-        gates: [],
-      });
     const read = await world({
       assigned: [issue("#1", ["epic"])],
       children: { "#1": kids("#2", "#3") },
-      descriptions: { "#1": description },
+      descriptions: { "#1": parallelPlan() },
     }).read();
     expect(read.wanted.map((i) => i.key).sort()).toEqual(["#2", "#3"]);
   });
@@ -619,15 +789,80 @@ describe("an assigned epic's children", () => {
     expect(read.wanted.map((i) => i.key)).not.toContain("#10");
   });
 
-  it("works each nested epic one child at a time on its own", async () => {
+  it("holds a nested subtree while a sibling fills the parent width", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [started("#5"), issue("#2", ["epic"], null)],
+        "#2": kids("#3", "#4"),
+      },
+    }).read(one);
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#3"]).toContain("working #5");
+  });
+
+  it("admits one nested child of a parent while allowing that child's own width", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [issue("#2", ["epic"], null), issue("#6", ["epic"], null)],
+        "#2": kids("#3", "#4"),
+        "#6": kids("#7", "#8"),
+      },
+    }).read(one);
+    expect(read.wanted.map((i) => i.key)).toEqual(["#3"]);
+    expect(reasons(read)["#7"]).toContain("starting #2");
+  });
+
+  it("holds a directly assigned child when its unwalked parent is full", async () => {
+    const read = await world({
+      assigned: [issue("#2")],
+      others: [issue("#1", ["epic"], "sam")],
+      children: { "#1": [issue("#2"), started("#5")] },
+    }).read(one);
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#2"]).toContain("working #5");
+  });
+
+  it("reuses an active nested epic's parent slot without counting it twice", async () => {
+    const nested = {
+      ...issue("#2", ["epic"], null),
+      state: { id: "s", name: "In Progress", type: "started" as const },
+    };
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [nested, issue("#6", [], null)],
+        "#2": kids("#3", "#4"),
+      },
+    }).read({ epicWidth: 2 });
+    expect(read.wanted.map((i) => i.key).sort()).toEqual(["#3", "#4", "#6"]);
+  });
+
+  it("counts an unstarted nested epic with active descendants against its parent's width", async () => {
+    const read = await world({
+      assigned: [issue("#1", ["epic"])],
+      children: {
+        "#1": [issue("#2", ["epic"], null), issue("#6", [], null)],
+        "#2": [started("#3")],
+      },
+    }).read(one);
+    expect(read.wanted).toEqual([]);
+    expect(reasons(read)["#6"]).toContain("working #2");
+  });
+
+  it("holds each nested epic to its own width", async () => {
     const read = await world({
       assigned: [issue("#1", ["epic"])],
       children: {
         "#1": [issue("#2", ["epic"], null)],
         "#2": kids("#3", "#4"),
       },
-    }).read();
+    }).read(one);
     expect(read.wanted.map((i) => i.key)).toEqual(["#3"]);
+    expect(reasons(read)["#4"]).toBe(
+      "#2 works at most 1 child at once (dispatch.epic_width): starting #3",
+    );
   });
 
   it("reports one reason for an epic none of whose children can start", async () => {

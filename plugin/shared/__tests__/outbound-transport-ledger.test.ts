@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,13 +19,29 @@ import {
 import { httpTransport as githubTransport } from "../../skills/do-item/scripts/lib/tracker/github/transport.ts";
 import { httpTransport as jiraTransport } from "../../skills/do-item/scripts/lib/tracker/jira/transport.ts";
 import { ok } from "../outcome.ts";
+import { setForgeGovernor } from "../outbound/github-budget.ts";
 import { traceGhRunner } from "../trace.ts";
 
 const directories: string[] = [];
+// The machine's owner discovery would ask GitHub for the credential's user.
+beforeEach(() => setForgeGovernor(budgetGovernor(memoryBudgetStore())));
 afterEach(() => {
+  setForgeGovernor(null);
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
+
+/** A gh runner whose every call answers an empty object; a hold would be a bug. */
+function emptyRestRunner() {
+  return traceGhRunner(
+    async () => ({ code: 0, stdout: "{}", stderr: "", timedOut: false }),
+    () => 10,
+    {},
+    () => {
+      throw new Error("unexpected hold");
+    },
+  );
+}
 
 describe("outbound transport cost accounting", () => {
   it("totals each named Linear operation from its cost header, including local refusals separately", async () => {
@@ -133,14 +149,7 @@ describe("outbound transport cost accounting", () => {
     await withLedgerWriter(
       (event) => events.push(event),
       async () => {
-        const runner = traceGhRunner(
-          async () => ({ code: 0, stdout: "{}", stderr: "", timedOut: false }),
-          () => 10,
-          {},
-          () => {
-            throw new Error("unexpected hold");
-          },
-        );
+        const runner = emptyRestRunner();
         await runner([
           "api",
           "repos/private-owner/private-repo/issues/123?cursor=private-value",
@@ -156,6 +165,35 @@ describe("outbound transport cost accounting", () => {
       unit: "requests",
       estimated: true,
     });
+    expect(JSON.stringify(events)).not.toContain("private-");
+  });
+
+  it("attributes flag-first REST reads to their redacted route", async () => {
+    const events: CallRecord[] = [];
+    await withLedgerWriter(
+      (event) => events.push(event),
+      async () => {
+        const runner = emptyRestRunner();
+        await runner([
+          "api",
+          "--paginate",
+          "--slurp",
+          "repos/private-owner/private-repo/issues/123/comments",
+        ]);
+        await runner([
+          "api",
+          "-H",
+          "Accept: application/json",
+          "--method",
+          "GET",
+          "repos/private-owner/private-repo/pulls/123",
+        ]);
+      },
+    );
+    expect(events.map((e) => e.operation)).toEqual([
+      "GET /repos/{}/{}/issues/{}/comments",
+      "GET /repos/{}/{}/pulls/{}",
+    ]);
     expect(JSON.stringify(events)).not.toContain("private-");
   });
 

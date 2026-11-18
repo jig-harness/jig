@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/needs-and-answers/v1/schemas/parked-decision.json",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "parked-decision/v1"
+    },
+    "class": {
+      "type": "string"
+    },
+    "call": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "pay": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tag": {
+                "type": "string"
+              },
+              "keep": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rightWhen": {
+                "type": "string"
+              },
+              "obligation": {
+                "type": "string"
+              },
+              "reversible": {
+                "type": "boolean"
+              }
+            },
+            "required": ["id", "name", "summary", "pay"],
+            "additionalProperties": true
+          }
+        },
+        "recommended": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "question", "options", "recommended", "why"],
+      "additionalProperties": true
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "alreadyDone": {
+      "type": "string"
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": ["text", "source"],
+        "additionalProperties": true
+      }
+    },
+    "interplay": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["from", "to", "text"],
+        "additionalProperties": true
+      }
+    },
+    "sheet": {
+      "type": "string"
+    }
+  },
+  "required": ["schema", "class", "call", "steps", "alreadyDone"],
+  "additionalProperties": true
+}

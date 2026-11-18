@@ -86,9 +86,19 @@ const columns = helper.columns([
     id: "reason",
     cell: ({ row }) => <span className="cell-why">{row.original.reason}</span>,
   }),
+  helper.display({
+    id: "run",
+    cell: ({ row }) =>
+      row.original.run === null ? null : (
+        <span className="cell-run">{row.original.run.line}</span>
+      ),
+  }),
 ]);
 
-function RowBody({ view }: { view: RowView }) {
+/** Opens a piece of work's page of runs: the log filtered to its target. */
+export type OpenWork = (repo: string, target: string) => void;
+
+function RowBody({ view, onWork }: { view: RowView; onWork: OpenWork | null }) {
   return (
     <div className="rowBody">
       <StageHint stage={view.stage} />
@@ -108,9 +118,21 @@ function RowBody({ view }: { view: RowView }) {
           links={view.links}
         />
       )}
-      {view.noLink === null ? null : (
+      {view.noLink === null &&
+      (onWork === null || view.target === "") ? null : (
         <div className="goto">
-          <span className="noLink">{view.noLink}</span>
+          {view.noLink === null ? null : (
+            <span className="noLink">{view.noLink}</span>
+          )}
+          {onWork === null || view.target === "" ? null : (
+            <button
+              className="fbtn"
+              type="button"
+              onClick={() => onWork(view.repo, view.target)}
+            >
+              All runs of {view.target}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -124,8 +146,10 @@ function LogRowCard({
   offset,
   measure,
   cells,
+  onWork,
 }: {
   row: Row<typeof features, RowView>;
+  onWork: OpenWork | null;
   index: number;
   offset: number;
   measure: (element: HTMLElement | null) => void;
@@ -171,7 +195,7 @@ function LogRowCard({
         <div className="rowSum">{cells}</div>
         {open ? (
           <div className="detail" id={id} data-no-toggle="">
-            <RowBody view={row.original} />
+            <RowBody view={row.original} onWork={onWork} />
           </div>
         ) : null}
       </div>
@@ -201,10 +225,13 @@ export function LogTable({
   rows,
   rowClock,
   forges,
+  onWork,
 }: {
   rows: LogRow[];
   rowClock: RowClock;
   forges: Forges;
+  /** Opens a row's work; `null` while the page cannot ask the host. */
+  onWork: OpenWork | null;
 }) {
   const [limit, setLimit] = useState(PAGE);
   const data = useMemo(
@@ -242,6 +269,7 @@ export function LogTable({
     <LogRowCard
       key={row.id}
       row={row}
+      onWork={onWork}
       index={index}
       offset={Math.round(start - top)}
       measure={virtual.measureElement}

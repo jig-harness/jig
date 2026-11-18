@@ -60,7 +60,7 @@ hook or the interface instead.
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Local checks, generators, lints            | Any command                                                                                                                                                                                                                                                                                           | [A command](#commands-a-repository-supplies)                                                                        | —                                                                                                                       |
 | Review skills, implementing agents, scouts | The repository's own                                                                                                                                                                                                                                                                                  | [Configuration](#the-repositorys-own-skills-and-agents)                                                             | —                                                                                                                       |
-| Issue tracker                              | GitHub Issues (the default); Linear; Jira Cloud                                                                                                                                                                                                                                                       | [A tracker adapter](#issue-tracker) in Jig                                                                          | The deferral step still calls Linear directly: roadmap items 10 and 12                                                  |
+| Issue tracker                              | GitHub Issues (the default); Linear; Jira Cloud                                                                                                                                                                                                                                                       | [A tracker adapter](#issue-tracker) in Jig                                                                          | A plan file kept in the repository: roadmap item 12                                                                     |
 | Reflection store                           | A folder of files, a Notion database, a GitHub repository's issues, or any command                                                                                                                                                                                                                    | [A store command](#reflection-stores), no change to Jig                                                             | Jira: roadmap, later                                                                                                    |
 | AI reviewer                                | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included                                            | [Configuration](#ai-reviewers)                                                                                      | —                                                                                                                       |
 | Forge (where pull requests live)           | GitHub, through the `gh` command                                                                                                                                                                                                                                                                      | —                                                                                                                   | [No forge interface yet](#forge-github): roadmap, later                                                                 |
@@ -74,23 +74,11 @@ hook or the interface instead.
 
 ## Commands a repository supplies
 
-Each of these is a field whose value is a shell command. The skill runs it
-from the repository root, except where a row below says otherwise, and
-judges it by its exit code: 0 is success. The contract column says what else the command is given or must print.
-
-| Field                                   | Run by                                                               | Contract                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gates.command`                         | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push                                                                                                                                                                                                                                                                                               |
-| `drive.validation_plan_command`         | drive-pr, and the skills that verify a change                        | Reads the changed files, one per line, on standard input; prints the validation plan as JSON ([format](skills/drive-pr/README.md))                                                                                                                                                                                                                          |
-| `drive.load_guard_command`              | drive-pr                                                             | Returns once the machine can take heavy checks                                                                                                                                                                                                                                                                                                              |
-| `descar.lint_command`                   | descar                                                               | Takes document paths; finds review scars in them                                                                                                                                                                                                                                                                                                            |
-| `promote_memory.lint_command`           | promote-memory                                                       | `{dir}` and `{file}` stand for the memory folder and file; checks one memory against the repository                                                                                                                                                                                                                                                         |
-| `fix_ci.regenerate_commands`            | fix-ci                                                               | Each regenerates committed generated files a CI check compares                                                                                                                                                                                                                                                                                              |
-| `ci.log_command`                        | fix-ci, for a drive's CI-repair pass                                 | Reads `{"context", "target_url"}` of a failing commit status as JSON on standard input; prints that status's failed log, at most 64 KiB. Runs in a temporary copy of the default branch's files, not the pull request's checkout. Exit 3, the reason its first output line, when the log is gone; 300 s                                                                                                                                              |
-| `resolve_conflicts.generated[].command` | resolve-conflicts                                                    | Rebuilds the files its `paths` match when they conflict                                                                                                                                                                                                                                                                                                     |
-| `explain.figure_build_command`          | explain                                                              | Builds one explainer figure; the figure's stem is appended                                                                                                                                                                                                                                                                                                  |
-| `code_stats.classify_command`           | code-stats                                                           | Reads every tracked path, one per line, on standard input; prints one JSON object per line, `{"path", "area"?, "kind"?, "language"?, "module"?}`, whose values override the skill's own classification ([contract](skills/code-stats/README.md#the-classify-command)). Exit 0 within 300 seconds; any other exit, or a line it cannot use, fails the report |
-| `do_item.preflight_command`              | do-item, work-batch and the dispatcher's pickups, through `tracker.ts claim` | Read from the default branch, and run without the tracker and forge tokens. Reads the item's `get_issue.ts` JSON on standard input. Exit 0 lets the claim go on; exit 3 refuses it and the first line of standard output is the reason; any other exit, more than 64 KiB of output, or a run past 60 seconds, refuses too ([contract](CONFIGURATION.md#do_item)) |
+The [repository commands chapter](protocol/repo-commands.md) lists the
+commands, who runs each, what it is given, what it must answer with, its
+exits and its deadline. Use it when implementing one of those commands.
+The [configuration reference](CONFIGURATION.md) gives each setting's
+accepted values and default.
 
 `issue_tracker.file_command` is different: no skill runs it. It is an
 instruction that `do-item`, `decide` and others hand to the agent, saying how
@@ -119,6 +107,15 @@ named in configuration:
   repository keeps its standing policy.
 - **Decision rules.** `adr.rules_file` holds the machine-readable rules
   `review` checks a change against.
+- **Repository arms.** `followup.arms` adds the repository's own
+  obligations to the follow-up after a merge: an instructions file read from
+  the integration branch, a read-only check command (its contract is the
+  `followup.arms` entry of the
+  [repository commands chapter](protocol/repo-commands.md)), or a skill the
+  repository, the user's home or another plugin already holds, named by its
+  slash command. Each is settled like the follow-up's own arms and acts only
+  within its fixed authority table
+  ([CONFIGURATION.md](CONFIGURATION.md#followup)).
 
 ## Issue tracker
 
@@ -311,9 +308,12 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 `linear.ts` (the facets an adapter keeps in the tracker's own fields are its
 own to read and write; it passes its tracker through `withFacets` in
 [`facets/tracker.ts`](skills/do-item/scripts/lib/tracker/facets/tracker.ts),
-which keeps every other facet in labels, and adds the stores it can hold to
-`ADAPTER_STORES` in
-[`facets/config.ts`](skills/do-item/scripts/lib/tracker/facets/config.ts)),
+which keeps every other facet in labels, and adds a row for each facet to
+`ADAPTER_FACET_STORES` in
+[`facets/facet-values.ts`](skills/do-item/scripts/lib/tracker/facets/facet-values.ts),
+saying for each store what it is on that tracker or why it is refused, from
+which the Protocol's [tracker facets chapter](protocol/tracker-facets.md)
+is generated),
 register it in `ADAPTERS` in
 [`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), give its key
 shape an entry in [`keys.ts`](skills/do-item/scripts/lib/tracker/keys.ts),
@@ -327,9 +327,10 @@ adapter maps its tracker onto the interface's vocabulary:
 - an issue key has the shape the adapter's `keys.ts` entry defines; every
   caller that finds a key in text, reads one from a branch name or names a
   file after one goes through that entry;
-- priority is a number from 0 (none) to 4 (low); a type is a type of the
-  repository's label taxonomy and a size a label of its size group, each
-  `null` for none, whatever the tracker shows;
+- priority is a number from 0 (none) to 4 (low)
+  ([the priorities](protocol/tracker-facets.md#priorities)); a type is a
+  type of the repository's label taxonomy and a size a label of its size
+  group, each `null` for none, whatever the tracker shows;
 - relations are directed and read from each issue's side: `relate A blocks
 B` makes B wait for A, and B reads it as `blocked_by` A; `relate A
 duplicate B` records A as the duplicate of B (the tracker may close A),
@@ -348,10 +349,6 @@ duplicate B` records A as the duplicate of B (the tracker may close A),
 **What still assumes Linear.** These bypass the interface today, so a
 second adapter does not yet reach them:
 
-- **Deferring review findings.** `resolve-review-comments` files deferred
-  findings through its own Linear client (`defer-batch.ts`), with fixed type
-  and repository label groups; with GitHub Issues as the tracker, the
-  default, deferred findings cannot be filed yet.
 - **Native forms.** A skill run where the scripts cannot reach the tracker
   (no credential in that environment) may use a harness's own integration,
   and the skills give Linear's MCP tools as its example; every step they
@@ -363,11 +360,9 @@ second adapter does not yet reach them:
 
 A repository gate (`scripts/check-tracker-boundary.ts` in Jig's own
 repository) keeps the rest of the plugin's code, and the planning skills'
-procedures, from reaching Linear except through the interface; the deferral
-step is the one file it still allows.
+procedures, from reaching Linear except through the interface.
 
-Fixing it means moving the deferral step onto the interface. Roadmap item 10
-holds the deferral step; item 12 holds the next adapter, a plan file kept in the
+Roadmap item 12 holds the next adapter, a plan file kept in the
 repository, behind open decisions: the plan file's format, and whether an
 adapter may leave out the reporting operations.
 
@@ -561,8 +556,9 @@ the [Codex notes](README.md#codex-notes): Codex does not fill in the skill's
 folder path, loads plugin agents only from its own folders, and the drive's
 default pass starts Claude Code. Any other agent tool can use the skills by
 copying or linking the whole `plugin/skills/` directory into its skill
-folder, keeping every skill beside the others, and `plugin/shared/` into a
-`shared/` folder beside that skill folder
+folder, keeping every skill beside the others, and `plugin/shared/` and
+`plugin/protocol/` into sibling `shared/` and `protocol/` folders beside that
+skill folder
 ([where it works](README.md#where-it-works)): skills' scripts import code
 from `shared/` and from sibling skills (`fix-ci` from
 `resolve-review-comments`, for one), so a single skill copied alone does not

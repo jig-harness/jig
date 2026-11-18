@@ -3,14 +3,18 @@
  * phases: each repository's query (`forge-batch.ts`: the repository, its
  * configuration, its open pull requests and their comments), each pull
  * request's comments (`tick-comments.ts`, filled from that query where it
- * read them in full), the forge's login, the runtime's host-wide listings, and the forge's budget. The
+ * read them in full, the rest revalidated page by page against what an
+ * earlier tick read, `records/comment-pages.ts`), the forge's login, the runtime's host-wide listings, and the forge's budget. The
  * login and the listings are the host's, not a repository's: each is read
  * once, the first time a repository needs it, and every repository is
  * answered from that read, a failed one failing each repository's record as
  * a read of its own would. The queries start from the page size the last
  * tick's read ended at (`pageSizes`), so a repository whose pull requests
  * the forge cannot answer fifty at a time is not asked that way every tick.
- * The budget is read once, as the tick starts: it
+ * The budget is read once, as the tick starts, from the machine's budget
+ * record (`shared/outbound/github-budget.ts`), which every process's forge
+ * calls keep current; only a record whose core window no answer has reported in the last
+ * minute is refreshed first, by one read of the `rate_limit` endpoint. It
  * decides whether the optional reads run (`lowBudget`), and every
  * repository's report says what was left then.
  *
@@ -27,11 +31,15 @@
  * None of these serves a read just before a launch: those go to the forge
  * and the runtime (`tick-apply.ts`).
  */
+import { coalesce } from "../../shared/outbound/coalesce.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
-import { listComments } from "../../shared/records/forge-claims.ts";
+import { listCommentsKept } from "../../shared/records/comment-pages.ts";
 import type { SharedBudget } from "../../shared/records/shared.ts";
 import { failed, type Outcome } from "../../shared/outcome.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
+import type { BudgetWindow } from "../../shared/outbound/budget.ts";
+import { githubBalances } from "../../shared/outbound/github-budget.ts";
+import { currentMs, isoFromMs } from "../../shared/time.ts";
 import {
   type CommentsRead,
   type PageSizes,
@@ -48,7 +56,6 @@ import type { ServedViews } from "./sources/served-reads.ts";
 import { failureText } from "./text.ts";
 import { type TickComments, tickComments } from "./tick-comments.ts";
 import type { SharedReport } from "./types.ts";
-import { currentMs } from "../../shared/time.ts";
 
 /** The forge's budget as the tick started, or why it did not read. */
 export type TickBudget = SharedBudget | { unreadable: string };
@@ -115,11 +122,42 @@ function lazySessions(runtime: SessionRuntime): SessionsReader {
   };
 }
 
-/** The forge's core budget; a read that fails is the reason it does not read. */
+/** How old the record's core balance may be for the tick to read it without asking the forge. */
+const FRESH_RECORD_MS = 60_000;
+
+/** The core balance the machine's record holds now, when an answer updated it within `FRESH_RECORD_MS`; `null` otherwise. */
+export function recordedBudget(
+  now: number,
+  balances: ReturnType<typeof githubBalances>,
+): SharedBudget | null {
+  if (balances === null) return null;
+  const core: BudgetWindow = balances.core;
+  // The core window's own last report: spending that other windows' answers
+  // or reservations recorded does not make the balance current.
+  if (core.answeredAt == null || now - core.answeredAt > FRESH_RECORD_MS)
+    return null;
+  if (core.remaining === null || core.limit === null || core.resetAt === null)
+    return null;
+  const reset = core.resetAt <= now;
+  return {
+    remaining: reset ? core.limit : Math.max(0, Math.floor(core.remaining)),
+    limit: core.limit,
+    resetAt: isoFromMs(core.resetAt),
+  };
+}
+
+/**
+ * The forge's core budget from the machine's record; a record too old to
+ * read is refreshed by one `rate_limit` read, whose answer the forge
+ * client records. A read that fails is the reason it does not read.
+ */
 async function readBudget(): Promise<TickBudget> {
   try {
+    const held = recordedBudget(currentMs(), githubBalances());
+    if (held !== null) return held;
     const read = await forgeShared({ login: null }).budget();
-    return read.ok ? read.value : { unreadable: read.failure.reason };
+    if (!read.ok) return { unreadable: read.failure.reason };
+    return recordedBudget(currentMs(), githubBalances()) ?? read.value;
   } catch (error) {
     return { unreadable: failureText(error) };
   }
@@ -189,8 +227,7 @@ export function tickReads(
   poolSize?: number,
   bound?: TickBound,
 ): TickReads {
-  let login: Promise<string | null> | null = null;
-  let budget: Promise<TickBudget> | null = null;
+  const singletonReads = new Map<string, Promise<unknown>>();
   const reads = pool(poolSize);
   const comments = tickComments({
     list: (target) =>
@@ -198,25 +235,21 @@ export function tickReads(
         unlessEnded(
           bound,
           `the comments of #${target.number} were listed`,
-          () => listComments(target, listingDeadline(bound)),
+          () => listCommentsKept(target, listingDeadline(bound)),
         ),
       ),
     written: (repo, pr) => forgetMergeRead(repo, pr),
   });
   const repositories = new Map<string, Promise<RepositoryOutcome>>();
   return {
-    repository: (path) => {
-      let read = repositories.get(path);
-      if (read === undefined) {
-        read = reads.run(() =>
+    repository: (path) =>
+      coalesce(repositories, path, () =>
+        reads.run(() =>
           unlessEnded(bound, "the repository's query was read", () =>
             queryRepository(path, comments, bound),
           ),
-        );
-        repositories.set(path, read);
-      }
-      return read;
-    },
+        ),
+      ),
     pullRequestComments: (slug, prs) =>
       reads.run(() =>
         unlessEnded(bound, "the merged pull requests' comments were read", () =>
@@ -224,18 +257,18 @@ export function tickReads(
         ),
       ),
     comments,
-    login: () => {
-      login ??= reads.run(() => resolveLogin());
-      return login;
-    },
+    login: () =>
+      coalesce(singletonReads, "login", () =>
+        reads.run(() => resolveLogin()),
+      ) as Promise<string | null>,
     sessions: lazySessions(runtime),
     budgets: [],
-    budget: () => {
-      budget ??= reads.run(readBudget);
-      return budget;
-    },
+    budget: () =>
+      coalesce(singletonReads, "budget", () =>
+        reads.run(readBudget),
+      ) as Promise<TickBudget>,
     pool: reads,
-    servedViews: new Map(),
+    servedViews: Object.assign(new Map(), bound === undefined ? {} : { bound }),
     ...(bound === undefined ? {} : { bound }),
   };
 }

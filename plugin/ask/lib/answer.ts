@@ -8,6 +8,11 @@ import type { NextOwner } from "../../dispatch/lib/next-owner.ts";
  */
 import type { Station } from "../../shared/address.ts";
 import type { NeedAct } from "../../shared/acts.ts";
+import type {
+  ReportCause,
+  ReportWriter,
+  SuggestedNext,
+} from "../../shared/closing-report.ts";
 
 /** The version `--json` prints as `v`. */
 export const ANSWER_VERSION = 1;
@@ -125,6 +130,20 @@ export interface Last {
   from: "outcome log" | "launch claim";
   /** Null when the older record did not keep a handoff. */
   next: NextOwner | null;
+  /** The stage that ran (`rearm`, `takeover`, `pickup`, `followup`), from the outcome log; absent from a launch claim's end. */
+  stage?: string;
+  /** What the run's closing report says, from the outcome log; absent from a launch claim's end, whose report stays on the host that ran it, and from a row written before reports were kept. */
+  report?: LastReport;
+}
+
+/** A run's closing report as `last.report` carries it; `by: none` for a run that ended without one. */
+export interface LastReport {
+  by: ReportWriter;
+  concluded?: string;
+  suggested_next?: SuggestedNext;
+  cause?: ReportCause;
+  /** For a run that left no report: the path of its transcript's copy on the host, while there is one. */
+  transcript?: string;
 }
 
 /** One record kind the answer consulted. */

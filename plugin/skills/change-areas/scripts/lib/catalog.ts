@@ -20,7 +20,7 @@ import { Defect } from "../../../../shared/errors.ts";
 import { REVIEWER } from "../../../../shared/forge-logins.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { load as loadYaml } from "../../../../shared/yaml.ts";
-import { globProblem } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { globProblem } from "../../../../shared/glob.ts";
 
 /** Kebab-case area ids and `impliedBy` references. */
 export const AREA_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;

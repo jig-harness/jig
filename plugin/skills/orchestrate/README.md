@@ -11,6 +11,11 @@ Verified defects are filed separately. Work spanning several pull requests
 gets a plan for review; after approval the first wave becomes issues and
 starts through the host's configured delivery mechanism. A separate plan
 keeper and durable record preserve what was agreed and what is still owed.
+When the session has run long, it suggests at a quiet moment that a fresh
+session take over: once the person agrees, it brings the durable record up
+to date, starts the successor pointed at that record (or gives the person
+the command to start it), checks that the successor is running, and stops
+acting.
 
 Run `/jig:orchestrate <topic>`. It requires no configuration section of its
 own. It uses the repository's existing plan review and record facilities,

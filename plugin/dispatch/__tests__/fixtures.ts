@@ -18,6 +18,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -74,6 +76,11 @@ fs.appendFileSync(F + "/gh-calls.log", args.join(" ").replace(/\\n/g, " ") + "\\
 if (fs.existsSync(F + "/forge-rate-limited")) { process.stderr.write("gh: API rate limit exceeded for user ID 1. (HTTP 403)\\n"); process.exit(1); }
 if (fs.existsSync(F + "/forge-unauthorized")) { process.stderr.write("gh: Bad credentials (HTTP 401)\\n"); process.exit(1); }
 if (fs.existsSync(F + "/forge-unreachable")) { process.stderr.write("dial tcp: lookup api.github.com: no such host\\n"); process.exit(1); }
+// One call refused as the first rule of forge-fails.json whose \`match\` is part of its arguments says, with that rule's \`stderr\`.
+if (fs.existsSync(F + "/forge-fails.json")) {
+  const rule = JSON.parse(fs.readFileSync(F + "/forge-fails.json", "utf8")).find((r) => args.join(" ").includes(r.match));
+  if (rule !== undefined) { process.stderr.write(rule.stderr + "\\n"); process.exit(1); }
+}
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
 // The repository's labels as labels-repo.json lists them: a name alone is a label with no description.
 const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])
@@ -359,7 +366,7 @@ if (file === null) { process.stdout.write(JSON.stringify({ ok: false, error: { c
 answer(JSON.parse(fs.readFileSync(F + "/" + file, "utf8")));
 `;
 
-/** The drive the wrapper starts in tests: it records how it was started, runs while `drive-hold` exists, and exits with `drive-exit`'s code. */
+/** The drive the wrapper starts in tests: it records how it was started, runs while `drive-hold` exists, writes `drive-report` to the report file the wrapper named, and exits with `drive-exit`'s code. */
 const FAKE_DRIVE = `const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
 fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
@@ -371,11 +378,16 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? null,
   openaiKey: process.env.OPENAI_API_KEY ?? null,
   launch: process.env.JIG_LAUNCH ?? null,
+  report: process.env.JIG_DRIVER_REPORT ?? null,
 }) + "\\n");
 const until = Date.now() + 60000;
 if (fs.existsSync(F + "/drive-stderr")) process.stderr.write(fs.readFileSync(F + "/drive-stderr"));
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);
 if (fs.existsSync(F + "/drive-output")) process.stdout.write(fs.readFileSync(F + "/drive-output"));
+if (fs.existsSync(F + "/drive-report") && process.env.JIG_DRIVER_REPORT) {
+  fs.mkdirSync(require("node:path").dirname(process.env.JIG_DRIVER_REPORT), { recursive: true });
+  fs.writeFileSync(process.env.JIG_DRIVER_REPORT, fs.readFileSync(F + "/drive-report"));
+}
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 
@@ -453,8 +465,15 @@ export interface OrcaAgent {
 
 export interface OrcaRow {
   branch: string;
-  /** A real directory, for a workspace a launch runs in; `/ws/<i>` when absent. */
+  /**
+   * A real directory, for a workspace a launch runs in; `/ws/<i>` when
+   * absent. One under the world's root is made a checkout of the clone on
+   * `branch` (`checkoutOn`), keeping what it holds, unless `checkout` is
+   * `false`.
+   */
   path?: string;
+  /** `false` keeps `path` as it is: a directory that is no checkout of the clone. */
+  checkout?: false;
   linkedPR?: number;
   agents?: OrcaAgent[];
   unverifiableTerminalCount?: number;
@@ -548,10 +567,14 @@ export interface World {
   setIssues(nodes: Array<Record<string, unknown>>): void;
   /** From the issue listing after the `n`th on, the tracker answers with `nodes` instead: a change between a tick's reads. */
   setIssuesAfter(n: number, nodes: Array<Record<string, unknown>>): void;
+  /** The tracker's GraphQL operations the world answered so far, by name, in the order they came. */
+  trackerOps(): string[];
   /** Who made each issue's assignment, by issue number. */
   setAssigner(number: number, login: string, permission: string): void;
   setPrs(state: "open" | "merged", prs: unknown[]): void;
   setComments(pr: number, comments: unknown[]): void;
+  /** Refuse every forge call whose arguments hold `match` as `gh` would, printing `stderr`; a pull request's comments it refuses are not read in full by the repository's query either. */
+  failCall(match: string, stderr: string): void;
   /** The head of the base branch; `null` for a branch that does not read. With `next`, the head after the next read of it. */
   setBaseHead(sha: string | null, next?: string): void;
   setWorkspaces(rows: OrcaRow[]): void;
@@ -571,6 +594,66 @@ export interface World {
     stderr: string;
   }>;
   close(): void;
+}
+
+/**
+ * Make `path` a checkout of the clone at `repo` on `branch`, as a workspace
+ * Orca lists is, keeping every file it already holds: the branch is made
+ * from `main` when the clone lacks it, and the clone gets an `origin` (the
+ * clone itself) when it has none, and the branch is published there, so a
+ * workspace's proof reads it. A path
+ * that already is a checkout is left as it is.
+ */
+export function checkoutOn(
+  repo: string,
+  path: string,
+  branch: string,
+  env: Record<string, string>,
+): void {
+  const git = (...args: string[]) =>
+    Bun.spawnSync(["git", ...args], { env, stdout: "pipe", stderr: "pipe" });
+  mkdirSync(path, { recursive: true });
+  if (git("-C", path, "rev-parse", "--show-prefix").stdout.toString() === "\n")
+    return;
+  if (git("-C", repo, "remote", "get-url", "origin").exitCode !== 0)
+    expectSpawnExit(git("-C", repo, "remote", "add", "origin", repo), 0);
+  if (
+    git("-C", repo, "rev-parse", "--verify", `refs/heads/${branch}`)
+      .exitCode !== 0
+  )
+    expectSpawnExit(git("-C", repo, "branch", branch, "main"), 0);
+  const published = git(
+    "-C",
+    repo,
+    "ls-remote",
+    "--exit-code",
+    "origin",
+    `refs/heads/${branch}`,
+  );
+  if (published.exitCode !== 0)
+    expectSpawnExit(git("-C", repo, "push", "-q", "origin", branch), 0);
+  // git adds a worktree only into an empty folder: add it beside, then move its link in.
+  const beside = `${path}.checkout`;
+  expectSpawnExit(
+    git(
+      "-C",
+      repo,
+      "worktree",
+      "add",
+      "-q",
+      "-f",
+      "--no-checkout",
+      beside,
+      branch,
+    ),
+    0,
+  );
+  renameSync(join(beside, ".git"), join(path, ".git"));
+  rmSync(beside, { recursive: true });
+  expectSpawnExit(git("-C", repo, "worktree", "repair", path), 0);
+  expectSpawnExit(git("-C", path, "reset", "-q"), 0);
+  // The branch's files the folder lacks; one it holds keeps its content.
+  git("-C", path, "checkout-index", "-a", "-q");
 }
 
 export function world(): World {
@@ -621,6 +704,7 @@ export function world(): World {
   });
 
   let issues: Array<Record<string, unknown>> = [];
+  const ops: string[] = [];
   const assigners = new Map<number, { login: string; permission: string }>();
   const server = Bun.serve({
     port: 0,
@@ -631,6 +715,7 @@ export function world(): World {
         variables: Record<string, unknown>;
       };
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1];
+      ops.push(op ?? "");
       // The tracker preflight's read, which every repository of the world answers.
       const data = op?.startsWith("TrackerFacet")
         ? { repository: noFacetStores(query) }
@@ -648,6 +733,19 @@ export function world(): World {
   let later: { after: number; nodes: Array<Record<string, unknown>> } | null =
     null;
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
+    // This world scripts whole readings, not an update stream. Declare that
+    // its probe cannot establish completeness, so each tick takes that reading.
+    if (op === "TrackerDispatchChanges")
+      return { repository: { issues: conn([], "unmodelled-changes") } };
+    if (op === "TrackerDispatchIssues")
+      return Object.fromEntries(
+        Object.keys(v)
+          .filter((key) => /^number\d+$/.test(key))
+          .map((key) => [
+            `i${key.slice(6)}`,
+            { issue: issues.find((node) => node.number === v[key]) ?? null },
+          ]),
+      );
     if (op === "TrackerIssues" || op === "TrackerDispatchQueue") {
       listings += 1;
       if (later !== null && listings > later.after) issues = later.nodes;
@@ -764,37 +862,29 @@ export function world(): World {
     setIssuesAfter: (after, nodes) => {
       later = { after: listings + after, nodes };
     },
+    trackerOps: () => [...ops],
     setAssigner: (number, login, permission) => {
       assigners.set(number, { login, permission });
     },
     setPrs: (state, prs) => write(`prs-${state}.json`, prs),
     setComments: (pr, comments) => write(`comments-${pr}.json`, comments),
+    failCall: (match, stderr) => {
+      const file = join(dir, "forge-fails.json");
+      const rules = existsSync(file)
+        ? JSON.parse(readFileSync(file, "utf8"))
+        : [];
+      write("forge-fails.json", [...rules, { match, stderr }]);
+    },
     setBaseHead: (sha, next) => {
       if (sha === null) rmSync(join(dir, "base-head"), { force: true });
       else write("base-head", sha);
       if (next !== undefined) write("base-head-next", next);
     },
     setWorkspaces: (rows) => {
-      // Listed on-disk stage workspaces are checkouts, as the real runtime requires.
-      for (const row of rows) {
-        if (
-          row.path?.startsWith(root) &&
-          existsSync(row.path) &&
-          !existsSync(join(row.path, ".git"))
-        ) {
-          const initialized = Bun.spawnSync(["git", "init", "-q", row.path], {
-            env,
-          });
-          expectSpawnExit(
-            {
-              exitCode: initialized.exitCode,
-              stdout: initialized.stdout.toString(),
-              stderr: initialized.stderr.toString(),
-            },
-            0,
-          );
-        }
-      }
+      // Listed on-disk stage workspaces are checkouts of the clone, as the real runtime requires.
+      for (const r of rows)
+        if (r.path?.startsWith(root) && r.checkout !== false)
+          checkoutOn(forge.repo, r.path, r.branch, env);
       write("orca-ps.json", {
         worktrees: rows.map((r, i) => ({
           worktreeId: `repo-1::/ws/${i}`,

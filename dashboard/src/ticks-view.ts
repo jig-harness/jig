@@ -9,6 +9,7 @@ import type {
   LineSnapshot,
   LineTick,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import { readNothing } from "../../plugin/dispatch/lib/line-unread.ts";
 import { hostDay, plural, seconds, stamp } from "./format.ts";
 import type { Clock } from "./view.ts";
 
@@ -131,6 +132,19 @@ function marksOf(tick: LineTick): TickMark[] {
       tone: "badly",
       meaning:
         "Something no code expected was thrown, and stopped the tick's closing steps or a repository's turn; the receipt has the reason and the tick's error output the stack.",
+    });
+  const refused = tick.refused ?? [];
+  if (readNothing(tick))
+    marks.push({
+      word: "read nothing",
+      tone: "badly",
+      meaning: `The tick could read none of the repositories it reported on (${refused.join(", ")}), so it found nothing waiting and launched nothing; the line keeps what an earlier tick read of them. The receipt has each refusal.`,
+    });
+  else if (refused.length > 0)
+    marks.push({
+      word: `${refused.length} refused`,
+      tone: "waiting",
+      meaning: `The tick could not read ${refused.join(", ")}; the line keeps what an earlier tick read of ${refused.length === 1 ? "it" : "them"}. The receipt has each refusal.`,
     });
   if (tick.lowBudget !== null)
     marks.push({

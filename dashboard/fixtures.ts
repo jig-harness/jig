@@ -219,17 +219,23 @@ function loudNeeds(): LineNeed[] {
       notified: T(15, 25),
       workspaces: ["/srv/work/web/web-418", "/srv/work/web/web-418-b"],
     }),
-    need({
-      cause: "followup-failed",
-      stage: "followup",
-      repo: WEB,
-      pr: 461,
-      title: "Trim the checkout bundle",
-      since: T(14, 2),
-      reason:
-        "a follow-up claimed it 17h ago (comment 456) and has not marked it done",
-      notified: T(14, 5),
-    }),
+    {
+      ...need({
+        cause: "followup-failed",
+        stage: "followup",
+        repo: WEB,
+        pr: 461,
+        title: "Trim the checkout bundle",
+        since: T(14, 2),
+        reason:
+          "a follow-up claimed it 17h ago (comment 456) and has not marked it done",
+        notified: T(14, 5),
+      }),
+      question:
+        "Should the bundle budget rise to 180 KiB, or the chart library be split out?",
+      concluded:
+        "Tagged the release and updated the website; the bundle budget check fails at 184 KiB, which only a person may raise.",
+    },
   ];
 }
 

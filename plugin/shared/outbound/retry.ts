@@ -66,6 +66,14 @@ export async function retryRead<T>(
     signal.throwIfAborted();
     const sent = await sendOnce(send);
     if (!sent.ok && signal.aborted) throw sent.error;
+    // A rate-limited answer that was received stands through a cancellation:
+    // the hold on the system needs it, and it is the call's answer.
+    if (
+      sent.ok &&
+      signal.aborted &&
+      options.failureOf(sent.answer)?.code === "rate-limited"
+    )
+      return sent.answer;
     signal.throwIfAborted();
     const delay = retryDelay(sentFailure(sent, options), attempt, options, now);
     if (delay === null) return settled(sent);

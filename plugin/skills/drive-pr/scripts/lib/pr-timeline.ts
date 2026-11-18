@@ -7,10 +7,16 @@ import {
 } from "../../../../shared/outcome.ts";
 import { ghCall } from "./proc.ts";
 
-/** Every timeline event, preserving why the forge or its response could not be read. */
+/**
+ * Every timeline event, preserving why the forge or its response could not
+ * be read: `unreadable` when the forge could not be reached; `malformed` when
+ * it answered with something that is not a timeline. Read fresh
+ * (`paged-read.ts`): the hold-label transitions it gives guard a label
+ * change, a re-run, a reset and an announcement.
+ */
 export async function readTimeline(
   pr: string,
-): Promise<Outcome<unknown[], "unreadable">> {
+): Promise<Outcome<unknown[], "unreadable" | "malformed">> {
   const result = await ghCall([
     "api",
     "--paginate",
@@ -20,20 +26,17 @@ export async function readTimeline(
   if (result.code !== 0)
     return failed(
       "unreadable",
-      `PR #${pr} timeline: gh api exited ${result.code}: ${result.stderrTail || result.stderr.trim().slice(-500)}`,
+      `PR #${pr} timeline: gh api exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
     );
   const decoded = attempt(
-    "unreadable",
+    "malformed",
     `PR #${pr} timeline JSON could not be decoded`,
     (): unknown => JSON.parse(result.stdout),
   );
   if (!decoded.ok) return decoded;
   return Array.isArray(decoded.value)
     ? ok(decoded.value.flat())
-    : failed(
-        "unreadable",
-        `PR #${pr} timeline response is not a list of pages`,
-      );
+    : failed("malformed", `PR #${pr} timeline response is not a list of pages`);
 }
 
 /** Every event on the PR's timeline, or `null` when it cannot be read. */

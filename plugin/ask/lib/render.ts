@@ -64,6 +64,40 @@ function lastLine(last: Last | null): string {
     : `${last.class} at ${last.at}: ${last.reason} (from the ${last.from})`;
 }
 
+/** A report's free text on one line, since the card prints one field per line. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** The *Last run* line: the stage, when it ended, what it concluded and the next step it suggests. */
+function lastRunLine(last: Last, station: string): string {
+  const head = `${last.stage ?? station}, ended ${last.at}`;
+  const report = last.report;
+  if (report === undefined)
+    return last.from === "launch claim"
+      ? `${head}: its closing report stays on the host that ran it`
+      : `${head}: no closing report was kept`;
+  if (report.by === "none")
+    return report.transcript === undefined
+      ? `${head}: ended without a report`
+      : `${head}: ended without a report; its transcript's copy is ${report.transcript}`;
+  const next = report.suggested_next;
+  const owner =
+    next === undefined
+      ? ""
+      : next.owner === "person" && next.act !== undefined
+        ? `person, ${next.act}`
+        : next.owner;
+  return [
+    `${head}: ${oneLine(report.concluded ?? "concluded nothing")}`,
+    next === undefined
+      ? null
+      : `suggested next: ${oneLine(next.step)} (${owner})`,
+  ]
+    .filter((p): p is string => p !== null)
+    .join(" · ");
+}
+
 function sourceLine(s: SourceRead): string {
   const where = s.local === true ? " (this machine)" : "";
   return `${s.record}${where}: ${s.read ? "read" : "not read"}${s.detail === undefined ? "" : ` (${s.detail})`}`;
@@ -113,6 +147,9 @@ export function renderAnswer(a: AskAnswer): string {
       : field("last.next", [
           a.last.next == null ? "not recorded" : nextText(a.last.next),
         ])),
+    ...(a.last === null
+      ? []
+      : field("last.run", [lastRunLine(a.last, a.station)])),
     ...field("sources", [
       ...a.sources.records.map(sourceLine),
       `forge calls ${a.sources.forgeCalls}, tracker calls ${a.sources.trackerCalls}`,
@@ -127,7 +164,13 @@ export function renderAnswer(a: AskAnswer): string {
 export function renderWaiting(w: WaitingAnswer): string {
   if (w.tick === null) return w.unread ?? "there is no line to read";
   const head = `waiting on a person, as the tick ${w.tick.runId} found it at ${w.tick.finishedAt}:`;
-  if (w.waiting.length === 0) return `${head}\n  nothing`;
+  const unread = incompleteLines(w.incomplete);
+  if (w.waiting.length === 0)
+    return [
+      head,
+      unread.length === 0 ? "  nothing" : "  none in what was read",
+      ...unread,
+    ].join("\n");
   return [
     head,
     ...w.waiting.flatMap((e) => [
@@ -136,7 +179,28 @@ export function renderWaiting(w: WaitingAnswer): string {
       ),
       printable(`    ${e.reason}`),
       ...e.questions.map((q) => printable(`    question: ${q}`)),
+      ...(e.notice === null
+        ? []
+        : [printable(`    notice not delivered: ${e.notice}`)]),
       ...(e.url === null ? [] : [`    ${e.url}`]),
     ]),
+    ...unread,
   ].join("\n");
+}
+
+/** The repositories the line could not read, after what it found. */
+function incompleteLines(incomplete: WaitingAnswer["incomplete"]): string[] {
+  if (incomplete.length === 0) return [];
+  const count =
+    incomplete.length === 1
+      ? "1 repository was"
+      : `${incomplete.length} repositories were`;
+  return [
+    `the line is incomplete: ${count} not read, so what waits on ${incomplete.length === 1 ? "it" : "them"} is as of the reading named, or unknown:`,
+    ...incomplete.map((r) =>
+      printable(
+        `  ${r.repo}: ${r.readAt === null ? "never read" : `as read at ${r.readAt}`}; ${r.refused}`,
+      ),
+    ),
+  ];
 }

@@ -115,8 +115,10 @@ describe("jig send assign", () => {
     );
     expect(r.stdout).toContain("starts the pick-up");
     expect(writes(ops)).toEqual([]);
-    // The forge is read for the default branch's configuration and written nowhere.
+    // The forge is read for the quota owner the budget keeps its record
+    // under and for the default branch's configuration, and written nowhere.
     expect(w.calls()).toEqual([
+      "api user --include",
       `api -i repos/${REPO}/contents/.config/jig.yaml`,
     ]);
   });

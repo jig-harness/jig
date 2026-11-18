@@ -9,6 +9,8 @@
 const OBSERVE_POOL_SIZE = 6;
 
 export interface Pool {
+  /** How many reads the pool keeps in flight at most. */
+  readonly size: number;
   /** Run `read` once a place is free, and free the place when it settles. */
   run<T>(read: () => Promise<T>): Promise<T>;
 }
@@ -27,6 +29,7 @@ export function pool(size: number = OBSERVE_POOL_SIZE): Pool {
     else next();
   };
   return {
+    size: limit,
     async run(read) {
       if (active < limit) active += 1;
       else await new Promise<void>((resolve) => waiting.push(resolve));

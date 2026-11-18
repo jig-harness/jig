@@ -55,13 +55,15 @@ then `do-item` (or `work-batch`), which opens the pull request and arms
 
 - **Find your way:** `jig`, this skill.
 - **Deliver a change:** `file-issue`, `do-item`, `work-batch`, `drive-pr`,
-  `resolve-review-comments`, `resolve-conflicts`, `fix-ci`, `operator`,
-  which says where work stands and what waits on a person.
+  `resolve-review-comments`, `resolve-conflicts`, `fix-ci`, `followup`,
+  which settles what a merge still owes, `operator`, which says where work
+  stands and what waits on a person.
   `steward` is the dispatcher-launched pass that proposes guarded recovery
   records and frames the needs that remain a person's.
 - **Review a change:** `change-areas`, `review`, `github-actions`.
-- **Understand, decide and record:** `explain`, `orchestrate`, `decide`, `adr`, `red-team`,
-  `design-brief-builder`.
+- **Understand, decide and record:** `explain`, `orchestrate`, `priorities`,
+  which declares what the dispatcher's shortlist ranks first, `decide`,
+  `adr`, `red-team`, `design-brief-builder`.
 - **Learn from the work:** `reflect`, `review-reflections`,
   `promote-memory`, `descar`.
 - **Inspect and analyse:** `audit`, `code-stats`, `docs`, `changelog`,

@@ -15,8 +15,12 @@
  * `waits --until <time>` is a pickup the tracker's rate limit stopped, or a
  * follow-up the forge's or the tracker's rate limit stopped: the tick starts
  * it again once `time` (ISO 8601, at most a day ahead) has passed, and asks
- * no person (a follow-up's third wait in a row is a person's:
- * `lib/followup-waits.ts`).
+ * no person (a follow-up's third rate-limit wait in a row is a person's:
+ * `lib/followup-waits.ts`). `--reason` says what it waits for:
+ * `rate-limit`, the default, or `pending`, a follow-up one of whose arms is
+ * still pending (a release run still going, a deploy not started), which
+ * `--arm <name>` names; a follow-up that finds its arm still pending once
+ * `dispatch.followup_within` has passed since it first did is a person's.
  *
  * `failed --decision <file>` (`-` for standard input) is a pass that stopped
  * for a person and framed what it asks: a `parked-decision/v1` record, the
@@ -26,11 +30,21 @@
  * that does not pass the check records nothing, so the pass can fix it and
  * run the command again.
  *
+ * When the state database refuses the read or the write (a schema out of
+ * step with its version, a broken or locked file), the command keeps the
+ * evidence of the attempt outside the database (`lib/unwritten-result.ts`)
+ * and tells the pass to stop and ask no person about the dispatcher: the
+ * fault is the host's, its health check reports it, and the tick settles
+ * the stage itself once the database reads again.
+ *
  * Exit codes: 0 recorded; 2 usage, no such record, a token that is not the
  * record's, a drive's record, or a decision the check refuses; 3 the record
- * already has a result.
+ * already has a result; 4 the host could not write it.
  */
 import { derivedNext, type NextOwner } from "./lib/next-owner.ts";
+import { stateDbFailure } from "./lib/state.ts";
+import { writeUnwritten } from "./lib/unwritten-result.ts";
+import { stateRoot } from "./receipts.ts";
 import { framedResultOf } from "./lib/framed-result.ts";
 import { timingSafeEqual } from "node:crypto";
 import {
@@ -44,9 +58,18 @@ import {
   type SessionResult,
 } from "./lib/launches.ts";
 import { currentIso, currentMs, isoFromMs, parseMs } from "../shared/time.ts";
+import {
+  ARM_MAX,
+  armWords,
+  WAIT_REASONS,
+  type WaitFor,
+  type WaitReason,
+} from "./lib/wait-for.ts";
 
 const USAGE =
-  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time>";
+  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>]";
+/** The host could not write the result: the evidence is kept, and the dispatcher settles the stage. */
+const UNWRITTEN = 4;
 /** The longest a pass may wait on a rate limit: a tracker's or the forge's window is an hour or less. */
 const MAX_WAIT_MS = 24 * 60 * 60_000;
 /** The record already has a result, which stands. */
@@ -244,20 +267,73 @@ function refusalFor(
 }
 
 /** The time a `waits` result names, in the column's form; `null` when it is not one. */
-function waitsUntil(flag?: string, value?: string): string | null {
-  if (flag !== "--until" || value === undefined) return null;
+function waitsUntil(value?: string): string | null {
+  if (value === undefined) return null;
   const at = parseMs(value);
   if (!Number.isFinite(at) || at > currentMs() + MAX_WAIT_MS) return null;
   return isoFromMs(at);
 }
 
-/** A command line this command takes: `done|failed` with their options, or `waits --until <time>`. */
+/** What a `waits` result says: the time it waits until, and what for. */
+interface WaitsArgs {
+  until: string;
+  wait: WaitFor;
+}
+
+const WAITS_FLAGS = ["--until", "--reason", "--arm"];
+
+/**
+ * `--until <time> [--reason rate-limit|pending] [--arm <name>]`, each at
+ * most once and in any order: `--reason` absent is a rate limit's, and
+ * `--arm`, one line of at most `ARM_MAX` characters, goes only with
+ * `pending`; `null` when they do not read.
+ */
+function waitsArgs(rest: readonly string[]): WaitsArgs | null {
+  const named = waitsFlags(rest);
+  if (named === null) return null;
+  const until = waitsUntil(named.get("--until"));
+  const wait = waitFor(named.get("--reason"), named.get("--arm"));
+  return until === null || wait === null ? null : { until, wait };
+}
+
+/** The `waits` options by flag, each named once; `null` for an unknown, repeated or valueless one. */
+function waitsFlags(rest: readonly string[]): Map<string, string> | null {
+  const named = new Map<string, string>();
+  for (let i = 0; i < rest.length; i += 2) {
+    const [flag, value] = [rest[i], rest[i + 1]];
+    if (flag === undefined || value === undefined) return null;
+    if (!WAITS_FLAGS.includes(flag) || named.has(flag)) return null;
+    named.set(flag, value);
+  }
+  return named;
+}
+
+/** What `--reason` and `--arm` say a wait waits for; `null` when they do not read. */
+function waitFor(reason = "rate-limit", raw?: string): WaitFor | null {
+  if (!(WAIT_REASONS as readonly string[]).includes(reason)) return null;
+  if (raw === undefined)
+    return reason === "pending" ? null : { reason: reason as WaitReason };
+  const arm = oneLine(raw);
+  if (reason !== "pending" || arm === "" || arm.length > ARM_MAX) return null;
+  return { reason: "pending", arm };
+}
+
+/** A command line this command takes: `done|failed` with their options, or `waits` with its own. */
 function wellFormed(argv: string[]): boolean {
-  const [id, token, result, flag, value] = argv;
-  if (argv.length !== 3 && argv.length !== 5) return false;
+  const [id, token, result] = argv;
   if (id === undefined || token === undefined) return false;
-  if (result === "waits") return waitsUntil(flag, value) !== null;
+  if (result === "waits") return waitsArgs(argv.slice(3)) !== null;
+  if (argv.length !== 3 && argv.length !== 5) return false;
   return result === "done" || result === "failed";
+}
+
+/** The handoff a `waits` result records: nobody's, until the time it names. */
+function waitsNext(waited: WaitsArgs): NextOwner {
+  return waited.wait.reason === "pending"
+    ? {
+        none: `waits for ${armWords(waited.wait)} still pending until ${waited.until}`,
+      }
+    : { none: `waits for a rate limit until ${waited.until}` };
 }
 
 /** The record this session may answer for, or why not. */
@@ -291,11 +367,17 @@ export function resultMain(argv: string[], root?: string): number {
     console.error(`jig dispatch result: ${record}`);
     return 2;
   }
-  const until = result === "waits" ? waitsUntil(flag, value) : null;
+  const waited = result === "waits" ? waitsArgs(argv.slice(3)) : null;
+  if (waited?.wait.reason === "pending" && record.action !== "followup") {
+    console.error(
+      "jig dispatch result: --reason pending is a follow-up's; a pickup waits only on a rate limit",
+    );
+    return 2;
+  }
   const next =
-    until === null
+    waited === null
       ? nextForResult(record, result, flag, value)
-      : { none: `waits for a rate limit until ${until}` };
+      : waitsNext(waited);
   if (next === null) return 2;
   if (
     !recordResult(
@@ -304,7 +386,9 @@ export function resultMain(argv: string[], root?: string): number {
       root,
       next,
       null,
-      until ?? undefined,
+      waited?.until,
+      undefined,
+      waited?.wait,
     )
   ) {
     return already(id, root);
@@ -314,7 +398,7 @@ export function resultMain(argv: string[], root?: string): number {
       record: id,
       ...(record.item === null ? { pr: record.pr } : { item: record.item }),
       result,
-      ...(until === null ? {} : { until }),
+      ...(waited === null ? {} : { until: waited.until, ...waited.wait }),
       next,
     }),
   );
@@ -362,4 +446,30 @@ export function framedResultMain(
     }),
   );
   return 0;
+}
+
+/**
+ * Run one of the result commands for record `id`, keeping the evidence of
+ * the attempt outside the state database when the database fails it (exit
+ * `UNWRITTEN`), so the tick that reads it again knows the pass tried. Any
+ * other throw, a defect among them, goes on to the command's own boundary.
+ */
+export async function guardedResult(
+  id: string,
+  token: string,
+  record: () => number | Promise<number>,
+  root = stateRoot(),
+): Promise<number> {
+  try {
+    return await record();
+  } catch (error) {
+    // Only the database's own failure is the host's; anything else, a defect among them, is reported as what it is.
+    const why = stateDbFailure(error);
+    if (why === null) throw error;
+    const kept = writeUnwritten(root, id, token, "result", why);
+    console.error(
+      `jig dispatch result: this host could not write the result (${why}). ${kept ? "The dispatcher keeps evidence of this attempt and settles the stage itself" : "Its evidence could not be kept either; the dispatcher reads the stage as ended without a result"}: stop now, and ask no person about the dispatcher's database or host, whose health check (jig doctor dispatch) reports the cause.`,
+    );
+    return UNWRITTEN;
+  }
 }

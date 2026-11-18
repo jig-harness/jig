@@ -82,6 +82,7 @@ export function accountsReading(
     held: number;
     wall: unknown;
     wallUnrecorded: boolean;
+    weight?: { configured: number | null };
   }>,
   refused: readonly NotAdmitted[],
 ): AccountsReading {
@@ -89,6 +90,7 @@ export function accountsReading(
     (s) =>
       s.wall === null &&
       !s.wallUnrecorded &&
+      (s.weight === undefined || (s.weight.configured ?? 0) > 0) &&
       !refused.some((r) => r.account === s.account.name),
   );
   return {

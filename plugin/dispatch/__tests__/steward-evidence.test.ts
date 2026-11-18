@@ -46,7 +46,7 @@ describe("the steward's target evidence", () => {
         repo: { slug: "acme/repo" },
         report: { actions: [{ stage: "notify", target: "#7" }] },
       },
-      forge: { drives: [{ number: 8 }] },
+      drives: [{ number: 8 }],
       sessions: { ok: false },
     } as unknown as RepoObservation;
     const history = {
@@ -127,7 +127,7 @@ describe("the steward's target evidence", () => {
         repo: { slug: "acme/repo" },
         report: { actions: [{ stage: "notify", target: "#7" }] },
       },
-      forge: { drives: [] },
+      drives: [],
       sessions: { ok: false },
     } as unknown as RepoObservation;
     let called = false;
@@ -167,7 +167,7 @@ describe("the steward's target evidence", () => {
         repo: { slug: "acme/repo" },
         report: { actions: [{ stage: "notify", target: "#7" }] },
       },
-      forge: { drives: [{ number: 8 }] },
+      drives: [{ number: 8 }],
       sessions: { ok: false },
       forgeBudget: { limit: 5000, remaining: 20, resetAt: "2026-01-03" },
     } as unknown as RepoObservation;
@@ -220,7 +220,7 @@ describe("the steward's target evidence", () => {
         repo: { slug: "acme/repo" },
         report: { actions: [{ stage: "notify", target: "#900" }] },
       },
-      forge: { drives: [{ number: 901 }] },
+      drives: [{ number: 901 }],
       sessions: { ok: false },
     } as unknown as RepoObservation;
     const records = Array.from({ length: 50 }, (_, i) => ({

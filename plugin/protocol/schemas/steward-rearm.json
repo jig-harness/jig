@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jig-harness.dev/protocol/steward-records/v1/schemas/steward-rearm.json",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "const": "rearm"
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^PR #[1-9]\\d{0,3995}$",
+      "maxLength": 4000
+    },
+    "facts": {
+      "type": "string",
+      "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+      "maxLength": 4000
+    },
+    "class": {
+      "type": "string",
+      "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+      "maxLength": 4000
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^(?=[\\s\\S]*\\S)[\\s\\S]{1,4000}$",
+      "maxLength": 4000
+    }
+  },
+  "required": ["kind", "target", "facts", "class", "reason"],
+  "additionalProperties": false
+}

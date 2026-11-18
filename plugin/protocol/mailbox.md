@@ -124,3 +124,8 @@ The fields of an outbox line, and the statuses that carry each:
 | `generation` | integer | ack (always) | The generation of the driver that acted on the directive. |
 
 <!-- /protocol:generated -->
+
+## JSON Schemas
+
+[Inbox message](schemas/mailbox-message.json) and
+[outbox record](schemas/mailbox-outbox.json) describe one JSON line each.

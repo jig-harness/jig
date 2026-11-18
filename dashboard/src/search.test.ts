@@ -36,6 +36,9 @@ describe("the query string", () => {
       account: "work-a",
       class: "gates failed",
       reason: "conflict",
+      cause: "",
+      by: "",
+      target: "",
     });
   });
 

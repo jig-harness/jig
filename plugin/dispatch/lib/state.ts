@@ -5,7 +5,7 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pickup that waits on a tracker's rate limit has `result` `failed` and the reset in `result_until`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check |
+ * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pass that recorded `waits` has `result` `failed`, the time it waits until in `result_until` and what it waits for (a rate limit, or a follow-up's arm still pending) in `result_wait`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -21,6 +21,11 @@
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
+ * | `merge_facts` | repository and directly verified merged pull request | immutable merged time, base branch and complete changed files, independent of follow-up activation; associations and edge release are read again each tick |
+ * | `allocation_charge` | pickup claim | its claim id: written once, in the claim's transaction; a replay inserts nothing |
+ * | `allocation_week` | completed week | the week, written once by the next week's first tick and never rewritten |
+ * | `allocation_lane_epoch` | weighted lane's ready or empty transition | an increasing sequence; the newest is the epochs' revision |
+ * | `allocation_ranking` | repository | the newest ranking, replaced by each tick |
  * | `failures` | action, repository or tick scope that failed in a row | its failures in a row, the first and last failure's time, the last reason and the next try; removed by a success or once its action leaves the plan |
  *
  * The receipts, the account walls (which the drive's quota adapters write
@@ -42,7 +47,7 @@
  * past this plugin's version was additive, and refused, with its version
  * named, when it needs a newer reader (the shared module's minimum reader).
  */
-import type { Database } from "bun:sqlite";
+import { type Database, SQLiteError } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -55,6 +60,7 @@ import {
   schemaVersion,
 } from "../../shared/records/db.ts";
 import { stateRoot } from "../receipts.ts";
+import { ALLOCATION_TABLES_SQL } from "./allocation-store.ts";
 import { ExitError } from "../../shared/cli.ts";
 import { USAGE_EXIT } from "../../shared/command-line.ts";
 import { Defect, JigError } from "../../shared/errors.ts";
@@ -444,6 +450,30 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: false,
     sql: "CREATE INDEX notices_channel_key ON notices (channel, key);",
   },
+  {
+    // A steward run's records by effect (`judgedMembers` reads the refused-open ones of the latest runs only).
+    additive: true,
+    sql: "CREATE INDEX steward_records_run_effect ON steward_records (run, effect);",
+  },
+  {
+    // A drive's per-round pass session ids (`round-sessions.ts`), which its driver writes on the launch record as each pass starts, so a run is found in its vendor's transcripts.
+    additive: true,
+    sql: "ALTER TABLE launches ADD COLUMN sessions TEXT;",
+  },
+  {
+    // What a `waits` result waits for (`launch-result.ts`), as JSON: a rate limit's reset, or a follow-up's arm still pending and which. Written with the result, by the same update; `NULL` on a wait written before it was kept, which is a rate limit's.
+    additive: true,
+    sql: "ALTER TABLE launches ADD COLUMN result_wait TEXT;",
+  },
+  {
+    // The declared-priorities allocation records (`allocation-store.ts`): one charge per pickup claim, one row per completed week, each weighted lane's ready transitions, and each repository's newest ranking.
+    additive: true,
+    sql: ALLOCATION_TABLES_SQL,
+  },
+  {
+    additive: true,
+    sql: "CREATE TABLE merge_facts (repo TEXT NOT NULL, pr INTEGER NOT NULL, fact TEXT NOT NULL, PRIMARY KEY (repo, pr));",
+  },
 ];
 
 /** The schema version this plugin writes. */
@@ -472,6 +502,35 @@ export function newerStateRefusal(error: unknown): string | null {
     : null;
 }
 
+/**
+ * A database whose migration history or source state this plugin refuses:
+ * the cause of the usage exit `stateDb` refuses it with, beside
+ * `StateVersionError`, so a command tells the database's refusal from any
+ * other.
+ */
+class StateRefusedError extends JigError<"migration-history" | "source-state"> {
+  override name = "StateRefusedError";
+}
+
+/**
+ * Why the state database failed this process, when `error` is the
+ * database's own failure: any error SQLite raises, a schema version this
+ * plugin cannot read, a migration history or source it refuses, or a file it
+ * could not open; `null` for any other error. A defect that reaches SQLite
+ * (a statement that does not prepare, a constraint) reads as the database's
+ * failure too: a schema out of step with its version fails the same way.
+ */
+export function stateDbFailure(error: unknown): string | null {
+  if (error instanceof SQLiteError) return error.message;
+  if (!(error instanceof ExitError || error instanceof Defect)) return null;
+  const { cause } = error;
+  return cause instanceof StateVersionError ||
+    cause instanceof StateRefusedError ||
+    cause instanceof SQLiteError
+    ? error.message
+    : null;
+}
+
 /** The database file under a state directory. */
 export function statePath(root = stateRoot()): string {
   return join(root, STATE_FILE);
@@ -491,7 +550,9 @@ export function stateDb(root = stateRoot()): Database {
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
   if (code === "migration-history" || code === "source-state")
-    throw new ExitError(USAGE_EXIT, reason, { cause });
+    throw new ExitError(USAGE_EXIT, reason, {
+      cause: new StateRefusedError(code, reason, { cause }),
+    });
   if (code === "newer-schema")
     throw new ExitError(USAGE_EXIT, reason, {
       cause: new StateVersionError(path, schemaVersion(path) ?? 0, reason),

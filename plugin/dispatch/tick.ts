@@ -4,7 +4,11 @@
  * (the dispatch section from the default branch, the tracker, the forge's
  * pull requests and their drive ledgers, the runtime's sessions), each
  * repository under its observe lock and every read through one bounded pool
- * (lib/pool.ts). The act phase, under the act lock, then takes the
+ * (lib/pool.ts). Its reads of the forge and the tracker go through the
+ * tick's world view (lib/world-view.ts), which a caller of `runTick` can
+ * supply (`TickOptions.world`) and which otherwise reads them directly;
+ * this host's launch records, the machine view, are read beside it and
+ * never written into a fact it returned. The act phase, under the act lock, then takes the
  * repositories one at a time in this tick's rotated order: plan wanted minus
  * running, report, and with `--apply` launch; then the tick writes its
  * receipt. Without `--apply` a tick starts nothing: it reports what it
@@ -81,11 +85,13 @@ import {
 } from "../shared/outbound/budget.ts";
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
 import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
+import { accountsReport } from "./lib/account-report.ts";
+import { readAccountWeights } from "./lib/local-weights.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
-import { accountsReport, timeLeftMs } from "./lib/actions/launch.ts";
+import { timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
-import { prepareTrackers } from "./lib/tick-trackers.ts";
+import { tickWorld, worldOf } from "./lib/world-view.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
@@ -103,8 +109,9 @@ import {
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
-import { boundAt } from "./lib/sources/bounded.ts";
+import { boundAt, heldTo } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
+import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
   fillBudgets,
   lowBudget,
@@ -126,6 +133,7 @@ import {
   settleOutcomes,
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
+import { rankPriorities } from "./lib/tick-priorities.ts";
 import type { RepoReport } from "./lib/types.ts";
 import {
   type ScheduledUpgrade,
@@ -212,14 +220,15 @@ async function startTick(
         ? Temporal.Instant.from(options.now.toISOString())
         : options.now;
   const machine = options.machine ?? null;
-  // The tick's tracker reads keep to their share of each credential's budget.
-  setDispatcherShare(machine?.trackerShare ?? DEFAULT_DISPATCHER_SHARE);
+  // The tick's own calls, to the trackers and the forge, keep to their share of each credential's budget.
+  setDispatcherShare(machine?.outboundShare ?? DEFAULT_DISPATCHER_SHARE);
   // A system that does not answer is not asked again in this tick, and the next tick probes it once first.
   holdUnanswered(join(stateRoot(), UNANSWERED_FILE));
   const runtime = options.runtime ?? defaultRuntime(machine);
   // One bound for every read the tick makes, from the launcher's deadline; none when no launcher bounds it.
   const bound = boundAt(deadlineOf(machine, startedMs));
   const read = await readLaunches();
+  const reads = tickReads(runtime, options.poolSize, bound);
   const receipt: TickReceipt = {
     version: 1,
     runId,
@@ -239,11 +248,14 @@ async function startTick(
     startedMs,
     ...(bound === undefined ? {} : { bound }),
     launches: read.records,
+    weights: readAccountWeights(options.machine?.accounts ?? []),
     apply: null,
     lineInputs: new Map(),
     reflections: [],
     pending: [],
-    reads: tickReads(runtime, options.poolSize, bound),
+    reads,
+    world: tickWorld(options, reads, bound),
+    rerunsHeld: rerunsHeld(),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };
 }
@@ -314,10 +326,19 @@ async function observeAll(
       }
     }),
   );
-  await prepareTrackers(
-    prepared.map(({ opened }) => opened),
-    context,
-  );
+  try {
+    await heldTo(
+      () =>
+        worldOf(context).gatherQueues(
+          prepared.map(({ opened }) => opened),
+          context,
+        ),
+      context.bound,
+    );
+  } catch (error) {
+    // A view that never answered at the tick's deadline leaves each repository to read its own queues.
+    if (context.bound?.signal.aborted !== true) throw error;
+  }
   await Promise.all(
     prepared.map(async (opened) => {
       try {
@@ -377,6 +398,7 @@ async function startAct(started: StartedTick): Promise<void> {
     context.nowMs,
     read.unreadable,
     context.startedMs,
+    context.weights,
   );
   // `--apply` with a machine file that was then withheld says why.
   started.withheld =
@@ -386,7 +408,15 @@ async function startAct(started: StartedTick): Promise<void> {
   context.apply = apply;
   receipt.apply = apply !== null;
   if (started.withheld !== undefined) receipt.applyWithheld = started.withheld;
-  Object.assign(receipt, accountsReport(options.machine ?? null, apply));
+  Object.assign(
+    receipt,
+    accountsReport(options.machine ?? null, {
+      records: read.records,
+      nowMs: context.nowMs,
+      weights: context.weights,
+      ...(apply ?? {}),
+    }),
+  );
   receipt.unreadableLaunches = read.unreadable;
   await readLoadUnderAct(started, read.records);
 }
@@ -412,6 +442,7 @@ async function readLoadUnderAct(
     codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     nowMs: context.nowMs,
     sample: apply !== null,
+    weights: context.weights,
   });
   if (!load.ok) {
     receipt.loadUnread = load.failure.reason;
@@ -449,6 +480,33 @@ async function actAll(
     receipt.repos.push(await boundedAct(observed, context));
     acted.push(path);
   }
+  // The host's lane epochs read every owned repository's ready lanes at once.
+  // A tick that did not see every owned repository cannot say a lane has no ready work.
+  // Only a repository this host owns is prepared, so only those are counted.
+  const asked = new Set(order);
+  const owned = (options.machine?.repositories ?? []).filter((r) => r.owner);
+  // A listed repository this host does not own is requested but never prepared for priorities.
+  const notOwned = new Set(
+    (options.machine?.repositories ?? [])
+      .filter((r) => !r.owner)
+      .map((r) => r.path),
+  );
+  // Coverage is by identity: an unlisted repository is prepared too, and must not stand in for an owned one that failed.
+  const preparedPaths = new Set(
+    (context.priorities ?? []).map((p) => p.report.path),
+  );
+  // Without a machine file there is no inventory of what the host owns, so no tick can vouch for host-wide coverage.
+  const complete =
+    observe.busy.size === 0 &&
+    options.machine != null &&
+    owned.every((r) => asked.has(r.path) && preparedPaths.has(r.path)) &&
+    [...asked].every((path) => notOwned.has(path) || preparedPaths.has(path));
+  rankPriorities(
+    context.priorities ?? [],
+    context.nowMs,
+    complete,
+    options.machine?.priorities?.enforce === true,
+  );
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
   // A repository's observe lock is kept until its launches and close are done.
@@ -571,6 +629,7 @@ async function closeTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
+    weights: context.weights,
   });
   // Writing the line can set the exit to 1: the tick's failure row follows it.
   finalizeTickFailure(receipt, context);
@@ -629,6 +688,7 @@ function lineOfHeldTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
+    weights: context.weights,
   });
 }
 

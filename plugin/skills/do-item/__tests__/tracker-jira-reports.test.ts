@@ -16,6 +16,7 @@ import {
   MEMBER,
   page,
   routes,
+  SITE,
 } from "./jira-fixtures.ts";
 
 const DAY = 86_400_000;
@@ -251,6 +252,51 @@ describe("Jira adapter: comments with trust", () => {
     expect(
       calls.filter((c) => c.route === "GET user/assignable/search"),
     ).toHaveLength(2);
+  });
+
+  it("names each comment's author, its link and its last edit, from the one list request", async () => {
+    const edited = {
+      ...comment("7", "answer pickup: approve", MEMBER),
+      updated: "2026-01-03T10:30:00.000+0000",
+    };
+    const { t, calls } = jira(
+      routes({
+        "GET issue/ENG-1": issue({ key: "ENG-1", id: "10001" }),
+        "GET issue/ENG-1/comment": comments(
+          comment("6", "a", FACTORY),
+          edited,
+          comment("8", "gone", null),
+        ),
+        "GET user/assignable/search": assignable(
+          MEMBER.accountId,
+          FACTORY.accountId,
+        ),
+      }),
+    );
+    expect(t.commentAuthors).toBe(true);
+    const { comments: read } = await t.issueComments("ENG-1");
+    expect(
+      read.map((c) => ({ author: c.author, url: c.url, editedAt: c.editedAt })),
+    ).toEqual([
+      {
+        author: { id: FACTORY.accountId, name: "Jig Factory" },
+        url: `${SITE}/browse/ENG-1?focusedCommentId=6`,
+        editedAt: null,
+      },
+      {
+        author: { id: MEMBER.accountId, name: "Dana Lee" },
+        url: `${SITE}/browse/ENG-1?focusedCommentId=7`,
+        editedAt: "2026-01-03T10:30:00.000Z",
+      },
+      {
+        author: null,
+        url: `${SITE}/browse/ENG-1?focusedCommentId=8`,
+        editedAt: null,
+      },
+    ]);
+    expect(
+      calls.filter((c) => c.route === "GET issue/ENG-1/comment"),
+    ).toHaveLength(1);
   });
 
   it("fails rather than trust when membership cannot be read", async () => {
@@ -611,6 +657,18 @@ describe("Jira adapter: assignments", () => {
     assignee = FACTORY,
   ) =>
     routes({
+      "GET issueLinkType": {
+        issueLinkTypes: [
+          { name: "Blocks", inward: "is blocked by", outward: "blocks" },
+          { name: "Relates", inward: "relates to", outward: "relates to" },
+          {
+            name: "Duplicate",
+            inward: "is duplicated by",
+            outward: "duplicates",
+          },
+          { name: "Cloners", inward: "is cloned by", outward: "clones" },
+        ],
+      },
       "GET user/search": [
         {
           accountId: FACTORY.accountId,
@@ -628,7 +686,7 @@ describe("Jira adapter: assignments", () => {
           ? FACTORY
           : new JiraApiError("404", { status: 404 }),
       "POST search/jql": byJql(
-        [/parent in/, page()],
+        [/parent (?:in|=)/, page()],
         [
           /assignee = /,
           page(
@@ -805,6 +863,7 @@ describe("Jira adapter: assignments", () => {
       driveRoundsFlat: 3,
       pickupWithinMs: 7_200_000,
       pickupDeadlineMs: 10_800_000,
+      epicWidth: 4,
       followupWithinMs: 3_600_000,
       followupStaleAfterMs: 86_400_000,
       noticesLingerMs: 3_600_000,

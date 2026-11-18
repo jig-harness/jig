@@ -10,7 +10,11 @@
  * ledger's rows past `failures.notify_after` are planned as notifications
  * beside the plan's own (failure-notices.ts). A stalled pickup's finished
  * work is told from the open pull requests the observe phase already read
- * (`stalled-pr.ts`), and its moves to `pr_open` go on the report.
+ * (`stalled-pr.ts`), and its moves to `pr_open` go on the report. On the
+ * owner host the priorities ranking's inputs are read after the plan, for the
+ * tick to rank once every repository is planned (`tick-priorities.ts`); the
+ * plan never reads it, and only the host's `priorities.enforce` lets the
+ * ranking reorder the planned pickups.
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
@@ -26,7 +30,7 @@ import { readIdle, updateIdle } from "./idle.ts";
 import { type ReadRecord, settledEnds } from "./launches.ts";
 import { holdBack, type PlanInput, planTick } from "./plan.ts";
 import type { SessionsReport } from "./runtime/port.ts";
-import type { TickContext } from "./tick-context.ts";
+import { deadlineOf, type TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { RepoReport } from "./types.ts";
 import {
@@ -38,6 +42,7 @@ import { applyStewardOrder } from "./steward-queue.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
+import { preparePriorities } from "./tick-priorities.ts";
 
 /** Plan one observed repository into its report. */
 export function planObserved(
@@ -69,7 +74,7 @@ export function planObserved(
     section,
     pickups: tracked.pickups,
     claimed: tracked.claimed,
-    drives: forge.drives,
+    drives: observation.drives,
     merged: forge.merged,
     sessions,
     created: forge.created,
@@ -86,6 +91,24 @@ export function planObserved(
     ...withStalledPr(observation),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
+  if (opened.owner) {
+    const prepared = preparePriorities(report, {
+      slug: repo.slug,
+      path: repo.path,
+      defaultBranch: repo.defaultBranch,
+      scope: tracked.issueRepository ?? repo.slug,
+      pickups: tracked.pickups,
+      unplaced: report.unplaced,
+      trackerComplete: tracked.claimed !== null,
+      nowMs: context.nowMs,
+      enforce: context.options.machine?.priorities?.enforce === true,
+      ...deadlineField(context),
+    });
+    if (prepared !== null) {
+      context.priorities ??= [];
+      context.priorities.push(prepared);
+    }
+  }
   // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
   const failing = {
     actions: planFailureNotices(context, opened),
@@ -202,6 +225,7 @@ function planRepo(
     ),
     launches: records,
     retried: settledEnds(),
+    rerunsHeld: context.rerunsHeld ?? null,
     idleSince: readIdle(repo),
     nowMs,
   });
@@ -277,6 +301,14 @@ function settleRecords(
       context.apply.machine.accounts,
       context.apply.records,
       nowMs,
+      undefined,
+      context.weights,
     );
   return all.filter((r) => r.record.repo === repo);
+}
+
+/** The tick's deadline for the record read, when the tick has one. */
+function deadlineField(context: TickContext): { deadlineMs?: number } {
+  const at = deadlineOf(context.options.machine, context.startedMs);
+  return at === undefined ? {} : { deadlineMs: at };
 }

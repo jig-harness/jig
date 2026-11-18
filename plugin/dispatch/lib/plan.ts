@@ -59,7 +59,9 @@ import {
   type ForeignHold,
   foreignHold,
 } from "./shared-launches.ts";
-import { failed } from "../../shared/outcome.ts";
+import { failed, type Outcome } from "../../shared/outcome.ts";
+import type { SharedClaim } from "../../shared/records/shared.ts";
+import { readFailureOf } from "./read-failures.ts";
 import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
@@ -103,6 +105,8 @@ export interface PlanInput {
   releases?: ReadonlyMap<number, FollowupRelease>;
   /** The launch records whose follow-up marker a tick released as a retry (`settledEnds`). */
   retried?: ReadonlySet<string>;
+  /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
+  rerunsHeld?: string | null;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -226,6 +230,7 @@ export function planTick(input: PlanInput): Plan {
         releases: input.releases ?? new Map(),
         owner: input.shared?.owner ?? true,
         retried: input.retried ?? new Set(),
+        rerunsHeld: input.rerunsHeld ?? null,
         nowMs: input.nowMs,
       },
       plan,
@@ -439,6 +444,22 @@ const FOREIGN_QUIET: ReadonlyMap<ForeignHold["kind"], LedgerClass> = new Map([
   ["armed", "unarmed"],
 ]);
 
+/** The row of a drive whose launch claims did not read: a listing a failed call stopped carries that call's class, a claim that does not read none. */
+function unreadClaims(
+  target: string,
+  why: string,
+  claims: Outcome<SharedClaim[], "unreadable">,
+): Unplaced {
+  const failure = claims.ok ? undefined : readFailureOf(claims.failure);
+  return {
+    target,
+    record: "forge",
+    reason: why,
+    readFailed: true,
+    ...(failure === undefined ? {} : { failure }),
+  };
+}
+
 /**
  * Another host's claims beside a drive this host's records leave open:
  * `true` when they placed it (held, quiet or unplaced), else the takeover of
@@ -464,12 +485,7 @@ function planForeign(
   )
     return null;
   if (hold.kind === "unread") {
-    plan.unplaced.push({
-      target,
-      record: "forge",
-      reason: hold.why,
-      readFailed: true,
-    });
+    plan.unplaced.push(unreadClaims(target, hold.why, claims));
     return true;
   }
   const says = hold.claim.says.value;
@@ -533,6 +549,9 @@ function unplacedDrive(target: string, pr: DrivenPr): Unplaced {
     record: "forge",
     reason: pr.why,
     ...(pr.readFailed === true ? { readFailed: true as const } : {}),
+    ...(pr.readFailed === true && pr.failure !== undefined
+      ? { failure: pr.failure }
+      : {}),
   };
 }
 

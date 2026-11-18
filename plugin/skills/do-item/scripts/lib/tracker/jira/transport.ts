@@ -25,6 +25,7 @@
  * inside the call's deadline (`shared/outbound/retry.ts`); a write never is.
  */
 
+import { admitCommentPage } from "../comment-bounds.ts";
 import {
   answerClass,
   type FailureClass,
@@ -772,6 +773,7 @@ export async function offsetPages(
   const out: Record<string, unknown>[] = [];
   const guard = idGuard(opts.where);
   for (let startAt = 0; ; ) {
+    admitCommentPage();
     const query = { ...request.query, startAt, maxResults: PAGE };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);

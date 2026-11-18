@@ -58,7 +58,7 @@ review:
   repo_slug: jig-harness/jig
   # The labels a deferred review finding may carry, from label-taxonomy.yaml.
   taxonomy:
-    types: [bug, feature, infra, docs, chore]
+    types: [bug, feature, infra, docs, chore, epic]
     repos: [jig]
     sizes: [xs, small]
     context_prefixes: ["area:"]
@@ -77,15 +77,18 @@ issue_tracker:
     ops_pending: "state:ops-pending"
   file_command: /jig:file-issue
   # The work types do-item derives from an issue's native type: the taxonomy's
-  # types, the docs, chore and infra ones all being Task work.
+  # types, the docs, chore, infra and epic ones all being Task work.
   types:
     bug: [bug]
     feature: [feature]
-    task: [docs, chore, infra]
+    task: [docs, chore, infra, epic]
   # Declared, not left to the default, so fleet health measures follow-ups.
   labels:
     followup: pr-followup
+    # An epic is an issue of the Epic type; `epic` is the taxonomy type its
+    # recognition stands for, and no issue carries a label of that name.
     epic: epic
+    epic_types: [Epic]
   # Type, priority and size are kept in the organization's issue types and
   # its Priority and Effort fields, whose options are the taxonomy's types
   # and sizes (design/tracker-facets.md, "Jig's own repository"). Named, so

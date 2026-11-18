@@ -46,6 +46,7 @@ import { currentMs } from "../../shared/time.ts";
 export interface WorktreePolicy {
   remote: string;
   base: string;
+  regenerablePaths?: readonly string[];
   /** Where a worktree older than marking may have its unmarked ignored content archived; absent, none is. */
   legacy?: LegacyPolicy | undefined;
 }
@@ -354,6 +355,7 @@ async function attachedDrive(
 /** The worktree's ignored content, as git lists it and the rules account for it. */
 async function ignoredContentOf(
   path: string,
+  regenerablePaths?: readonly string[],
 ): Promise<Outcome<IgnoredContent>> {
   const ignored = await git(path, [
     "ls-files",
@@ -371,6 +373,8 @@ async function ignoredContentOf(
   return classifyIgnored(
     path,
     ignored.value.split("\0").filter((entry) => entry !== ""),
+    undefined,
+    regenerablePaths,
   );
 }
 /** Uncommitted changes, index flags that hide them, and an operation in progress. */
@@ -399,10 +403,11 @@ async function localEvidence(
   path: string,
   admin: string,
   coordinated: boolean,
+  regenerablePaths?: readonly string[],
 ): Promise<Outcome<WorktreeEvidence>> {
   const tracked = await trackedState(path, admin);
   if (!tracked.ok) return tracked;
-  const ignoredContent = await ignoredContentOf(path);
+  const ignoredContent = await ignoredContentOf(path, regenerablePaths);
   if (!ignoredContent.ok) return ignoredContent;
   return ok({
     ...tracked.value,
@@ -468,11 +473,14 @@ async function identityUnchanged(
  * moved, it gained changes or index flags that hide them, or an operation
  * began. `git worktree remove` refuses tracked and untracked changes itself,
  * but not a new commit on a detached head, which removal would leave on no
- * ref.
+ * ref. `hold`, when given, runs between the scans and the identity
+ * comparison: a caller about to remove the tree holds its head there, so no
+ * commit lands between the comparison and the removal.
  */
 export async function unchangedSinceProof(
   path: string,
   identity: WorktreeIdentity,
+  hold?: () => Promise<Outcome<undefined, string>>,
 ): Promise<Outcome<undefined, string>> {
   const tracked = await trackedState(path, identity.admin);
   if (!tracked.ok) return tracked;
@@ -482,6 +490,10 @@ export async function unchangedSinceProof(
   });
   if (veto !== null)
     return failed("changed", `kept after the proof: ${veto.reason}`);
+  if (hold !== undefined) {
+    const held = await hold();
+    if (!held.ok) return held;
+  }
   // Last, so a commit made while the slow scans above ran is seen.
   const same = await identityUnchanged(path, identity);
   if (!same.ok) return failed("changed", `kept: ${same.failure.reason}`);
@@ -556,8 +568,9 @@ export async function preserveLegacyContent(
   path: string,
   legacy: LegacyPolicy | undefined,
   deadline: number,
+  regenerablePaths?: readonly string[],
 ): Promise<Outcome<Archived | null>> {
-  const content = await ignoredContentOf(path);
+  const content = await ignoredContentOf(path, regenerablePaths);
   if (!content.ok) return content;
   const other = content.value.other;
   if (other.length === 0) return ok(null);
@@ -595,7 +608,12 @@ export async function worktreeProof(
     return ok({ state: "finding", reason: "worktree root is not a directory" });
   const identity = await worktreeIdentity(path);
   if (!identity.ok) return identity;
-  const local = await localEvidence(path, identity.value.admin, coordinated);
+  const local = await localEvidence(
+    path,
+    identity.value.admin,
+    coordinated,
+    policy.regenerablePaths,
+  );
   if (!local.ok) return local;
   const facts = { ...local.value, agentTool };
   // Changes, index flags and an operation in progress veto before ignored

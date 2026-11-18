@@ -2,7 +2,12 @@
 import type { Outcome as Result } from "../shared/outcome.ts";
 import type { ScheduledUpgrade } from "../runtime/upgrade-record.ts";
 
-export type KindName = "worktrees" | "tool-state" | "scratch" | "receipts";
+export type KindName =
+  | "worktrees"
+  | "tool-state"
+  | "scratch"
+  | "receipts"
+  | "orca-terminals";
 export type Outcome =
   | "collected"
   | "would-collect"
@@ -22,6 +27,8 @@ export interface Proof {
   reportOnly?: string;
   /** Evidence merged into the receipt line's `details`, whatever the state. */
   details?: unknown;
+  /** The proof reports a failure of the run itself: the run ends nonzero. */
+  failing?: true;
 }
 export interface CollectionKind {
   name: KindName;

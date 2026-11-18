@@ -2,7 +2,7 @@
  * `drives.ts --report`: the workspaces the dispatcher launched into since
  * the report's time, found by the dispatched mark on their launch records,
  * never by their names, each with the name it carries now as the session
- * runtime (a fake `orca`) shows it. A workspace a skill renamed is still
+ * runtime (a fake `orca`) shows it. A workspace a person renamed is still
  * listed; a record from before the report's time, or one with no mark, is
  * not.
  */
@@ -76,7 +76,7 @@ function record(fields: Partial<LaunchRecord>): LaunchRecord {
   };
 }
 
-/** A night with one dispatched re-arm, whose workspace a skill renamed, beside records the report leaves out. */
+/** A night with one dispatched re-arm, whose workspace a person renamed, beside records the report leaves out. */
 function setUp(): { forge: Forge; orca: string } {
   const forge = fakeForge("");
   forge.write("login", "drive-bot");

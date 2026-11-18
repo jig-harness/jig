@@ -4,6 +4,7 @@ import { factsOf } from "./actions/drive-hold.ts";
 import { replayable, type ApplyState } from "./actions/launch.ts";
 import { localRecoverySpent } from "./no-cause-stops.ts";
 import { RECOVERY_FACTS, sameFacts } from "./recovery-facts.ts";
+import { applyStewardCause } from "./steward-causes.ts";
 import { applyStewardFacet } from "./steward-facets.ts";
 import { projectStewardNeed } from "./steward-needs.ts";
 import { resumeSteward } from "./steward-resume.ts";
@@ -78,7 +79,7 @@ function applyNeed(
   digest: StewardDigest,
 ): void {
   const prior = digest.drives.find((p) => `PR #${p.number}` === record.target);
-  const current = observation.forge.drives.find(
+  const current = observation.drives.find(
     (p) => `PR #${p.number}` === record.target,
   );
   if (prior && (!current || !sameFacts(factsOf(prior), factsOf(current))))
@@ -135,7 +136,7 @@ function applyRearm(
   digest: StewardDigest,
   records: KeptStewardRecord[],
 ): void {
-  const pr = observation.forge.drives.find(
+  const pr = observation.drives.find(
     (p) => `PR #${p.number}` === record.target,
   );
   const duplicate = duplicateRearm(records, kept, record);
@@ -215,6 +216,8 @@ async function applyOne(
       return resumeSteward(state, observation, kept.id, kept.value);
     case "facet":
       return applyFacet(state, observation, kept, kept.value, digest.value);
+    case "cause":
+      return applyStewardCause(state, observation, kept, kept.value);
     case "rearm":
       return applyRearm(
         state,

@@ -15,7 +15,14 @@
  */
 import { listedActOfClass } from "./acts.ts";
 import { splitAnswerDigest } from "./decisions/answer-digest.ts";
-import { normalizeAnswerText } from "./decisions/answer-normalize.ts";
+import type {
+  AnswerForm,
+  AnswerLineWord,
+} from "./decisions/decision-values.ts";
+import {
+  normalizeAnswerText,
+  optionNameMatches,
+} from "./decisions/answer-normalize.ts";
 
 /** An option the card numbers: only whether it is the recommended one matters here. */
 export interface NumberableOption {
@@ -63,7 +70,7 @@ export function isGuardedPick(
 /** The option a structured answer chooses, and the form that chose it. */
 export interface WrittenChoice {
   option: string;
-  form: "approve" | "choose";
+  form: AnswerForm;
 }
 
 /** A structured answer's text: its form, and the framing's digest when there is one. */
@@ -72,18 +79,20 @@ export function structuredAnswerText(
   digest: string | undefined,
 ): string {
   const form =
-    choice.form === "approve" ? "approve" : `choose ${choice.option}`;
+    choice.form === "approve"
+      ? ("approve" satisfies AnswerForm)
+      : `${"choose" satisfies AnswerForm} ${choice.option}`;
   return digest === undefined ? form : `${form} [${digest}]`;
 }
 
 /** The line the re-arm reads. */
 export function answerLine(key: string, text: string): string {
-  return `answer ${key}: ${text.trim()}`;
+  return `${"answer" satisfies AnswerLineWord} ${key}: ${text.trim()}`;
 }
 
 /** The line that narrows a structured answer with the person's own words. */
 export function noteLine(key: string, note: string): string {
-  return `note ${key}: ${note.trim()}`;
+  return `${"note" satisfies AnswerLineWord} ${key}: ${note.trim()}`;
 }
 
 /** What a person's answer to one decision is, as the card commits it. */
@@ -153,24 +162,25 @@ export function cardComment(
  * exactly one form, or names no single option, so it reads as free. The
  * drive's readers and the dashboard read an answer through this one function.
  */
-export function choiceInText<O extends { name: string }>(
+export function choiceInText<O extends { id?: string; name: string }>(
   text: string,
   options: readonly O[],
   isRecommended: (option: O) => boolean,
+  allowRetiredHoldAlias = false,
 ): { option: O; form: WrittenChoice["form"] } | null {
   const normalized = normalizeAnswerText(text);
-  const form =
+  const form: AnswerForm | null =
     normalized === "approve"
       ? "approve"
-      : normalized.startsWith("choose ")
+      : normalized.startsWith(`${"choose" satisfies AnswerForm} `)
         ? "choose"
         : null;
   if (form === null) return null;
   const matches =
     form === "approve"
       ? options.filter(isRecommended)
-      : options.filter(
-          (o) => normalizeAnswerText(o.name) === normalized.slice(7),
+      : options.filter((o) =>
+          optionNameMatches(o, normalized.slice(7), allowRetiredHoldAlias),
         );
   const [option] = matches;
   return matches.length === 1 && option !== undefined ? { option, form } : null;
@@ -181,8 +191,14 @@ export function choiceInLine<O extends { name: string }>(
   text: string,
   options: readonly O[],
   isRecommended: (option: O) => boolean,
+  allowRetiredHoldAlias = false,
 ): { option: O; form: WrittenChoice["form"] } | null {
-  return choiceInText(splitAnswerDigest(text).text, options, isRecommended);
+  return choiceInText(
+    splitAnswerDigest(text).text,
+    options,
+    isRecommended,
+    allowRetiredHoldAlias,
+  );
 }
 
 /** An option's place on a card: the recommended option is 1, the others follow in the decision's order. */
@@ -207,7 +223,7 @@ export interface ReadAnswer {
   choice?: {
     option: string;
     recommended: boolean;
-    form: "approve" | "choose";
+    form: AnswerForm;
     note?: string;
   };
 }
@@ -220,7 +236,7 @@ export interface ShownAnswer {
   choice?: {
     option: string;
     recommended: boolean;
-    form: "approve" | "choose";
+    form: AnswerForm;
   };
   note?: string;
   free?: true;

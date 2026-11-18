@@ -23,26 +23,8 @@
  * bundles it. The digest is computed where the decision is stored or framed
  * (`digest.ts`), never here.
  */
+import { PARKED_DECISION_SCHEMA } from "./decision-values.ts";
 import type { ParkedDecision, ParkedOption } from "./park.ts";
-
-/** The key a station's decision is answered by, one per kind of need: `answer <key>: …`. */
-const STATION_KEYS = [
-  "followup",
-  "pickup",
-  "checkout",
-  "drive",
-  "launch",
-] as const;
-export type StationKey = (typeof STATION_KEYS)[number];
-
-/** The decision class of each dispatcher-framed decision; the acts table lists each as Decide. */
-export const STATION_CLASSES: Readonly<Record<StationKey, string>> = {
-  followup: "followup-recovery",
-  pickup: "pickup-recovery",
-  checkout: "checkout-recovery",
-  drive: "drive-recovery",
-  launch: "launch-recovery",
-};
 
 /** The option ids the tick carries out. `hold` is in every set. */
 export type StationOptionId =
@@ -54,8 +36,61 @@ export type StationOptionId =
   | "clear"
   | "hold";
 
+/** A kind of need the dispatcher frames: its decision's class and the options it offers. */
+export interface StationKeyValue {
+  readonly class: string;
+  readonly options: readonly StationOptionId[];
+  readonly meaning: string;
+}
+
+/**
+ * The key a station's decision is answered by, one per kind of need
+ * (`answer <key>: …`), with the decision class of each dispatcher-framed
+ * decision, which the acts table lists as Decide, and the options, in the
+ * order the decision offers them.
+ */
+export const STATION_KEYS = {
+  followup: {
+    class: "followup-recovery",
+    options: ["rerun", "done", "hold"],
+    meaning:
+      "A merged pull request's follow-up whose pass ended without recording done, or whose claim no session is joined to.",
+  },
+  pickup: {
+    class: "pickup-recovery",
+    options: ["release", "hold"],
+    meaning:
+      "A pickup that stalled, stopped on a question it did not frame, or ended without moving its item on.",
+  },
+  checkout: {
+    class: "checkout-recovery",
+    options: ["detach", "hold"],
+    meaning:
+      "A launch that waits because a checkout the workspace runtime does not list holds its branch and is in use.",
+  },
+  drive: {
+    class: "drive-recovery",
+    options: ["rearm", "hold"],
+    meaning: "A drive that stopped and handed its pull request to a person.",
+  },
+  launch: {
+    class: "launch-recovery",
+    options: ["clear", "hold"],
+    meaning: "A pending launch record that no tick launches again.",
+  },
+} as const satisfies Readonly<Record<string, StationKeyValue>>;
+export type StationKey = keyof typeof STATION_KEYS;
+
+/** The decision class of each dispatcher-framed decision; the acts table lists each as Decide. */
+export const STATION_CLASSES: Readonly<Record<StationKey, string>> =
+  Object.fromEntries(
+    Object.entries(STATION_KEYS).map(([key, v]) => [key, v.class]),
+  ) as Record<StationKey, string>;
+
 /** Each option the tick can carry out, as every dispatcher-framed decision names it. */
-const OPTIONS: Readonly<Record<StationOptionId, Omit<ParkedOption, "id">>> = {
+export const STATION_OPTIONS: Readonly<
+  Record<StationOptionId, Omit<ParkedOption, "id">>
+> = {
   rerun: {
     name: "Run it again",
     summary:
@@ -101,22 +136,23 @@ const OPTIONS: Readonly<Record<StationOptionId, Omit<ParkedOption, "id">>> = {
     pay: ["A session the record still describes is no longer tracked."],
   },
   hold: {
-    name: "Leave it to me",
+    name: "I'll handle it — hide this card",
     summary:
-      "The dispatcher takes no step on it for these facts and stops listing it under Needs you; it lists it again when they change.",
+      "Nothing is done; the work stays where it is. The dispatcher hides this card for these facts and lists it again when they change.",
     pay: ["You settle it by hand."],
   },
 };
 
 /** The option the tick carries out for `id`, as a decision states it. */
 function stationOption(id: StationOptionId): ParkedOption {
-  return { id, ...OPTIONS[id] };
+  return { id, ...STATION_OPTIONS[id] };
 }
 
 /** The id of a dispatcher option named `name`; `undefined` for a name no dispatcher option has. */
 export function stationOptionId(name: string): StationOptionId | undefined {
-  return (Object.keys(OPTIONS) as StationOptionId[]).find(
-    (id) => OPTIONS[id].name === name,
+  if (name === "Leave it to me") return "hold";
+  return (Object.keys(STATION_OPTIONS) as StationOptionId[]).find(
+    (id) => STATION_OPTIONS[id].name === name,
   );
 }
 
@@ -187,7 +223,6 @@ export interface StationDecision {
 function decision(
   key: StationKey,
   question: string,
-  ids: readonly StationOptionId[],
   recommended: StationOptionId,
   why: string,
   alreadyDone: string,
@@ -195,12 +230,12 @@ function decision(
   return {
     key,
     decision: {
-      schema: "parked-decision/v1",
-      class: STATION_CLASSES[key],
+      schema: PARKED_DECISION_SCHEMA,
+      class: STATION_KEYS[key].class,
       call: {
         id: "a",
         question,
-        options: ids.map(stationOption),
+        options: STATION_KEYS[key].options.map(stationOption),
         recommended,
         why,
       },
@@ -232,7 +267,6 @@ function followupFailed(
     ? decision(
         "followup",
         `How should the follow-up of PR #${f.pr} go on?`,
-        ["rerun", "done", "hold"],
         "rerun",
         "The pass stopped without asking a person anything, so running it once more is the likeliest way to finish it.",
         `${pass}${asked}.${claim}`,
@@ -240,7 +274,6 @@ function followupFailed(
     : decision(
         "followup",
         `How should the follow-up of PR #${f.pr} go on?`,
-        ["rerun", "done", "hold"],
         "hold",
         "The pass stopped on a question only a person can answer: settle it by hand, or run it again with your answer as a note.",
         `${pass}${asked}.${claim}`,
@@ -257,7 +290,6 @@ function followupStale(
   return decision(
     "followup",
     `How should the stale follow-up claim on PR #${f.pr} be settled?`,
-    ["rerun", "done", "hold"],
     "rerun",
     "No session is joined to the claim, so releasing it and running the follow-up once more finishes it unless something else holds it.",
     `Marker comment ${f.marker} claims the follow-up, is not marked done, and no session is joined to it.${earlier}`,
@@ -287,7 +319,6 @@ function stalled(
   return decision(
     "pickup",
     `How should the stalled pickup of ${f.item} go on?`,
-    ["release", "hold"],
     free ? "release" : "hold",
     free
       ? "No session holds the item and no pull request carries its work, so starting it afresh is the way it moves again."
@@ -302,7 +333,6 @@ function pickupQuestion(
   return decision(
     "pickup",
     `How should the pickup of ${f.item} go on after it stopped on a question?`,
-    ["release", "hold"],
     "hold",
     "The pass stopped on a question only a person can answer, so a person settles it before the item starts again.",
     `Its pass under launch record ${f.record} stopped on the question ${quoted(f.question)} without framing it.`,
@@ -316,7 +346,6 @@ function pickupEnded(
   return decision(
     "pickup",
     `Should ${f.item} be picked up again after its pickup ended without moving it on?`,
-    ["release", "hold"],
     free ? "release" : "hold",
     free
       ? "Its pass asked nothing and no pull request carries its work, so a new pickup is the way it moves again."
@@ -331,7 +360,6 @@ function checkout(
   return decision(
     "checkout",
     `How should the checkout that holds ${f.branch} be freed for ${f.target}?`,
-    ["detach", "hold"],
     "hold",
     "The checkout was in use when the launch met it, and only a person knows whether its work is finished.",
     `A launch of ${f.target} waits: the checkout at ${f.path}, which the workspace runtime does not list, holds ${f.branch} and was in use.`,
@@ -348,7 +376,6 @@ function drive(f: Extract<StationFacts, { kind: "drive" }>): StationDecision {
   return decision(
     "drive",
     `How should the stopped drive of PR #${f.pr} go on?`,
-    ["rearm", "hold"],
     "hold",
     "The drive handed it to a person, so re-arming it unchanged may stop it the same way.",
     `The drive stopped ${exit}${started} and handed it to a person.${rearm}`,
@@ -359,7 +386,6 @@ function launch(f: Extract<StationFacts, { kind: "launch" }>): StationDecision {
   return decision(
     "launch",
     `How should the stuck launch record ${f.record} of ${f.target} be settled?`,
-    ["clear", "hold"],
     "clear",
     "No tick launches the record again, so clearing it frees its slot and its stage.",
     `Launch record ${f.record} is pending and no tick launches it again.`,
@@ -401,6 +427,8 @@ export interface StationAnswer {
   address: string;
   /** Where the answer comment goes: the pull request, an issue on the forge, or an item on another tracker. */
   on: "pull-request" | "issue" | "tracker";
+  /** The configured GitHub issue repository, when it differs from the code repository. */
+  repository?: string;
   /** `session`: the stage's own pass framed it; `dispatcher`: the tick did, and carries out the option chosen. */
   framedBy: "session" | "dispatcher";
 }

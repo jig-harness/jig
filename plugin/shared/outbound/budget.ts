@@ -23,10 +23,19 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { swallow } from "../errors.ts";
+import { errnoCode, swallow } from "../errors.ts";
 import { JigError } from "../outcome.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
+import { parseRecord } from "./budget-shape.ts";
+export { parseRecord };
+import {
+  EMPTY,
+  olderWindow,
+  snapshotOf,
+  stamped,
+  unexplainedSpending,
+} from "./budget-snapshot.ts";
 
 /** How long a credential stays limited when the refusal named no reset. */
 export const FALLBACK_LIMIT_MS = 15 * 60_000;
@@ -52,6 +61,63 @@ export interface BudgetWindow {
    * `observedAt`.
    */
   readAt?: number | null;
+  /**
+   * When an answer last reported this window's balance, epoch milliseconds;
+   * a reservation does not move it. Absent: never reported.
+   */
+  answeredAt?: number | null;
+  /**
+   * The window's reset is a guess, rolled forward by a reservation after
+   * the last reported reset passed; the next answer that reports the
+   * window replaces it.
+   */
+  estimated?: boolean;
+  /**
+   * The send time of the snapshot that last replaced this window's balance:
+   * a request admitted before it is already settled in that balance.
+   */
+  snapshotSentAt?: number | null;
+  /**
+   * The times of the reservations the last reading does not count, oldest
+   * first: a snapshot sent at `t` has them all but those made at or after
+   * `t` in its balance. Absent: none recorded.
+   */
+  pending?: number[];
+  /**
+   * Reservations forgotten beyond `PENDING_CAP`: how many, and the newest
+   * one's time. A snapshot sent at or before that time counts them all as
+   * unsettled, which under-credits at worst; none is ever given back.
+   */
+  overflow?: { count: number; at: number };
+  /**
+   * When an ordinary answer last reported this window. A snapshot sent
+   * before it does not know of that answer's spending, so it cannot raise
+   * the balance above it.
+   */
+  answeredOrdinarilyAt?: number;
+}
+
+/** How many unsettled reservations a window remembers one by one. */
+const PENDING_CAP = 256;
+
+/** The window's unsettled reservations with one more at `at`, and what the cap forgot. */
+function withPending(
+  w: BudgetWindow,
+  at: number,
+): Pick<BudgetWindow, "pending" | "overflow"> {
+  const all = [...(w.pending ?? []), at];
+  const forgotten = all.slice(0, Math.max(0, all.length - PENDING_CAP));
+  const overflow =
+    forgotten.length === 0
+      ? w.overflow
+      : {
+          count: (w.overflow?.count ?? 0) + forgotten.length,
+          at: Math.max(w.overflow?.at ?? 0, ...forgotten),
+        };
+  return {
+    pending: all.slice(-PENDING_CAP),
+    ...(overflow === undefined ? {} : { overflow }),
+  };
 }
 
 /** What the machine knows of one credential's budget. */
@@ -66,14 +132,64 @@ export interface BudgetRecord {
   why: string | null;
   /** When an answer last updated the record. */
   observedAt: number;
+  /**
+   * Limits a system reports beside the request count and the complexity
+   * (GitHub's search), by name; absent when it reports none.
+   */
+  windows?: Record<string, BudgetWindow>;
+  /** Refusals in a row that named no wait; each holds the credential longer. */
+  strikes?: number;
 }
 
 /** What one answer said: the windows it reported, and whether it refused the credential and until when. */
 export interface BudgetAnswer {
   requests?: BudgetWindow;
   complexity?: BudgetWindow;
+  /** The other limits it reported, by the names the record keeps them under. */
+  windows?: Record<string, BudgetWindow>;
+  /**
+   * The answer reports the whole balance of each window it names, as
+   * GitHub's `rate_limit` endpoint does: it replaces what the record holds,
+   * reservations included, rather than taking the lower count.
+   */
+  snapshot?: boolean;
+  /**
+   * Complexity points the answer measured beyond what its reservation took,
+   * for an ordinary answer that reported a cost but no balance: the record
+   * takes them off the stored balance, so a later snapshot is compared with
+   * a balance that already holds them and shows them as explained.
+   */
+  extraComplexity?: number;
   limitedUntil?: number;
+  /**
+   * A refusal that named no wait: the credential is held for `floorMs`,
+   * doubled for each refusal in a row before it, up to `capMs`.
+   */
+  unnamedRefusal?: { floorMs: number; capMs: number };
   why?: string;
+}
+
+/**
+ * Which of a record's windows a request is admitted against (each must hold
+ * more than the caller's floor), and which one it reserves a request of;
+ * by default the request count and the complexity, reserving a request.
+ */
+export interface AdmitOptions {
+  windows?: readonly string[];
+  /** `null` reserves nothing: what the request costs is known only from its answer. */
+  reserve?: string | null;
+  /**
+   * How long the reserved window lasts, for a window that resets whole: a
+   * reservation after its reset starts the next window of that length,
+   * instead of reserving nothing.
+   */
+  rollMs?: number;
+  /** How many requests this one admission reserves, all or none in one transaction; 1 when left out. */
+  count?: number;
+  /** Told the window the request actually reserved in: `null` when it reserved nothing, whatever `reserve` asked. */
+  onReserved?: (reservedIn: string | null) => void;
+  /** Throw a store's contention to the caller rather than wait for it. */
+  nonblocking?: boolean;
 }
 
 /** No request may leave for the credential before `resetAt`. */
@@ -115,10 +231,12 @@ export interface BudgetStore {
   /**
    * Apply `change` to the record in one transaction, so two processes' answers
    * do not lose one another; a `null` result leaves the record as it was.
+   * `nonblocking` throws a store's `SQLITE_BUSY` instead of waiting for it.
    */
   update(
     key: string,
     change: (prev: BudgetRecord | null) => BudgetRecord | null,
+    nonblocking?: boolean,
   ): void;
 }
 
@@ -139,48 +257,6 @@ import { BUDGET_MIGRATIONS } from "./schema.ts";
 /** The machine's budget database: `~/.local/state/jig/tracker/budget.sqlite`. */
 export function budgetPath(home = homedir()): string {
   return join(home, ".local", "state", "jig", "tracker", "budget.sqlite");
-}
-
-const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
-  v === null || (typeof v === "number" && Number.isFinite(v) && ok(v));
-
-function validWindow(w: unknown): w is BudgetWindow {
-  if (typeof w !== "object" || w === null) return false;
-  const { limit, remaining, resetAt, refillMs, readAt } = w as Record<
-    string,
-    unknown
-  >;
-  return (
-    orNull(limit, (n) => n >= 0) &&
-    orNull(remaining, () => true) &&
-    orNull(resetAt, (n) => n >= 0) &&
-    (refillMs === undefined || orNull(refillMs, (n) => n > 0)) &&
-    (readAt === undefined || orNull(readAt, (n) => n >= 0))
-  );
-}
-
-/** A record read from the store only when every field has its shape; a damaged one reads as none. */
-function validRecord(value: unknown): value is BudgetRecord {
-  if (typeof value !== "object" || value === null) return false;
-  const r = value as Record<string, unknown>;
-  return (
-    validWindow(r.requests) &&
-    validWindow(r.complexity) &&
-    orNull(r.limitedUntil, (n) => n >= 0) &&
-    (r.why === null || typeof r.why === "string") &&
-    typeof r.observedAt === "number" &&
-    Number.isFinite(r.observedAt)
-  );
-}
-
-export function parseRecord(text: string): BudgetRecord | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    return validRecord(value) ? value : null;
-  } catch (error) {
-    swallow(error, "a tracker budget record does not read");
-    return null;
-  }
 }
 
 /** The SQLite store at `path`; one that cannot be opened governs nothing. */
@@ -209,18 +285,23 @@ export function sqliteBudgetStore(path = budgetPath()): BudgetStore {
         return null;
       }
     },
-    update(key, change) {
+    update(key, change, nonblocking) {
       try {
         const d = open();
         if (d === null) return;
-        inTransaction(d, () => {
-          const next = change(get(d, key));
-          if (next === null) return;
-          d.query(
-            "INSERT OR REPLACE INTO tracker_budget (key, value) VALUES (?, ?)",
-          ).run(key, JSON.stringify(next));
-        });
+        inTransaction(
+          d,
+          () => {
+            const next = change(get(d, key));
+            if (next === null) return;
+            d.query(
+              "INSERT OR REPLACE INTO tracker_budget (key, value) VALUES (?, ?)",
+            ).run(key, JSON.stringify(next));
+          },
+          nonblocking ? 0 : undefined,
+        );
       } catch (error) {
+        if (nonblocking && errnoCode(error) === "SQLITE_BUSY") throw error;
         swallow(error, "write the tracker budget");
       }
     },
@@ -243,18 +324,69 @@ function currentShare(): number | null {
   return dispatcherShare;
 }
 
+/**
+ * What a snapshot answer showed was spent beyond what the record had
+ * counted, in each window's own unit: the record's balance before it less
+ * the balance it left, within one window. Absent for a window that shows
+ * none, or for an answer that is not a snapshot.
+ */
+export type Unexplained = Partial<Record<"requests" | "complexity", number>>;
+
+/**
+ * The complexity window less the points an ordinary answer measured beyond
+ * its reservation. The deduction counts as an ordinary answer's, so a
+ * snapshot sent before it cannot raise the balance back above it. It is
+ * skipped where the stored balance already holds the spending or belongs to
+ * another window: a snapshot sent after the request (its balance includes
+ * what the request cost), or a window that reset since. A snapshot sent in
+ * the same millisecond is ambiguous, and the deduction stays: a balance
+ * counted twice errs low, one never counted errs high.
+ */
+function withExtraSpent(
+  window: BudgetWindow,
+  answer: BudgetAnswer,
+  now: number,
+  sentAt: number | undefined,
+): BudgetWindow {
+  const extra = answer.snapshot === true ? 0 : (answer.extraComplexity ?? 0);
+  if (extra <= 0 || window.remaining === null) return window;
+  const sent = sentAt ?? now;
+  if (window.resetAt !== null && window.resetAt <= sent) return window;
+  if (window.snapshotSentAt != null && window.snapshotSentAt > sent)
+    return window;
+  return {
+    ...window,
+    remaining: Math.max(0, window.remaining - extra),
+    answeredOrdinarilyAt: now,
+  };
+}
+
 /** Admits requests for a credential and records what the answers said. */
 export interface BudgetGovernor {
   /** Throws `TrackerRateLimited` when no request may leave now; returns the time the request was admitted. */
-  admit(adapter: string, key: string): number;
+  admit(adapter: string, key: string, opts?: AdmitOptions): number;
   /**
    * Record what one answer said. `sentAt` is the `admit` time of the request
-   * it answers: what was recorded since is not in the answer.
+   * it answers: what was recorded since is not in the answer. `reservedIn`
+   * names the window that request reserved, `null` for one that reserved
+   * nothing; left out, it is read as the window `admit` reserves by default.
+   * A snapshot's answer returns the spending it showed that the record had
+   * not counted.
    */
-  observe(key: string, answer: BudgetAnswer, sentAt?: number): void;
+  observe(
+    key: string,
+    answer: BudgetAnswer,
+    sentAt?: number,
+    reservedIn?: string | null,
+  ): Unexplained | undefined;
+  /** Until when the credential is held after the answers recorded so far, epoch milliseconds; `null` when it is not. */
+  heldUntil?(key: string): number | null;
+  /**
+   * Give back the request `admit` reserved in window `name` at `sentAt`,
+   * for a request that was never sent or that the system did not charge.
+   */
+  release?(key: string, name: string, sentAt: number): void;
 }
-
-const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
 
 /**
  * The newer of two readings of a window, the answer read at `now`: the
@@ -268,23 +400,128 @@ const EMPTY: BudgetWindow = { limit: null, remaining: null, resetAt: null };
  * stored balance carried to `now` (reservations included); an answer with
  * nothing recorded since its request was sent is the newest.
  */
+/**
+ * An ordinary answer as the stored window holds it. The settlement watermark
+ * of the last snapshot stays: `release` relies on it to give back nothing a
+ * snapshot already credited.
+ */
+function ordinaryRead(
+  prev: BudgetWindow,
+  next: BudgetWindow,
+  now: number,
+): BudgetWindow {
+  return {
+    ...next,
+    readAt: now,
+    answeredAt: now,
+    ...(prev.snapshotSentAt == null
+      ? {}
+      : { snapshotSentAt: prev.snapshotSentAt }),
+    ...(prev.overflow === undefined ? {} : { overflow: prev.overflow }),
+    answeredOrdinarilyAt: now,
+  };
+}
+
+/**
+ * A guessed reset yields to an answer that reports the current window, not to
+ * one from a window that has already ended.
+ */
+function yieldsEstimate(
+  prev: BudgetWindow,
+  next: BudgetWindow,
+  now: number,
+): boolean {
+  return (
+    prev.estimated === true && (next.resetAt === null || next.resetAt > now)
+  );
+}
+
 function merged(
   prev: BudgetWindow,
   next: BudgetWindow | undefined,
   now: number,
   sentAt: number | undefined,
+  requestReserved = true,
 ): BudgetWindow {
   if (next === undefined) return prev;
-  const read = { ...next, readAt: now };
+  const read = ordinaryRead(prev, next, now);
+  const { settled, adopted } = reconciliation(
+    prev,
+    read,
+    sentAt ?? now,
+    requestReserved,
+  );
+  const kept = (remaining: number | null): BudgetWindow => ({
+    ...read,
+    remaining,
+    ...(prev.pending === undefined ? {} : { pending: prev.pending }),
+  });
   const count = next.remaining;
-  if (count === null) return olderWindow(prev, next) ? prev : read;
+  if (count !== null && yieldsEstimate(prev, next, now)) return adopted(count);
+  if (count === null) return olderWindow(prev, next) ? prev : kept(null);
   if (sameResetWindow(prev, next) && prev.remaining !== null)
-    return { ...read, remaining: Math.min(prev.remaining, count) };
+    return settled(count) < prev.remaining
+      ? adopted(count)
+      : kept(prev.remaining);
   if (olderWindow(prev, next)) return prev;
   const carried = carriedBalance(prev, next, now, sentAt);
-  return carried === null
-    ? read
-    : { ...read, remaining: Math.min(carried, count) };
+  if (carried === null) return adopted(count);
+  return settled(count) < carried ? adopted(count) : kept(carried);
+}
+
+/**
+ * How an ordinary answer's balance is reconciled with a stored window. The
+ * answer's balance counts the reservations made before its request was sent,
+ * and none made since: it stands only with those deducted and kept pending,
+ * so a release gives back exactly what was taken. A balance that is not the
+ * answer's already holds every deduction, and keeps them all.
+ */
+function reconciliation(
+  prev: BudgetWindow,
+  read: BudgetWindow,
+  sent: number,
+  requestReserved: boolean,
+): {
+  settled: (count: number) => number;
+  adopted: (count: number | null) => BudgetWindow;
+} {
+  const pending = prev.pending ?? [];
+  // Reservations at the request's own millisecond cannot be told from it:
+  // when the request reserved in this window one of them is the request and
+  // the rest were made after it was sent; when it reserved nothing, all were.
+  // Forgotten ones (past `PENDING_CAP`) count as later too; when some were
+  // forgotten at that millisecond the request may be one: under-credit.
+  const overflow =
+    prev.overflow !== undefined && prev.overflow.at >= sent
+      ? prev.overflow
+      : undefined;
+  const forgotten = overflow?.count ?? 0;
+  const atSent = pending.filter((t) => t === sent).length;
+  const later = [
+    ...pending.filter((t) => t > sent),
+    ...Array<number>(
+      Math.max(0, atSent - (requestReserved && overflow === undefined ? 1 : 0)),
+    ).fill(sent),
+  ];
+  return {
+    // What the answer's balance comes to once every later reservation is
+    // taken from it: the figure to compare with a stored balance.
+    settled: (count) => count - later.length - forgotten,
+    adopted: (count) => {
+      // A balance cannot go below zero: a reservation it has no room to
+      // deduct is not kept pending, so its release gives back nothing.
+      const deducted =
+        count === null ? 0 : Math.min(later.length + forgotten, count);
+      const keep = Math.min(later.length, deducted);
+      return {
+        ...read,
+        remaining: count === null ? null : count - deducted,
+        ...(prev.pending === undefined
+          ? {}
+          : { pending: later.slice(later.length - keep) }),
+      };
+    },
+  };
 }
 
 /** Both readings are of one window that resets whole, with counts. */
@@ -295,15 +532,6 @@ function sameResetWindow(prev: BudgetWindow, next: BudgetWindow): boolean {
     next.resetAt === prev.resetAt &&
     prev.remaining !== null &&
     next.remaining !== null
-  );
-}
-
-/** The answer is from a window that ended before the stored one. */
-function olderWindow(prev: BudgetWindow, next: BudgetWindow): boolean {
-  return (
-    prev.resetAt !== null &&
-    next.resetAt !== null &&
-    next.resetAt < prev.resetAt
   );
 }
 
@@ -371,12 +599,12 @@ function spentWindow(
   record: BudgetRecord,
   share: number | null,
   now: number,
+  names: readonly string[],
 ): { resetAt: number; why: string } | null {
   let binding: { resetAt: number; why: string } | null = null;
-  for (const [name, w] of [
-    ["requests", record.requests],
-    ["complexity", record.complexity],
-  ] as const) {
+  for (const name of names) {
+    const w = windowOf(record, name);
+    if (w === undefined) continue;
     const blocked = blockedWindow(name, w, record.observedAt, share, now);
     if (
       blocked !== null &&
@@ -401,7 +629,7 @@ function blockedWindow(
   // passes and people, and for requests one whole request (a refilling
   // balance is fractional).
   const floor = share !== null && w.limit !== null ? w.limit * (1 - share) : 0;
-  const unit = name === "requests" ? 1 : 0;
+  const unit = name === "complexity" ? 0 : 1;
   const empty = unit > 0 ? held < unit : held <= 0;
   if (held > floor && !empty) return null;
   return {
@@ -412,12 +640,25 @@ function blockedWindow(
   };
 }
 
+/** The window a record keeps under `name`. */
+function windowOf(
+  record: BudgetRecord,
+  name: string,
+): BudgetWindow | undefined {
+  if (name === "requests") return record.requests;
+  if (name === "complexity") return record.complexity;
+  return record.windows?.[name];
+}
+
+const DEFAULT_WINDOWS = ["requests", "complexity"] as const;
+
 /** Why a request is refused at `now`, or null when it may go. */
 function refusalFor(
   adapter: string,
   record: BudgetRecord,
   share: number | null,
   now: number,
+  names: readonly string[] = DEFAULT_WINDOWS,
 ): TrackerRateLimited | null {
   if (record.limitedUntil !== null && record.limitedUntil > now)
     return new TrackerRateLimited(
@@ -425,21 +666,112 @@ function refusalFor(
       record.limitedUntil,
       record.why ?? "the tracker refused it",
     );
-  const spent = spentWindow(record, share, now);
+  const spent = spentWindow(record, share, now, names);
   return spent === null
     ? null
     : new TrackerRateLimited(adapter, spent.resetAt, spent.why);
 }
 
-/** The record with one request taken from its balance; null when unchanged. */
-function reserved(record: BudgetRecord, now: number): BudgetRecord | null {
-  const w = record.requests;
-  if (w.remaining === null || w.resetAt === null || w.resetAt <= now)
-    return null;
+/** The record with one request taken from the balance of its window `name`; null when unchanged. */
+function reserved(
+  record: BudgetRecord,
+  now: number,
+  name: string | null = "requests",
+  rollMs?: number,
+): BudgetRecord | null {
+  const w = name === null ? undefined : windowOf(record, name);
+  if (name === null || w === undefined || w.remaining === null) return null;
+  if (w.resetAt === null) return null;
+  if (w.resetAt <= now) {
+    // The reported window is over and no answer has said the next one: a
+    // reservation starts it, so the share can still bind.
+    if (rollMs === undefined || w.limit === null || w.limit < 1) return null;
+    return withWindow(record, name, {
+      limit: w.limit,
+      remaining: w.limit - 1,
+      resetAt: now + rollMs,
+      readAt: now,
+      answeredAt: w.answeredAt ?? null,
+      estimated: true,
+      pending: [now],
+    });
+  }
   // The balance as it stands, capped at the limit, from now on: a
   // refill that came while the window was full is not credit.
   const held = holds(w, record.observedAt, now) ?? w.remaining;
-  return { ...record, requests: { ...w, remaining: held - 1, readAt: now } };
+  return withWindow(record, name, {
+    ...w,
+    remaining: held - 1,
+    readAt: now,
+    ...withPending(w, now),
+  });
+}
+
+/** The record with its window `name` replaced. */
+function withWindow(
+  record: BudgetRecord,
+  name: string,
+  w: BudgetWindow,
+): BudgetRecord {
+  if (name === "requests") return { ...record, requests: w };
+  if (name === "complexity") return { ...record, complexity: w };
+  return { ...record, windows: { ...record.windows, [name]: w } };
+}
+
+/** The record's other windows with what an answer said of each merged in. */
+function mergedWindows(
+  prev: Record<string, BudgetWindow> | undefined,
+  next: Record<string, BudgetWindow> | undefined,
+  now: number,
+  sentAt: number | undefined,
+  reservedIn: string | null,
+): Record<string, BudgetWindow> | undefined {
+  if (next === undefined) return prev;
+  const out: Record<string, BudgetWindow> = { ...prev };
+  for (const [name, w] of Object.entries(next))
+    out[name] = merged(
+      prev?.[name] ?? EMPTY,
+      w,
+      now,
+      sentAt,
+      reservedIn === name,
+    );
+  return out;
+}
+
+/**
+ * Until when an answer holds the credential, with the refusals in a row it
+ * leaves; `null` when it holds nothing. Only an answer to a request sent
+ * once the last hold had ended moves the count: the other refusals of one
+ * burst share its hold, and a success that was already on its way when the
+ * credential was refused does not clear it.
+ */
+function holdOf(
+  answer: BudgetAnswer,
+  base: BudgetRecord,
+  now: number,
+  sentAt: number | undefined,
+): { until: number | null; strikes: number } {
+  const strikes = base.strikes ?? 0;
+  const fresh =
+    sentAt === undefined ||
+    base.limitedUntil === null ||
+    sentAt >= base.limitedUntil;
+  const struck = fresh ? strikes + 1 : Math.max(1, strikes);
+  if (answer.limitedUntil !== undefined)
+    return { until: answer.limitedUntil, strikes: struck };
+  const unnamed = answer.unnamedRefusal;
+  if (unnamed !== undefined)
+    return {
+      until:
+        now +
+        Math.min(
+          unnamed.capMs,
+          unnamed.floorMs * 2 ** Math.min(struck - 1, 30),
+        ),
+      strikes: struck,
+    };
+  return { until: null, strikes: fresh ? 0 : strikes };
 }
 
 /** A governor over `store`; `clock` and `share` are for tests. */
@@ -450,25 +782,48 @@ export function budgetGovernor(
   const clock = opts.clock ?? currentMs;
   const share = opts.share ?? currentShare;
   return {
-    admit(adapter, key) {
+    admit(adapter, key, opts = {}) {
       const now = clock();
-      const out: { refusal: TrackerRateLimited | null } = { refusal: null };
+      const out = {
+        refusal: null as TrackerRateLimited | null,
+        reservedIn: null as string | null,
+      };
       // The decision and the reservation of one request are one transaction,
       // so concurrent callers each spend their own part of the balance.
-      store.update(key, (record) => {
+      const decide = (record: BudgetRecord | null): BudgetRecord | null => {
         if (record === null) return null;
-        const refusal = refusalFor(adapter, record, share(), now);
-        if (refusal !== null) {
-          out.refusal = refusal;
-          return null;
+        const name = opts.reserve === undefined ? "requests" : opts.reserve;
+        let current: BudgetRecord = record;
+        let changed = false;
+        for (let at = 0; at < (opts.count ?? 1); at += 1) {
+          const refusal = refusalFor(
+            adapter,
+            current,
+            share(),
+            now,
+            opts.windows ?? DEFAULT_WINDOWS,
+          );
+          if (refusal !== null) {
+            // All or none: a refused batch reserves nothing.
+            out.refusal = refusal;
+            return null;
+          }
+          const next = reserved(current, now, name, opts.rollMs);
+          if (next === null) break;
+          current = next;
+          changed = true;
         }
-        return reserved(record, now);
-      });
+        out.reservedIn = changed ? name : null;
+        return changed ? current : null;
+      };
+      store.update(key, decide, opts.nonblocking);
       if (out.refusal !== null) throw out.refusal;
+      opts.onReserved?.(out.reservedIn);
       return now;
     },
-    observe(key, answer, sentAt) {
+    observe(key, answer, sentAt, reservedIn = "requests") {
       const now = clock();
+      let unexplained: Unexplained = {};
       store.update(key, (prev) => {
         const base: BudgetRecord = prev ?? {
           requests: EMPTY,
@@ -479,13 +834,46 @@ export function budgetGovernor(
         };
         const stillLimited =
           base.limitedUntil !== null && base.limitedUntil > now;
+        const hold = holdOf(answer, base, now, sentAt);
+        const windows =
+          answer.snapshot === true && answer.windows !== undefined
+            ? {
+                ...base.windows,
+                ...stamped(base.windows, answer.windows, now, sentAt),
+              }
+            : mergedWindows(
+                base.windows,
+                answer.windows,
+                now,
+                sentAt,
+                reservedIn,
+              );
+        const take = (
+          prev: BudgetWindow,
+          next: BudgetWindow | undefined,
+          name: string,
+        ) =>
+          answer.snapshot === true
+            ? snapshotOf(prev, next, now, sentAt)
+            : merged(prev, next, now, sentAt, reservedIn === name);
+        const requests = take(base.requests, answer.requests, "requests");
+        const complexity = withExtraSpent(
+          take(base.complexity, answer.complexity, "complexity"),
+          answer,
+          now,
+          sentAt,
+        );
+        unexplained =
+          answer.snapshot === true
+            ? unexplainedSpending(base, { requests, complexity })
+            : {};
         return {
-          requests: merged(base.requests, answer.requests, now, sentAt),
-          complexity: merged(base.complexity, answer.complexity, now, sentAt),
+          requests,
+          complexity,
           limitedUntil:
-            answer.limitedUntil !== undefined
+            hold.until !== null
               ? Math.max(
-                  answer.limitedUntil,
+                  hold.until,
                   stillLimited ? (base.limitedUntil as number) : 0,
                 )
               : stillLimited
@@ -493,7 +881,47 @@ export function budgetGovernor(
                 : null,
           why: answer.why ?? (stillLimited ? base.why : null),
           observedAt: now,
+          ...(windows === undefined ? {} : { windows }),
+          ...(hold.strikes === 0 ? {} : { strikes: hold.strikes }),
         };
+      });
+      return unexplained;
+    },
+    heldUntil(key) {
+      const record = store.read(key);
+      return record?.limitedUntil != null && record.limitedUntil > clock()
+        ? record.limitedUntil
+        : null;
+    },
+    release(key, name, sentAt) {
+      const now = clock();
+      store.update(key, (record) => {
+        const w = record === null ? undefined : windowOf(record, name);
+        if (
+          record === null ||
+          w === undefined ||
+          w.remaining === null ||
+          w.resetAt === null ||
+          w.resetAt <= now ||
+          w.resetAt <= sentAt ||
+          // A reservation a snapshot already settled is not pending: an unsent
+          // request is not in what GitHub charged, so nothing is given back.
+          (w.pending !== undefined && !w.pending.includes(sentAt))
+        )
+          return null;
+        // One reservation, even where several share a millisecond.
+        const at = w.pending?.indexOf(sentAt) ?? -1;
+        const pending =
+          at < 0 ? w.pending : w.pending?.filter((_, i) => i !== at);
+        const remaining =
+          w.limit === null
+            ? w.remaining + 1
+            : Math.min(w.limit, w.remaining + 1);
+        return withWindow(record, name, {
+          ...w,
+          remaining,
+          ...(pending === undefined ? {} : { pending }),
+        });
       });
     },
   };

@@ -21,9 +21,13 @@ import { swallow } from "../../shared/errors.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
 import { currentMs } from "../../shared/time.ts";
 import {
+  fixtureRegistryScopes,
   fixtureScopeInventory,
+  nextFixtureRegistryPage,
+  testFixtureRegistryRoot,
   type FixtureScope,
 } from "../../shared/test-fixture-registry.ts";
+import { fixtureRetirement } from "./fixture-retirement.ts";
 import {
   collectFixtureScratch,
   fixtureScratchProof,
@@ -239,9 +243,14 @@ export function scratchKind(
   declaration: string,
   idleDays: number,
   registryRoot?: string,
+  bounds: { pageSize?: number; batchSize?: number; advance?: boolean } = {},
 ): CollectionKind {
   let memberships = new Map<string, FixtureScope[]>();
   let processResources = new Map<string, FixtureScope>();
+  const retirement = fixtureRetirement(
+    registryRoot ?? testFixtureRegistryRoot(),
+    bounds.batchSize,
+  );
   return {
     name: "scratch",
     repository,
@@ -250,11 +259,17 @@ export function scratchKind(
       memberships.clear();
       processResources.clear();
       const resources = new Map<string, Resource>();
-      const registered = fixtureScopeInventory(registryRoot);
-      if (!registered.ok) {
-        recordFixtureFailure(registered.failure);
-        return registered;
+      // A bounded page, resumed by the next run: removing a root that exists
+      // still proves against the whole inventory, read again in `prove`.
+      const page = nextFixtureRegistryPage(registryRoot, {
+        limit: bounds.pageSize,
+        advance: bounds.advance,
+      });
+      if (!page.ok) {
+        recordFixtureFailure(page.failure);
+        return page;
       }
+      const registered = retirement.list(page.value);
       for (const prefix of prefixes) {
         const absolute = resolve(repository, prefix);
         let entries: Dirent[];
@@ -276,17 +291,18 @@ export function scratchKind(
       const inventory = registeredFixtureResources(
         repository,
         prefixes,
-        registered.value,
+        registered.present,
         resources,
       );
       memberships = inventory.memberships;
       processResources = inventory.processes;
-      return ok(inventory.resources);
+      return ok([...inventory.resources, ...registered.resources]);
     },
     prove: async (resource) => {
+      if (retirement.owns(resource.id)) return retirement.prove(resource);
       const processScope = processResources.get(resource.id);
       if (processScope) {
-        const registered = fixtureScopeInventory(registryRoot);
+        const registered = fixtureRegistryScopes(processScope.registry);
         if (!registered.ok)
           return {
             state: "unverified",
@@ -295,7 +311,6 @@ export function scratchKind(
         if (
           registered.value.some(
             (scope) =>
-              scope.registry === processScope.registry &&
               !fixtureScopeWithinBounds(scope.root, repository, prefixes),
           )
         )
@@ -324,6 +339,7 @@ export function scratchKind(
         : { state: "unverified", reason: proof.failure.reason };
     },
     collect: async (resource) => {
+      if (retirement.owns(resource.id)) return retirement.collect(resource);
       const processScope = processResources.get(resource.id);
       if (processScope) {
         const reaped = await reapFixtureScope(
@@ -344,6 +360,7 @@ export function scratchKind(
           };
     },
     describe: (resource) => {
+      if (retirement.owns(resource.id)) return retirement.describe(resource);
       const scope = processResources.get(resource.id);
       return scope
         ? `registered fixture processes for ${scope.root}`

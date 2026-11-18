@@ -134,15 +134,18 @@ finished.
   also covers a pass whose result write failed, and waits until the host's
   health check passes. It stays one run again per follow-up, counted
   against the pull request's recovery budget; `failures.rerun_died: 0`
-  turns it off (#944).
+  turns it off, and it takes no bound above `1` (#944).
 - A pickup that died or recorded no result is not started afresh, which
   could be a second implementer: it takes the stalled pickup's
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
-  follow-up's question (#944).
-- These re-runs are the tick's rule, in `routine-reruns.ts`, never a
-  steward record: the tick decides them from its own records.
+  follow-up's question (#944). Until that relaunch (#950) is built, a
+  pickup whose result could not be written asks a person once, after the
+  health check passes, to settle or release its item.
+- These re-runs are the tick's rule, beside the routine re-runs
+  (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
+  tick decides them from its own records.
 
 #### A stalled pickup
 
@@ -169,7 +172,8 @@ with nothing pushed, or the item was an epic.
 - The steward settles what needs reading with a `settle` record: link the
   item to a pull request no launch opened, or release a stale claim
   ([The steward's remit](#the-stewards-remit)).
-- What remains is framed: **Release the claim**, **Leave it to me**.
+- What remains is framed: **Release the claim**, **I'll handle it — hide
+  this card**.
 
 #### A release blocked
 
@@ -296,7 +300,7 @@ branch.
   [rescue branch](../GLOSSARY.md), a local branch the tick never pushes and
   `jig gc` never collects, and is then detached rather than asked about
   (#964). Off, the need stays framed: **Detach the checkout**,
-  **Leave it to me**.
+  **I'll handle it — hide this card**.
 - The busy-holder notice has a cause of its own (#629).
 
 #### A step a person owes after a merge
@@ -363,10 +367,11 @@ need. A cause is settled once, and its targets leave the line with it.
 The steward reads a digest and proposes records; the next tick checks and
 applies them under its own guards
 ([ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)).
-Its default remit stays `rearm`, `resume`, `need`, `facet` and `order`. A
-host may widen it with three record kinds. Each guard is read by the tick
-from the forge, the tracker and its own records, never from the steward's
-digest or its words:
+Its default remit stays the record kinds
+[the steward records chapter](../plugin/protocol/steward-records.md) lists:
+`rearm`, `resume`, `need`, `facet`, `order` and `cause`. A host may widen it with three record kinds. Each guard is read by
+the tick from the forge, the tracker and its own records, never from the
+steward's digest or its words:
 
 | Record | For | The tick applies it only when |
 | --- | --- | --- |
@@ -418,7 +423,7 @@ do is what the tick would do anyway on the same facts.
 | `dispatch.stalled_relaunch` | repository | `finish-once` | Whether unpushed pickup work may be finished unattended (`never` turns it off) |
 | `dispatch.followup_routine` | repository | `[local-leftover, person-owed, drafted-items]` | What a follow-up may file unattended in that repository's tracker |
 | `changelog.release.rerun_failed_gates` | repository | `1` | Release policy is the repository's |
-| `steward.remit` | host, capped by each repository's `autonomy.max_level` | `[rearm, resume, need, facet, order]` | The host opts in to `settle`, `redrive` and `rerun-checks`; in a repository whose `max_level` is `attended`, the tick turns such a record into a framed need |
+| `steward.remit` | host, capped by each repository's `autonomy.max_level` | `[rearm, resume, need, facet, order, cause]` | The host opts in to `settle`, `redrive` and `rerun-checks`; in a repository whose `max_level` is `attended`, the tick turns such a record into a framed need |
 | `failures.rerun_died` | host | `1` | A host fault is the host's to retry |
 | `failures.group` | host | `cause` (`scope` keeps one need per scope) | One need per host fault |
 | `preflight` | host | `[tracker]` | Credentials belong to an account on a machine |
@@ -486,9 +491,3 @@ on #884, whose health check it reads.
   a repository's maintainers decide, in its configuration.
 - **A sweep of the needs raised before this.** Clearing that backlog is a
   person's one-off task, not a mechanism.
-
-## Review
-
-Critiqued on 2026-11-12 by a reviewer with fresh context (a subagent that
-did not write it), against the draft of this design, its plan item and
-ADR-0018 on top of commit `96567939`.

@@ -94,6 +94,7 @@ export async function changed(
     pooled?: boolean;
     servedPerson?: string;
     ancestorEpic?: string;
+    factoryAncestor?: string;
     blockingFor?: string;
   },
 ): Promise<{ issue: PoolIssue } | { why: string }> {
@@ -105,6 +106,7 @@ export async function changed(
           key,
           ctx.servedPolicy,
           served?.pooled,
+          served?.factoryAncestor,
         )
       : await freshServedPickup(
           ctx.tracker,
@@ -282,13 +284,16 @@ function servedEvidence(action: Action): {
   pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
+  factoryAncestor?: string;
   blockingFor?: string;
 } {
-  const { ancestorEpic, blockingFor, servedPerson, pooled } = action.evidence;
+  const { ancestorEpic, factoryAncestor, blockingFor, servedPerson, pooled } =
+    action.evidence;
   return {
     ...(pooled === true ? { pooled: true } : {}),
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
     ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
+    ...(typeof factoryAncestor === "string" ? { factoryAncestor } : {}),
     ...(typeof blockingFor === "string" ? { blockingFor } : {}),
   };
 }
@@ -362,6 +367,7 @@ async function retryPending(
             item,
             ctx.servedPolicy,
             record.pooled,
+            record.factoryAncestor,
           )
         : await freshServedPickup(
             ctx.tracker,
@@ -386,6 +392,30 @@ async function retryPending(
   }
 }
 
+/**
+ * The order this tick launches `wanted` in. A served or pooled queue is ranked
+ * (assigned before pool, then the queue's own order), and under the host's
+ * `priorities.enforce` the priorities ranking set the order; both launch as
+ * given. Only the unranked factory pickups rotate.
+ */
+export function pickupSequence(
+  state: ApplyState,
+  report: Partial<Pick<RepoReport, "priorities">>,
+  wanted: Action[],
+): Action[] {
+  const ordered =
+    report.priorities !== undefined &&
+    "enforced" in report.priorities &&
+    report.priorities.enforced !== undefined;
+  return ordered ||
+    wanted.some(
+      (a) =>
+        a.evidence.servedPerson !== undefined || a.evidence.pooled === true,
+    )
+    ? wanted
+    : rotated(state, wanted, "targets");
+}
+
 /** `--apply` for one repository's pickups. */
 export async function applyPickups(
   state: ApplyState,
@@ -395,14 +425,8 @@ export async function applyPickups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "pickup");
   await retryPending(state, repo, report, ctx);
-  // A served or pooled queue is ranked (assigned before pool, then the
-  // queue's own order), so it launches in that order; only the unranked
-  // factory pickups rotate.
-  for (const action of wanted.some(
-    (a) => a.evidence.servedPerson !== undefined || a.evidence.pooled === true,
-  )
-    ? wanted
-    : rotated(state, wanted, "targets"))
+  // A pickup that waits passes its start to the next.
+  for (const action of pickupSequence(state, report, wanted))
     report.launches.push(await launchOne(state, repo, action, ctx));
 }
 

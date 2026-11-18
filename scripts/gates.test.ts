@@ -1636,7 +1636,9 @@ test("every suite the gate job leaves out runs in a CI job of its own or a selec
     (jobs["drive-pr-suite"]?.steps ?? []).some((s) =>
       (s.run ?? "").includes("terminal-states-consistency.ts"),
     ),
-  ).toBe(true);
+  ).toBe(false);
+  // The Protocol inventory check holds the exit contract in gate-set;
+  // the drive suite must not run a second standalone copy of that gate.
   // The required status check `gates` must wait for the separate job too.
   expect(jobs.gates?.needs).toEqual(["areas", "gate-set", "drive-pr-suite"]);
 });

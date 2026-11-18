@@ -346,7 +346,10 @@ describe("the line a tick leaves", () => {
       exitWritten(w, receipt.repos[0]?.launches[0]?.record ?? ""),
     );
     const line = storedLine(w)?.line;
-    expect(line?.repos[0]?.tracker).toEqual({ adapter: "github" });
+    expect(line?.repos[0]?.tracker).toEqual({
+      adapter: "github",
+      repository: SLUG,
+    });
     expect(line?.sessions[0]?.target).toBe("PR #7");
     expect(line?.sessions[0]?.links?.items.map((i) => i.key)).toEqual([
       "#4",
@@ -412,7 +415,8 @@ describe("the line a tick leaves", () => {
       stored?.line.repos.map((repo) => [repo.path, repo.runId, repo.readAt]),
     ).toEqual([
       [w.repo, first.runId, first.startedAt],
-      [other, second.runId, second.startedAt],
+      // The repository no tick identified has no reading to name.
+      [other, undefined, undefined],
     ]);
     expect(
       stored?.line.ticks?.map((t) => ({ runId: t.runId, busy: t.busy })),
@@ -452,7 +456,8 @@ describe("the line a tick leaves", () => {
       stored?.line.repos.map((repo) => [repo.path, repo.runId, repo.readAt]),
     ).toEqual([
       [w.repo, second.runId, second.startedAt],
-      [other, first.runId, first.startedAt],
+      // The repository no tick has read has no reading to name.
+      [other, undefined, undefined],
     ]);
     expect(
       stored?.line.ticks?.map((t) => ({ runId: t.runId, sweep: t.sweep })),

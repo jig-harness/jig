@@ -1,0 +1,746 @@
+{
+  "chapter": "followup-claim",
+  "title": "The follow-up claim and its result",
+  "version": 1,
+  "status": "stable",
+  "fields": {
+    "kind": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "record for the marker's kind in the records registry, marker for one of its hidden markers, run for a value of its run field, <run>-outcome (tick-outcome, manual-outcome) for a value of the outcome field of that run's marker, and field for a field of its payload."
+    },
+    "name": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": true,
+      "description": "The record kind's registered name, one hidden marker as its comment opens after `<!-- `, a run's name, an outcome as `<run>.<outcome>` (`tick.done`), or the payload field's name."
+    },
+    "run": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For an outcome, the run whose marker carries it; null for every other value."
+    },
+    "type": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a payload field, the JSON type of its value; null for every other value."
+    },
+    "carriedBy": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For a payload field, the runs whose markers carry it, each with always or sometimes, as `tick (always), manual (sometimes)`; a marker of a run not named never carries it. Null for every other value."
+    },
+    "version": {
+      "type": "integer",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For the record, the version Jig's writers write now, which its envelope's v carries; null otherwise."
+    },
+    "key": {
+      "type": "string",
+      "nullable": true,
+      "required": true,
+      "identifies": false,
+      "description": "For the record, the whole shape of its envelope's key as a regular expression; null otherwise."
+    },
+    "meaning": {
+      "type": "string",
+      "nullable": false,
+      "required": true,
+      "identifies": false,
+      "description": "What it means to a reader that meets it, and what that reader does with it."
+    }
+  },
+  "values": [
+    {
+      "kind": "record",
+      "name": "dispatch-followup",
+      "run": null,
+      "type": null,
+      "carriedBy": null,
+      "version": 2,
+      "key": "^(?:followup|[1-9]\\d*)$",
+      "meaning": "The claim on a merged pull request's one follow-up: which run took it, a dispatcher's tick or a person's, and once it ended, its outcome. A follow-up posts or reads it before it acts, and stops when an earlier trusted marker holds the follow-up."
+    },
+    {
+      "kind": "marker",
+      "name": "jig-dispatch-followup",
+      "run": null,
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "The claim on a merged pull request's one follow-up: which run took it, a dispatcher's tick or a person's, and once it ended, its outcome. A follow-up posts or reads it before it acts, and stops when an earlier trusted marker holds the follow-up."
+    },
+    {
+      "kind": "marker",
+      "name": "jig-dispatch-followup-data",
+      "run": null,
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "The claim on a merged pull request's one follow-up: which run took it, a dispatcher's tick or a person's, and once it ended, its outcome. A follow-up posts or reads it before it acts, and stops when an earlier trusted marker holds the follow-up."
+    },
+    {
+      "kind": "run",
+      "name": "tick",
+      "run": null,
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "A dispatcher's tick took the follow-up: its marker names the launch record of the session the tick started and the host that started it, and that host writes the follow-up's outcome onto the marker once the launch record ends."
+    },
+    {
+      "kind": "run",
+      "name": "manual",
+      "run": null,
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "A person ran the follow-up, and its run posted the marker through `jig dispatch marker claim`: the run writes its own outcome onto it (`jig dispatch marker done`)."
+    },
+    {
+      "kind": "tick-outcome",
+      "name": "tick.done",
+      "run": "tick",
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "The follow-up's session recorded its result as done (`jig dispatch result`): the follow-up is finished, and nothing starts it again."
+    },
+    {
+      "kind": "tick-outcome",
+      "name": "tick.failed",
+      "run": "tick",
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "The follow-up's session ended without recording done, or its launch died and is not retried: a person acts, and the marker keeps holding the follow-up against every later one until a person marks it done or deletes it, or the dispatcher's recovery releases it once, as for a rate-limit wait or a routine that failed."
+    },
+    {
+      "kind": "manual-outcome",
+      "name": "manual.running",
+      "run": "manual",
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "A person's run claimed the follow-up and has not finished its last act. It holds the follow-up against every later run; a run that failed leaves it so (`jig dispatch marker failed`) until a person marks it done or deletes it, or the dispatcher releases a stale one once."
+    },
+    {
+      "kind": "manual-outcome",
+      "name": "manual.done",
+      "run": "manual",
+      "type": null,
+      "carriedBy": null,
+      "version": null,
+      "key": null,
+      "meaning": "A person's run finished its last act (`jig dispatch marker done`): the follow-up is finished."
+    },
+    {
+      "kind": "field",
+      "name": "pr",
+      "run": null,
+      "type": "integer",
+      "carriedBy": "tick (always), manual (always)",
+      "version": null,
+      "key": null,
+      "meaning": "The number of the pull request the marker is on; a marker whose record names another pull request does not read."
+    },
+    {
+      "kind": "field",
+      "name": "run",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (always), manual (always)",
+      "version": null,
+      "key": null,
+      "meaning": "Which run took the follow-up: one of the runs listed above."
+    },
+    {
+      "kind": "field",
+      "name": "record",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (always)",
+      "version": null,
+      "key": null,
+      "meaning": "The launch record of the session the tick started, in the dispatcher's form `<yyyymmdd>T<hhmmss>Z-<8 hex>`."
+    },
+    {
+      "kind": "field",
+      "name": "host",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "The host whose tick took the follow-up, as a digest of its dispatcher's database instance: a public comment names no machine, and that host recognises its own marker. A marker posted before markers named their host carries none until the host that ends it writes its own."
+    },
+    {
+      "kind": "field",
+      "name": "owner",
+      "run": null,
+      "type": "boolean",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "Whether the host that took the follow-up owns the repository's board, notifications and history rows; absent where that host does not say."
+    },
+    {
+      "kind": "field",
+      "name": "outcome",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (sometimes), manual (always)",
+      "version": null,
+      "key": null,
+      "meaning": "Where the follow-up stands: one of the outcomes listed above for the marker's run. A tick's marker carries none until its host writes the end."
+    },
+    {
+      "kind": "field",
+      "name": "endedAt",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "When the follow-up's launch ended, as an ISO 8601 time, written by its host with the outcome."
+    },
+    {
+      "kind": "field",
+      "name": "by",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "Who wrote the follow-up run's closing report (agent, driver, wrapper, steward or person), or none when it left none, written by its host with the outcome. The report's own text stays on that host."
+    },
+    {
+      "kind": "field",
+      "name": "cause",
+      "run": null,
+      "type": "string",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "Why the follow-up run fell short, from the closing report's closed list of causes, written by its host with the outcome when the report named one."
+    }
+  ],
+  "schemas": {
+    "followup-claim": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "dispatch-followup"
+                },
+                "v": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2
+                },
+                "key": {
+                  "type": "string",
+                  "pattern": "^(?:followup|[1-9]\\d*)$"
+                },
+                "writer": {
+                  "type": "object",
+                  "properties": {
+                    "login": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "host": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "bootId": {
+                      "type": "string"
+                    },
+                    "pid": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "start": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["host"],
+                  "additionalProperties": true
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["kind", "v", "key", "writer", "at"],
+              "additionalProperties": true
+            },
+            {
+              "allOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "v": {
+                      "const": 1
+                    },
+                    "pr": true
+                  },
+                  "required": ["v"],
+                  "additionalProperties": true
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "run": {
+                          "const": "tick"
+                        },
+                        "record": {
+                          "type": "string",
+                          "pattern": "^\\d{8}T\\d{6}Z-[a-f\\d]{8}$"
+                        },
+                        "outcome": {
+                          "enum": ["done", "failed"]
+                        },
+                        "host": true,
+                        "owner": true,
+                        "endedAt": true
+                      },
+                      "required": ["run", "record"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "run": {
+                          "const": "manual"
+                        },
+                        "outcome": {
+                          "enum": ["running", "done"]
+                        }
+                      },
+                      "required": ["run", "outcome"],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "dispatch-followup"
+                },
+                "v": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2
+                },
+                "key": {
+                  "type": "string",
+                  "pattern": "^(?:followup|[1-9]\\d*)$"
+                },
+                "writer": {
+                  "type": "object",
+                  "properties": {
+                    "login": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "host": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "bootId": {
+                      "type": "string"
+                    },
+                    "pid": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "start": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["host"],
+                  "additionalProperties": true
+                },
+                "at": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                },
+                "generation": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["kind", "v", "key", "writer", "at"],
+              "additionalProperties": true
+            },
+            {
+              "allOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "v": {
+                      "const": 2
+                    },
+                    "key": {
+                      "const": "followup"
+                    }
+                  },
+                  "required": ["v", "key"],
+                  "additionalProperties": true
+                },
+                {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "pr": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["pr"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "run": {
+                              "const": "tick"
+                            },
+                            "record": {
+                              "type": "string",
+                              "pattern": "^\\d{8}T\\d{6}Z-[a-f\\d]{8}$"
+                            },
+                            "outcome": {
+                              "enum": ["done", "failed"]
+                            },
+                            "host": true,
+                            "owner": true,
+                            "endedAt": true
+                          },
+                          "required": ["run", "record"],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "run": {
+                              "const": "manual"
+                            },
+                            "outcome": {
+                              "enum": ["running", "done"]
+                            }
+                          },
+                          "required": ["run", "outcome"],
+                          "additionalProperties": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "followup-result": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "dispatch-followup"
+                    },
+                    "v": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2
+                    },
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(?:followup|[1-9]\\d*)$"
+                    },
+                    "writer": {
+                      "type": "object",
+                      "properties": {
+                        "login": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "host": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "bootId": {
+                          "type": "string"
+                        },
+                        "pid": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "start": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["host"],
+                      "additionalProperties": true
+                    },
+                    "at": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["kind", "v", "key", "writer", "at"],
+                  "additionalProperties": true
+                },
+                {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "v": {
+                          "const": 1
+                        },
+                        "pr": true
+                      },
+                      "required": ["v"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "run": {
+                              "const": "tick"
+                            },
+                            "record": {
+                              "type": "string",
+                              "pattern": "^\\d{8}T\\d{6}Z-[a-f\\d]{8}$"
+                            },
+                            "outcome": {
+                              "enum": ["done", "failed"]
+                            },
+                            "host": true,
+                            "owner": true,
+                            "endedAt": true
+                          },
+                          "required": ["run", "record"],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "run": {
+                              "const": "manual"
+                            },
+                            "outcome": {
+                              "enum": ["running", "done"]
+                            }
+                          },
+                          "required": ["run", "outcome"],
+                          "additionalProperties": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "dispatch-followup"
+                    },
+                    "v": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2
+                    },
+                    "key": {
+                      "type": "string",
+                      "pattern": "^(?:followup|[1-9]\\d*)$"
+                    },
+                    "writer": {
+                      "type": "object",
+                      "properties": {
+                        "login": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "host": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "bootId": {
+                          "type": "string"
+                        },
+                        "pid": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "start": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["host"],
+                      "additionalProperties": true
+                    },
+                    "at": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": ["kind", "v", "key", "writer", "at"],
+                  "additionalProperties": true
+                },
+                {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "v": {
+                          "const": 2
+                        },
+                        "key": {
+                          "const": "followup"
+                        }
+                      },
+                      "required": ["v", "key"],
+                      "additionalProperties": true
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "pr": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": ["pr"],
+                          "additionalProperties": true
+                        },
+                        {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "run": {
+                                  "const": "tick"
+                                },
+                                "record": {
+                                  "type": "string",
+                                  "pattern": "^\\d{8}T\\d{6}Z-[a-f\\d]{8}$"
+                                },
+                                "outcome": {
+                                  "enum": ["done", "failed"]
+                                },
+                                "host": true,
+                                "owner": true,
+                                "endedAt": true
+                              },
+                              "required": ["run", "record"],
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "run": {
+                                  "const": "manual"
+                                },
+                                "outcome": {
+                                  "enum": ["running", "done"]
+                                }
+                              },
+                              "required": ["run", "outcome"],
+                              "additionalProperties": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "enum": ["done", "failed"]
+            }
+          },
+          "required": ["outcome"],
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}

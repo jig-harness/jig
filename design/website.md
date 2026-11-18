@@ -113,12 +113,12 @@ it does not make the shipped skills themselves Orca-only.
 | Layer | Capability | Status and evidence or open work |
 |-------|------------|----------------------------------|
 | What runs by itself | Agents file issues after duplicate search and label validation; a person starts pickup; agents build, open, review, repair CI or conflicts, and stop ready or for a decision | Shipped: `file-issue`, `do-item`, `work-batch`, `drive-pr`, `resolve-review-comments`, `resolve-conflicts`, `fix-ci`; [delivery lifecycle](../docs/LIFECYCLE.md) |
-| What runs by itself | Apply the item's model route to its implementer and record it on the pull request | Planned: item 31; deriving and reporting the route is shipped |
+| What runs by itself | Apply the item's model route to its implementer and record it on the pull request | Planned: recording it on the pull request, [#1319](https://github.com/jig-harness/jig/issues/1319); deriving and reporting the route, and applying it in a dispatched pass behind declared rules, are shipped |
 | What runs by itself | The drive's CI-repair round invoking `fix-ci` | Planned: Later; the drive's own repair round and the standalone `fix-ci` skill are shipped |
-| What runs by itself | Dispatcher pickup, re-arm after a usage limit or answered question, re-drive of a stale pull request, and repository follow-up | Shipped machinery: [dispatcher](../plugin/README.md#the-dispatcher); unattended operation claim planned: item 33's live-host checks; generic follow-up skill planned: item 17 |
+| What runs by itself | Dispatcher pickup, re-arm after a usage limit or answered question, re-drive of a stale pull request, and repository follow-up | Shipped machinery: [dispatcher](../plugin/README.md#the-dispatcher) and the [`followup`](../plugin/skills/followup/README.md) skill it starts by default; unattended operation claim planned: item 33's live-host checks |
 | What runs by itself | Accounts and caps, guarded recovery proposals, notifications, dispatch labels, operator commands, serialized areas, outcome log and read-only dashboard | Shipped machinery: [dispatcher](../plugin/README.md#the-dispatcher), `steward`, `operator`; unattended operation claim planned: item 33 |
 | What runs by itself | Mechanically held pass boundaries and each need settled at its source | Planned: items 40 and 50 |
-| What runs by itself | Launch guard and a view inside Orca of what waits for a person | Planned: item 34 |
+| What runs by itself | Launch guard and a view inside Orca of what waits for a person | Shipped: the [Jig plugin for Orca](orca-integration.md#the-jig-plugin-for-orca) (launch guard, status bar, inbox panel); planned: item 34's answer picks and merge button |
 | What runs by itself | One place to watch and steer the line, growing from the dispatch dashboard | Planned: item 42; the existing dashboard remains a read-only view |
 | What runs by itself | Hub across machines and dispatchers | Planned: item 49 |
 | What runs by itself | Delegated merge | Planned: item 9, with its own decision; every shipped scenario says a person merges |
@@ -129,14 +129,14 @@ it does not make the shipped skills themselves Orca-only.
 | What a team gets | Decisions recorded, found and turned into rules; sourced explanations | Shipped: `adr`, `decide`, `explain`, M5 |
 | What a team gets | Design and planning grounded in the repository | Shipped: M6 templates, `red-team`, `design-brief-builder`; greenfield kickoff planned: item 3; epic planning on the tracker planned: Later |
 | What a team gets | Change notes and releases without shared changelog edits | Shipped: `changelog`, M16; several artifacts and other CI templates planned: item 21 |
-| What a team gets | Workspaces for concurrent agents, and bounded cleanup | Shipped: M12, workspace tools and `jig gc`; Herdr live checks planned: item 19; collection extensions planned: item 24; other runtime lifecycles planned: Later |
+| What a team gets | Workspaces for concurrent agents, and bounded cleanup | Shipped: M12, workspace tools and `jig gc`; Herdr live checks planned: [#1310](https://github.com/jig-harness/jig/issues/1310); collection extensions planned: item 24; other runtime lifecycles planned: Later |
 | What a team gets | Documents that state what is true | Shipped: `docs`, `descar`, `programmatic-execution`, M4 |
 | What it is built from | Practices as tool-independent rules, modules, adoption guides, observable maturity levels and profiles | Shipped: [module catalog](../modules/README.md), [profiles](../profiles/README.md); a team adopts one module at a time |
 | What it is built from | Gates with tests, an enforcement ladder, generated-file checks, pipeline economy and testing tiers | Shipped: M1, M2, M13 and M14; [reference gates](../FEATURES.md#gates-that-ship-with-their-tests-each-on-a-named-rung) |
 | What it is built from | Context, verification and knowledge supplied by instructions, glossary, decisions, change areas and task records | Shipped: M0, M3, M4, M5, M6, M7, M8, M9 and M10; [scaffolding](../FACTORY.md#what-it-stands-on) |
 | What it is built from | Configuration read in layers, extension interfaces and a skill finder | Shipped: [configuration](../plugin/CONFIGURATION.md), [extensions](../plugin/EXTENDING.md), `jig`; remaining assumed values planned: item 10; `init` planned: item 26 |
 | What it is built from | Tracker adapters for GitHub Issues, Linear and Jira | Shipped: [tracker interface](../plugin/EXTENDING.md#issue-tracker); more adapters planned: item 12 |
-| What it is built from | An installed, readable account of the factory's operating rules: the Jig Protocol | Planned: [Protocol design issue](https://github.com/jig-harness/jig/issues/1016) |
+| What it is built from | An installed, readable account of the factory's operating rules: the Jig Protocol | Shipped: [the Jig Protocol](../plugin/protocol/README.md), rendered at `/protocol/` |
 
 The first rows explain the work-item outcome; the features page links to
 them instead of retelling pickup and unattended operation as separate

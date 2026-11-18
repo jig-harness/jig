@@ -17,12 +17,14 @@ import {
   type NeedAct,
 } from "../../plugin/shared/acts.ts";
 import { uniqueLogins } from "../../plugin/shared/forge-logins.ts";
+import { refusedRepos } from "../../plugin/dispatch/lib/line-unread.ts";
 import { answerStateWords } from "../../plugin/shared/decision-card.ts";
 import { ago, clock, plural } from "./format.ts";
 import type { EveryoneAnswerState } from "./icons.ts";
 import { type DecisionRow, decisionRows } from "./picking.ts";
 import { noLinkText } from "./links.ts";
 import { itemWords, trackerOf, type Tracker } from "./tracker-name.ts";
+import { type SendTarget, sendTargetOf } from "./send-target.ts";
 import { ROLES, type Role } from "./status.ts";
 import {
   type Clock,
@@ -47,6 +49,13 @@ export interface NeedView {
   /** The steps for a person, as a checklist in the fold. */
   steps: string[];
   /** What the answers that keep a decision waiting say, one line per decision that has any, with the state they leave it in. */
+  acted: Array<{
+    key: string;
+    option: string;
+    author: string;
+    outcome: "done" | "refused" | "held" | null;
+    detail: string | null;
+  }>;
   answerNotes: Array<{ state: EveryoneAnswerState; text: string }>;
   /** Who it waits on, as the parks name them; empty when no record names anyone. */
   people: string[];
@@ -62,6 +71,8 @@ export interface NeedView {
   recorded: string;
   classNote: string;
   question: string | null;
+  /** What the run the need is about concluded, from its closing report, beside the question as context; `null` without one. */
+  concluded: string | null;
   recommendation: string | null;
   /** The whole decision as Markdown; `null` when the record holds none. */
   decision: string | null;
@@ -73,6 +84,8 @@ export interface NeedView {
   answerKeys: string[];
   /** One row per decision, oldest first, each picked on its own. */
   rows: DecisionRow[];
+  /** Where the card's Send posts its answers, or why it has none (`send-target.ts`). */
+  send: { to: SendTarget } | { absent: string };
   /** What Copy key takes when there is no link. */
   keyText: string | null;
   foldLabel: string;
@@ -108,14 +121,20 @@ function noLinkOf(n: LineNeed, tracker: Tracker): string | null {
 /** Each decision's waiting answers in words, named by its key when the need has several. */
 function answerNotes(decisions: LineDecision[]): NeedView["answerNotes"] {
   return decisions.flatMap((d) => {
+    const prefix = decisions.length > 1 ? `${d.key}: ` : "";
+    const notes: NeedView["answerNotes"] = [];
     const said = answerStateWords(d.answerState, d.answers ?? []);
-    if (said === null) return [];
-    return [
-      {
+    if (said !== null)
+      notes.push({
         state: d.answerState ?? "waiting",
-        text: decisions.length > 1 ? `${d.key}: ${said}` : said,
-      },
-    ];
+        text: `${prefix}${said}`,
+      });
+    if (d.unread !== undefined)
+      notes.push({
+        state: "waiting",
+        text: `${prefix}Answers not read, so it still waits: ${d.unread}`,
+      });
+    return notes;
   });
 }
 
@@ -145,8 +164,10 @@ function needEvidence(
       k: "notified",
       v:
         n.notified.at === null
-          ? n.notified.outcome
-          : `${clock(Date.parse(n.notified.at), timeZone)}${to}`,
+          ? n.notified.detail === undefined
+            ? n.notified.outcome
+            : `${n.notified.outcome}: ${n.notified.detail}`
+          : `${clock(Date.parse(n.notified.at), timeZone)}${to}${n.notified.detail === undefined ? "" : `; now ${n.notified.outcome}: ${n.notified.detail}`}`,
     });
   }
   if (n.stuckRecord != null) {
@@ -163,6 +184,44 @@ function needEvidence(
   return rows;
 }
 
+/** The card's note on the decision it leads with: its class, when named, and its kind. */
+function classNoteOf(first: LineDecision | undefined): string {
+  if (first === undefined) return "";
+  const named = first.decisionClass ?? null;
+  return `${named === null ? "" : `, class ${named}`}, ${first.kind}`;
+}
+
+/** The recommendation in words; a record whose recommended option reads in full shows that option instead. */
+function recommendationLine(
+  first: LineDecision | undefined,
+  recommended: NeedView["recommended"],
+): string | null {
+  const recommendation = first?.recommendation ?? null;
+  return recommendation === null || recommended !== null
+    ? null
+    : `Recommended: ${recommendation}`;
+}
+
+/** The destination the station's reader names, checked against its link. */
+function sendFor(n: LineNeed, rows: DecisionRow[]): NeedView["send"] {
+  const answer = n.decisions[0]?.answer;
+  return sendTargetOf({
+    repo: n.repo,
+    pr: n.pr,
+    url: n.url,
+    target: n.target,
+    parked: n.cause === "parked" && rows.length > 0,
+    ...(answer === undefined
+      ? {}
+      : {
+          answerOn: answer.on,
+          ...(answer.repository === undefined
+            ? {}
+            : { answerRepository: answer.repository }),
+        }),
+  });
+}
+
 /** One need as its row shows it. */
 export function needView(
   n: LineNeed,
@@ -172,12 +231,11 @@ export function needView(
   const first = n.decisions[0];
   // A park's question is its first decision's; a follow-up's is the line it stopped on.
   const question = first?.question ?? n.question ?? null;
-  const recommendation = first?.recommendation ?? null;
   const decision = decisionText(n.decisions);
-  const named = first?.decisionClass ?? null;
   // The card leads with the oldest decision's options; the steps of every open decision go in its fold.
   const options = first?.options ?? [];
   const recommended = options.find((o) => o.recommended) ?? null;
+  const rows = decisionRows(n.decisions);
   return {
     rowKey: `${n.repo} ${n.target} ${n.cause}`,
     act: needAct(n),
@@ -185,6 +243,9 @@ export function needView(
     otherOptions: options.filter((o) => o !== recommended),
     steps: [...new Set(n.decisions.flatMap((d) => d.steps ?? []))],
     answerNotes: answerNotes(n.decisions),
+    acted: n.decisions.flatMap((d) =>
+      d.acted == null ? [] : [{ key: d.key, ...d.acted }],
+    ),
     people: needPeople(n),
     target: n.target,
     title: n.title,
@@ -194,22 +255,17 @@ export function needView(
     role: ROLES.needs,
     cause: n.cause,
     recorded: recordedWord(n, tracker),
-    classNote:
-      first === undefined
-        ? ""
-        : `${named === null ? "" : `, class ${named}`}, ${first.kind}`,
+    classNote: classNoteOf(first),
     question: question ?? n.reason,
-    // A record whose recommended option reads in full shows that option instead.
-    recommendation:
-      recommendation === null || recommended !== null
-        ? null
-        : `Recommended: ${recommendation}`,
+    concluded: n.concluded ?? null,
+    recommendation: recommendationLine(first, recommended),
     decision,
     url: n.url,
     noLink: noLinkOf(n, tracker),
     ...(n.links === undefined ? {} : { links: n.links }),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
-    rows: decisionRows(n.decisions),
+    rows,
+    send: sendFor(n, rows),
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
     evidence: needEvidence(n, question !== null, clockNow.timeZone),
@@ -296,7 +352,9 @@ export function needCount(line: LineSnapshot | null, nowMs: number): number {
 export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (
     line !== null &&
-    (line.needs.length > 0 || notMoving(line, nowMs).length > 0)
+    (line.needs.length > 0 ||
+      (line.answeredHolds?.length ?? 0) > 0 ||
+      notMoving(line, nowMs).length > 0)
   );
 }
 
@@ -332,6 +390,7 @@ export function answerBand(
   const needs = orderedNeeds(line.needs);
   const first = needs[0];
   const tickClock = clock(Date.parse(line.startedAt), timeZone);
+  const unread = unreadText(line, timeZone);
   if (first !== undefined) {
     const oldest = Math.min(...needs.map((n) => Date.parse(n.since)));
     const stuckText =
@@ -342,14 +401,36 @@ export function answerBand(
         : needs.length === 1
           ? "1 needs a person."
           : `${needs.length} need a person.`,
-      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first, trackerOf(line, first.repo))}.`,
+      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first, trackerOf(line, first.repo))}.${unread === null ? "" : ` ${unread}`}`,
       loud: true,
     };
   }
-  return quietBand(line, nowMs, { moving, stuck, tickClock, pastTense });
+  return quietBand(line, nowMs, {
+    moving,
+    stuck,
+    tickClock,
+    pastTense,
+    unread,
+  });
 }
 
-/** The answer when no need is open: sessions not moving still count, and a quiet line says what runs and what waits. */
+/**
+ * The repositories whose newest read was refused, as `jig ask --waiting`
+ * names them, each with the tick its part is from: `1 repository not read:
+ * acme/web, as of 15:00.`; `null` when the line read every one.
+ */
+function unreadText(line: LineSnapshot, timeZone: string): string | null {
+  const unread = refusedRepos(line);
+  if (unread.length === 0) return null;
+  const each = unread.map((r) =>
+    r.readAt === null
+      ? `${r.repo}, never read`
+      : `${r.repo}, as of ${clock(Date.parse(r.readAt), timeZone)}`,
+  );
+  return `${plural(unread.length, "repository", "repositories")} not read: ${each.join("; ")}.`;
+}
+
+/** The answer when no need is open: sessions not moving still count, a repository not read is named, and a quiet line says what runs and what waits. */
 function quietBand(
   line: LineSnapshot,
   nowMs: number,
@@ -358,9 +439,10 @@ function quietBand(
     stuck: number;
     tickClock: string;
     pastTense: boolean;
+    unread: string | null;
   },
 ): AnswerView {
-  const { moving, stuck, tickClock, pastTense } = facts;
+  const { moving, stuck, tickClock, pastTense, unread } = facts;
   const walled = line.accounts.filter((a) => wallIsUp(a, nowMs)).length;
   const wallText =
     walled > 0 ? `; ${plural(walled, "account")} behind a wall` : "";
@@ -368,19 +450,30 @@ function quietBand(
     line.queue.length > 0
       ? `${plural(line.queue.length, "item")} queued`
       : "queue empty";
+  const unreadLead = unread === null ? "" : `${unread} `;
+  const sub = `${unreadLead}${plural(moving, "session")} working${wallText}; ${queueText}.`;
   if (stuck > 0)
     return {
       title: pastTense
         ? `${plural(stuck, "session")} not moving at the ${tickClock} tick.`
         : `${plural(stuck, "session")} not moving.`,
-      sub: `${plural(moving, "session")} working${wallText}; ${queueText}.`,
+      sub,
+      loud: true,
+    };
+  // A repository the line could not read may hold a need it cannot show, so the answer does not say nothing does.
+  if (unread !== null)
+    return {
+      title: pastTense
+        ? `Nothing needed a person in what the ${tickClock} tick read.`
+        : "Nothing needs a person in what was read.",
+      sub,
       loud: true,
     };
   return {
     title: pastTense
       ? `Nothing needed a person at the ${tickClock} tick.`
       : "Nothing needs a person.",
-    sub: `${plural(moving, "session")} working${wallText}; ${queueText}.`,
+    sub,
     loud: false,
   };
 }

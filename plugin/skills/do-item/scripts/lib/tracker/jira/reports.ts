@@ -28,7 +28,8 @@ import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { TrackerRequestError } from "../port.ts";
 import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
-import { dispatchSource } from "./dispatch-source.ts";
+import { commentAuthor, commentUrl } from "./comments.ts";
+import { DISPATCH_FIELDS, dispatchSource } from "./dispatch-source.ts";
 import type { JiraFacetStores } from "./facets.ts";
 import { type JiraIssue, parseIssue, stateInputOf, record } from "./read.ts";
 import {
@@ -382,6 +383,7 @@ export function reportOperations(
         client.site,
         await client.fieldLabels(signal),
         await client.facetFields(signal),
+        DISPATCH_FIELDS,
       );
       return poolOf(
         issue,
@@ -486,16 +488,19 @@ export function reportOperations(
       return out;
     },
 
-    async issueComments(key) {
+    async issueComments(key, signal) {
       requireOwnKey(key);
-      const issue = await client.mustIssue(key);
+      const issue = await client.mustIssue(key, signal);
       const comments = [];
-      for (const c of await client.comments(issue.key))
+      for (const c of await client.comments(issue.key, signal))
         comments.push({
           id: c.id,
           body: c.body,
           createdAt: c.createdAt,
-          trusted: await client.trusted(c.author),
+          trusted: await client.trusted(c.author, signal),
+          author: commentAuthor(c.author),
+          url: commentUrl(client.site, issue.key, c.id),
+          editedAt: c.editedAt,
         });
       return { uuid: issue.id, comments };
     },

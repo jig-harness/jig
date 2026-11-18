@@ -43,6 +43,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import {
   cachedRepoView,
   checkSignalsUnchanged,
@@ -52,6 +53,8 @@ import {
   readPrLiveness,
   resetProbeBaselines,
 } from "../gh-conditional.ts";
+import { CACHE_RETENTION_MS } from "../gh-cache-storage.ts";
+import { currentMs } from "../time.ts";
 
 function runScratch(
   command: string,
@@ -248,11 +251,34 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     expect(first).toMatchObject({ ok: true, changed: true });
     expect(conditionalCalls()).toHaveLength(0);
 
-    const second = await ghConditionalGet(PULL);
+    const events: CallRecord[] = [];
+    const second = await withLedgerWriter(
+      (event) => events.push(event),
+      () => ghConditionalGet(PULL),
+    );
     // The 304 arrives with exit 1 from the real CLI; it is a hit, not a failure.
     expect(second).toMatchObject({ ok: true, changed: false });
     expect(second.ok && second.body).toBe(first.ok ? first.body : "x");
     expect(conditionalCalls()).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      requests: 1,
+      cost: 0,
+      estimated: false,
+      failure: null,
+    });
+  });
+
+  it("never hands one credential's cached answer to another, even of the same user", async () => {
+    serve(PULL, pull("open", false, SHA));
+    const one = { ...process.env, GH_TOKEN: "first-token" };
+    const two = { ...process.env, GH_TOKEN: "second-token" };
+    await ghConditionalGet(PULL, { env: one });
+    const other = await ghConditionalGet(PULL, { env: two });
+    // The second credential read unconditionally: no ETag of the first's.
+    expect(other).toMatchObject({ ok: true, changed: true });
+    expect(conditionalCalls()).toHaveLength(0);
+    expect(entryFiles()).toHaveLength(2);
   });
 
   it("returns the new body and re-arms the ETag when the resource changed", async () => {
@@ -376,6 +402,41 @@ describe.skipIf(process.platform === "win32")("ghConditionalGet", () => {
     for (const f of entryFiles()) {
       expect(statSync(join(cacheDir, f)).mode & 0o077).toBe(0);
     }
+  });
+
+  it("does not reuse cached GitHub responses after their retention age", async () => {
+    serve(PULL, pull("open", false, SHA));
+    await ghConditionalGet(PULL);
+    const [entry = ""] = entryFiles();
+    expect(entry).not.toBe("");
+    const file = join(cacheDir, entry);
+    const retainedAt = statSync(file).mtimeMs;
+
+    // Revalidation updates recency for eviction, but response retention is
+    // measured from when the response was written, not its last reuse.
+    await ghConditionalGet(PULL);
+    expect(Math.floor(statSync(file).mtimeMs)).toBe(Math.floor(retainedAt));
+
+    const expired = new Date(currentMs() - CACHE_RETENTION_MS - 1_000);
+    utimesSync(file, expired, expired);
+
+    await ghConditionalGet(PULL);
+    // An expired entry is removed before the request, so it cannot supply an
+    // ETag or response body to the new read.
+    expect(conditionalCalls()).toHaveLength(1);
+  });
+
+  it("expires quiet cache entries while another entry is read", async () => {
+    serve(PULL, pull("open", false, SHA));
+    await ghConditionalGet(PULL);
+    const quiet = join(cacheDir, `${"f".repeat(40)}.json`);
+    writeFileSync(quiet, JSON.stringify({ path: "quiet" }));
+    const expired = new Date(currentMs() - CACHE_RETENTION_MS - 1_000);
+    utimesSync(quiet, expired, expired);
+
+    await ghConditionalGet(PULL);
+
+    expect(existsSync(quiet)).toBe(false);
   });
 
   it("prunes the oldest entries once the directory outgrows its bound", async () => {
@@ -678,6 +739,18 @@ describe.skipIf(process.platform === "win32")("cachedRepoView", () => {
     await cachedRepoView(ARGS, {
       cwd: repoA,
       env: { ...process.env, GH_REPO: "other/thing" },
+    });
+    expect(viewCalls()).toHaveLength(2);
+  });
+
+  it("keys on the credential the gh call sends", async () => {
+    await cachedRepoView(ARGS, {
+      cwd: repoA,
+      env: { ...process.env, GH_TOKEN: "first-token" },
+    });
+    await cachedRepoView(ARGS, {
+      cwd: repoA,
+      env: { ...process.env, GH_TOKEN: "second-token" },
     });
     expect(viewCalls()).toHaveLength(2);
   });

@@ -18,7 +18,7 @@ at each stage, is
 
 | Stage | Owner | Hands on | Detail |
 |-------|-------|----------|--------|
-| steer | [the plan](../design/plan.md), with the proposals of `/jig:audit` and `/jig:review-reflections` | a ranked list of open work | [design/README.md](../design/README.md) |
+| steer | [the plan](../design/plan.md), with the proposals of `/jig:audit` and `/jig:review-reflections`; `/jig:priorities` keeps the priorities record and the host's lane weights the dispatcher ranks its shortlist from | a ranked list of open work | [design/README.md](../design/README.md), [priorities](../plugin/skills/priorities/README.md) |
 | shape a topic | `/jig:orchestrate` | recorded decisions, a reviewed plan when work spans several pull requests, and started issues | [orchestrate](../plugin/skills/orchestrate/README.md) |
 | spec | [the design skeleton](../design/README.md#starting-a-design), `/jig:explain`, `/jig:decide`, `/jig:adr`, `/jig:red-team` and `/jig:design-brief-builder` | a reviewed design and the decision records it settles | [M6](../modules/M6-feature-delivery-pipeline/README.md), [M5](../modules/M5-adr-practice/README.md) |
 | file | `/jig:file-issue` | a labelled tracker issue | [M9](../modules/M9-tasks-memory/README.md) |
@@ -30,7 +30,7 @@ at each stage, is
 | draft and drive | `/jig:do-item` opens the pull request, `/jig:drive-pr` drives it | a draft pull request with its review loop armed | [CONTRIBUTING.md](../CONTRIBUTING.md#pull-request-lifecycle) |
 | review rounds | `/jig:resolve-review-comments` and `/jig:resolve-conflicts`, run by the drive; `/jig:fix-ci` when a person repairs a red run by hand | every thread resolved with a declared outcome, and green required checks | [drive-pr](../plugin/skills/drive-pr/README.md) |
 | merge | a person; an agent never merges ([ADR-0003](adr/ADR-0003-a-person-merges.md)) | the merged commit | [M7](../modules/M7-pr-lifecycle-review/README.md) |
-| post-merge | `/followup`, by hand or started by the dispatcher; either claims the merge with a marker comment first, so one run settles it | a settled tracker item, filed deferred findings, the release tag and settled active scaffolding; routine local leftovers wait for periodic cleanup | [followup](../.claude/skills/followup/SKILL.md) |
+| post-merge | `/jig:followup`, what any repository runs, by hand or started by the dispatcher; Jig itself runs its own `/followup`, which adds its website, status-page and consumer-repository arms; either claims the merge with a marker comment first, so one run settles it | a settled tracker item and epic, filed deferred findings and out-of-tree steps, the release tag, settled scaffolding and live verification, and the next step; routine local leftovers wait for periodic cleanup | [followup](../plugin/skills/followup/README.md), [Jig's followup](../.claude/skills/followup/SKILL.md) |
 | ops drain | `/followup`, which also brings the website and the status pages up to date and files the consumer repositories' work in their trackers; Jig keeps no separate ledger of out-of-tree work | every out-of-tree action the merge owed, done or filed with its owner | [followup](../.claude/skills/followup/SKILL.md) |
 | epic close | `/jig:do-item` on the epic, once its sub-issues are settled | an epic closed on an accepted verdict, its tails handed off | [M9](../modules/M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict) |
 

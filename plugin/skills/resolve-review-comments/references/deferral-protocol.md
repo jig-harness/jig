@@ -6,8 +6,8 @@ request**. Consumer values are declared in the repository's
 and `review.taxonomy` determine where issues go and which labels apply. The
 `pr-followup` and `epic` labels named below are the defaults of the `followup`
 and `epic` roles in `issue_tracker.labels`; read them as the repository's own
-labels for those roles. The shipped tracker adapter uses Linear; another
-adapter can implement the same find/create/update contract.
+labels for those roles. The scripts use the configured tracker interface
+on GitHub, Linear and Jira, through each adapter's governed transport.
 
 `<skill-dir>` in the commands below is this skill's directory, the parent of
 this `references/` directory. Run the commands from the repository root.
@@ -77,18 +77,14 @@ Once the deferral is decided, the sequence is fixed and ordered:
 
 0. **Prepare the issue workflow.** Load the consumer's tracker integration and
    canonical vocabulary before manual issue work. The shipped `defer-batch.ts`
-   uses the Linear adapter directly because an executable cannot call tools that
-   exist only inside an agent turn. Do not substitute a repository-specific
+   uses the configured tracker adapter because an executable cannot call tools
+   that exist only inside an agent turn. Do not substitute a repository-specific
    tracker command for this maintained batching mechanism.
-1. **File the issue** (see below). By default this is an entry in the
+1. **File the issue** (see below). This is an entry in the
    per-PR+Type **batch** issue — `defer-batch.ts` does the find-or-create and
-   the append (§ [Batching is the default](#batching-is-the-default)). For
-   the justified-individual exception, first check that an issue does not
-   already exist: search open issues for the finding's subject **and** walk
-   the originating issue's tracker relations (`blocks`/`blocked by`/related) —
-   scope-widening findings are often already tracked by a neighbouring
-   ticket, and a duplicate splits the audit trail. If found, reply with the
-   existing issue's link instead of filing.
+   the append (§ [Batching is the default](#batching-is-the-default)). Search
+   the originating issue's tracker relations for an issue already carrying
+   the finding before filing; reuse that issue's link when it exists.
 2. **Reply on the thread**, opening with the `**deferred**` outcome token, then
    the reason and the issue link:
 
@@ -106,25 +102,19 @@ tracking, and an orphaned open thread means continuous mode never converges.
 ## Batching is the default
 
 One PR's review rounds produce several deferrals; separate single-sentence
-issues fragment prioritisation and bury obligatory work. By default every
-deferral lands in the per-PR+Type batch issue. An individual issue is the
-exception, taken only when the round report records why:
-
-- the finding needs its **own design decision** (a batch entry that grows a
-  discussion is split out the same way);
-- its fix sizes **above `small`**;
-- it belongs to a **different owner or domain** than the rest of the batch.
-
-No justification in the round report, no individual issue.
+issues fragment prioritisation and bury obligatory work. Every deferral
+lands in the per-PR+Type backlog batch issue on every supported tracker.
+A batch entry may later become its own planned work; filing the deferral
+itself does not add scope to the originating epic.
 
 The batch key and contract:
 
-- **One batch issue per repository, PR and Type**, keyed on a marker the
-  helper writes as the **first line** of the issue's description:
-
-  ```markdown
-  <!-- defer-batch-key: repo=project pr=4374 type=bug -->
-  ```
+- **One batch issue per repository, PR and Type**, keyed on the
+  `deferred-batch` marker in the
+  [hidden comment markers chapter](../../../protocol/comment-markers.md#the-kinds-that-carry-markers).
+  The helper writes it as the **first line** of the issue's description,
+  with payload `repo=<repository> pr=<number> type=<type>`; that key is how
+  the helper finds the batch again.
 
   The rest of the description lists every batched finding: the thread URL, the
   reviewer's finding quoted, and the deferral reason — each entry
@@ -144,11 +134,12 @@ The batch key and contract:
 - **Why per repository**: the key carries the repository because consumers
   share one tracker workspace and pull-request numbers collide across them, so
   another repository's batch for the same PR number and Type does not match
-  the key. The label and the key must agree — a batch whose Repo or Type label contradicts its own marker is
-  refused rather than silently restamped. Because both are embedded in a
-  one-line HTML comment, a Repo or Type label declared in `review.taxonomy`
-  must be free of whitespace and of anything that could open or close a
-  comment; the helper refuses such a label before writing anything.
+  the key. The repository component is `review.repo_label` (or
+  `--repo-label`) when supplied, otherwise the repository slug. The issue's
+  type facet must agree with its marker; a contradictory type is refused
+  rather than silently restamped. Repository and type components embedded
+  in the marker must be free of whitespace and of anything that could open
+  or close an HTML comment; the helper refuses an unsafe key before writing.
 - **One batch issue per key means across all rounds**, and rounds arrive per
   push — the helper below finds the existing open batch under the key before
   creating one. A second issue under the same key recreates exactly the
@@ -157,15 +148,14 @@ The batch key and contract:
   key lives there, so a wiped description — or an edited marker — makes the
   batch unfindable and the next round files a fresh one under a key nothing
   can match. Edit prose and entries freely; leave that one line
-  byte-for-byte. (A writer that blanks the description or drops the marker
-  *while* the helper is mid-append is repaired automatically: the helper
-  puts the marker back before confirming the append. A marker replaced by a
-  different batch's key is refused instead, for a person to settle.)
+  byte-for-byte. If the marker is removed or changed while appending, the
+  helper refuses to confirm the deferral. Restore the original key and rerun
+  before resolving the thread.
 - Each deferred thread's reply links whichever issue carries it — several
   threads may link the same batch issue.
 
-The mechanized path — find-or-create under the key, correct labels and parent
-applied, idempotent append, and it prints the link for the `**deferred**`
+The mechanized path — find-or-create under the key, correct facets, labels
+and related links applied, idempotent append, and it prints the link for the `**deferred**`
 reply:
 
 ```bash
@@ -185,9 +175,8 @@ file-writing tool. The wrapper reads that file and supplies literal standard
 input to the helper; reviewer text is never shell source. The append is idempotent on
 the inline thread URL, or on the sticky comment plus fingerprint for a
 summary-only finding, so a crashed round re-runs safely and multiple findings
-in one sticky comment remain distinct. `--no-parent` covers the
-domain-mismatch judgment under [Parent](#parent); `--dry-run` previews without
-writing.
+in one sticky comment remain distinct. `--dry-run` previews without
+writing. Follow-ups never receive a parent.
 
 `--severity` is **required**: silently discarding severity creates follow-ups
 without actionable priority. Pass the reviewer's own severity marker, or
@@ -204,25 +193,26 @@ one is passed, but still files it, at Urgent priority. `--category` is
 **also required**, mirroring `triage-ladder.ts`'s own requirement (step 3 of
 [the procedure](../SKILL.md)): an omitted flag is indistinguishable from an explicit
 `unknown` and could silently discard a real parsed value the caller already
-computed. It is recorded in the entry text only — pass the same value fed to
+computed. The batch category is the union of its findings' areas, also
+recorded in the entry text — pass the same value fed to
 the `--category` option of `triage-ladder.ts` (`unknown` when the reviewer emits no
 `🏷️ category:` tag).
 
-The batch issue follows every rule below (labels, parent, description fields)
-exactly as an individual follow-up would — the helper applies them
-mechanically; batching changes the issue count, never the contract.
+The batch issue follows every rule below (labels, links, description fields)
+for every finding — the helper applies them mechanically; batching changes
+the issue count, never the contract.
 
 ## Deferral without a tracker
 
-The batch step files on Linear only, until the deferral moves onto the tracker
-interface. Before step 1, ask where this deferral goes:
+The batch step files through the configured tracker interface. Before step 1,
+read where this deferral goes:
 
 ```bash
 bun "<skill-dir>/scripts/defer-in-pr.ts" route
 ```
 
 `defer-batch` means step 1 files as above. `pr-body: <why>` (the
-repository's adapter is another, or no Linear credential is set) means record
+configured adapter cannot file) means record
 the finding in the pull request's own `## Deferred` section instead, at every
 autonomy level. Write the reviewer's finding verbatim to `finding.txt` with
 the file-writing tool, then:
@@ -252,11 +242,13 @@ and linking the section, and resolve:
 ```
 
 The entries are filed later, where an adapter can: `file-deferred.ts`
-files each through the tracker interface (`issue_tracker.adapter`) with the
+groups entries by pull request and type through the tracker interface
+(`issue_tracker.adapter`), appending to the open batch for that key or filing
+one when none exists, with the
 `followup` role's label and every facet the tracker keeps: the type the entry
-records, the priority its severity maps to (`unknown` as medium) and the
-size it names, else `small`. The issue's description carries the severity
-and the category. Where the repository's label taxonomy requires a group
+records, the highest priority its findings' severities map to (`unknown` as
+medium), their union of categories, and the size, else `small`. The issue's
+description carries every finding's severity and category. Where the repository's label taxonomy requires a group
 beyond the size (a `repo` group, say), it adds that group's label from the
 change-area catalog (`drive.change_areas_catalog`): the tracker labels of the
 areas whose own globs match the file the review thread is on, never the
@@ -314,7 +306,7 @@ reviewer found it in a PR and we chose not to fix it there". It is persistent �
 it stays applied after the follow-up ships, because it permanently records where
 the issue came from.
 
-Type is chosen from the finding, not from the parent. A deferred correctness
+Type is chosen from the finding, not from the originating issue. A deferred correctness
 finding is a `bug` even when the PR that surfaced it was a `feature`. A batch
 issue's Type comes from its batched findings, which must all share it — that
 is why batches are keyed per PR *and* Type (see above).
@@ -325,74 +317,37 @@ each (`issue_tracker.facets`), so the script names no type, size or priority
 label itself. The other required groups' labels come from the change-area
 catalog, as [Deferral without a tracker](#deferral-without-a-tracker) says.
 
-### Parent
+### Links and backlog
 
-Parent the follow-up to **the epic that the originating issue belongs to** —
-that is, the originating issue's own parent.
+A follow-up enters the backlog and is never a child of the originating issue
+or its epic. Add native `related` links to both, using the tracker interface
+as [ADR-0015](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0015-relationships-live-in-the-tracker.md)
+requires. A prose mention is useful context, never a substitute for the
+relation.
 
-**Never parent it to the originating issue itself.** The originating issue is
-about to be closed by the PR that is under review. Hanging live follow-up work
-off an issue that is about to complete strands the child under a done parent,
-and it distorts that issue's scope after the fact: an issue's children should be
-the work it was decomposed into, not work discovered while reviewing it.
+Resolve the nearest epic in the originating issue's parent chain:
 
-Resolve the parent by walking up exactly one level, then stop:
-
-| Originating issue | Parent to use |
+| Originating issue | Related links |
 |---|---|
-| Has a parent epic | That epic |
-| Is itself an epic (carries the `epic` label) | No parent — same project and milestone |
-| Has no parent | No parent — same project and milestone |
-| No linked issue at all (PR has no ticket) | No parent — triage |
+| Has an ancestor epic | Originating issue and the nearest epic |
+| Is itself an epic | That epic |
+| Has no ancestor epic | Originating issue |
+| No linked issue at all | No originating relation; backlog |
 
-Do not walk further up to find a grandparent epic, and do not invent an epic to
-hold the follow-up. One level up or nothing.
+An epic is identified by its configured epic label **or native epic issue
+type**, never merely by having children. A mid-tree grouping can have
+children without being an epic. A cycle or unreadable ancestry cannot prove
+which epic owns the origin; report it rather than guessing a relation. The
+links preserve provenance even when the
+finding concerns a different domain from the epic; they do not add it to the
+epic's designed scope.
 
-**"Is itself an epic" means the `epic` label, not "has children"** — the two
-disagree, and this row picks the label deliberately. Child-bearing is far
-weaker evidence than it reads: most issues with children are mid-tree
-groupings that have a genuine epic parent of their own, so treating a
-non-empty children set as proof files their follow-up parentless and silently
-discards the correct parent this table asks for. The epic label is a
-[flag label](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that exists to answer exactly this question ("this issue is a
-coordination container"), so it is the thing to ask.
-
-The trade, stated because both directions have a real failure mode: under the label rule an epic that nobody
-labelled gets its follow-up parented to the grandparent, which is a **labelling
-defect with a visible fix** — add the flag. Under a children rule an ordinary
-grouping loses a correct parent, which is **silent and unrecoverable** after
-the fact. Prefer the failure that announces itself.
-
-One override on the first row: **the epic must actually share the finding's
-domain.** A finding that has nothing to do with the parent epic's subject — a
-tooling defect surfaced while reviewing a compliance-doc PR, say — does not
-belong under that epic just because the table resolves there. File it
-parentless, and state in the description why: "no epic shares this domain;
-originating issue's epic is <epic> (unrelated)". A topically wrong parent is
-worse than none — it distorts the epic's scope and hides the issue from the
-people who own its real domain.
-
-### What the epic parent means for closing that epic
-
-An epic is complete when its designed scope is delivered, rather than when
-its child count reaches zero. At closure, the consumer's follow-up workflow
-moves surviving review debt into its configured debt destination and preserves
-provenance with a related link and an explanatory comment. This skill files the
-follow-up; it does not close epics or assume a particular debt project.
-
-This does not change the following, each easy to get backwards:
-
-- **New deferrals resolve by the table above, domain-mismatch override
-  included** — not a blanket "always parent to the epic". The sweep runs at
-  closure, not at deferral. Filing a fresh, epic-domain follow-up straight
-  into the debt ledger would lose the epic association the sweep later
-  depends on; a domain-mismatched one is filed parentless either way.
-- **"Designed scope delivered" is a judgement, not a child count.** The sweep
-  will not act on the mechanical check alone: it requires an accepting
-  verdict from the repository's epic acceptance review, or a human waiver
-  recorded on the epic. Sub-issues marked done whose code never landed are a
-  recurring failure, which is why counting them cannot be what authorizes a
-  closure.
+Existing follow-ups are not backfilled. A previously parented `pr-followup`
+is a tail the closure workflow extracts, preserving its related link and an
+explanatory comment. Person-only checks also leave at closure for one
+standing person-checks list. This skill files review debt; it does not close
+epics or move their tails. Closure still requires an accepting verdict on
+designed scope or a person's waiver, never a count of children.
 
 ### Description
 
@@ -406,19 +361,18 @@ reviewable without re-reading the PR:
 - the reviewer's finding, quoted;
 - the finding's **severity** and **category** (`--severity`/`--category`,
   always rendered — see the command above; severity also sets the batch
-  issue's priority, category is recorded as text only);
+  issue's priority, categories are unioned across the batch);
 - why it was deferred rather than fixed in that PR;
 - what a fix would involve, to the extent the round established it.
 
-Also add a **related** link to the originating issue. That is what preserves the
-connection the parent field deliberately does not carry: related, not child.
+Add the native **related** links described above, never a parent.
 
 ## Worked shape
 
 For a finding on a PR that closes an issue whose parent epic is `EPIC-12`:
 
-- **Parent** — `EPIC-12`
-- **Related** — the originating issue
+- **State** — backlog; no parent
+- **Related** — the originating issue and `EPIC-12`
 - **Labels** — Type/Size/Repo/context as usual, plus `pr-followup`
 - **Description** — thread URL, PR, quoted finding, severity, category,
   deferral reason
@@ -429,8 +383,8 @@ For a finding on a PR that closes an issue whose parent epic is `EPIC-12`:
 - Resolving the thread first and filing the issue "after the round" — the round
   ends, the issue is never filed, and the finding is gone with the thread closed.
 - Replying "will follow up" with no link. Unverifiable and untrackable.
-- Parenting to the originating issue. See above; this is the specific mistake
-  this protocol exists to prevent.
+- Parenting to the originating issue or its epic. A deferral preserves
+  provenance through related links and never enlarges their designed scope.
 - Filing under `pr-followup` alone, without the mandatory groups. The flag is
   additive; it does not replace Type/Size/Repo.
 - Deferring to avoid a hard fix. Deferral is a scope judgement, not an escape

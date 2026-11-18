@@ -6,14 +6,14 @@
  * written before the runtime's `launch` and the slot it holds, and the
  * outcome each launch reports.
  */
+import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
+  accountWeightBlock,
   admitRearm,
   admitTakeover,
   checkIdentity,
   type CodexOptIn,
-  hostCodexOptIn,
   type IdentityCheck,
-  type NotAdmitted,
   notAdmitted,
   refreshWalls,
   type Slots,
@@ -44,7 +44,6 @@ import {
   type SessionRuntime,
   tabTitle,
 } from "../runtime/port.ts";
-import { passTimeoutSeconds } from "../../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { holderRefusal } from "../holder-notices.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { retryable } from "../stuck-launches.ts";
@@ -107,29 +106,11 @@ export interface ApplyState {
   /** How many repositories the tick walks, the radix the stages' and targets' turns count in. */
   repos?: number;
   root?: string;
+  weights?: import("../local-weights.ts").AccountWeights | undefined;
   /** The host's gauges as this tick read them under the act lock, and what its launches have reserved of them (`load.ts`). */
   load?: LoadState;
   /** The checks run on an account before a tracker stage launches on it, and their answers this tick (`preflight.ts`). */
   preflight?: Preflight;
-}
-
-/**
- * The machine file's accounts a drive's pass is never admitted on, for the
- * receipt: a vendor with no documented pass command, or a Codex account
- * while the pass deadline this run reads is `0` or the host has not opted in
- * to its bypass.
- */
-export function accountsReport(
-  machine: MachineConfig | null,
-  apply: ApplyState | null,
-): { accountsNotAdmitted?: NotAdmitted[] } {
-  if (machine === null) return {};
-  const refused = notAdmitted(
-    machine.accounts,
-    apply?.passDeadlineSec ?? passTimeoutSeconds(),
-    apply?.codexOptIn ?? hostCodexOptIn(),
-  );
-  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
 }
 
 /**
@@ -654,6 +635,9 @@ export async function accountBlock(
     return blocked(
       `${slots.account.name} no longer has the vendor and directory the launch was recorded with`,
     );
+  const weightBlock = accountWeightBlock(slots);
+  if (weightBlock !== null)
+    return blocked(`${slots.account.name}: ${weightBlock}`);
   if (record.vendor === "codex" && !state.codexOptIn.on)
     return blocked(`${slots.account.name}: ${state.codexOptIn.why}`);
   if (slots.wallUnrecorded)
@@ -724,7 +708,13 @@ async function preflightHolds(
     preflight,
     repo,
     action.stage,
-    accounts.filter((a) => !never.has(a.name)),
+    accounts.filter(
+      (a) =>
+        !never.has(a.name) &&
+        state.table.some(
+          (s) => s.account.name === a.name && (s.weight.configured ?? 0) > 0,
+        ),
+    ),
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
     () => {
       const late = noPreflightRoom(state);
@@ -749,6 +739,7 @@ function admission(
       state.last,
       { kind: "pass", deadlineSec: pickupDeadlineSec, codex },
       excluded,
+      state.records,
     );
   // A follow-up is a headless pass, admitted as a drive's pass is: under the pass deadline it runs under.
   if (action.takeover === undefined)
@@ -757,6 +748,7 @@ function admission(
       state.last,
       { kind: "pass", deadlineSec: state.passDeadlineSec, codex },
       excluded,
+      state.records,
     );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
@@ -896,6 +888,7 @@ export function holdRecord(
   record: LaunchRecord,
   slots: Slots,
 ): void {
+  record.accountLaunchOrdinal = accountLaunchOrdinal(state.records, record) + 1;
   writeRecord(record, state.root);
   if (!sharesSlot(state, record)) slots.held += 1;
   state.records.push({ record, state: { kind: "pending" }, result: null });

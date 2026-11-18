@@ -42,17 +42,18 @@ function decision(
   at: string,
   id = newId(at),
 ): DecisionEvent {
-  return {
-    v: 1,
-    type: "decision",
+  const common = {
+    v: 1 as const,
+    type: "decision" as const,
     id,
     at,
     session: sampleFinding(newId(), "x").session,
     finding,
-    decision: kind,
     reason: "because",
-    ...(kind === "escalated" ? { issue: "ENG-1" } : {}),
   };
+  return kind === "escalated"
+    ? { ...common, decision: kind, issue: "ENG-1" }
+    : { ...common, decision: kind };
 }
 
 function inRepository(

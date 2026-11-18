@@ -17,8 +17,10 @@ import type { MachineConfig } from "./machine-config.ts";
 import type { RepoReflection } from "./reflection-route.ts";
 import type { SessionRuntime } from "./runtime/port.ts";
 import { boundAt, type TickBound } from "./sources/bounded.ts";
+import type { PreparedPriorities } from "./tick-priorities.ts";
 import type { TickReads } from "./tick-reads.ts";
 import type { RepoReport } from "./types.ts";
+import type { WorldView } from "./world-view.ts";
 
 export interface TickOptions {
   repos: string[];
@@ -33,6 +35,14 @@ export interface TickOptions {
   poolSize?: number;
   /** How long the act phase waits for another tick's act lock before it gives up, in milliseconds. */
   actLockWaitMs?: number;
+  /**
+   * What the observe phase reads the forge and the tracker through
+   * (`world-view.ts`), made once for the tick from its direct view: a caller
+   * wraps the direct view, serves from it where it holds nothing, or
+   * replaces it. The direct view when absent. Given by a caller in the same
+   * process, never from the command line or a file.
+   */
+  world?: (direct: WorldView) => WorldView;
 }
 
 /** What one repository's turn needs beyond its path. */
@@ -45,6 +55,7 @@ export interface TickContext {
   /** The tick's one bound, made the first time it is asked for (`tickBound`); absent for a tick no launcher bounds. */
   bound?: TickBound;
   launches: ReadRecord[];
+  weights?: import("./local-weights.ts").AccountWeights | undefined;
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
   lineInputs: Map<string, RepoLineInput>;
@@ -52,10 +63,16 @@ export interface TickContext {
   reflections: RepoReflection[];
   /** The repositories whose launches wait for every repository to be gathered, to be applied in turns. */
   pending: PendingRepository[];
+  /** Each owned repository's priorities inputs, ranked together once every repository is planned (`tick-priorities.ts`). */
+  priorities?: PreparedPriorities[];
   /** The act lock was held when the tick first asked: what serialization read may predate that tick's launches. */
   actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
   reads: TickReads;
+  /** What the observe phase reads the forge and the tracker through (`world-view.ts`); the direct view over `reads` when absent. */
+  world?: WorldView;
+  /** Why runs again of the follow-ups the host failed are held this tick (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
+  rerunsHeld?: string | null;
   /** Each repository's failure ledger book, by `owner/name`, opened by its first action. */
   books?: Map<string, ActionBook>;
   /** The failure ledger's rows for the repositories and the tick were written: a defect after it counts nothing twice. */

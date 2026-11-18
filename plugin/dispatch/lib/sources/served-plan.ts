@@ -1,3 +1,5 @@
+import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
 /** Execution-plan eligibility is shared with interactive pickup; absent merge proof holds a conflict. */
 import {
   eligibleIssues,
@@ -6,6 +8,7 @@ import {
   planContradictions,
   readExecutionPlan,
   type LiveIssue,
+  type ExecutionPlan,
 } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import { failureText } from "../text.ts";
 import { PERSON_HOLD } from "../queue-rank.ts";
@@ -37,6 +40,7 @@ export function servedPlan(
   epic: string,
   live: Record<string, LiveIssue>,
   block?: string,
+  evidence?: { merged: string[]; held: Record<string, string> },
 ): ServedPlan {
   try {
     const plan = readExecutionPlan(description, block);
@@ -77,14 +81,44 @@ export function servedPlan(
             )
           : item.blockedBy,
       };
-    const order = eligibleIssues(plan, inPlan, []);
+    const order = eligibleIssues(plan, inPlan, evidence?.merged ?? []);
     const holds: Record<string, string> = {};
     for (const step of plan.steps)
       if (!order.includes(step.issue))
         holds[step.issue] = "waiting on the epic execution plan";
+    mergeHolds(plan, evidence?.held ?? {}, holds);
     for (const gate of humanGates(plan)) holds[gate.issue] = PERSON_HOLD;
     return { present: true, order, holds };
   } catch (error) {
     return { present: true, order: [], holds: {}, error: failureText(error) };
   }
+}
+
+/** A failed merge proof explains the conflict hold without overriding other plan gates. */
+function mergeHolds(
+  plan: ExecutionPlan,
+  reasons: Record<string, string>,
+  holds: Record<string, string>,
+): void {
+  for (const edge of plan.edges) {
+    const reason = reasons[`${edge.from}>${edge.to}`];
+    if (reason && holds[edge.to]) holds[edge.to] = reason;
+  }
+}
+
+/** Resolve merge proof separately from the child walk's occupancy and selection. */
+export function childMergeEvidence(
+  tracker: Tracker,
+  description: string | null,
+  policy: {
+    executionPlanBlock?: string;
+    mergeEvidence?: PlanMergeReader | undefined;
+  },
+) {
+  return planMergeEvidence(
+    tracker,
+    description ?? "",
+    policy.executionPlanBlock,
+    policy.mergeEvidence,
+  );
 }

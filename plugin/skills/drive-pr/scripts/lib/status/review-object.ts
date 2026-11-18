@@ -20,8 +20,7 @@
  * that run completed, against another commit, makes the head's run stale.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
-import { attempt } from "../../../../../shared/outcome.ts";
-import { ghCall } from "../proc.ts";
+import { readArrayPages } from "../paged-read.ts";
 import { runTitleSays } from "../reviewer-profiles.ts";
 import type { CheckRun } from "./evidence.ts";
 import { parseMs } from "../../../../../shared/time.ts";
@@ -60,20 +59,14 @@ export async function reviewsBy(
   pr: string,
   login: string,
 ): Promise<ReviewObject[] | null> {
-  const r = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
+  // An observation for the verdict and the summary report (`paged-read.ts`).
+  const items = await readArrayPages(
     `repos/${owner}/${repo}/pulls/${pr}/reviews?per_page=100`,
-  ]);
-  if (r.code !== 0) return null;
-  const decoded = attempt("unreadable", "reviews JSON", (): unknown =>
-    JSON.parse(r.stdout),
+    "observed",
   );
-  const pages = decoded.ok ? decoded.value : null;
-  if (!Array.isArray(pages) || !pages.every(Array.isArray)) return null;
+  if (items === null) return null;
   const reviews: ReviewObject[] = [];
-  for (const raw of pages.flat() as unknown[]) {
+  for (const raw of items) {
     const review = reviewOf(raw, login);
     if (review === "malformed") return null;
     if (review !== null) reviews.push(review);

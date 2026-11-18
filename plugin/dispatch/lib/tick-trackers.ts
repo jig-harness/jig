@@ -24,18 +24,33 @@ function trackerFor(opened: OpenedRepo): Tracker {
   return opened.tracker;
 }
 
-/** Whether this tick has room for a pickup; no room allows a young kept reading to serve without a probe. */
-function trackerHeadroom(context: TickContext): boolean {
+/** Whether some account has room for a pickup, by `records`: always without a machine file. */
+export function pickupHeadroom(
+  context: Pick<TickContext, "options" | "nowMs" | "weights">,
+  records: Parameters<typeof slotTable>[1],
+): boolean {
   const machine = context.options.machine;
   return (
     machine == null ||
-    slotTable(machine.accounts, allRecords(context), context.nowMs).some(
+    slotTable(
+      machine.accounts,
+      records,
+      context.nowMs,
+      undefined,
+      context.weights,
+    ).some(
       (slot) =>
         slot.held < slot.account.maxPerAccount &&
         slot.wall === null &&
-        !slot.wallUnrecorded,
+        !slot.wallUnrecorded &&
+        (slot.weight.configured ?? 0) > 0,
     )
   );
+}
+
+/** Whether this tick has room for a pickup; no room allows a young kept reading to serve without a probe. */
+function trackerHeadroom(context: TickContext): boolean {
+  return pickupHeadroom(context, allRecords(context));
 }
 
 /** The native state superset needed by this repository's factory, served queues and claim watch. */

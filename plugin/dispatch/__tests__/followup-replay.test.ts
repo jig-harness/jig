@@ -153,7 +153,7 @@ describe("a follow-up whose launch never ran after its marker was posted", () =>
     expect(recordIds(w)).toEqual([]);
   });
 
-  it("waits, and is not marked never replayable, while the repository sets no follow-up command", async () => {
+  it("is launched again with the command it was launched with once the repository names none and the stage runs the default", async () => {
     const w = fixture();
     const record = await stoppedBeforeTheAnswer(w);
     w.setConfig(FOLLOWUP_CONFIG.replace("  followup_command: /followup\n", ""));
@@ -162,14 +162,18 @@ describe("a follow-up whose launch never ran after its marker was posted", () =>
     expect(launches(next)).toEqual([
       expect.objectContaining({
         target: "PR #9",
-        outcome: "waits",
+        outcome: "retried",
         record: record.id,
-        detail: expect.stringContaining("dispatch.followup_command"),
       }),
     ]);
-    expect(claudeRuns(w)).toEqual([]);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    const prompt = claudeRuns(w)[0]?.argv.at(-1) ?? "";
+    expect(prompt).toContain("/followup 9");
+    expect(prompt).not.toContain("/jig:followup");
     expect(
       readRecord(record.id, dispatchState(w))?.noReplay ?? null,
     ).toBeNull();
+    writeFileSync(join(w.dir, "claude-exit"), "");
+    await waitFor("the exit", () => exitWritten(w, record.id));
   });
 });

@@ -30,12 +30,7 @@ import {
   recordKey,
 } from "../lib/notice-records.ts";
 import type { SessionRuntime, Workspace } from "../lib/runtime/port.ts";
-import {
-  closeStateDb,
-  SCHEMA_VERSION,
-  stateDb,
-  statePath,
-} from "../lib/state.ts";
+import { closeStateDb, MIGRATIONS, stateDb, statePath } from "../lib/state.ts";
 import type { Action, RepoReport, RepoTarget } from "../lib/types.ts";
 
 const SLUG = "example-org/example-repo";
@@ -282,8 +277,19 @@ describe("the `channel` column", () => {
     roots.push(root);
     stateDb(root);
     closeStateDb(root);
-    const before = SCHEMA_VERSION - 2;
+    // The version just before the channel column's migration; later migrations are undone too.
+    const before = MIGRATIONS.findIndex((m) =>
+      m.sql.includes("ADD COLUMN channel"),
+    );
     const old = new Database(statePath(root));
+    old.run("DROP TABLE merge_facts");
+    old.run("DROP TABLE allocation_charge");
+    old.run("DROP TABLE allocation_week");
+    old.run("DROP TABLE allocation_lane_epoch");
+    old.run("DROP TABLE allocation_ranking");
+    old.run("ALTER TABLE launches DROP COLUMN sessions");
+    old.run("ALTER TABLE launches DROP COLUMN result_wait");
+    old.run("DROP INDEX steward_records_run_effect");
     old.run("DROP INDEX notices_channel_key");
     old.run("ALTER TABLE notices DROP COLUMN channel");
     old.run(`PRAGMA user_version = ${before}`);
@@ -451,7 +457,8 @@ describe("a channel's answers", () => {
 describe("a delivery that outlasts its time", () => {
   it("has stopped by the time its batch is answered lost", async () => {
     const h = host();
-    h.state.machine.runtimeTimeoutMs = 20;
+    h.state.machine.runtimeTimeoutMs = 10;
+    h.state.machine.workspaceTimeoutMs = 0;
     const slow = fakeChannel("slow");
     let stopped = false;
     slow.deliver = async (_due, time) => {
@@ -473,7 +480,8 @@ describe("a delivery that outlasts its time", () => {
 describe("a delivery that settles while it is being cancelled", () => {
   it("keeps the receipt it returns", async () => {
     const h = host();
-    h.state.machine.runtimeTimeoutMs = 20;
+    h.state.machine.runtimeTimeoutMs = 10;
+    h.state.machine.workspaceTimeoutMs = 0;
     const slow = fakeChannel("slow");
     slow.deliver = async (due, time) => {
       await new Promise<void>((resolve) =>

@@ -4,11 +4,18 @@ import { isRecord } from "../../../../../../shared/guards.ts";
 import { credentialKey } from "../../../../../../shared/outbound/budget.ts";
 import type { CorePoolIssue, CoreTracker } from "../facets/tracker.ts";
 import { readSignal, refuseStopped } from "../facets/bounds.ts";
-import type { FacetReadOptions, DispatchRawIssue } from "../port.ts";
+import type {
+  FacetReadOptions,
+  DispatchRawIssue,
+  IssueRelation,
+} from "../port.ts";
 import { demandOf } from "../dispatch-source.ts";
 import type { Client } from "./client.ts";
 import { issueFields, onePage, record, str } from "./read.ts";
 import { credentialToken, GitHubApiError, pageAll } from "./transport.ts";
+import { issueBatch } from "./dispatch-reads.ts";
+import { assignmentActor, canWrite } from "./assigner.ts";
+import { keyOf, repoOf, type Repo } from "./refs.ts";
 
 const FIELD_NODES = `nodes {
   __typename
@@ -39,7 +46,87 @@ function fieldsOf(requirements: ReadonlySet<string>): string {
     ${requirements.has("issue-type") ? "issueType { name }" : ""}
     ${requirements.has("issue-fields") ? `issueFieldValues(first: 25) { pageInfo { hasNextPage } ${FIELD_NODES} }` : ""}
     ${board}
-    subIssues(first: 100) { pageInfo { hasNextPage } nodes { state } }`;
+    subIssues(first: 100) { pageInfo { hasNextPage } nodes { state } }
+    ${DEPENDENCIES}`;
+}
+
+/** The dependency links dispatch acts on, carried with each row; a longer list is read on its own. */
+const LINKS = 25;
+const DEPENDENCIES = ["blockedBy", "blocking"]
+  .map(
+    (field) =>
+      `${field}(first: ${LINKS}) { pageInfo { hasNextPage } nodes { number repository { nameWithOwner } } }`,
+  )
+  .join("\n    ");
+
+/**
+ * The key of an issue a row links to (`number repository { nameWithOwner }`);
+ * `null` when its number is not a positive whole number, so the link is read
+ * on its own rather than named by a key that names no issue.
+ */
+function linkKey(value: unknown, where: string, home: Repo): string | null {
+  const link = record(value, where);
+  const number = link.number;
+  if (typeof number !== "number" || !Number.isSafeInteger(number) || number < 1)
+    return null;
+  const repository = record(link.repository, `${where}.repository`);
+  return keyOf(
+    {
+      ...repoOf(
+        str(repository.nameWithOwner, `${where}.repository.nameWithOwner`),
+      ),
+      number,
+    },
+    home,
+  );
+}
+
+/** One dependency list of a row as relations; `null` when the row does not carry it whole and well formed. */
+function links(
+  value: Record<string, unknown>,
+  field: "blockedBy" | "blocking",
+  home: Repo,
+): IssueRelation[] | null {
+  const list = value[field];
+  if (!isRecord(list) || !Array.isArray(list.nodes)) return null;
+  if (!isRecord(list.pageInfo) || list.pageInfo.hasNextPage !== false)
+    return null;
+  const keys = list.nodes.map((node) =>
+    linkKey(node, `dispatch issue.${field}`, home),
+  );
+  if (!keys.every((key): key is string => key !== null)) return null;
+  return keys.map((issue) => ({
+    type: field === "blockedBy" ? "blocked_by" : "blocks",
+    issue,
+  }));
+}
+
+/**
+ * The dependency links a row carries (`blocked_by`, `blocks`), the only
+ * relations dispatch acts on; `null` for a row read without them, or with
+ * more than one page of either.
+ */
+function rowDependencies(
+  value: Record<string, unknown>,
+  home: Repo,
+): IssueRelation[] | null {
+  const blockedBy = links(value, "blockedBy", home);
+  const blocking = links(value, "blocking", home);
+  return blockedBy === null || blocking === null
+    ? null
+    : [...blockedBy, ...blocking];
+}
+
+/** A row's description and its parent's key, from the fields every row carries; `null` when they do not read. */
+function rowDescription(
+  value: Record<string, unknown>,
+  home: Repo,
+): { description: string; parent: string | null } | null {
+  if (typeof value.body !== "string" || !("parent" in value)) return null;
+  if (value.parent === null) return { description: value.body, parent: null };
+  if (!isRecord(value.parent)) return null;
+  const parent = linkKey(value.parent, "dispatch issue.parent", home);
+  return parent === null ? null : { description: value.body, parent };
 }
 
 /** Adapt the native project fields to the ordinary issue parser's selected field. */
@@ -204,6 +291,20 @@ export function dispatchSource(
       return Promise.all(nodes.map((value) => wrap(value, signal)));
     },
     issue,
+    issues: issueBatch(client, fields, wrap),
+    async projectRelations(raw, options) {
+      refuseStopped(readSignal(options));
+      return rowDependencies(
+        record(raw.value, "dispatch native issue"),
+        client.home,
+      );
+    },
+    describe: (raw) =>
+      rowDescription(record(raw.value, "dispatch native issue"), client.home),
+    assignmentActor: (key, assignee, options) =>
+      assignmentActor(client, key, assignee, readSignal(options)),
+    writeAccess: (person, options) =>
+      canWrite(client, person, readSignal(options)),
     async children(key, options) {
       const signal = readSignal(options);
       refuseStopped(signal);

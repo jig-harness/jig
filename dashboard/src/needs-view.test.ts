@@ -147,6 +147,29 @@ describe("a park", () => {
     expect(view.recommendation).toBe("Recommended: A, it is smaller");
   });
 
+  it("sends to its pull request on github.com, and a stop with no decision does not", () => {
+    const url = "https://github.com/example-org/web/pull/7";
+    expect(needView({ ...park, url }, CLOCK).send).toEqual({
+      to: { repo: "example-org/web", number: 7 },
+    });
+    expect("absent" in needView(park, CLOCK).send).toBe(true);
+    expect("absent" in needView({ ...NEED, url }, CLOCK).send).toBe(true);
+  });
+
+  it("says why a decision's answers were not read, so it does not look unanswered", () => {
+    const unread = {
+      ...park,
+      decisions: [{ ...FRAMED, unread: "the tracker did not open this tick" }],
+    };
+    expect(needView(unread, CLOCK).answerNotes).toEqual([
+      {
+        state: "waiting",
+        text: "Answers not read, so it still waits: the tracker did not open this tick",
+      },
+    ]);
+    expect(needView(park, CLOCK).answerNotes).toEqual([]);
+  });
+
   it("names each decision key a person answers, once", () => {
     expect(needView(park, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
     const twice = { ...park, decisions: [FRAMED, FRAMED] };
@@ -341,6 +364,20 @@ describe("a need's words", () => {
       ).evidence.find((r) => r.k === "notified")?.v,
     ).toBe("lost");
   });
+
+  it("says why a notification waits", () => {
+    const detail = "the comment is full";
+    const notified = (at: string | null) =>
+      needView(
+        {
+          ...NEED,
+          notified: { at, outcome: "waits", workspace: null, detail },
+        },
+        CLOCK,
+      ).evidence.find((r) => r.k === "notified")?.v;
+    expect(notified(null)).toBe(`waits: ${detail}`);
+    expect(notified(iso(10, 5))).toBe(`10:05; now waits: ${detail}`);
+  });
 });
 
 describe("the person's list", () => {
@@ -487,6 +524,32 @@ describe("the answer", () => {
       sub: "2 sessions working; 1 account behind a wall; queue empty.",
       loud: false,
     });
+  });
+
+  it("says the line is incomplete, rather than that nothing needs a person, when a repository's newest read was refused", () => {
+    const line = lineOf("quiet");
+    const refusal =
+      "the forge cannot say which repository this is: the rate limit holds the call, so nothing was sent";
+    const unread: LineSnapshot = {
+      ...line,
+      repos: line.repos.map((r, i) =>
+        i === 0
+          ? {
+              ...r,
+              slug: null,
+              ...(r.slug === null ? {} : { lastSlug: r.slug }),
+              refused: refusal,
+              readAt: iso(15, 0),
+            }
+          : r,
+      ),
+    };
+    const band = answerBand(unread, CLOCK, true, false);
+    expect(band.title).toBe("Nothing needs a person in what was read.");
+    expect(band.sub).toContain(
+      `1 repository not read: ${line.repos[0]?.slug}, as of 15:00`,
+    );
+    expect(band.loud).toBe(true);
   });
 
   it("counts a session not moving when no need is open, so the answer matches the action panel", () => {

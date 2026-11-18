@@ -34,7 +34,10 @@ heading a pickup reads, so a later pickup reuses them while their hash matches
 or they are under 24 hours old. The text form prints its findings without
 contacting the tracker. A route without scouts is reported without an empty
 comment, and partial findings from a failed scout are reported without being
-published as reusable findings.
+published as reusable findings. The issue form also runs a footprint scout,
+whatever the route's scouts: it reads the code and records the paths the
+work would touch as the item's predicted paths (below), still without
+claiming it.
 
 Before opening, the pull-request planner warns about merge commits that bring
 in work outside the planned base, listing the foreign commits. When a
@@ -44,7 +47,8 @@ add none. Labels must already exist in the repository. An unreadable history
 or configured catalog stops planning.
 
 A repository can also carry the issue's own signals onto the pull request:
-`pull_requests.labels_from_issue` maps an issue label (in any case) to a
+`pull_requests.labels_from_issue` maps an issue label (matched as the
+[rule matchers' chapter](../../protocol/rule-matchers.md) says) to a
 pull-request label, and `pull_requests.reviewers_from_issue` to the
 reviewers to request, logins or `org/team`, with or without `@`. A change
 area's `pr: { labels, reviewers }` does the same for every pull request that
@@ -133,6 +137,13 @@ racing inside that re-read can both pass; the
 [dispatcher](../../README.md#the-dispatcher) reports an item two running
 sessions work on.
 
+A factory epic passes its unassigned child to `claim --factory-ancestor <epic-key>`.
+The claim reads `dispatch.identity` from the repository's default branch and
+checks that epic's live assignment, writer authority and ancestry. It assigns
+the child to the credential identity, while preserving the epic's assignment.
+A missing default-branch factory identity refuses the claim. The option cannot
+be combined with the served-person options.
+
 A dispatcher pickup serving a named person uses `claim --for <identity>`.
 It verifies that a repository writer made the assignment, keeps the person
 as the sole assignee, and moves the item in progress. With
@@ -142,8 +153,15 @@ adds the person to an unassigned child without replacing a concurrent
 assignee. Linear and Jira hold one assignee and have no write that applies
 only to an unassigned item, so there the claim assigns the child, then reads
 the item's history: if the assignment replaced someone who was assigned in
-between, it puts them back. Either way a detected race stands down and
-refreshes the queue.
+between, it puts them back. It polls for visible evidence within a 3-second
+window; calls in flight keep their transport's own deadline. If verification
+times out without conflict evidence, it clears the assignment only while the
+claimant is still the sole assignee. A partial race keeps polling for the
+evidence needed to restore the replaced owner. If that evidence never arrives,
+it leaves the assignment untouched and asks for reconciliation rather than
+guessing an owner. The stand-down reason distinguishes a race, an unverifiable
+write, and a race whose replaced owner remains unverified; each stops the
+pickup so the queue can refresh.
 
 Command-line claims share a machine-local mutex across worktrees and
 re-read authority before writing. That does not serialize claims on
@@ -168,14 +186,12 @@ repository, its driver is an agent, every blocker is finished) states them as
 one command, `do_item.preflight_command`. Every claim runs it first, before
 the claim lock and before anything is written, so `do-item`, `work-batch` and
 a dispatched pickup all honour it without any of them remembering to call it.
-It reads the item's JSON on standard input. Exit 0 lets the claim go on. Exit
-3 refuses it: the claim exits 3, nothing is written, and the first line the
-command printed is the reason. Any other exit, or a run past 60 seconds,
-refuses too. The command text is read from the default branch, so a branch cannot
-change the command its own claim runs; the command runs in the current
-checkout, so a program it names inside the repository (`bun
-scripts/start-rules.ts`) is the branch's own copy, and the rules are only as
-trusted as that program: a branch can bypass a rule by editing a script the command runs, so name an executable that is trusted independently of the branch, such as one installed on the machine. It runs without the tracker and forge tokens. Telling the agent to proceed does not clear a refusal: the
+The [repository commands chapter](../../protocol/repo-commands.md) gives
+its input, exits, deadline and command-store rules. The command text comes
+from the default branch, but a repository-relative program it names is the
+branch's copy: name an executable trusted independently of the branch when
+the start rule must hold against a branch editing its own scripts.
+Telling the agent to proceed does not clear a refusal: the
 item or the command changes. A dispatched pickup the command refused shows
 in the dispatcher's queue as held, with the reason, until the item changes.
 
@@ -317,6 +333,35 @@ skill never moves an item into or out of `blocked`, and its claim refuses
 an item there. The [configuration reference](../../CONFIGURATION.md#issue_tracker)
 has the rules.
 
+## Predicted paths
+
+The paths an item is expected to touch, its
+[footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), are
+recorded as input for planned dispatcher admission, which will compare them
+with the work already in flight before it starts more. These writers record
+one, each through `scripts/write-footprint.ts`: a pickup, once it has claimed the
+item and read the code and before it delegates (`pickup`, naming its
+session); the scout form's footprint scout (`scout`); and `file-issue`, when
+it files from a diff or from paths the person named (`filing`). The script
+takes the paths as a file of lines or as the workspace's diff, adds the
+change-area catalog's areas their files match directly and the commit of the
+base branch the prediction read, and writes nothing when no path was named.
+A failed write is reported and never stops the pickup or the filing.
+
+You can inspect an item's predicted paths with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>"`
+or append a prediction with `bun "<plugin-root>/skills/do-item/scripts/tracker.ts" footprint "<KEY>" --input "<file>"`.
+Run the script from the consumer repository through Bun, using its path
+under the installed plugin directory (`<plugin-root>` above). The input
+is JSON with `source` (`pickup`, `scout`, `planner` or `filing`), `base`
+(the commit read), `paths` and `areas`; it may include the matching `key`
+and a claiming session as `pickup`. The command generates the record's
+writer and time, and rejects invalid input before writing. The standalone
+read chooses the newest trusted prediction; it does not assert that a
+pickup's claim and session are still running. With no prediction, it uses
+the configured change-area catalog's labels, otherwise reports unknown.
+See [the footprint record](../../RECORDS.md#the-registry-and-the-envelope)
+for bounds, reuse and failure behavior.
+
 ## Continuing work
 
 Invoke the same skill with the issue key again. It refreshes tracker state,
@@ -341,11 +386,9 @@ board with custom columns maps these stages onto them in
 nothing in another runtime changes: outside Orca it makes no call, and an
 Orca call that fails only warns.
 
-In Herdr as well as Orca, the workspace is renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
-implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
-a follow-up step and nothing sets it yet), `{id} {status} {title} {pr}` by
-default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the
-template, and `template: ""` turns the renaming off.
+The workspace keeps its name throughout: the skill never renames it, and
+where the work stands is shown by the board card, the workspace's comment
+and the pull request.
 
 It also arms the drive in a terminal tab of its own in the workspace, titled
 `drive #<PR>`, so the drive outlives the session, a person can watch its

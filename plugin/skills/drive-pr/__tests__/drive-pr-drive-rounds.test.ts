@@ -46,6 +46,7 @@ import {
   PASS_NOOP,
   runDrive,
   runDriveIn,
+  spawnDriveIn,
   skipLongDriveFixture,
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
@@ -54,6 +55,10 @@ import { lockRow, writeState } from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
+
+// Complete driver rounds spawn several helpers; allow their startup under
+// parallel test execution without changing the driver's own deadlines.
+const MULTI_ROUND_TIMEOUT_MS = 60_000;
 
 useDrivePrSuite();
 
@@ -420,6 +425,7 @@ describe("drive.ts loop control", () => {
       expect(r.stderr).not.toContain("REFLECT=[3]");
       expect(r.stderr).toContain("/jig:reflect is DUE");
     },
+    MULTI_ROUND_TIMEOUT_MS,
   );
 
   it.skipIf(skipLongDriveFixture)(
@@ -443,6 +449,7 @@ describe("drive.ts loop control", () => {
       expect(r.stderr).not.toContain("REFLECT=[4]");
       expect(r.stderr).not.toContain("is DUE");
     },
+    MULTI_ROUND_TIMEOUT_MS,
   );
 
   describe("--handoff-at, the context-economy dial", () => {
@@ -942,26 +949,14 @@ describe("drive.ts loop control", () => {
       // so drive-status.ts will bump the durable count to 4 before drive.ts sees
       // it, exactly as it does at a real bound.
       seedRounds(stateDir, 3, PREV);
-      const env = {
-        ...gitCleanEnv(),
-        PATH: `${binDir}${delimiter}${process.env.PATH}`,
-        DRIVE_PR_FIXTURES: dir,
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-      };
       const at = async (max: string) => {
-        const p = Bun.spawn(
-          scriptArgv(
-            join(SCRIPTS, "drive.ts"),
-            "999",
-            "--no-head-sync",
-            "--max-rounds",
-            max,
-            "--",
-            ...PASS_LOUD,
-          ),
-          { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
-        );
+        const p = spawnDriveIn(dir, stateDir, [
+          "--no-head-sync",
+          "--max-rounds",
+          max,
+          "--",
+          ...PASS_LOUD,
+        ]);
         const [stdout, stderr, exitCode] = await Promise.all([
           new Response(p.stdout).text(),
           new Response(p.stderr).text(),
@@ -976,7 +971,9 @@ describe("drive.ts loop control", () => {
       // Resume with the limit raised by one — no re-seed, because the whole point
       // is that this head is ALREADY counted. It must now be worked.
       const raised = await at("4");
+      expectSpawnExit(raised, 6);
       expect(raised.stderr).toContain("RAN_THE_PASS");
     },
+    MULTI_ROUND_TIMEOUT_MS,
   );
 });

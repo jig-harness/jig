@@ -166,7 +166,11 @@ lists) and refused elsewhere as a usage error naming why.
 waits on a person, with the act each waits for, across the repositories the
 machine dispatches. It reads the newest tick's line, which the dispatcher
 already keeps for its dashboard, so it costs no forge or tracker call and
-is as fresh as the last tick; it says when that tick ran. `--person
+is as fresh as the last tick; it says when that tick ran. A repository
+whose newest read was refused keeps what an earlier reading found, so the
+answer names each such repository, why it was refused and when its part
+was read (`incomplete`), and an empty list from an incomplete line is not
+"nothing waits". `--person
 <login>` keeps the entries that name that person. On a machine that
 dispatches nothing it says there is no line to read.
 
@@ -487,10 +491,11 @@ address's stations with its records and its thread.
 The thread's additions are built in the dashboard's steps
 ([dispatch-dashboard.md § Build order](dispatch-dashboard.md#build-order)): resolved parks in the drive
 ledger in its stage 1, and the entry ids, the question's and the answer's
-fields, the fold by aliases and the list of threads in its stage 2. Its
-stage 3 adds to the `drive-answer` record `jig send` writes, beside the
-envelope, the plan id, the dry run's digest and the kind of proof that a
-person is present, with `via: dashboard`. Item 46 adds, as payload fields of the
+fields, the fold by aliases and the list of threads in its stage 2. A
+parked question's answer is not part of a plan: the dashboard posts it as a
+comment, and the `drive-answer` record carries no plan id, dry-run digest
+or proof of presence for it
+([structured-answers.md](structured-answers.md)). Item 46 adds, as payload fields of the
 same version, the decision digest and the option a structured answer
 chose, and the question's options and the answer's choice to the thread
 ([structured-answers.md](structured-answers.md)).

@@ -33,6 +33,11 @@
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
  */
+import {
+  reportEvidence,
+  reportFramed,
+  reportQuestion,
+} from "./report-needs.ts";
 import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
@@ -52,6 +57,8 @@ import {
 } from "./launches.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
+import { testLockNote } from "./test-lock-waits.ts";
+import { unwrittenResult } from "./session-startup.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
@@ -91,6 +98,8 @@ export interface PickupInput {
   root?: string;
   /** What tells a stalled pickup's finished work: the open pull requests and the `pr_open` state (`stalled-pr.ts`); absent, no claimed item is read for one. */
   prOpen?: StalledPrInput;
+  /** Why the host's health check fails (`rerun-gate.ts`); `null` or absent while it passes. */
+  rerunsHeld?: string | null;
 }
 
 export type PickupPlan = Pick<
@@ -116,12 +125,17 @@ function sessionsFor(
   const outside = holdingRecords(item, launches).filter(
     (r) => r.record.workspace === null || !paths.has(r.record.workspace.path),
   );
+  const waits = holdingRecords(item, launches).flatMap((r) => {
+    const note = testLockNote(r.record);
+    return note === null ? [] : [`launch record ${r.record.id} ${note}`];
+  });
   const parts = [
     ...(live.length > 0 ? [liveAgents(live)] : []),
     ...outside.map(
       (r) =>
         `launch record ${r.record.id} (${r.state.kind}) in ${r.record.workspace?.path ?? "no workspace yet"}`,
     ),
+    ...waits,
   ];
   const who = [
     ...live.map((w) => `workspace ${w.id}`),
@@ -211,7 +225,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       continue;
     }
     if (hold.kind !== "none") {
-      planStopped(input.slug, item, hold, launches, plan);
+      planStopped(input, item, hold, launches, plan);
       continue;
     }
     plan.actions.push(pickupAction(item, held.evidence));
@@ -236,7 +250,7 @@ export function planPickups(input: PickupInput): PickupPlan {
  * question, else a need that asks whether to pick it up again.
  */
 function planStopped(
-  slug: string,
+  input: PickupInput,
   item: WantedItem,
   hold: Extract<PickupHold, { kind: "ended" | "refused" }>,
   launches: ReadRecord[],
@@ -247,8 +261,16 @@ function planStopped(
     plan.quiet.push({ target: item.key, class: "pickup-refused", why });
     return;
   }
-  const asked = questionAsked(slug, item, launches);
-  plan.actions.push(asked ?? endedNeed(slug, item, hold.record, why));
+  const asked = questionAsked(input, item, launches);
+  if (asked !== null) {
+    plan.actions.push(asked);
+    return;
+  }
+  if ((input.rerunsHeld ?? null) !== null && unwrittenResult(hold.record)) {
+    plan.quiet.push({ target: item.key, class: "pickup-ended", why });
+    return;
+  }
+  plan.actions.push(endedNeed(input.slug, item, hold.record, why));
 }
 
 /**
@@ -276,6 +298,7 @@ function endedNeed(
       state: item.state,
       account: record.account,
       ended: endedHow(latest),
+      ...reportEvidence(latest.report),
     },
     cause: "pickup-ended",
     notice: pickupNotice(
@@ -313,6 +336,37 @@ function outsideScope(
   )
     return `in ${item.state}, claimed outside dispatch: no launch record of this machine and no claim marker took it (dispatch.stalled_scope claimed)`;
   return null;
+}
+
+/** Quiets an item whose latest pickup ended without a result the host could write, while the host's health check fails; `true` when it did. */
+function heldForHost(
+  item: ClaimedItem,
+  input: PickupInput,
+  plan: PickupPlan,
+): boolean {
+  const latestPickup = latestPickupFor(item.key, input.launches);
+  if (
+    input.rerunsHeld === null ||
+    latestPickup === undefined ||
+    !unwrittenResult(latestPickup)
+  )
+    return false;
+  plan.quiet.push({
+    target: item.key,
+    class: "pickup-ended",
+    why: `its pickup ended without a result this host could write; held while ${input.rerunsHeld}`,
+  });
+  return true;
+}
+
+/** Whether the item's pull request or the host's failing health check settles it for this tick. */
+function settledOrHeld(
+  item: ClaimedItem,
+  input: PickupInput,
+  step: LaunchPrStep | null,
+  plan: PickupPlan,
+): boolean {
+  return settledByPr(item.key, step, plan) || heldForHost(item, input, plan);
 }
 
 /** One claimed item: a double claim, running, idle, or stalled. */
@@ -367,12 +421,12 @@ function planClaimed(
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
   if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
-  const asked = questionAsked(input.slug, item, input.launches);
+  const asked = questionAsked(input, item, input.launches);
   if (asked !== null) {
     plan.actions.push(asked);
     return;
   }
-  if (settledByPr(item.key, pr.step, plan)) return;
+  if (settledOrHeld(item, input, pr.step, plan)) return;
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
@@ -396,7 +450,17 @@ function stalledPickup(
 ): Action {
   const idle = input.nowMs - since;
   const note = stallNote(pr);
-  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}`;
+  const latest = input.launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item.key ||
+          r.record.batchItems?.some((i) => i.key === item.key)),
+    )
+    .sort((a, b) => b.record.createdAt.localeCompare(a.record.createdAt))[0];
+  const wait =
+    latest?.record.testLockWait === undefined ? "" : `; ${endedHow(latest)}`;
+  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}${wait}`;
   return {
     stage: "notify",
     target: item.key,
@@ -440,28 +504,34 @@ function settledByPr(
 /**
  * The need an item's latest pickup raises when its pass ended on a
  * question without recording `done`: the question, notified once per
- * launch record; `null` otherwise.
+ * launch record; `null` otherwise. A pass whose result or exit the host
+ * could not write (`unwritten-result.ts`) asks nothing of its own: while the
+ * host's health check fails its need stands for it, and once it passes a
+ * person is asked to settle or release the item.
  */
 function questionAsked(
-  slug: string,
+  input: Pick<PickupInput, "slug" | "rerunsHeld">,
   item: { key: string; title: string; state: string },
   launches: ReadRecord[],
 ): Action | null {
-  const latest = launches
-    .filter(
-      (r) =>
-        r.record.action === "pickup" &&
-        (r.record.item === item.key ||
-          r.record.batchItems?.some((i) => i.key === item.key) === true) &&
-        holdsItem(r.record, item.key),
-    )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
-    .at(-1);
+  const { slug } = input;
+  const latest = latestPickupFor(item.key, launches);
   if (latest === undefined) return null;
-  const question = endedQuestion(latest);
-  if (question === null) return null;
+  // What a pass whose result the host could not write asked is the host's fault, never a person's question.
+  const unwritten = unwrittenResult(latest);
+  if (unwritten && (input.rerunsHeld ?? null) !== null) return null;
+  const asked = unwritten
+    ? `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
+    : endedQuestion(latest);
+  if (asked === null) return null;
+  // A pass whose result the host could not write wrote no report a person reads.
+  const report = unwritten ? null : latest.report;
+  const question = reportQuestion(report, asked);
+  const framed = unwritten ? undefined : reportFramed(latest.framed, report);
   const { record } = latest;
-  const reason = `the pickup stopped on a question for a person: ${question}`;
+  const reason = unwritten
+    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again: ${question}`
+    : `the pickup stopped on a question for a person: ${question}`;
   return {
     stage: "notify",
     target: item.key,
@@ -474,9 +544,10 @@ function questionAsked(
       state: item.state,
       account: record.account,
       question,
+      ...reportEvidence(report),
     },
     cause: "pickup-question",
-    ...(latest.framed === undefined ? {} : { framed: latest.framed }),
+    ...(framed === undefined ? {} : { framed }),
     notice: pickupNotice(
       slug,
       `${item.key} question, record ${record.id}`,
@@ -486,6 +557,23 @@ function questionAsked(
     // The pass's ended row in the outcome log already holds how it ended.
     launched: true,
   };
+}
+
+/** The latest unreleased pickup for this item, shared by its question and host-health hold. */
+function latestPickupFor(
+  item: string,
+  launches: readonly ReadRecord[],
+): ReadRecord | undefined {
+  return launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item ||
+          r.record.batchItems?.some((entry) => entry.key === item) === true) &&
+        holdsItem(r.record, item),
+    )
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
+    .at(-1);
 }
 
 /** What the tick read as a waiting session's cause: the usage-limit wall still its last record, if any. */
@@ -557,6 +645,9 @@ function pickupAction(
       ...(item.ancestorEpic === undefined
         ? {}
         : { ancestorEpic: item.ancestorEpic }),
+      ...(item.factoryAncestor === undefined
+        ? {}
+        : { factoryAncestor: item.factoryAncestor }),
       ...(item.blockingFor === undefined
         ? {}
         : { blockingFor: item.blockingFor }),

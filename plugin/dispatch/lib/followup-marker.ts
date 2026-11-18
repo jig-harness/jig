@@ -30,7 +30,8 @@ import type {
   SharedClaim,
   SharedRecords,
 } from "../../shared/records/shared.ts";
-import type { FollowupMarker } from "./types.ts";
+import { readFailureOf } from "./read-failures.ts";
+import type { FollowupMarker, ReadFailure } from "./types.ts";
 
 export {
   FOLLOWUP_CLAIM,
@@ -95,11 +96,14 @@ export async function readMarkers(
   shared: SharedRecords,
   slug: string,
   pr: number,
-): Promise<FollowupMarker[] | { unreadable: string }> {
+): Promise<FollowupMarker[] | { unreadable: string; failure?: ReadFailure }> {
   const listing = await shared.list({ repo: slug, pr }, "followup");
-  return listing.ok
-    ? listing.value.map(markerOf)
-    : { unreadable: listing.failure.reason };
+  if (listing.ok) return listing.value.map(markerOf);
+  const failure = readFailureOf(listing.failure);
+  return {
+    unreadable: listing.failure.reason,
+    ...(failure === undefined ? {} : { failure }),
+  };
 }
 
 /** The trusted markers, earliest first. */

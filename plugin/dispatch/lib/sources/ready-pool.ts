@@ -12,6 +12,8 @@
  * marker the pool requires decides between hosts that take the same item.
  */
 import { cacheForTracker } from "./tracker-cache.ts";
+import { AssignerUnknown } from "../../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
+import { readFailureOfError } from "../read-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
@@ -25,7 +27,7 @@ import type {
 import type { PickupReads } from "../pickup-reads.ts";
 import { queueHold, rankQueue } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
-import { ended, within } from "./bounded.ts";
+import { CUT_AT_BOUND, ended, within } from "./bounded.ts";
 import type { FacetBound } from "./tracker-facets.ts";
 import type { DispatchSection, Unplaced, WantedItem } from "../types.ts";
 import type { ServedPolicy } from "./served.ts";
@@ -86,8 +88,10 @@ async function madeReadyBy(
     by = await read(issue);
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    return row(
+    return failedRow(
+      issue,
       `in the ready pool (${issue.state.name}), but who made it ready cannot be read: ${failureText(error)}`,
+      error,
     );
   }
   if (!by.trusted)
@@ -120,7 +124,12 @@ function moverReader(
 }
 
 /** A pool that picks up nothing, with the row that says why. */
-function unread(tracker: Tracker, names: string, reason: string): PoolReading {
+function unread(
+  tracker: Tracker,
+  names: string,
+  reason: string,
+  ...thrown: [] | [unknown]
+): PoolReading {
   return {
     ...NONE,
     states: names,
@@ -130,9 +139,23 @@ function unread(tracker: Tracker, names: string, reason: string): PoolReading {
         target: `${tracker.adapter} ${tracker.team}`,
         record: "tracker",
         reason,
+        ...(thrown.length === 0 ? {} : failedFields(thrown[0])),
       },
     ],
   };
+}
+
+/** A deadline that prevents a pool read is a failed, retryable read. */
+function deadlineUnread(
+  tracker: Tracker,
+  names: string,
+  reason: string,
+): PoolReading {
+  const result = unread(tracker, names, reason);
+  const row = result.unplaced[0];
+  if (row !== undefined)
+    result.unplaced[0] = { ...row, readFailed: true, failure: CUT_AT_BOUND };
+  return result;
 }
 
 /** The wanted item for a pool issue a trusted person made ready. */
@@ -181,6 +204,22 @@ function rowOf(issue: PoolIssue, reason: string): { row: Unplaced } {
   };
 }
 
+/** Failed calls count with their class; definite negative evidence is an answer, not a failed call. */
+function failedFields(error: unknown): Partial<Unplaced> {
+  if (error instanceof AssignerUnknown) return {};
+  const failure = readFailureOfError(error);
+  return { readFailed: true, ...(failure === undefined ? {} : { failure }) };
+}
+
+function failedRow(
+  issue: PoolIssue,
+  reason: string,
+  error: unknown,
+): { row: Unplaced } {
+  const { row } = rowOf(issue, reason);
+  return { row: { ...row, ...failedFields(error) } };
+}
+
 /**
  * The served queue's open-blocker rule, for a pool item: it waits while a
  * blocker is open or cannot be read (`openBlockers`, `queueHold`), and the
@@ -196,9 +235,10 @@ async function blockerHold(
     open = await blockers(issue);
   } catch (error) {
     if (isRateLimited(error)) throw error;
-    return rowOf(
+    return failedRow(
       issue,
       `in the ready pool (${issue.state.name}), but its blockers cannot be read: ${failureText(error)}`,
+      error,
     );
   }
   const held = queueHold({ issue, blockers: open, unblocks: 0 }, policy);
@@ -302,6 +342,8 @@ async function placeAll(
         url: issue.url,
         record: "tracker",
         reason: `in the ready pool (${issue.state.name}), but the tick's deadline passed before who made it ready was read`,
+        readFailed: true,
+        failure: CUT_AT_BOUND,
       });
       continue;
     }
@@ -360,7 +402,7 @@ export async function readPoolPickups(
     // The claim assigns the item to the credential's user: it must be the
     // identity the pool is attributed to and monitored under.
     if (ended(bound))
-      return unread(
+      return deadlineUnread(
         tracker,
         names,
         `the ready pool (${names}) could not be read: the tick's deadline passed before the read could start`,
@@ -376,7 +418,7 @@ export async function readPoolPickups(
         `the ready pool (${names}) is not read: the issue service credential acts as ${viewer.name}, not as the dispatch identity ${identity}, so a claim would assign pool items to the wrong user`,
       );
     if (ended(bound))
-      return unread(
+      return deadlineUnread(
         tracker,
         names,
         `the ready pool (${names}) could not be read: the tick's deadline passed before the read could start`,
@@ -395,6 +437,7 @@ export async function readPoolPickups(
       tracker,
       names,
       `the ready pool (${names}) could not be read: ${failureText(error)}`,
+      error,
     );
   }
   const out = await placeAll(

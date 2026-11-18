@@ -44,7 +44,7 @@ afterAll(() => {
   for (const root of made) rmSync(root, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(regenerable_paths?: string[]) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "gc-agent-")));
   made.push(root);
   const { repo, user, bin, env, command } = setupWorktreeFixture(root);
@@ -53,10 +53,14 @@ function setup() {
     kinds: ["worktrees"],
     worktree_roots: [join(root, "worktrees")],
     scratch_prefixes: [],
+    ...(regenerable_paths === undefined ? {} : { regenerable_paths }),
   };
   mkdirSync(join(repo, ".config", "worktree-hooks"), { recursive: true });
   writeFileSync(join(repo, ".config/jig.yaml"), dump({ gc: declaration }));
-  writeFileSync(join(repo, ".gitignore"), ".claude/\n");
+  writeFileSync(
+    join(repo, ".gitignore"),
+    ".claude/\n.fallow/\ndist/\nprivate-note\n",
+  );
   writeFileSync(
     join(repo, ".config/worktree-hooks/remove"),
     // With `commit-during-hook` present, the hook commits in the tree: a
@@ -130,6 +134,51 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
     );
   };
   lsof();
+  /**
+   * A `git` on `PATH` in front of the real one, acting in the tree at one
+   * point of the collection: `scan` commits during the second tracked-state
+   * scan after the remove hook (the final one, before the identity
+   * comparison); `window` tries a commit right before `git worktree remove`,
+   * first staging a file when `stage` is set, and writes the attempt's exit
+   * code and error output to `window-commit`.
+   */
+  const gitAt = (point: "scan" | "window", stage = false): void => {
+    const real = Bun.which("git");
+    if (real === null) throw new Error("git is not on PATH");
+    writeFakeProgram(
+      join(bin, "git"),
+      `#!/usr/bin/env bun
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+const real = ${JSON.stringify(real)};
+const tree = ${JSON.stringify(tree)};
+const root = ${JSON.stringify(root)};
+const args = process.argv.slice(2);
+const at = args[args.indexOf("-C") + 1] ?? "";
+const run = (more, pipe = false) =>
+  Bun.spawnSync([real, "-c", "user.email=t@example.invalid", "-c", "user.name=T", ...more], {
+    cwd: tree,
+    stdio: ["ignore", pipe ? "pipe" : "inherit", pipe ? "pipe" : "inherit"],
+  });
+const hookRan = existsSync(root + "/hook-ran");
+if (${JSON.stringify(point)} === "scan" && hookRan && at.endsWith("agent-a1") && args.includes("ls-files") && args.includes("-v")) {
+  const counter = root + "/scans";
+  const seen = (existsSync(counter) ? Number(readFileSync(counter, "utf8")) : 0) + 1;
+  writeFileSync(counter, String(seen));
+  if (seen === 2) run(["commit", "-q", "--allow-empty", "-m", "late"]);
+}
+if (${JSON.stringify(point)} === "window" && args.includes("worktree") && args.includes("remove")) {
+  if (${JSON.stringify(stage)}) {
+    writeFileSync(tree + "/staged.txt", "staged in the window\\n");
+    run(["add", "staged.txt"]);
+  }
+  const tried = run(["commit", "-q", "--allow-empty", "-m", "window"], true);
+  writeFileSync(root + "/window-commit", tried.exitCode + "\\n" + tried.stderr.toString());
+}
+const result = Bun.spawnSync([real, ...args], { stdio: ["inherit", "inherit", "inherit"] });
+process.exit(result.exitCode ?? 1);
+`,
+    );
+  };
   const machine = {
     repositories: [
       {
@@ -137,7 +186,10 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
         remote: "origin",
         remote_url: REMOTE,
         base_branch: "main",
-        bounds: declaration,
+        bounds: {
+          ...declaration,
+          regenerable_paths: regenerable_paths ?? [".fallow"],
+        },
       },
     ],
   };
@@ -149,7 +201,7 @@ console.log(JSON.stringify(rest ? ${JSON.stringify(rest)} : ${JSON.stringify(lis
     join(state, "marking-since"),
     `${new Date(Date.now() - 30 * DAY_MS).toISOString()}\n`,
   );
-  return { root, repo, tree, env, command, forge, lsof };
+  return { root, repo, tree, env, command, forge, lsof, gitAt };
 }
 
 /** Every entry of the worktree and its git directory, eight days old. */
@@ -226,6 +278,52 @@ describe.skipIf(
     expect(f.command(["git", "worktree", "list"])).not.toContain("agent-a1");
   }, 60_000);
 
+  test("a declared regenerable build output is collected from base configuration and its receipt names the rule", () => {
+    const f = setup(["dist"]);
+    mkdirSync(join(f.tree, "dist"));
+    writeFileSync(join(f.tree, "dist", "bundle.js"), "rebuilt output");
+    // Neither checkout's config can replace the declaration fetched from main.
+    writeFileSync(
+      join(f.repo, ".config/jig.yaml"),
+      dump({ gc: { kinds: ["worktrees"], regenerable_paths: [] } }),
+    );
+    idle(f);
+    expect(line(gc(f, ["--collect"]))).toMatchObject({
+      outcome: "collected",
+      details: { setAside: [{ path: "dist/", rule: "regenerable-path" }] },
+    });
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
+  test("an undeclared ignored note beside a declared output keeps the worktree", () => {
+    const f = setup(["dist"]);
+    mkdirSync(join(f.tree, "dist"));
+    writeFileSync(join(f.tree, "dist", "bundle.js"), "rebuilt output");
+    writeFileSync(join(f.tree, "private-note"), "keep this");
+    idle(f);
+    const kept = line(gc(f, ["--collect"]));
+    expect(kept.outcome).toBe("finding");
+    expect(kept.reason).toContain("private-note");
+    expect(kept.details).toMatchObject({
+      setAside: [{ path: "dist/", rule: "regenerable-path" }],
+    });
+    expect(readFileSync(join(f.tree, "private-note"), "utf8")).toBe(
+      "keep this",
+    );
+  }, 60_000);
+
+  test("the default tool cache needs no repository declaration", () => {
+    const f = setup();
+    mkdirSync(join(f.tree, ".fallow"));
+    writeFileSync(join(f.tree, ".fallow", "cache.bin"), "rebuilt cache");
+    idle(f);
+    expect(line(gc(f, ["--collect"]))).toMatchObject({
+      outcome: "collected",
+      details: { setAside: [{ path: ".fallow/", rule: "regenerable-path" }] },
+    });
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
   test("a detached one whose commit a merged pull request brought in is collected, its branch kept", () => {
     const f = setup();
     f.command(["git", "switch", "--detach"], f.tree);
@@ -261,6 +359,57 @@ describe.skipIf(
     expect(f.command(["git", "-C", f.tree, "log", "-1", "--format=%s"])).toBe(
       "late",
     );
+  }, 60_000);
+
+  test("a detached one that gains a commit during the final tracked-state scan is kept, the commit with it", () => {
+    const f = setup();
+    f.command(["git", "switch", "--detach"], f.tree);
+    idle(f);
+    f.gitAt("scan");
+    const kept = line(gc(f, ["--collect"]), 1);
+    expect(kept.outcome).toBe("failed");
+    expect(kept.reason).toContain("Worktree identity changed");
+    expect(readFileSync(join(f.root, "scans"), "utf8")).toBe("2");
+    expect(existsSync(f.tree)).toBe(true);
+    expect(f.command(["git", "-C", f.tree, "log", "-1", "--format=%s"])).toBe(
+      "late",
+    );
+    expect(
+      existsSync(join(f.repo, ".git", "worktrees", "agent-a1", "HEAD.lock")),
+    ).toBe(false);
+  }, 60_000);
+
+  test("a commit tried on a detached one between the final comparison and the removal is refused, so none is lost", () => {
+    const f = setup();
+    f.command(["git", "switch", "--detach"], f.tree);
+    idle(f);
+    f.gitAt("window");
+    expect(line(gc(f, ["--collect"])).outcome).toBe("collected");
+    const [code, error] = readFileSync(
+      join(f.root, "window-commit"),
+      "utf8",
+    ).split("\n", 2);
+    expect(code).not.toBe("0");
+    expect(error).toContain("cannot lock ref 'HEAD'");
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
+  test("a commit of staged work tried in that window is refused, and git keeps the tree with the work", () => {
+    const f = setup();
+    f.command(["git", "switch", "--detach"], f.tree);
+    idle(f);
+    f.gitAt("window", true);
+    const kept = line(gc(f, ["--collect"]), 1);
+    expect(kept.outcome).toBe("failed");
+    expect(readFileSync(join(f.root, "window-commit"), "utf8")).toContain(
+      "cannot lock ref 'HEAD'",
+    );
+    expect(readFileSync(join(f.tree, "staged.txt"), "utf8")).toBe(
+      "staged in the window\n",
+    );
+    expect(
+      existsSync(join(f.repo, ".git", "worktrees", "agent-a1", "HEAD.lock")),
+    ).toBe(false);
   }, 60_000);
 
   test("one holding an open pull request's branch is kept, naming the branch and how to release it", () => {

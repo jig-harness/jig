@@ -1,7 +1,8 @@
 /**
  * drive-pr suite: drive.ts on a converged head whose final CI carries cancelled
  * checks. A cancelled check spends no CI-repair pass; after its durable
- * recovery budget is spent, the drive parks, never reports convergence; a true failure beside it is repaired, naming the run that failed.
+ * recovery budget is spent, the drive parks, never reports convergence; a true failure beside it is repaired, naming the run that failed. A failure
+ * only cancelled runs carry, an aggregator's, is recovered as a cancellation.
  * Shared fixtures live in drive-pr-harness.ts and drive-loop-harness.ts.
  */
 
@@ -16,6 +17,7 @@ import {
 } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
+import { REPLACEMENT_WINDOW_MS } from "../scripts/lib/cancelled-recovery.ts";
 import {
   binDir,
   type CheckRunFixture,
@@ -139,6 +141,9 @@ async function driveConverged(
   );
 }
 
+/** A minute past the cancelled-run recovery's replacement window. */
+const PAST_WINDOW = REPLACEMENT_WINDOW_MS + 60_000;
+
 /** Seed elapsed recovery time in a subprocess, without waiting on the wall clock. */
 async function seedRecovery(dir: string, stateDir: string, spent: boolean) {
   const script = join(dir, "seed-recovery.ts");
@@ -149,7 +154,7 @@ async function seedRecovery(dir: string, stateDir: string, spent: boolean) {
     const { resolveStateDir } = await import(${JSON.stringify(pathToFileURL(join(SCRIPTS, "lib/state/store.ts")).href)});
     const drive = driveDb(await resolveStateDir());
     drive.db.run("INSERT OR REPLACE INTO cancelled_ci (clone, pr, head, first_seen, requested_at) VALUES (?, ?, ?, ?, ?)",
-      [drive.clone, "999", ${JSON.stringify(scratchClean.head)}, Date.now() - 120000, ${spent ? "Date.now() - 120000" : "null"}]);
+      [drive.clone, "999", ${JSON.stringify(scratchClean.head)}, Date.now() - ${PAST_WINDOW}, ${spent ? `Date.now() - ${PAST_WINDOW}` : "null"}]);
   `,
   );
   await expectSpawnExited(
@@ -259,7 +264,9 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
     expectNoRepairPass(r.stderr);
   });
 
-  it("repairs a failed job even when it started after cancellation", async () => {
+  it("recovers an aggregator that failed only in a cancelled run, never repairing it", async () => {
+    // The aggregator's run concluded cancelled: its failure is the cancelled
+    // case, so it takes the once-per-head recovery and, with that spent, parks.
     const r = await driveConverged(
       [
         { ...check("gates", "failure", 40), started: LATER },
@@ -267,9 +274,41 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
       ],
       [workflowRun(40, "cancelled")],
       { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+      true,
+    );
+    exits(r, 8);
+    expect(r.stderr).toContain("once-per-head re-run was already requested");
+    expect(r.stderr).toContain("gh run rerun 40");
+    expectNoRepairPass(r.stderr);
+  });
+
+  it("repairs a failure in a cancelled run that holds nothing cancelled to re-run", async () => {
+    const r = await driveConverged(
+      [{ ...check("gates", "failure", 40), started: LATER }],
+      [workflowRun(40, "cancelled")],
+      { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
     );
     exits(r, CI_REPAIR_SPENT_EXIT);
     expect(r.stderr).toContain("TASK=ci-repair RUNS=[40]");
+  });
+
+  it("repairs a failure in a cancelled run beside one in a run that failed", async () => {
+    const r = await driveConverged(
+      [
+        { ...check("gates", "failure", 40), started: LATER },
+        check("tests", "cancelled", 40),
+        { ...check("lint", "failure", 42), app: "github-actions" },
+      ],
+      // Another workflow: a run of the same one would replace the cancelled run.
+      [
+        workflowRun(40, "cancelled"),
+        { ...workflowRun(42, "failure"), workflow_id: 8 },
+      ],
+      { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+      true,
+    );
+    expect(r.stderr).not.toContain("once-per-head re-run");
+    expect(r.stderr).toContain("TASK=ci-repair RUNS=[40 42]");
   });
 
   it("repairs an aggregator in a run that was not cancelled", async () => {

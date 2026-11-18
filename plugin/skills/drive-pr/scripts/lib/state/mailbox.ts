@@ -3,7 +3,7 @@
  * human, the orchestrating session that spawned this drive, or `drives.ts
  * --stop`) and a headless `drive.ts` run in the same working tree. It is the
  * one way to steer or stop a running drive: append-only JSONL logs under
- * `.context/drive-mailbox/` (gitignored, tagged disposable with a
+ * `.context/drive-mailbox/` (ignored, `context-ignore.ts`; tagged disposable with a
  * `CACHEDIR.TAG` for `jig gc`, workspace-scoped — the same
  * granularity as the worktree lock in `store.ts`'s `worktreeLockName`, and NOT
  * the clone-wide state dir: a mailbox is a conversation with THIS tree's
@@ -138,62 +138,28 @@ import { fileLock } from "./file-lock.ts";
 import { helperExitCode } from "../status/terminal-states.ts";
 import { markDisposable } from "../../../../../shared/disposable-mark.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
-import {
-  DIRECTIVE_COMMANDS,
-  type DirectiveCommand,
-  GATE_NAMES,
-  type GateName,
-  type OutboxStatus,
-} from "./mailbox-values.ts";
+import type { DirectiveCommand, GateName } from "./mailbox-values.ts";
 
 export const MAILBOX_DIRNAME = "drive-mailbox";
 
 /** One JSONL line, whole, must fit in a single atomic `write(2)` — see header. */
 export const MAILBOX_LINE_MAX_BYTES = 4096;
 
-export interface NoteMessage {
-  id: string;
-  ts: string;
-  kind: "note";
-  from: string;
-  pr: string;
-  body: string;
-}
-
-export interface DirectiveMessage {
-  id: string;
-  ts: string;
-  kind: "directive";
-  from: string;
-  pr: string;
-  command: DirectiveCommand;
-  /** Required (and only meaningful) when `command === 'resume'`. */
-  target?: GateName;
-  body?: string;
-  /** For `stop` only: the driver generation it addresses. */
-  generation?: number;
-  /** With `generation`: cancel that driver's active pass now (`drives.ts --stop`). */
-  now?: true;
-}
-
-export type InboxMessage = NoteMessage | DirectiveMessage;
-
-export interface OutboxRecord {
-  id: string;
-  ts: string;
-  /**
-   * The PR this ack/response belongs to. Required so `unseenMessages` can
-   * scope the ack cursor per PR — see that function's own comment: without
-   * this, a message id is the ONLY key, and a worktree reused across PRs (or
-   * a collision among the 64-bit random ids `newId()` mints) lets one PR's
-   * outbox record silently acknowledge another PR's still-unseen message.
-   */
-  pr: string;
-  /** `ack`: the driver acted on the directive, as driver `generation`. */
-  status: OutboxStatus;
-  response?: string;
-  generation?: number;
-}
+export type {
+  NoteMessage,
+  DirectiveMessage,
+  InboxMessage,
+  OutboxRecord,
+} from "./mailbox-shapes.ts";
+import {
+  MAILBOX_MESSAGE_SHAPE,
+  MAILBOX_OUTBOX_SHAPE,
+  type NoteMessage,
+  type DirectiveMessage,
+  type InboxMessage,
+  type OutboxRecord,
+} from "./mailbox-shapes.ts";
+import { matches } from "../../../../../shared/shapes.ts";
 
 export function mailboxDir(worktreeRootPath: string): string {
   return join(worktreeRootPath, ".context", MAILBOX_DIRNAME);
@@ -270,10 +236,6 @@ export function readMailboxFile(path: string): MailboxFileRead {
   }
 }
 
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === "string" && v.length > 0;
-}
-
 /**
  * A PR string in the ONE canonical form every writer in this module produces
  * (`resolvePrArg`'s own `BigInt(...).toString()`), not merely digits:
@@ -300,59 +262,22 @@ function isCanonicalPr(s: string): boolean {
  * partial record here is debris, not a legacy shape to tolerate.
  */
 export function parseInboxMessage(v: unknown): InboxMessage | null {
-  if (typeof v !== "object" || v === null) return null;
-  const r = v as Record<string, unknown>;
-  if (!isNonEmptyString(r.id)) return null;
-  if (!isNonEmptyString(r.ts) || !Number.isFinite(parseMs(r.ts))) return null;
-  if (!isNonEmptyString(r.from)) return null;
-  if (!isNonEmptyString(r.pr)) return null;
-  if (r.kind === "note") {
-    if (typeof r.body !== "string") return null;
-    return {
-      id: r.id,
-      ts: r.ts,
-      kind: "note",
-      from: r.from,
-      pr: r.pr,
-      body: r.body,
-    };
-  }
-  if (r.kind === "directive") {
-    if (!DIRECTIVE_COMMANDS.includes(r.command as DirectiveCommand))
-      return null;
-    const command = r.command as DirectiveCommand;
-    const fields = directiveFields(r, command);
-    if (fields === null) return null;
-    const { id, ts, from, pr } = r;
-    return { id, ts, kind: "directive", from, pr, command, ...fields };
-  }
-  return null;
-}
-
-/**
- * A directive's fields past its command, `null` for a shape this module's
- * writer never produces: a `resume` without a target, or a target on any
- * other command (refused rather than silently ignored, the same
- * "partial/malformed record is debris" ruling `schema.ts` applies to
- * `DriveState`), a body that is not text, or an address `stopAddress`
- * refuses.
- */
-function directiveFields(
-  r: Record<string, unknown>,
-  command: DirectiveCommand,
-): Pick<DirectiveMessage, "target" | "body" | "generation" | "now"> | null {
-  const targeted =
-    command === "resume"
-      ? GATE_NAMES.includes(r.target as GateName)
-      : r.target === undefined;
-  if (!targeted) return null;
-  if (r.body !== undefined && typeof r.body !== "string") return null;
-  const address = stopAddress(r, command);
-  if (address === null) return null;
+  if (!matches(MAILBOX_MESSAGE_SHAPE, v) || !Number.isFinite(parseMs(v.ts)))
+    return null;
+  const { id, ts, from, pr } = v;
+  if (v.kind === "note")
+    return { id, ts, kind: "note", from, pr, body: v.body };
   return {
-    ...address,
-    ...(command === "resume" ? { target: r.target as GateName } : {}),
-    ...(typeof r.body === "string" ? { body: r.body } : {}),
+    id,
+    ts,
+    kind: "directive",
+    from,
+    pr,
+    command: v.command,
+    ...(v.target === undefined ? {} : { target: v.target }),
+    ...(v.body === undefined ? {} : { body: v.body }),
+    ...(v.generation === undefined ? {} : { generation: v.generation }),
+    ...(v.now === undefined ? {} : { now: v.now }),
   };
 }
 
@@ -377,41 +302,14 @@ function stopAddress(
 }
 
 export function parseOutboxRecord(v: unknown): OutboxRecord | null {
-  if (typeof v !== "object" || v === null) return null;
-  const r = v as Record<string, unknown>;
-  if (!isNonEmptyString(r.id)) return null;
-  if (!isNonEmptyString(r.ts) || !Number.isFinite(parseMs(r.ts))) return null;
-  if (!isNonEmptyString(r.pr)) return null;
-  const base = { id: r.id, ts: r.ts, pr: r.pr };
-  if (r.status === "ack")
-    return isGeneration(r.generation) && r.response === undefined
-      ? { ...base, status: "ack", generation: r.generation }
-      : null;
-  return parseReply(r, base);
-}
-
-/** A pass's acknowledgement (`received`) or answer (`done`), on `base`'s id, time and pull request. */
-function parseReply(
-  r: Record<string, unknown>,
-  base: Pick<OutboxRecord, "id" | "ts" | "pr">,
-): OutboxRecord | null {
-  if (r.status !== "received" && r.status !== "done") return null;
-  // A discriminated shape, not "response, if present, must be a string": a
-  // malformed writer or a hand-edited recovery line could otherwise produce
-  // `status: 'done'` with a missing or empty `response`, which `mailbox.ts
-  // outbox` would then report as a completed answer with nothing IN it, while
-  // `unseenMessages` treats the id as acknowledged and suppresses redelivery —
-  // leaving the original sender with neither a response nor a warning. `done`
-  // REQUIRES a non-empty response; `received` must NOT carry one, since it is
-  // not an answer yet.
-  if (r.status === "done") {
-    if (!isNonEmptyString(r.response)) return null;
-  } else if (r.response !== undefined) {
+  if (!matches(MAILBOX_OUTBOX_SHAPE, v) || !Number.isFinite(parseMs(v.ts)))
     return null;
-  }
-  const rec: OutboxRecord = { ...base, status: r.status };
-  if (r.status === "done") rec.response = r.response as string;
-  return rec;
+  const { id, ts, pr, status } = v;
+  if (v.status === "ack")
+    return { id, ts, pr, status, generation: v.generation };
+  return v.status === "done"
+    ? { id, ts, pr, status, response: v.response }
+    : { id, ts, pr, status };
 }
 
 /** Non-blank lines only — a trailing newline must not read as an empty record. */

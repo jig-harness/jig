@@ -393,6 +393,12 @@ describe("the tabs' counts", () => {
           "History8, 8 rows in the window",
           "Help",
         ]);
+        // The count Merge carries is also on the tab's title and icon.
+        expect(await page.title()).toBe("(4) Dispatch");
+        const icon = await page
+          .locator('link[rel="icon"]')
+          .getAttribute("href");
+        expect(decodeURIComponent(icon ?? "")).toContain(">4</text></svg>");
       } finally {
         await context.close();
       }

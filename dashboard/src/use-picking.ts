@@ -1,12 +1,15 @@
 /**
  * A parked need's picks, notes and own words as one card holds them: what
  * each row's answer is, which decision the keys act on, the card's own keys
- * (sent as `CARD_KEY`), and its Copy (`CARD_COMMIT`, the Copy button and the
- * palette alike), which takes a second step while a guarded pick is among the
- * answers and is held back while a row's answer cannot be sent.
+ * (sent as `CARD_KEY`), and its commits: Copy (`CARD_COMMIT`, the Copy button
+ * and the palette alike) and Send (`send.tsx`). Each takes a second step while
+ * a guarded pick is among the answers, and is held back while a row's answer
+ * cannot be sent.
  */
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { answerId, currentAnswers, useAnswers } from "./answers.ts";
+import { confirmationSignature, needsConfirmation } from "./confirmation.ts";
+import { tokenGeneration, useKeptToken } from "./forge-token.ts";
 import { announce, copyText } from "./copy.tsx";
 import { CARD_COMMIT, CARD_KEY, type CardKey, PALETTE_DONE } from "./keys.ts";
 import type { NeedView } from "./needs-view.ts";
@@ -27,13 +30,16 @@ import {
 
 export type Field = "note" | "free";
 
+/** How a card's answers are committed: copied to paste, or sent from the page. */
+export type Commit = "copy" | "send";
+
 export interface Picking {
   answers: RowAnswer[];
   commit: CardCommit;
   /** The decision the keys act on, by its place in the rows. */
   current: number;
-  /** Whether Copy's first step has shown the guarded picks, so the next Copy copies. */
-  confirming: boolean;
+  /** The commit whose first step has shown the guarded picks, so its next press commits; `null` when none has. */
+  confirming: Commit | null;
   /** Whether this browser stores the answers, rather than holding them only while the page is open. */
   saved: boolean;
   /** The field the person is writing in, opened by `r` or its button. */
@@ -46,7 +52,9 @@ export interface Picking {
   setText: (index: number, field: Field, text: string) => void;
   /** Asked before each copy: the comment to copy now, else `null` after saying why or what comes first. */
   gate: () => string | null;
-  /** Ends Copy's first step: a pick changed elsewhere, or the card lost focus. */
+  /** Asked before each send, as `gate` is before a copy: what to send now, which holds a pick. */
+  sendGate: () => CardCommit | null;
+  /** Ends a commit's first step: a pick changed elsewhere, or the card lost focus. */
   disarm: () => void;
 }
 
@@ -56,20 +64,17 @@ function placeOf(need: NeedView, index: number): string {
   return total > 1 ? `decision ${index + 1} of ${total}` : need.target;
 }
 
-/** What makes Copy's first step stand: the decisions' framings and which answer of each counts. */
-function signatureOf(need: NeedView, answers: RowAnswer[]): string {
-  return need.rows
-    .map((row, i) => {
-      const a = answers[i];
-      return `${row.key} ${row.framing.digest} ${row.framing.parkedAt} ${a?.active} ${a?.pick?.name ?? ""}`;
-    })
-    .join("\n");
+/** A commit's first step: for which answers it showed the guarded picks, and which commit it was. */
+interface Armed {
+  sign: string;
+  commit: Commit;
 }
 
 export function usePicking(
   need: NeedView,
   card: RefObject<HTMLElement | null>,
 ): Picking {
+  useKeptToken();
   const ids = need.rows.map((row) => answerId(need.repo, need.target, row.key));
   const [kept, change, saved] = useAnswers(ids);
   const answers = need.rows.map((row, i) => rowAnswer(row, kept[i] ?? null));
@@ -84,16 +89,20 @@ export function usePicking(
   const currentNow = () =>
     currentIndex(need.rows, answersNow(), heldNow.current);
   const [editing, setEditing] = useState<Picking["editing"]>(null);
-  const [armed, setArmedState] = useState<string | null>(null);
-  const armedNow = useRef<string | null>(null);
-  const setArmed = (to: string | null) => {
+  const [armed, setArmedState] = useState<Armed | null>(null);
+  const armedNow = useRef<Armed | null>(null);
+  const setArmed = (to: Armed | null) => {
     armedNow.current = to;
     setArmedState(to);
   };
   const current = currentIndex(need.rows, answers, held);
-  const signature = signatureOf(need, answers);
+  const signature = confirmationSignature(need, answers, tokenGeneration());
   const confirming =
-    armed !== null && armed === signature && commit.guarded.length > 0;
+    armed !== null &&
+    armed.sign === signature &&
+    (armed.commit === "send" || commit.guarded.length > 0)
+      ? armed.commit
+      : null;
 
   const hold = (index: number) => {
     const row = need.rows[index];
@@ -149,31 +158,47 @@ export function usePicking(
 
   const setText = (index: number, field: Field, text: string) => {
     const row = need.rows[index];
-    if (row !== undefined)
+    if (row !== undefined) {
       update(index, withText(row, keptNow(index), field, text, Date.now()));
+      setArmed(null);
+    }
   };
 
-  /** The comment to copy now, or `null` when a row holds it back or its first step is still to show. */
-  const commitNow = (): string | null => {
+  /** What to commit now, or `null` when a row holds it back, nothing is picked to send, or its first step is still to show. */
+  const commitNow = (how: Commit): CardCommit | null => {
     const fresh = answersNow();
     const now = cardCommit(need.rows, fresh);
     const [fault] = now.faults;
+    const not = how === "copy" ? "Not copied" : "Not sent";
     if (fault !== undefined) {
       announce(
-        `Not copied: ${placeOf(need, fault.place - 1)} cannot be sent: ${fault.fault}`,
+        `${not}: ${placeOf(need, fault.place - 1)} cannot be sent: ${fault.fault}`,
       );
       return null;
     }
-    const sign = signatureOf(need, fresh);
-    if (now.guarded.length > 0 && armedNow.current !== sign) {
-      setArmed(sign);
+    // Send posts only what a person picked: never an approval nobody picked, nor the starting line.
+    if (how === "send" && now.picked === 0) {
       announce(
-        `Check first: ${now.guarded.map((g) => `${g.option.name} for ${placeOf(need, g.place - 1)}`).join(", ")}. Copy again to copy.`,
+        `${not}: Send needs an option picked on ${need.target}; pick one, or copy the card to paste it`,
+      );
+      return null;
+    }
+    const sign = confirmationSignature(need, fresh, tokenGeneration());
+    const held = armedNow.current;
+    if (
+      needsConfirmation(how, now.guarded.length) &&
+      (held === null || held.sign !== sign || held.commit !== how)
+    ) {
+      setArmed({ sign, commit: how });
+      const again =
+        how === "copy" ? "Copy again to copy" : "Send again to send";
+      announce(
+        `Check first: ${now.guarded.map((g) => `${g.option.name} for ${placeOf(need, g.place - 1)}`).join(", ")}. ${again}.`,
       );
       return null;
     }
     setArmed(null);
-    return now.text;
+    return now;
   };
 
   /** Picks the option the key numbers, or says why it cannot. */
@@ -222,7 +247,7 @@ export function usePicking(
     };
     const onCommit = (event: Event) => {
       event.preventDefault();
-      const text = latest.current.commitNow();
+      const text = latest.current.commitNow("copy")?.text ?? null;
       if (text !== null) void copyText(text, element);
     };
     // The palette ran nothing on this card, or another card's entry: this card's first step ends.
@@ -263,7 +288,8 @@ export function usePicking(
     openField,
     closeField: () => setEditing(null),
     setText,
-    gate: commitNow,
+    gate: () => commitNow("copy")?.text ?? null,
+    sendGate: () => commitNow("send"),
     disarm,
   };
 }

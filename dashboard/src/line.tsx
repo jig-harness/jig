@@ -137,6 +137,7 @@ export function LinePanel({
                     />
                   )}
                 </div>
+                <div className="m sm">{account.weightText}</div>
                 {account.wall === null ? null : (
                   <div className="wallLine m">{account.wall}</div>
                 )}

@@ -10,6 +10,7 @@ import type {
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { ago, clock, plural, span, until } from "./format.ts";
+import { retainedSlug } from "../../plugin/dispatch/lib/line-unread.ts";
 import { noLinkText } from "./links.ts";
 import { trackerOf } from "./tracker-name.ts";
 import { type Role, roleOf } from "./status.ts";
@@ -113,8 +114,9 @@ export function timerBanner(
  * A banner for each repository whose part of the line is past the timer's
  * next tick and its longest recent one while the line itself is current:
  * the ticks since ran, and none of them read it. Each names the repository,
- * when its part was read, and why the ticks since did not read it: another
- * tick held it busy, or they read other repositories.
+ * when its part was read, and why the ticks since did not read it: the
+ * newest that tried was refused, another tick held it busy, or they read
+ * other repositories.
  */
 export function staleBanners(
   line: LineSnapshot,
@@ -125,15 +127,17 @@ export function staleBanners(
     if (repo.readAt === undefined) return [];
     const read = Date.parse(repo.readAt);
     if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
-    const name = repo.slug ?? repo.path;
+    const name = retainedSlug(repo) ?? repo.path;
     const since = (line.ticks ?? []).filter(
       (t) => Date.parse(t.startedAt) > read,
     );
     const busy = since.filter((t) => t.busy.includes(repo.path)).length;
     const why =
-      busy === 0
-        ? `None of the ${plural(since.length, "tick")} since read it.`
-        : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
+      repo.refused !== null
+        ? `The newest tick that tried could not read it (${repo.refused}).`
+        : busy === 0
+          ? `None of the ${plural(since.length, "tick")} since read it.`
+          : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
     return [
       {
         key: repo.path,
@@ -443,6 +447,7 @@ export interface AccountView {
   name: string;
   vendor: string;
   heldText: string;
+  weightText: string;
   /** One entry per slot: whether it is held. */
   pips: boolean[];
   state: AccountState | null;
@@ -451,11 +456,31 @@ export interface AccountView {
   free: boolean;
 }
 
+/** The configured weight and the weight available for new launches now. */
+function accountWeightText(
+  a: LineAccount,
+  walled: boolean,
+  atCap: boolean,
+): string {
+  const configured = a.weight === undefined ? 100 : a.weight.configured;
+  const closed = walled || a.wallUnrecorded || a.notAdmitted !== null || atCap;
+  const effective = closed ? 0 : (configured ?? 0);
+  const reason =
+    a.weight === undefined
+      ? "default 100"
+      : !walled && a.weight.reason.startsWith("walled until ")
+        ? a.weight.reason.split("; ").slice(1).join("; ") || a.weight.reason
+        : a.weight.reason;
+  return `weight ${configured ?? "unreadable"}, effective ${effective}; ${reason}`;
+}
+
 /** An account's row: how full it is and why it takes nothing, if it does not. */
 export function accountView(a: LineAccount, clockNow: Clock): AccountView {
   const { nowMs, timeZone } = clockNow;
   const walled = wallIsUp(a, nowMs);
   const atCap = a.held >= a.cap;
+  const configured = a.weight === undefined ? 100 : a.weight.configured;
+  const paused = configured === null || configured === 0;
   let state: AccountState | null = null;
   let wall: string | null = null;
   if (walled && a.wall !== null) {
@@ -469,6 +494,9 @@ export function accountView(a: LineAccount, clockNow: Clock): AccountView {
   } else if (a.notAdmitted !== null) {
     state = "not admitted";
     wall = a.notAdmitted;
+  } else if (paused) {
+    state = "not admitted";
+    wall = a.weight?.reason ?? "weight 0";
   } else if (atCap) {
     state = "at cap";
   }
@@ -476,11 +504,17 @@ export function accountView(a: LineAccount, clockNow: Clock): AccountView {
     name: a.name,
     vendor: a.vendor,
     heldText: `${a.held} of ${a.cap}`,
+    weightText: accountWeightText(a, walled, atCap),
     pips: Array.from({ length: a.cap }, (_, i) => i < a.held),
     state,
     wall,
     walled,
-    free: !walled && !a.wallUnrecorded && a.notAdmitted === null && !atCap,
+    free:
+      !paused &&
+      !walled &&
+      !a.wallUnrecorded &&
+      a.notAdmitted === null &&
+      !atCap,
   };
 }
 
@@ -492,7 +526,7 @@ export function slotSummary(accounts: LineAccount[], nowMs: number): string {
   return `${held} of ${cap} slots held${walls > 0 ? `, ${plural(walls, "wall")}` : ""}`;
 }
 
-/** The account the next admission lands on: the first free one, rotating on from the last launch's. */
+/** An example of an available account, keeping the legacy display order; launch weights determine the actual next choice. */
 export function nextFreeAccount(
   line: LineSnapshot,
   clockNow: Clock,

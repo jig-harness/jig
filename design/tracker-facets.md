@@ -119,16 +119,20 @@ A store is where a tracker keeps one facet:
 
 What each tracker can hold:
 
-| Store             | GitHub Issues                                   | Jira                                            | Linear                                                     |
-| ----------------- | ----------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
-| `native` type     | the issue type                                  | the issue type                                  | refused: Linear has no issue types                         |
-| `native` priority | the organization's Priority issue field         | the priority field                              | the priority field                                         |
-| `native` size     | refused: an Effort issue field is a `field`     | refused: each site's estimate is a custom field | the estimate                                               |
-| `field`           | an issue field of the repository's organization | a custom field, by name or id                   | refused: the adapter has no custom field to name on Linear |
-| `label`           | any facet                                       | any facet                                       | any facet                                                  |
+| Store             | GitHub Issues                                   | Jira                                                                                   | Linear                                                     |
+| ----------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `native` type     | the issue type                                  | the issue type                                                                         | refused: Linear has no issue types                         |
+| `native` priority | the organization's Priority issue field         | the priority field                                                                     | the priority field                                         |
+| `native` size     | refused: an Effort issue field is a `field`     | refused: each site's estimate is a custom field                                        | the estimate                                               |
+| `field`           | an issue field of the repository's organization | a custom field, by name or id (not for priority: refused, the priority field holds it) | refused: the adapter has no custom field to name on Linear |
+| `label`           | any facet                                       | any facet                                                                              | any facet                                                  |
 
 A store the adapter cannot hold is refused when the configuration is read,
-naming the facet and the stores that adapter has. A store kept by the
+naming the facet and the stores that adapter has. The stores each adapter
+holds in the current release, each refusal with its reason, are in the
+Protocol's
+[tracker facets chapter](../plugin/protocol/tracker-facets.md#the-stores-each-adapter-holds),
+generated from the code. A store kept by the
 repository's own command is [later work](#later-the-command-store).
 
 ### Value maps
@@ -726,14 +730,16 @@ record, followed by reverting the configuration commit.
 
 Jig moves to GitHub's stores once the move exists (build step 3). Its
 organization's issue types are its taxonomy's types, Bug, Feature, Docs,
-Chore and Infra: a person retires GitHub's default Task type from the
+Chore, Infra and Epic: a person retires GitHub's default Task type from the
 organization before the move, so the web interface offers no type that
 names nothing. Its Priority field has the default options, and its Effort
 field's options are `xs`, `small`, `medium`, `large` and `xl`, so its
 configuration names the stores (`store: native` for type and priority,
 `store: field` with `field: Effort` for size) and needs no value map. Its
-`issue_tracker.types` keeps mapping `docs`, `chore` and `infra` to the
-`task` work type. Its open issues then carry no type, priority or size
+`issue_tracker.types` keeps mapping `docs`, `chore`, `infra` and `epic` to
+the `task` work type. An epic is an issue of the `epic` type, which
+`issue_tracker.labels.epic_types` names `Epic`; no issue carries an `epic`
+label, since an issue has one type and a label beside it could contradict it. Its open issues then carry no type, priority or size
 label, and its closed issues keep theirs. Until the move its configuration
 names the label store for each of the three facets (`store: label`), set in
 the pull request of build step 2 that adds types to the issue forms: the
@@ -898,10 +904,6 @@ constraints:
 - **Facets beyond type, priority and size**, such as a due date, a team or
   an owning repository. They stay labels or Jira `field_labels`; one joins
   when a caller needs to read it.
-- **The deferral batch step's own Linear path** (`defer-batch.ts`), which
-  files outside the interface and already sets priority from severity,
-  through the shared mapping that files `unknown` as medium. It joins the
-  check when the deferral moves onto the interface (plan item 10).
 - **Records.** `reflect`'s issues are records, not work, carry no facets,
   and are never read by the sweep.
 - **A host timer for the sweep.** Jig's repository runs it as a workflow; a

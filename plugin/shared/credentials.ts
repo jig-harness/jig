@@ -11,6 +11,11 @@
 /** The names a key carries when its value is a secret. */
 const SECRET_KEY =
   "[A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*";
+/** Whether a structured field's name identifies a credential. */
+export function isCredentialKey(key: string): boolean {
+  return new RegExp(`^${SECRET_KEY}$`, "i").test(key);
+}
+
 /** A quoted value, either quote, with its escapes. */
 const QUOTED = `(?:"(?:[^"\\\\]|\\\\.|"")*"|'(?:[^'\\\\]|\\\\.|'')*')`;
 

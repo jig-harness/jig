@@ -23,7 +23,8 @@ import { currentIso, parseMs } from "../../../../../shared/time.ts";
  * What a takeover is admitted against: the doctor's `WEDGED`, a `DEAD`
  * holder, or, across clones, a `STALE` ledger heartbeat (`lib/driver/ledger.ts`).
  */
-export const TAKEOVER_VERDICTS = ["WEDGED", "DEAD", "STALE"] as const;
+import { TAKEOVER_VERDICTS } from "./ledger-values.ts";
+export { TAKEOVER_VERDICTS } from "./ledger-values.ts";
 
 export interface TakeoverRecord {
   /** When the takeover was recorded. */

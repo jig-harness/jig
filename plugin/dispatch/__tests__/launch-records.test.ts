@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
+import { holdRecord, type ApplyState } from "../lib/actions/launch.ts";
 import { driveHold } from "../lib/actions/drive-hold.ts";
 import { consumeRearm, pendingRearm } from "../lib/actions/rearm-request.ts";
 import { failed, ok } from "../../shared/outcome.ts";
@@ -21,6 +22,7 @@ import {
   settleEnds,
   type ReadRecord,
   writeRecord,
+  isLaunchRecord,
 } from "../lib/launches.ts";
 import { launchHeads } from "../lib/failed-rearms.ts";
 import { markedSince } from "../lib/launch-report.ts";
@@ -81,6 +83,90 @@ function record(id: string, over: Partial<LaunchRecord> = {}): LaunchRecord {
     ...over,
   };
 }
+
+it("records a new launch after the greatest ordinal, even when a resume copied an old ordinal", () => {
+  const dir = root();
+  const previous = ended(
+    record("20260101T000000Z-aaaaaaaa", { accountLaunchOrdinal: 73 }),
+    0,
+    "2026-01-01T00:00:00.000Z",
+  );
+  const state = { root: dir, records: [previous], last: null } as ApplyState;
+  const copied = record("20260201T000000Z-bbbbbbbb", {
+    accountLaunchOrdinal: 2,
+  });
+  holdRecord(state, copied, {
+    account: {
+      name: "a",
+      vendor: "claude",
+      configDir: "/c",
+      identity: "a",
+      maxPerAccount: 2,
+    },
+    held: 0,
+    wall: null,
+    wallUnrecorded: false,
+    weight: { configured: 100, reason: "fixture" },
+  });
+  expect(copied.accountLaunchOrdinal).toBe(74);
+  expect(readRecord(copied.id, dir)?.accountLaunchOrdinal).toBe(74);
+});
+
+it("reads legacy launch records but rejects invalid account launch ordinals", () => {
+  const original = record("ordinal-validation");
+  expect(isLaunchRecord(original)).toBe(true);
+  expect(isLaunchRecord({ ...original, accountLaunchOrdinal: 1 })).toBe(true);
+  for (const bad of [null, 0, -1, 1.5, "1", Number.POSITIVE_INFINITY])
+    expect(isLaunchRecord({ ...original, accountLaunchOrdinal: bad })).toBe(
+      false,
+    );
+});
+
+it("retains one ordinal anchor per account when old records are collected", () => {
+  const dir = root();
+  const anchor = ended(
+    record("20260101T000000Z-aaaaaaaa", { accountLaunchOrdinal: 73 }),
+    0,
+    "2026-01-01T00:00:00.000Z",
+  );
+  const later = ended(
+    record("20260201T000000Z-bbbbbbbb", {
+      account: "b",
+      configDir: "/b",
+      accountLaunchOrdinal: 21,
+      createdAt: "2026-02-01T00:00:00.000Z",
+    }),
+    0,
+    "2026-02-01T00:00:00.000Z",
+  );
+  expect(
+    pruneLaunches([anchor, later], Date.parse("2027-01-01"), 7, dir),
+  ).toEqual([]);
+});
+
+it("refuses malformed stored test-lock observations while reading older records", () => {
+  const original = record("wait-observation");
+  const wait = {
+    pid: 12,
+    workspace: "/work/w",
+    since: "2026-11-01T10:00:00.000Z",
+    observedAt: "2026-11-01T10:01:00.000Z",
+    waiting: true,
+  };
+  expect(isLaunchRecord(original)).toBe(true);
+  expect(isLaunchRecord({ ...original, testLockWait: wait })).toBe(true);
+  for (const bad of [
+    null,
+    {},
+    { ...wait, pid: 0 },
+    { ...wait, pid: 1.5 },
+    { ...wait, workspace: null },
+    { ...wait, since: "invalid" },
+    { ...wait, observedAt: "invalid" },
+    { ...wait, waiting: "yes" },
+  ])
+    expect(isLaunchRecord({ ...original, testLockWait: bad })).toBe(false);
+});
 
 function ended(r: LaunchRecord, code: number, at: string): ReadRecord {
   const exit: LaunchExit = { at, code, signal: null };

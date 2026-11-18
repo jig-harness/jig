@@ -17,7 +17,8 @@ import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { defaultFacets, type Facets } from "../facets/config.ts";
 import { TrackerRequestError } from "../port.ts";
-import { adfToMarkdown } from "./adf.ts";
+export type { JiraComment } from "./comments.ts";
+import { commentOf, type JiraComment } from "./comments.ts";
 import { type BlockedField, resolveBlockedFields } from "./blocked-fields.ts";
 import {
   type FacetField,
@@ -49,15 +50,6 @@ import {
   offsetPages,
   searchPages,
 } from "./transport.ts";
-
-/** One comment, with its author. */
-export interface JiraComment {
-  id: string;
-  body: string;
-  createdAt: string;
-  /** `null` for a deleted account. */
-  author: Record<string, unknown> | null;
-}
 
 export interface ChangelogEntry {
   createdAt: string;
@@ -621,14 +613,14 @@ export function jiraClient(opts: ClientOptions): Client {
         : until(authenticated, signal));
       // Resolved before the issue's own 404 handler: a failed field read is
       // not a missing issue.
-      const read = (await fieldsToRead(signal)).join(",");
+      const read = await fieldsToRead(signal);
       let raw: unknown;
       try {
         raw = await transport(
           {
             method: "GET",
             path: `issue/${encodeURIComponent(key)}`,
-            query: { fields: read },
+            query: { fields: read.join(",") },
           },
           signal,
         );
@@ -641,6 +633,7 @@ export function jiraClient(opts: ClientOptions): Client {
         site,
         await client.fieldLabels(signal),
         await client.facetFields(signal),
+        read,
       );
     },
 
@@ -664,7 +657,7 @@ export function jiraClient(opts: ClientOptions): Client {
       const facet = await client.facetFields(signal);
       const read = fields ?? (await fieldsToRead(signal));
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
-        parseIssue(i, site, extra, facet),
+        parseIssue(i, site, extra, facet, read),
       );
     },
 
@@ -730,12 +723,7 @@ export function jiraClient(opts: ClientOptions): Client {
         },
       );
       return items
-        .map((c, i) => ({
-          id: String(c.id ?? i),
-          body: adfToMarkdown(c.body),
-          createdAt: iso(c.created, `comments of ${key}[${i}].created`),
-          author: isRecord(c.author) ? c.author : null,
-        }))
+        .map((c, i) => commentOf(c, key, i))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
 

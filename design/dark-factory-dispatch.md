@@ -88,8 +88,9 @@ own once a repository's ledgers name its converged drives
 ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
 The act phase reads the host's gauges when it builds its apply state, and
 admits each launch within the load factor. And the steward is one more
-stage, launched on the owner host when its digest changed, whose records
-the next tick's plan reads.
+stage, launched on the owner host when its judgment backlog holds work no
+pass has judged ([The steward's trigger](#the-stewards-trigger)), whose
+records the next tick's plan reads.
 
 ```mermaid
 flowchart TD
@@ -418,9 +419,20 @@ guards keep one stage from starting twice:
   recent (within the session lease, 6 hours): the tick releases the marker
   it left, whether or not an answer was written onto it, and a later tick
   starts the follow-up again under a record whose facts carry the recovery
-  tag, within the pull request's recovery budget (see Launch records). Only
-  the death whose marker a tick released this way makes the next follow-up a
-  run again; one a person asks for by deleting a failed marker is a new
+  tag, within the pull request's recovery budget (see Launch records). A
+  pass whose result or exit the host could not write (`jig dispatch result`
+  keeps that evidence outside the state database when the database refuses
+  it, as the wrapper does for an exit) is run again once in the same manner,
+  whatever it said and with no age limit, and the question it asked is never
+  a person's. Both wait for the host's health check: the tick releases the
+  marker, and starts the run again, only while the dispatcher's last run
+  passed (`jig doctor dispatch`'s `dispatch:last-run`). While it fails,
+  every such follow-up that is not itself a run again is held quietly,
+  whatever its age, with nothing released or notified; once it passes, the
+  session lease applies again, and a plain death older than it goes to a
+  person. `failures.rerun_died: 0` turns both off.
+  Only the death whose marker a tick released this way makes the next
+  follow-up a run again; one a person asks for by deleting a failed marker is a new
   follow-up. A pass that ended failed on a **routine question** (see
   Sessions that wait) is run again once in the same manner, with no age
   limit, since it waits on no session lease: its outcome record
@@ -448,9 +460,12 @@ guards keep one stage from starting twice:
   instead of a question: the marker it left stays until that time, so no
   host starts the follow-up early, its wrapper does not answer it, and the
   tick releases it after the reset; a later tick starts the follow-up again
-  as a first run, with no recovery tag and outside the recovery budget. The
+  as a first run, with no recovery tag and outside the recovery budget. A
+  pass that stopped on a question naming a rate limit, with no routine
+  tag, waits the same way, until an hour after it ended. The
   third wait in a row is a person's, notified with the rate limit named
-  (`followup-waits.ts`). A run again of either kind never earns another: whichever
+  (`followup-waits.ts`); a person's restart (deleting the marker after that,
+  or a "Run it again" answer) starts the count again. A run again of either kind never earns another: whichever
   path ran it, its failure or death is a person's, so a follow-up is run
   again at most once by the two together, and both draw on the pull
   request's recovery budget. An older death, a failed outcome on an untagged
@@ -618,7 +633,13 @@ requires of a ledger or an answer. The check gates pickups only. A claimed
 item's current assignment is the claim's own, made by the factory
 identity, so the stalled and double-claim reports below read claimed items
 without it; they start nothing, so an unauthorized assignment gains
-nothing from them. The
+nothing from them. A tick does not ask both questions of every item again:
+who made an assignment is kept until the item's update time moves, which an
+assignment does, and whether that person can write is kept per person for
+15 minutes, since losing write access changes no item. On the served path
+the permission is kept with the item's metadata, so it is renewed when that
+metadata is, not at 15 minutes. The read just before
+a launch asks the tracker both again, whatever a tick kept. The
 item's text is untrusted data: the tick passes the session the item's key
 and nothing else, and `do-item` reads the item as it reads any issue.
 
@@ -672,10 +693,14 @@ links from the assigned item and ends at a cycle. A blocker that is assigned
 to someone else, in progress, an epic, held, another repository's or unreadable
 is never started on the strength of the relation, since anyone with write
 access to the tracker can add one: the blocked item waits, and its reason
-names the blocker and why it was left. Epics are worked one child at a time:
-without an execution plan only the top-ranked child of an epic is wanted, and
-none while another child is in progress, as `do-item` works an epic; a plan
-that lists several eligible steps sets its own order and parallelism. An epic
+names the blocker and why it was left. An epic's ready children are started
+in parallel
+([ADR-0024](../docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)):
+without an execution plan, its best-ranked ready children are wanted until
+`dispatch.epic_width` of them (4 by default) are under way, counting a
+started child that still needs an agent and a child that cannot be read, and
+a child that waits on the width names the epic and the width; a plan that
+lists several eligible steps sets its own order and parallelism. An epic
 none of whose open children can start reports one reason of its own, so the
 queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
@@ -1366,6 +1391,7 @@ The tick reaches the runtime only through these methods:
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sessions(repo)`                                     | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark                                                                                                                                                                                                                                                                                                                                              |
 | `openWorkspace(...)`                                 | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists                                                                                                                                                                                                                                                                                                                                                                                           |
+| `verifyWorkspace(repo, workspace, target)`           | proof that a workspace the launch did not open (the one joined to the pull request, a recovery's tree, a pending launch's recorded workspace) is still the pull request's checkout: a checkout of the repository's clone, its origin the head repository at the head the forge reports, its commit on that head's line of history; why not, or none once proven. It changes no work in the workspace, and a drive runs in no workspace it refuses                                            |
 | `launch(workspace, stage, account, key, sessionId?)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session. `sessionId`, given for an interactive session, is the vendor session id the tick minted and keeps on the launch record (see Control), distinct from the agent's id and the key; a launch that cannot carry it records no wall and gets no nudge |
 | `notify(target, message)`                            | a message that reaches a person; its receipt carries the target's comment as written                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `steer(session, nudge)`                              | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send                                                                                                                                                                                                                                                                                                                         |
@@ -1430,10 +1456,10 @@ create` does not do) live in the plugin, in
   the launch can carry it: `orca agent launch` takes no session id, so the
   interactive launch the pickup step built (the wrapper in a terminal tab,
   starting Claude Code itself) passes it as Claude Code's `--session-id`;
-  that `orca agent launch` can bind its agent to
-  an account so is checked when the pickup stage is built, and until it
-  does, interactive sessions are not launched. A pickup is launched as a
-  headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
+  `orca agent launch` cannot bind its agent to an account
+  ([orca-integration.md](orca-integration.md#what-jig-asks-of-orca) asks
+  Orca for it), and until it can, interactive sessions are not launched.
+  A pickup is launched as a headless pass instead ([headless pickups](../plugin/README.md#the-dispatcher))
   and takes the headless form above, with the wrapper running
   `do-item`. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
@@ -1518,8 +1544,8 @@ create`, which Orca shows as the workspace's name and makes its folder's
   back: the receipt says so.
 - **The tab title** of a launch: `jig dispatch · rearm #456`.
 
-The launch record keeps the same mark. A skill may rename a workspace to
-what the work became; the mark outlives the name, so the comment and the
+The launch record keeps the same mark. A person may rename a workspace;
+the mark outlives the name, so the comment and the
 record still say the dispatcher started it, and the morning report lists
 the workspaces of the night by the mark on their launch records, each with
 the name it carries now.
@@ -1621,10 +1647,11 @@ the same way, through the environment or account selection of its agent's
 launch, with the same isolation and the same check before it starts, and a
 person switching the host's active account does not move it.
 Switching Orca's active account before a launch is not used: it is
-host-wide and would move every other session's next pass too. Whether an
-Orca agent launch can bind its agent to an account is not verified (Orca's
-command line selects accounts only for some agents), so a pickup does not
-start as an interactive session: it runs as a headless pass, as a
+host-wide and would move every other session's next pass too. An Orca agent
+launch cannot bind its agent to an account either: that selection
+overrides a variable the launch hook adds
+([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)), so
+a pickup does not start as an interactive session: it runs as a headless pass, as a
 follow-up does
 ([headless pickups](../plugin/README.md#the-dispatcher)).
 
@@ -1742,6 +1769,43 @@ supervisor exit. This proves only what was observed, within
 [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)'s
 cooperative scope; it does not add operating-system containment or prove
 that every possible descendant ended.
+
+### The steward's trigger
+
+The [steward](../GLOSSARY.md) supplies judgment the tick's rules cannot, so
+it starts on that work alone. Each tick derives one repository's **judgment
+backlog** from what it already read: the items no rule settles and no
+steward pass has judged yet. Its members are
+
+- a stalled pickup or a failed follow-up with no running session;
+- a stopped drive whose class a re-arm could resolve, keyed by its ledger
+  facts, so new facts make a new member;
+- an ended pass that recommends a resume;
+- a queued item missing a priority, type or size;
+- a need with no framing: one neither its pass, its drive's parks nor the
+  tick frames as a decision a person answers in a word;
+- a pickup's or a follow-up's run that ended without a closing report and
+  whose end its wrapper did not explain, at most five no pass has seen, the
+  latest first
+  ([A run with no report](dispatched-sessions.md#when-a-runs-tab-closes)).
+
+The trigger reads the backlog only. An empty backlog starts no pass, and
+neither does one whose every member a pass of the repository's latest 20
+already saw. A member no pass has seen starts one on the same tick, with no
+cadence to wait on; the host's budget of three passes in a rolling hour, and
+one pass holding a repository at a time, stay. `steward.every` is still
+read, so a file that sets it keeps loading, and changes nothing.
+
+The digest the pass reads carries the backlog, the unframed needs and,
+beside them, each framed need with the framing it already carries. A `need`
+record may name only a target among the digest's unframed needs; one for
+any other target is refused. The runs without a report are listed with
+an excerpt of each run's transcript copy, and a `cause` record may name only
+one of them. A tick that starts no pass says why on its
+receipt and in the line the dashboard reads: the backlog was empty, its
+members were all judged, or the hourly budget was spent.
+
+A person's on-demand start of a pass through `jig send` is not built.
 
 ### What it never does
 
@@ -1861,7 +1925,15 @@ A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
 into one message, and when the target is still marked unread from an
 earlier notification it appends the new causes to that comment rather than
-overwriting it. Each cause's text carries its key (the facts its
+overwriting it. One comment holds at most 16,000 characters, so a comment
+that is exactly what the dispatcher wrote gives up the entries whose causes
+are settled (no cause the tick names carries the key, and no suppression
+record that still stands does: the test that retires an unread notices
+workspace) to make room for the new ones; an entry whose cause still stands
+is never dropped. A cause that still finds no room waits, and the failure
+ledger counts it as a failed delivery, so past `failures.notify_after`
+ticks a person is told through whatever destination still delivers (see
+Failures). Each cause's text carries its key (the facts its
 suppression record is keyed by). A cause counts as sent, and its
 suppression record is written, only once the runtime's receipt shows the
 comment carrying its key, so a cause never delivered is never suppressed.
@@ -2281,6 +2353,25 @@ never acted on: the stage keeps running and keeps its slot, and whether to
 stop it is a person's call. Stages the dispatcher did not launch carry no
 expectation.
 
+**Validation waiting for the host.** The dispatcher diagnoses test-lock
+waits without changing admission or pass deadlines. Resource-lock wait
+announcements carry the process identity, working directory and wait start
+on every platform. Attribution currently works on POSIX; Windows
+announcements are neither attributed nor counted as waiters until its
+synchronous identity check can verify process creation time. A tick attributes a live announcement only when one
+running launch's workspace holds the waiter's working directory and the
+launch precedes the wait, and retains
+the last observed wait on that launch record. Running and drift reasons
+name the wait and its duration; ended and stalled pickup reasons and the
+outcome log name the last observation as historical evidence. Admission or
+exit clears the current-wait mark on the next observation. An unreadable,
+unverifiable or older identity-only announcement is not attributed; the
+existing aggregate lock gauge remains available. A tick can miss a wait
+that starts and ends between observations. This diagnostic approach does
+not prevent a deadline from stopping a queued pass. The day-long live-host
+check after release remains a separate acceptance observation, including
+whether any queued validation reaches its deadline.
+
 **The dashboard.** `jig dispatch dashboard` serves one page that answers, in
 order, what needs a person, what is running on which account, what is coming
 and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)),
@@ -2488,7 +2579,8 @@ session runs. Its values are split as configuration always is:
   documented in [CONFIGURATION.md](../plugin/CONFIGURATION.md): the factory
   identity per tracker (`identity`), the states that mean "ready to pick
   up" (`states`), the follow-up command (`followup_command`, `/followup` in
-  Jig; a consumer repository names its own post-merge command),
+  Jig; elsewhere the plugin's `/jig:followup` unless the repository names
+  its own),
   `stalled_after`, `blocked_after`, the expectations
   `drive_rounds_flat`, `pickup_within` and `followup_within`, and the
   dispatch labels (`labels`: `enabled`, `prefix`, `only_labeled`).
@@ -2606,7 +2698,7 @@ One pull request each, in this order; each is usable on its own.
    notification carries its framed decision, or its stored reason
    when it has no decision record, and
    the receipts join its morning report; a consumer repository's
-   follow-up waits on its own post-merge command (item 17).
+   follow-up runs the plugin's `/jig:followup` unless it names its own.
 6. **Control.** The outcome log and its classifier, the expectations and
    stage drift, `jig dispatch dashboard`, the interactive wall record and
    waiting episodes, and the `steer` stage with its one nudge. Usable alone: every stage the dispatcher

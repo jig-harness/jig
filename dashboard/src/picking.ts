@@ -150,6 +150,8 @@ export interface DecisionRow {
   options: RowOption[];
   /** Whether the readers resolve a `choose` or `approve` for it: a typed decision, or a record with one recommended option. Otherwise every answer to it reads as free. */
   structured: boolean;
+  /** The dispatcher, rather than a session, framed this decision's options. */
+  dispatcherFramed: boolean;
   /** How this decision and another affect each other, as the decisions say. */
   interplay: string[];
   /** The record's recommendation as Markdown, where no option reads as the recommended one; `null` otherwise. */
@@ -203,6 +205,7 @@ export function decisionRows(decisions: LineDecision[]): DecisionRow[] {
     structured:
       d.decision !== undefined ||
       (d.options ?? []).filter((o) => o.recommended).length === 1,
+    dispatcherFramed: d.answer?.framedBy === "dispatcher",
     question: d.question,
     decisionClass: d.decisionClass,
     act: actOfClass(d.decisionClass),
@@ -338,7 +341,12 @@ function freeFault(row: DecisionRow, text: string): string | null {
     return `your own words name the framing [${claimed}], which is not this decision's; take it out`;
   // The readers would count these words as a choice, which only a pick (and its second step) may make. A record they read as free text alone has no choice to count.
   if (!row.structured) return null;
-  const read = choiceInLine(text, row.options, (o) => o.recommended);
+  const read = choiceInLine(
+    text,
+    row.options,
+    (o) => o.recommended,
+    row.dispatcherFramed,
+  );
   return read === null
     ? null
     : `your own words read as ${read.form === "approve" ? "approving" : "choosing"} ${read.option.name}; pick that option on the row instead`;
@@ -483,6 +491,8 @@ export interface GuardedPick {
 export interface CardCommit {
   /** The one comment Copy takes. */
   text: string;
+  /** Each decision the comment answers, with its digest: what Send writes, one comment per decision. */
+  answers: { key: string; digest?: string; answer: CardAnswer }[];
   /** What it is, as Copy and the palette name it. */
   label: "answers" | "approval" | "answer line";
   /** The picks that make Copy take two steps. */
@@ -526,16 +536,16 @@ export function cardCommit(
   });
   const picked = included.filter((x) => x.answer.kind === "pick").length;
   const tally = { faults, picked, free: included.length - picked };
+  const answered = included.map((x) => ({
+    key: x.row.key,
+    ...(x.row.digest === undefined ? {} : { digest: x.row.digest }),
+    answer: x.answer,
+  }));
   if (included.length > 0)
     return {
       ...tally,
-      text: cardComment(
-        included.map((x) => ({
-          key: x.row.key,
-          ...(x.row.digest === undefined ? {} : { digest: x.row.digest }),
-          answer: x.answer,
-        })),
-      ),
+      answers: answered,
+      text: cardComment(answered),
       label: "answers",
       guarded: included.flatMap((x) =>
         x.answer.kind === "pick" && x.pick?.guarded === true
@@ -554,6 +564,8 @@ export function cardCommit(
   )
     return {
       ...tally,
+      // Nothing was picked: the approval is Copy's alone, never sent.
+      answers: [],
       text: cardComment([
         {
           key: only.key,
@@ -570,6 +582,7 @@ export function cardCommit(
     };
   return {
     ...tally,
+    answers: [],
     text: rows.map((r) => answerLine(r.key, "")).join("\n\n"),
     label: "answer line",
     guarded: [],

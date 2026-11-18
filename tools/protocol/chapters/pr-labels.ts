@@ -15,6 +15,7 @@ import {
   type FieldSpec,
   fromRows,
 } from "../chapter.ts";
+import { checkHeldPhrases } from "../held.ts";
 import { table } from "../markdown.ts";
 
 const SOURCE_FILE = "plugin/shared/pr-labels/projection.ts";
@@ -105,6 +106,13 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
 
 export const PR_LABELS: Chapter = {
   id: "pr-labels",
+  check: (root) =>
+    checkHeldPhrases(root, "pr-labels", [
+      {
+        file: "plugin/skills/drive-pr/SKILL.md",
+        text: `The dispatcher's \`${DEFAULT_LABELS.prefix}${"hold" satisfies keyof typeof COMMAND_LABELS}\` label prevents new launches and re-arms`,
+      },
+    ]),
   title: "Pull-request labels Jig writes and reads",
   summary:
     "The labels that show where a pull request's drive or follow-up stands, and the labels a person adds to tell the dispatcher what to do with it.",
