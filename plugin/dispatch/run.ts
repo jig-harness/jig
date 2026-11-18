@@ -614,7 +614,7 @@ function recordFinishedExit(
       startup !== undefined &&
       !recordStartupWall(record, startup, startupOutputOf(ran));
     // The report before the exit: a tick that reads the exit reads its report too.
-    recordAndSay(id, record.action, startup);
+    recordAndSay(id, record.action, startup, startupWallUnrecorded);
     const session = sessionOf(record, ran);
     settlePassReport(record, ran, startup, session);
     recordExit(id, {

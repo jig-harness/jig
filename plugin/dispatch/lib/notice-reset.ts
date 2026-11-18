@@ -7,7 +7,7 @@
  * - a date and a time of day, for a weekly window:
  *   `resets Nov 13, 11am (Europe/Amsterdam)`.
  *
- * Neither carries a year, so each resolves to its next occurrence at or after
+ * Neither carries a year, so each resolves to its next occurrence after
  * the notice was read. The zone in the notice decides; one the notice leaves
  * out is the host's. A reset that does not read, names a zone the runtime does
  * not know, or lands further out than a weekly window can (`MAX_AHEAD_MS`) is
@@ -58,7 +58,11 @@ function hourOf(raw: number, meridiem: string | undefined): number | null {
   return meridiem.toLowerCase() === "pm" ? base + 12 : base;
 }
 
-/** The next instant at or after the minute of `now` that shows `month`-`day` `hour`:`minute` in `zone`. */
+/**
+ * The next instant after `now` that shows `month`-`day` `hour`:`minute` in
+ * `zone`: a time the clock skips (a spring-forward gap) does not read, and a
+ * time it shows twice (a fall-back) resolves to the first showing still ahead.
+ */
 function nextDated(
   now: Temporal.Instant,
   month: number,
@@ -67,17 +71,18 @@ function nextDated(
   minute: number,
   zone: string,
 ): Temporal.Instant | null {
-  const floor = Math.floor(now.epochMilliseconds / 60_000) * 60_000;
   try {
     const year = now.toZonedDateTimeISO(zone).year;
     for (const y of [year, year + 1]) {
-      const at = Temporal.PlainDateTime.from(
+      const wall = Temporal.PlainDateTime.from(
         { year: y, month, day, hour, minute },
         { overflow: "reject" },
-      )
-        .toZonedDateTime(zone, { disambiguation: "later" })
-        .toInstant();
-      if (at.epochMilliseconds >= floor) return at;
+      );
+      const first = wall.toZonedDateTime(zone, { disambiguation: "earlier" });
+      if (first.toPlainDateTime().equals(wall) === false) return null;
+      const later = wall.toZonedDateTime(zone, { disambiguation: "later" });
+      for (const at of [first.toInstant(), later.toInstant()])
+        if (at.epochMilliseconds > now.epochMilliseconds) return at;
     }
   } catch (error) {
     // An unknown zone or a date the calendar lacks (Feb 30) does not read.
@@ -111,6 +116,9 @@ export function noticeReset(
     at = nextDated(now, month, day, hour, minute, zone);
   }
   if (at === null) return null;
+  // The clock-time resolver compares against the floored minute, so a reset
+  // already past can come back; a wall at or before now is no wall.
+  if (at.epochMilliseconds <= now.epochMilliseconds) return null;
   return at.epochMilliseconds - now.epochMilliseconds <= MAX_AHEAD_MS
     ? at
     : null;

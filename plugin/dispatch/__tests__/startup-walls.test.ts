@@ -67,7 +67,30 @@ describe("the reset a usage notice states", () => {
     // A date just passed would be next year's: no weekly window lasts that long.
     expect(reset("resets Nov 10, 11am (UTC)", now)).toBeNull();
     expect(reset("resets Nov 20, 11am (UTC)", now)).toBeNull();
-    expect(MAX_AHEAD_MS).toBeLessThan(9 * 24 * 60 * 60_000);
+    expect(MAX_AHEAD_MS).toBe(8 * 24 * 60 * 60_000);
+  });
+
+  it("accepts a reset exactly eight days out and refuses one just beyond", () => {
+    const now = "2026-11-11T09:00:00Z";
+    expect(reset("resets Nov 19, 9am (UTC)", now)).toBe("2026-11-19T09:00:00Z");
+    expect(reset("resets Nov 19, 9:01am (UTC)", now)).toBeNull();
+  });
+
+  it("refuses a reset already past within the current minute", () => {
+    const now = "2026-11-13T11:00:30Z";
+    expect(reset("resets 11am (UTC)", now)).toBeNull();
+    expect(reset("resets Nov 13, 11am (UTC)", now)).toBeNull();
+  });
+
+  it("keeps a dated reset's clock transitions", () => {
+    // A fall-back time shown twice resolves to the first showing still ahead.
+    expect(
+      reset("resets Oct 25, 2:30am (Europe/Amsterdam)", "2026-10-25T00:00:00Z"),
+    ).toBe("2026-10-25T00:30:00Z");
+    // A time the clock skips does not read.
+    expect(
+      reset("resets Mar 29, 2:30am (Europe/Amsterdam)", "2026-03-28T12:00:00Z"),
+    ).toBeNull();
   });
 
   it("reads the reset only from a recognized standalone notice", () => {

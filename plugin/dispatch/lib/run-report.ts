@@ -95,7 +95,20 @@ function withRemoval(path: string, lines: string[]): string[] {
 function startupReport(
   action: LaunchAction,
   startup: "quota" | "unstarted",
+  wallUnrecorded: boolean,
 ): ClosingReport {
+  if (wallUnrecorded)
+    return {
+      schema: CLOSING_REPORT_SCHEMA,
+      concluded:
+        "The pass could not start, and the wrapper could not record its account's wall.",
+      suggested_next: {
+        step: "A person clears the unrecorded wall once the account's usage window has reopened: the dispatcher does not start the work again until then.",
+        owner: "person",
+        act: "Do",
+      },
+      cause: startup === "quota" ? "usage-limit" : "startup",
+    };
   return {
     schema: CLOSING_REPORT_SCHEMA,
     concluded:
@@ -141,12 +154,18 @@ function recordRunReport(
   id: string,
   action: LaunchAction,
   startup: "quota" | "unstarted" | undefined,
+  wallUnrecorded = false,
   root = stateRoot(),
 ): string[] {
   try {
     if (isDrive({ action })) return takeDriverReport(id, root);
     if (startup !== undefined && keptReport(id, root) === null)
-      recordReport(id, startupReport(action, startup), "wrapper", root);
+      recordReport(
+        id,
+        startupReport(action, startup, wallUnrecorded),
+        "wrapper",
+        root,
+      );
     return [];
   } catch (error) {
     return [
@@ -160,8 +179,9 @@ export function recordAndSay(
   id: string,
   action: LaunchAction,
   startup: "quota" | "unstarted" | undefined,
+  wallUnrecorded = false,
 ): void {
-  for (const line of recordRunReport(id, action, startup))
+  for (const line of recordRunReport(id, action, startup, wallUnrecorded))
     console.error(`jig dispatch run: ${line}`);
 }
 

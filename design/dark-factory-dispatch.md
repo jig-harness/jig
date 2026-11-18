@@ -1647,9 +1647,9 @@ stays where `drive-pr` keeps it and still decides whether `drive.ts` admits
 the re-arm. A wall an interactive session meets is not recorded before the
 control step (see Control): that session shows as waiting, holds its slot, and is
 reported once it has waited past `dispatch.blocked_after` (30 minutes by
-default). A wall a follow-up's pass meets ends the pass short of `done`,
-so it is notified as a failed follow-up; it is not written as the
-account's wall.
+default). A wall a follow-up's pass meets after it started ends the pass short
+of `done`, so it is notified as a failed follow-up; it is not written as
+the account's wall. A wall met at startup is the one written, above.
 
 **Binding a session to its account.** A headless pass is bound to its
 account through the configuration directory of that account's Orca

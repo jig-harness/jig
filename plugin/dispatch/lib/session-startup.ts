@@ -182,7 +182,9 @@ export function startupNext(
   return {
     step:
       startup === "quota"
-        ? "The dispatcher starts it again once the account's wall lifts."
+        ? action === "pickup"
+          ? "The dispatcher starts it again on another account that is free, or on this one once its wall lifts."
+          : "The dispatcher starts it again once the account's wall lifts."
         : "The dispatcher starts it again once the account's backoff ends.",
     owner: "line",
   };
