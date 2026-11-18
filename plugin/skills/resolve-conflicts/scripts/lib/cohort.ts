@@ -34,7 +34,11 @@ export const COHORT_QUERY_NAME = "ConflictRatesCohort";
 /** The pull requests a page asks for: the forge charges about two points for a page this size. */
 export const COHORT_PAGE = 50;
 
-/** The most pull requests one listing reads: the forge lists at most this many for a search, and a listing that reaches it is cut. */
+/**
+ * The most pull requests one listing reads, about 40 points of the forge's
+ * hourly budget at the page size above; a listing that reaches it is cut
+ * and keeps the previous rates.
+ */
 export const COHORT_LIMIT = 1000;
 
 /** How far before the kept listing began the next one reaches again, for a pull request the forge recorded late. */
@@ -399,11 +403,6 @@ const inWindow = (pr: CohortPr, since: number | null, until: number | null) => {
   return (since === null || at >= since) && (until === null || at < until);
 };
 
-/**
- * The cohort of the window `[since, until)`: what the listing reads, and what
- * the kept listing holds where this one did not reach. `cut` when the listing
- * reaches its bound first, `unreadable` when a page does not read.
- */
 /** A fresh walk of the listing. */
 function startWalk(): Walk {
   return {

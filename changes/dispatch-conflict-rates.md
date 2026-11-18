@@ -13,7 +13,7 @@ release: minor
   at all: a listing that fails or reaches its bound keeps the file already
   there, and the run exits 3.
 - The dispatcher refreshes those rates for each repository it starts
-  pickups in, at most once a day, after its act phase and under a deadline,
+  pickups in, at most once a day and one repository per tick, after its act phase and under a deadline,
   in `~/.local/state/jig/dispatch/conflict-rates/`. A refresh that fails,
   reads an incomplete listing or runs past its deadline keeps the previous
   rates and says why in the tick's error output. Nothing reads the rates to

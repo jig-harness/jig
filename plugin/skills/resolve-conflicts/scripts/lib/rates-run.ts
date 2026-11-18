@@ -5,9 +5,14 @@
  * written. A cohort that does not read in full writes nothing, so a rates
  * file already at `--out` stays as it was.
  */
-import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
-import { mkdirSync } from "node:fs";
 import { errnoCode, swallow } from "../../../../shared/errors.ts";
 import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 import {

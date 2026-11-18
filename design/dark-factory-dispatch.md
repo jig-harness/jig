@@ -79,9 +79,11 @@ turn is next), so acts never overlap, and the admission order is the one the
 tick would take with no observe phase in front of it. Last, the tick closes: it settles what the
 repositories it did not read still owe, copies the outcome log, writes the
 dashboard's line and writes its receipt. Once it has given up every lock, an
-applying tick refreshes the conflict rates of each repository it starts
-pickups in, at most once a day and under a deadline, so a slow replay delays
-no launch and no other tick
+applying tick refreshes the conflict rates of one repository it starts
+pickups in whose refresh is due, each at most once a day and under a
+deadline, so a slow replay delays no launch and holds the next tick back by
+one refresh at most; the repositories still due are taken by the ticks that
+follow
 ([overlap-aware-admission.md § The conflict history report feeds it](overlap-aware-admission.md#the-conflict-history-report-feeds-it)).
 Each phase lives in its own module under `plugin/dispatch/lib/`.
 

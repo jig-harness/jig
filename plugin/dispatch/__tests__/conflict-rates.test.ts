@@ -5,7 +5,14 @@
  * `history.ts --rates` under a deadline and keeps the previous file whenever
  * the run does not end with a whole new one.
  */
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+} from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -30,6 +37,7 @@ import {
   REFRESH_EVERY_MS,
   type RunHistory,
   refreshConflictRates,
+  refreshEligible,
 } from "../lib/conflict-rates-refresh.ts";
 
 const SLUG = "acme/widgets";
@@ -293,5 +301,41 @@ describe("the daily refresh of the conflict rates", () => {
       { slug: "a/one", path: "/one" },
     ]);
     expect(eligibleTargets(repos, false)).toEqual([]);
+  });
+
+  it("runs one due refresh per tick and leaves the other due repositories to the next ticks", async () => {
+    const repos = ["a/one", "a/two", "a/three"].map((slug) => ({
+      slug,
+      path: `/${slug}`,
+      listed: true,
+      stages: ["pickup"],
+    }));
+    const calls: string[] = [];
+    const run: RunHistory = async (argv, opts) => {
+      calls.push(opts.cwd);
+      const out = argv[argv.indexOf("--out") + 1] as string;
+      writeFileSync(out, rates(NOW, []).replace(SLUG, opts.cwd.slice(1)));
+      return { code: 0, stderr: "", timedOut: false };
+    };
+    const tick = {
+      apply: true,
+      deadlineMs: undefined,
+      caller: "test",
+      root,
+      run,
+    };
+    setSystemTime(NOW);
+    try {
+      const first = await refreshEligible(repos, tick);
+      expect(first).toEqual([{ slug: "a/one", outcome: "written" }]);
+      const second = await refreshEligible(repos, tick);
+      expect(second.map((o) => [o.slug, o.outcome])).toEqual([
+        ["a/one", "skipped"],
+        ["a/two", "written"],
+      ]);
+      expect(calls).toEqual(["/a/one", "/a/two"]);
+    } finally {
+      setSystemTime();
+    }
   });
 });

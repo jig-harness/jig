@@ -268,13 +268,19 @@ export interface AfterAct {
   deadlineMs: number | undefined;
   /** Whom the refreshes' forge calls are charged to. */
   caller: string;
+  root?: string;
+  run?: RunHistory;
 }
 
 /**
- * Refresh, one after another, the rates of each repository the tick acted
- * on that `eligibleTargets` chooses. A refresh that keeps the previous file
- * says why on the error output, which the tick's journal keeps; a defect in
- * one stops that repository's refresh only.
+ * Refresh the rates of the first repository, among those the tick acted on
+ * that `eligibleTargets` chooses, whose refresh is due: one run per tick at
+ * most, so that a tick ends within one refresh's deadline and the next tick
+ * starts on time, and the repositories still due are taken by the ticks
+ * that follow. A repository whose refresh is not due, or that another tick
+ * holds, is passed over. A refresh that keeps the previous file says why on
+ * the error output, which the tick's journal keeps; a defect in one stops
+ * that repository's refresh only, and the next is tried.
  */
 export async function refreshEligible(
   repos: readonly ActedRepository[],
@@ -287,12 +293,15 @@ export async function refreshEligible(
         nowMs: currentMs(),
         deadlineMs: tick.deadlineMs,
         caller: tick.caller,
+        ...(tick.root === undefined ? {} : { root: tick.root }),
+        ...(tick.run === undefined ? {} : { run: tick.run }),
       });
       if (outcome.outcome === "kept")
         console.error(
           `jig dispatch: ${target.slug}'s conflict rates were not refreshed, and the previous ones are kept: ${outcome.reason}`,
         );
       outcomes.push(outcome);
+      if (outcome.outcome !== "skipped") break;
     } catch (error) {
       logDefect(
         `${target.slug}'s conflict rates refresh`,

@@ -12,9 +12,10 @@
  * repositories one at a time in this tick's rotated order: plan wanted minus
  * running, report, and with `--apply` launch; then the tick writes its
  * receipt. Once every lock is given up, an applying tick refreshes the
- * conflict rates of each repository it launches pickups for, at most once a
- * day and under a deadline (lib/conflict-rates-refresh.ts), so a slow replay
- * delays no launch. Without `--apply` a tick starts nothing: it reports what it
+ * conflict rates of one repository it launches pickups for whose refresh is
+ * due, each at most once a day and under a deadline
+ * (lib/conflict-rates-refresh.ts), so a slow replay delays no launch and
+ * holds the next tick back by one refresh at most. Without `--apply` a tick starts nothing: it reports what it
  * would start, and why. With it, the re-arms and takeovers a repository's
  * machine-file entry enables are launched within each account's cap
  * (actions/drive.ts), its follow-ups as headless passes the same way
@@ -833,7 +834,7 @@ async function lockedTick(
 
 /**
  * The work after the act phase, once its receipt is written and its locks
- * are given up, so nothing here delays a launch or another tick: the daily
+ * are given up, so nothing here delays a launch: the daily
  * refresh of the acted-on repositories' conflict rates. A defect here stops
  * this work only; the tick's receipt and exit stand.
  */
