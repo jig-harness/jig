@@ -62,6 +62,7 @@ interface Script {
   writes?: number[] | null;
   rerunnable?: number[];
   rerunOk?: boolean;
+  rerunIndeterminate?: boolean;
 }
 
 /** Fake dependencies over a scripted sequence of readings, on a clock the sleeps move. */
@@ -101,6 +102,8 @@ function fake(script: Script) {
     },
     rerunFailed: async (_pr, _head, run) => {
       asked.push(run);
+      if (script.rerunIndeterminate === true)
+        return { ok: false, indeterminate: true, detail: "timed out" };
       return script.rerunOk === false
         ? { ok: false, detail: "HTTP 403: the run cannot be re-run" }
         : { ok: true, detail: "" };
@@ -305,6 +308,83 @@ describe("the converged CI watch", () => {
     expect(verdict.kind).toBe("stands");
     expect(verdict.kind === "stands" && verdict.why).toContain(
       "nothing was seen to fail",
+    );
+  });
+
+  it("waits, never parks, when a newer attempt of the failing run succeeded", async () => {
+    const f = fake({
+      ci: [failing(48), GREEN],
+      runs: [[workflowRun(48, 2_000, { attempt: 2, conclusion: "success" })]],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.asked).toEqual([]);
+  });
+
+  it("parks on a later run no label write started while an earlier run is still going", async () => {
+    const f = fake({
+      ci: [
+        {
+          verdict: "failing: tests, lint",
+          failingRuns: [
+            { id: 50, createdAt: iso(WRITTEN + 2_000), conclusion: "failure" },
+            {
+              id: 51,
+              createdAt: iso(WRITTEN + 120_000),
+              conclusion: "failure",
+            },
+          ],
+          failingStatusNames: [],
+        },
+      ],
+      runs: [
+        [
+          workflowRun(50, 2_000, { status: "in_progress", conclusion: null }),
+          workflowRun(51, 120_000),
+        ],
+      ],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "no label write started it",
+    );
+    expect(verdict.kind === "park" && verdict.labelCaused).toBe(false);
+  });
+
+  it("re-runs an eligible run while another run is still going", async () => {
+    const f = fake({
+      ci: [
+        {
+          verdict: "failing: tests, lint",
+          failingRuns: [
+            { id: 52, createdAt: iso(WRITTEN + 2_000), conclusion: "failure" },
+            { id: 53, createdAt: iso(WRITTEN + 2_000), conclusion: "failure" },
+          ],
+          failingStatusNames: [],
+        },
+        GREEN,
+      ],
+      runs: [
+        [
+          workflowRun(52, 2_000, { status: "in_progress", conclusion: null }),
+          workflowRun(53, 2_000),
+        ],
+      ],
+    });
+    await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(f.asked).toEqual([53]);
+  });
+
+  it("watches for the new attempt when the re-run answer is indeterminate", async () => {
+    const f = fake({
+      ci: [failing(54)],
+      runs: [[workflowRun(54, 2_000)]],
+      rerunIndeterminate: true,
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(f.asked).toEqual([54]);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "shows no new attempt",
     );
   });
 

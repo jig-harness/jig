@@ -76,7 +76,7 @@ export interface ConvergedCiDeps {
     pr: string,
     head: string,
     run: number,
-  ): Promise<{ ok: boolean; detail: string }>;
+  ): Promise<{ ok: boolean; indeterminate?: boolean; detail: string }>;
   /** The cancelled-run recovery on the head. */
   recoverCancelled(pr: string, head: string): Promise<Recovery>;
 }
@@ -89,16 +89,66 @@ export interface ConvergedCiDeps {
 export type ConvergedCiVerdict =
   | { kind: "stands"; why: string }
   | { kind: "parked" }
-  | { kind: "park"; reason: string };
+  | { kind: "park"; reason: string; labelCaused: boolean };
 
 /** How long after a requested re-run the run must show its new attempt. */
 const RERUN_SHOWS_MS = 60_000;
 
 /** What one reading asks for next. */
-type Step = { next: "wait"; saw: string } | { next: "park"; reason: string };
+type Step =
+  | { next: "wait"; saw: string }
+  | { next: "park"; reason: string; labelCaused: boolean };
 
 /** What one failing reading asks for: a {@link Step}, or the runs to re-run. */
 type Judged = Step | { next: "rerun"; runs: WorkflowRun[] };
+
+/** What one failing run asks for: a {@link Step}, or `rerun` when a re-run may replay it. */
+function judgeRun(
+  run: WorkflowRun,
+  head: string,
+  writes: readonly number[],
+  reruns: ReadonlyMap<string, number>,
+  now: number,
+): Step | "rerun" {
+  if (run.status !== "completed")
+    return {
+      next: "wait",
+      saw: `run ${run.id} attempt ${run.attempt} is ${run.status}`,
+    };
+  // The check read and the run listing are separate reads: a newer attempt
+  // that succeeded is no failure, and the CI read is repeated.
+  if (["success", "neutral", "skipped"].includes(run.conclusion ?? ""))
+    return {
+      next: "wait",
+      saw: `run ${run.id} attempt ${run.attempt} concluded ${run.conclusion}, newer than the failure read`,
+    };
+  const requested = reruns.get(labelRerunKey({ id: run.id, attempt: 1 }));
+  if (run.attempt === 1 && requested !== undefined) {
+    if (now - requested < RERUN_SHOWS_MS)
+      return {
+        next: "wait",
+        saw: `run ${run.id}'s re-run was just requested`,
+      };
+    return {
+      next: "park",
+      reason: `run ${run.id} on head ${head} failed in a run a label write started, and its re-run, requested ${Math.round((now - requested) / 1000)}s ago, shows no new attempt`,
+      labelCaused: true,
+    };
+  }
+  if (!labelStarted(run, writes))
+    return {
+      next: "park",
+      reason: `run ${run.id} on head ${head} failed after the converged label was written, and no label write started it, so the drive does not re-run it`,
+      labelCaused: false,
+    };
+  if (run.attempt !== 1)
+    return {
+      next: "park",
+      reason: `run ${run.id} on head ${head} failed again on attempt ${run.attempt}, after its one re-run for the label write that started it`,
+      labelCaused: true,
+    };
+  return "rerun";
+}
 
 /**
  * Judge each failing run: a re-run still going or just requested waits; a
@@ -118,11 +168,13 @@ async function judgeFailure(
     return {
       next: "park",
       reason: `commit status ${read.failingStatusNames.join(", ")} failed on head ${head} after the converged label was written; a commit status has no run the drive can re-run`,
+      labelCaused: false,
     };
   if (failing.length === 0)
     return {
       next: "park",
       reason: `required CI on head ${head} reads ${read.verdict} after the converged label was written, with no workflow run behind it to re-run`,
+      labelCaused: false,
     };
   const [runs, writes, reruns] = await Promise.all([
     deps.workflowRuns(head),
@@ -136,42 +188,29 @@ async function judgeFailure(
     };
   const now = deps.now();
   const toRerun: WorkflowRun[] = [];
+  // The whole collection is judged: a park anywhere ends the watch, a wait
+  // is kept while the other runs are examined, and every run a re-run may
+  // replay is retried whatever the others are doing.
+  let waiting: string | null = null;
   for (const failed of failing) {
     const run = runs.find((r) => r.id === failed.id);
-    if (run === undefined)
-      return {
-        next: "wait",
-        saw: `${read.verdict} (run ${failed.id} not listed yet)`,
-      };
-    if (run.status !== "completed")
-      return {
-        next: "wait",
-        saw: `run ${run.id} attempt ${run.attempt} is ${run.status}`,
-      };
-    const requested = reruns.get(labelRerunKey({ id: run.id, attempt: 1 }));
-    if (run.attempt === 1 && requested !== undefined) {
-      if (now - requested < RERUN_SHOWS_MS)
-        return {
-          next: "wait",
-          saw: `run ${run.id}'s re-run was just requested`,
-        };
-      return {
-        next: "park",
-        reason: `run ${run.id} on head ${head} failed in a run a label write started, and its re-run, requested ${Math.round((now - requested) / 1000)}s ago, shows no new attempt`,
-      };
-    }
-    if (!labelStarted(run, writes))
-      return {
-        next: "park",
-        reason: `run ${run.id} on head ${head} failed after the converged label was written, and no label write started it, so the drive does not re-run it`,
-      };
-    if (run.attempt !== 1)
-      return {
-        next: "park",
-        reason: `run ${run.id} on head ${head} failed again on attempt ${run.attempt}, after its one re-run for the label write that started it`,
-      };
-    toRerun.push(run);
+    const judged =
+      run === undefined
+        ? ({
+            next: "wait",
+            saw: `${read.verdict} (run ${failed.id} not listed yet)`,
+          } as const)
+        : judgeRun(run, head, writes, reruns, now);
+    if (judged === "rerun" && run !== undefined) toRerun.push(run);
+    else if (typeof judged !== "string" && judged.next === "park")
+      return judged;
+    else if (typeof judged !== "string") waiting ??= judged.saw;
   }
+  if (toRerun.length === 0)
+    return {
+      next: "wait",
+      saw: waiting ?? `${read.verdict} (nothing to judge)`,
+    };
   // Asked only for the runs a re-run would replay: it reads the timeline again.
   const allowed = await deps.rerunnable(
     pr,
@@ -182,6 +221,7 @@ async function judgeFailure(
     return {
       next: "park",
       reason: `run ${held.id} on head ${head} failed in a run a label write started, and it may not be re-run (created under the CI hold, or the hold did not read)`,
+      labelCaused: true,
     };
   return { next: "rerun", runs: toRerun };
 }
@@ -196,11 +236,21 @@ async function rerun(
   for (const run of runs) {
     if (!(await deps.claimRerun(pr, run))) continue;
     const asked = await deps.rerunFailed(pr, head, run.id);
-    if (!asked.ok)
+    // An indeterminate answer may still have started the run: the claim is
+    // recorded, so the next reading looks for its new attempt and parks when
+    // none appears.
+    if (!asked.ok && asked.indeterminate !== true)
       return {
         next: "park",
         reason: `run ${run.id} on head ${head} failed in a run a label write started, and its re-run was not accepted: ${asked.detail}`,
+        labelCaused: true,
       };
+    if (!asked.ok) {
+      console.error(
+        `converged CI: the re-run of run ${run.id} on head ${head} is unconfirmed (${asked.detail}); watching for its new attempt`,
+      );
+      continue;
+    }
     console.error(
       `converged CI: re-ran run ${run.id} on head ${head}: it failed in a run the converged label's write started (once per run)`,
     );
@@ -241,6 +291,7 @@ async function step(
       return {
         next: "park",
         reason: `required CI on head ${head} reads ${verdict} after the converged label was written, and the cancelled-run recovery found nothing it may re-run`,
+        labelCaused: false,
       };
     // A failure only cancelled runs carry, which the recovery leaves: judged as a failure.
   }
@@ -283,7 +334,12 @@ export async function watchConvergedCi(
           }
         : await step(pr, verified, read, deps);
     if ("kind" in next) return next;
-    if (next.next === "park") return { kind: "park", reason: next.reason };
+    if (next.next === "park")
+      return {
+        kind: "park",
+        reason: next.reason,
+        labelCaused: next.labelCaused,
+      };
     saw = next.saw;
     if (read !== null) readOnce = true;
     if (deps.now() + deps.pollMs > deadline)
@@ -292,6 +348,7 @@ export async function watchConvergedCi(
         ? {
             kind: "park",
             reason: `CI on head ${verified} did not settle within ${Math.round(deps.windowMs / 60_000)} minute(s) of the converged label's write; last read: ${saw}`,
+            labelCaused: false,
           }
         : {
             kind: "stands",

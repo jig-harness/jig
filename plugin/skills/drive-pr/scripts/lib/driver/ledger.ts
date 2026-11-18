@@ -93,6 +93,7 @@ import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
+import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 
 /** Who this driver is, as the ledger names it. */
 export interface LedgerIdentity {
@@ -737,7 +738,16 @@ export function ledgerSettlement(
     // The converged stop is already written and its record gone, so no
     // recovery rewrites the ledger after this: a write that did not land is
     // tried again.
-    await writeStop(again, STOP_REWRITE_ATTEMPTS);
+    const rewritten = await writeStop(again, STOP_REWRITE_ATTEMPTS);
+    // A rewrite that never landed leaves the ledger and label saying
+    // `converged` over a head no drive settled: the exit becomes the one the
+    // dispatcher drives again, which judges the head afresh.
+    if (driver !== null && !dryRun && rewritten === null) {
+      console.error(
+        `ledger: PR #${pr}'s replacement stop (exit ${again}) was not written, so the stop is settled as INDETERMINATE for the next drive to judge the head again.`,
+      );
+      return DRIVE_EXIT.INDETERMINATE;
+    }
     return again;
   };
   /** Record stop `code` in the drive state, then the stopped ledger (up to `attempts` writes) and its label. */

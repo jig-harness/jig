@@ -129,14 +129,21 @@ export function liveConvergedCi(windowMinutes: number): ConvergedCiDeps {
     claimRerun: claimLabelRerun,
     async rerunFailed(pr, head, run) {
       const asked = await failedCheckForge.retry(pr, head, run);
-      return { ok: asked.ok, detail: asked.detail };
+      return {
+        ok: asked.ok,
+        detail: asked.detail,
+        ...(asked.indeterminate === true ? { indeterminate: true } : {}),
+      };
     },
     recoverCancelled: (pr, head) => recoverCancelledOnHead(pr, head),
   };
 }
 
 /** The `converged-ci` park's framed decision for a watch that ended for `reason`. */
-export function convergedCiDecision(reason: string): ParkedDecision {
+export function convergedCiDecision(
+  reason: string,
+  labelCaused: boolean,
+): ParkedDecision {
   return {
     schema: "parked-decision/v1",
     class: "human-decision",
@@ -162,12 +169,14 @@ export function convergedCiDecision(reason: string): ParkedDecision {
           ],
         },
       ],
-      recommended: "repair",
-      why: "The runs that left the head unsettled followed the drive's own label write; while the workflows run on every label event, each state write can disturb CI again.",
+      recommended: labelCaused ? "repair" : "rearm",
+      why: labelCaused
+        ? "The runs that left the head unsettled were started by the drive's own label write; while the workflows run on every label event, each state write can disturb CI again."
+        : "The reason below names no failure the drive's label write started (a commit status, an unattributed run, or CI still unsettled), so repairing the label triggers is not shown to help; a re-armed drive reads the head's CI afresh. Choose the repair if you know the label write caused it.",
     },
     steps: [reason, "Answer in a pull-request comment and re-arm the drive."],
     alreadyDone:
-      "The drive converged and certified CI on this head, wrote the converged label, then watched the head's CI, re-ran each cancellation and each failure a label write started once, and parked when that did not bring it back to green. " +
+      "The drive converged and certified CI on this head, wrote the converged label, then watched the head's CI. It re-runs a cancellation or a failure once only where a label write started the run, and parks otherwise; the reason says which happened. " +
       reason,
   };
 }
@@ -176,6 +185,7 @@ export function convergedCiDecision(reason: string): ParkedDecision {
 export async function parkConvergedCi(
   pr: string,
   reason: string,
+  labelCaused: boolean,
 ): Promise<boolean> {
   try {
     const person = await resolveParkPerson(
@@ -184,7 +194,7 @@ export async function parkConvergedCi(
       "finding",
       "",
     );
-    const decision = convergedCiDecision(reason);
+    const decision = convergedCiDecision(reason, labelCaused);
     const store = await openStore(pr);
     const capacity = await parkAdmissionContext(pr, store.stateDir);
     let admitted = true;
@@ -281,7 +291,7 @@ export async function convergedStopExit(
       return DRIVE_EXIT.HITL_PARKED;
     }
     console.error(`converged CI: parking: ${verdict.reason}`);
-    if (await parkConvergedCi(pr, verdict.reason))
+    if (await parkConvergedCi(pr, verdict.reason, verdict.labelCaused))
       return DRIVE_EXIT.HITL_PARKED;
     console.error(
       "converged CI: the park could not be recorded, so the stop is settled as INDETERMINATE for the next drive to judge the head again",
