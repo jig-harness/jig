@@ -95,14 +95,14 @@ export function renderConflictCoverage(c: ConflictCoverage): string {
 export const CONFLICT_LIMITS =
   "Conflict evidence covers replayed PR ancestry and this clone's live events. Live silence never proves clean. Force-pushed or unavailable heads remain unknown unless a conflict is recorded. Cherry-pick and revert conflicts resolved in other clones can remain invisible; a clean git merge can still break the build.";
 
-interface LiveEvent {
+export interface LiveEvent {
   type: "merge_conflict";
   ts: string;
   commit: string;
   path: string;
   pr: number | null;
 }
-interface ReplayEvidence {
+export interface ReplayEvidence {
   schema: "merge-conflicts/v1";
   shallow: boolean;
   merges: {
@@ -129,7 +129,7 @@ function replayEvidence(value: unknown): value is ReplayEvidence {
     )
   );
 }
-function liveEvent(value: unknown): value is LiveEvent {
+export function liveEvent(value: unknown): value is LiveEvent {
   return (
     isRecord(value) &&
     value.type === "merge_conflict" &&
@@ -159,10 +159,13 @@ export interface ConflictDeps {
 }
 
 type CohortPr = { number: number; mergedAt: string };
-type Ancestry = Awaited<ReturnType<ConflictDeps["ancestry"]>>;
+export type Ancestry = Awaited<ReturnType<ConflictDeps["ancestry"]>>;
 
 /** Direct PR marks remain useful even when its head has disappeared. */
-function directlyConflicted(pr: CohortPr, evidence: ConflictEvidence): boolean {
+export function directlyConflicted(
+  pr: CohortPr,
+  evidence: ConflictEvidence,
+): boolean {
   return (
     evidence.events.some(
       (e) => e.pr === pr.number && parseMs(e.ts) <= parseMs(pr.mergedAt),
@@ -176,8 +179,8 @@ function directlyConflicted(pr: CohortPr, evidence: ConflictEvidence): boolean {
   );
 }
 
-function historyConflicted(
-  sample: PrSample,
+export function historyConflicted(
+  sample: Pick<PrSample, "mergeCommitOid">,
   ancestry: Ancestry,
   evidence: ConflictEvidence,
 ): boolean {
@@ -191,7 +194,7 @@ function historyConflicted(
   );
 }
 
-function replayComplete(
+export function replayComplete(
   ancestry: Ancestry,
   evidence: ConflictEvidence,
   replayed: ReadonlySet<string>,

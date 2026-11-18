@@ -659,6 +659,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --days 90
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --since 2026-01-01 --until 2026-03-31
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --all --json
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --propose-serialize  # areas to serialize
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --rates --out <file>  # conflict rates per path
 ```
 
 `--propose-serialize` prints, instead of the report, each area of the
@@ -666,6 +667,22 @@ change-area catalog (`drive.change_areas_catalog`) that a hotspot lies in
 alone and that is not yet serialized, as the `serialize: true` line to add,
 with the hotspots behind it; hotspots no single area holds are listed
 apart. It writes nothing: show the lines to the person, who decides.
+
+`--rates` prints, instead of the report, the range's conflict rates as
+`merge-conflict-rates/v1` JSON: for each path, `merged`, the merged pull
+requests that changed it and whose conflicts were observed, `conflicted`, how
+many of those met a conflict before they merged, and `unknown`, those that
+were not observed. The merged pull requests come from the forge, one listing
+of the range through its governed transport; `--cohort-cache <file>` keeps
+that listing, so the next run lists only what changed since. A pull request
+counts as conflicted when a replayed merge or the live record names it or
+lies in its own history, and as clean only when the replay reached its head,
+replayed every merge of that history and the forge records no force-push of
+its branch. `--out <file>` writes the rates there whole instead of printing
+them. When the listing fails or reaches its bound of 1,000 pull requests, it
+writes nothing, keeps a file already at `--out`, says why, and exits 3. The
+dispatcher refreshes these rates itself once a day; run it by hand to see
+which files conflict most often per pull request.
 
 A bare date (`YYYY-MM-DD`) is a day in UTC: `--since` starts at its
 midnight, and `--until` ends after it. A time carries its offset from UTC

@@ -7,6 +7,7 @@
  *
  * Usage: bun history.ts [--days <n> | --since <date> [--until <date>] | --all]
  *                       [--json] [--limit <n>] [--propose-serialize]
+ *                       [--rates [--out <file>] [--cohort-cache <file>]]
  *   --days <n>      the last n days (default 30).
  *   --since <date>  merges committed on or after the date (YYYY-MM-DD, or an
  *                   ISO 8601 time with its offset); --until <date> ends the
@@ -19,6 +20,15 @@
  *                   `serialize: true` in the change-area catalog
  *                   (`drive.change_areas_catalog`): those a hotspot lies in
  *                   alone, as the lines a person would add. Nothing is written.
+ *   --rates         print, instead of the report, the conflict rates of the
+ *                   range (schema `merge-conflict-rates/v1`): for each path,
+ *                   how many merged pull requests changed it and how many of
+ *                   those met a conflict before they merged. The merged pull
+ *                   requests are read from the forge, one listing of the range
+ *                   (`lib/cohort.ts`); `--cohort-cache <file>` keeps that
+ *                   listing, so the next run lists only what changed since.
+ *                   `--out <file>` writes the rates there, whole or not at
+ *                   all, instead of printing them.
  *
  * Each merge's two parents are merged again with `git merge-tree
  * --write-tree` (diff3 style, so every region carries its merge base). Git's
@@ -35,7 +45,10 @@
  * Exit codes: 0 the report was printed; 1 a git call failed; 2 usage error,
  * not inside a git repository, invalid configuration (with
  * `--propose-serialize`, no change-area catalog configured or one that does
- * not read), git older than 2.43, or a partial clone with git older than 2.45.
+ * not read), git older than 2.43, or a partial clone with git older than 2.45;
+ * 3 with `--rates`, the merged pull requests did not read in full (a listing
+ * that failed, or one cut at its bound): nothing was written, and a file at
+ * `--out` stays as it was.
  */
 import { fail, runMain } from "../../../shared/cli.ts";
 import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
@@ -73,6 +86,8 @@ import {
   withScratchObjects,
 } from "./lib/replay.ts";
 import { proposeSerialize, renderProposal } from "./lib/propose-serialize.ts";
+import { askCohortPage } from "./lib/cohort.ts";
+import { ratesSummary, runRates } from "./lib/rates-run.ts";
 import {
   buildReport,
   loadConfidence,
@@ -93,13 +108,15 @@ const DEFAULT_LIMIT = 25;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const USAGE =
-  "usage: history.ts [--days <n> | --since <date> [--until <date>] | --all] [--json] [--limit <n>] [--propose-serialize]";
+  "usage: history.ts [--days <n> | --since <date> [--until <date>] | --all] [--json] [--limit <n>] [--propose-serialize] [--rates [--out <file>] [--cohort-cache <file>]]";
 
 export interface Options {
   json: boolean;
   limit: number;
   /** Print the areas to serialize instead of the report. */
   proposeSerialize: boolean;
+  /** Build the conflict rates instead of the report: where they go, and where the cohort's listing is kept. */
+  rates?: { out: string | null; cohortCache: string | null };
   /** Milliseconds since the epoch; null: open. */
   since: number | null;
   until: number | null;
@@ -137,6 +154,9 @@ interface Flags {
   json: boolean;
   all: boolean;
   proposeSerialize: boolean;
+  rates: boolean;
+  out: string | undefined;
+  cohortCache: string | undefined;
   limit: number;
   days: number | null;
   since: string | undefined;
@@ -166,6 +186,16 @@ const VALUE_FLAGS: Record<
       ? "--since takes a date (YYYY-MM-DD) or an ISO 8601 time with its offset"
       : null;
   },
+  "--out": (flags, value) => {
+    flags.out = value;
+    return value === undefined || value === "" ? "--out takes a file" : null;
+  },
+  "--cohort-cache": (flags, value) => {
+    flags.cohortCache = value;
+    return value === undefined || value === ""
+      ? "--cohort-cache takes a file"
+      : null;
+  },
   "--until": (flags, value) => {
     flags.until = value;
     return parseDate(value, true) === null
@@ -179,6 +209,9 @@ function readFlags(args: readonly string[]): Flags | string {
     json: false,
     all: false,
     proposeSerialize: false,
+    rates: false,
+    out: undefined,
+    cohortCache: undefined,
     limit: DEFAULT_LIMIT,
     days: null,
     since: undefined,
@@ -189,6 +222,7 @@ function readFlags(args: readonly string[]): Flags | string {
     if (arg === "--json") flags.json = true;
     else if (arg === "--all") flags.all = true;
     else if (arg === "--propose-serialize") flags.proposeSerialize = true;
+    else if (arg === "--rates") flags.rates = true;
     else {
       const store = VALUE_FLAGS[arg];
       const problem = store
@@ -217,6 +251,19 @@ function namedRange(
   return { since: from, until: to, label };
 }
 
+/** What `--rates` adds to the options, or a usage message. */
+function ratesOptions(flags: Flags): Pick<Options, "rates"> | string {
+  if (!flags.rates)
+    return flags.out !== undefined || flags.cohortCache !== undefined
+      ? "--out and --cohort-cache go with --rates"
+      : {};
+  if (flags.proposeSerialize)
+    return "choose one of --rates and --propose-serialize";
+  return {
+    rates: { out: flags.out ?? null, cohortCache: flags.cohortCache ?? null },
+  };
+}
+
 /** The command line, or a usage message. */
 export function parseArgs(
   args: readonly string[],
@@ -224,7 +271,10 @@ export function parseArgs(
 ): Options | string {
   const flags = readFlags(args);
   if (typeof flags === "string") return flags;
-  const { json, limit, proposeSerialize } = flags;
+  const rates = ratesOptions(flags);
+  if (typeof rates === "string") return rates;
+  const { json, limit } = flags;
+  const proposeSerialize = flags.proposeSerialize;
   const named = flags.since !== undefined || flags.until !== undefined;
   if ([flags.all, flags.days !== null, named].filter(Boolean).length > 1)
     return "choose one range: --days, --since/--until, or --all";
@@ -233,6 +283,7 @@ export function parseArgs(
       json,
       limit,
       proposeSerialize,
+      ...rates,
       since: null,
       until: null,
       label: "all history",
@@ -241,7 +292,7 @@ export function parseArgs(
     const range = namedRange(flags);
     return typeof range === "string"
       ? range
-      : { json, limit, proposeSerialize, ...range };
+      : { json, limit, proposeSerialize, ...rates, ...range };
   }
   const n = flags.days ?? DEFAULT_DAYS;
   const from = now - n * DAY_MS;
@@ -252,6 +303,7 @@ export function parseArgs(
     json,
     limit,
     proposeSerialize,
+    ...rates,
     since: from,
     until: null,
     label: `the last ${n} day${n === 1 ? "" : "s"} (${day(from)} to ${day(now)})`,
@@ -451,6 +503,45 @@ function configuredCatalog(): { catalog: ChangeAreaCatalog; where: string } {
   }
 }
 
+/** `--rates`: the conflict rates of the range, printed or written whole to `--out`; 3 when the cohort did not read in full. */
+async function ratesMain(
+  repo: Git,
+  options: Options,
+  rates: NonNullable<Options["rates"]>,
+  setup: Setup,
+): Promise<number> {
+  const result = await runRates({
+    git: repo,
+    root: process.cwd(),
+    range: rangeOf(options),
+    since: options.since,
+    until: options.until,
+    now: currentMs(),
+    out: rates.out,
+    cachePath: rates.cohortCache,
+    ask: askCohortPage(process.cwd()),
+    replay: (since, until) => ({
+      ...replayAll(repo, mergeCommits(repo, since, until), setup),
+      shallow: shallowBoundary(repo).size > 0,
+    }),
+  });
+  if (!result.ok) {
+    console.error(`history: ${result.reason}`);
+    return result.code;
+  }
+  if (rates.out === null) process.stdout.write(result.text);
+  else console.log(ratesSummary(result.rates, rates.out));
+  return 0;
+}
+
+function rangeOf(options: Options): Range {
+  return {
+    since: options.since === null ? null : isoFromMs(options.since),
+    until: options.until === null ? null : isoFromMs(options.until),
+    label: options.label,
+  };
+}
+
 async function main(): Promise<number> {
   const options = parseArgs(process.argv.slice(2));
   if (typeof options === "string") fail(2, `history: ${options}`, USAGE);
@@ -466,6 +557,8 @@ async function main(): Promise<number> {
     gitVersion: version,
     heads: pullRequestHeads(repo),
   };
+  if (options.rates !== undefined)
+    return ratesMain(repo, options, options.rates, setup);
   const minMerges = hotspotMinMerges();
   const seconds = (ms: number | null) =>
     ms === null ? null : Math.ceil(ms / 1000);
@@ -476,11 +569,7 @@ async function main(): Promise<number> {
   );
   const shallow = shallowBoundary(repo).size > 0;
   const { merges, skipped } = replayAll(repo, inRange, setup);
-  const range: Range = {
-    since: options.since === null ? null : isoFromMs(options.since),
-    until: options.until === null ? null : isoFromMs(options.until),
-    label: options.label,
-  };
+  const range = rangeOf(options);
   const report = buildReport({
     range,
     hotspotMinMerges: minMerges,
