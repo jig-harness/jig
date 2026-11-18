@@ -884,6 +884,10 @@ make, use the entry's term instead.
   such as the stakeholder label beside a human-in-the-loop flag; the
   *label taxonomy* says which label it requires, and the label validator
   rejects it alone. Not an *issue facet*.
+- **Dashboard filter facet** — one independent property of a dashboard card,
+  such as its repository or act, whose selected values narrow that dashboard
+  view. It is unrelated to a *facet* in a label taxonomy or to an *issue
+  facet*.
 - **Issue facet** (facet, where only issues' facts are meant) — one of the
   facts every work item carries beside its labels, its type, its priority
   and its size, held by the *tracker interface* as a value that means the

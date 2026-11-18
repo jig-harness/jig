@@ -391,6 +391,7 @@ function Page({
               setFilter={setFilter}
               theme={theme}
               filterActive={steer.filterResults.active}
+              filterKey={JSON.stringify(steer.cardFilter)}
             />
           </main>
           <footer className="foot">
@@ -490,6 +491,7 @@ function ViewBody({
   setFilter,
   theme,
   filterActive,
+  filterKey,
 }: {
   tab: ViewId;
   view: PageView;
@@ -498,6 +500,7 @@ function ViewBody({
   setFilter: (patch: Partial<LogFilter>) => void;
   theme: Theme;
   filterActive: boolean;
+  filterKey: string;
 }) {
   const { line, clock } = view;
   const today = hostDay(clock.nowMs, clock.timeZone);
@@ -509,7 +512,14 @@ function ViewBody({
   if (tab === "help") return <HelpView Fold={Fold} />;
   if (view.answer === null) return null;
   if (tab !== "history")
-    return <CardView tab={tab} view={view} filterActive={filterActive} />;
+    return (
+      <CardView
+        tab={tab}
+        view={view}
+        filterActive={filterActive}
+        filterKey={filterKey}
+      />
+    );
   return (
     <HistoryPanels
       theme={theme}
@@ -559,10 +569,12 @@ function CardView({
   tab,
   view,
   filterActive,
+  filterKey,
 }: {
   tab: ViewId;
   view: PageView;
   filterActive: boolean;
+  filterKey: string;
 }) {
   const { line, clock } = view;
   const { kept } = useKeptToken();
@@ -588,7 +600,12 @@ function CardView({
     <>
       {line !== null && (hasNeedRows(line, clock.nowMs) || kept !== null) ? (
         <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
-          <NeedsPanel line={line} clock={clock} filterActive={filterActive} />
+          <NeedsPanel
+            line={line}
+            clock={clock}
+            filterActive={filterActive}
+            filterKey={filterKey}
+          />
         </PanelBoundary>
       ) : null}
     </>

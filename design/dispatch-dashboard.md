@@ -32,12 +32,14 @@ Orca nor a keyboard. [Phone scope and access](#phone-scope-and-access)
 defines that subset and its acceptance checks; a desktop layout that
 merely fits a narrow screen does not satisfy it.
 
-This is the design of [plan.md](plan.md) item 42. Nothing of it is built.
-It serves the setup the dispatcher is built for: a host that dispatches
-while people start and steer work from their own machines. Its first stage
-is of use wherever the dispatcher runs; the later stages matter where work
-runs on more than one machine, and whether they are built is decided once
-the first is in use ([Build order](#build-order)). It grows from today's
+This is the design of [plan.md](plan.md) item 42. The local dashboard's
+initial views and card filters are implemented. The cross-machine source feed,
+hub and browser writes described below remain deferred. It serves the setup the
+dispatcher is built for: a host that dispatches while people start and steer
+work from their own machines. Its first stage is of use wherever the dispatcher
+runs; the later stages matter where work runs on more than one machine, and
+whether they are built is decided once the first is in use
+([Build order](#build-order)). It grows from today's
 dispatch dashboard and the line it serves
 ([dark-factory-dispatch.md § Control](dark-factory-dispatch.md#control-observe-record-report-steer),
 item 33), from `jig ask`, `jig send` and `/jig:operator`
@@ -145,10 +147,13 @@ heading uses the same disclosure. It shows the act icon, matching count and
 oldest wait. It opens on the first ten cards, with a control to show the rest.
 Investigate starts folded when Decide or Authorize cards are present.
 
-**Filters.** On desktop, the text filter comes first. Filters below it show
-each value with its icon, name and matching count. Selected values within a
-facet match any of those values, and the facets combine with one another.
-A facet with more than six values uses a select. An active filter shows
+**Filters.** On desktop, the text filter comes first. A **dashboard filter
+facet** is one independent card property, such as repository or act, that a
+person can select to narrow a view; it is unrelated to a [label
+facet](../GLOSSARY.md#facet). Filters below it show each value with its icon,
+name and matching count. Selected values within a dashboard filter facet match
+any of those values, and the dashboard filter facets combine with one another.
+A dashboard filter facet with more than six values uses a select. An active filter shows
 “Showing N of M” and a Clear control. Sharing the address preserves the view
 and its filters. Needs you shows the oldest wait alongside its act and
 repository filters, with additional facets for who is waiting, stage and

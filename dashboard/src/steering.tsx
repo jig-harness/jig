@@ -181,10 +181,15 @@ function useFocusAfterDraw(
 }
 
 function focusFilter(element: HTMLElement | null): void {
-  const field = element?.querySelector<HTMLInputElement>(
-    '[data-view-filter], .fields input[type="search"]',
+  const field = Array.from(
+    element?.querySelectorAll<HTMLElement>(
+      '[data-view-filter], .fields input[type="search"], .facetControls select',
+    ) ?? [],
+  ).find(
+    (candidate) =>
+      !candidate.matches(":disabled") && candidate.getClientRects().length > 0,
   );
-  if (field == null) announce("This view has no filter");
+  if (field == null) announce("This view has no visible filter");
   else field.focus();
 }
 

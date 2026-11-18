@@ -514,10 +514,13 @@ export function NeedsPanel({
   line,
   clock,
   filterActive = false,
+  filterKey = "",
 }: {
   line: LineSnapshot;
   clock: Clock;
   filterActive?: boolean;
+  /** Changes whenever the card filter does, reopening matching groups. */
+  filterKey?: string;
 }) {
   const rows = needRows(line, clock);
   const groups = groupRows(rows);
@@ -544,7 +547,7 @@ export function NeedsPanel({
       <div className="needList">
         {groups.map((group) => (
           <NeedGroup
-            key={group.head}
+            key={`${group.head}:${filterKey}`}
             group={group}
             clock={clock}
             defaultOpen={

@@ -142,7 +142,7 @@ function filterPairs(filter: LogFilter): Array<[string, string]> {
 }
 
 function queryOf(pairs: Array<[string, string]>): string {
-  return pairs.map(([k, v]) => `${k}=${encoded(v)}`).join("&");
+  return pairs.map(([k, v]) => `${encoded(k)}=${encoded(v)}`).join("&");
 }
 
 /** The filter's part of the address, as the page shows it: `?window=7d&repo=example-org/web`. */
