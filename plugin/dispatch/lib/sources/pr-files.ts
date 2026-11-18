@@ -52,25 +52,26 @@ function entryOf(value: unknown): Entry | null {
     return null;
   const entry = value as Record<string, unknown>;
   if (!epochMs(entry.attemptedAtMs)) return null;
-  if (entry.snapshot === null)
-    return { attemptedAtMs: entry.attemptedAtMs, snapshot: null };
-  if (typeof entry.snapshot !== "object" || Array.isArray(entry.snapshot))
-    return null;
-  const snapshot = entry.snapshot as Record<string, unknown>;
+  const snapshot = snapshotOf(entry.snapshot);
+  if (snapshot === undefined) return null;
+  return { attemptedAtMs: entry.attemptedAtMs, snapshot };
+}
+
+function snapshotOf(value: unknown): Snapshot | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return undefined;
+  const snapshot = value as Record<string, unknown>;
   if (
     (typeof snapshot.comparison !== "string" && snapshot.comparison !== null) ||
     !Array.isArray(snapshot.files) ||
     !snapshot.files.every((file) => typeof file === "string") ||
     !epochMs(snapshot.readAtMs)
   )
-    return null;
+    return undefined;
   return {
-    attemptedAtMs: entry.attemptedAtMs,
-    snapshot: {
-      comparison: snapshot.comparison,
-      files: snapshot.files,
-      readAtMs: snapshot.readAtMs,
-    },
+    comparison: snapshot.comparison,
+    files: snapshot.files,
+    readAtMs: snapshot.readAtMs,
   };
 }
 
@@ -99,6 +100,13 @@ export interface FilesObservation {
   evidence: PrFileEvidence[];
   /** Serialization needs current evidence. An aged reading retains its files only on the observation. */
   files(pr: number): Promise<Reading>;
+}
+
+interface WorkItem {
+  pr: ListedPr;
+  key: string;
+  entry: Entry | null;
+  comparison: string | null;
 }
 
 /**
@@ -157,18 +165,18 @@ export function summarizePrFiles(
   });
 }
 
-export async function observePrFiles(
+function oldestFirst(a: WorkItem, b: WorkItem): number {
+  return (a.entry?.attemptedAtMs ?? -1) - (b.entry?.attemptedAtMs ?? -1);
+}
+
+async function prepareWork(
   slug: string,
   open: readonly ListedPr[],
-  nowMs: number,
   skipped: string | null,
-  bound?: TickBound,
-  store = pickupReads,
-  read = pullRequestFiles,
-  head = branchHead,
-): Promise<FilesObservation> {
-  const readings = new Map<number, Reading>();
-  const evidence: PrFileEvidence[] = [];
+  bound: TickBound | undefined,
+  store: typeof pickupReads,
+  head: typeof branchHead,
+): Promise<WorkItem[]> {
   const prefix = `forge:pr-files:${slug}:`;
   const tips = new Map<string, BranchReading>();
   async function liveTip(pr: ListedPr): Promise<string | undefined> {
@@ -187,52 +195,57 @@ export async function observePrFiles(
     }
     return reading?.ok === true ? reading.value : undefined;
   }
-  const work: Array<{
-    pr: ListedPr;
-    key: string;
-    entry: Entry | null;
-    comparison: string | null;
-  }> = open.map((pr) => {
-    const key = `${prefix}${pr.number}`;
-    return {
-      pr,
-      key,
-      entry: entryOf(store.get<unknown>(key)),
-      comparison: null,
-    };
-  });
+  const work: WorkItem[] = open.map((pr) => ({
+    pr,
+    key: `${prefix}${pr.number}`,
+    entry: entryOf(store.get<unknown>(`${prefix}${pr.number}`)),
+    comparison: null,
+  }));
   // Allocate the bounded fallback witnesses in the same age order as fresh
   // file reads, so a large population of distinct base branches progresses.
-  work.sort(
-    (a, b) => (a.entry?.attemptedAtMs ?? -1) - (b.entry?.attemptedAtMs ?? -1),
-  );
-  for (const item of work) {
-    const { pr } = item;
+  work.sort(oldestFirst);
+  for (const item of work)
     item.comparison = comparison(
-      pr,
-      skipped === null ? await liveTip(pr) : undefined,
+      item.pr,
+      skipped === null ? await liveTip(item.pr) : undefined,
     );
-  }
   store.prune(
     prefix,
     work.map(({ key }) => key),
   );
-  // A repeatedly refused or too large pull request leaves room for the others next tick.
-  work.sort(
-    (a, b) => (a.entry?.attemptedAtMs ?? -1) - (b.entry?.attemptedAtMs ?? -1),
-  );
+  return work.sort(oldestFirst);
+}
+
+function deferredRead(
+  bound: TickBound | undefined,
+  skipped: string | null,
+  fresh: number,
+): Extract<Reading, { ok: false }> | null {
+  if (ended(bound)) return passedRead("the pull request's files were read");
+  if (skipped !== null) return failed("deferred", skipped);
+  if (fresh >= FRESH_LIMIT)
+    return failed(
+      "deferred",
+      "the tick reached its fresh pull request file read limit",
+    );
+  return null;
+}
+
+export async function observePrFiles(
+  slug: string,
+  open: readonly ListedPr[],
+  nowMs: number,
+  skipped: string | null,
+  bound?: TickBound,
+  store = pickupReads,
+  read = pullRequestFiles,
+  head = branchHead,
+): Promise<FilesObservation> {
+  const readings = new Map<number, Reading>();
+  const evidence: PrFileEvidence[] = [];
+  const work = await prepareWork(slug, open, skipped, bound, store, head);
 
   let fresh = 0;
-  function deferral(): Extract<Reading, { ok: false }> | null {
-    if (ended(bound)) return passedRead("the pull request's files were read");
-    if (skipped !== null) return failed("deferred", skipped);
-    if (fresh >= FRESH_LIMIT)
-      return failed(
-        "deferred",
-        "the tick reached its fresh pull request file read limit",
-      );
-    return null;
-  }
 
   for (const { pr, key, entry, comparison } of work) {
     const snapshot = entry?.snapshot ?? null;
@@ -245,7 +258,7 @@ export async function observePrFiles(
       continue;
     }
 
-    const deferred = deferral();
+    const deferred = deferredRead(bound, skipped, fresh);
     const result =
       deferred ??
       (await heldRead(bound, "the pull request's file listing", () =>
