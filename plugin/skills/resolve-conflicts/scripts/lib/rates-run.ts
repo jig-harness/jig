@@ -26,7 +26,7 @@ import { type AskCohortPage, type CohortPr, readCohort } from "./cohort.ts";
 import { eventsPath } from "./events.ts";
 import { splitNul } from "./git.ts";
 import { buildRates, type FirstParent, type Rates } from "./rates.ts";
-import type { Git } from "./replay.ts";
+import { Git, ReplayError } from "./replay.ts";
 import type { MergeRecord, Range, SkippedMerge } from "./report.ts";
 
 const DAY_MS = 86_400_000;
@@ -44,10 +44,47 @@ export const COHORT_UNREAD_EXIT = 3;
 
 const OID = /^[0-9a-f]{40,64}$/;
 
-/** The integration branch as the clone holds it: its remote-tracking ref first, else the local branch; null when neither exists. */
-export function integrationRef(git: Git, branch: string | null): string | null {
+/**
+ * How far before the window the first-parent walk keeps reading, so commits
+ * whose committer dates run behind their descendants' are still reached; the
+ * window itself is applied to each commit's own date.
+ */
+const COMMIT_SKEW_SECONDS = 7 * 86_400;
+
+/** git's answers to a commit or object the clone does not hold: the expected "unavailable", never an operational failure. */
+const MISSING_OBJECT =
+  /bad object|bad revision|unknown revision|not a valid object|invalid revision|could not read|unable to read|missing (?:blob|tree|commit)|needed a single revision/i;
+
+/** `git` that never fetches a missing object of a partial clone: a rates read stays inside the clone. */
+function withoutLazyFetch(git: Git): Git {
+  return new Git(git.cwd, { ...git.env, GIT_NO_LAZY_FETCH: "1" }, git.settings);
+}
+
+/** git's exit, as the object it asked for being unavailable (true), or as a failure to report (throws). */
+function unavailable(
+  args: readonly string[],
+  r: {
+    code: number;
+    stderr: string;
+  },
+): true {
+  if (MISSING_OBJECT.test(r.stderr)) return true;
+  throw new ReplayError(
+    `git ${args.join(" ")} exited ${r.code}: ${r.stderr.trim()}`,
+  );
+}
+
+/** The integration branch as the clone holds it: its remote-tracking ref on `remote` first, else the local branch; null when neither exists. */
+export function integrationRef(
+  git: Git,
+  remote: string,
+  branch: string | null,
+): string | null {
   if (branch === null) return null;
-  for (const ref of [`refs/remotes/origin/${branch}`, `refs/heads/${branch}`]) {
+  for (const ref of [
+    `refs/remotes/${remote}/${branch}`,
+    `refs/heads/${branch}`,
+  ]) {
     const r = git.raw(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
     if (r.code === 0) return ref;
   }
@@ -66,6 +103,7 @@ export function firstParents(
     "--no-show-signature",
     "--first-parent",
     "-z",
+    ...(since === null ? [] : [`--max-age=${since - COMMIT_SKEW_SECONDS}`]),
     "--format=%H%x1f%P%x1f%ct%x1f%at%x1f%s",
     ref,
   ]);
@@ -99,24 +137,26 @@ export function ancestryOf(git: Git, pr: CohortPr): Ancestry {
   const { headRefOid: head, mergeCommit: merge } = pr;
   if (head === null || merge === null || !OID.test(head) || !OID.test(merge))
     return null;
-  const landed = git.raw(["rev-list", "--parents", "-n", "1", merge]);
-  if (landed.code !== 0) return null;
+  const landedArgs = ["rev-list", "--parents", "-n", "1", merge];
+  const landed = git.raw(landedArgs);
+  if (landed.code !== 0) return unavailable(landedArgs, landed) && null;
   const final = landed.stdout.toString("utf8").trim().split(" ");
   if (final.length < 2) return null;
-  const listed = git.raw([
+  const listedArgs = [
     "rev-list",
     "--first-parent",
     "--parents",
     head,
     `^${final[1]}`,
-  ]);
-  if (listed.code !== 0) return null;
+  ];
+  const listed = git.raw(listedArgs);
+  if (listed.code !== 0) return unavailable(listedArgs, listed) && null;
   return ancestryFrom(listed.stdout.toString("utf8"), final);
 }
 
 /** The files a commit changed against its first parent, both names of a rename; null when the clone cannot tell. */
 export function commitFiles(git: Git, commit: string): string[] | null {
-  const r = git.raw([
+  const args = [
     "diff-tree",
     "-r",
     "-z",
@@ -124,8 +164,10 @@ export function commitFiles(git: Git, commit: string): string[] | null {
     "--no-renames",
     `${commit}^`,
     commit,
-  ]);
-  return r.code === 0 ? splitNul(r.stdout.toString("utf8")) : null;
+  ];
+  const r = git.raw(args);
+  if (r.code === 0) return splitNul(r.stdout.toString("utf8"));
+  return unavailable(args, r) && null;
 }
 
 /**
@@ -209,6 +251,8 @@ export interface RatesRun {
   git: Git;
   /** The working tree's root, whose clone holds the live record. */
   root: string;
+  /** The consumer's remote (`repository.remote`), whose tracking branch is the integration history. */
+  remote: string;
   range: Range;
   /** The window, milliseconds since the epoch; null is open. */
   since: number | null;
@@ -267,7 +311,8 @@ export async function runRates(run: RatesRun): Promise<RatesResult> {
     complete: live.complete,
     events: live.events,
   };
-  const ref = integrationRef(run.git, cohort.value.defaultBranch);
+  const git = withoutLazyFetch(run.git);
+  const ref = integrationRef(git, run.remote, cohort.value.defaultBranch);
   const files = new Map<string, string[] | null>();
   const rates = buildRates({
     repository: cohort.value.repository,
@@ -278,11 +323,11 @@ export async function runRates(run: RatesRun): Promise<RatesResult> {
     firstParents:
       ref === null
         ? null
-        : firstParents(run.git, ref, seconds(run.since), seconds(run.until)),
+        : firstParents(git, ref, seconds(run.since), seconds(run.until)),
     evidence,
-    ancestry: (pr) => ancestryOf(run.git, pr),
+    ancestry: (pr) => ancestryOf(git, pr),
     commitFiles: (commit) => {
-      if (!files.has(commit)) files.set(commit, commitFiles(run.git, commit));
+      if (!files.has(commit)) files.set(commit, commitFiles(git, commit));
       return files.get(commit) ?? null;
     },
   });

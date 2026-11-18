@@ -25,6 +25,7 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import { swallow } from "../../shared/errors.ts";
+import { shareForChild } from "../../shared/outbound/budget.ts";
 import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 import {
   run as runProcess,
@@ -165,6 +166,7 @@ async function refreshLocked(
   target: RatesTarget,
   options: RefreshOptions,
   root: string,
+  attempt: { started: boolean },
 ): Promise<RefreshOutcome> {
   const { slug } = target;
   const paths = ratesPaths(slug, root);
@@ -183,6 +185,7 @@ async function refreshLocked(
     };
   const attemptedAt = isoFromMs(options.nowMs);
   writeRecord(paths.refresh, { version: 1, attemptedAt, outcome: "started" });
+  attempt.started = true;
   const staging = `${paths.rates}.next`;
   rmSync(staging, { force: true });
   const timeoutSec = Math.floor(left / 1000);
@@ -201,6 +204,7 @@ async function refreshLocked(
       timeoutSec,
       env: {
         ...process.env,
+        ...shareForChild(),
         ...(options.caller === undefined
           ? {}
           : { JIG_OUTBOUND_CALLER: options.caller }),
@@ -254,8 +258,18 @@ export async function refreshConflictRates(
       outcome: "skipped",
       reason: `another tick is refreshing them: ${lock.heldBy}`,
     };
+  const attempt = { started: false };
   try {
-    return await refreshLocked(target, options, root);
+    return await refreshLocked(target, options, root, attempt);
+  } catch (error) {
+    // A refresh that ran has spent its deadline, whatever failed after it:
+    // it ends as a kept one, so the tick makes no second attempt.
+    if (!attempt.started) throw error;
+    return {
+      slug: target.slug,
+      outcome: "kept",
+      reason: `the refresh failed after it ran: ${error instanceof Error ? error.message : String(error)}`,
+    };
   } finally {
     lock.release();
   }

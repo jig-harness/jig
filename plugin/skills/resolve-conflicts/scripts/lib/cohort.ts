@@ -148,11 +148,17 @@ function commitOf(node: unknown): CohortCommit | null {
   return { subject, authoredAt, committedAt };
 }
 
-function filesOf(node: Record<string, unknown>): string[] | null {
+/** The files a pull request lists and whether it lists them all; null when either does not read, the forge's own answer on more pages included. */
+function filesOf(
+  node: Record<string, unknown>,
+): { paths: string[]; cut: boolean } | null {
   const nodes = field(node, "files", "nodes");
-  if (!Array.isArray(nodes)) return null;
+  const more = field(node, "files", "pageInfo", "hasNextPage");
+  if (!Array.isArray(nodes) || typeof more !== "boolean") return null;
   const paths = nodes.map((f) => field(f, "path"));
-  return paths.every((p): p is string => text(p) && p !== "") ? paths : null;
+  return paths.every((p): p is string => text(p) && p !== "")
+    ? { paths, cut: more }
+    : null;
 }
 
 function commitsOf(node: Record<string, unknown>): CohortCommit[] | null {
@@ -187,8 +193,8 @@ export function cohortPrOf(node: unknown): CohortPr | null {
     mergeCommit: text(oid) && oid !== "" ? oid : null,
     headRefOid: text(headRefOid) && headRefOid !== "" ? headRefOid : null,
     baseRefName,
-    files,
-    filesCut: field(node, "files", "pageInfo", "hasNextPage") === true,
+    files: files.paths,
+    filesCut: files.cut,
     commitCount: count,
     commits,
     forcePushed: pushes.length > 0,
@@ -278,6 +284,8 @@ function covers(
 }
 
 interface Page {
+  /** The page size that read: the next page starts from it. */
+  size: number;
   repository: string;
   defaultBranch: string | null;
   nodes: unknown[];
@@ -285,7 +293,22 @@ interface Page {
   cost: number | null;
 }
 
-function pageOf(answer: unknown): Outcome<Page, "unreadable"> {
+/** The cursor to the listing's next page, null at its last; the forge must say which. */
+function nextCursor(listing: unknown): Outcome<string | null, "unreadable"> {
+  const more = field(listing, "pageInfo", "hasNextPage");
+  const cursor = field(listing, "pageInfo", "endCursor");
+  if (typeof more !== "boolean")
+    return failed(
+      "unreadable",
+      "the listing does not say whether it has another page",
+    );
+  if (!more) return ok(null);
+  return text(cursor) && cursor !== ""
+    ? ok(cursor)
+    : failed("unreadable", "the listing has another page and no cursor to it");
+}
+
+function pageOf(answer: unknown, size: number): Outcome<Page, "unreadable"> {
   if (isRecord(answer) && answer.errors !== undefined)
     return failed("unreadable", "the forge answered the listing with errors");
   const repository = field(answer, "data", "repository");
@@ -297,20 +320,16 @@ function pageOf(answer: unknown): Outcome<Page, "unreadable"> {
       "unreadable",
       "the merged pull request listing does not read",
     );
-  const more = field(listing, "pageInfo", "hasNextPage") === true;
-  const cursor = field(listing, "pageInfo", "endCursor");
-  if (more && !text(cursor))
-    return failed(
-      "unreadable",
-      "the listing has another page and no cursor to it",
-    );
+  const next = nextCursor(listing);
+  if (!next.ok) return next;
   const branch = field(repository, "defaultBranchRef", "name");
   const cost = field(answer, "data", "rateLimit", "cost");
   return ok({
+    size,
     repository: name,
     defaultBranch: text(branch) && branch !== "" ? branch : null,
     nodes,
-    next: more ? (cursor as string) : null,
+    next: next.value,
     cost: typeof cost === "number" ? cost : null,
   });
 }
@@ -395,7 +414,7 @@ async function askPage(
         )
       : (read.outcome as Outcome<never, "unreadable">);
   }
-  return pageOf(read.outcome.value);
+  return pageOf(read.outcome.value, read.size);
 }
 
 const inWindow = (pr: CohortPr, since: number | null, until: number | null) => {
@@ -422,7 +441,7 @@ async function walkListing(
   input: CohortInput,
   kept: CohortCache | null,
 ): Promise<Outcome<Walk, CohortCode>> {
-  const size = input.pageSize ?? COHORT_PAGE;
+  let size = input.pageSize ?? COHORT_PAGE;
   const limit = input.limit ?? COHORT_LIMIT;
   const walk = startWalk();
   let after: string | null = null;
@@ -438,6 +457,7 @@ async function walkListing(
       Math.min(size, limit - walk.count),
     );
     if (!page.ok) return page;
+    size = Math.min(size, page.value.size);
     const done = takePage(walk, page.value, kept, input.since);
     if (!done.ok) return done;
     if (done.value) return ok(walk);

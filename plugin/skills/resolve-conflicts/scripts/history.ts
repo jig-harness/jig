@@ -51,7 +51,11 @@
  * `--out` stays as it was.
  */
 import { fail, runMain } from "../../../shared/cli.ts";
-import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
+import {
+  consumerRoot,
+  readConfig,
+  readRemoteName,
+} from "../../../shared/consumer.ts";
 import {
   type ChangeAreaCatalog,
   loadCatalogFile,
@@ -86,6 +90,7 @@ import {
   withScratchObjects,
 } from "./lib/replay.ts";
 import { proposeSerialize, renderProposal } from "./lib/propose-serialize.ts";
+import { inheritDispatcherShare } from "../../../shared/outbound/budget.ts";
 import { askCohortPage } from "./lib/cohort.ts";
 import { ratesSummary, runRates } from "./lib/rates-run.ts";
 import {
@@ -510,9 +515,13 @@ async function ratesMain(
   rates: NonNullable<Options["rates"]>,
   setup: Setup,
 ): Promise<number> {
+  inheritDispatcherShare();
+  const remote = readRemoteName(consumerRoot());
+  if ("error" in remote) return fail(2, `history: ${remote.error}`);
   const result = await runRates({
     git: repo,
     root: process.cwd(),
+    remote: remote.remote,
     range: rangeOf(options),
     since: options.since,
     until: options.until,

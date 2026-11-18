@@ -308,6 +308,81 @@ describe("the rates", () => {
     expect(partial.commits).toBeNull();
   });
 
+  describe("a pull request whose file list the forge cut", () => {
+    const merge = (n: number, extra: Partial<CohortPr> = {}) =>
+      pr(n, {
+        files: ["src/a.ts"],
+        filesCut: true,
+        mergeCommit: oid("a"),
+        ...extra,
+      });
+    const rated = (
+      cohortPr: CohortPr,
+      parents: FirstParent[],
+      read: (commit: string) => string[] | null,
+    ) =>
+      buildRates({
+        repository: "acme/widgets",
+        range: { since: null, until: null, label: "all history" },
+        generatedAt: at(NOW),
+        prs: [cohortPr],
+        listing,
+        firstParents: parents,
+        evidence,
+        ancestry: () => clean,
+        commitFiles: read,
+      });
+
+    it("counts a merge commit whose files were read, and every path of them", () => {
+      const r = rated(
+        merge(30),
+        [parent(oid("a"), [oid("0"), oid("1")], "Merge #30", NOW)],
+        () => ["src/a.ts", "src/b.ts"],
+      );
+      expect(r.pullRequests[0]?.observation).toBe("clean");
+      expect(r.cohort.filesCut).toBe(0);
+      expect(r.paths.map((p) => p.path)).toEqual(["src/a.ts", "src/b.ts"]);
+    });
+
+    it("leaves it unknown when the clone does not hold its commit", () => {
+      const r = rated(
+        merge(31),
+        [parent(oid("a"), [oid("0"), oid("1")], "Merge #31", NOW)],
+        () => null,
+      );
+      expect(r.pullRequests[0]?.observation).toBe("unknown");
+      expect(r.cohort).toMatchObject({ filesCut: 1, unknown: 1, clean: 0 });
+      expect(r.paths).toEqual([
+        { path: "src/a.ts", merged: 0, conflicted: 0, unknown: 1 },
+      ]);
+    });
+
+    it("leaves a rebase unknown when one of its commits cannot be read, or one is not mapped", () => {
+      const sub = (subject: string) => ({
+        subject,
+        authoredAt: at(NOW),
+        committedAt: at(NOW),
+      });
+      const rebase = merge(32, {
+        mergeCommit: oid("f"),
+        commitCount: 2,
+        commits: [sub("one"), sub("two")],
+      });
+      const both = [
+        parent(oid("f"), [oid("6")], "two", NOW),
+        parent(oid("6"), [oid("5")], "one", NOW),
+      ];
+      const unread = rated(rebase, both, (c) =>
+        c === oid("f") ? ["src/z.ts"] : null,
+      );
+      expect(unread.pullRequests[0]?.observation).toBe("unknown");
+      const lone = rated(rebase, [both[0] as FirstParent], () => ["src/z.ts"]);
+      expect(lone.pullRequests[0]?.observation).toBe("unknown");
+      const whole = rated(rebase, both, () => ["src/z.ts"]);
+      expect(whole.pullRequests[0]?.observation).toBe("clean");
+    });
+  });
+
   it("reads back what it wrote, and refuses another schema", () => {
     expect(parseRates(JSON.parse(JSON.stringify(rates)))).toEqual(
       JSON.parse(JSON.stringify(rates)),

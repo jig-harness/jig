@@ -160,6 +160,63 @@ describe("the merged-pull-request cohort", () => {
     });
   });
 
+  it("keeps the reduced page size for the rest of the listing", async () => {
+    const nodes = [1, 2, 3, 4, 5, 6].map((n) =>
+      node(n, { merged: NOW - n * DAY }),
+    );
+    const { ask, asked } = forge(nodes, {
+      fail: (_, size) => (size > 2 ? failed("too-costly", "HTTP 502") : null),
+    });
+    const read = await readCohort({
+      since: SINCE,
+      until: null,
+      now: NOW,
+      cache: null,
+      ask,
+      pageSize: 4,
+    });
+    if (!read.ok) throw new Error(read.failure.reason);
+    expect(asked.map((a) => a.size)).toEqual([4, 2, 2, 2]);
+  });
+
+  it("does not read a listing or a file list that does not say whether it has more", async () => {
+    const answer = (mutate: (n: Record<string, unknown>) => void) => {
+      const n = node(1, { merged: NOW - DAY });
+      mutate(n);
+      return n;
+    };
+    const noListingFlag: AskCohortPage = async () =>
+      ok({
+        data: {
+          repository: {
+            nameWithOwner: "acme/widgets",
+            pullRequests: { pageInfo: {}, nodes: [node(1, { merged: NOW })] },
+          },
+        },
+      });
+    const listing = await readCohort({
+      since: SINCE,
+      until: null,
+      now: NOW,
+      cache: null,
+      ask: noListingFlag,
+    });
+    expect(listing.ok).toBe(false);
+    const { ask } = forge([
+      answer((n) => {
+        (n.files as Record<string, unknown>).pageInfo = {};
+      }),
+    ]);
+    const files = await readCohort({
+      since: SINCE,
+      until: null,
+      now: NOW,
+      cache: null,
+      ask,
+    });
+    expect(files.ok).toBe(false);
+  });
+
   it("is cut when the listing reaches its bound before the window ends, and says so", async () => {
     const nodes = Array.from({ length: 6 }, (_, i) =>
       node(100 - i, { merged: NOW - (i + 1) * 3_600_000 }),

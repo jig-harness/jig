@@ -81,7 +81,7 @@ export interface Rates {
     conflicted: number;
     clean: number;
     unknown: number;
-    /** Pull requests whose changed files were read in part: more than the forge lists on one page, with no commit of theirs in the clone. */
+    /** Pull requests whose changed files were read in part: more than the forge lists on one page, and the clone does not hold every commit of theirs. They count as unknown. */
     filesCut: number;
     listing: CohortListing;
   };
@@ -156,13 +156,19 @@ function commitsOf(
 export function mapFirstParents(
   prs: readonly CohortPr[],
   firstParents: readonly FirstParent[],
-): { byPr: Map<number, string[]>; unknown: string[] } {
+): {
+  byPr: Map<number, string[]>;
+  /** The pull requests whose first-parent commits are all of them: a merge commit, or as many commits as the branch had. */
+  whole: Set<number>;
+  unknown: string[];
+} {
   const position = new Map(firstParents.map((c, i) => [c.commit, i]));
   const merges = new Set(
     prs.flatMap((pr) => (pr.mergeCommit === null ? [] : [pr.mergeCommit])),
   );
   const owner = new Map<string, number>();
   const byPr = new Map<number, string[]>();
+  const whole = new Set<number>();
   for (const pr of prs) {
     const at =
       pr.mergeCommit === null ? undefined : position.get(pr.mergeCommit);
@@ -172,9 +178,13 @@ export function mapFirstParents(
     const commits = commitsOf(pr, firstParents, at, taken);
     for (const commit of commits) owner.set(commit, pr.number);
     byPr.set(pr.number, commits);
+    const landed = firstParents[at] as FirstParent;
+    if (landed.parents.length !== 1 || commits.length >= pr.commitCount)
+      whole.add(pr.number);
   }
   return {
     byPr,
+    whole,
     unknown: firstParents.map((c) => c.commit).filter((c) => !owner.has(c)),
   };
 }
@@ -216,17 +226,22 @@ export interface RatesInput {
 
 /**
  * The files a pull request counts for: the forge's list and each of its
- * first-parent commits' files. `cut` when the forge's list was cut and no
- * commit of its is in the clone to complete it.
+ * first-parent commits' files. `cut` when the forge's list was cut and the
+ * clone does not complete it: every commit the pull request landed as must
+ * be mapped (`whole`) and read. A squashed commit is indistinguishable from
+ * a rebase's last commit, so a cut list is complete only for a merge commit
+ * or a branch rebased in full.
  */
 function filesOfPr(
   pr: CohortPr,
   commits: readonly string[],
+  whole: boolean,
   commitFiles: RatesInput["commitFiles"],
 ): { files: Set<string>; cut: boolean } {
   const local = commits.map(commitFiles);
   const files = new Set([...pr.files, ...local.flatMap((l) => l ?? [])]);
-  return { files, cut: pr.filesCut && local.every((l) => l === null) };
+  const complete = whole && local.every((l) => l !== null);
+  return { files, cut: pr.filesCut && !complete };
 }
 
 /** Count one pull request toward `path`: an unknown one apart from both counts. */
@@ -258,10 +273,18 @@ export function buildRates(input: RatesInput): Rates {
   const counts = { conflicted: 0, clean: 0, unknown: 0, filesCut: 0 };
   const pullRequests: RatedPr[] = [];
   for (const pr of [...input.prs].sort((a, b) => a.number - b.number)) {
-    const observation = observe(pr, evidence, input.ancestry(pr), replayed);
-    counts[observation] += 1;
+    const seen = observe(pr, evidence, input.ancestry(pr), replayed);
     const commits = mapped.byPr.get(pr.number) ?? [];
-    const { files, cut } = filesOfPr(pr, commits, input.commitFiles);
+    const { files, cut } = filesOfPr(
+      pr,
+      commits,
+      mapped.whole.has(pr.number),
+      input.commitFiles,
+    );
+    // A list that is not whole observes some of its paths and not the rest,
+    // which would bias their rates: it counts apart from both counts.
+    const observation: Observation = cut ? "unknown" : seen;
+    counts[observation] += 1;
     if (cut) counts.filesCut += 1;
     for (const path of files) countPath(byPath, path, observation);
     pullRequests.push({

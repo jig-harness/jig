@@ -39,6 +39,7 @@ import {
   refreshConflictRates,
   refreshEligible,
 } from "../lib/conflict-rates-refresh.ts";
+import { setDispatcherShare } from "../../shared/outbound/budget.ts";
 
 const SLUG = "acme/widgets";
 const NOW = parseMs("2026-11-18T12:00:00Z");
@@ -337,5 +338,55 @@ describe("the daily refresh of the conflict rates", () => {
     } finally {
       setSystemTime();
     }
+  });
+
+  it("makes no second attempt in a tick when the first one fails after it ran", async () => {
+    const repos = ["a/one", "a/two"].map((slug) => ({
+      slug,
+      path: `/${slug}`,
+      listed: true,
+      stages: ["pickup"],
+    }));
+    const calls: string[] = [];
+    const run: RunHistory = async (_argv, opts) => {
+      calls.push(opts.cwd);
+      throw new Error("the disk is full");
+    };
+    setSystemTime(NOW);
+    try {
+      const outcomes = await refreshEligible(repos, {
+        apply: true,
+        deadlineMs: undefined,
+        caller: "test",
+        root,
+        run,
+      });
+      expect(calls).toEqual(["/a/one"]);
+      expect(outcomes).toHaveLength(1);
+      expect(outcomes[0]).toMatchObject({ slug: "a/one", outcome: "kept" });
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  it("hands the child the dispatcher's share of the budget", async () => {
+    let env: Record<string, string | undefined> = {};
+    const run: RunHistory = async (argv, opts) => {
+      env = opts.env ?? {};
+      writeFileSync(argv[argv.indexOf("--out") + 1] as string, rates(NOW, []));
+      return { code: 0, stderr: "", timedOut: false };
+    };
+    setDispatcherShare(0.25);
+    try {
+      await refreshConflictRates(target, {
+        nowMs: NOW,
+        deadlineMs: undefined,
+        root,
+        run,
+      });
+    } finally {
+      setDispatcherShare(null);
+    }
+    expect(env.JIG_OUTBOUND_SHARE).toBe("0.25");
   });
 });
