@@ -69,7 +69,11 @@ import {
   startRecord,
   waits,
 } from "./launch.ts";
-import { holdingRecords, pickupHold } from "./pickup-hold.ts";
+import {
+  holdingRecords,
+  leftBehindWorkspaces,
+  pickupHold,
+} from "./pickup-hold.ts";
 import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's pickups need beyond the apply state. */
@@ -148,8 +152,14 @@ async function workspaceFor(
   named: Dispatched,
 ): Promise<Opened> {
   const sessions = await ctx.sessions().catch(() => null);
+  const left = leftBehindWorkspaces(
+    issue.identifier,
+    state.records.filter((r) => r.record.repo === repo.slug),
+  );
   const joined = sessions?.ok
-    ? sessions.workspaces.find((w) => w.items.includes(issue.identifier))
+    ? sessions.workspaces.find(
+        (w) => w.items.includes(issue.identifier) && !left.has(w.path),
+      )
     : undefined;
   if (joined !== undefined)
     return { workspace: { id: joined.id, path: joined.path } };

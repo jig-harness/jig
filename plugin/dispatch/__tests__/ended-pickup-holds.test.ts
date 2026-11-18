@@ -17,6 +17,7 @@ import {
 } from "../lib/actions/pickup-hold.ts";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
+import type { Workspace } from "../lib/runtime/port.ts";
 import { closeStateDb } from "../lib/state.ts";
 import type { DispatchSection, WantedItem } from "../lib/types.ts";
 
@@ -95,13 +96,17 @@ function wanted(key: string): WantedItem {
 }
 
 /** One tick's pickup plan over `pickups`. */
-function plan(pickups: string[], launches: ReadRecord[]) {
+function plan(
+  pickups: string[],
+  launches: ReadRecord[],
+  workspaces: Workspace[] = [],
+) {
   return planPickups({
     slug: SLUG,
     section: { stalledAfterMs: 3_600_000 } as DispatchSection,
     pickups: pickups.map(wanted),
     claimed: [],
-    sessions: { ok: true, source: "test", workspaces: [] },
+    sessions: { ok: true, source: "test", workspaces },
     launches,
     idleSince: new Map(),
     nowMs: NOW,
@@ -167,6 +172,26 @@ describe("a batch pickup that ended after claiming one member", () => {
       expect(records[0]?.record.releasedItems).toEqual(["#464"]);
     });
   }
+
+  it("does not read the batch's workspace, still joined to the anchor it left out, as the anchor's session", () => {
+    const records = [
+      endedBatch(["#464", "#713", "#715"], "done", ["#713", "#715"]),
+    ];
+    const [read] = records;
+    if (read !== undefined)
+      read.record.workspace = { id: "w1", path: "/tree/batch" };
+    const drive = {
+      id: "w1",
+      path: "/tree/batch",
+      items: ["#464"],
+      agents: [{ id: "a1", state: "working" }],
+    } as unknown as Workspace;
+    const next = plan(["#464"], records, [drive]);
+    expect(
+      next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
+    ).toEqual(["#464"]);
+    expect(next.running).toEqual([]);
+  });
 
   it("keeps every member of a batch that ended on a question, so the person answers it first", () => {
     const records = [endedBatch(["#923", "#924"], "failed", ["#923"])];

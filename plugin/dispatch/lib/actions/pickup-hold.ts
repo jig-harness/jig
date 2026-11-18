@@ -236,6 +236,24 @@ function leftUnclaimed(r: ReadRecord, item: string): boolean {
 }
 
 /**
+ * The workspaces of ended batch pickups that left `item` unclaimed. A batch
+ * opens its workspace under its first member, so one that left that member
+ * out still shows joined to it, while the tree holds the batch's work.
+ */
+export function leftBehindWorkspaces(
+  item: string,
+  records: ReadRecord[],
+): Set<string> {
+  return new Set(
+    recordsOf(item, records).flatMap((r) =>
+      r.record.workspace !== null && !holds(r.state) && leftUnclaimed(r, item)
+        ? [r.record.workspace.path]
+        : [],
+    ),
+  );
+}
+
+/**
  * Why `repo`'s ended pickup records keep an item from starting, or `null`:
  * a slot of an epic's width is never given to a child the tick will not
  * start (`serializeEpics`).

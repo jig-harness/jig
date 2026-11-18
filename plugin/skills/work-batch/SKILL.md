@@ -93,20 +93,25 @@ Read the full issues and assess their independence as for any batch.
 
 The dispatcher keeps the most expensive batchable size out of the batches it
 forms, but a size can change after the tick. **A member's size is never a
-question here.** The proposal lists each member of that size, and each that
-has grown past the batchable sizes, under **Left for their own pickups**
-(`leftOut` in the JSON form), and no verdict prompt appears:
+question here.** The proposal lists each member of that size, and each whose
+size no longer fits a batch (too large, cleared, or two at once), under
+**Left for their own pickups** (`leftOut` in the JSON form), and no verdict
+prompt appears:
 
 - Claim no member left out. Name each one and the reason in the pull
-  request's `## Batch` section and in the closing report. Once the pass ends,
-  the dispatcher picks it up on its own, because an ended batch pass that
-  claimed a sibling no longer holds the members it did not claim.
+  request's body (the `## Batch` section, for a batch) and in the closing
+  report. When the pass ends with a claim made and no question open, its launch
+  record holds only the members it claimed, and the dispatcher picks up the
+  others on their own.
 - With two or more members kept, go on with them as the batch.
 - With fewer than two kept, the pass still has to claim one, or its launch
   record keeps holding every member. Run `/jig:do-item` for the member kept,
   or, when none is, for the first member left out, passing that item's
   `--for` and `--ancestor` to its claim. Every other member stays unclaimed
   for its own pickup.
+- The workspace opened under the first named key, on that key's branch. When
+  that member is left out, work on the branch named for the member you claim
+  (step 4, or `/jig:do-item`'s), so the member's own pickup can use its branch.
 
 Any other question that needs a person ends the pass with `Question:`; frame
 it as a decision record and record the failed result with it through the

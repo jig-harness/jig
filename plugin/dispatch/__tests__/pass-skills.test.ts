@@ -50,6 +50,7 @@ describe("a fixed served batch's prompt", () => {
     pickupPassArgv(
       {
         ...record,
+        servedPerson: "someone",
         batchItems: [
           { key: "#1", person: "someone" },
           { key: "#2", person: "someone" },
@@ -60,6 +61,11 @@ describe("a fixed served batch's prompt", () => {
 
   it("reads the members through the proposal's fixed mode", () => {
     expect(prompt).toContain("--fixed '#1,#2'");
+  });
+
+  it("claims the anchor only when the proposal keeps it", () => {
+    expect(prompt).toContain("If the proposal keeps #1, claim it using");
+    expect(prompt).not.toContain("Claim this served assignment");
   });
 
   it("settles a member's size without a question", () => {

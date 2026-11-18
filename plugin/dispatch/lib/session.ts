@@ -258,7 +258,7 @@ function pickupPassPrompt(
     ...(record.servedPerson === undefined || record.stewardResume !== undefined
       ? []
       : [
-          `Claim this served assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the pickup.`,
+          `${record.batchItems === undefined ? "Claim this served assignment" : `If the proposal keeps ${record.item ?? ""}, claim it`} using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the ${record.batchItems === undefined ? "pickup" : "batch"}.`,
         ]),
     "",
     "jig dispatch started this headless pass for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard, and nobody can answer a question while it runs.",

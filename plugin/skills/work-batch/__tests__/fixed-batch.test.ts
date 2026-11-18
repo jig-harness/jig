@@ -78,6 +78,48 @@ describe("a fixed batch with a member of the most expensive size", () => {
     expect(p.excluded).toEqual([]);
   });
 
+  it("leaves out an anchor whose size was cleared or doubled, and asks nothing", async () => {
+    for (const anchor of [
+      issue("ENG-1", { labels: relabel(base, ["small"]) }),
+      issue("ENG-1", { labels: [...base, "medium"] }),
+    ]) {
+      const p = await propose(
+        [anchor, issue("ENG-2"), issue("ENG-3")],
+        "ENG-1",
+        members,
+      );
+      expect(ids(p.candidates).sort()).toEqual(["ENG-2", "ENG-3"]);
+      expect(p.leftOut.map((l) => [l.identifier, l.size])).toEqual([
+        ["ENG-1", null],
+      ]);
+      expect(p.excluded).toEqual([]);
+    }
+  });
+
+  it("warns about a member the tracker returns under another key", async () => {
+    const tracker = fakeTracker([issue("ENG-1"), issue("ENG-2")]);
+    const read = tracker.poolIssue.bind(tracker);
+    tracker.poolIssue = async (key) =>
+      key === "ENG-2" ? issue("OPS-5") : read(key);
+    const p = await run(
+      tracker,
+      catalog(),
+      P,
+      "ENG-1",
+      options(["ENG-1", "ENG-2"]),
+      import.meta.dir,
+    );
+    expect(ids(p.candidates)).toEqual(["ENG-1"]);
+    expect(p.warnings).toContain("fixed member ENG-2 came back as OPS-5");
+  });
+
+  it("refuses an epic as the anchor instead of proposing its children", async () => {
+    const epic = issue("ENG-1", { isEpic: true, hasOpenChildren: true });
+    await expect(
+      propose([epic, issue("ENG-2")], "ENG-1", members),
+    ).rejects.toThrow("ENG-1");
+  });
+
   it("proposes only the named members, however large the area's pool is", async () => {
     const p = await propose(
       [issue("ENG-1"), issue("ENG-2"), issue("ENG-9")],

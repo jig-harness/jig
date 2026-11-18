@@ -80,8 +80,8 @@ import { capCandidates } from "./lib/budget.ts";
 import {
   type LeftOut,
   leftOutLines,
-  outgrewBatch,
   readFixedMembers,
+  sizeLeavesBatch,
   splitFixed,
 } from "./lib/fixed-batch.ts";
 import { Refusal } from "./lib/errors.ts";
@@ -536,7 +536,7 @@ function seedPoolLabels(
   // here could still be held back there and silently vanish.
   const reason = excludeReason(seed, policy, opts);
   const leftOut =
-    opts.fixed !== undefined && reason !== null && outgrewBatch(reason);
+    opts.fixed !== undefined && reason !== null && sizeLeavesBatch(reason);
   if (reason !== null && !leftOut) refuse(seedRefusal(key, reason, policy));
   return poolLabels;
 }
@@ -558,7 +558,7 @@ async function runIssueAnchor(
     refuse(`${key} is not among the --fixed keys`);
   refuseUnusableSeed(key, seed, policy);
 
-  if (seed.isEpic) {
+  if (seed.isEpic && opts.fixed === undefined) {
     const anchor: Anchor = {
       kind: "epic",
       input: key,

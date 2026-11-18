@@ -717,8 +717,8 @@ batchable size (`medium` by default; none when every size costs the same) needs
 a person's verdict to stay in a batch, so it never joins a fixed batch: such an
 item is picked up on its own, with no question, and the other items go on as
 the batch. When fewer than two remain, each is its own pickup. A member that
-reaches that size, or grows past the batchable sizes, after the batch is formed
-is left out the same way by the batch's pass. A run with a person at the
+reaches that size after the batch is formed, or whose size no longer fits a
+batch, is left out the same way by the batch's pass. A run with a person at the
 keyboard still asks for the verdict.
 
 An unknown field in `work_batch` or `work_batch.ranking` is refused. The

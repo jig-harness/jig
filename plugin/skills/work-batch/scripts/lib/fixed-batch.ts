@@ -1,8 +1,8 @@
 /**
  * A fixed batch: the members a dispatcher launch names, proposed with
  * `--fixed`. Nobody is there to rule on a member's size, so the size rules
- * itself: a member of a verdict size, or one that has grown past the
- * batchable sizes since the tick, is left for its own pickup.
+ * itself: a member of a verdict size, or one whose size no longer fits a
+ * batch (too large, cleared, or two at once), is left for its own pickup.
  */
 import type {
   PoolIssue,
@@ -20,7 +20,8 @@ import { type BatchPolicy, verdictSizes } from "./policy.ts";
 export interface LeftOut {
   identifier: string;
   title: string;
-  size: string;
+  /** `null` when the member has no one size. */
+  size: string | null;
   /** Why the size keeps it out of the batch, as a person reads it. */
   why: string;
 }
@@ -30,11 +31,12 @@ interface Parts {
   excluded: Excluded[];
 }
 
-/** Whether `reason` is a size that takes a fixed batch's member out of it. */
-export function outgrewBatch(
-  reason: ExclusionReason,
-): reason is { kind: "not-batchable-size"; size: string } {
-  return reason.kind === "not-batchable-size" && reason.size !== null;
+/** Whether `reason` is about the size, which takes a fixed batch's member out of it. */
+export function sizeLeavesBatch(reason: ExclusionReason): boolean {
+  return (
+    reason.kind === "not-batchable-size" ||
+    reason.kind === "conflicting-size-labels"
+  );
 }
 
 /** The named members other than `seed`, each read from the tracker. */
@@ -49,6 +51,8 @@ export async function readFixedMembers(
     if (key === seed) continue;
     const member = await tracker.poolIssue(key);
     if (member === null) warnings.push(`fixed member ${key} was not found`);
+    else if (member.identifier !== key)
+      warnings.push(`fixed member ${key} came back as ${member.identifier}`);
     else members.push(member);
   }
   return members;
@@ -78,11 +82,11 @@ export function splitFixed(
   });
   const excluded = parts.excluded.filter((e) => {
     if (!fixed.has(e.identifier)) return false;
-    if (!outgrewBatch(e.reason)) return true;
+    if (!sizeLeavesBatch(e.reason)) return true;
     leftOut.push({
       identifier: e.identifier,
       title: e.title,
-      size: e.reason.size,
+      size: e.reason.kind === "not-batchable-size" ? e.reason.size : null,
       why: describeReason(e.reason, policy),
     });
     return false;
