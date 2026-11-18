@@ -12,8 +12,10 @@
  *   another) is a double claim: reported, nothing started for it.
  * - A claimed item (in the in-progress state) with no running session for
  *   longer than `dispatch.stalled_after` is a stalled pickup: reported,
- *   never relaunched, since a relaunch would start a second implementer on
- *   a claimed item. A served person's item is a pickup's claim only when a
+ *   never started afresh, since that would start a second implementer on
+ *   a claimed item. One whose own tree holds the work it left is relaunched
+ *   once per head in that tree, to push and record it
+ *   (`pickup-relaunch.ts`). A served person's item is a pickup's claim only when a
  *   pickup of this machine claimed it: its claim, noted on its launch record
  *   where `tracker.ts claim` made it (`pickup-claim.ts`), or seen while it
  *   ran. The rest of their work in progress is their own, and quiet.
@@ -59,6 +61,8 @@ import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
+import { relaunchStep, type RelaunchStep } from "./pickup-relaunch.ts";
+import type { TreeReader } from "./pickup-tree.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
@@ -100,6 +104,8 @@ export interface PickupInput {
   prOpen?: StalledPrInput;
   /** Why the host's health check fails (`rerun-gate.ts`); `null` or absent while it passes. */
   rerunsHeld?: string | null;
+  /** Reads a stalled pickup's tree for the work it left (`pickup-relaunch.ts`); absent, no stall is relaunched. */
+  trees?: TreeReader;
 }
 
 export type PickupPlan = Pick<
@@ -421,6 +427,15 @@ function planClaimed(
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
   if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
+  const latest = latestPickupFor(item.key, input.launches);
+  // A pass whose result the host could not write is relaunched in its tree, once the health check passes, before a person is asked.
+  if (
+    latest !== undefined &&
+    unwrittenResult(latest) &&
+    (input.rerunsHeld ?? null) === null &&
+    relaunched(relaunchStep(item, latest, input), item.key, plan)
+  )
+    return;
   const asked = questionAsked(input, item, input.launches);
   if (asked !== null) {
     plan.actions.push(asked);
@@ -437,7 +452,35 @@ function planClaimed(
     });
     return;
   }
-  plan.actions.push(stalledPickup(item, input, held, since, pr));
+  const step = relaunchStep(item, latest, input);
+  if (relaunched(step, item.key, plan)) return;
+  plan.actions.push(
+    stalledPickup(
+      item,
+      input,
+      held,
+      since,
+      pr,
+      step.kind === "stall" ? step.note : null,
+    ),
+  );
+}
+
+/** Whether the relaunch rule settles the stalled item for this tick: relaunched in its tree, or waiting for the host's health check. */
+function relaunched(
+  step: RelaunchStep,
+  key: string,
+  plan: PickupPlan,
+): boolean {
+  if (step.kind === "relaunch") {
+    plan.actions.push(step.action);
+    return true;
+  }
+  if (step.kind === "held") {
+    plan.quiet.push({ target: key, class: "pickup-ended", why: step.why });
+    return true;
+  }
+  return false;
 }
 
 /** The stall need of a claimed item idle past `dispatch.stalled_after`, naming its launch's pull request where one is open. */
@@ -447,9 +490,11 @@ function stalledPickup(
   held: Holding,
   since: number,
   pr: LaunchPrReading,
+  treeNote: string | null,
 ): Action {
   const idle = input.nowMs - since;
-  const note = stallNote(pr);
+  const notes = [stallNote(pr), treeNote].filter((n) => n !== null);
+  const note = notes.length === 0 ? null : notes.join("; ");
   const latest = input.launches
     .filter(
       (r) =>
@@ -460,7 +505,7 @@ function stalledPickup(
     .sort((a, b) => b.record.createdAt.localeCompare(a.record.createdAt))[0];
   const wait =
     latest?.record.testLockWait === undefined ? "" : `; ${endedHow(latest)}`;
-  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); never relaunched, a person settles it${note === null ? "" : `; ${note}`}${wait}`;
+  const reason = `stalled pickup: in ${item.state} with no running session for ${minutes(idle)} (dispatch.stalled_after ${minutes(input.section.stalledAfterMs)}); a person settles it${note === null ? "" : `; ${note}`}${wait}`;
   return {
     stage: "notify",
     target: item.key,

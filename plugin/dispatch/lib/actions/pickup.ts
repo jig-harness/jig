@@ -70,6 +70,7 @@ import {
   waits,
 } from "./launch.ts";
 import { holdingRecords, pickupHold } from "./pickup-hold.ts";
+import { applyRelaunches } from "./pickup-relaunch.ts";
 import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's pickups need beyond the apply state. */
@@ -356,7 +357,8 @@ async function retryPending(
   ctx: PickupContext,
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["pickup"])) {
-    if (record.stewardResume !== undefined) continue;
+    if (record.stewardResume !== undefined || record.relaunchOf !== undefined)
+      continue;
     const item = record.item as string;
     const unauthorized = servedAuthorization(state, ctx, record, item);
     const fresh =
@@ -423,8 +425,14 @@ export async function applyPickups(
   report: RepoReport,
   ctx: PickupContext,
 ): Promise<void> {
-  const wanted = report.actions.filter((a) => a.stage === "pickup");
+  const wanted = report.actions.filter(
+    (a) => a.stage === "pickup" && a.relaunch === undefined,
+  );
   await retryPending(state, repo, report, ctx);
+  await applyRelaunches(state, repo, report, {
+    sessions: ctx.sessions,
+    deadlineSec: deadlineSec(ctx),
+  });
   // A pickup that waits passes its start to the next.
   for (const action of pickupSequence(state, report, wanted))
     report.launches.push(await launchOne(state, repo, action, ctx));

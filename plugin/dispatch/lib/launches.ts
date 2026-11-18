@@ -144,6 +144,10 @@ export interface LaunchRecord {
   stewardResume?: string;
   stewardDecision?: number;
   stewardContext?: string;
+  /** For a stalled pickup's relaunch: the launch record of the pickup it finishes, in that pickup's own tree (`pickup-relaunch.ts`). */
+  relaunchOf?: string;
+  /** For a stalled pickup's relaunch: the tree's head when it was relaunched; one relaunch per item and head. */
+  relaunchHead?: string;
   version: 1;
   id: string;
   token: string;
