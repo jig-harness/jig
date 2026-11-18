@@ -106,7 +106,11 @@ export async function markClaims(
     const kept = keptMark(cache, key, item);
     if (kept !== undefined) mark(item, kept);
     else if (limited)
-      unread(item, "the tracker's rate limit stopped an earlier read", false);
+      unread(
+        item,
+        "the issue service's rate limit stopped an earlier read",
+        false,
+      );
     else if (ended(tick))
       unread(item, passedBefore("its comments were read"), true, CUT_AT_BOUND);
     else {
