@@ -91,11 +91,13 @@
  * claim, a follow-up's marker; `lib/shared-launches.ts`'s `settleAtExit`), so
  * another host reads the end when the launch ends; a write that fails is one
  * line on its output, and the host's next tick with `--apply` writes the end
- * instead. Then a run that left
- * nothing for a person (a drive whose exit the registry's
- * `driveExitClosesTab` closes on, a session or a follow-up pass that
- * recorded `done`) closes its terminal tab, when the tick recorded it as a
- * run tab (`shared/orca-tabs.ts`); a park or a failure keeps the tab.
+ * instead. Then, on every exit it recorded (a park and a failure
+ * included), the wrapper closes its terminal tab, when the tick recorded it
+ * as a run tab (`shared/orca-tabs.ts`): the closing report, or the cause the
+ * wrapper, the driver or the steward records, keeps what the tab showed, and
+ * a drive's output stays in its driver log. A stage whose exit it could not
+ * record keeps the tab until the tick finds the record ended without its
+ * wrapper and asks the session runtime to end the run (`endRun`).
  *
  * Exit codes: the drive's own; 2 usage, a token that is not the record's,
  * a state database a newer plugin wrote, or a follow-up or pickup whose
@@ -121,10 +123,7 @@ import {
   NO_BACKGROUND_TASKS,
   passCommand,
 } from "../skills/drive-pr/scripts/lib/pass-command.ts";
-import {
-  DRIVE_EXIT,
-  driveExitClosesTab,
-} from "../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { DRIVE_EXIT } from "../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { run } from "../shared/proc.ts";
 import {
   driveState,
@@ -424,13 +423,11 @@ async function wrap(id: string, token: string): Promise<number> {
     return CLAIMED;
   }
   process.chdir(record.workspace.path);
-  if (!isInteractive(record)) {
-    const code = await spawnSupervisor(id, token);
-    if (readEnded(id)?.state.kind === "ended")
-      await closeTabIfDone(record, code);
-    return code;
-  }
-  return executeStage(id, record);
+  const code = isInteractive(record)
+    ? await executeStage(id, record)
+    : await spawnSupervisor(id, token);
+  await closeTabOnExit(id);
+  return code;
 }
 
 async function executeStage(
@@ -635,7 +632,6 @@ async function finishRun(
   await endSharedClaim(id);
   await labelFollowup(id);
   printKeptReport(id);
-  if (isInteractive(record)) await closeTabIfDone(record, code);
   return code ?? 1;
 }
 
@@ -683,16 +679,18 @@ async function labelFollowup(id: string): Promise<void> {
   if (line !== null) console.error(`jig dispatch run: ${line}`);
 }
 
-/** Close the run's tab when the run left nothing for a person; a failure only says so. */
-async function closeTabIfDone(
-  record: LaunchRecord,
-  code: number | null,
-): Promise<void> {
+/**
+ * Close the run's tab once its exit is recorded, whatever the exit: the
+ * closing report, or the cause the wrapper, the driver or the steward
+ * records, holds what a person read the tab for. A stage whose exit is not
+ * recorded (its processes may still run) keeps the tab, which the tick's
+ * `endRun` closes once the record is found ended without its wrapper. A
+ * failure only says so.
+ */
+async function closeTabOnExit(id: string): Promise<void> {
   try {
-    const done = isDrive(record)
-      ? driveExitClosesTab(code)
-      : readResult(record.id) === "done";
-    const line = await endOwnTab(done);
+    if (readEnded(id)?.state.kind !== "ended") return;
+    const line = await endOwnTab(true);
     if (line !== null) console.error(`jig dispatch run: ${line}`);
   } catch (error) {
     swallow(error, "the run's tab could not be closed");

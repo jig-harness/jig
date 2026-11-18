@@ -124,7 +124,7 @@ async function endAndLog(w: World): Promise<void> {
       nowIso: "2026-11-14T10:21:00.000Z",
       root,
     }),
-  ).toEqual([]);
+  ).toEqual({ failed: [], ended: [] });
 }
 
 describe("jig dispatch report", () => {

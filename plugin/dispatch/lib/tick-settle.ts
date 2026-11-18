@@ -37,7 +37,7 @@ import { hostNoticeKeys } from "./failure-notices.ts";
 import { releaseOnEveryChannel } from "./notice-records.ts";
 import { stateDb } from "./state.ts";
 import { mergedNotClosed } from "./forge.ts";
-import { logEnded } from "./log-ended.ts";
+import { type EndContext, logEnded } from "./log-ended.ts";
 import { aboutTargets } from "./line.ts";
 import { hasEnded } from "./log.ts";
 import { eraseStewardOutput } from "./steward.ts";
@@ -62,6 +62,14 @@ import {
   waitsOut,
 } from "./read-failures.ts";
 
+/** The runtime's `endRun`, on a tick that may act: a report changes nothing a run left. */
+function endRunOf(context: TickContext): Pick<EndContext, "endRun"> {
+  if (context.apply === null) return {};
+  const { runtime } = context;
+  const timeoutMs = context.options.machine?.runtimeTimeoutMs;
+  return { endRun: (run) => runtime.endRun(run, timeoutMs) };
+}
+
 /** The ended rows of this repository's records that ended, read beside its ledgers. */
 export async function logRepo(
   context: TickContext,
@@ -70,9 +78,10 @@ export async function logRepo(
   drives: Awaited<ReturnType<typeof readDrives>>,
 ): Promise<void> {
   const all = allRecords(context);
-  const failed = await logEnded(
+  const { failed, ended } = await logEnded(
     all.filter((r) => r.record.repo === slug),
     {
+      ...endRunOf(context),
       all,
       drives,
       merged: (pr) =>
@@ -95,6 +104,7 @@ export async function logRepo(
       ),
     },
   );
+  if (ended.length > 0) report.endedRuns = ended;
   for (const reason of failed)
     report.unplaced.push({
       target: "the outcome log",
@@ -172,9 +182,10 @@ export async function settleOutcomes(
   );
   // Whoever observes one, a repository this tick was not asked for included, holds its locks.
   const exclusive = claimUnobserved(unread);
-  let unlogged: Awaited<ReturnType<typeof logEnded>>;
+  let logged: Awaited<ReturnType<typeof logEnded>>;
   try {
-    unlogged = await logEnded(exclusive.records, {
+    logged = await logEnded(exclusive.records, {
+      ...endRunOf(context),
       all: records,
       drives: null,
       merged: async () => null,
@@ -183,7 +194,8 @@ export async function settleOutcomes(
   } finally {
     exclusive.release();
   }
-  if (unlogged.length > 0) receipt.unloggedOutcomes = unlogged;
+  if (logged.failed.length > 0) receipt.unloggedOutcomes = logged.failed;
+  if (logged.ended.length > 0) receipt.endedRuns = logged.ended;
   // A record that ended without its outcome row in the log is kept: its end is written with the row.
   pruneLaunches(
     records.filter(
@@ -200,7 +212,7 @@ export async function settleOutcomes(
   eraseStewardOutput(context.nowMs, days ?? 30, context.apply?.root);
   pruneTranscriptCopies(context.nowMs, days ?? 30, context.apply?.root);
   return (
-    unlogged.length > 0 ||
+    logged.failed.length > 0 ||
     receipt.repos.some(
       (r) =>
         (r.refused !== null ||

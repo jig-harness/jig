@@ -193,6 +193,14 @@ export interface NoticesTarget {
   dispatched: Dispatched;
 }
 
+/** A launch record's run that ended without its wrapper recording an exit, as `endRun` is given it. */
+export interface EndedRun {
+  /** The launch record's id. */
+  id: string;
+  /** The workspace the record names; `null` when it names none. */
+  workspace: { id: string; path: string } | null;
+}
+
 /** Whether a runtime can start an interactive session billed to a chosen account. */
 export type Binding = { ok: true } | { ok: false; reason: string };
 
@@ -309,6 +317,16 @@ export interface SessionRuntime {
     expected: { comment: string; unread: boolean; branch?: string },
     timeoutMs?: number,
   ): Promise<RuntimeReceipt>;
+  /**
+   * What the runtime does with what a run left once the tick finds that it
+   * ended without its wrapper recording an exit: on Orca, the run's recorded
+   * tab closed by the run-tab idle checks, so a terminal someone typed into
+   * stays. It never ends a process. Its receipt: `ok` when nothing of the
+   * run is left open, or nothing was recorded for it; `ok: false` with the
+   * reason when something stays (a busy tab, a refused close), which a later
+   * collection may still close.
+   */
+  endRun(run: EndedRun, timeoutMs?: number): Promise<RuntimeReceipt>;
 }
 
 /**

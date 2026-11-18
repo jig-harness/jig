@@ -12,6 +12,7 @@ import type {
   Evidence,
   LabelReport,
   LabelWrite,
+  EndRunOutcome,
   LaunchOutcome,
   NotifyOutcome,
   PrOpenMove,
@@ -63,6 +64,11 @@ function plannedMoves(r: RepoReport, verb: string): string[] {
     .map((m) => moveLine(m, verb));
 }
 
+/** What `endRun` did with a run whose wrapper died. */
+function endedRunLine(e: EndRunOutcome): string {
+  return `  ${e.outcome.padEnd(8)} end run ${e.target} (record ${e.record}): ${e.detail}`;
+}
+
 function steerLine(s: SteerOutcome): string {
   return `  ${s.outcome.padEnd(10)} steer  ${s.target} (record ${s.record}, wall ${s.episode}): ${s.detail}`;
 }
@@ -78,6 +84,7 @@ function outcomeLines(r: RepoReport): string[] {
       .filter((m) => m.outcome !== undefined)
       .map((m) => moveLine(m, "")),
     ...(r.steers ?? []).map(steerLine),
+    ...(r.endedRuns ?? []).map(endedRunLine),
     ...notified.map(noticeLine),
     ...(r.noticesWorkspace === undefined
       ? []
@@ -261,6 +268,7 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
     ...(receipt.unloggedOutcomes ?? []).map(
       (reason) => `outcome log: ${reason}`,
     ),
+    ...(receipt.endedRuns ?? []).map((e) => endedRunLine(e).trim()),
     ...(receipt.logCopyFailed === undefined
       ? []
       : [`outcome log: ${receipt.logCopyFailed}`]),

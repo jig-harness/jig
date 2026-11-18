@@ -1,11 +1,14 @@
 /**
  * Run tabs: the Orca terminal tabs Jig opens for a run (a drive armed in a
- * tab, a stage the dispatcher launches), closed again once the run ends with
- * nothing left for a person to look at.
+ * tab, a stage the dispatcher launches), closed again once the run ends: a
+ * stage the dispatcher launched on every exit its wrapper records, a drive
+ * armed in a tab when it ends with nothing left for a person to look at.
  *
  * The opener records each tab it opens: its handle, the PID and start time
- * of the login shell Orca started in it, the worktree and what the run is
- * for (a pull request, an item). When a new run opens for the same subject
+ * of the login shell Orca started in it, the worktree, what the run is for
+ * (a pull request, an item) and, for a launch, the launch record it runs, so
+ * the dispatcher's tick closes the tab of a run whose wrapper died before it
+ * could (`closeLaunchTabs`). When a new run opens for the same subject
  * in the same worktree, the opener closes that subject's earlier run tabs.
  * When the tab's own command (the process whose parent is the recorded
  * shell) ends, it calls `endOwnTab`, which starts a detached closer: the
@@ -63,6 +66,8 @@ export interface RunTab {
   worktree: string;
   /** What the run is for: `pr:<number>` or `item:<key>`. */
   subject: string;
+  /** The dispatcher's launch record the tab runs, when a launch opened it; absent for a drive armed in a tab, and on a record an earlier release wrote. */
+  launch?: string;
   title: string;
   /** The Orca command the tab was opened with, which closes it too. */
   orca: string;
@@ -191,6 +196,7 @@ function isRunTab(value: unknown): value is RunTab {
     typeof value.shellStart === "string" &&
     typeof value.worktree === "string" &&
     typeof value.subject === "string" &&
+    (value.launch === undefined || typeof value.launch === "string") &&
     typeof value.orca === "string"
   );
 }
@@ -236,6 +242,7 @@ export async function recordRunTab(
     worktree: string;
     subject: string;
     title: string;
+    launch?: string;
   },
   deps: Pick<RunTabDeps, "root" | "table" | "now">,
   until: number = Number.POSITIVE_INFINITY,
@@ -259,6 +266,7 @@ export async function recordRunTab(
     shellStart: shell.start,
     worktree: treePath(opened.worktree),
     subject: opened.subject,
+    ...(opened.launch === undefined ? {} : { launch: opened.launch }),
     title: opened.title,
     orca: opened.orca,
     openedAt: isoFromMs(deps.now()),
@@ -353,7 +361,8 @@ export async function closeRunTab(
   };
 }
 
-function outcomeText(outcome: CloseOutcome): string {
+/** How closing one tab ended, in words. */
+export function outcomeText(outcome: CloseOutcome): string {
   return typeof outcome === "string" ? outcome : outcome.failed;
 }
 
@@ -386,6 +395,31 @@ export async function closePreviousTabs(
     );
   }
   return lines;
+}
+
+/**
+ * Close the run tabs a launch record's run left, once the run ended without
+ * its wrapper closing them: each tab recorded for `launch`, by the idle
+ * checks `closeRunTab` makes, through `orca` (the caller's own command,
+ * never the one the record carries). Returns one line per tab it looked at;
+ * none when no tab is recorded for the launch.
+ */
+export async function closeLaunchTabs(
+  launch: string,
+  orca: string,
+  deps: Pick<RunTabDeps, "root" | "orca" | "table">,
+  until: number = Number.POSITIVE_INFINITY,
+): Promise<{ tab: RunTab; outcome: CloseOutcome }[]> {
+  const ended: { tab: RunTab; outcome: CloseOutcome }[] = [];
+  for (const tab of readRunTabs(deps.root).filter((t) => t.launch === launch))
+    ended.push({
+      tab,
+      outcome:
+        currentMs() >= until
+          ? "out of time"
+          : await closeRunTab({ ...tab, orca }, deps, until),
+    });
+  return ended;
 }
 
 const POLL_MS = 250;
