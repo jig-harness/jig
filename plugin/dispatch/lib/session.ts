@@ -205,6 +205,50 @@ function pickupResultLines(
   ];
 }
 
+/** What a pickup's prompt says about batching: a fixed batch's scope, or that the item is alone. */
+function batchScopeLines(
+  record: Pick<LaunchRecord, "batchItems" | "stewardResume">,
+): string[] {
+  return [
+    ...(record.batchItems === undefined
+      ? []
+      : [
+          `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. No member may be replaced or added.`,
+          ...(record.stewardResume === undefined
+            ? [
+                `Use the first named key as the proposal anchor and pass --fixed ${shellQuote(record.batchItems.map((i) => i.key).join(","))}. Ask no question about a member's size: claim no member the proposal leaves for its own pickup, except that when fewer than two members stay you claim and work one alone as the skill says (the first member left out when none stays). Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.`,
+              ]
+            : []),
+        ]),
+    ...(record.batchItems !== undefined || record.stewardResume !== undefined
+      ? []
+      : [
+          "This item is picked up on its own: run the pickup skill's batch check only to confirm that, suggest no batch and ask no question about one.",
+        ]),
+  ];
+}
+
+/** The claim a served assignment owes, with the person it keeps as the only assignee. */
+function servedClaimLines(
+  record: Pick<
+    LaunchRecord,
+    | "item"
+    | "batchItems"
+    | "servedPerson"
+    | "ancestorEpic"
+    | "blockingFor"
+    | "stewardResume"
+  >,
+): string[] {
+  return [
+    ...(record.servedPerson === undefined || record.stewardResume !== undefined
+      ? []
+      : [
+          `${record.batchItems === undefined ? "Claim this served assignment" : `If the proposal keeps ${record.item ?? ""}, claim it`} using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the ${record.batchItems === undefined ? "pickup" : "batch"}.`,
+        ]),
+  ];
+}
+
 /** The prompt a pickup's headless pass starts with. */
 function pickupPassPrompt(
   record: Pick<
@@ -238,21 +282,7 @@ function pickupPassPrompt(
         ? `${PICKUP_SKILL} ${record.item}`
         : `/jig:work-batch ${record.item}`,
     ),
-    ...(record.batchItems === undefined
-      ? []
-      : [
-          `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. No member may be replaced or added.`,
-          ...(record.stewardResume === undefined
-            ? [
-                `Use the first named key as the proposal anchor and pass --fixed ${shellQuote(record.batchItems.map((i) => i.key).join(","))}. Ask no question about a member's size: claim no member the proposal leaves for its own pickup, except that when fewer than two members stay you claim and work one alone as the skill says (the first member left out when none stays). Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.`,
-              ]
-            : []),
-        ]),
-    ...(record.batchItems !== undefined || record.stewardResume !== undefined
-      ? []
-      : [
-          "This item is picked up on its own: run the pickup skill's batch check only to confirm that, suggest no batch and ask no question about one.",
-        ]),
+    ...batchScopeLines(record),
     ROUTE_RULES_LINE,
     ...(record.factoryAncestor === undefined ||
     record.stewardResume !== undefined
@@ -260,11 +290,7 @@ function pickupPassPrompt(
       : [
           `Claim this factory-inherited assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --factory-ancestor ${shellQuote(record.factoryAncestor)}; validate the factory ancestor and assign the child to the credential identity. A refusal stops the pickup.`,
         ]),
-    ...(record.servedPerson === undefined || record.stewardResume !== undefined
-      ? []
-      : [
-          `${record.batchItems === undefined ? "Claim this served assignment" : `If the proposal keeps ${record.item ?? ""}, claim it`} using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the ${record.batchItems === undefined ? "pickup" : "batch"}.`,
-        ]),
+    ...servedClaimLines(record),
     "",
     "jig dispatch started this headless pass for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard, and nobody can answer a question while it runs.",
     FOREGROUND_LINE,
