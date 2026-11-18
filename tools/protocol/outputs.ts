@@ -9,9 +9,11 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Finding } from "../../lib/findings.ts";
 import {
+  carriedMap,
   type Chapter,
   COMMAND,
   chapterFile,
+  comparisonOf,
   DATA_DIR,
   type DataFile,
   type DataValue,
@@ -157,6 +159,50 @@ function identityFindings(chapter: Chapter, values: readonly DataValue[]) {
     seen.add(shown);
   }
   return out;
+}
+
+/**
+ * A comparison the field cannot be read by: anything but exact on a field
+ * that identifies a value, which is matched and never compared, or on one
+ * that holds no text; and a `carriers` value not written as that comparison
+ * reads it, which it could not hold to its promise.
+ */
+function comparisonFindings(
+  chapter: Chapter,
+  values: readonly DataValue[],
+): Finding[] {
+  const file = chapterFile(chapter.id);
+  const remedy = "correct the field's comparedAs in the chapter's fields";
+  return Object.entries(chapter.fields).flatMap(([name, spec]) => {
+    const how = comparisonOf(name, spec);
+    if (how === "exact") return [];
+    if (spec.identifies)
+      return [
+        finding(
+          file,
+          `the field ${name} identifies a value, so it can only be compared as exact`,
+          remedy,
+        ),
+      ];
+    if (spec.type !== "string")
+      return [
+        finding(
+          file,
+          `the field ${name} is compared as ${how}, which only a string field can be`,
+          remedy,
+        ),
+      ];
+    if (how !== "carriers") return [];
+    return values
+      .filter((v) => (v[name] ?? null) !== null && !carriedMap(v[name]))
+      .map((v) =>
+        finding(
+          file,
+          `${String(v.name)}'s ${name} is ${JSON.stringify(v[name])}, which is not a list of carriers, each with (always) or (sometimes)`,
+          "write it as `tick (always), manual (sometimes)`, each carrier once",
+        ),
+      );
+  });
 }
 
 function valueFindings(chapter: Chapter, values: readonly DataValue[]) {
@@ -369,6 +415,7 @@ function chapterOutputs(
     ],
     findings: [
       ...statusFindings(chapter, open),
+      ...comparisonFindings(chapter, data.values),
       ...valueFindings(chapter, data.values),
       ...identityFindings(chapter, data.values),
       ...markdown.findings,

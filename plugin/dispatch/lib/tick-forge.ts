@@ -203,6 +203,7 @@ export async function readForge(
       adoption,
       (pr) => reads.comments.read(repo.slug, pr),
       (read) => reads.pool.run(read),
+      reads.bound,
     );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));

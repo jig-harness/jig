@@ -217,14 +217,14 @@ function trackerOf(
 /** The login the forge client is signed in as, for every station but a pick-up, which makes no forge call. */
 async function loginFor(r: Reading, address: Address): Promise<string | null> {
   if (address.station === "pickup") return null;
-  const login = await readLogin(r);
+  const read = await readLogin(r);
+  const login = read.ok ? read.value : null;
   r.note(
     login === null
       ? {
           record: "forge-login",
           read: false,
-          detail:
-            "the forge did not name its login; only authors it vouches for are trusted",
+          detail: `${read.ok ? "the forge did not name its login" : `the forge login was not read: ${read.failure.reason}`}; only authors it vouches for are trusted`,
         }
       : { record: "forge-login", read: true },
   );

@@ -844,7 +844,9 @@ outlives the session that spawned it, so its console is not where you look:
   itself; `--stop` writes it once the driver and its pass tree are witnessed
   gone, and after a signal stop `--stop` or `--doctor` against the driver
   record it marked released with its locks does the same, each only while
-  the ledger still names that driver. Review and repair passes persist
+  the ledger still names that driver. Under the dispatcher, the driver
+  records Claude Code session ids at spawn and Codex session ids when they
+  appear in startup output, for review and repair passes. These passes persist
   acquisition-bound process observations before spawning. After an abrupt
   local stop, dispatch or doctor can reconcile the ledger when those
   observations prove the driver and its observed and registered work gone.

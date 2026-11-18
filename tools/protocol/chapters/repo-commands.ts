@@ -144,6 +144,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: true,
     required: true,
     identifies: false,
+    comparedAs: "names",
     description:
       "For a command, the skills and components that run it, comma-separated; null for an exit.",
   },
@@ -160,6 +161,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: true,
     required: true,
     identifies: false,
+    comparedAs: "prose",
     description:
       "For a command, what it is given: its standard input, its arguments and where it runs; null for an exit.",
   },
@@ -168,6 +170,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: true,
     required: true,
     identifies: false,
+    comparedAs: "prose",
     description:
       "For a command, what it answers with on success, exit 0; null for an exit.",
   },

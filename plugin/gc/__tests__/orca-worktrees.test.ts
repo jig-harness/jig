@@ -33,6 +33,7 @@ import {
   detachWithMergedPull,
   setup,
 } from "./orca-fixture.ts";
+import { preserveCompletion } from "./worktree-fixture.ts";
 
 const FINDING_TITLE = "The setup step assumed a running database";
 
@@ -312,6 +313,14 @@ describe.skipIf(
     ) as OrcaState;
     expect(state.worktrees).toEqual([]);
     expect(calls(f)).toContain(`worktree rm --worktree id:${f.id} --json`);
+  }, 60_000);
+
+  test("collecting an Orca checkout retires its preserved completion evidence", () => {
+    const f = setup();
+    const completionIds = preserveCompletion(f);
+    idle(f);
+    line(gc(f, ["--collect", "--json"]));
+    expect(completionIds()).toEqual([]);
   }, 60_000);
 
   test("collecting a worktree whose only ignored content is a dependency directory still reports it as rebuildable", () => {
