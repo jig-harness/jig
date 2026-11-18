@@ -138,6 +138,7 @@ function stateAt(root: string, records: ReadRecord[] = []): ApplyArgs[0] {
 function observation(actions: Action[]): ApplyArgs[1] {
   return {
     forge: { ok: true, drives: [] },
+    drives: [],
     held: new Set(),
     tracked: { pickups: [] },
     opened: {

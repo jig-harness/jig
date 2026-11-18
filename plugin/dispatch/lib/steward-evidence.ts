@@ -104,7 +104,7 @@ function targetNames(context: EvidenceContext, queue: PoolIssue[]): string[] {
     ...observation.opened.report.actions
       .filter((a) => a.stage === "notify")
       .map((a) => a.target),
-    ...observation.forge.drives.map((pr) => `PR #${pr.number}`),
+    ...observation.drives.map((pr) => `PR #${pr.number}`),
     ...queue.map((issue) => issue.identifier),
   ]);
   const historical = records

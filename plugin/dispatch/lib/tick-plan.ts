@@ -74,7 +74,7 @@ export function planObserved(
     section,
     pickups: tracked.pickups,
     claimed: tracked.claimed,
-    drives: forge.drives,
+    drives: observation.drives,
     merged: forge.merged,
     sessions,
     created: forge.created,

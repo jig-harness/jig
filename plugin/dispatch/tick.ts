@@ -4,7 +4,11 @@
  * (the dispatch section from the default branch, the tracker, the forge's
  * pull requests and their drive ledgers, the runtime's sessions), each
  * repository under its observe lock and every read through one bounded pool
- * (lib/pool.ts). The act phase, under the act lock, then takes the
+ * (lib/pool.ts). Its reads of the forge and the tracker go through the
+ * tick's world view (lib/world-view.ts), which a caller of `runTick` can
+ * supply (`TickOptions.world`) and which otherwise reads them directly;
+ * this host's launch records, the machine view, are read beside it and
+ * never written into a fact it returned. The act phase, under the act lock, then takes the
  * repositories one at a time in this tick's rotated order: plan wanted minus
  * running, report, and with `--apply` launch; then the tick writes its
  * receipt. Without `--apply` a tick starts nothing: it reports what it
@@ -87,7 +91,7 @@ import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
-import { prepareTrackers } from "./lib/tick-trackers.ts";
+import { tickWorld, worldOf } from "./lib/world-view.ts";
 import { settleFollowups } from "./lib/followup-outcomes.ts";
 import { type ReadRecord, readLaunches } from "./lib/launches.ts";
 import type { MachineConfig } from "./lib/machine-config.ts";
@@ -105,7 +109,7 @@ import {
   type TickContext,
   type TickOptions,
 } from "./lib/tick-context.ts";
-import { boundAt } from "./lib/sources/bounded.ts";
+import { boundAt, heldTo } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
@@ -224,6 +228,7 @@ async function startTick(
   // One bound for every read the tick makes, from the launcher's deadline; none when no launcher bounds it.
   const bound = boundAt(deadlineOf(machine, startedMs));
   const read = await readLaunches();
+  const reads = tickReads(runtime, options.poolSize, bound);
   const receipt: TickReceipt = {
     version: 1,
     runId,
@@ -248,7 +253,8 @@ async function startTick(
     lineInputs: new Map(),
     reflections: [],
     pending: [],
-    reads: tickReads(runtime, options.poolSize, bound),
+    reads,
+    world: tickWorld(options, reads, bound),
     rerunsHeld: rerunsHeld(),
   };
   return { receipt, context, withheld: undefined, settleFailed: false };
@@ -320,10 +326,19 @@ async function observeAll(
       }
     }),
   );
-  await prepareTrackers(
-    prepared.map(({ opened }) => opened),
-    context,
-  );
+  try {
+    await heldTo(
+      () =>
+        worldOf(context).gatherQueues(
+          prepared.map(({ opened }) => opened),
+          context,
+        ),
+      context.bound,
+    );
+  } catch (error) {
+    // A view that never answered at the tick's deadline leaves each repository to read its own queues.
+    if (context.bound?.signal.aborted !== true) throw error;
+  }
   await Promise.all(
     prepared.map(async (opened) => {
       try {
