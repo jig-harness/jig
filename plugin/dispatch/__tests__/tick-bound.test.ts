@@ -369,8 +369,10 @@ describe("the forge's reads under the tick's bound", () => {
     );
     const read = await reads.repository(REPO.path);
     expect(read.ok ? null : outboundOf(read.failure)?.code).toBe("unreachable");
-    // No login is asked after the deadline: the reading has none.
-    expect(await reads.login()).toBeNull();
+    // No login is asked after the deadline, and its absence is a deadline failure, never a missing login.
+    await expect(reads.login()).rejects.toMatchObject({
+      code: "unreachable",
+    });
   });
 
   /** The forge's part of a tick under `bound`, its repository query answering `query`. */

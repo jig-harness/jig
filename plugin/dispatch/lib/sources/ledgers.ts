@@ -757,6 +757,8 @@ interface Reading {
   comments: (pr: number) => Promise<Listing>;
   /** What this host shows of a silent ledger's driver. */
   presence: (pr: number, ledger: Ledger) => Promise<DriverPresence>;
+  /** The tick's bound, where it has one: no park thread is read once it has ended. */
+  bound?: TickBound;
 }
 
 /** Runs a forge read when the tick's pool has a place for it (`pool.ts`). */
@@ -883,7 +885,14 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       readFailed: true,
     };
   const ledger = snapshot.canonical.parsed.ledger;
-  const park = await readPark(pr.number, ledger, slug, listing.value);
+  const park = await readPark(
+    pr.number,
+    ledger,
+    slug,
+    listing.value,
+    {},
+    r.bound,
+  );
   const forge = await factsOf(pr, ledger, r);
   let classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
   const request = rearmRequest(ledger, labels, pr.labels, classified);
@@ -984,6 +993,7 @@ export async function readDrives(
           })
         : driverPresence(pr, ledger),
     comments: comments ?? ((pr) => listComments({ repo: slug, number: pr })),
+    ...(bound === undefined ? {} : { bound }),
   };
   const out: DrivenPr[] = [];
   for (const pr of prs) {
