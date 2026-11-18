@@ -322,6 +322,25 @@ export function setDispatcherShare(share: number | null): void {
   dispatcherShare = share;
 }
 
+/** The variable that hands this process's share to an outbound-capable child it starts on the dispatcher's behalf. */
+const DISPATCHER_SHARE_ENV = "JIG_OUTBOUND_SHARE";
+
+/** The share to hand a child, for `DISPATCHER_SHARE_ENV`; absent when this process's requests use all of the budget. */
+export function shareForChild(): Record<string, string> {
+  return dispatcherShare === null
+    ? {}
+    : { [DISPATCHER_SHARE_ENV]: String(dispatcherShare) };
+}
+
+/** Take the share a parent handed this process: the child's requests stay inside the dispatcher's, whatever the parent's own process held. Nothing is changed when none was handed or it does not read as a share between 0 and 1. */
+export function inheritDispatcherShare(
+  env: Record<string, string | undefined> = process.env,
+): void {
+  const share = Number(env[DISPATCHER_SHARE_ENV] ?? Number.NaN);
+  if (Number.isFinite(share) && share >= 0 && share <= 1)
+    setDispatcherShare(share);
+}
+
 /** The share this process's requests may use; `null` for all of it. */
 function currentShare(): number | null {
   return dispatcherShare;
