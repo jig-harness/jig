@@ -781,7 +781,10 @@ function governed(
           refused: outboundFailure(
             "rate-limited",
             `${error.message}${said}; nothing was sent`,
-            { until: error.resetAt },
+            {
+              until: error.resetAt,
+              quota: { system: error.adapter, share: error.share === true },
+            },
           ),
         };
       }

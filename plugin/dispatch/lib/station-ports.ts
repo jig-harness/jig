@@ -269,7 +269,7 @@ async function moveTo(
     await tracker.transition(item, state, AbortSignal.timeout(60_000));
     return null;
   } catch (error) {
-    return `the tracker did not move ${item} to ${state}: ${failureText(error)}`;
+    return `the issue service did not move ${item} to ${state}: ${failureText(error)}`;
   }
 }
 
@@ -281,7 +281,8 @@ async function releasePickup(
   const off = stageOff(inputs, "pickup");
   if (off !== null) return refused(off);
   const { tracker } = inputs;
-  if (tracker === null) return refused("the tracker did not open this tick");
+  if (tracker === null)
+    return refused("the issue service did not open this tick");
   const state = startState(inputs.section);
   if (state === null)
     return refused(
@@ -293,7 +294,8 @@ async function releasePickup(
   } catch (error) {
     return refused(`${item} did not read: ${failureText(error)}`);
   }
-  if (current === null) return refused(`${item} is gone from the tracker`);
+  if (current === null)
+    return refused(`${item} is gone from the issue service`);
   if (["completed", "canceled", "duplicate"].includes(current.state.type))
     return refused(
       `${item} is now ${current.state.name}, not a claim to release`,

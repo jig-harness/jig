@@ -139,7 +139,7 @@ async function moveOne(
     return done(
       move,
       isRateLimited(error) || clock ? "waits" : "refused",
-      `the tracker did not move ${move.target} to ${move.to}: ${failureText(error)}`,
+      `the issue service did not move ${move.target} to ${move.to}: ${failureText(error)}`,
     );
   }
   const ms = allowance(room);

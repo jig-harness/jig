@@ -346,6 +346,12 @@ fields:
     read_by: [resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar]
     repository_only: true
 
+  gates.dispatch_fast:
+    type: boolean
+    read_by: [jig-gates]
+    repository_only: true
+    since: 0.277.2
+
   review.bots:
     type: list
     items:

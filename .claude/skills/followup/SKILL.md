@@ -235,9 +235,19 @@ bun plugin/skills/changelog/scripts/tag.ts --json
 |---------|----------|
 | no entry (`untagged` empty) | NOT OWED |
 | `pending` or `rerun` | Pending: the gates on the releasing commit are still running, or were cancelled and the workflow runs them again once; check again later, not an incident |
-| `ready` | OWED: the gates passed but no tag job has run since; run the release workflow (`gh workflow run release.yml`), ask first |
-| `failed` | OWED, a person's step: the gates failed on the releasing commit; report it with the failing checks, and never tag it by hand |
-| `imported` | OWED only if that version was ever owed a tag: its heading came in with others, so no commit released it; report it for a person |
+| `ready` | Pending while the release workflow is running. Otherwise OWED: the gates passed but no tag job has run since; record the release owed, and run the workflow (`gh workflow run release.yml`) only after asking |
+| `failed` | OWED, a person's step: the gates failed on the releasing commit; record the release owed with the failing checks, and never tag it by hand |
+| `manual` | OWED, a person's step, when that version was ever owed a tag: it is outside automatic tagging eligibility (older than the newest tag, or not the newest release when no tags exist); record the release owed |
+| `imported` | OWED only if that version was ever owed a tag: its heading came in with others, so no commit released it; record the release owed |
+
+Each release a person owes gets one tracker item per version, as
+[Recording a release owed](../../../plugin/skills/followup/SKILL.md#recording-a-release-owed)
+says: write `[person-owed] release <version> owed` in this arm's evidence, and
+in a session the dispatcher started, run its prompt's `release-owed` command
+before filing; its answer says whether to reuse the item, leave the filing to
+another run, or search and file `Release <owner/name> <version> owes a tag`.
+The dispatcher keeps the decision by version, so a release owed is no
+`Question:` line: go on to the other arms.
 
 `tags.known: false` is unread, not NOT OWED: say so with its `detail`. A tag
 on origin of the version's name counts as made, whatever it points at; when

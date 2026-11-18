@@ -36,7 +36,7 @@
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
-import { derivedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
+import { endedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
@@ -68,6 +68,7 @@ export const OUTCOME_CLASSES = [
   "merged",
   "quota wall",
   "parked for a person",
+  "arm pending",
   "stalled",
   "died",
   "refused",
@@ -429,6 +430,7 @@ function sessionClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,
     r.waitsFor,
+    r.framed,
   );
   if (result !== null) return result;
   const s = r.state;
@@ -547,11 +549,13 @@ export function endedRow(
         : null,
     class: placed.class,
     reason,
-    next:
-      record.action === "pickup" &&
-      (r.result === "done" || r.result === "waits")
-        ? (r.next ?? null)
-        : derivedNext(record.action, placed.class, reason),
+    next: endedNext(record.action, {
+      result: r.result,
+      next: r.next ?? null,
+      framed: r.framed,
+      class: placed.class,
+      reason,
+    }),
     ...aboutFields(about),
     ...reportFields(r.report),
   };

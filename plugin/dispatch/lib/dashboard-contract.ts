@@ -15,6 +15,8 @@ import type {
   LaunchOutcome,
   NotifyCause,
   NotifyOutcome,
+  ReadFailure,
+  RefusedStep,
 } from "./types.ts";
 import type {
   Act,
@@ -315,6 +317,12 @@ export interface LineQueued {
   footprint?: string;
 }
 
+/** What stopped the newest tick that tried to open a repository, in parts (`LineRepo.refusal`). */
+export interface LineRefusal {
+  step: RefusedStep;
+  failure?: ReadFailure;
+}
+
 /** One repository the machine file lists. */
 export interface LineRepo {
   /** `null` when the forge could not say which repository the path is. */
@@ -328,6 +336,16 @@ export interface LineRepo {
   tracker?: { adapter: string; repository?: string } | null;
   /** Why nothing could be dispatched for it at the newest tick that tried; `null` when it was read. Beside an earlier tick's `runId` when that tick's part of the line was kept because this one could not identify the repository. */
   refused: string | null;
+  /**
+   * `refused` in parts, so the page can lead with one short line and keep
+   * `refused` for what it shows on expanding: the step opening the
+   * repository stopped at and, when a failed call stopped it, that call's
+   * failure (its class, when a rate limit clears, and whose credential
+   * quota stopped it, and whether only the dispatcher's share). Absent beside a refusal written before it
+   * was kept and beside one no step names, where the page shows `refused`
+   * whole.
+   */
+  refusal?: LineRefusal;
   /** The records that did not read at the newest tick. */
   failedReads: Array<{ record: string; source: string; detail: string }>;
   /** What each record's read said about what this repository has, such as no pickups. */
@@ -506,6 +524,8 @@ export interface LineSnapshot {
   needs: LineNeed[];
   /** Decisions answered with hold, still visible until their facts change; absent in older snapshots. */
   answeredHolds?: Array<{ repo: string; target: string; why: string }>;
+  /** Claimed items no session holds that an open pull request carries while its drive is live (`driving`) or converged, and so not asked about as stalled pickups; absent in older snapshots. */
+  carried?: LineCarried[];
   queue: LineQueued[];
   /** The converged pull requests the board read placed, Ready to merge first in its order; absent from a line written before the board read. */
   ready?: LineReady[];
@@ -516,6 +536,18 @@ export interface LineSnapshot {
   parks?: LinePark[];
   /** The resolution receipts the tick has written to the outcome log, by park occurrence, while a ledger it read still lists them. */
   ingested?: string[];
+}
+
+/** A claimed item an open pull request carries, as the tick read it (`carried-pr.ts`). */
+export interface LineCarried {
+  repo: string;
+  /** The item's key. */
+  target: string;
+  pr: number;
+  url: string;
+  drive: "driving" | "converged";
+  /** The tick's reason, verbatim. */
+  why: string;
 }
 
 /** `GET /state`. */

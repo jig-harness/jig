@@ -191,7 +191,8 @@ field only to override the derivation:
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
+| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push; a session the dispatcher starts may run fewer, as `gates.dispatch_fast` says. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
+| `gates.dispatch_fast` | boolean | Full local gates | jig-gates | Jig’s repository gate command runs fast checks and targeted tests in the sessions the dispatcher starts when this repository-only setting is true. CI retains the full gate set. Other repositories can opt in by implementing this setting in their own gate command using the dispatch launch identifier in `JIG_LAUNCH`. |
 
 ## `review`
 
@@ -711,6 +712,16 @@ context labels from `review`, the labels that name an area from
 | `work_batch.ranking.provenance` | whole number ≥ 0 | `3` | work-batch | The score of the follow-up label (`issue_tracker.labels.followup`) |
 | `work_batch.ranking.shared_area_label` | whole number ≥ 0 | `1` | work-batch | The score of each shared area label an issue carries |
 
+`dispatch` reads `work_batch.size_points`, `point_budget`, `max_items` and
+`solo_flags` to form fixed batches of served items. The most expensive
+batchable size (`medium` by default; none when every size costs the same) needs
+a person's verdict to stay in a batch, so it never joins a fixed batch: such an
+item is picked up on its own, with no question, and the other items go on as
+the batch. When fewer than two remain, each is its own pickup. A member that
+reaches that size after the batch is formed, or whose size no longer fits a
+batch, is left out the same way by the batch's pass. A run with a person at the
+keyboard still asks for the verdict.
+
 An unknown field in `work_batch` or `work_batch.ranking` is refused. The
 [work-batch README](skills/work-batch/README.md) explains the budget, the
 ranking and the solo-only flags.
@@ -1133,8 +1144,16 @@ overrides) and takes the agent command for its fresh runs on the command
 line.
 
 `orchestrate` adds no configuration fields. It uses the repository and host's
-existing plan review surface and durable record facility, with chat review
-and a plain file outside the repository as fallbacks. Fresh filing sessions
+existing plan review surface, with chat review as the fallback, and keeps
+each topic's record in an orchestration notebook, the host-local folder
+`$JIG_HOME/orchestrate/<topic>/` (`~/.jig/orchestrate/<topic>/` by default).
+The folder is named after the topic in lowercase Latin letters and digits
+joined by hyphens, accents dropped (a topic with none of these is refused), and holds `state.md`, the current state rewritten whole, and
+`journal/YYYY-MM-DD.md`, one append-only file a day (UTC). It is never
+written inside a Git working tree: when the notebook's resolved destination
+lies in one (`JIG_HOME` there, or a symbolic link into one), the skill
+refuses the notebook and falls back to a plain file outside the repository.
+Nothing in it depends on the agent tool that writes it. Fresh filing sessions
 use the existing `file_issue` and `issue_tracker` settings; starting work on a
 dispatcher host uses [`dispatch.identity`](#dispatch) and the host's configured
 start procedure. Missing start configuration is a question for the person,
@@ -1194,7 +1213,7 @@ These are set per machine or per run, not committed:
 |----------|--------------|
 | `JIG_OVERLAY` | Path of the configuration file to read instead of the repository's own |
 | `JIG_CONSUMER_ROOT` | The repository root, instead of the nearest folder holding `.git` |
-| `JIG_HOME` | The folder holding the user layer's `jig.yaml`, instead of `~/.jig` |
+| `JIG_HOME` | The folder holding the user layer's `jig.yaml` and the host-local files beside it (the dispatcher's `dispatch.yaml`, orchestration notebooks under `orchestrate/`), instead of `~/.jig` |
 | `JIG_USER_LAYER` | `off` leaves the user layer out (see [configuration layers](#configuration-layers)) |
 | `JIG_FORGE_BUDGET` | `off` leaves the forge's calls out of the machine's budget record (see `outbound_share`), the `gh` client's runs and the GraphQL requests sent over HTTPS to `JIG_GITHUB_GRAPHQL_URL` alike: nothing is admitted against it, nothing it answers is recorded, and `gh api` runs without `--include`. Unset, every call is governed |
 | `JIG_GITHUB_INSTALLATION_ID` | The GitHub App installation the `gh` client's installation token (`ghs_`) belongs to, a positive integer, set by whatever issues the token. GitHub counts an installation's primary limits across all its tokens, and a token cannot name its own installation, so this declaration is what lets two tokens of one installation, a replacement after expiry included, share one record in the machine's budget record (see `outbound_share`) and its hold. Unset or unreadable, the token shares the record every credential on the host whose owner is unknown shares. Read only for an installation token. A machine that works for several GitHub accounts needs no setting: a token or a client configuration directory per repository is its own credential, and a stored login whose client picks the account per repository has its owner asked per repository a call addresses (`-R`, a positional repository URL, a `repos/<owner>/<repo>` route, `GH_REPO`, else the working directory's `gh repo set-default` remote or `origin` remote), with `GH_REPO` set for the question |
@@ -1748,7 +1767,7 @@ rejects any other form.
 | `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
-| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up startup that writes no transcript, result or question within its first minute. The startup backoff applies whether or not its output contains a recognized quota notice |
+| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up, pickup or steward startup that writes no transcript, result or question within its first minute. A startup whose output holds a recognized usage-limit notice is walled until the reset the notice states instead, read in the zone it names (the host's when it names none) and at most eight days out; the backoff applies when that reset cannot be read, and to a startup with no such notice |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
 | `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. `opens_per_tick` plus `followup_opens_per_tick`, times this, plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days). The installed tick deadline covers that budget, with a six-hour minimum |
 | `opens_per_tick` | `4`; positive whole number of workspace opens allowed in one tick, limited further by the accounts' free slots. One open is kept for the notices workspace when the machine file enables `notify` for any repository; the budget must then be at least `2`, so launches can still proceed. A launch that needs another open waits for the next tick, with its receipt naming the budget or account constraint. A value whose workspace opens and runtime calls exceed the timer range is refused, naming `opens_per_tick`. Follow-ups never draw on it: they open from `followup_opens_per_tick` |
@@ -2055,6 +2074,7 @@ dispatch:
     states: [todo]                       # needs do_item.claim_marker: true
 gates:
   command: make check                    # required by resolve-review-comments
+  dispatch_fast: false
 review:
   bots:
     - example-review[bot]

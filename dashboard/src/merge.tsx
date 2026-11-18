@@ -8,7 +8,8 @@ import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.
 import { cardAttrs } from "./keys.ts";
 import { mergeCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
-import { Fold, PanelHelp } from "./fold.tsx";
+import { PanelHelp } from "./fold.tsx";
+import { GutterCard } from "./gutter.tsx";
 import { Glyph } from "./icon-word.tsx";
 import { iconOf, LANE_ICONS } from "./icons.ts";
 import { readKept, writeKept } from "./kept.ts";
@@ -20,43 +21,62 @@ import {
   type MergeCardView,
   mergeLanes,
 } from "./merge-view.ts";
-import { Pr, RepoLink } from "./pr.tsx";
+import { RepoLink } from "./pr.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 import type { Clock } from "./view.ts";
 
 function MergeItem({ card }: { card: MergeCardView }) {
   const info = mergeCard(card);
   return (
-    <article className="need mCard" {...cardAttrs(info)}>
-      <div className="rowTop">
-        <Pr repo={card.repo} target={card.target} url={card.url} />
-        <span className="m sm mut end nowrap">ready {card.age}</span>
-        <span className="br" />
-        <RepoLink repo={card.repo} url={card.url} />
-        {card.act === null ? null : <span className="chip">{card.act}</span>}
-      </div>
-      <q className="sm mTitle">{card.title}</q>
-      <p className="sm mut">{card.says}</p>
-      {card.failing.length === 0 ? null : (
-        <p className="sm">Failing: {card.failing.join(", ")}.</p>
-      )}
-      {card.unblocks.length === 0 ? null : (
-        <p className="sm">
-          Unblocks {card.unblocks.map((n) => `#${n}`).join(", ")}.
-        </p>
-      )}
-      <div className="goto">
-        <span className="m sm mCommand">{card.command}</span>
-        <CopyButton
-          text={card.command}
-          idle={card.merges ? "Copy merge command" : "Copy jig ask line"}
-          aria={`Copy the ${info.commandLabel} for ${card.target}`}
-        />
-        {card.withheld === null ? null : (
-          <span className="noLink">
-            Merge command withheld: {card.withheld} does not pass its form.
-          </span>
-        )}
-        <Fold label={`Ready conditions for ${card.target}`}>
+    <GutterCard
+      className="need mCard"
+      attrs={cardAttrs(info)}
+      label={`Ready conditions for ${card.target}`}
+      face={
+        <>
+          <div className="rowTop">
+            <WorkLead
+              repo={card.repo}
+              target={card.target}
+              url={card.url}
+              title={card.title}
+              links={card.links}
+            />
+            <span className="m sm mut end nowrap">ready {card.age}</span>
+            <span className="br" />
+            <RepoLink repo={card.repo} url={card.url} />
+            {card.act === null ? null : (
+              <span className="chip">{card.act}</span>
+            )}
+          </div>
+          <q className="sm mTitle">{card.title}</q>
+          <p className="sm mut">{card.says}</p>
+          {card.failing.length === 0 ? null : (
+            <p className="sm">Failing: {card.failing.join(", ")}.</p>
+          )}
+          {card.unblocks.length === 0 ? null : (
+            <p className="sm">
+              Unblocks {card.unblocks.map((n) => `#${n}`).join(", ")}.
+            </p>
+          )}
+          <div className="goto">
+            <span className="m sm mCommand">{card.command}</span>
+            <CopyButton
+              text={card.command}
+              idle={card.merges ? "Copy merge command" : "Copy jig ask line"}
+              aria={`Copy the ${info.commandLabel} for ${card.target}`}
+            />
+            {card.withheld === null ? null : (
+              <span className="noLink">
+                Merge command withheld: {card.withheld} does not pass its form.
+              </span>
+            )}
+          </div>
+        </>
+      }
+      detail={
+        <>
+          <h3 className="sm">Ready conditions</h3>
           <ul className="mConds sm">
             {card.conditions.map((c) => (
               <li key={c.name}>
@@ -69,9 +89,14 @@ function MergeItem({ card }: { card: MergeCardView }) {
               </li>
             ))}
           </ul>
-        </Fold>
-      </div>
-    </article>
+          <LinkedDetail
+            repo={card.repo}
+            target={card.target}
+            links={card.links}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -105,7 +130,7 @@ export function MergePanel({
       <div className="needList all">
         {lanes.map((lane, i) => (
           <div className="mLane" key={lane.lane}>
-            <div className={`groupHead${i === 0 ? " first" : ""}`}>
+            <div className={`groupHead groupWord${i === 0 ? " first" : ""}`}>
               <span className="headWord">
                 <Glyph of={iconOf(LANE_ICONS, lane.lane)} size={16} />
                 {lane.title} · {lane.cards.length}

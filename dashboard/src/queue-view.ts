@@ -3,6 +3,7 @@
  * each target, not by where it came from.
  */
 import type {
+  LineLinks,
   LineQueued,
   LineSnapshot,
   QueueGroup,
@@ -27,6 +28,8 @@ export interface QueueItemView {
   role: Role;
   /** The record behind it, which its card folds. */
   evidence: EvidenceRow[];
+  /** The work the line links it to; absent when the line does not say. */
+  links?: LineLinks;
 }
 
 function queueEvidence(q: LineQueued): EvidenceRow[] {
@@ -84,6 +87,7 @@ function queueItem(q: LineQueued, nowMs: number): QueueItemView {
       q.hold === null ? null : `waited ${ago(Date.parse(q.hold.since), nowMs)}`,
     role: q.stale ? ROLES.stale : ROLES.held,
     evidence: queueEvidence(q),
+    ...(q.links === undefined ? {} : { links: q.links }),
   };
 }
 

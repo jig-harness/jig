@@ -10,7 +10,7 @@ import type {
 import type { NoticeFields } from "../../chat/channel.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { TickOutcome } from "../../shared/records/followup-values.ts";
-import type { FailureClass } from "../../shared/outbound/failure.ts";
+import type { FailureClass, QuotaHold } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
@@ -151,6 +151,8 @@ export type PickupClass =
   | "claimed"
   | "claimed-by-person"
   | "claimed-pr-open"
+  /** A claimed item with no running session that an open pull request whose drive is live or converged carries (`carried-pr.ts`). */
+  | "claimed-carried"
   /** Under the host's `priorities.enforce`: a pickup whose priority lane is out of rotation (`priorities-order.ts`). */
   | "lane-paused";
 
@@ -589,12 +591,18 @@ export interface Running {
 /**
  * How a read failed when a call to an outside system failed it: the call's
  * failure class (`shared/outbound/failure.ts`) and, for `rate-limited`, when
- * the system lets the credential send again.
+ * the system lets the credential send again and, when a credential's quota
+ * stopped the call (`TrackerRateLimited`), whose quota it is and whether only the
+ * dispatcher's share of it is spent.
  */
 export interface ReadFailure {
   class: FailureClass;
   until?: string;
+  quota?: QuotaHold;
 }
+
+/** Where opening a repository for its tick stopped: looking up which repository the path is, reading its dispatch section, or the tick's time ran out first. */
+export type RefusedStep = "lookup" | "configuration" | "time";
 
 /** How one record read for one repository. */
 export interface RecordRead {
@@ -719,6 +727,8 @@ export interface RepoReport {
   refused: string | null;
   /** A refusal a failed call to the forge caused: that call's failure class. */
   refusedBy?: ReadFailure;
+  /** A refusal that stopped opening the repository: the step it stopped at. */
+  refusedStep?: RefusedStep;
   /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
   defect?: Defect;
   /** The defects a stage of `--apply` caught, each of which stopped its own stage only; absent when there were none. */
@@ -773,6 +783,12 @@ export interface RepoReport {
     /** `answered-hold`: a need a person answered with the hold option, kept off Needs you for its facts (`station-answers.ts`). */
     class: LedgerClass | PickupClass | FollowupClass | "answered-hold";
     why: string;
+    /** For `claimed-carried`: the pull request that carries the item, and its drive's state. */
+    carried?: {
+      pr: number;
+      url: string;
+      drive: "driving" | "converged";
+    };
   }>;
 }
 

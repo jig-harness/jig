@@ -8,6 +8,9 @@ import type { Unplaced } from "../types.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
 import type { ServedView } from "./served-reads.ts";
 
+/** How the row a rate-limited tracker leaves begins, which tells it from every other row. */
+export const LIMITED_REASON = "the issue service is rate limited until";
+
 /** The single row a rate-limited tracker leaves on the receipt. */
 export function limitedRow(
   tracker: Pick<Tracker, "adapter" | "team">,
@@ -18,7 +21,7 @@ export function limitedRow(
   const row: Unplaced = {
     target: `${tracker.adapter} ${tracker.team}`,
     record: "tracker",
-    reason: `the tracker is rate limited until ${until}: pickups wait for the reset, and no request is sent before it`,
+    reason: `${LIMITED_REASON} ${until}: pickups wait for the reset, and no request is sent before it`,
   };
   // A rate limit retains its class as a deferral, without a failed read.
   return {

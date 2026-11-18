@@ -44,6 +44,7 @@ import {
 import {
   defectLine,
   type OwnForge,
+  type OwnWrite,
   ownWriteLine,
   writeOwnState,
 } from "../../../../../shared/pr-labels/write.ts";
@@ -306,10 +307,17 @@ async function itemsFollow(
   }
 }
 
+/** A label write the drive attempted: the moment it labelled, whether it labelled it `converged`, and what the write did. */
+export interface DriveLabelWrite {
+  moment: DriveMoment;
+  converged: boolean;
+  write: OwnWrite;
+}
+
 /**
  * Write the label `momentOf` gives pull request `pr` (the moment, or how to
- * read it), and say what happened on stderr. Never throws, and never
- * changes the drive's exit.
+ * read it), say what happened on stderr, and return the write; `null` when
+ * none was attempted. Never throws, and never changes the drive's exit.
  */
 export async function labelDrive(
   pr: string,
@@ -317,18 +325,18 @@ export async function labelDrive(
   source: LabelSource = FORGE_SOURCE,
   /** Asked just before the write: `false` when the ledger no longer belongs to this acquisition, so the label is left. */
   stillOurs: () => Promise<boolean> = async () => true,
-): Promise<void> {
+): Promise<DriveLabelWrite | null> {
   try {
     // A moment read from the drive's state is read here, inside the boundary, so a throw there is reported, not the drive's.
     const moment = typeof momentOf === "function" ? await momentOf() : momentOf;
     const ledger = ledgerAt(moment);
-    if (ledger === null) return;
+    if (ledger === null) return null;
     const settings = await source.settings();
     if (!settings.ok) {
       console.error(
         `labels: PR #${pr}'s state label is not written: dispatch.labels does not read (${settings.failure.reason})`,
       );
-      return;
+      return null;
     }
     const projected = ledgerState(ledger, DONE_EXITS);
     const converged =
@@ -339,13 +347,13 @@ export async function labelDrive(
       console.error(
         `labels: PR #${pr}'s labels are left as they are: the drive recorded no verified head to label converged`,
       );
-      return;
+      return null;
     }
     if (!(await stillOurs())) {
       console.error(
         `labels: PR #${pr}'s labels are left as they are: its drive ledger no longer belongs to this driver`,
       );
-      return;
+      return null;
     }
     const written = await writeOwnState({
       config: settings.value.config,
@@ -363,6 +371,7 @@ export async function labelDrive(
     const line = ownWriteLine(Number(pr), written);
     if (line !== null) console.error(`labels: ${line}`);
     if (settings.value.config.enabled && written.outcome !== "held")
+      // The label write stands whatever the items do: its caller reads it.
       await itemsFollow(
         Number(pr),
         settings.value.slug,
@@ -371,8 +380,12 @@ export async function labelDrive(
         moment,
         source,
         stillOurs,
+      ).catch((error: unknown) =>
+        console.error(`labels: ${defectLine(`PR #${pr}'s items`, error)}`),
       );
+    return { moment, converged, write: written };
   } catch (error) {
     console.error(`labels: ${defectLine(`PR #${pr}`, error)}`);
+    return null;
   }
 }

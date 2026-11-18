@@ -20,7 +20,9 @@ import {
 import type { LaunchDraft } from "../../shared/records/shared.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { readKeptReport } from "../lib/closing-report-store.ts";
 import { hostOf } from "../lib/shared-launches.ts";
+import { existingStateDb } from "../lib/state.ts";
 import { SLUG, type World, world } from "./fixtures.ts";
 import {
   account,
@@ -190,6 +192,49 @@ describe("the wrapper ends its launch's shared claim", () => {
     expect(comments[0]?.body).toContain("outcome: failed");
     expect(comments[0]?.body).toContain('"by":"none"');
   });
+
+  it("ends a follow-up pass it stopped at its deadline with its own report, and the marker carries its writer and cause, never its text", async () => {
+    const w = world();
+    current = w;
+    launched(w);
+    earlierRecord(w, {
+      id: ID,
+      account: "a",
+      token: TOKEN,
+      action: "followup",
+      command: "/followup",
+      routineTags: true,
+      passTimeoutSec: 1,
+      // A follow-up the line would run again releases its marker instead of ending it.
+      rerunDied: 0,
+    });
+    // No `claude-exit`: the pass runs on until the wrapper stops it.
+    w.setComments(7, [
+      forgeComment(
+        705,
+        `${FOLLOWUP_MARKER}\njig dispatch follow-up · record: ${ID}`,
+        "drive-bot",
+      ),
+    ]);
+    const r = await runWrapper(w, ID, TOKEN);
+    expectSpawnExit(r, 1, "the follow-up wrapper");
+    const row = existingStateDb(dispatchState(w))
+      ?.query("SELECT report FROM launches WHERE id = ?")
+      .get(ID) as { report: string | null } | undefined;
+    const kept = readKeptReport(row?.report);
+    expect(kept?.by).toBe("wrapper");
+    expect(kept?.report.cause).toBe("deadline");
+    expect(kept?.report.suggested_next.step).toBeTruthy();
+    const concluded = kept?.report.concluded ?? "";
+    expect(concluded).toContain("1-second deadline");
+    const body = JSON.parse(
+      readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+    )[0].body as string;
+    expect(body).toContain('"by":"wrapper"');
+    expect(body).toContain('"cause":"deadline"');
+    expect(body).not.toContain(concluded);
+    expect(body).not.toContain("deadline; the pass left no closing report");
+  }, 60_000);
 
   it("leaves a hostless follow-up marker for another launch untouched", async () => {
     const w = world();
