@@ -401,6 +401,18 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.275.0] - 2026-11-18
+
+### Added
+
+- `/jig:orchestrate` keeps each topic's record in an orchestration notebook,
+  `~/.jig/orchestrate/<topic>/` (under `JIG_HOME` when set), outside every
+  repository and the same for Claude Code and Codex: `state.md`, the current
+  state with the decisions waiting on you and the acts owed, rewritten whole
+  at each change, and `journal/<date>.md`, an append-only log of decisions
+  and their reasons. A session started with `/jig:orchestrate <topic>` resumes
+  from the state alone, and a handover hands the successor just the topic.
+
 ## [0.274.2] - 2026-11-18
 
 ### Fixed
@@ -9640,7 +9652,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.274.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.275.0...HEAD
+[0.275.0]: https://github.com/jig-harness/jig/compare/v0.274.2...v0.275.0
 [0.274.2]: https://github.com/jig-harness/jig/compare/v0.274.1...v0.274.2
 [0.274.1]: https://github.com/jig-harness/jig/compare/v0.274.0...v0.274.1
 [0.274.0]: https://github.com/jig-harness/jig/compare/v0.273.1...v0.274.0
