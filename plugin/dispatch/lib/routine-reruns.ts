@@ -60,7 +60,8 @@ export interface RoutineRerun {
  * a host fault whose recovery the host-health path owns (releasing this marker
  * would drop it), an attempt that was itself a run again owes none, and a
  * pass that waits out a rate limit, recorded or asked about, owes no routine
- * answer (`followup-waits.ts` owns it).
+ * answer (`followup-waits.ts` owns it); a pass that parked on a decision
+ * waits for a person, so no automatic run again answers it.
  */
 function ownedElsewhere(
   outcome: FollowupOutcome,
@@ -69,7 +70,10 @@ function ownedElsewhere(
   if (outcome.rerun === true) return true;
   if (found === undefined) return false;
   return (
-    unwrittenResult(found) || isRerun(found.record) || waitUntil(found) !== null
+    unwrittenResult(found) ||
+    found.result === "parked" ||
+    isRerun(found.record) ||
+    waitUntil(found) !== null
   );
 }
 
