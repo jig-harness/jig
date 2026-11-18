@@ -146,22 +146,15 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   svg.unread { color: GrayText; }
 }
 .need .rec strong { font-weight: 700; }
-.personFilter { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); }
-.personFilter select { min-height: var(--tap); font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-tag); }
 .detail .options ul, .detail .steps ul { margin: 2px 0 8px; padding-left: 18px; }
 .detail .steps ul { list-style: none; padding-left: 0; }
 .detail .steps input { flex: none; width: 20px; height: var(--tap); margin: 0; }
 .detail .steps label { display: inline-flex; gap: 6px; align-items: center; min-height: var(--tap); }
 .groupHead { padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--line-strong); color: var(--muted); font: 600 14px/1.3 var(--sans); }
 .groupHead.first { border-top: 0; margin-top: 0; padding-top: 0; }
-.groupHead h3 { font: inherit; }
-.groupCount { font-weight: 400; }
 /* the cards an answer hid: one quiet line, a full touch target at every width, that opens to their notes */
 .heldToggle { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: var(--small); color: var(--muted); text-align: left; }
 .answeredHolds ul:not([hidden]) { margin: 0 0 6px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
-.need.rest, .groupHead.rest { display: none; }
-.needList.all .need.rest { display: grid; }
-.needList.all .groupHead.rest { display: block; }
 .moreBtn { min-height: 44px; margin-top: 6px; width: 100%; background: transparent; color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); cursor: pointer; }
 .moreRow { display: flex; gap: 8px; margin-top: 6px; }
 .panelHead .headMore { width: auto; margin: 0 0 0 auto; min-height: 44px; padding: 0 12px; font-size: var(--small); }
@@ -401,8 +394,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   .panel { padding: 10px 12px; }
   .panelHead { margin-bottom: 4px; }
   .need .q, .tgt { font-size: 14px; }
-  .need.rest, .qItem.rest { display: grid; }
-  .groupHead.rest { display: block; }
+  .qItem.rest { display: grid; }
   .moreBtn { display: none; }
   .moreBtn.deskToo { display: block; }
   .goto a, .fold summary, .foldBtn, .colophon a { min-height: 24px; }
@@ -522,8 +514,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .dd kbd { display: inline-block; min-width: 1.4em; padding: 0 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--r-tag); background: var(--sunk); color: var(--ink); font: 400 12px/1.5 var(--mono); text-align: center; }
 [data-card] { scroll-margin: 112px 0 72px; }
 .dd [data-card][hidden] { display: none !important; }
-.main.filtering .need.rest, .main.filtering .qItem.rest { display: grid; }
-.main.filtering .groupHead.rest { display: block; }
+.main.filtering .qItem.rest { display: grid; }
 /* the card j and k rest on: a tinted fill reaching into the gutter, an accent bar, and the bar that names its keys */
 :where([data-card]) { position: relative; }
 .dd [data-card]:focus { outline: none; }
@@ -562,3 +553,56 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 }
 
 .sendPreview { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Needs you group headings share the card gutter. */
+.needList > [data-facet-group] + [data-facet-group] { border-top: 1px solid var(--line-strong); }
+.needGroup > .gpanel { padding-inline-start: 0; }
+.needGroupTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  font: 600 19px/1.3 var(--serif);
+}
+.needGroupTitle [data-group-count], .needGroupTitle [data-group-oldest] {
+  color: var(--muted);
+  font: 500 12px/1.3 var(--sans);
+}
+.needGroup:not(.all) .need.groupRest { display: none; }
+.main.filtering .needGroup .need.groupRest:not([hidden]) { display: grid; }
+.main.filtering [data-group-more] { display: none; }
+
+/* Shared card filters and counts. */
+.facetControls, .facetRow { min-width: 0; }
+.facetControls:empty { display: none; }
+.facetControls { display: grid; gap: 8px; }
+.facetControls.answer { display: grid; gap: 8px; }
+.facetDesktop, .facetSelect, .facetStatus { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.facetDesktop { padding: 0; margin: 0; border: 0; }
+.facetLabel { flex: 0 0 75px; }
+.facetChip, .facetSelect select, .clearFilter {
+  min-height: 44px; max-width: 100%; padding: 4px 10px; border: 1px solid var(--line-strong);
+  border-radius: var(--r-tag); background: var(--card); color: var(--ink); font: inherit;
+}
+.facetChip { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; overflow-wrap: anywhere; }
+.facetChip svg { flex: none; }
+.facetChip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.facetSelect select { min-width: 0; }
+.facetStatus, .facetSelect, .facetOldest { overflow-wrap: anywhere; }
+.facetOldest a { display: inline-flex; align-items: center; min-height: 44px; }
+.clearFilter { cursor: pointer; }
+.answer h1.needCount { margin: 0; font-size: 18px; }
+.facetOldest { margin: 0; }
+.facetControls .phoneRepo, .phoneFilters { display: none; }
+.dd [data-facet-group][hidden] { display: none !important; }
+
+@media (forced-colors: active) {
+  .facetChip[aria-pressed="true"] { border-color: Highlight; }
+}
+
+@media (max-width: 899px) {
+  .viewFilter, .facetDesktop, .facetRow:not(.facet-repo) { display: none; }
+  .facetControls .phoneRepo { display: flex; }
+  .phoneFilters { display: block; }
+}

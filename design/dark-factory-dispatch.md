@@ -1641,14 +1641,25 @@ with the reset the drive printed, or, when the reset is unknown,
 `dispatch.wall_backoff` (one hour by default) from the stop. Several
 sessions can write the same account's wall; a write never moves the
 reset earlier, so the record keeps the latest reset any write has
-recorded, and the wall is lifted at that reset; nothing else lifts it. The drive's own quota park
+recorded, and the wall is lifted at that reset; nothing else lifts it.
+A follow-up's, a pickup's or a steward's pass whose Claude Code session
+stops in its first minute, unsuccessfully and with no transcript, result
+or question, could not start, and its wrapper writes the wall as well:
+until the reset a usage-limit notice in its output states (a time of day,
+or a date and a time of day, in the zone the notice names, else the
+host's), else `dispatch.wall_backoff` from the stop. A pickup stopped by
+such a notice is wanted again at once, and the wall keeps it off that
+account. A drive's passes are not read this way: `drive.ts` starts them,
+the wrapper sees only the driver's exit, and the driver reads its passes'
+walls from the vendor's transcripts and exits `16`; a pass stopped before
+it wrote a transcript is the driver's to recognise. The drive's own quota park
 stays where `drive-pr` keeps it and still decides whether `drive.ts` admits
 the re-arm. A wall an interactive session meets is not recorded before the
 control step (see Control): that session shows as waiting, holds its slot, and is
 reported once it has waited past `dispatch.blocked_after` (30 minutes by
-default). A wall a follow-up's pass meets ends the pass short of `done`,
-so it is notified as a failed follow-up; it is not written as the
-account's wall.
+default). A wall a follow-up's pass meets after it started ends the pass short
+of `done`, so it is notified as a failed follow-up; it is not written as
+the account's wall. A wall met at startup is the one written, above.
 
 **Binding a session to its account.** A headless pass is bound to its
 account through the configuration directory of that account's Orca

@@ -307,15 +307,14 @@ function notMoving(line: LineSnapshot, nowMs: number): LineSession[] {
 }
 
 export type NeedRow =
-  | { type: "head"; head: string; count: number }
-  | { type: "need"; need: NeedView }
-  | { type: "stuck"; slot: SlotView };
+  | { type: "head"; head: string }
+  | { type: "need"; need: NeedView; since: string }
+  | { type: "stuck"; slot: SlotView; since: string };
 
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
- * sessions not moving, each heading with the number of rows under it.
- * Filtered to one person, only the needs that wait on them stay; a session
- * not moving names nobody, so it goes too.
+ * sessions not moving. Filtered to one person, only the needs that wait on
+ * them stay; a session not moving names nobody, so it goes too.
  */
 export function needRows(
   line: LineSnapshot,
@@ -327,19 +326,26 @@ export function needRows(
   for (const act of NEED_ACTS) {
     const list = ordered.filter((n) => needAct(n) === act);
     if (list.length === 0) continue;
-    rows.push({ type: "head", head: act, count: list.length });
+    rows.push({ type: "head", head: act });
     for (const n of list)
       rows.push({
         type: "need",
         need: needView(n, clockNow, trackerOf(line, n.repo)),
+        since: n.since,
       });
   }
   if (person !== null) return rows;
-  const stuck = notMoving(line, clockNow.nowMs);
+  const stuck = notMoving(line, clockNow.nowMs).sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  );
   if (stuck.length > 0) {
-    rows.push({ type: "head", head: "Not moving", count: stuck.length });
+    rows.push({ type: "head", head: "Not moving" });
     for (const s of stuck)
-      rows.push({ type: "stuck", slot: slotView(s, clockNow, line) });
+      rows.push({
+        type: "stuck",
+        slot: slotView(s, clockNow, line),
+        since: s.createdAt,
+      });
   }
   return rows;
 }
@@ -420,7 +426,10 @@ export function answerBand(
  * names them, each with the tick its part is from: `1 repository not read:
  * acme/web, as of 15:00.`; `null` when the line read every one.
  */
-function unreadText(line: LineSnapshot, timeZone: string): string | null {
+export function unreadText(
+  line: LineSnapshot,
+  timeZone: string,
+): string | null {
   const unread = refusedRepos(line);
   if (unread.length === 0) return null;
   const each = unread.map((r) =>

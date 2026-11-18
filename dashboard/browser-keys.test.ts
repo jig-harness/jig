@@ -233,6 +233,11 @@ describe("the keys on every view", () => {
           await page.keyboard.press("Escape");
           await page.reload();
           await shows(page, "main :is(h1, h2)");
+          if (view.id === "needs") {
+            await page
+              .getByRole("button", { name: "Investigate group" })
+              .click();
+          }
           const issue = await jTo(page, "data-issue");
           // Needs you and Queue hold tracker items in this scenario; the other views hold only pull requests.
           expect(issue !== null).toBe(
@@ -521,19 +526,19 @@ describe("the keys on every view", () => {
   );
 
   browserIt(
-    "a filter finds the cards a phone keeps behind Show all",
+    "a text filter finds a card inside a folded group",
     async () => {
-      const server = await served("merge");
+      const server = await served("loud");
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
         `${server.url}&view=needs`,
-        { width: 390, height: 844 },
+        LAPTOP,
       );
       try {
         await shows(page, ".need");
         const hidden = await page
-          .locator(".need.rest .tgt")
+          .locator(".needGroup > .gpanel[hidden] .need .tgt")
           .first()
           .textContent();
         expect(hidden).not.toBeNull();
@@ -548,6 +553,25 @@ describe("the keys on every view", () => {
             .first()
             .textContent(),
         ).toBe(hidden);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a card-view text filter leaves History's rows visible",
+    async () => {
+      const { page, context } = await openOn("needs");
+      try {
+        await page
+          .locator("[data-view-filter]")
+          .fill("no card has these words");
+        await shows(page, ".main.filtering");
+        await openView(page, "History");
+        await settled(page);
+        expect(await page.locator(".row:visible").count()).toBeGreaterThan(0);
       } finally {
         await context.close();
       }

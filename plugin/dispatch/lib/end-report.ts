@@ -25,6 +25,7 @@ import { stateRoot } from "../receipts.ts";
 import { recordReportIfNone } from "./closing-report-store.ts";
 import { isDrive, type LaunchRecord } from "./launches.ts";
 import { reportsUsageLimit } from "./pass-output.ts";
+import { startupNext } from "./session-startup.ts";
 import { stateDb } from "./state.ts";
 import { keepTranscriptCopy } from "./transcript-copy.ts";
 
@@ -90,19 +91,13 @@ export function wrapperReport(
   if (seen?.startup === "quota")
     return report(
       "The pass could not start: its account was at its usage limit.",
-      {
-        step: "The dispatcher starts it again once the account's wall lifts.",
-        owner: "line",
-      },
+      startupNext(record.action, "quota"),
       "usage-limit",
     );
   if (seen?.startup === "unstarted")
     return report(
       "The pass could not start: it exited unsuccessfully within its first minute and left no transcript.",
-      {
-        step: "The dispatcher starts it again once the account's backoff ends.",
-        owner: "line",
-      },
+      startupNext(record.action, "unstarted"),
       "startup",
     );
   if (seen?.timedOut === true)
