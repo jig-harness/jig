@@ -436,14 +436,17 @@ function regexProblem(value: unknown): string | null {
   }
 }
 
-function integerProblem(value: unknown, field?: Field): string | null {
-  const words = field?.values ?? [];
-  if (typeof value === "string" && words.includes(value)) return null;
+/** Whether `value` is a number `kind` accepts within the field's `min` and `max`; else what it must be. */
+function boundedNumber(
+  value: unknown,
+  field: Field | undefined,
+  kind: { name: string; accepts: (n: number) => boolean },
+): string | null {
   const min = field?.min ?? Number.NEGATIVE_INFINITY;
   const max = field?.max ?? Number.POSITIVE_INFINITY;
   if (
     typeof value === "number" &&
-    Number.isSafeInteger(value) &&
+    kind.accepts(value) &&
     value >= min &&
     value <= max
   )
@@ -452,26 +455,26 @@ function integerProblem(value: unknown, field?: Field): string | null {
     field?.min === undefined ? null : `≥ ${min}`,
     field?.max === undefined ? null : `≤ ${max}`,
   ].filter((l) => l !== null);
-  const bound = ["a whole number", limits.join(" and ")].join(" ").trim();
-  return `must be ${[bound, ...words].join(" or ")}`;
+  return [kind.name, limits.join(" and ")].join(" ").trim();
+}
+
+function integerProblem(value: unknown, field?: Field): string | null {
+  const words = field?.values ?? [];
+  if (typeof value === "string" && words.includes(value)) return null;
+  const bound = boundedNumber(value, field, {
+    name: "a whole number",
+    accepts: Number.isSafeInteger,
+  });
+  return bound === null ? null : `must be ${[bound, ...words].join(" or ")}`;
 }
 
 /** A number, whole or not, within the field's `min` and `max`. */
 function numberProblem(value: unknown, field?: Field): string | null {
-  const min = field?.min ?? Number.NEGATIVE_INFINITY;
-  const max = field?.max ?? Number.POSITIVE_INFINITY;
-  if (
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= min &&
-    value <= max
-  )
-    return null;
-  const limits = [
-    field?.min === undefined ? null : `≥ ${min}`,
-    field?.max === undefined ? null : `≤ ${max}`,
-  ].filter((l) => l !== null);
-  return `must be ${["a number", limits.join(" and ")].join(" ").trim()}`;
+  const bound = boundedNumber(value, field, {
+    name: "a number",
+    accepts: Number.isFinite,
+  });
+  return bound === null ? null : `must be ${bound}`;
 }
 
 function enumProblem(value: unknown, field?: Field): string | null {

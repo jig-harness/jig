@@ -489,6 +489,18 @@ export const HEAD_SHA = "a".repeat(40);
 /** The head commit of the base branch unless a test names another. */
 export const BASE_SHA = "c".repeat(40);
 
+/** The footprint port's batch of comment reads: each alias `b<i>` a repository root, every issue with no comment. */
+function footprintBatch(v: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(v)
+      .filter(([name]) => /^b\d+_number$/.test(name))
+      .map(([name, number]) => [
+        name.replace(/_number$/, ""),
+        { issue: { id: `i-${String(number)}`, comments: conn([]) } },
+      ]),
+  );
+}
+
 /** An open pull request as `gh pr list --json` returns it: at `HEAD_SHA` and mergeable, unless `extra` says otherwise. */
 export const openPr = (
   number: number,
@@ -721,7 +733,9 @@ export function world(): World {
         ? { repository: noFacetStores(query) }
         : op === "TrackerRepository"
           ? { repository: { id: "R_repo" } }
-          : answer(op, variables);
+          : op === "footprint"
+            ? footprintBatch(variables)
+            : answer(op, variables);
       return Response.json(
         data === undefined
           ? { errors: [{ message: `unhandled ${op}` }] }
@@ -792,16 +806,6 @@ export function world(): World {
           issue: { id: `i-${String(v.number)}`, comments: conn([]) },
         },
       };
-    // The footprint port's batch of comment reads: each alias `b<i>` a repository root, every issue with no comment.
-    if (op === "footprint")
-      return Object.fromEntries(
-        Object.entries(v)
-          .filter(([name]) => /^b\d+_number$/.test(name))
-          .map(([name, number]) => [
-            name.replace(/_number$/, ""),
-            { issue: { id: `i-${String(number)}`, comments: conn([]) } },
-          ]),
-      );
     if (op === "TrackerAssignedBy") {
       const found = issues.find((n) => n.number === v.number);
       const by = assigners.get(Number(v.number));

@@ -25,13 +25,7 @@ import { duration } from "./duration.ts";
 export const DEFAULT_FILE_RATE = 0.5;
 
 /** The priorities patience is set for: the tracker's 1 (urgent) to 4 (low), and 0 (none). */
-export const PATIENCE_KEYS = [
-  "urgent",
-  "high",
-  "medium",
-  "low",
-  "none",
-] as const;
+const PATIENCE_KEYS = ["urgent", "high", "medium", "low", "none"] as const;
 export type PatienceKey = (typeof PATIENCE_KEYS)[number];
 
 export interface OverlapSettings {
@@ -79,6 +73,25 @@ const KEYS = [
 type Checked<T> = Outcome<T, "invalid">;
 
 const invalid = (reason: string): Checked<never> => failed("invalid", reason);
+
+/**
+ * The refusal of a mapping's keys that `known` does not list, naming the
+ * setting `where` and the keys it knows; `null` when every key is known. The
+ * `dispatch` section and each mapping in it refuse an unknown key, since a
+ * misspelt key would silently keep the default it was written to change.
+ */
+export function unknownKeys(
+  where: string,
+  value: Record<string, unknown>,
+  known: readonly string[],
+): Checked<never> | null {
+  const unknown = Object.keys(value).filter((k) => !known.includes(k));
+  return unknown.length === 0
+    ? null
+    : invalid(
+        `${where} has unknown key(s): ${unknown.join(", ")} (known: ${known.join(", ")})`,
+      );
+}
 
 /** The settings a section that names none of them, or a fixture built without them, reads as. */
 export function overlapOf(section: {
@@ -148,13 +161,12 @@ function patience(value: unknown): Checked<Record<PatienceKey, number>> {
     return invalid(
       `dispatch.overlap.patience must be a mapping of priorities (${PATIENCE_KEYS.join(", ")}) to durations`,
     );
-  const unknown = Object.keys(value).filter(
-    (k) => !(PATIENCE_KEYS as readonly string[]).includes(k),
+  const refused = unknownKeys(
+    "dispatch.overlap.patience",
+    value,
+    PATIENCE_KEYS,
   );
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch.overlap.patience has unknown key(s): ${unknown.join(", ")} (known: ${PATIENCE_KEYS.join(", ")})`,
-    );
+  if (refused !== null) return refused;
   for (const key of PATIENCE_KEYS) {
     const read = wait(value[key], `patience.${key}`, out[key], true);
     if (!read.ok) return read;
@@ -184,11 +196,8 @@ function ignore(value: unknown): Checked<string[]> {
 export function parseOverlap(value: unknown): Checked<OverlapSettings> {
   if (value === undefined || value === null) return ok(DEFAULT_OVERLAP);
   if (!isMapping(value)) return invalid("dispatch.overlap must be a mapping");
-  const unknown = Object.keys(value).filter((k) => !KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch.overlap has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
-    );
+  const refused = unknownKeys("dispatch.overlap", value, KEYS);
+  if (refused !== null) return refused;
   const bound = maxPerFile(value.max_per_file);
   if (!bound.ok) return bound;
   const patienceMs = patience(value.patience);
