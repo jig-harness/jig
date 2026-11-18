@@ -90,9 +90,9 @@ describe("Needs you", () => {
         );
         // The other options fold under the decision's row.
         await card.locator("[data-card-toggle]").click();
-        await shows(page, ".pNeeds .need .decExpanded.opts");
+        await shows(page, ".pNeeds .need .opts .decExpanded");
         expect(
-          await card.locator(".decExpanded.opts li").textContent(),
+          await card.locator(".opts li.decExpanded").textContent(),
         ).toContain("B: retry 5xx and 429");
 
         await shows(page, ".pNeeds .need .steps");

@@ -22,13 +22,15 @@ function OptionPick({
   option,
   picked,
   onPick,
+  expandedOnly,
 }: {
   option: RowOption;
   picked: boolean;
   onPick: () => void;
+  expandedOnly: boolean;
 }) {
   return (
-    <li>
+    <li className={expandedOnly ? "decExpanded" : undefined}>
       <button
         type="button"
         className={`opt${option.recommended ? " rec" : ""}${picked ? " on" : ""}`}
@@ -206,26 +208,20 @@ function UnpickableOptions({ row }: { row: DecisionRow }) {
 /** The recommended option and the pick in sight, the other options on the open card. */
 function RowOptions({ row, index, picking }: Omit<RowProps, "need">) {
   const picked = picking.answers[index]?.pick?.name ?? null;
-  const first = row.options.find((option) => option.recommended);
-  const shown = row.options.filter((o) => o === first || o.name === picked);
-  const folded = row.options.filter((o) => o !== first && o.name !== picked);
   if (!row.structured) return <UnpickableOptions row={row} />;
-  const list = (options: RowOption[]) =>
-    options.map((o) => (
-      <OptionPick
-        key={o.name}
-        option={o}
-        picked={o.name === picked}
-        onPick={() => picking.pick(index, o)}
-      />
-    ));
+  if (row.options.length === 0) return null;
   return (
-    <>
-      {shown.length === 0 ? null : <ul className="opts">{list(shown)}</ul>}
-      {folded.length === 0 ? null : (
-        <ul className="opts decExpanded">{list(folded)}</ul>
-      )}
-    </>
+    <ul className="opts">
+      {row.options.map((option) => (
+        <OptionPick
+          key={option.name}
+          option={option}
+          picked={option.name === picked}
+          expandedOnly={!option.recommended && option.name !== picked}
+          onPick={() => picking.pick(index, option)}
+        />
+      ))}
+    </ul>
   );
 }
 

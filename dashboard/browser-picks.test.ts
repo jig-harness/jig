@@ -473,6 +473,14 @@ describe("picking answers on a card", () => {
           await shows(page, ".pNeeds .need");
           const two = card(page, "PR #502");
           const toggle = two.locator("[data-card-toggle]");
+          expect(await two.getAttribute("data-pr")).toBe(
+            await two
+              .getByRole("link", { name: "Paste in a pull request comment" })
+              .getAttribute("href"),
+          );
+          expect(await two.getAttribute("data-pr")).toEndWith(
+            "#new_comment_field",
+          );
           const press = async (control: ReturnType<typeof two.locator>) => {
             if (width < 1440) await control.tap();
             else await control.click();
