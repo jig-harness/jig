@@ -923,3 +923,20 @@ it("does not repeat a hold or rerun already acted under the old snapshot's diges
     );
   }
 });
+
+it("counts the dispatcher's own sent hold answer whose record keeps the retired spelling", async () => {
+  const dir = root();
+  const action = failedFollowup();
+  const digest = digestOf(action);
+  const p = ports([
+    said(
+      sentAnswer("followup", digest, "I'll handle it \u2014 hide this card", {
+        option: "Leave it to me",
+      }),
+      "Drive-Bot",
+    ),
+  ]);
+  await settle(reportOf({ actions: [action] }), p, dir);
+  expect(action.answered?.state).toBeUndefined();
+  expect(action.answered?.acted).toMatchObject({ outcome: "held" });
+});

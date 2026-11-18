@@ -193,7 +193,7 @@ async function readByTick(
     ? refused(
         `the tracker's credential here acts as ${viewer.name}, the factory identity ${identity}, whose comments the tick never counts as an answer without the record a send from the host that owns the repository writes; ${INSTEAD}`,
       )
-    : ok({ notice: unsure, record: unsure !== null });
+    : ok({ notice: unsure, record: true });
 }
 
 /** The sender an answer through `here` writes as, the user its credential acts as, with how the tick reads it; refused when the tick would not. */

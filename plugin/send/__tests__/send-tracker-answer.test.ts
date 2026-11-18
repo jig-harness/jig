@@ -221,9 +221,11 @@ describe("jig send … answer on an item of another tracker", () => {
       ok: true,
       value: "https://linear.app/acme/issue/ENG-12",
     });
-    expect(t.posted).toEqual([
-      ["ENG-12", `answer pickup: approve [${DIGEST}]`],
-    ]);
+    expect(t.posted).toHaveLength(1);
+    const [item, body] = t.posted[0] ?? [];
+    expect(item).toBe("ENG-12");
+    expect(body?.split("\n")[0]).toBe(`answer pickup: approve [${DIGEST}]`);
+    expect(body).toContain("jig-send-answer");
   });
 
   it("refuses when the factory identity cannot be looked up", async () => {
@@ -614,9 +616,14 @@ describe("jig send … answer on another tracker's item, from the command line",
       digest,
     ]);
     expectSpawnExit(sent, 0);
-    expect(
-      ops.filter((o) => o.op === "TrackerComment").map((o) => o.variables.body),
-    ).toEqual([`answer pickup: approve [${digest}]`]);
+    const bodies = ops
+      .filter((o) => o.op === "TrackerComment")
+      .map((o) => String(o.variables.body));
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]?.split("\n")[0]).toBe(
+      `answer pickup: approve [${digest}]`,
+    );
+    expect(bodies[0]).toContain("jig-send-answer");
     expect(w.writes()).toEqual([]);
     // The default branch's tracker and factory identity are the ones asked, never the checkout's.
     const issueAsks = ops.filter((o) => o.op === "TrackerIssue");

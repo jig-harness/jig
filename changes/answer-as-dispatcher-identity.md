@@ -10,5 +10,5 @@ release: patch
   one carrying the record `jig send` writes for that identity, the decision's
   key and current digest and the option chosen. `jig send` to a tracker item no
   longer refuses on the host that owns the repository: the comment carries that
-  record. An answer typed by hand under the shared identity is still not read,
-  and the card says why.
+  record. An answer typed by hand under the shared identity is still not read;
+  on a tracker item the card says why.

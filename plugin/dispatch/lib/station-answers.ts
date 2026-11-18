@@ -41,6 +41,7 @@ import {
   stationOptionId,
   type StationOptionId,
 } from "../../shared/decisions/station.ts";
+import { optionNameMatches } from "../../shared/decisions/answer-normalize.ts";
 import { readSentAnswer } from "../../shared/decisions/answer-record.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
@@ -124,6 +125,18 @@ function answerOf(
     : answer;
 }
 
+/** Whether the record's option `recorded` is the option `read` names, the retired hold spelling included. */
+function sameOption(
+  decision: LineDecision,
+  read: string,
+  recorded: string | undefined,
+): boolean {
+  if (recorded === undefined) return false;
+  if (read === recorded) return true;
+  const option = decision.options?.find((o) => o.name === read);
+  return option !== undefined && optionNameMatches(option, recorded, true);
+}
+
 /**
  * `c`, by the dispatcher's own identity `name`, read as an answer to
  * `decision`: only with a sent answer's record naming that identity and this
@@ -149,7 +162,8 @@ function ownAnswerOf(
   return answer.stale !== true &&
     sent.decision === decision.digest &&
     choice !== undefined &&
-    choice.option === sent.choice?.option &&
+    sent.choice !== undefined &&
+    sameOption(decision, choice.option, sent.choice.option) &&
     choice.form === sent.choice.form
     ? answer
     : { ...answer, stale: true };
