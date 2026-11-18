@@ -75,11 +75,14 @@
  * `jig send` refuses that session a person's commands
  * (`shared/launched-session.ts`).
  *
- * A Claude follow-up that exits unsuccessfully within a minute, without a
- * result, a question or its own transcript, could not start: its account
- * backs off and its claim is released for retry. A recognized vendor usage
- * notice identifies a quota wall; otherwise its cause stays unknown. An
- * unreadable transcript scan withholds that classification.
+ * A Claude follow-up, steward or pickup pass that exits unsuccessfully
+ * within a minute, without a result, a question or its own transcript,
+ * could not start: its account is walled, and a follow-up's claim is
+ * released for retry. A recognized vendor usage notice identifies a quota
+ * wall, which lifts at the reset the notice states (`wall_backoff` from now
+ * when that does not read); otherwise its cause stays unknown and the
+ * account backs off for `wall_backoff`. An unreadable transcript scan
+ * withholds that classification.
  * Before it records the exit of a pass that left no closing report, the
  * wrapper records what it saw as the report, `by: wrapper` (a pass that
  * could not start, one it stopped at its deadline, any steward pass), or,
@@ -162,7 +165,7 @@ import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
 import { writeWall } from "./lib/walls.ts";
-import { failedStartup } from "./lib/session-startup.ts";
+import { failedStartup, startupReset } from "./lib/session-startup.ts";
 import { settleUnreported } from "./lib/end-report.ts";
 import { codexSessionIn } from "./lib/transcript-copy.ts";
 import {
@@ -515,9 +518,14 @@ function startupOf(record: LaunchRecord, ran: Ran) {
     record,
     ran.code,
     ran.started,
-    ran.startupOutput ?? ran.output ?? "",
+    startupOutputOf(ran),
     ran.exited,
   );
+}
+
+/** What a stage printed at its start, where a vendor's usage notice would be. */
+function startupOutputOf(ran: Ran): string {
+  return ran.startupOutput ?? ran.output ?? "";
 }
 
 /** The session id a Codex pass printed at its start; Claude Code's is the one the tick minted (`sessionId`). */
@@ -527,15 +535,27 @@ function sessionOf(record: LaunchRecord, ran: Ran): string | null {
     : null;
 }
 
-/** Back off an account before releasing the slot held by an unstarted session. */
-function recordStartupWall(record: LaunchRecord, startup: string): boolean {
+/**
+ * Wall an account before releasing the slot held by an unstarted session:
+ * until the reset its usage notice states, else `wall_backoff` from now.
+ */
+function recordStartupWall(
+  record: LaunchRecord,
+  startup: string,
+  output: string,
+): boolean {
   try {
+    const now = currentMs();
+    const reset = startup === "quota" ? startupReset(output, now) : null;
     writeWall({
       account: record.account,
       vendor: record.vendor,
       configDir: record.configDir,
-      resetAt: isoFromMs(currentMs() + record.wallBackoffMs),
-      source: `session could not start (${startup}); wall_backoff`,
+      resetAt: reset ?? isoFromMs(now + record.wallBackoffMs),
+      source:
+        reset === null
+          ? `session could not start (${startup}); wall_backoff`
+          : `session could not start (${startup}); the usage notice's reset`,
     });
     return true;
   } catch (error) {
@@ -580,7 +600,8 @@ function recordFinishedExit(
     // exit evidence, so a database that refuses reads still leaves it.
     const startup = startupOf(record, ran);
     const startupWallUnrecorded =
-      startup !== undefined && !recordStartupWall(record, startup);
+      startup !== undefined &&
+      !recordStartupWall(record, startup, startupOutputOf(ran));
     // The report before the exit: a tick that reads the exit reads its report too.
     recordAndSay(id, isDrive(record), startup);
     const session = sessionOf(record, ran);

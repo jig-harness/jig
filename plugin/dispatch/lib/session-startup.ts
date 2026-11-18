@@ -7,6 +7,12 @@
  * it said and however long ago (`retriedDeath`). The last two are the host's
  * faults: the tick releases their markers only while the host's health check
  * passes (`rerun-gate.ts`), and `failures.rerun_died: 0` turns them off.
+ *
+ * A startup that stopped is recognised for every stage whose Claude Code
+ * session the wrapper starts (`failedStartup`), and the wrapper walls its
+ * account: until the reset a usage notice states (`startupReset`), else for
+ * `wall_backoff`. A pickup stopped by a notice is wanted again once a wall
+ * keeps it off that account (`pickup-hold.ts`).
  */
 import { statSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -19,7 +25,8 @@ import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { questionOf } from "./session.ts";
 import { swallow } from "../../shared/errors.ts";
 import { SESSION_LEASE_MIN } from "../../shared/liveness.ts";
-import { currentMs, parseMs } from "../../shared/time.ts";
+import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
+import { noticeReset } from "./notice-reset.ts";
 
 /** Startup failures are limited to the first minute of the vendor process. */
 const STARTUP_MS = 60_000;
@@ -82,17 +89,51 @@ function transcriptAbsent(record: LaunchRecord, started: number): boolean {
   }
 }
 
-/** Only a recognized standalone vendor notice is persisted, never arbitrary output. */
-function quotaNotice(output: string): boolean {
-  return output.split(/\r?\n/).some((line) => {
+/**
+ * The `resets …` clause of a recognized standalone vendor notice in the
+ * output, or `null` when it holds none; only such a notice is persisted,
+ * never arbitrary output.
+ */
+function quotaNotice(output: string): string | null {
+  for (const line of output.split(/\r?\n/)) {
     const parts = line.trim().split("·");
-    if (parts.length !== 2) return false;
-    return (
+    if (parts.length !== 2) continue;
+    const reset = (parts[1] ?? "").trim();
+    if (
       /^you(?:'|’)ve hit your (?:session |weekly |usage )?limit$/i.test(
         (parts[0] ?? "").trim(),
-      ) && /^resets\s+\S/i.test((parts[1] ?? "").trim())
-    );
-  });
+      ) &&
+      /^resets\s+\S/i.test(reset)
+    )
+      return reset;
+  }
+  return null;
+}
+
+/**
+ * The reset the vendor's usage notice in a startup's output states, at or
+ * after `nowMs` (`notice-reset.ts`); `null` when there is no notice or its
+ * reset does not read.
+ */
+export function startupReset(output: string, nowMs: number): string | null {
+  const clause = quotaNotice(output);
+  if (clause === null) return null;
+  const at = noticeReset(clause, Temporal.Instant.fromEpochMilliseconds(nowMs));
+  return at === null ? null : isoFromMs(at.epochMilliseconds);
+}
+
+/**
+ * The stages whose Claude Code session the wrapper starts itself, with the
+ * session id the tick minted (`--session-id`): a follow-up's, a steward's
+ * and a headless pickup's pass. A drive's passes are `drive.ts`'s, which
+ * reads its own wall (`QUOTA_PARKED`).
+ */
+function ownSession(record: LaunchRecord): boolean {
+  return (
+    record.action === "followup" ||
+    record.action === "steward" ||
+    (record.action === "pickup" && record.headless === true)
+  );
 }
 
 export function failedStartup(
@@ -103,7 +144,7 @@ export function failedStartup(
   exited: number,
 ): "quota" | "unstarted" | undefined {
   if (
-    record.action !== "followup" ||
+    !ownSession(record) ||
     record.vendor !== "claude" ||
     typeof record.sessionId !== "string" ||
     code === null ||
@@ -112,7 +153,7 @@ export function failedStartup(
     !transcriptAbsent(record, started)
   )
     return;
-  return quotaNotice(output) ? "quota" : "unstarted";
+  return quotaNotice(output) === null ? "unstarted" : "quota";
 }
 
 /** Persisted startup evidence permits only the follow-up attempt that never began to retry. */
