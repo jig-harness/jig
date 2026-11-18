@@ -937,17 +937,18 @@ stops a model. A team that runs passes unattended should know which:
   collaborator wrote them; a follow-up marker when the dispatcher's own
   login or one of those wrote it; a merge-ready announcement, an answer to a
   thread or a parked question when an owner, member or collaborator wrote
-  it, and an answer to a need's decision when one other than the
-  dispatcher's own login did, or, on another tracker's item, a workspace
-  member who is not a guest other than the user the dispatcher's tracker
-  credential acts as
+  it, and an answer to a need's decision when one of them did, or, on
+  another tracker's item, a workspace member who is not a guest, the
+  dispatcher's own login or the user its tracker credential acts as counting
+  only through the record `jig send` writes, which names that identity, the
+  decision's key and digest and the option chosen
   (`shared/trusted-authors.ts`, `dispatch/lib/station-answers.ts`,
   `dispatch/lib/tracker-answers.ts`, `shared/records/forge-claims.ts`,
   `skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/driver/rearm.ts`). A pass signed in as the
   same login as the person, or holding the person's tracker credential, can
-  therefore post a comment those scripts would trust; only the instructions
-  say it must not.
+  therefore post a comment those scripts would trust, that record included;
+  only the instructions say it must not.
 - **The machine's state folders.** Launch records, walls, receipts, the
   outcome log and the drive's state are files under `~/.local/state/jig/`,
   writable by every session the same user runs. Leases and tokens fence the

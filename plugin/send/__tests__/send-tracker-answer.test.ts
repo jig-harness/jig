@@ -2,10 +2,11 @@
  * `jig send pickup@… answer <key> --approve|--choose` to a pickup's
  * decision on an item of a tracker other than the forge: written through
  * the tracker as the comment a person could type there, as the user the
- * tracker's credential acts as here; refused, with why, by a tracker that
- * cannot name who wrote a comment, to the repository's factory identity,
- * and on the host that owns the repository, whose tick leaves out the user a
- * send there writes as.
+ * tracker's credential acts as here, with the record the tick counts it by where that
+ * user may be the one its own credential acts as; refused, with why, by a
+ * tracker that cannot name who wrote a comment, to the repository's factory
+ * identity from another host, and where no record the tick counts can be
+ * written.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -21,9 +22,17 @@ import {
 } from "../../dispatch/lib/line-station.ts";
 import { writeLine } from "../../dispatch/lib/line-store.ts";
 import { closeStateDb } from "../../dispatch/lib/state.ts";
+import {
+  countsAsSent,
+  settleStationAnswers,
+  type StationPorts,
+} from "../../dispatch/lib/station-answers.ts";
+import { readTrackerAnswers } from "../../dispatch/lib/tracker-answers.ts";
 import type { Action } from "../../dispatch/lib/types.ts";
+import { report as reportOf } from "../../dispatch/__tests__/line-fixtures.ts";
 import { reading } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
+import { answerComment } from "../../shared/decisions/answer-record.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type {
   Tracker,
@@ -263,29 +272,128 @@ describe("jig send … answer on an item of another tracker", () => {
     }
   });
 
-  it("refuses, writing nothing, on the host that owns the repository, whether or not it names a factory identity", async () => {
-    for (const identity of [null, "factory@example.com"])
-      for (const dryRun of [false, true]) {
-        const t = tracker(DANA);
-        const planned = await plan(t, approve(DIGEST), {
-          identity,
-          owner: ok(true),
-          dryRun,
-        });
-        expect(planned?.ok).toBe(false);
-        const reason =
-          planned !== null && !planned.ok ? planned.failure.reason : "";
-        expect(reason).toContain(
-          `this machine owns ${REPO}, so its tick reads the answers with the tracker credential a send here uses, which acts as Dana Lee`,
-        );
-        expect(reason).toContain(
-          "answer on the tracker as another user, or give the dispatcher a tracker user of its own",
-        );
-        expect(t.posted).toEqual([]);
-      }
+  it("posts from the host that owns the repository, with the record its tick counts the answer by", async () => {
+    for (const identity of [null, "factory@example.com"]) {
+      const t = tracker(DANA);
+      const planned = await plan(t, approve(DIGEST), {
+        identity,
+        owner: ok(true),
+      });
+      if (planned === null || !planned.ok)
+        throw new TypeError(`not planned: ${JSON.stringify(planned)}`);
+      expect(planned.value.notice).toContain(
+        `this machine owns ${REPO}, so its tick reads the answers with the tracker credential a send here uses, which acts as Dana Lee; it counts this answer by the record the comment carries`,
+      );
+      expect(planned.value.record).toContain("in a hidden marker");
+      expect(t.posted).toEqual([]);
+      await planned.value.write();
+      const body = t.posted[0]?.[1] ?? "";
+      expect(body).toStartWith(
+        `answer pickup: approve [${DIGEST}]\n\n<!-- jig-send-answer\n`,
+      );
+
+      const root = mkdtempSync(join(tmpdir(), "send-tracker-tick-"));
+      roots.push(root);
+      const released: string[] = [];
+      const reader = {
+        adapter: "linear",
+        commentAuthors: true,
+        issueComments: async () => ({
+          uuid: "uuid-12",
+          comments: [
+            {
+              id: "c1",
+              body,
+              createdAt: "2026-11-12T11:00:00.000Z",
+              trusted: true,
+              author: DANA,
+            },
+          ],
+        }),
+      } as unknown as Tracker;
+      const report = reportOf({ actions: [{ ...STALLED }] });
+      await settleStationAnswers(
+        REPO,
+        report,
+        stationContextOf(REPO, {
+          tracker: { adapter: "linear" },
+          links: { itemsOf: () => null, prsOf: () => [] },
+        }),
+        {
+          self: null,
+          issueRepository: null,
+          trackerComments: (item: string) =>
+            readTrackerAnswers(reader, item, async () => DANA),
+          releasePickup: async (item: string) => {
+            released.push(item);
+            return ok("released");
+          },
+        } as unknown as StationPorts,
+        root,
+      );
+      expect(released).toEqual(["ENG-12"]);
+    }
   });
 
-  it("posts when whether this machine owns the repository cannot be told, saying the tick may not read it", async () => {
+  it("writes nothing on a dry run from the host that owns the repository", async () => {
+    const t = tracker(DANA);
+    const planned = await plan(t, approve(DIGEST), {
+      owner: ok(true),
+      dryRun: true,
+    });
+    expect(planned?.ok).toBe(true);
+    expect(t.posted).toEqual([]);
+  });
+
+  it("refuses, writing nothing, where the tick could not count the answer: no record can name the user, or the user does not read", async () => {
+    const cases: Array<[Tracker & { posted: unknown[] }, string]> = [
+      [
+        tracker({ id: "u-nameless", name: "" }),
+        "would not read this answer as choosing Release the claim",
+      ],
+      [
+        tracker(DANA, {
+          viewer: async () => {
+            throw new Error("viewer down");
+          },
+        } as Partial<Tracker>),
+        "the user the tracker's credential acts as did not read",
+      ],
+    ];
+    for (const [t, says] of cases) {
+      const planned = await plan(t, approve(DIGEST), { owner: ok(true) });
+      expect(planned?.ok).toBe(false);
+      expect(
+        planned !== null && !planned.ok ? planned.failure.reason : "",
+      ).toContain(says);
+      expect(t.posted).toEqual([]);
+    }
+  });
+
+  it("takes a comment for a sent answer only when its record names that user and the option chosen", () => {
+    const decision = NEED.decisions[0];
+    if (decision === undefined) throw new TypeError("no decision");
+    const line = `answer pickup: approve [${DIGEST}]`;
+    const body = answerComment(
+      "pickup",
+      `approve [${DIGEST}]`,
+      null,
+      { login: "Dana Lee", host: "sha256:0123456789abcdef" },
+      "2026-11-12T11:00:00.000Z",
+      {
+        decision: DIGEST,
+        choice: { option: "Release the claim", form: "approve" },
+      },
+    );
+    const counted = (text: string, login: string, option: string) =>
+      countsAsSent(decision, text, login, option);
+    expect(counted(body, "Dana Lee", "Release the claim")).toBe(true);
+    expect(counted(body, "Sam Ortiz", "Release the claim")).toBe(false);
+    expect(counted(body, "Dana Lee", "Another option")).toBe(false);
+    expect(counted(line, "Dana Lee", "Release the claim")).toBe(false);
+  });
+
+  it("posts when whether this machine owns the repository cannot be told, saying how the tick counts it", async () => {
     const t = tracker(DANA);
     const planned = await plan(t, approve(DIGEST), {
       owner: failed(
@@ -312,7 +420,7 @@ describe("jig send … answer on an item of another tracker", () => {
     expect(t.posted).toHaveLength(1);
   });
 
-  it("posts from a host that does not own a repository naming no factory identity, saying the tick may not read it", async () => {
+  it("posts from a host that does not own a repository naming no factory identity, saying how the tick counts it", async () => {
     const t = tracker(DANA);
     const planned = await plan(t, approve(DIGEST), { identity: null });
     if (planned === null || !planned.ok)
@@ -420,27 +528,42 @@ describe("jig send … answer on another tracker's item, from the command line",
     return { w, ops, digest: decision.digest ?? "" };
   }
 
-  it("refuses on the host that owns the repository, posting nothing", async () => {
+  it("posts the answer with its record on the host that owns the repository", async () => {
     const { w, ops, digest } = trackerWorld();
     mkdirSync(join(w.home, ".jig"), { recursive: true });
     writeFileSync(
       join(w.home, ".jig", "dispatch.yaml"),
       `repositories:\n  - path: ${w.repo}\n    stages: [pickup]\n`,
     );
-    for (const extra of [["--dry-run"], ["--decision", digest]]) {
-      const r = await w.send([
-        `pickup@${REPO_OF_WORLD}#14`,
-        "answer",
-        "pickup",
-        "--approve",
-        ...extra,
-      ]);
-      expectSpawnExit(r, 1);
-      expect(r.stderr).toContain(
-        "so its tick reads the answers with the tracker credential a send here uses, which acts as maintainer",
-      );
-    }
+    const address = `pickup@${REPO_OF_WORLD}#14`;
+    const dry = await w.send([
+      address,
+      "answer",
+      "pickup",
+      "--approve",
+      "--dry-run",
+    ]);
+    expectSpawnExit(dry, 0);
+    expect(dry.stdout.replace(/\s+/g, " ")).toContain(
+      "so its tick reads the answers with the tracker credential a send here uses, which acts as maintainer",
+    );
     expect(ops.some((o) => o.op === "TrackerComment")).toBe(false);
+    const sent = await w.send([
+      address,
+      "answer",
+      "pickup",
+      "--approve",
+      "--decision",
+      digest,
+    ]);
+    expectSpawnExit(sent, 0);
+    const bodies = ops
+      .filter((o) => o.op === "TrackerComment")
+      .map((o) => String(o.variables.body));
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toStartWith(
+      `answer pickup: approve [${digest}]\n\n<!-- jig-send-answer\n`,
+    );
     expect(w.writes()).toEqual([]);
   });
 

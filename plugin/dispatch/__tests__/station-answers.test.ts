@@ -1,18 +1,25 @@
 import { ok as assert } from "node:assert/strict";
 /**
  * A person's answer to a need's decision: counted only from a trusted
- * author other than the dispatcher, naming the decision's current digest,
- * agreed by every person who answered; its step runs once, refuses with
- * why, and a step that starts a session leaves that session the answer.
+ * author, the dispatcher's own identity only through the record `jig send`
+ * writes, naming the decision's current digest, agreed by every person who
+ * answered; its step runs once, refuses with why, and a step that starts a
+ * session leaves that session the answer.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { answerComment } from "../../shared/decisions/answer-record.ts";
 import { decisionDigest } from "../../shared/decisions/digest.ts";
 import type { ParkedDecision } from "../../shared/decisions/park.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  adfToMarkdown,
+  markdownToAdf,
+} from "../../skills/do-item/scripts/lib/tracker/jira/adf.ts";
 import type { CommentLike } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
+import { parkAnswers } from "../../skills/drive-pr/scripts/lib/driver/park-answers.ts";
 import { stationContextOf, stationDecision } from "../lib/line-station.ts";
 import { closeStateDb } from "../lib/state.ts";
 import {
@@ -23,10 +30,14 @@ import {
 } from "../lib/station-answer-store.ts";
 import {
   settleStationAnswers,
+  stationItem,
   type StationPorts,
 } from "../lib/station-answers.ts";
 import type { Action, DispatchSection, RepoReport } from "../lib/types.ts";
-import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import type {
+  CommentFact,
+  Tracker,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS } from "../lib/labels.ts";
 import type { SharedContext } from "../lib/shared-launches.ts";
 import { stationPorts } from "../lib/station-ports.ts";
@@ -81,6 +92,46 @@ function said(
     url: `https://github.com/${SLUG}/pull/12#issuecomment-${next}`,
     body,
   };
+}
+
+const OTHER_DIGEST = "0123456789ab";
+
+/** What a `jig send` comment's record may be made to say instead of what its line says. */
+interface SentFields {
+  login?: string;
+  host?: string;
+  key?: string;
+  /** The digest the record names; `null` leaves it out. */
+  decision?: string | null;
+  option?: string;
+}
+
+/**
+ * The comment `jig send` writes choosing `option` of decision `key`, its
+ * line naming `digest`; `record` changes what its hidden record says.
+ */
+function sentAnswer(
+  key: string,
+  digest: string,
+  option: string,
+  record: SentFields = {},
+): string {
+  const decision = record.decision === undefined ? digest : record.decision;
+  const body = answerComment(
+    record.key ?? key,
+    `choose ${record.option ?? option} [${decision ?? digest}]`,
+    12,
+    {
+      login: record.login ?? "drive-bot",
+      host: record.host ?? "sha256:0123456789abcdef",
+    },
+    "2026-11-12T11:00:00.000Z",
+    {
+      ...(decision === null ? {} : { decision }),
+      choice: { option: record.option ?? option, form: "choose" },
+    },
+  );
+  return `answer ${key}: choose ${option} [${digest}]${body.slice(body.indexOf("\n"))}`;
 }
 
 /** Ports that record each step and answer as told. */
@@ -177,6 +228,104 @@ describe("settleStationAnswers", () => {
     await settle(report, p, dir);
     expect(p.steps).toEqual([]);
     expect(report.actions[0]?.answered?.answers).toEqual([]);
+  });
+
+  it("counts an answer `jig send` wrote as the dispatcher's own login, by the record it carries", async () => {
+    const dir = root();
+    const action = failedFollowup();
+    const digest = digestOf(action);
+    const p = ports([
+      said(sentAnswer("followup", digest, "Run it again"), "Drive-Bot"),
+    ]);
+    const report = reportOf({ actions: [action] });
+    await settle(report, p, dir);
+    expect(p.steps).toEqual(["rerun 12 41"]);
+    expect(report.actions[0]?.answered).toMatchObject({
+      answers: [{ author: "Drive-Bot", choice: { option: "Run it again" } }],
+      acted: { author: "Drive-Bot", option: "Run it again", outcome: "done" },
+    });
+  });
+
+  it("ignores the dispatcher's own comment whose record is not an answer to this decision by that login", async () => {
+    const digest = digestOf(failedFollowup());
+    const records: SentFields[] = [
+      { key: "pickup" },
+      { login: "maintainer" },
+      { host: "dashboard (browser)" },
+      { option: "Record it done" },
+    ];
+    for (const record of records) {
+      const p = ports([
+        said(
+          sentAnswer("followup", digest, "Run it again", record),
+          "drive-bot",
+        ),
+      ]);
+      const report = reportOf({ actions: [failedFollowup()] });
+      await settle(report, p, root());
+      expect(p.steps).toEqual([]);
+      expect(report.actions[0]?.answered?.answers).toEqual([]);
+      expect(report.actions[0]?.answered?.state).toBeUndefined();
+    }
+  });
+
+  it("leaves the dispatcher's own answer stale when its record names no digest, another, or an earlier framing", async () => {
+    const digest = digestOf(failedFollowup());
+    const bodies = [
+      sentAnswer("followup", digest, "Run it again", { decision: null }),
+      sentAnswer("followup", digest, "Run it again", {
+        decision: OTHER_DIGEST,
+      }),
+      // A whole comment copied from when the decision was framed differently.
+      sentAnswer("followup", OTHER_DIGEST, "Run it again"),
+    ];
+    for (const body of bodies) {
+      const p = ports([said(body, "drive-bot")]);
+      const report = reportOf({ actions: [failedFollowup()] });
+      await settle(report, p, root());
+      expect(p.steps).toEqual([]);
+      expect(report.actions[0]?.answered?.state).toBe("stale");
+    }
+  });
+
+  it("reaches the park reader's verdict on the dispatcher's own sent answer", async () => {
+    const action = failedFollowup();
+    const digest = digestOf(action);
+    const decision = stationDecision(
+      action as Action & { cause: "followup-failed" },
+      CONTEXT,
+    );
+    assert(decision !== null);
+    const cases: Array<[string, "answered" | "stale"]> = [
+      [digest, "answered"],
+      [OTHER_DIGEST, "stale"],
+    ];
+    for (const [named, verdict] of cases) {
+      const comment = said(
+        sentAnswer("followup", named, "Run it again"),
+        "drive-bot",
+      );
+      const parks = await parkAnswers(12, [stationItem(decision)], SLUG, [
+        {
+          user: { login: comment.author },
+          author_association: comment.association,
+          created_at: comment.at,
+          updated_at: null,
+          html_url: comment.url,
+          body: comment.body,
+        },
+      ]);
+      assert(!("unreadable" in parks));
+      expect(parks[verdict]).toHaveLength(1);
+      const report = reportOf({ actions: [failedFollowup()] });
+      await settle(report, ports([comment]), root());
+      expect(report.actions[0]?.answered?.state).toBe(
+        verdict === "stale" ? "stale" : undefined,
+      );
+      expect(report.actions[0]?.answered?.acted !== undefined).toBe(
+        verdict === "answered",
+      );
+    }
   });
 
   it("leaves an answer naming no digest, or another, stale, and two people's different options disputed", async () => {
@@ -526,6 +675,121 @@ describe("settleStationAnswers on an item of another tracker", () => {
     expect(report.actions[0]?.answered?.answers).toHaveLength(1);
   });
 
+  /** Stationed ports over a tracker whose credential acts as Jig Factory and whose item holds `comments`, recording each state moved to. */
+  function ownUserPorts(
+    comments: readonly CommentFact[],
+    dir: string,
+  ): { p: StationPorts; moved: string[] } {
+    const moved: string[] = [];
+    const tracker = {
+      adapter: "linear",
+      commentAuthors: true,
+      viewer: async () => FACTORY_USER,
+      issueComments: async () => ({ uuid: "uuid-12", comments }),
+      getIssue: async () => ({
+        state: { name: "In Progress", type: "started" },
+      }),
+      transition: async (key: string, state: string) => {
+        moved.push(`${key} ${state}`);
+      },
+    } as unknown as Tracker;
+    const p = stationPorts({
+      repo: { path: "/srv/work/web", slug: SLUG, defaultBranch: "main" },
+      enabled: new Set(["pickup"]),
+      section: {
+        states: ["todo"],
+        labels: { ...DEFAULT_LABELS, enabled: false },
+      } as unknown as DispatchSection,
+      shared: {} as SharedContext,
+      login: "drive-bot",
+      tracker,
+      issueRepository: null,
+      links: { itemsOf: () => null, prsOf: () => [] },
+      sessions: async () => ({ ok: true, source: "test", workspaces: [] }),
+      root: dir,
+    });
+    return { p, moved };
+  }
+
+  const FACTORY_USER = { id: "u-factory", name: "Jig Factory" };
+  const RELEASE = "Release the claim";
+  const byFactory = (
+    body: string,
+    fields: Partial<CommentFact> = {},
+  ): CommentFact => ({
+    id: "c-own",
+    body,
+    createdAt: "2026-11-12T11:00:00.000Z",
+    trusted: true,
+    author: FACTORY_USER,
+    ...fields,
+  });
+  const sentByFactory = (named = digest, record: SentFields = {}) =>
+    sentAnswer("pickup", named, RELEASE, { login: "Jig Factory", ...record });
+
+  it("counts an answer `jig send` wrote as the tracker's own user, by the record it carries", async () => {
+    const dir = root();
+    // The tracker hands the answer line back with its brackets escaped.
+    const body = sentByFactory().replace(`[${digest}]`, `\\[${digest}\\]`);
+    const { p, moved } = ownUserPorts([byFactory(body)], dir);
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(moved).toEqual(["ENG-12 todo"]);
+    expect(report.actions[0]?.answered).toMatchObject({
+      answers: [{ author: "Jig Factory", choice: { option: RELEASE } }],
+      acted: { author: "Jig Factory", option: RELEASE, outcome: "done" },
+    });
+  });
+
+  it("keeps a record whose JSON has escapes of its own as the tracker wrote it", async () => {
+    const dir = root();
+    const body = sentByFactory().replace(
+      '"form":"choose"',
+      '"form":"choose","note":"say \\"why\\""',
+    );
+    const { p, moved } = ownUserPorts([byFactory(body)], dir);
+    await settleOn(reportOf({ actions: [stalled()] }), p, dir);
+    expect(moved).toEqual(["ENG-12 todo"]);
+  });
+
+  it("counts the tracker's own user's sent answer after a trip through Jira's document format", async () => {
+    const dir = root();
+    const body = adfToMarkdown(markdownToAdf(sentByFactory()));
+    const { p, moved } = ownUserPorts([byFactory(body)], dir);
+    await settleOn(reportOf({ actions: [stalled()] }), p, dir);
+    expect(moved).toEqual(["ENG-12 todo"]);
+  });
+
+  it("does not count the tracker's own user's sent answer when the tracker does not vouch for that user", async () => {
+    const dir = root();
+    const { p, moved } = ownUserPorts(
+      [byFactory(sentByFactory(), { trusted: false })],
+      dir,
+    );
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(moved).toEqual([]);
+    expect(report.actions[0]?.answered?.acted).toBeUndefined();
+  });
+
+  it("does not act on the tracker's own user's comment whose record names another key, digest or framing", async () => {
+    const cases: Array<[string, "stale" | undefined]> = [
+      [sentByFactory(digest, { key: "followup" }), undefined],
+      [sentByFactory(digest, { decision: OTHER_DIGEST }), "stale"],
+      [sentByFactory(digest, { decision: null }), "stale"],
+      [sentByFactory(OTHER_DIGEST), "stale"],
+    ];
+    for (const [body, state] of cases) {
+      const dir = root();
+      const { p, moved } = ownUserPorts([byFactory(body)], dir);
+      const report = reportOf({ actions: [stalled()] });
+      await settleOn(report, p, dir);
+      expect(moved).toEqual([]);
+      expect(report.actions[0]?.answered?.state).toBe(state);
+      expect(report.actions[0]?.answered?.acted).toBeUndefined();
+    }
+  });
+
   it("reads an answer only the tracker's own user wrote as unread, says why, and takes no step", async () => {
     const dir = root();
     const p = onTracker(ok([onItem("thanks, looking")]), [
@@ -538,7 +802,7 @@ describe("settleStationAnswers on an item of another tracker", () => {
       digest,
       answers: [],
       unread:
-        "the only answer on ENG-12 is by Jig Factory, the user the dispatcher's own tracker credential acts as, whose comments the tick never counts as an answer; answer on the tracker as another user, or give the dispatcher a tracker user of its own",
+        "the only answer on ENG-12 is by Jig Factory, the user the dispatcher's own tracker credential acts as, whose comments the tick counts only with the record jig send writes; answer with jig send, answer on the tracker as another user, or give the dispatcher a tracker user of its own",
     });
   });
 

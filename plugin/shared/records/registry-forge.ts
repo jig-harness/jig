@@ -138,7 +138,7 @@ export const FORGE: RecordKind[] = [
     name: "drive-answer",
     medium: "forge",
     owner: "shared/decisions/answer-record.ts",
-    at: "a comment on the pull request answering one parked item, written by `jig send` or the dispatch dashboard's Send",
+    at: "a comment on the pull request answering one parked item, written by `jig send` or the dispatch dashboard's Send, or on a tracker item answering a pickup's decision, written by `jig send`",
     markers: ["jig-send-answer"],
     version: 1,
     key: ANSWER_KEY,
