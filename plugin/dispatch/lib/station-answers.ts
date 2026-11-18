@@ -7,11 +7,18 @@
  * the forge's issues, else the item on its tracker (`tracker-answers.ts`),
  * whose trusted authors count as the forge's members do. Every comment goes
  * through the reader every station shares (`answer-forms.ts`), with the same
- * rule for who may answer (`shared/trusted-authors.ts`). A comment by the
- * dispatcher's own forge login, or by the user its tracker credential acts
- * as, never answers: a dispatcher does not answer on a person's behalf.
- * A need whose only answers on its tracker item are that user's reads as
- * unread, with why, so whoever wrote them learns the tick will not act.
+ * rule for who may answer (`shared/trusted-authors.ts`). A dispatcher does
+ * not answer on a person's behalf, so a comment by its own forge login, or by
+ * the user its tracker credential acts as, is left out, unless it carries the
+ * record `jig send` writes (`shared/decisions/answer-record.ts`), naming that
+ * identity, this decision's key and the option its answer line chooses: that
+ * is a person who shares the identity. The record proves no authorship, since
+ * whatever holds the identity's credential could write one; it keeps the
+ * reader from taking the dispatcher's own comments for answers, and asks more
+ * than a drive's park reader, which reads the same comment without it.
+ * A need whose only answers on its tracker item are that user's, none of them
+ * sent, reads as unread, with why, so whoever wrote them learns the tick will
+ * not act.
  * An answer counts only when it names the decision's current digest, so a
  * word typed for earlier facts never acts on new ones; each person's latest
  * answer is theirs, and two that differ leave the need disputed. A free
@@ -34,6 +41,8 @@ import {
   stationOptionId,
   type StationOptionId,
 } from "../../shared/decisions/station.ts";
+import { optionNameMatches } from "../../shared/decisions/answer-normalize.ts";
+import { readSentAnswer } from "../../shared/decisions/answer-record.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
   type CommentLike,
@@ -56,7 +65,7 @@ import {
   finishAnswer,
 } from "./station-answer-store.ts";
 import type { Action, RepoReport } from "./types.ts";
-import { currentMs, parseMs } from "../../shared/time.ts";
+import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 
 /** Before any park: a decision the tick framed has no park time, and its digest binds an answer. */
 const EPOCH = "1970-01-01T00:00:00.000Z";
@@ -92,33 +101,86 @@ export function stationItem(decision: LineDecision): ParkedItem {
   };
 }
 
+/** The comments by the dispatcher's own identity that may answer, and the name their records carry. */
+interface OwnComments {
+  name: string;
+  comments: readonly CommentLike[];
+}
+
+/** `c` read as an answer to `decision`; one that names no digest, or another, is stale. */
+function answerOf(
+  decision: LineDecision,
+  c: CommentLike,
+): PendingAnswer | null {
+  const answer = parseAnswerComment(
+    stationItem(decision),
+    c,
+    "conversation",
+    decision.answer?.framedBy === "dispatcher",
+  );
+  if (answer === null) return null;
+  // A structured answer acts only when it names the framing it answers.
+  return answer.choice !== undefined && answer.digest !== decision.digest
+    ? { ...answer, stale: true as const }
+    : answer;
+}
+
+/** Whether the record's option `recorded` is the option `read` names, the retired hold spelling included. */
+function sameOption(
+  decision: LineDecision,
+  read: string,
+  recorded: string | undefined,
+): boolean {
+  if (recorded === undefined) return false;
+  if (read === recorded) return true;
+  const option = decision.options?.find((o) => o.name === read);
+  return option !== undefined && optionNameMatches(option, recorded, true);
+}
+
 /**
- * The answers `comments` give `decision`: each person's latest, the
- * dispatcher's own login's left out; an answer that names no digest, or
- * another, is stale.
+ * `c`, by the dispatcher's own identity `name`, read as an answer to
+ * `decision`: only with a sent answer's record naming that identity and this
+ * decision's key. An answer whose record does not name the decision's digest
+ * and the option its line chooses is stale, as any author's answer to other
+ * facts is, so the need shows it rather than losing it.
  */
+function ownAnswerOf(
+  decision: LineDecision,
+  c: CommentLike,
+  name: string,
+): PendingAnswer | null {
+  const sent = readSentAnswer(c.body);
+  if (
+    sent === null ||
+    sent.login.toLowerCase() !== name.toLowerCase() ||
+    sent.key.toLowerCase() !== decision.key.toLowerCase()
+  )
+    return null;
+  const answer = answerOf(decision, c);
+  if (answer === null) return null;
+  const { choice } = answer;
+  return answer.stale !== true &&
+    sent.decision === decision.digest &&
+    choice !== undefined &&
+    sent.choice !== undefined &&
+    sameOption(decision, choice.option, sent.choice.option) &&
+    choice.form === sent.choice.form
+    ? answer
+    : { ...answer, stale: true };
+}
+
+/** The answers `comments` and the dispatcher's `own` give `decision`: each person's latest. */
 function readStationAnswers(
   decision: LineDecision,
   comments: readonly CommentLike[],
-  self: string | null,
+  own: OwnComments | null,
 ): AnswerReading {
-  const item = stationItem(decision);
-  const mine = self?.toLowerCase() ?? null;
-  const parsed = comments
-    .filter((c) => c.author.toLowerCase() !== mine)
-    .flatMap((c) => {
-      const answer = parseAnswerComment(
-        item,
-        c,
-        "conversation",
-        decision.answer?.framedBy === "dispatcher",
-      );
-      if (answer === null) return [];
-      // A structured answer acts only when it names the framing it answers.
-      return answer.choice !== undefined && answer.digest !== decision.digest
-        ? [{ ...answer, stale: true as const }]
-        : [answer];
-    });
+  const parsed = [
+    ...comments.map((c) => answerOf(decision, c)),
+    ...(own === null
+      ? []
+      : own.comments.map((c) => ownAnswerOf(decision, c, own.name))),
+  ].filter((a) => a !== null);
   const answers = latestAnswers(parsed);
   if (answers.length === 0) return { answers };
   if (answers.some((a) => a.stale === true)) return { answers, state: "stale" };
@@ -127,6 +189,27 @@ function readStationAnswers(
   return first?.choice === undefined
     ? { answers }
     : { answers, counted: first };
+}
+
+/**
+ * Whether the tick would count `body`, by the dispatcher's own identity
+ * `login`, as choosing `option` of `decision`: what `jig send` checks before
+ * it writes as a user the tick may leave out.
+ */
+export function countsAsSent(
+  decision: LineDecision,
+  body: string,
+  login: string,
+  option: string,
+): boolean {
+  const parked = parseMs(stationItem(decision).at ?? EPOCH);
+  const at = isoFromMs(Math.max(currentMs(), parked + 1000));
+  const comment = { author: login, association: "MEMBER", at, url: "", body };
+  const { counted } = readStationAnswers(decision, [], {
+    name: login,
+    comments: [comment],
+  });
+  return counted?.choice?.option === option;
 }
 
 /** The steps the tick takes on a person's answer, each checking its preconditions again before it acts: what it did, or why it refused. */
@@ -144,7 +227,7 @@ export interface StationPorts {
   trackerComments(
     item: string,
   ): Promise<Outcome<TrackerConversation, "unreadable">>;
-  /** The dispatcher's own forge login, whose comments never answer. */
+  /** The dispatcher's own forge login, whose comments answer only with a sent answer's record. */
   self: string | null;
   /** Where the items are the forge's issues, the repository they are in; `null` otherwise. */
   issueRepository: string | null;
@@ -466,19 +549,41 @@ async function actedOn(
     : actedAnswer(row, root);
 }
 
-/** The comments at `where`, with the tracker's own user's kept apart (`null` on the forge, whose reader leaves out its login itself). */
+/** The comments at a need's place: everyone else's, the dispatcher's own that may answer, and on a tracker its own user's, kept to say why they are not read. */
+interface Conversation {
+  comments: CommentLike[];
+  sent: OwnComments | null;
+  own: TrackerConversation["own"] | null;
+}
+
+/** The comments at `where`, the dispatcher's own identity's kept apart. */
 async function conversationAt(
   where: Where,
   ports: StationPorts,
-): Promise<
-  Outcome<
-    { comments: CommentLike[]; own: TrackerConversation["own"] | null },
-    "unreadable"
-  >
-> {
-  if (where.on === "tracker") return ports.trackerComments(where.item);
+): Promise<Outcome<Conversation, "unreadable">> {
+  if (where.on === "tracker") {
+    const read = await ports.trackerComments(where.item);
+    if (!read.ok) return read;
+    const { comments, own } = read.value;
+    return ok({
+      comments,
+      own,
+      sent: { name: own.name, comments: own.sent ?? [] },
+    });
+  }
   const listed = await ports.comments(where.repo, where.number);
-  return listed.ok ? ok({ comments: listed.value, own: null }) : listed;
+  if (!listed.ok) return listed;
+  const { self } = ports;
+  const mine = (c: CommentLike) =>
+    c.author.toLowerCase() === self?.toLowerCase();
+  return ok({
+    comments: listed.value.filter((c) => !mine(c)),
+    own: null,
+    sent:
+      self === null
+        ? null
+        : { name: self, comments: listed.value.filter(mine) },
+  });
 }
 
 /** Why a need's answers are not read when the only ones on its tracker item are by the user the tick's tracker credential acts as; `null` otherwise. */
@@ -491,7 +596,7 @@ function ownOnly(
   if (read.answers.length > 0) return null;
   if (readStationAnswers(decision, own.comments, null).answers.length === 0)
     return null;
-  return `the only answer on ${item} is by ${own.name}, the user the dispatcher's own tracker credential acts as, whose comments the tick never counts as an answer; answer on the tracker as another user, or give the dispatcher a tracker user of its own`;
+  return `the only answer on ${item} is by ${own.name}, the user the dispatcher's own tracker credential acts as, whose comments the tick counts only with the record jig send writes; answer with jig send, answer on the tracker as another user, or give the dispatcher a tracker user of its own`;
 }
 
 /** Read one need's answers onto its action and act on the one that counts; whether it was answered I'll handle it — hide this card. */
@@ -507,10 +612,8 @@ async function settleOne(
     action.answered = { digest, answers: [], unread: listed.failure.reason };
     return false;
   }
-  const { comments, own } = listed.value;
-  // The tracker's own user's comments are already kept apart, by its id.
-  const self = where.on === "forge" ? ports.self : null;
-  const read = readStationAnswers(decision, comments, self);
+  const { comments, own, sent } = listed.value;
+  const read = readStationAnswers(decision, comments, sent);
   const unread =
     own === null || where.on !== "tracker"
       ? null
