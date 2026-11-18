@@ -28,7 +28,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { jigHome } from "../../../shared/config-layers.ts";
 import { JigError } from "../../../shared/outcome.ts";
 import { renameWithRetry } from "../../../shared/rename-with-retry.ts";
@@ -124,8 +124,12 @@ export function enclosingWorkTree(
   if (designated !== undefined && designated !== "") {
     const tree = realpathSync(resolve(designated));
     const below = relative(tree, current);
-    if (below === "" || (!below.startsWith("..") && !below.startsWith("/")))
-      return tree;
+    const outside =
+      isAbsolute(below) ||
+      below === ".." ||
+      below.startsWith(`..${sep}`) ||
+      below.startsWith("../");
+    if (!outside) return tree;
   }
   for (;;) {
     if (

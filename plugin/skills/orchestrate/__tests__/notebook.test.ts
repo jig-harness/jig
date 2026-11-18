@@ -107,6 +107,15 @@ describe("the notebook's topic and place", () => {
     ).toBeUndefined();
   });
 
+  test("a child directory named with leading dots is inside the designated tree", () => {
+    const tree = home(false);
+    const child = join(tree, "..notebooks");
+    mkdirSync(child);
+    expect(enclosingWorkTree(join(child, "a"), { GIT_WORK_TREE: tree })).toBe(
+      realpathSync(tree),
+    );
+  });
+
   test("a symbolic link at the journal or today's file is refused", () => {
     const tree = home(false);
     mkdirSync(join(tree, ".git"));
