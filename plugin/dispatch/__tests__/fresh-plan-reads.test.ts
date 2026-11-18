@@ -13,6 +13,7 @@ import type {
 import { issue } from "./served-fixtures.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
 import { TrackerRateLimited } from "../../shared/outbound/budget.ts";
+import { freshReads } from "../lib/sources/fresh-reads.ts";
 import { servedParentHold } from "../lib/sources/served-parents.ts";
 
 const STEPS = Array.from({ length: 8 }, (_, i) => `#${i + 2}`);
@@ -158,11 +159,15 @@ for (const [name, failure] of [
   ["a malformed answer", new Error("the batch failed")],
 ] as const)
   it(`refuses every key of a batch that failed for ${name}, without a read of each`, async () => {
-    const f = fixture(() => failure);
+    // The ancestry reads (one key each) succeed; the plan's steps batch fails.
+    const f = fixture((numbers) => (numbers.length > 1 ? failure : null));
     const item = await f.t.poolIssue("#3");
     assert(item);
     const mark = f.calls.length;
-    await expect(servedParentHold(f.t, item, none)).rejects.toBeDefined();
+    await expect(servedParentHold(f.t, item, none)).rejects.toBe(failure);
+    expect(
+      f.calls.slice(mark).filter((call) => call.op === "TrackerDispatchIssues"),
+    ).toHaveLength(3);
     expect(
       f.calls.slice(mark).filter((call) => call.op === "TrackerIssue"),
     ).toEqual([]);
@@ -249,4 +254,60 @@ it("holds an item its parent plan does not place, read from the batch", async ()
   expect(await servedParentHold(f.t, item, none)).toBe(
     "waiting on the epic execution plan",
   );
+});
+
+it("reads alone a key the tracker's pool batch left unanswered, not as absent", async () => {
+  const singles: string[] = [];
+  const issues: Record<string, ReturnType<typeof issue>> = {
+    "ENG-1": issue("ENG-1"),
+    "ENG-2": issue("ENG-2"),
+    "ENG-3": issue("ENG-3"),
+  };
+  const tracker = {
+    adapter: "linear",
+    team: "ENG",
+    poolIssues: async (keys: ReadonlyArray<string>) =>
+      new Map(
+        keys
+          .filter((key) => key !== "ENG-2")
+          .map((key) => [key, issues[key] ?? null]),
+      ),
+    poolIssue: async (key: string) => {
+      singles.push(key);
+      return issues[key] ?? null;
+    },
+  } as unknown as Tracker;
+  const reads = freshReads(tracker);
+  const [one, two, three] = await Promise.all([
+    reads.pool("ENG-1"),
+    reads.pool("ENG-2"),
+    reads.pool("ENG-3"),
+  ]);
+  expect([one, two, three]).toEqual([
+    issues["ENG-1"] ?? null,
+    issues["ENG-2"] ?? null,
+    issues["ENG-3"] ?? null,
+  ]);
+  expect(singles).toEqual(["ENG-2"]);
+});
+
+it("starts no request once the check's signal has aborted, and passes the signal to the reads it makes", async () => {
+  const seen: Array<AbortSignal | undefined> = [];
+  const controller = new AbortController();
+  const tracker = {
+    adapter: "linear",
+    team: "ENG",
+    poolIssues: async (_keys: ReadonlyArray<string>, signal?: AbortSignal) => {
+      seen.push(signal);
+      controller.abort();
+      throw new TrackerRateLimited("linear", 0, "TIMEOUT");
+    },
+    poolIssue: async () => {
+      throw new Error("no read alone after the signal aborted");
+    },
+  } as unknown as Tracker;
+  const reads = freshReads(tracker, { signal: controller.signal });
+  await expect(reads.pool("ENG-1")).rejects.toBeDefined();
+  expect(seen).toHaveLength(1);
+  expect(seen[0]?.aborted).toBe(true);
 });

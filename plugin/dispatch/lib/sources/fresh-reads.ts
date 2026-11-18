@@ -5,8 +5,13 @@
  * each.
  */
 import { failureOf } from "../../../shared/outbound/failure.ts";
+import {
+  readSignal,
+  refuseStopped,
+} from "../../../skills/do-item/scripts/lib/tracker/facets/bounds.ts";
 import type {
   DispatchRawIssue,
+  FacetReadOptions,
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
@@ -26,11 +31,18 @@ interface Waiter {
 type Batch = Map<string, Waiter>;
 
 /** Each key read on its own: one key the tracker cannot read fails only itself. */
-function readEach(tracker: Tracker, batch: Batch): Promise<unknown> {
+function readEach(
+  tracker: Tracker,
+  batch: Batch,
+  signal: AbortSignal | undefined,
+): Promise<unknown> {
   return Promise.all(
     [...batch].map(([key, waiter]) =>
-      tracker
-        .poolIssue(key)
+      Promise.resolve()
+        .then(() => {
+          refuseStopped(signal);
+          return tracker.poolIssue(key, signal);
+        })
         .then((pool) => waiter.resolve({ pool, raw: null }), waiter.reject),
     ),
   );
@@ -40,6 +52,7 @@ function readEach(tracker: Tracker, batch: Batch): Promise<unknown> {
 type Way = (
   tracker: Tracker,
   keys: string[],
+  signal: AbortSignal | undefined,
 ) => Promise<Map<string, Row> | null>;
 
 /**
@@ -48,28 +61,38 @@ type Way = (
  * which spares the walk an issue read for each parent's plan. Elsewhere the
  * tracker's pool read is the lighter batch.
  */
-const readNative: Way = async (tracker, keys) => {
+const readNative: Way = async (tracker, keys, signal) => {
   const source = tracker.dispatchSource;
   if (source?.issues === undefined || source.describe === undefined)
     return null;
-  const rows = await source.issues(keys);
+  refuseStopped(signal);
+  const options: FacetReadOptions = signal === undefined ? {} : { signal };
+  const rows = await source.issues(keys, options);
   return new Map(
     await Promise.all(
-      [...rows].map(
-        async ([key, raw]) =>
-          [key, { pool: await source.project(raw), raw }] as const,
-      ),
+      [...rows].map(async ([key, raw]) => {
+        refuseStopped(signal);
+        return [
+          key,
+          { pool: await source.project(raw, options), raw },
+        ] as const;
+      }),
     ),
   );
 };
 
 /** The batch through the tracker's own batched pool read. */
-const readPooled: Way = async (tracker, keys) => {
+const readPooled: Way = async (tracker, keys, signal) => {
   if (tracker.poolIssues === undefined) return null;
-  const read = await tracker.poolIssues(keys);
-  return new Map(
-    keys.map((key) => [key, { pool: read.get(key) ?? null, raw: null }]),
-  );
+  refuseStopped(signal);
+  const read = await tracker.poolIssues(keys, signal);
+  const rows = new Map<string, Row>();
+  // A key the batch left out stays unanswered, to be read alone; `null` is an answer.
+  for (const key of keys) {
+    const pool = read.get(key);
+    if (pool !== undefined) rows.set(key, { pool, raw: null });
+  }
+  return rows;
 };
 
 /**
@@ -89,14 +112,18 @@ function readsNarrower(error: unknown): boolean {
  * limit, no answer, a refused credential, a malformed answer) refuses every
  * key with that failure.
  */
-async function settle(tracker: Tracker, batch: Batch): Promise<void> {
+async function settle(
+  tracker: Tracker,
+  batch: Batch,
+  signal: AbortSignal | undefined,
+): Promise<void> {
   const keys = [...batch.keys()];
   for (const way of [readNative, readPooled]) {
     let rows: Map<string, Row> | null;
     try {
-      rows = await way(tracker, keys);
+      rows = await way(tracker, keys, signal);
     } catch (error) {
-      if (readsNarrower(error)) continue;
+      if (signal?.aborted !== true && readsNarrower(error)) continue;
       for (const waiter of batch.values()) waiter.reject(error);
       return;
     }
@@ -107,24 +134,30 @@ async function settle(tracker: Tracker, batch: Batch): Promise<void> {
       if (row === undefined) unanswered.set(key, waiter);
       else waiter.resolve(row);
     }
-    await readEach(tracker, unanswered);
+    await readEach(tracker, unanswered, signal);
     return;
   }
-  await readEach(tracker, batch);
+  await readEach(tracker, batch, signal);
 }
 
 /**
  * Reads for one fresh parent check. Every key is read once in the check, and
- * the keys asked for in one turn of the event loop leave in one batch.
+ * the keys asked for in one turn of the event loop leave in one batch. The
+ * check's `bounds` (a cancellation signal, an overall deadline) bind every
+ * batch and every read alone: once they stop it, no further request starts.
  */
-export function freshReads(tracker: Tracker): ParentReads {
+export function freshReads(
+  tracker: Tracker,
+  bounds?: FacetReadOptions,
+): ParentReads {
+  const signal = readSignal(bounds);
   const memo = new Map<string, Promise<Row>>();
   const reads = new Map<string, Promise<unknown>>();
   let queued: Batch = new Map();
   const flush = () => {
     const batch = queued;
     queued = new Map();
-    void settle(tracker, batch).catch((error: unknown) => {
+    void settle(tracker, batch, signal).catch((error: unknown) => {
       for (const waiter of batch.values()) waiter.reject(error);
     });
   };
