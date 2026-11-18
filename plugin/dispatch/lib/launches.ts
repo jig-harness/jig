@@ -55,6 +55,7 @@ import {
   type StageSupervision,
 } from "./launch-supervision.ts";
 import { ordinalAnchors } from "./account-ordinal.ts";
+import { relaunchAnchors } from "./pickup-relaunch.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
@@ -90,7 +91,12 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
+import {
+  idsOf,
+  latestArms,
+  latestBy,
+  latestDriveRefusals,
+} from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
 import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
 import { latestDeaths, witnessedState } from "./launch-recovery.ts";
@@ -785,43 +791,22 @@ export function holds(state: LaunchState): boolean {
   );
 }
 
-/** The newest record per key among those `keep` accepts. */
-function latestBy(
-  records: ReadRecord[],
-  keep: (record: LaunchRecord) => boolean,
-  keyOf: (record: LaunchRecord) => string,
-): Map<string, ReadRecord> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    if (!keep(r.record)) continue;
-    const key = keyOf(r.record);
-    const seen = latest.get(key);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(key, r);
-  }
-  return latest;
-}
-
 /**
  * The ids of each pull request's latest record when it ended on a refusal of
  * a second driver: the stage's answer for as long as the ledger facts hold.
  */
 function latestRefusals(records: ReadRecord[]): Set<string> {
   // Pull request numbers repeat across repositories: key by both.
-  const latest = latestBy(
-    records,
-    (r) => isDrive(r),
-    (r) => `${r.repo}#${String(r.pr)}`,
+  const latest = latestBy(records, ({ record: r }) =>
+    isDrive(r) ? `${r.repo}#${String(r.pr)}` : null,
   );
-  const ids = new Set<string>();
-  for (const { record, state } of latest.values())
-    if (
+  return idsOf(
+    latest,
+    ({ state }) =>
       state.kind === "ended" &&
       state.exit.code !== null &&
-      DRIVER_REFUSAL_EXITS.has(state.exit.code)
-    )
-      ids.add(record.id);
-  return ids;
+      DRIVER_REFUSAL_EXITS.has(state.exit.code),
+  );
 }
 
 /**
@@ -843,18 +828,6 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
     }
   }
   return new Set([...latest.values()].map((r) => r.record.id));
-}
-
-/** Relaunch records are durable recovery evidence: keep each head and source. */
-function relaunchAnchors(records: ReadRecord[]): Set<string> {
-  const kept = new Set<string>();
-  for (const { record } of records) {
-    if (record.relaunchOf === undefined || record.relaunchHead === undefined)
-      continue;
-    kept.add(record.id);
-    kept.add(record.relaunchOf);
-  }
-  return kept;
 }
 
 /** When an ended or died record finished; `null` for one still holding its stage. */

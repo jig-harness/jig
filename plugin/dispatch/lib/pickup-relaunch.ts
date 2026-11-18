@@ -148,3 +148,15 @@ export function relaunchStep(
     },
   };
 }
+
+/** Relaunch records are durable recovery evidence: keep each head and source. */
+export function relaunchAnchors(records: ReadRecord[]): Set<string> {
+  const kept = new Set<string>();
+  for (const { record } of records) {
+    if (record.relaunchOf === undefined || record.relaunchHead === undefined)
+      continue;
+    kept.add(record.id);
+    kept.add(record.relaunchOf);
+  }
+  return kept;
+}
