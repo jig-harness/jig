@@ -32,16 +32,20 @@ interface TakenDecision {
   evidence: Evidence;
 }
 
-/** The version a tag names: whatever prefix the repository's tags carry (`v`, `app-`) is dropped. */
-function versionOf(tag: string): string {
-  return tag.replace(/^[^0-9]*/, "");
+/** The version a tag names: the first dotted number onward, so whatever prefix the repository's tags carry (`v`, `app-`, `service2/v`) is dropped; `null` when the tag holds none. */
+function versionOf(tag: string): string | null {
+  return /\d+\.\d+\.\d+.*$/.exec(tag)?.[0] ?? null;
 }
 
 /** Semantic-version order, which puts a final release after its own pre-releases; tags that are not versions fall back to text order. */
 function byVersion(left: OwedRelease, right: OwedRelease): number {
-  const order = Bun.semver.order(versionOf(left.tag), versionOf(right.tag));
-  return order !== 0
-    ? order
+  const order = attempt("unreadable", "unreadable", () => {
+    const [a, b] = [versionOf(left.tag), versionOf(right.tag)];
+    return a === null || b === null ? 0 : Bun.semver.order(a, b);
+  });
+  const ordered = order.ok ? order.value : 0;
+  return ordered !== 0
+    ? ordered
     : left.tag.localeCompare(right.tag, "en", { numeric: true });
 }
 

@@ -18,6 +18,17 @@ describe("release groups", () => {
     }
   });
 
+  it("orders tags whose prefix carries digits or slashes, and falls back to text for non-versions", () => {
+    const [group] = releaseActions([
+      release("service2/v1.10.0", "#2"),
+      release("service2/v1.9.0", "#1"),
+      release("nightly", "#3"),
+    ]);
+    expect(group?.evidence.tags).toBe(
+      "nightly service2/v1.9.0 service2/v1.10.0",
+    );
+  });
+
   it("leaves a kept decision with no release facts to the ordinary groups", () => {
     const empty = JSON.stringify({ target: "#45", evidence: {} });
     const actions = releaseActions([
