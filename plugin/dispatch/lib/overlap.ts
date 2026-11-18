@@ -91,6 +91,8 @@ export interface Evaluation {
   shares: Share[];
   /** The file that puts it over the bound, and the work in flight that changes it; `null` within the bound. */
   bound: { path: string; work: InFlight[] } | null;
+  /** Every file over the bound; `bound` remains the representative shown in the wait reason. */
+  boundPaths: string[];
 }
 
 type Element =
@@ -113,7 +115,7 @@ export function canonical(
     dirs: unique([
       ...footprint.dirs,
       ...footprint.files.filter((f) => f.endsWith("/")),
-    ]),
+    ]).filter((d) => !model.ignored(`${bare(d)}/`)),
     areas: unique(footprint.areas),
   };
 }
@@ -221,6 +223,7 @@ export function evaluate(
       cost: model.settings.unknownCost,
       shares: [],
       bound: null,
+      boundPaths: [],
     };
   const c = canonical(candidate, model);
   const shares: Share[] = [];
@@ -232,18 +235,25 @@ export function evaluate(
     if (chance > 0) shares.push({ work, units, chance });
   }
   const cost = shares.reduce((sum, s) => sum + s.chance, 0);
-  return { unknown: false, cost, shares, bound: boundOf(c, inFlight, model) };
+  const bounds = boundsOf(c, inFlight, model);
+  return {
+    unknown: false,
+    cost,
+    shares,
+    bound: bounds[0] ?? null,
+    boundPaths: bounds.map((bound) => bound.path),
+  };
 }
 
 /** The file of `c` the most work in flight changes, when that work already reaches `max_per_file`. */
-function boundOf(
+function boundsOf(
   c: Footprint,
   inFlight: readonly InFlight[],
   model: OverlapModel,
-): Evaluation["bound"] {
+): Array<NonNullable<Evaluation["bound"]>> {
   const max = model.settings.maxPerFile;
-  if (max === 0) return null;
-  let worst: Evaluation["bound"] = null;
+  if (max === 0) return [];
+  const bounds: Array<NonNullable<Evaluation["bound"]>> = [];
   for (const path of c.files) {
     const work = inFlight.filter(
       (w) =>
@@ -251,13 +261,11 @@ function boundOf(
         w.footprint.known &&
         canonical(w.footprint, model).files.includes(path),
     );
-    if (
-      work.length >= max &&
-      (worst === null || work.length > worst.work.length)
-    )
-      worst = { path, work };
+    if (work.length >= max) bounds.push({ path, work });
   }
-  return worst;
+  return bounds.sort(
+    (a, b) => b.work.length - a.work.length || a.path.localeCompare(b.path),
+  );
 }
 
 /** A pickup the tick wants, in rank order. */

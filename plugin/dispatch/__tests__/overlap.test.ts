@@ -187,6 +187,18 @@ describe("shared units", () => {
       ),
     ).toBe(0);
   });
+  it("leaves out a generated or ignored directory", () => {
+    const m = model(
+      { ignore: ["src/ignored/**"] },
+      {},
+      { dispatch: ["src/dispatch/**"] },
+      ["src/gen/**"],
+    );
+    expect(
+      canonical(files("src/gen/", "src/ignored/", "src/a/"), m).dirs,
+    ).toEqual(["src/a/"]);
+    expect(cost(files("src/gen/"), [pr(1, files("src/gen/"))], m)).toBe(0);
+  });
 });
 
 describe("the chance of a round and the cost", () => {

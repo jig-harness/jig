@@ -35,6 +35,9 @@ import type { ClaimedItem, WantedItem } from "./types.ts";
 /** The most items whose footprints one repository's tick reads fresh. */
 export const MAX_FRESH = 20;
 
+/** A tick does not see the tracker's full-read generation; items whose comments do not move `updatedAt` are re-read once per window, not once per tick. */
+const SCOPE_WINDOW_MS = 15 * 60_000;
+
 /** What overlap read in the observe phase, for the plan phase. */
 export interface OverlapFacts {
   /** Each item's footprint, by key; an item absent was not read. */
@@ -93,7 +96,7 @@ function activeSession(
     (r) =>
       r.record.action === "pickup" &&
       r.record.item === key &&
-      holds(r.state) &&
+      r.state.kind === "alive" &&
       typeof r.record.sessionId === "string" &&
       r.record.sessionId !== "",
   );
@@ -135,6 +138,10 @@ export function footprintItems(input: OverlapObserveInput): FootprintItem[] {
   for (const w of input.wanted) add(w);
   for (const c of input.claimed ?? [])
     add(c as ClaimedItem & { queueIssue?: { labels: string[] } });
+  // A pickup this host started and no tracker list carries yet still holds files.
+  for (const r of input.records)
+    if (r.record.action === "pickup" && holds(r.state))
+      add({ key: r.record.item });
   return out;
 }
 
@@ -161,7 +168,7 @@ export async function readOverlapFacts(
   try {
     const readings = await tracker.footprints(footprintItems(input), {
       cycle: {},
-      scopeRead: isoFromMs(input.nowMs),
+      scopeRead: isoFromMs(input.nowMs - (input.nowMs % SCOPE_WINDOW_MS)),
       cache: cacheOf(tracker),
       areaLabels,
       maxFresh: MAX_FRESH,

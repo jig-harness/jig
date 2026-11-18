@@ -200,9 +200,7 @@ describe("the footprint note beside the rank", () => {
         reading("#12", { reason: "fresh footprint read limit", stale: true }),
         "unread",
       ),
-    ).toBe(
-      "footprint unknown: its footprint was not read this tick (fresh footprint read limit)",
-    );
+    ).toBe("footprint stale: fresh footprint read limit");
     expect(
       readingNote(
         reading("#12", { source: "labels", areas: ["dispatch"] }),

@@ -68,6 +68,10 @@ export function readingNote(
   unread: string,
 ): string | null {
   if (reading === undefined) return `footprint unknown: ${unread}`;
+  if (reading.stale) {
+    const detail = reading.failure?.reason ?? reading.reason;
+    return `footprint stale: ${detail ?? "the last footprint read could not be refreshed"}`;
+  }
   return footprintNote({
     source: reading.source,
     areas: reading.areas,
@@ -239,9 +243,7 @@ function hotspots(
   notes: string[],
 ): OverlapHotspot[] {
   const paths = placed.flatMap((p) =>
-    p.tier === 3 && p.evaluation.bound !== null
-      ? [p.evaluation.bound.path]
-      : [],
+    p.tier === 3 ? p.evaluation.boundPaths : [],
   );
   if (paths.length === 0 || context.apply === null) return [];
   const day = isoFromMs(context.nowMs).slice(0, 10);
