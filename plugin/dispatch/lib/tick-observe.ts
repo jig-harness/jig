@@ -11,7 +11,9 @@
  * forge's part (its open pull requests with their ledgers, its merges) are
  * read through the tick's world view (`world-view.ts`), whose facts carry
  * their freshness class. The launch claims (the shared records), Control's
- * reads and the board read the forge directly. The forge's drives as this
+ * reads and the board read the forge directly, and overlap reads the
+ * footprints of the wanted and claimed items through the tracker the tick
+ * opened (`overlap-observe.ts`). The forge's drives as this
  * host's launch records and every host's claims settle them are the
  * machine view, `RepoObservation.drives`, kept apart from the forge's read:
  * nothing of what this host did is written into a fact the view returned.

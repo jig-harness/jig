@@ -792,6 +792,16 @@ export function world(): World {
           issue: { id: `i-${String(v.number)}`, comments: conn([]) },
         },
       };
+    // The footprint port's batch of comment reads: each alias `b<i>` a repository root, every issue with no comment.
+    if (op === "footprint")
+      return Object.fromEntries(
+        Object.entries(v)
+          .filter(([name]) => /^b\d+_number$/.test(name))
+          .map(([name, number]) => [
+            name.replace(/_number$/, ""),
+            { issue: { id: `i-${String(number)}`, comments: conn([]) } },
+          ]),
+      );
     if (op === "TrackerAssignedBy") {
       const found = issues.find((n) => n.number === v.number);
       const by = assigners.get(Number(v.number));
