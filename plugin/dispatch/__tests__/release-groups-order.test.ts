@@ -40,4 +40,26 @@ describe("release groups", () => {
     );
     expect(actions.map((a) => a.evidence.tags)).toEqual(["v1.0.0 v1.1.0"]);
   });
+
+  it("returns a kept decision whose target or items are not canonical tracker items to the ordinary groups", () => {
+    const badTarget = JSON.stringify({
+      target: "not-an-item",
+      evidence: { tag: "v1.0.0" },
+    });
+    const badItems = JSON.stringify({
+      target: "#45",
+      evidence: { tags: "v1.1.0 v1.2.0", items: "#2 nope" },
+    });
+    const actions = releaseActions(
+      [
+        release("v1.0.0", "#1", badTarget),
+        release("v1.1.0", "#2", badItems),
+        release("v1.2.0", "#3", badItems),
+      ],
+      "v",
+    );
+    expect(actions.map((a) => a.evidence.tags)).toEqual([
+      "v1.0.0 v1.1.0 v1.2.0",
+    ]);
+  });
 });

@@ -15,6 +15,7 @@
  */
 import { isRecord, isString } from "../../shared/guards.ts";
 import { attempt } from "../../shared/outcome.ts";
+import { shapeOfKey } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { Action, Evidence } from "./types.ts";
 
 /** A release that waits on a person, as grouping reads it. */
@@ -161,13 +162,14 @@ function isEvidence(value: unknown): value is Evidence {
   );
 }
 
-/** Whether `target` and `evidence` are one `takenDecision` writes: a lone release's tag, or a group's tags and items. */
+/** Whether `target` and `evidence` are one `takenDecision` writes: a canonical tracker item, and a lone release's tag or a group's tags and items. */
 function isTakenShape(target: unknown, evidence: Evidence): boolean {
-  if (!isString(target) || target === "") return false;
+  if (!isString(target) || shapeOfKey(target) === null) return false;
   if (typeof evidence.tag === "string") return evidence.tag !== "";
   return (
     groupTags(evidence).length > 0 &&
-    groupItems(evidence).length === groupTags(evidence).length
+    groupItems(evidence).length === groupTags(evidence).length &&
+    groupItems(evidence).every((item) => shapeOfKey(item) !== null)
   );
 }
 
