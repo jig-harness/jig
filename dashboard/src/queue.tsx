@@ -1,5 +1,5 @@
 import { GitBranch } from "lucide-react";
-import { useState } from "react";
+import { useRef } from "react";
 import { FollowupBadge } from "./followups.tsx";
 import { RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
@@ -141,7 +141,13 @@ function SectionTitle({
   );
 }
 
-function SectionCards({ section }: { section: QueueSectionView }) {
+function SectionCards({
+  section,
+  startsFolded,
+}: {
+  section: QueueSectionView;
+  startsFolded: boolean;
+}) {
   return (
     <>
       {section.note === null ? null : (
@@ -152,7 +158,7 @@ function SectionCards({ section }: { section: QueueSectionView }) {
       {section.items.map((item, i) => (
         <QueueItem
           item={item}
-          rest={!section.startsFolded && i >= SHOWN_CLOSED}
+          rest={!startsFolded && i >= SHOWN_CLOSED}
           showHappens={section.by !== DEFAULT_QUEUE_GROUPING}
           key={item.rowKey}
         />
@@ -163,22 +169,23 @@ function SectionCards({ section }: { section: QueueSectionView }) {
 
 function QueueSection({
   section,
+  startsFolded,
   filterActive,
   filterKey,
 }: {
   section: QueueSectionView;
+  startsFolded: boolean;
   filterActive: boolean;
   filterKey: string;
 }) {
-  // Only the first read folds a group: a later one must not close it on the person.
-  const [startsFolded] = useState(section.startsFolded);
-  if (section.title === null) return <SectionCards section={section} />;
+  const cards = <SectionCards section={section} startsFolded={startsFolded} />;
+  if (section.title === null) return cards;
   return (
     <div data-facet-group="">
       {section.fixed ? (
         <>
           <SectionTitle section={section} className="groupWord qFixed" />
-          <SectionCards section={section} />
+          {cards}
         </>
       ) : (
         <GutterFold
@@ -189,11 +196,22 @@ function QueueSection({
           keepMounted
           head={<SectionTitle section={section} />}
         >
-          <SectionCards section={section} />
+          {cards}
         </GutterFold>
       )}
     </div>
   );
+}
+
+/** Whether each section starts folded, settled when the page first shows it, so a later refresh rearranges nothing under the person. */
+function useStartsFolded(): (section: QueueSectionView) => boolean {
+  const settled = useRef(new Map<string, boolean>());
+  return (section) => {
+    const known = settled.current.get(section.key);
+    if (known !== undefined) return known;
+    settled.current.set(section.key, section.startsFolded);
+    return section.startsFolded;
+  };
 }
 
 export function QueuePanel({
@@ -211,14 +229,19 @@ export function QueuePanel({
   filterKey?: string;
 }) {
   const [all, setAll, panel] = useShowAll();
+  const startsFolded = useStartsFolded();
   const groups = line === null ? [] : queueGroups(line, clock);
-  const sections = queueSections(groups, grouping);
+  const sections = queueSections(groups, grouping).map((section) => ({
+    section,
+    folded: startsFolded(section),
+  }));
   const total = groups.reduce((sum, g) => sum + g.items.length, 0);
-  // On a phone a section shows its first cards, and one that starts folded shows all of them once opened.
-  const limited = sections.filter((s) => !s.startsFolded);
-  const more = limited.some((s) => s.items.length > SHOWN_CLOSED)
-    ? limited.reduce((sum, s) => sum + s.items.length, 0)
-    : 0;
+  // On a phone a section shows its first cards, one that starts folded all of them once opened, and a filter every match.
+  const limited = sections.flatMap((s) => (s.folded ? [] : [s.section.items]));
+  const more =
+    !filterActive && limited.some((items) => items.length > SHOWN_CLOSED)
+      ? limited.reduce((sum, items) => sum + items.length, 0)
+      : 0;
   return (
     <section
       className="panel pQueue"
@@ -244,10 +267,11 @@ export function QueuePanel({
         </p>
       )}
       <div className={all ? "qList all" : "qList"}>
-        {sections.map((section) => (
+        {sections.map(({ section, folded }) => (
           <QueueSection
             key={section.key}
             section={section}
+            startsFolded={folded}
             filterActive={filterActive}
             filterKey={filterKey}
           />

@@ -400,7 +400,7 @@ describe("What is coming", () => {
   );
 
   browserIt(
-    "a read that lengthens the refused group leaves it as the person has it",
+    "a refresh that lengthens the refused group leaves it as the person has it",
     async () => {
       const server = await served("queue");
       const { page, context } = await open(
@@ -462,6 +462,105 @@ describe("What is coming", () => {
           async () =>
             (await page.locator(".pQueue .qItem:visible").count()) === 10,
         );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "on a phone a refresh changes neither how a group opens nor what it holds back",
+    async () => {
+      const server = await served("queue");
+      const context = await requireBrowser().newContext({
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+      });
+      const page = await context.newPage();
+      try {
+        const lead = longQueue().slice(0, 1);
+        let refused = 5;
+        await withQueue(page, () => [...lead, ...refusedItems(refused)]);
+        await page.clock.install();
+        await page.goto(`${server.url}&view=queue`);
+        const cards = page.locator(".pQueue .qItem");
+        const shown = page.locator(".pQueue .qItem:visible");
+        await until(
+          "the cards arrive",
+          async () => (await cards.count()) === 6,
+        );
+        expect(await shown.count()).toBe(3);
+        refused = 6;
+        await page.clock.fastForward(60_000);
+        await until(
+          "the card arrives",
+          async () => (await cards.count()) === 7,
+        );
+        expect(await shown.count()).toBe(3);
+        expect(
+          await page.getByRole("button", { name: "Show all 7" }).count(),
+        ).toBeGreaterThan(0);
+
+        refused = 8;
+        await page.reload();
+        const never = page.getByRole("button", {
+          name: "Will not start group",
+        });
+        await never.waitFor();
+        expect(await never.getAttribute("aria-expanded")).toBe("false");
+        refused = 4;
+        await page.clock.fastForward(60_000);
+        await until(
+          "the group shrinks",
+          async () => (await cards.count()) === 5,
+        );
+        await never.tap();
+        await until(
+          "the opened group shows every card",
+          async () => (await shown.count()) === 5,
+        );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a phone offers no Show all while a filter already shows every match",
+    async () => {
+      const server = await served("queue");
+      const context = await requireBrowser().newContext({
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+      });
+      const page = await context.newPage();
+      try {
+        await withQueue(page, () =>
+          Array.from({ length: 8 }, (_, i) =>
+            queued({
+              source: "re-armable",
+              group: "starts",
+              repo: repoAt(i % 2),
+              pr: 300 + i,
+              title: `Starting change ${i}`,
+              why: "its wall has lifted",
+            }),
+          ),
+        );
+        await page.goto(`${server.url}&view=queue`);
+        const all = page.getByRole("button", { name: /^Show all/ });
+        await all.first().waitFor();
+        await page.locator(".phoneRepo select").selectOption("example-org/api");
+        await until(
+          "every match shows",
+          async () =>
+            (await page.locator(".pQueue .qItem:visible").count()) === 4,
+        );
+        expect(await all.count()).toBe(0);
       } finally {
         await context.close();
       }
