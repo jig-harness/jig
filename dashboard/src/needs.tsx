@@ -253,9 +253,9 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
             />
           </div>
           <ItemTitle title={need.title} />
-          <Concluded need={need} />
           {picks ? (
             <>
+              <Concluded need={need} />
               <DecisionRows need={need} picking={picking} />
               <AnswerNotes need={need} />
               <WaitsOn need={need} />

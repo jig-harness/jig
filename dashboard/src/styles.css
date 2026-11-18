@@ -470,7 +470,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   .card.opens:hover > .gutter .disc, .ghead:hover .disc { color: var(--ink); }
 }
 @container page (min-width: 900px) {
-  .dd { --gut: 28px; }
+  .dd > * { --gut: 28px; }
   .disc { width: 24px; height: 24px; margin: 0 0 0 -2px; }
   .spine { margin-left: 9px; }
   .ghead { min-height: 26px; }
