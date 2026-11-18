@@ -45,15 +45,13 @@ export const COHORT_UNREAD_EXIT = 3;
 const OID = /^[0-9a-f]{40,64}$/;
 
 /**
- * How far before the window the first-parent walk keeps reading, so commits
- * whose committer dates run behind their descendants' are still reached; the
- * window itself is applied to each commit's own date.
+ * git's answers to a commit or object the clone does not hold: the expected
+ * "unavailable". A diagnostic that says anything else (a corrupt object, a
+ * denied read) is an operational failure, so an answer is "unavailable" only
+ * when every `fatal:` or `error:` line of it is one of these.
  */
-const COMMIT_SKEW_SECONDS = 7 * 86_400;
-
-/** git's answers to a commit or object the clone does not hold: the expected "unavailable", never an operational failure. */
-const MISSING_OBJECT =
-  /bad object|bad revision|unknown revision|not a valid object|invalid revision|could not read|unable to read|missing (?:blob|tree|commit)|needed a single revision/i;
+const MISSING_OBJECT_LINE =
+  /^(?:fatal|error): (?:bad object|bad revision|ambiguous argument|unknown revision|not a valid object name|invalid revision|needed a single revision)\b/i;
 
 /** `git` that never fetches a missing object of a partial clone: a rates read stays inside the clone. */
 function withoutLazyFetch(git: Git): Git {
@@ -61,14 +59,22 @@ function withoutLazyFetch(git: Git): Git {
 }
 
 /** git's exit, as the object it asked for being unavailable (true), or as a failure to report (throws). */
-function unavailable(
+export function unavailable(
   args: readonly string[],
   r: {
     code: number;
     stderr: string;
   },
 ): true {
-  if (MISSING_OBJECT.test(r.stderr)) return true;
+  const diagnostics = r.stderr
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /^(?:fatal|error):/i.test(l));
+  if (
+    diagnostics.length > 0 &&
+    diagnostics.every((l) => MISSING_OBJECT_LINE.test(l))
+  )
+    return true;
   throw new ReplayError(
     `git ${args.join(" ")} exited ${r.code}: ${r.stderr.trim()}`,
   );
@@ -103,7 +109,7 @@ export function firstParents(
     "--no-show-signature",
     "--first-parent",
     "-z",
-    ...(since === null ? [] : [`--max-age=${since - COMMIT_SKEW_SECONDS}`]),
+    ...(since === null ? [] : [`--since-as-filter=${since}`]),
     "--format=%H%x1f%P%x1f%ct%x1f%at%x1f%s",
     ref,
   ]);

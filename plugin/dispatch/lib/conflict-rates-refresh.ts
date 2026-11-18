@@ -166,7 +166,7 @@ async function refreshLocked(
   target: RatesTarget,
   options: RefreshOptions,
   root: string,
-  attempt: { started: boolean },
+  attempt: { started: boolean; published: boolean },
 ): Promise<RefreshOutcome> {
   const { slug } = target;
   const paths = ratesPaths(slug, root);
@@ -233,6 +233,7 @@ async function refreshLocked(
     };
   else {
     renameSync(staging, paths.rates);
+    attempt.published = true;
     outcome = { slug, outcome: "written" };
   }
   rmSync(staging, { force: true });
@@ -258,21 +259,50 @@ export async function refreshConflictRates(
       outcome: "skipped",
       reason: `another tick is refreshing them: ${lock.heldBy}`,
     };
-  const attempt = { started: false };
+  const attempt = { started: false, published: false };
   try {
     return await refreshLocked(target, options, root, attempt);
   } catch (error) {
     // A refresh that ran has spent its deadline, whatever failed after it:
-    // it ends as a kept one, so the tick makes no second attempt.
+    // it ends as a finished one, so the tick makes no second attempt, and
+    // its record says how it ended instead of staying `started`.
     if (!attempt.started) throw error;
-    return {
-      slug: target.slug,
-      outcome: "kept",
-      reason: `the refresh failed after it ran: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    return finishAfterFailure(target.slug, root, options, attempt, error);
   } finally {
     lock.release();
   }
+}
+
+/** Close the record of a refresh that failed after it started: the new file is in place when it was published, else the previous one is kept. */
+function finishAfterFailure(
+  slug: string,
+  root: string,
+  options: RefreshOptions,
+  attempt: { published: boolean },
+  error: unknown,
+): RefreshOutcome {
+  const message = error instanceof Error ? error.message : String(error);
+  const outcome: RefreshOutcome = attempt.published
+    ? { slug, outcome: "written" }
+    : {
+        slug,
+        outcome: "kept",
+        reason: `the refresh failed after it ran: ${message}`,
+      };
+  try {
+    writeRecord(ratesPaths(slug, root).refresh, {
+      version: 1,
+      attemptedAt: isoFromMs(options.nowMs),
+      outcome: outcome.outcome,
+      ...(outcome.outcome === "kept" ? { reason: outcome.reason } : {}),
+    });
+  } catch (writeError) {
+    swallow(
+      writeError,
+      "a record that cannot be closed stays as started, which the reader treats as not due again until its interval passes",
+    );
+  }
+  return outcome;
 }
 
 /** What the tick hands the refresh once its act phase is done. */

@@ -369,6 +369,25 @@ describe("the daily refresh of the conflict rates", () => {
     }
   });
 
+  it("records a run that rejects as kept, with its reason, for the reader", async () => {
+    place(
+      rates(NOW - HOUR, [{ path: "a", merged: 5, conflicted: 5, unknown: 0 }]),
+    );
+    const run: RunHistory = async () => {
+      throw new Error("the disk is full");
+    };
+    const r = await refreshConflictRates(target, {
+      nowMs: NOW,
+      deadlineMs: undefined,
+      root,
+      run,
+    });
+    expect(r.outcome).toBe("kept");
+    const read = readConflictRates(SLUG, NOW, root);
+    expect(read.lastRefresh).toMatchObject({ outcome: "kept" });
+    expect(JSON.stringify(read.lastRefresh)).toContain("the disk is full");
+  });
+
   it("hands the child the dispatcher's share of the budget", async () => {
     let env: Record<string, string | undefined> = {};
     const run: RunHistory = async (argv, opts) => {

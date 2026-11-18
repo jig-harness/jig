@@ -14,6 +14,7 @@ import {
   commitFiles,
   firstParents,
   integrationRef,
+  unavailable,
 } from "../scripts/lib/rates-run.ts";
 import type { CohortPr } from "../scripts/lib/cohort.ts";
 
@@ -69,6 +70,18 @@ describe("the first-parent walk", () => {
   });
 });
 
+describe("the first-parent walk over dates that run backwards", () => {
+  it("reaches an in-window ancestor behind an older commit", () => {
+    git(["checkout", "-q", "-b", "skew", recent]);
+    commit("mid.txt", "2026-10-01T00:00:00Z");
+    const tip = commit("tip.txt", "2026-11-18T00:00:00Z");
+    git(["checkout", "-q", "main"]);
+    const since = Date.parse("2026-11-01T00:00:00Z") / 1000;
+    const walked = firstParents(repo, "refs/heads/skew", since, null);
+    expect(walked.map((c) => c.commit)).toEqual([tip, recent]);
+  });
+});
+
 describe("an object the clone does not hold", () => {
   const missing = "1".repeat(40);
   const pr = (head: string, merge: string): CohortPr => ({
@@ -93,5 +106,24 @@ describe("an object the clone does not hold", () => {
   it("is told from a git that fails for another reason", () => {
     const broken = new Git(dir, { ...process.env, GIT_DIR: join(dir, "nope") });
     expect(() => commitFiles(broken, recent)).toThrow(ReplayError);
+  });
+});
+
+describe("git's answer told unavailable or failed", () => {
+  const args = ["cat-file", "x"];
+  it("reads only missing-object lines as unavailable", () => {
+    expect(
+      unavailable(args, { code: 128, stderr: "fatal: bad object abc\n" }),
+    ).toBe(true);
+  });
+
+  it("reports a corruption diagnostic that precedes a missing-object line", () => {
+    expect(() =>
+      unavailable(args, {
+        code: 128,
+        stderr:
+          "error: inflate: data stream error (incorrect header check)\nfatal: bad object abc\n",
+      }),
+    ).toThrow(ReplayError);
   });
 });
