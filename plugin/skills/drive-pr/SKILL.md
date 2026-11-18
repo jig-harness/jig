@@ -868,7 +868,21 @@ outlives the session that spawned it, so its console is not where you look:
   and a stop the dispatcher re-drives (where it would read `stale`),
   `driving` for one it re-arms or a second driver refused, nothing for
   `PR_NOT_OPEN` or `TAKEN_OVER` (the full list:
-  [terminal states](references/terminal-states.md#exit-codes)). A person's
+  [terminal states](references/terminal-states.md#exit-codes)). A
+  `converged` write can start CI on the verified head where workflows run
+  on label events, so the drive, still holding the pull request, then
+  watches that head (`lib/driver/converged-ci.ts`): 31 seconds after the
+  write it reads the head's CI again; a cancellation goes to the
+  cancelled-run recovery below, a failure in a first attempt a label write
+  started (created within 30 seconds after one) is re-run once, claimed in
+  the same SQLite table as a label-caused cancellation, and green lets the
+  label stand. A failure no label write started, a commit status failing,
+  a re-run that fails again or is not accepted, or CI not settled within
+  `DRIVE_PR_CONVERGED_CI_MINUTES` (30 by default, `0` writes the label and
+  watches nothing) parks `converged-ci` with a framed decision naming the
+  runs, and the stop is settled again as [`HITL_PARKED`](../../protocol/drive-exits.md),
+  labelled `parked`. A head that moved, or a pull request no longer open,
+  ends the watch with the label as written. A person's
   stop through `drives.ts` names no exit and is labelled `parked` once it
   marks the ledger stopped. Never `stale`
   or `held`, nothing on a pull request carrying `hold` or `held`, and never

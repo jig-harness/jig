@@ -1626,6 +1626,16 @@ false "green":
   be replayed, falls back to the head's budget
   (`lib/label-cancelled-runs.ts`). Observing recovery clears that operational park. A
   live CI hold is left for convergence to release.
+- After a `CONVERGED` stop's `converged` label write, which starts the
+  workflows that run on label events, the drive watches the verified head
+  while it still holds its locks (`lib/driver/converged-ci.ts`): a
+  cancellation goes to the recovery above; a failure in a first attempt a
+  label write started is re-run once with `gh run rerun --failed`, claimed
+  in `cancelled_ci_label_rerun`; a failure no label write started, a
+  failing commit status, a second failure, a refused re-run, or CI not
+  settled within `DRIVE_PR_CONVERGED_CI_MINUTES` (30) parks `converged-ci`,
+  and the stop is written again as [`HITL_PARKED`](../../../protocol/drive-exits.md) and labelled
+  `parked`. A moved head or a closed pull request ends the watch as it is.
   Cancellation stops counting only when a run of
   the same workflow on the head, started no earlier, has completed with a
   result: by start time, because a concurrency group can cancel the higher run
