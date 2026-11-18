@@ -77,7 +77,7 @@ export function readingNote(
     const detail = reading.failure?.reason ?? reading.reason;
     return `footprint stale: ${detail ?? "the last footprint read could not be refreshed"}`;
   }
-  return footprintNote({
+  const note = footprintNote({
     source: reading.source,
     areas: reading.areas,
     ...(reading.reason === undefined ? {} : { reason: reading.reason }),
@@ -90,6 +90,10 @@ export function readingNote(
           },
         }),
   });
+  if (note === null || reading.source !== "labels" || !reading.stale)
+    return note;
+  const detail = reading.failure?.reason ?? reading.reason;
+  return `${note}; stale: ${detail ?? "its comments could not be refreshed"}`;
 }
 
 /** The globs of the files the catalog marks generated: each area's `generated[].outputs`. */

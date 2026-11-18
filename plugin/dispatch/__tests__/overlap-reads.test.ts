@@ -224,6 +224,20 @@ describe("the footprint note beside the rank", () => {
     ).toBe(
       "footprint unknown: no footprint record; derived from its area labels (dispatch)",
     );
+    expect(
+      readingNote(
+        reading("#12", {
+          source: "labels",
+          areas: ["dispatch"],
+          readAt: 1,
+          stale: true,
+          failure: { code: "rate-limited", reason: "the tracker said wait" },
+        }),
+        "unread",
+      ),
+    ).toBe(
+      "footprint unknown: no footprint record; derived from its area labels (dispatch); stale: the tracker said wait",
+    );
     expect(readingNote(reading("#12"), "unread")).toBe(
       "footprint unknown: no footprint record and no area label",
     );

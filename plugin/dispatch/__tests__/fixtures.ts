@@ -731,9 +731,7 @@ export function world(): World {
         ? { repository: noFacetStores(query) }
         : op === "TrackerRepository"
           ? { repository: { id: "R_repo" } }
-          : op === "footprint"
-            ? footprintBatch(variables)
-            : answer(op, variables);
+          : answer(op, variables);
       return Response.json(
         data === undefined
           ? { errors: [{ message: `unhandled ${op}` }] }
@@ -749,6 +747,7 @@ export function world(): World {
     // its probe cannot establish completeness, so each tick takes that reading.
     const release = releaseTrackerAnswer(op, v, issues, SLUG);
     if (release !== undefined) return release;
+    if (op === "footprint") return footprintBatch(v);
     if (op === "TrackerDispatchChanges")
       return { repository: { issues: conn([], "unmodelled-changes") } };
     if (op === "TrackerDispatchIssues")
