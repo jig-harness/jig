@@ -44,6 +44,7 @@ import {
   type Dispatched,
   dispatched,
   type SessionsReport,
+  type Workspace,
 } from "../runtime/port.ts";
 import { freshServedPickup } from "../sources/served.ts";
 import { freshPickup } from "../sources/tracker.ts";
@@ -86,6 +87,19 @@ export interface PickupContext {
   branchPattern: string;
   /** The runtime's answer read afresh, for the read just before a launch. */
   sessions: () => Promise<SessionsReport>;
+}
+
+/** Whether a workspace is `key`'s: joined to it, and not one a batch pickup left it out of. */
+function joinedTo(
+  state: ApplyState,
+  repo: RepoTarget,
+  key: string,
+): (w: Workspace) => boolean {
+  const left = leftBehindWorkspaces(
+    key,
+    state.records.filter((r) => r.record.repo === repo.slug),
+  );
+  return (w) => w.items.includes(key) && !left.has(w.path);
 }
 
 /** Why the item must not be started now; `null` when nothing changed. */
@@ -134,7 +148,7 @@ export async function changed(
   } catch (error) {
     return { why: `the runtime cannot be read again: ${failureText(error)}` };
   }
-  const held = holding(sessions, (w) => w.items.includes(key));
+  const held = holding(sessions, joinedTo(state, repo, key));
   if (held.kind === "unknown") return { why: held.reason };
   if (held.kind === "running")
     return {
@@ -152,14 +166,8 @@ async function workspaceFor(
   named: Dispatched,
 ): Promise<Opened> {
   const sessions = await ctx.sessions().catch(() => null);
-  const left = leftBehindWorkspaces(
-    issue.identifier,
-    state.records.filter((r) => r.record.repo === repo.slug),
-  );
   const joined = sessions?.ok
-    ? sessions.workspaces.find(
-        (w) => w.items.includes(issue.identifier) && !left.has(w.path),
-      )
+    ? sessions.workspaces.find(joinedTo(state, repo, issue.identifier))
     : undefined;
   if (joined !== undefined)
     return { workspace: { id: joined.id, path: joined.path } };
@@ -348,7 +356,7 @@ async function competing(
   } catch (error) {
     return `the runtime cannot be read again: ${failureText(error)}`;
   }
-  const held = holding(sessions, (w) => w.items.includes(item));
+  const held = holding(sessions, joinedTo(state, repo, item));
   if (held.kind === "unknown") return held.reason;
   const own = record.workspace?.id;
   const rivals =
