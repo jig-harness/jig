@@ -401,6 +401,14 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.277.1] - 2026-11-18
+
+### Changed
+
+- Dispatch reads open pull requests' checks, threads and heads every tick.
+  Between full repository reads it revalidates comments when it needs them,
+  so unchanged comment pages use no GitHub primary rate-limit points.
+
 ## [0.277.0] - 2026-11-18
 
 ### Added
@@ -9730,7 +9738,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.1...HEAD
+[0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
 [0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
 [0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0
 [0.275.1]: https://github.com/jig-harness/jig/compare/v0.275.0...v0.275.1
