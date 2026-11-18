@@ -33,6 +33,10 @@ const BRANCHES = resolve(
 const INTEGRATION_BRANCH_INSPECTION = `import { integrationBranch } from ${JSON.stringify(BRANCHES)};
 const root = process.env.JIG_RELEASE_INSPECTION_ROOT;
 process.stdout.write(JSON.stringify(root === undefined ? null : integrationBranch(root)) + "\\n");`;
+const RELEASING_COMMIT_INSPECTION = `import { releasingCommit } from ${JSON.stringify(resolve(import.meta.dir, "../../skills/changelog/scripts/releasing-commit.ts"))};
+const root = process.env.JIG_RELEASE_INSPECTION_ROOT;
+const tag = process.env.JIG_RELEASE_INSPECTION_TAG;
+process.stdout.write(JSON.stringify(root === undefined || tag === undefined ? null : releasingCommit(root, tag)) + "\\n");`;
 
 const refused = (why: string) => failed("refused", why);
 
@@ -128,13 +132,17 @@ async function inspectReleasingCommit(
           process.execPath,
           "--no-env-file",
           `--config=${BUNFIG}`,
-          `${import.meta.dir}/releasing-commit-inspect.ts`,
-          repo.path,
-          tag,
+          "-e",
+          RELEASING_COMMIT_INSPECTION,
         ],
         {
           cwd: repo.path,
-          env: { ...process.env, JIG_RELEASE_INSPECTION_BRANCH: branch },
+          env: {
+            ...process.env,
+            JIG_RELEASE_INSPECTION_BRANCH: branch,
+            JIG_RELEASE_INSPECTION_ROOT: repo.path,
+            JIG_RELEASE_INSPECTION_TAG: tag,
+          },
           stderr: "pipe",
           timeoutSec: Math.min(secondsLeft(bound) ?? 20, 20),
           onSpawn,
