@@ -150,7 +150,7 @@ function configuredIgnores(): string[] {
  * called in this process with the repository root.
  */
 export type Stage = { name: string } & (
-  | { command: string[] }
+  | { command: string[]; env?: Record<string, string> }
   | { check: (root: string) => number | Promise<number> }
 );
 
@@ -311,6 +311,7 @@ async function runStage(stage: Stage, root: string): Promise<number> {
   if (!("command" in stage)) return stage.check(root);
   const child = Bun.spawn([process.execPath, ...stage.command], {
     cwd: root,
+    env: { ...process.env, ...stage.env },
     stdout: "inherit",
     stderr: "inherit",
   });
@@ -379,13 +380,25 @@ export function summary(
   ].join("\n");
 }
 
+/**
+ * A dispatched pass's stages: the fast ones, then the tests the change
+ * reaches. Those go through the suite's own runner, which scrubs the
+ * environment and refuses a run that executed nothing, one file at a time and
+ * outside the machine-wide lock, whose admission is sized for full suites.
+ */
 export function dispatchPlan(tests: string[]): Stage[] {
-  const targeted = command(
-    "test",
+  const run = command(
+    "scripts/test.ts",
+    "--parallel=1",
     "--timeout",
     "60000",
     ...tests.map((path) => `./${path}`),
   );
+  const targeted: Stage = {
+    ...run,
+    name: `RESOURCE_LOCK_BYPASS=1 ${run.name}`,
+    env: { RESOURCE_LOCK_BYPASS: "1" },
+  };
   return [...plan(true, targeted), ...(tests.length ? [targeted] : [])];
 }
 

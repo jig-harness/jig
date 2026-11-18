@@ -95,9 +95,17 @@ test("only opted-in dispatch launches use targeted local gates", async () => {
     dispatchFastEnabled(setting, launch)
       ? dispatchPlan(["scripts/example.test.ts"])
       : plan(false, full);
-  expect(stages(true).at(-1)?.name).toBe(
-    "bun test --timeout 60000 ./scripts/example.test.ts",
-  );
+  expect(stages(true).at(-1)).toEqual({
+    name: "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./scripts/example.test.ts",
+    command: [
+      "scripts/test.ts",
+      "--parallel=1",
+      "--timeout",
+      "60000",
+      "./scripts/example.test.ts",
+    ],
+    env: { RESOURCE_LOCK_BYPASS: "1" },
+  });
   expect(stages(true).map((stage) => stage.name)).not.toContain(full.name);
   expect(stages(undefined).map((stage) => stage.name)).toContain(full.name);
   expect(dispatchFastEnabled(false, launch)).toBe(false);
@@ -135,5 +143,21 @@ test("targeted gates select changed tests and nearby tests named for changed sou
     "plugin/dispatch/__tests__/run.test.ts",
     "plugin/dispatch/__tests__/session.test.ts",
     "scripts/gates-plan.test.ts",
+  ]);
+});
+
+test("a command stage runs with the environment it names", async () => {
+  const { runStages } = await import("./gates.ts");
+  const probe = ["-e", "process.exit(process.env.STAGE_PROBE === '1' ? 0 : 1)"];
+  const outcomes = await runStages(
+    [
+      { name: "with", command: probe, env: { STAGE_PROBE: "1" } },
+      { name: "without", command: probe },
+    ],
+    import.meta.dir,
+  );
+  expect(outcomes).toEqual([
+    { name: "with", status: 0 },
+    { name: "without", status: 1 },
   ]);
 });

@@ -68,7 +68,9 @@ so moves that are harmless alone collide here.
   new ones while it collects. Native Windows uses one worker because
   concurrent process startups and process-table queries exceed the tests'
   budgets; other platforms use four. CI and `RESOURCE_LOCK_BYPASS=1` skip
-  the lock. A single file run with `bun test <file>` takes no lock. After the last test,
+  the lock. A single file run with `bun test <file>` takes no lock, and
+  neither do the targeted tests of a
+  [dispatched pass](#local-validation-in-dispatched-passes). After the last test,
   a test process kills every descendant a test left running whose identity
   it can read, and reports on stderr what it killed and what it had to leave
   (`lib/test-reap-children-bun-preload.ts`): a reported leak is a fixture
@@ -405,8 +407,8 @@ tests need `bun install` inside `website/` first.
 Jig's `gates.dispatch_fast` setting selects the fast checks and targeted
 tests for dispatched pickups and drives. The targeted run includes changed
 test files, nearby tests named for changed files and tests that import
-changed files directly. These tests run without
-parallel workers or the shared `heavy` lock. The lock admits full suites by
+changed files directly. These tests run through the suite's runner, one file
+at a time and without the shared `heavy` lock. The lock admits full suites by
 worker count. Applying it to short targeted runs would make them queue
 behind those suites. Required CI jobs still run the full checks and suites.
 
