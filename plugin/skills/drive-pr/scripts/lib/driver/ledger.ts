@@ -743,7 +743,13 @@ export function ledgerSettlement(
     }
     const labelled = (await writeStop(code)).label;
     if (code === null) return code;
-    const again = await convergedStopExit(pr, labelled, currentMs(), recheck);
+    const again = await convergedStopExit(
+      pr,
+      labelled,
+      currentMs(),
+      recheck,
+      () => ledgerIsOurs(pr),
+    );
     if (again === null) return code;
     // The converged stop is already written and its record gone, so no
     // recovery rewrites the ledger after this: a write that did not land is
@@ -753,9 +759,8 @@ export function ledgerSettlement(
     // `converged` over a head no drive settled: the exit becomes the one the
     // dispatcher drives again, which judges the head afresh.
     if (driver !== null && !dryRun && !rewritten.landed) {
-      // The first stop removed the driver record; restore it so the
-      // recovery (`lib/ledger-stop.ts`) can write the replacement stop the
-      // drive state now holds.
+      // The first stop removed the driver record; the restored one lets
+      // `--stop` and `--doctor` see this acquisition.
       const worktree = process.env.DRIVE_PR_WORKTREE ?? "";
       if (worktree !== "" && started !== "")
         writeDriverRecord(await resolveStateDir(), pr, {

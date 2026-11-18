@@ -233,6 +233,7 @@ export type ConvergedRecheck = (
   pr: string,
   verified: string,
   writtenAt: number,
+  owned?: () => Promise<boolean>,
 ) => Promise<ConvergedCiVerdict>;
 
 /** The live watch, over the window `DRIVE_PR_CONVERGED_CI_MINUTES` sets; `0` watches nothing. */
@@ -240,6 +241,7 @@ export const liveRecheck: ConvergedRecheck = async (
   pr,
   verified,
   writtenAt,
+  owned,
 ) => {
   const minutes = convergedCiMinutes();
   if (minutes === 0)
@@ -247,7 +249,10 @@ export const liveRecheck: ConvergedRecheck = async (
   console.error(
     `converged CI: watching head ${verified} for up to ${minutes} minute(s) after the converged label's write, which can start CI on it`,
   );
-  return watchConvergedCi(pr, verified, writtenAt, liveConvergedCi(minutes));
+  return watchConvergedCi(pr, verified, writtenAt, {
+    ...liveConvergedCi(minutes),
+    ...(owned === undefined ? {} : { owned }),
+  });
 };
 
 /** What a defect or a throw says, with its stack where it has one. */
@@ -270,6 +275,7 @@ export async function convergedStopExit(
   labelled: DriveLabelWrite | null,
   writtenAt: number,
   recheck: ConvergedRecheck,
+  owned?: () => Promise<boolean>,
 ): Promise<number | null> {
   if (
     labelled === null ||
@@ -279,7 +285,12 @@ export async function convergedStopExit(
   )
     return null;
   try {
-    const verdict = await recheck(pr, labelled.moment.verifiedSha, writtenAt);
+    const verdict = await recheck(
+      pr,
+      labelled.moment.verifiedSha,
+      writtenAt,
+      owned,
+    );
     if (verdict.kind === "stands") {
       console.error(`converged CI: the converged label stands: ${verdict.why}`);
       return null;

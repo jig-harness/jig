@@ -63,6 +63,7 @@ interface Script {
   rerunnable?: number[];
   rerunOk?: boolean;
   rerunIndeterminate?: boolean;
+  owned?: boolean;
 }
 
 /** Fake dependencies over a scripted sequence of readings, on a clock the sleeps move. */
@@ -112,6 +113,7 @@ function fake(script: Script) {
       recovered.push(head);
       return last(script.recovery ?? ["none"], recoveryAt++);
     },
+    ...(script.owned === undefined ? {} : { owned: async () => script.owned! }),
   };
   return { deps, asked, recovered, clock: () => now };
 }
@@ -399,6 +401,36 @@ describe("the converged CI watch", () => {
     expect(verdict.kind === "park" && verdict.reason).toContain(
       "shows no new attempt",
     );
+  });
+});
+
+describe("the converged CI watch after another clone takes the drive over", () => {
+  it("changes no CI once a successor owns the drive", async () => {
+    const f = fake({
+      ci: [failing(1)],
+      runs: [[workflowRun(1, 2_000)]],
+      owned: false,
+    });
+    const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.asked).toEqual([]);
+    expect(f.recovered).toEqual([]);
+  });
+
+  it("recovers a cancelled run while the drive is still its own", async () => {
+    const f = fake({
+      ci: [
+        {
+          verdict: "cancelled: tests",
+          failingRuns: [],
+          failingStatusNames: [],
+        },
+      ],
+      recovery: ["none"],
+      owned: true,
+    });
+    await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(f.recovered).toEqual([HEAD]);
   });
 });
 

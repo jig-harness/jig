@@ -79,6 +79,11 @@ export interface ConvergedCiDeps {
   ): Promise<{ ok: boolean; indeterminate?: boolean; detail: string }>;
   /** The cancelled-run recovery on the head. */
   recoverCancelled(pr: string, head: string): Promise<Recovery>;
+  /**
+   * Whether this drive still owns the pull request: no takeover claim newer
+   * than its own. Asked before each step that changes CI; unset means owned.
+   */
+  owned?(): Promise<boolean>;
 }
 
 /**
@@ -279,6 +284,13 @@ async function step(
     (failing.length > 0 &&
       (read.failingStatusNames ?? []).length === 0 &&
       failing.every((r) => r.conclusion === "cancelled"));
+  // Past this point the step re-runs or recovers runs: a successor that took
+  // the drive over while the watch ran owns them now.
+  if (deps.owned !== undefined && !(await deps.owned()))
+    return {
+      kind: "stands",
+      why: "another clone took the drive over, so its CI is not this drive's to change",
+    };
   if (cancelledOnly) {
     const recovery = await deps.recoverCancelled(pr, head);
     if (recovery === "parked") return { kind: "parked" };
