@@ -10,14 +10,16 @@
 #
 # Which jobs and test legs a pull request runs comes from Jig's change-area
 # catalog (.config/change-areas.yaml, resolved by scripts/change-areas.ts):
-# the `tests` legs are the matrix the resolution writes (scripts/area-validation.ts),
+# the `tests` legs are the matrix the resolution writes (scripts/area-validation.ts):
 # every shard of the whole suite when its validation plan is the deepest
-# profile (a file no area matches, or code no area's own tests cover), the
-# own tests of the areas the change reaches otherwise, and none for a change
-# no test reads; the drive-pr suite runs when the `drive-pr` area is
-# affected, and the website steps when the `website` area is (the area takes
-# in what the site reads, through `site-sources`). A push to main runs
-# everything, and so does the nightly run.
+# profile (a file no area matches, or code no area's own tests cover) or the
+# change is loaded by every test run, otherwise the own tests of the areas the
+# change reaches and the test files that depend on it (scripts/test-reach.ts),
+# and none for a change no test reads. The drive-pr suite and the website steps
+# run when their area is affected (the website's takes in what the site reads,
+# through `site-sources`), when a test of theirs depends on the change, and
+# whenever the whole suite runs. A push to main runs everything, and so does
+# the nightly run.
 #
 # The CI hold (modules/M13-pipeline-economy/README.md#7-hold): while a pull
 # request carries the `ci:hold` label (`ci.hold_label` in .config/jig.yaml),
@@ -122,7 +124,7 @@ jobs:
       # failing test together.
       fail-fast: false
       # The checks leg and the tests legs the change owes, each with its shard
-      # and, for a narrowed run, the directories it tests.
+      # and, for a narrowed run, the directories and test files it tests.
       matrix: ${{ fromJSON(needs.areas.outputs.matrix) }}
     runs-on: ubuntu-latest
     # A tests leg takes a few minutes; the checks leg takes two for the gates

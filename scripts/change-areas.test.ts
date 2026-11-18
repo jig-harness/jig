@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { expect, spyOn, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -179,6 +179,45 @@ test("Jig's catalog runs the drive-pr suite for what it depends on, and not for 
     "scripts/check-md-links.ts",
   ])
     expect(areas(file)).not.toContain("drive-pr");
+});
+
+test("the check reports an own-test directory that holds no test file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-areas-"));
+  const errors = spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    mkdirSync(join(dir, ".config"));
+    mkdirSync(join(dir, "app"));
+    writeFileSync(join(dir, "app/a.test.ts"), "");
+    const write = (ownTests: string) =>
+      writeFileSync(
+        join(dir, CATALOG),
+        `vocabularies:
+  category: [skill]
+  deployTier: [none]
+areas:
+  app:
+    title: App
+    category: skill
+    paths: ['**']
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    validation:
+      ownTests: "${ownTests}"
+`,
+      );
+    write("bun run test ./app/");
+    expect(checkChangeAreas(dir)).toBe(0);
+    expect(errors).not.toHaveBeenCalled();
+    write("bun run test ./app/ ./apps/");
+    expect(checkChangeAreas(dir)).toBe(1);
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "app: validation.ownTests names ./apps/, which holds no test file",
+    );
+  } finally {
+    errors.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a catalog that repeats an area is refused, not read as its last copy", () => {

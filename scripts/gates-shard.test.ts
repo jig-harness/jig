@@ -18,18 +18,29 @@ import {
 
 const root = join(import.meta.dir, "..");
 
-test("the directories the environment names confine the test stage, after its shard", () => {
+test("the paths the environment names confine the test stage, after its shard", () => {
   expect(testPaths({})).toEqual([]);
   expect(testPaths({ [TEST_PATHS_ENV]: " " })).toEqual([]);
   expect(
     testPaths({ [TEST_PATHS_ENV]: "./plugin/skills/explain/ ./scripts/" }),
   ).toEqual(["./plugin/skills/explain/", "./scripts/"]);
+  // A dependent test file travels beside the directories.
+  expect(
+    testPaths({ [TEST_PATHS_ENV]: "./scripts/ ./plugin/send/a.test.ts" }),
+  ).toEqual(["./scripts/", "./plugin/send/a.test.ts"]);
   for (const bad of [
     "scripts/",
     "./scripts",
     "./../x/",
     "./a/ --bail",
     "./a/;b/",
+    "./a.ts",
+    "a.test.ts",
+    "./../a.test.ts",
+    "./a/../b.test.ts",
+    "./a/./b.test.ts",
+    "./a;b.test.ts",
+    "./$(a).test.ts",
   ])
     expect(() => testPaths({ [TEST_PATHS_ENV]: bad })).toThrow(TEST_PATHS_ENV);
   expect(

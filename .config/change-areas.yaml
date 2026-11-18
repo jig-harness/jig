@@ -1,15 +1,21 @@
 # Jig's change-area catalog (module M3): the one place that maps this
 # repository's paths to named change-areas. The CI workflow reads area names
 # and its test legs from scripts/change-areas.ts, never these globs: the
-# drive-pr suite runs when the `drive-pr` area is affected, and the gate
-# set's test legs run the own tests of the areas a change reaches (every
-# shard when its plan is the deepest profile). A push to main runs every
-# suite, and the nightly workflow runs them on macOS and Windows without
-# reading this catalog.
+# drive-pr suite runs when the `drive-pr` area is affected or holds a test
+# that depends on the change, and the gate set's test legs run the own tests
+# of the areas a change reaches and the test files that depend on it (every
+# shard, and every separate suite, when its plan is the deepest profile). A
+# push to main runs every suite, and the nightly workflow runs them on macOS
+# and Windows without reading this catalog.
 #
 # Every tracked file belongs to at least one area (`bun run gates` fails
-# otherwise). When unsure whether one area depends on another, add the
-# `impliedBy` edge: a redundant CI job is cheap, a skipped one is not.
+# otherwise). `impliedBy` says that a change to the listed areas also affects
+# this one. CI finds the tests that import a changed file, or name it, by
+# itself (scripts/test-reach.ts), so an edge is not needed for those; it is
+# for what that walk cannot see, such as a script production code starts by
+# path or a file a suite reads, and for what follows from an area beyond its
+# tests (reviews, CI jobs). When unsure whether one area depends on another,
+# add the edge: a redundant CI job is cheap, a skipped one is not.
 #
 # Its schema, resolver and invariants are the plugin's change-areas skill
 # (plugin/skills/change-areas/README.md); scripts/change-areas.ts adds Jig's
@@ -38,14 +44,17 @@ vocabularies:
 # (`validation.ownTests`, always `bun run test` and the directories its
 # suites live in); scripts/validation-plan.ts derives the plan from the
 # areas a change touches, and scripts/change-areas.ts builds CI's test legs
-# from the same resolution. The deepest profile is the fail-closed fallback:
+# from the same resolution and the tests that depend on the changed files.
+# An own-tests directory must hold a test file (`--check` fails otherwise).
+# The deepest profile is the fail-closed fallback:
 # a changed file no area matches selects it, and so does a file outside the
 # `docs` profile whose areas declare no own tests (a file only the broad
 # `plugin` area holds), since nothing narrower tests it.
 # `validation.separateSuite: true` (a field Jig's script adds) marks an own
 # suite CI runs in a job of its own: the gate set leaves its directories out
-# (scripts/gates.ts reads them from here), and gates.test.ts fails while a
-# workflow does not run it.
+# (scripts/gates.ts reads them from here), the job runs for the deepest profile
+# and whenever a test in it depends on the change, and gates.test.ts fails while
+# a workflow does not run it.
 profiles:
   docs:
     notes: Prose and configuration no test reads; the repository checks hold it.
@@ -114,9 +123,10 @@ areas:
   # in jig.yaml). They sit inside `plugin` and add no CI job of their own:
   # only `website` and `drive-pr` select one, and no edge below leads to
   # either; their own tests join the gate set's test legs. Each lists the
-  # areas it imports from; an area the catalog does not name (`adr`, `docs`,
-  # `change-areas`) is reached through `plugin`, whose files no own tests
-  # cover, so a change to them runs the whole gate set.
+  # areas whose changes should also run its own tests; a test that imports a
+  # changed file runs whether listed or not. An area the catalog does not name
+  # (`adr`, `docs`, `change-areas`) is reached through `plugin`, whose files no
+  # own tests cover, so a change to them runs the whole gate set.
   dispatch:
     title: "The dispatcher (jig dispatch) and its dashboard server"
     category: skill

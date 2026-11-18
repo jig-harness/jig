@@ -5,9 +5,10 @@
 // an area: exit 1 on a violation, 2 when the catalog cannot be read.
 // `--base <ref>` resolves the files changed since the merge base with <ref>
 // to areas and prints the resolution as JSON, with the validation plan and
-// CI's gate-set matrix (scripts/area-validation.ts); under GitHub Actions it
-// also writes the `areas` and `matrix` step outputs the CI workflow selects
-// jobs and test legs by. `--all` resolves to every area and every shard.
+// CI's gate-set matrix (scripts/area-validation.ts), which holds the tests that
+// depend on those files (scripts/test-reach.ts); under GitHub Actions it also
+// writes the `areas` and `matrix` step outputs the CI workflow selects jobs and
+// test legs by. `--all` resolves to every area and every shard.
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
@@ -33,13 +34,23 @@ import {
   matchSeedAreas,
 } from "../plugin/skills/change-areas/scripts/lib/resolve.ts";
 import {
+  ciAreas,
   ciMatrix,
   countTestFiles,
+  emptyOwnTestDirs,
   fullMatrix,
   jigValidation,
   type Matrix,
   ownTestsProblems,
+  selectsDeepest,
 } from "./area-validation.ts";
+import {
+  fileReader,
+  NO_REACH,
+  type ReadFile,
+  runnableTests,
+  testReach,
+} from "./test-reach.ts";
 import { generatedListProblems } from "../modules/M2-generated-artifact-freshness/reference/inventory/run-generated-checks.ts";
 
 export const CATALOG = ".config/change-areas.yaml";
@@ -162,13 +173,17 @@ export function validCatalog(root: string): Catalog {
 
 /**
  * The resolution of `files` with Jig's validation plan and the gate-set
- * matrix CI runs for it; `tracked` lists the repository's files, whose test
- * files the matrix's legs split.
+ * matrix CI runs for it. `tracked` lists the repository's files and `read`
+ * returns their text: the tests that depend on the change are derived from
+ * them. `areas` also holds the separate suites the change owes a run, since
+ * CI selects their jobs by it; `seedAreas` and `unmatched` stay what the
+ * files themselves match.
  */
 export function planChange(
   files: string[],
   doc: Document,
   tracked: string[],
+  read: ReadFile,
 ): Resolution & { validation: unknown; matrix: Matrix } {
   const resolution = resolveAreas(files, doc.areas);
   const ctx = {
@@ -178,10 +193,20 @@ export function planChange(
     resolved: new Set(resolution.areas),
   };
   const validation = jigValidation(ctx);
-  const matrix = ciMatrix(validation, ctx.changedFiles, doc, (dirs) =>
-    countTestFiles(tracked, dirs),
+  const repoPaths = slashes(tracked);
+  // The deepest profile runs everything, so nothing needs walking.
+  const reach = selectsDeepest(validation, doc)
+    ? NO_REACH
+    : testReach(ctx.changedFiles, repoPaths, read);
+  const matrix = ciMatrix(
+    validation,
+    ctx.changedFiles,
+    doc,
+    (dirs) => countTestFiles(repoPaths, dirs),
+    reach,
   );
-  return { ...resolution, validation, matrix };
+  const areas = ciAreas(resolution.areas, validation, doc, reach);
+  return { ...resolution, areas, validation, matrix };
 }
 
 /** The gate: a valid catalog that every repository file belongs to. */
@@ -204,6 +229,10 @@ export function checkChangeAreas(root = "."): number {
     problems.push(
       ...workspaceProblems(catalog, { root, trackedFiles: files }),
       ...generatedProblems(catalog, { root, trackedFiles: files }),
+      ...emptyOwnTestDirs(
+        catalog,
+        runnableTests(slashes(files), fileReader(root)),
+      ),
     );
     for (const file of uncoveredFiles(files, catalog.areas))
       problems.push(`${file}: belongs to no area`);
@@ -241,7 +270,12 @@ if (import.meta.main)
         matrix: fullMatrix(),
       };
     else if (flag === "--base" && ref)
-      resolution = planChange(changedFiles(root, ref), doc, repoFiles(root));
+      resolution = planChange(
+        changedFiles(root, ref),
+        doc,
+        repoFiles(root),
+        fileReader(root),
+      );
     else {
       console.error("usage: change-areas.ts --check | --base <ref> | --all");
       return 2;

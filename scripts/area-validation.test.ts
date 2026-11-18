@@ -3,14 +3,18 @@ import { join, resolve } from "node:path";
 import { repoFiles } from "../lib/files.ts";
 import type { Catalog as SharedCatalog } from "../plugin/skills/change-areas/scripts/lib/catalog.ts";
 import {
+  ciAreas,
   ciMatrix,
   ciTestDirs,
+  emptyOwnTestDirs,
   FILES_PER_SHARD,
   fullMatrix,
   jigValidation,
   MAX_SHARDS,
+  MAX_TEST_PATHS_LENGTH,
   ownTestsProblems,
   separateSuites,
+  TEST_PATH,
   untestedFiles,
 } from "./area-validation.ts";
 import {
@@ -21,6 +25,7 @@ import {
   readCatalog,
   validDocument,
 } from "./change-areas.ts";
+import { fileReader, NO_REACH, type TestReach } from "./test-reach.ts";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -147,35 +152,20 @@ test("CI tests what the changed files' tested areas reach, never the separate su
 
 test("CI's matrix: every shard for the deepest plan, legs for the reached tests by their count, the checks leg alone otherwise", () => {
   const count = (n: number) => () => n;
-  expect(
-    ciMatrix(plan(["misc/x.ts"]), ["misc/x.ts"], fixture, count(5)),
-  ).toEqual(fullMatrix());
-  expect(
-    ciMatrix(plan(["README.md"]), ["README.md"], fixture, count(5)),
-  ).toEqual({
-    include: [{ part: "checks" }],
-  });
+  const matrix = (files: string[], n: number) =>
+    ciMatrix(plan(files), files, fixture, count(n), NO_REACH);
+  expect(matrix(["misc/x.ts"], 5)).toEqual(fullMatrix());
+  expect(matrix(["README.md"], 5)).toEqual({ include: [{ part: "checks" }] });
   // A reached directory with no test file runs no leg.
-  expect(ciMatrix(plan(["app/x.ts"]), ["app/x.ts"], fixture, count(0))).toEqual(
-    {
-      include: [{ part: "checks" }],
-    },
-  );
-  expect(ciMatrix(plan(["app/x.ts"]), ["app/x.ts"], fixture, count(3))).toEqual(
-    {
-      include: [
-        { part: "checks" },
-        { part: "tests", shard: "1/1", paths: "./app/" },
-      ],
-    },
-  );
+  expect(matrix(["app/x.ts"], 0)).toEqual({ include: [{ part: "checks" }] });
+  expect(matrix(["app/x.ts"], 3)).toEqual({
+    include: [
+      { part: "checks" },
+      { part: "tests", shard: "1/1", paths: "./app/" },
+    ],
+  });
   const legs = (n: number) =>
-    ciMatrix(
-      plan(["lib/x.ts"]),
-      ["lib/x.ts"],
-      fixture,
-      count(n),
-    ).include.filter((leg) => leg.part === "tests");
+    matrix(["lib/x.ts"], n).include.filter((leg) => leg.part === "tests");
   expect(legs(FILES_PER_SHARD + 1).map((leg) => leg.shard)).toEqual([
     "1/2",
     "2/2",
@@ -184,13 +174,132 @@ test("CI's matrix: every shard for the deepest plan, legs for the reached tests 
   expect(legs(1)[0]?.paths).toBe("./app/ ./lib/");
 });
 
+const reachOf = (...tests: string[]): TestReach => ({ tests, everyRun: [] });
+const testsOf = (matrix: ReturnType<typeof fullMatrix>) =>
+  matrix.include.filter((leg) => leg.part === "tests");
+
+test("the test legs add the dependent test files the reached directories do not hold, and count them", () => {
+  const files = ["app/x.ts"];
+  const reach = reachOf("app/in.test.ts", "other/a.test.ts", "z/b.test.tsx");
+  expect(ciMatrix(plan(files), files, fixture, () => 3, reach)).toEqual({
+    include: [
+      { part: "checks" },
+      {
+        part: "tests",
+        shard: "1/1",
+        paths: "./app/ ./other/a.test.ts ./z/b.test.tsx",
+      },
+    ],
+  });
+  // The legs split the directories' tests and the added files together.
+  const legs = testsOf(
+    ciMatrix(plan(files), files, fixture, () => FILES_PER_SHARD - 1, reach),
+  );
+  expect(legs.map((leg) => leg.shard)).toEqual(["1/2", "2/2"]);
+  // A change whose areas declare no test leg still runs what depends on it.
+  expect(
+    testsOf(
+      ciMatrix(
+        plan(["README.md"]),
+        ["README.md"],
+        fixture,
+        () => 0,
+        reachOf("other/a.test.ts"),
+      ),
+    ),
+  ).toEqual([{ part: "tests", shard: "1/1", paths: "./other/a.test.ts" }]);
+});
+
+test("a dependent test in a separate suite selects that suite's job instead of a leg", () => {
+  const files = ["app/x.ts"];
+  const reach = reachOf("long/a.test.ts");
+  expect(ciMatrix(plan(files), files, fixture, () => 3, reach)).toEqual({
+    include: [
+      { part: "checks" },
+      { part: "tests", shard: "1/1", paths: "./app/" },
+    ],
+  });
+  expect(ciAreas(["app"], plan(files), fixture, reach)).toEqual([
+    "app",
+    "long",
+  ]);
+  expect(ciAreas(["app"], plan(files), fixture, NO_REACH)).toEqual(["app"]);
+});
+
+test("the deepest plan, or a change every test run loads, runs the whole suite and every separate suite", () => {
+  const everyRun: TestReach = { tests: [], everyRun: ["app/x.ts"] };
+  expect(
+    ciMatrix(plan(["app/x.ts"]), ["app/x.ts"], fixture, () => 3, everyRun),
+  ).toEqual(fullMatrix());
+  expect(ciAreas(["app"], plan(["app/x.ts"]), fixture, everyRun)).toEqual([
+    "app",
+    "long",
+  ]);
+  expect(ciAreas([], plan(["stray.txt"]), fixture, NO_REACH)).toEqual(["long"]);
+});
+
+test("a list of test paths a leg cannot carry, or could not pass on, runs the whole suite", () => {
+  const files = ["app/x.ts"];
+  const matrix = (reach: TestReach) =>
+    ciMatrix(plan(files), files, fixture, () => 3, reach);
+  const name = "d".repeat(100);
+  const many = Array.from(
+    { length: Math.ceil(MAX_TEST_PATHS_LENGTH / 100) },
+    (_, i) => `${name}/${i}.test.ts`,
+  );
+  expect(matrix(reachOf(...many))).toEqual(fullMatrix());
+  expect(matrix(reachOf("odd dir/a.test.ts"))).toEqual(fullMatrix());
+});
+
+test("a test path is a directory or a test file inside the repository", () => {
+  for (const good of [
+    "./scripts/",
+    "./plugin/send/__tests__/a.test.ts",
+    "./dashboard/src/b.test.tsx",
+    "./root.test.ts",
+  ])
+    expect(TEST_PATH.test(good)).toBe(true);
+  for (const bad of [
+    "scripts/",
+    "./scripts",
+    "./a/b.ts",
+    "./../a.test.ts",
+    "./a/../b.test.ts",
+    "./a/./b.test.ts",
+    "./.test.ts",
+    "../a.test.ts",
+    "a.test.ts",
+    "./a;b.test.ts",
+    "./a b.test.ts",
+    "./$(x).test.ts",
+  ])
+    expect(TEST_PATH.test(bad)).toBe(false);
+});
+
+test("an own-test directory with no test file is reported, one beside a live directory included", () => {
+  const catalog: SharedCatalog = {
+    areas: {
+      live: area(["a/**"], { ownTests: "bun run test ./a/" }),
+      stale: area(["b/**"], { ownTests: "bun run test ./b/ ./gone/" }),
+      typo: area(["c/**"], { ownTests: "bun run test ./cc/" }),
+      bare: area(["d/**"]),
+    },
+  };
+  expect(
+    emptyOwnTestDirs(catalog, ["a/x.test.ts", "b/y.test.ts", "c/z.test.ts"]),
+  ).toEqual([
+    "stale: validation.ownTests names ./gone/, which holds no test file",
+    "typo: validation.ownTests names ./cc/, which holds no test file",
+  ]);
+});
+
 // The acceptance cases, on Jig's own catalog and files.
 const jig = validDocument(root);
 const tracked = repoFiles(root);
-const testLegs = (...files: string[]) =>
-  planChange(files, jig, tracked).matrix.include.filter(
-    (leg) => leg.part === "tests",
-  );
+const planOf = (...files: string[]) =>
+  planChange(files, jig, tracked, fileReader(root));
+const testLegs = (...files: string[]) => testsOf(planOf(...files).matrix);
+const wholeSuite = testsOf(fullMatrix());
 
 test("on Jig's catalog a documentation-only change runs no test leg", () => {
   expect(
@@ -203,19 +312,59 @@ test("on Jig's catalog a documentation-only change runs no test leg", () => {
   ).toEqual([]);
 });
 
-test("on Jig's catalog a change to one skill runs that skill's tests only", () => {
-  expect(testLegs("plugin/skills/explain/scripts/sheet.ts")).toEqual([
-    { part: "tests", shard: "1/1", paths: "./plugin/skills/explain/" },
+test("on Jig's catalog a change to a file only its own skill uses runs that skill's tests only", () => {
+  // Built in parts: a test that spelled the file's name would depend on it.
+  const leaf = `plugin/skills/audit/scripts/lib/${"feedback"}.ts`;
+  expect(testLegs(leaf)).toEqual([
+    { part: "tests", shard: "1/1", paths: "./plugin/skills/audit/" },
   ]);
 });
 
-test("on Jig's catalog an unmatched file, or code no own tests cover, runs every shard", () => {
-  const full = fullMatrix().include.filter((leg) => leg.part === "tests");
+test("on Jig's catalog a change runs the tests that depend on it outside its areas", () => {
+  const { areas, seedAreas, matrix } = planOf(
+    "plugin/dispatch/lib/station-answers.ts",
+  );
+  const [leg] = testsOf(matrix);
+  const paths = leg?.paths?.split(" ") ?? [];
+  expect(paths).toContain("./plugin/dispatch/");
+  expect(paths).toContain(
+    "./plugin/send/__tests__/send-tracker-answer.test.ts",
+  );
+  // Nothing already under a listed directory is listed again.
+  expect(paths.filter((p) => p.startsWith("./plugin/dispatch/"))).toEqual([
+    "./plugin/dispatch/",
+  ]);
+  // A dependent test in the drive-pr suite selects its job, not a leg.
+  expect(paths.some((p) => p.startsWith("./plugin/skills/drive-pr/"))).toBe(
+    false,
+  );
+  expect(areas).toContain("drive-pr");
+  expect(seedAreas).not.toContain("drive-pr");
+});
+
+test("on Jig's catalog an unmatched file, or code no own tests cover, runs every shard and every separate suite", () => {
   expect(
     testLegs("plugin/skills/explain/scripts/sheet.ts", "stray-file.xyz"),
-  ).toEqual(full);
-  expect(testLegs("plugin/jig.ts")).toEqual(full);
-  expect(testLegs("package.json")).toEqual(full);
+  ).toEqual(wholeSuite);
+  expect(testLegs("plugin/jig.ts")).toEqual(wholeSuite);
+  expect(testLegs("package.json")).toEqual(wholeSuite);
+  const unmatched = planOf("stray-file.xyz");
+  expect(unmatched).toMatchObject({
+    seedAreas: [],
+    unmatched: ["stray-file.xyz"],
+  });
+  for (const change of [unmatched, planOf("plugin/runtime/upgrade-record.ts")])
+    expect(change.areas).toEqual(
+      expect.arrayContaining(["drive-pr", "website"]),
+    );
+});
+
+test("on Jig's catalog a test preload runs every shard and every separate suite", () => {
+  const { matrix, areas } = planOf(
+    "plugin/skills/resolve-review-comments/__tests__/preload.ts",
+  );
+  expect(testsOf(matrix)).toEqual(wholeSuite);
+  expect(areas).toEqual(expect.arrayContaining(["drive-pr", "website"]));
 });
 
 test("Jig's catalog is refused when an own-tests command takes another shape", () => {

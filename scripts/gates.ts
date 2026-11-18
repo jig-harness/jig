@@ -28,7 +28,7 @@ import { checkLicences } from "./check-licences.ts";
 import { checkChangelog } from "./check-changelog.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
 import { checkChangeAreas, validDocument } from "./change-areas.ts";
-import { separateSuites, TEST_DIR } from "./area-validation.ts";
+import { separateSuites, TEST_PATH } from "./area-validation.ts";
 import { checkGeneratedFiles } from "./check-generated-files.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
@@ -127,21 +127,22 @@ export function shardArgs(env: Record<string, string | undefined>): string[] {
 }
 
 /**
- * The directories this run's tests are confined to, as `./dir/` (CI's legs
- * for a change the catalog narrows, scripts/area-validation.ts): none when
- * unset, the whole suite. A malformed list throws.
+ * The paths this run's tests are confined to, directories as `./dir/` and
+ * test files as `./dir/name.test.ts` (CI's legs for a narrowed change,
+ * scripts/area-validation.ts): none when unset, the whole suite. A malformed
+ * list throws.
  */
 export const TEST_PATHS_ENV = "JIG_GATES_TEST_PATHS";
 
-/** The test directories `env` names: none when unset; a malformed one throws. */
+/** The test paths `env` names: none when unset; a malformed one throws. */
 export function testPaths(env: Record<string, string | undefined>): string[] {
   const value = env[TEST_PATHS_ENV];
   if (value === undefined || value.trim() === "") return [];
   const paths = value.trim().split(/\s+/);
-  const bad = paths.filter((p) => !TEST_DIR.test(p));
+  const bad = paths.filter((p) => !TEST_PATH.test(p));
   if (bad.length)
     throw new ShardError(
-      `${TEST_PATHS_ENV} must list directories as ./dir/, not ${JSON.stringify(bad.join(" "))}`,
+      `${TEST_PATHS_ENV} must list directories as ./dir/ and test files as ./dir/name.test.ts, not ${JSON.stringify(bad.join(" "))}`,
     );
   return paths;
 }
@@ -149,7 +150,7 @@ export function testPaths(env: Record<string, string | undefined>): string[] {
 /**
  * The `bun run test` arguments. Bun's `--path-ignore-patterns` replaces the
  * `bunfig.toml` list rather than adding to it, so the configured patterns are
- * passed along with the skipped suites. `shard` and the directories come last.
+ * passed along with the skipped suites. `shard` and the test paths come last.
  */
 export function testArgs(
   skipped: string[],

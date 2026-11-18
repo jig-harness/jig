@@ -401,19 +401,33 @@ the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
 
 What a change runs is derived from the areas it touches. Each area of
-`.config/change-areas.yaml` names its validation profile (`docs`, `area` or
-`deep`) and its own tests (`validation.ownTests`, `bun run test` and the
-directories its suites live in), and `printf '%s\n' <files> | bun
-scripts/validation-plan.ts` prints the plan drive-pr, review and fix-ci read:
-the quick gates (`bun run gates --fast`), the touched areas' own tests and the
-generators the change touches, or the whole `bun run gates` when a changed
-file belongs to no area or to areas with no own tests. CI's test legs come
-from the same resolution (`scripts/area-validation.ts`): none for a change
-no test reads, the own tests of the areas the change reaches through
-`impliedBy`, and every shard of the whole suite for the deepest profile. A
-push to main and the nightly run still run every suite. A new area, or a new
-directory of tests, declares its profile and own tests in the same change,
-or its code runs the whole gate set.
+`.config/change-areas.yaml` names its [validation profile](GLOSSARY.md)
+(`docs`, `area` or `deep`) and its [own tests](GLOSSARY.md)
+(`validation.ownTests`, `bun run test` and the directories its suites live
+in; a directory with no test file fails `bun run gates`), and
+`printf '%s\n' <files> | bun scripts/validation-plan.ts` prints the plan
+drive-pr, review and fix-ci read: the quick gates (`bun run gates --fast`),
+the touched areas' own tests and the generators the change touches, or the
+whole `bun run gates` when a changed file belongs to no area or to areas with
+no own tests.
+
+CI's test legs start from the same resolution (`scripts/area-validation.ts`)
+and add the [dependent tests](GLOSSARY.md): `scripts/test-reach.ts` walks back
+from the changed files through what imports them and through test code that
+names a script, so a test that depends on the change runs wherever it lives.
+A change no test reads runs no test leg. Any other runs its areas' own tests,
+the own tests of the areas that list one of them under `impliedBy` (the
+catalog's way of saying a change to that area also affects this one, for what
+the walk cannot see) and the dependent tests outside those directories, split
+into [test shards](GLOSSARY.md). Every shard of the whole suite runs for the
+deepest profile and for a change to what every test run loads
+(`bunfig.toml`'s preloads and their imports). A
+[separate suite](GLOSSARY.md)'s job runs when its area is affected, when a
+dependent test lies in it, and whenever the whole suite runs. The local plan
+does not walk the dependent tests, so CI can run tests it did not name. A push
+to main and the nightly run still run every suite. A new area, or a new
+directory of tests, declares its profile and own tests in the same change, or
+its code runs the whole gate set.
 
 ### Known failures on the nightly run
 

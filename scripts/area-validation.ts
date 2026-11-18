@@ -10,10 +10,14 @@
 //     own tests selects the deepest profile, as an unmatched file does:
 //     nothing narrower tests it (a file only the broad `plugin` area holds);
 //   - CI's test legs run the own tests of the areas the changed files'
-//     tested areas reach through `impliedBy`, every shard of the whole suite
-//     when the plan is the deepest, and none when nothing changed is tested;
+//     tested areas reach through `impliedBy` and the test files that depend
+//     on the change (scripts/test-reach.ts), every shard of the whole suite
+//     when the plan is the deepest or the change is loaded by every test run,
+//     and none when nothing changed is tested;
 //   - an area marked `validation.separateSuite` has its suites run in a CI
-//     job of their own, so the gate set leaves those directories out.
+//     job of their own, so the gate set leaves those directories out and the
+//     job runs whenever the whole suite does or a test in it depends on the
+//     change.
 import type { Catalog as SharedCatalog } from "../plugin/skills/change-areas/scripts/lib/catalog.ts";
 import {
   deepestProfile,
@@ -31,12 +35,19 @@ import {
   applyImpliedClosure,
   matchesGlob,
 } from "../plugin/skills/change-areas/scripts/lib/resolve.ts";
+import type { TestReach } from "./test-reach.ts";
 
-/** One test directory as `./dir/`, inside the repository: no `.` or `..` step. */
-const DIR = String.raw`\./(?:(?!\.{1,2}/)[A-Za-z0-9._-]+/)+`;
+/** One directory step of a path inside the repository: never `.` or `..`. */
+const STEP = String.raw`(?!\.{1,2}/)[A-Za-z0-9._-]+/`;
 
-/** A test directory as a command line or the gate set's environment names it. */
-export const TEST_DIR = new RegExp(`^${DIR}$`);
+/** One test directory as `./dir/`. */
+const DIR = String.raw`\./(?:${STEP})+`;
+
+/** One test file as `./dir/name.test.ts`. */
+const FILE = String.raw`\./(?:${STEP})*(?!\.)[A-Za-z0-9._-]+\.test\.tsx?`;
+
+/** What the gate set's environment confines a test run to: a directory or a test file. */
+export const TEST_PATH = new RegExp(`^(?:${DIR}|${FILE})$`);
 
 /** The one shape an own-tests command takes: `bun run test ./dir/ …`. */
 export const OWN_TESTS = new RegExp(`^bun run test(?: ${DIR})+$`);
@@ -46,6 +57,13 @@ export const MAX_SHARDS = 4;
 
 /** About how many test files one CI leg takes before another leg pays off. */
 export const FILES_PER_SHARD = 80;
+
+/**
+ * The longest list of test paths a leg carries. It reaches the gate set as an
+ * environment variable, which Linux caps at 128 KiB, and each leg repeats it
+ * in the job output; a longer list runs the whole suite instead.
+ */
+export const MAX_TEST_PATHS_LENGTH = 64 * 1024;
 
 type Area = SharedCatalog["areas"][string];
 
@@ -73,6 +91,25 @@ export function ownTestsProblems(catalog: SharedCatalog): string[] {
         `${id}: validation.separateSuite names no suite: declare validation.ownTests`,
       );
   }
+  return problems;
+}
+
+/**
+ * The own-test directories that hold no test file, so that a mistyped or stale
+ * one cannot silently drop its area's tests. `testFiles` are the files
+ * `bun test` runs.
+ */
+export function emptyOwnTestDirs(
+  catalog: SharedCatalog,
+  testFiles: string[],
+): string[] {
+  const problems: string[] = [];
+  for (const [id, area] of Object.entries(catalog.areas))
+    for (const dir of ownTestDirs(area))
+      if (!testFiles.some((file) => file.startsWith(dir)))
+        problems.push(
+          `${id}: validation.ownTests names ./${dir}, which holds no test file`,
+        );
   return problems;
 }
 
@@ -176,7 +213,7 @@ export function jigValidation(whole: ResolutionContext): ValidationPlan {
   };
 }
 
-/** One leg of the gate-set job: its part, its shard and its test directories. */
+/** One leg of the gate-set job: its part, its shard and the test paths it runs. */
 export interface Leg {
   part: "checks" | "tests";
   shard?: string;
@@ -234,27 +271,61 @@ export function ciTestDirs(files: string[], catalog: SharedCatalog): string[] {
   return outermost(dirs);
 }
 
+const isUnder = (file: string, dirs: string[]) =>
+  dirs.some((dir) => file.startsWith(dir));
+
+/** Whether the plan selects the deepest profile, which runs every suite. */
+export function selectsDeepest(
+  plan: ValidationPlan,
+  catalog: SharedCatalog,
+): boolean {
+  const deepest = deepestProfile(catalog);
+  return deepest === undefined || plan.profiles.includes(deepest);
+}
+
+/** Whether no selection of tests can stand in for the whole suite. */
+function owesWholeSuite(
+  plan: ValidationPlan,
+  catalog: SharedCatalog,
+  reach: TestReach,
+): boolean {
+  return selectsDeepest(plan, catalog) || reach.everyRun.length > 0;
+}
+
 /**
- * The gate-set job's matrix for one change: every shard when its plan
- * selects the deepest profile, legs for the reached areas' own tests
- * otherwise (as many as their test files call for, up to `MAX_SHARDS`), and
- * the checks leg alone when no test directory is reached or none holds a
- * test. `countTests` counts the test files under the directories.
+ * The gate-set job's matrix for one change: every shard when the whole suite
+ * is owed, otherwise legs for the reached areas' own tests and the dependent
+ * test files outside them (as many legs as those files call for, up to
+ * `MAX_SHARDS`), and the checks leg alone when no test is selected. A
+ * dependent test in a separate suite runs in that suite's job
+ * (`ciAreas`). A list of paths a leg cannot carry runs every shard.
+ * `countTests` counts the test files under the directories.
  */
 export function ciMatrix(
   plan: ValidationPlan,
   files: string[],
   catalog: SharedCatalog,
   countTests: (dirs: string[]) => number,
+  reach: TestReach,
 ): Matrix {
-  const deepest = deepestProfile(catalog);
-  if (deepest === undefined || plan.profiles.includes(deepest))
-    return fullMatrix();
+  if (owesWholeSuite(plan, catalog, reach)) return fullMatrix();
   const dirs = ciTestDirs(files, catalog);
-  const count = dirs.length ? countTests(dirs) : 0;
+  const separate = Object.values(catalog.areas)
+    .filter((area) => area.validation?.separateSuite === true)
+    .flatMap(ownTestDirs);
+  const dependents = reach.tests.filter(
+    (file) => !isUnder(file, dirs) && !isUnder(file, separate),
+  );
+  const count = (dirs.length ? countTests(dirs) : 0) + dependents.length;
   if (count === 0) return { include: [CHECKS] };
+  const listed = [...dirs, ...dependents].map((path) => `./${path}`);
+  const paths = listed.join(" ");
+  if (
+    paths.length > MAX_TEST_PATHS_LENGTH ||
+    !listed.every((path) => TEST_PATH.test(path))
+  )
+    return fullMatrix();
   const shards = Math.min(MAX_SHARDS, Math.ceil(count / FILES_PER_SHARD));
-  const paths = dirs.map((dir) => `./${dir}`).join(" ");
   return {
     include: [
       CHECKS,
@@ -265,6 +336,27 @@ export function ciMatrix(
       })),
     ],
   };
+}
+
+/**
+ * The areas whose CI jobs a change selects: the `resolved` ones and each
+ * separate suite that is owed, all of them when the whole suite is and
+ * otherwise those holding a test that depends on the change.
+ */
+export function ciAreas(
+  resolved: string[],
+  plan: ValidationPlan,
+  catalog: SharedCatalog,
+  reach: TestReach,
+): string[] {
+  const whole = owesWholeSuite(plan, catalog, reach);
+  const owed = new Set(resolved);
+  for (const [id, area] of Object.entries(catalog.areas)) {
+    if (area.validation?.separateSuite !== true) continue;
+    const dirs = ownTestDirs(area);
+    if (whole || reach.tests.some((file) => isUnder(file, dirs))) owed.add(id);
+  }
+  return Object.keys(catalog.areas).filter((id) => owed.has(id));
 }
 
 /** The test files among `files` under `dirs`: the count CI's legs split. */
