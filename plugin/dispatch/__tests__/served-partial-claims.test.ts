@@ -117,7 +117,7 @@ function ended(item: string, question: boolean): ReadRecord {
       exit: { at: "2026-11-18T08:45:00Z", code: 0, signal: null },
       process: null,
     },
-    result: "failed",
+    result: question ? "parked" : "failed",
     ...(question
       ? {
           framed: {

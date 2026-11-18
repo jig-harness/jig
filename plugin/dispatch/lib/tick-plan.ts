@@ -47,13 +47,13 @@ import { branchPattern } from "./section.ts";
 import type { PrLinkText } from "./work-links.ts";
 import { preparePriorities } from "./tick-priorities.ts";
 
-/** Plan one observed repository into its report. */
-export function planObserved(
+/** Put the steward's recorded queue order on the tracked pickups, where this host owns the repository. */
+function orderTracked(
   context: TickContext,
   observation: RepoObservation,
 ): void {
-  const { opened, tracked, forge, ctx, claims, sessions } = observation;
-  const { repo, section, report } = opened;
+  const { opened, tracked } = observation;
+  const { repo } = opened;
   if (
     opened.owner &&
     opened.stages.has("steward") &&
@@ -68,6 +68,16 @@ export function planObserved(
     });
     tracked.pickups = applyStewardOrder(tracked.pickups, orders);
   }
+}
+
+/** Plan one observed repository into its report. */
+export function planObserved(
+  context: TickContext,
+  observation: RepoObservation,
+): void {
+  const { opened, tracked, forge, ctx, claims, sessions } = observation;
+  const { repo, section, report } = opened;
+  orderTracked(context, observation);
   const onlyLabeled = observation.labels?.onlyLabeled === true;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
