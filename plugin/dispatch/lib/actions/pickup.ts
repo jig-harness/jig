@@ -44,6 +44,7 @@ import {
   type Dispatched,
   dispatched,
   type SessionsReport,
+  type Workspace,
 } from "../runtime/port.ts";
 import { freshServedPickup } from "../sources/served.ts";
 import { freshPickup } from "../sources/tracker.ts";
@@ -69,7 +70,11 @@ import {
   startRecord,
   waits,
 } from "./launch.ts";
-import { holdingRecords, pickupHold } from "./pickup-hold.ts";
+import {
+  holdingRecords,
+  leftBehindWorkspaces,
+  pickupHold,
+} from "./pickup-hold.ts";
 import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's pickups need beyond the apply state. */
@@ -82,6 +87,48 @@ export interface PickupContext {
   branchPattern: string;
   /** The runtime's answer read afresh, for the read just before a launch. */
   sessions: () => Promise<SessionsReport>;
+}
+
+/** Whether a workspace is `key`'s: joined to it, and not one a batch pickup left it out of. */
+function joinedTo(
+  state: ApplyState,
+  repo: RepoTarget,
+  key: string,
+): (w: Workspace) => boolean {
+  const left = leftBehindWorkspaces(
+    key,
+    state.records.filter((r) => r.record.repo === repo.slug),
+  );
+  return (w) => w.items.includes(key) && !left.has(w.path);
+}
+
+/**
+ * Why the item must not start in `path`: opening its branch can return the
+ * tree a batch left it out of, while an agent still works there.
+ */
+export async function leftBehindBusy(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: PickupContext,
+  key: string,
+  path: string,
+): Promise<string | null> {
+  const left = leftBehindWorkspaces(
+    key,
+    state.records.filter((r) => r.record.repo === repo.slug),
+  );
+  if (!left.has(path)) return null;
+  let sessions: SessionsReport;
+  try {
+    sessions = await ctx.sessions();
+  } catch (error) {
+    return `the runtime cannot be read again: ${failureText(error)}`;
+  }
+  const held = holding(sessions, (w) => w.path === path);
+  if (held.kind === "unknown") return held.reason;
+  return held.kind === "running"
+    ? `its branch is checked out in ${path}, the batch's workspace, where an agent is running`
+    : null;
 }
 
 /** Why the item must not be started now; `null` when nothing changed. */
@@ -130,7 +177,7 @@ export async function changed(
   } catch (error) {
     return { why: `the runtime cannot be read again: ${failureText(error)}` };
   }
-  const held = holding(sessions, (w) => w.items.includes(key));
+  const held = holding(sessions, joinedTo(state, repo, key));
   if (held.kind === "unknown") return { why: held.reason };
   if (held.kind === "running")
     return {
@@ -149,7 +196,7 @@ async function workspaceFor(
 ): Promise<Opened> {
   const sessions = await ctx.sessions().catch(() => null);
   const joined = sessions?.ok
-    ? sessions.workspaces.find((w) => w.items.includes(issue.identifier))
+    ? sessions.workspaces.find(joinedTo(state, repo, issue.identifier))
     : undefined;
   if (joined !== undefined)
     return { workspace: { id: joined.id, path: joined.path } };
@@ -212,6 +259,14 @@ async function launchOne(
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
+  const busy = await leftBehindBusy(
+    state,
+    repo,
+    ctx,
+    action.target,
+    workspace.path,
+  );
+  if (busy !== null) return waits(action, busy, slots.account.name);
   const after = await changed(state, repo, ctx, action.target, served);
   if ("why" in after) return waits(action, after.why, slots.account.name);
   const afterBatch = await checkBatch();
@@ -338,7 +393,7 @@ async function competing(
   } catch (error) {
     return `the runtime cannot be read again: ${failureText(error)}`;
   }
-  const held = holding(sessions, (w) => w.items.includes(item));
+  const held = holding(sessions, joinedTo(state, repo, item));
   if (held.kind === "unknown") return held.reason;
   const own = record.workspace?.id;
   const rivals =

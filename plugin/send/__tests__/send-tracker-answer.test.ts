@@ -33,6 +33,7 @@ import { report as reportOf } from "../../dispatch/__tests__/line-fixtures.ts";
 import { reading } from "../../ask/lib/reading.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import { answerComment } from "../../shared/decisions/answer-record.ts";
+import { OutboundError } from "../../shared/outbound/failure.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type {
   Tracker,
@@ -337,6 +338,19 @@ describe("jig send … answer on an item of another tracker", () => {
     }
   });
 
+  it("refuses, writing nothing, naming why the tracker's user was not read", async () => {
+    const t = tracker(DANA, {
+      viewer: async () => {
+        throw new OutboundError("unauthorized", "HTTP 401");
+      },
+    });
+    const planned = await plan(t);
+    expect(planned !== null && !planned.ok ? planned.failure.reason : "").toBe(
+      "the login this machine is signed in as on the tracker was not read, so nothing was sent: the tracker refused the credential (HTTP 401); sign in again, then send again",
+    );
+    expect(t.posted).toEqual([]);
+  });
+
   it("writes nothing on a dry run from the host that owns the repository", async () => {
     const t = tracker(DANA);
     const planned = await plan(t, approve(DIGEST), {
@@ -351,7 +365,7 @@ describe("jig send … answer on an item of another tracker", () => {
     const cases: Array<[Tracker & { posted: unknown[] }, string]> = [
       [
         tracker({ id: "u-nameless", name: "" }),
-        "would not read this answer as choosing Release the claim",
+        "did not name the login this machine is signed in as",
       ],
       [
         tracker(DANA, {
@@ -359,7 +373,7 @@ describe("jig send … answer on an item of another tracker", () => {
             throw new Error("viewer down");
           },
         } as Partial<Tracker>),
-        "the user the tracker's credential acts as did not read",
+        "the login this machine is signed in as on the tracker was not read",
       ],
     ];
     for (const [t, says] of cases) {

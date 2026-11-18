@@ -1,8 +1,13 @@
-/** Small independent items sharing a configured change area use one pickup. */
+/**
+ * Small independent items sharing a configured change area use one pickup. A
+ * size that needs a person's verdict to stay in a batch never joins one here,
+ * where nobody is there to give it: that item is its own pickup.
+ */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { matchOne } from "../../shared/rule-matcher.ts";
 import {
   parseWorkBatchSection,
+  verdictSizes,
   type WorkBatchSettings,
 } from "../../skills/work-batch/scripts/lib/policy.ts";
 import { parseTrackerLabels } from "../../shared/tracker-labels.ts";
@@ -39,17 +44,20 @@ export function batchPickups(
     labels.batchSizes.map(sizeOf),
     sizeOf,
   );
+  const ownPickup = verdictSizes(policy);
   const groups = new Map<string, Action[]>();
   for (const action of actions) {
     if (action.stage !== "pickup") continue;
     const item = wanted.find((i) => i.key === action.target);
     const issue = item?.queueIssue;
+    const size = issue?.size?.toLowerCase() ?? "";
     if (
       item?.servedPerson === undefined ||
       item.batchAllowed === false ||
       issue === undefined ||
       issue.priority === 1 ||
-      !Object.hasOwn(policy.sizePoints, issue.size?.toLowerCase() ?? "")
+      !Object.hasOwn(policy.sizePoints, size) ||
+      ownPickup.includes(size)
     )
       continue;
     if (

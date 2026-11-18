@@ -28,8 +28,11 @@ afterEach(() => {
 const NO_PAGE = { pageInfo: { hasNextPage: false, endCursor: null } };
 const SUB = { subIssues: { pageInfo: { hasNextPage: false }, nodes: [] } };
 
-/** A world whose tracker holds #14 (nobody's) and #15 (dana's); `ops` logs each GraphQL operation. */
-function world(identity: string | null = "factory-bot") {
+/** A world whose tracker holds #14 (nobody's) and #15 (dana's); `ops` logs each GraphQL operation; `viewer`, when given, answers the tracker's viewer read. */
+function world(
+  identity: string | null = "factory-bot",
+  viewer?: () => Response,
+) {
   const w = sendWorld();
   current = w;
   const ops: Array<{ op: string; variables: Record<string, unknown> }> = [];
@@ -63,6 +66,7 @@ function world(identity: string | null = "factory-bot") {
       const op = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "?";
       ops.push({ op, variables });
       if (op === "TrackerAssign") assigned = true;
+      if (op === "TrackerViewer" && viewer !== undefined) return viewer();
       const answers: Record<string, unknown> = {
         TrackerViewer: { viewer: { id: "U_maintainer", login: "maintainer" } },
         TrackerIssue: oneIssue(
@@ -148,6 +152,27 @@ describe("jig send assign", () => {
     expectSpawnExit(r2, 1);
     expect(r2.stderr).toContain("set dispatch.identity");
     expect(writes(none.ops)).toEqual([]);
+  });
+
+  it("refuses, naming the spent allowance and its reset time, when the tracker's user is not read", async () => {
+    const { w, ops } = world("factory-bot", () =>
+      Response.json(
+        { message: "API rate limit exceeded" },
+        {
+          status: 403,
+          headers: {
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": "4102444800",
+          },
+        },
+      ),
+    );
+    const r = await w.send([`pickup@${REPO}#14`, "assign"]);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain(
+      "the login this machine is signed in as on the tracker was not read, so nothing was sent: the credential's allowance on the tracker is spent until 2100-01-01T00:00:00.000Z",
+    );
+    expect(writes(ops)).toEqual([]);
   });
 
   it("takes the tracker from the default branch, not the checkout", async () => {

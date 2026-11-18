@@ -55,7 +55,7 @@ import {
   type StationChoice,
   stationChoice,
 } from "./answer-station.ts";
-import { type Planned, refused, writerLogin } from "./plan.ts";
+import { type Planned, refused, trackerWriter } from "./plan.ts";
 
 type OneAnswer = Extract<AnswerRequest, { all: false }>;
 
@@ -197,20 +197,19 @@ async function trackerSender(
   options: { as: string | undefined; dryRun: boolean },
 ): Promise<Outcome<{ sender: Sender; reading: TickReading }, "refused">> {
   const { tracker } = here;
-  const viewer = await readHere(
-    ctx,
-    "the user the tracker's credential acts as",
-    (signal) => tracker.viewer(signal),
+  const writer = await trackerWriter(
+    tracker,
+    ctx.reading.sourceSec(),
+    options.as,
   );
-  if (!viewer.ok) return viewer;
-  const login = writerLogin(viewer.value.name, options.as, "the tracker");
-  if (!login.ok) return login;
-  const read = await readByTick(ctx, here, viewer.value);
+  if (!writer.ok) return writer;
+  const { viewer, login } = writer.value;
+  const read = await readByTick(ctx, here, viewer);
   if (!read.ok) return read;
   return ok({
     sender: {
-      login: login.value,
-      writesAs: `${login.value}, the user the tracker's credential acts as here`,
+      login,
+      writesAs: `${login}, the user the tracker's credential acts as here`,
       dryRun: options.dryRun,
       as: options.as,
     },
