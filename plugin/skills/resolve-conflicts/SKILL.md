@@ -668,7 +668,7 @@ alone and that is not yet serialized, as the `serialize: true` line to add,
 with the hotspots behind it; hotspots no single area holds are listed
 apart. It writes nothing: show the lines to the person, who decides.
 
-`--rates` prints, instead of the report, the range's conflict rates as
+`--rates` prints, instead of the report, the range's [conflict rates](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) as
 `merge-conflict-rates/v1` JSON: for each path, `merged`, the merged pull
 requests that changed it and whose conflicts were observed, `conflicted`, how
 many of those met a conflict before they merged, and `unknown`, those that
