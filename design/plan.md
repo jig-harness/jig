@@ -322,7 +322,7 @@ leaving a slot idle, an overlap bound per file that replaces the per-epic
 width and, like the cost, only orders,
 validation capacity as a gauge of the load factor, and the reason shown for
 each item that waits. What it will build, one pull request per step, is the
-design's remaining build order: conflict rates from `history.ts`, overlap reported,
+design's remaining build order: overlap reported,
 serialized areas holding pickups, validation capacity, then overlap
 admission. The planner's footprint writer is part of #1180.
 
