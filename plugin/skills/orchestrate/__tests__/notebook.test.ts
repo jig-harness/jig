@@ -6,6 +6,8 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -58,6 +60,7 @@ describe("the notebook's topic and place", () => {
     expect(topicSlug("../../etc")).toBe("etc");
     expect(topicSlug("!!!")).toBeUndefined();
     expect(topicSlug("x".repeat(100))).toHaveLength(64);
+    expect(topicSlug("Café crème")).toBe("cafe-creme");
   });
 
   test("a JIG_HOME inside a working tree is refused and nothing is written", () => {
@@ -65,22 +68,32 @@ describe("the notebook's topic and place", () => {
     mkdirSync(join(tree, ".git"));
     const jigHome = join(tree, "nested", "jig-home");
     const result = run(jigHome, ["open", "release-cadence"]);
-    expectSpawnExit(result, 3);
+    expectSpawnExit(result, 4);
     expect(result.err).toContain("inside the Git working tree");
     expect(existsSync(join(tree, "nested"))).toBeFalse();
-    expectSpawnExit(run(jigHome, ["state", "release-cadence"], stateText()), 3);
-    expectSpawnExit(run(jigHome, ["journal", "release-cadence"], "entry"), 3);
+    expectSpawnExit(run(jigHome, ["state", "release-cadence"], stateText()), 4);
+    expectSpawnExit(run(jigHome, ["journal", "release-cadence"], "entry"), 4);
     expect(existsSync(join(tree, "nested"))).toBeFalse();
   });
 
   test("a linked worktree's .git file counts as a working tree", () => {
     const tree = home(false);
     writeFileSync(join(tree, ".git"), "gitdir: /elsewhere\n");
-    expect(enclosingWorkTree(join(tree, "a", "b"))).toBe(tree);
+    expect(enclosingWorkTree(join(tree, "a", "b"))).toBe(realpathSync(tree));
+  });
+
+  test("a symbolic link into a working tree counts as inside it", () => {
+    const tree = home(false);
+    mkdirSync(join(tree, ".git"));
+    mkdirSync(join(tree, "notebooks"));
+    const jigHome = home(false);
+    symlinkSync(join(tree, "notebooks"), join(jigHome, "orchestrate"));
+    expectSpawnExit(run(jigHome, ["open", "release-cadence"]), 4);
+    expect(readdirSync(join(tree, "notebooks"))).toEqual([]);
   });
 
   test("the fixture in this repository is itself refused as a JIG_HOME", () => {
-    expectSpawnExit(run(fixtureHome, ["open", "release-cadence"]), 3);
+    expectSpawnExit(run(fixtureHome, ["open", "release-cadence"]), 4);
   });
 });
 
@@ -171,6 +184,11 @@ describe("writing the notebook", () => {
     expect(result.err).toContain('"## Waiting on the person"');
     expect(readFileSync(path, "utf8")).toBe(before);
     expectSpawnExit(run(jigHome, ["state", "release-cadence"], "  \n"), 3);
+    const fenced = ["```", ...STATE_SECTIONS.map((n) => `## ${n}`), "```"].join(
+      "\n",
+    );
+    expectSpawnExit(run(jigHome, ["state", "release-cadence"], fenced), 3);
+    expect(readFileSync(path, "utf8")).toBe(before);
   });
 
   test("a long state is written with a warning", () => {

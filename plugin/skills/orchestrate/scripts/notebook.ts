@@ -12,15 +12,18 @@
  *   bun notebook.ts list             the topics this host holds
  *
  * Exit 0 done; 1 the folder or a file could not be read or written; 2 usage;
- * 3 refused, nothing written: the folder lies inside a Git working tree, the
- * state lacks a required section, or the input is empty.
+ * 3 refused, nothing written: the state lacks a required section or the
+ * input is empty; 4 refused, nothing written: the folder lies inside a Git
+ * working tree.
  */
 import {
   appendFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -54,11 +57,12 @@ const USAGE = [
 type Env = Record<string, string | undefined>;
 
 /** A refusal's code names the exit it ends in. */
-type RefusalCode = "unreadable" | "usage" | "refused";
+type RefusalCode = "unreadable" | "usage" | "refused" | "in-work-tree";
 const EXIT: Record<RefusalCode, number> = {
   unreadable: 1,
   usage: 2,
   refused: 3,
+  "in-work-tree": 4,
 };
 
 class Refusal extends JigError<RefusalCode> {
@@ -72,7 +76,8 @@ class Refusal extends JigError<RefusalCode> {
  */
 export function topicSlug(topic: string): string | undefined {
   const slug = topic
-    .normalize("NFKC")
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
@@ -89,12 +94,23 @@ export function notebooksRoot(env: Env = process.env): string {
 /**
  * The working tree `path` lies in, or undefined: the nearest folder at or
  * above it holding a `.git` entry (a folder, or the file a linked worktree
- * keeps).
+ * keeps). The deepest part of `path` that exists is resolved first, so a
+ * symbolic link into a checkout counts as inside it. A `.git` entry that
+ * cannot be checked throws rather than reading as absent.
  */
 export function enclosingWorkTree(path: string): string | undefined {
-  let current = path;
+  let existing = path;
+  while (lstatSync(existing, { throwIfNoEntry: false }) === undefined) {
+    const parent = dirname(existing);
+    if (parent === existing) break;
+    existing = parent;
+  }
+  let current = realpathSync(existing);
   for (;;) {
-    if (existsSync(join(current, ".git"))) return current;
+    if (
+      lstatSync(join(current, ".git"), { throwIfNoEntry: false }) !== undefined
+    )
+      return current;
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
@@ -103,8 +119,11 @@ export function enclosingWorkTree(path: string): string | undefined {
 
 /** The sections of `STATE_SECTIONS` a state text lacks. */
 export function missingSections(text: string): string[] {
+  const outsideFences = text.replace(/^(```|~~~)[\s\S]*?^\1/gm, "");
   const headings = new Set(
-    [...text.matchAll(/^## +(.+?)\s*$/gm)].map((m) => m[1]?.toLowerCase()),
+    [...outsideFences.matchAll(/^## +(.+?)\s*$/gm)].map((m) =>
+      m[1]?.toLowerCase(),
+    ),
   );
   return STATE_SECTIONS.filter((name) => !headings.has(name.toLowerCase()));
 }
@@ -125,10 +144,12 @@ function folderOf(topic: string, env: Env): { slug: string; folder: string } {
       `a topic needs a letter or digit (got ${JSON.stringify(topic)})`,
     );
   const folder = join(notebooksRoot(env), slug);
-  const tree = enclosingWorkTree(folder);
+  const tree = io("could not check for a Git working tree", () =>
+    enclosingWorkTree(folder),
+  );
   if (tree !== undefined)
     throw new Refusal(
-      "refused",
+      "in-work-tree",
       `${folder} lies inside the Git working tree ${tree}; a notebook is never written there. Move JIG_HOME outside every repository.`,
     );
   return { slug, folder };
@@ -141,6 +162,7 @@ function io<T>(what: string, run: () => T): T {
     throw new Refusal(
       "unreadable",
       `${what}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
@@ -248,9 +270,11 @@ export function list(env: Env = process.env): string {
   return topics
     .map((entry) => {
       const statePath = join(root, entry.name, "state.md");
-      const written = existsSync(statePath)
-        ? isoFromMs(statSync(statePath).mtimeMs)
-        : "no state yet";
+      const stat = io("could not read a topic's state", () =>
+        statSync(statePath, { throwIfNoEntry: false }),
+      );
+      const written =
+        stat === undefined ? "no state yet" : isoFromMs(stat.mtimeMs);
       return `${entry.name}\t${written}\n`;
     })
     .sort()

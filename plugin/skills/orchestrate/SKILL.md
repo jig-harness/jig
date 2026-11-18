@@ -23,8 +23,8 @@ the [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 
 When a step calls for a fresh or separate session and the runtime cannot
 start one, prepare a concise brief for the person to run in a separate session.
-The brief names the input, the required return, and the durable record to
-update. Wait for that return; do not perform the delegated work in the
+The brief names the input, the required return, and the repository record
+to update, if any. Wait for that return; do not perform the delegated work in the
 coordinating session. This rule applies to every delegation below.
 
 ## The notebook
@@ -38,7 +38,8 @@ profile or memory facility. It has two parts:
 - **`state.md`**, the current state: rewritten whole at every change of state,
   and kept to about 150 lines. Each of its sections is required, with "None."
   under one that is empty:
-  - `## Focus`: the tracks and where each stands;
+  - `## Focus`: the tracks and where each stands, with demoted tracks
+    marked as ideas (step 13);
   - `## Waiting on the person`: each decision, numbered, with its
     recommendation;
   - `## Owed`: each act this session owes, with its due date;
@@ -57,8 +58,9 @@ the tracker stay where they are, and `state.md` links to them.
 Reach it through its script only, from the repository root, with the topic
 as the person gave it; the script names the folder, so "Release cadence" and
 `release-cadence` are one topic. `state` and `journal` read the text from
-standard input (a quoted here-document in a POSIX shell, a here-string piped
-in PowerShell):
+standard input (a quoted here-document in a POSIX shell; in PowerShell a
+here-string piped in, after `$OutputEncoding = [Text.UTF8Encoding]::new()` so
+the text arrives as UTF-8):
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/notebook.ts" open "<topic>"
@@ -71,11 +73,12 @@ bun "${CLAUDE_SKILL_DIR}/scripts/notebook.ts" list
 for each agent tool, the journal's days and `state.md`. `state` replaces
 `state.md` whole and refuses (exit `3`, nothing written) a state missing a
 section; past 150 lines it writes and warns, and the next rewrite moves the
-history to the journal. `journal` appends one timestamped entry to today's
-file. `list` names each topic with when its state was written. Every
-command refuses (exit `3`) a folder inside a Git working tree, which happens
-only when `JIG_HOME` lies in one; exit `1` is a folder or file that could not
-be read or written. On either, use step 12's fallback.
+history to the journal; on that refusal, add the missing section and run it
+again. `journal` appends one timestamped entry to today's file. `list` names
+each topic with when its state was written. Every command refuses (exit `4`)
+a folder inside a Git working tree, a symbolic link into one included, which
+happens only when `JIG_HOME` lies in one; exit `1` is a folder or file that
+could not be read or written. On exit `4` or `1`, use step 12's fallback.
 
 When each part is written:
 
@@ -84,7 +87,7 @@ When each part is written:
    recommendations, then take `## Next act`, and go on at the step the state
    shows; read no other record to resume. When it reports a new topic, run
    `list`, and if a listed topic looks like the one meant, ask the person
-   which it is before writing anything.
+   which it is before writing to either.
 2. **At natural pauses** (a decision recorded, an issue started, delegated
    work returned, the person leaving), append what happened and why to the
    journal, then rewrite `state.md`.
@@ -222,7 +225,10 @@ session can resume: the tracks, decisions, issue numbers and what is owed.
 This session writes the notebook itself, since it holds the state and the
 notebook is no repository file; the repository's own records (decision
 records, the plan, the tracker) are kept by the fresh sessions above and
-linked from `state.md`. Where the notebook cannot be written, use a
+linked from `state.md`. Wherever this procedure says "durable record", it
+means the notebook, which only this session writes: a brief to a fresh
+session names the repository record it updates, never the notebook.
+Where the notebook cannot be written, use a
 plain file outside the repository with the same sections; with no writable
 persistent facility, give the person the complete record to save and supply
 on return, and state that it has not been persisted.

@@ -1136,8 +1136,8 @@ line.
 existing plan review surface, with chat review as the fallback, and keeps
 each topic's record in an orchestration notebook, the host-local folder
 `$JIG_HOME/orchestrate/<topic>/` (`~/.jig/orchestrate/<topic>/` by default).
-The folder is named after the topic in lowercase letters and digits joined
-by hyphens, and holds `state.md`, the current state rewritten whole, and
+The folder is named after the topic in lowercase Latin letters and digits
+joined by hyphens, accents dropped (a topic with none of these is refused), and holds `state.md`, the current state rewritten whole, and
 `journal/YYYY-MM-DD.md`, one append-only file a day (UTC). It is never
 written inside a Git working tree: when `JIG_HOME` lies in one, the skill
 refuses the notebook and falls back to a plain file outside the repository.
