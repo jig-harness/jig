@@ -578,7 +578,10 @@ describe("What is coming", () => {
         };
         await until("the heading is back in view", clearOfStrip);
 
-        // A heading only just under the strip is brought out as well.
+        // A heading only just under the strip is brought out as well, however tall the strip has wrapped.
+        await page.locator(".strip").evaluate((strip) => {
+          (strip as HTMLElement).style.paddingBottom = "60px";
+        });
         await more.tap();
         await until(
           "the group has opened again",

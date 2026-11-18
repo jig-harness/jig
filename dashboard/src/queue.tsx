@@ -34,6 +34,9 @@ import type { Clock } from "./view.ts";
 /** Cards a group shows on a phone before its Show all. */
 const SHOWN_CLOSED = 2;
 
+/** The space left between the sticky strip and a heading brought back under it. */
+const HEADING_GAP_PX = 8;
+
 function QueueItem({
   item,
   rest,
@@ -185,8 +188,8 @@ function SectionCards({
             const strip = document.querySelector(".strip");
             const clear = strip?.getBoundingClientRect().bottom ?? 0;
             const heading = group.querySelector("h3") ?? group;
-            if (heading.getBoundingClientRect().top < clear)
-              group.scrollIntoView({ block: "start" });
+            const hidden = clear - heading.getBoundingClientRect().top;
+            if (hidden > 0) window.scrollBy(0, -(hidden + HEADING_GAP_PX));
           }}
         >
           {all ? "Show fewer" : `Show all ${section.items.length}`}
