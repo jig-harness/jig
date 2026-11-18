@@ -226,6 +226,7 @@ export function GutterFold({
   children,
   defaultOpen = false,
   keepMounted = false,
+  resetKey,
 }: {
   className?: string;
   /** The chevron's name. */
@@ -235,8 +236,15 @@ export function GutterFold({
   defaultOpen?: boolean;
   /** Keep the folded content in the document, so filters can still read it. */
   keepMounted?: boolean;
+  /** When it changes, a person's choice is dropped and the default applies again; the content stays mounted. */
+  resetKey?: string;
 }) {
   const [chosenOpen, setOpen] = useState<boolean | null>(null);
+  const [seenKey, setSeenKey] = useState(resetKey);
+  if (seenKey !== resetKey) {
+    setSeenKey(resetKey);
+    setOpen(null);
+  }
   const open = chosenOpen ?? defaultOpen;
   const id = useId();
   const toggle = () => setOpen((was) => !(was ?? defaultOpen));

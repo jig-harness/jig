@@ -404,10 +404,12 @@ function NeedGroup({
   group,
   clock,
   defaultOpen,
+  resetKey,
 }: {
   group: NeedGroupView;
   clock: Clock;
   defaultOpen: boolean;
+  resetKey: string;
 }) {
   const [all, setAll] = useState(false);
   const { head, cards } = group;
@@ -418,6 +420,7 @@ function NeedGroup({
         className={all ? "needGroup all" : "needGroup"}
         label={`${head} group`}
         defaultOpen={defaultOpen}
+        resetKey={resetKey}
         keepMounted
         head={
           <h3 className="needGroupTitle">
@@ -547,9 +550,10 @@ export function NeedsPanel({
       <div className="needList">
         {groups.map((group) => (
           <NeedGroup
-            key={`${group.head}:${filterKey}`}
+            key={group.head}
             group={group}
             clock={clock}
+            resetKey={filterKey}
             defaultOpen={
               filterActive || group.head !== "Investigate" || !decisionWaits
             }

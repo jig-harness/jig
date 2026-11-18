@@ -33,8 +33,9 @@ defines that subset and its acceptance checks; a desktop layout that
 merely fits a narrow screen does not satisfy it.
 
 This is the design of [plan.md](plan.md) item 42. The local dashboard's
-initial views and card filters are implemented. The cross-machine source feed,
-hub and browser writes described below remain deferred. It serves the setup the
+initial views, card filters and Send, which posts a parked decision's answer
+from the browser, are implemented. The cross-machine source feed, the hub and
+the browser writes beyond Send described below remain deferred. It serves the setup the
 dispatcher is built for: a host that dispatches while people start and steer
 work from their own machines. Its first stage is of use wherever the dispatcher
 runs; the later stages matter where work runs on more than one machine, and
@@ -150,7 +151,7 @@ Investigate starts folded when Decide or Authorize cards are present.
 **Filters.** On desktop, the text filter comes first. A **dashboard filter
 facet** is one independent card property, such as repository or act, that a
 person can select to narrow a view; it is unrelated to a [label
-facet](../GLOSSARY.md#facet). Filters below it show each value with its icon,
+facet](../GLOSSARY.md). Filters below it show each value with its icon,
 name and matching count. Selected values within a dashboard filter facet match
 any of those values, and the dashboard filter facets combine with one another.
 A dashboard filter facet with more than six values uses a select. An active filter shows
