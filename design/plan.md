@@ -238,9 +238,7 @@ per issue in the design's order:
   the `settle`, `redrive` and `rerun-checks` records, each an opt-in of the
   host (`steward.remit`) that the tick applies only on its own reads.
 - **Releases.** A releasing commit's failed gates re-run once and every
-  untagged release reported (`changelog.release.rerun_failed_gates`); a
-  follow-up recording the release owed and finishing, with one need per
-  release.
+  untagged release reported (`changelog.release.rerun_failed_gates`).
 - **Re-drives.** The re-drives per head as configuration
   (`dispatch.redrive`, capped by the host's `redrive_max`); a pass that
   stands down recording why; the conflict round recognising a squash-merged
@@ -322,7 +320,7 @@ leaving a slot idle, an overlap bound per file that replaces the per-epic
 width and, like the cost, only orders,
 validation capacity as a gauge of the load factor, and the reason shown for
 each item that waits. What it will build, one pull request per step, is the
-design's remaining build order: conflict rates from `history.ts`, overlap reported,
+design's remaining build order: overlap reported,
 serialized areas holding pickups, validation capacity, then overlap
 admission. The planner's footprint writer is part of #1180.
 
@@ -662,8 +660,7 @@ they are present and a dry run that still matches.
 
 A dispatched run's conclusion is lost: the wrapper keeps only its last
 `Question:` line, so why a run died or stalled is found only in the
-terminal tab it left. A run that parks or fails keeps that tab, and nothing
-closes it once its pull request merges. And the dispatcher runs nothing
+terminal tab it left. And the dispatcher runs nothing
 without Orca. [design/dispatched-sessions.md](dispatched-sessions.md) has
 how it works. What it will build, one pull request per step in the design's
 order, after `jig gc`'s fixes (#990, #991):
@@ -675,9 +672,6 @@ order, after `jig gc`'s fixes (#990, #991):
   from `drive.ts` at its stop, built on its passes' round reports. It is
   kept on the launch record and the outcome log, and shown on the dashboard
   and by `jig ask`.
-- **Tabs close on every exit**, a park and a failure included, once the
-  report and the cause record hold what a tab showed; the tick ends what a
-  run whose wrapper died left (`endRun`).
 - **The process runtime.** A second session runtime, chosen in the host's
   machine file (`runtime: process`), that opens plain git worktrees under
   `jig gc`'s shared admission, starts each run as a unit or job of the

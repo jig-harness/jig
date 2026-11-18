@@ -224,6 +224,16 @@
     },
     {
       "kind": "field",
+      "name": "releaseTags",
+      "run": null,
+      "type": "array",
+      "carriedBy": "tick (sometimes)",
+      "version": null,
+      "key": null,
+      "meaning": "Up to 100 release tags the follow-up found owed, handed to the repository's owner dispatcher for tracker filing. The owner takes these only from a trusted non-owner follow-up outcome."
+    },
+    {
+      "kind": "field",
       "name": "by",
       "run": null,
       "type": "string",
@@ -332,7 +342,8 @@
                         },
                         "host": true,
                         "owner": true,
-                        "endedAt": true
+                        "endedAt": true,
+                        "releaseTags": true
                       },
                       "required": ["run", "record"],
                       "additionalProperties": true
@@ -458,7 +469,8 @@
                             },
                             "host": true,
                             "owner": true,
-                            "endedAt": true
+                            "endedAt": true,
+                            "releaseTags": true
                           },
                           "required": ["run", "record"],
                           "additionalProperties": true
@@ -576,7 +588,8 @@
                             },
                             "host": true,
                             "owner": true,
-                            "endedAt": true
+                            "endedAt": true,
+                            "releaseTags": true
                           },
                           "required": ["run", "record"],
                           "additionalProperties": true
@@ -702,7 +715,8 @@
                                 },
                                 "host": true,
                                 "owner": true,
-                                "endedAt": true
+                                "endedAt": true,
+                                "releaseTags": true
                               },
                               "required": ["run", "record"],
                               "additionalProperties": true

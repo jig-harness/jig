@@ -112,6 +112,25 @@ describe("a Codex pass's session id", () => {
     expect(codexSessionIn(`the session id: ${SESSION} was said`)).toBeNull();
     expect(codexSessionIn(undefined)).toBeNull();
   });
+
+  it("reads a valid thread ID from a Codex JSON startup event", () => {
+    const startup = JSON.stringify({
+      type: "thread.started",
+      thread_id: SESSION.toUpperCase(),
+    });
+    expect(codexSessionIn(`diagnostic\n${startup}\n`)).toBe(SESSION);
+    expect(codexSessionIn('{"type":"thread.started"')).toBeNull();
+    expect(
+      codexSessionIn(
+        JSON.stringify({ type: "thread.started", thread_id: "../transcript" }),
+      ),
+    ).toBeNull();
+    expect(
+      codexSessionIn(
+        JSON.stringify({ type: "turn.started", thread_id: SESSION }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("keeping a run's transcript copy", () => {

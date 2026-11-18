@@ -54,6 +54,7 @@ import { readDrives } from "./sources/ledgers.ts";
 import {
   allRecords,
   bookOf,
+  tickBound,
   type TickContext,
   type TickOptions,
 } from "./tick-context.ts";
@@ -63,6 +64,7 @@ import { afterWait } from "./tick-plan.ts";
 import { aboutTargets } from "./line.ts";
 import { endOwnClaims } from "./tick-shared.ts";
 import { stationContextOf } from "./line-station.ts";
+import { releaseStationOn, settleReleaseHandoff } from "./release-handoff.ts";
 import { settleStationAnswers } from "./station-answers.ts";
 import { stationPorts } from "./station-ports.ts";
 import type { ActionBook } from "./failures.ts";
@@ -166,6 +168,18 @@ export async function actObserved(
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
+  if (releaseStationOn(opened))
+    await hooks.guard(
+      opened.stages.has("followup") ? "followup" : "notify",
+      () =>
+        settleReleaseHandoff({
+          repo,
+          values: opened.values,
+          report,
+          now: context.nowMs,
+          bound: tickBound(context),
+        }),
+    );
   const inputs: ApplyInputs = {
     repo,
     runtime: context.runtime,
@@ -198,6 +212,7 @@ export async function actObserved(
           login: forge.login,
           tracker: observation.tracked.tracker,
           issueRepository: observation.tracked.issueRepository,
+          bound: tickBound(context),
           links: lineInput?.links,
           sessions: () => readSessions(context.runtime, repo, observation.join),
         }),

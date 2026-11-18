@@ -42,6 +42,8 @@ import {
   removeRecordIf,
   writeRecord,
 } from "./launches.ts";
+import type { TickBound } from "./sources/bounded.ts";
+import { rerunReleaseGates } from "./release-gates.ts";
 import { writeCommandLabel } from "./requests.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -71,6 +73,7 @@ export interface StationInputs {
   links: WorkLinks | null | undefined;
   sessions: () => Promise<SessionsReport>;
   root?: string;
+  bound?: TickBound | undefined;
 }
 
 /** Why a stage the step belongs to is off; `null` when it is on. */
@@ -421,6 +424,14 @@ export function stationPorts(inputs: StationInputs): StationPorts {
       return listed.ok ? ok(conversationOf(listed.value)) : listed;
     },
     trackerComments: (item) => readTrackerAnswers(inputs.tracker, item, self),
+    rerunReleaseGates: (tag) => {
+      const off = inputs.enabled.has("notify")
+        ? null
+        : stageOff(inputs, "followup");
+      return off === null
+        ? rerunReleaseGates(inputs.repo, tag, inputs.root, inputs.bound)
+        : Promise.resolve(refused(off));
+    },
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
     releasePickup: (item, record = null) => releasePickup(inputs, item, record),

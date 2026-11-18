@@ -60,7 +60,7 @@ import type { LineLoad } from "./lib/dashboard-contract.ts";
 import type { ReflectionReport } from "./lib/reflection-route.ts";
 import { tickFailure } from "./lib/tick-failure.ts";
 import { failureText } from "./lib/text.ts";
-import type { Defect, RepoReport } from "./lib/types.ts";
+import type { Defect, EndRunOutcome, RepoReport } from "./lib/types.ts";
 import { currentMs, isoOf, parseMs } from "../shared/time.ts";
 
 /** Days a receipt is kept unless the machine file's `receipts_days` says otherwise. */
@@ -84,6 +84,8 @@ export interface TickReceipt {
   unreadableLaunches?: string[];
   /** Outcome rows that could not be written for records of repositories this tick did not read. */
   unloggedOutcomes?: string[];
+  /** What `--apply` had the session runtime end of what the ended runs of repositories this tick did not read left (`end-runs.ts`); a run that left nothing is not listed. */
+  endedRuns?: EndRunOutcome[];
   /** Why the outcome log's text copy was not brought up to date. */
   logCopyFailed?: string;
   /** Why the dashboard's line was not written: it keeps showing the tick before. */
@@ -692,6 +694,19 @@ export function takeObserveLock(path: string, root = stateRoot()): Lock {
  */
 export function takeRepositoryLock(slug: string, root = stateRoot()): Lock {
   return takeObserveKey(`repository:${slug}`, root);
+}
+
+/**
+ * The lock of a repository's conflict rates refresh
+ * (`lib/conflict-rates-refresh.ts`), taken after the act phase, so two ticks
+ * that acted on the repository never run the refresh together, and neither
+ * holds a lock another tick's observe or act phase waits for.
+ */
+export function takeRatesLock(slug: string, root = stateRoot()): Lock {
+  const digest = createHash("sha256").update(slug).digest("hex");
+  return takeLockAt(
+    join(root, "conflict-rates", `${digest.slice(0, 16)}.lock`),
+  );
 }
 
 function takeObserveKey(key: string, root: string): Lock {
