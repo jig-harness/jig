@@ -38,7 +38,11 @@ import {
 } from "./bounded.ts";
 import { markClaims } from "./claim-markers.ts";
 import { freshPoolPickup, readPoolPickups } from "./ready-pool.ts";
-import { LIMITED_REASON, limitedRow } from "./served-failures.ts";
+import {
+  claimsUnreadRow,
+  LIMITED_REASON,
+  limitedRow,
+} from "./served-failures.ts";
 import {
   readServedPickups,
   freshServedPickup,
@@ -100,6 +104,11 @@ export interface TrackerReading {
    * to watch; `null` when they could not be read (named in `unplaced`).
    */
   claimed: ClaimedItem[] | null;
+  /**
+   * A served queue's item, or a queue the rate limit stopped part way, was
+   * not read: the wanted items are not all known, though the claims may be.
+   */
+  partial?: true;
 }
 
 /**
@@ -689,8 +698,9 @@ export async function readPickups(
     factory.claimed === null &&
     once().dispatchSource !== undefined &&
     factoryReading.factoryView === undefined
-  )
-    return factory;
+  ) {
+    return withClaimsUnread(factory, once().adapter, served?.people);
+  }
   const roots = [
     ...(factoryReading.epicRoots ?? []),
     ...factoryReading.wanted.flatMap((i) =>
@@ -725,12 +735,11 @@ export async function readPickups(
       ),
     ],
     unplaced: onceEach([...factory.unplaced, ...extra.unplaced]),
-    // A queue the rate limit stopped part way, or one that failed to read,
-    // was not read whole: its claims are not known, so no ended pickup is released or judged on it.
+    // A queue whose items in progress were not read leaves its claims
+    // unknown, so none is judged on it. An item below the queue that did
+    // not read leaves the claims known and only the wanted items partial.
     claimed:
-      factory.claimed === null ||
-      extra.limitedUntil !== undefined ||
-      extra.incomplete === true
+      factory.claimed === null || extra.claimsUnknown === true
         ? null
         : [
             ...new Map(
@@ -738,7 +747,42 @@ export async function readPickups(
               [...extra.claimed, ...factory.claimed].map((i) => [i.key, i]),
             ).values(),
           ],
+    ...(partialRead(factory, extra) ? { partial: true as const } : {}),
   };
+}
+
+/** A reading is partial when the pool, a served queue or an item below it was not read. */
+function partialRead(
+  factory: TrackerReading,
+  extra: Awaited<ReturnType<typeof readServedPickups>>,
+): boolean {
+  return (
+    extra.limitedUntil !== undefined ||
+    extra.incomplete === true ||
+    factory.partial === true
+  );
+}
+
+/** A failed native scope leaves each served person's claims unread: say so, beside the scope's own row. */
+function withClaimsUnread(
+  factory: TrackerReading,
+  adapter: string,
+  people: readonly ServedPerson[] = [],
+): TrackerReading {
+  const rows = people.flatMap((person) => {
+    const identity = person.tracker[adapter as keyof ServedPerson["tracker"]];
+    return identity === undefined
+      ? []
+      : [
+          claimsUnreadRow(
+            identity,
+            "the tracker's scope failed before the queue was read",
+          ),
+        ];
+  });
+  return rows.length === 0
+    ? factory
+    : { ...factory, unplaced: onceEach([...factory.unplaced, ...rows]) };
 }
 
 /**
@@ -828,6 +872,11 @@ function withPool(
       ...pool.unplaced,
       ...(pool.limited === undefined ? [] : [limitedRow(open(), pool.limited)]),
     ]),
+    // A pool that was not read may hold an ended pickup's item: the reading
+    // is partial, so its record is kept.
+    ...(pool.limited !== undefined || pool.failed === true
+      ? { partial: true as const }
+      : {}),
   };
 }
 

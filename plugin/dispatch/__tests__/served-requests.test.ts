@@ -225,7 +225,7 @@ describe("a served queue's cost in tracker requests", () => {
     }
   });
 
-  it("reports an item no user assigned as its own row, keeps the record ok and leaves the claims unknown", async () => {
+  it("reports an item no user assigned as its own row, keeps the record ok and the claims known", async () => {
     const read = async (history?: "none") => {
       const fake = queue();
       fake.add({
@@ -256,7 +256,8 @@ describe("a served queue's cost in tracker requests", () => {
       }),
     );
     expect(noAssigner.wanted).toHaveLength(50);
-    expect(noAssigner.claimed).toBeNull();
+    expect(noAssigner.claimed).toEqual([]);
+    expect(noAssigner.partial).toBe(true);
   });
 
   it("reads neither the children nor the description of an epic no user assigned", async () => {
@@ -511,12 +512,16 @@ describe("a served queue's cost in tracker requests", () => {
           `rate limited until ${new Date(reset).toISOString()}`,
         ),
       }),
+      expect.objectContaining({
+        target: "the items person@example.com claimed",
+        reason: expect.stringContaining("stalls, double claims"),
+      }),
     ]);
     expect(read.wanted).toEqual([]);
     expect(fake.count()).toBe(0);
   });
 
-  it("leaves the claims unknown when the limit stopped the served queue, so no ended pickup is released", async () => {
+  it("leaves the claims unknown when the limit stopped the served queue, and names what goes unchecked", async () => {
     const fake = queue();
     const reset = T0 + 30 * 60_000;
     const limited: Tracker = {
@@ -536,7 +541,19 @@ describe("a served queue's cost in tracker requests", () => {
     );
     expect(read.read.ok).toBe(true);
     expect(read.claimed).toBeNull();
-    expect(read.unplaced).toHaveLength(1);
+    expect(read.unplaced).toEqual([
+      {
+        target: `the items ${PERSON} claimed`,
+        record: "tracker",
+        reason: `the items ${PERSON} claimed could not be read, so stalls, double claims and the questions of started pickups are not checked: the tracker is rate limited until ${new Date(reset).toISOString()}`,
+      },
+      expect.objectContaining({
+        target: "linear ENG",
+        reason: expect.stringContaining(
+          `rate limited until ${new Date(reset).toISOString()}`,
+        ),
+      }),
+    ]);
   });
 
   it("reports a rate-limited tracker once, keeps the last reading, and sends nothing", async () => {
@@ -560,10 +577,15 @@ describe("a served queue's cost in tracker requests", () => {
     const mark = fake.count();
     const read = await tick(limited, cache, 2);
     expect(fake.count()).toBe(mark);
-    expect(read.unplaced).toHaveLength(1);
-    expect(read.unplaced[0]?.reason).toContain(
+    // The limit once, and the claims the kept reading cannot vouch for.
+    expect(read.unplaced.map((u) => u.target)).toEqual([
+      `the items ${PERSON} claimed`,
+      "linear ENG",
+    ]);
+    expect(read.unplaced[1]?.reason).toContain(
       `rate limited until ${new Date(reset).toISOString()}`,
     );
+    expect(read.claimsUnknown).toBe(true);
     expect(read.limitedUntil).toBe(new Date(reset).toISOString());
     expect(read.wanted).toHaveLength(50);
   });
