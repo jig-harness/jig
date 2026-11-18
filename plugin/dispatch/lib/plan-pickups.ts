@@ -66,6 +66,7 @@ import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
+import { ANY_KEY_SOURCE } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
@@ -593,9 +594,7 @@ function batchQuestionForSibling(latest: ReadRecord, item: string): boolean {
   if (asked === null) return false;
   const question = reportQuestion(latest.report, asked);
   const keys = new Set(
-    question
-      .toUpperCase()
-      .match(/(?<![\w#])(?:#\d+|[A-Z][A-Z0-9]*-\d+)(?!\w)/g),
+    question.toUpperCase().match(new RegExp(ANY_KEY_SOURCE, "gi")),
   );
   const named = members.filter(({ key }) => keys.has(key.toUpperCase()));
   return named.length > 0

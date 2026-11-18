@@ -18,6 +18,7 @@ import {
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { leftBehindWorkspaces } from "../lib/actions/pickup-hold.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
+import { stationContextOf, stationDecision } from "../lib/line-station.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
 import { closeStateDb } from "../lib/state.ts";
 import type { DispatchSection, WantedItem } from "../lib/types.ts";
@@ -288,6 +289,26 @@ describe("a batch pickup that ended after claiming one member", () => {
     expect(sibling?.evidence.question).toBeUndefined();
     expect(sibling?.notice).toBeUndefined();
     expect(sibling?.framed).toBeUndefined();
+    const decision = stationDecision(
+      sibling as Parameters<typeof stationDecision>[0],
+      stationContextOf(SLUG, { tracker: { adapter: "github" } }),
+    );
+    expect(decision).not.toBeNull();
+    if (decision === null) return;
+    expect(decision.answer).toMatchObject({
+      station: "pickup",
+      address: "pickup@example-org/example-repo#925",
+    });
+    expect(decision.decision).toBeDefined();
+    if (decision.decision === undefined) return;
+    expect(decision.decision.call.options.map((option) => option.id)).toContain(
+      "release",
+    );
+  });
+
+  it("does not recognize an HTML entity as a GitHub member key", () => {
+    const read = questionedBatch("Should &#924; follow the shared approach?");
+    expect(questionTargets(["#923", "#924", "#925"], [read])).toEqual(["#923"]);
   });
 
   it("keeps every member of a batch that claimed none, each a need for a person", () => {
