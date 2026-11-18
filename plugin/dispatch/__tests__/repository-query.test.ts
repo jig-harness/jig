@@ -76,9 +76,11 @@ async function tick(
   return JSON.parse(r.stdout) as TickReceipt;
 }
 
-/** Forget the `gh` calls so far, so the next tick's are counted alone. */
-const resetCalls = (w: World) =>
+/** Forget forge observations so the next tick's calls and responses are counted alone. */
+const resetCalls = (w: World) => {
   rmSync(join(w.dir, "gh-calls.log"), { force: true });
+  rmSync(join(w.dir, "comment-page-responses.log"), { force: true });
+};
 
 /** Every `gh` call the fake answered so far, one line each. */
 function ghCalls(w: World): string[] {
@@ -98,6 +100,14 @@ const queries = (w: World, name = "DispatchRepository") =>
 const listings = (w: World, pr: number) =>
   ghCalls(w).filter((c) => c.includes(`/issues/${pr}/comments?per_page=100`))
     .length;
+
+/** Each conditional comment-page response the fake forge returned. */
+function commentPageResponses(w: World): string[] {
+  const path = join(w.dir, "comment-page-responses.log");
+  return existsSync(path)
+    ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean)
+    : [];
+}
 
 const forgeDetail = (r: TickReceipt) =>
   r.repos[0]?.records.find((x) => x.record === "forge")?.detail ?? "";
@@ -161,6 +171,12 @@ describe("one query per repository", () => {
     expect(
       ghCalls(w).filter((c) => c.includes("If-None-Match:")).length,
     ).toBeGreaterThanOrEqual(4);
+    expect(commentPageResponses(w).sort()).toEqual([
+      "10 304",
+      "7 304",
+      "8 304",
+      "9 200",
+    ]);
 
     resetCalls(w);
     const state = new Database(

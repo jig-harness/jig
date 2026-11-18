@@ -15,7 +15,7 @@
  * `forge-fails.json` refuses has more comments than the query gives, so the
  * tick lists them on their own.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
 /** How many comments one page of the query holds. */
 const COMMENTS_PAGE = 100;
@@ -146,6 +146,10 @@ export function replyConditionalCommentPage(dir: string, args: string[]): void {
   const tag = '"' + Bun.hash(body).toString(16) + '"';
   const unchanged = args.includes("If-None-Match: " + tag);
   const status = unchanged ? "304 Not Modified" : "200 OK";
+  appendFileSync(
+    `${dir}/comment-page-responses.log`,
+    `${match[1]} ${unchanged ? "304" : "200"}\n`,
+  );
   process.stdout.write(
     `HTTP/2.0 ${status}\r\nEtag: ${tag}\r\n\r\n${unchanged ? "" : body}`,
   );
