@@ -566,10 +566,35 @@ describe("What is coming", () => {
         await more.scrollIntoViewIfNeeded();
         await more.tap();
         const heading = page.getByRole("heading", { name: /^Starts next/ });
-        await until("the heading is back in view", async () => {
+        const clearOfStrip = async () => {
           const box = await heading.boundingBox();
-          return box !== null && box.y >= 0 && box.y < 844;
+          const strip = await page.locator(".strip").boundingBox();
+          return (
+            box !== null &&
+            strip !== null &&
+            box.y >= strip.y + strip.height &&
+            box.y < 844
+          );
+        };
+        await until("the heading is back in view", clearOfStrip);
+
+        // A heading only just under the strip is brought out as well.
+        await more.tap();
+        await until(
+          "the group has opened again",
+          async () =>
+            (await page.locator(".pQueue .qItem:visible").count()) === 40,
+        );
+        const top = (await heading.boundingBox())?.y ?? 0;
+        await page.evaluate((by) => window.scrollBy(0, by), top - 30);
+        await until(
+          "the heading is under the strip",
+          async () => !(await clearOfStrip()),
+        );
+        await page.evaluate(() => {
+          document.querySelector<HTMLElement>("[data-group-more]")?.click();
         });
+        await until("the heading is out from under the strip", clearOfStrip);
       } finally {
         await context.close();
       }

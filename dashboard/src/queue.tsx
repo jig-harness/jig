@@ -179,9 +179,13 @@ function SectionCards({
           aria-expanded={all}
           onClick={(event) => {
             setAll(!all);
-            // Closing from the group's foot brings its heading back into view.
+            // Closing from the group's foot brings its heading out from above the view or under the sticky strip.
             const group = event.currentTarget.closest("[data-facet-group]");
-            if (all && group !== null && group.getBoundingClientRect().top < 0)
+            if (!all || group === null) return;
+            const clear = Number.parseFloat(
+              getComputedStyle(group).scrollMarginTop,
+            );
+            if (group.getBoundingClientRect().top < clear)
               group.scrollIntoView({ block: "start" });
           }}
         >
