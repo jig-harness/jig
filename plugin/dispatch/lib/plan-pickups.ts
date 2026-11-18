@@ -22,6 +22,11 @@
  *   (`stalled-pr.ts`): from its in-progress state it is moved to `pr_open`,
  *   and in `pr_open` it is quiet while that pull request is open. Where it
  *   cannot move, the stall need names the pull request.
+ * - A claimed item with no running session that an open pull request of the
+ *   repository links, while that pull request's drive is live or converged,
+ *   is carried by it, not a stall, whatever state the item is in
+ *   (`carried-pr.ts`). A linked pull request with no drive, or a stopped
+ *   one, leaves the stall need, which names it.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -56,6 +61,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { type Carriage, readCarriage } from "./carried-pr.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { testLockNote } from "./test-lock-waits.ts";
@@ -63,6 +69,7 @@ import { unwrittenResult } from "./session-startup.ts";
 import {
   type LaunchPrReading,
   type LaunchPrStep,
+  inPrOpen,
   readLaunchPr,
   type StalledPrInput,
   stallNote,
@@ -373,6 +380,56 @@ function settledOrHeld(
   return settledByPr(item.key, step, plan) || heldForHost(item, input, plan);
 }
 
+/** The carriage of an item a driven pull request may carry: none for one already in pr_open, which keeps its existing handling whichever pull request links it. */
+function carriageOf(
+  item: ClaimedItem,
+  input: PickupInput,
+  pr: LaunchPrReading,
+): Carriage {
+  if (input.prOpen !== undefined && inPrOpen(item, input.prOpen)) {
+    return { kind: "none" };
+  }
+  return readCarriage(
+    item,
+    input.prOpen?.carried,
+    pr.read.kind === "open" ? pr.read.pr.number : undefined,
+  );
+}
+
+/** Quiets an item a driven pull request carries, unless it is still to move to pr_open; whether it did. */
+function carriedQuiet(
+  item: ClaimedItem,
+  carriage: Carriage,
+  pr: LaunchPrReading,
+  plan: PickupPlan,
+): boolean {
+  if (carriage.kind !== "carried" || pr.step?.kind === "move") return false;
+  plan.quiet.push({
+    target: item.key,
+    class: "claimed-carried",
+    why: carriage.why,
+    carried: {
+      pr: carriage.pr.number,
+      url: carriage.pr.url,
+      drive: carriage.drive,
+    },
+  });
+  return true;
+}
+
+/** Quiets an item its launch's open pull request settles or a driven pull request carries, whatever the pickup once asked; a question on an item still to move stays a need. Whether it did. */
+function quietByPr(
+  item: ClaimedItem,
+  input: PickupInput,
+  pr: LaunchPrReading,
+  plan: PickupPlan,
+): boolean {
+  if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) {
+    return true;
+  }
+  return carriedQuiet(item, carriageOf(item, input, pr), pr, plan);
+}
+
 /** One claimed item: a double claim, running, idle, or stalled. */
 function planClaimed(
   item: ClaimedItem,
@@ -423,8 +480,7 @@ function planClaimed(
   }
   plan.idleNow.push(item.key);
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
-  // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
-  if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
+  if (quietByPr(item, input, pr, plan)) return;
   const asked = questionAsked(input, item, input.launches);
   if (asked !== null) {
     plan.actions.push(asked);
@@ -453,7 +509,12 @@ function stalledPickup(
   pr: LaunchPrReading,
 ): Action {
   const idle = input.nowMs - since;
-  const note = stallNote(pr);
+  const carriage = carriageOf(item, input, pr);
+  const notes = [
+    stallNote(pr),
+    carriage.kind === "stall" ? carriage.note : null,
+  ].filter((n): n is string => n !== null);
+  const note = notes.length === 0 ? null : notes.join("; ");
   const latest = input.launches
     .filter(
       (r) =>
