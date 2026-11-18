@@ -171,9 +171,11 @@ A [serialized area](../GLOSSARY.md) and overlap read the same files:
 
 - **Reuse.** A pull request's files are kept under its head commit and its
   comparison base (the base branch's name and commit, as the listing
-  reports them), so a pull request whose head and base did not move costs
-  nothing; a retarget or a base that moved is read again. The same reading
-  serves serialization and overlap.
+  reports them). When the listing supplies that base commit, an unchanged
+  head and base need no file-page requests; a retarget or a base that moved
+  is read again. When the listing omits the base commit, the tick reads the
+  live base-branch tip before deciding whether it can reuse the cached
+  comparison. The same file reading serves serialization and overlap.
 - **Admit and bound.** Each page asks the shared budget record. Pages of
   100 files, at most 3,000 files a pull request (the forge's own listing
   limit), and at most eight pull requests of a repository read fresh in
@@ -545,9 +547,3 @@ One pull request each, in this order.
 - **Overlap across repositories.** Files collide only within one
   repository. Two repositories' passes still share a host's validation
   capacity when they share its lock, and the gauge counts them both.
-
-## Review
-
-Reviewed on 2026-11-14 at commit 11c00b4d8 by a reviewer with fresh
-context (a subagent that did not write the design), against the issue's
-decisions, the ADRs it names and the dispatcher's code.
