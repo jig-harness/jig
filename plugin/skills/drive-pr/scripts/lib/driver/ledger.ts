@@ -78,7 +78,13 @@ import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
-import { labelDrive } from "./state-labels.ts";
+import { type DriveLabelWrite, labelDrive } from "./state-labels.ts";
+import {
+  type ConvergedRecheck,
+  convergedStopParks,
+  liveRecheck,
+} from "./converged-ci-live.ts";
+import { DRIVE_EXIT } from "../status/terminal-states.ts";
 import { stopKey } from "../../../../../shared/pr-labels/blocked.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -613,10 +619,10 @@ async function ledgerIsOurs(pr: string): Promise<boolean> {
 async function labelOwnDrive(
   pr: string,
   moment: Parameters<typeof labelDrive>[1],
-): Promise<void> {
+): Promise<DriveLabelWrite | null> {
   // A drive with no ledger labels nothing.
-  if (ledgerDriverFromEnv() === null) return;
-  await labelDrive(pr, moment, undefined, () => ledgerIsOurs(pr));
+  if (ledgerDriverFromEnv() === null) return null;
+  return await labelDrive(pr, moment, undefined, () => ledgerIsOurs(pr));
 }
 
 /** Write the running ledger now and, once it landed, the state label that follows it; what `handoff` exited with. */
@@ -650,12 +656,12 @@ async function afterStopWrite(
   code: number | null,
   started: string,
   dropRecord: () => Promise<void>,
-): Promise<void> {
+): Promise<DriveLabelWrite | null> {
   const next = afterHandoff(handoff);
-  if (next === "unwritten") return;
+  if (next === "unwritten") return null;
   await dropRecord();
-  if (next === "refused") return;
-  await labelOwnDrive(pr, async () => {
+  if (next === "refused") return null;
+  return await labelOwnDrive(pr, async () => {
     const state = await readDriveState(pr);
     return {
       stopped: code,
@@ -685,11 +691,17 @@ async function afterStopWrite(
  * naming this driver running, its heartbeat ages toward the lease window,
  * and the record stays unmarked, so no recovery marks it stopped either.
  * The same holds when the stop cannot be recorded in the drive state first.
+ *
+ * A stop labelled `converged` then watches the head's CI while the drive
+ * still holds its locks (`converged-ci-live.ts`): the label write can start
+ * runs on it. When those runs leave CI unsettled after their one re-run, the
+ * stop is settled again as `HITL_PARKED`, which `done` returns.
  */
 export function ledgerSettlement(
   pr: string,
   held: readonly DriveLock[],
   dryRun = false,
+  recheck: ConvergedRecheck = liveRecheck,
 ): AsyncDisposable & {
   done(code: number): Promise<number>;
 } {
@@ -700,21 +712,35 @@ export function ledgerSettlement(
     if (started !== "")
       removeDriverRecord(await resolveStateDir(), pr, started, true);
   };
-  const settle = async (code: number | null): Promise<void> => {
-    if (settled) return;
+  const settle = async (code: number | null): Promise<number | null> => {
+    if (settled) return code;
     const driver = ledgerDriverFromEnv();
     if (code === TAKEN_OVER_EXIT) {
       settled = true;
       await dropRecord();
-      return;
+      return code;
     }
     settled = true;
     if (driver !== null && held.length === 0) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its locks are retained, so its pass may still act.`,
       );
-      return;
+      return code;
     }
+    const labelled = await writeStop(code);
+    if (
+      code === null ||
+      !(await convergedStopParks(pr, labelled, currentMs(), recheck))
+    )
+      return code;
+    await writeStop(DRIVE_EXIT.HITL_PARKED);
+    return DRIVE_EXIT.HITL_PARKED;
+  };
+  /** Record stop `code` in the drive state, then the stopped ledger and its label. */
+  const writeStop = async (
+    code: number | null,
+  ): Promise<DriveLabelWrite | null> => {
+    const driver = ledgerDriverFromEnv();
     // The exit goes into the state before the ledger's last write, which
     // mirrors the state's events: an unknown exit names none in the driver
     // record, so a report reading the ledger falls back to those events, and
@@ -730,12 +756,12 @@ export function ledgerSettlement(
         String(code ?? "unknown"),
         driverRuntime.stopLeftWork,
       ));
-    if (driver === null) return;
+    if (driver === null) return null;
     if (!recorded) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
-      return;
+      return null;
     }
     const res = await run(tsArgv(driveState, ["handoff", pr]), {
       stdout: "ignore",
@@ -747,12 +773,11 @@ export function ledgerSettlement(
         [HANDOFF_TELLS_REFUSED]: "1",
       },
     });
-    await afterStopWrite(pr, res.code, code, started, dropRecord);
+    return await afterStopWrite(pr, res.code, code, started, dropRecord);
   };
   return {
     async done(code: number): Promise<number> {
-      await settle(code);
-      return code;
+      return (await settle(code)) ?? code;
     },
     async [Symbol.asyncDispose](): Promise<void> {
       await settle(null);

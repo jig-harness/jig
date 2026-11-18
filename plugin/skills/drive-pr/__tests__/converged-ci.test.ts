@@ -1,0 +1,300 @@
+/**
+ * drive-pr: the watch a converged stop runs after its label write
+ * (`lib/driver/converged-ci.ts`). The write can start CI on the verified head:
+ * a cancellation goes to the cancelled-run recovery, a failure in a run a
+ * label write started is re-run once, and anything that stays unsettled parks.
+ */
+import { describe, expect, it } from "bun:test";
+import {
+  type CiRead,
+  type ConvergedCiDeps,
+  watchConvergedCi,
+} from "../scripts/lib/driver/converged-ci.ts";
+import type { Recovery } from "../scripts/lib/cancelled-recovery.ts";
+import type { WorkflowRun } from "../scripts/lib/status/workflow-runs.ts";
+import { isoFromMs, parseMs } from "../../../shared/time.ts";
+
+const HEAD = "a".repeat(40);
+const WRITTEN = parseMs("2026-11-17T10:00:00.000Z");
+const iso = isoFromMs;
+
+/** A workflow run on the head, created `after` ms past the label write. */
+function workflowRun(
+  id: number,
+  after: number,
+  over: Partial<WorkflowRun> = {},
+): WorkflowRun {
+  return {
+    id,
+    workflowId: 7,
+    status: "completed",
+    conclusion: "failure",
+    checkSuiteId: id * 10,
+    createdAt: iso(WRITTEN + after),
+    startedAt: iso(WRITTEN + after),
+    attempt: 1,
+    updatedAt: iso(WRITTEN + after + 60_000),
+    ...over,
+  };
+}
+
+const failing = (id: number, conclusion = "failure"): CiRead => ({
+  verdict: "failing: tests",
+  failingRuns: [
+    { id, createdAt: iso(WRITTEN + 2_000), conclusion, jobNames: ["tests"] },
+  ],
+  failingStatusNames: [],
+});
+const GREEN: CiRead = {
+  verdict: "green",
+  failingRuns: [],
+  failingStatusNames: [],
+};
+
+interface Script {
+  ci: Array<CiRead | null>;
+  runs?: Array<WorkflowRun[] | null>;
+  recovery?: Recovery[];
+  head?: string;
+  open?: boolean;
+  writes?: number[] | null;
+  rerunnable?: number[];
+  rerunOk?: boolean;
+}
+
+/** Fake dependencies over a scripted sequence of readings, on a clock the sleeps move. */
+function fake(script: Script) {
+  let now = WRITTEN;
+  const reruns = new Map<string, number>();
+  const asked: number[] = [];
+  const recovered: string[] = [];
+  let ciAt = 0;
+  let runsAt = 0;
+  let recoveryAt = 0;
+  const last = <T>(list: T[], at: number): T =>
+    list[Math.min(at, list.length - 1)] as T;
+  const deps: ConvergedCiDeps = {
+    now: () => now,
+    sleep: async (ms) => {
+      now += ms;
+    },
+    pollMs: 10_000,
+    settleMs: 31_000,
+    windowMs: 5 * 60_000,
+    pullRequest: async () => ({
+      open: script.open ?? true,
+      head: script.head ?? HEAD,
+    }),
+    ci: async () => last(script.ci, ciAt++),
+    workflowRuns: async () => last(script.runs ?? [[]], runsAt++),
+    labelWrites: async () =>
+      script.writes === undefined ? [WRITTEN] : script.writes,
+    labelReruns: async () => reruns,
+    rerunnable: async (_pr, runs) => script.rerunnable ?? runs.map((r) => r.id),
+    claimRerun: async (_pr, run) => {
+      const key = `${run.id}:${run.attempt}`;
+      if (reruns.has(key)) return false;
+      reruns.set(key, now);
+      return true;
+    },
+    rerunFailed: async (_pr, _head, run) => {
+      asked.push(run);
+      return script.rerunOk === false
+        ? { ok: false, detail: "HTTP 403: the run cannot be re-run" }
+        : { ok: true, detail: "" };
+    },
+    recoverCancelled: async (_pr, head) => {
+      recovered.push(head);
+      return last(script.recovery ?? ["none"], recoveryAt++);
+    },
+  };
+  return { deps, asked, recovered, clock: () => now };
+}
+
+describe("the converged CI watch", () => {
+  it("lets the label stand when the head's CI reads green after the write's runs exist", async () => {
+    const f = fake({ ci: [GREEN] });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict).toEqual({
+      kind: "stands",
+      why: `CI on head ${HEAD} reads green`,
+    });
+    // It read nothing before the label-run window and its rounding second had passed.
+    expect(f.clock()).toBe(WRITTEN + 31_000);
+  });
+
+  it("waits through pending CI to green", async () => {
+    const f = fake({ ci: [{ ...GREEN, verdict: "pending: tests" }, GREEN] });
+    expect((await watchConvergedCi("999", HEAD, WRITTEN, f.deps)).kind).toBe(
+      "stands",
+    );
+    expect(f.asked).toEqual([]);
+  });
+
+  it("hands a cancellation to the cancelled-run recovery, and stands once its re-run is green", async () => {
+    const cancelled: CiRead = {
+      verdict: "cancelled: tests",
+      failingRuns: [],
+      failingStatusNames: [],
+    };
+    const f = fake({
+      ci: [cancelled, cancelled, GREEN],
+      recovery: ["wait", "wait"],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.recovered).toEqual([HEAD, HEAD]);
+    expect(f.asked).toEqual([]);
+  });
+
+  it("ends parked when the cancelled-run recovery parks cancelled-ci", async () => {
+    const f = fake({
+      ci: [
+        {
+          verdict: "cancelled: tests",
+          failingRuns: [],
+          failingStatusNames: [],
+        },
+      ],
+      recovery: ["parked"],
+    });
+    expect(await watchConvergedCi("999", HEAD, WRITTEN, f.deps)).toEqual({
+      kind: "parked",
+    });
+  });
+
+  it("parks a cancellation the recovery has nothing to re-run for", async () => {
+    const f = fake({
+      ci: [
+        {
+          verdict: "cancelled: tests",
+          failingRuns: [],
+          failingStatusNames: [],
+        },
+      ],
+      recovery: ["none"],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("park");
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "found nothing it may re-run",
+    );
+  });
+
+  it("re-runs a failure in a run the label write started once, then stands on its green", async () => {
+    const f = fake({
+      ci: [failing(41), failing(41), GREEN],
+      runs: [
+        [workflowRun(41, 2_000)],
+        [
+          workflowRun(41, 2_000, {
+            attempt: 2,
+            status: "in_progress",
+            conclusion: null,
+          }),
+        ],
+      ],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.asked).toEqual([41]);
+  });
+
+  it("parks when the one re-run of a label-started run fails again", async () => {
+    const f = fake({
+      ci: [failing(41), failing(41)],
+      runs: [
+        [workflowRun(41, 2_000)],
+        [workflowRun(41, 2_000, { attempt: 2 })],
+      ],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(f.asked).toEqual([41]);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      `run 41 on head ${HEAD} failed again on attempt 2`,
+    );
+  });
+
+  it("parks, without a re-run, a failure in a run no label write started", async () => {
+    // Created two minutes after the write: past the window that attributes a run to it.
+    const f = fake({ ci: [failing(42)], runs: [[workflowRun(42, 120_000)]] });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(f.asked).toEqual([]);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "no label write started it",
+    );
+  });
+
+  it("parks, without a re-run, a label-started run created under the CI hold", async () => {
+    const f = fake({
+      ci: [failing(43)],
+      runs: [[workflowRun(43, 2_000)]],
+      rerunnable: [],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(f.asked).toEqual([]);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "may not be re-run",
+    );
+  });
+
+  it("parks when the forge does not accept the re-run", async () => {
+    const f = fake({
+      ci: [failing(44)],
+      runs: [[workflowRun(44, 2_000)]],
+      rerunOk: false,
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind === "park" && verdict.reason).toContain("HTTP 403");
+  });
+
+  it("parks a failing commit status, which has no run to re-run", async () => {
+    const f = fake({
+      ci: [
+        {
+          verdict: "failing: ci/legacy",
+          failingRuns: [],
+          failingStatusNames: ["ci/legacy"],
+        },
+      ],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "commit status ci/legacy failed",
+    );
+  });
+
+  it("parks when CI is still unsettled at the end of its window", async () => {
+    const f = fake({ ci: [{ ...GREEN, verdict: "pending: tests" }] });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "did not settle within 5 minute(s) of the converged label's write; last read: pending: tests",
+    );
+    expect(f.clock()).toBeLessThanOrEqual(WRITTEN + 5 * 60_000);
+  });
+
+  it("waits while the label history does not read, rather than re-running blind", async () => {
+    const f = fake({
+      ci: [failing(45), GREEN],
+      runs: [[workflowRun(45, 2_000)]],
+      writes: null,
+    });
+    expect((await watchConvergedCi("999", HEAD, WRITTEN, f.deps)).kind).toBe(
+      "stands",
+    );
+    expect(f.asked).toEqual([]);
+  });
+
+  it("leaves a head that moved, or a pull request no longer open, to the next drive", async () => {
+    const moved = fake({ ci: [failing(46)], head: "b".repeat(40) });
+    expect(await watchConvergedCi("999", HEAD, WRITTEN, moved.deps)).toEqual({
+      kind: "stands",
+      why: `the head moved to ${"b".repeat(40)}`,
+    });
+    const closed = fake({ ci: [failing(46)], open: false });
+    expect(
+      (await watchConvergedCi("999", HEAD, WRITTEN, closed.deps)).kind,
+    ).toBe("stands");
+    expect([...moved.asked, ...closed.asked]).toEqual([]);
+  });
+});
