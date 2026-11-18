@@ -81,10 +81,12 @@ import { driveState } from "./paths.ts";
 import { type DriveLabelWrite, labelDrive } from "./state-labels.ts";
 import {
   type ConvergedRecheck,
-  convergedStopParks,
+  convergedStopExit,
   liveRecheck,
 } from "./converged-ci-live.ts";
-import { DRIVE_EXIT } from "../status/terminal-states.ts";
+
+/** How many times a converged stop the CI watch overturned is written again. */
+const STOP_REWRITE_ATTEMPTS = 3;
 import { stopKey } from "../../../../../shared/pr-labels/blocked.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -695,7 +697,8 @@ async function afterStopWrite(
  * A stop labelled `converged` then watches the head's CI while the drive
  * still holds its locks (`converged-ci-live.ts`): the label write can start
  * runs on it. When those runs leave CI unsettled after their one re-run, the
- * stop is settled again as `HITL_PARKED`, which `done` returns.
+ * stop is settled again as `HITL_PARKED` (`INDETERMINATE` when the park could
+ * not be recorded), which `done` returns.
  */
 export function ledgerSettlement(
   pr: string,
@@ -728,17 +731,19 @@ export function ledgerSettlement(
       return code;
     }
     const labelled = await writeStop(code);
-    if (
-      code === null ||
-      !(await convergedStopParks(pr, labelled, currentMs(), recheck))
-    )
-      return code;
-    await writeStop(DRIVE_EXIT.HITL_PARKED);
-    return DRIVE_EXIT.HITL_PARKED;
+    if (code === null) return code;
+    const again = await convergedStopExit(pr, labelled, currentMs(), recheck);
+    if (again === null) return code;
+    // The converged stop is already written and its record gone, so no
+    // recovery rewrites the ledger after this: a write that did not land is
+    // tried again.
+    await writeStop(again, STOP_REWRITE_ATTEMPTS);
+    return again;
   };
-  /** Record stop `code` in the drive state, then the stopped ledger and its label. */
+  /** Record stop `code` in the drive state, then the stopped ledger (up to `attempts` writes) and its label. */
   const writeStop = async (
     code: number | null,
+    attempts = 1,
   ): Promise<DriveLabelWrite | null> => {
     const driver = ledgerDriverFromEnv();
     // The exit goes into the state before the ledger's last write, which
@@ -763,17 +768,26 @@ export function ledgerSettlement(
       );
       return null;
     }
-    const res = await run(tsArgv(driveState, ["handoff", pr]), {
-      stdout: "ignore",
-      stderr: "inherit",
-      timeoutSec: helperTimeoutSeconds(),
-      env: {
-        ...process.env,
-        [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
-        [HANDOFF_TELLS_REFUSED]: "1",
-      },
-    });
-    return await afterStopWrite(pr, res.code, code, started, dropRecord);
+    let handoff = 0;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const res = await run(tsArgv(driveState, ["handoff", pr]), {
+        stdout: "ignore",
+        stderr: "inherit",
+        timeoutSec: helperTimeoutSeconds(),
+        env: {
+          ...process.env,
+          [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
+          [HANDOFF_TELLS_REFUSED]: "1",
+        },
+      });
+      handoff = res.code;
+      if (afterHandoff(handoff) !== "unwritten") break;
+      if (attempts > 1)
+        console.error(
+          `ledger: PR #${pr}'s stopped ledger (exit ${code}) was not written (attempt ${attempt} of ${attempts}).`,
+        );
+    }
+    return await afterStopWrite(pr, handoff, code, started, dropRecord);
   };
   return {
     async done(code: number): Promise<number> {

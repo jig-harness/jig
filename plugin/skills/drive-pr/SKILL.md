@@ -881,8 +881,10 @@ outlives the session that spawned it, so its console is not where you look:
   `DRIVE_PR_CONVERGED_CI_MINUTES` (30 by default, `0` writes the label and
   watches nothing) parks `converged-ci` with a framed decision naming the
   runs, and the stop is settled again as [`HITL_PARKED`](../../protocol/drive-exits.md),
-  labelled `parked`. A head that moved, or a pull request no longer open,
-  ends the watch with the label as written. A person's
+  labelled `parked` (as `INDETERMINATE` when the park cannot be recorded or
+  the watch fails). A head that moved, a pull request no longer open, or a
+  window in which the head's CI never read ends the watch with the label as
+  written; until it ends, the drive's locks refuse a re-arm. A person's
   stop through `drives.ts` names no exit and is labelled `parked` once it
   marks the ledger stopped. Never `stale`
   or `held`, nothing on a pull request carrying `hold` or `held`, and never

@@ -1626,16 +1626,6 @@ false "green":
   be replayed, falls back to the head's budget
   (`lib/label-cancelled-runs.ts`). Observing recovery clears that operational park. A
   live CI hold is left for convergence to release.
-- After a `CONVERGED` stop's `converged` label write, which starts the
-  workflows that run on label events, the drive watches the verified head
-  while it still holds its locks (`lib/driver/converged-ci.ts`): a
-  cancellation goes to the recovery above; a failure in a first attempt a
-  label write started has its failed jobs re-run once, claimed
-  in `cancelled_ci_label_rerun`; a failure no label write started, a
-  failing commit status, a second failure, a refused re-run, or CI not
-  settled within `DRIVE_PR_CONVERGED_CI_MINUTES` (30) parks `converged-ci`,
-  and the stop is written again as [`HITL_PARKED`](../../../protocol/drive-exits.md) and labelled
-  `parked`. A moved head or a closed pull request ends the watch as it is.
   Cancellation stops counting only when a run of
   the same workflow on the head, started no earlier, has completed with a
   result: by start time, because a concurrency group can cancel the higher run
@@ -1652,6 +1642,20 @@ false "green":
   completes; another run's success never discharges that obligation. With the
   workflow runs unreadable nothing is dropped: a cancelled check stays unknown
   and a failed one fails.
+- After a `CONVERGED` stop's `converged` label write, which starts the
+  workflows that run on label events, the drive watches the verified head
+  while it still holds its locks (`lib/driver/converged-ci.ts`): a
+  cancellation goes to the recovery above; a failure in a first attempt a
+  label write started has its failed jobs re-run once, claimed
+  in `cancelled_ci_label_rerun`; a failure no label write started, a
+  failing commit status, a second failure, a refused re-run, or CI not
+  settled within `DRIVE_PR_CONVERGED_CI_MINUTES` (30) parks `converged-ci`,
+  and the stop is written again as [`HITL_PARKED`](../../../protocol/drive-exits.md) and labelled
+  `parked`; a park that cannot be recorded, or a watch that fails, writes it
+  again as `INDETERMINATE` instead, for the next drive to judge the head. A
+  moved head, a closed pull request, or a window in which the head's CI never
+  read ends the watch with the label as it is. Until the watch ends, the
+  drive's locks refuse a re-arm.
 
 ### 10. A finding marked answered by someone who cannot merge
 

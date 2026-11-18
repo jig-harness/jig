@@ -18,7 +18,8 @@
  *   attempt only): re-run once, claimed in the same table the label-caused
  *   cancellations use, so a run is re-run once however many callers see it;
  * - anything else, a failure its one re-run did not clear, or a verdict still
- *   unsettled when the watch's window ends: the drive parks, naming the runs.
+ *   unsettled when the watch's window ends: the drive parks, naming the runs;
+ *   a window in which the head's CI never read leaves the label standing.
  *
  * A run counts as started by the write only when the forge created it within
  * the label-run window after a label event; a workflow created later is not
@@ -123,11 +124,10 @@ async function judgeFailure(
       next: "park",
       reason: `required CI on head ${head} reads ${read.verdict} after the converged label was written, with no workflow run behind it to re-run`,
     };
-  const [runs, writes, reruns, allowed] = await Promise.all([
+  const [runs, writes, reruns] = await Promise.all([
     deps.workflowRuns(head),
     deps.labelWrites(pr),
     deps.labelReruns(pr),
-    deps.rerunnable(pr, failing),
   ]);
   if (runs === null || writes === null)
     return {
@@ -170,13 +170,19 @@ async function judgeFailure(
         next: "park",
         reason: `run ${run.id} on head ${head} failed again on attempt ${run.attempt}, after its one re-run for the label write that started it`,
       };
-    if (!allowed.includes(run.id))
-      return {
-        next: "park",
-        reason: `run ${run.id} on head ${head} failed in a run a label write started, and it may not be re-run (created under the CI hold, or the hold did not read)`,
-      };
     toRerun.push(run);
   }
+  // Asked only for the runs a re-run would replay: it reads the timeline again.
+  const allowed = await deps.rerunnable(
+    pr,
+    failing.filter((f) => toRerun.some((r) => r.id === f.id)),
+  );
+  const held = toRerun.find((run) => !allowed.includes(run.id));
+  if (held !== undefined)
+    return {
+      next: "park",
+      reason: `run ${held.id} on head ${head} failed in a run a label write started, and it may not be re-run (created under the CI hold, or the hold did not read)`,
+    };
   return { next: "rerun", runs: toRerun };
 }
 
@@ -258,6 +264,7 @@ export async function watchConvergedCi(
   const settle = writtenAt + deps.settleMs - deps.now();
   if (settle > 0) await deps.sleep(settle);
   let saw = "nothing read yet";
+  let readOnce = false;
   for (;;) {
     const current = await deps.pullRequest(pr);
     if (current !== null && (!current.open || current.head !== verified))
@@ -278,11 +285,18 @@ export async function watchConvergedCi(
     if ("kind" in next) return next;
     if (next.next === "park") return { kind: "park", reason: next.reason };
     saw = next.saw;
+    if (read !== null) readOnce = true;
     if (deps.now() + deps.pollMs > deadline)
-      return {
-        kind: "park",
-        reason: `CI on head ${verified} did not settle within ${Math.round(deps.windowMs / 60_000)} minute(s) of the converged label's write; last read: ${saw}`,
-      };
+      // A watch that never read the head's CI saw nothing fail: the label stands.
+      return readOnce
+        ? {
+            kind: "park",
+            reason: `CI on head ${verified} did not settle within ${Math.round(deps.windowMs / 60_000)} minute(s) of the converged label's write; last read: ${saw}`,
+          }
+        : {
+            kind: "stands",
+            why: `the head's CI did not read within ${Math.round(deps.windowMs / 60_000)} minute(s), so nothing was seen to fail`,
+          };
     await deps.sleep(deps.pollMs);
   }
 }

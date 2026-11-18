@@ -1,6 +1,5 @@
 /** The converged CI watch's live reads and writes, and the park it ends in; every forge call is bounded. */
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
-import { swallow } from "../../../../../shared/errors.ts";
 import { currentIso, currentMs } from "../../../../../shared/time.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
 import { claimLabelRerun, labelReruns } from "../cancelled-recovery-state.ts";
@@ -26,12 +25,15 @@ import {
 } from "./converged-ci.ts";
 import type { DriveLabelWrite } from "./state-labels.ts";
 import { rerunnableRuns } from "./failed-runs.ts";
-import { FINAL_CI_POLL_SECONDS } from "./settings.ts";
+import { DRIVE_EXIT } from "../status/terminal-states.ts";
 
 /** The park key a converged head's unsettled CI parks under. */
 export const CONVERGED_CI_PARK = "converged-ci";
 
 const WINDOW_MINUTES_DEFAULT = 30;
+
+/** How often the watch reads the head's CI: a read costs a handful of forge requests. */
+const POLL_MS = 30_000;
 
 /**
  * How long the watch waits for the converged head's CI to settle, in minutes:
@@ -64,11 +66,15 @@ async function pullRequest(pr: string) {
       JSON.parse(read.stdout) as unknown,
       holdLabelPolicy(),
     );
+    if (snapshot === null)
+      console.error("converged CI: the pull request read has no state or head");
     return snapshot === null
       ? null
       : { open: snapshot.state === "OPEN", head: snapshot.head };
   } catch (err) {
-    swallow(err, "the converged CI watch's pull request read is unreadable");
+    console.error(
+      `converged CI: the pull request or the CI hold setting did not read: ${described(err)}`,
+    );
     return null;
   }
 }
@@ -95,7 +101,9 @@ async function labelWrites(pr: string): Promise<number[] | null> {
   try {
     return labelWriteTimes(events.value, holdLabelPolicy());
   } catch (err) {
-    swallow(err, "the CI hold label is unreadable for the converged CI watch");
+    console.error(
+      `converged CI: the CI hold setting did not read: ${described(err)}`,
+    );
     return null;
   }
 }
@@ -105,7 +113,7 @@ export function liveConvergedCi(windowMinutes: number): ConvergedCiDeps {
   return {
     now: currentMs,
     sleep: (ms) => sleep(ms / 1000),
-    pollMs: FINAL_CI_POLL_SECONDS * 1000,
+    pollMs: testPacing("DRIVE_PR_CONVERGED_CI_POLL_MS", POLL_MS, 10),
     settleMs: testPacing(
       "DRIVE_PR_CONVERGED_CI_SETTLE_MS",
       LABEL_SETTLE_MS,
@@ -205,9 +213,7 @@ export async function parkConvergedCi(
     });
     return admitted;
   } catch (err) {
-    console.error(
-      `converged CI: the park was not recorded: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.error(`converged CI: the park was not recorded: ${described(err)}`);
     return false;
   }
 }
@@ -234,43 +240,57 @@ export const liveRecheck: ConvergedRecheck = async (
   return watchConvergedCi(pr, verified, writtenAt, liveConvergedCi(minutes));
 };
 
+/** What a defect or a throw says, with its stack where it has one. */
+function described(err: unknown): string {
+  return err instanceof Error ? (err.stack ?? err.message) : String(err);
+}
+
 /**
  * After a stop's label write: when it wrote `converged`, watch the head's CI
- * and say whether the stop must be settled again as a park, recording the
- * `converged-ci` park when the watch asks for one. Never throws: a defect is
- * reported and the converged stop stands.
+ * and return the exit the stop must be settled again with, or `null` when
+ * the converged stop stands. A park the watch asks for is `HITL_PARKED` only
+ * once its `converged-ci` record is in the drive state (or the cancelled-run
+ * recovery recorded `cancelled-ci`); a park that could not be recorded, or a
+ * watch that failed, is `INDETERMINATE`, a stop the dispatcher drives again,
+ * since the label must not say `converged` over CI nobody settled. Never
+ * throws.
  */
-export async function convergedStopParks(
+export async function convergedStopExit(
   pr: string,
   labelled: DriveLabelWrite | null,
   writtenAt: number,
   recheck: ConvergedRecheck,
-): Promise<boolean> {
+): Promise<number | null> {
   if (
     labelled === null ||
     !labelled.converged ||
     labelled.write.outcome !== "written" ||
     !("stopped" in labelled.moment)
   )
-    return false;
+    return null;
   try {
     const verdict = await recheck(pr, labelled.moment.verifiedSha, writtenAt);
     if (verdict.kind === "stands") {
       console.error(`converged CI: the converged label stands: ${verdict.why}`);
-      return false;
+      return null;
     }
-    if (verdict.kind === "park") {
-      console.error(`converged CI: parking: ${verdict.reason}`);
-      await parkConvergedCi(pr, verdict.reason);
-    } else
+    if (verdict.kind === "parked") {
       console.error(
         "converged CI: the cancelled-run recovery parked cancelled-ci",
       );
-    return true;
+      return DRIVE_EXIT.HITL_PARKED;
+    }
+    console.error(`converged CI: parking: ${verdict.reason}`);
+    if (await parkConvergedCi(pr, verdict.reason))
+      return DRIVE_EXIT.HITL_PARKED;
+    console.error(
+      "converged CI: the park could not be recorded, so the stop is settled as INDETERMINATE for the next drive to judge the head again",
+    );
+    return DRIVE_EXIT.INDETERMINATE;
   } catch (err) {
     console.error(
-      `converged CI: the watch failed, so the converged label stands: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+      `converged CI: the watch failed, so the stop is settled as INDETERMINATE for the next drive to judge the head again: ${described(err)}`,
     );
-    return false;
+    return DRIVE_EXIT.INDETERMINATE;
   }
 }

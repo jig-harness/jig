@@ -71,8 +71,8 @@ export function blockedPassScript(started: string, release: string): string {
  * drive.ts's fixed waits, compressed for every drive `runDriveIn` spawns
  * (a test that spawns drive.ts itself spreads this into its env): the
  * final-CI poll (10s in production), the settle after removing the CI hold
- * label (5s), the settle after the converged label's write (31s) and the
- * mailbox poll of a paused or quota-parked drive (2s).
+ * label (5s), the settle after the converged label's write (31s) and its
+ * CI poll (30s), and the mailbox poll of a paused or quota-parked drive (2s).
  * At the production values the loop-control tests spend most of their time
  * asleep in them. The fixtures answer from files, so a shorter wait changes
  * how long a drive sleeps, never what it reads or decides; a poll-bounded
@@ -85,6 +85,7 @@ export const DRIVE_PACING_ENV: Record<string, string> = {
   DRIVE_PR_UNLABEL_SETTLE_MS: "50",
   DRIVE_PR_MAILBOX_POLL_MS: "50",
   DRIVE_PR_CONVERGED_CI_SETTLE_MS: "50",
+  DRIVE_PR_CONVERGED_CI_POLL_MS: "50",
   // The stub forge never returns a comment it was posted, so a drive writing
   // its ledger would add a post per round to what these suites count; the
   // ledger's own suite turns it on.

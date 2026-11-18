@@ -371,6 +371,7 @@ export async function labelDrive(
     const line = ownWriteLine(Number(pr), written);
     if (line !== null) console.error(`labels: ${line}`);
     if (settings.value.config.enabled && written.outcome !== "held")
+      // The label write stands whatever the items do: its caller reads it.
       await itemsFollow(
         Number(pr),
         settings.value.slug,
@@ -379,6 +380,8 @@ export async function labelDrive(
         moment,
         source,
         stillOurs,
+      ).catch((error: unknown) =>
+        console.error(`labels: ${defectLine(`PR #${pr}'s items`, error)}`),
       );
     return { moment, converged, write: written };
   } catch (error) {

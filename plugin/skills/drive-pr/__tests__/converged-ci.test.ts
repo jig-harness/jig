@@ -11,6 +11,8 @@ import {
   watchConvergedCi,
 } from "../scripts/lib/driver/converged-ci.ts";
 import type { Recovery } from "../scripts/lib/cancelled-recovery.ts";
+import { convergedStopExit } from "../scripts/lib/driver/converged-ci-live.ts";
+import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import type { WorkflowRun } from "../scripts/lib/status/workflow-runs.ts";
 import { isoFromMs, parseMs } from "../../../shared/time.ts";
 
@@ -296,5 +298,87 @@ describe("the converged CI watch", () => {
       (await watchConvergedCi("999", HEAD, WRITTEN, closed.deps)).kind,
     ).toBe("stands");
     expect([...moved.asked, ...closed.asked]).toEqual([]);
+  });
+  it("lets the label stand when the head's CI never read in the window: nothing was seen to fail", async () => {
+    const f = fake({ ci: [null] });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(verdict.kind === "stands" && verdict.why).toContain(
+      "nothing was seen to fail",
+    );
+  });
+
+  it("parks when a requested re-run shows no new attempt a minute on", async () => {
+    // The re-run was accepted, but the run stays on its first attempt.
+    const f = fake({
+      ci: [failing(47)],
+      runs: [[workflowRun(47, 2_000)]],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(f.asked).toEqual([47]);
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "shows no new attempt",
+    );
+  });
+});
+
+describe("the stop a converged label's watch settles", () => {
+  const labelled = (converged: boolean, outcome: "written" | "agrees") => ({
+    moment: {
+      stopped: 3,
+      byPerson: false,
+      verifiedSha: HEAD,
+    },
+    converged,
+    write:
+      outcome === "written"
+        ? { outcome, detail: "+jig:converged -jig:driving" }
+        : { outcome },
+  });
+
+  it("watches only a converged label this stop wrote", async () => {
+    let watched = 0;
+    const recheck = async () => {
+      watched += 1;
+      return { kind: "parked" as const };
+    };
+    expect(
+      await convergedStopExit(
+        "999",
+        labelled(false, "written"),
+        WRITTEN,
+        recheck,
+      ),
+    ).toBeNull();
+    expect(
+      await convergedStopExit(
+        "999",
+        labelled(true, "agrees"),
+        WRITTEN,
+        recheck,
+      ),
+    ).toBeNull();
+    expect(await convergedStopExit("999", null, WRITTEN, recheck)).toBeNull();
+    expect(watched).toBe(0);
+  });
+
+  it("keeps the stop when the label stands, parks on the recovery's park, and is INDETERMINATE when the watch fails", async () => {
+    const write = labelled(true, "written");
+    expect(
+      await convergedStopExit("999", write, WRITTEN, async () => ({
+        kind: "stands",
+        why: "green",
+      })),
+    ).toBeNull();
+    expect(
+      await convergedStopExit("999", write, WRITTEN, async () => ({
+        kind: "parked",
+      })),
+    ).toBe(DRIVE_EXIT.HITL_PARKED);
+    expect(
+      await convergedStopExit("999", write, WRITTEN, async () => {
+        throw new Error("the store did not open");
+      }),
+    ).toBe(DRIVE_EXIT.INDETERMINATE);
   });
 });
