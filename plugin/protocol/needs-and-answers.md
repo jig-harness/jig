@@ -246,6 +246,7 @@ the name `hold` had before, still chooses it.
 | Key | Class | Options | Meaning |
 | --- | --- | --- | --- |
 | `followup` | `followup-recovery` | `rerun`, `done`, `hold` | A merged pull request's follow-up whose pass ended without recording done, or whose claim no session is joined to. |
+| `release` | `release` | `gates`, `inspect`, `tag` | One untagged release, answered on its tracker item. |
 | `pickup` | `pickup-recovery` | `release`, `hold` | A pickup that stalled, stopped on a question it did not frame, or ended without moving its item on. |
 | `checkout` | `checkout-recovery` | `detach`, `hold` | A launch that waits because a checkout the workspace runtime does not list holds its branch and is in use. |
 | `drive` | `drive-recovery` | `rearm`, `hold` | A drive that stopped and handed its pull request to a person. |
@@ -263,6 +264,9 @@ the name `hold` had before, still chooses it.
 | `detach` | **Detach the checkout** | yes | The dispatcher detaches the checkout from its branch (its files and commits stay where they are), so the launch can take the branch. |
 | `rearm` | **Re-arm the drive** | — | The dispatcher re-arms the drive once on the pull request's current head, as the rearm label does. |
 | `clear` | **Clear the record** | — | The dispatcher clears the stuck launch record, as jig dispatch clear does, which frees its slot; a later tick may start its stage again. |
+| `gates` | **Re-run the failed gates** | — | The dispatcher requests another run of the failed jobs on the releasing commit once. |
+| `inspect` | **Investigate** | — | Take the tracker item and determine what is holding back the tag. |
+| `tag` | **Tag it by hand** | — | Take the tracker item and create the tag by hand after checking it is safe to release. |
 | `hold` | **I'll handle it — hide this card** | — | Nothing is done; the work stays where it is. The dispatcher hides this card for these facts and lists it again when they change. |
 
 <!-- /protocol:generated -->

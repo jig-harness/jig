@@ -112,6 +112,7 @@ async function launchInShell(w: World): Promise<string> {
   expect(launches(receipt)[0]?.outcome).toBe("launched");
   const [tab] = runTabs(w);
   expect(tab?.subject).toBe("pr:7");
+  expect(tab?.launch).toBe(record);
   cleanups.push(() => {
     try {
       process.kill(tab?.shellPid ?? 0);
@@ -135,23 +136,21 @@ describe("the re-arm's terminal tab", () => {
     await waitFor("the record dropped", () => runTabs(w).length === 0);
   });
 
-  it("stays open when the drive parks for a person", async () => {
-    const { w } = fixture();
-    machineFile(w, [account(w, "a", "a@example.com")]);
-    writeFileSync(join(w.dir, "drive-exit"), "8");
-    await launchInShell(w);
-    // The wrapper says, before it exits, whether its tab closes.
-    await waitFor("the wrapper's end", () =>
-      readFileSync(join(w.dir, "terminal.log"), "utf8").includes(
-        "stays open: the run ended needing a person",
-      ),
-    );
-    expect(readFileSync(join(w.dir, "terminal.log"), "utf8")).not.toContain(
-      "closes once this run has exited",
-    );
-    expect(tabCloses(w)).toEqual([]);
-    expect(runTabs(w)).toHaveLength(1);
-  });
+  for (const [ending, exit] of [
+    ["the drive parks for a person", "8"],
+    ["the drive fails", "1"],
+  ] as const)
+    it(`is closed as well when ${ending}: the report keeps what it showed`, async () => {
+      const { w } = fixture();
+      machineFile(w, [account(w, "a", "a@example.com")]);
+      writeFileSync(join(w.dir, "drive-exit"), exit);
+      await launchInShell(w);
+      await waitFor("the tab's close", () => tabCloses(w).length === 1);
+      expect(readFileSync(join(w.dir, "terminal.log"), "utf8")).not.toContain(
+        "stays open",
+      );
+      await waitFor("the record dropped", () => runTabs(w).length === 0);
+    });
 });
 
 describe("jig dispatch --apply launches re-arms within account caps", () => {

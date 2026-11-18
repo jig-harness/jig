@@ -45,6 +45,7 @@
  * instance (`dispatch/lib/shared-launches.ts`): a public comment names no
  * machine, and the host that made a claim recognises it as its own.
  */
+import { sharedReleaseTags } from "./release-tags.ts";
 import { decodeMarker } from "./envelope.ts";
 import {
   FOLLOWUP_OUTCOMES,
@@ -230,6 +231,12 @@ function followupFault(
     return `its record claims ${JSON.stringify(r.key)}, not the follow-up`;
   if (!r.legacy && target !== null && r.payload.pr !== target.number)
     return `its record names pull request #${String(r.payload.pr)}`;
+  if (
+    r.payload.owner === false &&
+    Object.hasOwn(r.payload, "releaseTags") &&
+    sharedReleaseTags(r.payload.releaseTags) === undefined
+  )
+    return "its release tag handoff is malformed";
   return runFault(r.payload);
 }
 
@@ -351,11 +358,13 @@ export function manualClaim(done: boolean, post: MarkerPost): ClaimDraft {
 function followupEnd(p: Record<string, unknown>): LaunchEnd | null {
   if (!isOutcomeOf("tick", p.outcome)) return null;
   const at = isTime(p.endedAt) ? p.endedAt : "";
+  const tags = sharedReleaseTags(p.releaseTags);
   return {
     state: "ended",
     at,
     exit: null,
     outcome: p.outcome,
+    ...(tags === undefined ? {} : { releaseTags: tags }),
     ...reportOfEnd(p),
   };
 }
@@ -572,6 +581,9 @@ export function endedClaim(
       ...(p.host === undefined && host !== undefined ? { host } : {}),
       outcome,
       endedAt: end.at,
+      ...(end.state === "ended" && end.releaseTags !== undefined
+        ? { releaseTags: end.releaseTags }
+        : {}),
       ...writtenReport(end),
     },
     text: `jig dispatch follow-up · record: ${String(p.record)} · outcome: ${outcome}`,

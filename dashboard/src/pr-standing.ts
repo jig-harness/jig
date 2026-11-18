@@ -50,6 +50,7 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "stopped-unknown": "Stopped, cause unknown",
   "followup-failed": "Follow-up failed",
   "followup-stale": "Follow-up claim went stale",
+  "release-owed": "Release tag owed",
   "nudge-unanswered": "Nudge unanswered",
   "pickup-question": "Pickup stopped on a question",
   "pickup-ended": "Pickup ended without moving the item on",

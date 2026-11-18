@@ -216,10 +216,38 @@ now): the report's `tags`, or for each check's verdict the tag plan,
 |---|---|
 | none untagged | the tags are `not-owed` |
 | `pending`, `rerun` | `pending`: the gates on the releasing commit are still running or run again |
-| `ready` | `owed`: run the release workflow (the workflow named `release` or `changelog` the changelog skill reads) on the integration branch: ask first |
-| `failed` | `owed`, a person's step: report the failing checks; never tag by hand |
-| `manual`, `imported` | `owed` for a person only when that version was ever owed a tag |
+| `ready` | `pending` while the release workflow is running. Otherwise `owed` under [Recording a release owed](#recording-a-release-owed), with evidence that the checks passed |
+| `failed` | `owed` under [Recording a release owed](#recording-a-release-owed), with the failing checks |
+| `manual`, `imported` | `owed` under [Recording a release owed](#recording-a-release-owed) when that version was ever owed a tag |
 | `tags.known: false` | `unread`, with its `detail` |
+
+#### Recording a release owed
+
+For each version needing a person, record `[person-owed] release <version> owed`
+in the release evidence, replacing `<version>` with the tag from the plan. Include
+the releasing commit and what still owes attention.
+
+In a dispatched run, reserve the version with the prompt's `release-owed`
+command. On `recorded`, reuse the returned tracker key. On
+`reserved-elsewhere`, record the owed evidence and leave filing to the
+follow-up that reserved it. On `delegated`, record the owed evidence and
+leave filing to the repository's owner dispatcher. On `reserved`, search
+or file as below, then
+run the same command with the quoted tracker key after the tag. If the
+command or the tracker search fails, record the reason and use the
+retry or unread rule for that failure.
+
+For a manual run or a reservation you hold, search the configured tracker
+for the exact title `Release <owner/name> <version> owes a tag`, including
+closed items. Use the repository slug from the merged pull request.
+Reuse its key. If none exists and the authority table allows filing, use
+the filing skill with that title, the releasing commit, and the evidence
+from the tag plan. Check the marker before filing. Include each available
+key as `--item` in the release verdict.
+
+Continue with the other arms and record done once they settle. The
+dispatcher keeps the release decision by version, so there is no
+`Question:` line for the release.
 
 ### scaffolding: temporary scaffolding and live drivers
 
