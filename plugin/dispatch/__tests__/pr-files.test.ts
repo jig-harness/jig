@@ -149,6 +149,26 @@ it("reuses matching comparisons when the optional read budget is low", async () 
   ]);
 });
 
+it("does not read fallback base tips when the forge budget skips optional work", async () => {
+  const store = cache();
+  const { baseTipOid: _missing, ...fallback } = pr(1);
+  let witnesses = 0;
+  await observePrFiles(
+    "owner/repo",
+    [fallback],
+    100,
+    "low budget",
+    undefined,
+    store,
+    async () => ok(["path"]),
+    async () => {
+      witnesses++;
+      return ok("tip");
+    },
+  );
+  expect(witnesses).toBe(0);
+});
+
 it("adds one live base-tip witness for fallback listings before reusing them", async () => {
   const store = cache();
   const { baseTipOid: _missing, ...fallback } = pr(1);
@@ -232,6 +252,43 @@ it("settles a fallback population larger than the fresh file-read cap", async ()
   ]);
   for (const { pr: number } of after.evidence)
     expect(await after.files(number)).toEqual(ok([`path-${number}`]));
+});
+
+it("rotates fallback witnesses across distinct base branches", async () => {
+  const store = cache();
+  const open = Array.from({ length: 9 }, (_, index) => {
+    const { baseTipOid: _missing, ...fallback } = pr(index + 1);
+    return { ...fallback, baseRefName: `base-${index + 1}` };
+  });
+  const witnesses: string[] = [];
+  const head = async (_slug: string, branch: string, timeout?: number) => {
+    expect(timeout).toBeUndefined();
+    witnesses.push(branch);
+    return ok("tip");
+  };
+  await observePrFiles(
+    "owner/repo",
+    open,
+    100,
+    null,
+    undefined,
+    store,
+    async (_slug, number) => ok([`path-${number}`]),
+    head,
+  );
+  await observePrFiles(
+    "owner/repo",
+    open,
+    200,
+    null,
+    undefined,
+    store,
+    async (_slug, number) => ok([`path-${number}`]),
+    head,
+  );
+  expect(new Set(witnesses)).toEqual(
+    new Set(open.map(({ baseRefName }) => baseRefName)),
+  );
 });
 
 it("treats malformed persisted cache entries as a fresh read", async () => {

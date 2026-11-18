@@ -5,7 +5,13 @@ import { branchHead, type ListedPr, pullRequestFiles } from "../forge.ts";
 import { pickupReads } from "../pickup-reads.ts";
 import { readFailureOf } from "../read-failures.ts";
 import type { ReadFailure } from "../types.ts";
-import { ended, heldRead, passedRead, type TickBound } from "./bounded.ts";
+import {
+  ended,
+  heldRead,
+  passedRead,
+  secondsLeft,
+  type TickBound,
+} from "./bounded.ts";
 
 /** The most pull requests a repository reads fresh in one tick, even if every read fails. */
 const FRESH_LIMIT = 8;
@@ -169,21 +175,37 @@ export async function observePrFiles(
       reading = await heldRead(
         bound,
         "the base branch's live tip was read",
-        () => head(slug, pr.baseRefName as string),
+        () => head(slug, pr.baseRefName as string, secondsLeft(bound)),
       );
       tips.set(pr.baseRefName, reading);
     }
     return reading?.ok === true ? reading.value : undefined;
   }
-  const work = [];
-  for (const pr of open) {
+  const work: Array<{
+    pr: ListedPr;
+    key: string;
+    entry: Entry | null;
+    comparison: string | null;
+  }> = open.map((pr) => {
     const key = `${prefix}${pr.number}`;
-    work.push({
+    return {
       pr,
       key,
       entry: entryOf(store.get<unknown>(key)),
-      comparison: comparison(pr, await liveTip(pr)),
-    });
+      comparison: null,
+    };
+  });
+  // Allocate the bounded fallback witnesses in the same age order as fresh
+  // file reads, so a large population of distinct base branches progresses.
+  work.sort(
+    (a, b) => (a.entry?.attemptedAtMs ?? -1) - (b.entry?.attemptedAtMs ?? -1),
+  );
+  for (const item of work) {
+    const { pr } = item;
+    item.comparison = comparison(
+      pr,
+      skipped === null ? await liveTip(pr) : undefined,
+    );
   }
   store.prune(
     prefix,
