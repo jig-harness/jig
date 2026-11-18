@@ -417,6 +417,19 @@ function carriedQuiet(
   return true;
 }
 
+/** Quiets an item its launch's open pull request settles or a driven pull request carries, whatever the pickup once asked; a question on an item still to move stays a need. Whether it did. */
+function quietByPr(
+  item: ClaimedItem,
+  input: PickupInput,
+  pr: LaunchPrReading,
+  plan: PickupPlan,
+): boolean {
+  if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) {
+    return true;
+  }
+  return carriedQuiet(item, carriageOf(item, input, pr), pr, plan);
+}
+
 /** One claimed item: a double claim, running, idle, or stalled. */
 function planClaimed(
   item: ClaimedItem,
@@ -467,10 +480,7 @@ function planClaimed(
   }
   plan.idleNow.push(item.key);
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
-  // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
-  if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
-  const carriage = carriageOf(item, input, pr);
-  if (carriedQuiet(item, carriage, pr, plan)) return;
+  if (quietByPr(item, input, pr, plan)) return;
   const asked = questionAsked(input, item, input.launches);
   if (asked !== null) {
     plan.actions.push(asked);
@@ -487,7 +497,7 @@ function planClaimed(
     });
     return;
   }
-  plan.actions.push(stalledPickup(item, input, held, since, pr, carriage));
+  plan.actions.push(stalledPickup(item, input, held, since, pr));
 }
 
 /** The stall need of a claimed item idle past `dispatch.stalled_after`, naming its launch's pull request where one is open. */
@@ -497,9 +507,9 @@ function stalledPickup(
   held: Holding,
   since: number,
   pr: LaunchPrReading,
-  carriage: Carriage,
 ): Action {
   const idle = input.nowMs - since;
+  const carriage = carriageOf(item, input, pr);
   const notes = [
     stallNote(pr),
     carriage.kind === "stall" ? carriage.note : null,
