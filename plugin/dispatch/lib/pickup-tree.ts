@@ -5,13 +5,7 @@
  * the tracked files changed and not committed (uncommitted edits). Untracked
  * files are not counted: a pass leaves scratch there, which is not work.
  */
-import {
-  spawnSync,
-  withoutLeakyGitEnv,
-} from "../../shared/guarded-git-spawn.ts";
-import { currentMs } from "../../shared/time.ts";
-
-const GIT_TIMEOUT_MS = 10_000;
+import { boundedGit } from "./bounded-git.ts";
 
 /** A tree as git read it: its head and what it has not shipped, or why it did not read. */
 export type PickupTree =
@@ -33,19 +27,12 @@ export function treeText(tree: Extract<PickupTree, { kind: "read" }>): string {
 
 /** Read the tree at `path`, each git call bounded by what is left of `deadlineMs` (epoch milliseconds). */
 export function readPickupTree(path: string, deadlineMs?: number): PickupTree {
-  const head = git(path, ["rev-parse", "--verify", "HEAD"], deadlineMs);
+  const git = (args: string[]) => boundedGit(path, args, deadlineMs, true);
+  const head = git(["rev-parse", "--verify", "HEAD"]);
   if (!head.ok) return { kind: "unread", why: head.why };
-  const ahead = git(
-    path,
-    ["rev-list", "--count", "HEAD", "--not", "--remotes"],
-    deadlineMs,
-  );
+  const ahead = git(["rev-list", "--count", "HEAD", "--not", "--remotes"]);
   if (!ahead.ok) return { kind: "unread", why: ahead.why };
-  const status = git(
-    path,
-    ["status", "--porcelain", "--untracked-files=no"],
-    deadlineMs,
-  );
+  const status = git(["status", "--porcelain", "--untracked-files=no"]);
   if (!status.ok) return { kind: "unread", why: status.why };
   const unpushed = Number.parseInt(ahead.stdout.trim(), 10);
   if (!Number.isSafeInteger(unpushed))
@@ -59,36 +46,5 @@ export function readPickupTree(path: string, deadlineMs?: number): PickupTree {
     unpushed,
     uncommitted: status.stdout.split("\n").filter((l) => l.trim() !== "")
       .length,
-  };
-}
-
-function git(
-  cwd: string,
-  args: string[],
-  deadlineMs: number | undefined,
-): { ok: true; stdout: string } | { ok: false; why: string } {
-  const left = deadlineMs === undefined ? Infinity : deadlineMs - currentMs();
-  if (left < 1)
-    return {
-      ok: false,
-      why: `git ${args[0]} in ${cwd} not run: the tick's time is spent`,
-    };
-  const r = spawnSync("git", args, {
-    cwd,
-    timeout: Math.min(GIT_TIMEOUT_MS, Math.floor(left)),
-    env: withoutLeakyGitEnv(process.env),
-  });
-  if (r.status === 0) return { ok: true, stdout: r.stdout };
-  if (r.error !== undefined)
-    return { ok: false, why: `git ${args[0]} in ${cwd}: ${r.error.message}` };
-  if (r.signal !== null)
-    return {
-      ok: false,
-      why: `git ${args[0]} in ${cwd} did not finish in time (${r.signal})`,
-    };
-  const last = (r.stderr ?? "").trim().split("\n").at(-1)?.trim();
-  return {
-    ok: false,
-    why: `git ${args[0]} in ${cwd} exited ${r.status}${last ? `: ${last}` : ""}`,
   };
 }

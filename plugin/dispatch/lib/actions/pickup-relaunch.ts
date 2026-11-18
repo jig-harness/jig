@@ -17,12 +17,11 @@
  * launch got no answer is retried once under its own record, as a pickup's
  * is.
  */
-import { holding } from "../holding.ts";
+import { holdingAgain } from "../holding.ts";
 import { newRecordId, newToken, type LaunchRecord } from "../launches.ts";
 import { readPickupTree, type TreeReader } from "../pickup-tree.ts";
 import { dispatched, type SessionsReport } from "../runtime/port.ts";
 import { sessionIdFor } from "../session.ts";
-import { failureText } from "../text.ts";
 import type {
   Action,
   LaunchOutcome,
@@ -68,19 +67,32 @@ async function changed(
   relaunch: PickupRelaunch,
   own?: string,
 ): Promise<string | null> {
-  const records = state.records.filter((r) => r.record.repo === repo.slug);
+  return (
+    recordsChanged(state, repo, ctx, { item, relaunch, own }) ??
+    (await runtimeChanged(ctx, item, relaunch.workspace.path)) ??
+    treeChanged(state, ctx, relaunch)
+  );
+}
+
+/** Why the host's rules or launch records no longer admit the relaunch; `null` when they still do. */
+function recordsChanged(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: RelaunchContext,
+  read: { item: string; relaunch: PickupRelaunch; own: string | undefined },
+): string | null {
+  const { item, relaunch, own } = read;
   if (ctx.section.stalledRelaunch === "never")
     return "dispatch.stalled_relaunch is now never";
   if (ctx.rerunsHeld !== null)
     return `the host health gate is failing: ${ctx.rerunsHeld}`;
+  const records = state.records.filter((r) => r.record.repo === repo.slug);
   const source = records.find((r) => r.record.id === relaunch.record);
   if (source === undefined)
     return `the launch record it finishes, ${relaunch.record}, is no longer this host's`;
-  if (
-    source.record.servedPerson !== undefined &&
-    !ctx.serves.includes(source.record.servedPerson)
-  )
-    return `${source.record.servedPerson} is no longer served by this host`;
+  const served = source.record.servedPerson;
+  if (served !== undefined && !ctx.serves.includes(served))
+    return `${served} is no longer served by this host`;
   const again = records.find(
     (r) =>
       r.record.id !== own &&
@@ -91,28 +103,41 @@ async function changed(
   if (again !== undefined)
     return `launch record ${again.record.id} already relaunched it at ${relaunch.head}`;
   const other = holdingRecords(item, records).find((r) => r.record.id !== own);
-  if (other !== undefined)
-    return `launch record ${other.record.id} holds the item`;
-  let sessions: SessionsReport;
-  try {
-    sessions = await ctx.sessions();
-  } catch (error) {
-    return `the runtime cannot be read again: ${failureText(error)}`;
-  }
-  if (!sessions.ok) return sessions.reason;
-  const { path } = relaunch.workspace;
-  if (!sessions.workspaces.some((w) => w.path === path))
-    return `no open workspace holds its tree ${path} now; a fresh tree would not carry the work`;
-  const held = holding(
-    sessions,
+  return other === undefined
+    ? null
+    : `launch record ${other.record.id} holds the item`;
+}
+
+/** Why the runtime no longer leaves the tree's workspace open and free; `null` when it does. */
+async function runtimeChanged(
+  ctx: RelaunchContext,
+  item: string,
+  path: string,
+): Promise<string | null> {
+  const { sessions, held } = await holdingAgain(
+    ctx.sessions,
     (w) => w.path === path || w.items.includes(item),
   );
+  if (
+    sessions?.ok === true &&
+    !sessions.workspaces.some((w) => w.path === path)
+  )
+    return `no open workspace holds its tree ${path} now; a fresh tree would not carry the work`;
   if (held.kind === "unknown") return held.reason;
   if (held.kind === "running")
     return `a session started since the plan read it: ${held.workspaces.map((w) => w.path).join(", ")}`;
+  return null;
+}
+
+/** Why the tree no longer stands at the head the plan read; `null` when it does. */
+function treeChanged(
+  state: ApplyState,
+  ctx: RelaunchContext,
+  relaunch: PickupRelaunch,
+): string | null {
   const left = timeLeftMs(state);
   const tree = (ctx.trees ?? readPickupTree)(
-    path,
+    relaunch.workspace.path,
     left === null ? undefined : currentMs() + Math.max(0, left),
   );
   if (tree.kind === "unread") return tree.why;
