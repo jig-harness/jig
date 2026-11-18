@@ -94,9 +94,12 @@ const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites" | "park"> & {
     const question = decision.call.question;
     const store = await openStore(pr);
     const capacity = await parkAdmissionContext(pr, store.stateDir);
-    // Ownership is asked once the preparation's reads are done, at the commit.
-    if (stillOwned !== undefined && !(await stillOwned()))
-      throw new OwnershipLost();
+    // Ownership is asked inside the store's lock, after the wait for it, as the
+    // write is about to run.
+    if (stillOwned !== undefined)
+      store.setFence(async () => {
+        if (!(await stillOwned())) throw new OwnershipLost();
+      });
     await store.update((state) => {
       const next = {
         ...state,
@@ -286,17 +289,14 @@ export async function recoverCancelledOnHead(
       ...live,
       ...timelineDeps(pr),
       ...(mayMutate === undefined ? {} : { mayMutate }),
-      async claim(...args) {
-        await owned();
-        return await live.claim(...args);
+      async claim(pr, head, workflowIds, requested) {
+        return await claimCancellation(pr, head, workflowIds, requested, owned);
       },
-      async extend(...args) {
-        await owned();
-        return await live.extend(...args);
+      async extend(pr, head, earlier, requested) {
+        return await extendCancellation(pr, head, earlier, requested, owned);
       },
-      async claimLabelRerun(...args) {
-        await owned();
-        return (await live.claimLabelRerun?.(...args)) ?? false;
+      async claimLabelRerun(pr, run) {
+        return await claimLabelRerun(pr, run, owned);
       },
       async park(parkPr, reason) {
         await live.park(parkPr, reason, async () => {
