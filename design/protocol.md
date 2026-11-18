@@ -27,9 +27,8 @@ shape descriptions; the provisional chapters on addresses and the verbs of
 `jig send`, forge claims, tracker facets, needs and structured answers, and
 steward records; the restatements turned into links, with the values a
 skill needs within a step held by the chapter's gate; and the site's pages
-at `/protocol/`. Its open follow-ups are backlog issues
-[#1176](https://github.com/jig-harness/jig/issues/1176) and
-[#1250](https://github.com/jig-harness/jig/issues/1250). The decision that a
+at `/protocol/`. Its open follow-up is backlog issue
+[#1176](https://github.com/jig-harness/jig/issues/1176). The decision that a
 chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 

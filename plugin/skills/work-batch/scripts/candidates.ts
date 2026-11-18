@@ -22,8 +22,12 @@
  *
  * Usage:
  *     bun candidates.ts <anchor> [--limit N] [--budget N] [--claimed K1,K2]
- *                       [--catalog <path>] [--format table|json]
+ *                       [--fixed K1,K2] [--catalog <path>] [--format table|json]
  *     bun candidates.ts --eligibility [--claimed K1,K2] [--catalog <path>] < issues.json
+ *
+ * `--fixed` proposes a batch a dispatcher launch named: only those issues,
+ * each read by its key and counted as claimed, with the ones their size keeps
+ * out listed as left for their own pickups (`lib/fixed-batch.ts`).
  *
  * The eligibility mode reads issues on stdin, reads no tracker, and prints
  * one versioned JSON document: the effective policy and a verdict for each
@@ -72,6 +76,14 @@ import {
   unrankedOf,
 } from "./lib/gaps.ts";
 import { anchorIssueKey } from "./lib/anchor-key.ts";
+import { capCandidates } from "./lib/budget.ts";
+import {
+  type LeftOut,
+  leftOutLines,
+  readFixedMembers,
+  sizeLeavesBatch,
+  splitFixed,
+} from "./lib/fixed-batch.ts";
 import { Refusal } from "./lib/errors.ts";
 import { parsePoolIssues } from "./lib/pool-input.ts";
 import {
@@ -80,6 +92,7 @@ import {
   catalogPath,
   policyFrom,
   readCatalog,
+  verdictSizes,
 } from "./lib/policy.ts";
 import { parseMs } from "../../../shared/time.ts";
 
@@ -130,6 +143,8 @@ export interface Anchor {
 }
 
 export type { LabellingGap } from "./lib/gaps.ts";
+export { capCandidates, fillBudget } from "./lib/budget.ts";
+export { verdictSizes } from "./lib/policy.ts";
 
 export interface Proposal {
   version: number;
@@ -142,6 +157,8 @@ export interface Proposal {
   points: number;
   candidates: Candidate[];
   excluded: Excluded[];
+  /** Under `--fixed`: the members their size leaves for their own pickups. */
+  leftOut: LeftOut[];
   labellingGaps: LabellingGap[];
   /** Eligible issues left out by the item limit or the point budget. */
   overflow: number;
@@ -152,6 +169,8 @@ export interface BuildOptions {
   limit: number;
   budget: number;
   claimed: ReadonlySet<string>;
+  /** The members a dispatcher launch named, in its order: the proposal's whole scope. */
+  fixed?: ReadonlySet<string>;
 }
 
 function refuse(message: string): never {
@@ -244,70 +263,6 @@ export function rank(
       };
     })
     .sort(compareCandidates);
-}
-
-/**
- * Fill a ranked list up to both limits in one pass: take each item that
- * still fits the point budget and the item limit, and skip (not stop at) one
- * that does not, so an expensive issue that no longer fits leaves room for
- * cheaper ones below it. `pinned` items are taken first and unconditionally,
- * charged against both limits. The result keeps the rank order.
- */
-export function fillBudget<T>(
-  ranked: readonly T[],
-  pointsOf: (item: T) => number,
-  opts: { limit: number; budget: number; pinned?: (item: T) => boolean },
-): T[] {
-  const pinned = opts.pinned ?? (() => false);
-  // By position, not by value: two equal items are two slots.
-  const chosen = new Set<number>();
-  let used = 0;
-  ranked.forEach((item, i) => {
-    if (!pinned(item)) return;
-    chosen.add(i);
-    used += pointsOf(item);
-  });
-  ranked.forEach((item, i) => {
-    if (chosen.size >= opts.limit || chosen.has(i)) return;
-    const cost = pointsOf(item);
-    if (used + cost > opts.budget) return;
-    chosen.add(i);
-    used += cost;
-  });
-  return ranked.filter((_, i) => chosen.has(i));
-}
-
-/**
- * Fill the budget, never letting an issue anchor's own seed fall out: the
- * seed is the issue the run was invoked to complete. It is pinned, charged
- * against both limits and listed first.
- */
-export function capCandidates(
-  ranked: Candidate[],
-  opts: { limit: number; budget: number },
-  seed: string | null,
-): Candidate[] {
-  const kept = fillBudget(ranked, (c) => c.points, {
-    ...opts,
-    pinned: (c) => c.identifier === seed,
-  });
-  return [
-    ...kept.filter((c) => c.identifier === seed),
-    ...kept.filter((c) => c.identifier !== seed),
-  ];
-}
-
-/**
- * The sizes whose issues need an explicit verdict before they stay in a
- * batch: the most expensive batchable size (`medium` by default), the size
- * whose label is least reliable in both directions. None when every
- * batchable size costs the same.
- */
-export function verdictSizes(policy: BatchPolicy): string[] {
-  const points = policy.batchSizes.map((s) => policy.sizePoints[s] ?? 0);
-  const max = Math.max(...points);
-  if (points.every((p) => p === max)) return [];
-  return policy.batchSizes.filter((s) => policy.sizePoints[s] === max);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -486,7 +441,7 @@ export function buildProposal(
   warnings: string[],
   sizeGaps: readonly PoolIssue[],
 ): Proposal {
-  const parts = partition(issues, policy, opts);
+  const parts = splitFixed(partition(issues, policy, opts), policy, opts.fixed);
   const ranked = rank(parts.eligible, policy, anchor.sharedLabels);
   // An issue held back for no priority is a labelling gap, not a refusal.
   const unranked = unrankedOf(issues, parts.excluded);
@@ -513,6 +468,7 @@ export function buildProposal(
     points,
     candidates,
     excluded,
+    leftOut: parts.leftOut,
     labellingGaps: gaps,
     overflow: ranked.length - candidates.length,
     warnings,
@@ -579,7 +535,9 @@ function seedPoolLabels(
   // claimed set: the pool partition must agree on it, or a seed that passed
   // here could still be held back there and silently vanish.
   const reason = excludeReason(seed, policy, opts);
-  if (reason !== null) refuse(seedRefusal(key, reason, policy));
+  const leftOut =
+    opts.fixed !== undefined && reason !== null && sizeLeavesBatch(reason);
+  if (reason !== null && !leftOut) refuse(seedRefusal(key, reason, policy));
   return poolLabels;
 }
 
@@ -596,9 +554,11 @@ async function runIssueAnchor(
   // The tracker's own spelling of the key, so a key typed in lower case
   // still pins the seed and names it in the proposal.
   const key = seed.identifier;
+  if (opts.fixed?.has(key) === false)
+    refuse(`${key} is not among the --fixed keys`);
   refuseUnusableSeed(key, seed, policy);
 
-  if (seed.isEpic) {
+  if (seed.isEpic && opts.fixed === undefined) {
     const anchor: Anchor = {
       kind: "epic",
       input: key,
@@ -625,12 +585,13 @@ async function runIssueAnchor(
     sharedLabels:
       catalog === null ? [] : sharedAreaLabels(areas, catalog, poolLabels),
   };
-  const { issues, sizeGaps } = await readPool(
-    tracker,
-    poolLabels,
-    policy,
-    warnings,
-  );
+  const { issues, sizeGaps } =
+    opts.fixed === undefined
+      ? await readPool(tracker, poolLabels, policy, warnings)
+      : {
+          issues: await readFixedMembers(tracker, opts.fixed, key, warnings),
+          sizeGaps: [],
+        };
   // The seed is kept whether or not the pool read returned it.
   const pool = unique([seed, ...issues.filter((i) => i.identifier !== key)]);
   return buildProposal(anchor, pool, policy, opts, warnings, sizeGaps);
@@ -648,6 +609,8 @@ export async function run(
 ): Promise<Proposal> {
   const key = anchorIssueKey(anchorInput, catalog, root, keys);
   if (key !== null) return runIssueAnchor(tracker, catalog, policy, key, opts);
+  if (opts.fixed !== undefined)
+    refuse("--fixed needs an issue's key as its anchor");
   if (catalog === null)
     refuse(
       "drive.change_areas_catalog is not set: an area or path anchor needs the change-area catalog. Anchor on an issue or an epic, or declare the catalog.",
@@ -911,6 +874,7 @@ export function renderTable(p: Proposal, policy: BatchPolicy): string {
   return [
     ...anchorLines(p),
     ...batchLines(p, policy),
+    ...leftOutLines(p.leftOut),
     ...heldBackLines(p, policy),
     ...gapLines(p.labellingGaps, policy),
     ...p.warnings.flatMap((w) => ["", `WARNING: ${sanitizeForDisplay(w)}`]),
@@ -921,7 +885,7 @@ export function renderTable(p: Proposal, policy: BatchPolicy): string {
 // CLI
 // ─────────────────────────────────────────────────────────────────────────────
 
-const USAGE = `usage: candidates.ts <anchor> [--limit N] [--budget N] [--claimed K1,K2] [--catalog <path>] [--format table|json]
+const USAGE = `usage: candidates.ts <anchor> [--limit N] [--budget N] [--claimed K1,K2] [--fixed K1,K2] [--catalog <path>] [--format table|json]
        candidates.ts --eligibility [--claimed K1,K2] [--catalog <path>]   (issues as a JSON array on stdin)
 
   <anchor>  a change-area name, a repository path, an epic's key or one issue's key`;
@@ -989,10 +953,15 @@ async function proposalCommand(
   const format = values.get("format") ?? "table";
   if (format !== "table" && format !== "json")
     throw new Refusal(`--format must be table or json, got "${format}"`);
+  const fixed = values.has("fixed")
+    ? claimedSet(values.get("fixed"))
+    : undefined;
+  if (fixed?.size === 0) throw new Refusal(`--fixed names no key\n${USAGE}`);
   const limits = {
     limit: positiveInteger(values.get("limit"), "limit", policy.maxItems),
     budget: positiveInteger(values.get("budget"), "budget", policy.pointBudget),
-    claimed,
+    claimed: new Set([...claimed, ...(fixed ?? [])]),
+    ...(fixed === undefined ? {} : { fixed }),
   };
   const proposal = await run(openTracker(), catalog, policy, anchor, limits);
   console.log(
@@ -1009,7 +978,7 @@ export async function main(argv: string[]): Promise<number> {
     flags: ["eligibility"],
     values: eligibility
       ? ["claimed", "catalog"]
-      : ["limit", "budget", "claimed", "catalog", "format"],
+      : ["limit", "budget", "claimed", "fixed", "catalog", "format"],
     usage: USAGE,
     noPositional: eligibility,
   });

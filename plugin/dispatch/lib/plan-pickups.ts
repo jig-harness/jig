@@ -46,6 +46,7 @@ import {
   endedHow,
   endedQuestion,
   holdingRecords,
+  leftBehindWorkspaces,
   pickupClaimed,
   type PickupHold,
   pickupHold,
@@ -194,7 +195,10 @@ export function planPickups(input: PickupInput): PickupPlan {
     moves: [],
   };
   const { sessions, launches } = input;
-  const joined = (key: string) => (w: Workspace) => w.items.includes(key);
+  const joined = (key: string) => {
+    const left = leftBehindWorkspaces(key, launches);
+    return (w: Workspace) => w.items.includes(key) && !left.has(w.path);
+  };
 
   for (const item of input.pickups) {
     const held = holding(sessions, joined(item.key));

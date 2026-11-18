@@ -401,6 +401,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.274.1] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` no longer stops a fixed batch on a question about a `medium` member. The most expensive batchable size is picked up on its own and the smaller items go on as the batch; with fewer than two left, each is its own pickup. A member whose size changes after the tick is left out by the batch's pass, through the proposal's new `--fixed` option. A person running `/jig:work-batch` is still asked for the verdict.
+
+## [0.274.0] - 2026-11-18
+
+### Added
+
+- A shared workspace opener gives Orca and plain git worktrees the same branch and create-hook rules. Process worktrees carry owner records under shared collection admission; `jig gc` finds their runs root and collects them only after their launches and recorded processes have ended, preserving every existing Git and local-content check.
+- Each field in a [Jig Protocol](plugin/protocol/README.md) data file now
+  states `comparedAs`, what a stable chapter promises about its content within
+  one version: `exact`, `prose` (may be reworded), `names` (a comma-separated
+  list that may gain a name and never loses one) or `carriers` (what carries a
+  value, each with `always` or `sometimes`). Rewording a command's `given`,
+  adding a skill to its `runBy` or adding a new kind of mailbox line keeps the
+  chapter's version.
+
 ## [0.273.1] - 2026-11-18
 
 ### Changed
@@ -9611,7 +9630,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.273.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.274.1...HEAD
+[0.274.1]: https://github.com/jig-harness/jig/compare/v0.274.0...v0.274.1
+[0.274.0]: https://github.com/jig-harness/jig/compare/v0.273.1...v0.274.0
 [0.273.1]: https://github.com/jig-harness/jig/compare/v0.273.0...v0.273.1
 [0.273.0]: https://github.com/jig-harness/jig/compare/v0.272.0...v0.273.0
 [0.272.0]: https://github.com/jig-harness/jig/compare/v0.271.1...v0.272.0
