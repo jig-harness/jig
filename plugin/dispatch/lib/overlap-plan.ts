@@ -43,6 +43,7 @@ import {
   type OverlapReport,
 } from "./overlap-reasons.ts";
 import { countHotspots, readWaits, settleWaits } from "./overlap-waits.ts";
+import { membersOf } from "./priorities-order.ts";
 import { branchPattern } from "./section.ts";
 import type { TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
@@ -304,15 +305,19 @@ export function planOverlap(
   );
   const model = overlapModel(settings, rates.rate, facts?.catalog ?? null);
   const wanted = new Map(tracked.pickups.map((w) => [w.key, w]));
-  const candidates = pickups.map((a) => {
-    const item = wanted.get(a.target);
-    return {
-      item: a.target,
-      url: item?.url ?? null,
-      priority: patienceKey(item?.queueIssue?.priority),
-      footprint: footprintOf(facts?.readings.get(a.target)),
-    };
-  });
+  // A batch starts every member, so each is a candidate beside the action's own target.
+  const candidates = pickups
+    .flatMap((a) => membersOf(a))
+    .filter((key, i, all) => all.indexOf(key) === i)
+    .map((key) => {
+      const item = wanted.get(key);
+      return {
+        item: key,
+        url: item?.url ?? null,
+        priority: patienceKey(item?.queueIssue?.priority),
+        footprint: footprintOf(facts?.readings.get(key)),
+      };
+    });
   const inFlight = [
     ...pullRequestsInFlight(observation, settings, context.nowMs),
     ...pickupsInFlight(observation, new Set(candidates.map((c) => c.item))),

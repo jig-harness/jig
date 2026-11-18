@@ -47,7 +47,6 @@ import { type CarrierInput, carrierInput } from "./carried-pr.ts";
 import { branchPattern } from "./section.ts";
 import type { PrLinkText } from "./work-links.ts";
 import { preparePriorities } from "./tick-priorities.ts";
-import { planOverlap } from "./overlap-plan.ts";
 
 /** Plan one observed repository into its report. */
 export function planObserved(
@@ -96,8 +95,9 @@ export function planObserved(
     ...withStalledPr(observation),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
-  // Reported only: the planned pickups and their order stay as they are.
-  planOverlap(context, observation);
+  // Reported only, and weighed after the priorities ranking so it sees the pickup order that starts.
+  context.overlaps ??= [];
+  context.overlaps.push({ observation });
   if (opened.owner) {
     const prepared = preparePriorities(report, {
       slug: repo.slug,

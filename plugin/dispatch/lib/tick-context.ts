@@ -16,6 +16,7 @@ import type { ReadRecord } from "./launches.ts";
 import type { RepoLineInput } from "./line.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { RepoReflection } from "./reflection-route.ts";
+import type { RepoObservation } from "./tick-observe.ts";
 import type { SessionRuntime } from "./runtime/port.ts";
 import { boundAt, type TickBound } from "./sources/bounded.ts";
 import type { PreparedPriorities } from "./tick-priorities.ts";
@@ -76,6 +77,8 @@ export interface TickContext {
   pending: PendingRepository[];
   /** Each owned repository's priorities inputs, ranked together once every repository is planned (`tick-priorities.ts`). */
   priorities?: PreparedPriorities[];
+  /** Each planned repository's observation, weighed for overlap once the priorities ranking has fixed the pickup order. */
+  overlaps?: { observation: RepoObservation }[];
   /** The act lock was held when the tick first asked: what serialization read may predate that tick's launches. */
   actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
