@@ -1,7 +1,7 @@
 /** Read the changed files of every open pull request, reusing a complete comparison between ticks. */
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { isoFromMs } from "../../../shared/time.ts";
-import { type ListedPr, pullRequestFiles } from "../forge.ts";
+import { branchHead, type ListedPr, pullRequestFiles } from "../forge.ts";
 import { pickupReads } from "../pickup-reads.ts";
 import { readFailureOf } from "../read-failures.ts";
 import type { ReadFailure } from "../types.ts";
@@ -13,6 +13,7 @@ const FRESH_LIMIT = 8;
 const EPOCH_MS_LIMIT = 8_640_000_000_000_000;
 
 type Reading = Outcome<string[], "unreadable" | "deferred">;
+type BranchReading = Outcome<string, "unreadable">;
 
 interface Snapshot {
   comparison: string | null;
@@ -90,11 +91,12 @@ export interface FilesObservation {
 
 /**
  * Current serialization evidence needs the live base tip. A fallback listing
- * can still be read and reported, but cannot establish a cache hit because
- * its base snapshot may stay unchanged while the live base branch advances.
+ * obtains that witness through a bounded branch read before it can reuse its
+ * changed-file snapshot.
  */
-function comparison(pr: ListedPr): string | null {
-  const { headRefOid, baseRefName, baseRefOid, baseTipOid } = pr;
+function comparison(pr: ListedPr, liveTip: string | undefined): string | null {
+  const { headRefOid, baseRefName, baseRefOid } = pr;
+  const baseTipOid = pr.baseTipOid ?? liveTip;
   if (!headRefOid || !baseRefName || !baseRefOid || !baseTipOid) return null;
   return JSON.stringify([
     headRefOid,
@@ -151,19 +153,38 @@ export async function observePrFiles(
   bound?: TickBound,
   store = pickupReads,
   read = pullRequestFiles,
+  head = branchHead,
 ): Promise<FilesObservation> {
   const readings = new Map<number, Reading>();
   const evidence: PrFileEvidence[] = [];
   const prefix = `forge:pr-files:${slug}:`;
-  const work = open.map((pr) => {
+  const tips = new Map<string, BranchReading>();
+  async function liveTip(pr: ListedPr): Promise<string | undefined> {
+    if (pr.baseTipOid !== undefined) return pr.baseTipOid;
+    if (pr.baseRefName === undefined || pr.baseRefName === "") return undefined;
+    let reading = tips.get(pr.baseRefName);
+    // Bound fallback witnesses separately from file reads: one branch can
+    // witness many pull requests, and an unwitnessed branch remains fresh-only.
+    if (reading === undefined && tips.size < FRESH_LIMIT) {
+      reading = await heldRead(
+        bound,
+        "the base branch's live tip was read",
+        () => head(slug, pr.baseRefName as string),
+      );
+      tips.set(pr.baseRefName, reading);
+    }
+    return reading?.ok === true ? reading.value : undefined;
+  }
+  const work = [];
+  for (const pr of open) {
     const key = `${prefix}${pr.number}`;
-    return {
+    work.push({
       pr,
       key,
       entry: entryOf(store.get<unknown>(key)),
-      comparison: comparison(pr),
-    };
-  });
+      comparison: comparison(pr, await liveTip(pr)),
+    });
+  }
   store.prune(
     prefix,
     work.map(({ key }) => key),

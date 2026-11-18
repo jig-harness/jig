@@ -149,10 +149,15 @@ it("reuses matching comparisons when the optional read budget is low", async () 
   ]);
 });
 
-it("does not reuse a fallback listing without a live base-tip witness", async () => {
+it("adds one live base-tip witness for fallback listings before reusing them", async () => {
   const store = cache();
   const { baseTipOid: _missing, ...fallback } = pr(1);
   const open = [fallback];
+  let witnesses = 0;
+  const head = async () => {
+    witnesses++;
+    return ok("tip");
+  };
   await observePrFiles(
     "owner/repo",
     open,
@@ -161,6 +166,7 @@ it("does not reuse a fallback listing without a live base-tip witness", async ()
     undefined,
     store,
     async () => ok(["before"]),
+    head,
   );
   const after = await observePrFiles(
     "owner/repo",
@@ -170,13 +176,62 @@ it("does not reuse a fallback listing without a live base-tip witness", async ()
     undefined,
     store,
     async () => ok(["after"]),
+    head,
   );
+  expect(witnesses).toBe(2);
   expect(after.evidence[0]).toMatchObject({
     pr: 1,
-    status: "fresh",
-    files: ["after"],
+    status: "cached",
+    files: ["before"],
   });
-  expect(await after.files(1)).toEqual(ok(["after"]));
+  expect(await after.files(1)).toEqual(ok(["before"]));
+});
+
+it("settles a fallback population larger than the fresh file-read cap", async () => {
+  const store = cache();
+  const open = Array.from({ length: 9 }, (_, index) => {
+    const { baseTipOid: _missing, ...fallback } = pr(index + 1);
+    return fallback;
+  });
+  let witnesses = 0;
+  const head = async () => {
+    witnesses++;
+    return ok("tip");
+  };
+  await observePrFiles(
+    "owner/repo",
+    open,
+    100,
+    null,
+    undefined,
+    store,
+    async (_slug, number) => ok([`path-${number}`]),
+    head,
+  );
+  const after = await observePrFiles(
+    "owner/repo",
+    open,
+    200,
+    null,
+    undefined,
+    store,
+    async (_slug, number) => ok([`path-${number}`]),
+    head,
+  );
+  expect(witnesses).toBe(2);
+  expect(after.evidence.map(({ status }) => status)).toEqual([
+    "cached",
+    "cached",
+    "cached",
+    "cached",
+    "cached",
+    "cached",
+    "cached",
+    "cached",
+    "fresh",
+  ]);
+  for (const { pr: number } of after.evidence)
+    expect(await after.files(number)).toEqual(ok([`path-${number}`]));
 });
 
 it("treats malformed persisted cache entries as a fresh read", async () => {
