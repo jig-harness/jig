@@ -229,7 +229,12 @@ function pickupsInFlight(
   // launch's own target, with the members' footprints together.
   const launchOf = new Map<string, string>();
   for (const { record } of records) {
-    if (record.action !== "pickup" || record.batchItems === undefined) continue;
+    if (
+      record.repo !== opened.repo.slug ||
+      record.action !== "pickup" ||
+      record.batchItems === undefined
+    )
+      continue;
     for (const { key } of record.batchItems)
       if (holdsItem(record, key)) launchOf.set(key, record.id);
   }
@@ -254,6 +259,29 @@ function pickupsInFlight(
   });
 }
 
+/**
+ * The wait one member of a placed batch keeps: its own recorded history, with
+ * the batch's tier-3 start and promotion added only where the batch gained
+ * them this tick, so joining a promoted member's batch never promotes another.
+ */
+export function memberWait(
+  p: Placed,
+  own: Wait | undefined,
+  before: Wait | undefined,
+  nowMs: number,
+): Wait | null {
+  if (p.wait === null) return null;
+  return {
+    sinceMs: own?.sinceMs ?? nowMs,
+    tier3SinceMs:
+      own?.tier3SinceMs ??
+      (before?.tier3SinceMs == null ? p.wait.tier3SinceMs : null),
+    promotedMs:
+      own?.promotedMs ??
+      (before?.promotedMs == null ? p.wait.promotedMs : null),
+  };
+}
+
 /** The waits the state database keeps for the repository; none, with a note, when they do not read. */
 function loadWaits(slug: string, notes: string[]): Map<string, Wait> {
   const read = attempt("unreadable", "the overlap waits did not read", () =>
@@ -274,6 +302,8 @@ function storeWaits(
   observation: RepoObservation,
   placed: readonly Placed[],
   memberKeys: ReadonlyMap<string, readonly string[]>,
+  stored: ReadonlyMap<string, Wait>,
+  joined: ReadonlyMap<string, Wait>,
   notes: string[],
 ): void {
   if (context.apply === null) return;
@@ -295,7 +325,15 @@ function storeWaits(
       new Map(
         placed.flatMap((p) =>
           (memberKeys.get(p.candidate.item) ?? [p.candidate.item]).map(
-            (key): [string, Wait | null] => [key, p.wait],
+            (key): [string, Wait | null] => [
+              key,
+              memberWait(
+                p,
+                stored.get(key),
+                joined.get(p.candidate.item),
+                context.nowMs,
+              ),
+            ],
           ),
         ),
       ),
@@ -353,7 +391,15 @@ export function planOverlap(
   const facts = observation.overlap;
   const notes = [...(facts?.notes ?? [])];
   if (pickups.length === 0) {
-    storeWaits(context, observation, [], new Map(), notes);
+    storeWaits(
+      context,
+      observation,
+      [],
+      new Map(),
+      new Map(),
+      new Map(),
+      notes,
+    );
     return;
   }
   const settings = overlapOf(section);
@@ -405,7 +451,7 @@ export function planOverlap(
     if (joined !== undefined) waits.set(c.item, joined);
   }
   const placed = walkOverlap(candidates, inFlight, waits, model, context.nowMs);
-  storeWaits(context, observation, placed, memberKeys, notes);
+  storeWaits(context, observation, placed, memberKeys, stored, waits, notes);
   // A member shares its batch's placement, with its own footprint reading beside it.
   const members = placed.flatMap((p) =>
     (memberKeys.get(p.candidate.item) ?? [p.candidate.item]).map((item) => ({

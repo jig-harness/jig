@@ -25,6 +25,7 @@ import {
 import {
   combinedFootprint,
   combinedWait,
+  memberWait,
   overlapModel,
 } from "../lib/overlap-plan.ts";
 import { parseMs } from "../../shared/time.ts";
@@ -529,5 +530,24 @@ describe("a batch as one piece of work", () => {
         { sinceMs: 3, tier3SinceMs: 4, promotedMs: 9 },
       ]),
     ).toEqual({ sinceMs: 3, tier3SinceMs: 4, promotedMs: 9 });
+  });
+
+  it("keeps each member's own wait when a batch's placement is stored", () => {
+    const promoted: Wait = { sinceMs: 3, tier3SinceMs: 4, promotedMs: 9 };
+    const batch = { wait: promoted } as Parameters<typeof memberWait>[0];
+    // A joins B's batch: B's old promotion is not copied onto the new member.
+    expect(memberWait(batch, promoted, promoted, NOW)).toEqual(promoted);
+    expect(memberWait(batch, undefined, promoted, NOW)).toEqual({
+      sinceMs: NOW,
+      tier3SinceMs: null,
+      promotedMs: null,
+    });
+    // A promotion the batch gained this tick is every member's.
+    const fresh = { sinceMs: 3, tier3SinceMs: 4, promotedMs: NOW };
+    const gained = { wait: fresh } as Parameters<typeof memberWait>[0];
+    expect(
+      memberWait(gained, undefined, { ...fresh, promotedMs: null }, NOW)
+        ?.promotedMs,
+    ).toBe(NOW);
   });
 });
