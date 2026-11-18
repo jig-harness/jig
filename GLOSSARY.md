@@ -2514,6 +2514,15 @@ make, use the entry's term instead.
   instruction and after showing what it would write, and holds no state of
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
+- **Carried item** — a claimed item no session holds that an open pull
+  request of its own repository carries: the line links the pull request to
+  the item, and its drive is live or has converged and waits for a person's
+  merge. The dispatcher reports it, and the line lists it, as carried
+  rather than as a stalled pickup. A pull request with no drive, or a
+  stopped one, does not carry it, and the stall need names the pull
+  request. An item already in the tracker's pull-request-open state, or
+  with a move to it still to make, keeps its existing handling and is not
+  reported as carried.
 - **Dispatch dashboard** — the page a person watches and steers the
   execution line from, and the process that serves it. Today
   `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to

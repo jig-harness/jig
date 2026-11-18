@@ -46,6 +46,37 @@ async function readAttempt(head: string, id: number) {
   };
 }
 
+/** Why the PR is not safe to retry on `head`: closed, moved, held or unreadable; `null` when it is. */
+async function openUnheldRefusal(pr: string, head: string) {
+  const read = await ghCall([
+    "pr",
+    "view",
+    pr,
+    "--json",
+    "state,headRefOid,labels",
+  ]);
+  if (read.code !== 0)
+    return {
+      ok: false,
+      detail: `the PR could not be read (forge exit ${read.code}): ${read.stderr.trim()}`,
+    };
+  const snapshot = parsePrSnapshot(
+    JSON.parse(read.stdout) as unknown,
+    holdLabelPolicy(),
+  );
+  if (
+    snapshot === null ||
+    snapshot.state !== "OPEN" ||
+    snapshot.head !== head ||
+    snapshot.held
+  )
+    return {
+      ok: false,
+      detail: "the PR closed, its head changed, or CI is held",
+    };
+  return null;
+}
+
 export const failedCheckForge: RetryForge = {
   rerunnable: rerunnableRuns,
   async observe(head, id) {
@@ -58,7 +89,7 @@ export const failedCheckForge: RetryForge = {
     }
     return null;
   },
-  async retry(pr, head, id) {
+  async retry(pr, head, id, mayMutate) {
     let lock: Awaited<ReturnType<typeof assertRemoteMutationAllowed>> | null =
       null;
     try {
@@ -74,31 +105,15 @@ export const failedCheckForge: RetryForge = {
           ok: false,
           detail: "the run is unfinished or belongs to another head",
         };
-      const read = await ghCall([
-        "pr",
-        "view",
-        pr,
-        "--json",
-        "state,headRefOid,labels",
-      ]);
-      if (read.code !== 0)
+      const unsafe = await openUnheldRefusal(pr, head);
+      if (unsafe !== null) return unsafe;
+      // Nothing was sent: the caller waits for an attempt that never comes
+      // and the next reading judges ownership, rather than parking.
+      if (mayMutate !== undefined && !(await mayMutate()))
         return {
           ok: false,
-          detail: `the PR could not be read (forge exit ${read.code}): ${read.stderr.trim()}`,
-        };
-      const snapshot = parsePrSnapshot(
-        JSON.parse(read.stdout) as unknown,
-        holdLabelPolicy(),
-      );
-      if (
-        snapshot === null ||
-        snapshot.state !== "OPEN" ||
-        snapshot.head !== head ||
-        snapshot.held
-      )
-        return {
-          ok: false,
-          detail: "the PR closed, its head changed, or CI is held",
+          indeterminate: true,
+          detail: "the drive no longer owns the pull request",
         };
       const retry = await ghCall(["run", "rerun", String(id), "--failed"]);
       const detail = retry.stderr.trim() || `forge exit ${retry.code}`;

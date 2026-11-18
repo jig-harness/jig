@@ -401,6 +401,36 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.276.0] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` no longer asks a person about a claimed item as a stalled
+  pickup while an open pull request of its repository carries it: one the
+  line links to the item (its branch names the item's key, its description
+  closes it, or the forge says it closes it), not from a fork, whose drive
+  is live or has converged and waits for its merge. The tick reports the
+  item as carried by that pull request, with its link and the drive's state,
+  and the line the dashboard reads lists it under `carried`, whether or not the
+  repository names a `pr_open` state; an item already in `pr_open`, or with a
+  move to `pr_open` still to make, keeps its existing handling and is not
+  listed as carried. A pull request with no drive or a
+  stopped one still leaves the stalled need, which now names it; where the
+  open pull requests or the drive did not read, the need says what could not
+  be told.
+- A drive that stops `CONVERGED` no longer leaves a pull request labelled
+  `converged` while its own label write blocked CI. In a repository whose
+  workflows run on label events, adding `converged` and removing `driving`
+  starts runs on the head the drive just verified; those runs could cancel
+  each other or fail a flaky test, and no drive was left to notice. The drive
+  now watches that head's CI after the write, while it still holds the pull
+  request: it re-runs a cancellation the write caused through the
+  cancelled-run recovery, re-runs a failure in a run a label write started
+  once, and when CI is still not green, or has not settled within
+  `DRIVE_PR_CONVERGED_CI_MINUTES` (30 minutes by default, `0` turns the watch
+  off), it parks `converged-ci` with the runs it saw, stops with
+  `HITL_PARKED` and labels the pull request `parked`.
+
 ## [0.275.1] - 2026-11-18
 
 ### Fixed
@@ -9665,7 +9695,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.275.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.276.0...HEAD
+[0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0
 [0.275.1]: https://github.com/jig-harness/jig/compare/v0.275.0...v0.275.1
 [0.275.0]: https://github.com/jig-harness/jig/compare/v0.274.2...v0.275.0
 [0.274.2]: https://github.com/jig-harness/jig/compare/v0.274.1...v0.274.2

@@ -570,3 +570,35 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     expect(f.calls).toEqual([1, 2, 1, 2]);
   });
 });
+
+describe("a drive that lost the pull request mid-recovery", () => {
+  test("neither re-runs nor parks once the ownership check refuses", async () => {
+    const f = fixture();
+    let owned = true;
+    const deps: RecoveryDeps = { ...f.deps, mayMutate: async () => owned };
+    await recoverCancelled("5", "head", [job], [run(1)], deps);
+    f.advance(30_000);
+    owned = false;
+    expect(await recoverCancelled("5", "head", [job], [run(1)], deps)).toBe(
+      "unknown",
+    );
+    expect(f.calls).toEqual([]);
+    expect(f.parks).toEqual([]);
+  });
+  test("a refused re-run answer is not parked by a drive that no longer owns it", async () => {
+    const f = fixture();
+    let owned = true;
+    const deps: RecoveryDeps = {
+      ...f.deps,
+      mayMutate: async () => owned,
+      rerun: async () => {
+        owned = false;
+        return { code: 1, stderr: "refused" };
+      },
+    };
+    await recoverCancelled("5", "head", [job], [run(1)], deps);
+    f.advance(30_000);
+    await recoverCancelled("5", "head", [job], [run(1)], deps);
+    expect(f.parks).toEqual([]);
+  });
+});
