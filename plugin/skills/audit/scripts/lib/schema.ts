@@ -24,6 +24,7 @@ export const FIELD_TYPES = [
   "regex",
   "boolean",
   "integer",
+  "number",
   "enum",
   "list",
   "map",
@@ -455,6 +456,24 @@ function integerProblem(value: unknown, field?: Field): string | null {
   return `must be ${[bound, ...words].join(" or ")}`;
 }
 
+/** A number, whole or not, within the field's `min` and `max`. */
+function numberProblem(value: unknown, field?: Field): string | null {
+  const min = field?.min ?? Number.NEGATIVE_INFINITY;
+  const max = field?.max ?? Number.POSITIVE_INFINITY;
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= min &&
+    value <= max
+  )
+    return null;
+  const limits = [
+    field?.min === undefined ? null : `≥ ${min}`,
+    field?.max === undefined ? null : `≤ ${max}`,
+  ].filter((l) => l !== null);
+  return `must be ${["a number", limits.join(" and ")].join(" ").trim()}`;
+}
+
 function enumProblem(value: unknown, field?: Field): string | null {
   const values = field?.values ?? [];
   return values.includes(value as string)
@@ -564,6 +583,7 @@ const TYPE_PROBLEMS: Record<
   boolean: (value) =>
     typeof value === "boolean" ? null : "must be true or false",
   integer: integerProblem,
+  number: numberProblem,
   enum: enumProblem,
   list: listProblem,
   map: mapProblem,

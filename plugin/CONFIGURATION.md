@@ -1403,6 +1403,14 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
 | `dispatch.pickup_deadline` | duration | `3h`: the deadline a pickup's headless `do-item` pass runs under; the wrapper stops the pass when it passes, as a follow-up's pass is stopped at the pass deadline. An implementation outruns a review pass, so a pickup has a deadline of its own | dispatch |
 | `dispatch.epic_width` | positive whole number | `4`: the most children of an assigned epic with no execution plan that are under way at once; the dispatcher starts its ready children, best-ranked first, until that many are. A child counts while it is started and not waiting on a person (its session runs or its pull request is open), or while it cannot be read; a child in `ops_pending` or carrying `hitl`, `hitl:*`, `manual-ops` or `jig:hold` does not. A child that waits names the epic and the width. `1` starts one child at a time. An epic with an execution plan follows its plan instead. A temporary bound until admission weighs the overlap of all work in flight ([ADR-0024](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)) | dispatch |
+| `dispatch.overlap.max_per_file` | whole number, `0` or more | `4`: the [overlap bound](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A planned pickup is in tier 3 when starting it would put more than this many pieces of work in flight (open pull requests and pickups with no pull request yet) that change one of its files; only files count, never a directory or an area, a quiet pull request (`quiet_after`) does not, nor does an ignored or generated path. `0` turns the bound off. The tick reports the tier and why; it does not yet change what it starts | dispatch |
+| `dispatch.overlap.patience` | mapping of `urgent`, `high`, `medium`, `low` and `none` to a duration, or `0` | urgent `0`, high `30m`, medium `2h`, low and none `6h`: how long a planned pickup of that priority that overlaps the work in flight waits, for each conflict resolution round it is expected to cause, before it returns to tier 1, counted from the first tick that put it in tier 2 or 3 (the state database's `overlap_waits`). A key left out keeps its default | dispatch |
+| `dispatch.overlap.file_rate` | number from 0 to 1 | `0.5`: a file's chance of a conflict before it merges while fewer than 5 merged pull requests that changed it were observed, or while the repository's conflict rates are missing or stale | dispatch |
+| `dispatch.overlap.area_rate` | number from 0 to 1 | `0.2`: the chance counted for the one unit that every directory or area match holding no file match makes together, the weaker prediction | dispatch |
+| `dispatch.overlap.unknown_cost` | number from 0 to 100 | `0.5`: the overlap cost of a pickup whose footprint is unknown (no footprint record and no area label, or a footprint that did not read), counted once whatever is in flight, so known work that collides with nothing comes first | dispatch |
+| `dispatch.overlap.ignore` | list of path globs | None: the paths, beside those the change-area catalog marks generated (`generated[].outputs`), that count toward neither the overlap cost nor the bound, such as a file every pull request appends to | dispatch |
+| `dispatch.overlap.quiet_after` | duration | `336h` (14 days): an open pull request not updated for this long counts toward the overlap cost but not toward the bound | dispatch |
+| `dispatch.overlap.bound_patience` | duration | `24h`: a pickup that has waited in tier 3 longer than this is promoted to tier 1, ahead of every pickup that has not, the longest waiter first, until it starts or is no longer wanted | dispatch |
 | `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts; and a follow-up whose passes record `waits --reason pending` (an arm still pending) is notified as a failed follow-up naming the arm once a pass still finds it pending this long after the first pass that found it so | dispatch |
 | `dispatch.followup_stale_after` | duration | `24h`: a follow-up claim no run will finish (a person's run's marker not marked done, or another host's with no answer) that is older than this, with no session joined to its pull request, is released: the host that owns the repository deletes the marker, once per pull request, and the follow-up starts again. A claim on it that goes stale again after that is notified to a person, never released twice | dispatch |
 | `dispatch.notices_linger` | duration, or `0s` | `1h`: the repository's notices workspace, once read, is removed this long after the first tick that finds it read; `0s` removes it at that tick. An unread one is removed once every cause it carries is gone | dispatch |
@@ -2021,6 +2029,15 @@ dispatch:
   pickup_within: 2h
   pickup_deadline: 3h
   epic_width: 4
+  overlap:
+    max_per_file: 4
+    patience: { urgent: 0, high: 30m, medium: 2h, low: 6h, none: 6h }
+    file_rate: 0.5
+    area_rate: 0.2
+    unknown_cost: 0.5
+    ignore: [CHANGELOG.md]
+    quiet_after: 336h
+    bound_patience: 24h
   followup_within: 1h
   followup_stale_after: 24h
   notices_linger: 1h
