@@ -475,6 +475,21 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: "CREATE TABLE merge_facts (repo TEXT NOT NULL, pr INTEGER NOT NULL, fact TEXT NOT NULL, PRIMARY KEY (repo, pr));",
   },
   {
+    additive: true,
+    sql: `ALTER TABLE launches ADD COLUMN release_tags TEXT;
+    CREATE TABLE release_needs (
+      repo TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      launch TEXT NOT NULL,
+      item TEXT,
+      rerun_claimed INTEGER NOT NULL DEFAULT 0,
+      tagged INTEGER NOT NULL DEFAULT 0,
+      next_tag_check INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (repo, tag),
+      UNIQUE (repo, item)
+    );`,
+  },
+  {
     // A process-owned checkout keeps its ended launch evidence after normal retention. Pruning must preserve that evidence, which an earlier writer does not do, so earlier readers are refused.
     additive: false,
     sql: `

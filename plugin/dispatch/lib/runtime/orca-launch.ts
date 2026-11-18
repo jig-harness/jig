@@ -18,10 +18,11 @@
  * reports that it cannot bind an interactive session (`orca.ts` says why),
  * so the tick asks for none: a pickup runs as a headless pass.
  *
- * The tab is recorded as a run tab (`shared/orca-tabs.ts`), so the wrapper
- * closes it when its run ends with nothing for a person, and the launch
+ * The tab is recorded as a run tab (`shared/orca-tabs.ts`) under its launch
+ * record, so the wrapper closes it on every exit it records, the tick's
+ * `endRun` closes it for a run whose wrapper died first, and the launch
  * closes the earlier idle run tabs of the same pull request or item in the
- * workspace. Neither holds a launch back: the receipt says what happened.
+ * workspace. None holds a launch back: the receipt says what happened.
  */
 import { resolve } from "node:path";
 import { sessionOverrides } from "../../../shared/session-overrides.ts";
@@ -242,6 +243,7 @@ async function recordAndCloseEarlier(
       result,
       worktree: workspace.path,
       subject,
+      launch: stage.record,
       title: stage.title,
     },
     tabs,

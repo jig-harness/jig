@@ -81,6 +81,7 @@ pre-commit:
         - "plugin/shared/records/envelope.ts"
         - "plugin/shared/records/followup-shapes.ts"
         - "plugin/shared/records/followup-values.ts"
+        - "plugin/shared/records/release-tags.ts"
         - "plugin/shared/records/forge-claim-shapes.ts"
         - "plugin/shared/records/forge-claim-values.ts"
         - "plugin/shared/records/marker-shapes.ts"

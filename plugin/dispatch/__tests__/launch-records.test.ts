@@ -116,6 +116,11 @@ it("reads legacy launch records but rejects invalid account launch ordinals", ()
   const original = record("ordinal-validation");
   expect(isLaunchRecord(original)).toBe(true);
   expect(isLaunchRecord({ ...original, accountLaunchOrdinal: 1 })).toBe(true);
+  expect(
+    isLaunchRecord({ ...original, runEndedAt: "2026-11-01T12:00:00.000Z" }),
+  ).toBe(true);
+  for (const bad of [null, false, "not a time"])
+    expect(isLaunchRecord({ ...original, runEndedAt: bad })).toBe(false);
   for (const bad of [null, 0, -1, 1.5, "1", Number.POSITIVE_INFINITY])
     expect(isLaunchRecord({ ...original, accountLaunchOrdinal: bad })).toBe(
       false,
