@@ -93,7 +93,7 @@ export const REPO_COMMANDS = {
     deadline: null,
     exits: {},
     meaning:
-      "The repository's complete local checks, run before every push. resolve-review-comments refuses to start without it, and it is drive-pr's one local check where `drive.validation_plan_command` is not set.",
+      "The repository's local checks, run before every push: all of them, except in a session its dispatcher starts, where `gates.dispatch_fast` may leave some to CI. resolve-review-comments refuses to start without it, and it is drive-pr's one local check where `drive.validation_plan_command` is not set.",
   },
   "drive.validation_plan_command": {
     runBy: ["drive-pr", "fix-ci", "resolve-conflicts", "review", "descar"],

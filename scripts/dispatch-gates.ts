@@ -15,9 +15,25 @@ const moduleSuffixes = [
   ...moduleExtensions,
   ...moduleExtensions.map((extension) => `/index${extension}`),
 ];
+
 /** A string, or a template without an interpolation: one fixed specifier. */
-const literalSpecifier =
-  /^(?:'([^'\\]*)'|"([^"\\]*)"|`((?:(?!\$\{)[^`\\])*)`)$/;
+function literalSpecifier(source: string): string | undefined {
+  const { program } = parseSync("specifier.ts", `(${source});`);
+  const statement = program.body[0];
+  if (statement?.type !== "ExpressionStatement") return undefined;
+  const expression =
+    statement.expression.type === "ParenthesizedExpression"
+      ? statement.expression.expression
+      : statement.expression;
+  if (expression.type === "Literal")
+    return typeof expression.value === "string" ? expression.value : undefined;
+  if (
+    expression.type === "TemplateLiteral" &&
+    expression.expressions.length === 0
+  )
+    return expression.quasis[0]?.value.cooked ?? undefined;
+  return undefined;
+}
 
 /**
  * How many test files a targeted run takes. A file run alone takes seconds, so
@@ -143,8 +159,7 @@ function testImports(root: string, test: string): string[] {
   return [
     ...staticImports.map(({ moduleRequest }) => moduleRequest.value),
     ...dynamicImports.flatMap(({ moduleRequest: { start, end } }) => {
-      const match = literalSpecifier.exec(code.slice(start, end));
-      const path = match?.[1] ?? match?.[2] ?? match?.[3];
+      const path = literalSpecifier(code.slice(start, end));
       return path === undefined ? [] : [path];
     }),
   ]

@@ -43,7 +43,7 @@ command runs as long as the step that runs it lets it.
 
 | Setting | Run by | Command store's rules | Deadline | Meaning |
 | --- | --- | --- | --- | --- |
-| `gates.command` | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | no | — | The repository's complete local checks, run before every push. resolve-review-comments refuses to start without it, and it is drive-pr's one local check where `drive.validation_plan_command` is not set. |
+| `gates.command` | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | no | — | The repository's local checks, run before every push: all of them, except in a session its dispatcher starts, where `gates.dispatch_fast` may leave some to CI. resolve-review-comments refuses to start without it, and it is drive-pr's one local check where `drive.validation_plan_command` is not set. |
 | `drive.validation_plan_command` | drive-pr, fix-ci, resolve-conflicts, review, descar | no | — | Says which checks and reviews a change needs. The change-areas skill's resolver prints such a plan from the change-area catalog. |
 | `drive.load_guard_command` | drive-pr | no | — | Waits until the machine can take a round's heavy checks. |
 | `ci.log_command` | fix-ci | yes | 300 s (`JIG_FIX_CI_LOG_COMMAND_TIMEOUT_SEC`) | Reads the failed log of a commit status, for a CI service that reports as commit statuses and keeps its logs where only the repository knows how to reach them. |

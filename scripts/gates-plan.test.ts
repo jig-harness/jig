@@ -91,7 +91,12 @@ test("a run names its part in the closing line", async () => {
   expect(summary(green, false)).toBe("all gates passed");
 });
 
-const launch = { JIG_LAUNCH: "20260101T000000Z-abcdef12" };
+// The layered configuration reader takes its home from the environment it is
+// given, so the tests hand it the isolated one the preload set up.
+const launch = {
+  JIG_LAUNCH: "20260101T000000Z-abcdef12",
+  JIG_HOME: process.env.JIG_HOME,
+};
 
 function git(cwd: string, ...args: string[]): void {
   const child = Bun.spawnSync(
@@ -115,6 +120,7 @@ function changedRepository(config: string): string {
     "other/dynamic.test.ts": "await import('../lib/' + name);\n",
     "other/prefix.test.ts": "await import('../lib/thing.ts' + suffix);\n",
     "other/dollar.test.ts": "await import('../lib/$cost.ts');\n",
+    "other/escaped.test.ts": 'await import("../lib/\\u0074hing.ts");\n',
     "other/widget.test.ts": 'import "../lib/widget";\n',
     "lib/$cost.ts": "export const cost = 1;\n",
     "lib/widget/index.tsx": "export const widget = 1;\n",
@@ -155,7 +161,7 @@ test("only an opted-in dispatch launch runs the targeted form", async () => {
   expect(targeted.dispatch).toBe(true);
   expect(names(targeted)).not.toContain(full);
   expect(targeted.stages.at(-1)?.name).toBe(
-    "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./lib/bare.test.ts ./lib/plain.test.ts ./lib/thing.test.ts ./other/dollar.test.ts ./other/late.test.ts ./other/widget.test.ts",
+    "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./lib/bare.test.ts ./lib/plain.test.ts ./lib/thing.test.ts ./other/dollar.test.ts ./other/escaped.test.ts ./other/late.test.ts ./other/widget.test.ts",
   );
   for (const run of [
     gateRun(false, undefined, off, launch),
@@ -173,7 +179,7 @@ test("only an opted-in dispatch launch runs the targeted form", async () => {
 test("the targeted tests run outside the lock, without the line's variables", async () => {
   const { dispatchPlan } = await import("./gates.ts");
   const stage = dispatchPlan(["scripts/example.test.ts"], {
-    ...launch,
+    JIG_LAUNCH: launch.JIG_LAUNCH,
     DRIVE_PR_TARGET: "14",
     PATH: "/bin",
   }).at(-1);
