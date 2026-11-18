@@ -15,6 +15,12 @@ import {
 
 /** The most pull requests a repository reads fresh in one tick, even if every read fails. */
 const FRESH_LIMIT = 8;
+/**
+ * Fallback listings need a live base-tip witness before their cached files can
+ * be reused. Leave room for a population larger than the two fresh-read
+ * batches so every member can become decidable on a later tick.
+ */
+const FALLBACK_TIP_LIMIT = FRESH_LIMIT * 2 + 1;
 /** Temporal.Instant accepts epoch milliseconds only in this inclusive range. */
 const EPOCH_MS_LIMIT = 8_640_000_000_000_000;
 
@@ -171,7 +177,7 @@ export async function observePrFiles(
     let reading = tips.get(pr.baseRefName);
     // Bound fallback witnesses separately from file reads: one branch can
     // witness many pull requests, and an unwitnessed branch remains fresh-only.
-    if (reading === undefined && tips.size < FRESH_LIMIT) {
+    if (reading === undefined && tips.size < FALLBACK_TIP_LIMIT) {
       reading = await heldRead(
         bound,
         "the base branch's live tip was read",

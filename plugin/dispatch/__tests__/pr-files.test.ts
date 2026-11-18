@@ -291,6 +291,55 @@ it("rotates fallback witnesses across distinct base branches", async () => {
   );
 });
 
+it("settles a bounded distinct-branch fallback population across ticks", async () => {
+  const store = cache();
+  const open = Array.from({ length: 17 }, (_, index) => {
+    const { baseTipOid: _missing, ...fallback } = pr(index + 1);
+    return { ...fallback, baseRefName: `base-${index + 1}` };
+  });
+  const head = async () => ok("tip");
+  const read = async (_slug: string, number: number) => ok([`path-${number}`]);
+
+  await observePrFiles(
+    "owner/repo",
+    open,
+    100,
+    null,
+    undefined,
+    store,
+    read,
+    head,
+  );
+  await observePrFiles(
+    "owner/repo",
+    open,
+    200,
+    null,
+    undefined,
+    store,
+    read,
+    head,
+  );
+  const settled = await observePrFiles(
+    "owner/repo",
+    open,
+    300,
+    null,
+    undefined,
+    store,
+    read,
+    head,
+  );
+
+  expect(
+    settled.evidence.every(
+      ({ status }) => status === "fresh" || status === "cached",
+    ),
+  ).toBe(true);
+  for (const { number } of open)
+    expect(await settled.files(number)).toEqual(ok([`path-${number}`]));
+});
+
 it("treats malformed persisted cache entries as a fresh read", async () => {
   const store = cache();
   store.set("forge:pr-files:owner/repo:1", {
