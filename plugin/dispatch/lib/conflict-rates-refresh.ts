@@ -46,10 +46,10 @@ export const REFRESH_EVERY_MS = 86_400_000;
 export const REFRESH_DEADLINE_MS = 10 * 60_000;
 
 /** The least time a refresh is started with: with less of the tick left, it waits for a later tick. */
-export const MIN_REFRESH_MS = 60_000;
+const MIN_REFRESH_MS = 60_000;
 
 /** The window the rates count, in days. */
-export const RATES_WINDOW_DAYS = 30;
+const RATES_WINDOW_DAYS = 30;
 
 const HISTORY = resolve(
   import.meta.dir,
