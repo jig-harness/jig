@@ -116,7 +116,7 @@ export { isDrive, isInteractive } from "./launch-kind.ts";
  * stopped, or a follow-up a rate limit or an arm still pending stopped, to
  * be started again once its time has come (`waitsUntil`, `waitsFor`).
  */
-export type { RecordedResult, SessionResult } from "./session-result-types.ts";
+export type { SessionResult } from "./session-result-types.ts";
 
 /** The runtime's answer to one `launch` call for the record. */
 export interface LaunchAttempt {
