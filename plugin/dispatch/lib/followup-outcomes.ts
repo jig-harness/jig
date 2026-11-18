@@ -52,6 +52,8 @@ export interface FollowupOutcome {
   routine?: string | null;
   /** Whether the attempt was itself a run again (its facts carry the recovery tag); absent on a row that kept none. */
   rerun?: boolean;
+  /** Whether the attempt parked on a decision for a person; absent when it did not. */
+  parked?: boolean;
   /** Why the row's `asked` column does not read: it does not parse, is not a mapping, or names another record. Such a row is a person's, never read as an earlier release's. */
   unreadable?: string;
 }
@@ -59,7 +61,7 @@ export interface FollowupOutcome {
 /** What a row keeps of the pass's question, as its `asked` column holds it. */
 export type Asked = Pick<
   FollowupOutcome,
-  "question" | "routine" | "rerun" | "unreadable"
+  "question" | "routine" | "rerun" | "parked" | "unreadable"
 >;
 
 /** The rows this process has warned of, so a row read every tick warns once and is written at debug level after. */
@@ -101,16 +103,19 @@ function parseAsked(text: string | null, record: string): Asked {
       ? {}
       : { routine: value.routine as string | null }),
     rerun: value.rerun as boolean,
+    ...(value.parked === true ? { parked: true } : {}),
   };
 }
 
 /** Why a mapping in the `asked` column does not hold the fields a row keeps; `null` when it does. */
 function invalidAsked(value: Record<string, unknown>): string | null {
-  const { question, routine, rerun } = value;
+  const { question, routine, rerun, parked } = value;
   if (question !== null && typeof question !== "string")
     return "its question is neither text nor null";
   if (typeof rerun !== "boolean")
     return "it does not say whether the attempt was a run again";
+  if (parked !== undefined && typeof parked !== "boolean")
+    return "its parked flag is not a boolean";
   const unlisted =
     typeof routine !== "string" || routineQuestion(routine) === undefined;
   if (routine !== undefined && routine !== null && unlisted)
@@ -139,21 +144,50 @@ export function readOutcomes(
 /** What an ended follow-up record asked: its question, its tag's class where its prompt offered tags, and whether it was a run again. */
 export function askedBy(r: ReadRecord): Asked {
   // An unwritten end is a host fault: its database question is never asked.
-  const question = unwrittenResult(r) ? null : questionOf(r.state);
+  const question = unwrittenResult(r)
+    ? null
+    : (questionOf(r.state) ??
+      r.report?.report.question ??
+      (r.result === "parked" ? r.framed?.decision.call.question : undefined) ??
+      null);
   return {
     question,
     ...(r.record.routineTags === true
       ? { routine: routineClassOf(question) }
       : {}),
     rerun: isRerun(r.record),
+    ...(r.result === "parked" ? { parked: true } : {}),
   };
 }
 
-/** How an ended follow-up record ended: its session's recorded result, else failed; `null` while it holds, or for a retry (a startup that never began, a first death). */
-export function outcomeOf(r: ReadRecord): TickOutcome | null {
+/** How an ended follow-up ended, as a reader that counts its ends takes it. */
+export type FollowupEnd = "done" | "waits" | "parked" | "failed";
+
+/**
+ * How an ended follow-up record ended: its session's recorded result, a
+ * wait (`waits`) or a stop on the decision it framed for a person
+ * (`parked`) apart from a failure, and an end with no result `failed`;
+ * `null` while it holds, or for a retry (a startup that never began, a
+ * first death).
+ */
+export function followupEnd(r: ReadRecord): FollowupEnd | null {
   if (retryableFollowup(r)) return null;
   if (r.state.kind !== "ended" && r.state.kind !== "died") return null;
-  return r.result === "done" ? "done" : "failed";
+  return r.result ?? "failed";
+}
+
+/**
+ * The outcome the follow-up's marker and its outcome record carry
+ * (`followupEnd`, in the marker's closed words): `done`, else `failed`. A
+ * wait or a park stays `failed` there, so a host that reads the marker, on
+ * any release, holds the follow-up rather than starting it again; the wait
+ * releases it at its time (`followup-waits.ts`), and the park waits for the
+ * person's answer.
+ */
+export function outcomeOf(r: ReadRecord): TickOutcome | null {
+  const end = followupEnd(r);
+  if (end === null) return null;
+  return end === "done" ? "done" : "failed";
 }
 
 /** Whether the written outcome belongs to an attempt later than `record`. */
@@ -188,16 +222,25 @@ export function settleFollowups(
     if (record.action !== "followup" || record.pr === null) continue;
     const outcome = outcomeOf(r);
     if (outcome === null) continue;
+    const asked = askedBy(r);
     let outcomes = known.get(record.repo);
     if (outcomes === undefined) {
       outcomes = readOutcomes(record.repo, root);
       known.set(record.repo, outcomes);
     }
     const written = outcomes.get(record.pr);
-    if (written?.record === record.id && written.outcome === outcome) continue;
+    if (
+      written?.record === record.id &&
+      written.outcome === outcome &&
+      written.question === asked.question &&
+      written.routine === asked.routine &&
+      written.rerun === asked.rerun &&
+      written.parked === asked.parked &&
+      written.unreadable === asked.unreadable
+    )
+      continue;
     // A later attempt's outcome stands over an earlier record that ends after it: ordered by when the record was created, the ids only break a tie (their suffix is random within a second).
     if (written !== undefined && supersedes(written, record)) continue;
-    const asked = askedBy(r);
     const value: FollowupOutcome = {
       repo: record.repo,
       pr: record.pr,

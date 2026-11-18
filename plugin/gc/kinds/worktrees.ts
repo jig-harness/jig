@@ -3,6 +3,7 @@ import { realpathSync, rmSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
+  ORCA_LIST_LIMIT,
   orcaEnvelope,
   orcaFailure,
   orcaResult,
@@ -135,6 +136,8 @@ async function orcaWorktrees(
     "list",
     "--repo",
     `path:${repository}`,
+    "--limit",
+    String(ORCA_LIST_LIMIT),
     "--json",
   ]);
   const envelope = orcaEnvelope(done.stdout);

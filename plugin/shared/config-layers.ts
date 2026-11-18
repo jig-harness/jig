@@ -67,6 +67,7 @@ export const PATH_LAYER_SELECTORS: readonly string[] = [
 /** Fields only a repository (or one run) may set; the user layer refuses them. */
 export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "gates.command",
+  "gates.dispatch_fast",
   "gc.kinds",
   "gc.worktree_roots",
   "gc.scratch_prefixes",
