@@ -434,7 +434,6 @@ export async function observeRepo(
             ok: false,
             openReadable: false,
             open: [],
-            openReadable: false,
             read: new Set(),
             scoped: labels?.onlyLabeled === true,
             inScope: new Set(),
