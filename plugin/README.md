@@ -547,8 +547,22 @@ batch is picked up again without them. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
-hands to a repository maintainer to merge, and a completed follow-up hands
-to nobody. The session holds its
+hands to a repository maintainer to merge, a pass parked on the decision it
+framed (below) to a repository maintainer and the act the decision's class
+asks for, and a completed follow-up to nobody.
+
+A pass's recorded answer is read as one of these
+[launch results](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+`done`; `waits`, a pass that recorded a wait; `parked`, a pass that
+recorded `failed --decision <file>` and so stopped on the decision it
+framed for a person; and `failed`, a pass that recorded `failed` with
+neither, or ended with no result at all. The state database keeps `waits`
+and `parked` as `failed`, with the wait's time or the decision beside it,
+so a host that rolls back to a release that knows neither holds such a pass
+for a person rather than starting it again; every reader on this release
+takes a pending-arm wait and a parked decision apart from a failure, rows
+written before it included, and neither counts as one. A rate-limit wait
+remains a quota wall. The session holds its
 slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
@@ -695,7 +709,9 @@ park: it writes a [`parked-decision/v1` record](protocol/needs-and-answers.md#th
 one it recommends and why, the class, the steps a person must take and what
 it already did) and
 records `failed --decision <file>`, which checks the record as a park's is
-and keeps it with the result; a record the check refuses records nothing,
+and keeps it with the result, read as `parked`: the outcome log classes it
+parked for a person, with the person and act the decision names as its next
+owner, never as a failure. A record the check refuses records nothing,
 so the pass fixes it and sends it again. The need it raises (a failed
 follow-up, a pickup's question) carries that decision. For what the tick
 finds itself it frames the decision from the facts that identify it. For
@@ -859,7 +875,8 @@ nothing either and records
 `waits --until <time> --reason pending --arm <name>`, the time to look
 again and the arm. It is held and started again the same way, its waits
 are never reported as a rate limit, and they do not count toward the rate
-limit's three. A pass that still finds the arm pending once
+limit's three. The outcome log classes such a pass `arm pending`, which
+the dashboard shows as held back, not as finishing badly. A pass that still finds the arm pending once
 `dispatch.followup_within` has passed since the first pass that found it so
 is notified as a failed follow-up that names the arm. `--reason` absent is
 `rate-limit`.
@@ -1133,7 +1150,8 @@ stages' results into these outcome classes:
 | converged | a drive converged; a pickup or follow-up recorded success |
 | merged | a drive's pull request merged while it ran |
 | quota wall | a usage limit, or a session that ended with no result while its wall stood |
-| parked for a person | a drive parked, or a follow-up stopped on a question |
+| parked for a person | a drive parked, or a pickup or follow-up stopped on a question or parked on the decision it framed |
+| arm pending | a follow-up that recorded a wait on an arm still pending |
 | stalled | a drive stalled, reached its round limit or was replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
 | refused | a stage's own refusal or a stop it was given |
@@ -1352,7 +1370,8 @@ writes nothing to the host:
   seven or thirty days, or a range), repository, stage, account, class,
   reason, the closing report's cause and who wrote it, and the piece of
   work, whose page lists its runs with their reports, counting each class over the window and naming each recurring
-  class: a bad class (any but converged, merged and parked for a person) of
+  class: a bad class (any but converged, merged, parked for a person and arm
+  pending) of
   one stage on one repository on at least three of the last seven host days,
   counting the ended rows and the event rows that carry a class, such as a
   drive stopped for a person (a drift carries none). A question about

@@ -43,6 +43,7 @@ function readFailure(outbound: OutboundFailure): ReadFailure {
     ...(outbound.until === undefined
       ? {}
       : { until: isoFromMs(outbound.until) }),
+    ...(outbound.quota === undefined ? {} : { quota: outbound.quota }),
   };
 }
 
