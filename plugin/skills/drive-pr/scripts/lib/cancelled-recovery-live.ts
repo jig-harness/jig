@@ -184,6 +184,7 @@ export async function recoverCancelledOnHead(
   head: string,
   required?: readonly string[],
   alreadyFenced = false,
+  mayMutate?: () => Promise<boolean>,
 ) {
   const jobs = await checkRuns(head);
   if (jobs === null) {
@@ -270,10 +271,18 @@ export async function recoverCancelledOnHead(
     return "unknown";
   }
   try {
+    // A caller that can lose the drive to a successor asks again here, where
+    // the first claim is about to be spent.
+    if (mayMutate !== undefined && !(await mayMutate())) return "unknown";
     const answer = await recoverCancelled(pr, head, relevant, runs, {
       ...live,
       ...timelineDeps(pr),
       async rerun(id) {
+        if (mayMutate !== undefined && !(await mayMutate()))
+          return {
+            code: 1,
+            stderr: "the drive no longer owns the pull request",
+          };
         if (!(await live.confirm(pr, head)))
           return {
             code: 1,

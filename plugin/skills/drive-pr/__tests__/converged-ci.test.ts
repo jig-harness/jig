@@ -10,6 +10,7 @@ import {
   type ConvergedCiDeps,
   watchConvergedCi,
 } from "../scripts/lib/driver/converged-ci.ts";
+import type { Ownership } from "../scripts/lib/driver/converged-ci.ts";
 import type { Recovery } from "../scripts/lib/cancelled-recovery.ts";
 import { convergedStopExit } from "../scripts/lib/driver/converged-ci-live.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
@@ -63,7 +64,8 @@ interface Script {
   rerunnable?: number[];
   rerunOk?: boolean;
   rerunIndeterminate?: boolean;
-  owned?: boolean;
+  /** Each ownership read in turn, the last repeating; `true` and `false` read ours and lost. */
+  owned?: boolean | Ownership[] | { afterMs: number; becomes: Ownership };
 }
 
 /** Fake dependencies over a scripted sequence of readings, on a clock the sleeps move. */
@@ -75,6 +77,7 @@ function fake(script: Script) {
   let ciAt = 0;
   let runsAt = 0;
   let recoveryAt = 0;
+  let ownedAt = 0;
   const last = <T>(list: T[], at: number): T =>
     list[Math.min(at, list.length - 1)] as T;
   const deps: ConvergedCiDeps = {
@@ -109,13 +112,23 @@ function fake(script: Script) {
         ? { ok: false, detail: "HTTP 403: the run cannot be re-run" }
         : { ok: true, detail: "" };
     },
-    recoverCancelled: async (_pr, head) => {
+    recoverCancelled: async (_pr, head, mayMutate) => {
+      if (!(await mayMutate())) return "unknown";
       recovered.push(head);
       return last(script.recovery ?? ["none"], recoveryAt++);
     },
     ...(script.owned === undefined
       ? {}
-      : { owned: async () => script.owned === true }),
+      : {
+          owned: async (): Promise<Ownership> => {
+            const o = script.owned;
+            if (o === undefined) return "ours";
+            if (typeof o === "boolean") return o ? "ours" : "lost";
+            if (!Array.isArray(o))
+              return now - WRITTEN >= o.afterMs ? o.becomes : "ours";
+            return last(o, ownedAt++);
+          },
+        }),
   };
   return { deps, asked, recovered, clock: () => now };
 }
@@ -419,6 +432,62 @@ describe("the converged CI watch after another clone takes the drive over", () =
     expect(f.recovered).toEqual([]);
   });
 
+  it("changes nothing and settles as unverified when the claims never read, even over a readable failure", async () => {
+    const f = fake({
+      ci: [failing(1)],
+      runs: [[workflowRun(1, 2_000)]],
+      owned: ["unreadable"],
+    });
+    const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("unverified");
+    expect(f.asked).toEqual([]);
+    expect(f.recovered).toEqual([]);
+  });
+
+  it("keeps watching through a transient unreadable answer and then judges the failure", async () => {
+    const f = fake({
+      ci: [failing(1)],
+      runs: [[workflowRun(1, 2_000)]],
+      owned: ["unreadable", "ours"],
+    });
+    const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).not.toBe("unverified");
+    expect(f.asked).toEqual([1]);
+  });
+
+  it("records no park for unsettled CI once a successor owns the drive", async () => {
+    const f = fake({
+      ci: [
+        { verdict: "pending: tests", failingRuns: [], failingStatusNames: [] },
+      ],
+      owned: { afterMs: 4 * 60_000, becomes: "lost" },
+    });
+    const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+  });
+
+  it("does not park an unsettled window when ownership cannot be read at the end", async () => {
+    const f = fake({
+      ci: [
+        { verdict: "pending: tests", failingRuns: [], failingStatusNames: [] },
+      ],
+      owned: { afterMs: 4 * 60_000, becomes: "unreadable" },
+    });
+    const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("unverified");
+  });
+
+  it("asks again before each re-run claim: a successor that arrived during the reads gets none", async () => {
+    const f = fake({
+      ci: [failing(1)],
+      runs: [[workflowRun(1, 2_000)]],
+      owned: ["ours", "lost"],
+    });
+    const verdict = await watchConvergedCi("5", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.asked).toEqual([]);
+  });
+
   it("recovers a cancelled run while the drive is still its own", async () => {
     const f = fake({
       ci: [
@@ -478,6 +547,12 @@ describe("the stop a converged label's watch settles", () => {
 
   it("keeps the stop when the label stands, parks on the recovery's park, and is INDETERMINATE when the watch fails", async () => {
     const write = labelled(true, "written");
+    expect(
+      await convergedStopExit("999", write, WRITTEN, async () => ({
+        kind: "unverified",
+        why: "the claims did not read",
+      })),
+    ).toBe(DRIVE_EXIT.INDETERMINATE);
     expect(
       await convergedStopExit("999", write, WRITTEN, async () => ({
         kind: "stands",

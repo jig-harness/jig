@@ -77,22 +77,39 @@ export interface ConvergedCiDeps {
     head: string,
     run: number,
   ): Promise<{ ok: boolean; indeterminate?: boolean; detail: string }>;
-  /** The cancelled-run recovery on the head. */
-  recoverCancelled(pr: string, head: string): Promise<Recovery>;
   /**
-   * Whether this drive still owns the pull request: no takeover claim newer
-   * than its own. Asked before each step that changes CI; unset means owned.
+   * The cancelled-run recovery on the head; `mayMutate` is asked at its
+   * mutation boundary, after its own fence and before it claims or re-runs.
    */
-  owned?(): Promise<boolean>;
+  recoverCancelled(
+    pr: string,
+    head: string,
+    mayMutate: () => Promise<boolean>,
+  ): Promise<Recovery>;
+  /**
+   * Whether this drive still owns the pull request. Asked before every
+   * change to CI and before a park; unset means owned.
+   */
+  owned?(): Promise<Ownership>;
 }
+
+/**
+ * `lost`: a takeover claim newer than this drive's own is on the pull
+ * request. `unreadable`: the claims did not read, which proves neither
+ * answer, so nothing may change and nothing may settle on it.
+ */
+export type Ownership = "ours" | "lost" | "unreadable";
 
 /**
  * How the watch ended: `stands` leaves the converged stop as it is;
  * `parked` means the cancelled-run recovery parked `cancelled-ci` itself;
- * `park` asks the drive to park with `reason`.
+ * `park` asks the drive to park with `reason`; `unverified` means the watch
+ * could not tell whether this drive still owns the pull request, so the
+ * stop is settled for a next drive to judge the head again.
  */
 export type ConvergedCiVerdict =
   | { kind: "stands"; why: string }
+  | { kind: "unverified"; why: string }
   | { kind: "parked" }
   | { kind: "park"; reason: string; labelCaused: boolean };
 
@@ -237,8 +254,11 @@ async function rerun(
   head: string,
   runs: readonly WorkflowRun[],
   deps: ConvergedCiDeps,
-): Promise<Step> {
+): Promise<Step | ConvergedCiVerdict> {
   for (const run of runs) {
+    // The reads before this claim, and the requests before it, took time.
+    const held = await ownershipHold(deps);
+    if (held !== null) return held;
     if (!(await deps.claimRerun(pr, run))) continue;
     const asked = await deps.rerunFailed(pr, head, run.id);
     // An indeterminate answer may still have started the run: the claim is
@@ -266,6 +286,25 @@ async function rerun(
   };
 }
 
+async function ownershipOf(deps: ConvergedCiDeps): Promise<Ownership> {
+  if (deps.owned === undefined) return "ours";
+  try {
+    return await deps.owned();
+  } catch {
+    return "unreadable";
+  }
+}
+
+/** Why a watch must not change CI or settle on what it saw: `null` while the drive owns the pull request. */
+async function ownershipHold(
+  deps: ConvergedCiDeps,
+): Promise<ConvergedCiVerdict | Step | null> {
+  const owner = await ownershipOf(deps);
+  if (owner === "ours") return null;
+  if (owner === "lost") return { kind: "stands", why: LOST_WHY };
+  return { next: "wait", saw: "the drive's ownership did not read" };
+}
+
 /** One reading of the head's CI and what it asks for. */
 async function step(
   pr: string,
@@ -284,15 +323,12 @@ async function step(
     (failing.length > 0 &&
       (read.failingStatusNames ?? []).length === 0 &&
       failing.every((r) => r.conclusion === "cancelled"));
-  // Past this point the step re-runs or recovers runs: a successor that took
-  // the drive over while the watch ran owns them now.
-  if (deps.owned !== undefined && !(await deps.owned()))
-    return {
-      kind: "stands",
-      why: "another clone took the drive over, so its CI is not this drive's to change",
-    };
   if (cancelledOnly) {
-    const recovery = await deps.recoverCancelled(pr, head);
+    const recovery = await deps.recoverCancelled(
+      pr,
+      head,
+      async () => (await ownershipOf(deps)) === "ours",
+    );
     if (recovery === "parked") return { kind: "parked" };
     if (recovery !== "none")
       return {
@@ -309,6 +345,104 @@ async function step(
   }
   const judged = await judgeFailure(pr, head, read, deps);
   return judged.next === "rerun" ? rerun(pr, head, judged.runs, deps) : judged;
+}
+
+const LOST_WHY =
+  "another clone took the drive over, so its CI is not this drive's to change";
+
+/** A park stands only while the drive owns the pull request at the moment it is asked for. */
+async function parkOrHold(
+  deps: ConvergedCiDeps,
+  verdict: ConvergedCiVerdict,
+): Promise<ConvergedCiVerdict> {
+  if (verdict.kind !== "park") return verdict;
+  const owner = await ownershipOf(deps);
+  if (owner === "ours") return verdict;
+  return owner === "lost"
+    ? {
+        kind: "stands",
+        why: "another clone took the drive over, so a park here would be a stale one",
+      }
+    : {
+        kind: "unverified",
+        why: "the drive's ownership did not read, so the park was not recorded",
+      };
+}
+
+/** How the watch ends when its window is spent, over what its last reading was. */
+function windowSpent(
+  deps: ConvergedCiDeps,
+  verified: string,
+  saw: string,
+  readOnce: boolean,
+  ownershipUnread: boolean,
+): ConvergedCiVerdict {
+  const minutes = Math.round(deps.windowMs / 60_000);
+  if (ownershipUnread)
+    return {
+      kind: "unverified",
+      why: `the drive's ownership did not read within ${minutes} minute(s), so the head's CI was not judged`,
+    };
+  // A watch that never read the head's CI saw nothing fail: the label stands.
+  return readOnce
+    ? {
+        kind: "park",
+        reason: `CI on head ${verified} did not settle within ${minutes} minute(s) of the converged label's write; last read: ${saw}`,
+        labelCaused: false,
+      }
+    : {
+        kind: "stands",
+        why: `the head's CI did not read within ${minutes} minute(s), so nothing was seen to fail`,
+      };
+}
+
+/** One poll of the watch: what the head's CI and this drive's ownership ask for. */
+async function poll(
+  pr: string,
+  verified: string,
+  deps: ConvergedCiDeps,
+): Promise<{
+  next: Step | ConvergedCiVerdict;
+  read: boolean;
+  unread: boolean;
+}> {
+  const current = await deps.pullRequest(pr);
+  if (current !== null && (!current.open || current.head !== verified))
+    return {
+      next: {
+        kind: "stands",
+        why: current.open
+          ? `the head moved to ${current.head}`
+          : "the pull request is no longer open",
+      },
+      read: false,
+      unread: false,
+    };
+  const owner = await ownershipOf(deps);
+  if (owner === "lost")
+    return {
+      next: { kind: "stands", why: LOST_WHY },
+      read: false,
+      unread: false,
+    };
+  if (owner === "unreadable")
+    return {
+      next: { next: "wait", saw: "the drive's ownership did not read" },
+      read: false,
+      unread: true,
+    };
+  const read = current === null ? null : await deps.ci(pr, verified);
+  if (read === null)
+    return {
+      next: { next: "wait", saw: "the pull request or its CI did not read" },
+      read: false,
+      unread: false,
+    };
+  return {
+    next: await step(pr, verified, read, deps),
+    read: true,
+    unread: false,
+  };
 }
 
 /**
@@ -329,43 +463,21 @@ export async function watchConvergedCi(
   let saw = "nothing read yet";
   let readOnce = false;
   for (;;) {
-    const current = await deps.pullRequest(pr);
-    if (current !== null && (!current.open || current.head !== verified))
-      return {
-        kind: "stands",
-        why: current.open
-          ? `the head moved to ${current.head}`
-          : "the pull request is no longer open",
-      };
-    const read = current === null ? null : await deps.ci(pr, verified);
-    const next =
-      read === null
-        ? {
-            next: "wait" as const,
-            saw: "the pull request or its CI did not read",
-          }
-        : await step(pr, verified, read, deps);
-    if ("kind" in next) return next;
+    const { next, read, unread } = await poll(pr, verified, deps);
+    if ("kind" in next) return parkOrHold(deps, next);
     if (next.next === "park")
-      return {
+      return parkOrHold(deps, {
         kind: "park",
         reason: next.reason,
         labelCaused: next.labelCaused,
-      };
+      });
     saw = next.saw;
-    if (read !== null) readOnce = true;
+    readOnce ||= read;
     if (deps.now() + deps.pollMs > deadline)
-      // A watch that never read the head's CI saw nothing fail: the label stands.
-      return readOnce
-        ? {
-            kind: "park",
-            reason: `CI on head ${verified} did not settle within ${Math.round(deps.windowMs / 60_000)} minute(s) of the converged label's write; last read: ${saw}`,
-            labelCaused: false,
-          }
-        : {
-            kind: "stands",
-            why: `the head's CI did not read within ${Math.round(deps.windowMs / 60_000)} minute(s), so nothing was seen to fail`,
-          };
+      return parkOrHold(
+        deps,
+        windowSpent(deps, verified, saw, readOnce, unread),
+      );
     await deps.sleep(deps.pollMs);
   }
 }

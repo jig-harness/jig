@@ -84,6 +84,7 @@ import {
   convergedStopExit,
   liveRecheck,
 } from "./converged-ci-live.ts";
+import type { Ownership } from "./converged-ci.ts";
 
 /** How many times a converged stop the CI watch overturned is written again. */
 const STOP_REWRITE_ATTEMPTS = 3;
@@ -602,20 +603,29 @@ export async function publishStartup(pr: string): Promise<void> {
  * newer than its own is on it. A clone that takes the drive over claims it
  * before it writes the ledger or a label, so a driver that read no such
  * claim just before its label write is not overwriting a successor's.
- * `false` for a driver that no longer writes the ledger (taken over) or a
- * listing that does not read.
+ * `lost` for a driver that no longer writes the ledger (taken over) or that
+ * a newer claim displaced; `unreadable` for a listing that does not read.
  */
-async function ledgerIsOurs(pr: string): Promise<boolean> {
+async function ledgerOwnership(pr: string): Promise<Ownership> {
   const driver = ledgerDriverFromEnv();
-  if (driver === null) return false;
+  if (driver === null) return "lost";
   // No position among the claims, so none can be newer.
-  if (driver.floor === null) return true;
+  if (driver.floor === null) return "ours";
   const snapshot = await readLedgerSnapshot(pr, driver.login);
-  if (typeof snapshot === "string") return false;
-  return (
-    newerClaim(snapshot.claims, driver.floor, driver.clone, driver.claim) ===
-    null
-  );
+  if (typeof snapshot === "string") return "unreadable";
+  return newerClaim(
+    snapshot.claims,
+    driver.floor,
+    driver.clone,
+    driver.claim,
+  ) === null
+    ? "ours"
+    : "lost";
+}
+
+/** Whether a write may go ahead: only a proven ownership allows one. */
+async function ledgerIsOurs(pr: string): Promise<boolean> {
+  return (await ledgerOwnership(pr)) === "ours";
 }
 
 /** The state label for a ledger this driver just wrote, written only while that ledger is still its own. */
@@ -748,7 +758,7 @@ export function ledgerSettlement(
       labelled,
       currentMs(),
       recheck,
-      () => ledgerIsOurs(pr),
+      () => ledgerOwnership(pr),
     );
     if (again === null) return code;
     // The converged stop is already written and its record gone, so no

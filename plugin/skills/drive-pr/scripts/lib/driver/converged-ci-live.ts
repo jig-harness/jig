@@ -21,6 +21,7 @@ import { failedCheckForge } from "./ci-retry-forge.ts";
 import {
   type ConvergedCiDeps,
   type ConvergedCiVerdict,
+  type Ownership,
   watchConvergedCi,
 } from "./converged-ci.ts";
 import type { DriveLabelWrite } from "./state-labels.ts";
@@ -135,7 +136,8 @@ export function liveConvergedCi(windowMinutes: number): ConvergedCiDeps {
         ...(asked.indeterminate === true ? { indeterminate: true } : {}),
       };
     },
-    recoverCancelled: (pr, head) => recoverCancelledOnHead(pr, head),
+    recoverCancelled: (pr, head, mayMutate) =>
+      recoverCancelledOnHead(pr, head, undefined, false, mayMutate),
   };
 }
 
@@ -233,7 +235,7 @@ export type ConvergedRecheck = (
   pr: string,
   verified: string,
   writtenAt: number,
-  owned?: () => Promise<boolean>,
+  owned?: () => Promise<Ownership>,
 ) => Promise<ConvergedCiVerdict>;
 
 /** The live watch, over the window `DRIVE_PR_CONVERGED_CI_MINUTES` sets; `0` watches nothing. */
@@ -275,7 +277,7 @@ export async function convergedStopExit(
   labelled: DriveLabelWrite | null,
   writtenAt: number,
   recheck: ConvergedRecheck,
-  owned?: () => Promise<boolean>,
+  owned?: () => Promise<Ownership>,
 ): Promise<number | null> {
   if (
     labelled === null ||
@@ -294,6 +296,12 @@ export async function convergedStopExit(
     if (verdict.kind === "stands") {
       console.error(`converged CI: the converged label stands: ${verdict.why}`);
       return null;
+    }
+    if (verdict.kind === "unverified") {
+      console.error(
+        `converged CI: ${verdict.why}, so the stop is settled as INDETERMINATE for the next drive to judge the head again`,
+      );
+      return DRIVE_EXIT.INDETERMINATE;
     }
     if (verdict.kind === "parked") {
       console.error(
