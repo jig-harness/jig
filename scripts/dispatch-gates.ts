@@ -116,7 +116,7 @@ export function selectDispatchTests(
         testSuffix.test(path) &&
         !/(^|\/)(fixtures?|\.context|dist|seeds)\//.test(path),
     )
-    .sort();
+    .sort(byPath);
   const changedTests = candidates.filter((path) => touched.has(path));
   const nearby = candidates.filter(
     (path) =>
@@ -131,9 +131,15 @@ export function selectDispatchTests(
   );
   const ordered = [...changedTests, ...nearby, ...importers];
   return {
-    tests: ordered.slice(0, limit).sort(),
+    tests: ordered.slice(0, limit).sort(byPath),
     leftToCi: Math.max(0, ordered.length - limit),
   };
+}
+
+/** Code-point order, so a selection never depends on the host's locale. */
+function byPath(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 /** The files a relative import may name: as written, or as it resolves. */

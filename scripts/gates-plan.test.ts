@@ -339,6 +339,7 @@ test("a command stage runs with exactly the environment it names", async () => {
     stdout: null,
     stderr: null,
   });
+  expect([named?.status, unnamed?.status]).toEqual([0, 1]);
   expectSpawnExit(exit(named?.status), 0, "named");
   expectSpawnExit(exit(unnamed?.status), 1, "unnamed");
 });
