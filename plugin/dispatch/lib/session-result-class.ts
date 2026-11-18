@@ -1,7 +1,7 @@
 /** Classification shared by the tick and a session reporting after its tick. */
 import { armWords, type WaitFor } from "./wait-for.ts";
 import type { FramedResult } from "./framed-result.ts";
-import type { SessionResult } from "./launches.ts";
+import type { SessionResult } from "./session-result-types.ts";
 import type { OutcomeClass } from "./log.ts";
 import { questionIn } from "./session.ts";
 

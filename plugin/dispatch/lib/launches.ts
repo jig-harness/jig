@@ -95,6 +95,8 @@ import { latestPickups } from "./launch-pickups.ts";
 import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
 import { latestDeaths, witnessedState } from "./launch-recovery.ts";
 import { asResult } from "./launch-result.ts";
+import { isDrive } from "./launch-kind.ts";
+import type { SessionResult } from "./session-result-types.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
 import { isoOf, parseMs } from "../../shared/time.ts";
 
@@ -106,21 +108,7 @@ export type LaunchAction =
   | "followup"
   | "steward";
 
-/** Whether a record starts a drive's headless pass, whose exit is its answer. */
-export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
-  return record.action === "rearm" || record.action === "takeover";
-}
-
-/**
- * Whether a record starts an interactive session, whose agent ends it: a
- * pickup an earlier release started that way. A pickup this release starts
- * is a headless pass (`headless`), as a follow-up is, which its exit ends.
- */
-export function isInteractive(
-  record: Pick<LaunchRecord, "action" | "headless">,
-): boolean {
-  return record.action === "pickup" && record.headless !== true;
-}
+export { isDrive, isInteractive } from "./launch-kind.ts";
 
 /**
  * A pickup's session's or a follow-up pass's own answer, recorded through
@@ -128,15 +116,7 @@ export function isInteractive(
  * stopped, or a follow-up a rate limit or an arm still pending stopped, to
  * be started again once its time has come (`waitsUntil`, `waitsFor`).
  */
-export type RecordedResult = "done" | "failed" | "waits";
-
-/**
- * A recorded answer as every reader takes it: a `failed` that carries the
- * decision the pass framed for a person (`failed --decision`) is `parked`,
- * an end that waits on that person rather than a failure
- * (`launch-result.ts`).
- */
-export type SessionResult = RecordedResult | "parked";
+export type { RecordedResult, SessionResult } from "./session-result-types.ts";
 
 /** The runtime's answer to one `launch` call for the record. */
 export interface LaunchAttempt {

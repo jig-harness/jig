@@ -24,7 +24,8 @@ import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import type { ApplyState } from "./actions/launch.ts";
 import { recordReportIfNone } from "./closing-report-store.ts";
 import { causeAsked } from "./end-report.ts";
-import { type ReadRecord, type SessionResult, targetOf } from "./launches.ts";
+import { type ReadRecord, targetOf } from "./launches.ts";
+import type { SessionResult } from "./session-result-types.ts";
 import { hasEnded } from "./log.ts";
 import { durableSummary } from "./pass-output.ts";
 import {

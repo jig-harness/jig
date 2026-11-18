@@ -24,7 +24,8 @@ import {
   CODEX_BYPASS,
   skillPrompt,
 } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
-import type { LaunchRecord, LaunchState, RecordedResult } from "./launches.ts";
+import type { LaunchRecord, LaunchState } from "./launches.ts";
+import type { RecordedResult } from "./session-result-types.ts";
 import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 import { STEWARD_RESUME } from "./steward.ts";
 import { NEED_ACTS } from "../../shared/acts.ts";

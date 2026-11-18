@@ -1,7 +1,8 @@
 /** A session owns its result and handoff; one conditional write settles both. */
 import { Defect } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
-import type { PickupRefusal, SessionResult } from "./launches.ts";
+import type { PickupRefusal } from "./launches.ts";
+import type { SessionResult } from "./session-result-types.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { endedNext, type NextOwner } from "./next-owner.ts";
 import { sessionResultClass } from "./session-result-class.ts";

@@ -8,7 +8,8 @@ import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { actOfClass } from "../../shared/acts.ts";
 import type { FramedResult } from "./framed-result.ts";
-import type { LaunchAction, SessionResult } from "./launches.ts";
+import type { LaunchAction } from "./launches.ts";
+import type { SessionResult } from "./session-result-types.ts";
 
 export type NextOwner =
   | { address: string }
