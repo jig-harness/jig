@@ -2520,7 +2520,9 @@ make, use the entry's term instead.
   merge. The dispatcher reports it, and the line lists it, as carried
   rather than as a stalled pickup. A pull request with no drive, or a
   stopped one, does not carry it, and the stall need names the pull
-  request.
+  request. An item already in the tracker's pull-request-open state, or
+  with a move to it still to make, keeps its existing handling and is not
+  reported as carried.
 - **Dispatch dashboard** — the page a person watches and steers the
   execution line from, and the process that serves it. Today
   `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to
