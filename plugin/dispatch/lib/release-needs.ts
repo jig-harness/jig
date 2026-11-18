@@ -1,10 +1,17 @@
 /** A release's tracker item and authorization belong to the version, not to a merged pull request. */
+import { valueAt } from "../../shared/config-layers.ts";
 import { stateRoot } from "../receipts.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { SHARED_RELEASE_LIMIT } from "../../shared/records/release-tags.ts";
 import { releaseActions } from "./release-groups.ts";
 import type { Action, MarkedPr } from "./types.ts";
+
+/** The prefix of the repository's release tags, as the changelog skill reads it: `changelog.tag_prefix`, else `v`. */
+export function tagPrefixOf(values: Record<string, unknown>): string {
+  const prefix = valueAt(values, "changelog.tag_prefix");
+  return typeof prefix === "string" ? prefix : "v";
+}
 
 export interface ReleaseNeed {
   tag: string;
@@ -96,11 +103,15 @@ export function releaseNeeds(repo: string, root = stateRoot()): ReleaseNeed[] {
     .all(repo) as ReleaseNeed[];
 }
 
-export function releaseNeedActions(needs: readonly ReleaseNeed[]): Action[] {
+export function releaseNeedActions(
+  needs: readonly ReleaseNeed[],
+  tagPrefix: string,
+): Action[] {
   return releaseActions(
     needs.flatMap((need) =>
       need.item === null ? [] : [{ ...need, item: need.item }],
     ),
+    tagPrefix,
   );
 }
 

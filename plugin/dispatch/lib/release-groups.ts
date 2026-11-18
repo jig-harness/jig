@@ -32,21 +32,26 @@ interface TakenDecision {
   evidence: Evidence;
 }
 
-/** The version a tag names: the first dotted number onward, so whatever prefix the repository's tags carry (`v`, `app-`, `service2/v`) is dropped; `null` when the tag holds none. */
-function versionOf(tag: string): string | null {
-  return /\d+\.\d+\.\d+.*$/.exec(tag)?.[0] ?? null;
+/** The version a tag names: what follows the repository's configured tag prefix (`changelog.tag_prefix`); `null` when the tag does not carry it. */
+function versionOf(tag: string, prefix: string): string | null {
+  return tag.startsWith(prefix) ? tag.slice(prefix.length) : null;
 }
 
 /** Semantic-version order, which puts a final release after its own pre-releases; tags that are not versions fall back to text order. */
-function byVersion(left: OwedRelease, right: OwedRelease): number {
-  const order = attempt("unreadable", "unreadable", () => {
-    const [a, b] = [versionOf(left.tag), versionOf(right.tag)];
-    return a === null || b === null ? 0 : Bun.semver.order(a, b);
-  });
-  const ordered = order.ok ? order.value : 0;
-  return ordered !== 0
-    ? ordered
-    : left.tag.localeCompare(right.tag, "en", { numeric: true });
+function byVersion(prefix: string) {
+  return (left: OwedRelease, right: OwedRelease): number => {
+    const order = attempt("unreadable", "unreadable", () => {
+      const [a, b] = [
+        versionOf(left.tag, prefix),
+        versionOf(right.tag, prefix),
+      ];
+      return a === null || b === null ? 0 : Bun.semver.order(a, b);
+    });
+    const ordered = order.ok ? order.value : 0;
+    return ordered !== 0
+      ? ordered
+      : left.tag.localeCompare(right.tag, "en", { numeric: true });
+  };
 }
 
 function words(evidence: Evidence, field: string): string[] {
@@ -214,9 +219,12 @@ function takenActions(sorted: readonly OwedRelease[]): {
   return { actions, unread };
 }
 
-/** The needs of `owed`: one for each remedy its open releases share, and one for each decision a person took some under. */
-export function releaseActions(owed: readonly OwedRelease[]): Action[] {
-  const sorted = [...owed].sort(byVersion);
+/** The needs of `owed`, ordered by the version after `tagPrefix`: one for each remedy its open releases share, and one for each decision a person took some under. */
+export function releaseActions(
+  owed: readonly OwedRelease[],
+  tagPrefix: string,
+): Action[] {
+  const sorted = [...owed].sort(byVersion(tagPrefix));
   const { actions, unread } = takenActions(sorted);
   const open = sorted.filter(
     (release) => release.taken_as === null || unread.includes(release),

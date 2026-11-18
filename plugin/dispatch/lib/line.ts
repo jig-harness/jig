@@ -395,7 +395,7 @@ function sightedSince(
         [n.target, ...(n.covers ?? [])].some((target) => held.has(target)),
     )
     .map((n) => n.since)
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   return seen[0] ?? nowIso;
 }
 

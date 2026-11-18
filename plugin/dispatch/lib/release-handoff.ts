@@ -20,6 +20,7 @@ import {
   nextReleaseHandoff,
   recordTagged,
   releaseNeedActions,
+  tagPrefixOf,
   releaseNeeds,
   reserveRelease,
 } from "./release-needs.ts";
@@ -101,7 +102,10 @@ export async function settleReleaseHandoff({
     if (attached.value.status === "recorded")
       report.actions = [
         ...report.actions.filter((a) => a.cause !== "release-owed"),
-        ...releaseNeedActions(releaseNeeds(repo.slug, root)),
+        ...releaseNeedActions(
+          releaseNeeds(repo.slug, root),
+          tagPrefixOf(values),
+        ),
       ];
   } catch (error) {
     unplaced(failureText(error));

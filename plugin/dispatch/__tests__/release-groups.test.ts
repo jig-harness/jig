@@ -341,7 +341,7 @@ describe("untagged releases of one repository on the line", () => {
     expect(claimAnswer(row, null, root)).toBe(true);
     finishAnswer(row, "held", "a person took the step", null, root);
     stateDb(root).run(RELEASES_ALREADY_TAKEN);
-    const actions = releaseNeedActions(releaseNeeds(SLUG, root));
+    const actions = releaseNeedActions(releaseNeeds(SLUG, root), "v");
     expect(actions.map(({ target, evidence }) => [target, evidence])).toEqual([
       ["#42", { tag: "v1.9.0" }],
       ["#41", { tag: "v1.2.0", open: "v1.2.0" }],
@@ -362,7 +362,7 @@ describe("the answer to a group of releases", () => {
   }));
 
   function group(owed: typeof OWED = OWED): Action {
-    const [action] = releaseNeedActions(owed);
+    const [action] = releaseNeedActions(owed, "v");
     if (action === undefined) throw new TypeError("no release group");
     return action;
   }
