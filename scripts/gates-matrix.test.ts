@@ -41,7 +41,7 @@ test("the gate-set job's matrix is the one the areas resolve, and the full one r
   // The legs come from the change's resolution, written by the areas job.
   expect(job.strategy?.matrix).toBe(GATE_SET_MATRIX);
   expect(jobs.areas?.outputs?.matrix).toBe(
-    "${{ steps.resolve.outputs.matrix }}",
+    `\${{ steps.resolve.outputs.matrix }}`,
   );
   const resolve = jobs.areas?.steps.find((step) => step.id === "resolve");
   expect(resolve?.run).toContain("bun scripts/change-areas.ts --base HEAD^1");
