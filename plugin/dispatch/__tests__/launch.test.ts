@@ -139,7 +139,7 @@ describe("the re-arm's terminal tab", () => {
   for (const [ending, exit] of [
     ["the drive parks for a person", "8"],
     ["the drive fails", "1"],
-  ])
+  ] as const)
     it(`is closed as well when ${ending}: the report keeps what it showed`, async () => {
       const { w } = fixture();
       machineFile(w, [account(w, "a", "a@example.com")]);
