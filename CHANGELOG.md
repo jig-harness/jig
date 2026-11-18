@@ -401,6 +401,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.273.1] - 2026-11-18
+
+### Changed
+
+- The dispatcher takes a follow-up's tick outcomes, and the state label each one ends with, from the follow-up marker's table (`plugin/shared/records/followup-values.ts`) instead of restating them, and a test holds the state database's outcome check to that table: an outcome added there fails the type check and the test rather than the tick's write.
+
+### Fixed
+
+- A dispatcher tick whose deadline passed while it read a repository's pull requests no longer starts a base branch's head read, a driver presence check or the forge login read after it: the forge's reading is cut as `unreachable`, and the receipt and locks are settled as before.
+- Dispatched drives record Claude Code repair session IDs and Codex review
+  and repair session IDs from startup output, so the corresponding
+  transcripts can be found after a drive stops.
+
 ## [0.273.0] - 2026-11-18
 
 ### Added
@@ -9598,7 +9611,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.273.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.273.1...HEAD
+[0.273.1]: https://github.com/jig-harness/jig/compare/v0.273.0...v0.273.1
 [0.273.0]: https://github.com/jig-harness/jig/compare/v0.272.0...v0.273.0
 [0.272.0]: https://github.com/jig-harness/jig/compare/v0.271.1...v0.272.0
 [0.271.1]: https://github.com/jig-harness/jig/compare/v0.271.0...v0.271.1
