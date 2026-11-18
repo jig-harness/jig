@@ -42,6 +42,7 @@ import {
 } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { freshState } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import { orcaInstalledName } from "../../shared/orca.ts";
+import { footprintBatch } from "./footprint-fake.ts";
 
 export const SLUG = "example-org/example-repo";
 const JIG = resolve(import.meta.dir, "../../jig.ts");
@@ -488,18 +489,6 @@ export const HEAD_SHA = "a".repeat(40);
 
 /** The head commit of the base branch unless a test names another. */
 export const BASE_SHA = "c".repeat(40);
-
-/** The footprint port's batch of comment reads: each alias `b<i>` a repository root, every issue with no comment. */
-function footprintBatch(v: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(v)
-      .filter(([name]) => /^b\d+_number$/.test(name))
-      .map(([name, number]) => [
-        name.replace(/_number$/, ""),
-        { issue: { id: `i-${String(number)}`, comments: conn([]) } },
-      ]),
-  );
-}
 
 /** An open pull request as `gh pr list --json` returns it: at `HEAD_SHA` and mergeable, unless `extra` says otherwise. */
 export const openPr = (
