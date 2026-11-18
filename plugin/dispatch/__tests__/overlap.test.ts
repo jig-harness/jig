@@ -424,7 +424,7 @@ describe("tiers, patience and promotion", () => {
 });
 
 describe("the walk", () => {
-  it("weighs each pickup after the ones planned ahead of it, so two overlapping pickups are not both free", () => {
+  it("weighs each pickup after the ones would be admitted ahead of it, so two overlapping pickups are not both free", () => {
     const placed = walkOverlap(
       [candidate("A", files("src/a.ts")), candidate("B", files("src/a.ts"))],
       [],
@@ -439,7 +439,7 @@ describe("the walk", () => {
     expect(placed[1]?.evaluation.shares[0]?.work).toMatchObject({
       kind: "pickup",
       ref: "A",
-      state: "planned ahead of it",
+      state: "would be admitted ahead of it",
     });
   });
 

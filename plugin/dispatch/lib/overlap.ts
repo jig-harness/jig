@@ -23,10 +23,13 @@
  *   overlaps within the bound; tier 3 is over it.
  *
  * `walkOverlap` takes the pickups in rank order and, as the admission walk
- * will, takes the next one tier by tier (the promoted first, longest waiter
+ * would, takes the next one tier by tier (the promoted first, longest waiter
  * first), counts it in flight as if it started, and weighs the rest again:
  * two pickups that overlap each other are never both weighed as if neither
- * existed. It reports; it starts nothing.
+ * existed. The result is a hypothetical admission plan, not the order the
+ * tick launches: launching stays in rank order, so a pickup this walk takes
+ * first may still start after a higher-ranked one. It reports; it starts
+ * nothing.
  */
 import { globMatchesUnder, matchesGlob } from "../../shared/glob.ts";
 import type { OverlapSettings, PatienceKey } from "./overlap-config.ts";
@@ -379,7 +382,7 @@ function next(placed: readonly Placed[]): Placed | undefined {
 /**
  * Weigh the candidates, in rank order, against the work in flight: each
  * takes its turn by tier, and counts in flight for those after it as a
- * pickup planned ahead of them. Returns them in the order the walk takes
+ * pickup that would be admitted ahead of them. Returns them in the order the walk takes
  * them, each as it stood at its turn.
  */
 export function walkOverlap(
@@ -411,7 +414,7 @@ export function walkOverlap(
       kind: "pickup",
       ref: taken.candidate.item,
       url: taken.candidate.url,
-      state: "planned ahead of it",
+      state: "would be admitted ahead of it",
       footprint: taken.candidate.footprint,
       quiet: false,
     });

@@ -252,7 +252,7 @@ export interface OverlapRef {
   kind: "pull request" | "pickup";
   /** `#123` for a pull request; the item's key for a pickup. */
   ref: string;
-  /** As the tick found it: `open`, `open, quiet`, `claimed`, `running`, or `planned ahead of it` for a pickup this tick ranks first. */
+  /** As the tick found it: `open`, `open, quiet`, `claimed`, `running`, or `would be admitted ahead of it` for a pickup the hypothetical admission plan (not the launch order) takes first. */
   state: string;
   url: string | null;
 }
