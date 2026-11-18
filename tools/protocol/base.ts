@@ -460,8 +460,11 @@ function obligesKnownCarrier(view: ValueView, v: DataValue): boolean {
     const was = view.base.fields[field];
     const how = was === undefined ? spec.comparedAs : comparisonHeld(was, spec);
     if (how !== "carriers") return false;
+    const carriers = carriedMap(v[field]);
+    // Text that cannot be read cannot show it obliges no one.
+    if (carriers === null) return (v[field] ?? null) !== null;
     const known = knownCarriers(view.base, field);
-    return [...(carriedMap(v[field]) ?? [])].some(
+    return [...carriers].some(
       ([carrier, carried]) => carried === "always" && known.has(carrier),
     );
   });

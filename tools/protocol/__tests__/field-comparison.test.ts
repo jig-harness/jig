@@ -216,6 +216,13 @@ describe("a field listing what carries a value", () => {
     ).toEqual([REQUIRED]);
   });
 
+  test("reads carriers it cannot parse on a new value as a break", () => {
+    const base = dataOf(chapterWith("tick (sometimes)", "carriers"));
+    expect(
+      compare(base, withNew("tick (sometimes)", "tick(always)", "exact")),
+    ).toEqual([REQUIRED]);
+  });
+
   test("lets a carrier no value names yet join as always, on a listed value and a new one", () => {
     const base = dataOf(chapterWith("note (always)", "carriers"));
     expect(
