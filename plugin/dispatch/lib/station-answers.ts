@@ -716,10 +716,17 @@ export async function settleStationAnswers(
     report.quiet.push({
       target: action.target,
       class: "answered-hold",
-      why:
-        action.cause === "release-owed"
-          ? (action.answered?.acted?.detail ??
-            `a person took the release step${action.answered?.unread === undefined ? "" : `; its answer could not be refreshed: ${action.answered.unread}`}`)
-          : `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`,
+      why: answeredHoldWhy(action),
     });
+}
+
+/** Why an answered need sits among the report's quiet entries. */
+function answeredHoldWhy(action: Action): string {
+  if (action.cause !== "release-owed")
+    return `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`;
+  const unread = action.answered?.unread;
+  return (
+    action.answered?.acted?.detail ??
+    `a person took the release step${unread === undefined ? "" : `; its answer could not be refreshed: ${unread}`}`
+  );
 }
