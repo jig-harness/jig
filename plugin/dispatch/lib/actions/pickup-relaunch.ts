@@ -30,7 +30,7 @@ import type {
   RepoReport,
   RepoTarget,
 } from "../types.ts";
-import { admittedVendor } from "../accounts.ts";
+import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import {
   accountBlock,
   admitAccount,
@@ -105,6 +105,7 @@ async function changed(
 
 /** The relaunch's record: the pickup it finishes, under a record, token and account of its own. */
 function relaunchRecord(
+  state: ApplyState,
   source: LaunchRecord,
   relaunch: PickupRelaunch,
   slots: Parameters<typeof startRecord>[2],
@@ -142,9 +143,11 @@ function relaunchRecord(
     "answered",
     "testLockWait",
     "releasedItems",
+    "codexPassArgs",
   ] as const)
     delete record[field];
-  return record;
+  // Admission judged the account by this tick's Codex opt-in, not the source's.
+  return { ...record, ...codexLaunchFields(state.codexOptIn) };
 }
 
 /** One planned relaunch, through its fresh reads, admission and launch. */
@@ -171,7 +174,7 @@ async function relaunchOne(
     source.passTimeoutSec ?? ctx.deadlineSec,
   );
   if ("outcome" in admitted) return admitted.outcome;
-  const record = relaunchRecord(source, relaunch, admitted.slots);
+  const record = relaunchRecord(state, source, relaunch, admitted.slots);
   const started = await startRecord(state, record, admitted.slots);
   const begun = started.outcome === "launched" || started.outcome === "retried";
   return begun
@@ -190,9 +193,11 @@ async function retryPending(
   ctx: RelaunchContext,
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["pickup"])) {
+    // A steward's resume of a relaunch is the steward's to replay.
     if (
       record.relaunchOf === undefined ||
       record.relaunchHead === undefined ||
+      record.stewardResume !== undefined ||
       record.workspace === null
     )
       continue;

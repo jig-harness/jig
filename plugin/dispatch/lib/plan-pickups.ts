@@ -428,15 +428,21 @@ function planClaimed(
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
   if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
   const latest = latestPickupFor(item.key, input.launches);
-  // A pass whose result the host could not write is relaunched in its tree, once the health check passes, before a person is asked.
-  if (
+  // A pass whose result the host could not write is relaunched in its tree, once the health check passes, before a person is asked; a pull request it opened moves its item first.
+  const early =
     latest !== undefined &&
     unwrittenResult(latest) &&
     (input.rerunsHeld ?? null) === null &&
-    relaunched(relaunchStep(item, latest, input), item.key, plan)
-  )
-    return;
-  const asked = questionAsked(input, item, input.launches);
+    pr.step?.kind !== "move"
+      ? relaunchStep(item, latest, input)
+      : null;
+  if (early !== null && relaunched(early, item.key, plan)) return;
+  const asked = questionAsked(
+    input,
+    item,
+    input.launches,
+    early?.kind === "stall" ? early.note : null,
+  );
   if (asked !== null) {
     plan.actions.push(asked);
     return;
@@ -558,6 +564,7 @@ function questionAsked(
   input: Pick<PickupInput, "slug" | "rerunsHeld">,
   item: { key: string; title: string; state: string },
   launches: ReadRecord[],
+  treeNote: string | null = null,
 ): Action | null {
   const { slug } = input;
   const latest = latestPickupFor(item.key, launches);
@@ -575,7 +582,7 @@ function questionAsked(
   const framed = unwritten ? undefined : reportFramed(latest.framed, report);
   const { record } = latest;
   const reason = unwritten
-    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again: ${question}`
+    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again${treeNote === null ? "" : `; it was not relaunched: ${treeNote}`}: ${question}`
     : `the pickup stopped on a question for a person: ${question}`;
   return {
     stage: "notify",

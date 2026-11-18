@@ -7,7 +7,8 @@
  *
  * - the pickup: the latest unreleased launch record of this host for the
  *   item, a headless pass of the item alone (a batch's need stays a
- *   person's), that ended or died;
+ *   person's), that ended or died without recording `done` (a pass that
+ *   recorded `done` handed its item on, whatever its tree still holds);
  * - its tree: the workspace that record names, read with local git
  *   (`pickup-tree.ts`) for unpushed commits and uncommitted edits. A pass
  *   that died or recorded no result takes the relaunch whatever its tree
@@ -49,7 +50,7 @@ export type RelaunchStep =
 
 const NONE: RelaunchStep = { kind: "none" };
 
-/** Whether `latest` is a pickup this rule may relaunch: a headless pass of one item, with a tree, that ended. */
+/** Whether `latest` is a pickup this rule may relaunch: a headless pass of one item, with a tree, that ended without handing its item on. */
 function relaunchable(latest: ReadRecord): boolean {
   const { record, state } = latest;
   return (
@@ -57,6 +58,7 @@ function relaunchable(latest: ReadRecord): boolean {
     record.headless === true &&
     record.batchItems === undefined &&
     record.workspace !== null &&
+    latest.result !== "done" &&
     (state.kind === "ended" || state.kind === "died")
   );
 }
@@ -98,12 +100,10 @@ export function relaunchStep(
   const open = input.sessions.workspaces.find((w) => w.path === path);
   const tree = input.trees(path);
   if (tree.kind === "unread")
-    return open === undefined
-      ? NONE
-      : {
-          kind: "stall",
-          note: `whether its launch's tree ${path} holds unshipped work could not be told: ${tree.why}`,
-        };
+    return {
+      kind: "stall",
+      note: `whether its launch's tree ${path} holds unshipped work could not be told: ${tree.why}`,
+    };
   const noResult = latest.result === null;
   if (!unshipped(tree) && !noResult) return NONE;
   const holds = `launch record ${record.id}'s tree ${path} holds ${treeText(tree)}${noResult ? ", and the pickup recorded no result" : ""}`;

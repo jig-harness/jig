@@ -231,6 +231,11 @@ describe("a stalled pickup's relaunch", () => {
     );
   });
 
+  it("relaunches no pass that recorded done, which handed its item on", () => {
+    const plan = planPickups(input([ended({}, "done")]));
+    expect(relaunches(plan)).toEqual([]);
+  });
+
   it("relaunches no batch's pickup", () => {
     const batch = ended({
       batchItems: [{ key: "#12", person: "p" }],
@@ -277,7 +282,10 @@ describe("the pickup pass's prompt", () => {
 
   it("tells every pass to push its branch and record its result before it ends", () => {
     expect(prompt(record)).toContain(
-      "Before this pass ends, for any reason, push the branch whenever it holds committed work, and record how the pickup ended",
+      "Before this pass ends, for any reason, push the branch whenever it holds committed work",
+    );
+    expect(prompt(record)).toContain(
+      "and record how the pickup ended with one of the result commands below",
     );
   });
 

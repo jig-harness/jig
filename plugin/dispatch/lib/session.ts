@@ -141,7 +141,7 @@ const PUSH_BEFORE_VALIDATION_LINE =
  * (`pickup-relaunch.ts`).
  */
 const PUSH_AND_RECORD_LINE =
-  "Before this pass ends, for any reason, push the branch whenever it holds committed work, and record how the pickup ended with one of the result commands below. A pass that ends with its work only in this tree, or with no result recorded, leaves its item claimed and stalled.";
+  "Before this pass ends, for any reason, push the branch whenever it holds committed work (under the rule above: the repository's validation-before-push still wins), and record how the pickup ended with one of the result commands below. A pass that ends with its work only in this tree, or with no result recorded, leaves its item claimed and stalled.";
 
 /** The fixed prompt of a stalled pickup's relaunch (`pickup-relaunch.ts`): push and record what the tree holds, under the earlier pass's claim. */
 function relaunchLines(
