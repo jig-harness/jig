@@ -10,6 +10,7 @@ import type { PickupReads } from "../pickup-reads.ts";
 import { trackerScope, type HeldIssue } from "./served-reads.ts";
 import { planMergeEvidence, type PlanMergeReader } from "./plan-merges.ts";
 import { planKeys, servedPlan } from "./served-plan.ts";
+import { freshReads } from "./fresh-reads.ts";
 
 /**
  * How the parent walk reads: one issue by key, and what a queue read already
@@ -26,11 +27,6 @@ export interface ParentReads {
   raw?(key: string): Promise<DispatchRawIssue | null>;
   held?(key: string): HeldIssue | undefined;
   parentBody?(key: string): QueueParent | undefined;
-}
-
-/** Reads straight from the tracker, for the launch's fresh check. */
-function directReads(tracker: Tracker): ParentReads {
-  return { pool: (key) => tracker.poolIssue(key) };
 }
 
 interface Body {
@@ -171,13 +167,17 @@ async function parentOf(
   return full === null ? null : { parent: full.parent };
 }
 
-/** Tracker completion never substitutes for directly verified delivering merges. */
+/**
+ * Tracker completion never substitutes for directly verified delivering
+ * merges. Without `reads`, the check reads fresh: straight from the tracker,
+ * a plan's steps in one batch.
+ */
 export async function servedParentHold(
   tracker: Tracker,
   issue: PoolIssue,
   cache: PickupReads,
   block?: string,
-  reads: ParentReads = directReads(tracker),
+  reads: ParentReads = freshReads(tracker),
   merges?: PlanMergeReader,
 ): Promise<string | null> {
   const seen = new Set<string>();
