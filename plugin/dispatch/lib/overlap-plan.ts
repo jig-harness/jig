@@ -20,6 +20,8 @@ import { isoFromMs, parseMs } from "../../shared/time.ts";
 import type { FootprintReading } from "../../skills/do-item/scripts/lib/tracker/footprint-port.ts";
 import type { ChangeAreaCatalog } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import { readConflictRates } from "./conflict-rates.ts";
+import type { ReadRecord } from "./launches.ts";
+import { holdsItem } from "./launch-pickups.ts";
 import {
   type InFlight,
   type Footprint,
@@ -45,7 +47,7 @@ import {
 import { countHotspots, readWaits, settleWaits } from "./overlap-waits.ts";
 import { membersOf } from "./priorities-order.ts";
 import { branchPattern } from "./section.ts";
-import type { TickContext } from "./tick-context.ts";
+import { allRecords, type TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import { workLinks } from "./work-links.ts";
 
@@ -63,19 +65,38 @@ export function footprintOf(reading: FootprintReading | undefined): Footprint {
   };
 }
 
-/** One footprint for a batch: the members' files, directories and areas together; unknown when any member's is. */
-function combinedFootprint(parts: readonly Footprint[]): Footprint {
+/** One footprint for a batch: the known members' files, directories and areas together, marked incomplete when a member's is unknown. */
+export function combinedFootprint(parts: readonly Footprint[]): Footprint {
   const [only] = parts;
   if (parts.length === 1 && only !== undefined) return only;
-  if (parts.some((f) => !f.known)) return UNKNOWN_FOOTPRINT;
+  const known = parts.filter((f) => f.known);
+  if (known.length === 0) return UNKNOWN_FOOTPRINT;
   const union = (pick: (f: Footprint) => readonly string[]) => [
-    ...new Set(parts.flatMap(pick)),
+    ...new Set(known.flatMap(pick)),
   ];
   return {
     known: true,
     files: union((f) => f.files),
     dirs: union((f) => f.dirs),
     areas: union((f) => f.areas),
+    ...(known.length < parts.length ? { incomplete: true } : {}),
+  };
+}
+
+/** One wait for a batch from its members' waits: the earliest start, and a promotion or tier-3 start any member has. */
+export function combinedWait(
+  waits: readonly (Wait | undefined)[],
+): Wait | undefined {
+  const kept = waits.filter((w): w is Wait => w !== undefined);
+  if (kept.length === 0) return undefined;
+  const earliest = (values: readonly (number | null)[]) => {
+    const some = values.filter((v): v is number => v !== null);
+    return some.length === 0 ? null : Math.min(...some);
+  };
+  return {
+    sinceMs: Math.min(...kept.map((w) => w.sinceMs)),
+    tier3SinceMs: earliest(kept.map((w) => w.tier3SinceMs)),
+    promotedMs: earliest(kept.map((w) => w.promotedMs)),
   };
 }
 
@@ -183,6 +204,7 @@ function pullRequestsInFlight(
 function pickupsInFlight(
   observation: RepoObservation,
   candidates: ReadonlySet<string>,
+  records: readonly ReadRecord[],
 ): InFlight[] {
   const { tracked, forge, opened } = observation;
   const links =
@@ -203,18 +225,33 @@ function pickupsInFlight(
     if (r.stage === "pickup") states.set(r.target, "running");
   for (const c of tracked.claimed ?? [])
     if (!states.has(c.key)) states.set(c.key, "claimed");
-  return [...states]
-    .filter(
-      ([key]) => !candidates.has(key) && (links?.prsOf(key)?.length ?? 0) === 0,
-    )
-    .map(([key, state]) => ({
+  // The members of one launch are one piece of work: one entry, under the
+  // launch's own target, with the members' footprints together.
+  const launchOf = new Map<string, string>();
+  for (const { record } of records) {
+    if (record.action !== "pickup" || record.batchItems === undefined) continue;
+    for (const { key } of record.batchItems)
+      if (holdsItem(record, key)) launchOf.set(key, record.id);
+  }
+  const groups = new Map<string, string[]>();
+  for (const [key] of states) {
+    if (candidates.has(key) || (links?.prsOf(key)?.length ?? 0) > 0) continue;
+    const group = launchOf.get(key) ?? key;
+    groups.set(group, [...(groups.get(group) ?? []), key]);
+  }
+  return [...groups.values()].map((keys) => {
+    const [lead = ""] = keys;
+    return {
       kind: "pickup",
-      ref: key,
-      url: urls.get(key) ?? null,
-      state,
-      footprint: footprintOf(readings?.get(key)),
+      ref: lead,
+      url: urls.get(lead) ?? null,
+      state: states.get(lead) ?? "claimed",
+      footprint: combinedFootprint(
+        keys.map((key) => footprintOf(readings?.get(key))),
+      ),
       quiet: false,
-    }));
+    };
+  });
 }
 
 /** The waits the state database keeps for the repository; none, with a note, when they do not read. */
@@ -236,6 +273,7 @@ function storeWaits(
   context: TickContext,
   observation: RepoObservation,
   placed: readonly Placed[],
+  memberKeys: ReadonlyMap<string, readonly string[]>,
   notes: string[],
 ): void {
   if (context.apply === null) return;
@@ -254,7 +292,13 @@ function storeWaits(
   const written = attempt("unwritable", "the overlap waits were not kept", () =>
     settleWaits(
       opened.repo.slug,
-      new Map(placed.map((p) => [p.candidate.item, p.wait])),
+      new Map(
+        placed.flatMap((p) =>
+          (memberKeys.get(p.candidate.item) ?? [p.candidate.item]).map(
+            (key): [string, Wait | null] => [key, p.wait],
+          ),
+        ),
+      ),
       wanted,
     ),
   );
@@ -309,7 +353,7 @@ export function planOverlap(
   const facts = observation.overlap;
   const notes = [...(facts?.notes ?? [])];
   if (pickups.length === 0) {
-    storeWaits(context, observation, [], notes);
+    storeWaits(context, observation, [], new Map(), notes);
     return;
   }
   const settings = overlapOf(section);
@@ -348,11 +392,20 @@ export function planOverlap(
   );
   const inFlight = [
     ...pullRequestsInFlight(observation, settings, context.nowMs),
-    ...pickupsInFlight(observation, batched),
+    ...pickupsInFlight(observation, batched, allRecords(context)),
   ];
-  const waits = loadWaits(repo.slug, notes);
+  const stored = loadWaits(repo.slug, notes);
+  // A batch starts from its members' waits together, so one member's wait or
+  // promotion is not lost by joining another's batch.
+  const waits = new Map<string, Wait>();
+  for (const c of candidates) {
+    const joined = combinedWait(
+      (memberKeys.get(c.item) ?? [c.item]).map((key) => stored.get(key)),
+    );
+    if (joined !== undefined) waits.set(c.item, joined);
+  }
   const placed = walkOverlap(candidates, inFlight, waits, model, context.nowMs);
-  storeWaits(context, observation, placed, notes);
+  storeWaits(context, observation, placed, memberKeys, notes);
   // A member shares its batch's placement, with its own footprint reading beside it.
   const members = placed.flatMap((p) =>
     (memberKeys.get(p.candidate.item) ?? [p.candidate.item]).map((item) => ({

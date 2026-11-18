@@ -22,7 +22,11 @@ import {
   type Wait,
   walkOverlap,
 } from "../lib/overlap.ts";
-import { overlapModel } from "../lib/overlap-plan.ts";
+import {
+  combinedFootprint,
+  combinedWait,
+  overlapModel,
+} from "../lib/overlap-plan.ts";
 import { parseMs } from "../../shared/time.ts";
 import type { ChangeAreaCatalog } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 
@@ -262,6 +266,18 @@ describe("the chance of a round and the cost", () => {
     ).toBe(0.7);
   });
 
+  it("keeps the known part of an incomplete batch footprint and adds unknown_cost once", () => {
+    const m = model({ unknownCost: 0.7, maxPerFile: 2 });
+    const work = [pr(1, files("src/hot.ts")), pr(2, files("src/hot.ts"))];
+    const incomplete = { ...files("src/hot.ts"), incomplete: true };
+    const known = evaluate(files("src/hot.ts"), work, m);
+    const result = evaluate(incomplete, work, m);
+    expect(result.unknown).toBe(false);
+    expect(result.incomplete).toBe(true);
+    expect(result.boundPaths).toEqual(["src/hot.ts"]);
+    expect(result.cost).toBeCloseTo(known.cost + 0.7, 10);
+  });
+
   it("counts no chance with work in flight whose footprint is unknown", () => {
     expect(cost(files("src/a.ts"), [pr(1, UNKNOWN_FOOTPRINT)])).toBe(0);
   });
@@ -483,5 +499,35 @@ describe("the walk", () => {
       "T2",
     ]);
     expect(placed.map((p) => p.rank)).toEqual([3, 2, 1, 0]);
+  });
+});
+
+describe("a batch as one piece of work", () => {
+  it("combines the known members and marks the batch incomplete when one is unknown", () => {
+    const combined = combinedFootprint([
+      files("a.ts"),
+      UNKNOWN_FOOTPRINT,
+      files("b.ts"),
+    ]);
+    expect(combined.known).toBe(true);
+    expect(combined.incomplete).toBe(true);
+    expect(combined.files).toEqual(["a.ts", "b.ts"]);
+    expect(
+      combinedFootprint([UNKNOWN_FOOTPRINT, UNKNOWN_FOOTPRINT]).known,
+    ).toBe(false);
+    expect(combinedFootprint([files("a.ts"), files("b.ts")]).incomplete).toBe(
+      undefined,
+    );
+  });
+
+  it("starts a batch from its members' waits together: the earliest start, any promotion", () => {
+    expect(combinedWait([undefined, undefined])).toBeUndefined();
+    expect(
+      combinedWait([
+        { sinceMs: 5, tier3SinceMs: null, promotedMs: null },
+        undefined,
+        { sinceMs: 3, tier3SinceMs: 4, promotedMs: 9 },
+      ]),
+    ).toEqual({ sinceMs: 3, tier3SinceMs: 4, promotedMs: 9 });
   });
 });

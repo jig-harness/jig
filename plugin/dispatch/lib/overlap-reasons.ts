@@ -96,12 +96,19 @@ function overlapReason(p: Placed, nowMs: number): OverlapReason {
     .map(([path]) => path);
   const more = paths.length > 1 ? ` (+${paths.length - 1})` : "";
   const on = evaluation.shares.map((s) => refOf(s.work));
+  const partial = evaluation.incomplete
+    ? "; part of the batch's footprint is unknown"
+    : "";
+  const shared =
+    on.length === 0
+      ? "its footprint is partly unknown"
+      : `shares ${paths[0] ?? "a path"}${more} with ${list(on.map((r) => `${r.ref} (${r.kind})`))}${partial}`;
   return {
     relation: "waits on overlap",
     item: p.candidate.item,
     on,
     count: on.length,
-    text: `waits on overlap: shares ${paths[0] ?? "a path"}${more} with ${list(on.map((r) => `${r.ref} (${r.kind})`))}; ${tail}`,
+    text: `waits on overlap: ${shared}; ${tail}`,
   };
 }
 

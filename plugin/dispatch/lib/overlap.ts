@@ -43,6 +43,8 @@ export interface Footprint {
   dirs: readonly string[];
   /** Areas of the change-area catalog, by key. */
   areas: readonly string[];
+  /** A batch's footprint some member's is unknown: the known part is weighed, and `unknown_cost` is added once. */
+  incomplete?: boolean;
 }
 
 export const UNKNOWN_FOOTPRINT: Footprint = {
@@ -89,6 +91,8 @@ export interface Share {
 
 export interface Evaluation {
   unknown: boolean;
+  /** Part of a batch's footprint is unknown: its cost includes `unknown_cost` beside the shares. */
+  incomplete: boolean;
   cost: number;
   /** The work in flight it shares a unit with, in the order given. */
   shares: Share[];
@@ -112,6 +116,7 @@ export function canonical(
 ): Footprint {
   return {
     known: footprint.known,
+    ...(footprint.incomplete === true ? { incomplete: true } : {}),
     files: unique(footprint.files).filter(
       (f) => !f.endsWith("/") && !model.ignored(f),
     ),
@@ -223,6 +228,7 @@ export function evaluate(
   if (!candidate.known)
     return {
       unknown: true,
+      incomplete: false,
       cost: model.settings.unknownCost,
       shares: [],
       bound: null,
@@ -237,10 +243,14 @@ export function evaluate(
     const chance = roundChance(units);
     if (chance > 0) shares.push({ work, units, chance });
   }
-  const cost = shares.reduce((sum, s) => sum + s.chance, 0);
+  const incomplete = candidate.incomplete === true;
+  const cost =
+    shares.reduce((sum, s) => sum + s.chance, 0) +
+    (incomplete ? model.settings.unknownCost : 0);
   const bounds = boundsOf(c, inFlight, model);
   return {
     unknown: false,
+    incomplete,
     cost,
     shares,
     bound: bounds[0] ?? null,
