@@ -237,7 +237,7 @@ bun plugin/skills/changelog/scripts/tag.ts --json
 | `pending` or `rerun` | Pending: the gates on the releasing commit are still running, or were cancelled and the workflow runs them again once; check again later, not an incident |
 | `ready` | Pending while the release workflow is running. Otherwise OWED: the gates passed but no tag job has run since; record the release owed, and run the workflow (`gh workflow run release.yml`) only after asking |
 | `failed` | OWED, a person's step: the gates failed on the releasing commit; record the release owed with the failing checks, and never tag it by hand |
-| `manual` | OWED, a person's step, when that version was ever owed a tag: it is older than the newest tag, so the workflow will not tag it; record the release owed |
+| `manual` | OWED, a person's step, when that version was ever owed a tag: it is outside automatic tagging eligibility (older than the newest tag, or not the newest release when no tags exist); record the release owed |
 | `imported` | OWED only if that version was ever owed a tag: its heading came in with others, so no commit released it; record the release owed |
 
 Each release a person owes gets one tracker item per version, as
