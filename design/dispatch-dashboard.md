@@ -110,7 +110,7 @@ no item is one, and so is an item with no pull request yet.
 | --- | --- | --- |
 | **Merge**, where the dashboard opens while merge now holds a pull request | What can I merge now: merge now, approve first, update next, in order | item 36's [merge-ready predicate](dispatch-board.md#ready-exactly) |
 | **Needs you**, where it opens otherwise | What waits on me: parks with their framed decisions, approve-first pull requests, a follow-up's question, stalled pickups, double claims, a host that stopped answering, each opening with its act | the line's needs, the Ready to merge lanes, each source's state |
-| **Running** | What is being worked on, and where: Driven and Picking up, under the host's load gauge | item 36's board read and placement, with pickup progress |
+| **Running** | What is being worked on, and where: Driven and Picking up, under the host's load, every gauge against its own line | item 36's board read and placement, with pickup progress |
 | **Queue** | What starts next, and why not yet: Coming, the served people's ranked queue and each held item's reason | item 36's placement and item 44's ranking |
 | **Work**, an opened card | In stage 1, one pull request or one item: its rounds with their times, checks, the CI hold, answered parks and the follow-up. From stage 2, one piece of work end to end: its stations, each round with its unresolved threads, and one thread | stage 1: the line and the [drive ledger](../GLOSSARY.md); from stage 2, `jig ask` and the fold by aliases |
 | **History** | What ended and why, filterable, by piece of work too | the outcome log |
@@ -137,12 +137,42 @@ keyboard's card order leaves out, open by their chevron or a tap. A click
 or tap anywhere else on the card opens and closes it too, unless it lands on a link, a button or a field, or
 inside what the card opened; a press that moved on its way (a scroll or a
 drag) or that ends a text selection does not count as one. An open card
-draws a line down its gutter beside what it opened. The load breakdown, the
-accounts list and the list of repositories on Running, and the folds of the
-Help view, are headings on the same gutter, opened by their chevron or a
-tap on the heading; the accounts list starts open. Group headings (the
-Merge lanes, the acts of Needs you, the groups of Queue) start on the same
-gutter and do not fold yet.
+draws a line down its gutter beside what it opened. The load's holds and
+reservations, the accounts list and the list of repositories on Running,
+and the folds of the Help view, are headings on the same gutter, opened by
+their chevron or a tap on the heading; the accounts list starts open. Group
+headings (the Merge lanes, the acts of Needs you, the groups of Queue)
+start on the same gutter and do not fold yet.
+
+**Running's load.** Running opens with the host's load as the tick read it
+(the line's `load`). The headline gives the [load factor](../GLOSSARY.md)
+and names the gauge that binds ("Load 150%, processors binds"), and one
+fixed sentence under it says what the figure is: "The fullest gauge
+against its own line, not a sum." Below it each gauge has a row of its
+own, always open on every viewport, so every gauge's fill shows without
+opening anything: the gauge's icon and name, a bar, its percent, and what
+it read with its line ("load 21.6 on 16 cores · line: 0.9 per core"). The
+bar runs from 0 to 150%, and the gauge's line is a vertical tick two
+thirds along it, at 100%. A gauge at or past its line draws the part of
+its fill past the tick in the alarm colour with a hatch, and an "over its
+line" tag with its warning icon, so the state does not rest on colour
+alone. The gauge that binds has a bold name and a "binds" tag. A gauge the
+host did not read has an empty dashed bar, "not read" in place of its
+percent, and the reason it read nothing where the reading goes. Each bar
+names itself to a screen reader ("Processors at 150% of its line, over
+it"). On a wide row the name, bar, percent and reading sit on one line, in
+columns the gauge rows share; on a phone the name and percent lead, the
+bar runs the row's width, and what it read moves under the bar. Under
+[forced colours](../GLOSSARY.md) (the operating system's high-contrast
+mode) the bar's edge, the tick and the dashed edge are borders in the
+system's text colour and the fill is drawn in it. The launches the factor
+held or would have held and each kind's memory reservation sit under the
+gauges in one fold titled with its count: "Would have held 2 launches ·
+reservations" while the dispatcher only reports, "Held 2 launches ·
+reservations" once it enforces the load, and "no launch" when none was. A
+stacked bar is not used (it reads as a sum), nor a dial per gauge (a row of
+dials does not fit a phone), and the gauges are not folded away. The gauge row is
+Running's own, not a shared part of the card system.
 
 **One identity for a pull request and an issue.** Wherever a card names a
 pull request or an issue it draws its [work identity](../GLOSSARY.md): an

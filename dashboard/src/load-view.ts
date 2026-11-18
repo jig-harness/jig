@@ -1,4 +1,4 @@
-/** What the Running view's load gauge shows, from the tick's load report (`LineLoad`). */
+/** What the Running view's load shows, from the tick's load report (`LineLoad`). */
 import type {
   LineLoad,
   LoadGauge,
@@ -15,63 +15,104 @@ const NAMES: Record<LoadGauge, string> = {
 
 const GIB = 1024 ** 3;
 
-export interface LoadView {
-  /** "82%", or "–" when no gauge read. */
-  percent: string;
-  /** The bar's width, 0 to 100. */
-  width: number;
-  /** Whether the fullest gauge is at or past its line. */
+/** The fill a gauge's bar runs to: half again past its line. */
+export const BAR_TOP = 1.5;
+
+/** Where a gauge's line sits along its bar, in percent of the bar. */
+export const LINE_AT = 100 / BAR_TOP;
+
+/** The sentence under the headline, said once: what the figure is. */
+export const NOT_A_SUM = "The fullest gauge against its own line, not a sum.";
+
+export interface GaugeRow {
+  gauge: LoadGauge;
+  name: string;
+  /** "150%", or "not read". */
+  fill: string;
+  /** Whether the host read it; an unread gauge's `reads` is the reason. */
+  read: boolean;
+  /** Whether it is at or past its line. */
   over: boolean;
-  /** "memory binds", or that no gauge read. */
+  /** Whether its fill is the load factor. */
+  binds: boolean;
+  /** What it read and its line, or why it read nothing and its line. */
+  reads: string;
+  /** The bar's fill up to the line, in percent of the bar. */
+  under: number;
+  /** The bar's fill past the line, in percent of the bar, starting at `LINE_AT`. */
+  past: number;
+  /** What the bar says to a screen reader. */
+  label: string;
+}
+
+export interface LoadView {
+  /** The headline's figure: "Load 150%", or "Load –" when no gauge read. */
+  figure: string;
+  /** What follows the figure: "processors binds", or that no gauge read. */
   binds: string;
-  /** What the load factor did with the launches: held them, or would have. */
-  summary: string;
-  gauges: Array<{
-    gauge: LoadGauge;
-    name: string;
-    fill: string;
-    /** Whether it is at or past its line. */
-    over: boolean;
-    reads: string;
-    line: string;
-  }>;
+  gauges: GaugeRow[];
+  /** The disclosure under the gauges, titled with its count of launches: "Would have held 2 launches · reservations". */
+  title: string;
   reservations: Array<{ kind: string; text: string }>;
   holds: Array<{ key: string; target: string; text: string }>;
 }
 
 const percentOf = (fill: number) => `${Math.round(fill * 100)}%`;
 
-function summaryOf(load: LineLoad): string {
+/** A share of the bar, rounded to a tenth of a percent. */
+const ofBar = (fill: number) =>
+  Math.round((Math.max(0, fill) / BAR_TOP) * 1000) / 10;
+
+function titleOf(load: LineLoad): string {
   const n = load.holds.length;
-  const launches = n === 1 ? "1 launch" : `${n} launches`;
-  if (load.enforce)
-    return n === 0
-      ? "Enforced: no launch held this tick."
-      : `Enforced: ${launches} held this tick.`;
-  return n === 0
-    ? "Reporting only: no launch would have been held this tick."
-    : `Reporting only: ${launches} would have been held this tick.`;
+  const launches =
+    n === 0 ? "no launch" : n === 1 ? "1 launch" : `${n} launches`;
+  return `${load.enforce ? "Held" : "Would have held"} ${launches} · reservations`;
+}
+
+function rowOf(
+  g: LineLoad["gauges"][number],
+  binds: LoadGauge | null,
+): GaugeRow {
+  const name = NAMES[g.gauge];
+  const line = `line: ${g.line}`;
+  if (g.fill === null)
+    return {
+      gauge: g.gauge,
+      name,
+      fill: "not read",
+      read: false,
+      over: false,
+      binds: false,
+      reads: `${g.reads} · ${line}`,
+      under: 0,
+      past: 0,
+      label: `${name} not read`,
+    };
+  const over = g.fill >= 1;
+  return {
+    gauge: g.gauge,
+    name,
+    fill: percentOf(g.fill),
+    read: true,
+    over,
+    binds: g.gauge === binds,
+    reads: `${g.reads} · ${line}`,
+    under: ofBar(Math.min(g.fill, 1)),
+    past: over ? ofBar(Math.min(g.fill, BAR_TOP) - 1) : 0,
+    label: `${name} at ${percentOf(g.fill)} of its line${over ? ", over it" : ""}`,
+  };
 }
 
 export function loadView(load: LineLoad): LoadView {
-  const factor = load.factor;
   return {
-    percent: factor === null ? "–" : percentOf(factor),
-    width: factor === null ? 0 : Math.max(0, Math.min(100, factor * 100)),
-    over: factor !== null && factor >= 1,
+    figure: `Load ${load.factor === null ? "–" : percentOf(load.factor)}`,
     binds:
       load.binds === null
         ? "no gauge read"
         : `${NAMES[load.binds].toLowerCase()} binds`,
-    summary: summaryOf(load),
-    gauges: load.gauges.map((g) => ({
-      gauge: g.gauge,
-      name: NAMES[g.gauge],
-      fill: g.fill === null ? "not read" : percentOf(g.fill),
-      over: g.fill !== null && g.fill >= 1,
-      reads: g.reads,
-      line: g.line,
-    })),
+    gauges: load.gauges.map((g) => rowOf(g, load.binds)),
+    title: titleOf(load),
     reservations: load.reservations.map((r) => ({
       kind: r.kind,
       text: `${(r.bytes / GIB).toFixed(1)} GiB, ${r.measured ? `measured over ${r.samples} samples` : `default (${r.samples} of 5 samples)`}`,
