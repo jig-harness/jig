@@ -78,6 +78,20 @@ describe("jig send when the forge login is not read", () => {
     expect(r.stderr).toContain(`the forge ${NOT_NAMED}`);
     expect(w.writes()).toEqual([]);
   });
+
+  it("names an answer that is not a user document or names a malformed login", async () => {
+    for (const body of [["not", "a user"], { login: "bad login!" }]) {
+      const w = world();
+      w.api("user", body);
+      const r = await w.send([ADDRESS, "hold"]);
+      expectSpawnExit(r, 1);
+      expect(r.stderr).toContain("the forge's answer could not be read");
+      expect(r.stderr).not.toContain(NOT_NAMED);
+      expect(w.writes()).toEqual([]);
+      current?.close();
+      current = null;
+    }
+  });
 });
 
 /** A tracker whose viewer read does what `viewer` does. */

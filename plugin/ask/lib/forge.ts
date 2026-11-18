@@ -12,7 +12,7 @@ import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { ghConditionalGet } from "../../shared/gh-conditional.ts";
-import { failedBy } from "../../shared/outbound/failure.ts";
+import { failedBy, outboundFailure } from "../../shared/outbound/failure.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { PAST_DEADLINE, type Reading } from "./reading.ts";
 
@@ -210,17 +210,27 @@ export async function readDefaultConfig(
 
 /**
  * The login the forge client is signed in as; `null` when the forge answered
- * and named no login, and the read's failure, carrying the call's class, when
- * it was not read.
+ * with a user document that names no login, and the read's failure, carrying
+ * the call's class, when it was not read: an answer that does not parse, is
+ * not a user document or names a malformed login is `invalid`.
  */
 export async function readLogin(
   reading: Reading,
 ): Promise<Outcome<string | null, "absent" | "unreadable">> {
   const got = await get(reading, "user");
   if (!got.ok) return got;
+  const unreadable = (what: string) =>
+    failedBy(
+      "unreadable" as const,
+      outboundFailure("invalid", `the forge's user answer ${what}`),
+    );
   const v = json(got.value);
-  const login = isRecord(v) ? text(v.login) : "";
-  return ok(/^[A-Za-z0-9-]+(\[bot\])?$/.test(login) ? login : null);
+  if (!isRecord(v)) return unreadable("is not a user document");
+  const login = text(v.login);
+  if (login === "") return ok(null);
+  return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login)
+    ? ok(login)
+    : unreadable("names a login that is malformed");
 }
 
 /** A forge comment's fields an answer reads. */
