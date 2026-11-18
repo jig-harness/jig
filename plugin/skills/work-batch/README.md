@@ -49,8 +49,9 @@ Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
    independent of each other, none is larger than its size label says, and
    each `medium` issue gets an explicit decision: re-size it,
    keep it, or leave it for its own pull request. A batch the dispatcher
-   forms has nobody to decide, so a `medium` issue stays out of it and is
-   picked up on its own.
+   forms has nobody to decide, so an issue of the most expensive batchable
+   size (`medium` by default) stays out of it and is picked up on its own;
+   when every batchable size costs the same, none is kept out.
 3. **Claim.** Just before claiming, the agent runs the proposal again and
    drops any issue whose state, assignee, priority, size, type, context or
    flags changed since the first run: a new flag or an urgent priority holds

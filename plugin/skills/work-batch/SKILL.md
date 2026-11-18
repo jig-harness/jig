@@ -98,7 +98,8 @@ size no longer fits a batch (too large, cleared, or two at once), under
 **Left for their own pickups** (`leftOut` in the JSON form), and no verdict
 prompt appears:
 
-- Claim no member left out. Name each one and the reason in the pull
+- Claim no member left out, except as the third bullet says when fewer than
+  two members are kept. Name each one and the reason in the pull
   request's body (the `## Batch` section, for a batch) and in the closing
   report. When the pass ends with a claim made and no question open, its launch
   record holds only the members it claimed, and the dispatcher picks up the
@@ -153,8 +154,11 @@ rather than stopping at it. `--budget` and `--limit` override
 `--claimed "<its key>"`. Without it the script reads the issue's own state and
 assignee as someone else's work and refuses it as the anchor.
 
-Read all three lists the script prints:
+Read each list the script prints:
 
+- **Left for their own pickups**: each member of the most expensive
+  batchable size, or whose size no longer fits, which the dispatcher picks up
+  on its own (`leftOut` in the JSON form).
 - **Proposed batch**: each issue's size, points and score, its revalidation
   line (below) and, under each issue of the most expensive batchable size
   (`medium` by default), a verdict prompt for step 2. With `--fixed` no such

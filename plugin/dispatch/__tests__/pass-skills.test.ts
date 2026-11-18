@@ -71,6 +71,17 @@ describe("a fixed served batch's prompt", () => {
   it("settles a member's size without a question", () => {
     expect(prompt).toContain("Ask no question about a member's size");
   });
+
+  it("lets the first member left out be claimed when none stays", () => {
+    expect(prompt).toContain("(the first member left out when none stays)");
+  });
+});
+
+describe("a solo pickup's prompt", () => {
+  it("suggests no batch and asks nothing about one", () => {
+    const prompt = pickupPassArgv(record, []).at(-1) ?? "";
+    expect(prompt).toContain("suggest no batch");
+  });
 });
 
 describe("skills a dispatched Claude pass starts", () => {

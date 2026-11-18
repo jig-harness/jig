@@ -244,9 +244,14 @@ function pickupPassPrompt(
           `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. No member may be replaced or added.`,
           ...(record.stewardResume === undefined
             ? [
-                `Use the first named key as the proposal anchor and pass --fixed ${shellQuote(record.batchItems.map((i) => i.key).join(","))}. Ask no question about a member's size: claim no member the proposal leaves for its own pickup, and when fewer than two members stay, work one alone as the skill says. Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.`,
+                `Use the first named key as the proposal anchor and pass --fixed ${shellQuote(record.batchItems.map((i) => i.key).join(","))}. Ask no question about a member's size: claim no member the proposal leaves for its own pickup, except that when fewer than two members stay you claim and work one alone as the skill says (the first member left out when none stays). Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.`,
               ]
             : []),
+        ]),
+    ...(record.batchItems !== undefined || record.stewardResume !== undefined
+      ? []
+      : [
+          "This item is picked up on its own: run the pickup skill's batch check only to confirm that, suggest no batch and ask no question about one.",
         ]),
     ROUTE_RULES_LINE,
     ...(record.factoryAncestor === undefined ||
