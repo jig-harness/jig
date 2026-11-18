@@ -195,7 +195,7 @@ function systemName(system: string): string {
  * showing 16:05 data`. `null` when the entry keeps no parts or parts this
  * page cannot read, so the banner shows the whole sentence instead.
  */
-export function refusalLine(
+function refusalLine(
   repo: Pick<LineRepo, "refusal">,
   readMs: number,
   timeZone: string,
