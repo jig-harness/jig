@@ -9,6 +9,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "message-kind for a value of an inbox line's kind field, directive for a value of a directive's command field, outbox-status for a value of an outbox line's status field, inbox-field and outbox-field for a field of each file's lines."
     },
     "name": {
@@ -16,6 +17,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The value as a line carries it, or the field's name."
     },
     "resumable": {
@@ -23,6 +25,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a directive, whether a resume directive may name it as its target; null for every other value."
     },
     "writer": {
@@ -30,6 +33,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an outbox status, who appends a record of it: pass (one of the drive's passes) or driver (drive.ts itself); null for every other value."
     },
     "type": {
@@ -37,6 +41,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, the JSON type of its value: string, integer or boolean; null for every other value."
     },
     "carriedBy": {
@@ -44,6 +49,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "carriers",
       "description": "For a field, the kinds or statuses of the lines that carry it, each with always or sometimes, as `note (always), directive (sometimes)`; a line of a kind not named never carries it. Null for every other value."
     },
     "meaning": {
@@ -51,6 +57,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What it means to a reader that writes or reads the mailbox, and what that reader does with it."
     }
   },

@@ -401,6 +401,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.274.0] - 2026-11-18
+
+### Added
+
+- A shared workspace opener gives Orca and plain git worktrees the same branch and create-hook rules. Process worktrees carry owner records under shared collection admission; `jig gc` finds their runs root and collects them only after their launches and recorded processes have ended, preserving every existing Git and local-content check.
+- Each field in a [Jig Protocol](plugin/protocol/README.md) data file now
+  states `comparedAs`, what a stable chapter promises about its content within
+  one version: `exact`, `prose` (may be reworded), `names` (a comma-separated
+  list that may gain a name and never loses one) or `carriers` (what carries a
+  value, each with `always` or `sometimes`). Rewording a command's `given`,
+  adding a skill to its `runBy` or adding a new kind of mailbox line keeps the
+  chapter's version.
+
 ## [0.273.1] - 2026-11-18
 
 ### Changed
@@ -9611,7 +9624,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.273.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.274.0...HEAD
+[0.274.0]: https://github.com/jig-harness/jig/compare/v0.273.1...v0.274.0
 [0.273.1]: https://github.com/jig-harness/jig/compare/v0.273.0...v0.273.1
 [0.273.0]: https://github.com/jig-harness/jig/compare/v0.272.0...v0.273.0
 [0.272.0]: https://github.com/jig-harness/jig/compare/v0.271.1...v0.272.0

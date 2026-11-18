@@ -603,6 +603,7 @@ export async function worktreeProof(
   idleDays: number,
   coordinated = false,
   agentTool = false,
+  processOwned = false,
 ): Promise<Outcome<Proof>> {
   if (!lstatSync(path).isDirectory())
     return ok({ state: "finding", reason: "worktree root is not a directory" });
@@ -615,7 +616,7 @@ export async function worktreeProof(
     policy.regenerablePaths,
   );
   if (!local.ok) return local;
-  const facts = { ...local.value, agentTool };
+  const facts = { ...local.value, agentTool, processOwned };
   // Changes, index flags and an operation in progress veto before ignored
   // content is weighed for an archive.
   const unarchivable = localWorktreeVeto({
