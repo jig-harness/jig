@@ -84,7 +84,7 @@ export interface TickReceipt {
   unreadableLaunches?: string[];
   /** Outcome rows that could not be written for records of repositories this tick did not read. */
   unloggedOutcomes?: string[];
-  /** What `--apply` had the session runtime end of the died runs of repositories this tick did not read. */
+  /** What `--apply` had the session runtime end of what the ended runs of repositories this tick did not read left (`end-runs.ts`); a run that left nothing is not listed. */
   endedRuns?: EndRunOutcome[];
   /** Why the outcome log's text copy was not brought up to date. */
   logCopyFailed?: string;

@@ -690,7 +690,7 @@ export interface PreflightHold {
   stages: Stage[];
 }
 
-/** What `--apply` had the session runtime end of a run whose wrapper died without recording an exit (`endRun`). */
+/** What `--apply` had the session runtime end of what an ended run left, its wrapper gone before closing its tab (`endRun`, `end-runs.ts`). */
 export interface EndRunOutcome {
   /** The launch record's id. */
   record: string;
@@ -739,7 +739,7 @@ export interface RepoReport {
   notifications: NotifyOutcome[];
   /** What `--apply` did with the repository's notices workspace, where the machine file enables `notify` and one is open. */
   noticesWorkspace?: RetireOutcome;
-  /** What `--apply` had the session runtime end of the runs whose wrapper died; absent when there were none. */
+  /** What `--apply` had the session runtime end of what ended runs left; absent when none left anything. */
   endedRuns?: EndRunOutcome[];
   /** What `--apply` nudged, where the machine file enables `steer`; empty otherwise. */
   steers?: SteerOutcome[];

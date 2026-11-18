@@ -21,7 +21,7 @@ import type { EndedRun, RuntimeReceipt } from "../lib/runtime/port.ts";
 import { endRunOf } from "../lib/tick-settle.ts";
 import type { TickContext } from "../lib/tick-context.ts";
 import type { RunTab } from "../../shared/orca-tabs.ts";
-import { parseMs } from "../../shared/time.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 import { dispatchState, earlierRecord } from "./launch-fixtures.ts";
 import { type World, world } from "./fixtures.ts";
 
@@ -168,9 +168,16 @@ describe("ending what an ended run left", () => {
           record: "died-run",
           target: "PR #7",
           outcome: "left",
-          detail: answer instanceof Error ? answer.message : answer.detail,
+          detail:
+            answer instanceof Error
+              ? `${answer.message}; a later tick asks again`
+              : answer.detail,
         },
       ]);
+      // An answer is not asked for again; a throw, which answered nothing, is.
+      expect(readRecord("died-run", root)?.runEndedAt === undefined).toBe(
+        answer instanceof Error,
+      );
       w.close();
       current = null;
     }
@@ -227,6 +234,23 @@ describe("which ticks end runs", () => {
     );
     await endRun?.({ id: "x", workspace: null });
     expect(asked).toEqual([60_000]);
+  });
+
+  it("asks nothing once the tick's time is spent", () => {
+    const machine = {
+      intervalMs: 5 * 60_000,
+      runtimeTimeoutMs: 1_000,
+      workspaceTimeoutMs: 1_000,
+    };
+    const endRun = endRunOf(
+      contextOf({
+        machine,
+        // Past the six hours the launcher allows a tick.
+        startedAt: currentMs() - 7 * 3_600_000,
+        runtime: { endRun: async () => ({ ok: true, detail: "" }) },
+      }),
+    );
+    expect(endRun?.({ id: "x", workspace: null })).toBeNull();
   });
 });
 

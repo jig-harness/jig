@@ -64,7 +64,7 @@ function plannedMoves(r: RepoReport, verb: string): string[] {
     .map((m) => moveLine(m, verb));
 }
 
-/** What `endRun` did with a run whose wrapper died. */
+/** What `endRun` did with what an ended run left. */
 function endedRunLine(e: EndRunOutcome): string {
   return `  ${e.outcome.padEnd(8)} end run ${e.target} (record ${e.record}): ${e.detail}`;
 }

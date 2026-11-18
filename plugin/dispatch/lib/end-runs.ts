@@ -10,7 +10,10 @@
  * goes with it, so the runtime finds nothing left; the call is for a run
  * whose wrapper died, before or after the stage's exit was recorded. A
  * record whose exit is younger than `SETTLE_MS` waits for a later tick, so
- * the wrapper's own closer goes first. A report changes nothing a run left:
+ * the wrapper's own closer goes first. A runtime that throws instead of
+ * answering leaves the record unmarked, so a later tick asks again; one
+ * that answers is not asked again, whatever it left, which `jig gc`'s
+ * collection then closes once idle. A report changes nothing a run left:
  * a tick without `--apply` asks nothing, and marks nothing.
  */
 import { failureText } from "./text.ts";
@@ -55,7 +58,13 @@ export async function endRuns(
       if (asked === null) break;
       receipt = await asked;
     } catch (error) {
-      receipt = { ok: false, detail: failureText(error) };
+      // No answer: the record stays unmarked, so a later tick asks again.
+      outcomes.push({
+        ...about,
+        outcome: "left",
+        detail: `${failureText(error)}; a later tick asks again`,
+      });
+      continue;
     }
     try {
       const runEndedAt = isoFromMs(nowMs);
