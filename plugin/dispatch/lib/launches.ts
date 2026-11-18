@@ -236,6 +236,8 @@ export interface LaunchRecord {
   endedAt?: string;
   /** A reservation cancelled before runtime execution whose shared withdrawal needs retrying. */
   cancelledAt?: string;
+  /** When a tick with `--apply` asked the session runtime to end what the run left (`endRun`, `end-runs.ts`); it asks once. */
+  runEndedAt?: string;
   /** For a follow-up: the machine file's `failures.rerun_died` when the record was written, kept only when it is `0`, which runs no follow-up again after a death or an unwritten result. */
   rerunDied?: number;
   /** For a follow-up: the repository's `dispatch.followup_within` when the record was written, the longest its follow-up may wait on an arm still pending (`followup-waits.ts`); absent on a record written before it was kept, read as the field's default. */

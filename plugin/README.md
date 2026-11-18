@@ -1013,10 +1013,13 @@ that name and the launch record's id (`⚙ dispatched · rearm #456 · launch
 comment, once, on a line of its own after what the comment holds (a later
 launch's mark replaces an earlier one's for the same stage and key). Each
 session's terminal tab reads `jig dispatch · <stage> <key>`, and closes
-when its run ends with nothing for a person: a drive's exit that is not a
-park or a failure, a session that recorded `done`. A run that needs a
-person keeps its tab, and the next launch for the same pull request or item
-closes an earlier one of its own that is idle. No skill renames the
+when its run ends, however it ended: a park and a failure close it too,
+since the run's closing report, or the cause recorded for it, keeps what
+the tab showed, and a drive's output stays in its driver log. A run whose
+wrapper died before it could close its tab has the tab closed by a later
+tick that runs with `--apply`, while nothing runs in it. A terminal
+someone typed a command into stays open, and the next launch for the same
+pull request or item closes an earlier idle tab of its own. No skill renames the
 workspace after that, though a person may; the mark outlives the name,
 since the launch record keeps it too and a notification that rewrites the
 comment keeps it, and the morning report (`drives.ts --report`) lists the
