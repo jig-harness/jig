@@ -724,11 +724,13 @@ approve [<digest>]`), copied from the dashboard or sent with `jig send
 followup@owner/name#456 answer followup --approve --decision <digest>`.
 The tick of the host that owns the repository reads the comments each
 tick, counts an answer only from an author the forge vouches for (on
-another tracker, a member of its workspace who is not a guest), never its
-own login or the user its tracker credential acts as, and only when it
-names the decision's current digest and every person who answered chose
-the same option (a need whose only answers on its item are by that tracker
-user reads as unread, and `jig ask` says why), then
+another tracker, a member of its workspace who is not a guest), its own
+login or the user its tracker credential acts as only through the record
+`jig send` writes, so a person who shares that identity answers with `jig
+send`, and only when it names the decision's current digest and every
+person who answered chose the same option (a need whose only answers on its
+item are by that tracker user, none of them sent, reads as unread, and `jig
+ask` says why), then
 carries out the option once: it checks again that the step still may run
 (the stage is on, no hold label, the marker unchanged, no session holds the
 work, no open pull request carries the item, the checkout idle) and
@@ -1727,12 +1729,12 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   to a need's decision, an answer whose key no need of the address carries
   in this machine's newest line, your own words (the tick carries out an
   option), and, on another tracker's item, a tracker that cannot name who
-  wrote a comment, a credential that acts as the factory identity, or a
-  send from the host that owns the repository, whose tick reads with that
-  same credential and never counts its user's comments; where the user the
-  tick leaves out cannot be told here (the repository names no factory
-  identity, or this machine cannot tell whether it owns the repository), it
-  is sent with a notice that the tick may not read it;
+  wrote a comment, or, from a host that does not own the repository, a
+  credential that acts as the factory identity; from the host that owns it,
+  whose tick reads with the same credential, and where that cannot be told
+  (the repository names no factory identity, or this machine cannot tell
+  whether it owns the repository), the comment carries the record the tick
+  counts it by, and the plan says so;
 - a mailbox directive already in force, a `resume` with nothing to withdraw,
   a drive no driver on this machine holds, and a drive another host holds,
   which it names: a directive reaches a driver on this machine only, so
