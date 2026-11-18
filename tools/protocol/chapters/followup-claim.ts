@@ -133,6 +133,7 @@ const FIELDS: Readonly<Record<string, FieldSpec>> = {
     nullable: true,
     required: true,
     identifies: false,
+    comparedAs: "carriers",
     description:
       "For a payload field, the runs whose markers carry it, each with always or sometimes, as `tick (always), manual (sometimes)`; a marker of a run not named never carries it. Null for every other value.",
   },

@@ -19,6 +19,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "field for a field of the decision record, form for a form of a structured answer, line for a line an answer is written in, normalization for a step of normalizing an answer, limit for a limit on a decision or an answer, act for what a need asks a person to do, class for a decision class Jig knows, station-key for a kind of need the dispatcher frames, and station-option for an option the dispatcher carries out."
     },
     "name": {
@@ -26,6 +27,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "A field's path in the record (a field of each option as call.options[].<field>), a form's or a line's opening word, a step's or a limit's name, an act or a class as a record names it, the key an answer to a dispatcher's framing names, or an option's id."
     },
     "type": {
@@ -33,6 +35,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, the JSON type of its value (string, boolean, object, string[] or object[] for a list of strings or objects); null otherwise."
     },
     "carried": {
@@ -40,6 +43,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a field, always when every record (or every entry of the list it is in) carries it, sometimes when only some do; null otherwise."
     },
     "written": {
@@ -47,6 +51,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a form or a line, how a person writes it, its parts in angle brackets; null otherwise."
     },
     "step": {
@@ -54,6 +59,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a normalization step, its place in the order the steps apply, from 1; null otherwise."
     },
     "value": {
@@ -61,6 +67,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a limit, its value in its unit; null otherwise."
     },
     "unit": {
@@ -68,6 +75,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a limit, what its value counts; null otherwise."
     },
     "act": {
@@ -75,6 +83,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a class, the act a decision under it asks for; null otherwise."
     },
     "class": {
@@ -82,6 +91,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a station key, the class of the decision the dispatcher frames for it; null otherwise."
     },
     "options": {
@@ -89,6 +99,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a station key, the ids of the options its decision offers, in their order, each separated from the next by a comma and a space; null otherwise."
     },
     "option": {
@@ -96,6 +107,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a station option, its name as the decision gives it and `choose` names it; null otherwise."
     },
     "reversible": {
@@ -103,6 +115,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a station option, true when the decision marks what it does as one that can be undone; null when the decision does not say, and for every other value."
     },
     "meaning": {
@@ -110,6 +123,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What the value means to a reader that meets it; for a station option, what choosing it does, as the decision's summary says."
     }
   },
