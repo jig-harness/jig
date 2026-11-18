@@ -735,6 +735,11 @@ make, use the entry's term instead.
   concludes: which file, why it conflicted, what was decided, and whether a
   review-loop round started the resolution. It keeps the conflicts a merge replay cannot see, because a
   rebase leaves no merge commit to merge again.
+- **Conflict rate** — for one file, the share of the merged pull requests
+  that changed it in a window and met a conflict before they merged, counting
+  only those whose conflicts the *merge replay* or the *live conflict record*
+  observed. The dispatcher refreshes each repository's rates once a day; a
+  file too few pull requests changed takes a default rate.
 - **Changelog** — a file listing each release's notable changes, newest
   first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
