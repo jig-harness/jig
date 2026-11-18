@@ -623,55 +623,27 @@ describe("settleStationAnswers on an item of another tracker", () => {
 
   it("releases the claim on a person's answer the tracker holds, never counting its own user's", async () => {
     const dir = root();
-    const moved: string[] = [];
-    const factory = { id: "u-factory", name: "Jig Factory" };
     const dana = { id: "u-dana", name: "Dana Lee" };
-    const tracker = {
-      adapter: "linear",
-      commentAuthors: true,
-      viewer: async () => factory,
-      issueComments: async () => ({
-        uuid: "uuid-12",
-        comments: [
-          {
-            id: "c1",
-            body: `answer pickup: choose Leave it to me \\[${digest}\\]`,
-            createdAt: "2026-11-12T10:30:00.000Z",
-            trusted: true,
-            author: factory,
-          },
-          {
-            id: "c2",
-            body: `answer pickup: approve \\[${digest}\\]`,
-            createdAt: "2026-11-12T11:00:00.000Z",
-            trusted: true,
-            author: dana,
-            url: "https://linear.app/acme/issue/ENG-12/x#comment-c2",
-          },
-        ],
-      }),
-      getIssue: async () => ({
-        state: { name: "In Progress", type: "started" },
-      }),
-      transition: async (key: string, state: string) => {
-        moved.push(`${key} ${state}`);
-      },
-    } as unknown as Tracker;
-    const p = stationPorts({
-      repo: { path: "/srv/work/web", slug: SLUG, defaultBranch: "main" },
-      enabled: new Set(["pickup"]),
-      section: {
-        states: ["todo"],
-        labels: { ...DEFAULT_LABELS, enabled: false },
-      } as unknown as DispatchSection,
-      shared: {} as SharedContext,
-      login: "drive-bot",
-      tracker,
-      issueRepository: null,
-      links: { itemsOf: () => null, prsOf: () => [] },
-      sessions: async () => ({ ok: true, source: "test", workspaces: [] }),
-      root: dir,
-    });
+    const { p, moved } = ownUserPorts(
+      [
+        {
+          id: "c1",
+          body: `answer pickup: choose Leave it to me \\[${digest}\\]`,
+          createdAt: "2026-11-12T10:30:00.000Z",
+          trusted: true,
+          author: FACTORY_USER,
+        },
+        {
+          id: "c2",
+          body: `answer pickup: approve \\[${digest}\\]`,
+          createdAt: "2026-11-12T11:00:00.000Z",
+          trusted: true,
+          author: dana,
+          url: "https://linear.app/acme/issue/ENG-12/x#comment-c2",
+        },
+      ],
+      dir,
+    );
     const report = reportOf({ actions: [stalled()] });
     await settleOn(report, p, dir);
     expect(moved).toEqual(["ENG-12 todo"]);

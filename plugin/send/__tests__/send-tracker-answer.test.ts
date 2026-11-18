@@ -546,13 +546,11 @@ describe("jig send … answer on another tracker's item, from the command line",
     return { w, ops, digest: decision.digest ?? "" };
   }
 
-  it("posts the answer with its record on the host that owns the repository", async () => {
-    const { w, ops, digest } = trackerWorld();
-    mkdirSync(join(w.home, ".jig"), { recursive: true });
-    writeFileSync(
-      join(w.home, ".jig", "dispatch.yaml"),
-      `repositories:\n  - path: ${w.repo}\n    stages: [pickup]\n`,
-    );
+  /** Dry-runs the approval, then sends it; returns the dry run's output and the tracker comment bodies posted. */
+  async function approveTwice(
+    world: ReturnType<typeof trackerWorld>,
+  ): Promise<{ dry: string; bodies: string[] }> {
+    const { w, ops, digest } = world;
     const address = `pickup@${REPO_OF_WORLD}#14`;
     const dry = await w.send([
       address,
@@ -562,9 +560,6 @@ describe("jig send … answer on another tracker's item, from the command line",
       "--dry-run",
     ]);
     expectSpawnExit(dry, 0);
-    expect(dry.stdout.replace(/\s+/g, " ")).toContain(
-      "so its tick reads the answers with the tracker credential a send here uses, which acts as maintainer",
-    );
     expect(ops.some((o) => o.op === "TrackerComment")).toBe(false);
     const sent = await w.send([
       address,
@@ -579,6 +574,20 @@ describe("jig send … answer on another tracker's item, from the command line",
       .filter((o) => o.op === "TrackerComment")
       .map((o) => String(o.variables.body));
     expect(bodies).toHaveLength(1);
+    return { dry: dry.stdout, bodies };
+  }
+
+  it("posts the answer with its record on the host that owns the repository", async () => {
+    const { w, ops, digest } = trackerWorld();
+    mkdirSync(join(w.home, ".jig"), { recursive: true });
+    writeFileSync(
+      join(w.home, ".jig", "dispatch.yaml"),
+      `repositories:\n  - path: ${w.repo}\n    stages: [pickup]\n`,
+    );
+    const { dry, bodies } = await approveTwice({ w, ops, digest });
+    expect(dry.replace(/\s+/g, " ")).toContain(
+      "so its tick reads the answers with the tracker credential a send here uses, which acts as maintainer",
+    );
     expect(bodies[0]).toStartWith(
       `answer pickup: approve [${digest}]\n\n<!-- jig-send-answer\n`,
     );
@@ -610,32 +619,10 @@ describe("jig send … answer on another tracker's item, from the command line",
 
   it("posts the answer on the item through the tracker, and nothing on the forge", async () => {
     const { w, ops, digest } = trackerWorld();
-    const address = `pickup@${REPO_OF_WORLD}#14`;
-    const dry = await w.send([
-      address,
-      "answer",
-      "pickup",
-      "--approve",
-      "--dry-run",
-    ]);
-    expectSpawnExit(dry, 0);
-    expect(dry.stdout).toContain(
+    const { dry, bodies } = await approveTwice({ w, ops, digest });
+    expect(dry).toContain(
       "maintainer, the user the tracker's credential acts as here",
     );
-    expect(ops.some((o) => o.op === "TrackerComment")).toBe(false);
-    const sent = await w.send([
-      address,
-      "answer",
-      "pickup",
-      "--approve",
-      "--decision",
-      digest,
-    ]);
-    expectSpawnExit(sent, 0);
-    const bodies = ops
-      .filter((o) => o.op === "TrackerComment")
-      .map((o) => String(o.variables.body));
-    expect(bodies).toHaveLength(1);
     expect(bodies[0]?.split("\n")[0]).toBe(
       `answer pickup: approve [${digest}]`,
     );
