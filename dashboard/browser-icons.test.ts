@@ -277,7 +277,7 @@ describe("the icon vocabulary", () => {
         expect(await card.locator(".act svg.lucide-scale").count()).toBe(1);
         expect(await card.locator(".stageChip svg.lucide").count()).toBe(1);
         expect(
-          await page.locator(".pNeeds .groupHead svg.lucide").count(),
+          await page.locator(".pNeeds .needGroupTitle svg.lucide").count(),
         ).toBe(3);
         await openView(page, "Queue");
         await shows(page, ".pQueue .srcChip");

@@ -191,7 +191,8 @@ field only to override the derivation:
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
+| `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push; a session the dispatcher starts may run fewer, as `gates.dispatch_fast` says. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
+| `gates.dispatch_fast` | boolean | Full local gates | jig-gates | Jig’s repository gate command runs fast checks and targeted tests in the sessions the dispatcher starts when this repository-only setting is true. CI retains the full gate set. Other repositories can opt in by implementing this setting in their own gate command using the dispatch launch identifier in `JIG_LAUNCH`. |
 
 ## `review`
 
@@ -1758,7 +1759,7 @@ rejects any other form.
 | `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
-| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up startup that writes no transcript, result or question within its first minute. The startup backoff applies whether or not its output contains a recognized quota notice |
+| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up, pickup or steward startup that writes no transcript, result or question within its first minute. A startup whose output holds a recognized usage-limit notice is walled until the reset the notice states instead, read in the zone it names (the host's when it names none) and at most eight days out; the backoff applies when that reset cannot be read, and to a startup with no such notice |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
 | `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. `opens_per_tick` plus `followup_opens_per_tick`, times this, plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days). The installed tick deadline covers that budget, with a six-hour minimum |
 | `opens_per_tick` | `4`; positive whole number of workspace opens allowed in one tick, limited further by the accounts' free slots. One open is kept for the notices workspace when the machine file enables `notify` for any repository; the budget must then be at least `2`, so launches can still proceed. A launch that needs another open waits for the next tick, with its receipt naming the budget or account constraint. A value whose workspace opens and runtime calls exceed the timer range is refused, naming `opens_per_tick`. Follow-ups never draw on it: they open from `followup_opens_per_tick` |
@@ -2056,6 +2057,7 @@ dispatch:
     states: [todo]                       # needs do_item.claim_marker: true
 gates:
   command: make check                    # required by resolve-review-comments
+  dispatch_fast: false
 review:
   bots:
     - example-review[bot]

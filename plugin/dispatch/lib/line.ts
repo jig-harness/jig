@@ -700,6 +700,16 @@ function repoOf(
     stages: entry?.stages ?? [],
     ...(input?.tracker === undefined ? {} : { tracker: input.tracker }),
     refused: report.refused,
+    ...(report.refused === null || report.refusedStep === undefined
+      ? {}
+      : {
+          refusal: {
+            step: report.refusedStep,
+            ...(report.refusedBy === undefined
+              ? {}
+              : { failure: report.refusedBy }),
+          },
+        }),
     ...(report.slug !== null &&
     report.refused !== null &&
     report.section === null

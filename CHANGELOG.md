@@ -401,6 +401,71 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.278.1] - 2026-11-18
+
+### Fixed
+
+- A dispatched drive or headless pass now records how it ended even when the
+  host upgrades Jig during the stage to a release whose state database
+  refuses older readers. The tick logs the launch by its real exit instead of
+  "its wrapper is gone without an exit". If the wrapper still cannot record
+  the exit, it says the stage ran and exits with the stage's own code instead
+  of reporting that nothing was started.
+- The dispatcher no longer counts a pickup or follow-up that ended normally
+  while waiting (a follow-up whose release or deployment is still pending), or
+  that stopped on a decision for a person, as a failure. The outcome log
+  records these as `arm pending` and `parked for a person`; a parked run names
+  who answers it and what they must do; and the dashboard, the recurring
+  classes and the steward stop counting them as failures.
+- A follow-up outcome now preserves the question from its framed decision,
+  including when that decision is recorded after the outcome row, so retained
+  outcomes still show what needs a person's answer after their launch records
+  expire.
+- The dispatch dashboard says a repository the dispatcher paused for its
+  GitHub quota in one short line: what paused it, when it resumes and how old
+  the data shown is, with the full detail on expanding the card. A repository
+  lookup held by a rate limit no longer reads as the forge not knowing which
+  repository it is.
+
+## [0.278.0] - 2026-11-18
+
+### Added
+
+- The dispatch dashboard offers shareable filters with matching counts and folding act headings on Needs you. On a phone, shared filters still apply and can be cleared.
+
+## [0.277.3] - 2026-11-18
+
+### Fixed
+
+- A dispatched pickup or steward pass whose Claude Code session stops at
+  startup on a usage-limit notice now walls its account, as a follow-up's
+  already did; before, the pickup was logged as died, the account stayed
+  admitted, and the item waited for a person to release it. The wall lifts
+  at the reset the notice states, in both its time-of-day form
+  (`resets 3:20am (Europe/Amsterdam)`) and its dated weekly form
+  (`resets Nov 13, 11am (Europe/Amsterdam)`), and `dispatch.wall_backoff`
+  applies only when that reset cannot be read. A pickup stopped this way is
+  picked up again on another account, or on its own once the wall lifts,
+  with no person asked. A pickup or steward pass that stops at startup with
+  no usage notice now backs its account off for `dispatch.wall_backoff`, as
+  a follow-up's already did. **Consumer action:** none.
+
+## [0.277.2] - 2026-11-18
+
+### Changed
+
+- The sessions Jig's dispatcher starts on Jig itself run fast checks and
+  targeted tests locally, leaving the full suites to required CI. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` collects finished Orca workspaces on a machine with more than 200
+  of them. It read Orca's workspace registry without asking for more than
+  Orca's default page of 200 rows, took the cut page for an incomplete
+  registry and marked every Orca workspace unverified, so none was ever
+  removed. It now requests up to 5,000 rows and continues to refuse
+  collection when Orca reports that either registry response is truncated.
+
 ## [0.277.1] - 2026-11-18
 
 ### Changed
@@ -9738,7 +9803,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.278.1...HEAD
+[0.278.1]: https://github.com/jig-harness/jig/compare/v0.278.0...v0.278.1
+[0.278.0]: https://github.com/jig-harness/jig/compare/v0.277.3...v0.278.0
+[0.277.3]: https://github.com/jig-harness/jig/compare/v0.277.2...v0.277.3
+[0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
 [0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
 [0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
 [0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0
