@@ -1628,7 +1628,8 @@ make, use the entry's term instead.
   changed; a change that alters or removes what older copies read raises it,
   and an older copy then refuses the database and names both versions. The
   dispatcher's wrapper, once its stage has ended, still records the stage's
-  exit in such a database while the columns it writes are unchanged.
+  exit in such a database while every column it reads or writes after
+  its stage is unchanged.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
   agent's worktree (in its *worktree scratch*, or in the runner that started

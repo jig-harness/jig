@@ -2161,14 +2161,16 @@ command's own version was not additive (it raised the minimum reader).
 A wrapper whose stage has ended is the one exception, so that a stage's
 exit crosses such a step when the host upgrades while the stage runs:
 from then on the wrapper uses a newer database as it is, never migrating
-it, as long as it still holds, unchanged, the launch columns the wrapper
-reads and writes on its own record (the record, its claim, result, closing
-report and exit, and the thread samples, waiting episodes and claimed
-items read with it). It records the exit, then what follows it (the
+it, as long as it still holds, unchanged, every column the wrapper reads or
+writes after its stage (the wrapper's `AFTER_STAGE_COLUMNS` contract): on
+the launch record, its claim, result, closing report and exit, and the
+thread samples, waiting episodes and claimed items read with it, and in the
+log, the settled ends, the steward runs and the companion tables the
+wrapper's report writes and result reads use. It records the exit, then what follows it (the
 launch's end on its shared claim, a follow-up's label, closing a finished
 run's tab), and the newer tick classes the launch by that exit as it would
 have without the upgrade. The tick, a claim and every other reader that
-decides slots stay refused. A future step that is not additive keeps those
+decides slots stay refused. A future step that is not additive keeps all of those
 columns readable and writable as they are, or says how an older wrapper's
 exit crosses it; a database that lacks one of them refuses the wrapper,
 which then says that the stage ran and how it ended and exits with the
