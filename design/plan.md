@@ -1108,8 +1108,8 @@ A Jig release sometimes asks something of the repositories that use it: a
 runbook that describes old behaviour, a configuration key to change, a plugin
 source on a machine. Today a person reads the changelog by hand and tests each
 entry against the repository, nothing records which release a repository has
-already taken, and `/followup` stops on "which repositories are consumers?"
-because Jig names none. [design/consumer-actions.md](consumer-actions.md) has
+already taken, and Jig's follow-up cannot tell which repositories a change
+affects, because Jig names none. [design/consumer-actions.md](consumer-actions.md) has
 how it works. What it will build, on the **consumer actions** change notes
 declare and the record the release step derives from them
 (`plugin/consumer-actions.json`): a repository records the version it last
@@ -1120,13 +1120,13 @@ required, advised, needs-a-look and not-applicable with file and line
 evidence, and files the repository's own tracker items only for what a person
 approved; a `reconcile` dispatch stage runs it per dispatched repository and
 notifies once per new required entry, so a machine's dispatch file is the
-list of consumers; `/followup`'s Breaking-changes arm reads its result; and
+list of consumers; the consumer arm of Jig's follow-up reads its result; and
 `/jig:jig` points at it for what changed.
 
 Done when a fixture repository and changelog produce a required, an advised
 and a not-applicable entry with evidence and file nothing unapproved, a
-dispatch tick notifies once per new required entry, `/followup` no longer asks
-which consumers are affected, and `/jig:jig` no longer sends a reader to read
+dispatch tick notifies once per new required entry, the consumer arm of Jig's
+follow-up no longer needs to be told which consumers are affected, and `/jig:jig` no longer sends a reader to read
 the changelog by hand.
 
 ### 12. More tracker adapters

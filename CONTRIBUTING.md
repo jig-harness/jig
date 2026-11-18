@@ -124,14 +124,19 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an
    agent never does ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
-5. Maintainers: after the merge, run `/followup <PR>`
-   ([.claude/skills/followup/](.claude/skills/followup/SKILL.md)): the
-   tracker item and deferred findings, the release tag, what the merge did
-   to the website, the status pages and documents that cite them, the
-   consumer repositories, and active scaffolding. Routine local branch,
-   workspace and scratch-note cleanup is left to periodic maintenance. Its fixes go in one follow-up pull
-   request. A contributor's pull request owes nothing here; the maintainer
-   who merges it runs this step.
+5. Maintainers: after the merge, run `/jig:followup <PR>`
+   ([followup](plugin/skills/followup/README.md)), or let the dispatcher
+   start it: the plugin's core arms (the tracker item and deferred findings,
+   the out-of-tree steps, the release tag, active scaffolding, live
+   verification, the next step) and Jig's own repository arms, declared in
+   [`.config/jig.yaml`](.config/jig.yaml) (`followup.arms`) with their
+   instructions in [`.config/followup/`](.config/followup/): what the merge
+   did to the website, the status pages and the documents that cite them,
+   the glossary and the auditor, and the consumer repositories. Routine
+   local branch, workspace and scratch-note cleanup is left to periodic
+   maintenance. What it finds to fix is filed as one item, which a follow-up
+   pull request takes up. A contributor's pull request owes nothing here;
+   the maintainer who merges it runs this step.
 
 **A host that drives Jig opts in.** Jig's pull requests edit its own skills
 under `.claude/skills/**`, and a pass started without a terminal is denied every
@@ -152,9 +157,7 @@ directory [M0](modules/M0-instruction-architecture/mappings.md#cross-runtime-ski
 recommends. They are not part of the plugin, so changing one ships no
 version. One that opens pull requests or files issues sets
 `disable-model-invocation: true`, so it runs only when a person or a schedule
-starts it; the context budget gate still measures its description. The
-exception is `followup`: every session is told to run it after a merge
-([AGENTS.md](AGENTS.md)), so an agent must be able to start it. Their
+starts it; the context budget gate still measures its description. Their
 scripts and tests live in `scripts/`, where the gates run them. Codex reads
 skills from another directory; link it once per worktree with M0's mirror
 script (the links are gitignored):
@@ -163,8 +166,6 @@ script (the links are gitignored):
 bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
 ```
 
-- [`followup`](.claude/skills/followup/SKILL.md): settles what a merged
-  pull request still owes (step 5 above).
 - [`website-update`](.claude/skills/website-update/SKILL.md): brings the
   site up to date with the commits since its last check, recorded in
   `website/content-sync.yaml`.

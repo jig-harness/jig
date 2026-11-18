@@ -467,3 +467,16 @@ still to file, the scaffolding to remove, the release notes, the live checks
 the deploy will owe. `settle` ends it as a preview; put what is owed in the
 pull request's description so the post-merge run checks a list instead of
 rebuilding it.
+
+Report first the pull request's **provisional decisions**: the calls a
+drive took at the `wide` autonomy level that a person may still reverse
+before the merge. List them from the drive's report,
+`bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --report --since <when the pull request opened> --json`
+(its `provisional` entries for this pull request), each with its thread or
+record and whether it stands or was reversed. The report lists only the
+pull requests the signed-in account authored or wrote a drive ledger on:
+when this one's entry is absent, read its drive ledger comment and its
+provisional replies directly rather than listing none. An entry whose
+status is `unread`, or errors in the report's top-level `unread`, make the
+list incomplete: say which part is unread, and never present it as
+complete.
