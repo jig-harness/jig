@@ -1,9 +1,11 @@
 # Jig's change-area catalog (module M3): the one place that maps this
 # repository's paths to named change-areas. The CI workflow reads area names
-# from scripts/change-areas.ts, never these globs: the drive-pr suite runs
-# when the `drive-pr` area is affected. The gate set runs on Linux for every
-# change whatever its areas, and the nightly workflow runs it on macOS and
-# Windows without reading this catalog.
+# and its test legs from scripts/change-areas.ts, never these globs: the
+# drive-pr suite runs when the `drive-pr` area is affected, and the gate
+# set's test legs run the own tests of the areas a change reaches (every
+# shard when its plan is the deepest profile). A push to main runs every
+# suite, and the nightly workflow runs them on macOS and Windows without
+# reading this catalog.
 #
 # Every tracked file belongs to at least one area (`bun run gates` fails
 # otherwise). When unsure whether one area depends on another, add the
@@ -109,10 +111,12 @@ areas:
 
   # The areas below name the tracker's other `area:` labels, so
   # `/jig:work-batch` can draw a batch from them (do_item.agents.codearea_areas
-  # in jig.yaml). They sit inside `plugin` and add no CI job: only `website`
-  # and `drive-pr` select one, and no edge below leads to either. Each lists
-  # the areas it imports from; an area the catalog does not name (`adr`,
-  # `docs`, `change-areas`) is reached through `plugin`.
+  # in jig.yaml). They sit inside `plugin` and add no CI job of their own:
+  # only `website` and `drive-pr` select one, and no edge below leads to
+  # either; their own tests join the gate set's test legs. Each lists the
+  # areas it imports from; an area the catalog does not name (`adr`, `docs`,
+  # `change-areas`) is reached through `plugin`, whose files no own tests
+  # cover, so a change to them runs the whole gate set.
   dispatch:
     title: "The dispatcher (jig dispatch) and its dashboard server"
     category: skill

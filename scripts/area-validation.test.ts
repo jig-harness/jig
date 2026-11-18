@@ -64,6 +64,7 @@ const fixture: SharedCatalog = {
     ),
     broad: area(["app/**", "lib/**", "misc/**"], { profile: "area" }),
     docs: area(["*.md"], { profile: "docs" }),
+    bare: area(["bare/**"]),
   },
 };
 
@@ -126,7 +127,8 @@ test("a file only an area without own tests holds is untested, and deepens the p
     profiles: ["docs"],
     localChecks: ["quick"],
   });
-  for (const files of [["misc/x.ts"], ["app/x.ts", "stray.txt"]])
+  // An area with no validation block runs at the deepest profile.
+  for (const files of [["misc/x.ts"], ["app/x.ts", "stray.txt"], ["bare/x.ts"]])
     expect(plan(files)).toMatchObject({
       profiles: expect.arrayContaining(["deep"]),
       localChecks: ["all"],

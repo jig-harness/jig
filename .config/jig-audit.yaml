@@ -179,7 +179,7 @@ criteria:
     # prior: mechanical: scripts/gates.test.ts runs each check-* script against pass and fail fixtures in scripts/tests/fixtures/, in the bun run gates test step under the required gates check
     # probe found: .github/workflows/gates.yml
     score: mechanical
-    evidence: "scripts/gates.test.ts, scripts/change-areas.test.ts and tools/quality/grit.test.ts run in the gates test step under the required check; gates.test.ts also checks gates.yml against SEPARATE_SUITES and the catalog's area names"
+    evidence: "scripts/gates.test.ts, scripts/change-areas.test.ts and tools/quality/grit.test.ts run in the gates test step under the required check; gates.test.ts also checks gates.yml against the separate suites the catalog marks and the catalog's area names"
   M1/gate-self-tests-cover-empty-input:   # strict, requires mechanical
     # Each repository-written gate's self-test includes a case where the gate has nothing to examine (its input or section missing, or empty where the input's format requires content, such as a scan root with no file) and asserts that the gate does not pass on it.
     score: absent
@@ -263,7 +263,7 @@ criteria:
     # One catalog file is the single place that maps path patterns to named change-areas and their implications; consumers reference area names rather than re-listing the path patterns.
     # prior: absent: .config/ai-review.yaml states Jig has no live change-area catalog; path rules are hand-written in ai-review.yaml, scripts/gates.ts POSIX_ONLY_SUITES and plugin/AGENTS.md
     score: convention
-    evidence: ".config/change-areas.yaml is the one path-to-area map; gates.yml selects jobs by area name and the resolver's code flag, never by globs; .config/jig.yaml drive.change_areas_catalog points drive-pr and do-item at it; remaining glob copies in .config/ai-review.yaml and scripts/gates.ts SEPARATE_SUITES"
+    evidence: ".config/change-areas.yaml is the one path-to-area map; gates.yml selects jobs by area name and its test legs by the matrix the resolution writes, never by globs; .config/jig.yaml drive.change_areas_catalog points drive-pr and do-item at it, and drive.validation_plan_command derives the validation plan from its profiles and own tests; scripts/gates.ts reads its separate suites from the catalog's validation.separateSuite; the remaining glob copies are in .config/ai-review.yaml"
   M3/catalog-schema-validated:   # lite, requires mechanical
     # A check validates the catalog's structure: area ids are well-formed, every implied-by reference names an existing area, and no area implies itself.
     # prior: absent: No catalog file in Jig; plugin/skills/drive-pr/scripts/lib/change-areas-catalog.ts validates consumers' catalogs only
@@ -273,7 +273,7 @@ criteria:
     # A CI check enforces the graph invariants of the implied-by relation (referential integrity, no cycles) and, for any area declaring generated:, that each generated[].source glob resolves to a real on-disk path; where an agent-gate-depth consumer is wired, fixtures prove its fail-closed defaults and that each projection reads the right side of seeds versus closure.
     # prior: absent: No catalog, so no implied-by graph check (git ls-files for area/catalog outside modules/ and fixtures)
     score: mechanical
-    evidence: "scripts/change-areas.ts checks referential integrity, finds cycles and fails on any repository file in no area; runs in bun run gates and again in gates.yml's areas job"
+    evidence: "scripts/change-areas.ts checks referential integrity, finds cycles, fails on any repository file in no area and refuses an own-tests command CI cannot route; runs in bun run gates and again in gates.yml's areas job. The agent-gate-depth consumer (scripts/validation-plan.ts through scripts/area-validation.ts) is fixtured: an unmatched file, an area with no validation block and code no own tests cover select the deepest profile (scripts/area-validation.test.ts, scripts/validation-plan.test.ts), and a generator source change puts its check in the plan"
   M3/workspace-coverage-gated:   # standard, requires mechanical
     # Every workspace directory on disk maps to at least one area, and each area's declared workspace exists and is matched by one of its own globs; a new unmapped workspace fails CI.
     # prior: expected-absent: Single-package repository: package.json has no workspaces field and there are no apps/* or packages/* directories
@@ -288,12 +288,12 @@ criteria:
     # CI job selection is driven by the resolver (seed match + implied-by closure), so a change to a shared area mechanically triggers the jobs of every area that depends on it.
     # prior: expected-absent: gates.yml has no path filters or job selection: every pull request runs the full gate set and the drive-pr suite
     score: mechanical
-    evidence: "gates.yml's areas job runs scripts/change-areas.ts --base (path match plus impliedBy closure); the drive-pr shards are gated on the drive-pr area and the platform matrix on code; a shared lib change selects dependent areas (tested in scripts/change-areas.test.ts); a push to main resolves every area"
+    evidence: "gates.yml's areas job runs scripts/change-areas.ts --base against the merge commit's first parent (path match plus impliedBy closure); the drive-pr shards are gated on the drive-pr area, the website steps on the website area, and the gate set's test legs are the matrix the resolution writes: the own tests of the areas the changed files' tested areas reach through impliedBy, every shard for the deepest profile, none for a documentation-only change (scripts/area-validation.test.ts); a shared lib change selects dependent areas (scripts/change-areas.test.ts); a push to main resolves every area and runs every shard"
   M3/all-consumers-generated:   # strict, requires mechanical
     # Every consumer view is a generated projection with a freshness gate; no consumer re-hardcodes the catalog's path patterns.
     # prior: absent: .config/ai-review.yaml rules[].paths and high_risk_path_patterns re-list path patterns by hand; the plugin/ version-bump rule is restated in plugin/AGENTS.md and plugin/README.md
     score: absent
-    evidence: ".config/ai-review.yaml rules[].paths and high_risk_path_patterns are hand-written; scripts/gates.ts SEPARATE_SUITES repeats the drive-pr glob with no check against the catalog"
+    evidence: ".config/ai-review.yaml rules[].paths and high_risk_path_patterns are hand-written; scripts/gates.ts reads its separate suites from the catalog, and CI's test legs and the validation plan are derived from it"
   M3/regex-shortcut-sync-checked:   # strict, requires mechanical
     # Any hand-maintained CI shortcut regex is checked against the catalog in both directions and against the union of files tracked at the current and base refs (the two directional checks alone can pass while a whole unmapped tracked file still slips through — see reference/regex-mirror/README.md).
     # prior: expected-absent: No hand-maintained CI shortcut regex in .github/workflows/gates.yml (no paths/paths-ignore/changed-files filters)
@@ -972,7 +972,7 @@ criteria:
   M14/test-tiers-declared:   # lite, requires convention
     # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.
     score: convention
-    evidence: "Tiers written down with their triggers: on every pull request and push to main, Linux only, the gate set's tests, the sharded drive-pr suite when the drive-pr area is affected, and the website parser tests when the website area is (a push to main runs every job); once a day and on demand, the gate set on macOS and Windows, the drive-pr suite on macOS and the website tests on both (scripts/gates.ts SEPARATE_SUITES and POSIX_ONLY_SUITES with reasons; the headers of .github/workflows/gates.yml and nightly.yml give each job's trigger, and each job's timeout-minutes its budget); plugin/AGENTS.md requires a long suite to be listed in scripts/gates.ts with its reason. No end-to-end sweep exists"
+    evidence: "Tiers written down with their triggers: on every pull request and push to main, Linux only, the gate set's test legs the change-area catalog selects (every shard on a push to main and for the deepest profile, the reached areas' own tests otherwise, none for documentation), the sharded drive-pr suite when the drive-pr area is affected, and the website parser tests when the website area is (a push to main runs every job); once a day and on demand, the gate set on macOS and Windows, the drive-pr suite on macOS and the website tests on both (the catalog's validation.separateSuite areas and scripts/gates.ts POSIX_ONLY_SUITES with reasons; the headers of .github/workflows/gates.yml and nightly.yml give each job's trigger, and each job's timeout-minutes its budget); plugin/AGENTS.md requires a long suite to be listed in scripts/gates.ts with its reason. No end-to-end sweep exists"
   M14/testing-rules-written:   # lite, requires convention
     # The testing rules are written where agents and people read them: test doubles reject what the real dependency rejects, runtime code reads time from an injected clock, waits poll with a deadline instead of sleeping, tests change the home directory, working directory or environment only in a subprocess, and a new test is seen to fail before its pass is trusted.
     score: convention
