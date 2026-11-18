@@ -21,8 +21,8 @@ import { KeyBar } from "./key-bar.tsx";
 import { Fold, Hint, PopupRoot } from "./fold.tsx";
 import { hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
-import { BareWord } from "./icon-word.tsx";
-import { CONTROL_ICONS, type IconWord } from "./icons.ts";
+import { CONTROL_ICONS } from "./icons.ts";
+import { Banner, COMMAND } from "./banner.tsx";
 import { LinePanel } from "./line.tsx";
 import { LogPanel } from "./log-panel.tsx";
 import { type Forges, forgesOf } from "./links.ts";
@@ -76,8 +76,6 @@ import {
 import { type Clock, staleBanners, timerBanner } from "./view.ts";
 import { WindowPanel } from "./window-panel.tsx";
 
-const COMMAND = "jig dispatch dashboard";
-
 /** How often ages move between reads. */
 const AGES_MOVE_MS = 20_000;
 
@@ -89,43 +87,6 @@ function useMonoNow(): number {
     return () => clearInterval(timer);
   }, []);
   return mono;
-}
-
-function CommandRow() {
-  return (
-    <div className="copyRow">
-      <span className="m sm">{COMMAND}</span>
-      <CopyButton text={COMMAND} idle="Copy command" />
-    </div>
-  );
-}
-
-function Banner({
-  title,
-  body,
-  command,
-  icon,
-}: {
-  title: string;
-  body: string;
-  command: boolean;
-  /** What the title is about, where the icon vocabulary draws it. */
-  icon?: IconWord;
-}) {
-  return (
-    <section className="banner" role="status">
-      <span className="mk r-unknown" aria-hidden="true">
-        ?
-      </span>
-      <div className="bannerBody">
-        <h2>
-          {icon === undefined ? title : <BareWord of={icon}>{title}</BareWord>}
-        </h2>
-        <p className="sm">{body}</p>
-        {command ? <CommandRow /> : null}
-      </div>
-    </section>
-  );
 }
 
 export function App() {
@@ -501,7 +462,13 @@ function Banners({ view }: { view: PageView }) {
         <Banner {...timerBanner(line, view.clock)} command={false} />
       ) : line === null ? null : (
         staleBanners(line, view.clock).map((b) => (
-          <Banner key={b.key} title={b.title} body={b.body} command={false} />
+          <Banner
+            key={b.key}
+            title={b.title}
+            body={b.body}
+            command={false}
+            {...(b.detail === undefined ? {} : { detail: b.detail })}
+          />
         ))
       )}
       {coded === null ? null : (

@@ -122,6 +122,7 @@ import {
 import type {
   DispatchSection,
   DrivenPr,
+  RefusedStep,
   RepoPhase,
   RepoReport,
   RepoTarget,
@@ -213,6 +214,7 @@ export async function openRepo(
       `${cut.failure.reason}, so nothing is planned for it this tick`,
       cut.failure,
       nowMs,
+      "time",
     );
   };
   if (ended(context.bound)) return passed();
@@ -230,9 +232,10 @@ export async function openRepo(
   if (!target.ok)
     return refusedBy(
       path,
-      `the forge cannot say which repository this is: ${target.failure.reason}`,
+      `${lookupFailed(target.failure)}: ${target.failure.reason}`,
       target.failure,
       nowMs,
+      "lookup",
     );
   const repo: RepoTarget = target.value.value;
   let config: ConfigurationOutcome;
@@ -243,6 +246,7 @@ export async function openRepo(
       `the dispatch section on the default branch cannot be read, so nothing is planned: ${why}`,
       cause,
       nowMs,
+      "configuration",
     ),
     slug: repo.slug,
   });
@@ -287,15 +291,28 @@ export async function openRepo(
 }
 
 /**
- * The report of a repository a failed read refused: with the call's
- * failure class when a call failed it, and the forge's last reading with
- * its age when that class clears by waiting.
+ * What a failed lookup of which repository a path is says first: a rate
+ * limit held the lookup, which clears by waiting and says nothing of the
+ * repository; any other failure leaves the forge unable to say which
+ * repository it is.
+ */
+export function lookupFailed(failure: Failure): string {
+  return readFailureOf(failure)?.class === "rate-limited"
+    ? "the repository lookup waits for the rate limit"
+    : "the forge cannot say which repository this is";
+}
+
+/**
+ * The report of a repository a failed read refused at `step`: with the
+ * call's failure class when a call failed it, and the forge's last reading
+ * with its age when that class clears by waiting.
  */
 function refusedBy(
   path: string,
   refused: string,
   cause: Failure | undefined,
   nowMs: number,
+  step: RefusedStep,
 ): RepoReport {
   const failure = cause === undefined ? undefined : readFailureOf(cause);
   const waits = failure !== undefined && clearsByWaiting(failure.class);
@@ -305,6 +322,7 @@ function refusedBy(
       `${refused}${waits ? lastForgeReading(path, nowMs) : ""}`,
     ),
     ...(failure === undefined ? {} : { refusedBy: failure }),
+    refusedStep: step,
   };
 }
 
@@ -434,7 +452,6 @@ export async function observeRepo(
             ok: false,
             openReadable: false,
             open: [],
-            openReadable: false,
             read: new Set(),
             scoped: labels?.onlyLabeled === true,
             inScope: new Set(),
