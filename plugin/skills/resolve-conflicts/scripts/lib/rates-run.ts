@@ -51,7 +51,7 @@ const OID = /^[0-9a-f]{40,64}$/;
  * when every `fatal:` or `error:` line of it is one of these.
  */
 const MISSING_OBJECT_LINE =
-  /^(?:fatal|error): (?:bad object|bad revision|ambiguous argument|unknown revision|not a valid object name|invalid revision|needed a single revision)\b/i;
+  /^(?:fatal|error): (?:bad object|bad revision|ambiguous argument|unknown revision|not a valid object name|invalid revision|needed a single revision|unable to read tree)\b/i;
 
 /** `git` that never fetches a missing object of a partial clone: a rates read stays inside the clone. */
 function withoutLazyFetch(git: Git): Git {
@@ -109,7 +109,7 @@ export function firstParents(
     "--no-show-signature",
     "--first-parent",
     "-z",
-    ...(since === null ? [] : [`--since-as-filter=${since}`]),
+    ...(since === null ? [] : [`--since-as-filter=${isoFromMs(since * 1000)}`]),
     "--format=%H%x1f%P%x1f%ct%x1f%at%x1f%s",
     ref,
   ]);

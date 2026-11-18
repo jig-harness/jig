@@ -70,6 +70,19 @@ describe("the first-parent walk", () => {
   });
 });
 
+describe("the first-parent walk over an early-epoch window", () => {
+  it("keeps commits after a window that starts below git's bare-epoch floor", () => {
+    expect(
+      firstParents(
+        repo,
+        "refs/heads/main",
+        Date.parse("1971-01-01Z") / 1000,
+        null,
+      ).map((c) => c.commit),
+    ).toEqual([recent, old]);
+  });
+});
+
 describe("the first-parent walk over dates that run backwards", () => {
   it("reaches an in-window ancestor behind an older commit", () => {
     git(["checkout", "-q", "-b", "skew", recent]);
@@ -114,6 +127,15 @@ describe("git's answer told unavailable or failed", () => {
   it("reads only missing-object lines as unavailable", () => {
     expect(
       unavailable(args, { code: 128, stderr: "fatal: bad object abc\n" }),
+    ).toBe(true);
+  });
+
+  it("reads a tree the partial clone lacks as unavailable", () => {
+    expect(
+      unavailable(args, {
+        code: 128,
+        stderr: `fatal: unable to read tree (${"2".repeat(40)})\n`,
+      }),
     ).toBe(true);
   });
 
