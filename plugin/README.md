@@ -560,8 +560,9 @@ neither, or ended with no result at all. The state database keeps `waits`
 and `parked` as `failed`, with the wait's time or the decision beside it,
 so a host that rolls back to a release that knows neither holds such a pass
 for a person rather than starting it again; every reader on this release
-takes each apart from a failure, rows written before it included, and none
-counts either as one. The session holds its
+takes a pending-arm wait and a parked decision apart from a failure, rows
+written before it included, and neither counts as one. A rate-limit wait
+remains a quota wall. The session holds its
 slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
