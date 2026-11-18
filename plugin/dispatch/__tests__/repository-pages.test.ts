@@ -53,7 +53,11 @@ function forge(open: number, most: number) {
         number: from + i + 1,
         headRefName: `feature/${from + i + 1}`,
         labels: { pageInfo: { hasNextPage: false }, nodes: [] },
-        comments: { pageInfo: { hasNextPage: false }, nodes: [] },
+        comments: {
+          totalCount: 0,
+          pageInfo: { hasNextPage: false },
+          nodes: [],
+        },
       }),
     );
     const next = from + nodes.length;
@@ -192,7 +196,11 @@ describe("named pull requests' comments the forge cannot answer a full query of"
       const repository: Record<string, unknown> = {};
       for (const n of prs)
         repository[`pr${n}`] = {
-          comments: { pageInfo: { hasNextPage: false }, nodes: [] },
+          comments: {
+            totalCount: 0,
+            pageInfo: { hasNextPage: false },
+            nodes: [],
+          },
         };
       return ok({ data: { rateLimit: { cost: 1 }, repository } });
     };
