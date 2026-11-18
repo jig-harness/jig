@@ -19,14 +19,20 @@ useDrivePrSuite();
 
 const LAUNCH = "20261115T080000Z-abcdef02";
 const SESSION = "0b8e2f4c-1d2e-4f50-9a1b-2c3d4e5f6a7b";
+const THREAD_STARTED = JSON.stringify({
+  type: "thread.started",
+  thread_id: SESSION,
+});
 
 for (const scenario of [
   "claude-repair",
   "codex-review",
+  "codex-json-repair",
   "codex-no-id",
 ] as const) {
   it(`records the dispatched pass session for ${scenario}`, async () => {
-    const repair = scenario === "claude-repair";
+    const claude = scenario === "claude-repair";
+    const repair = scenario.endsWith("-repair");
     const home = mkdtempSync(join(tmpRoot, "pass-session-"));
     const root = join(home, ".local", "state", "jig", "dispatch");
     const db = stateDb(root);
@@ -52,7 +58,7 @@ for (const scenario of [
         : { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
       scratchClean.dir,
     );
-    const body = repair
+    const body = claude
       ? [
           "const i = process.argv.indexOf('--session-id');",
           "console.error('repair id=' + (i === -1 ? '' : process.argv[i + 1]));",
@@ -68,9 +74,11 @@ for (const scenario of [
             `while (performance.now() < deadline && !db.query("SELECT sessions FROM launches").get()?.sessions) await Bun.sleep(20);`,
             "console.log('recorded before pass exit=' + Boolean(db.query('SELECT sessions FROM launches').get()?.sessions));",
           ]
-        : ["console.log('no startup session header');"];
+        : scenario === "codex-json-repair"
+          ? [`console.log(${JSON.stringify(THREAD_STARTED)});`]
+          : ["console.log('no startup session header');"];
     const pass = writeFakeProgram(
-      join(dir, repair ? "claude" : "codex"),
+      join(dir, claude ? "claude" : "codex"),
       ["#!/usr/bin/env bun", ...body, "process.exit(1);"].join("\n"),
     );
     const child = spawnDriveIn(
@@ -107,7 +115,7 @@ for (const scenario of [
       .get();
     const sessions = readRoundSessions(row?.sessions);
 
-    if (repair) {
+    if (claude) {
       expect(stderr).toContain("task=ci-repair");
       const id = /^repair id=(.+)$/m.exec(stderr)?.[1] ?? "";
       expect(id).toMatch(/^[0-9a-f-]{36}$/);
@@ -119,6 +127,11 @@ for (const scenario of [
       expect(stdout).toContain("recorded before pass exit=true");
       expect(sessions).toEqual([
         { round: 1, session: SESSION, at: expect.any(String) },
+      ]);
+    } else if (scenario === "codex-json-repair") {
+      expect(stdout).toContain(THREAD_STARTED);
+      expect(sessions).toEqual([
+        { round: 0, session: SESSION, at: expect.any(String) },
       ]);
     } else {
       expect(stdout).toContain("no startup session header");

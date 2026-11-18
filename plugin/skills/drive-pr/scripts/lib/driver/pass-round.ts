@@ -66,6 +66,7 @@ function recordSession(
         `drive.ts: round ${round}'s pass session was not recorded on launch record ${launch}: ${refused}`,
       );
   } catch (error) {
+    swallow(error, "a pass session could not be saved on its launch record");
     console.error(
       `drive.ts: round ${round}'s pass session was not recorded on launch record ${launch} (${error instanceof Error ? error.message : String(error)})`,
     );

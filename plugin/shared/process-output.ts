@@ -64,6 +64,28 @@ interface OutputCancellation {
   timers: ProcessTimers;
 }
 
+/** Give observed output written before exit a brief drain without waiting on other pipe writers. */
+const OBSERVED_DRAIN_MS = 100;
+
+function closeObservedOutput(
+  child: ChildProcess,
+  streams: NonNullable<ChildProcess["stdout"]>[],
+  hasCapturedOutput: boolean,
+  timers: ProcessTimers,
+): void {
+  if (streams.length === 0) return;
+  child.once("exit", () => {
+    // With inherited output the leader's exit ends its deadline. Preserve
+    // that even when draining our extra pipes, and leave cancellation
+    // escalation and regular captured streams to their existing handlers.
+    if (!hasCapturedOutput) clearTimeout(timers.kill);
+    const drain = setTimeout(() => {
+      for (const stream of streams) stream.destroy();
+    }, OBSERVED_DRAIN_MS);
+    child.once("close", () => clearTimeout(drain));
+  });
+}
+
 /** A bounded marker scan relays accounting failure without retaining diagnostics. */
 function accountingOutput(): (text: string) => void {
   const accounting = Boolean(process.env.JIG_FORGE_CALL_COUNT_FILE);
@@ -124,18 +146,23 @@ export function captureProcessOutput(
     options.onChunk?.(stream, length, captured);
     if (bytes > (options.maxBufferBytes ?? MAX_BUFFER_BYTES)) overflow();
   };
+  const observed: NonNullable<ChildProcess["stdout"]>[] = [];
+  let hasCapturedOutput = false;
   for (const stream of ["stdout", "stderr"] as const) {
     const source = child[stream];
     if (source === null) continue;
     const observe = options.onInheritedOutput;
     if (options[stream] === "inherit" && observe !== undefined) {
+      observed.push(source);
       source.on("data", (chunk: Buffer) => observe(stream, chunk));
       source.pipe(process[stream], { end: false });
     } else {
+      hasCapturedOutput = true;
       source.setEncoding("utf8");
       source.on("data", (text: string) => receive(stream, text));
     }
   }
+  closeObservedOutput(child, observed, hasCapturedOutput, cancellation.timers);
   return {
     get stdout() {
       return stdout;
