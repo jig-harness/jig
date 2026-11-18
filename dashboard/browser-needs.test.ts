@@ -69,11 +69,17 @@ describe("Needs you", () => {
       );
       try {
         await shows(page, ".pNeeds .need");
-        for (const act of ["Decide", "Authorize", "Investigate"]) {
-          expect(
-            await page.getByRole("heading", { name: new RegExp(act) }).count(),
-          ).toBe(1);
-        }
+        const headings = await page
+          .locator(".pNeeds .needGroupTitle")
+          .allTextContents();
+        expect(headings.map((h) => h.replace(/\s+/g, " ").trim())).toEqual([
+          expect.stringMatching(/^Decide · \d+/),
+          expect.stringMatching(/^Authorize · \d+/),
+          expect.stringMatching(/^Investigate · \d+/),
+        ]);
+        expect(await page.locator(".pNeeds .needGroupTitle .act").count()).toBe(
+          0,
+        );
         const card = page.locator(".pNeeds .need").first();
         expect(await card.locator(".act").textContent()).toBe("Decide");
         expect(await card.locator(".q").textContent()).toBe(

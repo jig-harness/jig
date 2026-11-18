@@ -284,6 +284,7 @@ describe("the dispatcher's share of GitHub's windows", () => {
     expect(ghRunFailure(stopped)).toMatchObject({
       code: "rate-limited",
       until: reset,
+      quota: { system: "GitHub", share: true },
     });
     expect(stopped.stderr).toContain("dispatcher's share (50%)");
 
@@ -302,6 +303,18 @@ describe("the dispatcher's share of GitHub's windows", () => {
     const third = await forge.run(["api", "repos/o/r/pulls"]);
     expect(forge.sent).toHaveLength(2);
     expect(ghRunFailure(third)?.code).toBe("rate-limited");
+  });
+
+  it("says a window with nothing left is GitHub's quota spent, not the dispatcher's share", async () => {
+    const { store } = dispatcher();
+    store.update(KEY, () => record(0));
+    const forge = client(() => ok("{}"));
+    const stopped = await forge.run(["api", "repos/o/r/pulls"]);
+    expect(forge.sent).toHaveLength(0);
+    expect(ghRunFailure(stopped)).toMatchObject({
+      code: "rate-limited",
+      quota: { system: "GitHub", share: false },
+    });
   });
 
   it("lets a GraphQL call and a rate_limit read through while only the core window is at its share", async () => {

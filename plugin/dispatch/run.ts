@@ -102,10 +102,20 @@
  * record keeps the tab until the tick finds the record ended without its
  * wrapper and asks the session runtime to end the run (`endRun`).
  *
- * Exit codes: the drive's own; 2 usage, a token that is not the record's,
- * a state database a newer plugin wrote, or a follow-up or pickup whose
- * permission settings do not read; 3 the record was already claimed, so nothing
- * started.
+ * Once its stage has ended, the wrapper reads and writes its own launch
+ * record even when an upgrade during the stage moved the state database past
+ * a step that was not additive (`lib/state.ts`'s `enterAfterStage`), so the
+ * exit and what follows it are recorded as without the upgrade. A database
+ * that refuses it even then (a newer schema without a column it touches)
+ * leaves the exit unrecorded: the wrapper says the stage ran and how it
+ * ended, and exits with the stage's own code.
+ *
+ * Exit codes: the stage's own (a drive's exit), also when the state database
+ * refuses the wrapper after its stage ran; 2 usage, a token that is not the
+ * record's, a state database a newer plugin wrote that refuses the wrapper
+ * before its stage starts, so nothing is started, or a follow-up or pickup
+ * whose permission settings do not read; 3 the record was already claimed,
+ * so nothing started.
  */
 import { runStage, type Ran, type RunOptions } from "./lib/run-stage.ts";
 import { driverCleanupUncertain } from "./lib/stage-cleanup.ts";
@@ -161,7 +171,11 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
-import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
+import {
+  enterAfterStage,
+  newerStateRefusal,
+  stateDbFailure,
+} from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
 import { writeWall } from "./lib/walls.ts";
@@ -426,11 +440,29 @@ async function wrap(id: string, token: string): Promise<number> {
     return CLAIMED;
   }
   process.chdir(record.workspace.path);
-  const code = isInteractive(record)
-    ? await executeStage(id, record)
-    : await spawnSupervisor(id, token);
+  let code: number;
+  if (isInteractive(record)) {
+    code = await executeStage(id, record);
+  } else {
+    code = await spawnSupervisor(id, token);
+    enterAfterStage();
+  }
   await closeTabOnExit(id);
   return code;
+}
+
+/**
+ * Whether the supervisor recorded the stage's exit. A state database that
+ * refuses this wrapper reads as no exit: the supervisor has already said why,
+ * and the tab stays for a person.
+ */
+function supervisedEnded(id: string): boolean {
+  try {
+    return readEnded(id)?.state.kind === "ended";
+  } catch (error) {
+    if (newerStateRefusal(error) === null) throw error;
+    return false;
+  }
 }
 
 async function executeStage(
@@ -637,8 +669,37 @@ function recordFinishedExit(
   }
 }
 
-/** Publish a finished stage's exit, unless its processes may still run. */
+/**
+ * Publish a finished stage's exit and what follows it. A state database that
+ * refuses this wrapper even past its stage (`enterAfterStage`) is said here,
+ * as a stage that ran: the wrapper's exit stays the stage's.
+ */
 async function finishRun(
+  id: string,
+  record: LaunchRecord,
+  ran: Ran,
+): Promise<number> {
+  enterAfterStage();
+  try {
+    return await publishEnd(id, record, ran);
+  } catch (error) {
+    const newer = newerStateRefusal(error);
+    if (newer === null) throw error;
+    console.error(
+      `jig dispatch run: the stage ran and ended (${endOf(ran)}), and its exit is not recorded: ${newer}`,
+    );
+    return ran.code ?? 1;
+  }
+}
+
+/** How a stage ended, as one phrase. */
+function endOf(ran: Pick<Ran, "code" | "signal">): string {
+  if (ran.code !== null) return `exit ${ran.code}`;
+  return ran.signal === null ? "without a code" : `signal ${ran.signal}`;
+}
+
+/** Publish a finished stage's exit, unless its processes may still run. */
+async function publishEnd(
   id: string,
   record: LaunchRecord,
   ran: Ran,
@@ -722,7 +783,7 @@ async function labelFollowup(id: string): Promise<void> {
 async function closeTabOnExit(id: string): Promise<void> {
   let ended: boolean;
   try {
-    ended = readEnded(id)?.state.kind === "ended";
+    ended = supervisedEnded(id);
   } catch (error) {
     console.error(
       `jig dispatch run: the run's tab stays open: its exit did not read (${failureText(error)})`,
@@ -771,8 +832,6 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
 
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
-  if (argv[0] === "supervise" && argv.length === 3)
-    return supervise(argv[1] as string, argv[2] as string);
   if (argv[0] === "identity" && argv.length === 2) {
     console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
     return 0;
@@ -792,16 +851,20 @@ export async function runMain(argv: string[]): Promise<number> {
   }
   if (argv[0] === "tracker" && argv.length === 3)
     return trackerMain(argv[1] as string, argv[2] as string);
-  if (argv.length !== 2) {
+  const supervising = argv[0] === "supervise" && argv.length === 3;
+  if (!supervising && argv.length !== 2) {
     console.error(
       "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
     );
     return 2;
   }
   try {
-    return await wrap(argv[0] as string, argv[1] as string);
+    return supervising
+      ? await supervise(argv[1] as string, argv[2] as string)
+      : await wrap(argv[0] as string, argv[1] as string);
   } catch (error) {
-    // A state database a newer plugin wrote: nothing is started.
+    // A state database a newer plugin wrote, refusing the wrapper before its
+    // stage starts: nothing is started. Past the stage, `finishRun` says it.
     const newer = newerStateRefusal(error);
     if (newer === null) throw error;
     console.error(`jig dispatch run: ${newer}`);

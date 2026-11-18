@@ -557,7 +557,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 /* Needs you group headings share the card gutter. */
 .needList > [data-facet-group] + [data-facet-group] { border-top: 1px solid var(--line-strong); }
 .needGroup > .gpanel { padding-inline-start: 0; }
-.needGroupTitle {
+.dd .needGroupTitle {
   display: flex;
   align-items: center;
   flex-wrap: wrap;

@@ -40,10 +40,18 @@ export const FAILURE_CLASSES = [
 /** One way a call to an outside system failed. */
 export type FailureClass = (typeof FAILURE_CLASSES)[number];
 
+/** Whose credential quota stopped a `rate-limited` call (`TrackerRateLimited`), for messages, and whether only the caller's share of a window, not the whole window, is spent. */
+export interface QuotaHold {
+  system: string;
+  share: boolean;
+}
+
 /** A call's failure: its class as the code, a sentence for a person, and what the class carries. */
 export interface OutboundFailure extends Failure<FailureClass> {
   /** `rate-limited`: when the system lets the credential send again, epoch milliseconds. */
   until?: number;
+  /** `rate-limited` as a credential's quota said it (`TrackerRateLimited`): whose quota, and whether only the caller's share is spent. */
+  quota?: QuotaHold;
   /** The request left before the answer was lost: a write may have landed. */
   sent?: boolean;
   /** How long the system asked the caller to wait (`Retry-After`), milliseconds. */
@@ -112,6 +120,7 @@ export function outboundFailure(
   reason: string,
   extra: {
     until?: number | null;
+    quota?: QuotaHold;
     sent?: boolean;
     retryAfterMs?: number | null;
     cause?: unknown;
@@ -120,6 +129,7 @@ export function outboundFailure(
   const failure: OutboundFailure = { code, reason };
   if (extra.until !== undefined && extra.until !== null)
     failure.until = extra.until;
+  if (extra.quota !== undefined) failure.quota = extra.quota;
   if (extra.sent === true) failure.sent = true;
   if (extra.retryAfterMs !== undefined && extra.retryAfterMs !== null)
     failure.retryAfterMs = extra.retryAfterMs;
@@ -200,7 +210,7 @@ export class OutboundError extends JigError<FailureClass> {
 /**
  * The class of what a call threw. An `OutboundError` says its own; the
  * budget's refusal (`TrackerRateLimited`, from this module's copy or another
- * release's) is `rate-limited` until its reset; an abort or a timeout the
+ * release's) is `rate-limited` until its reset, with the quota it names; an abort or a timeout the
  * platform raised is `unreachable`. Anything else is `invalid`: a call that
  * failed in a way no transport classified is a defect for a person.
  */
@@ -208,12 +218,22 @@ export function failureOf(error: unknown): OutboundFailure {
   if (error instanceof OutboundError) return error.failure;
   const said = error instanceof Error ? error.message : String(error);
   if (error instanceof Error) {
-    const fields = error as { code?: unknown; resetAt?: unknown };
+    const fields = error as {
+      code?: unknown;
+      resetAt?: unknown;
+      adapter?: unknown;
+      share?: unknown;
+    };
     if (
       fields.code === "tracker-rate-limited" &&
       typeof fields.resetAt === "number"
     )
-      return outboundFailure("rate-limited", said, { until: fields.resetAt });
+      return outboundFailure("rate-limited", said, {
+        until: fields.resetAt,
+        ...(typeof fields.adapter === "string"
+          ? { quota: { system: fields.adapter, share: fields.share === true } }
+          : {}),
+      });
     if (isFailureClass(fields.code) && error.name === "OutboundError")
       return outboundFailure(fields.code, said);
     if (error.name === "AbortError" || error.name === "TimeoutError")

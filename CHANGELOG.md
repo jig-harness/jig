@@ -401,6 +401,39 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.279.0] - 2026-11-18
+
+### Added
+
+- [M12's mappings](modules/M12-parallel-agent-ergonomics/mappings.md) map T3 Code as a workspace runtime: a `t3.json` script with `runOnWorktreeCreate` runs the worktree create hook once it is imported into the project's actions, and a wrapper runs the remove hook, since T3 Code has no point before a worktree is removed. A dated assessment says what T3 Code offers Jig's tooling and when Jig would add a launcher provider or a dispatcher session runtime for it.
+- The audit's `M12/worktree-hooks-wired` criterion recognises T3 Code: a tracked `t3.json` whose worktree-create script runs the create hook, with a documented step that imports it, counts as wired creation, and removal counts as wired only when the repository tracks how the remove hook is reached and documents the project's automatic worktree cleanup as off. **Consumer action:** none.
+
+## [0.278.1] - 2026-11-18
+
+### Fixed
+
+- A dispatched drive or headless pass now records how it ended even when the
+  host upgrades Jig during the stage to a release whose state database
+  refuses older readers. The tick logs the launch by its real exit instead of
+  "its wrapper is gone without an exit". If the wrapper still cannot record
+  the exit, it says the stage ran and exits with the stage's own code instead
+  of reporting that nothing was started.
+- The dispatcher no longer counts a pickup or follow-up that ended normally
+  while waiting (a follow-up whose release or deployment is still pending), or
+  that stopped on a decision for a person, as a failure. The outcome log
+  records these as `arm pending` and `parked for a person`; a parked run names
+  who answers it and what they must do; and the dashboard, the recurring
+  classes and the steward stop counting them as failures.
+- A follow-up outcome now preserves the question from its framed decision,
+  including when that decision is recorded after the outcome row, so retained
+  outcomes still show what needs a person's answer after their launch records
+  expire.
+- The dispatch dashboard says a repository the dispatcher paused for its
+  GitHub quota in one short line: what paused it, when it resumes and how old
+  the data shown is, with the full detail on expanding the card. A repository
+  lookup held by a rate limit no longer reads as the forge not knowing which
+  repository it is.
+
 ## [0.278.0] - 2026-11-18
 
 ### Added
@@ -9777,7 +9810,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.278.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.279.0...HEAD
+[0.279.0]: https://github.com/jig-harness/jig/compare/v0.278.1...v0.279.0
+[0.278.1]: https://github.com/jig-harness/jig/compare/v0.278.0...v0.278.1
 [0.278.0]: https://github.com/jig-harness/jig/compare/v0.277.3...v0.278.0
 [0.277.3]: https://github.com/jig-harness/jig/compare/v0.277.2...v0.277.3
 [0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2

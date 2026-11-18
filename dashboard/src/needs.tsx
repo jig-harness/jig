@@ -458,6 +458,9 @@ function NeedGroup({
               />
               {head}
             </span>{" "}
+            <span className="mut" aria-hidden="true">
+              ·
+            </span>{" "}
             <span className="m" data-group-count="">
               {cards.length}
             </span>{" "}
