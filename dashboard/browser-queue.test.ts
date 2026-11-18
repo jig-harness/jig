@@ -595,6 +595,30 @@ describe("What is coming", () => {
           document.querySelector<HTMLElement>("[data-group-more]")?.click();
         });
         await until("the heading is out from under the strip", clearOfStrip);
+
+        // A heading already clear of the strip stays where it is.
+        await page.evaluate(() => {
+          document.querySelector<HTMLElement>("[data-group-more]")?.click();
+        });
+        await until(
+          "the group has opened once more",
+          async () =>
+            (await page.locator(".pQueue .qItem:visible").count()) === 40,
+        );
+        const strip = await page.locator(".strip").boundingBox();
+        const clearAt = (strip?.y ?? 0) + (strip?.height ?? 0) + 7;
+        const now = (await heading.boundingBox())?.y ?? 0;
+        await page.evaluate((by) => window.scrollBy(0, by), now - clearAt);
+        const before = await page.evaluate(() => window.scrollY);
+        await page.evaluate(() => {
+          document.querySelector<HTMLElement>("[data-group-more]")?.click();
+        });
+        await until(
+          "the group has closed",
+          async () =>
+            (await page.locator(".pQueue .qItem:visible").count()) < 40,
+        );
+        expect(await page.evaluate(() => window.scrollY)).toBe(before);
       } finally {
         await context.close();
       }

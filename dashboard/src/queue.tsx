@@ -182,10 +182,10 @@ function SectionCards({
             // Closing from the group's foot brings its heading out from above the view or under the sticky strip.
             const group = event.currentTarget.closest("[data-facet-group]");
             if (!all || group === null) return;
-            const clear = Number.parseFloat(
-              getComputedStyle(group).scrollMarginTop,
-            );
-            if (group.getBoundingClientRect().top < clear)
+            const strip = document.querySelector(".strip");
+            const clear = strip?.getBoundingClientRect().bottom ?? 0;
+            const heading = group.querySelector("h3") ?? group;
+            if (heading.getBoundingClientRect().top < clear)
               group.scrollIntoView({ block: "start" });
           }}
         >
