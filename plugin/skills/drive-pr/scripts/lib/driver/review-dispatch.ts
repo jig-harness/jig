@@ -1,4 +1,3 @@
-import { runObservedPass } from "../driver-observation.ts";
 /** Prepare quota attribution, charge the attempt at dispatch and join all post-pass acquisition work. */
 import type { DriveRoundContext } from "./round-context.ts";
 
@@ -13,13 +12,17 @@ import {
 
 import { driverRuntime } from "./runtime.ts";
 
-import { snapshotQuotaSessions, prepareQuotaSpawn } from "./../quota/index.ts";
+import {
+  snapshotQuotaSessions,
+  prepareQuotaSpawn,
+  reportPreparedQuotaSpawn,
+} from "./../quota/index.ts";
 
 import { resolveAccountIdentity } from "./../identity.ts";
 
 import { passEnv } from "./repair.ts";
 
-import { notePassStarted, withPassRound } from "./pass-round.ts";
+import { runRoundPass, withPassRound } from "./pass-round.ts";
 
 import { run, tsArgv, helperTimeoutSeconds } from "./../proc.ts";
 
@@ -181,28 +184,9 @@ export async function prepareReviewPass(
   }
   if (notice !== "") baseEnv.DRIVE_PR_PASS_NOTICE = notice;
   const prepared = prepareQuotaSpawn(context.agent, baseEnv);
-  if (prepared !== null) {
-    // Said out loud, once per round. This is the only place the driver
-    // rewrites a command the caller gave it, and an operator whose CLI
-    // does not understand the injected flag sees the round die instantly
-    // with a usage error for a command they never typed — with nothing
-    // anywhere connecting the two, or naming the way out.
-    //
-    // Two shapes, told apart by argv length rather than the correlation's
-    // own `sessionId` being non-null: a minted or exact-resume-value
-    // correlation both leave `sessionId` a real string, but only the
-    // MINTED one actually injects `--session-id` into argv — an
-    // exact-resume-value or a vendor-confirmed-no-id correlation (a
-    // deliberate `--continue`/`-c`/ambiguous `--resume`) leaves argv
-    // unchanged, so describing either of those as an "amended" flag
-    // injection would name a mutation that never happened.
-    const amended = prepared.argv.length !== context.agent.length;
-    console.error(
-      amended
-        ? `pass argv amended for quota attribution: --session-id ${prepared.correlation.sessionId} (DRIVE_PR_QUOTA_NO_SPAWN_PREP=1 disables)`
-        : `pass correlated for quota attribution without amending argv: ${prepared.correlation.vendor} session ${prepared.correlation.sessionId ?? "(no exact id — a deliberately resumed/continued session)"} (DRIVE_PR_QUOTA_NO_SPAWN_PREP=1 disables)`,
-    );
-  }
+  // Said out loud, once per round. This is the only place the driver rewrites
+  // a command the caller gave it, and repair passes use the same account.
+  reportPreparedQuotaSpawn(context.agent, prepared);
 
   return {
     prepared,
@@ -278,39 +262,35 @@ export async function dispatchReviewPass(
     );
   }
   context.passIdentity = resolveAccountIdentity(context.agent);
+  const session = prepared?.correlation.sessionId ?? null;
   const passRes = await span("pass", { round }, () =>
-    runObservedPass(prepared?.argv ?? context.agent, {
-      stdout: "inherit",
-      stderr: "inherit",
-      detached: true,
-      env: prepared?.env ?? baseEnv,
-      // `0` disables, matching every other deadline knob in this skill; `run()`
-      // takes the absence of the field as "no deadline" rather than a zero.
-      ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
-      onSpawn: (handle) => {
-        driverRuntime.activePass = handle;
-        notePassStarted(
-          context.pr,
-          round,
-          prepared?.correlation.sessionId ?? null,
-        );
-        passSpawnProgressStamp = run(
-          tsArgv(driveState, [
-            "progress",
-            context.pr,
-            "--phase",
-            "pass-spawned",
-          ]),
-          { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
-        ).then((progressStamp) => {
-          if (progressStamp.code !== 0) {
-            console.error(
-              `drive.ts: could not stamp progress for round ${round}'s pass (drive-state.ts exited ${progressStamp.code}) — continuing anyway.`,
-            );
-          }
-        });
+    runRoundPass(
+      prepared?.argv ?? context.agent,
+      { pr: context.pr, round, session },
+      {
+        env: prepared?.env ?? baseEnv,
+        // `0` disables, matching every other deadline knob in this skill; `run()`
+        // takes the absence of the field as "no deadline" rather than a zero.
+        ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
+        onSpawn: () => {
+          passSpawnProgressStamp = run(
+            tsArgv(driveState, [
+              "progress",
+              context.pr,
+              "--phase",
+              "pass-spawned",
+            ]),
+            { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+          ).then((progressStamp) => {
+            if (progressStamp.code !== 0) {
+              console.error(
+                `drive.ts: could not stamp progress for round ${round}'s pass (drive-state.ts exited ${progressStamp.code}) — continuing anyway.`,
+              );
+            }
+          });
+        },
       },
-    }),
+    ),
   );
   // Captured before `activePass` is cleared: the PASS_DEADLINE branch below
   // needs it to witness the pass tree's termination, which happens after
