@@ -307,13 +307,13 @@ function notMoving(line: LineSnapshot, nowMs: number): LineSession[] {
 }
 
 export type NeedRow =
-  | { type: "head"; head: string }
+  | { type: "head"; head: string; count: number }
   | { type: "need"; need: NeedView }
   | { type: "stuck"; slot: SlotView };
 
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
- * sessions not moving. Filtered to one person, only the needs that wait on
+ * sessions not moving, each heading with the number of rows under it. Filtered to one person, only the needs that wait on
  * them stay; a session not moving names nobody, so it goes too.
  */
 export function needRows(
@@ -326,7 +326,7 @@ export function needRows(
   for (const act of NEED_ACTS) {
     const list = ordered.filter((n) => needAct(n) === act);
     if (list.length === 0) continue;
-    rows.push({ type: "head", head: act });
+    rows.push({ type: "head", head: act, count: list.length });
     for (const n of list)
       rows.push({
         type: "need",
@@ -336,7 +336,7 @@ export function needRows(
   if (person !== null) return rows;
   const stuck = notMoving(line, clockNow.nowMs);
   if (stuck.length > 0) {
-    rows.push({ type: "head", head: "Not moving" });
+    rows.push({ type: "head", head: "Not moving", count: stuck.length });
     for (const s of stuck)
       rows.push({ type: "stuck", slot: slotView(s, clockNow, line) });
   }

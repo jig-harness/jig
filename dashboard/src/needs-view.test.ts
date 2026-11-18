@@ -415,15 +415,15 @@ describe("the person's list", () => {
         { ...lineOf("quiet"), sessions: [], needs: [{ ...NEED, cause }] },
         CLOCK,
       );
-      expect(first).toEqual({ type: "head", head });
+      expect(first).toEqual({ type: "head", head, count: 1 });
     }
   });
 
   it("adds the sessions not moving under their own heading", () => {
     const rows = needRows(lineOf("hung"), CLOCK);
     expect(rows.filter((r) => r.type === "head")).toEqual([
-      { type: "head", head: "Reply" },
-      { type: "head", head: "Not moving" },
+      { type: "head", head: "Reply", count: 1 },
+      { type: "head", head: "Not moving", count: 4 },
     ]);
     expect(rows.filter((r) => r.type === "stuck").length).toBe(4);
   });

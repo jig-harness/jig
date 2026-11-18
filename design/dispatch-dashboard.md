@@ -142,7 +142,12 @@ accounts list and the list of repositories on Running, and the folds of the
 Help view, are headings on the same gutter, opened by their chevron or a
 tap on the heading; the accounts list starts open. Group headings (the
 Merge lanes, the acts of Needs you, the groups of Queue) start on the same
-gutter and do not fold yet.
+gutter and do not fold yet. An act's group on Needs you is headed by the
+act's icon and word with the group's count (`Decide · 3`), never by the
+act's pill, which stays on each card. The cards a person's answer hid fold
+into one muted line above the list (`6 cards hidden by answers · show`), a
+full touch target at every width, that opens to one note per hidden card and
+closes again; with none hidden, nothing shows.
 
 **One identity for a pull request and an issue.** Wherever a card names a
 pull request or an issue it draws its [work identity](../GLOSSARY.md): an
@@ -290,10 +295,11 @@ and a retry control's, which no view draws today.
   mode, which replaces the page's colours with its own). Where the design keeps a
   word alone (an answer still waiting, a draft that does not count), the
   map holds the word with no icon.
-- **A family is told apart by its container.** An act is a filled pill, a
-  stage an outlined chip, a source a dashed chip; a cause, a standing, an
-  account's state and an answer's state are a bare icon beside its word;
-  a coming group, a lane and a gauge lead their heading or row. The shapes
+- **A family is told apart by its container.** An act is a filled pill on
+  a card, a stage an outlined chip, a source a dashed chip; a cause, a
+  standing, an account's state and an answer's state are a bare icon beside
+  its word; an act's group, a coming group, a lane and a gauge lead their
+  heading or row. The shapes
   carry the difference, so it holds in greyscale, and under forced colours
   the pill is filled with the system's text colour and the chips keep their
   solid or dashed borders.
