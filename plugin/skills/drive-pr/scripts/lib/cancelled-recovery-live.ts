@@ -197,6 +197,93 @@ export function cancelledCiDecision(reason: string): ParkedDecision {
   };
 }
 
+/** What the live pull request says of the CI hold: `free` to go on, `none` while held, `unknown` when it cannot be established. */
+async function liveHoldState(
+  pr: string,
+  head: string,
+): Promise<"free" | "none" | "unknown"> {
+  const snapshot = await ghCall([
+    "pr",
+    "view",
+    pr,
+    "--json",
+    "state,headRefOid,labels",
+  ]);
+  if (snapshot.code !== 0) {
+    console.error(
+      `cancelled CI recovery: live hold read exited ${snapshot.code}: ${snapshot.stderr.trim()}`,
+    );
+    return "unknown";
+  }
+  try {
+    const current = parsePrSnapshot(
+      JSON.parse(snapshot.stdout) as unknown,
+      holdLabelPolicy(),
+    );
+    if (current === null || current.state !== "OPEN" || current.head !== head)
+      return "unknown";
+    // Held synchronize runs cancel deliberately. Their release at convergence,
+    // rather than a re-run of the held event, supplies their replacement.
+    return current.held ? "none" : "free";
+  } catch (err) {
+    swallow(
+      err,
+      "the live CI hold cannot be established for cancellation recovery",
+    );
+    return "unknown";
+  }
+}
+
+/** The recovery's dependencies, each durable claim, forge mutation and park asking `owned` first. */
+function fencedDeps(
+  pr: string,
+  head: string,
+  mayMutate: (() => Promise<boolean>) | undefined,
+  owned: () => Promise<void>,
+) {
+  return {
+    ...live,
+    ...timelineDeps(pr),
+    ...(mayMutate === undefined ? {} : { mayMutate }),
+    async claim(
+      pr: string,
+      head: string,
+      workflowIds: Parameters<typeof claimCancellation>[2],
+      requested: Parameters<typeof claimCancellation>[3],
+    ) {
+      return await claimCancellation(pr, head, workflowIds, requested, owned);
+    },
+    async extend(
+      pr: string,
+      head: string,
+      earlier: Parameters<typeof extendCancellation>[2],
+      requested: Parameters<typeof extendCancellation>[3],
+    ) {
+      return await extendCancellation(pr, head, earlier, requested, owned);
+    },
+    async claimLabelRerun(
+      pr: string,
+      run: Parameters<typeof claimLabelRerun>[1],
+    ) {
+      return await claimLabelRerun(pr, run, owned);
+    },
+    async park(parkPr: string, reason: string) {
+      await live.park(parkPr, reason, async () => {
+        return mayMutate === undefined || (await mayMutate());
+      });
+    },
+    async rerun(id: number) {
+      if (!(await live.confirm(pr, head)))
+        return {
+          code: 1,
+          stderr: "the pull request closed or its head changed",
+        };
+      await owned();
+      return await live.rerun(id);
+    },
+  };
+}
+
 /** A required-check subset at acquisition; all cancelled workflow jobs at final convergence. */
 export async function recoverCancelledOnHead(
   pr: string,
@@ -221,36 +308,8 @@ export async function recoverCancelledOnHead(
     )
   )
     return await waitForRequestedRun(pr, head);
-  const snapshot = await ghCall([
-    "pr",
-    "view",
-    pr,
-    "--json",
-    "state,headRefOid,labels",
-  ]);
-  if (snapshot.code !== 0) {
-    console.error(
-      `cancelled CI recovery: live hold read exited ${snapshot.code}: ${snapshot.stderr.trim()}`,
-    );
-    return "unknown";
-  }
-  try {
-    const current = parsePrSnapshot(
-      JSON.parse(snapshot.stdout) as unknown,
-      holdLabelPolicy(),
-    );
-    if (current === null || current.state !== "OPEN" || current.head !== head)
-      return "unknown";
-    // Held synchronize runs cancel deliberately. Their release at convergence,
-    // rather than a re-run of the held event, supplies their replacement.
-    if (current.held) return "none";
-  } catch (err) {
-    swallow(
-      err,
-      "the live CI hold cannot be established for cancellation recovery",
-    );
-    return "unknown";
-  }
+  const hold = await liveHoldState(pr, head);
+  if (hold !== "free") return hold;
   const runs = await workflowRunsFor("{owner}", "{repo}", head);
   if (runs === null) {
     console.error(
@@ -285,34 +344,13 @@ export async function recoverCancelledOnHead(
       if (mayMutate !== undefined && !(await mayMutate()))
         throw new OwnershipLost();
     };
-    const answer = await recoverCancelled(pr, head, relevant, runs, {
-      ...live,
-      ...timelineDeps(pr),
-      ...(mayMutate === undefined ? {} : { mayMutate }),
-      async claim(pr, head, workflowIds, requested) {
-        return await claimCancellation(pr, head, workflowIds, requested, owned);
-      },
-      async extend(pr, head, earlier, requested) {
-        return await extendCancellation(pr, head, earlier, requested, owned);
-      },
-      async claimLabelRerun(pr, run) {
-        return await claimLabelRerun(pr, run, owned);
-      },
-      async park(parkPr, reason) {
-        await live.park(parkPr, reason, async () => {
-          return mayMutate === undefined || (await mayMutate());
-        });
-      },
-      async rerun(id) {
-        if (!(await live.confirm(pr, head)))
-          return {
-            code: 1,
-            stderr: "the pull request closed or its head changed",
-          };
-        await owned();
-        return await live.rerun(id);
-      },
-    });
+    const answer = await recoverCancelled(
+      pr,
+      head,
+      relevant,
+      runs,
+      fencedDeps(pr, head, mayMutate, owned),
+    );
     return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
   } catch (err) {
     if (err instanceof OwnershipLost) return "unknown";

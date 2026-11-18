@@ -572,6 +572,16 @@ async function recoverLabelCaused(
     )
       ? "wait"
       : null;
+  return await rerunFreshLabelCaused(pr, head, fresh, deps);
+}
+
+/** Claim and request the one re-run of each label-caused run not yet re-run. */
+async function rerunFreshLabelCaused(
+  pr: string,
+  head: string,
+  fresh: readonly WorkflowRun[],
+  deps: RecoveryDeps,
+): Promise<"wait" | "parked" | "unknown" | null> {
   if (!(await deps.confirm(pr, head))) return "unknown";
   const claimed = await claimSafeRuns(pr, fresh, deps);
   if (claimed === null) return null;

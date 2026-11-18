@@ -753,6 +753,14 @@ export function ledgerSettlement(
     }
     const labelled = (await writeStop(code)).label;
     if (code === null) return code;
+    return await rewriteStop(code, labelled, driver !== null);
+  };
+  /** Watch the head's CI after a `converged` stop; the stop to settle as: `code` when nothing overturned it. */
+  const rewriteStop = async (
+    code: number,
+    labelled: DriveLabelWrite | null,
+    hasDriver: boolean,
+  ): Promise<number> => {
     const again = await convergedStopExit(
       pr,
       labelled,
@@ -768,7 +776,7 @@ export function ledgerSettlement(
     // A rewrite that never landed leaves the ledger and label saying
     // `converged` over a head no drive settled: the exit becomes the one the
     // dispatcher drives again, which judges the head afresh.
-    if (driver !== null && !dryRun && !rewritten.landed) {
+    if (hasDriver && !dryRun && !rewritten.landed) {
       // The first stop removed the driver record; the restored one lets
       // `--stop` and `--doctor` see this acquisition.
       const worktree = process.env.DRIVE_PR_WORKTREE ?? "";
@@ -787,6 +795,7 @@ export function ledgerSettlement(
     }
     return again;
   };
+
   /** Record stop `code` in the drive state, then the stopped ledger (up to `attempts` writes) and its label. */
   const writeStop = async (
     code: number | null,

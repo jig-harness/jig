@@ -174,16 +174,40 @@ function judgeRun(
 }
 
 /**
- * Judge each failing run: a re-run still going or just requested waits; a
- * first attempt a label write started, that may be replayed and is not yet
- * claimed, is re-run; anything else parks, naming the run.
+ * Judge the whole collection: a park anywhere ends the watch, a wait is kept
+ * while the other runs are examined, and every run a re-run may replay is
+ * retried whatever the others are doing.
  */
-async function judgeFailure(
-  pr: string,
+function judgeEach(
+  failing: readonly { id: number }[],
+  runs: readonly WorkflowRun[],
   head: string,
-  read: CiRead,
-  deps: ConvergedCiDeps,
-): Promise<Judged> {
+  writes: readonly number[],
+  reruns: ReadonlyMap<string, number>,
+  now: number,
+  verdict: string,
+): Judged | { toRerun: WorkflowRun[]; waiting: string | null } {
+  const toRerun: WorkflowRun[] = [];
+  let waiting: string | null = null;
+  for (const failed of failing) {
+    const run = runs.find((r) => r.id === failed.id);
+    const judged =
+      run === undefined
+        ? ({
+            next: "wait",
+            saw: `${verdict} (run ${failed.id} not listed yet)`,
+          } as const)
+        : judgeRun(run, head, writes, reruns, now);
+    if (judged === "rerun" && run !== undefined) toRerun.push(run);
+    else if (typeof judged !== "string" && judged.next === "park")
+      return judged;
+    else if (typeof judged !== "string") waiting ??= judged.saw;
+  }
+  return { toRerun, waiting };
+}
+
+/** The wait or park a failure with no run to re-run asks for, `null` when runs are behind it. */
+function unrerunnable(read: CiRead, head: string): Step | null {
   const failing = read.failingRuns;
   if (failing === null || read.failingStatusNames === null)
     return { next: "wait", saw: `${read.verdict} (its runs did not read)` };
@@ -199,6 +223,23 @@ async function judgeFailure(
       reason: `required CI on head ${head} reads ${read.verdict} after the converged label was written, with no workflow run behind it to re-run`,
       labelCaused: false,
     };
+  return null;
+}
+
+/**
+ * Judge each failing run: a re-run still going or just requested waits; a
+ * first attempt a label write started, that may be replayed and is not yet
+ * claimed, is re-run; anything else parks, naming the run.
+ */
+async function judgeFailure(
+  pr: string,
+  head: string,
+  read: CiRead,
+  deps: ConvergedCiDeps,
+): Promise<Judged> {
+  const unjudged = unrerunnable(read, head);
+  if (unjudged !== null) return unjudged;
+  const failing = read.failingRuns ?? [];
   const [runs, writes, reruns] = await Promise.all([
     deps.workflowRuns(head),
     deps.labelWrites(pr),
@@ -209,26 +250,17 @@ async function judgeFailure(
       next: "wait",
       saw: `${read.verdict} (the head's runs or the label history did not read)`,
     };
-  const now = deps.now();
-  const toRerun: WorkflowRun[] = [];
-  // The whole collection is judged: a park anywhere ends the watch, a wait
-  // is kept while the other runs are examined, and every run a re-run may
-  // replay is retried whatever the others are doing.
-  let waiting: string | null = null;
-  for (const failed of failing) {
-    const run = runs.find((r) => r.id === failed.id);
-    const judged =
-      run === undefined
-        ? ({
-            next: "wait",
-            saw: `${read.verdict} (run ${failed.id} not listed yet)`,
-          } as const)
-        : judgeRun(run, head, writes, reruns, now);
-    if (judged === "rerun" && run !== undefined) toRerun.push(run);
-    else if (typeof judged !== "string" && judged.next === "park")
-      return judged;
-    else if (typeof judged !== "string") waiting ??= judged.saw;
-  }
+  const sorted = judgeEach(
+    failing,
+    runs,
+    head,
+    writes,
+    reruns,
+    deps.now(),
+    read.verdict,
+  );
+  if ("next" in sorted) return sorted;
+  const { toRerun, waiting } = sorted;
   if (toRerun.length === 0)
     return {
       next: "wait",
@@ -311,6 +343,50 @@ async function ownershipHold(
   return { next: "wait", saw: "the drive's ownership did not read" };
 }
 
+/** Whether the failure is nothing but cancelled runs (or a `cancelled:` verdict). */
+function onlyCancelled(read: CiRead): boolean {
+  const failing = read.failingRuns ?? [];
+  return (
+    read.verdict.startsWith("cancelled:") ||
+    (failing.length > 0 &&
+      (read.failingStatusNames ?? []).length === 0 &&
+      failing.every((r) => r.conclusion === "cancelled"))
+  );
+}
+
+/**
+ * The cancelled-run recovery, when the failure is only cancellations: its
+ * answer, or `null` to judge the head as a failure.
+ */
+async function recoverCancelledStep(
+  pr: string,
+  head: string,
+  read: CiRead,
+  deps: ConvergedCiDeps,
+): Promise<Step | ConvergedCiVerdict | null> {
+  const verdict = read.verdict;
+  if (!onlyCancelled(read)) return null;
+  const recovery = await deps.recoverCancelled(
+    pr,
+    head,
+    async () => (await ownershipOf(deps)) === "ours",
+  );
+  if (recovery === "parked") return { kind: "parked" };
+  if (recovery !== "none")
+    return {
+      next: "wait",
+      saw: `${verdict} (cancelled-run recovery: ${recovery})`,
+    };
+  if (verdict.startsWith("cancelled:"))
+    return {
+      next: "park",
+      reason: `required CI on head ${head} reads ${verdict} after the converged label was written, and the cancelled-run recovery found nothing it may re-run`,
+      labelCaused: false,
+    };
+  // A failure only cancelled runs carry, which the recovery leaves: judged as a failure.
+  return null;
+}
+
 /** One reading of the head's CI and what it asks for. */
 async function step(
   pr: string,
@@ -323,32 +399,8 @@ async function step(
     return { kind: "stands", why: `CI on head ${head} reads ${verdict}` };
   if (verdict.startsWith("pending:") || verdict.startsWith("unknown:"))
     return { next: "wait", saw: verdict };
-  const failing = read.failingRuns ?? [];
-  const cancelledOnly =
-    verdict.startsWith("cancelled:") ||
-    (failing.length > 0 &&
-      (read.failingStatusNames ?? []).length === 0 &&
-      failing.every((r) => r.conclusion === "cancelled"));
-  if (cancelledOnly) {
-    const recovery = await deps.recoverCancelled(
-      pr,
-      head,
-      async () => (await ownershipOf(deps)) === "ours",
-    );
-    if (recovery === "parked") return { kind: "parked" };
-    if (recovery !== "none")
-      return {
-        next: "wait",
-        saw: `${verdict} (cancelled-run recovery: ${recovery})`,
-      };
-    if (verdict.startsWith("cancelled:"))
-      return {
-        next: "park",
-        reason: `required CI on head ${head} reads ${verdict} after the converged label was written, and the cancelled-run recovery found nothing it may re-run`,
-        labelCaused: false,
-      };
-    // A failure only cancelled runs carry, which the recovery leaves: judged as a failure.
-  }
+  const cancelled = await recoverCancelledStep(pr, head, read, deps);
+  if (cancelled !== null) return cancelled;
   const judged = await judgeFailure(pr, head, read, deps);
   return judged.next === "rerun" ? rerun(pr, head, judged.runs, deps) : judged;
 }
