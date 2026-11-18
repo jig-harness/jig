@@ -84,7 +84,8 @@ export const STATION_KEYS = {
   launch: {
     class: "launch-recovery",
     options: ["clear", "hold"],
-    meaning: "A pending launch record that no tick launches again.",
+    meaning:
+      "A pending launch record that no tick launches again, or one of unknown process that holds a stopped drive.",
   },
 } as const satisfies Readonly<Record<string, StationKeyValue>>;
 export type StationKey = keyof typeof STATION_KEYS;
@@ -239,7 +240,13 @@ export type StationFacts =
       /** The re-arm whose launch ended without moving the ledger; `null` for none. */
       failedRearm: string | null;
     }
-  | { kind: "launch"; target: string; record: string };
+  | {
+      kind: "launch";
+      target: string;
+      record: string;
+      /** Why the process of a record holding a stopped drive is unknown; absent for a pending record. */
+      held?: string;
+    };
 
 /** A framed decision and the key that answers it. */
 export interface StationDecision {
@@ -414,8 +421,12 @@ function launch(f: Extract<StationFacts, { kind: "launch" }>): StationDecision {
     "launch",
     `How should the stuck launch record ${f.record} of ${f.target} be settled?`,
     "clear",
-    "No tick launches the record again, so clearing it frees its slot and its stage.",
-    `Launch record ${f.record} is pending and no tick launches it again.`,
+    f.held === undefined
+      ? "No tick launches the record again, so clearing it frees its slot and its stage."
+      : "No tick launches the drive while the record holds it, so clearing it lets the next tick re-arm the drive; a process still running keeps the record.",
+    f.held === undefined
+      ? `Launch record ${f.record} is pending and no tick launches it again.`
+      : `Launch record ${f.record} holds the stopped drive of ${f.target}, and whether its process runs is unknown: ${f.held}.`,
   );
 }
 

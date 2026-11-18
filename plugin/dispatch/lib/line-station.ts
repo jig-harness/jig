@@ -174,7 +174,12 @@ function factsOf(action: NeedAction, ctx: StationContext): StationFacts | null {
   const stuck = text(action.evidence, "stuck");
   const record = text(action.evidence, "record");
   if (stuck !== null && record !== null)
-    return { kind: "launch", target: action.target, record };
+    return {
+      kind: "launch",
+      target: action.target,
+      record,
+      ...(text(action.evidence, "heldSince") === null ? {} : { held: stuck }),
+    };
   return FACTS[action.cause]?.(action, ctx) ?? null;
 }
 
@@ -187,7 +192,8 @@ function needsPersonFacts(
   const branch = text(evidence, "branch");
   if (holder !== null && branch !== null)
     return { kind: "checkout", target, branch, path: holder };
-  if (pr === null) return null;
+  // Another host's claim is settled there: no option here would move it.
+  if (pr === null || text(evidence, "heldClaim") !== null) return null;
   const exit = evidence.exit;
   return {
     kind: "drive",

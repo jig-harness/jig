@@ -67,6 +67,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
+import { heldStopWait } from "./hold-wait.ts";
 import { lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   parkReading,
@@ -260,7 +261,7 @@ function waitsOnOf(
   ledger: Ledger,
   r: DriveReads,
   ctx: AskContext,
-  held: boolean,
+  holder: Holder | "none",
   base: PrFacts["base"],
   merge: WaitsOn,
 ): WaitsOn {
@@ -308,9 +309,17 @@ function waitsOnOf(
     dispatched
       ? { waiting: why }
       : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
-  // A launch that holds the drive says nothing of a park nobody answered or of a ledger gone silent.
+  const onHold = heldStopWait(
+    holder,
+    placed.class,
+    ledger.driver.heartbeat,
+    dispatched,
+  );
+  if (onHold !== null) return onHold;
+  // A running launch says nothing of a park nobody answered or of a ledger gone silent.
   if (
-    held &&
+    holder !== "none" &&
+    holder.process === "alive" &&
     placed.class !== "parked" &&
     placed.class !== "stale" &&
     placed.class !== "silent"
@@ -355,6 +364,7 @@ function claimHolder(
     generation,
     process: "unknown",
     why: `launch claim ${claim.id} has no end; whether its process runs is its host's to know`,
+    ...(claim.says.value.at === "" ? {} : { since: claim.says.value.at }),
   };
 }
 
@@ -864,7 +874,7 @@ function driveWait(
   if (diagnosis !== null) return diagnosis;
   return ledger === null
     ? "none"
-    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base, facts.merge);
+    : waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 
 /** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */

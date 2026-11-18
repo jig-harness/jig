@@ -256,7 +256,7 @@ the name `hold` had before, still chooses it.
 | `pickup` | `pickup-recovery` | `release`, `hold` | A pickup that stalled, stopped on a question it did not frame, or ended without moving its item on. |
 | `checkout` | `checkout-recovery` | `detach`, `hold` | A launch that waits because a checkout the workspace runtime does not list holds its branch and is in use. |
 | `drive` | `drive-recovery` | `rearm`, `hold` | A drive that stopped and handed its pull request to a person. |
-| `launch` | `launch-recovery` | `clear`, `hold` | A pending launch record that no tick launches again. |
+| `launch` | `launch-recovery` | `clear`, `hold` | A pending launch record that no tick launches again, or one of unknown process that holds a stopped drive. |
 
 <!-- /protocol:generated -->
 

@@ -4,16 +4,28 @@
  * cannot carry a re-arm, an open pull request carries the item, a session
  * holds it; and a release moves the item only when none of those stops it.
  */
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { captureIdentity } from "../../shared/liveness.ts";
 import type {
   CommentFact,
   Tracker,
   TrackerUser,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS } from "../lib/labels.ts";
+import {
+  claimRecord,
+  type LaunchClaim,
+  type LaunchRecord,
+  readLaunches,
+  writeRecord,
+} from "../lib/launches.ts";
 import type { SessionsReport } from "../lib/runtime/port.ts";
 import type { SharedContext } from "../lib/shared-launches.ts";
 import { type StationInputs, stationPorts } from "../lib/station-ports.ts";
+import { closeStateDb } from "../lib/state.ts";
 import type { DispatchSection } from "../lib/types.ts";
 import type { WorkLinks } from "../lib/work-links.ts";
 
@@ -337,5 +349,84 @@ describe("the answers on an item of another tracker", () => {
       expect(read.ok).toBe(false);
       expect(reasonOf(read)).toContain(says);
     }
+  });
+});
+
+describe("clearing a launch record of unknown process", () => {
+  const ID = "20261118T120000Z-aaaaaaaa";
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      closeStateDb(root);
+      rmSync(root, { recursive: true });
+    }
+  });
+
+  function claimed(claim: LaunchClaim): string {
+    const root = mkdtempSync(join(tmpdir(), "jig-station-clear-"));
+    roots.push(root);
+    const record: LaunchRecord = {
+      version: 1,
+      id: ID,
+      token: "t",
+      action: "rearm",
+      repo: "example-org/web",
+      repoPath: "/srv/work/web",
+      pr: 7,
+      account: "a",
+      vendor: "claude",
+      configDir: "/c",
+      wallBackoffMs: 1,
+      replaces: null,
+      facts: "generation 1, exit 8, heartbeat x",
+      createdAt: "2026-11-18T12:00:00.000Z",
+      workspace: null,
+      attempts: [],
+      item: null,
+      agentId: null,
+      model: null,
+      effort: null,
+      released: false,
+      command: null,
+      marker: null,
+    };
+    writeRecord(record, root);
+    expect(claimRecord(ID, claim, root)).toBe(true);
+    return root;
+  }
+
+  async function ownIdentity() {
+    const captured = await captureIdentity();
+    if (!captured.ok) throw new Error(captured.failure.reason);
+    return { ...captured.value, claimedAt: "2026-11-18T12:00:01.000Z" };
+  }
+
+  it("removes one no process is known to run", async () => {
+    const root = claimed({
+      hostId: "another-host-id",
+      host: "another-host",
+      bootId: "another-boot",
+      pid: 4242,
+      start: "Mon Nov  2 10:00:00 2026",
+      claimedAt: "2026-11-18T12:00:01.000Z",
+    });
+    const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
+    expect(outcome).toEqual({ ok: true, value: `cleared launch record ${ID}` });
+    expect((await readLaunches(root)).records).toEqual([]);
+  });
+
+  it("refuses one whose supervised process is alive, and keeps it", async () => {
+    const child = await ownIdentity();
+    const root = claimed({
+      ...child,
+      pid: 2147483647,
+      supervision: { supervisor: child, child },
+    });
+    const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? "" : outcome.failure.reason).toContain(
+      "running supervised process",
+    );
+    expect((await readLaunches(root)).records).toHaveLength(1);
   });
 });

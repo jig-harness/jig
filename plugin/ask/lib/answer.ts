@@ -31,6 +31,8 @@ export interface Holder {
   process: ProcessState;
   /** Why the process state is what it is, in words. */
   why: string;
+  /** When its launch began, where its record or claim says. */
+  since?: string;
   /** What only this machine's records name. */
   local?: {
     account?: string;

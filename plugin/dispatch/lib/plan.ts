@@ -65,6 +65,7 @@ import { readFailureOf } from "./read-failures.ts";
 import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
+import { strandedByClaim, strandedByRecord } from "./stranded-holds.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
@@ -502,6 +503,12 @@ function planForeign(
       reason: `held by host ${String(says.host)}: ${hold.why}`,
       evidence: { claim: hold.claim.id, host: says.host, record: says.record },
     });
+    plan.actions.push(
+      ...strandedByClaim(input.slug, pr, hold.claim, {
+        nowMs: input.nowMs,
+        sessions: input.sessions,
+      }),
+    );
     return true;
   }
   plan.quiet.push({
@@ -594,7 +601,15 @@ function planDrive(
   const pr = plannable(input, read, plan);
   if (pr === null) return;
   const hold = driveHold(pr, launches);
-  if (heldByRecord(target, pr, hold, plan)) return;
+  if (heldByRecord(target, pr, hold, plan)) {
+    plan.actions.push(
+      ...strandedByRecord(slug, pr, launches, {
+        nowMs: input.nowMs,
+        sessions: input.sessions,
+      }),
+    );
+    return;
+  }
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
