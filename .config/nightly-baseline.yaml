@@ -569,8 +569,11 @@ groups:
         - "await-round.ts review rounds > with reflection off, settles the rounds without asking for a reflection"
         - "await-round.ts review rounds > with reflection on, notes the round count and asks for /jig:reflect at wind-down, and settles the rounds"
       scripts/validation-plan.test.ts:
+        - "a change to one skill runs that skill's own tests beside the quick gates"
+        - "a documentation-only change's plan names no test run"
+        - "a file no area matches, or code no area's own tests cover, runs the full gates"
         - "review routing preserves closure, deduplication, deleted paths and strict schema"
-        - "the configured review command accepts Jig's catalog and keeps full gates"
+        - "the configured review command accepts Jig's catalog and runs the full gates for configuration"
       tools/plugin/bootstrap-powershell.test.ts:
         - "Windows preview checks auth and registration without installer or profile writes"
   - platform: windows
