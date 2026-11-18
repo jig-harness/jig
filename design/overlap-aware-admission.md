@@ -169,13 +169,14 @@ repository (`plugin/dispatch/lib/sources/pr-files.ts`, page by page through
 forge's listing limit), through the forge's governed transport (item 55).
 A [serialized area](../GLOSSARY.md) and overlap read the same files:
 
-- **Reuse.** A pull request's files are kept under its head commit and its
-  comparison base (the base branch's name and commit, as the listing
-  reports them). When the listing supplies that base commit, an unchanged
-  head and base need no file-page requests; a retarget or a base that moved
-  is read again. When the listing omits the base commit, the tick reads the
-  live base-branch tip before deciding whether it can reuse the cached
-  comparison. The same file reading serves serialization and overlap.
+- **Reuse.** A pull request's files are kept under its head commit, its
+  comparison base snapshot (the base branch's name and commit, as the listing
+  reports them), and the live base-branch tip. When the listing supplies that
+  live tip, an unchanged head, comparison snapshot and tip need no file-page
+  requests; a retarget or either base commit that moved is read again. When
+  the listing omits the live tip, the tick reads it before deciding whether it
+  can reuse the cached comparison. The same file reading serves serialization
+  and overlap.
 - **Admit and bound.** Each page asks the shared budget record. Pages of
   100 files, at most 3,000 files a pull request (the forge's own listing
   limit), and at most eight pull requests of a repository read fresh in
