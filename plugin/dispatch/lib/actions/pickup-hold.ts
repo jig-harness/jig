@@ -218,7 +218,7 @@ function stoppedHold(
 /**
  * The question an ended pickup left for a person, or `null`: none after
  * `done` or a rate-limit wait, else the pass's trailing question, else the
- * question its closing report asks, or for a failed pass the question of its
+ * question its closing report asks, or for a parked pass the question of its
  * framed decision. Question planning and
  * the release of unclaimed members read this one policy.
  */
@@ -227,7 +227,7 @@ export function endedQuestion(r: ReadRecord): string | null {
   return (
     questionOf(r.state) ??
     r.report?.report.question ??
-    (r.result === "failed" ? (r.framed?.decision.call.question ?? null) : null)
+    (r.result === "parked" ? (r.framed?.decision.call.question ?? null) : null)
   );
 }
 

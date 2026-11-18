@@ -194,7 +194,7 @@ describe("the disclosures", () => {
           "the group has opened",
           async () => (await items.count()) === 3,
         );
-        expect(await more.innerText()).toBe("Show fewer");
+        expect(await more.textContent()).toBe("Show fewer");
         await more.click();
         await until(
           "the group has closed",

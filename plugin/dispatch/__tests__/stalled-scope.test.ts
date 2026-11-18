@@ -316,7 +316,11 @@ describe("markClaims under the tracker's own rate limit", () => {
       [
         "#1",
         undefined,
-        { class: "rate-limited", until: "2026-11-11T09:00:00.000Z" },
+        {
+          class: "rate-limited",
+          until: "2026-11-11T09:00:00.000Z",
+          quota: { system: "linear", share: false },
+        },
       ],
       ["#2", undefined, undefined],
     ]);

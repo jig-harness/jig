@@ -1635,7 +1635,10 @@ make, use the entry's term instead.
   only adds (a table, a column with a default) leaves it where it was, so a
   copy of the program one release behind keeps using a database a newer copy
   changed; a change that alters or removes what older copies read raises it,
-  and an older copy then refuses the database and names both versions.
+  and an older copy then refuses the database and names both versions. The
+  dispatcher's wrapper, once its stage has ended, still records the stage's
+  exit in such a database while every column it reads or writes after
+  its stage is unchanged.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
   agent's worktree (in its *worktree scratch*, or in the runner that started
@@ -2406,6 +2409,17 @@ make, use the entry's term instead.
   the session adds the *process identity* it runs as and, when it ends, the
   stage's exit. A launch whose answer is lost still has its record, so it holds its
   stage and its account's *slot*, and is never followed by a second launch.
+- **Launch result** — how a pickup's or a follow-up's pass says it ended,
+  recorded on its *launch record* and read by every reader as one of these
+  words: `done`; `waits`, a pass that will start again once a time has
+  come (a rate limit's reset, or a *follow-up arm* still pending);
+  `parked`, a pass that stopped on a *framed decision* it wrote for a
+  person; and `failed`, any other end, or none recorded. `waits` and
+  `parked` are kept as `failed` beside the wait's time or the decision, so
+  a release that knows neither holds such a pass for a person rather than
+  starting it again; a pending *follow-up arm* and a parked decision do
+  not count as a failure on this release, and a rate-limit wait is logged
+  as a quota wall.
 - **Stuck launch record** — a *launch record* still pending that no tick
   launches again: every launch it is allowed (two) ended as not started or
   unanswered with at least one unanswered, a follow-up's replay can never be
@@ -2872,7 +2886,8 @@ make, use the entry's term instead.
   file per month: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the
   dispatcher's design defines, among them converged, quota wall, parked
-  for a person, stalled and died; a stop no class in that list fits is
+  for a person, arm pending (a follow-up waiting on a *follow-up arm*
+  still pending), stalled and died; a stop no class in that list fits is
   logged as `unknown` with its last state, never dropped. Beside those
   rows it holds one event row per notification it delivered and per nudge
   it attempted (for a stalled pickup, a double claim or a stage drift),
@@ -2894,8 +2909,8 @@ make, use the entry's term instead.
   again. Quieting differs from clearing, which removes the row and its count
   when a tick of that scope itself exits 0, and from notification
   suppression, which only holds back a repeat of a notice already told.
-- **Recurring class** — a bad outcome class (any but converged, merged and
-  parked for a person) of one stage on one repository in the *outcome log* on
+- **Recurring class** — a bad outcome class (any but converged, merged,
+  parked for a person and arm pending) of one stage on one repository in the *outcome log* on
   at least three of the last seven days of the host's clock, counting the rows
   of ended sessions and the event rows that carry a class, such as a drive
   stopped for a person; a drift carries none and never recurs in this sense.
