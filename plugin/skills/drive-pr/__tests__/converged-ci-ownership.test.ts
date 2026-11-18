@@ -8,7 +8,6 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -18,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const root = join(import.meta.dir, "../scripts/lib");
 
@@ -32,14 +32,13 @@ function fixture() {
     "dispatch:\n  person: owner-person\n",
   );
   const forge = join(bin, "gh");
-  writeFileSync(
+  writeFakeProgram(
     forge,
     `#!/usr/bin/env bun
 require("node:fs").writeFileSync(${JSON.stringify(join(dir, "forge-called"))}, "");
 process.exit(1);
 `,
   );
-  chmodSync(forge, 0o755);
   const ownerFile = join(dir, "owner");
   const dbFile = join(dir, "state", "state.sqlite");
   const source = join(dir, "probe.ts");
