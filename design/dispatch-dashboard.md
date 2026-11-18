@@ -127,6 +127,53 @@ glance across views. A card shows the act, the ask and the recommended option wi
 its cost, never a full framed decision in place, with the other options,
 the steps and the evidence folded.
 
+**A card and how it opens.** Every card on every view, and every row of
+History and of the tick strip, is a [card with gutter](../GLOSSARY.md):
+its first column is a gutter of one width holding a bare chevron, so the
+chevron sits at the same place on every card of a view whatever text
+follows it. The chevron is a real button with its open state, which Enter
+and `o` reach on the focused card; the tick strip's rows, which the
+keyboard's card order leaves out, open by their chevron or a tap. A click
+or tap anywhere else on the card opens and closes it too, unless it lands on a link, a button or a field, or
+inside what the card opened; a press that moved on its way (a scroll or a
+drag) or that ends a text selection does not count as one. An open card
+draws a line down its gutter beside what it opened. The load breakdown, the
+accounts list and the list of repositories on Running, and the folds of the
+Help view, are headings on the same gutter, opened by their chevron or a
+tap on the heading; the accounts list starts open. Group headings (the
+Merge lanes, the acts of Needs you, the groups of Queue) start on the same
+gutter and do not fold yet.
+
+**One identity for a pull request and an issue.** Wherever a card names a
+pull request or an issue it draws its [work identity](../GLOSSARY.md): an
+icon, the number or key as its link, and a Copy of the number or key. The
+icon opens a popover, by a tap, a click, focus or a resting mouse: the
+kind with its product ("Linear issue", "GitHub pull request, open"), the
+quoted title or that the read holds none, where the dispatcher holds a pull
+request, the repository, the standing and number or key, the linked work,
+and one link out ("Open in Linear", "Open on GitHub"). A pull request's
+icon shows only its standing on the forge (open, draft, merged, closed, or
+dashed while not read); where the dispatcher holds it stays with the card's
+status mark and stage chip. An issue's icon is the same for GitHub Issues,
+Linear and Jira, since the page reads no live state of an issue. The
+identity is a card's one link to its pull request or issue; a link that
+goes elsewhere stays on the card and says where.
+
+**Linked work.** From the line's `links` field, a card shows its
+[linked work](../GLOSSARY.md) inline after its identity, behind a link
+icon, as smaller identities with their Copy in their popover: up to two,
+then "+N more". The popover and the opened card list all of it, or say
+which case holds: "none found" when the tick found none (for an issue,
+"none found among this repository's open pull requests"), and "not known
+for this read" when the line has no `links` for the row. The face says
+nothing in either case.
+
+**Naming a repository's tracker.** The page names a repository's tracker
+by the product its configuration's adapter (`tracker.adapter` on the line)
+names: GitHub Issues, Linear or Jira, an unknown adapter by its own word.
+Where the line does not say, it speaks of the repository's issues; no
+string the page shows says "tracker".
+
 **Where the facts come from.** Merge, Needs you, Running, Queue and
 Hosts are drawn from the line each tick writes, with the forge facts its
 board read gathered, so drawing them makes no forge or tracker call, and
@@ -257,13 +304,13 @@ and a retry control's, which no view draws today.
 - **The Help view lists every icon with its word**, set by set, each in its
   family's container, from the same map.
 
-A pull request is drawn by its forge standing (open, draft, merged, closed,
-or dashed while the forge is not read). Its icon also carries the
-dispatcher's states while the dispatcher holds it: queued, held, reported
-and refused take the queue groups' icons, needs a person the cause's and
-following up the followup stage's, and driving and waiting have interim
-icons the design's table does not name. The card system moves these states
-to the status mark and the stage chip.
+A pull request is drawn by its forge standing alone (open, draft, merged,
+closed, or dashed while the forge is not read), and an issue by one icon
+whatever its tracker. Where the dispatcher holds a pull request is the
+card's status mark and stage chip, and its popover says it beside the same
+icons: queued, held, reported and refused take the queue groups' icons,
+needs a person the cause's and following up the followup stage's, and
+driving and waiting have interim icons the design's table does not name.
 
 ### Progress before a pull request
 
@@ -917,7 +964,11 @@ targets are at least 44 × 44 CSS pixels; long commands wrap or scroll within
 their copy field. Browser suites use touch input with hover absent and
 cover navigation, folded alternatives, links, successful and refused
 clipboard access, stale reads, a failed host and reconnecting after the
-phone resumes. The key bar is absent and no action depends on it.
+phone resumes. The key bar is absent and no action depends on it. A phone
+opens a card by a tap on its chevron or its own space, where every link
+and Copy inside keeps its 44-pixel target and so wins the tap; a scroll
+over a card never opens it, and a work identity's popover opens by a tap
+on its icon.
 
 The page's size in bytes is not a phone constraint; how soon the phone
 shows the page is. Before the first Stage 1 view implementation, measure

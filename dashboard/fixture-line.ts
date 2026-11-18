@@ -53,7 +53,7 @@ const REPOS: LineRepo[] = [
         record: "tracker",
         source: ".config/jig.yaml",
         detail:
-          "The tracker cannot be opened: issue_tracker.team is set but issue_tracker.adapter is not",
+          "The issue service cannot be opened: issue_tracker.team is set but issue_tracker.adapter is not",
       },
     ],
     notes: [],

@@ -504,7 +504,7 @@ function factReader(p: Plan, gate: Gate): ServedView["once"] {
     coalesce(reads, key, () =>
       p.source === "offline" || ended(p.bound)
         ? Promise.reject(
-            offlineReason(p) ?? new Error("the tracker is offline"),
+            offlineReason(p) ?? new Error("the issue service is offline"),
           )
         : p.bound === undefined
           ? gate(read)

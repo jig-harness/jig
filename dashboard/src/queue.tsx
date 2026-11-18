@@ -1,12 +1,14 @@
 import { FollowupBadge } from "./followups.tsx";
-import { Pr, RepoLink } from "./pr.tsx";
+import { RepoLink } from "./pr.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * What is coming, ordered by what will happen to each target rather than where
  * it came from. The cap at the foot says items cannot be added here; it is never
  * a control.
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { Evidence, Fold, PanelHelp, SourceHint } from "./fold.tsx";
+import { Evidence, PanelHelp, SourceHint } from "./fold.tsx";
+import { GutterCard } from "./gutter.tsx";
 import { queueCard } from "./cards.ts";
 import { Glyph } from "./icon-word.tsx";
 import { GROUP_ICONS, iconOf } from "./icons.ts";
@@ -18,28 +20,45 @@ import type { Clock } from "./view.ts";
 
 function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
   return (
-    <div
+    <GutterCard
       className={rest ? "qItem rest" : "qItem"}
-      {...cardAttrs(queueCard(item))}
-    >
-      <div className="rowTop">
-        <Mark role={item.role} />
-        <Pr repo={item.repo} target={item.target} url={item.url} />
-        <RepoLink repo={item.repo} url={item.url} />
-        <SourceHint source={item.source} />
-        <FollowupBadge label={item.followup} />
-        {item.wait === null ? null : (
-          <span className="m sm mut end nowrap">{item.wait}</span>
-        )}
-      </div>
-      {item.title === null ? null : <div className="sm">{item.title}</div>}
-      {item.why === null ? null : <div className="sm mut qWhy">{item.why}</div>}
-      <div className="goto">
-        <Fold label={`The record for ${item.target}`}>
+      attrs={cardAttrs(queueCard(item))}
+      label={`The record for ${item.target}`}
+      face={
+        <>
+          <div className="rowTop">
+            <Mark role={item.role} />
+            <WorkLead
+              repo={item.repo}
+              target={item.target}
+              url={item.url}
+              title={item.title}
+              links={item.links}
+            />
+            <RepoLink repo={item.repo} url={item.url} />
+            <SourceHint source={item.source} />
+            <FollowupBadge label={item.followup} />
+            {item.wait === null ? null : (
+              <span className="m sm mut end nowrap">{item.wait}</span>
+            )}
+          </div>
+          {item.title === null ? null : <div className="sm">{item.title}</div>}
+          {item.why === null ? null : (
+            <div className="sm mut qWhy">{item.why}</div>
+          )}
+        </>
+      }
+      detail={
+        <>
           <Evidence rows={item.evidence} />
-        </Fold>
-      </div>
-    </div>
+          <LinkedDetail
+            repo={item.repo}
+            target={item.target}
+            links={item.links}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -74,14 +93,14 @@ export function QueuePanel({
       {total > 0 ? null : (
         <p className="emptyLine">
           {line === null
-            ? "Nothing queued: no tick has read the tracker or the forge."
+            ? "Nothing queued: no tick has read the issues or the forge."
             : "Nothing queued. No item is assigned to the factory identity; no pull request is re-armable, labelled or held."}
         </p>
       )}
       <div className={all ? "qList all" : "qList"}>
         {groups.map((g, i) => (
           <div className={i === 0 ? "qGroup first" : "qGroup"} key={g.group}>
-            <h3 className="headWord">
+            <h3 className="headWord groupWord">
               <Glyph of={iconOf(GROUP_ICONS, g.group)} size={16} />
               {g.title}
             </h3>
@@ -102,8 +121,9 @@ export function QueuePanel({
       <div className="ghost">
         <span className="mk plan" aria-hidden="true" />
         <p>
-          Added by hand: not available. Items enter from a tracker assignment or
-          the <span className="m">drive</span> label; this page writes nothing.
+          Added by hand: not available. Items enter when an issue is assigned to
+          the factory identity, or from the <span className="m">drive</span>{" "}
+          label; this page writes nothing.
         </p>
       </div>
     </section>

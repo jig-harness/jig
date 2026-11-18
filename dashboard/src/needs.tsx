@@ -1,6 +1,7 @@
 import { FollowupBadge } from "./followups.tsx";
 import { runningFollowup } from "./followup-view.ts";
-import { ItemTitle, Pr, RepoLink } from "./pr.tsx";
+import { ItemTitle, RepoLink } from "./pr.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * Needs you: the person's list, one group per act. Each card opens with the
  * act, then, for a parked need, one short row per decision (`decision-rows.tsx`)
@@ -16,7 +17,8 @@ import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
 import { cardAttrs } from "./keys.ts";
 import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
-import { Evidence, Fold, PanelHelp, StageHint } from "./fold.tsx";
+import { Evidence, PanelHelp, StageHint } from "./fold.tsx";
+import { GutterCard } from "./gutter.tsx";
 import { ActPill, BareWord, Glyph } from "./icon-word.tsx";
 import { ACT_ICONS, CAUSE_ICONS, EVERYONE_ICONS, iconOf } from "./icons.ts";
 import { Mark } from "./marks.tsx";
@@ -170,10 +172,10 @@ function NeedAsk({ need }: { need: NeedView }) {
   );
 }
 
-/** What a card folds: the other options where no row shows them, the steps for a person as a checklist, the whole decision and the evidence. */
-function NeedFold({ need }: { need: NeedView }) {
+/** What an opened card shows: the other options where no row shows them, the steps for a person as a checklist, the whole decision and the evidence. */
+function NeedDetail({ need }: { need: NeedView }) {
   return (
-    <Fold label={need.foldLabel}>
+    <>
       {need.rows.length > 0 || need.otherOptions.length === 0 ? null : (
         <div className="options">
           <h3>Other options</h3>
@@ -202,7 +204,8 @@ function NeedFold({ need }: { need: NeedView }) {
         </>
       )}
       <Evidence rows={need.evidence} />
-    </Fold>
+      <LinkedDetail repo={need.repo} target={need.target} links={need.links} />
+    </>
   );
 }
 
@@ -211,10 +214,11 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
   const picking = usePicking(need, card);
   const picks = need.rows.length > 0;
   return (
-    <article
+    <GutterCard
       className={rest ? "need rest" : "need"}
-      ref={card}
-      {...cardAttrs({ ...needCard(need, picking.commit), picks })}
+      cardRef={card}
+      attrs={cardAttrs({ ...needCard(need, picking.commit), picks })}
+      label={`${need.foldLabel} for ${need.target}`}
       onBlur={(event) => {
         // Copy's first step lasts while focus stays on the card, or in the palette that copies it.
         const to = event.relatedTarget;
@@ -226,98 +230,116 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
           return;
         picking.disarm();
       }}
-    >
-      <div className="rowTop">
-        <ActPill act={need.act} />
-        <Mark role={need.role} />
-        <Pr repo={need.repo} target={need.target} url={need.url} />
-        <span className="m sm mut end nowrap">{need.age}</span>
-        <span className="br" />
-        <RepoLink repo={need.repo} url={need.url} />
-        <StageHint stage={need.stage} />
-        <FollowupBadge
-          label={need.stage === "followup" ? "Follow-up needs attention" : null}
-        />
-      </div>
-      <ItemTitle title={need.title} />
-      {picks ? (
+      face={
         <>
-          <Concluded need={need} />
-          <DecisionRows need={need} picking={picking} />
-          <AnswerNotes need={need} />
-          <WaitsOn need={need} />
+          <div className="rowTop">
+            <ActPill act={need.act} />
+            <Mark role={need.role} />
+            <WorkLead
+              repo={need.repo}
+              target={need.target}
+              url={need.url}
+              title={need.title}
+              links={need.links}
+            />
+            <span className="m sm mut end nowrap">{need.age}</span>
+            <span className="br" />
+            <RepoLink repo={need.repo} url={need.url} />
+            <StageHint stage={need.stage} />
+            <FollowupBadge
+              label={
+                need.stage === "followup" ? "Follow-up needs attention" : null
+              }
+            />
+          </div>
+          <ItemTitle title={need.title} />
+          {picks ? (
+            <>
+              <Concluded need={need} />
+              <DecisionRows need={need} picking={picking} />
+              <AnswerNotes need={need} />
+              <WaitsOn need={need} />
+            </>
+          ) : (
+            <NeedAsk need={need} />
+          )}
+          <div className="sm">
+            <BareWord of={iconOf(CAUSE_ICONS, need.cause)} className="m">
+              {need.recorded}
+            </BareWord>
+            <span className="mut">{need.classNote}</span>
+          </div>
+          <div className="goto">
+            {need.noLink === null ? null : (
+              <span className="noLink">{need.noLink}</span>
+            )}
+            {picks ? (
+              <CommitControls need={need} picking={picking} />
+            ) : need.keyText !== null ? (
+              <CopyButton
+                text={need.keyText}
+                idle="Copy key"
+                aria={`Copy key ${need.keyText}`}
+              />
+            ) : null}
+          </div>
+          <ActedAnswers need={need} />
+          <NoSend need={need} />
         </>
-      ) : (
-        <NeedAsk need={need} />
-      )}
-      <div className="sm">
-        <BareWord of={iconOf(CAUSE_ICONS, need.cause)} className="m">
-          {need.recorded}
-        </BareWord>
-        <span className="mut">{need.classNote}</span>
-      </div>
-      <div className="goto">
-        {need.url === null ? null : (
-          <a href={need.url} target="_blank" rel="noreferrer noopener">
-            {need.goLabel}
-          </a>
-        )}
-        {need.noLink === null ? null : (
-          <span className="noLink">{need.noLink}</span>
-        )}
-        {picks ? (
-          <CommitControls need={need} picking={picking} />
-        ) : need.keyText !== null ? (
-          <CopyButton
-            text={need.keyText}
-            idle="Copy key"
-            aria={`Copy key ${need.keyText}`}
-          />
-        ) : null}
-        <NeedFold need={need} />
-      </div>
-      <ActedAnswers need={need} />
-      <NoSend need={need} />
-    </article>
+      }
+      detail={<NeedDetail need={need} />}
+    />
   );
 }
 
 function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
   return (
-    <article
+    <GutterCard
       className={rest ? "need rest" : "need"}
-      {...cardAttrs(slotCard(slot, "needs"))}
-    >
-      <div className="rowTop">
-        <Mark role={slot.role} />
-        <Pr repo={slot.repo} target={slot.target} url={slot.url} />
-        <span className="br" />
-        <RepoLink repo={slot.repo} url={slot.url} />
-        <StageHint stage={slot.stage} />
-        <FollowupBadge
-          label={slot.stage === "followup" ? runningFollowup(slot.kind) : null}
-        />
-      </div>
-      <ItemTitle title={slot.title} />
-      <div className="sm">
-        <span className="m">{slot.fact}</span>
-      </div>
-      <div className="goto">
-        {slot.url === null ? null : (
-          <a href={slot.url} target="_blank" rel="noreferrer noopener">
-            {slot.target.startsWith("PR #")
-              ? "Open the pull request"
-              : "Open in the tracker"}
-          </a>
-        )}
-        {slot.noLink === null ? null : (
-          <span className="noLink">{slot.noLink}</span>
-        )}
-        <Fold label="Evidence">
+      attrs={cardAttrs(slotCard(slot, "needs"))}
+      label={`Evidence for ${slot.target}`}
+      face={
+        <>
+          <div className="rowTop">
+            <Mark role={slot.role} />
+            <WorkLead
+              repo={slot.repo}
+              target={slot.target}
+              url={slot.url}
+              title={slot.title}
+              links={slot.links}
+            />
+            <span className="br" />
+            <RepoLink repo={slot.repo} url={slot.url} />
+            <StageHint stage={slot.stage} />
+            <FollowupBadge
+              label={
+                slot.stage === "followup" ? runningFollowup(slot.kind) : null
+              }
+            />
+          </div>
+          <ItemTitle title={slot.title} />
+          <div className="sm">
+            <span className="m">{slot.fact}</span>
+          </div>
+          {slot.noLink === null ? null : (
+            <div className="goto">
+              <span className="noLink">{slot.noLink}</span>
+            </div>
+          )}
+        </>
+      }
+      detail={
+        <>
           <Evidence rows={slot.evidence} />
-        </Fold>
-      </div>
-    </article>
+          <LinkedDetail
+            repo={slot.repo}
+            target={slot.target}
+            links={slot.links}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -414,7 +436,7 @@ export function NeedsPanel({
           if (row.type === "head")
             return (
               <div
-                className={`groupHead${i === 0 ? " first" : ""}${rest ? " rest" : ""}`}
+                className={`groupHead groupWord${i === 0 ? " first" : ""}${rest ? " rest" : ""}`}
                 key={rowKeyOf(row)}
               >
                 {Object.hasOwn(ACT_ICONS, row.head) ? (

@@ -125,7 +125,7 @@ export async function nativeSharedView(
   const source = tracker.dispatchSource;
   if (source === undefined)
     return Promise.reject(
-      new Error("the tracker has no native dispatch source"),
+      new Error("the issue service has no native dispatch source"),
     );
   const changedSince = tracker.changedSince;
   const credentialRead = source.credential(callerBound);
