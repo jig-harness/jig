@@ -380,6 +380,43 @@ function settledOrHeld(
   return settledByPr(item.key, step, plan) || heldForHost(item, input, plan);
 }
 
+/** The carriage of an item a driven pull request may carry: none for one already in pr_open, which keeps its existing handling whichever pull request links it. */
+function carriageOf(
+  item: ClaimedItem,
+  input: PickupInput,
+  pr: LaunchPrReading,
+): Carriage {
+  if (input.prOpen !== undefined && inPrOpen(item, input.prOpen)) {
+    return { kind: "none" };
+  }
+  return readCarriage(
+    item,
+    input.prOpen?.carried,
+    pr.read.kind === "open" ? pr.read.pr.number : undefined,
+  );
+}
+
+/** Quiets an item a driven pull request carries, unless it is still to move to pr_open; whether it did. */
+function carriedQuiet(
+  item: ClaimedItem,
+  carriage: Carriage,
+  pr: LaunchPrReading,
+  plan: PickupPlan,
+): boolean {
+  if (carriage.kind !== "carried" || pr.step?.kind === "move") return false;
+  plan.quiet.push({
+    target: item.key,
+    class: "claimed-carried",
+    why: carriage.why,
+    carried: {
+      pr: carriage.pr.number,
+      url: carriage.pr.url,
+      drive: carriage.drive,
+    },
+  });
+  return true;
+}
+
 /** One claimed item: a double claim, running, idle, or stalled. */
 function planClaimed(
   item: ClaimedItem,
@@ -432,29 +469,8 @@ function planClaimed(
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   // An item already in pr_open under its launch's open pull request is quiet whatever the pickup once asked; a question on an item still to move stays a need.
   if (pr.step?.kind === "quiet" && settledByPr(item.key, pr.step, plan)) return;
-  // So is one a driven pull request carries, unless it is still to move to pr_open.
-  // An item already in pr_open keeps its existing handling, whichever pull request links it.
-  const carriage: Carriage =
-    input.prOpen !== undefined && inPrOpen(item, input.prOpen)
-      ? { kind: "none" }
-      : readCarriage(
-          item,
-          input.prOpen?.carried,
-          pr.read.kind === "open" ? pr.read.pr.number : undefined,
-        );
-  if (carriage.kind === "carried" && pr.step?.kind !== "move") {
-    plan.quiet.push({
-      target: item.key,
-      class: "claimed-carried",
-      why: carriage.why,
-      carried: {
-        pr: carriage.pr.number,
-        url: carriage.pr.url,
-        drive: carriage.drive,
-      },
-    });
-    return;
-  }
+  const carriage = carriageOf(item, input, pr);
+  if (carriedQuiet(item, carriage, pr, plan)) return;
   const asked = questionAsked(input, item, input.launches);
   if (asked !== null) {
     plan.actions.push(asked);
