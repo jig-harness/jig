@@ -659,12 +659,12 @@ async function afterStopWrite(
   code: number | null,
   started: string,
   dropRecord: () => Promise<void>,
-): Promise<DriveLabelWrite | null> {
+): Promise<StopWrite> {
   const next = afterHandoff(handoff);
-  if (next === "unwritten") return null;
+  if (next === "unwritten") return { landed: false, label: null };
   await dropRecord();
-  if (next === "refused") return null;
-  return await labelOwnDrive(pr, async () => {
+  if (next === "refused") return { landed: true, label: null };
+  const label = await labelOwnDrive(pr, async () => {
     const state = await readDriveState(pr);
     return {
       stopped: code,
@@ -676,6 +676,16 @@ async function afterStopWrite(
       parks: state?.parked ?? [],
     };
   });
+  return { landed: true, label };
+}
+
+/**
+ * A stop write's two outcomes, kept apart: whether the ledger write landed
+ * (or was refused, leaving nothing to write), and the optional state label.
+ */
+interface StopWrite {
+  landed: boolean;
+  label: DriveLabelWrite | null;
 }
 
 /**
@@ -731,7 +741,7 @@ export function ledgerSettlement(
       );
       return code;
     }
-    const labelled = await writeStop(code);
+    const labelled = (await writeStop(code)).label;
     if (code === null) return code;
     const again = await convergedStopExit(pr, labelled, currentMs(), recheck);
     if (again === null) return code;
@@ -742,7 +752,19 @@ export function ledgerSettlement(
     // A rewrite that never landed leaves the ledger and label saying
     // `converged` over a head no drive settled: the exit becomes the one the
     // dispatcher drives again, which judges the head afresh.
-    if (driver !== null && !dryRun && rewritten === null) {
+    if (driver !== null && !dryRun && !rewritten.landed) {
+      // The first stop removed the driver record; restore it so the
+      // recovery (`lib/ledger-stop.ts`) can write the replacement stop the
+      // drive state now holds.
+      const worktree = process.env.DRIVE_PR_WORKTREE ?? "";
+      if (worktree !== "" && started !== "")
+        writeDriverRecord(await resolveStateDir(), pr, {
+          worktree,
+          started,
+          pid: process.pid,
+          host: hostname(),
+          released: true,
+        });
       console.error(
         `ledger: PR #${pr}'s replacement stop (exit ${again}) was not written, so the stop is settled as INDETERMINATE for the next drive to judge the head again.`,
       );
@@ -754,7 +776,7 @@ export function ledgerSettlement(
   const writeStop = async (
     code: number | null,
     attempts = 1,
-  ): Promise<DriveLabelWrite | null> => {
+  ): Promise<StopWrite> => {
     const driver = ledgerDriverFromEnv();
     // The exit goes into the state before the ledger's last write, which
     // mirrors the state's events: an unknown exit names none in the driver
@@ -771,12 +793,12 @@ export function ledgerSettlement(
         String(code ?? "unknown"),
         driverRuntime.stopLeftWork,
       ));
-    if (driver === null) return null;
+    if (driver === null) return { landed: true, label: null };
     if (!recorded) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
-      return null;
+      return { landed: false, label: null };
     }
     let handoff = 0;
     for (let attempt = 1; attempt <= attempts; attempt++) {
