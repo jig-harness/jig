@@ -19,12 +19,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { statePath } from "../lib/state.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { manualMarker } from "../lib/followup-marker.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   ledgerComment,
+  FAILING,
+  labeled,
   mergedPr,
   openPr,
   SLUG,
@@ -56,19 +60,27 @@ function fixture(): World {
 }
 
 /** A tick over the world's repository, `--apply` when `apply`; resolves to its receipt. */
-async function tick(w: World, apply = false): Promise<TickReceipt> {
+async function tick(
+  w: World,
+  apply = false,
+  env: Record<string, string> = {},
+): Promise<TickReceipt> {
   const r = await w.dispatch(
     apply
       ? ["--apply", "--json"]
       : ["--followup-since", "2026-10-30T00:00:00Z", "--json"],
+    undefined,
+    env,
   );
   expectSpawnExit(r, 0);
   return JSON.parse(r.stdout) as TickReceipt;
 }
 
-/** Forget the `gh` calls so far, so the next tick's are counted alone. */
-const resetCalls = (w: World) =>
+/** Forget forge observations so the next tick's calls and responses are counted alone. */
+const resetCalls = (w: World) => {
   rmSync(join(w.dir, "gh-calls.log"), { force: true });
+  rmSync(join(w.dir, "comment-page-responses.log"), { force: true });
+};
 
 /** Every `gh` call the fake answered so far, one line each. */
 function ghCalls(w: World): string[] {
@@ -78,13 +90,24 @@ function ghCalls(w: World): string[] {
     : [];
 }
 
+const queryCalls = (w: World, name: string) =>
+  ghCalls(w).filter((c) => c.includes(`query ${name}`));
+
 const queries = (w: World, name = "DispatchRepository") =>
-  ghCalls(w).filter((c) => c.includes(`query ${name}`)).length;
+  queryCalls(w, name).length;
 
 /** The comment listings of pull request `pr` among the calls. */
 const listings = (w: World, pr: number) =>
   ghCalls(w).filter((c) => c.includes(`/issues/${pr}/comments?per_page=100`))
     .length;
+
+/** Each conditional comment-page response the fake forge returned. */
+function commentPageResponses(w: World): string[] {
+  const path = join(w.dir, "comment-page-responses.log");
+  return existsSync(path)
+    ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean)
+    : [];
+}
 
 const forgeDetail = (r: TickReceipt) =>
   r.repos[0]?.records.find((x) => x.record === "forge")?.detail ?? "";
@@ -94,6 +117,86 @@ const stopped = (generation = 3) =>
   ledgerComment(701, { ...stoppedLedger(7, 16), generation });
 
 describe("one query per repository", () => {
+  it("reads mutable pull request facts and revalidates comments between full reads", async () => {
+    const w = fixture();
+    w.setConfig(`${CONFIG}dispatch:\n  labels: { enabled: true }\n`);
+    const cache = { JIG_GH_CACHE_DIR: join(w.root, "forge-cache") };
+    const original = openPr(10, "feature/10");
+    const prs = [
+      { ...labeled(openPr(7, HEAD), "automation"), statusCheckRollup: [] },
+      labeled(openPr(8, "feature/8"), "automation"),
+      openPr(9, "feature/9"),
+      original,
+    ];
+    w.setPrs("open", prs);
+    w.setComments(7, [stopped()]);
+    w.setComments(8, [ledgerComment(801, stoppedLedger(8, 16))]);
+    w.setComments(9, []);
+    w.setComments(10, [
+      ledgerComment(
+        1001,
+        stoppedLedger(10, 0, { verifiedSha: original.headRefOid }),
+      ),
+    ]);
+    const threads = join(w.dir, "threads-8");
+    writeFileSync(threads, "1");
+    const targets = async () =>
+      (await tick(w, false, cache)).repos[0]?.actions.map((a) => a.target);
+    expect(await targets()).toEqual(["PR #8"]);
+    expect(queryCalls(w, "DispatchRepository(")).toEqual([
+      expect.stringContaining("comments(first:"),
+    ]);
+
+    resetCalls(w);
+    expect(await targets()).toEqual(["PR #8"]);
+    expect(queries(w, "DispatchRepository(")).toBe(0);
+    expect(queryCalls(w, "DispatchRepositoryState(")).toEqual([
+      expect.not.stringContaining("comments(first:"),
+    ]);
+
+    resetCalls(w);
+    w.setPrs("open", [
+      { ...prs[0], ...FAILING },
+      prs[1],
+      prs[2],
+      { ...original, headRefOid: "b".repeat(40) },
+    ]);
+    writeFileSync(threads, "0");
+    w.setComments(9, [ledgerComment(901, stoppedLedger(9, 16))]);
+    expect(await targets()).toEqual(["PR #7", "PR #9", "PR #10"]);
+    expect(queries(w, "DispatchRepository(")).toBe(0);
+    expect(queryCalls(w, "DispatchRepositoryState(")).toEqual([
+      expect.not.stringContaining("comments(first:"),
+    ]);
+    expect(
+      ghCalls(w).filter((c) => c.includes("If-None-Match:")).length,
+    ).toBeGreaterThanOrEqual(4);
+    expect(commentPageResponses(w).sort()).toEqual([
+      "10 304",
+      "7 304",
+      "8 304",
+      "9 200",
+    ]);
+
+    resetCalls(w);
+    const state = new Database(
+      statePath(join(w.home, ".local", "state", "jig", "dispatch")),
+    );
+    try {
+      state
+        .query(
+          "UPDATE pickup_reads SET value = '1' WHERE key LIKE 'forge:repository-full:%'",
+        )
+        .run();
+    } finally {
+      state.close();
+    }
+    expect(await targets()).toEqual(["PR #7", "PR #9", "PR #10"]);
+    expect(queryCalls(w, "DispatchRepository(")).toEqual([
+      expect.stringContaining("comments(first:"),
+    ]);
+  }, 60_000);
+
   it("reads the repository, its configuration, its open pull requests and their comments in one call", async () => {
     const w = fixture();
     w.setPrs("open", [openPr(7, HEAD), openPr(8, "feature/8")]);
