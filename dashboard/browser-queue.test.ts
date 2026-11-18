@@ -309,6 +309,10 @@ describe("What is coming", () => {
           async () => (await page.locator(".pQueue h3").count()) === 0,
         );
         expect(await cardOrder(page)).toEqual(order);
+        // The flat list is still one group, which its Show all and a jump act on.
+        expect(await page.locator(".pQueue [data-facet-group]").count()).toBe(
+          1,
+        );
 
         await groupBy(page, "source").click();
         await page.getByRole("heading", { name: /^assigned/ }).waitFor();
@@ -521,6 +525,51 @@ describe("What is coming", () => {
           "the opened group shows every card",
           async () => (await shown.count()) === 5,
         );
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "closing a long group from its foot brings its heading back into view",
+    async () => {
+      const server = await served("queue");
+      const context = await requireBrowser().newContext({
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+      });
+      const page = await context.newPage();
+      try {
+        await withQueue(page, () =>
+          Array.from({ length: 40 }, (_, i) =>
+            queued({
+              source: "re-armable",
+              group: "starts",
+              repo: repoAt(i),
+              pr: 400 + i,
+              title: `Starting change ${i}`,
+              why: "its wall has lifted",
+            }),
+          ),
+        );
+        await page.goto(`${server.url}&view=queue`);
+        const more = page.locator("[data-group-more]");
+        await more.tap();
+        await until(
+          "the group has opened",
+          async () =>
+            (await page.locator(".pQueue .qItem:visible").count()) === 40,
+        );
+        await more.scrollIntoViewIfNeeded();
+        await more.tap();
+        const heading = page.getByRole("heading", { name: /^Starts next/ });
+        await until("the heading is back in view", async () => {
+          const box = await heading.boundingBox();
+          return box !== null && box.y >= 0 && box.y < 844;
+        });
       } finally {
         await context.close();
       }

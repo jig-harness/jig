@@ -177,7 +177,13 @@ function SectionCards({
           type="button"
           data-group-more=""
           aria-expanded={all}
-          onClick={() => setAll(!all)}
+          onClick={(event) => {
+            setAll(!all);
+            // Closing from the group's foot brings its heading back into view.
+            const group = event.currentTarget.closest("[data-facet-group]");
+            if (all && group !== null && group.getBoundingClientRect().top < 0)
+              group.scrollIntoView({ block: "start" });
+          }}
         >
           {all ? "Show fewer" : `Show all ${section.items.length}`}
         </button>
@@ -206,10 +212,11 @@ function QueueSection({
       setAll={setAll}
     />
   );
-  if (section.title === null) return cards;
   return (
     <div className={all ? "qSection all" : "qSection"} data-facet-group="">
-      {section.fixed ? (
+      {section.title === null ? (
+        cards
+      ) : section.fixed ? (
         <>
           <SectionTitle section={section} className="groupWord qFixed" />
           {cards}
