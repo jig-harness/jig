@@ -154,6 +154,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .detail .steps label { display: inline-flex; gap: 6px; align-items: center; min-height: var(--tap); }
 .groupHead { padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--line-strong); color: var(--muted); font: 600 14px/1.3 var(--sans); }
 .groupHead.first { border-top: 0; margin-top: 0; padding-top: 0; }
+.groupHead h3 { font: inherit; }
 .groupCount { font-weight: 400; }
 /* the cards an answer hid: one quiet line, a full touch target at every width, that opens to their notes */
 .heldToggle { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: var(--small); color: var(--muted); text-align: left; }

@@ -432,8 +432,9 @@ browser
   links them, in this browser alone, and the page reads the line every 3
   seconds for up to 90 seconds, stopping sooner once the tick records the
   answer's outcome. The card then shows whether the step was carried out,
-  refused with its reason, or held: an answered hold stays on the card and
-  says the work remains undone, until its facts change. A refusal part-way names the decisions not
+  refused with its reason, or held: an answered hold leaves the list and is
+  noted in the folded line above it, which says the work remains undone until
+  its facts change. A refusal part-way names the decisions not
   posted. A refusal shows GitHub's own message with what it means (401: the
   token is wrong or revoked; 403: it lacks write access to Issues and Pull
   requests on that repository, or an organization has not approved it; 404:

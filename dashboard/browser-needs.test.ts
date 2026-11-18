@@ -74,6 +74,13 @@ describe("Needs you", () => {
           await page.locator(".pNeeds .groupHead").allTextContents(),
         ).toEqual(["Decide · 3", "Authorize · 1", "Investigate · 4"]);
         expect(await page.locator(".pNeeds .groupHead .act").count()).toBe(0);
+        expect(
+          await page
+            .getByRole("heading", {
+              name: /^(Decide|Authorize|Investigate) · \d+$/,
+            })
+            .count(),
+        ).toBe(3);
         const card = page.locator(".pNeeds .need").first();
         expect(await card.locator(".act").textContent()).toBe("Decide");
         expect(await card.locator(".q").textContent()).toBe(

@@ -463,11 +463,11 @@ export function NeedsPanel({
                 className={`groupHead groupWord${i === 0 ? " first" : ""}${rest ? " rest" : ""}`}
                 key={rowKeyOf(row)}
               >
-                <span className="headWord">
+                <h3 className="headWord">
                   <Glyph of={iconOf(ACT_ICONS, row.head)} size={16} />
                   {row.head}
                   <span className="groupCount"> · {row.count}</span>
-                </span>
+                </h3>
               </div>
             );
           seen++;
