@@ -576,19 +576,29 @@ function plannedStage(view: RepoView, action: Action): LineQueued | null {
       action.evidence,
     );
   }
-  if (action.stage === "pickup")
-    return queued(
-      view,
-      {
-        source: "assigned",
-        group: groupOf(launch, "reported"),
-        target: action.target,
-        why: action.reason,
-        assignedBy: text(action.evidence, "assignedBy"),
-        ...launchFields,
-      },
-      action.evidence,
+  if (action.stage === "pickup") {
+    const overlap = view.report.overlap?.entries.find(
+      (e) => e.item === action.target,
     );
+    return {
+      ...queued(
+        view,
+        {
+          source: "assigned",
+          group: groupOf(launch, "reported"),
+          target: action.target,
+          why: action.reason,
+          assignedBy: text(action.evidence, "assignedBy"),
+          ...launchFields,
+        },
+        action.evidence,
+      ),
+      ...(overlap?.reason === undefined ? {} : { overlap: overlap.reason }),
+      ...(overlap?.footprintNote === undefined
+        ? {}
+        : { footprint: overlap.footprintNote }),
+    };
+  }
   if (action.stage === "followup")
     return queued(
       view,

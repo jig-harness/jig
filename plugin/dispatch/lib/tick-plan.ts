@@ -14,7 +14,8 @@
  * owner host the priorities ranking's inputs are read after the plan, for the
  * tick to rank once every repository is planned (`tick-priorities.ts`); the
  * plan never reads it, and only the host's `priorities.enforce` lets the
- * ranking reorder the planned pickups.
+ * ranking reorder the planned pickups. The planned pickups are then weighed
+ * against the work in flight (`overlap-plan.ts`), for the report only.
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
@@ -43,6 +44,7 @@ import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
 import { preparePriorities } from "./tick-priorities.ts";
+import { planOverlap } from "./overlap-plan.ts";
 
 /** Plan one observed repository into its report. */
 export function planObserved(
@@ -91,6 +93,8 @@ export function planObserved(
     ...withStalledPr(observation),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
+  // Reported only: the planned pickups and their order stay as they are.
+  planOverlap(context, observation);
   if (opened.owner) {
     const prepared = preparePriorities(report, {
       slug: repo.slug,

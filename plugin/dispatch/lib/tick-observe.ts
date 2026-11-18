@@ -84,6 +84,7 @@ import {
   heldElsewhere,
   type SharedContext,
 } from "./shared-launches.ts";
+import { type OverlapFacts, readOverlapFacts } from "./overlap-observe.ts";
 import { observeContention } from "./sources/contention.ts";
 import type { FilesObservation } from "./sources/pr-files.ts";
 import { type HolderReadings, readHolders } from "./sources/doctor.ts";
@@ -189,6 +190,8 @@ export interface RepoObservation {
   serialized: Contention;
   /** Changed-file paths and their freshness, kept in memory for planning. */
   prFiles?: FilesObservation;
+  /** The footprints and the catalog overlap weighs (`overlap-observe.ts`). */
+  overlap?: OverlapFacts;
   /** The pull requests a person's hold label keeps every stage off. */
   held: Set<number>;
   /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
@@ -480,7 +483,7 @@ export async function observeRepo(
   );
 
   const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
-  const { serialized, prFiles } = await timer.time("observe", () =>
+  const { serialized, prFiles, catalogText } = await timer.time("observe", () =>
     pool.run(async () => {
       const skipped = await optionalSkipped(reads, context.bound);
       const threads = boundedThreads(
@@ -521,6 +524,21 @@ export async function observeRepo(
         context.bound,
       );
     }),
+  );
+  // The footprints overlap weighs, through the tracker the tick opened.
+  const overlap = await timer.time("observe", () =>
+    pool.run(() =>
+      readOverlapFacts({
+        tracker: tracked.tracker,
+        wanted: tracked.pickups,
+        claimed: tracked.claimed,
+        records,
+        catalogText,
+        where: `${repo.slug}@${repo.defaultBranch}`,
+        nowMs,
+        bound: context.bound,
+      }),
+    ),
   );
   // The board read, a query of its own whose failure touches nothing planned.
   const board = await timer.time("board", () =>
@@ -573,6 +591,7 @@ export async function observeRepo(
     sessions,
     serialized,
     ...(prFiles === undefined ? {} : { prFiles }),
+    overlap,
     held,
     board,
     ...(holders === undefined ? {} : { holders }),

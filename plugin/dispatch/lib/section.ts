@@ -17,6 +17,7 @@ import {
 import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
+import { parseOverlap } from "./overlap-config.ts";
 import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
 import type { AdoptRule, DispatchSection, StalledScope } from "./types.ts";
 
@@ -57,6 +58,7 @@ const KEYS = [
   "adopt",
   "pool",
   "epic_width",
+  "overlap",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
@@ -342,6 +344,7 @@ type Timings = Omit<
   | "adopt"
   | "pickupDeadlineMs"
   | "epicWidth"
+  | "overlap"
 >;
 
 /** `stalled_scope`: `claimed` unless the section says `assigned`. */
@@ -447,12 +450,15 @@ export function dispatchSection(
   if (!ready.ok) return ready;
   const epicWidth = width(section.epic_width);
   if (!epicWidth.ok) return epicWidth;
+  const overlap = parseOverlap(section.overlap);
+  if (!overlap.ok) return overlap;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
     epicWidth: epicWidth.value,
+    overlap: overlap.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

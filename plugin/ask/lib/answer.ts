@@ -216,6 +216,10 @@ export interface AskAnswer {
   /** The state in words: why it reads so. */
   stateDetail: string;
   waitsOn: WaitsOn;
+  /** For a pickup the newest tick found waiting on overlap: the structured reason (relation, the work it waits on, a count, the text). */
+  overlap?: import("../../dispatch/lib/dashboard-contract.ts").OverlapReason;
+  /** For a pickup whose footprint the newest tick found unknown or from labels alone: its note. */
+  footprint?: string;
   last: Last | null;
   sources: Sources;
   thread?: ThreadEntry[];

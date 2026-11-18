@@ -40,7 +40,25 @@ function queueEvidence(q: LineQueued): EvidenceRow[] {
       k: "last launch",
       v: `${q.launch.outcome}: ${q.launch.detail}`,
     });
+  if (q.overlap !== undefined)
+    rows.push(
+      { k: q.overlap.relation, v: `${q.overlap.count}` },
+      ...q.overlap.on.map((r) => ({
+        k: r.kind,
+        v: `${r.ref} (${r.state})${r.url === null ? "" : ` ${r.url}`}`,
+      })),
+    );
+  if (q.footprint !== undefined) rows.push({ k: "footprint", v: q.footprint });
   return rows;
+}
+
+/** Why a queued target waits: a serialized hold, else its overlap, else the record's own reason; a pickup's unknown footprint beside it. */
+function whyOf(q: LineQueued): string {
+  const why =
+    q.hold !== null
+      ? `held: serialized behind #${q.hold.leader} in ${q.hold.area}`
+      : (q.overlap?.text ?? q.why);
+  return q.footprint === undefined ? why : `${why} · ${q.footprint}`;
 }
 
 export interface QueueGroupView {
@@ -61,10 +79,7 @@ function queueItem(q: LineQueued, nowMs: number): QueueItemView {
     source: q.source,
     followup: q.source === "merged" ? queuedFollowup(q.group) : null,
     title: q.title,
-    why:
-      q.hold === null
-        ? q.why
-        : `held: serialized behind #${q.hold.leader} in ${q.hold.area}`,
+    why: whyOf(q),
     wait:
       q.hold === null ? null : `waited ${ago(Date.parse(q.hold.since), nowMs)}`,
     role: q.stale ? ROLES.stale : ROLES.held,

@@ -246,6 +246,8 @@ function answerOf(found: StationAnswer, ctx: AskContext): AskAnswer {
     state: found.state,
     stateDetail: found.stateDetail,
     waitsOn: found.waitsOn,
+    ...(found.overlap === undefined ? {} : { overlap: found.overlap }),
+    ...(found.footprint === undefined ? {} : { footprint: found.footprint }),
     last: found.last,
     sources: ctx.reading.sources(),
   };
