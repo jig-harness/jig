@@ -401,6 +401,24 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.271.1] - 2026-11-18
+
+### Changed
+
+- The dispatcher groups comment reads for pull requests with outstanding launch
+  claims outside the open and merged listings. When the grouped answer is
+  incomplete, the dispatcher reads the affected pull request's comments on
+  their own. It still checks the forge before it writes a claim or launches work.
+
+### Fixed
+
+- A dispatch tick whose time bound ends its forge read now records that
+  the open pull requests were not listed, as every other failed forge
+  read does. **Consumer action:** none.
+- A dispatch tick whose forge read the deadline cut short records its open
+  pull-request listing as unread, so serialization treats the repository's
+  changed files as unavailable for that tick.
+
 ## [0.271.0] - 2026-11-18
 
 ### Added
@@ -9526,7 +9544,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.271.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.271.1...HEAD
+[0.271.1]: https://github.com/jig-harness/jig/compare/v0.271.0...v0.271.1
 [0.271.0]: https://github.com/jig-harness/jig/compare/v0.270.1...v0.271.0
 [0.270.1]: https://github.com/jig-harness/jig/compare/v0.270.0...v0.270.1
 [0.270.0]: https://github.com/jig-harness/jig/compare/v0.269.0...v0.270.0
