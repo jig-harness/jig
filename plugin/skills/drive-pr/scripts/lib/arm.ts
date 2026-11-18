@@ -450,6 +450,7 @@ export interface ArmReport {
     | "unconfirmed"
     | "already-live"
     | "spawn"
+    | "owed"
     | "print"
     | "failed";
   reason: string;
@@ -540,6 +541,7 @@ export interface ArmInputs {
   codexBypass?: boolean;
   env: Env;
   platform?: NodeJS.Platform;
+  processPickup?: boolean;
 }
 
 /** Decide, open a tab where that is the way, and report; exit 1 when the setting cannot be honoured. */
@@ -555,6 +557,15 @@ export async function arm(
     { model, passArgs, vendor, codexBypass: codexBypass === true },
     "",
   );
+  if (inputs.processPickup === true && setting.value !== "print")
+    return {
+      report: {
+        ...base,
+        status: "owed",
+        reason: "the process dispatcher starts this pickup's first drive",
+      },
+      exit: 0,
+    };
   const choice = chooseWay(setting.value, env, inputs.platform);
   if ("error" in choice)
     return { report: { ...base, reason: choice.error }, exit: 1 };

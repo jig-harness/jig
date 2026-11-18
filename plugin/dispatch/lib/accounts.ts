@@ -56,6 +56,10 @@ import {
   type ReadRecord,
   unrecordedWalls,
 } from "./launches.ts";
+import {
+  processEnvironment,
+  type ProcessSettings,
+} from "./runtime/process-environment.ts";
 import type { MachineAccount } from "./machine-config.ts";
 import { accountWall, type Wall } from "./walls.ts";
 
@@ -365,10 +369,32 @@ function describeSlots(table: Slots[], launch: LaunchKind): string {
 }
 
 /** Why the account's launch weight closes admission; shared by new launches and pending replays. */
-export function accountWeightBlock(slots: Slots): string | null {
+function accountWeightBlock(slots: Slots): string | null {
   return slots.weight.configured === null || slots.weight.configured === 0
     ? `weight ${slots.weight.configured ?? "unreadable"}: ${slots.weight.reason}`
     : null;
+}
+
+/** Whether an account still satisfies the local conditions on its reserved launch. */
+export function replaySlotBlock(
+  slots: Slots,
+  record: Pick<LaunchRecord, "vendor" | "configDir">,
+  codex: CodexOptIn,
+): string | null {
+  if (
+    slots.account.vendor !== record.vendor ||
+    slots.account.configDir !== record.configDir
+  )
+    return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
+  const weightBlock = accountWeightBlock(slots);
+  if (weightBlock !== null) return `${slots.account.name}: ${weightBlock}`;
+  if (record.vendor === "codex" && !codex.on)
+    return `${slots.account.name}: ${codex.why}`;
+  if (slots.wallUnrecorded)
+    return `${slots.account.name} ended on a wall that was not recorded`;
+  if (slots.wall !== null)
+    return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
+  return null;
 }
 
 /** Why an account cannot take `launch` now; `null` when it can. */
@@ -475,6 +501,7 @@ export type IdentityCheck = { ok: true } | { ok: false; reason: string };
 export async function checkIdentity(
   account: MachineAccount,
   timeoutSec: number,
+  settings?: ProcessSettings,
 ): Promise<IdentityCheck> {
   const vendor = account.vendor;
   if (!isPassVendor(vendor))
@@ -482,6 +509,7 @@ export async function checkIdentity(
       ok: false,
       reason: `the drive documents no pass command for the vendor ${vendor}`,
     };
+  const selected = { vendor, configDir: account.configDir };
   const done = await run(
     [
       process.execPath,
@@ -493,10 +521,10 @@ export async function checkIdentity(
     ],
     {
       timeoutSec,
-      env: passEnvironment(process.env, {
-        vendor,
-        configDir: account.configDir,
-      }),
+      env:
+        settings === undefined
+          ? passEnvironment(process.env, selected)
+          : processEnvironment(process.env, settings, selected),
     },
   );
   if (done.code !== 0)

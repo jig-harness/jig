@@ -1695,6 +1695,10 @@ serve:
     tracker: { github: maintainer-login, linear: maintainer@example.com }
 interval: 5m
 wall_backoff: 1h
+runtime: orca
+# process:
+#   path: /home/me/.local/bin:/usr/local/bin:/usr/bin:/bin
+#   env_keep: []
 runtime_timeout: 1m
 opens_per_tick: 4
 followup_opens_per_tick: 2          # the follow-ups' own opens, beside opens_per_tick
@@ -1759,6 +1763,9 @@ rejects any other form.
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up startup that writes no transcript, result or question within its first minute. The startup backoff applies whether or not its output contains a recognized quota notice |
+| `runtime` | `orca`; set `process` to dispatch headless runs through the host's service manager and open plain git worktrees. The machine file is the only runtime selector. The process runtime refuses the `notify` stage and starts the first drive for a finished pickup through the usual drive admission checks |
+| `process.path` | The scheduled tick's `PATH`, recorded by `jig install`. Overrides the path supplied to the run and its account identity check |
+| `process.env_keep` | `[]`. Names of additional environment variables to pass through. The run keeps the home, user, locale and temporary-directory settings, `JIG_HOME` when set, and the selected account's configuration directory. The allowlist refuses vendor credentials, account directory overrides, `CODEX_*` harness variables, `ENV`, `BASH_ENV`, and loader variables beginning with `LD_` or `DYLD_`. List a forge token variable here to pass it through |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
 | `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. `opens_per_tick` plus `followup_opens_per_tick`, times this, plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days). The installed tick deadline covers that budget, with a six-hour minimum |
 | `opens_per_tick` | `4`; positive whole number of workspace opens allowed in one tick, limited further by the accounts' free slots. One open is kept for the notices workspace when the machine file enables `notify` for any repository; the budget must then be at least `2`, so launches can still proceed. A launch that needs another open waits for the next tick, with its receipt naming the budget or account constraint. A value whose workspace opens and runtime calls exceed the timer range is refused, naming `opens_per_tick`. Follow-ups never draw on it: they open from `followup_opens_per_tick` |

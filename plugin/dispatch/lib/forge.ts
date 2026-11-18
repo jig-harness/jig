@@ -285,6 +285,7 @@ export interface ListedPr {
   url: string;
   title: string;
   headRefName: string;
+  isCrossRepository?: boolean;
   createdAt?: string;
   mergedAt?: string;
   /** An open pull request's head commit, as the forge reports it. */
@@ -315,6 +316,7 @@ export interface ListedPr {
 /** Whether a read carries the pull requests' labels, and their descriptions with them: only where the repository turns dispatch labels on. */
 interface LabelRead {
   labels: boolean;
+  headRepository?: boolean;
 }
 
 const NO_LABELS: LabelRead = { labels: false };
@@ -392,6 +394,9 @@ function listedPr(
     url: typeof p.url === "string" ? p.url : "",
     title: typeof p.title === "string" ? p.title : "",
     headRefName: p.headRefName,
+    ...(typeof p.isCrossRepository === "boolean"
+      ? { isCrossRepository: p.isCrossRepository }
+      : {}),
     ...text("createdAt"),
     ...text("mergedAt"),
     ...text("headRefOid"),
@@ -422,6 +427,7 @@ async function listPrs(
   const fields = [...LISTED];
   if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
+  if (read.headRepository === true) fields.push("isCrossRepository");
   if (read.labels) fields.push("labels", "body");
   const ask = (asked: readonly string[]) =>
     ghAnswer([
@@ -515,6 +521,7 @@ export async function openPullRequest(
         ...LISTED,
         ...OPEN_FIELDS,
         "state",
+        ...(read.headRepository === true ? ["isCrossRepository"] : []),
         ...(read.labels ? ["labels", "body"] : []),
       ].join(","),
     ],

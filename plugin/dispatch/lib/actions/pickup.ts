@@ -199,7 +199,13 @@ async function workspaceFor(
     ? sessions.workspaces.find(joinedTo(state, repo, issue.identifier))
     : undefined;
   if (joined !== undefined)
-    return { workspace: { id: joined.id, path: joined.path } };
+    return {
+      workspace: {
+        id: joined.id,
+        path: joined.path,
+        ...(state.runtime.name === "process" ? { branch: joined.branch } : {}),
+      },
+    };
   return openWithinBudget(state, repo, {
     item: issue.identifier,
     branch: renderBranchName(

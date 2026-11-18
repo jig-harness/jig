@@ -285,6 +285,13 @@ outcome log) is one SQLite database beside them, `state.sqlite`; a
 database written by a newer plugin is refused, with its version named,
 until the plugin is updated.
 
+The machine file can select [`runtime: process`](CONFIGURATION.md#the-machines-dispatch-file)
+to run without Orca. The dispatcher opens plain Git worktrees and starts
+headless runs through the host's service manager. Each run receives an
+allowlisted environment for its account. A pickup hands its first drive
+back to the dispatcher, which admits it when the pickup has ended. The
+dashboard shows causes that need attention.
+
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,
@@ -294,9 +301,10 @@ started (or another host did: see several hosts, below), or of a silent
 driver no launch started that ran on this host and whose run this host
 shows ended, or whose holder the clone's drive doctor (`drives.ts --json`)
 reads `DEAD` or `WEDGED`,
-runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
-of the pull request's workspace, opened from the pull request when none
-holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
+runs as `drive.ts <PR> [--take-over] -- <pass>` in the pull request's
+workspace, opened from the pull request when none holds it. A wrapper
+(`dispatch/run.ts`) starts the drive in an Orca tab or a managed process,
+according to the machine file. The wrapper bills
 the pass to an account the machine file lists, through that account's
 configuration directory, and only while the account has a free slot and no
 recorded usage-limit wall; before the launch the dispatcher checks that the

@@ -365,6 +365,15 @@ function inputs(
 }
 
 describe("the arm's answer", () => {
+  it("hands a process pickup's drive to the dispatcher without opening a tab", async () => {
+    const { report, exit } = await arm(
+      { ...inputs("auto", IN_ORCA), processPickup: true },
+      deps(fakeOrca(REFUSED).runner, [null]),
+    );
+    expect(exit).toBe(0);
+    expect(report).toMatchObject({ status: "owed", way: null, tab: null });
+  });
+
   it("falls back to the background under auto when Orca refuses the tab, and says so", async () => {
     const { report, exit } = await arm(
       inputs("auto", IN_ORCA),
@@ -489,7 +498,12 @@ function cleanEnv(extra: Record<string, string>): Record<string, string> {
     if (
       v !== undefined &&
       !/^(GIT_|DRIVE_PR_|ORCA_|CONDUCTOR_|CODEX_|JIG__)/.test(k) &&
-      !["CLAUDECODE", "HERDR_ENV", "CLAUDE_CODE_ENTRYPOINT"].includes(k)
+      ![
+        "CLAUDECODE",
+        "HERDR_ENV",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "JIG_LAUNCH",
+      ].includes(k)
     )
       env[k] = v;
   return { ...env, ...extra };

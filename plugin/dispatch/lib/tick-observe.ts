@@ -63,6 +63,7 @@ import {
   tickThreadReader,
 } from "./expectations.ts";
 import type { LabelConfig } from "./labels.ts";
+import { pickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
 import { type MachineRepository, machineRepository } from "./machine-config.ts";
 import { previousFollowupSince } from "../receipts.ts";
@@ -425,6 +426,7 @@ export async function observeRepo(
                 labels,
                 nowMs,
                 shared: shared.records,
+                pickupArms: pickupArms(records, repo),
               }),
             context.bound,
           );

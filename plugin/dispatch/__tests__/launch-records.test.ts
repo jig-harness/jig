@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
 import { holdRecord, type ApplyState } from "../lib/actions/launch.ts";
+import { orcaRuntime } from "../lib/runtime/orca.ts";
 import { driveHold } from "../lib/actions/drive-hold.ts";
 import { consumeRearm, pendingRearm } from "../lib/actions/rearm-request.ts";
 import { failed, ok } from "../../shared/outcome.ts";
@@ -91,7 +92,12 @@ it("records a new launch after the greatest ordinal, even when a resume copied a
     0,
     "2026-01-01T00:00:00.000Z",
   );
-  const state = { root: dir, records: [previous], last: null } as ApplyState;
+  const state = {
+    root: dir,
+    records: [previous],
+    last: null,
+    runtime: orcaRuntime(),
+  } as ApplyState;
   const copied = record("20260201T000000Z-bbbbbbbb", {
     accountLaunchOrdinal: 2,
   });
@@ -774,6 +780,18 @@ describe("the timer's job", () => {
     });
     expect(duration("576h", "x")).toEqual({ ok: true, value: 576 * 3_600_000 });
   });
+});
+
+it("refuses a delayed wrapper claim after the launch was cancelled or ended", () => {
+  const dir = root();
+  const cancelled = "20260101T000000Z-aaaaaaaa";
+  const ended = "20260101T000001Z-bbbbbbbb";
+  const at = "2026-01-01T00:01:00.000Z";
+  writeRecord(record(cancelled, { cancelledAt: at }), dir);
+  writeRecord(record(ended), dir);
+  recordExit(ended, { at, code: null, signal: null }, dir);
+  expect(claimRecord(cancelled, WHO, dir)).toBe(false);
+  expect(claimRecord(ended, WHO, dir)).toBe(false);
 });
 
 describe("the marked records a report reads", () => {

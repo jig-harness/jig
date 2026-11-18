@@ -1,3 +1,4 @@
+import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
 /**
  * The drives the forge wants re-armed, and the merges that want a
  * follow-up. Each open pull request's comments are read for its drive
@@ -632,6 +633,7 @@ function exitClass(
 }
 
 export interface OpenPr {
+  isCrossRepository?: boolean;
   number: number;
   url: string;
   title: string;
@@ -674,7 +676,7 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
 function unarmed(
   pr: OpenPr,
   base: Omit<DrivenPr, "class" | "why" | "evidence">,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
 ): DrivenPr | null {
   const asked = askedToArm(pr, r);
   if (asked === null) return null;
@@ -697,11 +699,16 @@ function unarmed(
 /** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
 function askedToArm(
   pr: OpenPr,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
-): { asks: string; evidence: { adopted?: string } } | null {
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
+): { asks: string; evidence: { adopted?: string; pickupArm?: true } } | null {
   const { labels, adoption } = r;
   if (labels !== null && hasCommand(labels, pr.labels, "drive"))
     return { asks: "a person's drive label asks for one", evidence: {} };
+  if (pickupAsked(r.pickupArms, pr))
+    return {
+      asks: "its completed process pickup handed off the first drive",
+      evidence: { pickupArm: true },
+    };
   const adopted =
     adoption === null ? null : adopts(pr, adoption, labels, r.nowMs);
   return adopted === null
@@ -728,6 +735,7 @@ function baseOf(
 
 /** What every drive of one reading shares. */
 interface Reading {
+  pickupArms?: PickupArms;
   slug: string;
   login: string | null;
   nowMs: number;
@@ -918,10 +926,14 @@ export async function readDrives(
   nowMs: number,
   labels: LabelConfig | null = null,
   adoption: Adoption | null = null,
-  comments?: (pr: number) => Promise<Listing>,
-  admit: Admit = (read) => read(),
-  bound?: TickBound,
+  options: {
+    comments?: (pr: number) => Promise<Listing>;
+    admit?: Admit;
+    bound?: TickBound | undefined;
+    pickupArms?: PickupArms | undefined;
+  } = {},
 ): Promise<DrivenPr[]> {
+  const { comments, admit = (read) => read(), bound, pickupArms } = options;
   const reading: Reading = {
     slug,
     login,
@@ -929,6 +941,7 @@ export async function readDrives(
     windowMs: stallThresholdMs(),
     labels,
     adoption,
+    ...(pickupArms === undefined ? {} : { pickupArms }),
     baseHead: baseHeads(slug, admit, bound),
     presence: (pr, ledger) =>
       ended(bound)
