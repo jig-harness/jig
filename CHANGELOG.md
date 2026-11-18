@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.278.0] - 2026-11-18
+
+### Added
+
+- The dispatch dashboard offers shareable filters with matching counts and folding act headings on Needs you. On a phone, shared filters still apply and can be cleared.
+
 ## [0.277.3] - 2026-11-18
 
 ### Fixed
@@ -9771,7 +9777,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.278.0...HEAD
+[0.278.0]: https://github.com/jig-harness/jig/compare/v0.277.3...v0.278.0
 [0.277.3]: https://github.com/jig-harness/jig/compare/v0.277.2...v0.277.3
 [0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
 [0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1

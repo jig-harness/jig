@@ -5,6 +5,12 @@
  * history entry.
  */
 import { useCallback, useRef, useState } from "react";
+import {
+  CARD_FILTER_PARAMS,
+  type CardFilter,
+  cardFilterPairs,
+  readCardFilter,
+} from "./facets.ts";
 import { instantOf } from "./format.ts";
 
 export const PRESETS = [
@@ -136,7 +142,7 @@ function filterPairs(filter: LogFilter): Array<[string, string]> {
 }
 
 function queryOf(pairs: Array<[string, string]>): string {
-  return pairs.map(([k, v]) => `${k}=${encoded(v)}`).join("&");
+  return pairs.map(([k, v]) => `${encoded(k)}=${encoded(v)}`).join("&");
 }
 
 /** The filter's part of the address, as the page shows it: `?window=7d&repo=example-org/web`. */
@@ -167,7 +173,10 @@ export function pageQuery(filter: LogFilter, search: string): string {
       return value === null ? [] : [[name, value]];
     },
   );
-  return `?${queryOf([...kept, ...filterPairs(filter)])}`;
+  const cards = CARD_FILTER_PARAMS.flatMap((name) =>
+    params.getAll(name).map((value): [string, string] => [name, value]),
+  );
+  return `?${queryOf([...kept, ...filterPairs(filter), ...cards])}`;
 }
 
 /** The token the page was opened with. */
@@ -248,4 +257,27 @@ export function useFilter(): [LogFilter, (patch: Partial<LogFilter>) => void] {
     );
   }, []);
   return [filter, patch];
+}
+
+/** The card filters travel in the page address beside the history filters. */
+export function useCardFilters(
+  view: ViewId,
+): [CardFilter, (filter: CardFilter) => void] {
+  const [filter, setFilter] = useState(() => readCardFilter(location.search));
+  const replace = useCallback(
+    (next: CardFilter) => {
+      setFilter(next);
+      const params = new URLSearchParams(location.search);
+      params.set("view", view);
+      for (const name of CARD_FILTER_PARAMS) params.delete(name);
+      const query = queryOf([...params, ...cardFilterPairs(next)]);
+      history.replaceState(
+        null,
+        "",
+        `${location.pathname}${query ? `?${query}` : ""}${location.hash}`,
+      );
+    },
+    [view],
+  );
+  return [filter, replace];
 }
