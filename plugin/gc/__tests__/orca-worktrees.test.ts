@@ -531,6 +531,38 @@ describe.skipIf(
     );
   }, 60_000);
 
+  test("a truncated worktree list refuses collection before the remove hook", () => {
+    const f = setup();
+    idle(f);
+    f.writeState({ listFiller: 5_000 });
+    const result = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(result, 1);
+    expect(
+      (JSON.parse(result.stdout.toString()) as Receipt).resources[0],
+    ).toMatchObject({
+      outcome: "unverified",
+      reason: expect.stringContaining("worktree list was incomplete"),
+    });
+    expect(existsSync(f.tree)).toBe(true);
+    expect(existsSync(join(f.root, "hook-ran"))).toBe(false);
+    expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
+  }, 60_000);
+
+  test("a truncated worktree process listing refuses collection before the remove hook", () => {
+    const f = setup();
+    idle(f);
+    f.writeState({ psFiller: 5_000 });
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "unverified",
+      reason: expect.stringContaining(
+        "registry (orca worktree ps) answered an incomplete list",
+      ),
+    });
+    expect(existsSync(f.tree)).toBe(true);
+    expect(existsSync(join(f.root, "hook-ran"))).toBe(false);
+    expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
+  }, 60_000);
+
   test("an unreadable registry refuses collection", () => {
     const f = setup();
     idle(f);
