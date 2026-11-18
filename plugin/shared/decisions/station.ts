@@ -34,7 +34,10 @@ export type StationOptionId =
   | "detach"
   | "rearm"
   | "clear"
-  | "hold";
+  | "hold"
+  | "gates"
+  | "inspect"
+  | "tag";
 
 /** A kind of need the dispatcher frames: its decision's class and the options it offers. */
 export interface StationKeyValue {
@@ -55,6 +58,11 @@ export const STATION_KEYS = {
     options: ["rerun", "done", "hold"],
     meaning:
       "A merged pull request's follow-up whose pass ended without recording done, or whose claim no session is joined to.",
+  },
+  release: {
+    class: "release",
+    options: ["gates", "inspect", "tag"],
+    meaning: "One untagged release, answered on its tracker item.",
   },
   pickup: {
     class: "pickup-recovery",
@@ -135,6 +143,24 @@ export const STATION_OPTIONS: Readonly<
       "The dispatcher clears the stuck launch record, as jig dispatch clear does, which frees its slot; a later tick may start its stage again.",
     pay: ["A session the record still describes is no longer tracked."],
   },
+  gates: {
+    name: "Re-run the failed gates",
+    summary:
+      "The dispatcher requests another run of the failed jobs on the releasing commit once.",
+    pay: ["Uses CI capacity and still depends on the release checks passing."],
+  },
+  inspect: {
+    name: "Investigate",
+    summary:
+      "Take the tracker item and determine what is holding back the tag.",
+    pay: ["A person investigates the checks and the release state."],
+  },
+  tag: {
+    name: "Tag it by hand",
+    summary:
+      "Take the tracker item and create the tag by hand after checking it is safe to release.",
+    pay: ["A person verifies the release and creates the tag."],
+  },
   hold: {
     name: "I'll handle it — hide this card",
     summary:
@@ -201,6 +227,7 @@ export type StationFacts =
       ended: string | null;
       carriedBy: readonly number[] | null;
     }
+  | { kind: "release-owed"; repo: string; tag: string }
   | { kind: "checkout"; target: string; branch: string; path: string }
   | {
       kind: "drive";
@@ -395,6 +422,14 @@ function launch(f: Extract<StationFacts, { kind: "launch" }>): StationDecision {
 /** The decision the tick frames for a need from `facts`. */
 export function frameStationDecision(facts: StationFacts): StationDecision {
   switch (facts.kind) {
+    case "release-owed":
+      return decision(
+        "release",
+        `How should release ${facts.tag} of ${facts.repo} get its tag?`,
+        "gates",
+        "Another run can clear a transient gate failure while keeping the release checks in force.",
+        "The merged pull requests' follow-ups leave the release tracked in one item.",
+      );
     case "followup-failed":
       return followupFailed(facts);
     case "followup-stale":

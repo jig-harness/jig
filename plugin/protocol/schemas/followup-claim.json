@@ -88,7 +88,8 @@
                     },
                     "host": true,
                     "owner": true,
-                    "endedAt": true
+                    "endedAt": true,
+                    "releaseTags": true
                   },
                   "required": ["run", "record"],
                   "additionalProperties": true
@@ -214,7 +215,8 @@
                         },
                         "host": true,
                         "owner": true,
-                        "endedAt": true
+                        "endedAt": true,
+                        "releaseTags": true
                       },
                       "required": ["run", "record"],
                       "additionalProperties": true

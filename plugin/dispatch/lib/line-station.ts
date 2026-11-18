@@ -157,6 +157,10 @@ const FACTS: Partial<
   >
 > = {
   "followup-failed": followupFailedFacts,
+  "release-owed": (action, ctx) => {
+    const tag = text(action.evidence, "tag");
+    return tag === null ? null : { kind: "release-owed", repo: ctx.slug, tag };
+  },
   "followup-stale": followupStaleFacts,
   stalled: stalledFacts,
   "pickup-question": pickupQuestionFacts,
