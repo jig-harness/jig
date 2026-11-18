@@ -205,7 +205,7 @@ function pickupResultLines(
   ];
 }
 
-/** What a pickup's prompt says about batching: a fixed batch's scope, or that the item is alone. */
+/** What a pickup's prompt says about a fixed batch's scope. */
 function batchScopeLines(
   record: Pick<LaunchRecord, "batchItems" | "stewardResume">,
 ): string[] {
@@ -220,12 +220,18 @@ function batchScopeLines(
               ]
             : []),
         ]),
-    ...(record.batchItems !== undefined || record.stewardResume !== undefined
-      ? []
-      : [
-          "This item is picked up on its own: run the pickup skill's batch check only to confirm that, suggest no batch and ask no question about one.",
-        ]),
   ];
+}
+
+/** The line that tells a pass its item is picked up alone, after the route line. */
+function aloneLines(
+  record: Pick<LaunchRecord, "batchItems" | "stewardResume">,
+): string[] {
+  return record.batchItems !== undefined || record.stewardResume !== undefined
+    ? []
+    : [
+        "This item is picked up on its own: run the pickup skill's batch check only to confirm that, suggest no batch and ask no question about one.",
+      ];
 }
 
 /** The claim a served assignment owes, with the person it keeps as the only assignee. */
@@ -284,6 +290,7 @@ function pickupPassPrompt(
     ),
     ...batchScopeLines(record),
     ROUTE_RULES_LINE,
+    ...aloneLines(record),
     ...(record.factoryAncestor === undefined ||
     record.stewardResume !== undefined
       ? []
