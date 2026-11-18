@@ -401,6 +401,23 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.277.3] - 2026-11-18
+
+### Fixed
+
+- A dispatched pickup or steward pass whose Claude Code session stops at
+  startup on a usage-limit notice now walls its account, as a follow-up's
+  already did; before, the pickup was logged as died, the account stayed
+  admitted, and the item waited for a person to release it. The wall lifts
+  at the reset the notice states, in both its time-of-day form
+  (`resets 3:20am (Europe/Amsterdam)`) and its dated weekly form
+  (`resets Nov 13, 11am (Europe/Amsterdam)`), and `dispatch.wall_backoff`
+  applies only when that reset cannot be read. A pickup stopped this way is
+  picked up again on another account, or on its own once the wall lifts,
+  with no person asked. A pickup or steward pass that stops at startup with
+  no usage notice now backs its account off for `dispatch.wall_backoff`, as
+  a follow-up's already did. **Consumer action:** none.
+
 ## [0.277.2] - 2026-11-18
 
 ### Changed
@@ -9754,7 +9771,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.3...HEAD
+[0.277.3]: https://github.com/jig-harness/jig/compare/v0.277.2...v0.277.3
 [0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
 [0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
 [0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
