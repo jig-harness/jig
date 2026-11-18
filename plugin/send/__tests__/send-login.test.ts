@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { OutboundError } from "../../shared/outbound/failure.ts";
+import { OutboundError, outboundOf } from "../../shared/outbound/failure.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { trackerWriter } from "../lib/plan.ts";
 import {
@@ -113,6 +113,10 @@ describe("the tracker's user a send writes as", () => {
     expect(refused.ok ? null : refused.failure.reason).toContain(
       "the tracker refused the credential (HTTP 401)",
     );
+    // The refusal keeps the read's class, for a caller that branches on it.
+    expect(refused.ok ? null : outboundOf(refused.failure)?.code).toBe(
+      "unauthorized",
+    );
     const late = await trackerWriter(
       tracker(
         (signal) =>
@@ -126,7 +130,7 @@ describe("the tracker's user a send writes as", () => {
       undefined,
     );
     expect(late.ok ? null : late.failure.reason).toContain(
-      "the tracker did not answer (no answer within the answer's deadline (1 s))",
+      "the tracker did not answer (its deadline of 1 s passed); send again",
     );
   });
 

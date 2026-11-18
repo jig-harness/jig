@@ -23,7 +23,7 @@ import {
 } from "../../shared/outcome.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import { printable } from "../../ask/lib/render.ts";
-import { within } from "../../ask/lib/reading.ts";
+import { PAST_DEADLINE, within } from "../../ask/lib/reading.ts";
 import type {
   Tracker,
   TrackerUser,
@@ -108,11 +108,11 @@ function unreadCause(
   }
 }
 
-/** The refusal of a send whose login on `where` was not read, naming why. */
+/** The refusal of a send whose login on `where` was not read, naming why; it carries the read's failure class. */
 function loginUnread(where: string, failure: Failure) {
-  return refused(
-    `the login this machine is signed in as on ${where} was not read, so nothing was sent: ${unreadCause(where, outboundOf(failure), failure.reason)}`,
-  );
+  const call = outboundOf(failure);
+  const reason = `the login this machine is signed in as on ${where} was not read, so nothing was sent: ${unreadCause(where, call, failure.reason)}`;
+  return call === null ? refused(reason) : failedBy("refused", call, reason);
 }
 
 /**
@@ -158,7 +158,7 @@ export async function trackerWriter(
             "unread",
             outboundFailure(
               "unreachable",
-              `no answer within the answer's deadline (${sec} s)`,
+              sec <= 0 ? PAST_DEADLINE : `its deadline of ${sec} s passed`,
             ),
           )
         : ok(got.value);

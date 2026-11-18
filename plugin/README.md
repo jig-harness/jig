@@ -1799,9 +1799,10 @@ here is signed in as, or for `assign` the user the tracker's credential acts
 as), the record, where it goes, the reader that acts on it and how to take
 it back. `--as <login>` refuses when this machine writes as anyone else.
 When that login cannot be read, `send` refuses, writing nothing, and says
-why: a spent allowance and the time it resets, a refused credential, or no
-answer. An `answer` is a comment readable by whoever can read the pull request, and
-`send` says so; the comment carries the
+why: a spent allowance and the time it resets, a refused credential, no
+answer, or an answer that does not read. An `answer` is a comment
+readable by whoever can read the pull request, and `send` says so; the
+comment carries the
 [record envelope](RECORDS.md#the-registry-and-the-envelope) in a hidden
 marker, naming you and this host as a digest. `send` adds no authority:
 each reader keeps its own rule for whose record counts, an assignment made
