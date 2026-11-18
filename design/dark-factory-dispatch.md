@@ -670,13 +670,15 @@ already read, so the rule makes no forge request of its own. Where the
 repository names no `pr_open` state, or the open pull requests did not read
 this tick, nothing moves and the stall need says why, naming the pull
 request where there is one. A pull request no launch of this host opened is
-not this rule's case: the steward's `settle` record links it. Whatever
-state the item is in, it is not a stall while an open pull request of the
+not this rule's case: the steward's `settle` record links it. An item
+already in `pr_open`, or with a move to `pr_open` still to make, keeps the
+rule above and is not listed as carried. Any other claimed item is not a
+stall while an open pull request of the
 repository's own branches that the line links to it (as the need's framed
 decision reads the links) has a drive that is live or has converged and
 waits for its merge, the drive's state being the one its dispatch label
 shows: the tick reports the item as carried by that pull request, with its
-link and the drive's state, and the line lists it as carried. With no drive
+link and the drive's state, and the line lists it as [carried](../GLOSSARY.md). With no drive
 on that pull request, a stopped one, or a drive or open pull requests that
 did not read, the stall need stands and says which. One with more than one running session is
 a double claim (see Guards against a second launch). A repository with no factory identity

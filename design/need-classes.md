@@ -167,8 +167,10 @@ with nothing pushed, or the item was an epic.
   its own repository that the line links to it (its branch names the key,
   its description closes the item, or the forge says it closes it) has a
   drive that is live or has converged and waits for its merge: the tick
-  reports it, and the line shows it, as carried by that pull request,
-  whether or not the repository names a `pr_open` state. A pull request
+  reports it, and the line shows it, as [carried](../GLOSSARY.md) by that
+  pull request, whether or not the repository names a `pr_open` state;
+  an item already in `pr_open`, or with a move to `pr_open` still to make,
+  keeps that rule and is not listed as carried. A pull request
   from a fork does not carry it; one with no drive or a stopped drive
   leaves the need, which names it; where the pull requests or the drive
   did not read, the need says what could not be told.

@@ -34,8 +34,9 @@ import type {
 import type { PrLinkText } from "../lib/work-links.ts";
 import { input as lineInput, REPO, report } from "./line-fixtures.ts";
 import { SLUG } from "./fixtures.ts";
+import { parseMs } from "../../shared/time.ts";
 
-const NOW = Date.parse("2026-11-14T17:14:00Z");
+const NOW = parseMs("2026-11-14T17:14:00Z");
 const HOUR = 3_600_000;
 const PATH = "/work/example-repo-12";
 const BRANCH = "12-issue-12";
@@ -208,9 +209,7 @@ describe("a claimed item an open pull request carries", () => {
 
   it("is still a stalled pickup naming the pull request when the pull request has no drive", () => {
     const reason = expectStalled(planPickups(input(stalled([pr()], []))));
-    expect(reason).toContain(
-      `pull request #31 (${URL}) links it, but it has no drive`,
-    );
+    expect(reason).toContain("pull request #31 links it, but it has no drive");
   });
 
   it("is still a stalled pickup naming the pull request when its drive stopped", () => {
@@ -218,7 +217,7 @@ describe("a claimed item an open pull request carries", () => {
       planPickups(input(stalled([pr()], [drive("parked")]))),
     );
     expect(reason).toContain(
-      `pull request #31 (${URL}) links it, but its drive stopped (parked`,
+      `pull request #31 links it, but its drive stopped (parked`,
     );
   });
 
@@ -227,7 +226,11 @@ describe("a claimed item an open pull request carries", () => {
       const { crossRepository: _, ...rest } = pr();
       const fork: PrLinkText =
         crossRepository === undefined ? rest : { ...rest, crossRepository };
-      expectStalled(planPickups(input(stalled([fork], [LIVE]))));
+      const reason = expectStalled(planPickups(input(stalled([fork], [LIVE]))));
+      if (crossRepository === undefined)
+        expect(reason).toContain(
+          "its head repository did not read, so it cannot be told from a fork",
+        );
     }
   });
 
@@ -344,6 +347,14 @@ describe("the line", () => {
         root,
       );
       expect(readLine(root).ok).toBe(false);
+      for (const pr of [-1, 0, 1.5]) {
+        writeLine(
+          { ...line, carried: [{ ...entry, pr } as LineCarried] },
+          "{}",
+          root,
+        );
+        expect(readLine(root).ok).toBe(false);
+      }
     } finally {
       closeStateDb(root);
       rmSync(root, { recursive: true, force: true });

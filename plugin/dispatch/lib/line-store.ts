@@ -296,7 +296,7 @@ const LINE_FIELDS: Fields = {
     listOf({
       repo: isString,
       target: isString,
-      pr: isNumber,
+      pr: (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0,
       url: isString,
       drive: (v) => v === "driving" || v === "converged",
       why: isString,

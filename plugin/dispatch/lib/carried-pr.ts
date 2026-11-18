@@ -8,8 +8,9 @@
  * - A pull request carries the item when the line links it to the item, as
  *   the need's framed decision reads it (`work-links.ts`: its branch names
  *   the item's key, its description closes the item, or the forge says it
- *   closes it), and its head is in the repository itself: one from a fork,
- *   or whose head repository did not read, carries nothing.
+ *   closes it), and its head is in the repository itself: one from a fork
+ *   carries nothing, and one whose head repository did not read cannot be
+ *   told from a fork, so the stall need says so.
  * - Its drive carries the item while the drive's state is `driving` or
  *   `converged`, the state the pull request's dispatch label shows
  *   (`labels.ts`). A pull request with no drive, or one whose drive stopped
@@ -30,6 +31,8 @@ import { type LinkRules, type PrLinkText, workLinks } from "./work-links.ts";
 export interface CarrierPr {
   number: number;
   url: string;
+  /** Set where the pull request's head repository did not read: it cannot carry the item, and the stall need says why. */
+  headUnread?: true;
 }
 
 /** What the stall watch reads to tell whether an open pull request carries a claimed item. */
@@ -96,8 +99,9 @@ function carrierDrive(
  * What the stall watch reads from the tick's reads: the open pull requests
  * (`null` when they did not read), how the repository's keys link them,
  * the drives the tick read and the pull requests whose ledgers it read.
- * A pull request from a fork, or whose head repository did not read, is
- * left out before the links are made.
+ * A pull request from a fork is left out before the links
+ * are made; one whose head repository did not read stays in, marked, so the
+ * stall need can say it could not be told from a fork.
  */
 export function carrierInput(read: {
   prs: readonly PrLinkText[] | null;
@@ -107,17 +111,27 @@ export function carrierInput(read: {
   /** Under `only_labeled`, the pull requests in scope: one outside it has no drive the tick reads. */
   inScope?: ReadonlySet<number>;
 }): CarrierInput {
-  const own = read.prs?.filter((p) => p.crossRepository === false) ?? null;
+  const own = read.prs?.filter((p) => p.crossRepository !== true) ?? null;
+  const unknownHead = new Set(
+    own?.filter((p) => p.crossRepository === undefined).map((p) => p.number),
+  );
   const links =
     own === null || read.rules === null ? null : workLinks(own, read.rules);
   return {
-    carriers: (key) => links?.prsOf(key) ?? null,
+    carriers: (key) =>
+      links
+        ?.prsOf(key)
+        ?.map((p) =>
+          unknownHead.has(p.number) ? { ...p, headUnread: true } : p,
+        ) ?? null,
     drive: (pr) => carrierDrive(pr, read.drives, read.read, read.inScope),
   };
 }
 
-function prName(pr: CarrierPr): string {
-  return `pull request #${pr.number} (${pr.url})`;
+function prName(pr: CarrierPr, named?: number): string {
+  return pr.number === named
+    ? `pull request #${pr.number}`
+    : `pull request #${pr.number} (${pr.url})`;
 }
 
 function carriedWhy(
@@ -132,10 +146,15 @@ function carriedWhy(
   return `in ${state} with no running session: carried by ${prName(pr)}, which links it; ${how}`;
 }
 
-/** What the open pull requests that link a claimed item make of it; `none` without the input. */
+/**
+ * What the open pull requests that link a claimed item make of it; `none`
+ * without the input. `named` is a pull request the stall need already names
+ * in full, which the note then names by number alone.
+ */
 export function readCarriage(
   item: { key: string; state: string },
   input: CarrierInput | undefined,
+  named?: number,
 ): Carriage {
   if (input === undefined) return { kind: "none" };
   const prs = input.carriers(item.key);
@@ -151,6 +170,13 @@ export function readCarriage(
   const told: string[] = [];
   let unread = false;
   for (const { pr, drive } of read) {
+    if (pr.headUnread === true) {
+      told.push(
+        `${prName(pr, named)} links it, but its head repository did not read, so it cannot be told from a fork`,
+      );
+      unread = true;
+      continue;
+    }
     if (drive.kind === "driving" || drive.kind === "converged")
       return {
         kind: "carried",
@@ -158,7 +184,7 @@ export function readCarriage(
         drive: drive.kind,
         why: carriedWhy(item.state, pr, drive.kind),
       };
-    told.push(`${prName(pr)} links it, but ${drive.why}`);
+    told.push(`${prName(pr, named)} links it, but ${drive.why}`);
     unread ||= drive.kind === "unread";
   }
   return {
