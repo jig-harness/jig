@@ -776,10 +776,8 @@ async function placeLeaf(
     view,
     options.mergeEvidence,
   );
-  if (parentHold !== null) {
-    if (parentHoldUnread(parentHold)) itemFailed(found);
-    return void unplace(parentHold);
-  }
+  if (parentHoldUnread(parentHold)) itemFailed(found);
+  if (parentHold !== null) return void unplace(parentHold);
   const admissionHold = await attachAdmissions(
     ctx,
     candidate,
@@ -940,10 +938,8 @@ async function heldReason(
     view,
     options.mergeEvidence,
   );
-  if (parentHold !== null) {
-    if (parentHoldUnread(parentHold)) itemFailed(found);
-    return parentHold;
-  }
+  if (parentHoldUnread(parentHold)) itemFailed(found);
+  if (parentHold !== null) return parentHold;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
     hitl: options.hitl,
     manualOps: options.manualOps,

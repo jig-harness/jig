@@ -699,21 +699,7 @@ export async function readPickups(
     once().dispatchSource !== undefined &&
     factoryReading.factoryView === undefined
   ) {
-    const adapter = once().adapter as keyof ServedPerson["tracker"];
-    const unchecked = (served?.people ?? []).flatMap((person) => {
-      const identity = person.tracker[adapter];
-      return identity === undefined
-        ? []
-        : [
-            claimsUnreadRow(
-              identity,
-              "the tracker's scope failed before the queue was read",
-            ),
-          ];
-    });
-    return unchecked.length === 0
-      ? factory
-      : { ...factory, unplaced: onceEach([...factory.unplaced, ...unchecked]) };
+    return withClaimsUnread(factory, once().adapter, served?.people ?? []);
   }
   const roots = [
     ...(factoryReading.epicRoots ?? []),
@@ -767,6 +753,28 @@ export async function readPickups(
       ? { partial: true as const }
       : {}),
   };
+}
+
+/** A failed native scope leaves each served person's claims unread: say so, beside the scope's own row. */
+function withClaimsUnread(
+  factory: TrackerReading,
+  adapter: string,
+  people: readonly ServedPerson[],
+): TrackerReading {
+  const rows = people.flatMap((person) => {
+    const identity = person.tracker[adapter as keyof ServedPerson["tracker"]];
+    return identity === undefined
+      ? []
+      : [
+          claimsUnreadRow(
+            identity,
+            "the tracker's scope failed before the queue was read",
+          ),
+        ];
+  });
+  return rows.length === 0
+    ? factory
+    : { ...factory, unplaced: onceEach([...factory.unplaced, ...rows]) };
 }
 
 /**
