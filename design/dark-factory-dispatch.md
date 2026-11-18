@@ -2128,7 +2128,25 @@ writes that SQLite's own write lock orders against a tick's. The database runs i
 so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
-version named, by every command that opens it. The dashboard's server
+version named, by every command that opens it, once a step past the
+command's own version was not additive (it raised the minimum reader).
+A wrapper whose stage has ended is the one exception, so that a stage's
+exit crosses such a step when the host upgrades while the stage runs:
+from then on the wrapper uses a newer database as it is, never migrating
+it, as long as it still holds, unchanged, the launch columns the wrapper
+reads and writes on its own record (the record, its claim, result, closing
+report and exit, and the thread samples, waiting episodes and claimed
+items read with it). It records the exit, then what follows it (the
+launch's end on its shared claim, a follow-up's label, closing a finished
+run's tab), and the newer tick classes the launch by that exit as it would
+have without the upgrade. The tick, a claim and every other reader that
+decides slots stay refused. A future step that is not additive keeps those
+columns readable and writable as they are, or says how an older wrapper's
+exit crosses it; a database that lacks one of them refuses the wrapper,
+which then says that the stage ran and how it ended and exits with the
+stage's own code, and the tick finds the launch's wrapper gone without an
+exit. A wrapper refused before its stage starts starts nothing and exits
+`2`. The dashboard's server
 opens it through the reader that migrates it until the dashboard design's
 first stage (its step 5) makes the server, and every later stage's, open
 it read-only, never migrating it and showing a schema older or newer than

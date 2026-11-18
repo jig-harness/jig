@@ -35,6 +35,17 @@
  * were recorded): the minimum reader is then the database's own version, so
  * only a copy that knows that version reads it.
  *
+ * **Named columns past the minimum reader.** One kind of caller may still
+ * use a database whose minimum reader is newer than its copy:
+ * `openKnownColumns`, for a caller that reads and writes only the columns it
+ * names. It opens the database as `openDatabase` does and, where that
+ * refuses a newer schema, uses it as it is (never migrated, its meta row
+ * left as the newer copy wrote it) when the database's migration history
+ * starts with this copy's and every named column is still in it; otherwise
+ * the refusal stands. So a non-additive step keeps every such caller working
+ * as long as it leaves those columns as they are, and a step that changes or
+ * removes one of them refuses that caller as it refuses any other.
+ *
  * **The instance.** The meta row also holds a random id minted when the row
  * is first written. A database deleted and created again, or another file put
  * in its place, has another id, so a process handed a database's id by its
@@ -352,6 +363,80 @@ export function openDatabase(spec: DatabaseSpec): Outcome<Database, OpenCode> {
   const id = fileId(spec.path);
   if (id !== null) connections.set(spec.path, { db: opened.value, ...id });
   return opened;
+}
+
+/** The columns a caller reads and writes, by table. */
+export type KnownColumns = Readonly<Record<string, readonly string[]>>;
+
+/** Which of `columns` the database lacks, as `table.column`. */
+function missingColumns(db: Database, columns: KnownColumns): string[] {
+  const missing: string[] = [];
+  for (const [table, names] of Object.entries(columns)) {
+    const present = new Set(
+      (
+        db.query("SELECT name FROM pragma_table_info(?)").all(table) as Array<{
+          name: string;
+        }>
+      ).map((c) => c.name),
+    );
+    for (const name of names)
+      if (!present.has(name)) missing.push(`${table}.${name}`);
+  }
+  return missing;
+}
+
+/**
+ * The database at `spec.path` for a caller that reads and writes only
+ * `columns`: opened as `openDatabase` opens it, and, where that refuses a
+ * schema whose minimum reader is newer than this copy, used as it is when its
+ * migration history starts with this copy's and holds every one of `columns`
+ * (see the header). Such a database is never migrated and its meta row never
+ * written; the connection is this process's cached one, so a later
+ * `openDatabase` checks it again and still refuses it.
+ */
+export function openKnownColumns(
+  spec: DatabaseSpec,
+  columns: KnownColumns,
+): Outcome<Database, OpenCode> {
+  const opened = openDatabase(spec);
+  if (opened.ok || opened.failure.code !== "newer-schema") return opened;
+  const held = cached(spec.path);
+  let db: Database | undefined;
+  try {
+    db = held ?? new Database(spec.path);
+    if (held === null) {
+      db.run(`PRAGMA busy_timeout = ${spec.busyMs ?? BUSY_MS}`);
+      db.run("PRAGMA foreign_keys = ON");
+    }
+    const conn = db;
+    const refused = conn.transaction((): Outcome<never, OpenCode> | null => {
+      const verified = verifyMigrations(conn, spec, userVersion(conn));
+      if (!verified.ok) return verified;
+      const missing = missingColumns(conn, columns);
+      return missing.length === 0
+        ? null
+        : failed(
+            "newer-schema",
+            `${opened.failure.reason}; it lacks ${missing.join(", ")}`,
+          );
+    })();
+    if (refused !== null) {
+      if (held === null) db.close();
+      return refused;
+    }
+    if (held === null) {
+      const id = fileId(spec.path);
+      if (id !== null) connections.set(spec.path, { db, ...id });
+    }
+    return ok(db);
+  } catch (error) {
+    if (held === null) db?.close();
+    return failed(
+      "unopenable",
+      `${spec.path} cannot be opened: ${error instanceof Error ? error.message : String(error)}`,
+      error,
+    );
+  }
 }
 
 /**

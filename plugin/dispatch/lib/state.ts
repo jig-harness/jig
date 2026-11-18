@@ -46,15 +46,32 @@
  * transaction. One a newer plugin migrated is used as it is when every step
  * past this plugin's version was additive, and refused, with its version
  * named, when it needs a newer reader (the shared module's minimum reader).
+ *
+ * A wrapper whose stage has ended is the one reader that still uses such a
+ * database: from `enterAfterStage` on, its process opens it through the
+ * shared module's `openKnownColumns`, naming `AFTER_STAGE_COLUMNS`, the
+ * columns the wrapper reads and writes on its own launch record once the
+ * stage is over (the record, its claim, result and closing report, its
+ * thread samples, waiting episodes and claimed items, and the `exit` it
+ * writes). So an upgrade during a stage, past a step that was not additive,
+ * still gets the stage's exit recorded, and the newer tick classes the
+ * launch by it. Nothing else the dispatcher runs opens the database that way:
+ * the tick, a claim and every reader that decides slots stay refused. A
+ * future step that is not additive keeps those columns readable and
+ * writable as they are, or older wrappers' exits stop crossing it: their
+ * open is refused as before, the wrapper says so with the stage's own exit
+ * code, and the tick finds the launch's wrapper gone without an exit.
  */
 import { type Database, SQLiteError } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   closeDatabase,
+  type KnownColumns,
   type Migration,
   type OpenCode,
   openDatabase,
+  openKnownColumns,
   openReadOnly,
   type ReadOnlyDatabase,
   schemaVersion,
@@ -531,6 +548,46 @@ export function stateDbFailure(error: unknown): string | null {
     : null;
 }
 
+/**
+ * The columns a wrapper reads and writes on its own launch record once its
+ * stage has ended, by table: the record, its claim, result, closing report
+ * and `exit`, and the thread samples, waiting episodes and claimed items
+ * read with it.
+ */
+const AFTER_STAGE_COLUMNS: KnownColumns = {
+  launches: [
+    "id",
+    "record",
+    "claim",
+    "exit",
+    "result",
+    "result_until",
+    "report",
+  ],
+  thread_samples: ["launch", "round", "threads", "at"],
+  waiting_episodes: [
+    "launch",
+    "observed_at",
+    "reset_at",
+    "evidence",
+    "last",
+    "read_at",
+  ],
+  pickup_claims: ["launch", "item"],
+};
+
+let afterStage = false;
+
+/**
+ * Mark this process as a wrapper whose stage has ended: from here on,
+ * `stateDb` also uses a database whose minimum reader is newer than this
+ * plugin, as long as it keeps `AFTER_STAGE_COLUMNS` (see the header). Only
+ * the wrapper calls it, once its stage is over.
+ */
+export function enterAfterStage(): void {
+  afterStage = true;
+}
+
 /** The database file under a state directory. */
 export function statePath(root = stateRoot()): string {
   return join(root, STATE_FILE);
@@ -540,13 +597,18 @@ export function statePath(root = stateRoot()): string {
  * The state database under `root`, opened once per process: created and
  * migrated to this plugin's schema when it is new or older, refused with
  * the usage exit (its cause a `StateVersionError`, `newerStateRefusal`) when
- * a newer plugin wrote it and it needs a newer reader. A database that cannot
+ * a newer plugin wrote it and it needs a newer reader, unless this process is
+ * a wrapper past its stage and the database keeps the columns it touches
+ * (`enterAfterStage`). A database that cannot
  * be opened at all is a defect here, carrying what the platform threw as its
  * cause and its message.
  */
 export function stateDb(root = stateRoot()): Database {
   const path = statePath(root);
-  const opened = openDatabase({ path, migrations: MIGRATIONS });
+  const spec = { path, migrations: MIGRATIONS };
+  const opened = afterStage
+    ? openKnownColumns(spec, AFTER_STAGE_COLUMNS)
+    : openDatabase(spec);
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
   if (code === "migration-history" || code === "source-state")

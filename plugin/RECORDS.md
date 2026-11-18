@@ -131,7 +131,11 @@ whether it is additive (it only adds a table, an index or a column with a
 default); the minimum reader is the version the last migration that was not
 additive moved the schema to. So a plugin one release behind reads a
 database a newer one changed only additively, and refuses one that needs a
-newer reader, naming both versions. The instance id is random, so a
+newer reader, naming both versions. One open admits such a database for a
+caller that names the columns it reads and writes (`openKnownColumns`),
+never migrating it, while those columns are still there: the dispatcher's
+wrapper uses it once its stage has ended, so the stage's exit is recorded
+across an upgrade (`dispatch/lib/state.ts`). The instance id is random, so a
 database deleted and created again at the same path is told apart from the
 one before it.
 
