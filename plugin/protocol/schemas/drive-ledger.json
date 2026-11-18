@@ -501,7 +501,8 @@
                         "enum": ["pass-deadline", "stall"]
                       },
                       "leftWork": false,
-                      "tree": false
+                      "tree": false,
+                      "listingPages": false
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true
@@ -530,7 +531,8 @@
                         ]
                       },
                       "leftWork": false,
-                      "tree": false
+                      "tree": false,
+                      "listingPages": false
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true
@@ -559,6 +561,11 @@
                       "tree": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "listingPages": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": ["at", "round", "kind", "cause"],
@@ -1341,7 +1348,8 @@
                     "enum": ["pass-deadline", "stall"]
                   },
                   "leftWork": false,
-                  "tree": false
+                  "tree": false,
+                  "listingPages": false
                 },
                 "required": ["at", "round", "kind", "cause"],
                 "additionalProperties": true
@@ -1370,7 +1378,8 @@
                     ]
                   },
                   "leftWork": false,
-                  "tree": false
+                  "tree": false,
+                  "listingPages": false
                 },
                 "required": ["at", "round", "kind", "cause"],
                 "additionalProperties": true
@@ -1399,6 +1408,11 @@
                   "tree": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "listingPages": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": ["at", "round", "kind", "cause"],

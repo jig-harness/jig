@@ -302,6 +302,8 @@ export interface Fixture {
    * every consumer of it is skipped, so it must not block `PR_CONFLICTING`.
    */
   checkRunsUnreadable?: boolean;
+  /** The check-runs read never answers, so its deadline cuts it short. */
+  checkRunsHang?: boolean;
   /**
    * The mergeability GitHub reports changes between the first `gh pr view`
    * read and later ones — the window `announce-merge-ready.ts` closes with its
@@ -2055,7 +2057,9 @@ for a in "$@"; do
         echo "gh-stub: simulated timeline timeout" >&2; exit 1
       fi
       emit "$F/timeline.json"; exit 0 ;;
-    *check-runs*)        emit "$F/check-runs.json"; exit 0 ;;
+    *check-runs*)
+      if [ -f "$F/check-runs-hang" ]; then sleep 60; fi
+      emit "$F/check-runs.json"; exit 0 ;;
     *actions/runs*)      emit "$F/workflow-runs.json"; exit 0 ;;
     # Query string included: drive-status.ts paginates this endpoint with an
     # explicit \`?per_page=\`, and a stub matching only the bare path would make
@@ -2229,6 +2233,7 @@ export function writeFixture(
     writeFileSync(join(dir, "dirty-on-final-verify"), "");
   }
   if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
+  if (f.checkRunsHang) writeFileSync(join(dir, "check-runs-hang"), "");
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }

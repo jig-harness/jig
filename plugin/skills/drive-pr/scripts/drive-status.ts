@@ -173,6 +173,10 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       and its review of an earlier head does not cover it
  *                       (the PR's diff changed): no review of this head will
  *                       come
+ *  24  CHECK_RUNS_UNREADABLE  [state] the head's check-runs listing ran into
+ *                       a deadline or its page bound; the reason names the
+ *                       pages read. Retried like INDETERMINATE within this
+ *                       invocation, then returned
  *  11  SESSION_LEASE_HELD  [state, set outside evaluate]
  *                       another LIVE session in this working tree holds the
  *                       drive lease for this PR. Raised by whichever
@@ -1696,7 +1700,8 @@ async function main(): Promise<number> {
     }
 
     switch (code) {
-      case 1: {
+      case 1:
+      case 24: {
         // Never let an unreadable state decay into a settled one. Retry a
         // bounded number of times, then say so — guessing here is how a round
         // gets abandoned on an auth blip.
@@ -1708,8 +1713,8 @@ async function main(): Promise<number> {
         // spent budget to spawn a reconciliation sweep with.
         queryErrors += 1;
         if (once || queryErrors >= MAX_QUERY_ERRORS || !intervalFits()) {
-          await emit(1);
-          return 1;
+          await emit(code);
+          return code;
         }
         console.error(
           `${report.reason} (attempt ${queryErrors}/${MAX_QUERY_ERRORS}); retrying`,

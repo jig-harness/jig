@@ -43,6 +43,7 @@ function fixture() {
     const phase = existsSync(phasePath) ? readFileSync(phasePath, "utf8") : "held";
     const args = process.argv.slice(2);
     if (args[0] === "api" && args.at(-1).includes("check-runs")) {
+      if (phase === "listing-hangs") await Bun.sleep(30_000);
       const checks = phase === "external" ? [{id: 2, name: "reviewer", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 2}}] : [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
         status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "success" ? "success" : "cancelled", check_suite: {id: 1}}];
       console.log(JSON.stringify([{check_runs: checks}]));
@@ -63,9 +64,13 @@ function fixture() {
     JIG_OVERLAY: overlay,
     PATH: `${dir}${delimiter}${process.env.PATH}`,
   };
-  const run = async (mode: string, head = HEAD) => {
+  const run = async (
+    mode: string,
+    head = HEAD,
+    extraEnv: Record<string, string> = {},
+  ) => {
     const child = Bun.spawn([process.execPath, source, mode, head], {
-      env,
+      env: { ...env, ...extraEnv },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -81,6 +86,18 @@ function fixture() {
 }
 
 describe("durable cancellation recovery boundary", () => {
+  test("a check-runs listing cut short is its own answer, not an unknown head", async () => {
+    const f = fixture();
+    try {
+      writeFileSync(join(f.dir, "phase"), "listing-hangs");
+      expect(await f.run("recover", HEAD, { GH_CALL_TIMEOUT: "1" })).toBe(
+        "listing-cut-short",
+      );
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("a claim survives process restarts and concurrent claimers only win once per head", async () => {
     const f = fixture();
     try {

@@ -13,7 +13,11 @@ import { exportPolicyBase } from "./policy-base.ts";
 import { failedRunsField } from "./failed-runs.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
 import { sleep } from "../cli.ts";
-import { FINAL_CI_POLL_SECONDS, UNLABEL_SETTLE_SECONDS } from "./settings.ts";
+import {
+  CHECK_RUNS_UNREADABLE_EXIT,
+  FINAL_CI_POLL_SECONDS,
+  UNLABEL_SETTLE_SECONDS,
+} from "./settings.ts";
 
 export async function pendingRetryDisposition(
   context: DriveRoundContext,
@@ -76,6 +80,7 @@ export async function cancelledRunRecovery(
   }
   const recovery = await recoverCancelledOnHead(context.pr, head);
   if (recovery === "parked") return 8;
+  if (recovery === "listing-cut-short") return CHECK_RUNS_UNREADABLE_EXIT;
   if (recovery === "unknown") {
     console.error(
       `review converged; '${finalVerdict}' failed only in cancelled runs, and their recovery could not establish the head's state; stopping`,

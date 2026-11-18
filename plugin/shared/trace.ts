@@ -397,9 +397,14 @@ async function ghRequest<T extends GhRun, O extends { timeoutSec?: number }>(
  * Shared gh boundary keeps its effective deadline and span metadata together
  * and sends each request through `ghRequest`. A captured `gh api --paginate`
  * read is sent a page at a time (`outbound/gh-paginate.ts`), each page a
- * request of its own, within the call's one deadline.
+ * request of its own, within the call's one deadline, or within
+ * `pagedWholeSec` where the caller names a longer bound for the whole read.
+ * A paged read left to gh is one process, so that bound is its deadline.
  */
-function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
+function traceGhCall<
+  T extends GhRun,
+  O extends { timeoutSec?: number; pagedWholeSec?: number },
+>(
   args: string[],
   opts: O,
   envDeadline: number,
@@ -411,6 +416,7 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
     opts.timeoutSec === undefined
       ? envDeadline
       : Math.max(1, Math.min(envDeadline, opts.timeoutSec));
+  const wholeSec = Math.max(deadline, opts.pagedWholeSec ?? deadline);
   // The host a call names is the one it sends to: accounting, governance
   // and paging all read the call's environment with it applied.
   const given = (opts as { env?: Record<string, string | undefined> }).env;
@@ -434,8 +440,8 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
   };
   return traceCommand("ghCall", "gh", deadline, () =>
     plan === null
-      ? request(args, deadline)
-      : drivePages(plan, paged, deadline, refuse),
+      ? request(args, wholeSec)
+      : drivePages(plan, paged, deadline, refuse, wholeSec),
   );
 }
 
@@ -473,7 +479,7 @@ export function unheldForm<R extends object>(runner: R): R | undefined {
  */
 export function traceGhRunner<
   T extends GhRun,
-  O extends { timeoutSec?: number },
+  O extends { timeoutSec?: number; pagedWholeSec?: number },
 >(
   run: (argv: string[], opts: O) => Promise<T>,
   timeout: () => number,

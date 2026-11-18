@@ -299,6 +299,7 @@ import {
   ROUND_VERBS,
   reviewRound,
 } from "./lib/state/review-rounds.ts";
+import { slurpCheckRuns } from "./lib/paged-read.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -1630,12 +1631,12 @@ async function main(): Promise<number> {
         async function proveCiGreen(): Promise<
           { ok: true } | { ok: false; reason: string }
         > {
-          const checks = await ghCall([
-            "api",
-            "--paginate",
-            "--slurp",
-            `repos/{owner}/{repo}/commits/${a.sha}/check-runs?per_page=100`,
-          ]);
+          const checks = await slurpCheckRuns(
+            "{owner}",
+            "{repo}",
+            a.sha,
+            "fresh",
+          );
           if (checks.code !== 0) {
             return { ok: false, reason: "cannot read check-runs" };
           }

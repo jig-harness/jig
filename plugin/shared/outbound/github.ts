@@ -67,6 +67,8 @@ export interface GhRun {
   limitedUntil?: number;
   /** The captured response's status, retained when governance strips its headers. */
   httpStatus?: number;
+  /** A read the forge client paged: how many pages it read before it ended. */
+  pagesRead?: number;
 }
 
 /** A complete captured HTTP status line, never an inference from CLI error text. */

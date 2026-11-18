@@ -91,7 +91,11 @@ const STOP_REWRITE_ATTEMPTS = 3;
 import { stopKey } from "../../../../../shared/pr-labels/blocked.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
-import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
+import {
+  CHECK_RUNS_UNREADABLE_EXIT,
+  SINGLE_INSTANCE_LOCK_EXIT,
+  TAKEN_OVER_EXIT,
+} from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
@@ -816,6 +820,9 @@ export function ledgerSettlement(
         "stop",
         String(code ?? "unknown"),
         driverRuntime.stopLeftWork,
+        code === CHECK_RUNS_UNREADABLE_EXIT
+          ? driverRuntime.stopListingPages
+          : null,
       ));
     if (driver === null) return { landed: true, label: null };
     if (!recorded) {

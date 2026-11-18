@@ -10,6 +10,7 @@ import {
   type ClosingReport,
 } from "../../../shared/closing-report.ts";
 import type { ParkedDecision } from "../../../shared/decisions/park.ts";
+import { driverRuntime } from "../scripts/lib/driver/runtime.ts";
 import {
   composeConcluded,
   composeDriverReport,
@@ -94,6 +95,24 @@ describe("the closing report's concluded", () => {
 });
 
 describe("the driver's closing report", () => {
+  test("names the pages a check-runs listing read before it was cut short", () => {
+    driverRuntime.stopListingPages = 14;
+    try {
+      const report = composeDriverReport({
+        pr: "42",
+        code: DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+        state: null,
+        round: null,
+      });
+      expect(checkClosingReport(report)).toEqual([]);
+      expect(report.concluded).toContain("after 14 page(s)");
+      expect(report.cause).toBe("tool-failed");
+      expect(report.suggested_next?.owner).toBe("line");
+    } finally {
+      driverRuntime.stopListingPages = null;
+    }
+  });
+
   test("takes the cause and the next step from the registry's entry for the exit", () => {
     const report = composeDriverReport({
       pr: "42",

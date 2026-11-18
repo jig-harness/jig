@@ -174,8 +174,18 @@ export function liveConvergedCi(
         ...(asked.indeterminate === true ? { indeterminate: true } : {}),
       };
     },
-    recoverCancelled: (pr, head, mayMutate) =>
-      recoverCancelledOnHead(pr, head, undefined, false, mayMutate),
+    // This watch reads an unknown recovery as its own stop; a listing cut
+    // short is one to it.
+    recoverCancelled: async (pr, head, mayMutate) => {
+      const recovery = await recoverCancelledOnHead(
+        pr,
+        head,
+        undefined,
+        false,
+        mayMutate,
+      );
+      return recovery === "listing-cut-short" ? "unknown" : recovery;
+    },
   };
 }
 

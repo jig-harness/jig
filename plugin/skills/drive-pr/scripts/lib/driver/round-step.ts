@@ -17,6 +17,7 @@ import { runConflictPhase } from "./conflict.ts";
 import { driverRuntime } from "./runtime.ts";
 
 import {
+  CHECK_RUNS_UNREADABLE_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
   FINAL_CI_POLL_SECONDS,
 } from "./settings.ts";
@@ -130,6 +131,12 @@ async function gateRoundStatus(
       // re-checks immediately before pushing — see SKILL.md § 6. This check
       // keeps the loop from *starting* work it cannot land; guarded-push.ts
       // keeps it from *finishing* one.
+      if (code === CHECK_RUNS_UNREADABLE_EXIT) {
+        const pages = status.listingPagesRead;
+        driverRuntime.stopListingPages =
+          typeof pages === "number" ? pages : null;
+        console.error(reasonLine);
+      }
       return code;
   }
 
@@ -340,6 +347,8 @@ async function recoverBeforePass(
   switch (recovery) {
     case "parked":
       return 8;
+    case "listing-cut-short":
+      return CHECK_RUNS_UNREADABLE_EXIT;
     case "unknown":
       return 1;
     case "wait":

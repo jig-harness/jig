@@ -24,6 +24,11 @@ import {
   type Outcome,
 } from "../../../../shared/outcome.ts";
 import { isGitSha } from "./cli.ts";
+import {
+  listingCutShort,
+  type ListingCutShort,
+  slurpCheckRuns,
+} from "./paged-read.ts";
 import { ghCall } from "./proc.ts";
 import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
@@ -134,12 +139,24 @@ export async function writeCiState(
 export async function readCheckRuns(
   head: string,
 ): Promise<Outcome<CheckRunLite[], HoldReadFailure["code"]>> {
-  const result = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
-  ]);
+  return (await checkRunsRead(head)).runs;
+}
+
+/** `readCheckRuns`' answer, and how the listing was cut short when it was. */
+export async function checkRunsRead(head: string): Promise<{
+  runs: Outcome<CheckRunLite[], HoldReadFailure["code"]>;
+  cutShort: ListingCutShort | null;
+}> {
+  const result = await slurpCheckRuns("{owner}", "{repo}", head, "fresh");
+  return {
+    runs: parsedCheckRuns(result),
+    cutShort: result.code === 0 ? null : listingCutShort(head, result),
+  };
+}
+
+function parsedCheckRuns(
+  result: Awaited<ReturnType<typeof slurpCheckRuns>>,
+): Outcome<CheckRunLite[], HoldReadFailure["code"]> {
   if (result.code !== 0)
     return failed(
       "unreadable",

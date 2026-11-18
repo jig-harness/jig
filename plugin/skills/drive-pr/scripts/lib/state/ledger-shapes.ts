@@ -120,6 +120,7 @@ const event = s.union([
     cause: s.enum(EVENT_CAUSES.restart),
     leftWork: absent,
     tree: absent,
+    listingPages: absent,
   }),
   s.object({
     ...eventBase,
@@ -127,6 +128,7 @@ const event = s.union([
     cause: s.enum(EVENT_CAUSES.rearm),
     leftWork: absent,
     tree: absent,
+    listingPages: absent,
   }),
   s.object({
     ...eventBase,
@@ -134,6 +136,7 @@ const event = s.union([
     cause: s.string({ pattern: "^(\\d+|unknown)$" }),
     leftWork: s.optional(s.boolean()),
     tree: s.optional(nonempty),
+    listingPages: s.optional(safeCount),
   }),
 ]);
 const ciAction = s.object({

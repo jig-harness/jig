@@ -57,6 +57,7 @@ import {
   writeChildInput,
 } from "../../../../shared/proc.ts";
 import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
+import type { OutboundFailure } from "../../../../shared/outbound/failure.ts";
 import { fail, testPacing } from "./cli.ts";
 import { currentMs } from "../../../../shared/time.ts";
 
@@ -186,6 +187,26 @@ export function markReadyTimeoutSeconds(): number {
   return Math.min(totalSeconds, MAX_SAFE_TIMEOUT_SECONDS);
 }
 
+/** How many `GH_CALL_TIMEOUT`s a head's whole check-runs listing may take. */
+const CHECK_RUN_LISTING_CALLS = 4;
+
+/**
+ * The seconds a head's whole check-runs listing may take. Each page keeps
+ * `GH_CALL_TIMEOUT`: a head with a large matrix lists more pages than one
+ * call's deadline holds, and the listing still has to be read whole.
+ */
+export function checkRunListingSeconds(): number {
+  return Math.min(
+    CHECK_RUN_LISTING_CALLS * ghCallTimeoutSeconds(),
+    Math.floor(2_147_483_647 / 1000),
+  );
+}
+
+/** What `reads` check-runs listings add to a bound that counts each as one `gh` call. */
+function checkRunListingExtraCalls(reads: number): number {
+  return reads * (CHECK_RUN_LISTING_CALLS - 1);
+}
+
 /**
  * The deadline for one `ci-hold.ts` transition. Its longest path consumes a
  * remote/state-lock budget, one local git read, and up to 24 GitHub calls
@@ -201,12 +222,15 @@ export function ciHoldTimeoutSeconds(): number {
   // (intent, recovery, settled ownership) on the crash-recovery paths.
   const STATE_LOCK_BUDGET_SECONDS = 1200;
   const GH_BOUND_CALLS = 24; // rollback probes + release mutation/retries/restore; final-ready's proofs
+  // The check-runs listings among them: the entry read, the watermark and
+  // final-ready's three reads per proof, for its two proofs.
+  const LISTING_CALLS = checkRunListingExtraCalls(8);
   const GIT_BOUND_CALLS = 1; // exact local push-head check on ensure
   const TOTAL_CALLS = 1 + GH_BOUND_CALLS + GIT_BOUND_CALLS;
   const TIMELINE_RETRY_WAIT_SECONDS = 6;
   const totalSeconds =
     STATE_LOCK_BUDGET_SECONDS +
-    GH_BOUND_CALLS * ghCallTimeoutSeconds() +
+    (GH_BOUND_CALLS + LISTING_CALLS) * ghCallTimeoutSeconds() +
     GIT_BOUND_CALLS * gitCallTimeoutSeconds() +
     TOTAL_CALLS * (KILL_ESCALATE_MS / 1000) +
     TIMELINE_RETRY_WAIT_SECONDS;
@@ -237,6 +261,8 @@ export function finalVerifyTimeoutSeconds(): number {
   const PROOFS = 3;
   const MAX_STATUS_PUBLISHERS = 4;
   const GH_BOUND_CALLS = 15 + 2 + PROOFS * (2 + MAX_STATUS_PUBLISHERS);
+  // Each proof lists the head's check runs twice.
+  const LISTING_CALLS = checkRunListingExtraCalls(PROOFS * 2);
   // set-verified can take THREE separate lock acquisitions in its worst case,
   // not two: the PR-wide remote-mutation lock, the state mutex for the
   // certificate write, and — when the post-write `stillFullyCurrent()` check
@@ -253,7 +279,7 @@ export function finalVerifyTimeoutSeconds(): number {
   const LOCK_BUDGET_SECONDS = 900;
   const totalSeconds =
     LOCK_BUDGET_SECONDS +
-    GH_BOUND_CALLS * ghCallTimeoutSeconds() +
+    (GH_BOUND_CALLS + LISTING_CALLS) * ghCallTimeoutSeconds() +
     GH_BOUND_CALLS * (KILL_ESCALATE_MS / 1000);
   return Math.min(totalSeconds, Math.floor(2_147_483_647 / 1000));
 }
@@ -270,7 +296,7 @@ export function driveStatusOnceTimeoutSeconds(): number {
   const TOTAL_CALLS = HELPER_BOUND_CALLS + GH_BOUND_CALLS + GIT_BOUND_CALLS;
   const totalSeconds =
     HELPER_BOUND_CALLS * helperTimeoutSeconds() +
-    GH_BOUND_CALLS * ghCallTimeoutSeconds() +
+    (GH_BOUND_CALLS + checkRunListingExtraCalls(1)) * ghCallTimeoutSeconds() +
     GIT_BOUND_CALLS * gitCallTimeoutSeconds() +
     TOTAL_CALLS * (KILL_ESCALATE_MS / 1000);
   return Math.min(totalSeconds, Math.floor(2_147_483_647 / 1000));
@@ -282,6 +308,10 @@ export interface RunResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** A read the forge client paged: how many pages it read before it ended. */
+  pagesRead?: number;
+  /** The failure a held or refused run answers, as it was met. */
+  held?: OutboundFailure;
   /** `true` when captured stdout+stderr hit `maxBufferBytes` and the child was killed for it. */
   bufferExceeded: boolean;
   /**
@@ -359,6 +389,11 @@ export interface RunHandle {
 export interface RunOptions {
   /** Seconds before the child is killed. Omit for no deadline. */
   timeoutSec?: number;
+  /**
+   * On a paged `gh api` read, seconds the whole read may take when that is
+   * longer than one call's deadline, which each page then keeps.
+   */
+  pagedWholeSec?: number;
   /** Text written to the child's stdin (the pipe closes after it). */
   stdin?: string;
   cwd?: string;

@@ -452,9 +452,15 @@ export async function recordDriveEvent(
   kind: "restart" | "rearm" | "stop",
   cause: string,
   measured: { leftWork: boolean; tree: string } | null = null,
+  listingPages: number | null = null,
 ): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
-    stdin: JSON.stringify({ kind, cause, ...measured }),
+    stdin: JSON.stringify({
+      kind,
+      cause,
+      ...measured,
+      ...(listingPages === null ? {} : { listingPages }),
+    }),
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   });

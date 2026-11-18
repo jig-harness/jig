@@ -119,6 +119,8 @@ export interface RunResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** A read the forge client paged: how many pages it read before it ended. */
+  pagesRead?: number;
   /** `true` when captured stdout+stderr hit `maxBufferBytes` and the child was killed for it. */
   bufferExceeded: boolean;
   /**
@@ -221,6 +223,11 @@ export function writeChildInput(
 export interface RunOptions {
   /** Seconds before the child is killed. Omit for no deadline. */
   timeoutSec?: number;
+  /**
+   * On a paged `gh api` read, seconds the whole read may take when that is
+   * longer than one call's deadline, which each page then keeps.
+   */
+  pagedWholeSec?: number;
   /** Text written to the child's stdin (the pipe closes after it). */
   stdin?: string;
   cwd?: string;

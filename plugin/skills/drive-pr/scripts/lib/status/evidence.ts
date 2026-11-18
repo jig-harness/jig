@@ -17,7 +17,13 @@ import {
   stickyMarker,
 } from "../overlay.ts";
 import { checkPattern } from "../merge-ready.ts";
-import { type PagedRead, slurpPages } from "../paged-read.ts";
+import {
+  listingCutShort,
+  type ListingCutShort,
+  type PagedRead,
+  slurpCheckRuns,
+  slurpPages,
+} from "../paged-read.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
 import {
   type FailedRun,
@@ -108,21 +114,15 @@ function parsePages(raw: string): unknown[] | null {
   }
 }
 
-/**
- * Every page of a commit's `check-runs` or `statuses` listing; `null` when
- * unreadable. `fresh` unless the caller only observes (`paged-read.ts`): a
- * CI-green proof or a hold release reads what GitHub says now.
- */
-async function commitPages(
+/** Every page of a commit's `statuses` listing; `null` when unreadable. */
+async function statusPages(
   owner: string,
   repo: string,
   sha: string,
-  listing: "check-runs" | "statuses",
-  read: PagedRead = "fresh",
 ): Promise<unknown[] | null> {
   const r = await slurpPages(
-    `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
-    read,
+    `repos/${owner}/${repo}/commits/${sha}/statuses?per_page=100`,
+    "fresh",
     { stderr: "ignore" },
   );
   return r.code === 0 ? parsePages(r.stdout) : null;
@@ -136,21 +136,44 @@ function jobTiming(c: Record<string, unknown>) {
   };
 }
 
+/** A head's check runs, or `null` with how the listing was cut short, if it was. */
+export interface CheckRunListing {
+  runs: CheckRun[] | null;
+  cutShort: ListingCutShort | null;
+}
+
 /**
  * Every check-run on `sha`, across every page (`--paginate --slurp`), reduced
- * to the fields the decision reads. `null` when the API could not be read —
- * the caller decides whether that is INDETERMINATE (a MERGEABLE head) or a
- * degraded-to-unknown verdict (a CONFLICTING one, where no consumer of the
- * runs is reachable).
+ * to the fields the decision reads. `fresh` unless the caller only observes
+ * (`paged-read.ts`): a CI-green proof or a hold release reads what GitHub says
+ * now. `runs` is `null` when the API could not be read — the caller decides
+ * whether that is INDETERMINATE (a MERGEABLE head), `CHECK_RUNS_UNREADABLE`
+ * (the listing was cut short) or a degraded-to-unknown verdict (a CONFLICTING
+ * one, where no consumer of the runs is reachable).
  */
+export async function checkRunListing(
+  owner: string,
+  repo: string,
+  sha: string,
+  read: PagedRead = "fresh",
+): Promise<CheckRunListing> {
+  const r = await slurpCheckRuns(owner, repo, sha, read, { stderr: "ignore" });
+  if (r.code !== 0) return { runs: null, cutShort: listingCutShort(sha, r) };
+  const pages = parsePages(r.stdout);
+  return { runs: pages === null ? null : checkRunsIn(pages), cutShort: null };
+}
+
+/** `checkRunListing`'s runs alone, for a caller any failure stops the same way. */
 export async function checkRunsFor(
   owner: string,
   repo: string,
   sha: string,
   read: PagedRead = "fresh",
 ): Promise<CheckRun[] | null> {
-  const pages = await commitPages(owner, repo, sha, "check-runs", read);
-  if (pages === null) return null;
+  return (await checkRunListing(owner, repo, sha, read)).runs;
+}
+
+function checkRunsIn(pages: unknown[]): CheckRun[] {
   const runs: CheckRun[] = [];
   for (const page of pages) {
     const list = (page as { check_runs?: unknown[] } | null)?.check_runs ?? [];
@@ -271,7 +294,7 @@ export async function statusesByPublisher(
   contexts: readonly string[],
 ): Promise<(CommitStatus & { appId: number | null })[] | null> {
   const wanted = new Set(contexts.map((context) => context.toLowerCase()));
-  const pages = await commitPages(owner, repo, sha, "statuses");
+  const pages = await statusPages(owner, repo, sha);
   if (pages === null) return null;
   const newest = new Map<
     string,

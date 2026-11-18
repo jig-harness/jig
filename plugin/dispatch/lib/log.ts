@@ -363,6 +363,10 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
     DRIVE_EXIT.CI_INFRA_PERSISTED,
     ["gates failed", "CI failing on the infrastructure"],
   ],
+  [
+    DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+    ["gates failed", "check-runs listing unreadable"],
+  ],
 ]);
 
 /** What the classifier needs beyond the record: whether a takeover replaced it, and a merged-or-closed drive's pull request state. */
@@ -503,6 +507,7 @@ const REDRIVEN: ReadonlyMap<string, string> = new Map([
   ["ci-repair", "a drive whose CI-repair passes were spent"],
   ["deadline", "a drive whose pass deadline recurred"],
   ["ci-infra", "a drive whose checks kept failing on the infrastructure"],
+  ["check-runs", "a drive whose check-runs listing could not be read"],
 ]);
 
 /** The ended row of a record that ended at `endedAt`. */

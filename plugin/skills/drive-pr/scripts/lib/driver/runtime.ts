@@ -9,6 +9,12 @@ interface DriverRuntime {
    */
   stopLeftWork: { leftWork: boolean; tree: string } | null;
   /**
+   * The pages a check-runs listing cut short had read, for the stop that
+   * reports it (`CHECK_RUNS_UNREADABLE`); `null` when none was or gh did not
+   * say.
+   */
+  stopListingPages: number | null;
+  /**
    * The round of the last pass this driver started, review or repair, which
    * every pass reads as `DRIVE_PR_ROUND`; `null` before the first. The
    * closing report reads only the round report stamped with it
@@ -88,6 +94,7 @@ interface DriverRuntime {
 
 export const driverRuntime: DriverRuntime = {
   stopLeftWork: null,
+  stopListingPages: null,
   passRound: null,
   passStartedAt: null,
   compromised: "",

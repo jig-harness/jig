@@ -1,5 +1,6 @@
 /** dispatch: each row of the ledger-to-class table, first match wins. */
 import { describe, expect, it } from "bun:test";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { classifyLedger } from "../lib/sources/ledgers.ts";
 import { stoppedLedger } from "./fixtures.ts";
 
@@ -93,6 +94,31 @@ describe("classifyLedger", () => {
         mergeable: "MERGEABLE",
       }).why,
     ).not.toContain("conflicts");
+  });
+
+  it("re-drives a check-runs listing cut short once per head, naming the pages it read", () => {
+    const head = "c".repeat(40);
+    const ledger = stoppedLedger(7, DRIVE_EXIT.CHECK_RUNS_UNREADABLE);
+    ledger.events = [
+      {
+        at: new Date(NOW).toISOString(),
+        round: 2,
+        kind: "stop",
+        cause: String(DRIVE_EXIT.CHECK_RUNS_UNREADABLE),
+        listingPages: 14,
+      },
+    ];
+    const placed = classifyLedger(ledger, NOW, WINDOW, undefined, {
+      head,
+      mergeable: "MERGEABLE",
+    });
+    expect(placed.class).toBe("stale");
+    expect(placed.why).toContain("after 14 page(s)");
+    expect(placed.stale).toMatchObject({
+      change: `head ${head}, stopped ${DRIVE_EXIT.CHECK_RUNS_UNREADABLE}`,
+      mechanicalStop: "check-runs",
+    });
+    expect(placed.stale?.tree).toBeUndefined();
   });
 
   it("binds a stall that left work to the tree it stalled in", () => {

@@ -64,13 +64,19 @@ export interface ObservedRun {
   bufferExceeded: boolean;
   spawnFailed: boolean;
   stderrTail: string;
+  /** How many pages the read got through before it ended. */
+  pagesRead?: number;
 }
 
 /** Where and how the read runs; the same fields the caller's `gh` call took. */
 export interface ObservedOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
-  /** Whole seconds the whole read may take, cache probes and pages included. */
+  /**
+   * Whole seconds the whole read may take, cache probes and pages included.
+   * Longer than the transport's own deadline, it is the listing's bound, and
+   * each page keeps that deadline.
+   */
   timeoutSec?: number;
   /** Sent as `X-Drive-Pr-Caller` on each page, so a test double tells callers apart. */
   caller?: string;
@@ -84,6 +90,7 @@ type GhCall<R extends ObservedRun> = (
     cwd?: string;
     env?: Record<string, string | undefined>;
     timeoutSec?: number;
+    pagedWholeSec?: number;
     stderr?: "pipe" | "inherit" | "ignore";
   },
 ) => Promise<R>;
@@ -314,6 +321,7 @@ export function createObservedPages<R extends ObservedRun>(
     kept: Entry | null,
     ctx: ObservedOptions,
     startMs: number,
+    progress: { pages: number },
   ): Promise<{ entry: Entry; changed: boolean } | null> {
     const byUrl = new Map((kept?.pages ?? []).map((p) => [p.url, p]));
     const pages: KeptPage[] = [];
@@ -370,6 +378,7 @@ export function createObservedPages<R extends ObservedRun>(
       changed ||= live;
       if (pages.length === 0 || (pageItems(page.body) ?? 0) > 0)
         pages.push(page);
+      progress.pages = pages.length;
       probing = false;
       lastLive = live;
     }
@@ -409,18 +418,40 @@ export function createObservedPages<R extends ObservedRun>(
     }
   }
 
-  /** The caller's own read, as it ran before: every page, no `If-None-Match`. */
-  function wholeRead(path: string, ctx: ObservedOptions, startMs: number) {
+  /**
+   * The caller's own read, as it ran before: every page, no `If-None-Match`.
+   * A failure counts the pages the walk before it got through, when those
+   * are more than this read reached.
+   */
+  async function wholeRead(
+    path: string,
+    ctx: ObservedOptions,
+    startMs: number,
+    walked = 0,
+  ): Promise<ObservedRun> {
     const left = leftSec(ctx, startMs);
-    if (left === 0) return Promise.resolve(spent(path));
+    if (left === 0) return { ...spent(path), pagesRead: walked };
     const opts = definedFields({
       cwd: ctx.cwd,
       env: ctx.env,
       stderr: ctx.stderr,
       timeoutSec: left,
+      pagedWholeSec:
+        left !== undefined && left > deps.defaultTimeoutSec()
+          ? left
+          : undefined,
     });
     const args = ["api", "--paginate", "--slurp", path];
-    return Object.keys(opts).length === 0 ? ghCall(args) : ghCall(args, opts);
+    const result =
+      Object.keys(opts).length === 0
+        ? await ghCall(args)
+        : await ghCall(args, opts);
+    return result.code === 0
+      ? result
+      : {
+          ...result,
+          pagesRead: Math.max(result.pagesRead ?? 0, walked),
+        };
   }
 
   async function read(
@@ -436,8 +467,9 @@ export function createObservedPages<R extends ObservedRun>(
     const request = `pages ${path}`;
     const file = entryFile(dir, scope, request);
     const kept = readEntry(file, request);
-    const walked = await walk(path, kept, ctx, startMs);
-    if (walked === null) return wholeRead(path, ctx, startMs);
+    const progress = { pages: 0 };
+    const walked = await walk(path, kept, ctx, startMs, progress);
+    if (walked === null) return wholeRead(path, ctx, startMs, progress.pages);
     const { entry, changed } = walked;
     if (changed)
       writeJsonFile(dir, file, { v: ENTRY_VERSION, request, ...entry });

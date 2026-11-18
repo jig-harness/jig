@@ -67,7 +67,7 @@ import { withObservedEvaluation } from "../gh-conditional.ts";
 import { summaryReport } from "../../summary-findings.ts";
 import {
   type CiReport,
-  checkRunsFor,
+  checkRunListing,
   ciReportFor,
   type ReviewerSticky,
   reviewerRun,
@@ -105,6 +105,8 @@ export interface StatusReport extends CiReport {
    * PR is Ready for review", and every gate ahead of the snapshot returns
    * without having asked. */
   isDraft: boolean | null;
+  /** On `CHECK_RUNS_UNREADABLE`: the pages read, `null` when gh did not say. */
+  listingPagesRead?: number | null;
   reviewerPresent: boolean;
   reviewerStatus: string;
   reviewerConclusion: string;
@@ -765,15 +767,22 @@ async function evaluateFresh(
   // or a 403 on evidence this path does not use block `PR_CONFLICTING` from
   // ever being reported. The verdict
   // degrades to "unknown" instead, which is what the reporter prints and what
-  // announce-merge-ready already refuses to announce on.
-  let runs = await checkRunsFor(
+  // announce-merge-ready already refuses to announce on. A listing cut short
+  // by a deadline or its page bound has its own state: reading it again can
+  // succeed, and the reason says how far it got.
+  const listing = await checkRunListing(
     ctx.owner,
     ctx.repo,
     report.apiHead,
     "observed",
   );
+  let runs = listing.runs;
   let runsUnreadable = false;
   if (runs === null) {
+    if (!conflicting && listing.cutShort !== null) {
+      report.listingPagesRead = listing.cutShort.pagesRead;
+      return terminal(report, "CHECK_RUNS_UNREADABLE", listing.cutShort.reason);
+    }
     if (!conflicting) {
       return terminal(
         report,

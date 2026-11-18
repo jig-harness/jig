@@ -15,7 +15,8 @@ import {
   RERUN_OPTION,
   type RecoveryDeps,
 } from "./cancelled-recovery.ts";
-import { checkRuns } from "./ci-hold-state.ts";
+import { checkRunsRead } from "./ci-hold-state.ts";
+import { driverRuntime } from "./driver/runtime.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
 import { openStore } from "./state/store.ts";
@@ -292,13 +293,19 @@ export async function recoverCancelledOnHead(
   alreadyFenced = false,
   mayMutate?: () => Promise<boolean>,
 ) {
-  const jobs = await checkRuns(head);
-  if (jobs === null) {
+  const read = await checkRunsRead(head);
+  if (read.cutShort !== null) {
+    console.error(`cancelled CI recovery: ${read.cutShort.reason}`);
+    driverRuntime.stopListingPages = read.cutShort.pagesRead;
+    return "listing-cut-short";
+  }
+  if (!read.runs.ok) {
     console.error(
       "cancelled CI recovery: could not read exact-head check runs",
     );
     return "unknown";
   }
+  const jobs = read.runs.value;
   if (
     !jobs.some(
       (job) =>

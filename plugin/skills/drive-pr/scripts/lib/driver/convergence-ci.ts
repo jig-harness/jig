@@ -21,6 +21,7 @@ import {
 import { sleep } from "./../cli.ts";
 
 import {
+  CHECK_RUNS_UNREADABLE_EXIT,
   CI_REPAIR_SPENT_EXIT,
   UNLABEL_SETTLE_SECONDS,
   FINAL_CI_POLL_SECONDS,
@@ -603,6 +604,7 @@ async function waitForReplacement(
   if (!context.dryRun) {
     const recovery = await recoverCancelledOnHead(context.pr, reviewedHead);
     if (recovery === "parked") return 8;
+    if (recovery === "listing-cut-short") return CHECK_RUNS_UNREADABLE_EXIT;
     if (recovery === "unknown") return 1;
     if (recovery === "wait") {
       await sleep(FINAL_CI_POLL_SECONDS);

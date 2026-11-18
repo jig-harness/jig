@@ -23,7 +23,9 @@
  *     work only in that tree, and a re-arm in that tree inherits the edits as
  *     its own. A stall's stop without `leftWork` was never measured, so it
  *     is read as possibly holding work; a deadline's, written by a driver
- *     that did not record it, is read as holding none.
+ *     that did not record it, is read as holding none. `listingPages`
+ *     records, on a `CHECK_RUNS_UNREADABLE` stop, how many pages of the
+ *     head's check-runs listing were read.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -47,6 +49,8 @@ export interface DriveEvent {
   leftWork?: boolean;
   /** On a `stop` that measured: the tree it ran in, `<actor>@<host>`. */
   tree?: string;
+  /** On a `stop` for a check-runs listing cut short: the pages it read. */
+  listingPages?: number;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -69,7 +73,11 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     (v.leftWork === undefined ||
       (typeof v.leftWork === "boolean" && v.kind === "stop")) &&
     (v.tree === undefined ||
-      (typeof v.tree === "string" && v.tree !== "" && v.kind === "stop"))
+      (typeof v.tree === "string" && v.tree !== "" && v.kind === "stop")) &&
+    (v.listingPages === undefined ||
+      (Number.isSafeInteger(v.listingPages) &&
+        (v.listingPages as number) >= 0 &&
+        v.kind === "stop"))
   );
 }
 
@@ -107,7 +115,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, and `"leftWork"` with `"tree"` on a stop that measured its tree). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, `"leftWork"` with `"tree"` on a stop that measured its tree, `"listingPages"` on a stop for a listing cut short). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -129,6 +137,9 @@ export async function recordEvent(
       cause: input.cause,
       ...(input.leftWork === undefined ? {} : { leftWork: input.leftWork }),
       ...(input.tree === undefined ? {} : { tree: input.tree }),
+      ...(input.listingPages === undefined
+        ? {}
+        : { listingPages: input.listingPages }),
     };
     if (!isDriveEvent(event))
       fail(

@@ -14,6 +14,7 @@
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`), `PASS_DEADLINE` (`15`) | stale, once per head commit |
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
+ * | stopped `CHECK_RUNS_UNREADABLE` (`24`) | stale, once per head commit, naming the pages read; a second such stop on the head is a person's, as a systematic read failure |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
@@ -351,6 +352,13 @@ const MECHANICAL_STOPS: ReadonlyMap<
       words: "CI still failing on the infrastructure through its re-runs",
     },
   ],
+  [
+    DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+    {
+      kind: "check-runs",
+      words: "its head's check-runs listing could not be read whole",
+    },
+  ],
 ]);
 
 /** What a needs-person reason adds when the pull request conflicts with its base. */
@@ -388,11 +396,15 @@ function mechanicalStopClass(
     return infraStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
+  const words =
+    stop.kind === "check-runs" && last?.listingPages !== undefined
+      ? `${stop.words} after ${last.listingPages} page(s)`
+      : stop.words;
   return {
     class: "stale",
-    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stopTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${words}): re-drive ${tree === null ? "on any account" : stopTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
     stale: {
-      cause: `stopped ${exit}, ${stop.words}`,
+      cause: `stopped ${exit}, ${words}`,
       change: `head ${head}, stopped ${exit}`,
       mechanicalStop: stop.kind,
       ...(stop.recovery === true ? { recovery: true as const } : {}),
