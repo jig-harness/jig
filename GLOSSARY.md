@@ -2474,9 +2474,13 @@ make, use the entry's term instead.
   in-progress state) that has had no running session for longer than the
   repository's `dispatch.stalled_after`. The identity's item counts when a
   launch of this host or a claim marker took it, or always under
-  `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
-  never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it. An item whose pickup already
+  `dispatch.stalled_scope: assigned`. The *dispatcher* never starts it
+  afresh, since a second session would be a second implementer on a
+  claimed item. When the tree its pickup ran in still holds the work it
+  left (commits not pushed, edits not committed, or no result recorded),
+  the dispatcher relaunches that pickup once per head in that same tree to
+  push and record it (`dispatch.stalled_relaunch`); otherwise it reports
+  the stall and a person settles it. An item whose pickup already
   opened its pull request is finished work, not a stall: when an open pull
   request from the branch of the dispatcher's launch of it links it, the
   dispatcher moves it to its `pr_open` state.
