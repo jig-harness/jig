@@ -21,8 +21,10 @@
  * repository names no `pr_open` state, or this host does not own the
  * repository, nothing moves and the stall need names the pull request. A
  * pull request no launch of this host opened is not this rule's case: the
- * steward's `settle` record links it.
+ * steward's `settle` record links it. An item a driven pull request carries
+ * is quiet whatever state it is in (`carried-pr.ts`).
  */
+import type { CarrierInput } from "./carried-pr.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import type { ReadRecord } from "./launches.ts";
 import type { SessionsReport } from "./runtime/port.ts";
@@ -41,6 +43,8 @@ export interface StalledPrInput {
   pickup: boolean;
   /** Whether a pull request's description links the item, as `do-item` links it. */
   links: (body: string, key: string) => boolean;
+  /** Which open pull requests carry a claimed item, and their drives (`carried-pr.ts`); absent, none is read. */
+  carried?: CarrierInput;
 }
 
 /** An open pull request from a launch's branch that links the item. */

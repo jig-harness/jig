@@ -120,6 +120,7 @@ export function mergeLine(
       previous.answeredHolds ?? [],
       fresh.answeredHolds ?? [],
     ),
+    carried: part(previous.carried ?? [], fresh.carried ?? []),
     queue: part(previous.queue, fresh.queue),
     ready: part(previous.ready ?? [], fresh.ready ?? []),
     repos: listed.flatMap(({ path }) => {

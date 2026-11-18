@@ -22,6 +22,11 @@
  *   (`stalled-pr.ts`): from its in-progress state it is moved to `pr_open`,
  *   and in `pr_open` it is quiet while that pull request is open. Where it
  *   cannot move, the stall need names the pull request.
+ * - A claimed item with no running session that an open pull request of the
+ *   repository links, while that pull request's drive is live or converged,
+ *   is carried by it, not a stall, whatever state the item is in
+ *   (`carried-pr.ts`). A linked pull request with no drive, or a stopped
+ *   one, leaves the stall need, which names it.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -55,6 +60,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { type Carriage, readCarriage } from "./carried-pr.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { testLockNote } from "./test-lock-waits.ts";
@@ -427,6 +433,20 @@ function planClaimed(
     return;
   }
   if (settledOrHeld(item, input, pr.step, plan)) return;
+  const carriage = readCarriage(item, input.prOpen?.carried);
+  if (carriage.kind === "carried") {
+    plan.quiet.push({
+      target: item.key,
+      class: "claimed-carried",
+      why: carriage.why,
+      carried: {
+        pr: carriage.pr.number,
+        url: carriage.pr.url,
+        drive: carriage.drive,
+      },
+    });
+    return;
+  }
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
@@ -437,7 +457,7 @@ function planClaimed(
     });
     return;
   }
-  plan.actions.push(stalledPickup(item, input, held, since, pr));
+  plan.actions.push(stalledPickup(item, input, held, since, pr, carriage));
 }
 
 /** The stall need of a claimed item idle past `dispatch.stalled_after`, naming its launch's pull request where one is open. */
@@ -447,9 +467,14 @@ function stalledPickup(
   held: Holding,
   since: number,
   pr: LaunchPrReading,
+  carriage: Carriage,
 ): Action {
   const idle = input.nowMs - since;
-  const note = stallNote(pr);
+  const notes = [
+    stallNote(pr),
+    carriage.kind === "stall" ? carriage.note : null,
+  ].filter((n): n is string => n !== null);
+  const note = notes.length === 0 ? null : notes.join("; ");
   const latest = input.launches
     .filter(
       (r) =>
