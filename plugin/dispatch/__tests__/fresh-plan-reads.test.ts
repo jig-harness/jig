@@ -293,6 +293,7 @@ it("reads alone a key the tracker's pool batch left unanswered, not as absent", 
 
 it("starts no request once the check's signal has aborted, and passes the signal to the reads it makes", async () => {
   const seen: Array<AbortSignal | undefined> = [];
+  const singles: string[] = [];
   const controller = new AbortController();
   const tracker = {
     adapter: "linear",
@@ -300,14 +301,48 @@ it("starts no request once the check's signal has aborted, and passes the signal
     poolIssues: async (_keys: ReadonlyArray<string>, signal?: AbortSignal) => {
       seen.push(signal);
       controller.abort();
-      throw new TrackerRateLimited("linear", 0, "TIMEOUT");
+      // A failure a narrower read may clear: only the aborted signal stops it.
+      const error = new Error("not visible");
+      error.name = "OutboundError";
+      Object.assign(error, { code: "not-found" });
+      throw error;
     },
-    poolIssue: async () => {
-      throw new Error("no read alone after the signal aborted");
+    poolIssue: async (key: string) => {
+      singles.push(key);
+      return null;
     },
   } as unknown as Tracker;
   const reads = freshReads(tracker, { signal: controller.signal });
   await expect(reads.pool("ENG-1")).rejects.toBeDefined();
   expect(seen).toHaveLength(1);
   expect(seen[0]?.aborted).toBe(true);
+  expect(singles).toEqual([]);
+});
+
+it("starts no read of any kind when the check's signal was already aborted", async () => {
+  const calls: string[] = [];
+  const controller = new AbortController();
+  controller.abort();
+  const tracker = {
+    adapter: "linear",
+    team: "ENG",
+    poolIssues: async () => {
+      calls.push("batch");
+      return new Map();
+    },
+    poolIssue: async () => {
+      calls.push("single");
+      return null;
+    },
+  } as unknown as Tracker;
+  const reads = freshReads(tracker, { signal: controller.signal });
+  assert(reads.once);
+  await expect(reads.pool("ENG-1")).rejects.toBeDefined();
+  await expect(
+    reads.once("issue ENG-1", async () => {
+      calls.push("body");
+      return null;
+    }),
+  ).rejects.toBeDefined();
+  expect(calls).toEqual([]);
 });

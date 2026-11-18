@@ -179,7 +179,10 @@ export function freshReads(
     once<T>(key: string, read: () => Promise<T>): Promise<T> {
       const kept = reads.get(key);
       if (kept !== undefined) return kept as Promise<T>;
-      const started = read();
+      const started = Promise.resolve().then(() => {
+        refuseStopped(signal);
+        return read();
+      });
       reads.set(key, started);
       return started;
     },
