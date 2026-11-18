@@ -109,8 +109,46 @@ async function labelWrites(pr: string): Promise<number[] | null> {
   }
 }
 
+/** Thrown inside a store's write when the drive passed to another driver; the write is not made. */
+class OwnershipLost extends Error {
+  constructor() {
+    super("the drive passed to another driver");
+  }
+}
+
+/** Throws `OwnershipLost` unless the drive still owns the pull request; unreadable ownership proves nothing, so it refuses too. */
+async function requireOwnership(
+  owned: (() => Promise<Ownership>) | undefined,
+): Promise<void> {
+  if (owned === undefined) return;
+  let owner: Ownership;
+  try {
+    owner = await owned();
+  } catch {
+    owner = "unreadable";
+  }
+  if (owner !== "ours") throw new OwnershipLost();
+}
+
+/** The label re-run's claim, asked of ownership immediately before it is inserted; false, with no allowance spent, once the drive is lost. */
+async function claimRerunWhileOwned(
+  pr: string,
+  run: Parameters<typeof claimLabelRerun>[1],
+  owned: (() => Promise<Ownership>) | undefined,
+): Promise<boolean> {
+  try {
+    return await claimLabelRerun(pr, run, () => requireOwnership(owned));
+  } catch (err) {
+    if (err instanceof OwnershipLost) return false;
+    throw err;
+  }
+}
+
 /** The watch's live dependencies, its window from `DRIVE_PR_CONVERGED_CI_MINUTES`. */
-export function liveConvergedCi(windowMinutes: number): ConvergedCiDeps {
+export function liveConvergedCi(
+  windowMinutes: number,
+  owned?: () => Promise<Ownership>,
+): ConvergedCiDeps {
   return {
     now: currentMs,
     sleep: (ms) => sleep(ms / 1000),
@@ -127,7 +165,7 @@ export function liveConvergedCi(windowMinutes: number): ConvergedCiDeps {
     labelWrites,
     labelReruns,
     rerunnable: (pr, runs) => rerunnableRuns(pr, runs),
-    claimRerun: claimLabelRerun,
+    claimRerun: (pr, run) => claimRerunWhileOwned(pr, run, owned),
     async rerunFailed(pr, head, run, mayMutate) {
       const asked = await failedCheckForge.retry(pr, head, run, mayMutate);
       return {
@@ -188,6 +226,7 @@ export async function parkConvergedCi(
   pr: string,
   reason: string,
   labelCaused: boolean,
+  owned?: () => Promise<Ownership>,
 ): Promise<boolean> {
   try {
     const person = await resolveParkPerson(
@@ -199,6 +238,9 @@ export async function parkConvergedCi(
     const decision = convergedCiDecision(reason, labelCaused);
     const store = await openStore(pr);
     const capacity = await parkAdmissionContext(pr, store.stateDir);
+    // Ownership is asked inside the store's lock, after the wait for it, as
+    // the write is about to run.
+    if (owned !== undefined) store.setFence(() => requireOwnership(owned));
     let admitted = true;
     await store.update((state) => {
       const next = {
@@ -252,7 +294,7 @@ export const liveRecheck: ConvergedRecheck = async (
     `converged CI: watching head ${verified} for up to ${minutes} minute(s) after the converged label's write, which can start CI on it`,
   );
   return watchConvergedCi(pr, verified, writtenAt, {
-    ...liveConvergedCi(minutes),
+    ...liveConvergedCi(minutes, owned),
     ...(owned === undefined ? {} : { owned }),
   });
 };
@@ -310,7 +352,7 @@ export async function convergedStopExit(
       return DRIVE_EXIT.HITL_PARKED;
     }
     console.error(`converged CI: parking: ${verdict.reason}`);
-    if (await parkConvergedCi(pr, verdict.reason, verdict.labelCaused))
+    if (await parkConvergedCi(pr, verdict.reason, verdict.labelCaused, owned))
       return DRIVE_EXIT.HITL_PARKED;
     console.error(
       "converged CI: the park could not be recorded, so the stop is settled as INDETERMINATE for the next drive to judge the head again",
