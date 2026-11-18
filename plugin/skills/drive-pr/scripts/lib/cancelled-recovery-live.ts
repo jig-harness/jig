@@ -36,7 +36,20 @@ import { parsePrSnapshot } from "./ci-hold.ts";
 import { workflowRunsFor, withoutSuperseded } from "./status/workflow-runs.ts";
 import { currentIso, currentMs } from "../../../../shared/time.ts";
 
-const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites"> = {
+/** Thrown by a guarded mutation when the drive passed to another driver; the recovery stands down. */
+class OwnershipLost extends Error {
+  constructor() {
+    super("the drive passed to another driver");
+  }
+}
+
+const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites" | "park"> & {
+  park(
+    pr: string,
+    reason: string,
+    stillOwned?: () => Promise<boolean>,
+  ): Promise<void>;
+} = {
   now: currentMs,
   observe: observeCancellation,
   claim: claimCancellation,
@@ -75,12 +88,15 @@ const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites"> = {
     }
   },
   rerun: (id) => ghCall(["run", "rerun", String(id)]),
-  async park(pr, reason) {
+  async park(pr, reason, stillOwned) {
     const person = await resolveParkPerson(pr, "cancelled-ci", "finding", "");
     const decision = cancelledCiDecision(reason);
     const question = decision.call.question;
     const store = await openStore(pr);
     const capacity = await parkAdmissionContext(pr, store.stateDir);
+    // Ownership is asked once the preparation's reads are done, at the commit.
+    if (stillOwned !== undefined && !(await stillOwned()))
+      throw new OwnershipLost();
     await store.update((state) => {
       const next = {
         ...state,
@@ -260,20 +276,47 @@ export async function recoverCancelledOnHead(
     // A caller that can lose the drive to a successor asks again here, where
     // the first claim is about to be spent.
     if (mayMutate !== undefined && !(await mayMutate())) return "unknown";
+    // Every durable claim, forge mutation and park asks again immediately
+    // before it commits, after the reads that precede it.
+    const owned = async () => {
+      if (mayMutate !== undefined && !(await mayMutate()))
+        throw new OwnershipLost();
+    };
     const answer = await recoverCancelled(pr, head, relevant, runs, {
       ...live,
       ...timelineDeps(pr),
       ...(mayMutate === undefined ? {} : { mayMutate }),
+      async claim(...args) {
+        await owned();
+        return await live.claim(...args);
+      },
+      async extend(...args) {
+        await owned();
+        return await live.extend(...args);
+      },
+      async claimLabelRerun(...args) {
+        await owned();
+        return (await live.claimLabelRerun?.(...args)) ?? false;
+      },
+      async park(parkPr, reason) {
+        await live.park(parkPr, reason, async () => {
+          return mayMutate === undefined || (await mayMutate());
+        });
+      },
       async rerun(id) {
         if (!(await live.confirm(pr, head)))
           return {
             code: 1,
             stderr: "the pull request closed or its head changed",
           };
+        await owned();
         return await live.rerun(id);
       },
     });
     return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
+  } catch (err) {
+    if (err instanceof OwnershipLost) return "unknown";
+    throw err;
   } finally {
     lock?.dispose();
   }
