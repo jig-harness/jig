@@ -321,8 +321,8 @@ export function recordsWanted(
 
 /**
  * Release every ended pickup record of `repo` whose item is no longer
- * wanted, so a later assignment of that item is a pickup again. Called only
- * after a whole read of the tracker.
+ * wanted, so a later assignment of that item is a pickup again. Called after
+ * a read whose claims are known.
  *
  * An item that is claimed (in progress) keeps its record, so the question its
  * pass stopped on stays a need; the record notes that member's claim, and
