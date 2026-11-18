@@ -496,6 +496,8 @@ export interface LineSnapshot {
   needs: LineNeed[];
   /** Decisions answered with hold, still visible until their facts change; absent in older snapshots. */
   answeredHolds?: Array<{ repo: string; target: string; why: string }>;
+  /** Claimed items no session holds that an open pull request carries while its drive is live (`driving`) or converged, and so not asked about as stalled pickups; absent in older snapshots. */
+  carried?: LineCarried[];
   queue: LineQueued[];
   /** The converged pull requests the board read placed, Ready to merge first in its order; absent from a line written before the board read. */
   ready?: LineReady[];
@@ -506,6 +508,18 @@ export interface LineSnapshot {
   parks?: LinePark[];
   /** The resolution receipts the tick has written to the outcome log, by park occurrence, while a ledger it read still lists them. */
   ingested?: string[];
+}
+
+/** A claimed item an open pull request carries, as the tick read it (`carried-pr.ts`). */
+export interface LineCarried {
+  repo: string;
+  /** The item's key. */
+  target: string;
+  pr: number;
+  url: string;
+  drive: "driving" | "converged";
+  /** The tick's reason, verbatim. */
+  why: string;
 }
 
 /** `GET /state`. */

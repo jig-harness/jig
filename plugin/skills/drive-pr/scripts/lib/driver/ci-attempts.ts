@@ -98,6 +98,8 @@ export interface RetryForge {
     pr: string,
     head: string,
     run: number,
+    /** Asked once the fence is held, at the mutation; false when the drive no longer owns the pull request. */
+    mayMutate?: () => Promise<boolean>,
   ): Promise<{
     ok: boolean;
     /** A mutation may have reached the forge despite no acknowledgement. */

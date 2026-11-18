@@ -78,13 +78,23 @@ import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
-import { labelDrive } from "./state-labels.ts";
+import { type DriveLabelWrite, labelDrive } from "./state-labels.ts";
+import {
+  type ConvergedRecheck,
+  convergedStopExit,
+  liveRecheck,
+} from "./converged-ci-live.ts";
+import type { Ownership } from "./converged-ci.ts";
+
+/** How many times a converged stop the CI watch overturned is written again. */
+const STOP_REWRITE_ATTEMPTS = 3;
 import { stopKey } from "../../../../../shared/pr-labels/blocked.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
+import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 
 /** Who this driver is, as the ledger names it. */
 export interface LedgerIdentity {
@@ -593,30 +603,39 @@ export async function publishStartup(pr: string): Promise<void> {
  * newer than its own is on it. A clone that takes the drive over claims it
  * before it writes the ledger or a label, so a driver that read no such
  * claim just before its label write is not overwriting a successor's.
- * `false` for a driver that no longer writes the ledger (taken over) or a
- * listing that does not read.
+ * `lost` for a driver that no longer writes the ledger (taken over) or that
+ * a newer claim displaced; `unreadable` for a listing that does not read.
  */
-async function ledgerIsOurs(pr: string): Promise<boolean> {
+async function ledgerOwnership(pr: string): Promise<Ownership> {
   const driver = ledgerDriverFromEnv();
-  if (driver === null) return false;
+  if (driver === null) return "lost";
   // No position among the claims, so none can be newer.
-  if (driver.floor === null) return true;
+  if (driver.floor === null) return "ours";
   const snapshot = await readLedgerSnapshot(pr, driver.login);
-  if (typeof snapshot === "string") return false;
-  return (
-    newerClaim(snapshot.claims, driver.floor, driver.clone, driver.claim) ===
-    null
-  );
+  if (typeof snapshot === "string") return "unreadable";
+  return newerClaim(
+    snapshot.claims,
+    driver.floor,
+    driver.clone,
+    driver.claim,
+  ) === null
+    ? "ours"
+    : "lost";
+}
+
+/** Whether a write may go ahead: only a proven ownership allows one. */
+async function ledgerIsOurs(pr: string): Promise<boolean> {
+  return (await ledgerOwnership(pr)) === "ours";
 }
 
 /** The state label for a ledger this driver just wrote, written only while that ledger is still its own. */
 async function labelOwnDrive(
   pr: string,
   moment: Parameters<typeof labelDrive>[1],
-): Promise<void> {
+): Promise<DriveLabelWrite | null> {
   // A drive with no ledger labels nothing.
-  if (ledgerDriverFromEnv() === null) return;
-  await labelDrive(pr, moment, undefined, () => ledgerIsOurs(pr));
+  if (ledgerDriverFromEnv() === null) return null;
+  return await labelDrive(pr, moment, undefined, () => ledgerIsOurs(pr));
 }
 
 /** Write the running ledger now and, once it landed, the state label that follows it; what `handoff` exited with. */
@@ -650,12 +669,12 @@ async function afterStopWrite(
   code: number | null,
   started: string,
   dropRecord: () => Promise<void>,
-): Promise<void> {
+): Promise<StopWrite> {
   const next = afterHandoff(handoff);
-  if (next === "unwritten") return;
+  if (next === "unwritten") return { landed: false, label: null };
   await dropRecord();
-  if (next === "refused") return;
-  await labelOwnDrive(pr, async () => {
+  if (next === "refused") return { landed: true, label: null };
+  const label = await labelOwnDrive(pr, async () => {
     const state = await readDriveState(pr);
     return {
       stopped: code,
@@ -667,6 +686,16 @@ async function afterStopWrite(
       parks: state?.parked ?? [],
     };
   });
+  return { landed: true, label };
+}
+
+/**
+ * A stop write's two outcomes, kept apart: whether the ledger write landed
+ * (or was refused, leaving nothing to write), and the optional state label.
+ */
+interface StopWrite {
+  landed: boolean;
+  label: DriveLabelWrite | null;
 }
 
 /**
@@ -685,11 +714,18 @@ async function afterStopWrite(
  * naming this driver running, its heartbeat ages toward the lease window,
  * and the record stays unmarked, so no recovery marks it stopped either.
  * The same holds when the stop cannot be recorded in the drive state first.
+ *
+ * A stop labelled `converged` then watches the head's CI while the drive
+ * still holds its locks (`converged-ci-live.ts`): the label write can start
+ * runs on it. When those runs leave CI unsettled after their one re-run, the
+ * stop is settled again as `HITL_PARKED` (`INDETERMINATE` when the park could
+ * not be recorded), which `done` returns.
  */
 export function ledgerSettlement(
   pr: string,
   held: readonly DriveLock[],
   dryRun = false,
+  recheck: ConvergedRecheck = liveRecheck,
 ): AsyncDisposable & {
   done(code: number): Promise<number>;
 } {
@@ -700,21 +736,72 @@ export function ledgerSettlement(
     if (started !== "")
       removeDriverRecord(await resolveStateDir(), pr, started, true);
   };
-  const settle = async (code: number | null): Promise<void> => {
-    if (settled) return;
+  const settle = async (code: number | null): Promise<number | null> => {
+    if (settled) return code;
     const driver = ledgerDriverFromEnv();
     if (code === TAKEN_OVER_EXIT) {
       settled = true;
       await dropRecord();
-      return;
+      return code;
     }
     settled = true;
     if (driver !== null && held.length === 0) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its locks are retained, so its pass may still act.`,
       );
-      return;
+      return code;
     }
+    const labelled = (await writeStop(code)).label;
+    if (code === null) return code;
+    return await rewriteStop(code, labelled, driver !== null);
+  };
+  /** Watch the head's CI after a `converged` stop; the stop to settle as: `code` when nothing overturned it. */
+  const rewriteStop = async (
+    code: number,
+    labelled: DriveLabelWrite | null,
+    hasDriver: boolean,
+  ): Promise<number> => {
+    const again = await convergedStopExit(
+      pr,
+      labelled,
+      currentMs(),
+      recheck,
+      () => ledgerOwnership(pr),
+    );
+    if (again === null) return code;
+    // The converged stop is already written and its record gone, so no
+    // recovery rewrites the ledger after this: a write that did not land is
+    // tried again.
+    const rewritten = await writeStop(again, STOP_REWRITE_ATTEMPTS);
+    // A rewrite that never landed leaves the ledger and label saying
+    // `converged` over a head no drive settled: the exit becomes the one the
+    // dispatcher drives again, which judges the head afresh.
+    if (hasDriver && !dryRun && !rewritten.landed) {
+      // The first stop removed the driver record; the restored one lets
+      // `--stop` and `--doctor` see this acquisition.
+      const worktree = process.env.DRIVE_PR_WORKTREE ?? "";
+      if (worktree !== "" && started !== "")
+        writeDriverRecord(await resolveStateDir(), pr, {
+          worktree,
+          started,
+          pid: process.pid,
+          host: hostname(),
+          released: true,
+        });
+      console.error(
+        `ledger: PR #${pr}'s replacement stop (exit ${again}) was not written, so the stop is settled as INDETERMINATE for the next drive to judge the head again.`,
+      );
+      return DRIVE_EXIT.INDETERMINATE;
+    }
+    return again;
+  };
+
+  /** Record stop `code` in the drive state, then the stopped ledger (up to `attempts` writes) and its label. */
+  const writeStop = async (
+    code: number | null,
+    attempts = 1,
+  ): Promise<StopWrite> => {
+    const driver = ledgerDriverFromEnv();
     // The exit goes into the state before the ledger's last write, which
     // mirrors the state's events: an unknown exit names none in the driver
     // record, so a report reading the ledger falls back to those events, and
@@ -730,29 +817,37 @@ export function ledgerSettlement(
         String(code ?? "unknown"),
         driverRuntime.stopLeftWork,
       ));
-    if (driver === null) return;
+    if (driver === null) return { landed: true, label: null };
     if (!recorded) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
-      return;
+      return { landed: false, label: null };
     }
-    const res = await run(tsArgv(driveState, ["handoff", pr]), {
-      stdout: "ignore",
-      stderr: "inherit",
-      timeoutSec: helperTimeoutSeconds(),
-      env: {
-        ...process.env,
-        [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
-        [HANDOFF_TELLS_REFUSED]: "1",
-      },
-    });
-    await afterStopWrite(pr, res.code, code, started, dropRecord);
+    let handoff = 0;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const res = await run(tsArgv(driveState, ["handoff", pr]), {
+        stdout: "ignore",
+        stderr: "inherit",
+        timeoutSec: helperTimeoutSeconds(),
+        env: {
+          ...process.env,
+          [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
+          [HANDOFF_TELLS_REFUSED]: "1",
+        },
+      });
+      handoff = res.code;
+      if (afterHandoff(handoff) !== "unwritten") break;
+      if (attempts > 1)
+        console.error(
+          `ledger: PR #${pr}'s stopped ledger (exit ${code}) was not written (attempt ${attempt} of ${attempts}).`,
+        );
+    }
+    return await afterStopWrite(pr, handoff, code, started, dropRecord);
   };
   return {
     async done(code: number): Promise<number> {
-      await settle(code);
-      return code;
+      return (await settle(code)) ?? code;
     },
     async [Symbol.asyncDispose](): Promise<void> {
       await settle(null);
