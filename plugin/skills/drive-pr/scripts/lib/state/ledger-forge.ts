@@ -44,11 +44,23 @@ export async function forge(
 ): Promise<{ ok: true; stdout: string } | { ok: false; why: string }> {
   const aborted = abortReason(signal);
   if (aborted !== null) return { ok: false, why: aborted };
+  // A signal that fires while the call runs ends the child, so the call does not outlive the caller's deadline.
+  let stop: (() => void) | undefined;
   const r = await ghCall(args, {
     stderr: "pipe",
     ...(stdin === undefined ? {} : { stdin }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
+    ...(signal === undefined
+      ? {}
+      : {
+          onSpawn: (handle) => {
+            stop = () => void handle.stop();
+            if (signal.aborted) stop();
+            else signal.addEventListener("abort", stop, { once: true });
+          },
+        }),
   });
+  if (stop !== undefined) signal?.removeEventListener("abort", stop);
   if (r.code === 0) return { ok: true, stdout: r.stdout };
   const tail = r.stderr.trim().split("\n").at(-1) ?? "";
   return {

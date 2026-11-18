@@ -9,7 +9,7 @@
  * bound, and reads as it always did.
  */
 import { describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type {
@@ -48,7 +48,14 @@ import { openRepo, readSessions } from "../lib/tick-observe.ts";
 import { tickReads } from "../lib/tick-reads.ts";
 import type { DispatchSection, RepoTarget } from "../lib/types.ts";
 import type { TickReceipt } from "../receipts.ts";
-import { assignedIssue, SLUG, world } from "./fixtures.ts";
+import {
+  assignedIssue,
+  ledgerComment,
+  openPr,
+  SLUG,
+  stoppedLedger,
+  world,
+} from "./fixtures.ts";
 import { account, dispatchState, machineFile } from "./launch-fixtures.ts";
 
 const PASSED = "the tick's deadline passed before";
@@ -349,7 +356,7 @@ describe("the runtime's read under the tick's bound", () => {
 describe("the forge's reads under the tick's bound", () => {
   const runtime = fakeRuntime(() => unanswered()).runtime;
 
-  it("starts no repository query, comment listing or comments query once the bound has ended", async () => {
+  it("starts no repository query, comment listing, comments query or login read once the bound has ended", async () => {
     const reads = tickReads(runtime, undefined, spent());
     expect(await reads.repository(REPO.path)).toEqual(
       passedRead("the repository's query was read"),
@@ -362,6 +369,10 @@ describe("the forge's reads under the tick's bound", () => {
     );
     const read = await reads.repository(REPO.path);
     expect(read.ok ? null : outboundOf(read.failure)?.code).toBe("unreachable");
+    // No login is asked after the deadline, and its absence is a deadline failure, never a missing login.
+    await expect(reads.login()).rejects.toMatchObject({
+      code: "unreachable",
+    });
   });
 
   /** The forge's part of a tick under `bound`, its repository query answering `query`. */
@@ -634,4 +645,67 @@ describe("a tick whose bound ends before it reads", () => {
       w.close();
     }
   });
+});
+
+describe("a tick whose bound ends after it opened its repository", () => {
+  it("cuts the forge's reading as unreachable, starts no base-head read after it, writes its receipt and lets its locks go", async () => {
+    const w = world();
+    try {
+      w.setConfig(
+        `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`,
+      );
+      // PR #7's drive stopped on a conflict with its base: reading it reads its base branch's head.
+      w.setPrs("open", [
+        openPr(7, "feature/7-conflict", { mergeable: "CONFLICTING" }),
+      ]);
+      w.setComments(7, [ledgerComment(701, stoppedLedger(7, 9))]);
+      machineFile(w, [account(w, "a", "a@example.com")], {
+        runtime_timeout: "1s",
+      });
+      // The login read, made once the repository is open, is answered only after the tick's deadline.
+      const hold = join(w.dir, "gh-hold.json");
+      writeFileSync(
+        hold,
+        JSON.stringify({ match: "api user --jq .login", ms: 15_000 }),
+      );
+      // The launcher's deadline less the runtime's share leaves a bound of nine seconds, ample to open the repository under load.
+      const bounded = await w.dispatch(["--json"], undefined, {
+        JIG_LAUNCHER_DEADLINE_SEC: "10",
+      });
+      expectSpawnExit(bounded, 0);
+      const receipt = JSON.parse(bounded.stdout) as TickReceipt;
+      expect(receipt.completed).toBe(true);
+      expect(receipt.lockHeldBy).toBeUndefined();
+      expect(receipt.repos[0]?.refused).toBeNull();
+      const forge = receipt.repos[0]?.records.find((r) => r.record === "forge");
+      expect(forge).toMatchObject({
+        ok: false,
+        failure: { class: "unreachable" },
+      });
+      expect(forge?.detail).toContain(
+        "the tick's deadline passed during the pull requests were read",
+      );
+      const calls = readFileSync(join(w.dir, "gh-calls.log"), "utf8");
+      expect(calls).toContain("api user --jq .login");
+      expect(existsSync(join(w.dir, "base-reads.log"))).toBe(false);
+      const written = join(
+        dispatchState(w),
+        "receipts",
+        receipt.startedAt.slice(0, 10),
+        `${receipt.runId}.json`,
+      );
+      expect(existsSync(written)).toBe(true);
+      // The locks were let go: the next tick, nothing held, reads the forge whole.
+      writeFileSync(hold, JSON.stringify({ match: "no call", ms: 0 }));
+      const next = await w.dispatch(["--json"]);
+      expectSpawnExit(next, 0);
+      const after = JSON.parse(next.stdout) as TickReceipt;
+      expect(after.lockHeldBy).toBeUndefined();
+      expect(
+        after.repos[0]?.records.find((r) => r.record === "forge")?.ok,
+      ).toBe(true);
+    } finally {
+      w.close();
+    }
+  }, 60_000);
 });

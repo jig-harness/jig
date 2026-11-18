@@ -7,6 +7,12 @@
       "One session the dispatcher started: its stage, its pull request or item, its account, the wrapper's claim, its exit and its result. A secondary host records release tags owed by a follow-up on its launch and shares them with the launch's outcome. The tick reads this record to know what holds a stage and an account's slot."
     ],
     [
+      "dispatch-process-worktree-completion",
+      "dispatch/lib/launches.ts",
+      "process_worktree_completions",
+      "The record, claim and exit of a pruned launch whose process-owned checkout still exists, kept so the checkout's later collection proof can read what ran in it."
+    ],
+    [
       "dispatch-pickup-claim",
       "dispatch/lib/pickup-claim.ts",
       "pickup_claims",

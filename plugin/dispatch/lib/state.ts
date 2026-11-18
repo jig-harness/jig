@@ -489,6 +489,18 @@ export const MIGRATIONS: readonly Migration[] = [
       UNIQUE (repo, item)
     );`,
   },
+  {
+    // A process-owned checkout keeps its ended launch evidence after normal retention. Pruning must preserve that evidence, which an earlier writer does not do, so earlier readers are refused.
+    additive: false,
+    sql: `
+    CREATE TABLE process_worktree_completions (
+      id TEXT PRIMARY KEY,
+      record TEXT NOT NULL,
+      claim TEXT NOT NULL,
+      exit TEXT NOT NULL
+    );
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

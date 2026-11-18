@@ -21,6 +21,8 @@ import { routineEnd } from "./routine-reruns.ts";
 import { waitEnd } from "./followup-waits.ts";
 import { defaultBranchLabels } from "./label-config.ts";
 import { ok } from "../../shared/outcome.ts";
+import type { StateName } from "../../shared/pr-labels/projection.ts";
+import type { TickOutcome } from "../../shared/records/followup-values.ts";
 import {
   defectLine,
   type OwnForge,
@@ -40,10 +42,16 @@ function followupForge(slug: string): OwnForge {
   };
 }
 
+/** The state label each of a tick's outcomes (`shared/records/followup-values.ts`) ends its follow-up with. */
+const END_STATE = {
+  done: "followed-up",
+  failed: "followup-failed",
+} as const satisfies Readonly<Record<TickOutcome, StateName>>;
+
 export interface FollowupEnd {
   slug: string;
   pr: number;
-  outcome: "done" | "failed";
+  outcome: TickOutcome;
   /** The repository's setting; by default its default branch's. */
   settings?: () => ReturnType<typeof defaultBranchLabels>;
   forge?: OwnForge;
@@ -76,9 +84,7 @@ export async function labelFollowupEnd(
     const write = await writeOwnState({
       config: settings.value.config,
       pr: end.pr,
-      projected: {
-        state: end.outcome === "done" ? "followed-up" : "followup-failed",
-      },
+      projected: { state: END_STATE[end.outcome] },
       writer: "followup",
       forge: end.forge ?? followupForge(end.slug),
     });
@@ -98,7 +104,7 @@ export function labelFailed(label: FollowupLabel): boolean {
 }
 
 /** How an ended follow-up record ended, for its label: `null` while it holds, or when it runs again (a routine run again, or after a rate limit's reset). */
-export function followupEndOf(r: ReadRecord): "done" | "failed" | null {
+export function followupEndOf(r: ReadRecord): TickOutcome | null {
   if (r.record.action !== "followup" || r.record.pr === null) return null;
   if (routineEnd(r) || waitEnd(r)) return null;
   return outcomeOf(r);

@@ -116,17 +116,15 @@ import { infraStopClass } from "../infra-backoff.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
-import { branchHead } from "../forge.ts";
+import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
+export type { Admit } from "./base-heads.ts";
+import { ended, passedBefore, type TickBound } from "./bounded.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import type { Listing } from "../tick-comments.ts";
-import { failureText, minutesBetween } from "../text.ts";
+import { minutesBetween } from "../text.ts";
 import { readPark, type ParkReading } from "./park-reading.ts";
 import { ledgerParks } from "../park-events.ts";
-import {
-  combinedFailure,
-  readFailureOf,
-  readFailureOfError,
-} from "../read-failures.ts";
+import { combinedFailure, readFailureOf } from "../read-failures.ts";
 import { listComments } from "../../../shared/records/forge-claims.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
@@ -138,13 +136,6 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
-
-/** What the head of a pull request's base branch read as; where it did not, the failed call's class. */
-type BaseHead = { oid: string } | { unreadable: string; failure?: ReadFailure };
-
-/** The `failure` field of a failed read with a class; nothing without one. */
-const classed = (failure: ReadFailure | undefined) =>
-  failure === undefined ? {} : { failure };
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
@@ -750,37 +741,8 @@ interface Reading {
   comments: (pr: number) => Promise<Listing>;
   /** What this host shows of a silent ledger's driver. */
   presence: (pr: number, ledger: Ledger) => Promise<DriverPresence>;
-}
-
-/** Runs a forge read when the tick's pool has a place for it (`pool.ts`). */
-export type Admit = <T>(read: () => Promise<T>) => Promise<T>;
-
-/** A reading's reader of base branch heads: pull requests on one base share one read. */
-function baseHeads(slug: string, admit: Admit): Reading["baseHead"] {
-  const read = new Map<string, Promise<BaseHead>>();
-  return (branch) => {
-    if (branch === undefined || branch === "")
-      return Promise.resolve({
-        unreadable: "the forge reports no base branch for it",
-      });
-    const known = read.get(branch);
-    if (known !== undefined) return known;
-    const head = admit(() => branchHead(slug, branch)).then(
-      (oid): BaseHead =>
-        oid.ok
-          ? { oid: oid.value }
-          : {
-              unreadable: oid.failure.reason,
-              ...classed(readFailureOf(oid.failure)),
-            },
-      (error: unknown): BaseHead => ({
-        unreadable: failureText(error),
-        ...classed(readFailureOfError(error)),
-      }),
-    );
-    read.set(branch, head);
-    return head;
-  };
+  /** The tick's bound, where it has one: no park thread is read once it has ended. */
+  bound?: TickBound;
 }
 
 /** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger whose stop a conflict re-drives. */
@@ -868,7 +830,14 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
       readFailed: true,
     };
   const ledger = snapshot.canonical.parsed.ledger;
-  const park = await readPark(pr.number, ledger, slug, listing.value);
+  const park = await readPark(
+    pr.number,
+    ledger,
+    slug,
+    listing.value,
+    {},
+    r.bound,
+  );
   const forge = await factsOf(pr, ledger, r);
   let classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
   const request = rearmRequest(ledger, labels, pr.labels, classified);
@@ -938,7 +907,9 @@ function waitingOf(
  * unless `labels` are on and it carries the `drive` label, or `adoption`
  * adopts it (`unarmed`). Each pull request's comments are read through
  * `comments`, the tick's listings, where the observe phase passes them, and
- * from the forge where it does not, as a launch's fresh read does.
+ * from the forge where it does not, as a launch's fresh read does. Under
+ * the tick's `bound`, no base branch's head and no driver's presence is
+ * read once it has ended.
  */
 export async function readDrives(
   slug: string,
@@ -949,6 +920,7 @@ export async function readDrives(
   adoption: Adoption | null = null,
   comments?: (pr: number) => Promise<Listing>,
   admit: Admit = (read) => read(),
+  bound?: TickBound,
 ): Promise<DrivenPr[]> {
   const reading: Reading = {
     slug,
@@ -957,9 +929,16 @@ export async function readDrives(
     windowMs: stallThresholdMs(),
     labels,
     adoption,
-    baseHead: baseHeads(slug, admit),
-    presence: driverPresence,
+    baseHead: baseHeads(slug, admit, bound),
+    presence: (pr, ledger) =>
+      ended(bound)
+        ? Promise.resolve({
+            gone: false,
+            why: passedBefore("this host looked for its driver's run"),
+          })
+        : driverPresence(pr, ledger),
     comments: comments ?? ((pr) => listComments({ repo: slug, number: pr })),
+    ...(bound === undefined ? {} : { bound }),
   };
   const out: DrivenPr[] = [];
   for (const pr of prs) {

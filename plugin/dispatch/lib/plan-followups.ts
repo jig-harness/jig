@@ -96,6 +96,8 @@ import {
 } from "./followup-waits.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
 import { parseMs } from "../../shared/time.ts";
+import type { TickOutcome } from "../../shared/records/followup-values.ts";
+import { Defect } from "../../shared/errors.ts";
 
 export interface FollowupInput {
   slug: string;
@@ -244,7 +246,7 @@ function endedAs(
   pr: number,
   id: string,
   found: ReadRecord | undefined,
-): "done" | "failed" | null {
+): TickOutcome | null {
   const outcome = input.outcomes.get(pr);
   if (outcome?.record === id) return outcome.outcome;
   return found === undefined ? null : outcomeOf(found);
@@ -275,25 +277,30 @@ function planForeignMarker(
   const target = `PR #${pr.number}`;
   const { record, host, outcome } = marker.run;
   const named = `host ${host}'s launch record ${record} (marker comment ${marker.id})`;
-  if (outcome === "done") {
-    plan.quiet.push({
-      target,
-      class: "followup-done",
-      why: `the follow-up under ${named} recorded done`,
-    });
-    return;
-  }
-  if (outcome === "failed") {
-    plan.actions.push(
-      failed(
-        input,
-        pr,
-        marker,
-        `its pass under ${named} ended without recording done; that host's report carries the question it stopped on, if any`,
-        false,
-      ),
-    );
-    return;
+  switch (outcome) {
+    case "done":
+      plan.quiet.push({
+        target,
+        class: "followup-done",
+        why: `the follow-up under ${named} recorded done`,
+      });
+      return;
+    case "failed":
+      plan.actions.push(
+        failed(
+          input,
+          pr,
+          marker,
+          `its pass under ${named} ended without recording done; that host's report carries the question it stopped on, if any`,
+          false,
+        ),
+      );
+      return;
+    case undefined:
+      break;
+    default:
+      assertNever(outcome);
+      return;
   }
   planClaimed(
     input,
@@ -309,6 +316,11 @@ function planForeignMarker(
         evidence: { record, marker: marker.id, host },
       }),
   );
+}
+
+/** Fails to compile when a switch over a closed set misses a member, so a new outcome is planned on purpose. */
+function assertNever(value: never): never {
+  throw new Defect(`unplanned follow-up outcome ${JSON.stringify(value)}`);
 }
 
 /** The record's test-lock wait as a reason suffix, empty when it recorded none. */
@@ -333,13 +345,20 @@ function planTickMarker(
     plan.unplaced.push({ target, record: "forge", reason: unsettled });
     return;
   }
-  if (ended === "done") {
-    plan.quiet.push({
-      target,
-      class: "followup-done",
-      why: `the follow-up under launch record ${id} recorded done`,
-    });
-    return;
+  switch (ended) {
+    case "done":
+      plan.quiet.push({
+        target,
+        class: "followup-done",
+        why: `the follow-up under launch record ${id} recorded done`,
+      });
+      return;
+    case "failed":
+    case null:
+      break;
+    default:
+      assertNever(ended);
+      return;
   }
   if (plannedWait(input, marker, found, ended, plan, target)) return;
   const released = releaseWhy(input, pr.number, marker, found, ended);
@@ -387,7 +406,7 @@ function releaseWhy(
   pr: number,
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
-  ended: "done" | "failed" | null,
+  ended: TickOutcome | null,
 ): { what: string; fault: boolean } | null {
   if (
     found !== undefined &&
@@ -441,7 +460,7 @@ function plannedWait(
   input: FollowupInput,
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
-  ended: "done" | "failed" | null,
+  ended: TickOutcome | null,
   plan: Plan,
   target: string,
 ): boolean {
@@ -548,7 +567,7 @@ function endedHere(
   pr: number,
   marker: FollowupMarker & { run: { kind: "tick" } },
   found: ReadRecord | undefined,
-): "done" | "failed" | null {
+): TickOutcome | null {
   // A marker a person's answer marked done settles the follow-up, whatever this host's records of the run say.
   if (marker.run.outcome === "done") return "done";
   const ended = endedAs(input, pr, marker.run.record, found);
