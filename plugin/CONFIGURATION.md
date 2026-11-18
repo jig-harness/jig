@@ -711,6 +711,16 @@ context labels from `review`, the labels that name an area from
 | `work_batch.ranking.provenance` | whole number ≥ 0 | `3` | work-batch | The score of the follow-up label (`issue_tracker.labels.followup`) |
 | `work_batch.ranking.shared_area_label` | whole number ≥ 0 | `1` | work-batch | The score of each shared area label an issue carries |
 
+`dispatch` reads `work_batch.size_points`, `point_budget`, `max_items` and
+`solo_flags` to form fixed batches of served items. The most expensive
+batchable size (`medium` by default; none when every size costs the same) needs
+a person's verdict to stay in a batch, so it never joins a fixed batch: such an
+item is picked up on its own, with no question, and the other items go on as
+the batch. When fewer than two remain, each is its own pickup. A member that
+reaches that size, or grows past the batchable sizes, after the batch is formed
+is left out the same way by the batch's pass. A run with a person at the
+keyboard still asks for the verdict.
+
 An unknown field in `work_batch` or `work_batch.ranking` is refused. The
 [work-batch README](skills/work-batch/README.md) explains the budget, the
 ranking and the solo-only flags.

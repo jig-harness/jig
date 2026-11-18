@@ -152,6 +152,22 @@ describe("a batch pickup that ended after claiming one member", () => {
     });
   }
 
+  for (const result of ["done", "failed"] as const) {
+    it(`wants the anchor it left out for its own pickup when it recorded ${result}`, () => {
+      const dir = root();
+      const records = [
+        endedBatch(["#464", "#713", "#715"], result, ["#713", "#715"]),
+      ];
+      const next = plan(["#464"], records);
+      expect(
+        next.actions.filter((a) => a.stage === "pickup").map((a) => a.target),
+      ).toEqual(["#464"]);
+      expect(next.actions.some((a) => a.stage === "notify")).toBe(false);
+      release(records, ["#464"], ["#713", "#715"], dir);
+      expect(records[0]?.record.releasedItems).toEqual(["#464"]);
+    });
+  }
+
   it("keeps every member of a batch that ended on a question, so the person answers it first", () => {
     const records = [endedBatch(["#923", "#924"], "failed", ["#923"])];
     const [read] = records;

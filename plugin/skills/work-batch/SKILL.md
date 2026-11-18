@@ -55,7 +55,8 @@ for a person to settle), use `AskUserQuestion` under Claude Code where the
 session can use it; in any interactive harness where it cannot (another
 harness, or a permission mode that denies the tool), ask a plain-text
 numbered question and end the turn. With nobody to answer, stop and state the question. Never pick on the
-user's behalf.
+user's behalf. A member's size in a dispatched served batch is no question:
+step 1 says what happens to it.
 
 ## When not to batch
 
@@ -83,18 +84,37 @@ Work the issue alone with [`/jig:do-item`](../do-item/SKILL.md) when:
 **Dispatched served batch.** A dispatcher launch may name a fixed set of
 items, their served tracker identity and each inherited item's ancestor
 epic. That set is the maximum scope; do not add siblings. Use the first named key as the anchor. Run the proposal
-and its revalidation with every fixed key in `--claimed`, so their existing
-served assignment does not exclude them. Keep only named items the other
+and its revalidation with every fixed key, in the launch's order, in
+`--fixed`: the script reads only those items, and their existing served
+assignment does not exclude them. Keep only named items the other
 eligibility checks permit. This flag does not claim an item: the live claim
 below still checks its state, assignment, holds and assignment provenance.
-Read the full issues and assess their independence as for any batch. A
-question that needs a person ends the pass with `Question:`; frame it as
-a decision record and record the failed result with it through the
+Read the full issues and assess their independence as for any batch.
+
+The dispatcher keeps the most expensive batchable size out of the batches it
+forms, but a size can change after the tick. **A member's size is never a
+question here.** The proposal lists each member of that size, and each that
+has grown past the batchable sizes, under **Left for their own pickups**
+(`leftOut` in the JSON form), and no verdict prompt appears:
+
+- Claim no member left out. Name each one and the reason in the pull
+  request's `## Batch` section and in the closing report. Once the pass ends,
+  the dispatcher picks it up on its own, because an ended batch pass that
+  claimed a sibling no longer holds the members it did not claim.
+- With two or more members kept, go on with them as the batch.
+- With fewer than two kept, the pass still has to claim one, or its launch
+  record keeps holding every member. Run `/jig:do-item` for the member kept,
+  or, when none is, for the first member left out, passing that item's
+  `--for` and `--ancestor` to its claim. Every other member stays unclaimed
+  for its own pickup.
+
+Any other question that needs a person ends the pass with `Question:`; frame
+it as a decision record and record the failed result with it through the
 launch's result command (`failed --decision <file>`, as the prompt says).
 Never choose for them.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--format json]
+bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--fixed "KEY,KEY"] [--format json]
 ```
 
 `<anchor>` is one of:
@@ -132,7 +152,8 @@ Read all three lists the script prints:
 
 - **Proposed batch**: each issue's size, points and score, its revalidation
   line (below) and, under each issue of the most expensive batchable size
-  (`medium` by default), a verdict prompt for step 2.
+  (`medium` by default), a verdict prompt for step 2. With `--fixed` no such
+  issue is proposed, so no prompt appears.
 - **Held back**: each issue that may not join, with its reason. A reason
   that names a label to add (no size, no type, no repository or context label,
   a context or area label the configuration does not know) is a labelling gap: fix the label and re-run.
@@ -172,9 +193,10 @@ confirm what the script cannot:
 - **One area is preferred.** An epic anchor may span two; a mixed batch takes
   the union of both areas' validation and mandatory reviews. Split unless
   the anchor is why the areas mix.
-- **Each issue under a verdict prompt gets an explicit verdict:** re-size it
-  (fix the label, then re-run so the budget prices it), keep it in the batch,
-  or leave it for its own pull request.
+- **Each issue under a verdict prompt gets an explicit verdict from the
+  person running the batch:** re-size it (fix the label, then re-run so the
+  budget prices it), keep it in the batch, or leave it for its own pull
+  request.
 
 The constraints and why: [`references/batch-policy.md`](references/batch-policy.md).
 
@@ -372,8 +394,9 @@ Anchor: `billing` (change area). 4 issues, 9 of 16 points.
 ```
 
 A row per issue is what closes each issue on merge: an issue named only in
-prose stays open. Add the `## Out-of-tree follow-ups` section `/jig:do-item`
-requires, for every issue.
+prose stays open, which is how a member left out of a dispatched batch is
+named, below the table, with the reason. Add the `## Out-of-tree follow-ups`
+section `/jig:do-item` requires, for every issue.
 
 Once the pull request is open, and before the drive arms, move each issue
 to `pr_open` as `/jig:do-item`'s "Move the item to `pr_open`" (Step 4a)

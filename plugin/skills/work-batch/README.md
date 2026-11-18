@@ -48,7 +48,9 @@ Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
    comments) and confirms what the script cannot: the issues are
    independent of each other, none is larger than its size label says, and
    each `medium` issue gets an explicit decision: re-size it,
-   keep it, or leave it for its own pull request.
+   keep it, or leave it for its own pull request. A batch the dispatcher
+   forms has nobody to decide, so a `medium` issue stays out of it and is
+   picked up on its own.
 3. **Claim.** Just before claiming, the agent runs the proposal again and
    drops any issue whose state, assignee, priority, size, type, context or
    flags changed since the first run: a new flag or an urgent priority holds

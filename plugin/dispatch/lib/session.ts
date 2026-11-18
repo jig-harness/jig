@@ -244,7 +244,7 @@ function pickupPassPrompt(
           `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. No member may be replaced or added.`,
           ...(record.stewardResume === undefined
             ? [
-                "Use the first named key as the proposal anchor and every fixed key in --claimed. Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.",
+                `Use the first named key as the proposal anchor and pass --fixed ${shellQuote(record.batchItems.map((i) => i.key).join(","))}. Ask no question about a member's size: claim no member the proposal leaves for its own pickup, and when fewer than two members stay, work one alone as the skill says. Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.`,
               ]
             : []),
         ]),
