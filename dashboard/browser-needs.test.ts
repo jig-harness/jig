@@ -70,7 +70,9 @@ describe("Needs you", () => {
       try {
         await shows(page, ".pNeeds .need");
         expect(
-          await page.locator(".pNeeds .groupHead").allTextContents(),
+          await page
+            .locator(".pNeeds .groupHead > :first-child")
+            .allTextContents(),
         ).toEqual(["Decide", "Authorize", "Investigate"]);
         const card = page.locator(".pNeeds .need").first();
         expect(await card.locator(".act").textContent()).toBe("Decide");
@@ -87,12 +89,12 @@ describe("Needs you", () => {
           "Waits on maintainer-a",
         );
         // The other options fold under the decision's row.
-        await card.getByRole("button", { name: "1 other option" }).click();
-        await shows(page, ".pNeeds .need .options");
-        expect(await card.locator(".options li").textContent()).toContain(
-          "B: retry 5xx and 429",
-        );
-        await card.getByRole("button", { name: "The whole decision" }).click();
+        await card.locator("[data-card-toggle]").click();
+        await shows(page, ".pNeeds .need .decExpanded.opts");
+        expect(
+          await card.locator(".decExpanded.opts li").textContent(),
+        ).toContain("B: retry 5xx and 429");
+
         await shows(page, ".pNeeds .need .steps");
         expect(await card.locator(".steps input[type=checkbox]").count()).toBe(
           1,

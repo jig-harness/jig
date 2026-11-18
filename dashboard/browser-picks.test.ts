@@ -120,7 +120,7 @@ describe("picking answers on a card", () => {
       try {
         const two = card(page, "PR #502");
         expect(await two.locator(".decCount").textContent()).toBe(
-          "2 decisions · 0 picked",
+          "2 decisions · 0 picked here",
         );
         // The interplay shows beside both decisions it names.
         expect(await two.locator(".interplay").count()).toBe(2);
@@ -141,7 +141,7 @@ describe("picking answers on a card", () => {
           async () => (await pressed(page, "PR #502", "Later")) === "true",
         );
         expect(await two.locator(".decCount").textContent()).toBe(
-          "2 decisions · 2 picked",
+          "2 decisions · 2 picked here",
         );
         // u clears the last pick and returns to it; h and l move between the decisions.
         await page.keyboard.press("u");
@@ -355,7 +355,7 @@ describe("picking answers on a card", () => {
         const two = card(page, "PR #502");
         // No number is shown on a phone: an option is a row to tap.
         expect(await two.locator(".optNum").first().isVisible()).toBe(false);
-        await two.getByRole("button", { name: "1 other option" }).first().tap();
+        await two.locator("[data-card-toggle]").tap();
         await two.locator(".opt", { hasText: "Remove" }).tap();
         await until(
           "the tap picked Remove",
@@ -369,11 +369,12 @@ describe("picking answers on a card", () => {
           async () => (await pressed(page, "PR #502", "Later")) === "false",
         );
         await two.locator(".opt", { hasText: "Later" }).tap();
-        await two
-          .locator('.dec[data-decision="PRRT_flag"]')
-          .getByRole("button", { name: "Add a note" })
-          .tap();
-        await page.keyboard.type("for one release only");
+        expect(
+          await two
+            .getByRole("button", { name: "Add a note" })
+            .first()
+            .isVisible(),
+        ).toBe(false);
         expect(await shortControls(page)).toEqual([]);
         await two
           .getByRole("button", { name: "Copy the answers for PR #502" })
@@ -385,7 +386,6 @@ describe("picking answers on a card", () => {
         expect(await clipboard(page)).toBe(
           [
             `answer PRRT_flag: choose Remove [${PICK_DIGESTS.flag}]`,
-            "note PRRT_flag: for one release only",
             "",
             `answer PRRT_table: approve [${PICK_DIGESTS.table}]`,
           ].join("\n"),
@@ -397,7 +397,7 @@ describe("picking answers on a card", () => {
           .first()
           .tap();
         const guarded = card(page, "PR #1300");
-        await guarded.getByRole("button", { name: "1 other option" }).tap();
+        await guarded.locator("[data-card-toggle]").tap();
         await guarded
           .locator(".opt", { hasText: "the table and its rows are deleted" })
           .tap();
@@ -431,6 +431,86 @@ describe("picking answers on a card", () => {
     },
     TIMEOUT,
   );
+
+  browserIt(
+    "filters stale and disputed answers for everyone",
+    async () => {
+      const { page, context } = await openPicks();
+      try {
+        const filter = page.getByLabel("For everyone");
+        await filter.selectOption("stale");
+        await shows(page, ".pNeeds .answers");
+        expect(
+          await card(page, "PR #501").locator(".answers").textContent(),
+        ).toContain("answered an earlier framing");
+        expect(await card(page, "PR #502").count()).toBe(0);
+        await filter.selectOption("disputed");
+        expect(
+          await card(page, "PR #502").locator(".answers").textContent(),
+        ).toContain("maintainer-b chose Now");
+        expect(await card(page, "PR #501").count()).toBe(0);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  for (const width of [1440, 390, 320]) {
+    browserIt(
+      `decision disclosure and copying work at ${width} pixels`,
+      async () => {
+        const server = await served("picks");
+        const context = await requireBrowser().newContext({
+          viewport: { width, height: 900 },
+          hasTouch: width < 1440,
+          isMobile: width < 1440,
+          permissions: ["clipboard-read", "clipboard-write"],
+        });
+        try {
+          const page = await context.newPage();
+          await page.goto(`${server.url}&view=needs`);
+          await shows(page, ".pNeeds .need");
+          const two = card(page, "PR #502");
+          const toggle = two.locator("[data-card-toggle]");
+          const press = async (control: ReturnType<typeof two.locator>) => {
+            if (width < 1440) await control.tap();
+            else await control.click();
+          };
+          await press(two.locator(".opt", { hasText: "Keep" }));
+          expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+          await press(two.locator(".q").last());
+          expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+          await press(two.locator(".opt", { hasText: "Now" }));
+          expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+          await press(toggle);
+          expect(
+            await two.locator(".opt", { hasText: "Now" }).isVisible(),
+          ).toBe(true);
+          if (width < 1440) expect(await shortControls(page)).toEqual([]);
+          expect(
+            await page.evaluate(() => document.documentElement.scrollWidth),
+          ).toBeLessThanOrEqual(width);
+          await press(
+            two.getByRole("button", { name: "Copy the answers for PR #502" }),
+          );
+          await until(
+            "both answers copied",
+            async () =>
+              (await clipboard(page)) ===
+              [
+                `answer PRRT_flag: approve [${PICK_DIGESTS.flag}]`,
+                "",
+                `answer PRRT_table: choose Now [${PICK_DIGESTS.table}]`,
+              ].join("\n"),
+          );
+        } finally {
+          await context.close();
+        }
+      },
+      TIMEOUT,
+    );
+  }
 
   browserIt(
     "a held c takes only the first step of a guarded copy",

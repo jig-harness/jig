@@ -161,6 +161,14 @@ function isPullUrl(url: string): boolean {
   return /\/pull\/\d+/.test(url);
 }
 
+/** The pull request comment field, where the card's copied answers go. */
+export function answerCommentUrl(url: string | null): string | null {
+  if (url === null || !/^https?:\/\//i.test(url) || !isPullUrl(url))
+    return null;
+  if (!/^https:\/\/github\.com\//i.test(url)) return url;
+  return `${url.split("#", 1)[0]}#new_comment_field`;
+}
+
 /** One key a focused card answers to, as the key bar names it. */
 export interface CardHint {
   key: string;

@@ -12,10 +12,15 @@ import { LinkedDetail, WorkLead } from "./work.tsx";
  * settings (`send.tsx`).
  */
 import { type ReactNode, useId, useRef, useState } from "react";
+import {
+  DecisionCounts,
+  filterAnswerStates,
+  groupMembers,
+} from "./decision-counts.tsx";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
-import { cardAttrs } from "./keys.ts";
+import { answerCommentUrl, cardAttrs } from "./keys.ts";
 import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 import { Evidence, PanelHelp, StageHint } from "./fold.tsx";
 import { GutterCard } from "./gutter.tsx";
@@ -213,11 +218,14 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
   const card = useRef<HTMLElement | null>(null);
   const picking = usePicking(need, card);
   const picks = need.rows.length > 0;
+  const attrs = cardAttrs({ ...needCard(need, picking.commit), picks });
+  const commentUrl = picks ? answerCommentUrl(need.url) : null;
+  if (commentUrl !== null) attrs["data-pr"] = commentUrl;
   return (
     <GutterCard
       className={rest ? "need rest" : "need"}
       cardRef={card}
-      attrs={cardAttrs({ ...needCard(need, picking.commit), picks })}
+      attrs={attrs}
       label={`${need.foldLabel} for ${need.target}`}
       onBlur={(event) => {
         // Copy's first step lasts while focus stays on the card, or in the palette that copies it.
@@ -393,7 +401,9 @@ export function NeedsPanel({
   const [chosen, setPerson] = useState<string | null>(null);
   // A person the newest line no longer names is no filter.
   const person = chosen !== null && people.includes(chosen) ? chosen : null;
-  const rows = needRows(line, clock, person);
+  const [everyone, setEveryone] = useState("any");
+  const allRows = needRows(line, clock, person);
+  const rows = filterAnswerStates(allRows, everyone);
   const count = rows.filter((r) => r.type !== "head").length;
   const send = useSendSettings(line, clock);
   let seen = 0;
@@ -426,8 +436,26 @@ export function NeedsPanel({
             </select>
           </label>
         )}
+        {everyone !== "any" ||
+        allRows.some(
+          (row) => row.type === "need" && row.need.answerNotes.length > 0,
+        ) ? (
+          <label className="personFilter sm">
+            <span className="mut">For everyone</span>
+            <select
+              value={everyone}
+              onChange={(event) => setEveryone(event.currentTarget.value)}
+            >
+              <option value="any">All states</option>
+              <option value="stale">Stale</option>
+              <option value="disputed">Disputed</option>
+              <option value="from the line">From the line</option>
+            </select>
+          </label>
+        ) : null}
         <MoreToggle count={count} all={all} setAll={setAll} where="head" />
       </div>
+      <DecisionCounts rows={rows} />
       {send.panel}
       <AnsweredHolds line={line} />
       <div className={all ? "needList all" : "needList"}>
@@ -447,6 +475,7 @@ export function NeedsPanel({
                     {row.head}
                   </span>
                 )}
+                <DecisionCounts rows={groupMembers(rows, i)} />
               </div>
             );
           seen++;

@@ -557,3 +557,11 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 }
 
 .sendPreview { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Decision details follow the card disclosure. Touch cards keep the pick and copy controls. */
+.card:not(.open) .decExpanded { display: none; }
+@media (hover: none), (pointer: coarse) {
+  .decFields { display: none; }
+  .opt { min-height: 44px; }
+  .opt .optNum { display: none; }
+}

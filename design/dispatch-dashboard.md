@@ -174,6 +174,20 @@ names: GitHub Issues, Linear or Jira, an unknown adapter by its own word.
 Where the line does not say, it speaks of the repository's issues; no
 string the page shows says "tracker".
 
+**Decision cards in Needs you.** The closed card shows each decision's
+position, class, question, recommended option and any different pick. Tap a
+question to open the card and read the remaining options, steps and evidence.
+Option buttons pick an answer directly. On a touch device the card offers
+picking and copying. Notes and answers in your own words are available on
+the expanded desktop card.
+
+The copy controls gather the active answers into one comment. Guarded picks
+first show a check panel with the option's effects and costs and the reason
+for confirmation. Changing an answer, updating its framing or moving focus
+away clears confirmation. The pull request link and the `p` key open the
+same place to paste the comment. The For everyone filter uses the line's
+answer state. Counts marked “here” reflect answers kept by this browser.
+
 **Where the facts come from.** Merge, Needs you, Running, Queue and
 Hosts are drawn from the line each tick writes, with the forge facts its
 board read gathered, so drawing them makes no forge or tracker call, and

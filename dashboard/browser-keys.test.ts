@@ -561,6 +561,7 @@ describe("the keys on every view", () => {
       const { page, context } = await openOn("needs");
       try {
         const need = page.locator(".need").first();
+        await need.locator("[data-card-toggle][aria-expanded=false]").click();
         await need.getByRole("button", { name: "Write an answer" }).click();
         const box = need.locator("input[data-field]");
         await box.focus();

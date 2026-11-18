@@ -309,6 +309,7 @@ describe("the disclosures", () => {
         );
 
         const need = page.locator(".need").first();
+        await need.locator("[data-card-toggle][aria-expanded=false]").click();
         await need.getByRole("button", { name: "Write an answer" }).click();
         await need.locator("input[data-field]").fill("A, keep it small");
         const answer = page.getByRole("button", {
@@ -325,6 +326,7 @@ describe("the disclosures", () => {
 
         // The answer is kept in this browser, so a reload loses none of it.
         await page.reload();
+        await need.locator("[data-card-toggle][aria-expanded=false]").click();
         await shows(page, ".need input[data-field]");
         expect(
           await page

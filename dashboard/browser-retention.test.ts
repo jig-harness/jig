@@ -59,6 +59,7 @@ describe("retained page choices", () => {
         try {
           await shows(page, ".need");
           const need = page.locator(".need").first();
+          await need.locator("[data-card-toggle][aria-expanded=false]").click();
           await need.getByRole("button", { name: "Write an answer" }).click();
           await page.evaluate((kind) => {
             const store = window.localStorage;
@@ -90,6 +91,7 @@ describe("retained page choices", () => {
           await openView(page, "History");
           await openView(page, "Help");
           await openView(page, "Needs you");
+          await need.locator("[data-card-toggle][aria-expanded=false]").click();
           await shows(page, ".need input[data-field]");
           expect(await need.locator("input[data-field]").inputValue()).toBe(
             "A, keep it small",
@@ -117,6 +119,7 @@ describe("retained page choices", () => {
         await page.reload();
         await shows(page, ".need");
         const need = page.locator(".need").first();
+        await need.locator("[data-card-toggle][aria-expanded=false]").click();
         await need.getByRole("button", { name: "Write an answer" }).click();
         await need.locator("input[data-field]").fill("A");
         await page.clock.setSystemTime(Date.now() + 31 * 24 * 60 * 60 * 1000);
