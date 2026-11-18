@@ -141,6 +141,9 @@ describe("the world view's direct implementation", () => {
     expect(ghCalls(w).toSorted()).toEqual([
       "api --paginate --slurp repos/example-org/example-repo/issues/5/comments?per_page=100",
       "api rate_limit",
+      "api repos/example-org/example-repo/git/ref/heads/main",
+      "api repos/example-org/example-repo/pulls/7/files?per_page=100&page=1",
+      "api repos/example-org/example-repo/pulls/8/files?per_page=100&page=1",
       "api user --jq .login",
       "graphql DispatchRepository",
       "pr list --repo example-org/example-repo --state merged --search merged:>=2026-10-30 --limit 1000 --json number,url,title,headRefName,createdAt,mergedAt,updatedAt",
