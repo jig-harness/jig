@@ -151,6 +151,8 @@ export interface LaunchRecord {
   /** The repository's `owner/name` and its local checkout. */
   repo: string;
   repoPath: string;
+  /** False for a follow-up on a host that delegates release tracker filing to the owner. */
+  followupOwner?: false;
   /** The pull request a drive or a follow-up acts on; `null` for a pickup. */
   pr: number | null;
   /** The item a pickup starts; `null` for a drive or a follow-up. */

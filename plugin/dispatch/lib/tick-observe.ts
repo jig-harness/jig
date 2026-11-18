@@ -72,7 +72,13 @@ import type {
   SessionsReader,
   SessionsReport,
 } from "./runtime/port.ts";
-import { branchPattern, followupCommandOn, readSection } from "./section.ts";
+import { releaseStationOn } from "./release-handoff.ts";
+import {
+  branchPattern,
+  DEFAULT_FOLLOWUP_COMMAND,
+  followupCommandOn,
+  readSection,
+} from "./section.ts";
 import { type PhaseTimer, settled } from "./phase-timer.ts";
 import {
   type RepoReflection,
@@ -412,7 +418,10 @@ export async function observeRepo(
               world.forge({
                 repo,
                 report: forgeReport,
-                section,
+                section:
+                  section.followupCommand === null && releaseStationOn(opened)
+                    ? { ...section, followupCommand: DEFAULT_FOLLOWUP_COMMAND }
+                    : section,
                 labels,
                 nowMs,
                 shared: shared.records,
@@ -434,7 +443,6 @@ export async function observeRepo(
             ok: false,
             openReadable: false,
             open: [],
-            openReadable: false,
             read: new Set(),
             scoped: labels?.onlyLabeled === true,
             inScope: new Set(),

@@ -61,27 +61,27 @@ import {
 } from "../../shared/records/shared.ts";
 import { digest, localWriter } from "../../shared/records/writer.ts";
 import { stateRoot } from "../receipts.ts";
-import { pendingRearm } from "./rearm-state.ts";
 import { factsOf, settledConflict } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
-import { outcomeOf } from "./followup-outcomes.ts";
 import { retriedDeath, retryableFollowup } from "./session-startup.ts";
 import { routineEnd, routineRerun } from "./routine-reruns.ts";
 import { waitEnd } from "./followup-waits.ts";
 import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
-  holds,
   isDrive,
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
   writeRecord,
-  cancelledBeforeExecution,
 } from "./launches.ts";
+import {
+  endOfRecord,
+  reportOfRun,
+  withReleaseHandoff,
+} from "./shared-launch-ends.ts";
 import { stateDb } from "./state.ts";
-import type { ReportCause, ReportWriter } from "../../shared/closing-report.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
 import { currentIso, currentMs, parseMs } from "../../shared/time.ts";
 
@@ -541,47 +541,6 @@ function lostWhy(a: Exclude<ClaimAnswer, { kind: "holds" }>): string {
   }
 }
 
-/** How a launch record's launch ended, as its claim says it; `null` while it holds. */
-function endOfRecord(
-  r: ReadRecord | undefined,
-  nowIso: string,
-): LaunchEnd | null {
-  if (r === undefined)
-    return {
-      state: "died",
-      at: nowIso,
-      reason: "its launch record is gone from the host that made it",
-    };
-  if (cancelledBeforeExecution(r))
-    return {
-      state: "died",
-      at: r.record.cancelledAt ?? nowIso,
-      reason: "its reservation was cancelled before execution",
-      executed: false,
-    };
-  // Other hosts must retain the reservation until the request label is removed.
-  if (holds(r.state) || pendingRearm(r.record, r.state)) return null;
-  if (r.state.kind === "died")
-    return { state: "died", at: nowIso, reason: r.state.reason };
-  if (r.state.kind !== "ended") return null;
-  const outcome = r.record.action === "followup" ? outcomeOf(r) : null;
-  return {
-    state: "ended",
-    at: r.state.exit.at,
-    exit: r.state.exit.code,
-    outcome,
-    ...reportOfRun(r),
-  };
-}
-
-/** What an end says of the run's closing report: who wrote it and its cause, never its text, since the claim is public. */
-function reportOfRun(r: ReadRecord): { by: ReportWriter; cause?: ReportCause } {
-  const kept = r.report ?? null;
-  if (kept === null) return { by: "none" };
-  const { cause } = kept.report;
-  return cause === undefined ? { by: kept.by } : { by: kept.by, cause };
-}
-
 /**
  * Write the end of each of this host's own claims that has none, once its
  * launch record ended or is gone; with `--apply` only, since it writes to the
@@ -619,7 +578,17 @@ export async function settleOwnClaims(
                 pr.number,
                 "followup",
                 m.id,
-                markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
+                withReleaseHandoff(
+                  markerEnd(
+                    m.run.record,
+                    outcomes.get(pr.number),
+                    byId,
+                    nowIso,
+                  ),
+                  ctx.slug,
+                  m.run.record,
+                  ctx.root,
+                ),
                 m.run.host === undefined ? ctx.host : undefined,
               ),
       ),
@@ -759,7 +728,11 @@ async function settleRecordClaims(
       ...failures,
       `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
     ];
-  return [...failures, ...(await writeRecordEnds(ctx, target, owed, matches))];
+  const end = withReleaseHandoff(owed.end, target.repo, r.record.id, root);
+  return [
+    ...failures,
+    ...(await writeRecordEnds(ctx, target, { ...owed, end }, matches)),
+  ];
 }
 
 /** Publish each readable still-open claim's end, keeping independent write failures. */

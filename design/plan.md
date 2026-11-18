@@ -240,9 +240,7 @@ per issue in the design's order:
   the `settle`, `redrive` and `rerun-checks` records, each an opt-in of the
   host (`steward.remit`) that the tick applies only on its own reads.
 - **Releases.** A releasing commit's failed gates re-run once and every
-  untagged release reported (`changelog.release.rerun_failed_gates`); a
-  follow-up recording the release owed and finishing, with one need per
-  release.
+  untagged release reported (`changelog.release.rerun_failed_gates`).
 - **Re-drives.** The re-drives per head as configuration
   (`dispatch.redrive`, capped by the host's `redrive_max`); a pass that
   stands down recording why; the conflict round recognising a squash-merged
