@@ -313,8 +313,9 @@ export type NeedRow =
 
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
- * sessions not moving, each heading with the number of rows under it. Filtered to one person, only the needs that wait on
- * them stay; a session not moving names nobody, so it goes too.
+ * sessions not moving, each heading with the number of rows under it.
+ * Filtered to one person, only the needs that wait on them stay; a session
+ * not moving names nobody, so it goes too.
  */
 export function needRows(
   line: LineSnapshot,

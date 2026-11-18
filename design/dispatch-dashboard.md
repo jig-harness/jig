@@ -299,10 +299,9 @@ and a retry control's, which no view draws today.
   a card, a stage an outlined chip, a source a dashed chip; a cause, a
   standing, an account's state and an answer's state are a bare icon beside
   its word; an act's group, a coming group, a lane and a gauge lead their
-  heading or row. The shapes
-  carry the difference, so it holds in greyscale, and under forced colours
-  the pill is filled with the system's text colour and the chips keep their
-  solid or dashed borders.
+  heading or row. The shapes carry the difference, so it holds in
+  greyscale, and under forced colours the pill is filled with the system's
+  text colour and the chips keep their solid or dashed borders.
 - **A shared word shares its icon** where the meaning is the same: a
   re-armable source and the rearm stage, a held source and the held group,
   a merged source and the merged standing. The act Merge asks a person to

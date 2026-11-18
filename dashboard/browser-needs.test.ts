@@ -155,6 +155,8 @@ describe("Needs you", () => {
           "the notes hide again",
           async () => (await notes.filter({ visible: true }).count()) === 0,
         );
+        // Open, so the notes' own lines are measured too.
+        await toggle.click();
         for (const width of [1440, 390, 320]) {
           await page.setViewportSize({ width, height: 900 });
           await settled(page);

@@ -4,7 +4,7 @@ import { ItemTitle, RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * Needs you: the person's list, one group per act under a heading with its
- * count; the act's chip is the card's alone. Each card opens with the act,
+ * count; the act's pill is the card's alone. Each card opens with the act,
  * then, for a parked need, one short row per decision (`decision-rows.tsx`)
  * to pick an answer on, and who it waits on; for any other need, the ask and
  * the recommended option with what it changes and costs. The steps and the
