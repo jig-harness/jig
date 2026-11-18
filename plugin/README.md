@@ -698,8 +698,9 @@ records `failed --decision <file>`, which checks the record as a park's is
 and keeps it with the result; a record the check refuses records nothing,
 so the pass fixes it and sends it again. The need it raises (a failed
 follow-up, a pickup's question) carries that decision. For what the tick
-finds itself it frames the decision from the facts that identify it, with
-options it can carry out, each set ending with **I'll handle it — hide this card**.
+finds itself it frames the decision from the facts that identify it. For
+recovery decisions it offers options it can carry out,
+each set ending with **I'll handle it — hide this card**.
 Nothing is done; the work stays where it is. The answered hold stays visible
 until its facts change. Answers naming **Leave it to me** still count, including
 answers sent from an older dashboard snapshot while the facts remain the same.
@@ -709,6 +710,7 @@ The keys, the options and the answer forms are listed in
 | Need | Key | The other options, and what the tick does |
 | --- | --- | --- |
 | a failed follow-up, or a stale claim again | `followup` | **Run it again**: deletes the follow-up's marker, so a later tick starts it again with your note in its prompt; **Record it done**: marks the existing marker done in place |
+| an untagged release that needs a person | `release` | **Re-run the failed gates**: requests failed jobs on the releasing commit again once. **Investigate** and **Tag it by hand** leave the chosen step with the person. Answer on the release's tracker item |
 | a stalled pickup, or a pickup's question it did not frame | `pickup` | **Release the claim**: moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
 | a checkout the workspace runtime does not list holds the launch's branch | `checkout` | **Detach the checkout**: detaches it at its commit, only when it is idle (clean, its commits on the remote, no drive or process in it) |
 | a drive handed to a person, or stopped with no cause | `drive` | **Re-arm the drive**: adds the `rearm` label |
@@ -1013,10 +1015,13 @@ that name and the launch record's id (`⚙ dispatched · rearm #456 · launch
 comment, once, on a line of its own after what the comment holds (a later
 launch's mark replaces an earlier one's for the same stage and key). Each
 session's terminal tab reads `jig dispatch · <stage> <key>`, and closes
-when its run ends with nothing for a person: a drive's exit that is not a
-park or a failure, a session that recorded `done`. A run that needs a
-person keeps its tab, and the next launch for the same pull request or item
-closes an earlier one of its own that is idle. No skill renames the
+when its run ends, however it ended: a park and a failure close it too,
+since the run's closing report, or the cause recorded for it, keeps what
+the tab showed, and a drive's output stays in its driver log. A run whose
+wrapper died before it could close its tab has the tab closed by a later
+tick that runs with `--apply`, while nothing runs in it. A terminal
+someone typed a command into stays open, and the next launch for the same
+pull request or item closes an earlier idle tab of its own. No skill renames the
 workspace after that, though a person may; the mark outlives the name,
 since the launch record keeps it too and a notification that rewrites the
 comment keeps it, and the morning report (`drives.ts --report`) lists the

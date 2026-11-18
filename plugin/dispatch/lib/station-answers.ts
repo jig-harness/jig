@@ -235,6 +235,7 @@ export interface StationPorts {
     pr: number,
     marker: number,
   ): Promise<Outcome<string, "refused">>;
+  rerunReleaseGates?(tag: string): Promise<Outcome<string, "refused">>;
   doneFollowup(pr: number, marker: number): Promise<Outcome<string, "refused">>;
   /** `record` is the ended pickup's launch record the need names, released with the claim. */
   releasePickup(
@@ -303,6 +304,14 @@ const DISPATCHER_STEPS: Readonly<
   >
 > = {
   hold: () => Promise.resolve({ ok: true, value: "left to a person" }),
+  gates: (action, ports) => {
+    const tag = evidenceText(action, "tag");
+    return tag === null || ports.rerunReleaseGates === undefined
+      ? notHere("the release's failed gates cannot be retried here")
+      : ports.rerunReleaseGates(tag);
+  },
+  inspect: () => Promise.resolve(ok("a person took the release investigation")),
+  tag: () => Promise.resolve(ok("a person took the manual tagging step")),
   rerun: (action, ports) => followupStep(action, ports, false),
   done: (action, ports) => followupStep(action, ports, true),
   release: (action, ports, pr) =>
@@ -419,7 +428,8 @@ async function act(
       : step === "session"
         ? await sessionStep(action, ports)
         : await dispatcherStep(step, action, ports);
-  const ended = !outcome.ok ? "refused" : step === "hold" ? "held" : "done";
+  const handedOff = step === "hold" || step === "inspect" || step === "tag";
+  const ended = !outcome.ok ? "refused" : handedOff ? "held" : "done";
   const detail = outcome.ok ? outcome.value : outcome.failure.reason;
   const carry = outcome.ok ? carryOf(step, decision, counted) : null;
   finishAnswer(row, ended, detail, carry, root);
@@ -648,6 +658,9 @@ export async function settleStationAnswers(
     report.quiet.push({
       target: action.target,
       class: "answered-hold",
-      why: `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`,
+      why:
+        action.cause === "release-owed"
+          ? (action.answered?.acted?.detail ?? "a person took the release step")
+          : `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`,
     });
 }

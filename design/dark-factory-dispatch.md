@@ -78,8 +78,14 @@ and the follow-ups' own lane's), the account whose
 turn is next), so acts never overlap, and the admission order is the one the
 tick would take with no observe phase in front of it. Last, the tick closes: it settles what the
 repositories it did not read still owe, copies the outcome log, writes the
-dashboard's line and writes its receipt. Each phase lives in its own module
-under `plugin/dispatch/lib/`.
+dashboard's line and writes its receipt. Once it has given up every lock, an
+applying tick refreshes the conflict rates of one repository it starts
+pickups in whose refresh is due, each at most once a day and under a
+deadline, so a slow replay delays no launch and holds the next tick back by
+one refresh at most; the repositories still due are taken by the ticks that
+follow
+([overlap-aware-admission.md § The conflict history report feeds it](overlap-aware-admission.md#the-conflict-history-report-feeds-it)).
+Each phase lives in its own module under `plugin/dispatch/lib/`.
 
 The [dispatcher](../plugin/README.md#the-dispatcher) owns these parts of
 the tick. The observe phase reads the served people's assigned items
@@ -125,6 +131,7 @@ flowchart TD
   LOOP -->|every repository planned| X[apply across all repositories, one launch group at a time:<br/>end own claims, then the rearm, pickup and follow-up stages,<br/>then each repository's finish: steer, notify, state labels]
   X -->|all launches and closes done: give up the observe locks| CL[close: log rows for repositories not read, prune records]
   CL --> E[copy the outcome log to month files, write the line,<br/>write the receipt, prune receipts, release the act lock]
+  E --> RR[every lock given up: refresh the conflict rates that are due,<br/>at most once a day each, under a deadline]
 ```
 
 **The locks, and their order.** A tick takes each repository's observe
@@ -1396,6 +1403,7 @@ The tick reaches the runtime only through these methods:
 | `notify(target, message)`                            | a message that reaches a person; its receipt carries the target's comment as written                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `steer(session, nudge)`                              | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send                                                                                                                                                                                                                                                                                                                         |
 | `retire(workspace, expected)`                        | the repository's notices workspace removed with its terminals and branch, once a re-read just before, under the comment lock, finds the comment and unread mark the tick decided on                                                                                                                                                                                                                                                                                                          |
+| `endRun(run)`                                        | what a run left, once a tick with `--apply` finds it ended, for a wrapper that died before closing what it opened: on Orca, the run's recorded tab closed by the run-tab idle checks; it never ends a process                                                                                                                                                                                                                                                                                                              |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
 `steer` included, runs under a deadline and is cancelled past it: its
@@ -1473,10 +1481,12 @@ agent launch --retry-launch` retries by a key the adapter passes it,
   (`plugin/shared/orca-tabs.ts`): its handle and the PID and start of the
   login shell Orca reports for it. The wrapper closes it through `orca
 terminal close --terminal` (never the whole tab, so a pane a person added
-  beside it stays) once the stage ends with nothing for a person,
-  while the shell is still alive (Orca no longer closes a tab whose shell
-  has exited by its handle), and a launch closes the earlier idle run tabs
-  of its pull request or item in the workspace;
+  beside it stays) on every exit it records, a park and a failure
+  included, while the shell is still alive (Orca no longer closes a tab
+  whose shell has exited by its handle); the tab's record names the launch
+  record, so `endRun` closes the tab of a run whose wrapper died first; and
+  a launch closes the earlier idle run tabs of its pull request or item in
+  the workspace;
 - `notify` as a workspace marked unread with the message as its comment
   (`orca worktree set --comment <message> --unread`, the comment read
   first and read back with `orca worktree show`), appended to the comment while the workspace

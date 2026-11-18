@@ -9,9 +9,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { closeDatabase, openDatabase } from "../../shared/records/db.ts";
+import { parseMs } from "../../shared/time.ts";
 import { type EndedRow, lastEnded, rowsFor, writeRow } from "../lib/log.ts";
 import {
   closeStateDb,
+  MIGRATIONS,
   SCHEMA_VERSION,
   stateDb,
   statePath,
@@ -104,45 +107,30 @@ describe("the outcome log's key column", () => {
 
   it("adds the column to a database from before it, filled from its rows", () => {
     const r = root();
-    writeRow(ended("a", "PR #7", "2026-11-01T10:00:00.000Z"), r);
-    closeStateDb(r);
-    // The database as the version before the column left it, without the columns later versions added.
-    const old = new Database(statePath(r));
-    old.run("DROP INDEX log_target");
-    old.run("ALTER TABLE log DROP COLUMN target");
-    old.run("ALTER TABLE notices DROP COLUMN sent_at");
-    old.run("ALTER TABLE notices_content DROP COLUMN pending");
-    old.run("DROP TABLE followup_releases");
-    old.run("DROP TABLE reflection_findings");
-    old.run("DROP TABLE merge_reads");
-    old.run("DROP TABLE merge_facts");
-    old.run("ALTER TABLE launches DROP COLUMN result_next");
-    old.run("ALTER TABLE launches DROP COLUMN refusal");
-    old.run("ALTER TABLE followup_outcomes DROP COLUMN asked");
-    old.run("DROP TABLE load_samples");
-    old.run("DROP TABLE failures");
-    old.run("DROP TABLE pickup_reads");
-    old.run("DROP TABLE steward_records");
-    old.run("DROP TABLE steward_runs");
-    old.run("DROP TABLE pickup_claims");
-    old.run("ALTER TABLE launches DROP COLUMN result_until");
-    old.run("ALTER TABLE launches DROP COLUMN result_decision");
-    old.run("DROP TABLE station_answers");
-    old.run("ALTER TABLE launches DROP COLUMN report");
-    old.run("DROP TABLE allocation_charge");
-    old.run("DROP TABLE allocation_week");
-    old.run("DROP TABLE allocation_lane_epoch");
-    old.run("DROP TABLE allocation_ranking");
-    old.run("ALTER TABLE launches DROP COLUMN sessions");
-    old.run("ALTER TABLE launches DROP COLUMN result_wait");
-    old.run("ALTER TABLE log DROP COLUMN cause");
-    old.run("ALTER TABLE log DROP COLUMN report_by");
-    old.run("DROP INDEX notices_channel_key");
-    old.run("ALTER TABLE notices DROP COLUMN channel");
-    old.run(`PRAGMA user_version = ${BEFORE_TARGET}`);
-    old.run("DELETE FROM db_migrations WHERE version > ?", [BEFORE_TARGET]);
-    old.run("UPDATE db_meta SET version = ?", [BEFORE_TARGET]);
-    old.close();
+    const path = statePath(r);
+    const old = openDatabase({
+      path,
+      migrations: MIGRATIONS.slice(0, BEFORE_TARGET),
+    });
+    if (!old.ok) throw new Error(old.failure.reason);
+    const row = ended("a", "PR #7", "2026-11-01T10:00:00.000Z");
+    old.value.run(
+      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        row.key,
+        row.kind,
+        row.at,
+        parseMs(row.at),
+        row.repo,
+        row.stage,
+        row.account,
+        row.class,
+        row.reason,
+        JSON.stringify(row),
+      ],
+    );
+    closeDatabase(path);
 
     expect(
       rowsOf("example-org/example-repo", "PR #7", r).map((x) => x.key),

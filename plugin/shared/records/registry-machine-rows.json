@@ -4,7 +4,7 @@
       "dispatch-launch",
       "dispatch/lib/launches.ts",
       "launches",
-      "One session the dispatcher started: its stage, its pull request or item, its account, the wrapper's claim, its exit and its result, each column written once by one writer. The tick reads it to know what holds a stage and an account's slot."
+      "One session the dispatcher started: its stage, its pull request or item, its account, the wrapper's claim, its exit and its result. A secondary host records release tags owed by a follow-up on its launch and shares them with the launch's outcome. The tick reads this record to know what holds a stage and an account's slot."
     ],
     [
       "dispatch-pickup-claim",
@@ -115,6 +115,12 @@
       "Immutable directly verified merge times, integration bases and complete changed files for execution-plan conflict edges, kept independently of the mutable follow-up marker cache. Current pull-request associations are read again each tick and never kept here."
     ],
     [
+      "dispatch-release-need",
+      "dispatch/lib/release-needs.ts",
+      "release_needs",
+      "The follow-up that reserved tracker filing for a release, the issue that carries it, the observed tag state, and whether the dispatcher claimed its one authorized rerun."
+    ],
+    [
       "dispatch-pickup-read",
       "dispatch/lib/pickup-reads.ts",
       "pickup_reads",
@@ -182,6 +188,13 @@
       "~/.local/state/jig/dispatch/runs/<record>/transcript.jsonl, copy.json",
       1,
       "The end of a run's vendor transcript, at most 2 MiB with credentials redacted, kept for a pickup's or a follow-up's run that left no closing report, and what was copied or why nothing was. The steward reads its excerpt to record the run's cause, and a person reads it from the path the run's outcome row names. It is removed seven days after the steward's cause is applied, and at the latest after the machine file's receipts_days."
+    ],
+    [
+      "dispatch-conflict-rates",
+      "dispatch/lib/conflict-rates.ts",
+      "~/.local/state/jig/dispatch/conflict-rates/<owner>%2F<name>.json, .cohort.json, .refresh.json, <16 hex>.lock",
+      1,
+      "A repository's conflict rates, the share of each path's observed merged pull requests of the window that met a conflict before they merged, kept for overlap-aware admission, with the forge's listing of merged pull requests kept for the next refresh and when the tick last refreshed them. Refreshed at most once a day after the act phase; a refresh that does not end with a whole new file keeps the previous one."
     ],
     [
       "gc-receipt",

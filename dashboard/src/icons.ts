@@ -240,6 +240,7 @@ export const CAUSE_ICONS = {
   "stopped-unknown": is(CircleHelp, "stopped-unknown"),
   "followup-failed": is(ListX, "followup-failed"),
   "followup-stale": is(ClockAlert, "followup-stale"),
+  "release-owed": is(Tag, "release owed"),
   "nudge-unanswered": is(BellOff, "nudge-unanswered"),
   "pickup-question": is(MessageSquareMore, "pickup-question"),
   "pickup-ended": is(RotateCw, "pickup-ended"),

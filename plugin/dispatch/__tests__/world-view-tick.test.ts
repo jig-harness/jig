@@ -348,7 +348,6 @@ describe("each forge fact's freshness class", () => {
       ...openPr(d.number, `feature/${d.number}`),
       labels: [],
     })),
-    openReadable: true,
     read: new Set(drives.map((d) => d.number)),
     scoped: false,
     inScope: new Set(),
