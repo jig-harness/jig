@@ -673,8 +673,7 @@ order, after `jig gc`'s fixes (#990, #991):
   kept on the launch record and the outcome log, and shown on the dashboard
   and by `jig ask`.
 - **The process runtime.** A second session runtime, chosen in the host's
-  machine file (`runtime: process`), that opens plain git worktrees under
-  `jig gc`'s shared admission, starts each run as a unit or job of the
+  machine file (`runtime: process`), that starts each run as a unit or job of the
   host's service manager with an environment built from a list and bound to
   its account as today, launches a pickup's first drive itself, and lets a
   person follow or take over a run (`jig dispatch attach`).

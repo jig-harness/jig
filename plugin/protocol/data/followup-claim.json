@@ -9,6 +9,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "record for the marker's kind in the records registry, marker for one of its hidden markers, run for a value of its run field, <run>-outcome (tick-outcome, manual-outcome) for a value of the outcome field of that run's marker, and field for a field of its payload."
     },
     "name": {
@@ -16,6 +17,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The record kind's registered name, one hidden marker as its comment opens after `<!-- `, a run's name, an outcome as `<run>.<outcome>` (`tick.done`), or the payload field's name."
     },
     "run": {
@@ -23,6 +25,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an outcome, the run whose marker carries it; null for every other value."
     },
     "type": {
@@ -30,6 +33,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a payload field, the JSON type of its value; null for every other value."
     },
     "carriedBy": {
@@ -37,6 +41,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "carriers",
       "description": "For a payload field, the runs whose markers carry it, each with always or sometimes, as `tick (always), manual (sometimes)`; a marker of a run not named never carries it. Null for every other value."
     },
     "version": {
@@ -44,6 +49,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For the record, the version Jig's writers write now, which its envelope's v carries; null otherwise."
     },
     "key": {
@@ -51,6 +57,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For the record, the whole shape of its envelope's key as a regular expression; null otherwise."
     },
     "meaning": {
@@ -58,6 +65,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What it means to a reader that meets it, and what that reader does with it."
     }
   },

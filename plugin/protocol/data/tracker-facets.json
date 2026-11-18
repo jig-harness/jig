@@ -15,6 +15,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "facet for an issue facet, priority for a priority, store for a store a facet may be kept in, adapter-store for whether one adapter holds one store for one facet, reason for why facet-stores reports a store as the one in force."
     },
     "name": {
@@ -22,6 +23,7 @@
       "nullable": false,
       "required": true,
       "identifies": true,
+      "comparedAs": "exact",
       "description": "The facet, the store or the reason as the interface and the configuration write it; a priority's configuration name, or none for priority 0; for an adapter-store, the adapter, the facet and the store, as <adapter>:<facet>:<store>."
     },
     "number": {
@@ -29,6 +31,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For a priority, the number the interface carries it as; null for every other kind."
     },
     "adapter": {
@@ -36,6 +39,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an adapter-store, the adapter as issue_tracker.adapter names it; null for every other kind."
     },
     "facet": {
@@ -43,6 +47,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an adapter-store, the facet; null for every other kind."
     },
     "store": {
@@ -50,6 +55,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an adapter-store, the store; null for every other kind."
     },
     "held": {
@@ -57,6 +63,7 @@
       "nullable": true,
       "required": true,
       "identifies": false,
+      "comparedAs": "exact",
       "description": "For an adapter-store, whether the adapter holds the store for the facet; a configuration that names a store it does not hold is refused. Null for every other kind."
     },
     "meaning": {
@@ -64,6 +71,7 @@
       "nullable": false,
       "required": true,
       "identifies": false,
+      "comparedAs": "prose",
       "description": "What the facet, the priority, the store or the reason means; for an adapter-store, what the store is on that tracker where the adapter holds it, or why it is refused where it does not."
     }
   },
