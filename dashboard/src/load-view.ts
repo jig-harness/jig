@@ -16,7 +16,7 @@ const NAMES: Record<LoadGauge, string> = {
 const GIB = 1024 ** 3;
 
 /** The fill a gauge's bar runs to: half again past its line. */
-export const BAR_TOP = 1.5;
+const BAR_TOP = 1.5;
 
 /** Where a gauge's line sits along its bar, in percent of the bar. */
 export const LINE_AT = 100 / BAR_TOP;
