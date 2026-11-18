@@ -143,6 +143,13 @@ const PUSH_BEFORE_VALIDATION_LINE =
 const PUSH_AND_RECORD_LINE =
   "Before this pass ends, for any reason, push the branch whenever it holds committed work (under the rule above: the repository's validation-before-push still wins), and record how the pickup ended with one of the result commands below. A pass that ends with its work only in this tree, or with no result recorded, leaves its item claimed and stalled.";
 
+/** Whether the pass continues a claimed pickup (a steward's resume or a relaunch): it claims nothing again. */
+function continuesClaim(
+  record: Pick<LaunchRecord, "stewardResume" | "relaunchOf">,
+): boolean {
+  return record.stewardResume !== undefined || record.relaunchOf !== undefined;
+}
+
 /** The fixed prompt of a stalled pickup's relaunch (`pickup-relaunch.ts`): push and record what the tree holds, under the earlier pass's claim. */
 function relaunchLines(
   record: Pick<LaunchRecord, "item" | "relaunchOf" | "relaunchHead">,
@@ -244,9 +251,6 @@ function pickupPassPrompt(
     | "relaunchHead"
   >,
 ): string {
-  // A resumed or relaunched pass continues a claimed pickup: it claims nothing again.
-  const resumed =
-    record.stewardResume !== undefined || record.relaunchOf !== undefined;
   return [
     ...stewardResumeLines(record),
     ...answeredLines(record),
@@ -274,12 +278,12 @@ function pickupPassPrompt(
         ]),
     ...relaunchLines(record),
     ROUTE_RULES_LINE,
-    ...(record.factoryAncestor === undefined || resumed
+    ...(record.factoryAncestor === undefined || continuesClaim(record)
       ? []
       : [
           `Claim this factory-inherited assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --factory-ancestor ${shellQuote(record.factoryAncestor)}; validate the factory ancestor and assign the child to the credential identity. A refusal stops the pickup.`,
         ]),
-    ...(record.servedPerson === undefined || resumed
+    ...(record.servedPerson === undefined || continuesClaim(record)
       ? []
       : [
           `Claim this served assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the pickup.`,

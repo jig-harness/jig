@@ -432,14 +432,7 @@ function planClaimed(
   )
     return;
   const latest = latestPickupFor(item.key, input.launches);
-  // A pass whose result the host could not write is relaunched in its tree, once the health check passes, before a person is asked; a pull request it opened moves its item first.
-  const early =
-    latest !== undefined &&
-    unwrittenResult(latest) &&
-    (input.rerunsHeld ?? null) === null &&
-    pr.step?.kind !== "move"
-      ? relaunchStep(item, latest, input)
-      : null;
+  const early = earlyRelaunch(item, latest, pr, input);
   if (early !== null && relaunched(early, item.key, plan)) return;
   const asked = questionAsked(
     input,
@@ -452,6 +445,37 @@ function planClaimed(
     return;
   }
   if (settledOrHeld(item, input, pr.step, plan)) return;
+  planIdle(item, input, plan, { held, pr, latest });
+}
+
+/** The relaunch rule's answer before a question is asked: a pass whose result the host could not write is relaunched in its tree, once the health check passes; a pull request it opened moves its item first. */
+function earlyRelaunch(
+  item: ClaimedItem,
+  latest: ReturnType<typeof latestPickupFor>,
+  pr: LaunchPrReading,
+  input: PickupInput,
+): RelaunchStep | null {
+  if (
+    latest === undefined ||
+    !unwrittenResult(latest) ||
+    (input.rerunsHeld ?? null) !== null ||
+    pr.step?.kind === "move"
+  )
+    return null;
+  return relaunchStep(item, latest, input);
+}
+
+/** A claimed item with no session and nothing to ask: quiet until `dispatch.stalled_after`, then relaunched in its tree or reported as stalled. */
+function planIdle(
+  item: ClaimedItem,
+  input: PickupInput,
+  plan: PickupPlan,
+  seen: {
+    held: Holding;
+    pr: LaunchPrReading;
+    latest: ReturnType<typeof latestPickupFor>;
+  },
+): void {
   const since = input.idleSince.get(item.key) ?? input.nowMs;
   const idle = input.nowMs - since;
   if (idle < input.section.stalledAfterMs) {
@@ -462,15 +486,15 @@ function planClaimed(
     });
     return;
   }
-  const step = relaunchStep(item, latest, input);
+  const step = relaunchStep(item, seen.latest, input);
   if (relaunched(step, item.key, plan)) return;
   plan.actions.push(
     stalledPickup(
       item,
       input,
-      held,
+      seen.held,
       since,
-      pr,
+      seen.pr,
       step.kind === "stall" ? step.note : null,
     ),
   );
