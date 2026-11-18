@@ -129,7 +129,13 @@ function operation(args: string[], stdin: string | undefined): string {
       (arg) => arg === "--method" || arg === "-X",
     );
     const method = methodAt < 0 ? "GET" : (args[methodAt + 1] ?? "GET");
-    return restOperation(method, apiRoute(args));
+    const route = apiRoute(args);
+    if (
+      method.toUpperCase() === "GET" &&
+      /^repos\/[^/]+\/[^/]+\/pulls\/\d+\/files$/.test(route)
+    )
+      return "pr-files";
+    return restOperation(method, route);
   }
   return (
     [args[0], args[1]]

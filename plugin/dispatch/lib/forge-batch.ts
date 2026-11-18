@@ -95,9 +95,10 @@ const QUERY = `query ${QUERY_NAME}($owner: String!, $name: String!, $first: Int!
     pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number url title body headRefName isCrossRepository createdAt headRefOid baseRefName mergeable isDraft updatedAt
+        number url title body headRefName isCrossRepository createdAt headRefOid baseRefName baseRefOid mergeable isDraft updatedAt
         author { __typename login }
         labels(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { name } }
+        baseRef { target { oid } }
         headRef { target { ... on Commit { statusCheckRollup { contexts(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }
         reviewThreads(first: ${ITEMS}) { pageInfo { hasNextPage } nodes { isResolved } }
         closingIssuesReferences(first: ${CLOSING}) { pageInfo { hasNextPage } nodes { number repository { nameWithOwner } } }
@@ -411,6 +412,7 @@ export function listedPullRequest(
   )
     return partial(`PR #${node.number} has unreadable labels`);
   const author = listedAuthor(node.author);
+  const baseTip = field(node, "baseRef", "target", "oid");
   return ok({
     number: node.number,
     ...strings(
@@ -423,10 +425,12 @@ export function listedPullRequest(
         "createdAt",
         "headRefOid",
         "baseRefName",
+        "baseRefOid",
         "mergeable",
         "updatedAt",
       ].map((k) => [k, k] as const),
     ),
+    ...(text(baseTip) ? { baseTipOid: baseTip } : {}),
     ...(typeof node.isDraft === "boolean" ? { isDraft: node.isDraft } : {}),
     ...(typeof node.isCrossRepository === "boolean"
       ? { isCrossRepository: node.isCrossRepository }
