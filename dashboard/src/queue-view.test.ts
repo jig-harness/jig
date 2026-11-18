@@ -34,6 +34,29 @@ const ITEM: LineQueued = {
 };
 
 describe("the queue", () => {
+  it("leads with a refused launch's own detail, with the overlap beside it", () => {
+    const refused: LineQueued = {
+      ...ITEM,
+      group: "never",
+      why: "assigned to factory-bot · waits on overlap",
+      launch: { outcome: "refused", detail: "the account is at its cap" },
+      overlap: {
+        relation: "waits on overlap",
+        item: "PR #7",
+        on: [],
+        count: 1,
+        text: "overlaps #9",
+      },
+    };
+    const [group] = queueGroups(
+      { ...lineOf("queue"), queue: [refused] },
+      CLOCK,
+    );
+    expect(group?.items[0]?.why).toBe(
+      "the account is at its cap · overlaps #9",
+    );
+  });
+
   it("is ordered by what will happen, with a heading for each", () => {
     expect(queueGroups(lineOf("queue"), CLOCK).map((g) => g.title)).toEqual([
       "Starts when a tick finds a free slot",

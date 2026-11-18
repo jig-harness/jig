@@ -63,6 +63,22 @@ export function footprintOf(reading: FootprintReading | undefined): Footprint {
   };
 }
 
+/** One footprint for a batch: the members' files, directories and areas together; unknown when any member's is. */
+function combinedFootprint(parts: readonly Footprint[]): Footprint {
+  const [only] = parts;
+  if (parts.length === 1 && only !== undefined) return only;
+  if (parts.some((f) => !f.known)) return UNKNOWN_FOOTPRINT;
+  const union = (pick: (f: Footprint) => readonly string[]) => [
+    ...new Set(parts.flatMap(pick)),
+  ];
+  return {
+    known: true,
+    files: union((f) => f.files),
+    dirs: union((f) => f.dirs),
+    areas: union((f) => f.areas),
+  };
+}
+
 /** The note beside a pickup's rank for its footprint reading; `null` for a footprint record. */
 export function readingNote(
   reading: FootprintReading | undefined,
@@ -305,26 +321,45 @@ export function planOverlap(
   );
   const model = overlapModel(settings, rates.rate, facts?.catalog ?? null);
   const wanted = new Map(tracked.pickups.map((w) => [w.key, w]));
-  // A batch starts every member, so each is a candidate beside the action's own target.
-  const candidates = pickups
-    .flatMap((a) => membersOf(a))
-    .filter((key, i, all) => all.indexOf(key) === i)
-    .map((key) => {
-      const item = wanted.get(key);
-      return {
-        item: key,
+  // A batch is one prospective launch: one candidate under the action's own
+  // target, with its members' footprints combined, so members never charge
+  // one another. Each member still gets an entry of its own below.
+  const memberKeys = new Map<string, string[]>();
+  const seen = new Set<string>();
+  const candidates = pickups.flatMap((a) => {
+    if (seen.has(a.target)) return [];
+    const members = membersOf(a).filter((key) => !seen.has(key));
+    for (const key of members) seen.add(key);
+    memberKeys.set(a.target, members);
+    const item = wanted.get(a.target);
+    return [
+      {
+        item: a.target,
         url: item?.url ?? null,
         priority: patienceKey(item?.queueIssue?.priority),
-        footprint: footprintOf(facts?.readings.get(key)),
-      };
-    });
+        footprint: combinedFootprint(
+          members.map((key) => footprintOf(facts?.readings.get(key))),
+        ),
+      },
+    ];
+  });
+  const batched = new Set(
+    candidates.flatMap((c) => memberKeys.get(c.item) ?? []),
+  );
   const inFlight = [
     ...pullRequestsInFlight(observation, settings, context.nowMs),
-    ...pickupsInFlight(observation, new Set(candidates.map((c) => c.item))),
+    ...pickupsInFlight(observation, batched),
   ];
   const waits = loadWaits(repo.slug, notes);
   const placed = walkOverlap(candidates, inFlight, waits, model, context.nowMs);
   storeWaits(context, observation, placed, notes);
+  // A member shares its batch's placement, with its own footprint reading beside it.
+  const members = placed.flatMap((p) =>
+    (memberKeys.get(p.candidate.item) ?? [p.candidate.item]).map((item) => ({
+      placed: p,
+      item,
+    })),
+  );
   const unread = "it was not read this tick";
   const overlap: OverlapReport = {
     rates: { measuredAt: rates.generatedAt, defaulted: rates.defaulted },
@@ -333,10 +368,10 @@ export function planOverlap(
       pickups: inFlight.filter((w) => w.kind === "pickup").length,
       unknown: inFlight.filter((w) => !w.footprint.known).map((w) => w.ref),
     },
-    entries: placed.map((p, i) => {
-      const reading = facts?.readings.get(p.candidate.item);
+    entries: members.map(({ placed: p, item }, i) => {
+      const reading = facts?.readings.get(item);
       return entryOf(
-        p,
+        { ...p, candidate: { ...p.candidate, item } },
         i + 1,
         {
           source: reading?.source ?? "unknown",

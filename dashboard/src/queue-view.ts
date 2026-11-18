@@ -55,17 +55,19 @@ function queueEvidence(q: LineQueued): EvidenceRow[] {
   return rows;
 }
 
-/** Why a queued target waits: a serialized hold, else its overlap, else the record's own reason; a pickup's unknown footprint beside it. A launch that was refused or only reported keeps its own reason first, with the overlap beside it as what would hold the start. */
+/** Why a queued target waits: a serialized hold, else its overlap, else the record's own reason; a pickup's unknown footprint beside it. A launch that was refused or only reported leads with its own detail, with the overlap beside it as what would hold the start. */
 function whyOf(q: LineQueued): string {
+  const launch = q.launch;
   const decided =
-    q.launch?.outcome === "refused" || q.launch?.outcome === "reported";
+    launch !== null &&
+    (launch.outcome === "refused" || launch.outcome === "reported");
   const why =
     q.hold !== null
       ? `held: serialized behind #${q.hold.leader} in ${q.hold.area}`
       : decided
         ? q.overlap === undefined
-          ? q.why
-          : `${q.why} · ${q.overlap.text}`
+          ? launch.detail
+          : `${launch.detail} · ${q.overlap.text}`
         : (q.overlap?.text ?? q.why);
   return q.footprint === undefined ? why : `${why} · ${q.footprint}`;
 }
