@@ -44,7 +44,7 @@ for (const late of [false, true]) {
         nowIso: "2026-11-01T12:01:00.000Z",
         root,
       }),
-    ).toEqual({ failed: [], ended: [] });
+    ).toEqual([]);
     exportLog(root);
     if (late)
       expect(recordResult("pickup-result", "done", root, next)).toBe(true);

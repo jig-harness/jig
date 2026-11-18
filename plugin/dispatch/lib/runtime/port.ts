@@ -111,6 +111,8 @@ export interface RuntimeReceipt {
   unread?: boolean;
   /** For `notify`: the confirmed projection was persisted as dispatcher-only under the lock. */
   ownedComment?: boolean;
+  /** For `endRun`: the run left nothing the runtime ends (its wrapper closed its tab, or none was recorded). */
+  nothingLeft?: true;
 }
 
 /** Notification identity and the comment policy rechecked under the write lock. */
@@ -318,13 +320,14 @@ export interface SessionRuntime {
     timeoutMs?: number,
   ): Promise<RuntimeReceipt>;
   /**
-   * What the runtime does with what a run left once the tick finds that it
-   * ended without its wrapper recording an exit: on Orca, the run's recorded
-   * tab closed by the run-tab idle checks, so a terminal someone typed into
-   * stays. It never ends a process. Its receipt: `ok` when nothing of the
-   * run is left open, or nothing was recorded for it; `ok: false` with the
-   * reason when something stays (a busy tab, a refused close), which a later
-   * collection may still close.
+   * What the runtime does with what a run left once the tick finds the run
+   * ended, for a wrapper that died before it could close what it opened:
+   * on Orca, the run's recorded tab closed by the run-tab idle checks, so a
+   * terminal someone typed into stays. It never ends a process. Its
+   * receipt: `ok` when nothing of the run is left open, with `nothingLeft`
+   * when there was nothing to end; `ok: false` with the reason when
+   * something stays (a busy tab, a refused close), which a later collection
+   * may still close.
    */
   endRun(run: EndedRun, timeoutMs?: number): Promise<RuntimeReceipt>;
 }

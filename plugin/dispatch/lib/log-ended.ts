@@ -13,12 +13,6 @@
  * did not: the report its wrapper would record, else the copy of its
  * transcript. A run that still has no report carries the copy's path on its
  * row (`transcript`), which the dashboard shows.
- *
- * A run whose wrapper died, ending without recording an exit, also left
- * what the wrapper would have closed: once its row is written, a tick that
- * may act (`endRun` given, under `--apply`) asks the session runtime to end
- * it, once, as the record's row is written once. On Orca that closes the
- * run's recorded tab by the idle checks; what stays is `jig gc`'s.
  */
 import { Defect } from "../../shared/errors.ts";
 import { readNext } from "./next-owner.ts";
@@ -37,8 +31,7 @@ import {
 import { endedRow, endTime, hasEnded, insertRow } from "./log.ts";
 import { waitsOf } from "./pickup-refusal.ts";
 import { inTransaction, stateDb } from "./state.ts";
-import type { EndedRun, RuntimeReceipt } from "./runtime/port.ts";
-import type { DrivenPr, EndRunOutcome } from "./types.ts";
+import type { DrivenPr } from "./types.ts";
 
 export interface EndContext {
   /** Every launch record this tick read, for the takeovers that replaced one. */
@@ -51,35 +44,6 @@ export interface EndContext {
   root?: string;
   /** A target's title and link as this tick's reads gave them; absent where the repository was not read. */
   about?: (target: string) => { title: string | null; url: string | null };
-  /** The session runtime's `endRun`, for a run whose wrapper died; absent on a tick that may not act. */
-  endRun?: (run: EndedRun) => Promise<RuntimeReceipt>;
-}
-
-/** What logging the ended records did: the rows that could not be written, and what `endRun` did. */
-export interface Logged {
-  failed: string[];
-  ended: EndRunOutcome[];
-}
-
-/** Ask the runtime to end what a run whose wrapper died left; a failure is its outcome, never the row's. */
-async function endDied(
-  record: ReadRecord["record"],
-  endRun: NonNullable<EndContext["endRun"]>,
-): Promise<EndRunOutcome> {
-  const about = { record: record.id, target: targetOf(record) };
-  try {
-    const receipt = await endRun({
-      id: record.id,
-      workspace: record.workspace,
-    });
-    return {
-      ...about,
-      outcome: receipt.ok ? "ended" : "left",
-      detail: receipt.detail,
-    };
-  } catch (error) {
-    return { ...about, outcome: "left", detail: failureText(error) };
-  }
 }
 
 /** A drive's ledger round at its end: the ledger this tick read, else the last round a sample recorded. */
@@ -119,13 +83,12 @@ function settleEnded(r: ReadRecord, root?: string): void {
   settleUnreported(r.record, seenOf(r), r.record.sessionId ?? session, root);
 }
 
-/** Write the ended row of each record in `records` that ended and has none yet, and end what a died run left; returns what failed and what was ended. */
+/** Write the ended row of each record in `records` that ended and has none yet; returns what failed. */
 export async function logEnded(
   records: ReadRecord[],
   ctx: EndContext,
-): Promise<Logged> {
+): Promise<string[]> {
   const failed: string[] = [];
-  const ended: EndRunOutcome[] = [];
   for (const r of records) {
     const { record } = r;
     if (!hasEnded(r) || record.endedAt !== undefined) continue;
@@ -178,10 +141,7 @@ export async function logEnded(
       failed.push(
         `the outcome row of launch record ${record.id} could not be written: ${failureText(error)}`,
       );
-      continue;
     }
-    if (r.state.kind === "died" && ctx.endRun !== undefined)
-      ended.push(await endDied(record, ctx.endRun));
   }
-  return { failed, ended };
+  return failed;
 }

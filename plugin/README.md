@@ -1014,7 +1014,7 @@ session's terminal tab reads `jig dispatch · <stage> <key>`, and closes
 when its run ends, however it ended: a park and a failure close it too,
 since the run's closing report, or the cause recorded for it, keeps what
 the tab showed, and a drive's output stays in its driver log. A run whose
-wrapper died before it could close its tab has the tab closed by the next
+wrapper died before it could close its tab has the tab closed by a later
 tick that runs with `--apply`, while nothing runs in it. A terminal
 someone typed a command into stays open, and the next launch for the same
 pull request or item closes an earlier idle tab of its own. No skill renames the

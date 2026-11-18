@@ -13,9 +13,9 @@ release: minor
 
 ### Added
 
-- The session runtime interface has `endRun`: when a tick with `--apply`
-  finds a run that ended without its wrapper recording an exit, it asks the
-  runtime to end what the run left, once. On Orca that closes the run's
+- The session runtime interface has `endRun`: a tick with `--apply` asks
+  the runtime, once for each run that ended, to end what a wrapper that died
+  before closing its tab left. On Orca that closes the run's
   recorded tab while nothing runs in it; the dispatch report lists what it
   closed (`end run`), and a tab it leaves is `jig gc`'s `orca-terminals`
   kind's to collect. A run tab now records the launch record it runs; a tab

@@ -471,10 +471,10 @@ function startCloser(
 }
 
 /**
- * Called by a run tab's own command as it ends: when `closes` (the run left
- * nothing for a person, as the caller judges it: a drive's exit through
- * drive-pr's `driveExitClosesTab`), closes the tab once this process has exited, else
- * leaves it open. Returns a line for the run's log; null when this process
+ * Called by a run tab's own command as it ends: when `closes`, as the
+ * caller judges it (the dispatcher's wrapper on every exit it recorded; a
+ * drive armed in a tab through drive-pr's `driveExitClosesTab`), closes the
+ * tab once this process has exited, else leaves it open. Returns a line for the run's log; null when this process
  * is not a recorded tab's own command (a person's tab, a run under another
  * wrapper, a test).
  *

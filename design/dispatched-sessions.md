@@ -192,10 +192,16 @@ terminals. A tab whose run was killed before anything closed it is closed by
 
 The session runtime interface gains one method for this, `endRun(record)`:
 what the runtime does with what a run left once the tick finds the run
-ended without its wrapper. The tick asks once, when it writes the run's
-outcome row, and only with `--apply`. Orca closes the run's recorded tab,
-which it finds by the launch record its run-tab record names; a tab an
-earlier release recorded names none, and is left to `jig gc`. The process
+ended without its wrapper. A tick with `--apply` asks once for every
+record that ended, and the record keeps that it asked, apart from its
+outcome row, which a tick without `--apply` may write first; a record whose
+exit the wrapper recorded is asked about a minute after that exit, so the
+wrapper's own close goes first, and a run whose wrapper closed its tab
+leaves nothing to end. This covers the wrapper killed while its stage's
+supervisor records the exit, as well as the record with no exit at all.
+Orca closes the run's recorded tab, which it finds by the launch record its
+run-tab record names; a tab an earlier release recorded names none, and is
+left to `jig gc`. The process
 runtime has no tab, and reports whether any of the run's recorded
 processes is still alive (below).
 

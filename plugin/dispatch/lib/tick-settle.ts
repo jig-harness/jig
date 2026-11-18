@@ -4,7 +4,9 @@
  * (log-ended.ts). A repository's turn logs its own records with its ledgers
  * beside them (`logRepo`); the close of the tick logs the records of every
  * repository the tick did not read, without them, and then prunes the
- * records whose rows are in the log (`settleOutcomes`).
+ * records whose rows are in the log (`settleOutcomes`). On a tick with
+ * `--apply`, each turn also has the session runtime end what an ended run
+ * left (`end-runs.ts`), once per record.
  *
  * Once the tick's exit is decided, the failure ledger (failures.ts) counts
  * what failed in a row (`settleFailures`): each repository this tick read
@@ -37,7 +39,9 @@ import { hostNoticeKeys } from "./failure-notices.ts";
 import { releaseOnEveryChannel } from "./notice-records.ts";
 import { stateDb } from "./state.ts";
 import { mergedNotClosed } from "./forge.ts";
-import { type EndContext, logEnded } from "./log-ended.ts";
+import { logEnded } from "./log-ended.ts";
+import { type EndRun, endRuns } from "./end-runs.ts";
+import { timeLeftMs } from "./actions/launch.ts";
 import { aboutTargets } from "./line.ts";
 import { hasEnded } from "./log.ts";
 import { eraseStewardOutput } from "./steward.ts";
@@ -52,7 +56,7 @@ import {
   takeObserveLock,
   takeRepositoryLock,
 } from "../receipts.ts";
-import type { RepoReport } from "./types.ts";
+import type { EndRunOutcome, RepoReport } from "./types.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { repoFailure, tickFailure } from "./tick-failure.ts";
 import {
@@ -62,15 +66,36 @@ import {
   waitsOut,
 } from "./read-failures.ts";
 
-/** The runtime's `endRun`, on a tick that may act: a report changes nothing a run left. */
-function endRunOf(context: TickContext): Pick<EndContext, "endRun"> {
-  if (context.apply === null) return {};
-  const { runtime } = context;
-  const timeoutMs = context.options.machine?.runtimeTimeoutMs;
-  return { endRun: (run) => runtime.endRun(run, timeoutMs) };
+/**
+ * The runtime's `endRun` (`end-runs.ts`) within the time the tick has left,
+ * on a tick that may act; `null` on a report, which ends nothing a run left.
+ */
+export function endRunOf(context: TickContext): EndRun | null {
+  const state = context.apply;
+  if (state === null) return null;
+  return (run) => {
+    const left = timeLeftMs(state);
+    if (left !== null && left <= 0) return null;
+    const { runtimeTimeoutMs } = state.machine;
+    return state.runtime.endRun(
+      run,
+      left === null ? runtimeTimeoutMs : Math.min(runtimeTimeoutMs, left),
+    );
+  };
 }
 
-/** The ended rows of this repository's records that ended, read beside its ledgers. */
+/** What `endRun` did with `records`' ended runs, on a tick that may act. */
+async function endEnded(
+  context: TickContext,
+  records: ReadRecord[],
+): Promise<EndRunOutcome[]> {
+  const endRun = endRunOf(context);
+  return endRun === null
+    ? []
+    : endRuns(records, endRun, context.nowMs, context.apply?.root);
+}
+
+/** The ended rows of this repository's records that ended, read beside its ledgers, and what their runs left ended. */
 export async function logRepo(
   context: TickContext,
   slug: string,
@@ -78,10 +103,9 @@ export async function logRepo(
   drives: Awaited<ReturnType<typeof readDrives>>,
 ): Promise<void> {
   const all = allRecords(context);
-  const { failed, ended } = await logEnded(
+  const failed = await logEnded(
     all.filter((r) => r.record.repo === slug),
     {
-      ...endRunOf(context),
       all,
       drives,
       merged: (pr) =>
@@ -104,13 +128,17 @@ export async function logRepo(
       ),
     },
   );
-  if (ended.length > 0) report.endedRuns = ended;
   for (const reason of failed)
     report.unplaced.push({
       target: "the outcome log",
       record: "runtime",
       reason,
     });
+  const ended = await endEnded(
+    context,
+    all.filter((r) => r.record.repo === slug),
+  );
+  if (ended.length > 0) report.endedRuns = ended;
 }
 
 /**
@@ -182,20 +210,20 @@ export async function settleOutcomes(
   );
   // Whoever observes one, a repository this tick was not asked for included, holds its locks.
   const exclusive = claimUnobserved(unread);
-  let logged: Awaited<ReturnType<typeof logEnded>>;
+  let unlogged: Awaited<ReturnType<typeof logEnded>>;
   try {
-    logged = await logEnded(exclusive.records, {
-      ...endRunOf(context),
+    unlogged = await logEnded(exclusive.records, {
       all: records,
       drives: null,
       merged: async () => null,
       nowIso: isoFromMs(context.nowMs),
     });
+    const ended = await endEnded(context, exclusive.records);
+    if (ended.length > 0) receipt.endedRuns = ended;
   } finally {
     exclusive.release();
   }
-  if (logged.failed.length > 0) receipt.unloggedOutcomes = logged.failed;
-  if (logged.ended.length > 0) receipt.endedRuns = logged.ended;
+  if (unlogged.length > 0) receipt.unloggedOutcomes = unlogged;
   // A record that ended without its outcome row in the log is kept: its end is written with the row.
   pruneLaunches(
     records.filter(
@@ -212,7 +240,7 @@ export async function settleOutcomes(
   eraseStewardOutput(context.nowMs, days ?? 30, context.apply?.root);
   pruneTranscriptCopies(context.nowMs, days ?? 30, context.apply?.root);
   return (
-    logged.failed.length > 0 ||
+    unlogged.length > 0 ||
     receipt.repos.some(
       (r) =>
         (r.refused !== null ||

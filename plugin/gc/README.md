@@ -281,8 +281,8 @@ A run Jig starts in an Orca terminal tab records the tab under
 `~/.local/state/jig/orca-tabs/` while it runs (`shared/orca-tabs.ts`), and
 closes it when it ends: a run the dispatcher launched on every exit, and a
 drive armed in a tab when it ends with nothing left for a person. A
-dispatched run whose wrapper died has its tab closed by the dispatcher's
-next tick with `--apply`, while nothing runs in it. A run killed before
+dispatched run whose wrapper died has its tab closed by a later dispatcher
+tick with `--apply`, while nothing runs in it. A run killed before
 its end that nothing closed leaves the tab and its record behind, and a
 tab a drive parked for a person stays until someone closes it. The
 `orca-terminals` kind joins those records to `orca terminal list --json`,

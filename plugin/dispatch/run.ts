@@ -683,13 +683,22 @@ async function labelFollowup(id: string): Promise<void> {
  * Close the run's tab once its exit is recorded, whatever the exit: the
  * closing report, or the cause the wrapper, the driver or the steward
  * records, holds what a person read the tab for. A stage whose exit is not
- * recorded (its processes may still run) keeps the tab, which the tick's
- * `endRun` closes once the record is found ended without its wrapper. A
- * failure only says so.
+ * recorded (its processes may still run), or that ended on a wall that could
+ * not be recorded (a person clears it), keeps the tab, which the tick's
+ * `endRun` closes once the record reads as ended. A failure only says so.
  */
 async function closeTabOnExit(id: string): Promise<void> {
+  let ended: boolean;
   try {
-    if (readEnded(id)?.state.kind !== "ended") return;
+    ended = readEnded(id)?.state.kind === "ended";
+  } catch (error) {
+    console.error(
+      `jig dispatch run: the run's tab stays open: its exit did not read (${failureText(error)})`,
+    );
+    return;
+  }
+  if (!ended) return;
+  try {
     const line = await endOwnTab(true);
     if (line !== null) console.error(`jig dispatch run: ${line}`);
   } catch (error) {
