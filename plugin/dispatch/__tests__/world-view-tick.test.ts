@@ -141,7 +141,6 @@ describe("the world view's direct implementation", () => {
     expect(ghCalls(w).toSorted()).toEqual([
       "api --paginate --slurp repos/example-org/example-repo/issues/5/comments?per_page=100",
       "api rate_limit",
-      // Every open pull request's changed files, and the base branch's tip, which this fixture's listing does not carry.
       "api repos/example-org/example-repo/git/ref/heads/main",
       "api repos/example-org/example-repo/pulls/7/files?per_page=100&page=1",
       "api repos/example-org/example-repo/pulls/8/files?per_page=100&page=1",

@@ -106,6 +106,7 @@ function files(dir: string) {
       ].find(has) as string,
     ) as RestComment[];
     return {
+      totalCount: listed.length,
       pageInfo: {
         hasNextPage: listed.length > COMMENTS_PAGE || refused(pr),
       },
@@ -123,7 +124,12 @@ export function commentsQuery(dir: string, args: string[]): unknown {
   const repository: Record<string, unknown> = {};
   for (const [, n] of query.matchAll(/pr(\d+): pullRequest\(number: \d+\)/g))
     repository[`pr${n}`] = { comments: comments(Number(n)) };
-  return { data: { rateLimit: { cost: 1, remaining: 4990 }, repository } };
+  return {
+    data: { rateLimit: { cost: 1, remaining: 4990 }, repository },
+    ...(has("comments-query-partial")
+      ? { errors: [{ message: "The comment query was incomplete" }] }
+      : {}),
+  };
 }
 
 /** The query's answer, or `null` for a query that fails. */

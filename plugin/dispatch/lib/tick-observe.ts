@@ -461,7 +461,14 @@ export async function observeRepo(
   // The machine view beside it: the forge's drives as this host's launch records and every host's claims settle them.
   const [{ claims, drives }, sessions] = await settled(
     timer.time("claims", () =>
-      readDriveClaims(ctx, forge, records, shared.records(forge.login), nowMs),
+      readDriveClaims(
+        ctx,
+        forge,
+        records,
+        shared.records(forge.login),
+        nowMs,
+        reads,
+      ),
     ),
     timer.time("runtime", async () => {
       const read = await pool.run(() =>

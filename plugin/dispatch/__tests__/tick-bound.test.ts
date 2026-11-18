@@ -463,7 +463,11 @@ describe("a paged forge query under the tick's bound", () => {
               number: from + i + 1,
               headRefName: `feature/${from + i + 1}`,
               labels: { pageInfo: { hasNextPage: false }, nodes: [] },
-              comments: { pageInfo: { hasNextPage: false }, nodes: [] },
+              comments: {
+                totalCount: 0,
+                pageInfo: { hasNextPage: false },
+                nodes: [],
+              },
             })),
           },
         },
