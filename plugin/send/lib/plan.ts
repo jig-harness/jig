@@ -8,8 +8,26 @@
  * wrote and the reader again.
  */
 import type { MachineStage } from "../../dispatch/lib/machine-config.ts";
-import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  failedBy,
+  failureOf,
+  type OutboundFailure,
+  outboundFailure,
+  outboundOf,
+} from "../../shared/outbound/failure.ts";
+import {
+  type Failure,
+  failed,
+  ok,
+  type Outcome,
+} from "../../shared/outcome.ts";
+import { isoFromMs } from "../../shared/time.ts";
 import { printable } from "../../ask/lib/render.ts";
+import { within } from "../../ask/lib/reading.ts";
+import type {
+  Tracker,
+  TrackerUser,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { Verb } from "./verbs.ts";
 
 /** The tick a send names as its reader when it woke none. */
@@ -63,15 +81,52 @@ export type Planned = Outcome<Plan, "refused">;
 
 export const refused = (reason: string) => failed("refused", reason);
 
+/** The cause of a failed login read, in words, by the call's failure class. */
+function unreadCause(
+  where: string,
+  call: OutboundFailure | null,
+  reason: string,
+): string {
+  switch (call?.code) {
+    case "rate-limited":
+      return call.until === undefined
+        ? `the credential's allowance on ${where} is spent; send again once it is restored`
+        : `the credential's allowance on ${where} is spent until ${isoFromMs(call.until)}; send again after then`;
+    case "unauthorized":
+      return `${where} refused the credential (${reason}); sign in again, then send again`;
+    case "unreachable":
+      return `${where} did not answer (${reason}); send again`;
+    case "too-costly":
+      return `${where} ran out of time on the request (${reason}); send again`;
+    case "server-fault":
+      return `${where} answered with a fault of its own (${reason}); send again later`;
+    case "not-found":
+    case "invalid":
+      return `${where}'s answer could not be read (${reason})`;
+    default:
+      return reason;
+  }
+}
+
+/** The refusal of a send whose login on `where` was not read, naming why. */
+function loginUnread(where: string, failure: Failure) {
+  return refused(
+    `the login this machine is signed in as on ${where} was not read, so nothing was sent: ${unreadCause(where, outboundOf(failure), failure.reason)}`,
+  );
+}
+
 /**
  * The login a send writes as, checked against `--as`: refused when the
- * medium named none, or when `as` names another.
+ * login was not read, naming why; when the medium answered and named none;
+ * or when `as` names another.
  */
 export function writerLogin(
-  login: string | null,
+  read: Outcome<string | null, string>,
   as: string | undefined,
   where: string,
 ): Outcome<string, "refused"> {
+  if (!read.ok) return loginUnread(where, read.failure);
+  const login = read.value;
   if (login === null)
     return refused(
       `${where} did not name the login this machine is signed in as, so who would write is not known`,
@@ -81,6 +136,43 @@ export function writerLogin(
       `--as ${as}: this machine is signed in as ${login} on ${where}; sign in as ${as}, or leave --as out`,
     );
   return ok(login);
+}
+
+/**
+ * The user the tracker's credential acts as, read within `sec` seconds, and
+ * the login a send through it writes as, checked as `writerLogin` checks
+ * it. A read that failed names the call's class; one that did not settle
+ * in time is `unreachable`.
+ */
+export async function trackerWriter(
+  tracker: Pick<Tracker, "viewer">,
+  sec: number,
+  as: string | undefined,
+): Promise<Outcome<{ viewer: TrackerUser; login: string }, "refused">> {
+  let read: Outcome<TrackerUser, "unread">;
+  try {
+    const got = await within(sec, (signal) => tracker.viewer(signal));
+    read =
+      got === null
+        ? failedBy(
+            "unread",
+            outboundFailure(
+              "unreachable",
+              `no answer within the answer's deadline (${sec} s)`,
+            ),
+          )
+        : ok(got.value);
+  } catch (error) {
+    read = failedBy("unread", failureOf(error));
+  }
+  if (!read.ok) return loginUnread("the tracker", read.failure);
+  const viewer = read.value;
+  const login = writerLogin(
+    ok(viewer.name === "" ? null : viewer.name),
+    as,
+    "the tracker",
+  );
+  return login.ok ? ok({ viewer, login: login.value }) : login;
 }
 
 /** `text` for the terminal: control and direction-changing characters removed, the layout newlines kept. */
