@@ -32,8 +32,17 @@ interface TakenDecision {
   evidence: Evidence;
 }
 
+/** The version a tag names: whatever prefix the repository's tags carry (`v`, `app-`) is dropped. */
+function versionOf(tag: string): string {
+  return tag.replace(/^[^0-9]*/, "");
+}
+
+/** Semantic-version order, which puts a final release after its own pre-releases; tags that are not versions fall back to text order. */
 function byVersion(left: OwedRelease, right: OwedRelease): number {
-  return left.tag.localeCompare(right.tag, "en", { numeric: true });
+  const order = Bun.semver.order(versionOf(left.tag), versionOf(right.tag));
+  return order !== 0
+    ? order
+    : left.tag.localeCompare(right.tag, "en", { numeric: true });
 }
 
 function words(evidence: Evidence, field: string): string[] {
@@ -143,13 +152,27 @@ function isEvidence(value: unknown): value is Evidence {
   );
 }
 
+/** Whether `target` and `evidence` are one `takenDecision` writes: a lone release's tag, or a group's tags and items. */
+function isTakenShape(target: unknown, evidence: Evidence): boolean {
+  if (!isString(target) || target === "") return false;
+  if (typeof evidence.tag === "string") return evidence.tag !== "";
+  return (
+    groupTags(evidence).length > 0 &&
+    groupItems(evidence).length === groupTags(evidence).length
+  );
+}
+
 function readTaken(kept: string): TakenDecision | null {
   const read = attempt("unreadable", "unreadable", (): unknown =>
     JSON.parse(kept),
   );
   if (!read.ok || !isRecord(read.value)) return null;
   const { target, evidence } = read.value;
-  return isString(target) && isEvidence(evidence) ? { target, evidence } : null;
+  return isString(target) &&
+    isEvidence(evidence) &&
+    isTakenShape(target, evidence)
+    ? { target, evidence }
+    : null;
 }
 
 /** The need of the releases a person took under one decision, which that person's answer holds off the line. */

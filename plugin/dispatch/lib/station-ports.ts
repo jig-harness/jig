@@ -42,7 +42,7 @@ import {
   removeRecordIf,
   writeRecord,
 } from "./launches.ts";
-import { boundAt, type TickBound } from "./sources/bounded.ts";
+import type { TickBound } from "./sources/bounded.ts";
 import { rerunReleaseGates } from "./release-gates.ts";
 import { recordReleasesTaken } from "./release-needs.ts";
 import { writeCommandLabel } from "./requests.ts";
@@ -54,7 +54,7 @@ import { readTrackerAnswers } from "./tracker-answers.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
 import type { WorkLinks } from "./work-links.ts";
-import { currentIso, currentMs } from "../../shared/time.ts";
+import { currentIso } from "../../shared/time.ts";
 
 /** The longest one step's git checks run. */
 const STEP_LIMIT_MS = 60_000;
@@ -75,6 +75,8 @@ export interface StationInputs {
   sessions: () => Promise<SessionsReport>;
   root?: string;
   bound?: TickBound | undefined;
+  /** What every repository's release re-runs spend together; made when the first is asked for, the tick's `bound` when it has a deadline. */
+  rerunBound?: (() => TickBound | undefined) | undefined;
 }
 
 /** Why a stage the step belongs to is off; `null` when it is on. */
@@ -416,12 +418,6 @@ export function stationPorts(inputs: StationInputs): StationPorts {
     });
     return asked;
   };
-  // A tick with no deadline of its own still limits what its release re-runs spend together.
-  let rerunLimit = inputs.bound;
-  const rerunBound = () => {
-    rerunLimit ??= boundAt(currentMs() + 120_000);
-    return rerunLimit;
-  };
   return {
     self: inputs.login,
     issueRepository: inputs.issueRepository,
@@ -438,7 +434,12 @@ export function stationPorts(inputs: StationInputs): StationPorts {
         ? null
         : stageOff(inputs, "followup");
       return off === null
-        ? rerunReleaseGates(inputs.repo, tag, inputs.root, rerunBound())
+        ? rerunReleaseGates(
+            inputs.repo,
+            tag,
+            inputs.root,
+            inputs.rerunBound?.() ?? inputs.bound,
+          )
         : Promise.resolve(refused(off));
     },
     takeReleases: (tags, decision) =>

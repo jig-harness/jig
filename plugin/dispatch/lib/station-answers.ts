@@ -666,19 +666,24 @@ async function settleOne(
   return acted?.outcome === "held";
 }
 
-/** Releases held by a person's answer keep its decision while other versions change; when the answer no longer holds them they return to the line. */
+/**
+ * Releases held by a person's answer keep its decision while other versions
+ * change; when the answer no longer holds them they return to the line. A read
+ * that failed has not revoked the hold, so those releases stay off the line:
+ * the answer says whether they are held now.
+ */
 function keepReleasesTaken(
   action: Action,
   isHeld: boolean,
   ports: StationPorts,
-): void {
+): boolean {
   const tags = owedTags(action.evidence);
   if (isHeld) ports.takeReleases?.(tags, takenDecision(action));
-  else if (
-    isTakenNeed(action.evidence) &&
-    action.answered?.unread === undefined
-  )
+  else if (isTakenNeed(action.evidence)) {
+    if (action.answered?.unread !== undefined) return true;
     ports.takeReleases?.(tags, null);
+  }
+  return false;
 }
 
 /**
@@ -699,8 +704,11 @@ export async function settleStationAnswers(
     if (framed === null) continue;
     const isHeld = await settleOne(framed, slug, ports, root);
     if (isHeld) held.add(action);
-    if (action.cause === "release-owed")
-      keepReleasesTaken(action, isHeld, ports);
+    if (
+      action.cause === "release-owed" &&
+      keepReleasesTaken(action, isHeld, ports)
+    )
+      held.add(action);
   }
   if (held.size === 0) return;
   report.actions = report.actions.filter((a) => !held.has(a));
@@ -710,7 +718,8 @@ export async function settleStationAnswers(
       class: "answered-hold",
       why:
         action.cause === "release-owed"
-          ? (action.answered?.acted?.detail ?? "a person took the release step")
+          ? (action.answered?.acted?.detail ??
+            `a person took the release step${action.answered?.unread === undefined ? "" : `; its answer could not be refreshed: ${action.answered.unread}`}`)
           : `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`,
     });
 }
