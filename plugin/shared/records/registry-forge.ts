@@ -143,7 +143,7 @@ export const FORGE: RecordKind[] = [
     version: 1,
     key: ANSWER_KEY,
     meaning:
-      "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. Each person's latest answer counts.",
+      "A person's answer to one parked question, written by `jig send`: the re-arm reads its `answer <key>:` line from a trusted author and hands the answer to the next pass. The same record answers a need's decision, on a tracker item too, where it is how the dispatcher tells a person's answer from its own identity's other comments. Each person's latest answer counts.",
   },
   plain(
     "forge",

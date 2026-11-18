@@ -127,8 +127,9 @@ function answerOf(
 /**
  * `c`, by the dispatcher's own identity `name`, read as an answer to
  * `decision`: only with a sent answer's record naming that identity and this
- * decision's key. The record must name the decision's digest, or the answer
- * is stale as any author's is, and the option its line chooses.
+ * decision's key. An answer whose record does not name the decision's digest
+ * and the option its line chooses is stale, as any author's answer to other
+ * facts is, so the need shows it rather than losing it.
  */
 function ownAnswerOf(
   decision: LineDecision,
@@ -144,14 +145,14 @@ function ownAnswerOf(
     return null;
   const answer = answerOf(decision, c);
   if (answer === null) return null;
-  if (answer.stale === true || sent.decision !== decision.digest)
-    return { ...answer, stale: true };
   const { choice } = answer;
-  return choice !== undefined &&
+  return answer.stale !== true &&
+    sent.decision === decision.digest &&
+    choice !== undefined &&
     choice.option === sent.choice?.option &&
     choice.form === sent.choice.form
     ? answer
-    : null;
+    : { ...answer, stale: true };
 }
 
 /** The answers `comments` and the dispatcher's `own` give `decision`: each person's latest. */

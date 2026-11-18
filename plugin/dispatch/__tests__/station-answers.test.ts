@@ -104,6 +104,7 @@ interface SentFields {
   /** The digest the record names; `null` leaves it out. */
   decision?: string | null;
   option?: string;
+  form?: "approve" | "choose";
 }
 
 /**
@@ -128,7 +129,10 @@ function sentAnswer(
     "2026-11-12T11:00:00.000Z",
     {
       ...(decision === null ? {} : { decision }),
-      choice: { option: record.option ?? option, form: "choose" },
+      choice: {
+        option: record.option ?? option,
+        form: record.form ?? "choose",
+      },
     },
   );
   return `answer ${key}: choose ${option} [${digest}]${body.slice(body.indexOf("\n"))}`;
@@ -252,7 +256,6 @@ describe("settleStationAnswers", () => {
       { key: "pickup" },
       { login: "maintainer" },
       { host: "dashboard (browser)" },
-      { option: "Record it done" },
     ];
     for (const record of records) {
       const p = ports([
@@ -269,7 +272,7 @@ describe("settleStationAnswers", () => {
     }
   });
 
-  it("leaves the dispatcher's own answer stale when its record names no digest, another, or an earlier framing", async () => {
+  it("leaves the dispatcher's own answer stale when its record names no digest, another, an earlier framing or another choice", async () => {
     const digest = digestOf(failedFollowup());
     const bodies = [
       sentAnswer("followup", digest, "Run it again", { decision: null }),
@@ -278,6 +281,10 @@ describe("settleStationAnswers", () => {
       }),
       // A whole comment copied from when the decision was framed differently.
       sentAnswer("followup", OTHER_DIGEST, "Run it again"),
+      sentAnswer("followup", digest, "Run it again", {
+        option: "Record it done",
+      }),
+      sentAnswer("followup", digest, "Run it again", { form: "approve" }),
     ];
     for (const body of bodies) {
       const p = ports([said(body, "drive-bot")]);

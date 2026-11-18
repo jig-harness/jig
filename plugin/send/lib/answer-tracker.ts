@@ -320,7 +320,7 @@ export async function planTrackerAnswer(
   );
   if (!body.ok) return body;
   const hidden = reading.record
-    ? `, with the record envelope naming ${sender.login} and this host (as a digest), the decision's digest and the option chosen in a hidden marker`
+    ? `, with the record envelope naming ${sender.login} and this host (as a digest), the decision's digest and the option chosen in a marker, which a tracker may show as text`
     : "";
   return ok({
     address: ctx.name,

@@ -284,7 +284,7 @@ describe("jig send … answer on an item of another tracker", () => {
       expect(planned.value.notice).toContain(
         `this machine owns ${REPO}, so its tick reads the answers with the tracker credential a send here uses, which acts as Dana Lee; it counts this answer by the record the comment carries`,
       );
-      expect(planned.value.record).toContain("in a hidden marker");
+      expect(planned.value.record).toContain("the option chosen in a marker");
       expect(t.posted).toEqual([]);
       await planned.value.write();
       const body = t.posted[0]?.[1] ?? "";

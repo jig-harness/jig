@@ -947,8 +947,9 @@ stops a model. A team that runs passes unattended should know which:
   `skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/driver/rearm.ts`). A pass signed in as the
   same login as the person, or holding the person's tracker credential, can
-  therefore post a comment those scripts would trust, that record included;
-  only the instructions say it must not.
+  therefore post a comment those scripts would trust, and one holding the
+  dispatcher's own login or tracker credential, shared or dedicated, can write
+  that record; only the instructions say it must not.
 - **The machine's state folders.** Launch records, walls, receipts, the
   outcome log and the drive's state are files under `~/.local/state/jig/`,
   writable by every session the same user runs. Leases and tokens fence the
