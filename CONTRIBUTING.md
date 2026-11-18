@@ -400,6 +400,18 @@ in the gate-set job's website steps (its checks leg); run
 the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
 
+### Local validation in dispatched passes
+
+Jig's `gates.dispatch_fast` setting selects the fast checks and targeted
+tests for dispatched pickups and drives. The targeted run includes changed
+test files, nearby tests named for changed files and tests that import
+changed files directly. These tests run without
+parallel workers or the shared `heavy` lock. The lock admits full suites by
+worker count. Applying it to short targeted runs would make them queue
+behind those suites. Required CI jobs still run the full checks and suites.
+
+Turn the setting off to return dispatched passes to the full local gates.
+
 ### Known failures on the nightly run
 
 The nightly run holds its tests against a *known-failure baseline*

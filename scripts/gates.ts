@@ -15,6 +15,7 @@
 // Two unrelated failures surface in one run rather than two.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { dispatchTestPaths, useDispatchFastGates } from "./dispatch-gates.ts";
 import { cli } from "../lib/cli.ts";
 import { couldNotCheck } from "../lib/findings.ts";
 import { checkLinks } from "./check-md-links.ts";
@@ -378,6 +379,28 @@ export function summary(
   ].join("\n");
 }
 
+export function dispatchPlan(tests: string[]): Stage[] {
+  const targeted = command(
+    "test",
+    "--timeout",
+    "60000",
+    ...tests.map((path) => `./${path}`),
+  );
+  return [...plan(true, targeted), ...(tests.length ? [targeted] : [])];
+}
+
+async function dispatchGates(): Promise<number> {
+  const tests = dispatchTestPaths(root);
+  if (!tests.length)
+    console.log("dispatch gates: no matching local test files");
+  const outcomes = await runStages(dispatchPlan(tests), root);
+  const status = verdict(outcomes);
+  (status ? console.error : console.log)(
+    status ? summary(outcomes, true) : "dispatch gates passed",
+  );
+  return status;
+}
+
 async function gates(fast: boolean): Promise<number> {
   let part: Part | undefined;
   try {
@@ -389,6 +412,7 @@ async function gates(fast: boolean): Promise<number> {
       error instanceof Error ? error.message : String(error),
     );
   }
+  if (!fast && !part && useDispatchFastGates(root)) return dispatchGates();
   const skipped = fast ? [] : skippedSuites(process.platform, process.env);
   if (skipped.length)
     console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);

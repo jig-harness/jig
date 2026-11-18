@@ -85,3 +85,55 @@ test("a run names its part in the closing line", async () => {
   expect(summary(green, false, "checks")).toBe("checks gates passed");
   expect(summary(green, false)).toBe("all gates passed");
 });
+
+test("only opted-in dispatch launches use targeted local gates", async () => {
+  const { dispatchFastEnabled } = await import("./dispatch-gates.ts");
+  const { dispatchPlan, plan, testStage } = await import("./gates.ts");
+  const launch = { JIG_LAUNCH: "20260101T000000Z-abcdef12" };
+  const full = testStage([], () => []);
+  const stages = (setting: unknown) =>
+    dispatchFastEnabled(setting, launch)
+      ? dispatchPlan(["scripts/example.test.ts"])
+      : plan(false, full);
+  expect(stages(true).at(-1)?.name).toBe(
+    "bun test --timeout 60000 ./scripts/example.test.ts",
+  );
+  expect(stages(true).map((stage) => stage.name)).not.toContain(full.name);
+  expect(stages(undefined).map((stage) => stage.name)).toContain(full.name);
+  expect(dispatchFastEnabled(false, launch)).toBe(false);
+  expect(dispatchFastEnabled(undefined, launch)).toBe(false);
+  expect(dispatchFastEnabled(true, {})).toBe(false);
+  expect(
+    dispatchFastEnabled(true, { JIG_LAUNCH: "drive-pr 14 driver 2" }),
+  ).toBe(false);
+  expect(dispatchFastEnabled(true, { ...launch, CI: "true" })).toBe(false);
+});
+
+test("targeted gates select changed tests and nearby tests named for changed sources", async () => {
+  const { selectDispatchTests } = await import("./dispatch-gates.ts");
+  expect(
+    selectDispatchTests(
+      [
+        "plugin/dispatch/lib/run.ts",
+        "scripts/gates-plan.test.ts",
+        "scripts/deleted.test.ts",
+      ],
+      [
+        "plugin/dispatch/__tests__/run.test.ts",
+        "plugin/dispatch/__tests__/run-timeout.test.ts",
+        "plugin/dispatch/__tests__/launch.test.ts",
+        "plugin/dispatch/__tests__/session.test.ts",
+        "plugin/dispatch/__tests__/fixtures/run.test.ts",
+        "plugin/other/__tests__/run.test.ts",
+        "scripts/gates-plan.test.ts",
+      ],
+      (test) =>
+        test.endsWith("/session.test.ts") ? ["plugin/dispatch/lib/run.ts"] : [],
+    ),
+  ).toEqual([
+    "plugin/dispatch/__tests__/run-timeout.test.ts",
+    "plugin/dispatch/__tests__/run.test.ts",
+    "plugin/dispatch/__tests__/session.test.ts",
+    "scripts/gates-plan.test.ts",
+  ]);
+});
