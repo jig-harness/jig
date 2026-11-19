@@ -68,6 +68,16 @@ function rowsOf(page: Page) {
         const r = found.getBoundingClientRect();
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
       };
+      const shown = (selector: string) => {
+        const found = row.querySelector(selector);
+        if (found === null) return false;
+        const style = getComputedStyle(found);
+        return (
+          style.visibility === "visible" &&
+          style.display !== "none" &&
+          Number(style.opacity) > 0
+        );
+      };
       const name = row.querySelector(".gName .bareWord");
       return {
         name: name?.textContent ?? "",
@@ -80,7 +90,9 @@ function rowsOf(page: Page) {
         trackBorder: getComputedStyle(row.querySelector(".gTrack") ?? row)
           .borderTopStyle,
         fill: box(".gFill"),
+        fillShown: shown(".gFill"),
         past: box(".gPast"),
+        pastShown: shown(".gPast"),
         line: box(".gLine"),
         lineBorder: getComputedStyle(row.querySelector(".gLine") ?? row)
           .borderLeftWidth,
@@ -203,7 +215,8 @@ describe("the load", () => {
               expect({
                 name: row.name,
                 filled: (row.fill?.right ?? 0) - (row.fill?.left ?? 0) > 4,
-              }).toEqual({ name: row.name, filled: true });
+                shown: row.fillShown,
+              }).toEqual({ name: row.name, filled: true, shown: true });
           }
           if (!touch)
             // The whole breakdown is in the first screen of a laptop.
@@ -236,6 +249,7 @@ describe("the load", () => {
           expect(
             (processors?.past?.right ?? 0) - (processors?.past?.left ?? 0),
           ).toBeGreaterThan(4);
+          expect(processors?.pastShown).toBe(true);
           // Memory is near its line but under it: neither binding nor over.
           expect(rows[0]?.classes).not.toContain("binds");
           expect(rows[0]?.past).toBeNull();
