@@ -74,9 +74,13 @@ async function readListing(f: {
   const source = join(dir, "read.ts");
   writeFileSync(
     source,
-    `import { checkRunListing } from ${JSON.stringify(join(LIB, "status/evidence.ts"))};
-    import { withObservedEvaluation } from ${JSON.stringify(join(LIB, "gh-conditional.ts"))};
-    const read = ${f.observed === true ? `await withObservedEvaluation(() => checkRunListing("o", "r", ${JSON.stringify(SHA)}, "observed"))` : `await checkRunListing("o", "r", ${JSON.stringify(SHA)})`};
+    // Fixed source: the paths, head and mode arrive as environment values.
+    `const { checkRunListing } = await import(process.env.LISTING_EVIDENCE);
+    const { withObservedEvaluation } = await import(process.env.LISTING_CONDITIONAL);
+    const sha = process.env.LISTING_SHA;
+    const read = process.env.LISTING_OBSERVED === "1"
+      ? await withObservedEvaluation(() => checkRunListing("o", "r", sha, "observed"))
+      : await checkRunListing("o", "r", sha);
     console.log(JSON.stringify({ runs: read.runs?.length ?? null, cutShort: read.cutShort }));`,
   );
   const child = Bun.spawn([process.execPath, source], {
@@ -86,6 +90,10 @@ async function readListing(f: {
       HOME: dir,
       XDG_STATE_HOME: join(dir, "state"),
       GH_TOKEN: "test-listing-token",
+      LISTING_EVIDENCE: join(LIB, "status/evidence.ts"),
+      LISTING_CONDITIONAL: join(LIB, "gh-conditional.ts"),
+      LISTING_SHA: SHA,
+      LISTING_OBSERVED: f.observed === true ? "1" : "0",
       GH_CALL_TIMEOUT: f.timeoutSec ?? "2",
       JIG_FORGE_BUDGET: "on",
       PATH: `${dir}${delimiter}${process.env.PATH}`,
