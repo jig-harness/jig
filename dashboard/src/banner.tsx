@@ -7,6 +7,7 @@ import { CopyButton } from "./copy.tsx";
 import { Fold } from "./fold.tsx";
 import { BareWord } from "./icon-word.tsx";
 import type { IconWord } from "./icons.ts";
+import type { StaleRepository } from "./view.ts";
 
 /** The command that starts the dashboard's server on the host. */
 export const COMMAND = "jig dispatch dashboard";
@@ -26,6 +27,7 @@ export function Banner({
   command,
   icon,
   detail,
+  repositories,
 }: {
   title: string;
   body: string;
@@ -34,6 +36,8 @@ export function Banner({
   icon?: IconWord;
   /** The whole story behind a short title, shown on expanding. */
   detail?: string;
+  /** The repositories a banner for several tells: each with when it was last read, and what stopped it on expanding. */
+  repositories?: StaleRepository[];
 }) {
   return (
     <section className="banner" role="status">
@@ -49,6 +53,24 @@ export function Banner({
           <Fold label="What stopped the read">
             <p className="sm m">{detail}</p>
           </Fold>
+        )}
+        {repositories === undefined ? null : (
+          <>
+            <p className="sm">
+              {repositories
+                .map(({ name, lastRead }) => `${name} (${lastRead})`)
+                .join(" · ")}
+            </p>
+            <Fold label="What stopped each read">
+              <ul className="sm">
+                {repositories.map(({ key, name, detail }) => (
+                  <li key={key}>
+                    <strong>{name}</strong>: {detail}
+                  </li>
+                ))}
+              </ul>
+            </Fold>
+          </>
         )}
         {command ? <CommandRow /> : null}
       </div>

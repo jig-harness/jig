@@ -23,7 +23,10 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { dispatchSection } from "../../dispatch/lib/section.ts";
 import { lastEnded } from "../../dispatch/lib/log.ts";
-import type { LineNeed } from "../../dispatch/lib/dashboard-contract.ts";
+import type {
+  LineNeed,
+  LineQueued,
+} from "../../dispatch/lib/dashboard-contract.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import {
   type Holder,
@@ -44,7 +47,7 @@ import {
 import { localLaunchEntries, logEntries } from "./thread.ts";
 import { personAct } from "./waiting.ts";
 import { actOfLineNeed } from "../../shared/acts.ts";
-import { lineNeeds } from "./line-needs.ts";
+import { lineNeeds, lineQueue } from "./line-needs.ts";
 
 /** A repository's tracker, from the configuration of its checkout at `root`. */
 export interface RepoTracker {
@@ -161,11 +164,19 @@ function needWhy(need: LineNeed): string {
   return [need.reason, ...unread].join("; ");
 }
 
+/** The newest tick's queue entry for this item as an assigned pickup, where it planned one. */
+function queuedOf(ctx: AskContext): LineQueued | undefined {
+  return lineQueue(ctx).find(
+    (q) => q.item === ctx.address.key && q.source === "assigned",
+  );
+}
+
 function waitsOnOf(
   state: string,
   needs: readonly LineNeed[],
   ctx: AskContext,
   held: boolean,
+  queued: LineQueued | undefined,
 ): WaitsOn {
   // The tick's own need comes first: a session that runs may be the one waiting on a person.
   const need = needs[0];
@@ -174,6 +185,8 @@ function waitsOnOf(
       act: actOfLineNeed(need),
     });
   if (held) return "none";
+  if (state === "assigned" && queued?.overlap !== undefined)
+    return { waiting: queued.overlap.text };
   if (state === "assigned" && ctx.dispatches)
     return { waiting: "the dispatcher's next tick, which starts the pick-up" };
   return "none";
@@ -306,6 +319,8 @@ async function issueAnswer(
   const holding = holdingRecord(local.records);
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
   const last = lastEnded(local.rows, ["pickup"]);
+  // The newest tick's overlap reason and footprint note hold only while the item still waits to be picked up.
+  const queued = state === "assigned" ? queuedOf(ctx) : undefined;
   return {
     found: true,
     title: issue.title,
@@ -316,7 +331,9 @@ async function issueAnswer(
         : recordHolder(holding, null),
     state,
     stateDetail: detail,
-    waitsOn: waitsOnOf(state, needs, ctx, holding !== null),
+    waitsOn: waitsOnOf(state, needs, ctx, holding !== null, queued),
+    ...(queued?.overlap === undefined ? {} : { overlap: queued.overlap }),
+    ...(queued?.footprint === undefined ? {} : { footprint: queued.footprint }),
     last: last === null ? null : lastOfRow(last),
     entries: [
       ...(await assignment(ctx, tracker, issue, member)),

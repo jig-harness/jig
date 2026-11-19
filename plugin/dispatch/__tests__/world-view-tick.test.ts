@@ -148,9 +148,11 @@ describe("the world view's direct implementation", () => {
       "graphql DispatchRepository",
       "pr list --repo example-org/example-repo --state merged --search merged:>=2026-10-30 --limit 1000 --json number,url,title,headRefName,createdAt,mergedAt,updatedAt",
     ]);
+    // Beside them, the footprint of the wanted pickup, which overlap reads through the tracker the tick opened.
     expect(w.trackerOps().toSorted()).toEqual([
       "TrackerAssignedBy",
       "TrackerCollaborator",
+      "TrackerComments",
       "TrackerComments",
       "TrackerDispatchQueue",
       "TrackerFacetEvidence",
@@ -169,7 +171,8 @@ describe("a tick over a world view its caller supplies", () => {
     ).toEqual(["pickup #12", "rearm PR #8", "followup PR #5"]);
     expect(planned(replayed)).toEqual(planned(direct));
     expect(replayed?.repos[0]?.refused).toBeNull();
-    // The replayed tick asked the forge for nothing the view covers, and the tracker for nothing.
+    // The replayed tick asked the forge for nothing the view covers, and the tracker for nothing the view covers:
+    // each tick reads the wanted pickup's footprint itself, outside the view, as Control's reads are.
     const second = calls(w).slice(calls(w).indexOf(SECOND_TICK) + 1);
     expect(second.length).toBeGreaterThan(0);
     for (const match of COVERED_CALLS)
@@ -177,6 +180,8 @@ describe("a tick over a world view its caller supplies", () => {
     expect(w.trackerOps().toSorted()).toEqual([
       "TrackerAssignedBy",
       "TrackerCollaborator",
+      "TrackerComments",
+      "TrackerComments",
       "TrackerComments",
       "TrackerDispatchQueue",
       "TrackerFacetEvidence",

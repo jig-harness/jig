@@ -51,7 +51,33 @@ function queueEvidence(q: LineQueued): EvidenceRow[] {
       k: "last launch",
       v: `${q.launch.outcome}: ${q.launch.detail}`,
     });
+  if (q.overlap !== undefined)
+    rows.push(
+      { k: q.overlap.relation, v: `${q.overlap.count}` },
+      ...q.overlap.on.map((r) => ({
+        k: r.kind,
+        v: `${r.ref} (${r.state})${r.url === null ? "" : ` ${r.url}`}`,
+      })),
+    );
+  if (q.footprint !== undefined) rows.push({ k: "footprint", v: q.footprint });
   return rows;
+}
+
+/** Why a queued target waits: a serialized hold, else its overlap, else the record's own reason; a pickup's unknown footprint beside it. A launch that was refused or only reported leads with its own detail, with the overlap beside it as what would hold the start. */
+function whyOf(q: LineQueued): string {
+  const launch = q.launch;
+  const decided =
+    launch !== null &&
+    (launch.outcome === "refused" || launch.outcome === "reported");
+  const why =
+    q.hold !== null
+      ? `held: serialized behind #${q.hold.leader} in ${q.hold.area}`
+      : decided
+        ? q.overlap === undefined
+          ? launch.detail
+          : `${launch.detail} · ${q.overlap.text}`
+        : (q.overlap?.text ?? q.why);
+  return q.footprint === undefined ? why : `${why} · ${q.footprint}`;
 }
 
 export interface QueueGroupView {
@@ -122,10 +148,7 @@ function queueItem(q: LineQueued, nowMs: number): QueueItemView {
     refusal: q.group === "never" ? refusalReason(q) : null,
     followup: q.source === "merged" ? queuedFollowup(q.group) : null,
     title: q.title,
-    why:
-      q.hold === null
-        ? q.why
-        : `held: serialized behind #${q.hold.leader} in ${q.hold.area}`,
+    why: whyOf(q),
     wait:
       q.hold === null ? null : `waited ${ago(Date.parse(q.hold.since), nowMs)}`,
     role: q.stale ? ROLES.stale : ROLES.held,

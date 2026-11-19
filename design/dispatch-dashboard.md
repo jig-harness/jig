@@ -141,13 +141,16 @@ or tap anywhere else on the card opens and closes it too, unless it lands on a l
 inside what the card opened; a press that moved on its way (a scroll or a
 drag) or that ends a text selection does not count as one. An open card
 draws a line down its gutter beside what it opened. The load's holds and
-reservations, the accounts list and the list of repositories on Running,
-and the folds of the Help view, are headings on the same gutter, opened by
-their chevron or a tap on the heading. The accounts list starts open. On
-Needs you, each act heading uses the same disclosure. It shows the act icon,
-matching count and oldest wait. It opens on the first ten cards, with a
-control to show the rest. Investigate starts folded when Decide or Authorize
-cards are present.
+reservations, the accounts list and the list of repositories on Running, and
+the folds of the Help view, are headings on the same gutter, opened by their
+chevron or a tap on the heading. The accounts list starts open. On Needs you,
+each act heading uses the same disclosure. It shows the act icon, matching
+count and oldest wait. It opens on the first ten cards, with a control to show
+the rest. Investigate starts folded when Decide or Authorize cards are
+present. The cards a person's answer hid fold into one muted line above the
+list (`6 cards hidden by answers · show`), a full touch target at every width,
+that opens to one note per hidden card and closes again; with none hidden,
+nothing shows.
 
 **Filters.** On desktop, the text filter comes first. A **dashboard filter
 facet** is one independent card property, such as repository or act, that a
@@ -357,13 +360,13 @@ and a retry control's, which no view draws today.
   mode, which replaces the page's colours with its own). Where the design keeps a
   word alone (an answer still waiting, a draft that does not count), the
   map holds the word with no icon.
-- **A family is told apart by its container.** An act is a filled pill, a
-  stage an outlined chip, a source a dashed chip; a cause, a standing, an
-  account's state and an answer's state are a bare icon beside its word;
-  a coming group, a lane and a gauge lead their heading or row. The shapes
-  carry the difference, so it holds in greyscale, and under forced colours
-  the pill is filled with the system's text colour and the chips keep their
-  solid or dashed borders.
+- **A family is told apart by its container.** An act is a filled pill on
+  a card, a stage an outlined chip, a source a dashed chip; a cause, a
+  standing, an account's state and an answer's state are a bare icon beside
+  its word; an act's group, a coming group, a lane and a gauge lead their
+  heading or row. The shapes carry the difference, so it holds in
+  greyscale, and under forced colours the pill is filled with the system's
+  text colour and the chips keep their solid or dashed borders.
 - **A shared word shares its icon** where the meaning is the same: a
   re-armable source and the rearm stage, a held source and the held group,
   a merged source and the merged standing. The act Merge asks a person to
@@ -494,8 +497,9 @@ browser
   links them, in this browser alone, and the page reads the line every 3
   seconds for up to 90 seconds, stopping sooner once the tick records the
   answer's outcome. The card then shows whether the step was carried out,
-  refused with its reason, or held: an answered hold stays on the card and
-  says the work remains undone, until its facts change. A refusal part-way names the decisions not
+  refused with its reason, or held: an answered hold leaves the list and is
+  noted in the folded line above it, which says the work remains undone until
+  its facts change. A refusal part-way names the decisions not
   posted. A refusal shows GitHub's own message with what it means (401: the
   token is wrong or revoked; 403: it lacks write access to Issues and Pull
   requests on that repository, or an organization has not approved it; 404:
