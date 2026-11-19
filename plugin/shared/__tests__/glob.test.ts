@@ -204,4 +204,12 @@ describe("globMayMatchUnder", () => {
       ]);
     expect(globMayMatchUnder("other/*/[! -~]*", "config/team")).toBe(false);
   });
+
+  it("reaches a directory through a class whose members lie outside any sampled alphabet", () => {
+    for (const glob of ["config/*/[! -~é中😀]", "config/*/[\u0100-\u0101]"])
+      expect([glob, globMayMatchUnder(glob, "config/team")]).toEqual([
+        glob,
+        true,
+      ]);
+  });
 });

@@ -193,6 +193,24 @@ const EXTRA_CHARS = [
   "\ude00",
 ];
 
+/**
+ * The sampled characters a token accepts besides `/`. When none of the sample
+ * passes, the first code unit that does stands in, found over the whole
+ * UTF-16 domain, so a class that accepts only characters outside the sample
+ * is never read as empty.
+ */
+function acceptedChars(source: string, test: RegExp): string[] {
+  const sampled = [...new Set([...source, ...EXTRA_CHARS])].filter(
+    (c) => c !== "/" && test.test(c),
+  );
+  if (sampled.length > 0) return sampled;
+  for (let unit = 0; unit <= 0xffff; unit++) {
+    const c = String.fromCharCode(unit);
+    if (c !== "/" && test.test(c)) return [c];
+  }
+  return [];
+}
+
 const automata = new Map<string, Automaton>();
 
 function automatonOf(glob: string): Automaton {
@@ -211,9 +229,7 @@ function automatonOf(glob: string): Automaton {
       slash: test.test("/"),
       dot: test.test("."),
       names: NAME_CHARS.filter((c) => test.test(c)),
-      chars: [...new Set([...source, ...EXTRA_CHARS])].filter(
-        (c) => c !== "/" && test.test(c),
-      ),
+      chars: acceptedChars(source, test),
       to,
     });
   };
