@@ -118,6 +118,8 @@ export interface LineInput {
   accounts: LineAccount[];
   /** The host's live drivers no holding record accounts for. */
   drivers?: LineDriver[];
+  /** Why the host's live drivers could not be read. */
+  driversUnread?: string;
   lastAccount: string | null;
   /** The durations the previous line carried. */
   recentTicksMs: number[];
@@ -920,6 +922,9 @@ export function buildLine(input: LineInput): LineSnapshot {
     timeZone: input.timeZone,
     accounts: input.accounts,
     ...(input.drivers === undefined ? {} : { drivers: input.drivers }),
+    ...(input.driversUnread === undefined
+      ? {}
+      : { driversUnread: input.driversUnread }),
     lastAccount: input.lastAccount,
     sessions: input.records
       .filter((r) => holds(r.state))

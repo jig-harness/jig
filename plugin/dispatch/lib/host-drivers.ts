@@ -7,13 +7,14 @@
  *
  * A holding record accounts for a driver that works the record's workspace
  * (a re-arm's or takeover's drive, a pickup's drive while the pickup still
- * runs: the pickup's slot is the drive's), or, for a drive's record, one of
- * the same pull request on the same account. Once the pickup's record stops
+ * runs: the pickup's slot is the drive's), whichever account each bills, or,
+ * for a drive's record, one of the same pull request on the same account. Once the pickup's record stops
  * holding, its drive keeps the slot rather than freeing it.
  *
  * The account is the listed one of the driver's vendor whose identity is
  * the one its claim says its passes bill; failing that, the account of the
- * ended record that started it. A driver no listed account answers is
+ * ended pickup or drive launch that started it: the newest of its tree from
+ * before the driver took its lock. A driver no listed account answers is
  * listed and holds no slot.
  */
 import { realpathSync } from "node:fs";
@@ -24,6 +25,7 @@ import {
 } from "../../skills/drive-pr/scripts/lib/driver/host-drivers.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { accountOf } from "./account-of.ts";
+import { parseMs } from "../../shared/time.ts";
 import { holds, isDrive, type ReadRecord } from "./launches.ts";
 import type { MachineAccount } from "./machine-config.ts";
 
@@ -120,9 +122,15 @@ export function unrecordedDrivers(
             accountOf(accounts, record) === named.name)),
     );
     if (covered) return [];
-    // The newest ended record of its tree started it.
+    // The newest pickup or drive launch of its tree from before it took its lock started it.
+    const since = parseMs(driver.since);
     const starter = records
-      .filter(({ record }) => byTree(record.workspace?.path, driver.worktree))
+      .filter(
+        ({ record }) =>
+          (record.action === "pickup" || isDrive(record)) &&
+          !(parseMs(record.createdAt) > since) &&
+          byTree(record.workspace?.path, driver.worktree),
+      )
       .reduce<ReadRecord | null>(
         (latest, r) =>
           latest === null || r.record.createdAt >= latest.record.createdAt

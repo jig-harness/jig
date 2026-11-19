@@ -2,7 +2,9 @@
  * Every live driver of a pull request on this host, as the drive's database
  * records it: one row per held `pr-drive-<PR>` lock, of every clone whose
  * state is under the host's state root, whose holder `claimAlive` reads
- * alive. Each carries what its claim's diagnostics say: the tree it works,
+ * alive, and, for a holder outside this host's process namespace (which
+ * `claimAlive` cannot probe), whose heartbeat is fresh, so a killed one
+ * stops counting. Each carries what its claim's diagnostics say: the tree it works,
  * its log, when it started and the account identity its passes bill.
  *
  * It is how a reader outside the drive (the dispatcher's slot count, its
@@ -11,17 +13,25 @@
  *
  * It reads without creating, migrating or importing anything: a host with
  * no drive database has no driver. A database that cannot be opened or
- * read is a failure value, with why.
+ * read is a failure value, with why. The database is the one under the
+ * host's state root; a `$DRIVE_PR_STATE_DIR` naming one clone's directory
+ * (as a driver's own environment does) is not that root.
  */
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { attempt, type Outcome } from "../../../../../shared/outcome.ts";
+import {
+  attempt,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../../../shared/outcome.ts";
+import { openReadOnly } from "../../../../../shared/records/db.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
+import { heartbeatStaleMs, samePidNamespace } from "../claim.ts";
 import type { AccountVendor } from "../identity.ts";
-import { dbPathFor } from "../state/db.ts";
+import { dbPathFor, MIGRATIONS } from "../state/db.ts";
 import type { LockRow } from "../state/lock.ts";
 import { stateRoot } from "../state/store.ts";
-import { claimAlive, claimOf } from "./locks.ts";
+import { type Claim, claimAlive, claimOf } from "./locks.ts";
 
 /** A live driver of one pull request, as its lock records it. */
 export interface HostDriver {
@@ -47,30 +57,39 @@ const PR_LOCK = /^pr-drive-([0-9]+)$/;
 export function liveHostDrivers(
   root?: string,
 ): Outcome<HostDriver[], "unreadable"> {
-  return attempt(
-    "unreadable",
-    "the drive's database could not be read for its live drivers",
-    () => {
-      const path = dbPathFor(join(root ?? stateRoot(), "clone"));
-      if (!existsSync(path)) return [];
-      const db = new Database(path, { readonly: true });
-      try {
-        const rows = db
-          .query("SELECT * FROM locks WHERE name GLOB 'pr-drive-[0-9]*'")
-          .all() as (LockRow & { clone: string })[];
-        return rows.flatMap((row) => driverOf(row));
-      } finally {
-        db.close();
-      }
-    },
+  const what = "the drive's database could not be read for its live drivers";
+  const path = attempt("unreadable", what, () =>
+    dbPathFor(join(root ?? stateRoot(), "clone")),
   );
+  if (!path.ok) return path;
+  const opened = openReadOnly({ path: path.value, migrations: MIGRATIONS });
+  if (!opened.ok)
+    return failed(
+      "unreadable",
+      `${what}: ${opened.failure.reason}`,
+      opened.failure.cause,
+    );
+  if (opened.value === null) return ok([]);
+  const { db } = opened.value;
+  try {
+    return attempt("unreadable", what, () =>
+      (
+        db
+          .query("SELECT * FROM locks WHERE name GLOB 'pr-drive-[0-9]*'")
+          .all() as (LockRow & { clone: string })[]
+      ).flatMap((row) => driverOf(row)),
+    );
+  } finally {
+    db.close();
+  }
 }
 
 function driverOf(row: LockRow & { clone: string }): HostDriver[] {
   const pr = PR_LOCK.exec(row.name)?.[1];
   if (pr === undefined) return [];
   const claim = claimOf(row);
-  if (!claimAlive(claim)) return [];
+  if (!claimAlive(claim) || !(samePidNamespace(claim) || fresh(claim)))
+    return [];
   const diag = claim.diag;
   return [
     {
@@ -85,4 +104,10 @@ function driverOf(row: LockRow & { clone: string }): HostDriver[] {
       vendor: diag?.account.vendor ?? null,
     },
   ];
+}
+
+/** Whether the holder renewed its heartbeat within the window a live driver keeps. */
+function fresh(claim: Claim): boolean {
+  const age = currentMs() - parseMs(claim.renewedAt);
+  return Number.isFinite(age) && age <= heartbeatStaleMs();
 }

@@ -197,6 +197,21 @@ function accountsOf(
   }));
 }
 
+/** The line's drivers, or why they could not be read; nothing for a tick that did not read them. */
+function driversPart(
+  machine: MachineConfig,
+  records: ReadRecord[],
+  drivers: HostDrivers | undefined,
+): { drivers: LineDriver[] } | { driversUnread: string } | object {
+  if (drivers === undefined) return {};
+  if (!drivers.ok) return { driversUnread: drivers.failure.reason };
+  return {
+    drivers: lineDrivers(
+      unrecordedDrivers(machine.accounts, records, drivers.value),
+    ),
+  };
+}
+
 /** Each driver no holding record accounts for, as the line lists it. */
 function lineDrivers(drivers: UnrecordedDriver[]): LineDriver[] {
   return drivers.map(
@@ -421,17 +436,7 @@ function writeKept(
             tick.weights,
             driversOf(tick.drivers),
           ),
-          ...(tick.drivers?.ok === true
-            ? {
-                drivers: lineDrivers(
-                  unrecordedDrivers(
-                    machine.accounts,
-                    records,
-                    tick.drivers.value,
-                  ),
-                ),
-              }
-            : {}),
+          ...driversPart(machine, records, tick.drivers),
           lastAccount: lastAccount(records),
           previousNeeds: before?.needs ?? [],
           ...(receipt.quotaRisks === undefined

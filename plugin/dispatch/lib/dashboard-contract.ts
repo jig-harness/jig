@@ -548,6 +548,8 @@ export interface LineSnapshot {
   sessions: LineSession[];
   /** The host's live drivers no session accounts for, each holding a slot of its account; absent from a line written before they were counted. */
   drivers?: LineDriver[];
+  /** Why the host's live drivers could not be read, when they could not: `drivers` is then absent and `accounts[].held` counts launch records only. */
+  driversUnread?: string;
   needs: LineNeed[];
   /** Decisions answered with hold, still visible until their facts change; absent in older snapshots. */
   answeredHolds?: Array<{ repo: string; target: string; why: string }>;

@@ -1481,7 +1481,8 @@ record accounts for, each with its pull request, its tree, the `account`
 whose slot it holds (`null`, with `accountReason`, when no listed account
 has the identity its passes bill, and then it holds none) and how it was
 started (`startedBy`: `pickup`, `dispatcher` or `unrecorded`); it is absent
-from a line written before they were counted.
+from a line written before they were counted, and when the drive's database
+could not be read, which `line.driversUnread` then says.
 Each entry in `line.repos` carries `tracker`, the adapter its configuration
 names (`{"adapter":"linear"}`), and each row of `needs`, `sessions`, `queue`
 and `ready` carries `links`: for a pull request, the items its branch names,

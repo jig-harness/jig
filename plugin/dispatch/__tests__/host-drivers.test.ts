@@ -6,7 +6,7 @@
  * of a drive database under a state root of the test's own.
  */
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { lockIdentity } from "../../shared/liveness.ts";
@@ -196,6 +196,16 @@ describe("a live driver no holding launch record accounts for", () => {
 describe("the host's drivers", () => {
   it("are none on a host with no drive database", () => {
     expect(drivers(tempDir("host-drivers-"))).toEqual([]);
+  });
+
+  it("do not read, saying why, from a database that is not one", () => {
+    const root = tempDir("host-drivers-");
+    writeFileSync(join(root, "state.sqlite"), "not a database");
+    const read = readHostDrivers(root);
+    expect(read.ok).toBe(false);
+    expect(read.ok ? null : read.failure.reason).toContain(
+      "the drive's database could not be read for its live drivers",
+    );
   });
 
   it("leave a tree's worktree lock out: only a pull request's lock is a driver", () => {
