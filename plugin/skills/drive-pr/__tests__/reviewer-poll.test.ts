@@ -30,4 +30,5 @@ it("respects the configured cap, the initial interval, and remaining budget", ()
   expect(reviewerPollSeconds(30, 10, 30, 180_000)).toBe(30);
   expect(reviewerPollSeconds(30, 300, 240, 40_000)).toBe(39);
   expect(reviewerPollSeconds(30, 300, 240, 150_000)).toBe(149);
+  expect(reviewerPollSeconds(30, 300, 240, 1_500)).toBe(1);
 });

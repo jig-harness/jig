@@ -28,6 +28,7 @@ export const DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION = 3;
 export type ReviewerFailurePolicy = {
   threshold: number;
   app?: string;
+  currentReviewerConfigured: boolean;
   sticky: string;
   stamp: string;
   skipNoticeMarker: string;
@@ -42,16 +43,29 @@ export function reviewerFailurePolicy(
 ): ReviewerFailurePolicy {
   const review = isRecord(values.review) ? values.review : {};
   const bots = Array.isArray(review.bots) ? review.bots : [];
+  const app =
+    typeof review.reviewer_app === "string" && review.reviewer_app.trim() !== ""
+      ? review.reviewer_app
+      : undefined;
+  const configuredCheckPattern =
+    typeof review.reviewer_check_pattern === "string" &&
+    review.reviewer_check_pattern.trim() !== ""
+      ? review.reviewer_check_pattern
+      : undefined;
+  const botLogins = bots.flatMap((bot: unknown) => {
+    const login = isRecord(bot) ? bot.login : bot;
+    return typeof login === "string" && login !== "" ? [login] : [];
+  });
   return {
     threshold,
-    ...(typeof review.reviewer_check_pattern === "string" &&
-    review.reviewer_check_pattern.trim() !== ""
-      ? { checkPattern: review.reviewer_check_pattern }
-      : {}),
-    ...(typeof review.reviewer_app === "string" &&
-    review.reviewer_app.trim() !== ""
-      ? { app: review.reviewer_app }
-      : {}),
+    ...(configuredCheckPattern === undefined
+      ? {}
+      : { checkPattern: configuredCheckPattern }),
+    ...(app === undefined ? {} : { app }),
+    currentReviewerConfigured:
+      app !== undefined ||
+      configuredCheckPattern !== undefined ||
+      botLogins.length > 0,
     ...(review.reviewer_evidence === "sticky" ||
     review.reviewer_evidence === "review_object"
       ? { evidence: review.reviewer_evidence }
@@ -62,10 +76,7 @@ export function reviewerFailurePolicy(
       review.skip_notice_marker,
       "ai-review-skip-notice",
     ),
-    bots: bots.flatMap((bot: unknown) => {
-      const login = isRecord(bot) ? bot.login : bot;
-      return typeof login === "string" && login !== "" ? [login] : [];
-    }),
+    bots: botLogins,
   };
 }
 
@@ -137,7 +148,8 @@ async function recovered(
   cwd?: string,
   bound?: TickBound,
 ): Promise<Outcome<boolean, "unreadable">> {
-  const app = policy.app ?? stop.app;
+  const app =
+    policy.app ?? (policy.currentReviewerConfigured ? undefined : stop.app);
   const logins = app === undefined ? policy.bots : [`${app}[bot]`];
   const mode =
     policy.evidence ?? reviewerProfile(app ?? "")?.evidence ?? "sticky";

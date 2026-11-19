@@ -10,5 +10,5 @@ export function reviewerPollSeconds(
   const usual = Math.max(interval, Math.min(previous * 2, max));
   // A wait that consumes the whole budget returns the report observed before
   // sleeping. Leave one second for the loop to read the reviewer once more.
-  return Math.min(usual, Math.max(0, Math.floor(remainingMs / 1000) - 1));
+  return Math.min(usual, Math.max(1, Math.floor(remainingMs / 1000) - 1));
 }
