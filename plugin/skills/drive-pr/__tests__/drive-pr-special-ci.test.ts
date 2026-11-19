@@ -370,3 +370,58 @@ test("mixed failure provenance excludes advisory-only runs from the repair chann
   expect(JSON.parse(lines[0] ?? "null")).toEqual([]);
   expect(JSON.parse(lines[1] ?? "null")).toEqual([]);
 });
+
+/**
+ * `evaluateFinalCi` with the reported failures' freshness unconfirmed
+ * (`staleRequiredFailure` true) and a job the runner timed out: every repair
+ * input is cut to the timed-out job, the advisory policy's own callback and
+ * its ordinary return alike, and the shared workflow the policy dropped stays
+ * dropped.
+ */
+const timedOutJob = `{name:"tests",checkRunId:11,limitMs:1800000,ranMs:1800000,run:{id:300,conclusion:"cancelled",jobNames:["tests"],createdAt:"2026-11-13T09:00:00Z"}}`;
+function evaluateStale(extra = "") {
+  const failing = `{checkRunNames:["scan","build","tests"],statusNames:[],runs:[{id:100,createdAt:"2026-11-13T09:00:00Z",jobNames:["build"]},{id:200,createdAt:"2026-11-13T09:00:00Z",jobNames:["scan","tests"]},{id:300,createdAt:"2026-11-13T09:00:00Z",jobNames:["tests"]}]}`;
+  return `import {mock} from "bun:test"; const live=await import(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))}); mock.module(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))},()=>({...live,timedOutOnHead:async()=>[${timedOutJob}]})); const {evaluateFinalCi}=await import(${JSON.stringify(convergence)}); ${extra} const c={pr:"999",ciRepairs:0,ciRepairBudget:2,dryRun:false,agent:[]}; const result=await evaluateFinalCi("failing: scan, build, tests",true,c,{code:4},process.env.DRIVE_PR_POLICY_BASE,null,${failing}); console.log(JSON.stringify({result}));`;
+}
+const repairLine = /would run a CI-repair pass for: ([^\n]*)/;
+
+test("stale reported failures: the ordinary policy return repairs only the timed-out job", async () => {
+  const f = setup();
+  const r = await child(f, evaluateStale());
+  const told = repairLine.exec(r.stderr)?.[1] ?? "";
+  expect(told).toStartWith("tests; timed out:");
+  expect(told).not.toContain("build");
+  expect(told).not.toContain("scan");
+});
+
+test("stale reported failures: an authorized advisory fix repairs only the timed-out job", async () => {
+  const f = setup();
+  const at = "2026-11-13T09:00:00.000Z";
+  writeState(f.stateDir, "999", {
+    ...freshState(999),
+    resolvedParks: [
+      {
+        key: advisoryKey(f.head, ["scan", "build", "tests"]),
+        kind: "finding",
+        class: "reviewer-posture",
+        reason: "How should this finding be handled?",
+        parkedAt: at,
+        resolvedAt: at,
+        outcome: "answered",
+        answers: [
+          {
+            author: "owner",
+            at,
+            url: "https://example.test/answer",
+            choice: { option: "fix", recommended: true, form: "approve" },
+          },
+        ],
+      },
+    ],
+  });
+  const r = await child(f, evaluateStale());
+  const told = repairLine.exec(r.stderr)?.[1] ?? "";
+  expect(told).toStartWith("tests; timed out:");
+  expect(told).not.toContain("build");
+  expect(told).not.toContain("scan");
+});
