@@ -7,7 +7,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
-import { claimBody } from "../../shared/records/forge-claims.ts";
+import { claimBody, readClaim } from "../../shared/records/forge-claims.ts";
 import { localWriter } from "../../shared/records/writer.ts";
 import { currentIso, currentMs, isoFromMs } from "../../shared/time.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
@@ -378,7 +378,14 @@ it("keeps the durable failure of a held request that timed out, without notifyin
   const posted: { body: string }[] = JSON.parse(
     readFileSync(join(w.dir, "comments-7.json"), "utf8"),
   );
-  expect(posted.some((c) => c.body.includes("needsPerson"))).toBe(true);
+  const cancellation = posted
+    .map((c) => readClaim(REARM_REQUEST, c.body, { repo: SLUG, number: 7 }))
+    .findLast((r) => r?.ok && r.value.payload.stopComment === null);
+  expect(cancellation?.ok && cancellation.value.payload).toMatchObject({
+    requestId: 702,
+    needsPerson: true,
+    reason: "the request could not launch within 30 minutes",
+  });
 }, 90000);
 
 it("leaves a request cancelled if closing label cleanup fails and the pull request reopens", async () => {
