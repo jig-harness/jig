@@ -72,11 +72,22 @@ describe("Needs you", () => {
         const headings = await page
           .locator(".pNeeds .needGroupTitle")
           .allTextContents();
+        const groups = page.locator(".pNeeds .needGroup");
+        const counted = await groups.evaluateAll((els) =>
+          els.map((el) => ({
+            shown: el.querySelector("[data-group-count]")?.textContent,
+            cards: el.querySelectorAll(".need").length,
+          })),
+        );
         expect(headings.map((h) => h.replace(/\s+/g, " ").trim())).toEqual([
-          expect.stringMatching(/^Decide · \d+/),
-          expect.stringMatching(/^Authorize · \d+/),
-          expect.stringMatching(/^Investigate · \d+/),
+          expect.stringMatching(/^Decide · [1-9]\d*/),
+          expect.stringMatching(/^Authorize · 1(?!\d)/),
+          expect.stringMatching(/^Investigate · 4(?!\d)/),
         ]);
+        // Each heading's count is the number of cards its group holds.
+        expect(counted.map((g) => g.shown)).toEqual(
+          counted.map((g) => String(g.cards)),
+        );
         expect(await page.locator(".pNeeds .needGroupTitle .act").count()).toBe(
           0,
         );
