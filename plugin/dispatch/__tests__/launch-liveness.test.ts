@@ -147,6 +147,20 @@ describe("a launch record's claim, judged by the shared process identity", () =>
     expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
   });
 
+  it("says when a process of this host could not be judged, and not for another host's", async () => {
+    const own = await ownClaim();
+    const here = thisHost();
+    const unread = claimState(own, null, here);
+    expect(unread.kind === "unknown" && unread.unjudged).toBe(true);
+    const elsewhere = claimState(
+      { ...own, hostId: "another-host" },
+      null,
+      here,
+    );
+    expect(elsewhere.kind).toBe("unknown");
+    expect(elsewhere.kind === "unknown" && elsewhere.unjudged).toBeUndefined();
+  });
+
   it("keeps missing cleanup evidence unknown even when every recorded process has died or its pid was reused", async () => {
     const identity = await ownClaim();
     const dead = { ...identity, pid: 2147483647 };

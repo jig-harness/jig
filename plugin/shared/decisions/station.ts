@@ -85,7 +85,7 @@ export const STATION_KEYS = {
     class: "launch-recovery",
     options: ["clear", "hold"],
     meaning:
-      "A pending launch record that no tick launches again, or one of unknown process that holds a stopped drive.",
+      "A pending launch record that no tick launches again, or one of unknown process that holds a drive.",
   },
 } as const satisfies Readonly<Record<string, StationKeyValue>>;
 export type StationKey = keyof typeof STATION_KEYS;
@@ -244,7 +244,7 @@ export type StationFacts =
       kind: "launch";
       target: string;
       record: string;
-      /** Why the process of a record holding a stopped drive is unknown; absent for a pending record. */
+      /** Why the process of a record holding a drive is unknown; absent for a pending record. */
       held?: string;
     };
 
@@ -423,10 +423,10 @@ function launch(f: Extract<StationFacts, { kind: "launch" }>): StationDecision {
     "clear",
     f.held === undefined
       ? "No tick launches the record again, so clearing it frees its slot and its stage."
-      : "No tick launches the drive while the record holds it, so clearing it lets the next tick re-arm the drive; a process still running keeps the record.",
+      : "No tick acts on the drive while the record holds it, so clearing it lets the next tick do so.",
     f.held === undefined
       ? `Launch record ${f.record} is pending and no tick launches it again.`
-      : `Launch record ${f.record} holds the stopped drive of ${f.target}, and whether its process runs is unknown: ${f.held}.`,
+      : `Launch record ${f.record} holds the drive of ${f.target}, and whether its process runs is unknown: ${f.held}.`,
   );
 }
 

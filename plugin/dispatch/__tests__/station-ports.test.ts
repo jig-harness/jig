@@ -424,9 +424,7 @@ describe("clearing a launch record of unknown process", () => {
     });
     const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
     expect(outcome.ok).toBe(false);
-    expect(outcome.ok ? "" : outcome.failure.reason).toContain(
-      "running supervised process",
-    );
+    expect(outcome.ok ? "" : outcome.failure.reason).toContain("still runs");
     expect((await readLaunches(root)).records).toHaveLength(1);
   });
 });

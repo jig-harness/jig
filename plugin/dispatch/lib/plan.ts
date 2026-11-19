@@ -65,7 +65,11 @@ import { readFailureOf } from "./read-failures.ts";
 import { type HolderReadings, orphanTakeover } from "./sources/doctor.ts";
 import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
-import { strandedByClaim, strandedByRecord } from "./stranded-holds.ts";
+import {
+  type StrandedHold,
+  strandedByClaim,
+  strandedByRecord,
+} from "./stranded-holds.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
@@ -470,6 +474,7 @@ function planForeign(
   input: PlanInput,
   pr: DrivenPr,
   plan: Plan,
+  want: Want,
 ): true | TakeoverClaim | null {
   const shared = input.shared;
   if (shared === undefined || !LAUNCHABLE.has(pr.class)) return null;
@@ -503,11 +508,9 @@ function planForeign(
       reason: `held by host ${String(says.host)}: ${hold.why}`,
       evidence: { claim: hold.claim.id, host: says.host, record: says.record },
     });
-    plan.actions.push(
-      ...strandedByClaim(input.slug, pr, hold.claim, {
-        nowMs: input.nowMs,
-        sessions: input.sessions,
-      }),
+    raiseStranded(
+      strandedByClaim(input.slug, pr, hold.claim, input.nowMs),
+      want,
     );
     return true;
   }
@@ -589,6 +592,11 @@ function plannable(
   return null;
 }
 
+/** A stranded hold's need, placed beside the sessions the runtime reports as any notification is. */
+function raiseStranded(stranded: StrandedHold | null, want: Want): void {
+  if (stranded !== null) want(stranded.action, stranded.joined);
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
 function planDrive(
   input: PlanInput,
@@ -602,18 +610,13 @@ function planDrive(
   if (pr === null) return;
   const hold = driveHold(pr, launches);
   if (heldByRecord(target, pr, hold, plan)) {
-    plan.actions.push(
-      ...strandedByRecord(slug, pr, launches, {
-        nowMs: input.nowMs,
-        sessions: input.sessions,
-      }),
-    );
+    raiseStranded(strandedByRecord(slug, pr, launches, input.nowMs), want);
     return;
   }
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
   // Another host's open takeover on these ledger facts holds the drive even
   // where this host's own record would take it over.
-  const placed = planForeign(input, pr, plan);
+  const placed = planForeign(input, pr, plan, want);
   if (placed === true) return;
   const foreign = takeover === null ? placed : null;
   const { holder, gone, unread } = orphanReading(pr, input, takeover, foreign);

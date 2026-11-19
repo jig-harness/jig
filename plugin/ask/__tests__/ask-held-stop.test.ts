@@ -138,10 +138,11 @@ function liveProcess(w: SendWorld): ProcessIdentity {
     ],
     { env: w.env, stdout: "pipe", stderr: "pipe" },
   );
-  const read = JSON.parse(probe.stdout.toString()) as {
+  const read = JSON.parse(probe.stdout.toString() || "{}") as {
     ok: boolean;
     value: ProcessIdentity;
   };
+  expectSpawnExit(probe, 0);
   expect(read.ok).toBe(true);
   return read.value;
 }
@@ -171,7 +172,7 @@ describe("a stopped drive a launch of unknown process holds", () => {
     expect(waiting).toContain("rearm launch on this machine");
     expect(waiting).toContain(RECORD);
     expect(waiting).toContain("is on another host");
-    expect(waiting).toContain("has held the stopped drive for");
+    expect(waiting).toContain("has held the drive for");
   });
 
   it("waits on another host's open launch claim, naming the claim and its host", async () => {
@@ -253,6 +254,28 @@ describe("a stopped drive a launch of unknown process holds", () => {
     claimElsewhere(w, now);
 
     expect((await ask(w)).waitsOn).toMatchObject({ person: "re-arm" });
+  });
+
+  it("leaves a pending launch to the dispatcher, however old", async () => {
+    const w = world();
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    answeredPark(w, parkedAt(long));
+    launch(w, long);
+
+    const { waiting } = (await ask(w)).waitsOn as { waiting: string };
+    expect(waiting).toContain("has not claimed the record yet");
+    expect(waiting).not.toContain("jig dispatch clear");
+  });
+
+  it("names the hold on a pull request with no ledger yet", async () => {
+    const w = world();
+    const now = currentIso();
+    pullRequest(w, 12, [], []);
+    launch(w, now);
+    claimElsewhere(w, now);
+
+    const { waiting } = (await ask(w)).waitsOn as { waiting: string };
+    expect(waiting).toContain(RECORD);
   });
 
   it("reads as driven while the holder's process is alive", async () => {

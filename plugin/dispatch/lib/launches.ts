@@ -296,6 +296,8 @@ export type LaunchState =
       wallUnrecorded?: true;
       /** A registered process proved alive even though the launch cannot be settled. */
       liveProcess?: ProcessIdentity;
+      /** A recorded process of this host could not be judged, so it may still run. */
+      unjudged?: true;
     }
   | { kind: "died"; reason: string; process: LaunchClaim }
   | {

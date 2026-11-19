@@ -362,11 +362,10 @@ not (stop its session first), and, among the records that read, an ended
 or died one and a pending one whose launch can still be retried: those
 the tick settles.
 
-A stopped drive the tick would launch again waits while such a record, or
-another host's launch claim with no end, holds it, and `jig ask` names that
-hold as what it waits on. Once the hold has lasted 30 minutes, counted from
-the later of the launch and the drive's stop, the tick notifies it as
-needing a person.
+A drive the tick would act on waits while such a record, or another host's
+launch claim with no end, holds it, and `jig ask` names that hold as what it
+waits on. Once the hold has lasted 30 minutes, counted from the later of the
+launch and the drive's stop, the tick notifies it as needing a person.
 
 **The account picks the agent.** Each account in the machine file names its
 `vendor`, and that decides the agent every session on it runs in: a re-arm
@@ -736,7 +735,7 @@ The keys, the options and the answer forms are listed in
 | a stalled pickup, or a pickup's question it did not frame | `pickup` | **Release the claim**: moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
 | a checkout the workspace runtime does not list holds the launch's branch | `checkout` | **Detach the checkout**: detaches it at its commit, only when it is idle (clean, its commits on the remote, no drive or process in it) |
 | a drive handed to a person, or stopped with no cause | `drive` | **Re-arm the drive**: adds the `rearm` label |
-| a launch record stuck pending, or one of unknown process that holds a stopped drive | `launch` | **Clear the record**: as `jig dispatch clear` does, refused while a process of it is known to run |
+| a launch record stuck pending, or one of unknown process that holds a drive | `launch` | **Clear the record**: as `jig dispatch clear` does; for a record of unknown process, only when every process of it could be judged, none runs and no account wall rests on it |
 
 A double claim, an unanswered nudge and an item assigned by someone who
 cannot write keep their free text. Answer a need's decision as a park is

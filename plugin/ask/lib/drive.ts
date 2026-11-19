@@ -309,12 +309,10 @@ function waitsOnOf(
     dispatched
       ? { waiting: why }
       : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
-  const onHold = heldStopWait(
-    holder,
-    placed.class,
-    ledger.driver.heartbeat,
+  const onHold = heldStopWait(holder, placed.class, ledger.driver.heartbeat, {
     dispatched,
-  );
+    record: holdingRecord(r.records),
+  });
   if (onHold !== null) return onHold;
   // A running launch says nothing of a park nobody answered or of a ledger gone silent.
   if (
@@ -872,9 +870,14 @@ function driveWait(
   }
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
-  return ledger === null
-    ? "none"
-    : waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
+  if (ledger === null)
+    return (
+      heldStopWait(holder, "unarmed", "", {
+        dispatched: ctx.dispatches || current(reads.claims) !== null,
+        record: holdingRecord(reads.records),
+      }) ?? "none"
+    );
+  return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 
 /** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */

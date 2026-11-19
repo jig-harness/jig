@@ -192,8 +192,8 @@ function needsPersonFacts(
   const branch = text(evidence, "branch");
   if (holder !== null && branch !== null)
     return { kind: "checkout", target, branch, path: holder };
-  // Another host's claim is settled there: no option here would move it.
-  if (pr === null || text(evidence, "heldClaim") !== null) return null;
+  // A held drive moves once its hold is settled: re-arming it would be refused.
+  if (pr === null || text(evidence, "heldSince") !== null) return null;
   const exit = evidence.exit;
   return {
     kind: "drive",

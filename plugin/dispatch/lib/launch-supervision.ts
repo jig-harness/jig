@@ -115,6 +115,28 @@ function liveStageProcess(
   });
 }
 
+/** What an unknown launch's processes show: one proved alive, and whether one of this host's could not be judged. */
+function processFacts(
+  claim: LaunchClaim,
+  rows: ProcessRow[] | null,
+  here: HostIdentity,
+): { liveProcess?: ProcessIdentity; unjudged?: true } {
+  const liveProcess = liveStageProcess(claim, rows, here);
+  const unjudged = [
+    claim,
+    claim.supervision?.supervisor,
+    claim.supervision?.child,
+  ].some((identity) => {
+    if (identity == null) return false;
+    const verdict = judge(identity, rows, here);
+    return !verdict.ok && verdict.failure.code !== "foreign";
+  });
+  return {
+    ...(liveProcess === undefined ? {} : { liveProcess }),
+    ...(unjudged ? { unjudged: true as const } : {}),
+  };
+}
+
 /** A cleanup uncertainty survives process death, but not a proved restart of its host. */
 export function uncertainCleanupState(
   claim: LaunchClaim | null | undefined,
@@ -125,12 +147,11 @@ export function uncertainCleanupState(
   const verdict = judge(claim, rows, here);
   if (verdict.ok && verdict.value.state === "dead" && restarted(claim, here))
     return null;
-  const liveProcess = liveStageProcess(claim, rows, here);
   return {
     kind: "unknown",
     reason: "the stage cleanup could not be confirmed",
     process: claim,
-    ...(liveProcess === undefined ? {} : { liveProcess }),
+    ...processFacts(claim, rows, here),
   };
 }
 
@@ -145,13 +166,14 @@ export function claimState(
   here: HostIdentity,
 ): LaunchState {
   const wrapper = judge(claim, rows, here);
-  const liveProcess = liveStageProcess(claim, rows, here);
+  const facts = processFacts(claim, rows, here);
+  const { liveProcess } = facts;
   if (!wrapper.ok)
     return {
       kind: "unknown",
       reason: wrapper.failure.reason,
       process: claim,
-      ...(liveProcess === undefined ? {} : { liveProcess }),
+      ...facts,
     };
   if (wrapper.value.state === "alive") return { kind: "alive", process: claim };
   const handoff = claim.supervision;
@@ -164,18 +186,20 @@ export function claimState(
         kind: "unknown",
         reason: "the wrapper ended while a supervised stage process still runs",
         process: claim,
-        liveProcess,
+        ...facts,
       };
     if (handoff.supervisor === null || handoff.child === null)
       return {
         kind: "unknown",
         reason: "the supervised stage launch handoff was not acknowledged",
         process: claim,
+        ...facts,
       };
     return {
       kind: "unknown",
       reason: UNCONFIRMED_CLEANUP,
       process: claim,
+      ...facts,
     };
   }
   return { kind: "died", reason: wrapper.value.reason, process: claim };

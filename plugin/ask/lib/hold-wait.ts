@@ -1,11 +1,14 @@
 /**
- * What a stopped drive waits on while a launch nobody can show running holds
- * it: the hold, named with its holder, why its process is unknown and how
- * long it has held the stopped drive. Past the dispatcher's bound
+ * What a drive waits on while a launch nobody can show running holds it: the
+ * hold, named with its holder, why its process is unknown and how long it
+ * has held the drive. Past the dispatcher's bound
  * (`dispatch/lib/stranded-holds.ts`), or with no dispatcher known to raise
- * it, the hold is a person's to settle.
+ * it, the hold is a person's to settle. A pending launch stays the
+ * dispatcher's: it launches the record again or reports it stuck.
  */
+import type { ReadRecord } from "../../dispatch/lib/launches.ts";
 import {
+  clearBlock,
   heldStopSinceMs,
   heldUpByLaunch,
   STRANDED_HOLD_MS,
@@ -14,6 +17,14 @@ import {
 import type { LedgerClass } from "../../dispatch/lib/types.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { type Holder, personWait, type WaitsOn } from "./answer.ts";
+
+/** What besides the holder decides the wait. */
+export interface HoldFacts {
+  /** Whether a dispatcher is known to act on the pull request. */
+  dispatched: boolean;
+  /** This machine's launch record that holds the drive, if one does. */
+  record: ReadRecord | null;
+}
 
 /** A span of time as a person reads it, to the minute. */
 function spanText(ms: number): string {
@@ -31,39 +42,48 @@ function holderWords(holder: Holder): string {
 }
 
 /** How a person settles the hold. */
-function settleWords(holder: Holder): string {
+function settleWords(holder: Holder, read: ReadRecord | null): string {
   const record = holder.local?.record;
-  return record === undefined
-    ? "check its host, and once no session runs for the launch settle its record there"
-    : `once no session runs for it, jig dispatch clear ${record} lets the next tick re-arm the drive`;
+  if (record === undefined)
+    return "check its host, and once no session runs for the launch settle its record there";
+  const clear = `jig dispatch clear ${record} lets the next tick act on the drive`;
+  const blocked =
+    read?.state.kind === "unknown" ? clearBlock(read.state) : null;
+  return blocked === null
+    ? `once no session runs for it, ${clear}`
+    : `${blocked}; then ${clear}`;
 }
 
-/** The wait on a hold that keeps a stopped drive from going on; `null` when the holder runs, or the hold is not what the drive waits on. */
+/** The wait on a hold that keeps a drive from going on; `null` when the holder runs, or the hold is not what the drive waits on. */
 export function heldStopWait(
   holder: Holder | "none",
   placed: LedgerClass,
   stoppedAt: string,
-  dispatched: boolean,
+  facts: HoldFacts,
 ): WaitsOn | null {
   if (holder === "none" || holder.process === "alive") return null;
   if (!heldUpByLaunch(placed)) return null;
   const since = heldStopSinceMs(holder.since ?? "", stoppedAt);
   const age = currentMs() - since;
   const held = Number.isFinite(since)
-    ? `${holderWords(holder)}; it has held the stopped drive for ${spanText(age)}, since ${isoFromMs(since)}`
+    ? `${holderWords(holder)}; it has held the drive for ${spanText(age)}, since ${isoFromMs(since)}`
     : holderWords(holder);
+  if (facts.record?.state.kind === "pending")
+    return {
+      waiting: `${held}; the dispatcher launches it again or reports it stuck`,
+    };
   if (Number.isFinite(since) && age >= STRANDED_HOLD_MS)
     return personWait(
       "re-arm",
-      `${held}, past ${STRANDED_HOLD_TEXT}: ${settleWords(holder)}`,
+      `${held}, past ${STRANDED_HOLD_TEXT}: ${settleWords(holder, facts.record)}`,
     );
   // A launch record of this machine's own shows a dispatcher runs here.
-  if (!dispatched && holder.local?.record === undefined)
+  if (!facts.dispatched && holder.local?.record === undefined)
     return personWait(
       "re-arm",
-      `${held}; no dispatcher is known to raise it: ${settleWords(holder)}`,
+      `${held}; no dispatcher is known to raise it: ${settleWords(holder, facts.record)}`,
     );
   return {
-    waiting: `${held}; no launch starts while it holds, and past ${STRANDED_HOLD_TEXT} it is raised to a person`,
+    waiting: `${held}; nothing acts on the drive while it holds, and past ${STRANDED_HOLD_TEXT} it is raised to a person`,
   };
 }

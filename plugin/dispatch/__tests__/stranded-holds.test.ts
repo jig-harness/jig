@@ -7,12 +7,13 @@ import { describe, expect, it } from "bun:test";
 import { ok } from "../../shared/outcome.ts";
 import type { ReadClaim } from "../../shared/records/shared.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
+import { classOf } from "../lib/actions/notify.ts";
 import type { NeedCause } from "../lib/dashboard-contract.ts";
 import type { ReadRecord } from "../lib/launches.ts";
 import { stationDecision } from "../lib/line-station.ts";
 import { type PlanInput, planTick } from "../lib/plan.ts";
 import { dispatchSection } from "../lib/section.ts";
-import { STRANDED_HOLD_MS } from "../lib/stranded-holds.ts";
+import { clearBlock, STRANDED_HOLD_MS } from "../lib/stranded-holds.ts";
 import type { Action, DispatchSection, DrivenPr } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
 import { record } from "./line-fixtures.ts";
@@ -135,8 +136,8 @@ describe("a stopped drive held by a launch of unknown process", () => {
     expect(planTick(plan).running.map((r) => r.target)).toEqual(["PR #7"]);
   });
 
-  it("raises the need for a stale ledger and for a stop with no cause", () => {
-    for (const cls of ["stale", "stopped-unknown"] as const)
+  it("raises the need for a stale ledger, a stop with no cause and an arm with no ledger", () => {
+    for (const cls of ["stale", "stopped-unknown", "unarmed"] as const)
       expect(
         needsOf(
           input({
@@ -145,6 +146,66 @@ describe("a stopped drive held by a launch of unknown process", () => {
           }),
         ).filter((a) => a.evidence.record === ID),
       ).toHaveLength(1);
+  });
+
+  it("reports the drive unplaced, with the runtime's reason, while it cannot say which sessions run", () => {
+    const plan = planTick(
+      input({
+        drives: [drive(PAST)],
+        launches: [launch(unknown)],
+        sessions: {
+          ok: false,
+          source: "fake",
+          reason: "the runtime did not answer",
+        },
+      }),
+    );
+    expect(plan.unplaced).toContainEqual({
+      target: "PR #7",
+      record: "runtime",
+      reason: "the runtime did not answer",
+    });
+  });
+
+  it("frames no clearing for a record a person's answer may not clear, and says what to settle", () => {
+    for (const [state, words] of [
+      [
+        {
+          ...unknown,
+          liveProcess: { ...PROCESS, pid: 4242 },
+        } as ReadRecord["state"],
+        "4242 still runs",
+      ],
+      [
+        { ...unknown, unjudged: true } as ReadRecord["state"],
+        "could not be judged",
+      ],
+      [
+        { ...unknown, wallUnrecorded: true } as ReadRecord["state"],
+        "never recorded",
+      ],
+    ] as const) {
+      const [need] = needsOf(
+        input({ drives: [drive(PAST)], launches: [launch(state)] }),
+      );
+      expect(need?.evidence.stuck).toBeUndefined();
+      expect(need?.evidence.blocked).toContain(words);
+      expect(need?.notice?.text).toContain(words);
+    }
+  });
+
+  it("lets an answer clear a record every process of which was judged", () => {
+    expect(
+      clearBlock({ kind: "unknown", reason: REASON, process: PROCESS }),
+    ).toBe(null);
+  });
+
+  it("logs its need under no drive outcome, whatever exit the drive stopped on", () => {
+    const [need] = needsOf(
+      input({ drives: [drive(PAST)], launches: [launch(unknown)] }),
+    );
+    if (need === undefined) throw new Error("no need raised");
+    expect(classOf(need as Parameters<typeof classOf>[0])).toBeNull();
   });
 
   it("keeps the key of its message from tick to tick", () => {
@@ -252,6 +313,17 @@ describe("the decision a stranded hold frames", () => {
     expect(decision?.key).toBe("launch");
     expect(decision?.decision?.alreadyDone).toContain(REASON);
     expect(decision?.decision?.alreadyDone).not.toContain("is pending");
+  });
+
+  it("offers nothing for a record it may not clear", () => {
+    const [need] = needsOf(
+      input({
+        drives: [drive(PAST)],
+        launches: [launch({ ...unknown, unjudged: true })],
+      }),
+    );
+    if (need === undefined) throw new Error("no need raised");
+    expect(framed(need)).toBeNull();
   });
 
   it("offers nothing for another host's claim, which is settled there", () => {
