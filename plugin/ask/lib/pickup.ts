@@ -314,7 +314,10 @@ async function issueAnswer(
   const { address, name } = ctx;
   const local = await dispatcherReads(
     ctx,
-    (r) => r.record.action === "pickup" && r.record.item === address.key,
+    (r) =>
+      r.record.action === "pickup" &&
+      (r.record.item === address.key ||
+        (r.record.batchItems?.some((i) => i.key === address.key) ?? false)),
     address.key,
   );
   const member = await membershipOf(ctx, tracker);
@@ -338,8 +341,12 @@ async function issueAnswer(
   const last = lastEnded(local.rows, ["pickup"]);
   // The newest tick's overlap reason and footprint note hold only while the item still waits to be picked up.
   const queued = state === "assigned" ? queuedOf(ctx) : undefined;
+  const claim = claimHolder(raw.state, issue);
   const waitsOn =
-    personHold !== undefined && needs.length === 0 && holding === null
+    personHold !== undefined &&
+    needs.length === 0 &&
+    holding === null &&
+    claim === "none"
       ? personWait("release the pickup hold", pickupHoldReason(personHold), {
           people: [personHold.by],
         })
@@ -354,10 +361,7 @@ async function issueAnswer(
     found: true,
     title: issue.title,
     url: issue.url,
-    holder:
-      holding === null
-        ? claimHolder(raw.state, issue)
-        : recordHolder(holding, null),
+    holder: holding === null ? claim : recordHolder(holding, null),
     state,
     stateDetail: detail,
     waitsOn,
