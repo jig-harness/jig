@@ -24,6 +24,7 @@ import {
   type Outcome,
 } from "../../../../shared/outcome.ts";
 import { isGitSha } from "./cli.ts";
+import { forgeReadClass, type ForgeReadCode } from "./forge-read.ts";
 import { ghCall } from "./proc.ts";
 import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
@@ -31,13 +32,13 @@ import { openStore } from "./state/store.ts";
 type HeldState = Extract<CiHoldState, { phase: "held" }>;
 
 /** A hold read that failed: the forge was not reached, or answered with something unreadable. */
-export type HoldReadFailure = Failure<"unreadable" | "malformed">;
+export type HoldReadFailure = Failure<ForgeReadCode | "unreadable">;
 
 /** The pull request's state, head and hold label. */
 export async function readPrSnapshot(
   pr: string,
   holdLabel: string | null,
-): Promise<Outcome<PrSnapshot, HoldReadFailure["code"]>> {
+): Promise<Outcome<PrSnapshot, ForgeReadCode>> {
   const result = await ghCall([
     "pr",
     "view",
@@ -47,7 +48,7 @@ export async function readPrSnapshot(
   ]);
   if (result.code !== 0)
     return failed(
-      "unreadable",
+      forgeReadClass(result),
       `gh pr view exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
     );
   const decoded = attempt(
@@ -133,7 +134,7 @@ export async function writeCiState(
  */
 export async function readCheckRuns(
   head: string,
-): Promise<Outcome<CheckRunLite[], HoldReadFailure["code"]>> {
+): Promise<Outcome<CheckRunLite[], ForgeReadCode>> {
   const result = await ghCall([
     "api",
     "--paginate",
@@ -142,7 +143,7 @@ export async function readCheckRuns(
   ]);
   if (result.code !== 0)
     return failed(
-      "unreadable",
+      forgeReadClass(result),
       `gh api check-runs exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
     );
   const decoded = attempt(
@@ -171,7 +172,7 @@ export async function checkRuns(head: string): Promise<CheckRunLite[] | null> {
 export async function headWatermark(
   head: string,
   why: string,
-): Promise<Outcome<number | null, HoldReadFailure["code"]>> {
+): Promise<Outcome<number | null, "unreadable" | "malformed">> {
   if (!isGitSha(head))
     return failed(
       "malformed",
@@ -180,7 +181,7 @@ export async function headWatermark(
   const runs = await readCheckRuns(head);
   if (!runs.ok)
     return failed(
-      runs.failure.code,
+      runs.failure.code === "malformed" ? "malformed" : "unreadable",
       `cannot establish the check-run watermark ${why}: ${runs.failure.reason}`,
     );
   return ok(checkRunWatermark(runs.value, head));

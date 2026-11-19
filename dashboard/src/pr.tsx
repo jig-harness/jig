@@ -12,7 +12,7 @@ import { prStanding } from "./pr-standing.ts";
 import type { Clock } from "./view.ts";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { reconcileNeeds } from "./pr-state.ts";
-import { withDerivedLinks } from "./links.ts";
+import { repoHome, withDerivedLinks } from "./links.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
 import { prNumber } from "./pr-state.ts";
 
@@ -81,7 +81,7 @@ export function ItemTitle({ title }: { title: string | null }) {
 }
 
 export function RepoLink({ repo, url }: { repo: string; url?: string | null }) {
-  const base = url?.match(/^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/pull\/\d+$/)?.[1];
+  const base = repoHome(repo, url);
   return base ? (
     <a
       className="m sm mut"

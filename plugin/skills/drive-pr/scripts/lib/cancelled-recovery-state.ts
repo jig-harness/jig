@@ -134,6 +134,38 @@ export async function extendCancellation(
 }
 
 /**
+ * Give back what a claim holds for re-runs that were never requested: the
+ * claim naming `claimed` then names `kept`, and with `release` it is no longer
+ * spent. Nothing changes when another caller moved the claim since, so this
+ * asks no ownership: it runs when the forge that answers that question did not.
+ */
+export async function withdrawCancellation(
+  pr: string,
+  head: string,
+  claimed: readonly RequestedRun[],
+  kept: readonly RequestedRun[],
+  release: boolean,
+): Promise<void> {
+  const drive = driveDb(await resolveStateDir());
+  const workflowIds = release
+    ? []
+    : [...new Set(kept.map((run) => run.workflowId))];
+  drive.db
+    .query(
+      "UPDATE cancelled_ci SET requested_at = CASE WHEN ? THEN NULL ELSE requested_at END, workflow_ids = ?, requested_runs = ? WHERE clone = ? AND pr = ? AND head = ? AND requested_at IS NOT NULL AND requested_runs = ?",
+    )
+    .run(
+      release ? 1 : 0,
+      JSON.stringify(workflowIds),
+      JSON.stringify(kept),
+      drive.clone,
+      canonicalPr(pr),
+      head,
+      JSON.stringify(claimed),
+    );
+}
+
+/**
  * A person's answer to the `cancelled-ci` park authorises one more re-run on
  * the head the park was framed for: a spent claim is released and the grant
  * counted, so the next recovery repeats every check the first one made (the
@@ -227,4 +259,17 @@ export async function claimLabelRerun(
       .get(drive.clone, canonicalPr(pr), run.id, run.attempt, currentMs()) !==
     null
   );
+}
+
+/** Give back the claim of a label-caused re-run that was never requested. */
+export async function withdrawLabelRerun(
+  pr: string,
+  run: Pick<WorkflowRun, "id" | "attempt">,
+): Promise<void> {
+  const drive = driveDb(await resolveStateDir());
+  drive.db
+    .query(
+      "DELETE FROM cancelled_ci_label_rerun WHERE clone = ? AND pr = ? AND run_id = ? AND attempt = ?",
+    )
+    .run(drive.clone, canonicalPr(pr), run.id, run.attempt);
 }
