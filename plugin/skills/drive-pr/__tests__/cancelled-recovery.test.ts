@@ -146,6 +146,31 @@ describe("a head read that fails after the re-run is claimed", () => {
     expect(f.record()?.requestedRuns?.map((r) => r.id)).toEqual([1]);
   });
 
+  test("a run left unrequested is requested while the retained request is still pending", async () => {
+    const other = { ...job, name: "other", suiteId: 2 };
+    const settled = (r: WorkflowRun): WorkflowRun => ({
+      ...r,
+      updatedAt: "2026-01-01T00:00:30Z",
+    });
+    const runs = [settled(run(1)), settled(run(2, 11))];
+    const f = fixture(parseMs("2026-01-01T00:10:00Z"));
+    await recoverCancelled("5", "head", [job, other], runs, f.deps);
+    f.advance(30_000);
+    confirmsInTurn(f, [true, true, "unread"]);
+    await recoverCancelled("5", "head", [job, other], runs, f.deps);
+    expect(f.calls).toEqual([1]);
+    // The first run's re-run is still pending: its attempt has not finished.
+    const pending: WorkflowRun[] = [
+      { ...runs[0], attempt: 2, status: "in_progress", conclusion: null },
+      runs[1],
+    ];
+    expect(
+      await recoverCancelled("5", "head", [job, other], pending, f.deps),
+    ).toBe("wait");
+    expect(f.calls).toEqual([1, 2]);
+    expect(f.parks).toEqual([]);
+  });
+
   test("a released claim still names the runs it named before", async () => {
     const f = await pastGrace([run(1)]);
     await recoverCancelled("5", "head", [job], [run(1)], f.deps);
@@ -668,6 +693,24 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
       await recoverCancelled("5", "head", firstChecks, [A(), B()], f.deps),
     ).toBe("wait");
     expect(f.calls).toEqual([1, 2, 1, 2]);
+  });
+});
+
+describe("a drive that loses the pull request between the claim and a request", () => {
+  test("gives the claim back for the runs it never sent", async () => {
+    const f = fixture();
+    let owned = true;
+    const deps: RecoveryDeps = { ...f.deps, mayMutate: async () => owned };
+    await recoverCancelled("5", "head", [job], [run(1)], deps);
+    f.advance(30_000);
+    // Lost once the claim is spent and the first request is about to leave.
+    owned = false;
+    expect(await recoverCancelled("5", "head", [job], [run(1)], deps)).toBe(
+      "unknown",
+    );
+    expect(f.calls).toEqual([]);
+    expect(f.parks).toEqual([]);
+    expect(f.record()?.requestedAt).toBeNull();
   });
 });
 

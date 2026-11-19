@@ -275,6 +275,20 @@ async function judgeRequest(
       `${budget} was already requested and cancellation still has no replacement`,
     );
   }
+  // A request that stopped part way left runs of other workflows cancelled
+  // before it and never requested: they are owed now, whatever the requested
+  // runs are doing, and a pending or missing sibling must not hold them back.
+  const owed = orphaned.filter(
+    (run) =>
+      !requested.some(
+        (request) =>
+          request.id === run.id || request.workflowId === run.workflowId,
+      ) && cancelledBefore(run, record.requestedAt ?? 0),
+  );
+  if (owed.length > 0) {
+    if ((await deps.confirm(pr, head)) !== true) return "unknown";
+    return await requestOnce(pr, head, owed, record, deps, requested, "extend");
+  }
   const observed = requested.map((run) => observeRequested(run, runs));
   // A run past its window parks whatever its siblings are doing.
   const missing = observed.filter(
@@ -674,8 +688,9 @@ async function requestRuns(
     const confirmed = await deps.confirm(pr, head);
     if (confirmed === "unread") return UNREAD;
     if (!confirmed) return "head-moved";
+    // Nothing was sent: the runs not yet requested go back to the next owner.
     if (deps.mayMutate !== undefined && !(await deps.mayMutate()))
-      return "head-moved";
+      return UNREAD;
     const answer = await deps.rerun(run.id);
     if (answer.unread === true) return UNREAD;
     if (answer.code !== 0)

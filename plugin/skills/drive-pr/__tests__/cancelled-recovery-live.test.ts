@@ -319,6 +319,24 @@ describe("a cancelled-run recovery read that fails", () => {
     });
   }
 
+  test("an unreadable answer at the last check before the re-run is not a failed re-run", async () => {
+    const f = fixture();
+    try {
+      await f.run("past-grace");
+      f.failReads("pr view", 1, "gh: HTTP 401: Bad credentials", {
+        passes: 3,
+        phase: "orphaned",
+      });
+      expect(await f.run("fenced")).toBe("unknown");
+      expect(f.reruns()).toEqual([]);
+      expect((await f.run("observe")).requestedAt).toBeNull();
+      expect(await f.run("fenced")).toBe("wait");
+      expect(f.reruns()).toEqual(["1"]);
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
   test("a rate limit is not asked again before it clears", async () => {
     const f = fixture();
     try {

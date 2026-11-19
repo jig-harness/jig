@@ -14,7 +14,10 @@ release: patch
   before a re-run, the head's one automatic re-run is given back, so the
   re-armed drive requests it instead of parking on a re-run that never left.
   A failure waiting cannot clear (a refused credential, an answer that does
-  not read) is not retried and is not re-armed.
+  not read) is not retried and is not re-armed. The same holds when the drive
+  loses the pull request between the claim and a request: the runs never sent
+  go back to the next owner, and a run left unrequested by a partial send is
+  requested while the runs already sent are still pending.
 - GitHub calls: `gh`'s `error connecting to <host>` message now counts as no
   answer from the forge (`unreachable`), which waiting can clear, instead of a
   request the forge refused.

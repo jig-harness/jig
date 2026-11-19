@@ -67,7 +67,9 @@ const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites" | "park"> & {
   withdrawLabelRerun,
   confirm: async (pr, head) => {
     const answer = await confirmHead(pr, head);
-    return typeof answer === "object" ? "unread" : answer;
+    return typeof answer === "object" || answer === "unreadable"
+      ? "unread"
+      : answer;
   },
   rerun: (id) => ghCall(["run", "rerun", String(id)]),
   async park(pr, reason, stillOwned) {
@@ -199,13 +201,17 @@ async function liveSnapshot(pr: string) {
   );
 }
 
-/** Whether the pull request is open at `head` and not held, or the read that failed. */
+/**
+ * Whether the pull request is open at `head` and not held; the read that failed
+ * when waiting could clear it, `unreadable` when it failed another way. A read
+ * that failed establishes nothing about the head, so it is never `false`.
+ */
 async function confirmHead(
   pr: string,
   head: string,
-): Promise<boolean | RecoveryReadFailure> {
+): Promise<boolean | RecoveryReadFailure | "unreadable"> {
   const read = await liveSnapshot(pr);
-  if (!read.ok) return read.answer === "unknown" ? false : read.answer;
+  if (!read.ok) return read.answer === "unknown" ? "unreadable" : read.answer;
   const { state, head: live, held } = read.value;
   return state === "OPEN" && live === head && !held;
 }
@@ -240,8 +246,8 @@ function fencedDeps(
     // the read that failed is kept beside it for the answer this module returns.
     async confirm(pr: string, head: string) {
       const answer = await confirmHead(pr, head);
-      if (typeof answer !== "object") return answer;
-      unread.failure = answer;
+      if (typeof answer === "boolean") return answer;
+      if (answer !== "unreadable") unread.failure = answer;
       return "unread" as const;
     },
     async claim(
@@ -273,7 +279,13 @@ function fencedDeps(
     },
     async rerun(id: number) {
       const confirmed = await confirmHead(pr, head);
-      if (typeof confirmed === "object") {
+      if (typeof confirmed !== "boolean") {
+        if (confirmed === "unreadable")
+          return {
+            code: 1,
+            stderr: "the pull request could not be read",
+            unread: true,
+          };
         unread.failure = confirmed;
         return { code: 1, stderr: confirmed.reason, unread: true };
       }
@@ -282,7 +294,13 @@ function fencedDeps(
           code: 1,
           stderr: "the pull request closed or its head changed",
         };
-      await owned();
+      // Ownership lost here sends nothing, so the claim goes back unspent.
+      try {
+        await owned();
+      } catch (err) {
+        if (!(err instanceof OwnershipLost)) throw err;
+        return { code: 1, stderr: err.message, unread: true };
+      }
       return await live.rerun(id);
     },
   };
