@@ -25,7 +25,12 @@ A dispatcher can launch a batch from a served person's queue. Its named
 items are the maximum scope, and each claim preserves that person as
 assignee. The claim checks inherited assignment and writer provenance live;
 a refused item stops the batch. A question needing a person stops the
-headless pass and is recorded with the launch result.
+headless pass and is recorded with the launch result. When it concerns
+particular members, include their exact tracker keys in the question, so the
+dispatcher places it on those members. Leave keys out for a batch-wide
+question, which is shown once on the batch anchor; siblings can still receive
+a release control for their own hold without receiving another member's
+question.
 
 Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
 [solo-only issues](#solo-only-issues) · [batch size](#batch-size) ·
