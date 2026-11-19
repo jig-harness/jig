@@ -237,8 +237,7 @@ describe("the GitHub tracker transport through gh", () => {
     const error = await thrown(
       transport("query { viewer { login } }", {}, undefined, true),
     );
-    expect(error.account).toBe("acct-one");
-    expect(error.code).toBe("not-found");
+    expect(error).toMatchObject({ account: "acct-one", code: "not-found" });
   });
 });
 
