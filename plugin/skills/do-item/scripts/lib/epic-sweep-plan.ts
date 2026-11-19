@@ -226,16 +226,20 @@ function operatorSteps(
     if (line.depth !== undefined) {
       const step = uncheckedListItem(line.line);
       if (line.depth > 0 && (open || step)) return null;
+      if (nestsOnItsOwnLine(line.line)) return null;
       if (step) steps.push(step);
       open = step !== undefined;
       column = line.contentColumn ?? 0;
       continue;
     }
+    const indent = line.line.length - line.line.trimStart().length;
+    // A boundary indented to the item's content column is a block inside the
+    // item, which the checklist cannot carry as one line.
+    if (open && line.boundary && indent >= column) return null;
     if (!open || line.boundary) {
       open = false;
       continue;
     }
-    const indent = line.line.length - line.line.trimStart().length;
     if (wasAfterBlank && indent < column) {
       open = false;
       continue;
@@ -244,6 +248,15 @@ function operatorSteps(
     steps[steps.length - 1] += ` ${line.line.trim()}`;
   }
   return found ? steps : null;
+}
+
+const LIST_MARKER = /^[ \t]*(?:[-*+]|\d+[.)])(?:[ \t]|$)/;
+
+/** Whether a list marker follows the first one on the same line (`- - [ ] x`). */
+function nestsOnItsOwnLine(line: string): boolean {
+  const text = line.trimStart();
+  const marker = /^(?:[-*+]|\d+[.)])/.exec(text)?.[0];
+  return marker !== undefined && LIST_MARKER.test(text.slice(marker.length));
 }
 
 function uncheckedListItem(line: string): string | undefined {

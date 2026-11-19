@@ -172,6 +172,23 @@ describe("epic sweep assessments", () => {
     ).toBe("needs-operator-checklist");
   });
 
+  test("refuses a thematic break inside an item and same-line nested markers", async () => {
+    const manual = { ...epic, labels: ["manual-ops"] };
+    const row = (description: string) =>
+      assessEpic({ ...manual, description }, [done], scope, absent);
+    const head = "## Operator Checklist\n\n";
+    for (const body of [
+      "- [ ] Deploy\n  ---\n  only after operator approval",
+      "- - [ ] Verify production",
+      "1. - [ ] Verify production",
+    ]) {
+      expect((await row(head + body)).outcome).toBe("needs-operator-checklist");
+    }
+    expect(
+      (await row(`${head}- [ ] Deploy\n---\n- [ ] Verify`)).operatorSteps,
+    ).toEqual(["Deploy", "Verify"]);
+  });
+
   test("binds a reply to the proposal and supports exclusions", async () => {
     const row = await assessEpic(epic, [done], scope, absent);
     const proposal = createProposal([row, { ...row, epic: "#20" }]);
