@@ -5,8 +5,8 @@
  * too, unless it lands on a link, a button or a field, ends a text selection,
  * or moved on the way (a scroll or a drag). Enter and o reach the same chevron
  * through `data-card-toggle` (`keys.ts`). A heading that folds what follows it,
- * such as the load breakdown or the accounts list, uses the same gutter and
- * chevron (`GutterFold`).
+ * such as the load's holds and reservations or the accounts list, uses the
+ * same gutter and chevron (`GutterFold`).
  */
 import {
   type FocusEvent,

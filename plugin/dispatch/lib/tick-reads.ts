@@ -94,6 +94,8 @@ export type CommentsOutcome = Outcome<CommentsRead, "unreadable">;
 export interface TickReads {
   /** The query of the checkout at `path`, read once per tick; the open pull requests' comments it read in full fill `comments`. */
   repository(path: string): Promise<RepositoryOutcome>;
+  /** Drop the query of the checkout at `path` and the comments it seeded, so the next read of it queries the forge again. */
+  refreshRepository(path: string): void;
   /** The comments of the pull requests `prs` of `slug` read in queries of `forge-batch.ts`'s `PAGE` each; those it read in full fill `comments`. */
   pullRequestComments(
     slug: string,
@@ -292,6 +294,15 @@ export function tickReads(
           ),
         ),
       ),
+    refreshRepository(path) {
+      const held = repositories.get(path);
+      repositories.delete(path);
+      void held?.then((read) => {
+        if (!read.ok) return;
+        for (const pr of read.value.comments.keys())
+          comments.forget(read.value.target.slug, pr);
+      });
+    },
     pullRequestComments: (slug, prs) =>
       reads.run(() =>
         unlessEnded(bound, "the merged pull requests' comments were read", () =>

@@ -172,7 +172,7 @@ export function overlapModel(
 }
 
 /** Every open pull request, by its changed files. */
-function pullRequestsInFlight(
+export function pullRequestsInFlight(
   observation: RepoObservation,
   settings: OverlapSettings,
   nowMs: number,
@@ -232,22 +232,29 @@ function launchesOf(
   return launchOf;
 }
 
+/** Which open pull requests link each item; `null` where the tracker's keys or the pull requests' texts did not read. */
+export function itemLinks(
+  observation: RepoObservation,
+): ReturnType<typeof workLinks> | null {
+  const { tracked, forge, opened } = observation;
+  return tracked.keys == null || forge.linkTexts === undefined
+    ? null
+    : workLinks(forge.linkTexts, {
+        keys: tracked.keys,
+        branchPattern: branchPattern(opened.values),
+        repository: opened.repo.slug,
+        issueRepository: tracked.issueRepository ?? null,
+      });
+}
+
 /** Every pickup in flight with no linked open pull request: this host's running pickups, then the claimed items. */
-function pickupsInFlight(
+export function pickupsInFlight(
   observation: RepoObservation,
   candidates: ReadonlySet<string>,
   records: readonly ReadRecord[],
 ): InFlight[] {
-  const { tracked, forge, opened } = observation;
-  const links =
-    tracked.keys == null || forge.linkTexts === undefined
-      ? null
-      : workLinks(forge.linkTexts, {
-          keys: tracked.keys,
-          branchPattern: branchPattern(opened.values),
-          repository: opened.repo.slug,
-          issueRepository: tracked.issueRepository ?? null,
-        });
+  const { tracked, opened } = observation;
+  const links = itemLinks(observation);
   const readings = observation.overlap?.readings;
   const urls = new Map<string, string | null>();
   for (const w of tracked.pickups) urls.set(w.key, w.url);

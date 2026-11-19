@@ -54,6 +54,7 @@ const BY_NAME: Record<DriveExitName, ExitClass> = {
   TAKEN_OVER: fixed("done"),
   CI_REPAIR_SPENT: readsPr("stale"),
   CI_INFRA_PERSISTED: readsPr("stale"),
+  FORGE_RATE_LIMITED: readsPr("stale"),
 };
 
 const BY_CODE: ReadonlyMap<number, ExitClass> = new Map(

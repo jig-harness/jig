@@ -12,14 +12,17 @@ it("scopes a drive listing to its PR and includes nested forge calls in the answ
     writeFileSync(
       listing,
       `import { traceGhRunner } from ${JSON.stringify(trace)};
-      if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["--json", "--pr", "123"])) process.exit(2);
+      const lockOnly = JSON.stringify(process.argv.slice(2)) === JSON.stringify(["--lock-only", "--json", "--pr", "123"]);
+      const diagnose = JSON.stringify(process.argv.slice(2)) === JSON.stringify(["--json", "--pr", "123"]);
+      if (!lockOnly && !diagnose) process.exit(2);
+      if (lockOnly) { console.log(JSON.stringify({rows: []})); process.exit(0); }
       const gh = traceGhRunner(async () => ({code: 0, timedOut: false}), () => 1, {});
       await gh(["api"]); await gh(["pr", "view"]);
       console.log(JSON.stringify({rows: []}));`,
     );
-    const code = `import { driveRow } from ${JSON.stringify(join(import.meta.dir, "../lib/local.ts"))};
+    const code = `import { localDriveRow } from ${JSON.stringify(join(import.meta.dir, "../lib/local.ts"))};
       import { reading } from ${JSON.stringify(join(import.meta.dir, "../lib/reading.ts"))};
-      const r = reading(); const result = await driveRow(r, process.cwd(), 123);
+      const r = reading(); const result = await localDriveRow(r, process.cwd(), 123, "diagnose");
       console.log(JSON.stringify({result, calls:r.sources().forgeCalls}));`;
     const child = Bun.spawn([process.execPath, "-e", code], {
       env: {
@@ -38,7 +41,7 @@ it("scopes a drive listing to its PR and includes nested forge calls in the answ
     ]);
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
     expect(JSON.parse(stdout)).toEqual({
-      result: { ok: true, value: null },
+      result: null,
       calls: 2,
     });
   } finally {
@@ -105,9 +108,9 @@ it.each(["pipe", "ignore", "inherit"] as const)(
       await gh(["api"]);
       console.error("unrelated diagnostic");`,
       );
-      const code = `import { driveRow } from ${JSON.stringify(join(import.meta.dir, "../lib/local.ts"))};
+      const code = `import { localDriveRow } from ${JSON.stringify(join(import.meta.dir, "../lib/local.ts"))};
       import { reading } from ${JSON.stringify(join(import.meta.dir, "../lib/reading.ts"))};
-      const r = reading(); console.log(JSON.stringify({result:await driveRow(r, process.cwd(), 123), sources:r.sources()}));`;
+      const r = reading(); console.log(JSON.stringify({result:await localDriveRow(r, process.cwd(), 123, "diagnose"), sources:r.sources()}));`;
       const child = Bun.spawn([process.execPath, "-e", code], {
         env: {
           ...process.env,
@@ -126,7 +129,7 @@ it.each(["pipe", "ignore", "inherit"] as const)(
       expectSpawnExit({ stdout, stderr, exitCode }, 0);
       expect(stderr).not.toContain("unrelated diagnostic");
       const answer = JSON.parse(stdout);
-      expect(answer.result).toEqual({ ok: true, value: null });
+      expect(answer.result).toBeNull();
       expect(answer.sources.records).toContainEqual({
         record: "drive forge call accounting",
         read: false,

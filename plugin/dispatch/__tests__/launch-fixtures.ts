@@ -23,6 +23,8 @@ export interface Account {
   dir: string;
   /** `claude` when absent. */
   vendor?: string;
+  /** The launching stages it serves (`accounts[].stages`); every one when absent. */
+  stages?: string[];
 }
 
 export function dispatchState(w: World): string {
@@ -70,6 +72,7 @@ export function machineFile(
         config_dir: a.dir,
         identity: a.identity,
         ...(a.max === undefined ? {} : { max_per_account: a.max }),
+        ...(a.stages === undefined ? {} : { stages: a.stages }),
       })),
       ...extra,
     }),

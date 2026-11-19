@@ -658,6 +658,14 @@ describe("an account", () => {
     expect(view.free).toBe(true);
   });
 
+  it("names the stages it serves only when the machine file narrows them", () => {
+    expect(accountView(ACCOUNT, CLOCK).stagesText).toBeNull();
+    expect(
+      accountView({ ...ACCOUNT, stages: ["pickup", "followup"] }, CLOCK)
+        .stagesText,
+    ).toBe("serves only pickup, followup");
+  });
+
   it("is at cap when every slot is held", () => {
     const view = accountView({ ...ACCOUNT, held: 2 }, CLOCK);
     expect(view.state).toBe("at cap");
