@@ -177,6 +177,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.225.0
+  dispatch.stalled_relaunch:
+    type: enum
+    values: [finish-once, never]
+    read_by: [dispatch]
+    repository_only: true
+    since: next
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"

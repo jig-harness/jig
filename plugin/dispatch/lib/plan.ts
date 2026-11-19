@@ -54,6 +54,7 @@ import { conflictNote } from "./sources/ledgers.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
+import type { TreeReader } from "./pickup-tree.ts";
 import {
   type DriveClaims,
   type ForeignHold,
@@ -128,6 +129,8 @@ export interface PlanInput {
   unclaimedAfterMs?: number;
   /** What tells a stalled pickup's finished work (`stalled-pr.ts`). */
   prOpen?: StalledPrInput;
+  /** Reads a stalled pickup's tree for the work it left (`pickup-relaunch.ts`). */
+  trees?: TreeReader;
   nowMs: number;
 }
 

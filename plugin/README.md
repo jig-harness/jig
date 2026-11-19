@@ -577,10 +577,14 @@ stands a claim down after its writes)
 ([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
 Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
-reported as stalled and never relaunched (a served person's item only when
+reported as stalled and never started afresh (a served person's item only when
 a pickup of the host claimed it: the rest of their work in progress is
 their own; the identity's item only when a launch record of the host or a
-claim marker took it, unless `dispatch.stalled_scope` is `assigned`); an
+claim marker took it, unless `dispatch.stalled_scope` is `assigned`). A
+stalled pickup whose own tree still holds its work (commits not pushed,
+edits not committed, or no result recorded) is relaunched once per head in
+that tree, with a fixed prompt to push and record the work, rather than
+reported (`dispatch.stalled_relaunch`); an
 item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
