@@ -116,15 +116,15 @@ export async function cancelledRunRecovery(
     // A job the runner stopped at its time limit beside a failure in a run
     // that was not cancelled is named to the same repair, when the advisory
     // policy left it in the set; with none left, ordinary recovery goes on.
+    // `failing` already holds those jobs with the provenance the policy kept,
+    // so it goes on as it is: rebuilding it from the jobs' own runs would
+    // restore a workflow the policy dropped for an advisory job in it.
     const kept = timedOut.filter((job) =>
       failing.checkRunNames?.includes(job.name),
     );
     return kept.length === 0 || context.dryRun
       ? null
-      : await repair(
-          withTimedOut(failing, { timedOut: kept, recovery: "none" }),
-          kept,
-        );
+      : await repair(failing, kept);
   }
   if (context.dryRun) {
     console.error(
