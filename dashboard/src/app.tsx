@@ -540,6 +540,9 @@ function Banners({ view }: { view: PageView }) {
             body={b.body}
             command={false}
             {...(b.detail === undefined ? {} : { detail: b.detail })}
+            {...(b.repositories === undefined
+              ? {}
+              : { repositories: b.repositories })}
           />
         ))
       )}

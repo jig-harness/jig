@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.283.2] - 2026-11-19
+
+### Fixed
+
+- The dispatch dashboard shows one stale-read banner for repositories with the same refusal cause. It lists when each repository was last read, shows the latest known reset, and keeps individual failure details available on demand.
+
 ## [0.283.1] - 2026-11-19
 
 ### Fixed
@@ -9985,7 +9991,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.283.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.283.2...HEAD
+[0.283.2]: https://github.com/jig-harness/jig/compare/v0.283.1...v0.283.2
 [0.283.1]: https://github.com/jig-harness/jig/compare/v0.283.0...v0.283.1
 [0.283.0]: https://github.com/jig-harness/jig/compare/v0.282.1...v0.283.0
 [0.282.1]: https://github.com/jig-harness/jig/compare/v0.282.0...v0.282.1

@@ -48,6 +48,8 @@ export interface QuotaHold {
 
 /** A call's failure: its class as the code, a sentence for a person, and what the class carries. */
 export interface OutboundFailure extends Failure<FailureClass> {
+  /** Opaque quota owner or credential key, never the credential itself. */
+  account?: string;
   /** `rate-limited`: when the system lets the credential send again, epoch milliseconds. */
   until?: number;
   /** `rate-limited` as a credential's quota said it (`TrackerRateLimited`): whose quota, and whether only the caller's share is spent. */
@@ -119,6 +121,7 @@ export function outboundFailure(
   code: FailureClass,
   reason: string,
   extra: {
+    account?: string | undefined;
     until?: number | null;
     quota?: QuotaHold;
     sent?: boolean;
@@ -127,6 +130,7 @@ export function outboundFailure(
   } = {},
 ): OutboundFailure {
   const failure: OutboundFailure = { code, reason };
+  if (extra.account !== undefined) failure.account = extra.account;
   if (extra.until !== undefined && extra.until !== null)
     failure.until = extra.until;
   if (extra.quota !== undefined) failure.quota = extra.quota;
@@ -174,10 +178,12 @@ export class OutboundError extends JigError<FailureClass> {
   readonly until: number | null;
   readonly sent: boolean;
   readonly retryAfterMs: number | null;
+  readonly account: string | undefined;
   constructor(
     code: FailureClass,
     reason: string,
     extra: {
+      account?: string | undefined;
       until?: number | null;
       sent?: boolean;
       retryAfterMs?: number | null;
@@ -192,10 +198,12 @@ export class OutboundError extends JigError<FailureClass> {
     this.until = extra.until ?? null;
     this.sent = extra.sent ?? false;
     this.retryAfterMs = extra.retryAfterMs ?? null;
+    this.account = extra.account;
   }
   /** The failure as an `Outcome`'s. */
   get failure(): OutboundFailure {
     return outboundFailure(this.code, this.message, {
+      account: this.account,
       until: this.until,
       sent: this.sent,
       retryAfterMs: this.retryAfterMs,
