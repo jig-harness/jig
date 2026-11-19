@@ -52,8 +52,9 @@ import {
 import { log } from "../log.ts";
 import { currentMs } from "../time.ts";
 import { coalesce } from "./coalesce.ts";
+import { type OutboundFailure, outboundFailure } from "./failure.ts";
 import { PAGE_CAP, nextPageUrl } from "./gh-paginate.ts";
-import { splitHeaders } from "./github-budget.ts";
+import { forgeBudgetOn, splitHeaders } from "./github-budget.ts";
 
 /** The answer of an observed read: the fields a `gh` run reports. */
 export interface ObservedRun {
@@ -66,6 +67,14 @@ export interface ObservedRun {
   stderrTail: string;
   /** How many pages the read got through before it ended. */
   pagesRead?: number;
+  /** The failure of a read the forge client or this reader refused to go on with. */
+  held?: OutboundFailure;
+}
+
+/** How far a walk got: the pages kept, and whether more lie past `PAGE_CAP`. */
+interface WalkProgress {
+  pages: number;
+  overCap: boolean;
 }
 
 /** Where and how the read runs; the same fields the caller's `gh` call took. */
@@ -107,6 +116,15 @@ export interface ObservedDeps<R extends ObservedRun> {
 }
 
 const evaluation = new AsyncLocalStorage<Map<string, Promise<ObservedRun>>>();
+
+/**
+ * How long past its budget the caller that started a reading waits for it.
+ * That reading stops itself at the budget, and its answer says how far it got.
+ */
+const OWN_READ_GRACE_MS = 5_000;
+
+/** How far each shared reading has got, for a caller whose budget ends first. */
+const walks = new WeakMap<Promise<ObservedRun>, WalkProgress>();
 
 /**
  * Run `fn` as one evaluation: the observed reads it makes, however many
@@ -240,7 +258,7 @@ function rejectedPage(result: ObservedRun, reason: string): null {
   return null;
 }
 
-const spent = (path: string): ObservedRun => {
+const spent = (path: string, pagesRead?: number): ObservedRun => {
   const reason = `gh api ${path}: caller budget exhausted`;
   return {
     code: 124,
@@ -250,8 +268,25 @@ const spent = (path: string): ObservedRun => {
     bufferExceeded: false,
     spawnFailed: false,
     stderrTail: reason,
+    ...(pagesRead === undefined ? {} : { pagesRead }),
   };
 };
+
+/** A resource with more pages than a read takes, as the forge client refuses one. */
+function overCap(path: string): ObservedRun {
+  const reason = `gh api ${path}: more than ${PAGE_CAP} pages; sent no more after page ${PAGE_CAP}`;
+  return {
+    code: 1,
+    stdout: "",
+    stderr: `${reason}\n`,
+    timedOut: false,
+    bufferExceeded: false,
+    spawnFailed: false,
+    stderrTail: reason,
+    pagesRead: PAGE_CAP,
+    held: outboundFailure("too-costly", reason, { sent: true }),
+  };
+}
 
 /** Bind observed reads to a conditional-request cache and its process transport. */
 export function createObservedPages<R extends ObservedRun>(
@@ -321,7 +356,7 @@ export function createObservedPages<R extends ObservedRun>(
     kept: Entry | null,
     ctx: ObservedOptions,
     startMs: number,
-    progress: { pages: number },
+    progress: WalkProgress,
   ): Promise<{ entry: Entry; changed: boolean } | null> {
     const byUrl = new Map((kept?.pages ?? []).map((p) => [p.url, p]));
     const pages: KeptPage[] = [];
@@ -331,7 +366,10 @@ export function createObservedPages<R extends ObservedRun>(
     let probing = false;
     let lastLive = false;
     while (url !== null) {
-      if (pages.length >= PAGE_CAP) return null;
+      if (pages.length >= PAGE_CAP) {
+        progress.overCap = true;
+        return null;
+      }
       const next = await step(url);
       if (next === "failed") return null;
       if (next === "done") break;
@@ -430,7 +468,7 @@ export function createObservedPages<R extends ObservedRun>(
     walked = 0,
   ): Promise<ObservedRun> {
     const left = leftSec(ctx, startMs);
-    if (left === 0) return { ...spent(path), pagesRead: walked };
+    if (left === 0) return spent(path, walked > 0 ? walked : undefined);
     const opts = definedFields({
       cwd: ctx.cwd,
       env: ctx.env,
@@ -446,12 +484,9 @@ export function createObservedPages<R extends ObservedRun>(
       Object.keys(opts).length === 0
         ? await ghCall(args)
         : await ghCall(args, opts);
-    return result.code === 0
+    return result.code === 0 || walked <= (result.pagesRead ?? 0)
       ? result
-      : {
-          ...result,
-          pagesRead: Math.max(result.pagesRead ?? 0, walked),
-        };
+      : { ...result, pagesRead: walked };
   }
 
   async function read(
@@ -459,6 +494,7 @@ export function createObservedPages<R extends ObservedRun>(
     ctx: ObservedOptions,
     knownScope?: string | null,
     startMs = currentMs(),
+    progress: WalkProgress = { pages: 0, overCap: false },
   ): Promise<ObservedRun> {
     const dir = deps.cacheDir();
     const scope =
@@ -467,8 +503,11 @@ export function createObservedPages<R extends ObservedRun>(
     const request = `pages ${path}`;
     const file = entryFile(dir, scope, request);
     const kept = readEntry(file, request);
-    const progress = { pages: 0 };
     const walked = await walk(path, kept, ctx, startMs, progress);
+    // Past the cap the forge client refuses the whole read too, after sending
+    // every page again; a `gh` paging for itself has no cap and may finish.
+    if (walked === null && progress.overCap && forgeBudgetOn(ctx.env))
+      return overCap(path);
     if (walked === null) return wholeRead(path, ctx, startMs, progress.pages);
     const { entry, changed } = walked;
     if (changed)
@@ -502,12 +541,21 @@ export function createObservedPages<R extends ObservedRun>(
     const scope = await deps.repoScope(scopeCtx);
     if (scope === null) return read(path, ctx, scope, startMs);
     const key = memoKey(path, scope);
+    const progress: WalkProgress = { pages: 0, overCap: false };
     const shared = coalesce(reads, key, async () => {
-      const answer = await read(path, ctx, scope, startMs);
+      const answer = await read(path, ctx, scope, startMs, progress);
       if (answer.code !== 0) reads.delete(key);
       return answer;
     });
-    return withinBudget(shared, path, ctx, startMs);
+    const own = !walks.has(shared);
+    if (own) walks.set(shared, progress);
+    return withinBudget(
+      shared,
+      path,
+      ctx,
+      startMs,
+      own ? OWN_READ_GRACE_MS : 0,
+    );
   }
 
   return { ghObservedSlurp };
@@ -529,14 +577,19 @@ function withinBudget(
   path: string,
   ctx: ObservedOptions,
   startMs: number,
+  graceMs: number,
 ): Promise<ObservedRun> {
   const budgetSec = ctx.timeoutSec;
   if (budgetSec === undefined) return shared.then((r) => ({ ...r }));
   const remainingMs = budgetSec * 1000 - (currentMs() - startMs);
-  if (remainingMs <= 0) return Promise.resolve(spent(path));
+  const pagesSoFar = () => walks.get(shared)?.pages || undefined;
+  if (remainingMs <= 0) return Promise.resolve(spent(path, pagesSoFar()));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<ObservedRun>((done) => {
-    timer = setTimeout(() => done(spent(path)), remainingMs);
+    timer = setTimeout(
+      () => done(spent(path, pagesSoFar())),
+      remainingMs + graceMs,
+    );
   });
   return Promise.race([shared.then((r) => ({ ...r })), late]).finally(() =>
     clearTimeout(timer),

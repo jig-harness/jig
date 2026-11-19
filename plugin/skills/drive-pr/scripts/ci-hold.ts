@@ -52,8 +52,11 @@ import {
   readPrSnapshot,
   valueOrNull,
   writeCiState,
+  checkRunsRead,
 } from "./lib/ci-hold-state.ts";
+import type { ListingCutShort } from "./lib/paged-read.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
+import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -94,6 +97,23 @@ const snapshot = async (pr: string) =>
 
 const transitions = async (pr: string) =>
   valueOrNull(await readHoldTransitions(pr, holdLabel()));
+
+/** What final-ready answers for a proof that failed: wait, unless its listing was cut short. */
+function proofStop(proof: { cutShort?: ListingCutShort }): number {
+  return proof.cutShort === undefined ? 4 : listingStop(proof.cutShort);
+}
+
+/**
+ * A check-runs listing cut short: its reason on stderr, its pages on stdout
+ * for the driver's stop record, and the drive's own exit for it.
+ */
+function listingStop(cut: ListingCutShort): number {
+  console.error(`ci-hold: ${cut.reason}`);
+  process.stdout.write(
+    `${JSON.stringify({ listingPagesRead: cut.pagesRead })}\n`,
+  );
+  return DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
+}
 
 /** A forge that was not reached is retried later; an answer that does not read stops. */
 function unread(failure: HoldReadFailure): number {
@@ -461,7 +481,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
       true,
     );
     if (recovery === "parked") return 8;
-    if (recovery === "unknown") return 1;
+    if (recovery === "unknown" || recovery === "listing-cut-short") return 1;
     console.error(
       latest?.event === "unlabeled"
         ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"
@@ -641,7 +661,10 @@ async function release(
   )
     return 4;
   const watermarkRead = await headWatermark(head, "before the unlabel");
-  if (!watermarkRead.ok) return unread(watermarkRead.failure);
+  if (!watermarkRead.ok)
+    return "cutShort" in watermarkRead
+      ? listingStop(watermarkRead.cutShort)
+      : unread(watermarkRead.failure);
   const watermark = watermarkRead.value;
   if (watermark === null) {
     console.error(
@@ -780,8 +803,14 @@ async function finalCiProofGreen(
   head: string,
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
   requireSuccess: boolean,
-): Promise<{ ok: true; startedAt: string | null } | { ok: false }> {
-  const allRuns = await checkRuns(head);
+): Promise<
+  | { ok: true; startedAt: string | null }
+  | { ok: false; cutShort?: ListingCutShort }
+> {
+  const listing = await checkRunsRead(head);
+  if (listing.cutShort !== null)
+    return { ok: false, cutShort: listing.cutShort };
+  const allRuns = valueOrNull(listing.runs);
   if (allRuns === null) return { ok: false };
   // A cancelled run another run replaced proves nothing about a required
   // check, however its check-run ids interleave with the replacement's.
@@ -958,7 +987,7 @@ async function finalReady(
     // No hold exists: every push ran full CI, so the required checks on this
     // exact head are the witness.
     const proof = await finalCiProofGreen(head, null, requireSuccess);
-    if (!proof.ok) return 4;
+    if (!proof.ok) return proofStop(proof);
     if (
       !(await stillCurrentForFinalReady(pr, head, null, null, requireSuccess))
     )
@@ -974,7 +1003,7 @@ async function finalReady(
     // No intermediate hold was ever applied: the PR-open run of the required
     // checks is the full-CI witness for this exact head.
     const initialProof = await finalCiProofGreen(head, null, requireSuccess);
-    if (!initialProof.ok) return 4;
+    if (!initialProof.ok) return proofStop(initialProof);
     if (
       !(await stillCurrentForFinalReady(
         pr,
@@ -991,7 +1020,7 @@ async function finalReady(
   if (persisted.phase !== "released" || persisted.head !== head) return 4;
   if (latestOf(timeline)?.id !== persisted.eventId) return 4;
   const initialProof = await finalCiProofGreen(head, persisted, requireSuccess);
-  if (!initialProof.ok) return 4;
+  if (!initialProof.ok) return proofStop(initialProof);
   if (
     !(await stillCurrentForFinalReady(
       pr,

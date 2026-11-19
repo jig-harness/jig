@@ -107,6 +107,8 @@ export interface StatusReport extends CiReport {
   isDraft: boolean | null;
   /** On `CHECK_RUNS_UNREADABLE`: the pages read, `null` when gh did not say. */
   listingPagesRead?: number | null;
+  /** On `CHECK_RUNS_UNREADABLE`: the listing has more pages than a read takes. */
+  listingAtBound?: boolean;
   reviewerPresent: boolean;
   reviewerStatus: string;
   reviewerConclusion: string;
@@ -781,6 +783,7 @@ async function evaluateFresh(
   if (runs === null) {
     if (!conflicting && listing.cutShort !== null) {
       report.listingPagesRead = listing.cutShort.pagesRead;
+      report.listingAtBound = listing.cutShort.atBound;
       return terminal(report, "CHECK_RUNS_UNREADABLE", listing.cutShort.reason);
     }
     if (!conflicting) {

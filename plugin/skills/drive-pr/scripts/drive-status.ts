@@ -176,7 +176,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *  24  CHECK_RUNS_UNREADABLE  [state] the head's check-runs listing ran into
  *                       a deadline or its page bound; the reason names the
  *                       pages read. Retried like INDETERMINATE within this
- *                       invocation, then returned
+ *                       invocation, except at the page bound, then returned
  *  11  SESSION_LEASE_HELD  [state, set outside evaluate]
  *                       another LIVE session in this working tree holds the
  *                       drive lease for this PR. Raised by whichever
@@ -972,6 +972,10 @@ async function main(): Promise<number> {
           failingStatusNames: report.failingStatusNames,
           failingRuns: report.failingRuns,
           failingStatuses: report.failingStatuses ?? null,
+          // On `CHECK_RUNS_UNREADABLE`: what the driver records on its stop.
+          ...(report.listingPagesRead === undefined
+            ? {}
+            : { listingPagesRead: report.listingPagesRead }),
         })}\n`,
       );
     } else {
@@ -1712,7 +1716,14 @@ async function main(): Promise<number> {
         // interval past the advertised timeout and handed the next iteration a
         // spent budget to spawn a reconciliation sweep with.
         queryErrors += 1;
-        if (once || queryErrors >= MAX_QUERY_ERRORS || !intervalFits()) {
+        // A listing over its page bound stays over it: another read only
+        // spends the forge's budget.
+        if (
+          once ||
+          report.listingAtBound === true ||
+          queryErrors >= MAX_QUERY_ERRORS ||
+          !intervalFits()
+        ) {
           await emit(code);
           return code;
         }

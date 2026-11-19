@@ -188,18 +188,23 @@ export async function checkRuns(head: string): Promise<CheckRunLite[] | null> {
 export async function headWatermark(
   head: string,
   why: string,
-): Promise<Outcome<number | null, HoldReadFailure["code"]>> {
+): Promise<
+  | Outcome<number | null, HoldReadFailure["code"]>
+  | { ok: false; failure: HoldReadFailure; cutShort: ListingCutShort }
+> {
   if (!isGitSha(head))
     return failed(
       "malformed",
       `cannot establish the check-run watermark ${why}: the head is not a SHA`,
     );
-  const runs = await readCheckRuns(head);
-  if (!runs.ok)
-    return failed(
+  const { runs, cutShort } = await checkRunsRead(head);
+  if (!runs.ok) {
+    const failure = failed(
       runs.failure.code,
       `cannot establish the check-run watermark ${why}: ${runs.failure.reason}`,
     );
+    return cutShort === null ? failure : { ...failure, cutShort };
+  }
   return ok(checkRunWatermark(runs.value, head));
 }
 

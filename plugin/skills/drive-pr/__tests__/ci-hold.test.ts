@@ -843,7 +843,8 @@ describe("ci:hold evidence", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const expected = 1200 + 24 * 30 + 30 + 26 * 2 + 6;
+    // 24 calls, and three further call deadlines for each of 8 check-runs listings.
+    const expected = 1200 + (24 + 8 * 3) * 30 + 30 + 26 * 2 + 6;
     expect(result.exitCode).toBe(0);
     expect(new TextDecoder().decode(result.stdout)).toBe(String(expected));
     rmSync(root, { recursive: true, force: true });

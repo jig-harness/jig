@@ -39,6 +39,7 @@ import { announcePolicyBase } from "./policy-base.ts";
 
 import type { FailingChecks } from "./infra-recovery.ts";
 
+import { attempt } from "../../../../../shared/outcome.ts";
 import { driverRuntime } from "./runtime.ts";
 import { attemptsFor, chargeRepair, repairSelection } from "./ci-attempts.ts";
 import {
@@ -63,6 +64,22 @@ function silentReleaseCause(
       ? `did not finish within its ${ciHoldTimeoutSeconds()}s deadline and was stopped`
       : "printed no error: a process stopped from outside (a signal) ends this way, as does one that exits before it can report";
   return `ci-hold.ts release ${ended}. The step that failed is removing the CI hold label from PR #${pr} at head ${head}. Run the release by hand ('ci-hold.ts release ${pr} --expect-head ${head}', which removes the label as this step would) to see its error, check whether something outside the drive stopped it, then re-arm.`;
+}
+
+/**
+ * The drive's stop for a `ci-hold.ts` step that found the check-runs listing
+ * cut short: the pages it read, as its last line of output says.
+ */
+function heldListingStop(result: Awaited<ReturnType<typeof run>>): number {
+  const last = result.stdout.trim().split("\n").at(-1) ?? "";
+  const pages = attempt("unreadable", "the listing's page count", (): unknown =>
+    JSON.parse(last),
+  );
+  const count = pages.ok
+    ? (pages.value as { listingPagesRead?: unknown } | null)?.listingPagesRead
+    : null;
+  driverRuntime.stopListingPages = typeof count === "number" ? count : null;
+  return CHECK_RUNS_UNREADABLE_EXIT;
 }
 
 export async function releaseAndReadFinalCi(
@@ -97,6 +114,8 @@ export async function releaseAndReadFinalCi(
   );
   if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
+  if (release.code === CHECK_RUNS_UNREADABLE_EXIT)
+    return heldListingStop(release);
   if (release.code === 4) {
     console.error(
       "review converged, but the CI hold's release could not settle (the head moved, the label changed, or the forge could not be read); not reporting merge-ready",
@@ -137,6 +156,8 @@ export async function releaseAndReadFinalCi(
     ),
   );
   if (finalCi.code === 5) return 5;
+  if (finalCi.code === CHECK_RUNS_UNREADABLE_EXIT)
+    return heldListingStop(finalCi);
   // What used to stand here read `status.ci` — the PRE-UNLABEL
   // snapshot, which the comment forty lines above this one already
   // declares unusable for the final decision ("cannot participate") —

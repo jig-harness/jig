@@ -14,7 +14,13 @@ import { CHECK_RUNS_UNREADABLE_EXIT } from "../scripts/lib/driver/settings.ts";
 import * as proc from "../scripts/lib/proc.ts";
 import { isDriveEvent } from "../scripts/lib/state/events.ts";
 import { checkRunListing } from "../scripts/lib/status/evidence.ts";
-import { HEAD, probe, useDrivePrSuite } from "./drive-pr-harness.ts";
+import {
+  binDir,
+  HEAD,
+  probe,
+  useDrivePrSuite,
+  writeFixture,
+} from "./drive-pr-harness.ts";
 import { runDrive } from "./drive-loop-harness.ts";
 
 const SHA = "a".repeat(40);
@@ -36,9 +42,17 @@ async function readListing(f: {
   pages: number;
   delayMs: number;
   hangAt?: number;
+  observed?: boolean;
+  timeoutSec?: string;
 }) {
   const dir = mkdtempSync(join(tmpdir(), "check-run-listing-"));
   dirs.push(dir);
+  // An observed read shares its reading under the repository's scope.
+  for (const args of [
+    ["init", "-q"],
+    ["remote", "add", "origin", "https://github.com/o/r.git"],
+  ])
+    expect(Bun.spawnSync(["git", ...args], { cwd: dir }).exitCode).toBe(0);
   writeFakeProgram(
     join(dir, "gh"),
     `#!/usr/bin/env bun
@@ -59,7 +73,8 @@ async function readListing(f: {
   writeFileSync(
     source,
     `import { checkRunListing } from ${JSON.stringify(join(LIB, "status/evidence.ts"))};
-    const read = await checkRunListing("o", "r", ${JSON.stringify(SHA)});
+    import { withObservedEvaluation } from ${JSON.stringify(join(LIB, "gh-conditional.ts"))};
+    const read = ${f.observed === true ? `await withObservedEvaluation(() => checkRunListing("o", "r", ${JSON.stringify(SHA)}, "observed"))` : `await checkRunListing("o", "r", ${JSON.stringify(SHA)})`};
     console.log(JSON.stringify({ runs: read.runs?.length ?? null, cutShort: read.cutShort }));`,
   );
   const child = Bun.spawn([process.execPath, source], {
@@ -69,7 +84,7 @@ async function readListing(f: {
       HOME: dir,
       XDG_STATE_HOME: join(dir, "state"),
       GH_TOKEN: "test-listing-token",
-      GH_CALL_TIMEOUT: "2",
+      GH_CALL_TIMEOUT: f.timeoutSec ?? "2",
       JIG_FORGE_BUDGET: "on",
       PATH: `${dir}${delimiter}${process.env.PATH}`,
     },
@@ -101,6 +116,21 @@ describe("a head's check-runs listing", () => {
     expect(read.cutShort?.pagesRead).toBe(2);
     expect(read.cutShort?.reason).toContain("after 2 page(s)");
     expect(read.cutShort?.reason).toContain("each page may take 2s");
+  }, 60_000);
+
+  it("names the pages an observed read got through when the listing's bound ends it", async () => {
+    // 30 pages of 400ms each against a 4-second bound for the whole listing.
+    const read = await readListing({
+      pages: 30,
+      delayMs: 400,
+      observed: true,
+      timeoutSec: "1",
+    });
+    expect(read.runs).toBeNull();
+    expect(read.cutShort?.pagesRead).toBeGreaterThan(0);
+    expect(read.cutShort?.reason).toContain(
+      `after ${read.cutShort?.pagesRead} page(s)`,
+    );
   }, 60_000);
 
   describe("read through the forge client's answer", () => {
@@ -141,6 +171,26 @@ describe("a head's check-runs listing", () => {
         expect(read.runs).toBeNull();
         expect(read.cutShort?.pagesRead).toBe(PAGE_CAP);
         expect(read.cutShort?.reason).toContain("its page bound");
+        expect(read.cutShort?.atBound).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("says why when a page was refused short of the bound", async () => {
+      const spy = answering({
+        pagesRead: 3,
+        held: {
+          code: "too-costly",
+          reason: "the deadline passed while waiting",
+        },
+      });
+      try {
+        const read = await checkRunListing("o", "r", SHA);
+        expect(read.cutShort?.atBound).toBe(false);
+        expect(read.cutShort?.reason).toContain(
+          "because the deadline passed while waiting",
+        );
       } finally {
         spy.mockRestore();
       }
@@ -188,6 +238,43 @@ describe("a listing cut short ends the round and the drive by name", () => {
     expect(r.exitCode).toBe(CHECK_RUNS_UNREADABLE_EXIT);
     expect(String(r.json.reason)).toContain(HEAD);
     expect(String(r.json.reason)).toContain("an unknown number of pages");
+    expect(r.json).toHaveProperty("listingPagesRead", null);
+  }, 60_000);
+
+  it("ci-hold.ts final-ready answers with it and the pages read", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      checkRunsHang: true,
+    });
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        join(LIB, "../ci-hold.ts"),
+        "final-ready",
+        "999",
+        "--expect-head",
+        HEAD,
+      ],
+      {
+        env: {
+          ...process.env,
+          ...env,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_FIXTURES: dir,
+          DRIVE_PR_STATE_DIR: stateDir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expectSpawnExit({ stdout, stderr, exitCode }, CHECK_RUNS_UNREADABLE_EXIT);
+    expect(JSON.parse(stdout)).toEqual({ listingPagesRead: null });
+    expect(stderr).toContain("check-runs listing");
   }, 60_000);
 
   it("drive.ts exits with it instead of 1", async () => {

@@ -48,6 +48,8 @@ export function slurpPages(
 export interface ListingCutShort {
   /** The pages read before it stopped; `null` when gh paged it and did not say. */
   pagesRead: number | null;
+  /** It has more pages than a read takes, so reading it again cannot help. */
+  atBound: boolean;
   reason: string;
 }
 
@@ -78,15 +80,23 @@ export function listingCutShort(
   sha: string,
   result: RunResult,
 ): ListingCutShort | null {
-  const bound = result.held?.code === "too-costly";
-  if (!result.timedOut && !bound) return null;
+  const refused = result.held?.code === "too-costly" ? result.held : null;
+  if (!result.timedOut && refused === null) return null;
   const pagesRead = result.pagesRead ?? null;
+  const atBound =
+    !result.timedOut && pagesRead !== null && pagesRead >= PAGE_CAP;
   const pages =
     pagesRead === null ? "an unknown number of pages" : `${pagesRead} page(s)`;
+  const how = result.timedOut
+    ? "at a deadline"
+    : atBound
+      ? "at its page bound"
+      : `because ${refused?.reason ?? "the forge client refused a page"}`;
   const limits = `each page may take ${ghCallTimeoutSeconds()}s, the listing ${checkRunListingSeconds()}s and ${PAGE_CAP} pages`;
   return {
     pagesRead,
-    reason: `the check-runs listing of ${sha} stopped after ${pages}, at ${result.timedOut ? "a deadline" : "its page bound"} (${limits})`,
+    atBound,
+    reason: `the check-runs listing of ${sha} stopped after ${pages}, ${how} (${limits})`,
   };
 }
 

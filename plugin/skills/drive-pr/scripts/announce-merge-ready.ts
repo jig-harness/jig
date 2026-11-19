@@ -64,6 +64,7 @@ const holdName = (): string => ciHoldLabelSetting() ?? "CI hold";
 import { fail, isDigits, readStdinAll, runMain, short } from "./lib/cli.ts";
 import { reviewedClaim } from "./lib/status/reviewed-sha.ts";
 import {
+  checkRunListingSeconds,
   ciHoldTimeoutSeconds,
   ghCall,
   git,
@@ -377,7 +378,11 @@ async function main(): Promise<number> {
   // acts on without re-deriving it.
   const statusRes = await run(
     tsArgv(driveStatus, [pr, "--json", "--once", "--no-count"]),
-    { timeoutSec: helperTimeoutSec, stderr: "ignore" },
+    // The read includes the head's check-runs listing, which has its own bound.
+    {
+      timeoutSec: helperTimeoutSec + checkRunListingSeconds(),
+      stderr: "ignore",
+    },
   );
   const code = statusRes.code;
   let status: Record<string, unknown> = {};
