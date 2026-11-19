@@ -146,9 +146,13 @@ and its epic's reconciliation.
    never because its children are closed; when this merge was its last
    piece and no verdict exists, the next step is that review, not a close.
    Before closing one, read the instructions file of each of the
-   repository's own arms (`followup.arms`) for a rule about epics: a
-   repository may reserve some epics' close to one of its later arms, and
-   the epic stays open here until that arm decides.
+   repository's own arms (`followup.arms`) that this run applies and that
+   has one (the `instructions` command, § The repository's own arms)
+   for a rule about epics: a repository may reserve some epics' close to
+   one of its later arms, and the epic stays open here until that arm
+   decides. An arm skipped for this run, or with only a skill or a check,
+   has no file to read and is passed over; an instructions file that
+   cannot be read leaves the epic open, since its rule is unknown.
 
 ### deferred-findings: review findings deferred to later
 
