@@ -23,6 +23,7 @@ import {
   claimState,
   registerStageProcess,
   type StageSupervision,
+  uncertainCleanupState,
   uncertainStage,
 } from "../lib/launch-supervision.ts";
 import { clearMain } from "../clear.ts";
@@ -146,6 +147,24 @@ describe("a launch record's claim, judged by the shared process identity", () =>
     const state = records[0]?.state;
     expect(state?.kind).toBe("unknown");
     expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
+  });
+
+  it("counts a stage whose cleanup was never confirmed as not judged, even with its recorded processes gone", async () => {
+    const own = await ownClaim();
+    const state = uncertainCleanupState(
+      {
+        ...own,
+        pid: 2147483647,
+        supervision: {
+          supervisor: { ...own, pid: 2147483646 },
+          child: { ...own, pid: 2147483645 },
+          uncertain: true,
+        },
+      },
+      [],
+      thisHost(),
+    );
+    expect(state?.kind === "unknown" && state.unjudged).toBe(true);
   });
 
   it("says when a process could not be judged, and not when each was judged gone", async () => {

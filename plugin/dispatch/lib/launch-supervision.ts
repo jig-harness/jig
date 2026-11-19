@@ -151,6 +151,8 @@ export function uncertainCleanupState(
     reason: "the stage cleanup could not be confirmed",
     process: claim,
     ...processFacts(claim, rows, here),
+    // Processes beyond the recorded ones may have outlived the stage.
+    unjudged: true,
   };
 }
 
