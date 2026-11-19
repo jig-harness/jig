@@ -143,6 +143,8 @@ export interface LaunchRecord {
   relaunchOf?: string;
   /** For a stalled pickup's relaunch: the tree's head when it was relaunched; one relaunch per item and head. */
   relaunchHead?: string;
+  /** For the relaunch of a pickup stopped on a fault of its host: that fault, which the relaunch's prompt names (`pickup-host-fault.ts`). */
+  relaunchFault?: string;
   version: 1;
   id: string;
   token: string;

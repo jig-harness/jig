@@ -20,8 +20,14 @@
  * workspace holds it any more, a fresh tree would not carry the work, so
  * the need stays framed for a person with the tree named. While the host's
  * health check fails (`rerun-gate.ts`), the relaunch waits for it.
+ *
+ * A pickup that stopped on a fault of its host (`pickup-host-fault.ts`) takes
+ * the same relaunch to resume its work rather than only to push it: as soon
+ * as it is idle and the health check passes, whatever its tree holds, and
+ * its record keeps the fault, which the relaunch's prompt names.
  */
 import type { ReadRecord } from "./launches.ts";
+import type { HostFault } from "./pickup-host-fault.ts";
 import { treeText, type TreeReader, unshipped } from "./pickup-tree.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import type { Action, DispatchSection } from "./types.ts";
@@ -35,6 +41,8 @@ export interface RelaunchInput {
   trees?: TreeReader;
   /** Why the host's health check fails; `null` or absent while it passes. */
   rerunsHeld?: string | null;
+  /** The host fault the pickup stopped on, when it did: relaunched to resume it, whatever its tree holds. */
+  fault?: HostFault | null;
 }
 
 /** What the rule makes of a stalled pickup. */
@@ -105,7 +113,8 @@ export function relaunchStep(
       note: `whether its launch's tree ${path} holds unshipped work could not be told: ${tree.why}`,
     };
   const noResult = latest.result === null;
-  if (!unshipped(tree) && !noResult) return NONE;
+  const fault = input.fault ?? null;
+  if (!unshipped(tree) && !noResult && fault === null) return NONE;
   const holds = `launch record ${record.id}'s tree ${path} holds ${treeText(tree)}${noResult ? ", and the pickup recorded no result" : ""}`;
   if (open === undefined)
     return {
@@ -130,7 +139,10 @@ export function relaunchStep(
       stage: "pickup",
       target: item.key,
       record: "runtime",
-      reason: `stalled pickup: ${holds}; relaunched once in that tree to push and record it (dispatch.stalled_relaunch finish-once)`,
+      reason:
+        fault === null
+          ? `stalled pickup: ${holds}; relaunched once in that tree to push and record it (dispatch.stalled_relaunch finish-once)`
+          : `pickup stopped on a fault of this host (${fault.why}), whose health check passes again: ${holds}; relaunched once in that tree to resume it (dispatch.stalled_relaunch finish-once)`,
       evidence: {
         title: item.title,
         state: item.state,
@@ -144,6 +156,7 @@ export function relaunchStep(
         record: record.id,
         workspace: { id: open.id, path: open.path },
         head: tree.head,
+        ...(fault === null ? {} : { fault: fault.why }),
       },
     },
   };

@@ -36,6 +36,11 @@
  *   started for it, whether it was claimed or is still in a dispatch state.
  *   One whose pass ended without a question and that no rule starts again
  *   is a need too, framed with its options: pick it up again, or leave it.
+ * - An item whose latest pickup stopped on a fault of its host
+ *   (`pickup-host-fault.ts`) asks nothing: it is held, with the fault named,
+ *   while the host's health check fails, then relaunched in its tree when
+ *   claimed, or picked up afresh when not. A restart that stops on a host
+ *   fault again is one need, never a second restart.
  *
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
@@ -68,6 +73,11 @@ import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
+import {
+  faultedAgain,
+  type HostFault,
+  hostFault,
+} from "./pickup-host-fault.ts";
 import { ANY_KEY_SOURCE } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { relaunchStep, type RelaunchStep } from "./pickup-relaunch.ts";
 import type { TreeReader } from "./pickup-tree.ts";
@@ -246,6 +256,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       planStopped(input, item, hold, plan);
       continue;
     }
+    if (heldAfterHostFault(item.key, input, plan)) continue;
     plan.actions.push(pickupAction(item, held.evidence));
   }
 
@@ -278,16 +289,106 @@ function planStopped(
     plan.quiet.push({ target: item.key, class: "pickup-refused", why });
     return;
   }
+  const fault = hostFault(hold.record);
+  if (fault !== null) {
+    stoppedOnHostFault(input, item, hold.record, fault, plan);
+    return;
+  }
   const asked = questionAsked(input, item, hold.record);
   if (asked !== null) {
     plan.actions.push(asked);
     return;
   }
-  if ((input.rerunsHeld ?? null) !== null && unwrittenResult(hold.record)) {
-    plan.quiet.push({ target: item.key, class: "pickup-ended", why });
+  plan.actions.push(endedNeed(input.slug, item, hold.record, why));
+}
+
+/** An unclaimed item whose ended pickup, stopped on a host fault, still holds it: held while the health check fails, else the need that says why it is not picked up afresh. */
+function stoppedOnHostFault(
+  input: PickupInput,
+  item: WantedItem,
+  latest: ReadRecord,
+  fault: HostFault,
+  plan: PickupPlan,
+): void {
+  const held = hostHeld(fault, input);
+  if (held !== null) {
+    plan.quiet.push({ target: item.key, class: "pickup-ended", why: held });
     return;
   }
-  plan.actions.push(endedNeed(input.slug, item, hold.record, why));
+  const again = faultedAgain(latest, input.launches, item.key);
+  const note =
+    latest.record.batchItems !== undefined
+      ? "a batch's pickup is not restarted on its own"
+      : again !== null
+        ? restartedNote(again)
+        : "its pickup claimed the item before it stopped";
+  plan.actions.push(hostFaultNeed(input.slug, item, latest, fault, note));
+}
+
+/** Why an item whose pickup stopped on a host fault is held this tick, or `null` while the host's health check passes. */
+function hostHeld(fault: HostFault, input: PickupInput): string | null {
+  const held = input.rerunsHeld ?? null;
+  return held === null
+    ? null
+    : `its pickup stopped on a fault of this host: ${fault.why}; held while ${held}, and restarted once that passes`;
+}
+
+/** Holds an unclaimed item an ended pickup stopped on a host fault left wanted, while the host's health check fails; `true` when it did. */
+function heldAfterHostFault(
+  key: string,
+  input: PickupInput,
+  plan: PickupPlan,
+): boolean {
+  const latest = latestPickupFor(key, input.launches);
+  const fault = latest === undefined ? null : hostFault(latest);
+  const held = fault === null ? null : hostHeld(fault, input);
+  if (held === null) return false;
+  plan.quiet.push({ target: key, class: "pickup-ended", why: held });
+  return true;
+}
+
+function restartedNote(source: ReadRecord): string {
+  return `it was restarted once after its pickup stopped on a host fault (launch record ${source.record.id}) and stopped on one again, so it is not restarted a second time`;
+}
+
+/**
+ * The need an item raises when its pickup stopped on a fault of its host
+ * and no restart is left to it: notified once per launch record, for a
+ * diagnosing session (the steward) or a person to find the fault's cause.
+ */
+function hostFaultNeed(
+  slug: string,
+  item: Pick<WantedItem, "key" | "title" | "state">,
+  latest: ReadRecord,
+  fault: HostFault,
+  note: string,
+): Action {
+  const { record } = latest;
+  const reason = `the pickup stopped on a fault of this host (${fault.why}), and it is not restarted: ${note}`;
+  return {
+    stage: "notify",
+    target: item.key,
+    record: "runtime",
+    reason,
+    evidence: {
+      record: record.id,
+      stage: "pickup",
+      title: item.title,
+      state: item.state,
+      account: record.account,
+      hostFault: fault.kind,
+      ended: endedHow(latest),
+    },
+    cause: "pickup-ended",
+    notice: pickupNotice(
+      slug,
+      `${item.key} host fault, record ${record.id}`,
+      `${item.key} (${item.title}): ${reason}; the host's fault is diagnosed and repaired, then the item is picked up again or left`,
+    ),
+    ...(record.workspace === null ? {} : { workspace: record.workspace.path }),
+    // The pass's ended row in the outcome log already holds how it ended.
+    launched: true,
+  };
 }
 
 /**
@@ -363,37 +464,6 @@ function outsideScope(
   return null;
 }
 
-/** Quiets an item whose latest pickup ended without a result the host could write, while the host's health check fails; `true` when it did. */
-function heldForHost(
-  item: ClaimedItem,
-  input: PickupInput,
-  plan: PickupPlan,
-): boolean {
-  const latestPickup = latestPickupFor(item.key, input.launches);
-  if (
-    input.rerunsHeld === null ||
-    latestPickup === undefined ||
-    !unwrittenResult(latestPickup)
-  )
-    return false;
-  plan.quiet.push({
-    target: item.key,
-    class: "pickup-ended",
-    why: `its pickup ended without a result this host could write; held while ${input.rerunsHeld}`,
-  });
-  return true;
-}
-
-/** Whether the item's pull request or the host's failing health check settles it for this tick. */
-function settledOrHeld(
-  item: ClaimedItem,
-  input: PickupInput,
-  step: LaunchPrStep | null,
-  plan: PickupPlan,
-): boolean {
-  return settledByPr(item.key, step, plan) || heldForHost(item, input, plan);
-}
-
 /** The carriage of an item a driven pull request may carry: none for one already in pr_open, which keeps its existing handling whichever pull request links it. */
 function carriageOf(
   item: ClaimedItem,
@@ -451,11 +521,11 @@ function quietByPr(
   return carriedQuiet(item, carriageOf(item, input, pr), pr, plan);
 }
 
-/** Whether the latest pickup ended on an ordinary question, one a person answers; a pass whose result the host could not write asks nothing yet. */
+/** Whether the latest pickup ended on an ordinary question, one a person answers; a pass stopped by a fault of its host asks nothing. */
 function asksPerson(latest: ReturnType<typeof latestPickupFor>): boolean {
   return (
     latest !== undefined &&
-    !unwrittenResult(latest) &&
+    hostFault(latest) === null &&
     endedQuestion(latest) !== null
   );
 }
@@ -523,22 +593,14 @@ function planIdleClaimed(
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   const latest = latestPickupFor(item.key, input.launches);
   if (quietByPr(item, input, pr, plan, asksPerson(latest))) return;
-  const early = earlyRelaunch(item, latest, pr, input);
-  if (early !== null && relaunched(early, item.key, plan)) return;
+  if (hostFaultStop(item, input, plan, latest, pr)) return;
   const asked =
-    pickup.kind === "ended"
-      ? questionAsked(
-          input,
-          item,
-          pickup.record,
-          early?.kind === "stall" ? early.note : null,
-        )
-      : null;
+    pickup.kind === "ended" ? questionAsked(input, item, pickup.record) : null;
   if (asked !== null) {
     plan.actions.push(asked);
     return;
   }
-  if (settledOrHeld(item, input, pr.step, plan)) return;
+  if (settledByPr(item.key, pr.step, plan)) return;
   if (
     pickup.kind === "ended" &&
     batchQuestionForSibling(pickup.record, item.key)
@@ -549,21 +611,45 @@ function planIdleClaimed(
   planIdle(item, input, plan, { held, pr, latest });
 }
 
-/** The relaunch rule's answer before a question is asked: a pass whose result the host could not write is relaunched in its tree, once the health check passes; a pull request it opened moves its item first. */
-function earlyRelaunch(
+/**
+ * A claimed item whose latest pickup stopped on a fault of its host: held
+ * while the health check fails, then relaunched once in its tree to resume
+ * the pickup, without waiting for `dispatch.stalled_after`; a relaunch that
+ * stops on a host fault again, or a tree that cannot be relaunched, is one
+ * need. `false` when the stop is not a host fault, a pull request it opened
+ * moves its item first, or the relaunch rule is off, so the item is planned
+ * as before.
+ */
+function hostFaultStop(
   item: ClaimedItem,
+  input: PickupInput,
+  plan: PickupPlan,
   latest: ReturnType<typeof latestPickupFor>,
   pr: LaunchPrReading,
-  input: PickupInput,
-): RelaunchStep | null {
-  if (
-    latest === undefined ||
-    !unwrittenResult(latest) ||
-    (input.rerunsHeld ?? null) !== null ||
-    pr.step?.kind === "move"
-  )
-    return null;
-  return relaunchStep(item, latest, input);
+): boolean {
+  if (latest === undefined || pr.step?.kind === "move") return false;
+  const fault = hostFault(latest);
+  if (fault === null) return false;
+  const again = faultedAgain(latest, input.launches, item.key);
+  if (again !== null) {
+    plan.actions.push(
+      hostFaultNeed(input.slug, item, latest, fault, restartedNote(again)),
+    );
+    return true;
+  }
+  const held = hostHeld(fault, input);
+  if (held !== null) {
+    plan.quiet.push({ target: item.key, class: "pickup-ended", why: held });
+    return true;
+  }
+  const step = relaunchStep(item, latest, { ...input, fault });
+  if (step.kind === "stall") {
+    plan.actions.push(
+      hostFaultNeed(input.slug, item, latest, fault, step.note),
+    );
+    return true;
+  }
+  return relaunched(step, item.key, plan);
 }
 
 /** A claimed item with no session and nothing to ask: quiet until `dispatch.stalled_after`, then relaunched in its tree or reported as stalled. */
@@ -710,15 +796,16 @@ function batchQuestionForSibling(latest: ReadRecord, item: string): boolean {
  * The need an item's latest pickup raises when its pass ended on a
  * question without recording `done`: the question, notified once per
  * launch record; `null` otherwise. A pass whose result or exit the host
- * could not write (`unwritten-result.ts`) asks nothing of its own: while the
- * host's health check fails its need stands for it, and once it passes a
- * person is asked to settle or release the item.
+ * could not write (`unwritten-result.ts`) asks nothing of its own: it is a
+ * host fault (`hostFaultStop`), and only where the relaunch rule does not
+ * take it (`dispatch.stalled_relaunch: never`, a batch's or an interactive
+ * pickup) is a person asked to settle or release the item once the host's
+ * health check passes.
  */
 function questionAsked(
   input: Pick<PickupInput, "slug" | "rerunsHeld">,
   item: { key: string; title: string; state: string },
   latest: ReadRecord,
-  treeNote: string | null = null,
 ): Action | null {
   const { slug } = input;
   // What a pass whose result the host could not write asked is the host's fault, never a person's question.
@@ -738,7 +825,7 @@ function questionAsked(
   const framed = unwritten ? undefined : reportFramed(latest.framed, report);
   const { record } = latest;
   const reason = unwritten
-    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again${treeNote === null ? "" : `; it was not relaunched: ${treeNote}`}: ${question}`
+    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again, but the relaunch rule did not take it: ${question}`
     : `the pickup stopped on a question for a person: ${question}`;
   return {
     stage: "notify",

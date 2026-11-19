@@ -163,7 +163,7 @@ function relaunchRecord(
     vendor,
     configDir: slots.account.configDir,
     createdAt: currentIso(),
-    facts: `stalled pickup relaunch of ${source.id} at ${relaunch.head}`,
+    facts: `${relaunch.fault === undefined ? "stalled" : "host-fault"} pickup relaunch of ${source.id} at ${relaunch.head}`,
     workspace: relaunch.workspace,
     replaces: null,
     attempts: [],
@@ -185,11 +185,13 @@ function relaunchRecord(
     "stewardContext",
     "stewardDecision",
     "answered",
+    "relaunchFault",
     "testLockWait",
     "releasedItems",
     "codexPassArgs",
   ] as const)
     delete record[field];
+  if (relaunch.fault !== undefined) record.relaunchFault = relaunch.fault;
   // Admission judged the account by this tick's Codex opt-in, not the source's.
   return { ...record, ...codexLaunchFields(state.codexOptIn) };
 }
@@ -226,7 +228,7 @@ async function relaunchOne(
   return begun
     ? {
         ...started,
-        detail: `the stalled pickup ${source.id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to push and record its work: ${started.detail}`,
+        detail: `the ${relaunch.fault === undefined ? "stalled" : "host-fault"} pickup ${source.id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to ${relaunch.fault === undefined ? "push and record" : "resume"} its work: ${started.detail}`,
       }
     : started;
 }
@@ -252,6 +254,9 @@ async function retryPending(
       record: record.relaunchOf,
       workspace: record.workspace,
       head: record.relaunchHead,
+      ...(record.relaunchFault === undefined
+        ? {}
+        : { fault: record.relaunchFault }),
     };
     const blocked =
       (await changed(state, repo, ctx, item, relaunch, record.id)) ??

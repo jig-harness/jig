@@ -140,10 +140,15 @@ finished.
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
-  follow-up's question (#944). A pickup whose result could not be
-  written takes that relaunch once the health check passes; a person is
-  asked to settle or release its item only where its tree cannot be
-  relaunched.
+  follow-up's question (#944). A pickup stopped by a fault of its host
+  (its result could not be written, its closing report gives the cause
+  `environment`, or its question is about the host's space, inodes or an
+  unwritable directory) is held with the fault named while the health
+  check fails, then relaunched once in its tree to resume the work, or
+  picked up afresh when it never claimed the item (#1623). A restart that
+  stops on a host fault again is one need for a diagnosing session, never
+  a second restart; a person is asked to settle or release the item only
+  where the relaunch rule does not take it.
 - These re-runs are the tick's rule, beside the routine re-runs
   (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
   tick decides them from its own records.
