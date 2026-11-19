@@ -197,6 +197,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       and meaning as `drive-state.ts`'s 13
  *   1  INDETERMINATE    [state] the state could not be read — never reported
  *                       as settled
+ *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit;
+ *                       the report names its reset (`rateLimit.until`)
  *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite: a `gh` that cannot
  *                       report mergeability. Reported through the JSON
  *                       contract like every other state — only argument
@@ -227,7 +229,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  * `<skill-dir>/scripts/lib/status/terminal-states.ts`.
  */
 
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type BaseDrift,
@@ -254,7 +256,6 @@ import {
   gitIdentityEnv,
   readTimeoutEnv,
   run,
-  runInlineProbe,
   tsArgv,
 } from "./lib/proc.ts";
 import { reviewerApp, reviewerPollMaxSeconds } from "./lib/overlay.ts";
@@ -283,12 +284,14 @@ import { reviewerPollSeconds } from "./lib/status/reviewer-poll.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
-import { outOfBand } from "./lib/status/terminal-states.ts";
+import { forgeRateLimited, outOfBand } from "./lib/status/terminal-states.ts";
 import {
   WaitingEvaluationCache,
   waitingChecksMaxAgeMs,
 } from "./lib/status/waiting-cache.ts";
 import { currentMs } from "../../../shared/time.ts";
+import { forgeLimitHeld, limitLine, reportLimit } from "./lib/forge-limit.ts";
+import { boundedRealpath, limitedAtStart } from "./lib/status/pre-report.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -298,39 +301,6 @@ const here = dirname(fileURLToPath(import.meta.url));
  */
 const MIN_INTERVAL = testPacing("DRIVE_PR_STATUS_MIN_INTERVAL", 5, 1);
 const MAX_QUERY_ERRORS = 3;
-
-/**
- * `realpathSync`, bounded — a stalled FUSE/NFS mount can block this SYNCHRONOUS
- * call indefinitely in THIS process, which `GIT_CALL_TIMEOUT` does nothing
- * for. So it runs as a bounded inline probe (`runInlineProbe`, from a neutral
- * directory: the path is made absolute against this process's cwd first).
- */
-const REALPATH_PROBE_SCRIPT = `
-const { realpathSync } = require('node:fs');
-const [p] = process.argv.slice(1);
-try {
-  process.stdout.write(realpathSync(p));
-} catch {}
-process.exit(0);
-`;
-
-async function boundedRealpath(
-  p: string,
-  timeoutSec: number,
-): Promise<string | null> {
-  // `realpathSync('')` resolves to `process.cwd()` instead of throwing (a
-  // Node/Bun quirk, verified empirically) — every caller here treats an empty
-  // string as "nothing to resolve", never as "resolve my cwd", so this must
-  // refuse before ever reaching the probe subprocess.
-  if (p === "") return null;
-  const probe = await runInlineProbe(REALPATH_PROBE_SCRIPT, [resolve(p)], {
-    stderr: "ignore",
-    ...definedFields({ timeoutSec }),
-  });
-  if (probe.code !== 0) return null;
-  const resolved = probe.stdout.trim();
-  return resolved === "" ? null : resolved;
-}
 
 /**
  * Exit codes this gate refuses to report while the replied-thread
@@ -560,6 +530,8 @@ async function main(): Promise<number> {
   ]);
   if (repoRes.code !== 0) {
     if (repoRes.stderr) process.stderr.write(repoRes.stderr);
+    const limit = forgeLimitHeld();
+    if (limit !== null) return limitedAtStart(pr, json, limit);
     fail(2, "could not resolve the repository");
   }
   const [owner, repo, repoUrl] = repoRes.stdout.trim().split(" ");
@@ -603,6 +575,8 @@ async function main(): Promise<number> {
   };
 
   const report: StatusReport = emptyReport();
+  /** The reset a `FORGE_RATE_LIMITED` report names. */
+  let rateLimit: { until: string; reason: string } | null = null;
 
   function countOrNull(n: number | null): number | null {
     return n;
@@ -888,6 +862,7 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
+          ...(rateLimit === null ? {} : { rateLimit }),
           reflectDue: reflectionDue,
           structuralEscalationDue: escalation.due,
           // The claim the last acknowledgment recorded via
@@ -1186,6 +1161,8 @@ async function main(): Promise<number> {
    * sweep instead of re-deriving the same answer from a stale decision.
    */
   async function degrade(reason: string): Promise<number | null> {
+    const limited = await stopOnForgeLimit(reason);
+    if (limited !== null) return limited;
     report.state = "INDETERMINATE";
     report.reason = reason;
     lastReviewerPoll = undefined;
@@ -1210,6 +1187,20 @@ async function main(): Promise<number> {
     );
     await sleep(interval);
     return null;
+  }
+
+  /** End on the forge's spent rate limit, when a read this process sent met one still ahead (a retry could only be refused again); `null` otherwise. `failed` stays in the log. */
+  async function stopOnForgeLimit(failed: string): Promise<number | null> {
+    const limit = forgeLimitHeld();
+    if (limit === null) return null;
+    console.error(
+      `drive-status.ts: ${failed} — read as the forge's rate limit`,
+    );
+    rateLimit = reportLimit(limit);
+    const why = `cannot read PR #${pr}: ${limitLine(limit)}; sending nothing more`;
+    const code = forgeRateLimited(report, why);
+    await emit(code);
+    return code;
   }
 
   let iterations = 0;
@@ -1681,6 +1672,8 @@ async function main(): Promise<number> {
 
     switch (code) {
       case 1: {
+        const limited = await stopOnForgeLimit(report.reason);
+        if (limited !== null) return limited;
         // Never let an unreadable state decay into a settled one. Retry a
         // bounded number of times, then say so — guessing here is how a round
         // gets abandoned on an auth blip.

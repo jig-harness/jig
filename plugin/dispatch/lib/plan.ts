@@ -558,6 +558,13 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   return {
     ...rest,
     class: "needs-person",
+    evidence:
+      pr.evidence.rearm === true
+        ? {
+            ...pr.evidence,
+            rearmFailedRequest: pr.evidence.rearmRequestId ?? null,
+          }
+        : pr.evidence,
     why: `${pr.stale?.cause ?? pr.why}, leaving work in its tree (${tree.actor}), which no open workspace on this host holds: a fresh tree would not carry the work, so a person recovers it${conflictNote(pr.evidence.mergeable)} (see the drive's handoff)`,
   };
 }
@@ -718,7 +725,8 @@ function placedByHold(target: string, hold: DriveHold, plan: Plan): boolean {
     });
     return true;
   }
-  const quiet = QUIET_HOLDS.get(hold.kind);
+  const quiet =
+    hold.kind === "limited" ? hold.class : QUIET_HOLDS.get(hold.kind);
   if (quiet === undefined || !("why" in hold)) return false;
   plan.quiet.push({ target, class: quiet, why: hold.why });
   return true;

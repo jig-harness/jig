@@ -561,7 +561,8 @@
                         "minLength": 1
                       },
                       "reviewerHead": true,
-                      "reviewerApp": true
+                      "reviewerApp": true,
+                      "until": true
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true
@@ -1403,7 +1404,8 @@
                     "minLength": 1
                   },
                   "reviewerHead": true,
-                  "reviewerApp": true
+                  "reviewerApp": true,
+                  "until": true
                 },
                 "required": ["at", "round", "kind", "cause"],
                 "additionalProperties": true

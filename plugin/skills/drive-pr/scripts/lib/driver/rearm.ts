@@ -457,9 +457,15 @@ export async function recordDriveEvent(
     reviewerHead?: string;
     reviewerApp?: string;
   } | null = null,
+  until: string | null = null,
 ): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
-    stdin: JSON.stringify({ kind, cause, ...measured }),
+    stdin: JSON.stringify({
+      kind,
+      cause,
+      ...measured,
+      ...(until === null ? {} : { until }),
+    }),
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   });

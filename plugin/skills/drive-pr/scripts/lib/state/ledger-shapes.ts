@@ -138,6 +138,7 @@ const event = s.union([
     // shape accepts extensions independently of whether they are usable.
     reviewerHead: s.optional(s.unknown()),
     reviewerApp: s.optional(s.unknown()),
+    until: s.optional(s.unknown()),
   }),
 ]);
 const ciAction = s.object({

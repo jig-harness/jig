@@ -92,6 +92,30 @@ describe("drives-read-only.ts --json", () => {
     expect(readFileSync(db).equals(before)).toBe(true);
   });
 
+  it("returns the empty driver lock for a PR with a retained CI hold", async () => {
+    const stateDir = freshStateDir();
+    const state = freshState(4242);
+    state.ciHold = {
+      phase: "held",
+      eventId: "42",
+      actor: "operator",
+      addedAtHead: "a".repeat(40),
+      createdAt: new Date().toISOString(),
+      checkRunWatermark: 1,
+    };
+    writeState(stateDir, "4242", state);
+    const db = dbPathFor(stateDir);
+    closeDatabase(db);
+    const before = readFileSync(db);
+
+    const r = await list(stateDir, ["--lock-only", "--json", "--pr", "4242"]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).rows).toEqual([
+      expect.objectContaining({ key: "4242", state: "empty", doctor: null }),
+    ]);
+    expect(readFileSync(db)).toEqual(before);
+  });
+
   it("diagnoses only the requested PR without reading unrelated retained holds", async () => {
     const { stateDir, db } = drivenClone();
     putLock(stateDir, "pr-drive-4243", { label: "drive.ts" });
