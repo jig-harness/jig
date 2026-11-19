@@ -25,8 +25,9 @@
  * per cause (actions/notify.ts); everything else is still reported.
  *
  * The locks (receipts.ts) are taken in one order: each repository's observe
- * lock first, never waited for (a repository another tick holds is left to
- * it, and said on the receipt), then the act lock (`tick.lock`, the file
+ * lock first, waited for only within `TickOptions.observeLockWaitMs` (the
+ * timer's sweep waits; a repository another tick still holds after it is
+ * left to that tick, and said on the receipt), then the act lock (`tick.lock`, the file
  * every earlier version took for its whole tick), waited for within
  * `ACT_LOCK_WAIT_MS`. A repository's observe lock is kept until its act
  * part is done, so a tick for one repository (a wake-up) reads and acts on
@@ -116,6 +117,7 @@ import {
   deadlineOf,
   type TickContext,
   type TickOptions,
+  tickBound,
 } from "./lib/tick-context.ts";
 import { boundAt, heldTo } from "./lib/sources/bounded.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
@@ -183,6 +185,13 @@ type Held = Exclude<Lock, { heldBy: string }>;
 const ACT_LOCK_WAIT_MS = 120_000;
 /** How often the act phase looks at the act lock again while it waits. */
 const ACT_LOCK_POLL_MS = 250;
+/**
+ * How long the timer's sweep waits for a repository another tick holds (a
+ * woken tick, say) before leaving it to that tick: with wake-ups arriving
+ * every minute or two, a sweep that never waited would skip the repository
+ * on most of its ticks.
+ */
+export const SWEEP_OBSERVE_WAIT_MS = 120_000;
 
 function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
   return machine === null
@@ -306,7 +315,7 @@ async function observeAll(
         locks.delete(path);
       };
       try {
-        const lock = takeObserveLock(path);
+        const lock = await waitForObserveLock(path, context);
         if ("heldBy" in lock) {
           out.busy.set(path, lock.heldBy);
           return;
@@ -361,6 +370,28 @@ async function observeAll(
     }),
   );
   return out;
+}
+
+/**
+ * A repository's observe lock, waited for within the tick's
+ * `observeLockWaitMs` and its deadline, so a repository another tick holds
+ * only briefly is read in this tick; who holds it when the wait ran out.
+ */
+async function waitForObserveLock(
+  path: string,
+  context: TickContext,
+): Promise<Lock> {
+  const deadline = currentMs() + (context.options.observeLockWaitMs ?? 0);
+  for (;;) {
+    const lock = takeObserveLock(path);
+    if (
+      !("heldBy" in lock) ||
+      currentMs() >= deadline ||
+      tickBound(context)?.signal.aborted === true
+    )
+      return lock;
+    await Bun.sleep(ACT_LOCK_POLL_MS);
+  }
 }
 
 /** The act lock, waited for within `waitMs`; who holds it when the wait ran out. */

@@ -108,7 +108,7 @@ flowchart TD
   S0[read this host's launch records as they stand,<br/>start the budget read] --> OBS{{every repository at once, in a pool of six reads}}
   subgraph repo [one repository's observe part, inside its boundary: tick-repo.ts]
     direction TB
-    OL[take its observe lock<br/>held by another tick: leave the repository to it]
+    OL[take its observe lock<br/>held by another tick: the timer's sweep waits up to two minutes,<br/>then leaves the repository to it]
     O1[open: forge target and the dispatch section<br/>from the default branch]
     O2[tracker: wanted pickups, claimed items]
     O3[forge: open PRs, login, a ledger per PR,<br/>merges and their follow-up markers]
@@ -150,14 +150,23 @@ close of a tick takes the same locks before it logs the ended records of
 a repository it did not read, and leaves those of one another tick
 observes to that tick. A lock acquisition that fails is a defect of that
 repository's turn, and the tick awaits every started observation before it
-gives any lock up. A repository another tick holds is left to that tick, named on the
+gives any lock up. The timer's sweep (`--apply` over the machine file's
+repositories) waits for a repository another tick holds, up to two minutes
+within its deadline, looking again every quarter of a second, so a woken
+tick that holds a repository when the sweep starts does not drop it from
+the sweep: with wake-ups arriving every minute or two, a sweep that never
+waited would leave a repository to woken ticks on most of its runs. Any
+other tick waits for no observe lock. A repository another tick still holds
+after the wait is left to that tick, named on the
 receipt (`busy`), and neither read nor acted on. A tick that finds every
 repository it names held ends as one that found the lock held (exit 3),
 which is what a wake-up's waiter retries after its minute. The act lock is
-taken only after every observe lock the tick holds for its reads, and is the only
-lock a tick waits for: up to two minutes, looking again every quarter of a
+taken only after every observe lock the tick holds for its reads, and
+waited for up to two minutes, looking again every quarter of a
 second, after which the tick ends the same way. A tick holding the act lock
-waits for nothing, so no two ticks wait on each other. Its one exception to
+waits for nothing, and a sweep waiting for an observe lock holds no act
+lock, so a wait ends when the holder's act phase does; two sweeps waiting
+for each other's repositories each stop at their bound. Its one exception to
 taking no observe lock is the close, which tries the observe locks of the
 repositories it did not read, without waiting, to log their ended records,
 and leaves any it cannot take to the tick that holds it. A repository's observe lock is kept until every repository's launches
@@ -212,7 +221,7 @@ when it fails. The phase names are the ones a receipt times.
 | Step                         | Module                                                       | Reads                                                                                                                                                                                                                                               | Writes                                                                                                                                                                                                                                                                                                                  | On failure                                                                                                                                                                                                     |
 | ---------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Launch records (`start`)     | `tick.ts`                                                    | `state.sqlite`                                                                                                                                                                                                                                      | none                                                                                                                                                                                                                                                                                                                    | read again by the act phase                                                                                                                                                                                    |
-| Observe lock                 | `receipts.ts`                                                | the repository's lock file                                                                                                                                                                                                                          | the lock, naming this process                                                                                                                                                                                                                                                                                           | held by a live tick: the repository is left to it and named on the receipt; every one held: the tick exits 3                                                                                                   |
+| Observe lock                 | `receipts.ts`                                                | the repository's lock file                                                                                                                                                                                                                          | the lock, naming this process                                                                                                                                                                                                                                                                                           | held by a live tick: the timer's sweep waits up to two minutes; still held, the repository is left to it and named on the receipt; every one held: the tick exits 3                                          |
 | `open`                       | `tick-observe.ts`, `forge-batch.ts`                          | the repository's query: the repository and its default branch, `.config/jig.yaml` on it, and the open pull requests with their labels, heads, mergeability and comments; where it does not read, `gh repo view` and the file on their own           | none                                                                                                                                                                                                                                                                                                                    | the repository is refused and reported; the others go on                                                                                                                                                       |
 | `tracker`                    | `tick-observe.ts`                                            | the items assigned in a dispatch state                                                                                                                                                                                                              | none                                                                                                                                                                                                                                                                                                                    | a failed record; no pickups planned                                                                                                                                                                            |
 | `forge`                      | `tick-forge.ts`                                              | open pull requests (from the repository's query, else their own listing), the login (once per tick), each one's ledger and park answers from its comments, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads                                                                                                                                                                                                                                                                                           | a failed record; drives and follow-ups not planned                                                                                                                                                             |
@@ -2699,8 +2708,12 @@ tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing
 tick, and a tick refused for a held lock tried again after the minute. `send` keeps its pending requests on disk
 (`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
-tick with the installed timer's launcher and environment and exits after
-it. Each request records who asked and why, and the waiter's log names
+tick with the installed timer's command and environment and exits after
+it. A systemd timer's are read as systemd runs them, its drop-ins applied
+(`plugin/runtime/systemd-dropins.ts`), so a drop-in that wraps the command
+to give the tick a credential gives the woken tick the same; a drop-in the
+waiter cannot reproduce starts no tick, says why in the waiter's log, and
+leaves the request to the timer's next tick. Each request records who asked and why, and the waiter's log names
 them beside the tick it ran.
 
 A change on the forge (a review, a comment, a label a person adds, a push,

@@ -8,7 +8,8 @@
  */
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { hostname } from "node:os";
 import { scopedStateDir } from "../../skills/drive-pr/__tests__/scoped-state-dir.ts";
@@ -56,6 +57,12 @@ afterEach(() => {
   current = null;
 });
 
+/** Where a repository's observe lock lives, as `receipts.ts` names it. */
+function observeLock(w: World, path: string): string {
+  const digest = createHash("sha256").update(resolve(path)).digest("hex");
+  return join(dispatchState(w), "observe", `${digest.slice(0, 16)}.lock`);
+}
+
 /** A quota-parked PR #7 whose workspace exists. */
 function fixture(): World {
   const w = world();
@@ -92,8 +99,12 @@ function storedLine(
   }
 }
 
-async function tick(w: World, exit = 0): Promise<TickReceipt> {
-  const r = await w.dispatch(["--apply", "--json"]);
+async function tick(
+  w: World,
+  exit = 0,
+  env: Record<string, string> = {},
+): Promise<TickReceipt> {
+  const r = await w.dispatch(["--apply", "--json"], undefined, env);
   expectSpawnExit(r, exit);
   return JSON.parse(r.stdout) as TickReceipt;
 }
@@ -403,7 +414,8 @@ describe("the line a tick leaves", () => {
     if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
     let second: TickReceipt;
     try {
-      second = await tick(w, 1);
+      // The sweep waits for no repository: the one held stays busy.
+      second = await tick(w, 1, { JIG_DISPATCH_OBSERVE_WAIT_MS: "0" });
     } finally {
       held.release();
     }
@@ -425,6 +437,42 @@ describe("the line a tick leaves", () => {
       { runId: second.runId, busy: [w.repo] },
     ]);
   });
+
+  it("reads, in the same tick, a repository another tick held when the timer's sweep began, once that tick gives it up", async () => {
+    const { w, other } = twoRepositories();
+    const first = await tick(w, 1);
+    // A woken tick for the repository, holding its observe lock.
+    const held = takeObserveLock(w.repo, dispatchState(w));
+    if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
+    let released = false;
+    try {
+      const sweep = w.dispatch(["--apply", "--json"], undefined, {
+        JIG_DISPATCH_OBSERVE_WAIT_MS: "30000",
+      });
+      // The sweep is observing: it holds the other repository's observe lock while it waits for this one.
+      await waitFor("the sweep to observe", () =>
+        existsSync(observeLock(w, other)),
+      );
+      held.release();
+      released = true;
+      const r = await sweep;
+      expectSpawnExit(r, 1);
+      const second = JSON.parse(r.stdout) as TickReceipt;
+      expect(second.busy).toBeUndefined();
+      expect(second.repos.map((repo) => repo.path)).toEqual([w.repo, other]);
+      const stored = storedLine(w);
+      expect(stored?.line.repos.map((repo) => [repo.path, repo.runId])).toEqual(
+        [
+          [w.repo, second.runId],
+          [other, undefined],
+        ],
+      );
+      expect(stored?.line.ticks?.map((t) => t.busy)).toEqual([[], []]);
+      expect(first.runId).not.toBe(second.runId);
+    } finally {
+      if (!released) held.release();
+    }
+  }, 60_000);
 
   it("moves the line's machine part on a timer's tick that finds its only repository held", async () => {
     const w = fixture();
