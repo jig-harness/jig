@@ -99,8 +99,10 @@ async function committedEntries(
   }
   return async ({ path, heading }) => {
     const document = documents.get(path);
-    if (document === undefined)
-      throw new EpicSweepError(`Scope assessment did not load ${path}`);
+    // A path confirmed absent at the fetched integration commit is an absent
+    // entry, not an unreadable document. `cat-file` above separates that
+    // result from failures to establish the path's state.
+    if (document === undefined) return false;
     return containsEntry(document, heading);
   };
 }

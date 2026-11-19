@@ -297,6 +297,17 @@ describe("sweep tracker integration", () => {
     notes.set("#1", [
       proposed,
       accepted,
+      fact(marker, {
+        createdAt: "2026-01-03T00:00:00Z",
+        editedAt: "2026-01-05T00:00:00Z",
+      }),
+    ]);
+    await expect(readSweepReply(tracker, replyUrl)).rejects.toThrow(
+      "Proposal changed after the reply",
+    );
+    notes.set("#1", [
+      proposed,
+      accepted,
       fact(marker, { createdAt: "unreadable" }),
     ]);
     await expect(readSweepReply(tracker, replyUrl)).rejects.toThrow(

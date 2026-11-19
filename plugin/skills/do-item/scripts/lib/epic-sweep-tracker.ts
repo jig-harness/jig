@@ -121,7 +121,15 @@ export async function readSweepReply(
         "invalid",
         `Cannot establish the proposal's time relative to the reply (${comment.url ?? comment.id})`,
       );
-    if (effectiveAt >= acceptedAt) continue;
+    // A proposal that was already visible when the person accepted cannot be
+    // silently ignored when an edit changes it afterwards. A genuinely later
+    // proposal, however, is outside that authorization.
+    if (created < acceptedAt && effectiveAt >= acceptedAt)
+      throw new TrackerRequestError(
+        "invalid",
+        `Proposal changed after the reply (${comment.url ?? comment.id})`,
+      );
+    if (created >= acceptedAt) continue;
     preceding.push({ body: comment.body, effectiveAt, marker });
   }
   preceding.sort((left, right) => left.effectiveAt - right.effectiveAt);

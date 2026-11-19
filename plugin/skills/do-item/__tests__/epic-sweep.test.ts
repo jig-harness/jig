@@ -95,11 +95,15 @@ describe("epic sweep assessments", () => {
     const withSteps = {
       ...manual,
       description:
-        "## Operator Checklist\n\n- [x] Tested\n- [ ] Verify in production\n1. [ ] Confirm the rollout",
+        "## Operator Checklist\n\n- [x] Tested\n-  [ ] Verify in production\n1.  [ ] Confirm the rollout\n1) [ ] Obtain approval",
     };
     expect(
       (await assessEpic(withSteps, [done], scope, absent)).operatorSteps,
-    ).toEqual(["Verify in production", "Confirm the rollout"]);
+    ).toEqual([
+      "Verify in production",
+      "Confirm the rollout",
+      "Obtain approval",
+    ]);
   });
 
   test("binds a reply to the proposal and supports exclusions", async () => {
