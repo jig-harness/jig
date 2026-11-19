@@ -309,13 +309,20 @@ async function observeAll(
   await Promise.all(
     [...new Set(context.options.repos)].map(async (path) => {
       const turn = startTurn(path);
+      // One wait allowance for the repository's turn, shared by both lock scopes.
+      const deadline = currentMs() + (context.options.observeLockWaitMs ?? 0);
       const own: Held[] = [];
       const give = () => {
         for (const lock of own) lock.release();
         locks.delete(path);
       };
       try {
-        const lock = await waitForLock(() => takeObserveLock(path), context);
+        const lock = await waitForLock(
+          () => takeObserveLock(path),
+          context,
+          deadline,
+        );
+        if (lock === null) return;
         if ("heldBy" in lock) {
           out.busy.set(path, lock.heldBy);
           return;
@@ -331,7 +338,11 @@ async function observeAll(
           const repository = await waitForLock(
             () => takeRepositoryLock(slug),
             context,
+            deadline,
+            () => claimed.has(slug),
           );
+          // Another checkout of this repository took the lock while this one waited.
+          if (repository === null) return null;
           if ("heldBy" in repository) return repository.heldBy;
           claimed.add(slug);
           own.push(repository);
@@ -376,17 +387,21 @@ async function observeAll(
 }
 
 /**
- * A repository lock (`take` tries once), waited for within the tick's
- * `observeLockWaitMs` and its deadline, so a repository another tick holds
- * only briefly is read in this tick; who holds it when the wait ran out.
- * Both lock scopes, the checkout's and the forge repository's, wait alike.
+ * A repository lock (`take` tries once), waited for until `deadline` and the
+ * tick's own deadline, so a repository another tick holds only briefly is
+ * read in this tick; who holds it when the wait ran out. Both lock scopes, the
+ * checkout's and the forge repository's, wait alike, sharing one `deadline`.
+ * `null` when `owned` turns true meanwhile: another checkout of this tick took
+ * the lock, which is not reentrant, so waiting on it would only time out.
  */
 async function waitForLock(
   take: () => Lock,
   context: TickContext,
-): Promise<Lock> {
-  const deadline = currentMs() + (context.options.observeLockWaitMs ?? 0);
+  deadline: number,
+  owned?: () => boolean,
+): Promise<Lock | null> {
   for (;;) {
+    if (owned?.() === true) return null;
     const lock = take();
     if (
       !("heldBy" in lock) ||

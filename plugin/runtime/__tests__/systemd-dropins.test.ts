@@ -383,12 +383,18 @@ describe("effectiveJob, what systemd would apply", () => {
     expect(refused("ProtectSystem=strict")).toMatchObject({ ok: false });
   });
 
-  test("lets an empty assignment reset a directive, per the final configuration", () => {
+  test("an empty assignment does not lift a refusal, since a scalar keeps its earlier value", () => {
+    expect(refused("NoNewPrivileges=yes\nNoNewPrivileges=")).toMatchObject({
+      ok: false,
+    });
     expect(refused("EnvironmentFile=/a\nEnvironmentFile=")).toMatchObject({
-      ok: true,
+      ok: false,
     });
     expect(refused("ExecStartPre=")).toMatchObject({ ok: true });
-    expect(refused("EnvironmentFile=/a")).toMatchObject({ ok: false });
+  });
+
+  test("refuses UMask, spelled as systemd spells it", () => {
+    expect(refused("UMask=0077")).toMatchObject({ ok: false });
   });
 
   test("refuses an invalid variable name and an unprintable value", () => {

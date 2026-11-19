@@ -68,7 +68,7 @@ const UNREPRODUCED = new Set([
 
 /** Sandboxing and privilege directives, which systemd applies and a plain child process does not. */
 const RESTRICTION =
-  /^(NoNewPrivileges|Protect[A-Z]\w*|Private[A-Z]\w*|Restrict[A-Z]\w*|Capability\w*|AmbientCapabilities|SystemCall\w*|ReadOnlyPaths|ReadWritePaths|InaccessiblePaths|TemporaryFileSystem|Bind\w*Paths|MemoryDeny\w*|Lock\w*|DynamicUser|SELinux\w*|AppArmor\w*|Smack\w*|Secure\w*|Device\w*|IPAddress\w*|Mount\w*|Namespace\w*|Umask|Nice|CPUSchedul\w*|IOSchedul\w*|OOM\w*|Personality|RemoveIPC|UtmpIdentifier|TTY\w*|StandardInput|StandardOutput|StandardError)$/;
+  /^(NoNewPrivileges|Protect[A-Z]\w*|Private[A-Z]\w*|Restrict[A-Z]\w*|Capability\w*|AmbientCapabilities|SystemCall\w*|ReadOnlyPaths|ReadWritePaths|InaccessiblePaths|TemporaryFileSystem|Bind\w*Paths|MemoryDeny\w*|Lock\w*|DynamicUser|SELinux\w*|AppArmor\w*|Smack\w*|Secure\w*|Device\w*|IPAddress\w*|Mount\w*|Namespace\w*|UMask|Nice|CPUSchedul\w*|IOSchedul\w*|OOM\w*|Personality|RemoveIPC|UtmpIdentifier|TTY\w*|StandardInput|StandardOutput|StandardError)$/;
 
 /** Whether `key` changes the process in a way this reader does not reproduce. */
 function unreproduced(key: string): boolean {
@@ -280,7 +280,7 @@ interface JobState {
   commands: string[][];
   env: Record<string, string>;
   changed: boolean;
-  /** Directives this reader does not reproduce, in force until an empty assignment resets them: key to the drop-in that set it. */
+  /** Directives this reader does not reproduce that a drop-in set to a value, key to the drop-in that set it; a later empty assignment does not lift them. */
   active: Map<string, string>;
 }
 
@@ -318,8 +318,8 @@ function applyAssignment(
 ): string | null {
   const { key, value } = assignment;
   if (unreproduced(key)) {
-    if (value === "") state.active.delete(key);
-    else state.active.set(key, path);
+    // An empty assignment resets only some directives (a boolean ignores it), so none lifts the refusal.
+    if (value !== "") state.active.set(key, path);
   } else if (key === "Environment")
     return applyEnvironment(state, value, specifiers);
   else if (key === "ExecStart") {
