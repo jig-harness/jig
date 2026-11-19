@@ -27,6 +27,7 @@ const COMMENT: CommentLike = {
 const REVIEW = {
   id: 1,
   html_url: COMMENT.url,
+  created_at: "2026-10-30T22:00:00Z",
   updated_at: "2026-10-30T22:00:00Z",
   author_association: "OWNER",
   user: { login: "a-maintainer" },
@@ -107,7 +108,10 @@ describe("a parked thread's kept reading", () => {
     for (const [changed, read] of [
       [[REVIEW, { ...REVIEW, id: 2 }], COMMENT],
       [[{ ...REVIEW, body: "Keep two." }], { ...COMMENT, body: "Keep two." }],
-      [[{ ...REVIEW, updated_at: "2026-10-30T23:00:00Z" }], COMMENT],
+      [
+        [{ ...REVIEW, updated_at: "2026-10-30T23:00:00Z" }],
+        { ...COMMENT, editedAt: "2026-10-30T23:00:00Z" },
+      ],
       [
         [{ ...REVIEW, author_association: "NONE" }],
         { ...COMMENT, association: "NONE" },
@@ -273,11 +277,34 @@ describe("a parked thread's kept reading", () => {
       { ...REVIEW, body: "Keep two retries." },
       { ...REVIEW, author_association: "NONE" },
       { ...REVIEW, user: { login: "someone-else" } },
+      { ...REVIEW, updated_at: "2026-10-30T23:00:00Z" },
     ]) {
       const { out } = deps([lagging]);
       await settled(out);
       expect(await tick(out)).toBeNull();
     }
+  });
+
+  it("is kept for a bot's comment, whichever way the two reads spell its login", async () => {
+    const bot = { ...REVIEW, user: { login: "review-bot[bot]" } };
+    const { out } = deps([bot]);
+    const read = { ...COMMENT, author: "review-bot" };
+    at(0);
+    await tick(out, read);
+    at(LISTING_SETTLE_MS);
+    await tick(out, read);
+    expect(await tick(out, read)).toEqual([read]);
+  });
+
+  it("is kept for a comment edited, its time as the listing shows it", async () => {
+    const edited = { ...REVIEW, updated_at: "2026-10-30T23:00:00Z" };
+    const { out } = deps([edited]);
+    const read = { ...COMMENT, editedAt: "2026-10-30T23:00:00Z" };
+    at(0);
+    await tick(out, read);
+    at(LISTING_SETTLE_MS);
+    await tick(out, read);
+    expect(await tick(out, read)).toEqual([read]);
   });
 
   it("stores a retired thread's removal when only another thread is reused", async () => {

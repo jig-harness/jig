@@ -27,7 +27,9 @@
  * listing changed lately or the backstop is due.
  */
 import { createHash } from "node:crypto";
+import { normalLogin } from "../../../shared/detect/forge.ts";
 import { swallow } from "../../../shared/errors.ts";
+import { parseMs } from "../../../shared/time.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import type { Outcome } from "../../../shared/outcome.ts";
 import { listReviewCommentsKept } from "../../../shared/records/comment-pages.ts";
@@ -140,6 +142,8 @@ interface ListedFacts {
   author: unknown;
   association: unknown;
   body: unknown;
+  /** When the comment was last written, as `answerTime` reads it: its edit, else its creation. */
+  time: number;
 }
 
 /** Each review comment's facts by URL, under the URL of the comment its thread starts with. */
@@ -164,15 +168,23 @@ function threadsIn(
       author: isRecord(c.user) ? c.user.login : null,
       association: c.author_association,
       body: c.body,
+      time: parseMs(String(c.updated_at ?? c.created_at)),
     });
     threads.set(root, comments);
   }
   return threads;
 }
 
+/** Whether two reads name one author: the listing spells a bot's login with `[bot]`, the thread read without. */
+function sameLogin(listed: unknown, read: string): boolean {
+  return (
+    typeof listed === "string" && normalLogin(listed) === normalLogin(read)
+  );
+}
+
 /**
  * Whether the thread read holds every comment the listing shows for it, and
- * no other, with the author, association and body the listing shows for each:
+ * no other, with the author, association, body and time of writing the listing shows for each:
  * the two forge reads can lag one another, and an answer is read from the body.
  */
 function confirms(
@@ -187,9 +199,10 @@ function confirms(
     const listed = expected.get(c.url);
     return (
       listed !== undefined &&
-      listed.author === c.author &&
+      sameLogin(listed.author, c.author) &&
       listed.association === c.association &&
-      listed.body === c.body
+      listed.body === c.body &&
+      listed.time === parseMs(c.editedAt ?? c.at)
     );
   });
 }
