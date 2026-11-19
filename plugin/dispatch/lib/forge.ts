@@ -35,11 +35,8 @@
  * that will answer after a wait from one that refused the read.
  */
 import { isRecord } from "../../shared/guards.ts";
-import {
-  ghCall,
-  ghRepoEnv,
-  ghRepoEnvFor,
-} from "../../skills/drive-pr/scripts/lib/proc.ts";
+import { ghRepoEnvFor } from "../../skills/drive-pr/scripts/lib/gh-repo-env.ts";
+import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { checksFail } from "./automation.ts";

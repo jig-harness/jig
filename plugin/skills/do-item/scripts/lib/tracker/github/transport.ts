@@ -27,8 +27,8 @@
 import {
   type RunResult,
   ghCall,
-  ghRepoEnvFor,
 } from "../../../../../drive-pr/scripts/lib/proc.ts";
+import { ghRepoEnvFor } from "../../../../../drive-pr/scripts/lib/gh-repo-env.ts";
 import { unheldForm } from "../../../../../../shared/trace.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
@@ -74,6 +74,8 @@ export type GitHubTransport = (
   variables: Record<string, unknown>,
   signal?: AbortSignal,
   idempotent?: boolean,
+  /** `owner/name` the request is about, for a call whose variables name none (a mutation by node id). */
+  repository?: string,
 ) => Promise<unknown>;
 
 /**
@@ -444,8 +446,8 @@ export function ghTransport(
   // call, after its retry. An injected runner is the caller's own.
   const unheld = unheldForm(runner);
   const hold = unheld === undefined ? null : GITHUB;
-  return (query, variables, signal, idempotent = false) => {
-    const repository = requestRepository(variables, home);
+  return (query, variables, signal, idempotent = false, target) => {
+    const repository = requestRepository(variables, target ?? home);
     return call(
       (bound) =>
         ghOnce(

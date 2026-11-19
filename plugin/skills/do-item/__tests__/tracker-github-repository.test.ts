@@ -71,21 +71,24 @@ function routingGh(answer: () => unknown): {
   return { runner, seen };
 }
 
-/** A GitHub tracker of `PRIVATE` whose requests go through `gh` as `runner`. */
-function trackerThrough(runner: typeof ghCall, home: string | null) {
+/** A GitHub client of `PRIVATE` whose requests go through `gh` as `runner`. */
+function clientThrough(runner: typeof ghCall, home: string | null) {
   const config = parseTrackerConfig({
     issue_tracker: { adapter: "github", github: { repository: SLUG } },
   });
-  return gitHubTracker(
-    gitHubClient({
-      home: PRIVATE,
-      model: gitHubModel(config.states, config.github),
-      settings: config.github,
-      transport: ghTransport(runner, home),
-      facets: resolveFacets(facetInputs(config), null),
-      credential: "gh's signed-in account",
-    }),
-  );
+  return gitHubClient({
+    home: PRIVATE,
+    model: gitHubModel(config.states, config.github),
+    settings: config.github,
+    transport: ghTransport(runner, home),
+    facets: resolveFacets(facetInputs(config), null),
+    credential: "gh's signed-in account",
+  });
+}
+
+/** A GitHub tracker of `PRIVATE` whose requests go through `gh` as `runner`. */
+function trackerThrough(runner: typeof ghCall, home: string | null) {
+  return gitHubTracker(clientThrough(runner, home));
 }
 
 describe("the repository a GitHub tracker request is about", () => {
@@ -163,6 +166,22 @@ describe("gh api graphql runs of the GitHub tracker", () => {
     }) as unknown as typeof ghCall);
     await transport("query Q { viewer { login } }", {});
     expect(envs).toEqual([undefined]);
+  });
+
+  it("name the repository of the issue a mutation by node id changes", async () => {
+    const { runner, seen } = routingGh(() => ({}));
+    const client = clientThrough(runner, SLUG);
+    const mutation = "mutation M($id: ID!) { m(id: $id) }";
+    await client.mutate(mutation, { id: "I_1" });
+    // The routing stand-in answers NOT_FOUND to any other repository, but the
+    // run still shows which repository it was sent for.
+    await client
+      .mutate(mutation, { id: "I_2" }, undefined, {
+        owner: "acme",
+        name: "app",
+      })
+      .catch(() => undefined);
+    expect(seen.map((s) => s.ghRepo)).toEqual([SLUG, "acme/app"]);
   });
 
   it("read the items assigned to an identity in a repository only the routed account sees", async () => {
