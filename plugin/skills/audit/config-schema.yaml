@@ -182,7 +182,7 @@ fields:
     values: [finish-once, never]
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.280.0
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"
