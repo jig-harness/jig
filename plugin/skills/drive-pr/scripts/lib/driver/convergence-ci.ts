@@ -662,17 +662,25 @@ async function joinTimedOut(
   timedOut: TimedOutJob[];
   finalVerdict: string;
   failing: FailingChecks;
+  staleRequiredFailure: boolean;
 }> {
+  // Classified on its own: the freshness doubt covers the failures the report
+  // names, never a job read from the runner on this head.
   const timedOut =
-    finalVerdict.startsWith("failing:") &&
-    !staleRequiredFailure &&
-    !context.dryRun
+    finalVerdict.startsWith("failing:") && !context.dryRun
       ? await timedOutOnHead(reviewedHead)
       : [];
-  if (timedOut.length === 0) return { timedOut, finalVerdict, failing };
-  const joined = withTimedOut(failing, { timedOut, recovery: "none" });
+  if (timedOut.length === 0)
+    return { timedOut, finalVerdict, failing, staleRequiredFailure };
+  // Failures not yet confirmed fresh leave the set, so the repair names only
+  // the timed-out jobs; the next gate judges the others again.
+  const joined = withTimedOut(staleRequiredFailure ? null : failing, {
+    timedOut,
+    recovery: "none",
+  });
   return {
     timedOut,
+    staleRequiredFailure: false,
     failing: joined,
     finalVerdict: `failing: ${[...(joined.checkRunNames ?? []), ...(joined.statusNames ?? [])].join(", ")}`,
   };
@@ -802,7 +810,7 @@ export async function evaluateFinalCi(
     failing,
   );
   const { timedOut } = joined;
-  ({ finalVerdict, failing } = joined);
+  ({ finalVerdict, failing, staleRequiredFailure } = joined);
   const special = await specialCiDisposition(
     finalVerdict,
     staleRequiredFailure,
