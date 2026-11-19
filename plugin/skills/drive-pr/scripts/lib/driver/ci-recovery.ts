@@ -11,7 +11,10 @@ import { failedCheckForge } from "./ci-retry-forge.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { exportPolicyBase } from "./policy-base.ts";
 import { failedRunsField } from "./failed-runs.ts";
-import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import {
+  recoverCancelledOnHead,
+  timedOutOnHead,
+} from "../cancelled-recovery-live.ts";
 import {
   isTimedOut,
   recoveryExit,
@@ -111,7 +114,18 @@ export async function cancelledRunRecovery(
   repair: RepairTimedOut,
 ): Promise<number | "continue" | null> {
   if (!finalVerdict.startsWith("failing:") || stale) return null;
-  if (!onlyInCancelledRuns(failing)) return null;
+  if (!onlyInCancelledRuns(failing)) {
+    // A job the runner stopped at its time limit beside a failure in a run
+    // that was not cancelled is named to the same repair.
+    if (context.dryRun) return null;
+    const timedOut = await timedOutOnHead(head);
+    return timedOut.length === 0
+      ? null
+      : await repair(
+          withTimedOut(failing, { timedOut, recovery: "none" }),
+          timedOut,
+        );
+  }
   if (context.dryRun) {
     console.error(
       `(dry-run) would recover '${finalVerdict}' as a cancellation: it failed only in cancelled runs, so no CI-repair pass`,

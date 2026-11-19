@@ -41,6 +41,7 @@ import {
   timedOutWords,
 } from "../cancelled-recovery-reads.ts";
 import type { FailedRun, WorkflowRun } from "../status/workflow-runs.ts";
+import type { TimedOutJob } from "../job-timeout.ts";
 
 /** What the watch reads of the pull request: whether it is open, and its head. */
 export interface PullRequestRead {
@@ -94,6 +95,8 @@ export interface ConvergedCiDeps {
     head: string,
     mayMutate: () => Promise<boolean>,
   ): Promise<LiveRecovery>;
+  /** The jobs the runner stopped at their time limit on the head, read only. */
+  timedOutJobs?(head: string): Promise<readonly TimedOutJob[]>;
   /**
    * Whether this drive still owns the pull request. Asked before every
    * change to CI and before a park; unset means owned.
@@ -372,7 +375,18 @@ async function recoverCancelledStep(
   deps: ConvergedCiDeps,
 ): Promise<Step | ConvergedCiVerdict | null> {
   const verdict = read.verdict;
-  if (!onlyCancelled(read)) return null;
+  if (!onlyCancelled(read)) {
+    // A job the runner stopped at its time limit beside a real failure is
+    // still named: the park below says it, not only the failure.
+    const timedOut = (await deps.timedOutJobs?.(head)) ?? [];
+    return timedOut.length === 0
+      ? null
+      : {
+          next: "park",
+          reason: `CI on head ${head} failed after the converged label was written: ${timedOutWords({ timedOut, recovery: "none" })}, beside ${verdict}; a re-run stops at the same limit, so the drive does not re-run it`,
+          labelCaused: false,
+        };
+  }
   const recovery = await deps.recoverCancelled(
     pr,
     head,

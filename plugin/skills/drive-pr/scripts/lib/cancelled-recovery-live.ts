@@ -25,7 +25,7 @@ import {
 } from "./cancelled-recovery-reads.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
 import { readCheckRuns, readPrSnapshot } from "./ci-hold-state.ts";
-import { timedOutJobs } from "./job-timeout.ts";
+import { type TimedOutJob, timedOutJobs } from "./job-timeout.ts";
 import type { WorkflowRun } from "./status/workflow-runs.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
@@ -368,6 +368,23 @@ export async function recoverCancelledOnHead(
   return timedOut.length > 0 && (answer === "none" || answer === "wait")
     ? { timedOut, recovery: answer }
     : answer;
+}
+
+/**
+ * The jobs the runner stopped at their time limit on `head`, read and nothing
+ * else: no claim, re-run or park. For a failure beside them that the
+ * recovery does not take; a read that fails answers none.
+ */
+export async function timedOutOnHead(head: string): Promise<TimedOutJob[]> {
+  const checks = await recoveryRead("check runs", () => readCheckRuns(head));
+  if (!checks.ok) return [];
+  const provenance = await headWorkflowRuns(head);
+  if (!provenance.ok) return [];
+  const runs = provenance.value;
+  const relevant = withoutSuperseded(checks.value, runs).filter((job) =>
+    runs.some((run) => run.checkSuiteId === job.suiteId),
+  );
+  return await timedOutJobs(unreplacedCancelledJobs(relevant, runs), runs);
 }
 
 /**

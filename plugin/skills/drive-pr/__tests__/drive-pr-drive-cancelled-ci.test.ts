@@ -513,7 +513,10 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
     // pass is told is the failed one's, so it does not re-run the wrong run.
     const r = await driveConverged(
       [check("tests", "cancelled", 40), check("tests", "failure", 41)],
-      [workflowRun(40, "cancelled"), workflowRun(41, "failure")],
+      [
+        workflowRun(40, "cancelled"),
+        { ...workflowRun(41, "failure"), workflow_id: 8 },
+      ],
       { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
     );
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
@@ -628,6 +631,19 @@ describe.skipIf(skipLongDriveFixture)(
         `TASK=ci-repair RUNS=[40] DETAIL=[gates, tests; timed out: ${TIMED_OUT} (timeout-minutes)]`,
       );
       expect(r.stderr).not.toContain("once-per-head re-run");
+    });
+
+    it("names it beside a failure in a run that was not cancelled", async () => {
+      const r = await driveTimedOut(
+        [{ ...check("lint", "failure", 41), started: LATER }, timedOutTests],
+        [
+          workflowRun(40, "cancelled"),
+          { ...workflowRun(41, "failure"), workflow_id: 8 },
+        ],
+      );
+      exits(r, CI_REPAIR_SPENT_EXIT);
+      expect(r.stderr).toContain(`timed out: ${TIMED_OUT} (timeout-minutes)`);
+      expect(r.stderr).toMatch(/DETAIL=\[[^\]]*lint[^\]]*tests; timed out/);
     });
   },
 );

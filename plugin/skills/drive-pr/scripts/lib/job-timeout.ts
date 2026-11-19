@@ -7,7 +7,7 @@
  * an absence of evidence to re-run: its re-run runs into the same limit.
  *
  * Its annotations are read only for a cancelled job whose check run carries
- * any, one request per job; a read that fails, or an answer that does not
+ * any, one request per page of up to 100 (at most ten pages); a read that fails, or an answer that does not
  * parse, leaves the job a cancellation. So does a run of its workflow still
  * going on the head (a re-run of it, queued before its jobs exist): the
  * recovery waits for that run as it waits for any replacement.
@@ -82,31 +82,70 @@ export function timeLimitOf(annotations: unknown): number | null {
   return null;
 }
 
-/** A completed check run's annotations do not change: each is read once per process. */
-const readBefore = new Map<number, unknown>();
+/** GitHub lists at most 100 annotations a page; a check run's own limit is far below `MAX_PAGES` of them. */
+const PAGE_SIZE = 100;
+const MAX_PAGES = 10;
+/** Messages are kept only to look for the runner's time-limit phrase. */
+const MESSAGE_CHARS = 500;
+const CACHE_ENTRIES = 64;
 
-/** One page of a check run's annotations, through the forge's bounded call. */
-const readAnnotations: AnnotationsRead = async (checkRunId) => {
-  if (readBefore.has(checkRunId)) return ok(readBefore.get(checkRunId));
-  const result = await ghCall([
-    "api",
-    `repos/{owner}/{repo}/check-runs/${checkRunId}/annotations?per_page=100`,
-  ]);
-  if (result.code !== 0)
-    return failed(
-      forgeReadClass(result),
-      `gh api check-run annotations exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
-    );
-  const decoded = attempt(
-    "malformed",
-    "the annotations answer is not JSON",
-    (): unknown => JSON.parse(result.stdout),
+/**
+ * A completed check run's annotations do not change: each is read once per
+ * process. Only each annotation's message is kept, cut short, and the oldest
+ * entry goes once the cache is full, so a long drive holds a bounded amount.
+ */
+const readBefore = new Map<number, unknown[]>();
+
+function remember(checkRunId: number, annotations: readonly unknown[]): void {
+  if (readBefore.size >= CACHE_ENTRIES) {
+    const oldest = readBefore.keys().next();
+    if (!oldest.done) readBefore.delete(oldest.value);
+  }
+  readBefore.set(
+    checkRunId,
+    annotations.map((entry) => {
+      const message =
+        typeof entry === "object" && entry !== null
+          ? (entry as Record<string, unknown>).message
+          : undefined;
+      return {
+        message:
+          typeof message === "string"
+            ? message.slice(0, MESSAGE_CHARS)
+            : undefined,
+      };
+    }),
   );
-  if (!decoded.ok) return decoded;
-  if (!Array.isArray(decoded.value))
-    return failed("malformed", "the annotations answer is not a list");
-  readBefore.set(checkRunId, decoded.value);
-  return decoded;
+}
+
+/** A check run's annotations, page by page until one is short or the time-limit message is found. */
+const readAnnotations: AnnotationsRead = async (checkRunId) => {
+  const cached = readBefore.get(checkRunId);
+  if (cached !== undefined) return ok(cached);
+  const all: unknown[] = [];
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const result = await ghCall([
+      "api",
+      `repos/{owner}/{repo}/check-runs/${checkRunId}/annotations?per_page=${PAGE_SIZE}&page=${page}`,
+    ]);
+    if (result.code !== 0)
+      return failed(
+        forgeReadClass(result),
+        `gh api check-run annotations exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
+      );
+    const decoded = attempt(
+      "malformed",
+      "the annotations answer is not JSON",
+      (): unknown => JSON.parse(result.stdout),
+    );
+    if (!decoded.ok) return decoded;
+    if (!Array.isArray(decoded.value))
+      return failed("malformed", "the annotations answer is not a list");
+    all.push(...decoded.value);
+    if (decoded.value.length < PAGE_SIZE || timeLimitOf(all) !== null) break;
+  }
+  remember(checkRunId, all);
+  return ok(all);
 };
 
 /** Whether a run of the job's workflow is still going on the head. */

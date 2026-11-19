@@ -468,6 +468,38 @@ function repairDetail(
     : `${listed}; timed out: ${told.map(timeoutWording).join("; ")}`;
 }
 
+/**
+ * Repair a job the runner stopped at its time limit. It is a failing check
+ * like any other, so the advisory policy applies first: a timed-out check the
+ * repository lists as advisory parks for a person's choice instead of being
+ * repaired unasked, and a mixed set keeps only what a repair may act on.
+ */
+async function repairTimedOutCi(
+  finalVerdict: string,
+  context: DriveRoundContext,
+  failing: FailingChecks,
+  head: string,
+  timedOut: readonly TimedOutJob[],
+): Promise<number | "continue"> {
+  const verdict = `failing: ${[...(failing.checkRunNames ?? []), ...(failing.statusNames ?? [])].join(", ")}`;
+  const special = await specialCiDisposition(
+    verdict,
+    false,
+    context,
+    head,
+    failing,
+    (v, ctx, failures) => repairConvergedCi(v, ctx, failures, head, timedOut),
+  );
+  if (typeof special !== "object") return special;
+  return await repairConvergedCi(
+    finalVerdict,
+    context,
+    special.failing,
+    head,
+    timedOut,
+  );
+}
+
 async function repairConvergedCi(
   finalVerdict: string,
   context: DriveRoundContext,
@@ -627,7 +659,7 @@ async function waitForReplacement(
     // A job stopped at its time limit is a failure, repaired as one: waiting
     // for a replacement would wait for a run nothing starts.
     if (isTimedOut(recovery))
-      return await repairConvergedCi(
+      return await repairTimedOutCi(
         finalVerdict,
         context,
         withTimedOut(null, recovery),
@@ -757,13 +789,7 @@ export async function evaluateFinalCi(
     reviewedHead,
     failing,
     (failures, timedOut) =>
-      repairConvergedCi(
-        finalVerdict,
-        context,
-        failures,
-        reviewedHead,
-        timedOut,
-      ),
+      repairTimedOutCi(finalVerdict, context, failures, reviewedHead, timedOut),
   );
   if (cancelled !== null) return cancelled;
   const recovered = await beforeRepairRecovery(

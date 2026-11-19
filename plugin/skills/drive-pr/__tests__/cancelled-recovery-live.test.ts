@@ -93,7 +93,7 @@ function fixture() {
     const phasePath = ${JSON.stringify(join(dir, "phase"))};
     const phase = existsSync(phasePath) ? readFileSync(phasePath, "utf8") : "held";
     // Phases with a cancelled gate the runner stopped at its limit, or (concurrency) did not.
-    const STOPPED = ["timeout", "concurrency", "mixed", "rerunning", "garbled"];
+    const STOPPED = ["timeout", "paged", "concurrency", "mixed", "rerunning", "garbled"];
     const args = process.argv.slice(2);
     const failPath = ${JSON.stringify(join(dir, "fail"))};
     if (existsSync(failPath)) {
@@ -118,7 +118,9 @@ function fixture() {
       const message = phase === "concurrency"
         ? "Canceling since a higher priority waiting request for 'ci-refs/pull/5' exists"
         : "The job running on runner r1 has exceeded the maximum execution time of 30 minutes.";
-      console.log(JSON.stringify(phase === "garbled" ? { message: "Not Found" } : [{ annotation_level: "failure", message }]));
+      const onPage = args.at(-1).includes("page=2") ? 2 : 1;
+      const filler = Array.from({length: 100}, () => ({annotation_level: "notice", message: "step output"}));
+      console.log(JSON.stringify(phase === "garbled" ? { message: "Not Found" } : phase === "paged" ? (onPage === 1 ? filler : [{annotation_level: "failure", message}]) : [{ annotation_level: "failure", message }]));
     } else if (args[0] === "api" && args.at(-1).includes("check-runs")) {
       const stopped = STOPPED.includes(phase);
       const lint = {id: 3, name: "lint", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 3}};
@@ -530,6 +532,21 @@ describe("a cancelled job the runner stopped at its time limit", () => {
     try {
       expect(await asked("wait")).toBe("continue");
       expect(await asked("none")).toBeNull();
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("is found on a later page of annotations", async () => {
+    const f = fixture();
+    try {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "paged");
+      const answer = (await f.run("fenced")) as {
+        timedOut: { name: string }[];
+      };
+      expect(answer.timedOut.map((job) => job.name)).toEqual(["gate"]);
+      expect(f.reruns()).toEqual([]);
     } finally {
       rmSync(f.dir, { recursive: true, force: true });
     }

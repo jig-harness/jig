@@ -414,7 +414,7 @@ runner stops a job that runs past its `timeout-minutes` and the forge
 reports it `cancelled`, with an annotation on its check run saying it
 "exceeded the maximum execution time". Before recovering a cancelled job
 whose check run carries annotations, the drive reads them (one request per
-job, once per driver process) and classes such a job as a
+page, once per driver process) and classes such a job as a
 [timed-out job](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): its run is never re-run, counted
 against the head's re-run or parked `cancelled-ci`, since a re-run stops at
 the same limit, and the other cancelled jobs of that run (a matrix's
@@ -423,10 +423,14 @@ it as for a failing check, from the same budget and stopping with
 `CI_REPAIR_SPENT` once that is spent, and names the job, its limit and its
 run time in its log and in the pass's detail: "job `test` ran 30m 4s and
 stopped at its 30-minute limit (timeout-minutes)". Other cancellations on
-the head still take the recovery above on the same poll; a re-run they
-request does not hold up the repair, and a park or stop they end in ends
-the drive first. Before a pass the drive logs a timed-out job and goes on,
-still polling while a re-run of another cancellation is going. A run of the
+the head still take the recovery above on the same poll; once the drive is
+at the final CI, a re-run they request does not hold up the repair, and a
+park or stop they end in ends the drive first. Before a round's pass the
+drive logs a timed-out job and goes on, but still waits for a re-run of
+another cancellation that is going, and repairs afterwards. A timed-out
+check the repository lists in `ci.advisory_checks` takes the advisory
+decision first, as any failing check does. A timed-out job beside a failure
+in a run that was not cancelled is named to the repair too. A run of the
 timed-out job's workflow still going on the head (a queued re-run of it) is
 waited for, as any replacement is.
 A cancellation the annotations do not attribute to a time limit (none
