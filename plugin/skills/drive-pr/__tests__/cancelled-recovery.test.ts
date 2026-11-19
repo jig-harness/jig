@@ -734,6 +734,7 @@ describe("an extension that stopped part way", () => {
   async function recoverAfterPartialExtension(
     lastRequest: string,
     cancelled: { startedAt: string; updatedAt: string },
+    claimedAt = lastRequest,
   ) {
     const f = fixture(parseMs("2026-01-01T00:11:00Z"));
     const requestedB = {
@@ -747,7 +748,7 @@ describe("an extension that stopped part way", () => {
       extend: async () => true,
       observe: async () => ({
         firstSeen: parseMs("2026-01-01T00:00:00Z"),
-        requestedAt: parseMs(lastRequest),
+        requestedAt: parseMs(claimedAt),
         workflowIds: [20],
         requestedRuns: [requestedB],
       }),
@@ -778,6 +779,7 @@ describe("an extension that stopped part way", () => {
         startedAt: "2026-01-01T00:06:00Z",
         updatedAt: "2026-01-01T00:07:00Z",
       },
+      "2026-01-01T00:05:00Z",
     );
     expect(result).toBe("wait");
     expect(calls).toEqual([3]);
