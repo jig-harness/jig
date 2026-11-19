@@ -216,7 +216,9 @@ export function repositoryQuery(
 ): unknown {
   const { has, json, comments, threads } = files(dir);
   if (has("prs-open-fail") || has("repository-query-fail")) return null;
-  const arg = (key: string) =>
+  // The answer is built from the files as they stand: a test changing them after this line changes what a later read sees, never this one.
+  appendFileSync(`${dir}/repository-answered.log`, "answered\n");
+  const arg =(key: string) =>
     (args.find((a) => a.startsWith(`${key}=`)) ?? "").slice(key.length + 1);
   const first = Number(arg("first"));
   const after = arg("after") === "" ? 0 : Number(arg("after"));

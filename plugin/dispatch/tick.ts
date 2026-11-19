@@ -117,9 +117,13 @@ import {
   deadlineOf,
   type TickContext,
   type TickOptions,
-  tickBound,
 } from "./lib/tick-context.ts";
 import { boundAt, heldTo } from "./lib/sources/bounded.ts";
+import {
+  REPOSITORY_LOCK_PREFIX,
+  releaseRepositoryLocks,
+  waitForLock,
+} from "./lib/tick-locks.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
@@ -181,9 +185,6 @@ export type TickResult =
 
 /** A lock this tick holds. */
 type Held = Exclude<Lock, { heldBy: string }>;
-
-/** The key a repository's lock is kept under in the tick's lock map, beside the checkouts' paths. */
-const REPOSITORY_LOCK_PREFIX = "repository:";
 
 /** How long the act phase waits for another tick's act lock: past it, the tick ends as one that found the lock held. */
 const ACT_LOCK_WAIT_MS = 120_000;
@@ -418,35 +419,6 @@ async function observeAll(
   return out;
 }
 
-/**
- * A repository lock (`take` tries once), waited for until `deadline` and the
- * tick's own deadline, so a repository another tick holds only briefly is
- * read in this tick; who holds it when the wait ran out. Both lock scopes, the
- * checkout's and the forge repository's, wait alike, sharing one `deadline`.
- * `null` when `owned` turns true meanwhile: another checkout of this tick took
- * the lock, which is not reentrant, so waiting on it would only time out.
- */
-async function waitForLock(
-  take: () => Lock,
-  context: TickContext,
-  deadline: number,
-  owned?: () => boolean,
-  waiting?: () => void,
-): Promise<Lock | null> {
-  for (;;) {
-    if (owned?.() === true) return null;
-    const lock = take();
-    if (
-      !("heldBy" in lock) ||
-      currentMs() >= deadline ||
-      tickBound(context)?.signal.aborted === true
-    )
-      return lock;
-    waiting?.();
-    await Bun.sleep(ACT_LOCK_POLL_MS);
-  }
-}
-
 /** The act lock, waited for within `waitMs`; who holds it when the wait ran out. */
 async function waitForActLock(
   waitMs: number,
@@ -610,12 +582,7 @@ async function actAll(
     locks.get(path)?.release();
     locks.delete(path);
   }
-  // The repository locks the checkouts shared go with the launches: the settle phase takes them again.
-  for (const [key, lock] of locks) {
-    if (!key.startsWith(REPOSITORY_LOCK_PREFIX)) continue;
-    lock.release();
-    locks.delete(key);
-  }
+  releaseRepositoryLocks(locks);
   // In the order the repositories were named, not the order their reads finished.
   const busy = [...new Set(order)].flatMap((path) => {
     const heldBy = observe.busy.get(path);

@@ -98,8 +98,6 @@ if (release !== undefined) out(release);
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchRepository"))) {
   const answer = require(${JSON.stringify(QUERY_FAKE)}).repositoryQuery(F, args, process.cwd());
   if (answer === null) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
-  // The answer is built from the files as they stand: a test changing them after this line changes what a later read sees, never this one.
-  fs.appendFileSync(F + "/repository-answered.log", "answered\\n");
   out(answer);
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchComments"))) {
