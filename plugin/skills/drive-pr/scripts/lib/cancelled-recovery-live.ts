@@ -378,6 +378,17 @@ export async function recoverCancelledOnHead(
 export async function timedOutOnHead(head: string): Promise<TimedOutJob[]> {
   const checks = await recoveryRead("check runs", () => readCheckRuns(head));
   if (!checks.ok) return [];
+  // No completed cancelled job with annotations: nothing to classify, so the
+  // workflow runs are not listed.
+  if (
+    !checks.value.some(
+      (job) =>
+        job.status === "completed" &&
+        job.conclusion === "cancelled" &&
+        (job.annotationsCount ?? 0) > 0,
+    )
+  )
+    return [];
   const provenance = await headWorkflowRuns(head);
   if (!provenance.ok) return [];
   const runs = provenance.value;

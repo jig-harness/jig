@@ -2,7 +2,10 @@ import { specialCiDisposition } from "./special-ci.ts";
 /** Release held CI, establish fresh evidence, repair actionable failures and bound witness polling. */
 
 import type { DriveRoundContext } from "./round-context.ts";
-import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import {
+  recoverCancelledOnHead,
+  timedOutOnHead,
+} from "../cancelled-recovery-live.ts";
 import { isTimedOut, recoveryExit } from "../cancelled-recovery-reads.ts";
 import { type TimedOutJob, timeoutWording } from "../job-timeout.ts";
 
@@ -480,7 +483,7 @@ async function repairTimedOutCi(
   failing: FailingChecks,
   head: string,
   timedOut: readonly TimedOutJob[],
-): Promise<number | "continue"> {
+): Promise<number | "continue" | null> {
   const verdict = `failing: ${[...(failing.checkRunNames ?? []), ...(failing.statusNames ?? [])].join(", ")}`;
   const special = await specialCiDisposition(
     verdict,
@@ -491,12 +494,18 @@ async function repairTimedOutCi(
     (v, ctx, failures) => repairConvergedCi(v, ctx, failures, head, timedOut),
   );
   if (typeof special !== "object") return special;
+  // A policy that took every timed-out job out of the set leaves ordinary
+  // recovery of what remains, not a charged repair for them.
+  const kept = timedOut.filter((job) =>
+    special.failing.checkRunNames?.includes(job.name),
+  );
+  if (kept.length === 0) return null;
   return await repairConvergedCi(
     finalVerdict,
     context,
     special.failing,
     head,
-    timedOut,
+    kept,
   );
 }
 
@@ -658,15 +667,16 @@ async function waitForReplacement(
     if (stop !== null) return stop;
     // A job stopped at its time limit is a failure, repaired as one: waiting
     // for a replacement would wait for a run nothing starts.
-    if (isTimedOut(recovery))
-      return await repairTimedOutCi(
+    if (isTimedOut(recovery)) {
+      const repaired = await repairTimedOutCi(
         finalVerdict,
         context,
         withTimedOut(null, recovery),
         reviewedHead,
         recovery.timedOut,
       );
-    if (recovery === "wait") {
+      if (repaired !== null) return repaired;
+    } else if (recovery === "wait") {
       await sleep(FINAL_CI_POLL_SECONDS);
       return "continue";
     }
@@ -754,6 +764,18 @@ export async function evaluateFinalCi(
 ): Promise<number | "continue" | null> {
   const pending = await pendingRetryDisposition(context, reviewedHead);
   if (pending !== null) return pending;
+  // The jobs the runner stopped at their time limit are failures the status
+  // report does not list: they join the set before any policy judges it.
+  const timedOut =
+    finalVerdict.startsWith("failing:") &&
+    !staleRequiredFailure &&
+    !context.dryRun
+      ? await timedOutOnHead(reviewedHead)
+      : [];
+  if (timedOut.length > 0) {
+    failing = withTimedOut(failing, { timedOut, recovery: "none" });
+    finalVerdict = `failing: ${[...(failing.checkRunNames ?? []), ...(failing.statusNames ?? [])].join(", ")}`;
+  }
   const special = await specialCiDisposition(
     finalVerdict,
     staleRequiredFailure,
@@ -761,7 +783,7 @@ export async function evaluateFinalCi(
     reviewedHead,
     failing,
     (verdict, ctx, failures) =>
-      repairConvergedCi(verdict, ctx, failures, reviewedHead),
+      repairConvergedCi(verdict, ctx, failures, reviewedHead, timedOut),
   );
   if (typeof special !== "object") return special;
   ({ finalVerdict, failing } = special);
@@ -788,8 +810,9 @@ export async function evaluateFinalCi(
     context,
     reviewedHead,
     failing,
-    (failures, timedOut) =>
-      repairTimedOutCi(finalVerdict, context, failures, reviewedHead, timedOut),
+    (failures, jobs) =>
+      repairTimedOutCi(finalVerdict, context, failures, reviewedHead, jobs),
+    timedOut,
   );
   if (cancelled !== null) return cancelled;
   const recovered = await beforeRepairRecovery(

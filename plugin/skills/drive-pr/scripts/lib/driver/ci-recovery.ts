@@ -11,10 +11,7 @@ import { failedCheckForge } from "./ci-retry-forge.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { exportPolicyBase } from "./policy-base.ts";
 import { failedRunsField } from "./failed-runs.ts";
-import {
-  recoverCancelledOnHead,
-  timedOutOnHead,
-} from "../cancelled-recovery-live.ts";
+import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
 import {
   isTimedOut,
   recoveryExit,
@@ -66,7 +63,7 @@ export function onlyInCancelledRuns(failing: FailingChecks): boolean {
 export type RepairTimedOut = (
   failing: FailingChecks,
   timedOut: readonly TimedOutJob[],
-) => Promise<number | "continue">;
+) => Promise<number | "continue" | null>;
 
 /**
  * The failing checks with the timed-out jobs added, each a failing check run
@@ -112,18 +109,21 @@ export async function cancelledRunRecovery(
   head: string,
   failing: FailingChecks,
   repair: RepairTimedOut,
+  timedOut: readonly TimedOutJob[] = [],
 ): Promise<number | "continue" | null> {
   if (!finalVerdict.startsWith("failing:") || stale) return null;
   if (!onlyInCancelledRuns(failing)) {
     // A job the runner stopped at its time limit beside a failure in a run
-    // that was not cancelled is named to the same repair.
-    if (context.dryRun) return null;
-    const timedOut = await timedOutOnHead(head);
-    return timedOut.length === 0
+    // that was not cancelled is named to the same repair, when the advisory
+    // policy left it in the set; with none left, ordinary recovery goes on.
+    const kept = timedOut.filter((job) =>
+      failing.checkRunNames?.includes(job.name),
+    );
+    return kept.length === 0 || context.dryRun
       ? null
       : await repair(
-          withTimedOut(failing, { timedOut, recovery: "none" }),
-          timedOut,
+          withTimedOut(failing, { timedOut: kept, recovery: "none" }),
+          kept,
         );
   }
   if (context.dryRun) {

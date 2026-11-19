@@ -85,43 +85,41 @@ export function timeLimitOf(annotations: unknown): number | null {
 /** GitHub lists at most 100 annotations a page; a check run's own limit is far below `MAX_PAGES` of them. */
 const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
-/** Messages are kept only to look for the runner's time-limit phrase. */
-const MESSAGE_CHARS = 500;
-const CACHE_ENTRIES = 64;
+/** Each entry is two numbers, so the bound is far above the jobs one head can have. */
+const CACHE_ENTRIES = 1024;
 
 /**
  * A completed check run's annotations do not change: each is read once per
- * process. Only each annotation's message is kept, cut short, and the oldest
- * entry goes once the cache is full, so a long drive holds a bounded amount.
+ * process. What is kept is the classification of the full response (how many
+ * annotations it held and the time limit it named), so a later read answers
+ * as the first did whatever the messages said, and a long drive holds a
+ * bounded amount.
  */
-const readBefore = new Map<number, unknown[]>();
+const readBefore = new Map<number, { count: number; limitMs: number | null }>();
 
 function remember(checkRunId: number, annotations: readonly unknown[]): void {
   if (readBefore.size >= CACHE_ENTRIES) {
     const oldest = readBefore.keys().next();
     if (!oldest.done) readBefore.delete(oldest.value);
   }
-  readBefore.set(
-    checkRunId,
-    annotations.map((entry) => {
-      const message =
-        typeof entry === "object" && entry !== null
-          ? (entry as Record<string, unknown>).message
-          : undefined;
-      return {
-        message:
-          typeof message === "string"
-            ? message.slice(0, MESSAGE_CHARS)
-            : undefined,
-      };
-    }),
-  );
+  readBefore.set(checkRunId, {
+    count: annotations.length,
+    limitMs: timeLimitOf(annotations),
+  });
+}
+
+/** The annotations a cached classification stands for: `count` of them, the first naming the limit. */
+function recalled(entry: { count: number; limitMs: number | null }): unknown[] {
+  const listed: unknown[] = Array.from({ length: entry.count }, () => ({}));
+  if (entry.limitMs !== null && entry.count > 0)
+    listed[0] = { message: `${PHRASE} ${entry.limitMs / 1000}s` };
+  return listed;
 }
 
 /** A check run's annotations, page by page until one is short or the time-limit message is found. */
 const readAnnotations: AnnotationsRead = async (checkRunId) => {
   const cached = readBefore.get(checkRunId);
-  if (cached !== undefined) return ok(cached);
+  if (cached !== undefined) return ok(recalled(cached));
   const all: unknown[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const result = await ghCall([
