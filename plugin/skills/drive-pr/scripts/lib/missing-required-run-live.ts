@@ -3,17 +3,20 @@
  * the head (`missing-required-run.ts`): read what the head's runs and the
  * repository's workflow files say, and park the drive for a person when the
  * check is missing past the grace. Its forge reads, made only when a required
- * check has no check run on the head, are the head's commit statuses and its
- * workflow runs: one paginated request each, no GraphQL points.
+ * check has no check run on the head, are the head's commit statuses, its
+ * workflow runs and its check runs again: one paginated request each, no
+ * GraphQL points. The check runs are read after the workflow runs, so a job
+ * a finished workflow run created is in them.
  */
 import type { ParkedDecision } from "../../../../shared/decisions/park.ts";
-import { currentMs, parseMs } from "../../../../shared/time.ts";
+import { currentMs } from "../../../../shared/time.ts";
 import { testPacing } from "./cli.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
+import { readCheckRuns } from "./ci-hold-state.ts";
 import {
   describeMissing,
-  headPushedMs,
   MISSING_RUN_GRACE_MS,
+  MISSING_RUN_SETTLE_MS,
   MISSING_RUN_PARK_KEY,
   missingRequiredRuns,
   requiredWithoutAnyRun,
@@ -52,14 +55,6 @@ async function gitText(args: string[]): Promise<string | null> {
     `ci-hold: git ${args[0]} exited ${r.code}: ${r.stderrTail.trim()}`,
   );
   return null;
-}
-
-/** The head commit's committer date, `null` when the tree cannot say. */
-async function committedMs(head: string): Promise<number | null> {
-  const out = await gitText(["show", "-s", "--format=%cI", head]);
-  if (out === null) return null;
-  const ms = parseMs(out.trim());
-  return Number.isFinite(ms) ? ms : null;
 }
 
 /** Whether the commits from `head` to the local HEAD change a workflow file. */
@@ -107,13 +102,17 @@ export function missingRunDecision(
     named.length > NAMED_CHECKS
       ? ` and ${named.length - NAMED_CHECKS} more`
       : "";
+  const subject =
+    named.length === 1
+      ? `the required check ${listed}, which has`
+      : `the required checks ${listed}${more}, which have`;
   const minutes = Math.round(graceMs / 60_000);
   return {
     schema: "parked-decision/v1",
     class: "human-decision",
     call: {
       id: "a",
-      question: `How should the required check ${listed}${more}, which has no run on head ${head.slice(0, 12)}, be made to run?`,
+      question: `How should ${subject} no run on head ${head.slice(0, 12)}, be made to run?`,
       options: [
         {
           id: "repair",
@@ -139,7 +138,7 @@ export function missingRunDecision(
       "Find the workflow named for each check; where it is unknown, find the workflow whose job reports that check.",
       "Answer in a pull-request comment and re-arm the drive.",
     ],
-    alreadyDone: `The drive found that more than ${minutes} minutes passed since the head's push, found no queued or running workflow run that could still report the check, and named its workflow where the repository's workflow files identify it.`,
+    alreadyDone: `The drive found that more than ${minutes} minutes passed since the head's push and that no workflow run on it was queued, running or recently finished that could still report the check, and named its workflow where the repository's workflow files identify it.`,
   };
 }
 
@@ -162,9 +161,16 @@ export async function stopOnMissingRequiredRun(
     commitStatusesFor("{owner}", "{repo}", head),
     readWorkflowRuns("{owner}", "{repo}", head),
   ]);
-  if (statuses === null || !workflowRuns.ok) {
+  const checkRuns = await readCheckRuns(head);
+  if (statuses === null || !workflowRuns.ok || !checkRuns.ok) {
+    const unread =
+      statuses === null
+        ? "its commit statuses cannot be read (the status read keeps no cause)"
+        : !workflowRuns.ok
+          ? `its workflow runs cannot be read (${workflowRuns.failure.code}: ${workflowRuns.failure.reason})`
+          : `its check runs cannot be read again (${checkRuns.ok ? "" : `${checkRuns.failure.code}: ${checkRuns.failure.reason}`})`;
     console.error(
-      `ci-hold: a required check has no run on this head, and its ${statuses === null ? "commit statuses" : "workflow runs"} cannot be read; waiting`,
+      `ci-hold: a required check has no run on this head, and ${unread}; waiting`,
     );
     return "wait";
   }
@@ -174,19 +180,18 @@ export async function stopOnMissingRequiredRun(
     0,
   );
   const verdict = missingRequiredRuns({
-    runs,
+    runs: checkRuns.value,
     statuses,
     workflowRuns: workflowRuns.value,
     required,
     head,
-    pushedMs: headPushedMs(
-      runs,
-      workflowRuns.value,
-      head,
-      await committedMs(head),
-    ),
     nowMs: currentMs(),
     graceMs,
+    settleMs: testPacing(
+      "DRIVE_PR_MISSING_RUN_SETTLE_MS",
+      MISSING_RUN_SETTLE_MS,
+      0,
+    ),
   });
   if (verdict.kind === "none") {
     await clearParkedFinding(pr, MISSING_RUN_PARK_KEY);

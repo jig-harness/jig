@@ -5,8 +5,11 @@
  * head, a workflow that failed to start) never completes, so the hold would
  * wait for a run nobody requested. These predicates tell a check that has a
  * run, queued, running or completed, from one that has none, after a bounded
- * grace from the head's push, and name the workflow when the repository's
- * workflow files identify it.
+ * grace from the head's push and a settle window after its last workflow run
+ * finished (a service that reports a check once the workflows end posts it
+ * then), and name the workflow when the repository's workflow files identify
+ * it. A head nothing has run on yet waits: that is CI not started, which a
+ * person cannot repair in the workflow.
  */
 
 import { swallow } from "../../../../shared/errors.ts";
@@ -17,6 +20,9 @@ import type { WorkflowRun } from "./status/workflow-runs.ts";
 
 /** How long after the head's push a required check may still have no run. */
 export const MISSING_RUN_GRACE_MS = 15 * 60_000;
+
+/** How long after the head's last workflow run finished a required check may still have no run. */
+export const MISSING_RUN_SETTLE_MS = 5 * 60_000;
 
 /** The parked finding a missing required run stops the drive under. */
 export const MISSING_RUN_PARK_KEY = "missing-required-run";
@@ -36,10 +42,9 @@ export interface MissingRunInput {
   workflowRuns: readonly WorkflowRun[];
   required: readonly string[];
   head: string;
-  /** When the head was pushed, as the evidence shows it; `null` when nothing shows it. */
-  pushedMs: number | null;
   nowMs: number;
   graceMs: number;
+  settleMs: number;
 }
 
 /** The required checks with neither a check run nor a commit status on `head`. */
@@ -60,15 +65,13 @@ export function requiredWithoutAnyRun(
 
 /**
  * When the head was pushed, as its runs show it: the earliest workflow run
- * created or check run started on it, since GitHub creates them on the push.
- * With none, `committedMs`, the head commit's committer date, which is no
- * later than its push; `null` when that is unknown too.
+ * created or check run started on it, since GitHub creates them on the push;
+ * `null` when nothing has run on it.
  */
 export function headPushedMs(
   runs: readonly CheckRunLite[],
   workflowRuns: readonly WorkflowRun[],
   head: string,
-  committedMs: number | null,
 ): number | null {
   const moments = [
     ...workflowRuns.map((run) => parseMs(run.createdAt)),
@@ -76,16 +79,26 @@ export function headPushedMs(
       .filter((run) => run.headSha === head && run.startedAt !== null)
       .map((run) => parseMs(run.startedAt as string)),
   ].filter(Number.isFinite);
-  if (moments.length > 0) return Math.min(...moments);
-  return committedMs !== null && Number.isFinite(committedMs)
-    ? committedMs
-    : null;
+  return moments.length > 0 ? Math.min(...moments) : null;
 }
+
+/** When the head's last workflow run finished, as far as its runs show; `null` with none. */
+export function lastWorkflowFinishedMs(
+  workflowRuns: readonly WorkflowRun[],
+): number | null {
+  const moments = workflowRuns
+    .map((run) => parseMs(run.updatedAt ?? run.startedAt))
+    .filter(Number.isFinite);
+  return moments.length > 0 ? Math.max(...moments) : null;
+}
+
+const seconds = (ms: number): number => Math.max(0, Math.round(ms / 1000));
 
 /**
  * Whether the required checks with no run on the head are missing: none of
  * the head's workflow runs is still to finish (a queued or running workflow
- * may yet report the check), and the grace from the head's push is spent.
+ * may yet report the check), the grace from the head's push is spent, and so
+ * is the settle window after its last workflow run finished.
  */
 export function missingRequiredRuns(input: MissingRunInput): MissingRunVerdict {
   const checks = requiredWithoutAnyRun(
@@ -101,18 +114,27 @@ export function missingRequiredRuns(input: MissingRunInput): MissingRunVerdict {
       checks,
       reason: "a workflow run on the head has not finished and may report it",
     };
-  if (input.pushedMs === null)
+  const pushedMs = headPushedMs(input.runs, input.workflowRuns, input.head);
+  if (pushedMs === null)
     return {
       kind: "wait",
       checks,
-      reason: "when the head was pushed cannot be read",
+      reason: "nothing has run on the head yet",
     };
-  const waited = input.nowMs - input.pushedMs;
+  const waited = input.nowMs - pushedMs;
   if (waited < input.graceMs)
     return {
       kind: "wait",
       checks,
-      reason: `the head was pushed ${Math.max(0, Math.round(waited / 1000))}s ago, within the ${Math.round(input.graceMs / 1000)}s grace`,
+      reason: `the head was pushed ${seconds(waited)}s ago, within the ${seconds(input.graceMs)}s grace`,
+    };
+  const finishedMs = lastWorkflowFinishedMs(input.workflowRuns);
+  const settled = finishedMs === null ? null : input.nowMs - finishedMs;
+  if (settled !== null && settled < input.settleMs)
+    return {
+      kind: "wait",
+      checks,
+      reason: `the head's last workflow run finished ${seconds(settled)}s ago, within the ${seconds(input.settleMs)}s a service reporting after it may take`,
     };
   return { kind: "missing", checks };
 }

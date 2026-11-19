@@ -256,13 +256,15 @@ unreadable answer keeps the wait (exit `4`), and a label that is live or mid-rec
 is handled before that read.
 A required check with no run on the head at all (no check run, no commit
 status, and no workflow run on the head still to finish) 15 minutes after
-the head's push (its earliest run, else its commit) never completes: `ensure`
+the head's push (its earliest run) and 5 minutes after its last workflow run
+finished never completes: `ensure`
 parks `missing-required-run` for a person, naming each such check and the
 workflow whose job reports it, or `unknown` when the head's workflow files
 name none or several, prints `missing-required-run` and exits `8`, which
 `finish-round.ts` reports as `HITL_PARKED`. When the commits about to be
 pushed change `.github/workflows/`, it prints `workflow-change` instead and
-the push goes ahead unheld, so the change can start the check.
+the push goes ahead unheld, so the change can start the check. A head
+nothing has run on yet keeps the wait.
 The hold label is a CI cost setting, not a signal to the drive. A live label
 this drive holds no record of (one an earlier run lost track of, a drive that
 died left, or anyone else added) is adopted: `ensure` records its newest

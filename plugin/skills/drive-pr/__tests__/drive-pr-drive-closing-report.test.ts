@@ -209,13 +209,14 @@ describe("drive.ts's closing report", () => {
       [
         `import { recordRoundFinish } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "round-finish.ts"))};`,
         `import { resolveStateDir } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "store.ts"))};`,
+        `import { currentIso } from ${JSON.stringify(join(SCRIPTS, "..", "..", "..", "shared", "time.ts"))};`,
         "const stateDir = process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());",
         'recordRoundFinish(stateDir, "999", {',
         "  round: Number(process.env.DRIVE_PR_ROUND),",
         '  state: "CI_HOLD_WAIT",',
         '  reason: "the CI hold is not ready on the current PR head",',
         '  head: "a".repeat(40),',
-        "  at: new Date().toISOString(),",
+        "  at: currentIso(),",
         "});",
       ].join("\n"),
     );

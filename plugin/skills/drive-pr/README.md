@@ -291,8 +291,9 @@ The dispatcher's `jig:hold` label prevents new launches and re-arms.
 A required check whose workflow never runs on the head (an event or path
 filter excludes it, or the workflow failed to start) would keep the drive
 waiting for a run nobody requested. Once no workflow run on the head is
-still to finish and 15 minutes have passed since the head's push, the drive
-parks `missing-required-run` for you instead, naming each such check and the
+still to finish, 15 minutes have passed since the head's push and 5 since
+its last workflow run finished (a service that posts a check after the
+workflows end has that long), the drive parks `missing-required-run` for you instead, naming each such check and the
 workflow whose job reports it (`unknown` when the head's workflow files name
 none, or several). Repair the workflow's triggers or filters, or start the
 run by hand, answer the park and re-arm. A round whose own commits change

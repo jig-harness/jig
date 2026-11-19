@@ -7,8 +7,9 @@ release: patch
 - drive-pr: a required check whose workflow never runs on the pull request's
   head (an event or path filter excludes it, or the workflow failed to start)
   no longer keeps the drive waiting on `CI_HOLD_WAIT` until it stalls. Once no
-  workflow run on the head is still to finish and 15 minutes have passed since
-  the head's push, `ci-hold.ts ensure` parks `missing-required-run` for a
+  workflow run on the head is still to finish, 15 minutes have passed since
+  the head's push and 5 since its last workflow run finished, `ci-hold.ts
+  ensure` parks `missing-required-run` for a
   person, naming each such check and the workflow whose job reports it
   (`unknown` when the head's workflow files name none, or several), and the
   drive stops `HITL_PARKED`. A check whose run is queued or in progress still

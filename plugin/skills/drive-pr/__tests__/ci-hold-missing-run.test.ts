@@ -31,6 +31,7 @@ const HEAD = "c".repeat(40);
 const REQUIRED = ["build", "tests"];
 const PUSHED = "2026-09-10T10:00:00Z";
 const GRACE = 15 * 60_000;
+const SETTLE = 5 * 60_000;
 
 const run = (
   id: number,
@@ -47,7 +48,11 @@ const run = (
   appId: null,
 });
 
-const workflowRun = (status: string, createdAt = PUSHED): WorkflowRun => ({
+const workflowRun = (
+  status: string,
+  createdAt = PUSHED,
+  updatedAt?: string,
+): WorkflowRun => ({
   id: 1,
   workflowId: 7,
   status,
@@ -56,6 +61,7 @@ const workflowRun = (status: string, createdAt = PUSHED): WorkflowRun => ({
   createdAt,
   startedAt: createdAt,
   attempt: 1,
+  ...(updatedAt === undefined ? {} : { updatedAt }),
 });
 
 const verdictAt = (
@@ -70,9 +76,9 @@ const verdictAt = (
     workflowRuns,
     required: REQUIRED,
     head: HEAD,
-    pushedMs: headPushedMs(runs, workflowRuns, HEAD, null),
     nowMs: parseMs(PUSHED) + minutesAfterPush * 60_000,
     graceMs: GRACE,
+    settleMs: SETTLE,
   });
 
 describe("missingRequiredRuns", () => {
@@ -104,6 +110,17 @@ describe("missingRequiredRuns", () => {
     expect(verdict).toMatchObject({ kind: "wait", checks: ["tests"] });
   });
 
+  it("waits within the settle window after the head's last workflow run finished, for a check a service posts after it", () => {
+    const finishedLate = [
+      workflowRun("completed", PUSHED, "2026-09-10T10:17:00Z"),
+    ];
+    expect(verdictAt(20, [run(1, "build")], finishedLate)).toMatchObject({
+      kind: "wait",
+      checks: ["tests"],
+    });
+    expect(verdictAt(23, [run(1, "build")], finishedLate).kind).toBe("missing");
+  });
+
   it("counts a commit status of the required context as its run", () => {
     expect(
       verdictAt(60, [run(1, "build")], undefined, [
@@ -112,21 +129,22 @@ describe("missingRequiredRuns", () => {
     ).toEqual({ kind: "none" });
   });
 
-  it("waits when nothing shows when the head was pushed", () => {
-    expect(verdictAt(60, [], []).kind).toBe("wait");
+  it("waits while nothing has run on the head at all", () => {
+    expect(verdictAt(60 * 24, [], [])).toMatchObject({
+      kind: "wait",
+      reason: "nothing has run on the head yet",
+    });
   });
 
-  it("dates the push by the head's earliest run, else its commit", () => {
+  it("dates the push by the head's earliest run", () => {
     expect(
       headPushedMs(
         [run(1, "build", "completed", "2026-09-10T10:05:00Z")],
         [workflowRun("completed", "2026-09-10T10:01:00Z")],
         HEAD,
-        0,
       ),
     ).toBe(parseMs("2026-09-10T10:01:00Z"));
-    expect(headPushedMs([], [], HEAD, 1234)).toBe(1234);
-    expect(headPushedMs([], [], HEAD, null)).toBeNull();
+    expect(headPushedMs([], [], HEAD)).toBeNull();
   });
 });
 
@@ -197,7 +215,10 @@ describe("ci-hold.ts ensure on a required check that never ran", () => {
     writeFileSync(join(fixtureDir, "timeline.json"), "[]");
   };
 
-  /** A scratch tree whose head holds the workflow that reports `tests`. */
+  /**
+   * A scratch tree whose head holds the workflow that reports `tests`, and
+   * the head before that commit, `before`.
+   */
   const withWorkflow = () => {
     const repo = scratchWithOrigin();
     const dir = join(repo.dir, ".github", "workflows");
@@ -216,7 +237,7 @@ describe("ci-hold.ts ensure on a required check that never ran", () => {
     expectSpawnExit(git(["add", "."]), 0);
     expectSpawnExit(git(["commit", "-qm", "ci"]), 0);
     const head = git(["rev-parse", "HEAD"]).stdout.toString().trim();
-    return { dir: repo.dir, head };
+    return { dir: repo.dir, head, before: repo.head };
   };
 
   it("parks missing-required-run past the grace, naming the check and its workflow, and pushes nothing", async () => {
@@ -251,6 +272,26 @@ describe("ci-hold.ts ensure on a required check that never ran", () => {
     expectSpawnExit(r, 8);
     const parked = parkedIn(r.stateDir);
     expect(parked[0]?.reason).toContain("'tests' (workflow: unknown)");
+  });
+
+  it("pushes unheld, parking nothing, when the round's own commits change the workflows", async () => {
+    const tree = withWorkflow();
+    const r = await finishRound({
+      // The pull request's head predates the commit that adds the workflow.
+      repo: { dir: tree.dir, head: tree.before },
+      fixture: { threads: [] },
+      seedState: async ({ fixtureDir }) => {
+        withTests(fixtureDir, false);
+        // The push is refused, so the round ends at it: no head to sync.
+        writeFileSync(join(fixtureDir, "push-fails"), "");
+      },
+    });
+    expectSpawnExit(r, 1);
+    expect(r.report.state).toBe("PUSH_FAILED");
+    expect(r.stderr).toContain("pushing unheld so the change can start them");
+    // No hold was taken for the push, so a failed one has none to roll back.
+    expect(r.stderr).not.toContain("CI hold label");
+    expect(parkedIn(r.stateDir)).toEqual([]);
   });
 
   it("still waits with CI_HOLD_WAIT while the required check's run is queued", async () => {

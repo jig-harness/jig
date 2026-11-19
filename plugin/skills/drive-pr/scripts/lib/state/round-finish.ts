@@ -13,6 +13,7 @@ import type { ReportCause } from "../../../../../shared/closing-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { parseMs } from "../../../../../shared/time.ts";
+import type { Report } from "../finish-round-report.ts";
 import { atomicWrite } from "./fsutil.ts";
 
 export const ROUND_FINISH_SCHEMA = "drive-round-finish/v1";
@@ -62,8 +63,13 @@ export function readRoundFinishes(stateDir: string, pr: string): RoundFinish[] {
       value.schema !== ROUND_FINISH_SCHEMA ||
       String(value.pr) !== pr ||
       !Array.isArray(value.finishes)
-    )
+    ) {
+      swallow(
+        new Error(`${file} is not ${ROUND_FINISH_SCHEMA} for PR #${pr}`),
+        "the round finishes do not read",
+      );
       return [];
+    }
     return value.finishes.filter(isRoundFinish);
   } catch (error) {
     swallow(error, "the round finishes do not read");
@@ -114,8 +120,10 @@ export function sharedFinish(
   return { state: last.state, reason: last.reason };
 }
 
-/** The `finish-round.ts` states each cause class takes; any other is `unknown`. */
-const FINISH_CAUSES: Readonly<Record<string, ReportCause>> = {
+/** The cause class each `finish-round.ts` state other than `FINISHED` takes. */
+const FINISH_CAUSES: Readonly<
+  Record<Exclude<Report["state"], "FINISHED">, ReportCause>
+> = {
   CI_HOLD_WAIT: "environment",
   HEAD_NOT_SYNCED: "environment",
   LEASE_HELD: "environment",
@@ -132,7 +140,9 @@ const FINISH_CAUSES: Readonly<Record<string, ReportCause>> = {
   PR_NOT_OPEN: "scope",
 };
 
-/** The closing report's cause for a stall held by `state`. */
+/** The closing report's cause for a stall held by `state`; `unknown` for a state this release does not know. */
 export function finishCause(state: string): ReportCause {
-  return FINISH_CAUSES[state] ?? "unknown";
+  return Object.hasOwn(FINISH_CAUSES, state)
+    ? FINISH_CAUSES[state as keyof typeof FINISH_CAUSES]
+    : "unknown";
 }
