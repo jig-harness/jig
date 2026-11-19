@@ -134,9 +134,18 @@ test("the reader skips oversized sample files", () => {
   const scratch = fixture();
   mkdirSync(scratch.samples, { recursive: true });
   const now = 1_800_000_000_000;
+  const oversized = JSON.stringify({
+    kind: "resource-lock-sample",
+    v: 1,
+    name: "heavy",
+    workspace: `/${"a".repeat(40_000)}`,
+    requestedAt: isoFromMs(now - 1_500),
+    waitMs: 500,
+    holdMs: 1_000,
+  });
   writeFileSync(
     join(scratch.samples, `${now}-${crypto.randomUUID()}.json`),
-    "x".repeat(4097),
+    oversized,
   );
   expect(readResourceLockSamples("heavy", now, scratch.env)).toEqual([]);
 });
@@ -189,4 +198,28 @@ test("future-dated samples do not displace current samples from the bounded read
     }),
   );
   expect(readResourceLockSamples("heavy", now, scratch.env)).toHaveLength(1);
+});
+
+test("recording prunes samples beyond the retained population", () => {
+  const scratch = fixture();
+  const now = 1_800_000_000_000;
+  mkdirSync(scratch.samples, { recursive: true });
+  for (let offset = 1; offset <= 10_000; offset++) {
+    writeFileSync(
+      join(scratch.samples, `${now - offset}-${crypto.randomUUID()}.json`),
+      "{}",
+    );
+  }
+  recordResourceLockSample(
+    {
+      name: "heavy",
+      workspace: scratch.workspace,
+      requestedAt: isoFromMs(now - 1_500),
+      waitMs: 500,
+      holdMs: 1_000,
+    },
+    now,
+    scratch.env,
+  );
+  expect(readdirSync(scratch.samples)).toHaveLength(10_000);
 });

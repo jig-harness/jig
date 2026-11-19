@@ -154,7 +154,7 @@ export function validationHold(
       state,
       "drive",
       state.driveDeadlineMs,
-      state.admittedRuns,
+      state.admittedRuns + own.ownRuns,
     );
     for (const result of [reserved, drive]) {
       if (result !== null && (result.fill === null || result.fill > line))

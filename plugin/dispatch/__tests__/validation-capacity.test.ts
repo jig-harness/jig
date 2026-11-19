@@ -107,11 +107,11 @@ describe("validation forecast", () => {
       ahead: 2,
       capacity: 4,
       ownRuns: 1,
-      required: 2,
+      required: 3,
       atLock: 2,
       toArrive: 2,
       waitWindowMs: HOUR,
-      fill: 0.5,
+      fill: 0.75,
     });
   });
 
@@ -131,6 +131,26 @@ describe("validation forecast", () => {
     expect(forecast(90 * MINUTE).fill).toBe(0);
     expect(forecast(HOUR).waitWindowMs).toBe(0);
     expect(forecast(HOUR).fill).toBeNull();
+  });
+
+  test("charges only candidate runs that cannot acquire an idle slot immediately", () => {
+    const measured = measureValidation([], []);
+    const forecast = forecastValidation(
+      {
+        ...measured,
+        concurrency: 1,
+        kinds: {
+          ...measured.kinds,
+          pickup: { runsPerPass: 2, timeToValidationMs: HOUR },
+        },
+      },
+      "pickup",
+      { atLock: 0, toArrive: 0 },
+      HOUR,
+      3 * HOUR,
+    );
+    expect(forecast.required).toBe(1);
+    expect(forecast.fill).toBe(0.25);
   });
 
   test("counts every active run attributed to a pass before forecasting arrivals", () => {

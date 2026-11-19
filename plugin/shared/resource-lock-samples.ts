@@ -46,15 +46,18 @@ function sampleEntries(dir: string): string[] {
   }
 }
 
-function recentEntries(dir: string, nowMs: number): string[] {
+function retainedEntries(dir: string, nowMs: number): string[] {
   return sampleEntries(dir)
     .filter((entry) => {
       if (!SAMPLE_FILE.test(entry)) return false;
       const releasedAt = releaseTime(entry);
       return releasedAt >= nowMs - KEEP_MS && releasedAt <= nowMs;
     })
-    .sort((left, right) => releaseTime(right) - releaseTime(left))
-    .slice(0, MAX_SAMPLES);
+    .sort((left, right) => releaseTime(right) - releaseTime(left));
+}
+
+function recentEntries(dir: string, nowMs: number): string[] {
+  return retainedEntries(dir, nowMs).slice(0, MAX_SAMPLES);
 }
 
 function releaseTime(entry: string): number {
@@ -89,7 +92,7 @@ export function recordResourceLockSample(
       )
         rmSync(join(dir, entry), { force: true });
     }
-    const retained = recentEntries(dir, releasedAt);
+    const retained = retainedEntries(dir, releasedAt);
     for (const entry of retained.slice(MAX_SAMPLES))
       rmSync(join(dir, entry), { force: true });
   } catch (error) {

@@ -248,7 +248,14 @@ export function forecastValidation(
   const capacity = (concurrency * waitWindowMs) / runMs;
   // A lock timeout bounds how long a pass may wait to acquire a slot, not how
   // long its own run may occupy that slot after immediate admission.
-  const required = ahead;
+  // One candidate run can use each currently idle slot immediately. Its
+  // remaining runs must queue behind the work already at the lock, so they
+  // consume the same waiting capacity as work from earlier passes.
+  const immediatelyAdmitted = Math.min(
+    ownRuns,
+    Math.max(0, concurrency - atLock),
+  );
+  const required = ahead + ownRuns - immediatelyAdmitted;
   return {
     ahead,
     capacity,
