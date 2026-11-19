@@ -4,7 +4,12 @@ import type {
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { fixture } from "../fixtures.ts";
-import { queueGroups } from "./queue-view.ts";
+import {
+  queueGroups,
+  queueSections,
+  reasonCounts,
+  refusalReason,
+} from "./queue-view.ts";
 import { ROLES } from "./status.ts";
 import type { Clock } from "./view.ts";
 
@@ -59,7 +64,7 @@ describe("the queue", () => {
 
   it("is ordered by what will happen, with a heading for each", () => {
     expect(queueGroups(lineOf("queue"), CLOCK).map((g) => g.title)).toEqual([
-      "Starts when a tick finds a free slot",
+      "Starts next",
       "Held behind a serialized leader",
       "Reported, not started",
       "Will not start",
@@ -69,7 +74,7 @@ describe("the queue", () => {
   it("names an available account without predicting the weighted choice", () => {
     const [starts] = queueGroups(lineOf("queue"), CLOCK);
     expect(starts?.note).toBe(
-      "Available account: codex-b. Launch weights determine the next choice.",
+      "When a tick finds a free slot. Available account: codex-b. Launch weights determine the next choice.",
     );
   });
 
@@ -197,5 +202,160 @@ describe("the queue", () => {
 
   it("has no groups when nothing is queued", () => {
     expect(queueGroups(lineOf("quiet"), CLOCK)).toEqual([]);
+  });
+
+  it("says whether a target is a pull request or an item", () => {
+    const items = queueGroups(lineOf("queue"), CLOCK).flatMap((g) => g.items);
+    expect(items.find((i) => i.target === "PR #477")?.kind).toBe(
+      "pull request",
+    );
+    expect(items.find((i) => i.target === "WEB-412")?.kind).toBe("item");
+  });
+});
+
+/** A line whose queue is these targets, in this order. */
+function groupsOf(queue: LineQueued[]) {
+  return queueGroups({ ...lineOf("quiet"), queue }, CLOCK);
+}
+
+function refused(n: number, why: string, repo = "example-org/web"): LineQueued {
+  return {
+    ...ITEM,
+    source: "assigned",
+    group: "never",
+    repo,
+    target: `ENG-${n}`,
+    pr: null,
+    item: `ENG-${n}`,
+    url: null,
+    why,
+  };
+}
+
+const CANNOT_WRITE = (n: number) =>
+  `assigned to factory by contractor-${n}, who cannot write to ENG; only a person with write access starts a pickup`;
+
+describe("the queue's sections", () => {
+  const targets = (sections: ReturnType<typeof queueSections>) =>
+    sections.flatMap((s) => s.items.map((i) => i.target));
+
+  it("leads with what starts next, which alone never folds", () => {
+    const sections = queueSections(
+      queueGroups(lineOf("queue"), CLOCK),
+      "group",
+    );
+    expect(sections.map((s) => [s.value, s.fixed])).toEqual([
+      ["starts", true],
+      ["held", false],
+      ["reported", false],
+      ["never", false],
+    ]);
+  });
+
+  it("starts the refused group folded only above five cards", () => {
+    const of = (count: number) =>
+      queueSections(
+        groupsOf(
+          Array.from({ length: count }, (_, n) => refused(n, CANNOT_WRITE(n))),
+        ),
+        "group",
+      )[0]?.startsFolded;
+    expect(of(5)).toBe(false);
+    expect(of(6)).toBe(true);
+  });
+
+  it("says why the refused group will not start, in counts", () => {
+    const [never] = queueSections(
+      groupsOf([
+        refused(1, CANNOT_WRITE(1)),
+        refused(2, "who assigned it cannot be read again: timed out"),
+        refused(3, CANNOT_WRITE(3)),
+      ]),
+      "group",
+    );
+    expect(never?.reasons).toBe(
+      "2 assigned by someone who cannot write, 1 who assigned it cannot be read again",
+    );
+  });
+
+  it("groups by repository, each in the dispatcher's order, and folds none shut", () => {
+    const groups = groupsOf([
+      { ...ITEM, repo: "example-org/web", target: "PR #1" },
+      { ...ITEM, repo: "example-org/api", target: "PR #2" },
+      refused(3, CANNOT_WRITE(3), "example-org/web"),
+      refused(4, CANNOT_WRITE(4), "example-org/api"),
+    ]);
+    const sections = queueSections(groups, "repo");
+    expect(sections.map((s) => [s.title, targets([s])])).toEqual([
+      ["example-org/api", ["PR #2", "ENG-4"]],
+      ["example-org/web", ["PR #1", "ENG-3"]],
+    ]);
+    expect(sections.every((s) => !s.fixed && !s.startsFolded)).toBe(true);
+  });
+
+  it("groups by source in the vocabulary's order", () => {
+    const sections = queueSections(
+      groupsOf([
+        refused(1, CANNOT_WRITE(1)),
+        { ...ITEM, source: "held", group: "held", target: "PR #2" },
+        { ...ITEM, target: "PR #3" },
+      ]),
+      "source",
+    );
+    expect(sections.map((s) => s.value)).toEqual([
+      "re-armable",
+      "held",
+      "assigned",
+    ]);
+  });
+
+  it("lists every target once, in the dispatcher's order, with no grouping", () => {
+    const groups = queueGroups(lineOf("queue"), CLOCK);
+    const sections = queueSections(groups, "none");
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.title).toBeNull();
+    expect(targets(sections)).toEqual(
+      groups.flatMap((g) => g.items.map((i) => i.target)),
+    );
+  });
+
+  it("gives back the same order after any other grouping", () => {
+    const groups = queueGroups(lineOf("queue"), CLOCK);
+    const before = targets(queueSections(groups, "group"));
+    queueSections(groups, "repo");
+    queueSections(groups, "source");
+    expect(targets(queueSections(groups, "group"))).toEqual(before);
+  });
+});
+
+describe("why a target will not start", () => {
+  it("names the kind of refusal, not the person", () => {
+    expect(refusalReason(refused(1, CANNOT_WRITE(1)))).toBe(
+      "assigned by someone who cannot write",
+    );
+    expect(
+      refusalReason(
+        refused(
+          2,
+          "moved to Ready by contractor-c, who cannot write to ENG; only an item a person with write access made ready is picked up from the pool",
+        ),
+      ),
+    ).toBe("moved by someone who cannot write");
+  });
+
+  it("reads a refused launch's own detail", () => {
+    expect(
+      refusalReason({
+        ...refused(1, "assigned by maintainer-a"),
+        launch: { outcome: "refused", detail: "identity check: no account" },
+      }),
+    ).toBe("identity check");
+  });
+
+  it("counts the commonest first and gathers what is left", () => {
+    expect(reasonCounts(["a", "b", "b", "c", "d", "b", "a"])).toBe(
+      "3 b, 2 a, 2 for other reasons",
+    );
+    expect(reasonCounts([])).toBe("");
   });
 });

@@ -11,7 +11,7 @@ import {
   watchConvergedCi,
 } from "../scripts/lib/driver/converged-ci.ts";
 import type { Ownership } from "../scripts/lib/driver/converged-ci.ts";
-import type { Recovery } from "../scripts/lib/cancelled-recovery.ts";
+import type { LiveRecovery } from "../scripts/lib/cancelled-recovery-reads.ts";
 import { convergedStopExit } from "../scripts/lib/driver/converged-ci-live.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import type { WorkflowRun } from "../scripts/lib/status/workflow-runs.ts";
@@ -57,7 +57,7 @@ const GREEN: CiRead = {
 interface Script {
   ci: Array<CiRead | null>;
   runs?: Array<WorkflowRun[] | null>;
-  recovery?: Recovery[];
+  recovery?: LiveRecovery[];
   head?: string;
   open?: boolean;
   writes?: number[] | null;
@@ -173,6 +173,23 @@ describe("the converged CI watch", () => {
     expect(verdict.kind).toBe("stands");
     expect(f.recovered).toEqual([HEAD, HEAD]);
     expect(f.asked).toEqual([]);
+  });
+
+  it("keeps watching when a cancelled-run recovery read kept failing", async () => {
+    const cancelled: CiRead = {
+      verdict: "cancelled: tests",
+      failingRuns: [],
+      failingStatusNames: [],
+    };
+    const f = fake({
+      ci: [cancelled, GREEN],
+      recovery: [
+        { read: "workflow runs", class: "server-fault", reason: "HTTP 502" },
+      ],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.recovered).toEqual([HEAD]);
   });
 
   it("ends parked when the cancelled-run recovery parks cancelled-ci", async () => {

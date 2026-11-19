@@ -2660,9 +2660,8 @@ session runs. Its values are split as configuration always is:
 - **A repository's**, in a `dispatch` section of its `.config/jig.yaml`,
   documented in [CONFIGURATION.md](../plugin/CONFIGURATION.md): the factory
   identity per tracker (`identity`), the states that mean "ready to pick
-  up" (`states`), the follow-up command (`followup_command`, `/followup` in
-  Jig; elsewhere the plugin's `/jig:followup` unless the repository names
-  its own),
+  up" (`states`), the follow-up command (`followup_command`, the plugin's
+  `/jig:followup` unless the repository names its own),
   `stalled_after`, `blocked_after`, the expectations
   `drive_rounds_flat`, `pickup_within` and `followup_within`, and the
   dispatch labels (`labels`: `enabled`, `prefix`, `only_labeled`).
@@ -2775,7 +2774,7 @@ One pull request each, in this order; each is usable on its own.
    outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a
    person runs it by hand and marks that marker done when it succeeds
-   (Jig's `/followup` first); the notifications above
+   (Jig's own first); the notifications above
    through `notify`. The park's
    notification carries its framed decision, or its stored reason
    when it has no decision record, and

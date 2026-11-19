@@ -11,6 +11,8 @@
  */
 
 import { swallow } from "../../../../../shared/errors.ts";
+import { failed, ok, type Outcome } from "../../../../../shared/outcome.ts";
+import { forgeReadClass, type ForgeReadCode } from "../forge-read.ts";
 import { type PagedRead, slurpPages } from "../paged-read.ts";
 import { parseMs } from "../../../../../shared/time.ts";
 
@@ -104,39 +106,58 @@ function parseWorkflowRun(raw: unknown): WorkflowRun | null {
 }
 
 /**
- * Every workflow run on `sha`, or `null` when they cannot be read. `fresh`
- * unless the caller only observes (`paged-read.ts`): a CI-green proof, a hold
- * release and a re-run of cancelled jobs act on what GitHub says now.
+ * Every workflow run on `sha`, or how the read failed. `fresh` unless the
+ * caller only observes (`paged-read.ts`): a CI-green proof, a hold release and
+ * a re-run of cancelled jobs act on what GitHub says now.
  */
+export async function readWorkflowRuns(
+  owner: string,
+  repo: string,
+  sha: string,
+  read: PagedRead = "fresh",
+): Promise<Outcome<WorkflowRun[], ForgeReadCode>> {
+  const r = await slurpPages(
+    `repos/${owner}/${repo}/actions/runs?head_sha=${sha}&per_page=100`,
+    read,
+  );
+  if (r.code !== 0)
+    return failed(
+      forgeReadClass(r),
+      `gh api actions/runs exited ${r.code}: ${(r.stderrTail || r.stderr).trim().slice(-500)}`,
+    );
+  const malformed = failed(
+    "malformed",
+    "the workflow runs have an invalid shape",
+  );
+  try {
+    const pages: unknown = JSON.parse(r.stdout);
+    if (!Array.isArray(pages)) return malformed;
+    const runs: WorkflowRun[] = [];
+    for (const page of pages) {
+      const list = (page as { workflow_runs?: unknown } | null)?.workflow_runs;
+      if (!Array.isArray(list)) return malformed;
+      for (const raw of list) {
+        const run = parseWorkflowRun(raw);
+        if (run === null) return malformed;
+        runs.push(run);
+      }
+    }
+    return ok(runs);
+  } catch (err) {
+    swallow(err, "the workflow runs are not JSON: read as unreadable");
+    return failed("malformed", "the workflow runs are not JSON");
+  }
+}
+
+/** Every workflow run on `sha`, or `null` when they cannot be read. */
 export async function workflowRunsFor(
   owner: string,
   repo: string,
   sha: string,
   read: PagedRead = "fresh",
 ): Promise<WorkflowRun[] | null> {
-  const r = await slurpPages(
-    `repos/${owner}/${repo}/actions/runs?head_sha=${sha}&per_page=100`,
-    read,
-  );
-  if (r.code !== 0) return null;
-  try {
-    const pages: unknown = JSON.parse(r.stdout);
-    if (!Array.isArray(pages)) return null;
-    const runs: WorkflowRun[] = [];
-    for (const page of pages) {
-      const list = (page as { workflow_runs?: unknown } | null)?.workflow_runs;
-      if (!Array.isArray(list)) return null;
-      for (const raw of list) {
-        const run = parseWorkflowRun(raw);
-        if (run === null) return null;
-        runs.push(run);
-      }
-    }
-    return runs;
-  } catch (err) {
-    swallow(err, "the workflow runs are not JSON: read as unreadable");
-    return null;
-  }
+  const runs = await readWorkflowRuns(owner, repo, sha, read);
+  return runs.ok ? runs.value : null;
 }
 
 /**
