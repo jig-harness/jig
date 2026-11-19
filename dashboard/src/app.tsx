@@ -266,6 +266,17 @@ function hrefOf(view: ViewId, filter: LogFilter, theme: Theme): string {
   );
 }
 
+function SteeringPalette({ steer }: { steer: ReturnType<typeof useSteering> }) {
+  if (steer.entries === null) return null;
+  return (
+    <Palette
+      entries={steer.entries}
+      onRun={steer.runPalette}
+      onClose={steer.closePalette}
+    />
+  );
+}
+
 function Page({
   token,
   theme,
@@ -368,13 +379,7 @@ function Page({
           <footer className="foot">
             <Colophon view={view} token={token} />
           </footer>
-          {steer.entries === null ? null : (
-            <Palette
-              entries={steer.entries}
-              onRun={steer.runPalette}
-              onClose={steer.closePalette}
-            />
-          )}
+          <SteeringPalette steer={steer} />
           <KeyBar />
           <KeyToast />
           <ClipParts />
