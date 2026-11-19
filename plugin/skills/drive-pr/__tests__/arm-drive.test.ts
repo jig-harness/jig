@@ -628,7 +628,7 @@ describe("arm-drive.ts", () => {
       { CODEX_HOME: "/unused/codex" },
     );
     expectSpawnExit(run, 0);
-    expect(report(run)).toMatchObject({ model: "gpt-6.1-sol" });
+    expect(report(run)).toMatchObject({ model: "gpt-6.2-sol" });
   });
 
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {
