@@ -488,14 +488,13 @@ async function main(): Promise<number> {
       ]),
       { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
     );
-    return result.code;
+    // A check-runs listing cut short proves nothing: to an announcement it is
+    // stale evidence like any other.
+    return result.code === DRIVE_EXIT.CHECK_RUNS_UNREADABLE ? 4 : result.code;
   }
   const finalCi = await finalCiProof();
   if (finalCi !== 0) {
-    // A check-runs listing cut short proves nothing either: the same head's
-    // announcement cannot stand on it.
-    const stale = finalCi === 4 || finalCi === DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
-    if (!dryRun && stale) {
+    if (!dryRun && finalCi === 4) {
       const standing = await announcements(pr);
       if (standing === null) {
         fail(
@@ -514,7 +513,7 @@ async function main(): Promise<number> {
       refuseUnreadable(standing, "as the final CI proof is stale");
     }
     fail(
-      finalCi === 5 ? 5 : stale ? 4 : 1,
+      finalCi === 5 ? 5 : finalCi === 4 ? 4 : 1,
       `announce-merge-ready: final CI/${holdName()} evidence is stale or unreadable (exit ${finalCi})`,
     );
   }
