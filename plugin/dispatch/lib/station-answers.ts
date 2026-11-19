@@ -54,6 +54,7 @@ import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-fr
 import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { type StationContext, stationDecision } from "./line-station.ts";
+import { isTakenNeed, owedTags, takenDecision } from "./release-groups.ts";
 import type { TrackerConversation } from "./tracker-answers.ts";
 import {
   claimedAt,
@@ -169,6 +170,15 @@ function ownAnswerOf(
     : { ...answer, stale: true };
 }
 
+/** A release's decision changes as versions are tagged, so an answer to an earlier list does not stand in the way of one to this list. */
+function currentReleaseAnswers(
+  decision: LineDecision,
+  answers: PendingAnswer[],
+): PendingAnswer[] {
+  const current = answers.filter((a) => a.stale !== true);
+  return decision.key === "release" && current.length > 0 ? current : answers;
+}
+
 /** The answers `comments` and the dispatcher's `own` give `decision`: each person's latest. */
 function readStationAnswers(
   decision: LineDecision,
@@ -181,7 +191,7 @@ function readStationAnswers(
       ? []
       : own.comments.map((c) => ownAnswerOf(decision, c, own.name))),
   ].filter((a) => a !== null);
-  const answers = latestAnswers(parsed);
+  const answers = currentReleaseAnswers(decision, latestAnswers(parsed));
   if (answers.length === 0) return { answers };
   if (answers.some((a) => a.stale === true)) return { answers, state: "stale" };
   if (disputedAnswers(answers)) return { answers, state: "disputed" };
@@ -236,6 +246,8 @@ export interface StationPorts {
     marker: number,
   ): Promise<Outcome<string, "refused">>;
   rerunReleaseGates?(tag: string): Promise<Outcome<string, "refused">>;
+  /** Record that a person took these releases' next step under `decision`; `null` returns them to the line. */
+  takeReleases?(tags: readonly string[], decision: string | null): void;
   doneFollowup(pr: number, marker: number): Promise<Outcome<string, "refused">>;
   /** `record` is the ended pickup's launch record the need names, released with the claim. */
   releasePickup(
@@ -292,6 +304,24 @@ function followupStep(
 
 const notHere = (why: string) => Promise.resolve(refused(why));
 
+/** Re-run every release's gates, one refusal leaving the others to go on, and say how each went. */
+async function rerunEach(
+  tags: readonly string[],
+  rerun: (tag: string) => Promise<Outcome<string, "refused">>,
+): Promise<Outcome<string, "refused">> {
+  const lines: string[] = [];
+  let refusals = 0;
+  for (const tag of tags) {
+    const outcome = await rerun(tag);
+    if (!outcome.ok) refusals += 1;
+    lines.push(
+      `${tag}: ${outcome.ok ? outcome.value : outcome.failure.reason}`,
+    );
+  }
+  const detail = lines.join("; ");
+  return refusals === 0 ? ok(detail) : refused(detail);
+}
+
 /** Each dispatcher option's step on a need, by option id. */
 const DISPATCHER_STEPS: Readonly<
   Record<
@@ -305,10 +335,12 @@ const DISPATCHER_STEPS: Readonly<
 > = {
   hold: () => Promise.resolve({ ok: true, value: "left to a person" }),
   gates: (action, ports) => {
-    const tag = evidenceText(action, "tag");
-    return tag === null || ports.rerunReleaseGates === undefined
-      ? notHere("the release's failed gates cannot be retried here")
-      : ports.rerunReleaseGates(tag);
+    const tags = owedTags(action.evidence);
+    const [only] = tags;
+    const { rerunReleaseGates: rerun } = ports;
+    if (only === undefined || rerun === undefined)
+      return notHere("the release's failed gates cannot be retried here");
+    return tags.length === 1 ? rerun(only) : rerunEach(tags, rerun);
   },
   inspect: () => Promise.resolve(ok("a person took the release investigation")),
   tag: () => Promise.resolve(ok("a person took the manual tagging step")),
@@ -635,6 +667,26 @@ async function settleOne(
 }
 
 /**
+ * Releases held by a person's answer keep its decision while other versions
+ * change; when the answer no longer holds them they return to the line. A read
+ * that failed has not revoked the hold, so those releases stay off the line:
+ * the answer says whether they are held now.
+ */
+function keepReleasesTaken(
+  action: Action,
+  isHeld: boolean,
+  ports: StationPorts,
+): boolean {
+  const tags = owedTags(action.evidence);
+  if (isHeld) ports.takeReleases?.(tags, takenDecision(action));
+  else if (isTakenNeed(action.evidence)) {
+    if (action.answered?.unread !== undefined) return true;
+    ports.takeReleases?.(tags, null);
+  }
+  return false;
+}
+
+/**
  * Read the answers to every framed need of `report` and act on the one
  * that counts, once; a need answered I'll handle it — hide this card moves to the report's
  * quiet entries, so it is neither notified nor shown for these facts.
@@ -649,7 +701,13 @@ export async function settleStationAnswers(
   const held = new Set<Action>();
   for (const action of report.actions) {
     const framed = framedOf(action, slug, context, ports);
-    if (framed !== null && (await settleOne(framed, slug, ports, root)))
+    if (framed === null) continue;
+    const isHeld = await settleOne(framed, slug, ports, root);
+    if (isHeld) held.add(action);
+    if (
+      action.cause === "release-owed" &&
+      keepReleasesTaken(action, isHeld, ports)
+    )
       held.add(action);
   }
   if (held.size === 0) return;
@@ -658,9 +716,17 @@ export async function settleStationAnswers(
     report.quiet.push({
       target: action.target,
       class: "answered-hold",
-      why:
-        action.cause === "release-owed"
-          ? (action.answered?.acted?.detail ?? "a person took the release step")
-          : `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`,
+      why: answeredHoldWhy(action),
     });
+}
+
+/** Why an answered need sits among the report's quiet entries. */
+function answeredHoldWhy(action: Action): string {
+  if (action.cause !== "release-owed")
+    return `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`;
+  const unread = action.answered?.unread;
+  return (
+    action.answered?.acted?.detail ??
+    `a person took the release step${unread === undefined ? "" : `; its answer could not be refreshed: ${unread}`}`
+  );
 }

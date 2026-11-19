@@ -55,6 +55,7 @@ import { readDrives } from "./sources/ledgers.ts";
 import {
   allRecords,
   bookOf,
+  rerunBound,
   tickBound,
   type TickContext,
   type TickOptions,
@@ -215,6 +216,7 @@ export async function actObserved(
           tracker: observation.tracked.tracker,
           issueRepository: observation.tracked.issueRepository,
           bound: tickBound(context),
+          rerunBound: () => rerunBound(context),
           links: lineInput?.links,
           sessions: () => readSessions(context.runtime, repo, observation.join),
         }),
