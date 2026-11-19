@@ -171,9 +171,9 @@ describe("the disclosures", () => {
   );
 
   browserIt(
-    "a long list closes from its panel's head as well as its foot",
+    "a long group on a phone opens and closes with its own Show all",
     async () => {
-      const server = await served("loud");
+      const server = await served("queue");
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
@@ -181,41 +181,24 @@ describe("the disclosures", () => {
         PHONE,
       );
       try {
-        await shows(page, ".pQueue .headMore");
-        const items = page.locator(".pQueue .qItem:visible");
-        const closed = await items.count();
-        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
+        const group = page.locator("[data-facet-group]").filter({
+          has: page.getByRole("heading", { name: /^Starts next/ }),
+        });
+        const more = group.locator("[data-group-more]");
+        await more.waitFor();
+        const items = group.locator(".qItem:visible");
+        expect(await items.count()).toBe(2);
+        expect(await more.innerText()).toBe("Show all 3");
+        await more.click();
         await until(
-          "the list has opened",
-          async () => (await items.count()) > closed,
+          "the group has opened",
+          async () => (await items.count()) === 3,
         );
-        expect(await page.locator(".pQueue .headMore").innerText()).toBe(
-          "Show fewer",
-        );
-        await page.locator(".pQueue .headMore").click();
+        expect(await more.textContent()).toBe("Show fewer");
+        await more.click();
         await until(
-          "the list has closed",
-          async () => (await items.count()) === closed,
-        );
-        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
-        await until(
-          "the list has opened again",
-          async () => (await items.count()) > closed,
-        );
-        await page.evaluate(() =>
-          window.scrollTo(0, document.body.scrollHeight),
-        );
-        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
-        await until(
-          "the foot button has closed the list",
-          async () => (await items.count()) === closed,
-        );
-        await until(
-          "the panel's head is back in view",
-          async () =>
-            await page
-              .locator(".pQueue .headMore")
-              .evaluate((el) => el.getBoundingClientRect().top >= 0),
+          "the group has closed",
+          async () => (await items.count()) === 2,
         );
       } finally {
         await context.close();
