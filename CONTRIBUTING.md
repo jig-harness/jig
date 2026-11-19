@@ -431,7 +431,8 @@ deepest profile and for a change to what every test run loads
 (`bunfig.toml`'s preloads and their imports). A
 [separate suite](GLOSSARY.md)'s job runs when its area is affected, when a
 dependent test lies in it, and whenever the whole suite runs. The local plan
-does not walk the dependent tests, so CI can run tests it did not name. A push
+runs only the touched areas' own tests: it neither walks the dependent tests
+nor follows `impliedBy`, so CI can run tests it did not name. A push
 to main and the nightly run still run every suite. A new area, or a new
 directory of tests, declares its profile and own tests in the same change, or
 its code runs the whole gate set.

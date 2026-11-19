@@ -150,6 +150,26 @@ test("CI tests what the changed files' tested areas reach, never the separate su
   expect(ciTestDirs(["README.md"], fixture)).toEqual([]);
 });
 
+test("CI follows an edge out of an area without own tests only for a file no tested area holds", () => {
+  const edged: SharedCatalog = {
+    ...fixture,
+    areas: {
+      ...fixture.areas,
+      guide: area(
+        ["guide/**"],
+        { profile: "area", ownTests: "bun run test ./guide/" },
+        ["docs", "broad"],
+      ),
+    },
+  };
+  // README.md belongs only to docs, which has no own tests: its edge counts.
+  expect(ciTestDirs(["README.md"], edged)).toEqual(["guide/"]);
+  // app/x.ts is in app, which has own tests, so its broad area seeds nothing.
+  expect(ciTestDirs(["app/x.ts"], edged)).toEqual(["app/"]);
+  // misc/x.ts belongs only to broad, which has no own tests.
+  expect(ciTestDirs(["misc/x.ts"], edged)).toEqual(["guide/"]);
+});
+
 test("CI's matrix: every shard for the deepest plan, legs for the reached tests by their count, the checks leg alone otherwise", () => {
   const count = (n: number) => () => n;
   const matrix = (files: string[], n: number) =>

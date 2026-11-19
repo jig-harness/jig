@@ -253,15 +253,21 @@ function outermost(dirs: string[]): string[] {
  * The test directories CI runs for a change whose plan is not the deepest:
  * the own tests of every area a changed file's tested areas reach through
  * `impliedBy`, except the separate suites, which run in jobs of their own.
- * A file's broad areas (those without own tests) seed nothing here, so a
- * change inside one skill does not reach what the broad `plugin` area does.
+ * A file's broad areas (those without own tests) seed nothing when one of its
+ * areas has own tests, so a change inside one skill does not reach what the
+ * broad `plugin` area does; a file with no tested area seeds every area it
+ * belongs to, so an edge out of a docs area still reaches its tests.
  */
 export function ciTestDirs(files: string[], catalog: SharedCatalog): string[] {
-  const tested = new Set<string>();
-  for (const file of files)
-    for (const id of areasOf(file, catalog))
-      if (ownTestDirs(catalog.areas[id]).length > 0) tested.add(id);
-  const reached = applyImpliedClosure(tested, catalog);
+  const seeds = new Set<string>();
+  for (const file of files) {
+    const areas = areasOf(file, catalog);
+    const tested = areas.filter(
+      (id) => ownTestDirs(catalog.areas[id]).length > 0,
+    );
+    for (const id of tested.length > 0 ? tested : areas) seeds.add(id);
+  }
+  const reached = applyImpliedClosure(seeds, catalog);
   const dirs: string[] = [];
   for (const id of Object.keys(catalog.areas)) {
     const area = catalog.areas[id];
