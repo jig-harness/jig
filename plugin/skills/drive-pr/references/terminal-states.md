@@ -124,14 +124,17 @@ to read, and a retry before the reset can only be refused again.
 - `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds
   (default 30 minutes, at most a day) and goes on: between rounds it keeps
   its ledger's lease and reads its mailbox while it waits; at the attach,
-  before its first round, it waits and reads the pull request again, up to
-  three resets.
+  before its first round, it waits and reads the pull request again. Either
+  way it waits for at most three resets in a row; a limit spent again after
+  each stops it.
 - A reset further off stops the drive with the same exit. Its `stop` event
   records the reset (`until`), its closing report names it with cause
   `environment` and the line as owner, and `jig dispatch` re-drives the stop
   once the reset has passed, on any account, once per stop, an hour after
-  the stop when it recorded no reset. A stop at the attach writes no ledger:
-  the dispatcher reads its launch's exit as a limit, not as a failed re-arm.
+  the stop when it recorded no reset. A stop at the attach writes no ledger
+  (the ledger lives on the forge the limit refuses): that launch spends no
+  arm and no re-drive, and the dispatcher launches the drive again an hour
+  after it ended, never handing it to a person for it.
 
 ## Repair rounds
 

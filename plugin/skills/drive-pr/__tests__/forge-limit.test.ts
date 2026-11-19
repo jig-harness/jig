@@ -10,6 +10,7 @@ import { AttachRefusal, attachThroughLimits } from "../scripts/lib/attach.ts";
 import {
   answerForgeLimit,
   attachForgeLimit,
+  LIMIT_WAITS,
 } from "../scripts/lib/driver/forge-limit-stop.ts";
 import { composeDriverReport } from "../scripts/lib/driver/closing-report.ts";
 import type { DriveRoundContext } from "../scripts/lib/driver/round-context.ts";
@@ -33,6 +34,7 @@ import { currentMs, isoFromMs } from "../../../shared/time.ts";
 
 afterEach(() => {
   driverRuntime.stopLimitedUntil = null;
+  driverRuntime.forgeLimitWaits = 0;
   clearForgeLimit();
 });
 
@@ -121,6 +123,16 @@ describe("the round loop on a status probe that stopped on the limit", () => {
 
   test("stops on a reset past the bound, recording the reset", async () => {
     const until = currentMs() + 24 * 3_600_000;
+    const status = { rateLimit: reportLimit({ until, reason: "spent" }) };
+    expect(await answerForgeLimit(context, status)).toBe(
+      DRIVE_EXIT.FORGE_RATE_LIMITED,
+    );
+    expect(driverRuntime.stopLimitedUntil).toBe(isoFromMs(until));
+  });
+
+  test("stops on a near reset once it waited for as many resets in a row as it may", async () => {
+    driverRuntime.forgeLimitWaits = LIMIT_WAITS;
+    const until = currentMs() + 1_000;
     const status = { rateLimit: reportLimit({ until, reason: "spent" }) };
     expect(await answerForgeLimit(context, status)).toBe(
       DRIVE_EXIT.FORGE_RATE_LIMITED,

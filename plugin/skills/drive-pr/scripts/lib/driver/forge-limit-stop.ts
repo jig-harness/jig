@@ -41,10 +41,13 @@ function stopOnLimit(
   return DRIVE_EXIT.FORGE_RATE_LIMITED;
 }
 
+/** How many resets in a row the drive waits for, at the attach and between rounds: a limit spent again at every reset is not waited out for good. */
+export const LIMIT_WAITS = 3;
+
 /**
  * A status probe ended `FORGE_RATE_LIMITED`: wait for its reset between
  * passes, keeping the ledger's lease and the mailbox, then read again; or
- * stop on it.
+ * stop on it, and once `LIMIT_WAITS` resets in a row did not clear it.
  */
 export async function answerForgeLimit(
   context: DriveRoundContext,
@@ -54,6 +57,13 @@ export async function answerForgeLimit(
   const plan = limit === null ? null : limitPlan(limit);
   if (limit === null || plan?.action !== "wait")
     return stopOnLimit(context.pr, limit);
+  if (driverRuntime.forgeLimitWaits >= LIMIT_WAITS)
+    return stopOnLimit(
+      context.pr,
+      limit,
+      "spent again after every reset the drive waited for",
+    );
+  driverRuntime.forgeLimitWaits += 1;
   console.error(
     `drive.ts: PR #${context.pr}: ${limitLine(limit)}; waiting ${seconds(plan.ms)} for the reset, sending nothing before it.`,
   );

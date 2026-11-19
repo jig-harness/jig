@@ -859,7 +859,7 @@ export function attachOff(script: string): boolean {
   return mode === "off";
 }
 
-/** How many resets the attach waits for before it stops on the limit: a limit spent again at every reset is not waited out for good. */
+/** How many resets the attach waits for before it stops on the limit: a limit spent again at every reset is not waited out for good (`LIMIT_WAITS` between rounds). */
 const ATTACH_LIMIT_WAITS = 3;
 
 /**

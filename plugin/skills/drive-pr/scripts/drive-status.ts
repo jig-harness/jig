@@ -1247,7 +1247,7 @@ async function main(): Promise<number> {
    * sweep instead of re-deriving the same answer from a stale decision.
    */
   async function degrade(reason: string): Promise<number | null> {
-    const limited = await stopOnForgeLimit();
+    const limited = await stopOnForgeLimit(reason);
     if (limited !== null) return limited;
     report.state = "INDETERMINATE";
     report.reason = reason;
@@ -1279,11 +1279,15 @@ async function main(): Promise<number> {
    * process sent met one whose reset is still ahead: nothing is sent before
    * the reset, so a retry could only be refused again, and a spent limit is
    * not a failure to read. Its report names the reset (`rateLimit`); `null`
-   * when no such limit holds.
+   * when no such limit holds. `failed`, the failure the limit is taken to
+   * explain, stays in the log.
    */
-  async function stopOnForgeLimit(): Promise<number | null> {
+  async function stopOnForgeLimit(failed: string): Promise<number | null> {
     const limit = forgeLimitHeld();
     if (limit === null) return null;
+    console.error(
+      `drive-status.ts: ${failed} — read as the forge's spent rate limit this process met`,
+    );
     rateLimit = reportLimit(limit);
     const code = forgeRateLimited(
       report,
@@ -1759,7 +1763,7 @@ async function main(): Promise<number> {
 
     switch (code) {
       case 1: {
-        const limited = await stopOnForgeLimit();
+        const limited = await stopOnForgeLimit(report.reason);
         if (limited !== null) return limited;
         // Never let an unreadable state decay into a settled one. Retry a
         // bounded number of times, then say so — guessing here is how a round

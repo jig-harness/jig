@@ -64,6 +64,7 @@ async function gateRoundStatus(
   // a failure to read (`forge-limit-stop.ts`).
   if (code === DRIVE_EXIT.FORGE_RATE_LIMITED)
     return await answerForgeLimit(context, status);
+  driverRuntime.forgeLimitWaits = 0;
 
   switch (code) {
     case 3: {
