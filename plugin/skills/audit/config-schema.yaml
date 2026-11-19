@@ -371,7 +371,7 @@ fields:
       or: string
       fields: { login: string, confirmation_marker: string, chat_marker: string }
       optional: [confirmation_marker, chat_marker]
-    read_by: [resolve-review-comments, drive-pr, review]
+    read_by: [resolve-review-comments, drive-pr, review, dispatch]
   review.job_pattern:
     type: regex
     nullable: true

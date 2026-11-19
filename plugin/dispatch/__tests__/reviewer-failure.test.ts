@@ -209,6 +209,20 @@ it("releases an old reviewer-failure hold when reviewer evidence is no longer co
   await rearmed(w);
 }, 120_000);
 
+it("keeps a reviewer-failure hold when a reviewer setting is malformed", async () => {
+  const w = fixture([FIRST, SECOND]);
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\nreview:\n  reviewer_app: 123\ndispatch:\n  reviewer_failures_before_escalation: 2\n  renotify_after: 1s\n`,
+  );
+  stopped(w, [FIRST, SECOND]);
+
+  const held = await tick(w);
+  expect(held.launches).toEqual([]);
+  expect(held.notifications).toMatchObject([
+    { cause: "needs-person", outcome: "sent" },
+  ]);
+}, 120_000);
+
 it("validates the configured threshold and applies the default", () => {
   expect(dispatchSection({})).toMatchObject({
     ok: true,

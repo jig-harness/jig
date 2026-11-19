@@ -52,6 +52,12 @@ export function reviewerFailurePolicy(
     review.reviewer_check_pattern.trim() !== ""
       ? review.reviewer_check_pattern
       : undefined;
+  // A malformed reviewer setting is not the same as no reviewer setting.
+  // Treat it as configured so a stopped drive stays held instead of being
+  // automatically re-armed without evidence that the configuration is safe.
+  const hasReviewerSetting =
+    Object.hasOwn(review, "reviewer_app") ||
+    Object.hasOwn(review, "reviewer_check_pattern");
   const botLogins = bots.flatMap((bot: unknown) => {
     const login = isRecord(bot) ? bot.login : bot;
     return typeof login === "string" && login !== "" ? [login] : [];
@@ -65,7 +71,7 @@ export function reviewerFailurePolicy(
     currentReviewerConfigured:
       app !== undefined ||
       configuredCheckPattern !== undefined ||
-      botLogins.length > 0,
+      hasReviewerSetting,
     ...(review.reviewer_evidence === "sticky" ||
     review.reviewer_evidence === "review_object"
       ? { evidence: review.reviewer_evidence }
