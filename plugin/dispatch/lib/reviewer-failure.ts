@@ -29,6 +29,7 @@ export type ReviewerFailurePolicy = {
   threshold: number;
   app?: string;
   currentReviewerConfigured: boolean;
+  malformedReviewerSetting: boolean;
   sticky: string;
   stamp: string;
   skipNoticeMarker: string;
@@ -52,12 +53,15 @@ export function reviewerFailurePolicy(
     review.reviewer_check_pattern.trim() !== ""
       ? review.reviewer_check_pattern
       : undefined;
-  // A malformed reviewer setting is not the same as no reviewer setting.
-  // Treat it as configured so a stopped drive stays held instead of being
-  // automatically re-armed without evidence that the configuration is safe.
-  const hasReviewerSetting =
-    Object.hasOwn(review, "reviewer_app") ||
-    Object.hasOwn(review, "reviewer_check_pattern");
+  const malformedReviewerSetting = [
+    review.reviewer_app,
+    review.reviewer_check_pattern,
+  ].some(
+    (value) =>
+      value !== undefined &&
+      value !== null &&
+      (typeof value !== "string" || value.trim() === ""),
+  );
   const botLogins = bots.flatMap((bot: unknown) => {
     const login = isRecord(bot) ? bot.login : bot;
     return typeof login === "string" && login !== "" ? [login] : [];
@@ -71,7 +75,8 @@ export function reviewerFailurePolicy(
     currentReviewerConfigured:
       app !== undefined ||
       configuredCheckPattern !== undefined ||
-      hasReviewerSetting,
+      malformedReviewerSetting,
+    malformedReviewerSetting,
     ...(review.reviewer_evidence === "sticky" ||
     review.reviewer_evidence === "review_object"
       ? { evidence: review.reviewer_evidence }
@@ -158,6 +163,9 @@ async function recovered(
   // expects reviewer evidence. Removing that policy intentionally releases
   // old holds rather than preserving the stopped reviewer's requirement.
   if (!policy.currentReviewerConfigured) return ok(true);
+  // Invalid reviewer settings must remain held until corrected. Evidence from
+  // a configured bot cannot prove that an invalid policy is safe to re-arm.
+  if (policy.malformedReviewerSetting) return ok(false);
   const app = policy.app;
   const logins = app === undefined ? policy.bots : [`${app}[bot]`];
   const mode =
