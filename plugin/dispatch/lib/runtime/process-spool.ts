@@ -25,16 +25,47 @@ const TRUNCATED_LINE = "[redacted: oversized line dropped]";
 const OPEN_CONTEXT = /(?:[=:"']|\b(?:Bearer|Basic))\s*$/i;
 
 /**
+ * Whether text ends inside a quoted value opened after a separator. The mask
+ * reads a quoted value across line breaks, so a cut inside one separates the
+ * value from its key.
+ */
+function endsInsideQuote(text: string): boolean {
+  let quote = "";
+  let last = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i] as string;
+    if (quote === "") {
+      if ((c === '"' || c === "'") && (last === "=" || last === ":")) quote = c;
+      if (!/\s/.test(c)) last = c;
+    } else if (c === "\\") {
+      i++;
+    } else if (c === quote) {
+      if (text[i + 1] === quote) i++;
+      else {
+        quote = "";
+        last = c;
+      }
+    }
+  }
+  return quote !== "";
+}
+
+const BOUNDARY_ATTEMPTS = 16;
+
+/**
  * Return the part that is safe to redact and write now: everything up to the
  * last line break before the fixed look-behind window whose preceding text
  * leaves no credential context open.
  */
 function redactionBoundary(text: string): number {
   let from = text.length - REDACTION_TAIL_BYTES - 1;
-  while (from >= 0) {
+  for (let attempt = 0; from >= 0 && attempt < BOUNDARY_ATTEMPTS; attempt++) {
     const cut = text.lastIndexOf("\n", from);
     if (cut < 0) return 0;
-    if (!OPEN_CONTEXT.test(text.slice(Math.max(0, cut - 256), cut)))
+    if (
+      !OPEN_CONTEXT.test(text.slice(Math.max(0, cut - 256), cut)) &&
+      !endsInsideQuote(text.slice(0, cut))
+    )
       return cut + 1;
     from = cut - 1;
   }
@@ -72,10 +103,18 @@ export function openSpool(
     if (boundary === 0) {
       if (redactionTail.length <= REDACTION_PENDING_LIMIT)
         return Buffer.alloc(0);
-      // Drop only through the oversized line's own terminator; what follows
-      // it is ordinary pending text.
+      // No cut is provably safe, and the mask reads credentials across line
+      // breaks. Drop the oversized line; when it ends with a credential
+      // context still open, drop what follows it too, so no value survives
+      // apart from its key.
       const lineEnd = redactionTail.indexOf("\n");
-      if (lineEnd < 0) {
+      const head =
+        lineEnd < 0 ? redactionTail : redactionTail.slice(0, lineEnd);
+      if (
+        lineEnd < 0 ||
+        OPEN_CONTEXT.test(head.slice(-256)) ||
+        endsInsideQuote(head)
+      ) {
         redactionTail = "";
         dropping = true;
       } else {
