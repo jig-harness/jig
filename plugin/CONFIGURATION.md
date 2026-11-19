@@ -192,7 +192,7 @@ field only to override the derivation:
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `gates.command` | shell command | **Required by `resolve-review-comments`**, which refuses without it. `drive-pr` then has no local checks unless `drive.validation_plan_command` is set | resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar | The repository's complete local checks, run before every push; a session the dispatcher starts may run fewer, as `gates.dispatch_fast` says. The [repository commands chapter](protocol/repo-commands.md) gives its invocation, input, answer, exits and deadline. |
-| `gates.dispatch_fast` | boolean | Full local gates | jig-gates | Jig’s repository gate command runs fast checks and targeted tests in the sessions the dispatcher starts when this repository-only setting is true. CI retains the full gate set. Other repositories can opt in by implementing this setting in their own gate command using the dispatch launch identifier in `JIG_LAUNCH`. |
+| `gates.dispatch_fast` | boolean | Full local gates | jig-gates | Jig’s repository gate command runs fast checks and targeted tests in the sessions the dispatcher starts when this repository-only setting is true. CI retains the full gate set. Other repositories can opt in by implementing this setting in their own gate command, using the dispatch launch identifier in `JIG_LAUNCH` or, in a drive a dispatched session armed, in `JIG_DISPATCHED_FROM`. |
 
 ## `review`
 
@@ -1255,6 +1255,7 @@ These are set per machine or per run, not committed:
 | `JIG_SCHEDULED_UPGRADE` | Set by the line, never by a person: the launcher passes a timer's job what its scheduled upgrade came to, a line of JSON of at most 8 KiB (its `detail` shortened to 2,000 characters), which the job writes into its receipt as `upgrade`; a line that does not read is recorded as a failed upgrade quoting it |
 | `JIG_UPGRADE_SCHEDULED` | Set by the line, never by a person: `1` tells the installed copy's `jig upgrade --jobs-only` that a timer's job runs it, so it leaves a loaded launchd job's file for the next `jig upgrade` a person runs |
 | `JIG_LAUNCH` | Set by the line, never by a person: the launch record a dispatched session runs under (the dispatcher's wrapper sets it), or the driver a drive's pass belongs to. While it is set, [`jig send`](README.md#telling-a-station-what-to-do) refuses the commands that are a person's |
+| `JIG_DISPATCHED_FROM` | Set by the line, never by a person: the launch record of the dispatched session that armed a drive, which a drive armed in a terminal tab does not run under. The driver hands it to every pass; what a pass reports as its launch stays `JIG_LAUNCH` |
 | `JIG_REFOCUS` | `1` or `0` puts `do-item`'s intent-chain snapshot in the Refocus calibration's on or off arm; unset, odd issue numbers are on |
 | `BASH_MAX_TIMEOUT_MS` | Claude Code's own variable, not Jig's: the longest `timeout` an agent may give a background command in an unattended session, 2 hours unless raised. Set it to `28800000` so a drive can outlast 2 hours (see [the background time limit](skills/drive-pr/README.md#the-background-time-limit)) |
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
