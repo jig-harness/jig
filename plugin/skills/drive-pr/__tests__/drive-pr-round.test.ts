@@ -336,6 +336,17 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("'ci:hold' is still present");
   });
 
+  it("withdraws a same-head announcement when the final proof's check-runs listing is cut short", async () => {
+    const r = await announce({ ...CONVERGED, checkRunsHangAfter: 1 }, false, {
+      staleAnnouncementFor: CONVERGED.head,
+      env: { GH_CALL_TIMEOUT: "1" },
+    });
+    expect(r.stderr).toContain("check-runs listing");
+    expect(r.exitCode).toBe(4);
+    expect(r.posted).toBe(false);
+    expect(r.deleted).toContain("7");
+  }, 60_000);
+
   it("withdraws a same-head announcement while 'ci:hold' is present", async () => {
     const r = await announce({ ...CONVERGED, ciHeld: true }, false, {
       staleAnnouncementFor: CONVERGED.head,

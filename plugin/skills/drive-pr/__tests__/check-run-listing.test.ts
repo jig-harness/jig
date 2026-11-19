@@ -10,6 +10,8 @@ import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { PAGE_CAP } from "../../../shared/outbound/gh-paginate.ts";
+import { finalReadListingStop } from "../scripts/lib/driver/convergence-ci.ts";
+import { driverRuntime } from "../scripts/lib/driver/runtime.ts";
 import { CHECK_RUNS_UNREADABLE_EXIT } from "../scripts/lib/driver/settings.ts";
 import * as proc from "../scripts/lib/proc.ts";
 import { isDriveEvent } from "../scripts/lib/state/events.ts";
@@ -207,6 +209,23 @@ describe("a head's check-runs listing", () => {
         spy.mockRestore();
       }
     });
+  });
+
+  it("stops on a final status re-read that found the listing cut short, and on no other answer", () => {
+    try {
+      expect(
+        finalReadListingStop(CHECK_RUNS_UNREADABLE_EXIT, {
+          reason: "cut short",
+          listingPagesRead: 14,
+        }),
+      ).toBe(CHECK_RUNS_UNREADABLE_EXIT);
+      expect(driverRuntime.stopListingPages).toBe(14);
+      expect(
+        finalReadListingStop(4, { state: "AWAITING_REVIEWER" }),
+      ).toBeNull();
+    } finally {
+      driverRuntime.stopListingPages = null;
+    }
   });
 
   it("keeps the pages read on a stop event, and on no other kind", () => {

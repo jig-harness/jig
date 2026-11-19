@@ -67,6 +67,22 @@ function silentReleaseCause(
 }
 
 /**
+ * The drive's stop when the final status re-read found the check-runs listing
+ * cut short: nothing was judged, so it is no disagreement with the review.
+ * `null` for any other answer.
+ */
+export function finalReadListingStop(
+  code: number,
+  status: Record<string, unknown>,
+): number | null {
+  if (code !== CHECK_RUNS_UNREADABLE_EXIT) return null;
+  const pages = status.listingPagesRead;
+  driverRuntime.stopListingPages = typeof pages === "number" ? pages : null;
+  console.error(`  ${String(status.reason ?? "")}`);
+  return CHECK_RUNS_UNREADABLE_EXIT;
+}
+
+/**
  * The drive's stop for a `ci-hold.ts` step that found the check-runs listing
  * cut short: the pages it read, as its last line of output says.
  */
@@ -303,6 +319,8 @@ export async function checkFinalCiStatus(
   // fresh, untriaged finding on it, leaving that finding unanswered.
   // Bounded (`final-regate.ts`): a re-read that keeps disagreeing on one
   // head would otherwise re-gate for as long as the drive lives.
+  const listingStop = finalReadListingStop(finalStatusRes.code, finalStatus);
+  if (listingStop !== null) return listingStop;
   if (
     finalRemoteHead === "" ||
     finalStatusRes.code !== 3 ||

@@ -63,8 +63,8 @@ import { announcePolicyBase } from "./lib/driver/policy-base.ts";
 const holdName = (): string => ciHoldLabelSetting() ?? "CI hold";
 import { fail, isDigits, readStdinAll, runMain, short } from "./lib/cli.ts";
 import { reviewedClaim } from "./lib/status/reviewed-sha.ts";
+import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import {
-  checkRunListingSeconds,
   ciHoldTimeoutSeconds,
   ghCall,
   git,
@@ -378,11 +378,7 @@ async function main(): Promise<number> {
   // acts on without re-deriving it.
   const statusRes = await run(
     tsArgv(driveStatus, [pr, "--json", "--once", "--no-count"]),
-    // The read includes the head's check-runs listing, which has its own bound.
-    {
-      timeoutSec: helperTimeoutSec + checkRunListingSeconds(),
-      stderr: "ignore",
-    },
+    { timeoutSec: helperTimeoutSec, stderr: "ignore" },
   );
   const code = statusRes.code;
   let status: Record<string, unknown> = {};
@@ -496,7 +492,10 @@ async function main(): Promise<number> {
   }
   const finalCi = await finalCiProof();
   if (finalCi !== 0) {
-    if (!dryRun && finalCi === 4) {
+    // A check-runs listing cut short proves nothing either: the same head's
+    // announcement cannot stand on it.
+    const stale = finalCi === 4 || finalCi === DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
+    if (!dryRun && stale) {
       const standing = await announcements(pr);
       if (standing === null) {
         fail(
@@ -515,7 +514,7 @@ async function main(): Promise<number> {
       refuseUnreadable(standing, "as the final CI proof is stale");
     }
     fail(
-      finalCi === 5 ? 5 : finalCi === 4 ? 4 : 1,
+      finalCi === 5 ? 5 : stale ? 4 : 1,
       `announce-merge-ready: final CI/${holdName()} evidence is stale or unreadable (exit ${finalCi})`,
     );
   }

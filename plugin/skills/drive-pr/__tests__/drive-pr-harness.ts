@@ -304,6 +304,8 @@ export interface Fixture {
   checkRunsUnreadable?: boolean;
   /** The check-runs read never answers, so its deadline cuts it short. */
   checkRunsHang?: boolean;
+  /** The check-runs read answers this many times, then never again. */
+  checkRunsHangAfter?: number;
   /**
    * The mergeability GitHub reports changes between the first `gh pr view`
    * read and later ones — the window `announce-merge-ready.ts` closes with its
@@ -2059,6 +2061,11 @@ for a in "$@"; do
       emit "$F/timeline.json"; exit 0 ;;
     *check-runs*)
       if [ -f "$F/check-runs-hang" ]; then sleep 60; fi
+      if [ -f "$F/check-runs-hang-after" ]; then
+        left=$(cat "$F/check-runs-hang-after")
+        if [ "$left" -le 0 ]; then sleep 60; fi
+        echo $((left - 1)) > "$F/check-runs-hang-after"
+      fi
       emit "$F/check-runs.json"; exit 0 ;;
     *actions/runs*)      emit "$F/workflow-runs.json"; exit 0 ;;
     # Query string included: drive-status.ts paginates this endpoint with an
@@ -2234,6 +2241,11 @@ export function writeFixture(
   }
   if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
   if (f.checkRunsHang) writeFileSync(join(dir, "check-runs-hang"), "");
+  if (f.checkRunsHangAfter !== undefined)
+    writeFileSync(
+      join(dir, "check-runs-hang-after"),
+      String(f.checkRunsHangAfter),
+    );
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }

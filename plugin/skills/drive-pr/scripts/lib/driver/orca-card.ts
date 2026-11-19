@@ -46,6 +46,7 @@ const FAILURE_STOPS: readonly string[] = [
   "STALLED",
   "CI_REPAIR_SPENT",
   "PASS_DEADLINE",
+  "CHECK_RUNS_UNREADABLE",
 ];
 
 /**
