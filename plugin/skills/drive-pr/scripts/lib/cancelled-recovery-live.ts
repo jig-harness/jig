@@ -317,11 +317,15 @@ export async function recoverCancelledOnHead(
   mayMutate?: () => Promise<boolean>,
 ): Promise<LiveRecovery> {
   const listing: { cutShort: ListingCutShort | null } = { cutShort: null };
-  const checks = await recoveryRead("check runs", async () => {
-    const read = await checkRunsRead(head);
-    listing.cutShort = read.cutShort;
-    return read.runs;
-  });
+  const checks = await recoveryRead(
+    "check runs",
+    async () => {
+      const read = await checkRunsRead(head);
+      listing.cutShort = read.cutShort;
+      return read.runs;
+    },
+    () => listing.cutShort?.atBound === true,
+  );
   if (!checks.ok) {
     if (listing.cutShort === null) return checks.answer;
     console.error(`cancelled CI recovery: ${listing.cutShort.reason}`);

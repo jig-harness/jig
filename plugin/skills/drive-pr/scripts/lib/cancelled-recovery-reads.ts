@@ -60,6 +60,8 @@ function failedAnswer(
 export async function recoveryRead<T>(
   read: string,
   ask: () => Promise<Outcome<T, ForgeReadCode>>,
+  /** True when the failure just seen cannot clear by asking again, such as a listing past its page bound. */
+  settled: () => boolean = () => false,
 ): Promise<RecoveryRead<T>> {
   const wait = testPacing("DRIVE_PR_RECOVERY_READ_RETRY_MS", READ_RETRY_MS, 10);
   let last: Failure<ForgeReadCode> | null = null;
@@ -74,7 +76,7 @@ export async function recoveryRead<T>(
     console.error(
       `cancelled CI recovery: the ${read} read failed (attempt ${attempt} of ${READ_ATTEMPTS}, ${last.code}): ${last.reason}`,
     );
-    if (!asksAgain(last.code)) break;
+    if (settled() || !asksAgain(last.code)) break;
   }
   return {
     ok: false,

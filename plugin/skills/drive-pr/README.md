@@ -404,7 +404,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_PAUSE_MAX_SEC` | How long a mailbox `pause` may last before [`MAILBOX_PAUSE_TIMEOUT`](../../protocol/drive-exits.md) | `1800` (30 minutes) |
 | `DRIVE_PR_PUSH_TIMEOUT` | One `git push`, pre-push hooks included, in seconds | `3600` |
 | `DRIVE_PR_HELPER_TIMEOUT` | One helper script the drive spawns, in seconds | `120` |
-| `GH_CALL_TIMEOUT` | One `gh` call, in seconds; one page of a head's check-runs listing, whose whole read may take four times this before the drive stops with [`CHECK_RUNS_UNREADABLE`](../../protocol/drive-exits.md) | `30` |
+| `GH_CALL_TIMEOUT` | One `gh` call, in seconds; one page of a head's check-runs listing, whose whole read may take four times this before the drive stops with [`CHECK_RUNS_UNREADABLE`](../../protocol/drive-exits.md); with `JIG_FORGE_BUDGET=off`, `gh` pages the listing itself under one deadline and no page bound | `30` |
 | `DRIVE_PR_STALL_MIN` | Minutes without progress before `bun "<skill-dir>/scripts/drives.ts" --doctor` calls a live drive wedged (never below the default) | `240` |
 
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
