@@ -13,7 +13,7 @@
 import { afterEach, expect, it } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { rereadPendingArms } from "../lib/arm-reread.ts";
+import { REREAD_MS, rereadPendingArms } from "../lib/arm-reread.ts";
 import { armTags, waitStreak, waitWords } from "../lib/followup-waits.ts";
 import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { DEFAULT_FOLLOWUP_COMMAND } from "../lib/section.ts";
@@ -39,7 +39,7 @@ import {
   waitFor,
 } from "./launch-fixtures.ts";
 import { applyTick, claudeRuns } from "./pickup-fixtures.ts";
-import { currentMs, isoFromMs } from "../../shared/time.ts";
+import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 import { failed, ok } from "../../shared/outcome.ts";
 
 let current: World | null = null;
@@ -290,12 +290,24 @@ it("starts a pending window again on a newer arm, re-reads only the first wait p
     spent: true,
     reread: ["v1.0.0"],
   });
-  // The pass after that re-read goes on in the same window: a person's, read no more.
+  // The run after it, whether the re-read or a person started it, has a window of its own.
   const again = [...same, waited(base, at(8, 20), on("v1.0.0"))];
   expect(waitStreak(again, SLUG, 9)).toMatchObject({
+    spent: false,
+    pendingSince: at(8, 20),
+  });
+  // Past that window on the same arm it is a person's, its tag read no more.
+  const still = [...again, waited(base, at(9, 30), on("v1.0.0"))];
+  expect(waitStreak(still, SLUG, 9)).toMatchObject({
     spent: true,
     reread: [],
   });
+  // An arm whose words change but name no tag never starts its window again.
+  const reworded = [
+    waited(base, at(6, 55), { reason: "pending", arm: "deploy: rolling out" }),
+    waited(base, at(8, 1), { reason: "pending", arm: "deploy: still going" }),
+  ];
+  expect(waitStreak(reworded, SLUG, 9)).toMatchObject({ spent: true });
   // An arm naming no tag past its window is spent with nothing to read.
   const untagged = [
     waited(base, at(6, 55), { reason: "pending", arm: "deploy" }),
@@ -358,10 +370,12 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
   const records = [...late(9, "v2.0.0"), ...late(10, "v2.0.0 v2.0.1")];
   const asked: string[][] = [];
   const repo = { path: w.dir, slug: SLUG, defaultBranch: "main" };
+  const nowMs = parseMs("2026-10-31T08:05:00.000Z");
   const settled = await rereadPendingArms(
     repo,
     [{ number: 9 }, { number: 10 }],
     records,
+    nowMs,
     undefined,
     async (_repo, tags) => {
       asked.push([...tags]);
@@ -370,14 +384,33 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
   );
   expect(asked).toEqual([["v2.0.0", "v2.0.1"]]);
   expect(settled).toEqual(ok(new Set([records[1]?.record.id ?? ""])));
-  const none = await rereadPendingArms(repo, [], records, undefined, () => {
+  const noRead = () => {
     throw new Error("no read is owed");
-  });
+  };
+  const none = await rereadPendingArms(
+    repo,
+    [],
+    records,
+    nowMs,
+    undefined,
+    noRead,
+  );
   expect(none).toEqual(ok(new Set()));
+  // A spent pass that ended longer ago than a few ticks is not read again.
+  const later = await rereadPendingArms(
+    repo,
+    [{ number: 9 }],
+    records,
+    nowMs + REREAD_MS,
+    undefined,
+    noRead,
+  );
+  expect(later).toEqual(ok(new Set()));
   const refused = await rereadPendingArms(
     repo,
     [{ number: 9 }],
     records,
+    nowMs,
     undefined,
     async () => failed("refused", "the forge did not answer"),
   );

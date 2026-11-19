@@ -890,12 +890,14 @@ limit's three. The outcome log classes such a pass `arm pending`, which
 the dashboard shows as held back, not as finishing badly. A pass that still finds the arm pending once
 `dispatch.followup_within` has passed since the first pass that found it so
 is notified as a failed follow-up that names the arm. That window starts
-again when a pass names a newer arm than the one it started on (another
-release tag, or other words where it names none), up to three windows after
-the first pending pass. Before the first pass past a window goes to a
-person, the tick reads the release tags its arm names once more: when they
-all exist, it releases the marker instead and the follow-up runs again; a
-pass past the window after that one goes to a person. `--reason` absent is
+again when a pass names other release tags than the ones it started on (a
+newer release), up to three windows after the first pending pass; an arm
+that names no tag keeps its window. Before a pass past its window goes to a
+person, the tick reads the release tags its arm names once more, within
+15 minutes of the pass's end: when they all exist, it releases the marker
+instead and the follow-up runs again as a new run. An arm a run of the pull
+request already went past its window on is not read again, so a follow-up
+that keeps finding it pending reaches a person. `--reason` absent is
 `rate-limit`.
 
 A Claude follow-up that exits unsuccessfully within a minute without a

@@ -27,18 +27,19 @@
  *      limit nor starts it again: it is not a rate limit, and the pass that
  *      recorded it met none on the way.
  *
- *      A window starts again when a pass names another arm than the one
- *      its window started on: the release tags each names, or its words
- *      where it names none (a newer release replaced the one waited for).
- *      However often it starts again, a run of pending waits is a person's
- *      once `WINDOWS_FOR_PERSON` windows have passed since its first.
+ *      A window starts again when a pass names other release tags than the
+ *      ones its window started on (a newer release replaced the one waited
+ *      for); an arm that names none never starts one again. However often
+ *      it starts again, a run of pending waits is a person's once
+ *      `WINDOWS_FOR_PERSON` windows have passed since its first.
  *
- *      Before the first wait past a window goes to a person, the tick reads
- *      the release tags its arm names again (`armTags`, `arm-reread.ts`):
- *      when every one now exists, the arm has settled, so the tick releases
- *      the marker instead and the follow-up runs once more, continuing the
- *      run. A wait past the window that follows one, or whose arm names no
- *      tag, goes to a person as it reads.
+ *      Before a wait past its window goes to a person, the tick reads the
+ *      release tags its arm names again (`armTags`, `arm-reread.ts`): when
+ *      every one now exists, the arm has settled, so the tick releases the
+ *      marker instead and the follow-up runs once more, as a new run. An
+ *      arm a run of the pull request already went past its window on is
+ *      not read again, so a pass that keeps finding the same arm pending
+ *      reaches a person; nor is an arm that names no tag.
  *
  * A pass that stopped on a question instead, whose question names a rate
  * limit and carries no routine class's tag (`routine-questions.ts`), waits
@@ -98,7 +99,7 @@ export interface WaitStreak {
   withinMs: number;
   /** The newest wait went past its kind's limit: the follow-up is a person's. */
   spent: boolean;
-  /** For the first pending wait past its window: the release tags its arm names, which the tick reads again before the follow-up goes to a person; empty otherwise. */
+  /** For a pending wait past its window on an arm no earlier run went past its window on: the release tags it names, which the tick reads again before the follow-up goes to a person; empty otherwise. */
   reread: string[];
 }
 
@@ -115,13 +116,10 @@ export function armTags(arm: string | undefined): string[] {
   return [...new Set(words)];
 }
 
-/** What an arm is, to tell a newer one from the one a window started on: the tags it names, else its words; `null` when it named none. */
+/** What an arm is, to tell a newer one from the one a window started on: the release tags it names; `null` when it names none. */
 function armKey(wait: WaitFor): string | null {
-  if (wait.arm === undefined) return null;
   const tags = armTags(wait.arm);
-  return tags.length > 0
-    ? [...tags].sort().join(" ")
-    : wait.arm.replace(/\s+/g, " ").trim();
+  return tags.length > 0 ? [...tags].sort().join(" ") : null;
 }
 
 /** How long a pass that stopped on a rate-limit question waits after it ended: the reset its prompt names when the forge names none. */
@@ -203,10 +201,10 @@ interface Run {
   firstPending: string | null;
   /** The arm the current window started on (`armKey`). */
   arm: string | null;
-  /** The pending waits past the current window. */
-  past: number;
   spent: boolean;
   reread: string[];
+  /** The arms earlier runs of the pull request went past their window on, which are never read again. */
+  spentArms: ReadonlySet<string>;
 }
 
 const EMPTY: Run = {
@@ -214,10 +212,19 @@ const EMPTY: Run = {
   pendingSince: null,
   firstPending: null,
   arm: null,
-  past: 0,
   spent: false,
   reread: [],
+  spentArms: new Set(),
 };
+
+/** A new run after `run`, keeping the arms runs went past their window on. */
+function restart(run: Run): Run {
+  const spentArms =
+    run.spent && run.arm !== null
+      ? new Set([...run.spentArms, run.arm])
+      : run.spentArms;
+  return { ...EMPTY, spentArms };
+}
 
 /** The pending run after `a`, a pending wait, from `from`. */
 function nextPending(from: Run, a: Attempt): Run {
@@ -233,24 +240,27 @@ function nextPending(from: Run, a: Attempt): Run {
   const pastWindow = Number.isFinite(waited) && waited >= a.withinMs;
   const pastRun =
     Number.isFinite(overall) && overall >= WINDOWS_FOR_PERSON * a.withinMs;
-  const past = (fresh ? 0 : from.past) + (pastWindow ? 1 : 0);
+  const windowArm = fresh ? arm : from.arm;
+  const readable =
+    pastWindow &&
+    !pastRun &&
+    windowArm !== null &&
+    !from.spentArms.has(windowArm);
   return {
-    count: from.count,
+    ...from,
     pendingSince,
     firstPending,
-    arm: fresh ? arm : from.arm,
-    past,
+    arm: windowArm,
     spent: pastWindow || pastRun,
-    reread: pastWindow && !pastRun && past === 1 ? armTags(a.wait.arm) : [],
+    reread: readable ? armTags(a.wait.arm) : [],
   };
 }
 
 /** The run after `a`, a wait: counted by its kind, and spent once past its kind's limit. */
 function nextRun(run: Run, a: Attempt): Run {
-  // A run a person settled, or one a person's answer started again, starts
-  // over; one the tick may have run once more on its arm's tags goes on.
-  const from =
-    (run.spent && run.reread.length === 0) || a.answeredByPerson ? EMPTY : run;
+  // A run a person settled, the tick ran once more on its arm's tags, or a
+  // person's answer started again, starts over.
+  const from = run.spent || a.answeredByPerson ? restart(run) : run;
   if (a.wait.reason === "pending") return nextPending(from, a);
   const count = from.count + 1;
   return {
@@ -275,7 +285,8 @@ function streakOf(attempts: Attempt[]): WaitStreak | null {
         a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
   let run = EMPTY;
-  for (const a of answered) run = a.until === null ? EMPTY : nextRun(run, a);
+  for (const a of answered)
+    run = a.until === null ? restart(run) : nextRun(run, a);
   const newest = answered.at(-1);
   if (newest === undefined || newest.until === null) return null;
   return {

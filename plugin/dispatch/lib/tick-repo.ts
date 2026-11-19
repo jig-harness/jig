@@ -166,16 +166,25 @@ export async function observeOpenedTurn(
 
   if (forge.ok && opened.section.followupCommand !== null) {
     const settled = await timer.time("forge", () =>
-      rereadPendingArms(opened.repo, forge.merged, allRecords(context), bound),
+      rereadPendingArms(
+        opened.repo,
+        forge.merged,
+        allRecords(context),
+        context.nowMs,
+        bound,
+      ),
     );
     if (settled.ok) observation.armsSettled = settled.value;
-    else
+    else {
+      const failure = readFailureOf(settled.failure);
       opened.report.records.push({
         record: "forge",
         source: `gh ${opened.repo.slug} release tags`,
         ok: false,
         detail: `The pending follow-up arms past dispatch.followup_within were not read again, so they go to a person as their passes read them: ${settled.failure.reason}`,
+        ...(failure === undefined ? {} : { failure }),
       });
+    }
   }
   if (releaseStationOn(opened)) {
     const tags = await timer.time("forge", () =>
