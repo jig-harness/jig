@@ -264,6 +264,14 @@ redacted.close();
 const secretOutput = readFileSync(join(processRunDirectory(redactedId), "output.log"), "utf8");
 expect(secretOutput).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
 expect(secretOutput).toContain("[redacted]");
+const boundaryId = "20261118T141627Z-44444444";
+const boundary = openSpool(boundaryId, (error) => { throw error; });
+boundary.write(Buffer.from("gh"));
+boundary.write(Buffer.concat([Buffer.from("p_" + "a".repeat(36) + "\\n"), Buffer.alloc(8153, "x")]));
+boundary.close();
+const boundaryOutput = readFileSync(join(processRunDirectory(boundaryId), "output.log"), "utf8");
+expect(boundaryOutput).not.toContain("ghp_" + "a".repeat(36));
+expect(boundaryOutput).toContain("[redacted]");
 
 `,
       );

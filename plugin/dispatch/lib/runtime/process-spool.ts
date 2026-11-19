@@ -10,7 +10,10 @@ export function processRunDirectory(id: string): string {
 
 const OUTPUT_LIMIT = 4 * 1024 * 1024;
 const FLUSH_INTERVAL_MS = 250;
-const REDACTION_TAIL_BYTES = 8 * 1024;
+// Keep enough context to recognise credentials which straddle an arbitrary
+// pipe-read boundary.  The mask recognises both named values and unstructured
+// tokens, so its look-behind must be retained as well as the possible value.
+const REDACTION_TAIL_BYTES = 32 * 1024;
 
 /** Keep the tail in memory and bound the file even while a large chunk arrives. */
 export function openSpool(
