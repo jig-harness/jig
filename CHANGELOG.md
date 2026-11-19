@@ -401,6 +401,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.283.1] - 2026-11-19
+
+### Fixed
+
+- The dispatch dashboard's What needs you no longer pushes its cards out of
+  view with one sentence per card a person's answer hid: those notes
+  fold into one muted line, such as `6 cards hidden by answers · show`, that
+  opens to the notes and closes again. Each act's group heading now reads as
+  a heading with the group's count (`Decide · 3`) instead of repeating the
+  act pill its first card opens with.
+
 ## [0.283.0] - 2026-11-19
 
 ### Added
@@ -9974,7 +9985,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.283.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.283.1...HEAD
+[0.283.1]: https://github.com/jig-harness/jig/compare/v0.283.0...v0.283.1
 [0.283.0]: https://github.com/jig-harness/jig/compare/v0.282.1...v0.283.0
 [0.282.1]: https://github.com/jig-harness/jig/compare/v0.282.0...v0.282.1
 [0.282.0]: https://github.com/jig-harness/jig/compare/v0.281.0...v0.282.0
