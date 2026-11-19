@@ -1,8 +1,8 @@
 # Follow-up arm: the glossary and the auditor
 
-Two things a merge into Jig owes that no gate settles: the terms of art it
-introduced are explained, and the next audit scores the practice it
-changed. Paths are from the repository root.
+A merge into Jig owes what no gate settles: its terms of art are explained,
+and the next audit scores the practice it changed. Paths are from the
+repository root.
 
 Record one verdict for the arm with the follow-up's `record` command:
 `owed` with each item filed, `not-owed` naming both answers (the terms the
@@ -38,6 +38,12 @@ the merged pull request's description:
   already carries that audit, name it as the arm's item; otherwise file one.
 - **The statement says nothing changed, and the diff agrees**: not owed for
   this part.
+- **The statement says nothing changed, but the diff disagrees** (it adds a
+  configuration field, changes a criterion's practice or a probe), **or it
+  describes schema or probe changes without naming a targeted criterion**:
+  the evaluation is incomplete or contradicted, so record this part owed and
+  file the correction, naming what the diff changed and which of the
+  re-evaluation questions above the statement leaves unanswered.
 
 ## What to carry out
 

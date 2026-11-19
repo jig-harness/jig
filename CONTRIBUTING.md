@@ -232,8 +232,9 @@ Jig is built with its own tools:
 - an implementer building a step of a plan, picked up by `/jig:do-item`;
 - a drive pass fixing what a reviewer flagged, in whatever file the reviewer
   flagged, the dispatcher's own code included;
-- a follow-up or site-update session (`followup`, `website-update`) editing
-  status pages and the site's copy.
+- a follow-up session (`followup`) checking what a merge owes the status
+  pages and the site's copy, and a site-update session (`website-update`)
+  editing them in a pull request of its own.
 
 What a part is held to follows from who writes it and who runs it:
 

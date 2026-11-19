@@ -10,7 +10,7 @@ origin-reference boundary, is a person's decision in the follow-up's
 authority table (`other-repository`, `origin-boundary`).
 
 Record one verdict for the arm with the follow-up's `record` command:
-`owed` with the item filed here, `not-owed` naming the three answers below
+`owed` with the item filed here, `not-owed` naming the answers below
 (no tool brought in from another repository, no change marked
 **Breaking**, no lesson for a consumer's practice), `unread` when the change
 notes or the changelog could not be read.

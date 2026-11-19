@@ -9,7 +9,7 @@ range (`followup.ts facts`).
 
 Record one verdict for the arm with the follow-up's `record` command:
 `owed` with each item filed, `pending` while the deploy has not finished,
-`not-owed` with the three answers below as its evidence, `unread` when the
+`not-owed` with the answers below as its evidence, `unread` when the
 deploy or a build could not be read.
 
 ## 1. Did it deploy?
@@ -25,6 +25,13 @@ gh run list --workflow website.yml --commit <range.head> --json status,conclusio
   asks first about (`deploy-rerun`); with nobody to ask, file the failure
   and report it as a person's step.
 - Succeeded: the deploy is settled; go on.
+- Cancelled, skipped or timed out, or no run for that commit: a later
+  commit's deploy supersedes it. Look at the newest `website.yml` run on
+  `main` (`gh run list --workflow website.yml --branch main --limit 1`): when
+  it succeeded and its commit contains `range.head`
+  (`git merge-base --is-ancestor <range.head> <that commit>`), the merge is
+  deployed and this part is settled. Otherwise record the arm `owed` with
+  the run's link as the actionable evidence.
 
 ## 2. What did the merge change on the site?
 
