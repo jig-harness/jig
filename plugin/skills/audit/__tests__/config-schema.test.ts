@@ -502,6 +502,10 @@ describe("the reading skills", () => {
       "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
       "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
       "dispatch.adopt.enabled": dispatch.value.adopt.enabled,
+      "dispatch.overlap.max_per_file": dispatch.value.overlap?.maxPerFile,
+      "dispatch.overlap.file_rate": dispatch.value.overlap?.fileRate,
+      "dispatch.overlap.area_rate": dispatch.value.overlap?.areaRate,
+      "dispatch.overlap.unknown_cost": dispatch.value.overlap?.unknownCost,
     });
   });
 
@@ -705,21 +709,20 @@ describe("the reading skills", () => {
   });
 
   test("exist under the names the schema gives as readers", () => {
+    const readerFile = (skill: string): string => {
+      if (skill === "gc" || skill === "dispatch") return join(plugin, "jig.ts");
+      if (skill === "evidence") return join(plugin, "shared", "evidence.ts");
+      if (skill === "jig-gates")
+        return join(repoRoot, "scripts", "dispatch-gates.ts");
+      return join(plugin, "skills", skill, "SKILL.md");
+    };
     for (const f of schema.fields)
       for (const skill of f.read_by)
-        expect([
+        expect([f.path, skill, existsSync(readerFile(skill))]).toEqual([
           f.path,
           skill,
-          existsSync(
-            skill === "gc" || skill === "dispatch"
-              ? join(plugin, "jig.ts")
-              : skill === "evidence"
-                ? join(plugin, "shared", "evidence.ts")
-                : skill === "jig-gates"
-                  ? join(repoRoot, "scripts", "dispatch-gates.ts")
-                  : join(plugin, "skills", skill, "SKILL.md"),
-          ),
-        ]).toEqual([f.path, skill, true]);
+          true,
+        ]);
   });
 });
 
@@ -817,6 +820,15 @@ describe("the schema's own format", () => {
       "type:a.b",
     ]);
   });
+  test("a number takes a fraction within its bounds", () => {
+    const rate = parseSchema(withField({ type: "number", min: 0, max: 1 }));
+    expect(checkConfig({ a: { b: 0.25 } }, rate)).toEqual([]);
+    for (const bad of [1.5, -0.1, "0.5", Number.NaN])
+      expect(
+        checkConfig({ a: { b: bad } }, rate).map((f) => f.message),
+      ).toEqual([expect.stringContaining("must be a number ≥ 0 and ≤ 1")]);
+  });
+
   test("a default is a value the field accepts", () => {
     expect(() =>
       parseSchema(withField({ type: "enum", values: ["a"], default: "b" })),

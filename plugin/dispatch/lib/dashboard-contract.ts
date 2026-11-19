@@ -251,6 +251,30 @@ export interface LineSession {
   waiting: string | null;
 }
 
+/** One piece of work in flight a pickup waits on for its overlap (`overlap-reasons.ts`). */
+export interface OverlapRef {
+  kind: "pull request" | "pickup";
+  /** `#123` for a pull request; the item's key for a pickup. */
+  ref: string;
+  /** As the tick found it: `open`, `open, quiet`, `claimed`, `running`, or `would be admitted ahead of it` for a pickup the hypothetical admission plan (not the launch order) takes first. */
+  state: string;
+  url: string | null;
+}
+
+/**
+ * Why a wanted pickup waits on overlap, as a structured reason: the relation
+ * word, the item, the work it waits on and how many, and the text a person
+ * reads (design/overlap-aware-admission.md § The reason a person sees).
+ */
+export interface OverlapReason {
+  relation: "waits on overlap" | "waits on the overlap bound";
+  item: string;
+  on: OverlapRef[];
+  /** For overlap, the pieces of work it shares paths with; for the bound, the pieces of work in flight that change the file. */
+  count: number;
+  text: string;
+}
+
 /** Where a queued target came from: the record that wants it. */
 export type QueueSource =
   | "re-armable"
@@ -291,6 +315,10 @@ export interface LineQueued {
     detail: string;
     waitsOn?: LaunchOutcome["waitsOn"];
   } | null;
+  /** For a pickup: why it waits on the work in flight it overlaps; absent when it does not, and from a line written before overlap was reported. */
+  overlap?: OverlapReason;
+  /** For a pickup whose footprint is unknown or derived from labels alone: the note beside its rank (`footprint unknown: …`), whether or not it waits. */
+  footprint?: string;
 }
 
 /** What stopped the newest tick that tried to open a repository, in parts (`LineRepo.refusal`). */

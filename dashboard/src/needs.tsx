@@ -3,13 +3,14 @@ import { runningFollowup } from "./followup-view.ts";
 import { ItemTitle, RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
- * Needs you: the person's list, one group per act. Each card opens with the
- * act, then, for a parked need, one short row per decision (`decision-rows.tsx`)
+ * Needs you: the person's list, one group per act. Each card opens with the act,
+ * then, for a parked need, one short row per decision (`decision-rows.tsx`)
  * to pick an answer on, and who it waits on; for any other need, the ask and
  * the recommended option with what it changes and costs. The steps and the
  * evidence are folded. Two rows show on a phone; the rest wait behind Show all.
  * Where a parked drive's card can send its answers, the head offers Send's
- * settings (`send.tsx`).
+ * settings (`send.tsx`). The cards an answer hid fold into one line above
+ * the list (`AnsweredHolds`).
  */
 import { type ReactNode, useId, useRef, useState } from "react";
 import { needCard, slotCard } from "./cards.ts";
@@ -128,20 +129,43 @@ export function ActedAnswers({ need }: { need: Pick<NeedView, "acted"> }) {
   );
 }
 
-/** Answered holds remain visible while their facts stand. */
+/**
+ * The cards a person's answer hid while their facts stand, folded into one
+ * quiet line with their count, so the notes never push the work down; the
+ * line opens to one note per hidden card.
+ */
 export function AnsweredHolds({
   line,
 }: {
   line: Pick<LineSnapshot, "answeredHolds">;
 }) {
+  const holds = line.answeredHolds ?? [];
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  if (holds.length === 0) return null;
+  const hidden =
+    holds.length === 1
+      ? "1 card hidden by an answer"
+      : `${holds.length} cards hidden by answers`;
   return (
-    <>
-      {(line.answeredHolds ?? []).map((h) => (
-        <p className="sm answeredHold" key={`${h.repo} ${h.target}`}>
-          {h.repo} {h.target}: {h.why}
-        </p>
-      ))}
-    </>
+    <div className="answeredHolds">
+      <button
+        className="heldToggle"
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen(!open)}
+      >
+        {hidden} · {open ? "hide" : "show"}
+      </button>
+      <ul id={id} hidden={!open}>
+        {holds.map((h) => (
+          <li className="sm answeredHold" key={`${h.repo} ${h.target}`}>
+            {h.repo} {h.target}: {h.why}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -433,6 +457,9 @@ function NeedGroup({
                 size={16}
               />
               {head}
+            </span>{" "}
+            <span className="mut" aria-hidden="true">
+              ·
             </span>{" "}
             <span className="m" data-group-count="">
               {cards.length}
