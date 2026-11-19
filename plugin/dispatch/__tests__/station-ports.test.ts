@@ -4,10 +4,9 @@
  * cannot carry a re-arm, an open pull request carries the item, a session
  * holds it; and a release moves the item only when none of those stops it.
  */
+import { claimedLaunchRoot } from "./plan-input-fixtures.ts";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { captureIdentity } from "../../shared/liveness.ts";
 import type {
   CommentFact,
@@ -15,13 +14,7 @@ import type {
   TrackerUser,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS } from "../lib/labels.ts";
-import {
-  claimRecord,
-  type LaunchClaim,
-  type LaunchRecord,
-  readLaunches,
-  writeRecord,
-} from "../lib/launches.ts";
+import { type LaunchClaim, readLaunches } from "../lib/launches.ts";
 import type { SessionsReport, Workspace } from "../lib/runtime/port.ts";
 import type { SharedContext } from "../lib/shared-launches.ts";
 import { type StationInputs, stationPorts } from "../lib/station-ports.ts";
@@ -362,38 +355,13 @@ describe("clearing a launch record of unknown process", () => {
     }
   });
 
-  function claimed(claim: LaunchClaim): string {
-    const root = mkdtempSync(join(tmpdir(), "jig-station-clear-"));
-    roots.push(root);
-    const record: LaunchRecord = {
-      version: 1,
-      id: ID,
-      token: "t",
-      action: "rearm",
+  const claimed = (claim: LaunchClaim): string =>
+    claimedLaunchRoot(roots, ID, claim, {
+      prefix: "jig-station-clear-",
       repo: "example-org/web",
       repoPath: "/srv/work/web",
-      pr: 7,
-      account: "a",
-      vendor: "claude",
-      configDir: "/c",
-      wallBackoffMs: 1,
-      replaces: null,
-      facts: "generation 1, exit 8, heartbeat x",
       createdAt: "2026-11-18T12:00:00.000Z",
-      workspace: null,
-      attempts: [],
-      item: null,
-      agentId: null,
-      model: null,
-      effort: null,
-      released: false,
-      command: null,
-      marker: null,
-    };
-    writeRecord(record, root);
-    expect(claimRecord(ID, claim, root)).toBe(true);
-    return root;
-  }
+    });
 
   async function ownIdentity() {
     const captured = await captureIdentity();

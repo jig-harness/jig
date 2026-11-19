@@ -13,10 +13,10 @@ import type { ReadRecord } from "../lib/launches.ts";
 import { buildLine } from "../lib/line.ts";
 import { stationDecision } from "../lib/line-station.ts";
 import { type PlanInput, planTick } from "../lib/plan.ts";
-import { dispatchSection } from "../lib/section.ts";
 import { clearBlock, STRANDED_HOLD_MS } from "../lib/stranded-holds.ts";
-import type { Action, DispatchSection, DrivenPr } from "../lib/types.ts";
+import type { Action, DrivenPr } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
+import { planInput } from "./plan-input-fixtures.ts";
 import { input as lineInput, PATH, record, report } from "./line-fixtures.ts";
 
 const NOW_MS = parseMs("2026-11-18T22:00:00.000Z");
@@ -34,31 +34,7 @@ const PROCESS = {
   claimedAt: PAST,
 };
 
-function section(): DispatchSection {
-  const read = dispatchSection({
-    issue_tracker: { adapter: "github", github: { repository: SLUG } },
-    dispatch: { identity: "factory-bot", followup_command: "/followup" },
-  });
-  if (!read.ok) throw new Error(read.failure.reason);
-  return read.value;
-}
-
-function input(over: Partial<PlanInput>): PlanInput {
-  return {
-    slug: SLUG,
-    section: section(),
-    pickups: [],
-    claimed: [],
-    drives: [],
-    merged: [],
-    outcomes: new Map(),
-    sessions: { ok: true, source: "fake", workspaces: [] },
-    launches: [],
-    idleSince: new Map(),
-    nowMs: NOW_MS,
-    ...over,
-  };
-}
+const input = (over: Partial<PlanInput>): PlanInput => planInput(NOW_MS, over);
 
 const drive = (heartbeat: string, over: Partial<DrivenPr> = {}): DrivenPr => ({
   number: 7,

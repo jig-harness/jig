@@ -9,37 +9,13 @@ import { failedBy, outboundFailure } from "../../shared/outbound/failure.ts";
 import { failed, type Outcome } from "../../shared/outcome.ts";
 import type { SharedClaim } from "../../shared/records/shared.ts";
 import { type PlanInput, planTick } from "../lib/plan.ts";
-import { dispatchSection } from "../lib/section.ts";
-import type { DispatchSection, DrivenPr, MarkedPr } from "../lib/types.ts";
+import type { DrivenPr, MarkedPr } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
+import { planInput } from "./plan-input-fixtures.ts";
 
 const NOW = Date.parse("2026-11-15T08:00:00Z");
 
-function section(): DispatchSection {
-  const read = dispatchSection({
-    issue_tracker: { adapter: "github", github: { repository: SLUG } },
-    dispatch: { identity: "factory-bot", followup_command: "/followup" },
-  });
-  if (!read.ok) throw new Error(read.failure.reason);
-  return read.value;
-}
-
-function input(over: Partial<PlanInput>): PlanInput {
-  return {
-    slug: SLUG,
-    section: section(),
-    pickups: [],
-    claimed: [],
-    drives: [],
-    merged: [],
-    outcomes: new Map(),
-    sessions: { ok: true, source: "fake", workspaces: [] },
-    launches: [],
-    idleSince: new Map(),
-    nowMs: NOW,
-    ...over,
-  };
-}
+const input = (over: Partial<PlanInput>): PlanInput => planInput(NOW, over);
 
 const drive = (over: Partial<DrivenPr>): DrivenPr => ({
   number: 7,

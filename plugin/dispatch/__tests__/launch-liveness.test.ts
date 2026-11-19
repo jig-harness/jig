@@ -5,19 +5,11 @@
  * host stays unknown, and one claimed under the host's earlier name is judged
  * by its process.
  */
+import { claimedLaunchRoot } from "./plan-input-fixtures.ts";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { captureIdentity, thisHost } from "../../shared/liveness.ts";
-import {
-  claimRecord,
-  holds,
-  type LaunchClaim,
-  type LaunchRecord,
-  readLaunches,
-  writeRecord,
-} from "../lib/launches.ts";
+import { holds, type LaunchClaim, readLaunches } from "../lib/launches.ts";
 import {
   asClaim,
   claimState,
@@ -40,38 +32,13 @@ afterEach(() => {
 
 const ID = "20261104T090000Z-aaaaaaaa";
 
-function claimedRoot(claim: LaunchClaim): string {
-  const dir = mkdtempSync(join(tmpdir(), "jig-dispatch-liveness-"));
-  dirs.push(dir);
-  const record: LaunchRecord = {
-    version: 1,
-    id: ID,
-    token: "t",
-    action: "rearm",
+const claimedRoot = (claim: LaunchClaim): string =>
+  claimedLaunchRoot(dirs, ID, claim, {
+    prefix: "jig-dispatch-liveness-",
     repo: "o/a",
     repoPath: "/r",
-    pr: 7,
-    account: "a",
-    vendor: "claude",
-    configDir: "/c",
-    wallBackoffMs: 1,
-    replaces: null,
-    facts: "generation 1, exit 8, heartbeat x",
     createdAt: "2026-11-04T09:00:00.000Z",
-    workspace: null,
-    attempts: [],
-    item: null,
-    agentId: null,
-    model: null,
-    effort: null,
-    released: false,
-    command: null,
-    marker: null,
-  };
-  writeRecord(record, dir);
-  expect(claimRecord(ID, claim, dir)).toBe(true);
-  return dir;
-}
+  });
 
 /** This process's claim, as its wrapper would have written it. */
 async function ownClaim(): Promise<LaunchClaim> {
