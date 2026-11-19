@@ -315,7 +315,7 @@ async function observeAll(
         locks.delete(path);
       };
       try {
-        const lock = await waitForObserveLock(path, context);
+        const lock = await waitForLock(() => takeObserveLock(path), context);
         if ("heldBy" in lock) {
           out.busy.set(path, lock.heldBy);
           return;
@@ -326,9 +326,12 @@ async function observeAll(
             for (const held of own) held.release();
           },
         });
-        const observed = await openTurn(turn, context, (slug) => {
+        const observed = await openTurn(turn, context, async (slug) => {
           if (claimed.has(slug)) return null;
-          const repository = takeRepositoryLock(slug);
+          const repository = await waitForLock(
+            () => takeRepositoryLock(slug),
+            context,
+          );
           if ("heldBy" in repository) return repository.heldBy;
           claimed.add(slug);
           own.push(repository);
@@ -373,17 +376,18 @@ async function observeAll(
 }
 
 /**
- * A repository's observe lock, waited for within the tick's
+ * A repository lock (`take` tries once), waited for within the tick's
  * `observeLockWaitMs` and its deadline, so a repository another tick holds
  * only briefly is read in this tick; who holds it when the wait ran out.
+ * Both lock scopes, the checkout's and the forge repository's, wait alike.
  */
-async function waitForObserveLock(
-  path: string,
+async function waitForLock(
+  take: () => Lock,
   context: TickContext,
 ): Promise<Lock> {
   const deadline = currentMs() + (context.options.observeLockWaitMs ?? 0);
   for (;;) {
-    const lock = takeObserveLock(path);
+    const lock = take();
     if (
       !("heldBy" in lock) ||
       currentMs() >= deadline ||

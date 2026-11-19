@@ -70,12 +70,12 @@ export type Observed =
 /**
  * Open one repository; the report that refuses it when it does
  * not open. `claim` takes the repository's own lock once its slug is known
- * and returns who holds it when another tick does: nothing is read then.
+ * (waiting for it, if it must) and returns who holds it when another tick does: nothing is read then.
  */
 export async function openTurn(
   turn: RepoTurn,
   context: TickContext,
-  claim: (slug: string) => string | null = () => null,
+  claim: (slug: string) => string | null | Promise<string | null> = () => null,
 ): Promise<
   | { turn: RepoTurn; opened: OpenedRepo }
   | { report: RepoReport }
@@ -84,7 +84,7 @@ export async function openTurn(
   const { path, timer } = turn;
   const opened = await timer.time("open", () => openRepo(path, context));
   if (!("repo" in opened)) return { report: timed(opened, timer) };
-  const heldBy = claim(opened.repo.slug);
+  const heldBy = await claim(opened.repo.slug);
   if (heldBy !== null) return { busy: heldBy };
   turn.report = opened.report;
   const { owner, reflection } = opened;

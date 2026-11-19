@@ -188,7 +188,7 @@ it.each([
   [
     "whose command does not end with the job's arguments",
     "[Service]\nExecStart=\nExecStart=/bin/with-op /home/someone/.local/bin/jig dispatch\n",
-    "does not end with the job's arguments",
+    "does not end with the job's 2 arguments",
   ],
 ])(
   "starts no tick for a drop-in %s, and leaves the request for the timer",

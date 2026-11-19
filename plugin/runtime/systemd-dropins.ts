@@ -44,9 +44,9 @@ export interface EffectiveJob {
   env: Record<string, string>;
   /** Whether a drop-in replaced the command or changed the environment. */
   changed: boolean;
+  /** Variables the base unit set that a drop-in cleared: a process that inherits more must not keep them. */
+  unset: string[];
 }
-
-type Unsupported = Outcome<never, "unsupported">;
 
 /** `[Service]` keys that change what the job's process runs or sees in a way this reader does not reproduce. */
 const UNREPRODUCED = new Set([
@@ -65,6 +65,25 @@ const UNREPRODUCED = new Set([
   "WorkingDirectory",
   "RootDirectory",
 ]);
+
+/** Sandboxing and privilege directives, which systemd applies and a plain child process does not. */
+const RESTRICTION =
+  /^(NoNewPrivileges|Protect[A-Z]\w*|Private[A-Z]\w*|Restrict[A-Z]\w*|Capability\w*|AmbientCapabilities|SystemCall\w*|ReadOnlyPaths|ReadWritePaths|InaccessiblePaths|TemporaryFileSystem|Bind\w*Paths|MemoryDeny\w*|Lock\w*|DynamicUser|SELinux\w*|AppArmor\w*|Smack\w*|Secure\w*|Device\w*|IPAddress\w*|Mount\w*|Namespace\w*|Umask|Nice|CPUSchedul\w*|IOSchedul\w*|OOM\w*|Personality|RemoveIPC|UtmpIdentifier|TTY\w*|StandardInput|StandardOutput|StandardError)$/;
+
+/** Whether `key` changes the process in a way this reader does not reproduce. */
+function unreproduced(key: string): boolean {
+  return UNREPRODUCED.has(key) || RESTRICTION.test(key);
+}
+
+/** A variable name systemd accepts: letters, digits and underscores, not starting with a digit. */
+const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** Whether `value` holds a control character, other than a tab, which systemd refuses in a variable's value. */
+function unprintable(value: string): boolean {
+  return [...value].some((char) => {
+    const code = char.charCodeAt(0);
+    return code === 0x7f || (code < 0x20 && code !== 0x09);
+  });
+}
 
 /** The specifiers' current values for the user manager running `unit`. */
 export function userSpecifiers(unit: string): Specifiers {
@@ -119,6 +138,51 @@ const ESCAPES: Record<string, string> = {
   "'": "'",
 };
 
+/** What the word scanner holds between characters. */
+interface Scan {
+  words: string[];
+  word: string | null;
+  quote: string | null;
+}
+
+/** One character of a value, outside an escape: the scanner's next state. */
+function scanChar(scan: Scan, char: string): void {
+  if (scan.quote !== null) {
+    if (char === scan.quote) scan.quote = null;
+    else scan.word = (scan.word ?? "") + char;
+  } else scanUnquoted(scan, char);
+}
+
+function scanUnquoted(scan: Scan, char: string): void {
+  if (char === '"' || char === "'") {
+    scan.quote = char;
+    scan.word ??= "";
+  } else if (/\s/.test(char)) {
+    if (scan.word !== null) scan.words.push(scan.word);
+    scan.word = null;
+  } else scan.word = (scan.word ?? "") + char;
+}
+
+/** A value split into words by whitespace, quotes and C escapes, before specifiers. */
+function splitWords(value: string): Outcome<string[], "unsupported"> {
+  const scan: Scan = { words: [], word: null, quote: null };
+  for (let at = 0; at < value.length; at++) {
+    const char = value[at] as string;
+    if (char !== "\\" || at + 1 >= value.length) {
+      scanChar(scan, char);
+      continue;
+    }
+    const next = value[++at] as string;
+    const escaped = ESCAPES[next];
+    if (escaped === undefined)
+      return failed("unsupported", `the escape \\${next} is not one it reads`);
+    scan.word = (scan.word ?? "") + escaped;
+  }
+  if (scan.quote !== null) return failed("unsupported", "a quote is left open");
+  if (scan.word !== null) scan.words.push(scan.word);
+  return ok(scan.words);
+}
+
 /**
  * The words of a unit's value: separated by whitespace, each quoted in
  * double or single quotes or not, a backslash starting a C escape; then
@@ -129,35 +193,10 @@ export function unitWords(
   value: string,
   specifiers: Specifiers,
 ): Outcome<string[], "unsupported"> {
-  const words: string[] = [];
-  let word: string | null = null;
-  let quote: string | null = null;
-  for (let at = 0; at < value.length; at++) {
-    const char = value[at] as string;
-    if (char === "\\" && at + 1 < value.length) {
-      const next = value[++at] as string;
-      const escaped = ESCAPES[next];
-      if (escaped === undefined)
-        return failed(
-          "unsupported",
-          `the escape \\${next} is not one it reads`,
-        );
-      word = (word ?? "") + escaped;
-    } else if (quote !== null) {
-      if (char === quote) quote = null;
-      else word = (word ?? "") + char;
-    } else if (char === '"' || char === "'") {
-      quote = char;
-      word ??= "";
-    } else if (/\s/.test(char)) {
-      if (word !== null) words.push(word);
-      word = null;
-    } else word = (word ?? "") + char;
-  }
-  if (quote !== null) return failed("unsupported", "a quote is left open");
-  if (word !== null) words.push(word);
+  const words = splitWords(value);
+  if (!words.ok) return words;
   const expanded: string[] = [];
-  for (const raw of words) {
+  for (const raw of words.value) {
     const one = expandSpecifiers(raw, specifiers);
     if (!one.ok) return one;
     expanded.push(one.value);
@@ -236,6 +275,65 @@ function assignments(
   return out;
 }
 
+/** What the drop-ins have made of the job so far. */
+interface JobState {
+  commands: string[][];
+  env: Record<string, string>;
+  changed: boolean;
+  /** Directives this reader does not reproduce, in force until an empty assignment resets them: key to the drop-in that set it. */
+  active: Map<string, string>;
+}
+
+/** An `Environment=` value's variables set in `state`; the reason it is not reproducible. */
+function applyEnvironment(
+  state: JobState,
+  value: string,
+  specifiers: Specifiers,
+): string | null {
+  state.changed = true;
+  if (value === "") {
+    state.env = {};
+    return null;
+  }
+  const words = unitWords(value, specifiers);
+  if (!words.ok) return words.failure.reason;
+  for (const word of words.value) {
+    const at = word.indexOf("=");
+    const name = at <= 0 ? "" : word.slice(0, at);
+    if (!VARIABLE_NAME.test(name))
+      return `Environment= sets no valid variable name: ${name || "(none)"}`;
+    if (unprintable(word.slice(at + 1)))
+      return `Environment= sets ${name} to a value with a control character`;
+    state.env[name] = word.slice(at + 1);
+  }
+  return null;
+}
+
+/** One `[Service]` assignment of the drop-in at `path` applied to `state`; the reason it is not reproducible. */
+function applyAssignment(
+  state: JobState,
+  assignment: { key: string; value: string },
+  path: string,
+  specifiers: Specifiers,
+): string | null {
+  const { key, value } = assignment;
+  if (unreproduced(key)) {
+    if (value === "") state.active.delete(key);
+    else state.active.set(key, path);
+  } else if (key === "Environment")
+    return applyEnvironment(state, value, specifiers);
+  else if (key === "ExecStart") {
+    state.changed = true;
+    if (value === "") state.commands = [];
+    else {
+      const argv = execWords(value, specifiers);
+      if (!argv.ok) return argv.failure.reason;
+      state.commands.push(argv.value);
+    }
+  }
+  return null;
+}
+
 /**
  * The base job with `dropIns` applied in their order: the command systemd
  * runs and the environment it runs it with; `unsupported` with the reason
@@ -246,46 +344,30 @@ export function effectiveJob(
   dropIns: readonly DropIn[],
   specifiers: Specifiers,
 ): Outcome<EffectiveJob, "unsupported"> {
-  let commands: string[][] = [base.command];
-  let env = { ...base.env };
-  let changed = false;
-  const refuse = (path: string, reason: string): Unsupported =>
-    failed("unsupported", `the drop-in ${path}: ${reason}`);
-  for (const dropIn of dropIns) {
-    for (const { section, key, value } of assignments(dropIn.text)) {
-      if (section !== "Service") continue;
-      if (UNREPRODUCED.has(key))
-        return refuse(dropIn.path, `${key}= is not reproduced outside systemd`);
-      if (key === "ExecStart") {
-        changed = true;
-        if (value === "") {
-          commands = [];
-          continue;
-        }
-        const argv = execWords(value, specifiers);
-        if (!argv.ok) return refuse(dropIn.path, argv.failure.reason);
-        commands.push(argv.value);
-      } else if (key === "Environment") {
-        changed = true;
-        if (value === "") {
-          env = {};
-          continue;
-        }
-        const words = unitWords(value, specifiers);
-        if (!words.ok) return refuse(dropIn.path, words.failure.reason);
-        for (const word of words.value) {
-          const at = word.indexOf("=");
-          if (at <= 0)
-            return refuse(
-              dropIn.path,
-              `Environment= sets no variable: ${word}`,
-            );
-          env[word.slice(0, at)] = word.slice(at + 1);
-        }
-      }
+  const state: JobState = {
+    commands: [base.command],
+    env: { ...base.env },
+    changed: false,
+    active: new Map(),
+  };
+  for (const dropIn of dropIns)
+    for (const assignment of assignments(dropIn.text)) {
+      if (assignment.section !== "Service") continue;
+      const reason = applyAssignment(
+        state,
+        assignment,
+        dropIn.path,
+        specifiers,
+      );
+      if (reason !== null)
+        return failed("unsupported", `the drop-in ${dropIn.path}: ${reason}`);
     }
-  }
-  const [command, ...more] = commands;
+  for (const [key, path] of state.active)
+    return failed(
+      "unsupported",
+      `the drop-in ${path}: ${key}= is not reproduced outside systemd`,
+    );
+  const [command, ...more] = state.commands;
   if (command === undefined)
     return failed("unsupported", "the drop-ins leave the job no command");
   if (more.length > 0)
@@ -293,7 +375,9 @@ export function effectiveJob(
       "unsupported",
       "the drop-ins give the job more than one command",
     );
-  return ok({ command, env, changed });
+  const { env, changed } = state;
+  const unset = Object.keys(base.env).filter((name) => !(name in env));
+  return ok({ command, env, changed, unset });
 }
 
 /**
@@ -309,8 +393,8 @@ export async function readDropIns(
     "--user",
     "show",
     unit,
+    "--property=NeedDaemonReload",
     "--property=DropInPaths",
-    "--value",
   ];
   const result = await run(command, { timeoutSec: 30 });
   if (result.timedOut || result.spawnFailed || result.code !== 0)
@@ -318,8 +402,29 @@ export async function readDropIns(
       "unreadable",
       `${command.join(" ")} did not answer: ${result.stderr.trim() || `exit ${result.code}`}`,
     );
+  const properties = new Map(
+    result.stdout
+      .split("\n")
+      .map(
+        (line) =>
+          [
+            line.slice(0, line.indexOf("=")),
+            line.slice(line.indexOf("=") + 1),
+          ] as const,
+      ),
+  );
+  // The files on disk are the loaded configuration only while the manager has not been told of an edit.
+  if (properties.get("NeedDaemonReload") !== "no")
+    return failed(
+      "unreadable",
+      `${unit}'s files changed since systemd loaded them (or whether they did could not be read), so the loaded drop-ins are not the files on disk`,
+    );
   const out: DropIn[] = [];
-  for (const path of result.stdout.split(/\s+/).filter(Boolean)) {
+  // The paths are one space-separated line: a space inside a directory name is told from the separator by the `/` that starts the next path.
+  for (const path of (properties.get("DropInPaths") ?? "")
+    .split(/\s+(?=\/)/)
+    .map((one) => one.trim())
+    .filter(Boolean)) {
     const text = attempt(
       "unreadable",
       `the drop-in ${path} does not read`,

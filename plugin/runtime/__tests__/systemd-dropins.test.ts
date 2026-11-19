@@ -93,7 +93,7 @@ describe("effectiveJob", () => {
     const base = installed();
     expect(effectiveJob(base, [], SPECIFIERS)).toEqual({
       ok: true,
-      value: { command: JOB.command, env: JOB.env, changed: false },
+      value: { command: JOB.command, env: JOB.env, changed: false, unset: [] },
     });
   });
 
@@ -116,6 +116,7 @@ describe("effectiveJob", () => {
         ],
         env: JOB.env,
         changed: true,
+        unset: [],
       },
     });
   });
@@ -149,6 +150,7 @@ describe("effectiveJob", () => {
           PATH: "/opt/bin",
         },
         changed: true,
+        unset: [],
       },
     });
   });
@@ -326,7 +328,9 @@ describe("readDropIns", () => {
   test.skipIf(process.platform === "win32")(
     "reads each drop-in systemd names, in its order",
     () => {
-      expect(read("DIR/b.conf DIR/a.conf")).toEqual({
+      expect(
+        read("NeedDaemonReload=no\nDropInPaths=DIR/b.conf DIR/a.conf"),
+      ).toEqual({
         ok: true,
         value: [
           { path: "DIR/b.conf", text: "[Service]\nEnvironment=B=2\n" },
@@ -339,7 +343,10 @@ describe("readDropIns", () => {
   test.skipIf(process.platform === "win32")(
     "reads no drop-in when systemd names none",
     () => {
-      expect(read("")).toEqual({ ok: true, value: [] });
+      expect(read("NeedDaemonReload=no\nDropInPaths=")).toEqual({
+        ok: true,
+        value: [],
+      });
     },
   );
 
@@ -350,10 +357,54 @@ describe("readDropIns", () => {
         ok: false,
         failure: { code: "unreadable" },
       });
-      expect(read("DIR/gone.conf")).toMatchObject({
+      expect(
+        read("NeedDaemonReload=yes\nDropInPaths=DIR/a.conf"),
+      ).toMatchObject({
+        ok: false,
+        failure: { code: "unreadable" },
+      });
+      expect(
+        read("NeedDaemonReload=no\nDropInPaths=DIR/gone.conf"),
+      ).toMatchObject({
         ok: false,
         failure: { code: "unreadable" },
       });
     },
   );
+});
+
+describe("effectiveJob, what systemd would apply", () => {
+  const dropIn = (text: string) => [{ path: "x.conf", text }];
+  const refused = (text: string) =>
+    effectiveJob(JOB, dropIn(`[Service]\n${text}\n`), SPECIFIERS);
+
+  test("refuses a sandboxing directive it cannot reproduce", () => {
+    expect(refused("NoNewPrivileges=yes")).toMatchObject({ ok: false });
+    expect(refused("ProtectSystem=strict")).toMatchObject({ ok: false });
+  });
+
+  test("lets an empty assignment reset a directive, per the final configuration", () => {
+    expect(refused("EnvironmentFile=/a\nEnvironmentFile=")).toMatchObject({
+      ok: true,
+    });
+    expect(refused("ExecStartPre=")).toMatchObject({ ok: true });
+    expect(refused("EnvironmentFile=/a")).toMatchObject({ ok: false });
+  });
+
+  test("refuses an invalid variable name and an unprintable value", () => {
+    expect(refused("Environment=BAD-NAME=v")).toMatchObject({ ok: false });
+    expect(refused('Environment="A=x\\ny"')).toMatchObject({ ok: false });
+  });
+
+  test("names the base variables a drop-in clears", () => {
+    const result = effectiveJob(
+      { command: JOB.command, env: { TRACKER_SCOPE: "a", KEEP: "b" } },
+      dropIn("[Service]\nEnvironment=\nEnvironment=KEEP=b\n"),
+      SPECIFIERS,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: { unset: ["TRACKER_SCOPE"] },
+    });
+  });
 });

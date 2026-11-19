@@ -109,7 +109,7 @@ function testCommand(): Outcome<string[] | null, "unstarted"> {
  */
 async function installedTimer(): Promise<
   Outcome<
-    { prefix: string[]; env: Record<string, string> } | null,
+    { prefix: string[]; env: Record<string, string>; unset?: string[] } | null,
     "malformed" | "unsupported" | "unreadable"
   >
 > {
@@ -159,7 +159,7 @@ async function systemdTimer(
   unit: string,
 ): Promise<
   Outcome<
-    { prefix: string[]; env: Record<string, string> },
+    { prefix: string[]; env: Record<string, string>; unset: string[] },
     "unsupported" | "unreadable"
   >
 > {
@@ -170,7 +170,7 @@ async function systemdTimer(
   if (!dropIns.ok) return dropIns;
   const effective = effectiveJob(job, dropIns.value, userSpecifiers(unit));
   if (!effective.ok) return effective;
-  const { command, env } = effective.value;
+  const { command, env, unset } = effective.value;
   const args = job.command.slice(separator + 1);
   const tail = command.slice(command.length - args.length);
   if (
@@ -179,9 +179,13 @@ async function systemdTimer(
   )
     return failed(
       "unsupported",
-      `the command systemd runs ends with ${JSON.stringify(tail)}, so it does not end with the job's arguments ${JSON.stringify(args)}`,
+      `the command systemd runs does not end with the job's ${args.length} arguments (the command's own words are not printed: they may carry a credential)`,
     );
-  return ok({ prefix: command.slice(0, command.length - args.length), env });
+  return ok({
+    prefix: command.slice(0, command.length - args.length),
+    env,
+    unset,
+  });
 }
 
 /** How the waiter runs the tick for the repository at `path`. */
@@ -214,43 +218,56 @@ export async function tickCall(
         : `the installed timer does not read: ${installed.failure.reason}`,
       installed.failure.cause,
     );
-  const timer = installed.value;
-  if (timer === null) {
-    const machine = readMachineConfig();
-    if (!machine.ok)
-      return failed(
-        "unstarted",
-        `the machine configuration does not read: ${machine.failure.reason}`,
-        machine.failure.cause,
-      );
-    return ok({
-      argv: [
-        process.execPath,
-        "--no-env-file",
-        `--config=${BUNFIG}`,
-        JIG,
-        ...tickArgs(path),
-      ],
-      env: environment(LINE_VARIABLE),
-      timeoutSec:
-        (machine.value === null
-          ? DEFAULT_DEADLINE_SEC
-          : tickDeadlineMs(machine.value) / 1000) + GRACE_SEC,
-    });
-  }
-  const deadline = Number(timer.env.JIG_LAUNCHER_DEADLINE_SEC);
+  if (installed.value === null) return ownCall(path);
+  return ok(timerCall(installed.value, path));
+}
+
+/** The tick for a machine with no installed timer: this checkout's own `jig.ts`. */
+function ownCall(path: string): Outcome<TickCall, "unstarted"> {
+  const machine = readMachineConfig();
+  if (!machine.ok)
+    return failed(
+      "unstarted",
+      `the machine configuration does not read: ${machine.failure.reason}`,
+      machine.failure.cause,
+    );
   return ok({
+    argv: [
+      process.execPath,
+      "--no-env-file",
+      `--config=${BUNFIG}`,
+      JIG,
+      ...tickArgs(path),
+    ],
+    env: environment(LINE_VARIABLE),
+    timeoutSec:
+      (machine.value === null
+        ? DEFAULT_DEADLINE_SEC
+        : tickDeadlineMs(machine.value) / 1000) + GRACE_SEC,
+  });
+}
+
+/** The tick as the installed timer runs it: its command and environment, which the requesting session's variables the timer clears do not survive. */
+function timerCall(
+  timer: { prefix: string[]; env: Record<string, string>; unset?: string[] },
+  path: string,
+): TickCall {
+  const deadline = Number(timer.env.JIG_LAUNCHER_DEADLINE_SEC);
+  const env: Record<string, string> = {
+    ...environment(SESSION_VARIABLE),
+    ...timer.env,
+    JIG_LAUNCHER_ROLE: "wake",
+  };
+  for (const name of timer.unset ?? [])
+    if (!(name in timer.env)) delete env[name];
+  return {
     argv: [...timer.prefix, ...tickArgs(path)],
-    env: {
-      ...environment(SESSION_VARIABLE),
-      ...timer.env,
-      JIG_LAUNCHER_ROLE: "wake",
-    },
+    env,
     timeoutSec:
       (Number.isSafeInteger(deadline) && deadline > 0
         ? deadline
         : DEFAULT_DEADLINE_SEC) + GRACE_SEC,
-  });
+  };
 }
 
 /** The wake of the repository at `path`. */
@@ -360,8 +377,9 @@ async function waiterMain(path: string): Promise<WaitEnd> {
           "unstarted",
           `${argv[0]} did not start: ${result.stderr}`,
         );
+      // The program and the count of arguments only: a wrapper's arguments may carry a credential.
       note(
-        `${JSON.stringify(argv)} exited ${result.code}\n${result.stdout}${result.stderr}`,
+        `${JSON.stringify(argv[0])} with ${argv.length - 1} arguments exited ${result.code}\n${result.stdout}${result.stderr}`,
       );
       return ok(result.code);
     },
