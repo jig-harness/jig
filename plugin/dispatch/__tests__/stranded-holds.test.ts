@@ -293,6 +293,41 @@ describe("a stopped drive held by a launch of unknown process", () => {
         ).toEqual([]);
   });
 
+  it("asks every holding record of a drive that may still run for proof, not only the newest", () => {
+    const older = launch(
+      { ...unknown, unjudged: true },
+      {
+        id: "20261118T110000Z-bbbbbbbb",
+        createdAt: isoFromMs(NOW_MS - 3 * STRANDED_HOLD_MS),
+      },
+    );
+    for (const cls of ["driven", "silent", "unplaced"] as const)
+      expect(
+        needsOf(
+          input({
+            drives: [drive(PAST, { class: cls })],
+            launches: [older, launch(unknown)],
+          }),
+        ),
+      ).toEqual([]);
+  });
+
+  it("raises a silent automation drive's hold although no launch is planned for it", () => {
+    const idle = drive(PAST, {
+      class: "silent",
+      evidence: {
+        generation: 3,
+        exit: 8,
+        heartbeat: PAST,
+        automationIdle: true,
+      },
+    });
+    const needs = needsOf(
+      input({ drives: [idle], launches: [launch(unknown)] }),
+    ).filter((a) => a.evidence.stuck === REASON);
+    expect(needs).toHaveLength(1);
+  });
+
   it("raises a stopped drive's hold whose processes cannot be judged, saying what to settle first", () => {
     for (const cls of ["done", "refused", "parked"] as const) {
       const [need, ...rest] = needsOf(

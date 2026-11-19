@@ -171,7 +171,11 @@ export function strandedByRecord(
     return null;
   const { record, state } = read;
   if (state.kind !== "unknown") return null;
-  if (needsProof(pr.class) && !provedGone(state)) return null;
+  if (
+    needsProof(pr.class) &&
+    holders.some((r) => r.state.kind === "unknown" && !provedGone(r.state))
+  )
+    return null;
   const since = strandedSince(pr, record.createdAt, nowMs);
   if (since === null) return null;
   const heldSince = isoFromMs(since);

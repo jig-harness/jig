@@ -81,10 +81,10 @@ function answeredPark(
 }
 
 /** A re-arm's launch record of the pull request, created at `createdAt`. */
-function launch(w: SendWorld, createdAt: string): void {
+function launch(w: SendWorld, createdAt: string, id = RECORD): void {
   const r: LaunchRecord = {
     version: 1,
-    id: RECORD,
+    id,
     token: "token",
     action: "rearm",
     repo: REPO,
@@ -112,9 +112,9 @@ function launch(w: SendWorld, createdAt: string): void {
 }
 
 /** Claim the launch for a process on a host this machine cannot see, whose state reads unknown. */
-function claimElsewhere(w: SendWorld, claimedAt: string): void {
+function claimElsewhere(w: SendWorld, claimedAt: string, id = RECORD): void {
   claimRecord(
-    RECORD,
+    id,
     {
       hostId: "another-host-id",
       host: "another-host",
@@ -128,7 +128,7 @@ function claimElsewhere(w: SendWorld, claimedAt: string): void {
 }
 
 /** Claim the launch on this host for a supervised stage whose wrapper, supervisor and child have all ended. */
-function claimEndedHere(w: SendWorld, claimedAt: string): void {
+function claimEndedHere(w: SendWorld, claimedAt: string, id = RECORD): void {
   const probe = Bun.spawnSync(
     [
       process.execPath,
@@ -145,7 +145,7 @@ function claimEndedHere(w: SendWorld, claimedAt: string): void {
   expect(read.ok).toBe(true);
   const ended = { ...read.value, pid: 2147483647 };
   claimRecord(
-    RECORD,
+    id,
     {
       ...ended,
       claimedAt,
@@ -411,5 +411,54 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     const waits = (await ask(w)).waitsOn as { person: string; why: string };
     expect(waits.person).toBe("settle the launch that holds the drive");
     expect(waits.why).toContain(RECORD);
+  });
+
+  it("asks every holding record's processes proved gone, not only the newest's", async () => {
+    const w = world();
+    const ledger = stoppedLedger(12, undefined, {
+      driver: {
+        actor: "wt-0123456789abcdef",
+        clone: "clone-a",
+        heartbeat: currentIso(),
+        state: "running",
+        started: currentIso(),
+      },
+    });
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    const older = "20261105T090000Z-00000001";
+    launch(w, isoFromMs(currentMs() - 20 * HOUR_MS), older);
+    claimElsewhere(w, isoFromMs(currentMs() - 20 * HOUR_MS), older);
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimEndedHere(w, long);
+
+    const { waiting } = (await ask(w)).waitsOn as { waiting: string };
+    expect(waiting).toContain("liveness and ownership are unknown");
+  });
+
+  it("does not take a ledger that did not read for an unarmed drive", async () => {
+    const w = world();
+    const damaged = ledgerOn(701, stoppedLedger(12, undefined)) as {
+      body: string;
+    };
+    pullRequest(
+      w,
+      12,
+      [],
+      [
+        {
+          ...damaged,
+          body: damaged.body.replace(
+            '{"kind":"drive-ledger"',
+            '{"kind":"drive-ledger",',
+          ),
+        },
+      ],
+    );
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    expect((await ask(w)).waitsOn).toBe("none");
   });
 });

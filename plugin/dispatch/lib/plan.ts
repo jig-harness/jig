@@ -636,7 +636,12 @@ function planDrive(
   const { slug, launches } = input;
   const target = `PR #${read.number}`;
   const pr = plannable(input, read, plan);
-  if (pr === null) return;
+  if (pr === null) {
+    // Nothing is launched for the drive yet, but a launch of unknown process
+    // still holds its account's slot.
+    raiseStranded(strandedByRecord(slug, read, launches, input.nowMs), want);
+    return;
+  }
   const hold = driveHold(pr, launches);
   if (heldByRecord(target, pr, hold, plan)) {
     raiseStranded(strandedByRecord(slug, pr, launches, input.nowMs), want);

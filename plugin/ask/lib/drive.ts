@@ -92,6 +92,7 @@ import {
   type AskContext,
   dispatcherReads,
   holdingRecord,
+  holdingRecordsOf,
   labelThread,
   lastOfRow,
   pullFor,
@@ -324,6 +325,7 @@ function waitsOnOf(
   const onHold = heldStopWait(holder, placed.class, ledger.driver.heartbeat, {
     dispatched,
     record: holdingRecord(r.records),
+    holding: holdingRecordsOf(r.records),
   });
   if (onHold !== null) return onHold;
   // A running launch says nothing of a park nobody answered or of a ledger gone silent.
@@ -749,6 +751,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       base,
       presence,
       merge: await convergedWait(ctx, read, doc),
+      unread: typeof ledger === "string",
     }),
     last: lastOf(reads),
     entries,
@@ -849,6 +852,7 @@ function driveWait(
     base: PrFacts["base"];
     presence: DriverPresence | null;
     merge: WaitsOn;
+    unread: boolean;
   },
 ): WaitsOn {
   if (!facts.read)
@@ -859,6 +863,7 @@ function driveWait(
   const holdFacts = {
     dispatched: ctx.dispatches || current(reads.claims) !== null,
     record: holdingRecord(reads.records),
+    holding: holdingRecordsOf(reads.records),
   };
   if (reads.pull.state !== "OPEN")
     return (
@@ -901,7 +906,14 @@ function driveWait(
   );
   if (diagnosis !== null) return diagnosis;
   if (ledger === null)
-    return heldStopWait(holder, "unarmed", "", holdFacts) ?? "none";
+    return (
+      heldStopWait(
+        holder,
+        facts.unread ? "unplaced" : "unarmed",
+        "",
+        holdFacts,
+      ) ?? "none"
+    );
   return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 
@@ -915,6 +927,11 @@ function diagnosticWait(
 ): WaitsOn | null {
   if (ledger !== null && ledger.parked.length > 0) return null;
   const diagnosis = row?.doctor?.ciHold;
+  const strandedHold =
+    held !== null &&
+    ledger?.driver.state === "running" &&
+    (holder === "none" || holder.process !== "alive");
+  if (strandedHold) return withDiagnosis(held, diagnosis);
   if (diagnosis !== undefined && diagnosis.held !== false) {
     return holdWait(
       diagnosis,
@@ -927,7 +944,6 @@ function diagnosticWait(
     ledger?.driver.state === "running" &&
     (holder === "none" || holder.process !== "alive")
   ) {
-    if (held !== null) return held;
     return {
       waiting:
         diagnosis?.driver === "dead"
@@ -936,6 +952,19 @@ function diagnosticWait(
     };
   }
   return null;
+}
+
+/** A stranded launch's wait, with what the doctor reads of the CI hold kept as supporting detail. */
+function withDiagnosis(
+  held: WaitsOn,
+  diagnosis: CiHoldDiagnosis | undefined,
+): WaitsOn {
+  if (held === "none" || diagnosis === undefined || diagnosis.held === false)
+    return held;
+  const more = `the doctor also reads: ${diagnosis.driverReason}; ${diagnosis.reason}`;
+  return "waiting" in held
+    ? { waiting: `${held.waiting}; ${more}` }
+    : { ...held, why: `${held.why}; ${more}` };
 }
 
 /** The shared diagnosis supplies the release proof; these reads must still describe the same run and head. */

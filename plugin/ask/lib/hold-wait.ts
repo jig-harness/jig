@@ -31,6 +31,8 @@ export interface HoldFacts {
   dispatched: boolean;
   /** This machine's launch record that holds the drive, if one does. */
   record: ReadRecord | null;
+  /** Every record of this machine that holds the drive. */
+  holding: readonly ReadRecord[];
 }
 
 /** A span of time as a person reads it, to the minute. */
@@ -48,17 +50,14 @@ function holderWords(holder: Holder): string {
   return `held by the ${holder.stage} launch on ${where}${record === undefined ? "" : ` (launch record ${record})`}, whose process is ${holder.process}: ${holder.why}`;
 }
 
-/** Whether the holder is this machine's record of unknown state, every process of which is proved gone where `proof` asks it. */
-function ownRecord(
-  holder: Holder,
-  read: ReadRecord | null,
-  proof: boolean,
-): boolean {
+/** Whether the holder is this machine's record of unknown state and every record holding the drive is one too, each with its processes proved gone where `proof` asks it. */
+function ownRecord(holder: Holder, facts: HoldFacts, proof: boolean): boolean {
   return (
     holder.local?.record !== undefined &&
-    read?.record.id === holder.local.record &&
-    read.state.kind === "unknown" &&
-    (!proof || provedGone(read.state))
+    facts.record?.record.id === holder.local.record &&
+    facts.holding.every(
+      (r) => r.state.kind === "unknown" && (!proof || provedGone(r.state)),
+    )
   );
 }
 
@@ -88,8 +87,7 @@ export function heldStopWait(
 ): WaitsOn | null {
   if (holder === "none" || holder.process === "alive") return null;
   const heldUp = heldUpByLaunch(placed);
-  if (!heldUp && !ownRecord(holder, facts.record, needsProof(placed)))
-    return null;
+  if (!heldUp && !ownRecord(holder, facts, needsProof(placed))) return null;
   const since = heldStopSinceMs(holder.since ?? "", stoppedAt, placed);
   const age = currentMs() - since;
   const held = Number.isFinite(since)

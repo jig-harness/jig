@@ -14,6 +14,10 @@ release: patch
   merged pull request's hold counts from its merge, and a running drive's
   from the launch. A drive whose driver may still run (a running, silent
   or unread ledger) is raised only once every process of the record is
-  proved gone, so a failed process read never raises a working drive. The
+  proved gone (for every record that holds the drive, not only the
+  newest), so a failed process read never raises a working drive; the
+  hold is raised whether or not a launch is planned for the drive, and
+  `jig ask` names a stranded launch ahead of a CI-hold diagnosis and
+  never reads a ledger that did not read as an unarmed drive. The
   tick sees a merged pull request through the follow-up stage's listing,
   so it raises that hold where follow-ups are configured.
