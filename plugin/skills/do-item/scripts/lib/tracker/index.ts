@@ -25,7 +25,7 @@ import type { Facets } from "./facets/config.ts";
 import { detectionCacheDir, fileDetectionCache } from "./facets/detect.ts";
 import { defaultedGitHub } from "./github/defaults.ts";
 import { gitHubModel } from "./github/model.ts";
-import { homeRepo, remoteUrl } from "./github/refs.ts";
+import { homeRepo, remoteUrl, slug } from "./github/refs.ts";
 import {
   credentialToken,
   defaultTransport as gitHubTransport,
@@ -75,7 +75,7 @@ function gitHub(
 ): Tracker {
   const home = homeRepo(config.github.repository, () => remoteUrl(root));
   const model = gitHubModel(config.states, config.github);
-  const transport = gitHubTransport();
+  const transport = gitHubTransport(process.env, slug(home));
   return defaultedGitHub({
     home,
     model,

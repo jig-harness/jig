@@ -23,7 +23,7 @@ import {
   type Outcome,
 } from "../../../../shared/outcome.ts";
 import type { ForgeFacts, HeadCheck, HeadReview } from "./merge-ready.ts";
-import { ghCall, ghRepoEnv } from "./proc.ts";
+import { ghCall, ghRepoEnvFor } from "./proc.ts";
 import { currentMs } from "../../../../shared/time.ts";
 
 /** The query's name, which a fake forge recognises. */
@@ -288,7 +288,7 @@ async function queryOnce(
       flag,
       `name=${name}`,
     ],
-    { stderr: "pipe", env: ghRepoEnv(), timeoutSec },
+    { stderr: "pipe", env: ghRepoEnvFor(slug), timeoutSec },
   );
   if (r.code !== 0) {
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";

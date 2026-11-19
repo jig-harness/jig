@@ -133,6 +133,7 @@ export type Runner = (
   opts: {
     stdin?: string;
     timeoutSec: number;
+    env?: Record<string, string | undefined>;
     onSpawn: (handle: RunHandle) => void;
   },
 ) => Promise<RunResult>;
@@ -147,7 +148,13 @@ export type Runner = (
 export async function runClient(
   runner: Runner,
   argv: string[],
-  opts: { stdin?: string; timeoutMs: number; signal: AbortSignal | undefined },
+  opts: {
+    stdin?: string;
+    timeoutMs: number;
+    signal: AbortSignal | undefined;
+    /** The client's whole environment, when it is not this process's. */
+    env?: Record<string, string | undefined>;
+  },
 ): Promise<RunResult> {
   let handle: RunHandle | undefined;
   let release: (() => void) | undefined;
@@ -156,6 +163,7 @@ export async function runClient(
   try {
     return await runner(argv, {
       ...(opts.stdin === undefined ? {} : { stdin: opts.stdin }),
+      ...(opts.env === undefined ? {} : { env: opts.env }),
       timeoutSec: opts.timeoutMs / 1000,
       onSpawn: (spawned) => {
         handle = spawned;

@@ -4,7 +4,9 @@
  *
  * Two transports exist. By default every request is `gh api graphql`, which
  * holds its own credential (`gh auth login`, or `GH_TOKEN` / `GITHUB_TOKEN`)
- * and knows the host. With `JIG_GITHUB_GRAPHQL_URL` set, requests go over
+ * and knows the host; each run names the repository its request is about in
+ * `GH_REPO` (`requestRepository`), so whatever picks the account `gh` runs
+ * as sees it. With `JIG_GITHUB_GRAPHQL_URL` set, requests go over
  * HTTPS to that endpoint with the token from `GH_TOKEN` or `GITHUB_TOKEN`
  * instead: a GitHub Enterprise endpoint `gh` is not signed in to, or a local
  * fake (plain `http` is accepted for a loopback address only). Tests of the
@@ -24,6 +26,7 @@
 import {
   type RunResult,
   ghCall,
+  ghRepoEnvFor,
 } from "../../../../../drive-pr/scripts/lib/proc.ts";
 import { unheldForm } from "../../../../../../shared/trace.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
@@ -274,10 +277,39 @@ async function call(
   return unwrapResponse(answer.body);
 }
 
+/** `owner/name` of each repository a request's variables name, told apart ignoring case. */
+function namedRepositories(variables: Record<string, unknown>): string[] {
+  const named = new Map<string, string>();
+  for (const [key, owner] of Object.entries(variables)) {
+    const suffix = /^owner(\d*)$/.exec(key)?.[1];
+    const name = suffix === undefined ? undefined : variables[`name${suffix}`];
+    if (typeof owner !== "string" || typeof name !== "string") continue;
+    if (owner === "" || name === "") continue;
+    const slug = `${owner}/${name}`;
+    named.set(slug.toLowerCase(), slug);
+  }
+  return [...named.values()];
+}
+
+/**
+ * The repository a request is about, as `owner/name`: the one its variables
+ * name (`owner` and `name`, or each batched `owner<i>` and `name<i>`) when
+ * they name exactly one, else `home`, the repository the transport serves.
+ * `null` when neither says.
+ */
+export function requestRepository(
+  variables: Record<string, unknown>,
+  home: string | null,
+): string | null {
+  const named = namedRepositories(variables);
+  return named.length === 1 ? (named[0] ?? home) : home;
+}
+
 /** One `gh api graphql` run's answer, its body read with the status and headers `--include` prints. */
 async function ghOnce(
   runner: typeof ghCall,
   payload: { query: string; variables: Record<string, unknown> },
+  repository: string | null,
   bound: AbortSignal,
   signal: AbortSignal | undefined,
 ): Promise<Answer> {
@@ -289,6 +321,7 @@ async function ghOnce(
       stdin: JSON.stringify(payload),
       timeoutMs: GITHUB_TIMEOUT_MS,
       signal: bound,
+      ...(repository === null ? {} : { env: ghRepoEnvFor(repository) }),
     },
   );
   if (cancelled(signal)) return abortedError(signal, true);
@@ -396,19 +429,34 @@ function errorsFailure(
  * Transport through `gh api graphql`, run through drive-pr's deadline
  * wrapper (`runClient`). The request travels on standard input as one JSON
  * body, so variables keep their types and nothing reaches the command line.
+ * `home` (`owner/name`) is the repository the transport serves: a run names
+ * it in `GH_REPO` when its variables name no single repository. A run that
+ * names none keeps the environment it inherits.
  */
-export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
+export function ghTransport(
+  runner: typeof ghCall = ghCall,
+  home: string | null = null,
+): GitHubTransport {
   // The shared runner is not held per run: the hold lands around the whole
   // call, after its retry. An injected runner is the caller's own.
   const unheld = unheldForm(runner);
   const hold = unheld === undefined ? null : GITHUB;
-  return (query, variables, signal, idempotent = false) =>
-    call(
-      (bound) => ghOnce(unheld ?? runner, { query, variables }, bound, signal),
+  return (query, variables, signal, idempotent = false) => {
+    const repository = requestRepository(variables, home);
+    return call(
+      (bound) =>
+        ghOnce(
+          unheld ?? runner,
+          { query, variables },
+          repository,
+          bound,
+          signal,
+        ),
       signal,
       idempotent,
       hold,
     );
+  };
 }
 
 /** `gh --include` prints the HTTP status and headers before the JSON body. */
@@ -665,11 +713,15 @@ export function httpTransport(
 
 /**
  * The transport the environment asks for: HTTPS to `JIG_GITHUB_GRAPHQL_URL`
- * when it is set (a token is then required), else `gh`.
+ * when it is set (a token is then required), else `gh` serving `home`
+ * (`owner/name`, see `ghTransport`).
  */
-export function defaultTransport(env = process.env): GitHubTransport {
+export function defaultTransport(
+  env = process.env,
+  home: string | null = null,
+): GitHubTransport {
   const url = env.JIG_GITHUB_GRAPHQL_URL?.trim();
-  if (url === undefined || url === "") return ghTransport();
+  if (url === undefined || url === "") return ghTransport(ghCall, home);
   const token = resolveGitHubToken(env);
   if (token === null)
     throw new GitHubApiError(
