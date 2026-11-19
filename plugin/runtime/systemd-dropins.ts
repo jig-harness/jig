@@ -369,10 +369,11 @@ export function effectiveJob(
       if (reason !== null)
         return failed("unsupported", `the drop-in ${dropIn.path}: ${reason}`);
     }
-  for (const [key, path] of state.active)
+  const [active] = state.active;
+  if (active !== undefined)
     return failed(
       "unsupported",
-      `the drop-in ${path}: ${key}= is not reproduced outside systemd`,
+      `the drop-in ${active[1]}: ${active[0]}= is not reproduced outside systemd`,
     );
   const [command, ...more] = state.commands;
   if (command === undefined)
@@ -429,7 +430,7 @@ export async function readDropIns(
   const out: DropIn[] = [];
   // The paths are one space-separated line: a space inside a directory name is told from the separator by the `/` that starts the next path.
   for (const path of (properties.get("DropInPaths") ?? "")
-    .split(/\s+(?=\/)/)
+    .split(/ (?=\/)/)
     .map((one) => one.trim())
     .filter(Boolean)) {
     const text = attempt(

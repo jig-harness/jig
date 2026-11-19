@@ -490,9 +490,16 @@ describe("the line a tick leaves", () => {
         JIG_DISPATCH_OBSERVE_WAIT_MS: "30000",
       });
       // The tick opened the repository, and now waits for its lock.
-      await waitFor("the tick to open the repository", () =>
-        existsSync(join(w.dir, "gh-calls.log")),
-      );
+      // The budget call also logs: wait for the repository read itself, which carries the configuration.
+      await waitFor("the tick to read the repository", () => {
+        const log = join(w.dir, "gh-calls.log");
+        return (
+          existsSync(log) &&
+          readFileSync(log, "utf8")
+            .split("\n")
+            .some((line) => line.includes("DispatchRepository"))
+        );
+      });
       // The holder acted: the repository's configuration and a second parked pull request changed after the tick's first read.
       w.setConfig(CONFIG.replace(SLUG, "example-org/moved-tracker"));
       w.setPrs("open", [openPr(7, HEAD), openPr(8, "feature/8-parked")]);

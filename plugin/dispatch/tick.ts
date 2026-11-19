@@ -182,6 +182,9 @@ export type TickResult =
 /** A lock this tick holds. */
 type Held = Exclude<Lock, { heldBy: string }>;
 
+/** The key a repository's lock is kept under in the tick's lock map, beside the checkouts' paths. */
+const REPOSITORY_LOCK_PREFIX = "repository:";
+
 /** How long the act phase waits for another tick's act lock: past it, the tick ends as one that found the lock held. */
 const ACT_LOCK_WAIT_MS = 120_000;
 /** How often the act phase looks at the act lock again while it waits. */
@@ -364,7 +367,8 @@ async function observeAll(
             if (repository === null) return null;
             if ("heldBy" in repository) return repository.heldBy;
             claimed.add(slug);
-            own.push(repository);
+            // Sibling checkouts borrow this lock: the tick owns it, so one checkout giving up its turn never releases it.
+            locks.set(`${REPOSITORY_LOCK_PREFIX}${slug}`, repository);
             // The holder may have acted during the wait: every checkout's open read of the repository is stale.
             if (waited) {
               waitedFor.add(slug);
@@ -605,6 +609,12 @@ async function actAll(
   for (const path of acted) {
     locks.get(path)?.release();
     locks.delete(path);
+  }
+  // The repository locks the checkouts shared go with the launches: the settle phase takes them again.
+  for (const [key, lock] of locks) {
+    if (!key.startsWith(REPOSITORY_LOCK_PREFIX)) continue;
+    lock.release();
+    locks.delete(key);
   }
   // In the order the repositories were named, not the order their reads finished.
   const busy = [...new Set(order)].flatMap((path) => {

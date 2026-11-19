@@ -115,7 +115,11 @@ export async function openTurn(
     heldBy = await claim(opened.repo.slug);
     if (heldBy === REOPEN && refreshed.has(opened.repo.slug)) heldBy = null;
   }
-  if (heldBy === REOPEN) heldBy = null;
+  // Out of reopens with the last read still stale: the turn waits for the next tick.
+  if (heldBy === REOPEN)
+    return {
+      busy: "its repository lock was waited for again after the last reopen",
+    };
   if (heldBy !== null) return { busy: heldBy };
   turn.report = opened.report;
   const { owner, reflection } = opened;
