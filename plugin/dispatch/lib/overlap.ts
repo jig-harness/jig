@@ -162,7 +162,11 @@ function globsMeet(a: string, b: string): boolean {
 }
 
 /** Whether a coarse element `x` (a directory or an area) holds, or reaches into, the element `y`. */
-function holds(x: Element, y: Element, model: OverlapModel): boolean {
+function holds(
+  x: Element,
+  y: Element,
+  model: Pick<OverlapModel, "areaGlobs">,
+): boolean {
   if (x.kind === "file") return false;
   if (x.kind === "dir") {
     if (y.kind === "file" || y.kind === "dir") return y.path.startsWith(x.path);
@@ -177,6 +181,29 @@ function holds(x: Element, y: Element, model: OverlapModel): boolean {
   if (x.key === y.key) return true;
   const other = model.areaGlobs(y.key);
   return globs.some((g) => other.some((h) => globsMeet(g, h)));
+}
+
+/**
+ * Whether a known footprint reaches an area of the catalog: a file of it lies
+ * in the area, or a directory or an area of it holds, or is held by, a glob
+ * of the area. The coarse match is read conservatively, as a serialized
+ * area's hold reads it; generated and ignored paths count.
+ */
+export function reachesArea(
+  footprint: Footprint,
+  area: string,
+  model: Pick<OverlapModel, "areaGlobs">,
+): boolean {
+  if (!footprint.known) return false;
+  const target: Element = { kind: "area", key: area };
+  const dirs = [
+    ...footprint.dirs,
+    ...footprint.files.filter((f) => f.endsWith("/")),
+  ];
+  const files = footprint.files.filter((f) => !f.endsWith("/"));
+  return elements({ ...footprint, files, dirs }).some(
+    (e) => holds(target, e, model) || holds(e, target, model),
+  );
 }
 
 function describe(e: Element): string {
