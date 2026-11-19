@@ -182,7 +182,6 @@ describe("the limit's reading", () => {
     });
     const limit = forgeLimitOf({
       code: 1,
-      stdout: "",
       stderr: `${held.reason}\n`,
       timedOut: false,
       held,
@@ -194,7 +193,6 @@ describe("the limit's reading", () => {
     expect(
       forgeLimitOf({
         code: 1,
-        stdout: "",
         stderr: "HTTP 404: Not Found\n",
         timedOut: false,
       }),
