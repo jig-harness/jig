@@ -22,9 +22,9 @@ test("audit checks the pushed branch against the remote default branch", () => {
     expectSpawnExit(result, 0, args.join(" "));
     return result.stdout.toString().trim();
   };
-  const audit = (upstreamBase?: string) =>
+  const audit = (upstreamBase?: string, dir = cwd) =>
     Bun.spawnSync([process.execPath, "run", "audit"], {
-      cwd,
+      cwd: dir,
       env: {
         ...Bun.env,
         FALLOW_AUDIT_BASE: upstreamBase,
@@ -106,6 +106,27 @@ test("audit checks the pushed branch against the remote default branch", () => {
     const symbolic = audit(topic);
     expectSpawnExit(symbolic, 1);
     expect(symbolic.stdout.toString()).toContain(base);
+
+    git("switch", "-c", "clean", base);
+    writeFileSync(join(cwd, "index.ts"), "console.log('clean');\n");
+    git("commit", "-am", "Clean change");
+    expectSpawnExit(audit(), 0);
+
+    const shallowDir = join(scratch, "shallow");
+    const clone = Bun.spawnSync([
+      "git",
+      "clone",
+      "--depth",
+      "1",
+      `file://${join(scratch, "remote")}`,
+      shallowDir,
+      "--branch",
+      "topic",
+    ]);
+    expectSpawnExit(clone, 0, "shallow clone");
+    const shallow = audit(undefined, shallowDir);
+    expectSpawnExit(shallow, 2);
+    expect(shallow.stderr.toString()).toContain("shallow");
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

@@ -1,25 +1,38 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { delimiter, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { couldNotCheck } from "../lib/findings.ts";
 
-const systemPath =
+const systemDirs =
   process.platform === "win32"
     ? [
         join(process.env.SystemRoot ?? "C:\\Windows", "System32"),
         join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "cmd"),
-      ].join(delimiter)
-    : "/usr/local/bin:/usr/bin:/bin";
+      ]
+    : ["/usr/local/bin", "/usr/bin", "/bin"];
+
+// System directories come first, so a planted executable can only win where
+// no system directory has the tool. The caller's own entries follow, minus
+// relative ones and any inside the checkout or the temp directory.
+const untrusted = [process.cwd(), tmpdir()].map((dir) => resolve(dir));
+const callerDirs = (process.env.PATH ?? "").split(delimiter).filter(
+  (dir) =>
+    isAbsolute(dir) &&
+    !untrusted.some((root) => {
+      const rel = relative(root, resolve(dir));
+      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    }),
+);
+const toolPath = [...systemDirs, ...callerDirs].join(delimiter);
 
 const git = (...args: string[]) =>
-  spawnSync("git", args, { encoding: "utf8", env: { PATH: systemPath } });
+  spawnSync("git", args, { encoding: "utf8", env: { PATH: toolPath } });
 
-const fallow = join(
-  import.meta.dir,
-  "../node_modules/.bin",
-  process.platform === "win32" ? "fallow.cmd" : "fallow",
-);
+// The package's own JavaScript launcher, run by Bun: a .bin shim is a shell
+// script or a Windows .cmd file, neither of which Bun can execute as a script.
+const fallow = join(import.meta.dir, "../node_modules/fallow/bin/fallow");
 
 function gitError(result: ReturnType<typeof git>): string {
   return result.error?.message ?? result.stderr.trim();
@@ -56,7 +69,7 @@ async function audit(): Promise<number> {
     return await Bun.spawn(
       [process.execPath, fallow, "audit", "-q", "--changed-since", commit],
       {
-        env: { ...process.env, PATH: systemPath, TMPDIR: cache },
+        env: { ...process.env, PATH: toolPath, TMPDIR: cache },
         stdout: "inherit",
         stderr: "inherit",
       },
