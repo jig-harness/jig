@@ -166,6 +166,14 @@ export function bookOf(
   return book;
 }
 
+/** The host's weights and live drivers, as the account views take them. */
+export function hostInputs(context: TickContext): {
+  weights: TickContext["weights"];
+  drivers: TickContext["drivers"];
+} {
+  return { weights: context.weights, drivers: context.drivers };
+}
+
 /** This machine's launch records, the ones this tick writes included. */
 export function allRecords(context: TickContext): ReadRecord[] {
   return context.apply?.records ?? context.launches;

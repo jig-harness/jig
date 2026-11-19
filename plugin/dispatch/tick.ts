@@ -115,6 +115,7 @@ import { loadReport } from "./lib/load.ts";
 import { readTickLoad } from "./lib/tick-load.ts";
 import {
   allRecords,
+  hostInputs,
   deadlineOf,
   type TickContext,
   type TickOptions,
@@ -461,7 +462,6 @@ async function startAct(started: StartedTick): Promise<void> {
     receipt.defect = defectOf("start", error);
     logDefect("the follow-up outcomes", receipt.defect, error);
   }
-  // Read again under the act lock, beside the records the launches are admitted by.
   context.drivers = readHostDrivers();
   const attempt = applyState(
     options,
@@ -486,8 +486,7 @@ async function startAct(started: StartedTick): Promise<void> {
     accountsReport(options.machine ?? null, {
       records: read.records,
       nowMs: context.nowMs,
-      weights: context.weights,
-      drivers: context.drivers,
+      ...hostInputs(context),
       ...(apply ?? {}),
     }),
   );
@@ -516,8 +515,7 @@ async function readLoadUnderAct(
     codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     nowMs: context.nowMs,
     sample: apply !== null,
-    weights: context.weights,
-    drivers: context.drivers,
+    ...hostInputs(context),
   });
   if (!load.ok) {
     receipt.loadUnread = load.failure.reason;
@@ -712,8 +710,7 @@ async function closeTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
-    weights: context.weights,
-    drivers: context.drivers,
+    ...hostInputs(context),
   });
   // Writing the line can set the exit to 1: the tick's failure row follows it.
   finalizeTickFailure(receipt, context);
@@ -772,8 +769,7 @@ function lineOfHeldTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
-    weights: context.weights,
-    drivers: context.drivers,
+    ...hostInputs(context),
   });
 }
 
