@@ -217,7 +217,7 @@ function scanItem(scan: ChecklistScan, line: MarkdownLine): boolean {
   const step = uncheckedListItem(line.line);
   if ((line.depth ?? 0) > 0 && (scan.open || step)) return false;
   if (nestsOnItsOwnLine(line.line)) return false;
-  if (step) scan.steps.push(step);
+  if (step !== undefined) scan.steps.push(step);
   scan.open = step !== undefined;
   scan.column = line.contentColumn ?? 0;
   return true;
@@ -238,7 +238,10 @@ function scanContinuation(
     return true;
   }
   if (line.kind !== "text" || line.quoted || line.inItem) return false;
-  scan.steps[scan.steps.length - 1] += ` ${line.line.trim()}`;
+  const last = scan.steps.length - 1;
+  const text = line.line.trim();
+  scan.steps[last] =
+    scan.steps[last] === "" ? text : `${scan.steps[last]} ${text}`;
   return true;
 }
 
@@ -280,7 +283,9 @@ function operatorSteps(
   for (const line of markdownLines(epic.description)) {
     if (!scanLine(scan, line)) return null;
   }
-  return scan.found ? scan.steps : null;
+  // An unchecked opener whose text never arrives is an obligation the
+  // checklist cannot name, so it is refused rather than dropped.
+  return scan.found && !scan.steps.includes("") ? scan.steps : null;
 }
 
 const LIST_MARKER = /^[ \t]*(?:[-*+]|\d+[.)])(?:[ \t]|$)/;
@@ -308,6 +313,7 @@ function skipBlanks(text: string, from: number): number {
   return cursor;
 }
 
+/** The text of an unchecked item (empty when it opens with none), else undefined. */
 function uncheckedListItem(line: string): string | undefined {
   const text = line.trimStart();
   const marker = afterListMarker(text);
@@ -315,9 +321,10 @@ function uncheckedListItem(line: string): string | undefined {
   const box = skipBlanks(text, marker);
   if (!text.startsWith("[ ]", box)) return undefined;
   const after = box + 3;
-  if (text[after] !== " " && text[after] !== "\t") return undefined;
-  const step = text.slice(skipBlanks(text, after)).trim();
-  return step === "" ? undefined : step;
+  if (after < text.length && text[after] !== " " && text[after] !== "\t") {
+    return undefined;
+  }
+  return text.slice(skipBlanks(text, after)).trim();
 }
 
 export async function assessEpic(

@@ -118,6 +118,13 @@ describe("epic sweep assessments", () => {
       ).operatorSteps,
     ).toEqual(["Deploy only after approval", "Verify"]);
     expect(
+      (await row("## Operator Checklist\n\n- [ ] \n  Verify production"))
+        .operatorSteps,
+    ).toEqual(["Verify production"]);
+    expect(
+      (await row("## Operator Checklist\n\n- [ ]\n- [ ] Verify")).outcome,
+    ).toBe("needs-operator-checklist");
+    expect(
       (await row("## Operator Checklist\n\n- [ ] Run\n  ```sh\n  make\n  ```"))
         .outcome,
     ).toBe("needs-operator-checklist");
