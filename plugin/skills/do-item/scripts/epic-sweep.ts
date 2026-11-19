@@ -81,15 +81,16 @@ async function committedEntries(
       `Cannot read ${tracking}`,
     ).trim();
     for (const path of paths) {
-      const exists = await git(
-        ["cat-file", "-e", `${commit}:${path}`],
-        options,
-      );
-      if (exists.code === 1) continue;
-      checkedGit(
-        exists,
+      // `ls-tree` answers an absent path with empty output, where `cat-file`
+      // would die on object-name resolution (exit 128), like a real failure.
+      const listed = checkedGit(
+        await git(
+          ["ls-tree", "-z", "--name-only", commit, "--", path],
+          options,
+        ),
         `Cannot establish whether ${path} exists on ${remote}/${branch}`,
       );
+      if (!listed.split("\0").includes(path)) continue;
       const contents = checkedGit(
         await git(["show", `${commit}:${path}`], options),
         `Cannot read ${path} on ${remote}/${branch}`,

@@ -106,6 +106,23 @@ describe("epic sweep assessments", () => {
     ]);
   });
 
+  test("keeps continuation lines and refuses fenced checklist items", async () => {
+    const manual = { ...epic, labels: ["manual-ops"] };
+    const row = (description: string) =>
+      assessEpic({ ...manual, description }, [done], scope, absent);
+    expect(
+      (
+        await row(
+          "## Operator Checklist\n\n- [ ] Deploy\n  only after approval\n- [ ] Verify",
+        )
+      ).operatorSteps,
+    ).toEqual(["Deploy only after approval", "Verify"]);
+    expect(
+      (await row("## Operator Checklist\n\n- [ ] Run\n  ```sh\n  make\n  ```"))
+        .outcome,
+    ).toBe("needs-operator-checklist");
+  });
+
   test("binds a reply to the proposal and supports exclusions", async () => {
     const row = await assessEpic(epic, [done], scope, absent);
     const proposal = createProposal([row, { ...row, epic: "#20" }]);

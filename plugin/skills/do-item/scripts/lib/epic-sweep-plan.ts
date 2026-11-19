@@ -182,6 +182,8 @@ export function containsEntry(document: string, heading: string): boolean {
   return false;
 }
 
+const LIST_MARKER = /^\s*(?:[-*+]|\d+[.)])(?:\s|$)/;
+
 function operatorSteps(
   epic: Issue,
   vocabulary: ReconcileVocabulary,
@@ -194,6 +196,7 @@ function operatorSteps(
   const steps: string[] = [];
   let checklistDepth = 0;
   let found = false;
+  let continuing = false;
   for (const line of markdownLines(epic.description)) {
     if (line.quoted || line.inItem) continue;
     if (line.kind === "heading") {
@@ -207,7 +210,19 @@ function operatorSteps(
       }
     } else if (checklistDepth && line.kind === "text") {
       const step = uncheckedListItem(line.line);
-      if (step) steps.push(step);
+      if (step) {
+        steps.push(step);
+        continuing = true;
+      } else if (line.line.trim() === "" || LIST_MARKER.test(line.line)) {
+        continuing = false;
+      } else if (continuing) {
+        // A paragraph continuation belongs to the item above it.
+        steps[steps.length - 1] += ` ${line.line.trim()}`;
+      }
+    } else if (checklistDepth && continuing) {
+      // A fenced or indented block inside an item cannot be carried as one
+      // line, so the checklist is refused rather than transferred incomplete.
+      return null;
     }
   }
   return found ? steps : null;
