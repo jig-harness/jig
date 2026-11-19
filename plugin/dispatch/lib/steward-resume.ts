@@ -508,6 +508,9 @@ function resumeRecord(
   };
   delete record.endedAt;
   delete record.cancelledAt;
+  // The resume continues the claim on the steward's word, not as the automatic relaunch its source was.
+  delete record.relaunchOf;
+  delete record.relaunchHead;
   return record;
 }
 

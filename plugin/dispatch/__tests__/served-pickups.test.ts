@@ -160,7 +160,7 @@ describe("served pickups", () => {
     expect(read.read.ok).toBe(false);
     expect(read.claimed).toBeNull();
   });
-  it("keeps the class of a child read that failed after the queue read", async () => {
+  it("keeps the class of a child read that failed after the queue read, and the claims the queue read", async () => {
     const f = fake();
     const poolIssue = f.tracker.poolIssue.bind(f.tracker);
     f.tracker.poolIssue = async (k: string) => {
@@ -178,7 +178,8 @@ describe("served pickups", () => {
     );
     expect(read.read.ok).toBe(false);
     expect(read.read.failure).toMatchObject({ class: "unreachable" });
-    expect(read.claimed).toBeNull();
+    expect(read.claimed).toEqual([]);
+    expect(read.partial).toBe(true);
   });
   const readWithChildRead = async (
     child: (poolIssue: (k: string) => Promise<unknown>, k: string) => unknown,
@@ -200,7 +201,8 @@ describe("served pickups", () => {
       return poolIssue(k);
     });
     expect(read.read.ok).toBe(false);
-    expect(read.claimed).toBeNull();
+    expect(read.claimed).toEqual([]);
+    expect(read.partial).toBe(true);
   });
   it("fails the record for a child read that threw an error with no value", async () => {
     const read = await readWithChildRead(async (poolIssue, k) => {
@@ -208,9 +210,10 @@ describe("served pickups", () => {
       return poolIssue(k);
     });
     expect(read.read.ok).toBe(false);
-    expect(read.claimed).toBeNull();
+    expect(read.claimed).toEqual([]);
+    expect(read.partial).toBe(true);
   });
-  it("keeps the record ok for an item no read threw for, and leaves the claims unknown", async () => {
+  it("keeps the record ok for an item no read threw for, and the claims known but the pickups partial", async () => {
     const read = await readWithChildRead(async (poolIssue, k) =>
       k === "#2"
         ? { ...issue("#2", ["epic"], null), truncated: ["labels"] }
@@ -224,7 +227,8 @@ describe("served pickups", () => {
         reason: "the child cannot be read completely",
       }),
     );
-    expect(read.claimed).toBeNull();
+    expect(read.claimed).toEqual([]);
+    expect(read.partial).toBe(true);
   });
   it("carries a tracker namespace through the public reader", async () => {
     const f = fake();

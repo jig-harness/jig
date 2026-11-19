@@ -9,6 +9,7 @@ import {
   type SessionsReport,
   type Workspace,
 } from "./runtime/port.ts";
+import { failureText } from "./text.ts";
 
 export type Holding =
   | { kind: "free"; evidence: string | null }
@@ -38,6 +39,30 @@ export function holding(
     kind: "free",
     evidence: finished.length > 0 ? finished.join("; ") : null,
   };
+}
+
+/**
+ * Reads the runtime again, just before an action, and whether a running
+ * session holds the target: unknown, with the reason, when the read throws or
+ * the runtime cannot answer. `sessions` is the answer the read gave, `null`
+ * when it threw.
+ */
+export async function holdingAgain(
+  read: () => Promise<SessionsReport>,
+  joined: (w: Workspace) => boolean,
+): Promise<{ sessions: SessionsReport | null; held: Holding }> {
+  try {
+    const sessions = await read();
+    return { sessions, held: holding(sessions, joined) };
+  } catch (error) {
+    return {
+      sessions: null,
+      held: {
+        kind: "unknown",
+        reason: `the runtime cannot be read again: ${failureText(error)}`,
+      },
+    };
+  }
 }
 
 /** The running agents of each workspace, for a report. */
