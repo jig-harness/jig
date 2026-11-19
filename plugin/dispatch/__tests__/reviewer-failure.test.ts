@@ -200,6 +200,15 @@ it("uses configured bot evidence when the current reviewer has no app", async ()
   await rearmed(w);
 }, 120_000);
 
+it("releases an old reviewer-failure hold when reviewer evidence is no longer configured", async () => {
+  const w = fixture([FIRST, SECOND]);
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  reviewer_failures_before_escalation: 2\n  renotify_after: 1s\n`,
+  );
+  stopped(w, [FIRST, SECOND]);
+  await rearmed(w);
+}, 120_000);
+
 it("validates the configured threshold and applies the default", () => {
   expect(dispatchSection({})).toMatchObject({
     ok: true,

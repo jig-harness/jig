@@ -148,8 +148,11 @@ async function recovered(
   cwd?: string,
   bound?: TickBound,
 ): Promise<Outcome<boolean, "unreadable">> {
-  const app =
-    policy.app ?? (policy.currentReviewerConfigured ? undefined : stop.app);
+  // A reviewer-failure stop is only relevant while the current policy still
+  // expects reviewer evidence. Removing that policy intentionally releases
+  // old holds rather than preserving the stopped reviewer's requirement.
+  if (!policy.currentReviewerConfigured) return ok(true);
+  const app = policy.app;
   const logins = app === undefined ? policy.bots : [`${app}[bot]`];
   const mode =
     policy.evidence ?? reviewerProfile(app ?? "")?.evidence ?? "sticky";
