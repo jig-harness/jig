@@ -32,6 +32,7 @@ import {
 } from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
@@ -116,7 +117,6 @@ export interface LineInput {
   stored: (slug: string) => RepoStored;
   records: ReadRecord[];
   accounts: LineAccount[];
-  /** The host's live drivers no holding record accounts for, or why they could not be read. */
   hostDrivers?: { drivers?: LineDriver[]; driversUnread?: string };
   lastAccount: string | null;
   /** The durations the previous line carried. */
@@ -688,34 +688,34 @@ function queueOf(view: RepoView): LineQueued[] {
         },
       }),
     );
+  const entry = (
+    source: LineQueued["source"],
+    group: LineQueued["group"],
+    target: string,
+    why: string,
+    hold: LineQueued["hold"] = null,
+  ) => queued(view, { source, group, target, why, hold });
   const serial = (view.report.serialized?.held ?? []).map((h) =>
-    queued(view, {
-      source: "held",
-      group: "held",
-      target: h.target,
-      why: h.reason,
-      hold: view.stored.holds.find((s) => s.pr === prNumber(h.target)) ?? null,
-    }),
+    entry(
+      "held",
+      "held",
+      h.target,
+      h.reason,
+      view.stored.holds.find((s) => s.pr === prNumber(h.target)) ?? null,
+    ),
   );
   const labelled = (view.report.labels?.held ?? []).map((h) =>
-    queued(view, {
-      source: "held",
-      group: "held",
-      target: h.target,
-      why: h.reason,
-    }),
+    entry("held", "held", h.target, h.reason),
   );
-  const refused = view.report.unplaced
-    .filter((u) => u.record === "tracker" && isItemTarget(u.target))
-    .map((u) =>
-      queued(view, {
-        source: "assigned",
-        group: "never",
-        target: u.target,
-        why: u.reason,
-      }),
-    );
-  return [...planned, ...replayed, ...serial, ...labelled, ...refused];
+  const unplaced = view.report.unplaced.filter((u) => isItemTarget(u.target));
+  // A pickup serialization could not place this tick waits on the next tick's reads.
+  const undecided = unplaced
+    .filter((u) => u.reason.startsWith(SERIAL_UNDECIDED))
+    .map((u) => entry("held", "held", u.target, u.reason));
+  const refused = unplaced
+    .filter((u) => u.record === "tracker")
+    .map((u) => entry("assigned", "never", u.target, u.reason));
+  return [planned, replayed, serial, undecided, labelled, refused].flat();
 }
 
 function repoOf(

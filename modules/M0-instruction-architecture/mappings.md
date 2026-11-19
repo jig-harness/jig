@@ -420,7 +420,7 @@ against the vendor's current lineup and pricing before relying on them.
 | Tier | Anthropic | OpenAI |
 |------|-----------|--------|
 | **Judgment** | Claude Fable (`fable`) | Astra (`astra`, `gpt-6-astra`) |
-| **Strategic** | Claude Opus (`opus`) | Sol (`sol`, `gpt-6.1-sol`) |
+| **Strategic** | Claude Opus (`opus`) | Sol (`sol`, `gpt-6.2-sol`) |
 | **Execution** | Claude Sonnet (`sonnet`) | Terra (`terra`, `gpt-5.6-terra`) |
 | **Scout** | Claude Haiku (`haiku`) | Luna (`luna`, `gpt-6-luna`) |
 | **Pin as** | a bare family alias ([below](#family-aliases-and-pins-in-claude-code)) | the undated model name, which points at the current snapshot, never a dated snapshot; where a runtime offers neither, one central name the repository maps to a release in a single place |

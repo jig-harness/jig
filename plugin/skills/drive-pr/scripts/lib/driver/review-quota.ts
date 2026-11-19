@@ -49,29 +49,35 @@ function wallAccount(context: DriveRoundContext): string | null {
   return accountHash(wallIdentity(context));
 }
 
-async function waitThroughQuotaWindow(
-  plan: Extract<QuotaPlan, { action: "sleep" }>,
+/**
+ * Wait `ms` between passes, as a usage-limit window or a forge rate limit
+ * asks: the exit to stop with when a mailbox stop or another clone's
+ * takeover ends the wait, else `null` once it is over or a lost lock
+ * (`compromised`) cut it short.
+ */
+export async function waitBetweenPasses(
+  ms: number,
   context: DriveRoundContext,
-): Promise<number | "continue"> {
+): Promise<number | null> {
   driverRuntime.quotaSleepAbort = new AbortController();
   try {
-    const quotaWaitStartedAt = performance.now();
+    const waitStartedAt = performance.now();
     // A sleep can outlast the ledger's lease window: the heartbeat is
     // rewritten as the sleep starts and well inside the window after, so
     // another clone never takes over a sleeping driver; a newer claim from
     // another clone ends the sleep. A mailbox pause inside the checkpoint
     // below renews it the same way.
     const renewLedger = ledgerRenewal(context.pr);
-    while (performance.now() - quotaWaitStartedAt < plan.ms) {
+    while (performance.now() - waitStartedAt < ms) {
       const takenOver = await renewLedger();
       if (takenOver !== null) return takenOver;
-      // Quota waiting is between passes, so a mailbox stop must not
-      // sit behind this potentially multi-hour sleep. Keep the
-      // takeover abort on each short sleep as before.
-      const mailboxDuringQuota = await context.mailboxCheckpoint();
-      if (typeof mailboxDuringQuota === "number") return mailboxDuringQuota;
+      // The wait is between passes, so a mailbox stop must not sit behind
+      // this potentially multi-hour sleep. Keep the takeover abort on each
+      // short sleep as before.
+      const mailbox = await context.mailboxCheckpoint();
+      if (typeof mailbox === "number") return mailbox;
       if (driverRuntime.compromised !== "") break;
-      const remainingMs = plan.ms - (performance.now() - quotaWaitStartedAt);
+      const remainingMs = ms - (performance.now() - waitStartedAt);
       if (remainingMs > 0) {
         await sleep(
           Math.min(MAILBOX_POLL_SECONDS, remainingMs / 1000),
@@ -82,6 +88,15 @@ async function waitThroughQuotaWindow(
   } finally {
     driverRuntime.quotaSleepAbort = null;
   }
+  return null;
+}
+
+async function waitThroughQuotaWindow(
+  plan: Extract<QuotaPlan, { action: "sleep" }>,
+  context: DriveRoundContext,
+): Promise<number | "continue"> {
+  const stopped = await waitBetweenPasses(plan.ms, context);
+  if (stopped !== null) return stopped;
   if (driverRuntime.compromised !== "") {
     // The loop's own top-of-iteration check reports and returns 11 —
     // nothing to add here beyond not claiming a resumption that

@@ -134,6 +134,7 @@ const event = s.union([
     cause: s.string({ pattern: "^(\\d+|unknown)$" }),
     leftWork: s.optional(s.boolean()),
     tree: s.optional(nonempty),
+    until: s.optional(s.unknown()),
   }),
 ]);
 const ciAction = s.object({

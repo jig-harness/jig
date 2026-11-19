@@ -20,6 +20,7 @@
  *     config_dir: /home/me/.claude-work
  *     identity: me@example.com
  *     max_per_account: 2
+ *     # stages: [pickup, followup] # the launching stages it serves; every one when left out
  * interval: 5m
  * wall_backoff: 1h
  * runtime_timeout: 1m
@@ -76,22 +77,19 @@ import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import { duration } from "./duration.ts";
 import {
+  accountStages,
+  type MachineStage,
+  machineStages,
+  type ServedStage,
+} from "./account-stages.ts";
+import {
   type PrioritiesSettings,
   prioritiesSettings,
 } from "./priorities-config.ts";
 
 export { duration };
 
-/** The stages a machine file can enable. */
-const MACHINE_STAGES = [
-  "rearm",
-  "pickup",
-  "followup",
-  "notify",
-  "steer",
-  "steward",
-] as const;
-export type MachineStage = (typeof MACHINE_STAGES)[number];
+export type { MachineStage };
 
 export interface MachineAccount {
   /** The account's name here, which launch records and walls are keyed by. */
@@ -108,6 +106,8 @@ export interface MachineAccount {
   identity: string;
   /** Sessions the dispatcher may hold on it at once. */
   maxPerAccount: number;
+  /** The launching stages it serves (`account-stages.ts`); absent, every one. */
+  stages?: ServedStage[];
 }
 
 export interface MachineRepository {
@@ -235,6 +235,7 @@ const ACCOUNT_KEYS = [
   "config_dir",
   "identity",
   "max_per_account",
+  "stages",
 ];
 
 /**
@@ -338,21 +339,6 @@ function each<T>(
   return ok(out);
 }
 
-function stages(value: unknown, where: string): Checked<MachineStage[]> {
-  const raw = list(value, where);
-  if (!raw.ok) return raw;
-  if (
-    raw.value.some(
-      (s) => !(MACHINE_STAGES as readonly unknown[]).includes(s),
-    ) ||
-    new Set(raw.value).size !== raw.value.length
-  )
-    return invalid(
-      `${where} must list distinct stages from ${MACHINE_STAGES.join(", ")}`,
-    );
-  return ok(raw.value as MachineStage[]);
-}
-
 function since(value: unknown, where: string): Checked<string | null> {
   if (value === undefined || value === null) return ok(null);
   const raw = value instanceof Date ? value.toISOString() : value;
@@ -368,7 +354,7 @@ function repository(value: unknown, i: number): Checked<MachineRepository> {
   if (!known.ok) return known;
   const repoPath = path(value.path, `${where}.path`);
   if (!repoPath.ok) return repoPath;
-  const enabled = stages(value.stages, `${where}.stages`);
+  const enabled = machineStages(value.stages, `${where}.stages`);
   if (!enabled.ok) return enabled;
   const followupSince = since(value.followup_since, `${where}.followup_since`);
   if (!followupSince.ok) return followupSince;
@@ -420,12 +406,15 @@ function account(value: unknown, i: number): Checked<MachineAccount> {
     DEFAULTS.maxPerAccount,
   );
   if (!maxPerAccount.ok) return maxPerAccount;
+  const served = accountStages(value.stages, `${where}.stages (${name.value})`);
+  if (!served.ok) return served;
   return ok({
     name: name.value,
     vendor: vendor.value,
     configDir: configDir.value,
     identity: identity.value,
     maxPerAccount: maxPerAccount.value,
+    ...(served.value === undefined ? {} : { stages: served.value }),
   });
 }
 

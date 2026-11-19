@@ -14,6 +14,14 @@
  * while its weight remains positive and readable and no wall holds. With no
  * account available the action waits, naming every account's slots and weights.
  *
+ * An account the machine file narrows to some stages (`accounts[].stages`,
+ * `account-stages.ts`) is passed over for an action of any other stage
+ * before any of that is weighed, and an action whose stage no listed account
+ * serves waits saying so. A takeover whose replaced record's account does not
+ * serve its stage is admitted as a new launch of that stage, on a free slot
+ * of its own (`admission.ts`): it shares the replaced record's slot only on
+ * the same account.
+ *
  * The account's vendor chooses the agent a session runs in, so an account
  * is admitted only for a vendor the drive documents a pass command for
  * (`pass-command.ts`); an account of any other vendor is accepted by the
@@ -61,6 +69,7 @@ import {
 import { accountOf } from "./account-of.ts";
 import { type HostDriver, unrecordedDrivers } from "./host-drivers.ts";
 import type { MachineAccount } from "./machine-config.ts";
+import { serves, type ServedStage } from "./account-stages.ts";
 import { accountWall, type Wall } from "./walls.ts";
 
 /** The credential variables the drive's resolver reads before a configuration directory. */
@@ -156,11 +165,22 @@ export function hostCodexOptIn(env: Env = process.env): CodexOptIn {
   }
 }
 
-/** What a launch starts, on a host's opt-in: a headless pass (a drive's, a follow-up's, a pickup's) under its deadline (seconds, `0` for none). */
+/** What a launch starts, on a host's opt-in: a headless pass (a drive's, a follow-up's, a pickup's) under its deadline (seconds, `0` for none), for `stage` where it is named. */
 export type LaunchKind = { codex: CodexOptIn } & {
   kind: "pass";
   deadlineSec: number;
+  stage?: ServedStage;
 };
+
+/** Why an account is passed over for `launch`'s stage; `null` when it serves it or no stage is named. */
+function stageRefusal(
+  account: MachineAccount,
+  launch: LaunchKind,
+): string | null {
+  return launch.stage === undefined || serves(account, launch.stage)
+    ? null
+    : `serves ${(account.stages ?? []).join(", ")}, not ${launch.stage}`;
+}
 
 /**
  * Why an account of `vendor` is never admitted for `launch`, whatever its
@@ -237,18 +257,43 @@ export function slotsOf(
   return table.find((s) => s.account.name === name);
 }
 
+/**
+ * Whether `record` is a takeover that shares the slot of the record it
+ * replaces: that record still holds, on the same account. A takeover
+ * admitted on another account holds a slot of its own there.
+ */
+export function sharesSlot(
+  accounts: MachineAccount[],
+  holding: ReadonlyMap<string, LaunchRecord>,
+  record: LaunchRecord,
+): boolean {
+  const replaced =
+    record.replaces === null ? undefined : holding.get(record.replaces);
+  return (
+    replaced !== undefined &&
+    accountOf(accounts, replaced) === accountOf(accounts, record)
+  );
+}
+
+/** The records that hold their slot, by id. */
+export function holdingRecords(
+  records: readonly ReadRecord[],
+): Map<string, LaunchRecord> {
+  return new Map(
+    records.filter((r) => holds(r.state)).map((r) => [r.record.id, r.record]),
+  );
+}
+
 /** The slots a set of records and the live drivers none of them accounts for hold, per listed account name. */
 function heldByAccount(
   accounts: MachineAccount[],
   records: ReadRecord[],
   drivers: readonly HostDriver[],
 ): Map<string, number> {
-  const holding = records.filter((r) => holds(r.state));
-  const ids = new Set(holding.map((r) => r.record.id));
+  const holding = holdingRecords(records);
   const held = new Map<string, number>();
-  for (const { record } of holding) {
-    // A takeover shares the slot of the record it replaces while both hold.
-    if (record.replaces !== null && ids.has(record.replaces)) continue;
+  for (const record of holding.values()) {
+    if (sharesSlot(accounts, holding, record)) continue;
     const name = accountOf(accounts, record);
     if (name === null) continue;
     held.set(name, (held.get(name) ?? 0) + 1);
@@ -346,6 +391,8 @@ function describeSlots(table: Slots[], launch: LaunchKind): string {
   if (table.length === 0) return "the machine file lists no accounts";
   return table
     .map((s) => {
+      const passed = stageRefusal(s.account, launch);
+      if (passed !== null) return `${s.account.name} (${passed})`;
       const refused = vendorRefusal(s.account.vendor, launch);
       const weight = `${s.account.name} weight ${s.weight.configured ?? "unreadable"} (effective ${effectiveAccountWeight(s, refused)})`;
       if (refused !== null) return `${weight} (${refused})`;
@@ -363,6 +410,8 @@ export function accountWeightBlock(slots: Slots): string | null {
 
 /** Why an account cannot take `launch` now; `null` when it can. */
 function closed(slots: Slots, launch: LaunchKind): string | null {
+  const passed = stageRefusal(slots.account, launch);
+  if (passed !== null) return passed;
   const refused = vendorRefusal(slots.account.vendor, launch);
   if (refused !== null) return refused;
   const weightBlock = accountWeightBlock(slots);
@@ -403,8 +452,15 @@ export function admitRearm(
     if (!excluded.has(slots.account.name) && closed(slots, launch) === null)
       return { admitted: slots };
   }
+  const stage = launch.stage;
+  const unserved =
+    stage !== undefined &&
+    table.length > 0 &&
+    table.every((s) => !serves(s.account, stage));
   return {
-    waits: `no account has a free slot: ${describeSlots(table, launch)}`,
+    waits: unserved
+      ? `no account serves the ${stage} stage: ${describeSlots(table, launch)}`
+      : `no account has a free slot: ${describeSlots(table, launch)}`,
   };
 }
 

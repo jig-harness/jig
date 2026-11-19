@@ -90,6 +90,8 @@ export interface PickupContext {
   sessions: () => Promise<SessionsReport>;
   /** Why the host's recovery gate is closed, if it is. */
   rerunsHeld?: string | null;
+  /** Why serialization could not be decided this tick: no pending launch is replayed then, as no pickup is placed. */
+  serialUndecided?: string | null;
 }
 
 /** Whether a workspace is `key`'s: joined to it, and not one a batch pickup left it out of. */
@@ -438,6 +440,7 @@ async function retryPending(
           );
     const batchBlock = await pendingBatchBlock(state, repo, ctx, record);
     const blocked =
+      ctx.serialUndecided ??
       unauthorized ??
       batchBlock ??
       (typeof fresh === "string"
@@ -491,6 +494,7 @@ export async function applyPickups(
     deadlineSec: deadlineSec(ctx),
     section: ctx.section,
     rerunsHeld: ctx.rerunsHeld ?? null,
+    serialUndecided: ctx.serialUndecided ?? null,
     serves:
       state.machine.serve
         ?.map(
