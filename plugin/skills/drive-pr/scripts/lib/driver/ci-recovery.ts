@@ -95,6 +95,34 @@ export function withTimedOut(
 }
 
 /**
+ * The repair inputs when the reported failures' freshness is unconfirmed: only
+ * the timed-out jobs read from the runner survive, cut from `failing` itself so
+ * the provenance the advisory policy kept (a workflow it dropped stays
+ * dropped) is never rebuilt from the jobs' own runs. A run that cannot be
+ * attributed wholly to those jobs is left out; `null` when no job is left.
+ */
+export function freshTimedOutInputs(
+  failing: FailingChecks,
+  timedOut: readonly TimedOutJob[],
+): { finalVerdict: string; failing: FailingChecks } | null {
+  const fresh = new Set(timedOut.map((job) => job.name));
+  const names = (failing.checkRunNames ?? []).filter((n) => fresh.has(n));
+  if (names.length === 0) return null;
+  const runs = failedRunsField(failing.runs).flatMap((run) => {
+    const jobNames = run.jobNames?.filter((n) => fresh.has(n));
+    return jobNames === undefined ||
+      jobNames.length === 0 ||
+      jobNames.length !== run.jobNames?.length
+      ? []
+      : [{ ...run, jobNames }];
+  });
+  return {
+    finalVerdict: `failing: ${names.join(", ")}`,
+    failing: { checkRunNames: names, statusNames: [], runs },
+  };
+}
+
+/**
  * A failure only cancelled runs carry goes through the cancelled-run recovery
  * (its grace period and one re-run per head) before any retry or repair. A
  * real failure comes back from that re-run in a run that is not cancelled,

@@ -49,6 +49,7 @@ import {
   beforeRepairRecovery,
   cancelledRunRecovery,
   pendingRetryDisposition,
+  freshTimedOutInputs,
   withTimedOut,
 } from "./ci-recovery.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
@@ -809,33 +810,37 @@ export async function evaluateFinalCi(
   const { timedOut } = joined;
   const unconfirmed = { finalVerdict, failing, stale: staleRequiredFailure };
   ({ finalVerdict, failing, staleRequiredFailure } = joined);
+  // The policy judges the whole set; every repair input, the policy's own
+  // callback included, is cut to the fresh timed-out jobs while the reported
+  // failures' freshness is unconfirmed.
+  const freshOnly = unconfirmed.stale && timedOut.length > 0;
   const special = await specialCiDisposition(
     finalVerdict,
     staleRequiredFailure,
     context,
     reviewedHead,
     failing,
-    (verdict, ctx, failures) =>
-      repairConvergedCi(verdict, ctx, failures, reviewedHead, timedOut),
+    (verdict, ctx, failures) => {
+      const cut = freshOnly ? freshTimedOutInputs(failures, timedOut) : null;
+      return repairConvergedCi(
+        cut?.finalVerdict ?? verdict,
+        ctx,
+        cut?.failing ?? failures,
+        reviewedHead,
+        timedOut,
+      );
+    },
   );
   if (typeof special !== "object") return special;
   ({ finalVerdict, failing } = special);
-  if (unconfirmed.stale && timedOut.length > 0) {
-    // The policy judged the whole set; the repair inputs exclude the reported
-    // failures whose freshness was never confirmed. With no timed-out job left
-    // after the policy, the original unconfirmed verdict stands.
-    const names = new Set(timedOut.map((job) => job.name));
-    const kept = (failing.checkRunNames ?? []).filter((n) => names.has(n));
-    if (kept.length === 0) {
+  if (freshOnly) {
+    // With no timed-out job left after the policy, the original unconfirmed
+    // verdict stands.
+    const cut = freshTimedOutInputs(failing, timedOut);
+    if (cut === null) {
       ({ finalVerdict, failing } = unconfirmed);
       staleRequiredFailure = true;
-    } else {
-      failing = withTimedOut(null, {
-        timedOut: timedOut.filter((job) => kept.includes(job.name)),
-        recovery: "none",
-      });
-      finalVerdict = `failing: ${kept.join(", ")}`;
-    }
+    } else ({ finalVerdict, failing } = cut);
   }
   if (finalVerdict.startsWith("cancelled:"))
     return await waitForReplacement(
