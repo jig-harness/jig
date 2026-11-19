@@ -10,6 +10,7 @@
  *   memory_free: 0.15     # share of the host's memory kept free after a launch
  *   load_per_core: 0.9    # one-minute load per core
  *   lock_waiters: 2       # runs waiting on the test lock
+ *   validation: 1         # share of forecast validation capacity
  *   disk_free_gb: 10      # free space on the workspaces' filesystem
  *   forge_floor: 0.1      # share of the forge's budget kept
  *   reservations_gb:      # until a kind has five samples of its own
@@ -41,6 +42,8 @@ export interface LoadSettings {
   loadPerCore: number;
   /** The runs waiting on the test lock at which no pickup or drive pass starts. */
   lockWaiters: number;
+  /** The share of forecast validation capacity the host may commit. */
+  validation: number;
   /** The free bytes kept on the workspaces' filesystem. */
   diskFreeBytes: number;
   /** The share of the forge's budget kept. */
@@ -54,6 +57,7 @@ export const LOAD_DEFAULTS: LoadSettings = {
   memoryFree: 0.15,
   loadPerCore: 0.9,
   lockWaiters: 2,
+  validation: 1,
   diskFreeBytes: 10 * GIB,
   forgeFloor: 0.1,
   reservations: {
@@ -69,6 +73,7 @@ const KEYS = [
   "memory_free",
   "load_per_core",
   "lock_waiters",
+  "validation",
   "disk_free_gb",
   "forge_floor",
   "reservations_gb",
@@ -154,6 +159,13 @@ export function loadSettings(value: unknown): Checked<LoadSettings> {
   if (!lockWaiters.ok) return lockWaiters;
   if (!Number.isSafeInteger(lockWaiters.value))
     return invalid("load.lock_waiters must be a positive whole number");
+  const validation = positive(
+    value.validation,
+    "load.validation",
+    LOAD_DEFAULTS.validation,
+  );
+  if (!validation.ok) return validation;
+  if (validation.value > 1) return invalid("load.validation must be at most 1");
   const diskFreeGb = positive(
     value.disk_free_gb,
     "load.disk_free_gb",
@@ -177,6 +189,7 @@ export function loadSettings(value: unknown): Checked<LoadSettings> {
     memoryFree: memoryFree.value,
     loadPerCore: loadPerCore.value,
     lockWaiters: lockWaiters.value,
+    validation: validation.value,
     diskFreeBytes,
     forgeFloor: forgeFloor.value,
     reservations: reserved.value,

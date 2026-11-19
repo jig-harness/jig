@@ -27,6 +27,7 @@ import { loadState } from "../lib/load.ts";
 import { LOAD_DEFAULTS } from "../lib/load-config.ts";
 import type { LoadReading } from "../lib/load-read.ts";
 import { outstandingReservations } from "../lib/tick-load.ts";
+import { readValidationLoad } from "../lib/validation-load.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -149,6 +150,7 @@ describe("jig dispatch reads the host's load each tick", () => {
       "memory",
       "processors",
       "test-lock",
+      "validation",
       "disk",
       "forge",
       "accounts",
@@ -183,6 +185,68 @@ describe("jig dispatch reads the host's load each tick", () => {
       },
     ]);
   });
+
+  it("attributes a lock run from a workspace subdirectory to its pickup", () => {
+    const workspace = join(process.cwd(), "pickup");
+    const records = [
+      {
+        record: {
+          action: "pickup",
+          createdAt: "2026-11-14T17:00:00.000Z",
+          workspace: { id: "pickup", path: workspace },
+        },
+        state: { kind: "pending" },
+      },
+    ] as ReadRecord[];
+    const reading = readValidationLoad(
+      records,
+      {
+        holders: 1,
+        waiters: 1,
+        runs: [
+          { workspace: join(workspace, "plugin") },
+          { workspace: workspace + "-other" },
+        ],
+      },
+      0,
+      90 * 60_000,
+    );
+    expect(reading.demand).toEqual({ atLock: 2, toArrive: 0 });
+  });
+
+  it("admits a pickup on an idle host with enforcement and the default deadlines", async () => {
+    const w = fixture(["pickup"], { enforce: true });
+    const receipt = await tick(w, host(w, 12 * GIB));
+    expect(launches(receipt)).toMatchObject([
+      { action: "pickup", target: "#12", outcome: "launched" },
+    ]);
+    expect(receipt.load?.holds).toEqual([]);
+  });
+
+  for (const enforce of [false, true]) {
+    it(`reports validation capacity and reserves room for a drive (enforce=${enforce})`, async () => {
+      const w = fixture(["pickup"], { enforce, validation: 0.4 });
+      const receipt = await tick(w, {
+        ...host(w, 12 * GIB),
+        DRIVE_PR_PASS_TIMEOUT: "10800",
+      });
+      expect(launches(receipt)).toMatchObject([
+        {
+          action: "pickup",
+          target: "#12",
+          outcome: enforce ? "waits" : "launched",
+        },
+      ]);
+      expect(receipt.load?.holds).toMatchObject([
+        {
+          target: "#12",
+          gauge: "validation",
+          detail: expect.stringContaining("keep room for a drive"),
+          held: enforce,
+        },
+      ]);
+    });
+  }
 
   it("with enforcement and one drive's headroom left, admits the re-arm and holds the pickup", async () => {
     const w = fixture(["rearm", "pickup"], { enforce: true });

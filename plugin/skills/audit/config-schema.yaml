@@ -56,6 +56,18 @@ version: 1
 # Maps whose keys the skills look up: an unknown key there is refused, since
 # it would silently keep the default it was written to change. Unknown keys
 # elsewhere are ignored, so other tooling can share the file.
+# Fields of the separate dispatcher machine file. These are never read
+# from the repository configuration above.
+machine_fields:
+  load.validation:
+    type: number
+    # The smallest positive JavaScript number makes zero invalid.
+    min: 5.0e-324
+    max: 1
+    default: 1
+    read_by: [dispatch]
+    since: next
+
 strict:
   - gc
   - changelog

@@ -1,0 +1,191 @@
+/** Adapt the host's lock and launch records to the validation forecast. */
+import { dirname, resolve } from "node:path";
+import { lockPlace } from "../../shared/resource-lock-waits.ts";
+import { readResourceLockSamples } from "../../shared/resource-lock-samples.ts";
+import { parseMs } from "../../shared/time.ts";
+import type { LineLoadGauge } from "./dashboard-contract.ts";
+import { holds, type ReadRecord } from "./launches.ts";
+import type { LoadReading } from "./load-read.ts";
+import { DEFAULT_PICKUP_DEADLINE_MS } from "./section.ts";
+import {
+  forecastValidation,
+  measureValidation,
+  validationDemand,
+  type ValidationDemand,
+  type ValidationForecast,
+  type ValidationKind,
+  type ValidationMeasurements,
+  type ValidationPass,
+} from "./validation-capacity.ts";
+
+const HOUR_MS = 3_600_000;
+
+export interface ValidationLoad {
+  measured: ValidationMeasurements;
+  demand: ValidationDemand | { unread: string };
+  waitLimitMs: number;
+  driveDeadlineMs: number;
+  admittedRuns: number;
+}
+
+function passOf({ record, state }: ReadRecord): ValidationPass | null {
+  const { action } = record;
+  if (action === "followup" || action === "steward") return null;
+  if (!holds(state) && state.kind !== "ended") return null;
+  const launchedAt =
+    state.kind === "pending"
+      ? record.createdAt
+      : (state.process?.claimedAt ?? record.createdAt);
+  return {
+    kind: action === "pickup" ? action : "drive",
+    workspace: record.workspace ? resolve(record.workspace.path) : null,
+    launchedAtMs: parseMs(launchedAt),
+    ...(state.kind === "ended" ? { endedAtMs: parseMs(state.exit.at) } : {}),
+  };
+}
+
+/** Find the closest launch workspace containing the lock command's working directory. */
+function workspaceOf(
+  cwd: string | null,
+  workspaces: ReadonlySet<string>,
+): string | null {
+  if (cwd === null) return null;
+  let path = resolve(cwd);
+  for (;;) {
+    if (workspaces.has(path)) return path;
+    const parent = dirname(path);
+    if (parent === path) return null;
+    path = parent;
+  }
+}
+
+export function readValidationLoad(
+  records: readonly ReadRecord[],
+  lock: LoadReading["lock"],
+  nowMs: number,
+  driveDeadlineMs: number,
+): ValidationLoad {
+  const { name } = lockPlace(process.env);
+  const passes = records.flatMap((record) => passOf(record) ?? []);
+  const workspaces = new Set(
+    passes.flatMap(({ workspace }) => workspace ?? []),
+  );
+  const samples = readResourceLockSamples(name, nowMs).map(
+    ({ workspace, requestedAt, waitMs, holdMs }) => ({
+      workspace: workspaceOf(workspace, workspaces),
+      requestedAtMs: parseMs(requestedAt),
+      waitMs,
+      holdMs,
+    }),
+  );
+  const measured = measureValidation(samples, passes);
+  const waitSeconds = Number(process.env.LOCK_TIMEOUT || NaN);
+  return {
+    measured,
+    demand:
+      "unread" in lock
+        ? lock
+        : validationDemand(
+            measured,
+            lock.runs?.map(({ workspace }) => ({
+              workspace: workspaceOf(workspace, workspaces),
+            })) ??
+              Array.from({ length: lock.holders + lock.waiters }, () => ({
+                workspace: null,
+              })),
+            passes.filter(({ endedAtMs }) => endedAtMs === undefined),
+            samples,
+          ),
+    waitLimitMs:
+      Number.isSafeInteger(waitSeconds) && waitSeconds >= 0
+        ? waitSeconds * 1000
+        : HOUR_MS,
+    driveDeadlineMs,
+    admittedRuns: 0,
+  };
+}
+
+function forecast(
+  state: ValidationLoad,
+  kind: ValidationKind,
+  deadlineMs: number,
+  admittedRuns: number,
+): ValidationForecast | null {
+  if ("unread" in state.demand) return null;
+  return forecastValidation(
+    state.measured,
+    kind,
+    state.demand,
+    state.waitLimitMs,
+    deadlineMs || Infinity,
+    admittedRuns,
+  );
+}
+
+function describe(state: ValidationLoad, result: ValidationForecast): string {
+  const { concurrency, runMs } = state.measured;
+  const ahead = Number(result.ahead.toFixed(2));
+  const minutes = (ms: number) => Math.round(ms / 60_000);
+  const waited = minutes((result.ahead * runMs) / concurrency);
+  const defaults = state.measured.defaults;
+  const note = defaults.length > 0 ? ` (defaults: ${defaults.join(", ")})` : "";
+  return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))}${note}`;
+}
+
+export function validationHold(
+  state: ValidationLoad,
+  line: number,
+  kind: ValidationKind,
+  pickupDeadlineMs: number,
+): string | null {
+  const deadline = kind === "pickup" ? pickupDeadlineMs : state.driveDeadlineMs;
+  const own = forecast(state, kind, deadline, state.admittedRuns);
+  if (own === null) return null;
+  if (own.fill === null || own.fill > line)
+    return `waits on validation capacity: ${describe(state, own)}`;
+  if (kind === "pickup") {
+    // Reserve a drive's runs in the pickup's window. The drive's shorter
+    // window still has to fit the demand already committed on this tick.
+    const reserved = forecast(
+      state,
+      "pickup",
+      deadline,
+      state.admittedRuns + state.measured.kinds.drive.runsPerPass,
+    );
+    const drive = forecast(
+      state,
+      "drive",
+      state.driveDeadlineMs,
+      state.admittedRuns,
+    );
+    for (const result of [reserved, drive]) {
+      if (result !== null && (result.fill === null || result.fill > line))
+        return `waits on validation capacity to keep room for a drive: ${describe(state, result)}`;
+    }
+  }
+  return null;
+}
+
+/** A representative new pickup on the default deadline, before this tick spends capacity. */
+export function validationGauge(
+  state: ValidationLoad,
+  share: number,
+): LineLoadGauge {
+  const line = `${Math.round(share * 100)}% of validation capacity`;
+  const result = forecast(state, "pickup", DEFAULT_PICKUP_DEADLINE_MS, 0);
+  const reads =
+    result === null
+      ? "unread" in state.demand
+        ? state.demand.unread
+        : "test lock unread"
+      : describe(state, result);
+  return {
+    gauge: "validation",
+    fill:
+      result === null
+        ? null
+        : Math.min((result.fill ?? share) / share, Number.MAX_SAFE_INTEGER),
+    reads,
+    line,
+  };
+}

@@ -745,9 +745,16 @@ function byLoad(
   repo: string,
   action: Action,
   slots: Slots,
+  pickupDeadlineSec: number,
 ): { slots: Slots } | { outcome: LaunchOutcome } {
   if (state.load === undefined) return { slots };
-  const held = judge(state.load, loadKindOf(action), repo, action.target);
+  const held = judge(
+    state.load,
+    loadKindOf(action),
+    repo,
+    action.target,
+    pickupDeadlineSec * 1000,
+  );
   return held === null
     ? { slots }
     : { outcome: waits(action, held, slots.account.name) };
@@ -799,7 +806,8 @@ export async function admitAccount(
           identity.waitsOn,
         ),
       };
-    if (identity.ok) return byLoad(state, repo, action, slots);
+    if (identity.ok)
+      return byLoad(state, repo, action, slots, pickupDeadlineSec);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
     if (action.takeover !== undefined && !takeoverMoves(state, action))

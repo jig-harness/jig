@@ -13,7 +13,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { decodeIdentity, isAliveSync, ownIdentity } from "./liveness.ts";
+import {
+  decodeIdentity,
+  isAliveSync,
+  ownIdentity,
+  type ProcessIdentity,
+} from "./liveness.ts";
 import { currentIso, parseMs } from "./time.ts";
 import { swallow } from "./errors.ts";
 import { isMapping } from "./config-layers.ts";
@@ -60,6 +65,32 @@ function readAnnouncement(path: string): string | null {
   }
 }
 
+/** Read identity and optional workspace from a bounded, nonblocking metadata file. */
+export function readLockMetadata(path: string): {
+  identity: ProcessIdentity;
+  workspace: string | null;
+  since: string | null;
+} | null {
+  const text = readAnnouncement(path);
+  if (text === null) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const identity = decodeIdentity(data);
+  if (identity === null || !isMapping(data)) return null;
+  return {
+    identity,
+    workspace:
+      typeof data.workspace === "string" && data.workspace
+        ? data.workspace
+        : null,
+    since: typeof data.since === "string" ? data.since : null,
+  };
+}
+
 export interface LockWait {
   pid: number;
   workspace: string;
@@ -83,19 +114,16 @@ function readWait(
   deadline?: number,
 ): LockWait | null {
   if (!/^[1-9][0-9]{0,9}$/.test(pid)) return null;
-  const text = readAnnouncement(join(root, entry));
-  if (text === null) return null;
-  const identity = decodeIdentity(text);
-  if (identity === null || String(identity.pid) !== pid) return null;
-  const data: unknown = JSON.parse(text);
+  const data = readLockMetadata(join(root, entry));
   if (
-    !isMapping(data) ||
-    typeof data.workspace !== "string" ||
-    typeof data.since !== "string" ||
+    data === null ||
+    String(data.identity.pid) !== pid ||
+    data.workspace === null ||
+    data.since === null ||
     !Number.isFinite(parseMs(data.since))
   )
     return null;
-  const live = isAliveSync(identity, undefined, deadline);
+  const live = isAliveSync(data.identity, undefined, deadline);
   if (!live.ok) {
     swallow(
       live.failure,
@@ -104,7 +132,11 @@ function readWait(
     return null;
   }
   if (live.value.state !== "alive") return null;
-  return { pid: identity.pid, workspace: data.workspace, since: data.since };
+  return {
+    pid: data.identity.pid,
+    workspace: data.workspace,
+    since: data.since,
+  };
 }
 
 /** Read only live, attributable announcements; an older announcement has no workspace. `deadline` (`performance.now()` milliseconds) stops the scan and bounds each liveness probe. */

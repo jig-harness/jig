@@ -239,6 +239,7 @@ const LOAD_GAUGES = [
   "memory",
   "processors",
   "test-lock",
+  "validation",
   "disk",
   "forge",
   "accounts",

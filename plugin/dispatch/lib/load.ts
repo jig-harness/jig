@@ -33,6 +33,12 @@ import { LOAD_KINDS, type LoadSettings } from "./load-config.ts";
 import type { LoadReading } from "./load-read.ts";
 import { MEASURED_AFTER, percentile90 } from "./load-samples.ts";
 
+import {
+  type ValidationLoad,
+  validationGauge,
+  validationHold,
+} from "./validation-load.ts";
+
 const GIB = 1024 ** 3;
 const gib = (bytes: number) => `${(bytes / GIB).toFixed(1)} GiB`;
 const pct = (share: number) => `${Math.round(share * 100)}%`;
@@ -54,6 +60,7 @@ export interface LoadState {
   /** The account slots this tick's admitted launches took. */
   spentSlots: number;
   holds: LineLoadHold[];
+  validation?: ValidationLoad;
 }
 
 /** Each kind's reservation from its samples, newest first: the 90th percentile once it has `MEASURED_AFTER`, else its default. */
@@ -262,6 +269,9 @@ function gauges(state: LoadState): LineLoadGauge[] {
     memoryGauge(state),
     processorsGauge(state),
     lockGauge(state),
+    ...(state.validation === undefined
+      ? []
+      : [validationGauge(state.validation, state.settings.validation)]),
     diskGauge(state),
     forgeGauge(state),
     accountsGauge(state),
@@ -311,7 +321,8 @@ function gaugeRefusal(
   kind: LoadKind,
   g: LineLoadGauge,
 ): Refusal | null {
-  if (g.fill === null || g.gauge === "memory") return null;
+  if (g.fill === null || g.gauge === "memory" || g.gauge === "validation")
+    return null;
   if (g.gauge === "accounts") {
     // Account admission decides every launch; a pickup alone must also leave a slot free.
     const { held, capacity } = state.accounts;
@@ -333,9 +344,25 @@ function gaugeRefusal(
 }
 
 /** Why a launch of `kind` does not fit now, naming the gauge; `null` when it fits. */
-function refusal(state: LoadState, kind: LoadKind): Refusal | null {
+function refusal(
+  state: LoadState,
+  kind: LoadKind,
+  pickupDeadlineMs: number,
+): Refusal | null {
   const mem = memoryRefusal(state, kind);
   if (mem !== null) return mem;
+  if (
+    state.validation !== undefined &&
+    (kind === "pickup" || kind === "drive")
+  ) {
+    const detail = validationHold(
+      state.validation,
+      state.settings.validation,
+      kind,
+      pickupDeadlineMs,
+    );
+    if (detail !== null) return { gauge: "validation", detail };
+  }
   for (const g of gauges(state)) {
     const refused = gaugeRefusal(state, kind, g);
     if (refused !== null) return refused;
@@ -355,11 +382,18 @@ export function judge(
   kind: LoadKind,
   repo: string,
   target: string,
+  pickupDeadlineMs = 0,
 ): string | null {
-  const refused = refusal(state, kind);
+  const refused = refusal(state, kind, pickupDeadlineMs);
   if (refused === null) {
     state.spentBytes += reservation(state, kind);
     state.spentSlots += 1;
+    if (
+      state.validation !== undefined &&
+      (kind === "pickup" || kind === "drive")
+    )
+      state.validation.admittedRuns +=
+        state.validation.measured.kinds[kind].runsPerPass;
     return null;
   }
   const held = state.settings.enforce;
