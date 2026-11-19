@@ -32,6 +32,7 @@ import {
 } from "../../../plugin/shared/records/envelope-shape.ts";
 import {
   ANSWER_PAYLOAD_SHAPE,
+  REARM_REQUEST_PAYLOAD_SHAPE,
   ATTACHMENT_MARKER_SHAPE,
   CLAIM_MARKER_PAYLOAD_SHAPE,
   CLAIM_OUTCOME_PAYLOAD_SHAPE,
@@ -78,6 +79,12 @@ export const MARKER_SCHEMAS = {
     {
       name: "drive-answer",
       shape: enveloped("drive-answer", ANSWER_PAYLOAD_SHAPE),
+    },
+  ],
+  "dispatch-rearm-request": [
+    {
+      name: "dispatch-rearm-request",
+      shape: enveloped("dispatch-rearm-request", REARM_REQUEST_PAYLOAD_SHAPE),
     },
   ],
   "tracker-claim-marker": [

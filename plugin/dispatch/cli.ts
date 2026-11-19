@@ -74,10 +74,30 @@ import {
 } from "./result.ts";
 import { reportFileMain } from "./report-command.ts";
 import { releaseOwedMain } from "./release-owed-command.ts";
-import { runTick } from "./tick.ts";
+import { runTick, SWEEP_OBSERVE_WAIT_MS } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
 const LOCK_HELD_EXIT = 3;
+
+/**
+ * How long a tick waits for a repository another tick holds: the timer's
+ * sweep (`--apply` over the machine file's repositories) waits, so a woken
+ * tick holding one does not drop it from the sweep; a tick a caller names
+ * repositories for (a wake-up) or a report does not. `JIG_DISPATCH_OBSERVE_WAIT_MS`
+ * names another wait for a test.
+ */
+function observeLockWaitMs(args: {
+  apply: boolean;
+  repos: readonly string[];
+}): number {
+  if (!args.apply || args.repos.length > 0) return 0;
+  const named = Number(process.env.JIG_DISPATCH_OBSERVE_WAIT_MS);
+  return process.env.JIG_DISPATCH_OBSERVE_WAIT_MS &&
+    Number.isSafeInteger(named) &&
+    named >= 0
+    ? named
+    : SWEEP_OBSERVE_WAIT_MS;
+}
 
 /** A positive whole number: a pull request's, or a comment's id. */
 const countValue = (metavar: "PR" | "ID"): ValueParser<"sync", number> => ({
@@ -809,6 +829,7 @@ async function commandMain(
   const result = await runTick({
     repos: repositories(args, machine),
     apply: args.apply,
+    observeLockWaitMs: observeLockWaitMs(args),
     machine,
     ...(args.followupSince === undefined
       ? {}

@@ -52,7 +52,7 @@ import {
   dispatched,
   type SessionsReport,
 } from "../runtime/port.ts";
-import type { Outcome } from "../../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
 import { RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
 import { stewardFresh } from "../steward-apply.ts";
@@ -72,6 +72,7 @@ import type {
   StaleCause,
 } from "../types.ts";
 import { armsUnarmed, factsOf } from "./drive-hold.ts";
+import { pullStateLabels } from "../forge.ts";
 import { launchHeads } from "../failed-rearms.ts";
 import {
   accountBlock,
@@ -91,6 +92,11 @@ import {
   rotated,
   waits,
 } from "./launch.ts";
+import {
+  ghCallTimeoutSeconds,
+  KILL_ESCALATE_MS,
+} from "../../../skills/drive-pr/scripts/lib/proc.ts";
+import { failedRearmRequest, rearmTimedOut } from "./retire-rearm.ts";
 import { currentIso } from "../../../shared/time.ts";
 
 export type { ApplyState } from "./launch.ts";
@@ -118,11 +124,84 @@ async function consumeRequest(
       "; rearm request was carried out but dispatch.labels is disabled, so its label stays until labels are enabled again; this launch record prevents another launch until its removal is acknowledged";
     return;
   }
-  const consumed = await consumeRearm(record, state.root, undefined, () =>
-    timeLeftMs(state),
-  );
+  const consumed = await acknowledgeRequest(state, record, fresh);
   if (!consumed.ok)
     result.detail += `; rearm request was carried out but its label could not be removed: ${consumed.failure.reason}; this launch record prevents another launch until its removal is acknowledged`;
+}
+
+/** The most forge calls one fresh drive reading makes: the view, its threads and its ledger reads. */
+const FRESH_READ_CALLS = 4;
+
+/** Whether the request label of a closed pull request is already gone, read within the tick's room. */
+async function closedRequestRetired(
+  state: ApplyState,
+  record: LaunchRecord,
+  room: (calls: number) => boolean,
+  later: () => Outcome<boolean, "refused">,
+): Promise<Outcome<boolean, "refused">> {
+  const left = timeLeftMs(state);
+  if (!room(1)) return later();
+  const terminal = await pullStateLabels(
+    record.repo,
+    Number(record.pr),
+    left === null ? undefined : Math.floor((left - KILL_ESCALATE_MS) / 1000),
+  );
+  if (!terminal.ok)
+    return failed("refused", terminal.failure.reason, terminal.failure.cause);
+  return terminal.value.state !== "OPEN" &&
+    !terminal.value.labels.includes(record.rearmLabel ?? "")
+    ? ok(false)
+    : failed(
+        "refused",
+        "the request label on the closed pull request still needs retirement",
+      );
+}
+
+/** Whether the pull request still carries the record's own request; the fresh read starts only with room for each forge call. */
+async function requestStands(
+  state: ApplyState,
+  record: LaunchRecord,
+  fresh: FreshDrive,
+): Promise<Outcome<boolean, "refused">> {
+  const callMs = ghCallTimeoutSeconds() * 1000 + KILL_ESCALATE_MS;
+  const room = (calls: number) => {
+    const left = timeLeftMs(state);
+    return left === null || left >= calls * callMs;
+  };
+  const later = () =>
+    failed(
+      "refused" as const,
+      "the tick deadline has no room to read the pull request again for rearm acknowledgment; a later tick retries it",
+    );
+  if (!room(FRESH_READ_CALLS)) return later();
+  const read = await fresh.read(Number(record.pr));
+  if (!read.ok) {
+    if (read.failure.code !== "not-open")
+      return failed("refused", read.failure.reason, read.failure.cause);
+    return closedRequestRetired(state, record, room, later);
+  }
+  const pr = read.value;
+  if (pr?.readFailed === true) return failed("refused", pr.why);
+  return ok(
+    pr !== null &&
+      pr.evidence.rearmLabel === record.rearmLabel &&
+      pr.evidence.rearmRequestId === record.rearmRequestId,
+  );
+}
+
+/** An acknowledgment belongs to its request, even if a newer one uses the same label. */
+function acknowledgeRequest(
+  state: ApplyState,
+  record: LaunchRecord,
+  fresh: FreshDrive,
+): ReturnType<typeof consumeRearm> {
+  return consumeRearm(
+    record,
+    state.root,
+    undefined,
+    () => timeLeftMs(state),
+    () => requestStands(state, record, fresh),
+  );
 }
 
 const HELD = "a person's hold label is on it now";
@@ -222,6 +301,34 @@ async function unclaimed(
 const IDLE =
   "it is an automation pull request that needs no work now (no failing check, no conflict, no unresolved thread)";
 
+/** Whether a pull request no longer carries the rearm request `id`: another one, none, or one past its lifetime. */
+function requestMoved(pr: DrivenPr, id: unknown): boolean {
+  return (
+    pr.evidence.rearm !== true ||
+    pr.evidence.rearmRequestId !== id ||
+    rearmTimedOut(pr)
+  );
+}
+
+/** Whether a record's rearm request ended before any launch of it started: its pull request closed or its request moved. */
+function unstartedRequestEnded(
+  record: LaunchRecord,
+  again: Outcome<DrivenPr | null>,
+): boolean {
+  if (
+    record.rearmRequestId === undefined ||
+    record.launchCalled === true ||
+    record.attempts.length > 0
+  )
+    return false;
+  if (!again.ok) return again.failure.code === "not-open";
+  const live = again.value;
+  return (
+    live === null ||
+    (live.readFailed !== true && requestMoved(live, record.rearmRequestId))
+  );
+}
+
 /** Why a pending record's launch must not be replayed now; `null` when it may. */
 async function retryBlocked(
   state: ApplyState,
@@ -238,6 +345,8 @@ async function retryBlocked(
   } catch (error) {
     return `its ledger cannot be read again: ${failureText(error)}`;
   }
+  if (unstartedRequestEnded(record, again) && dropPendingRecord(state, record))
+    return "the rearm request ended and its unstarted launch record was released";
   if (!again.ok)
     return `its ledger cannot be read again: ${again.failure.reason}`;
   const verified = recoveryReplayReading(
@@ -250,6 +359,8 @@ async function retryBlocked(
   const read = verified.value;
   if (!sameFacts(record.facts, factsOf(read)))
     return `its ledger changed since the launch (now ${factsOf(read)})`;
+  if (record.rearmLabel != null && requestMoved(read, record.rearmRequestId))
+    return "the rearm request changed or expired since the launch was recorded";
   const unwanted = classBlocked(record, read);
   if (unwanted !== null) return unwanted;
   // A stop on a conflict stands whatever moved since: its base moves often, and
@@ -286,7 +397,7 @@ async function replayOriginalTree(
       String(read.evidence.driverActor),
       String(read.evidence.driverClone),
     );
-    if (different !== null) return different;
+    if (different !== null) return different.why;
   }
   return null;
 }
@@ -446,21 +557,35 @@ function stillWanted(
   const want = wantedClass(isTakeover(action), action.redrive, action.facts);
   if (fresh.class !== want)
     return `its ledger now reads ${fresh.class}: ${fresh.why}`;
+  // A steward's rearm marks its fresh read itself; no label request stands behind it.
+  if (
+    action.steward === undefined &&
+    (action.evidence.rearm === true || fresh.evidence.rearm === true) &&
+    (fresh.evidence.rearm !== action.evidence.rearm ||
+      requestMoved(fresh, action.evidence.rearmRequestId))
+  )
+    return "the rearm request changed or expired since the plan read it";
   if (idleBlocksStart(fresh)) return IDLE;
   if (action.takeoverGone !== undefined && fresh.evidence.driverGone !== true)
     return `this host no longer shows its driver's run ended: ${String(fresh.evidence.driverCheck)}`;
   return changedStale(action.redrive, fresh);
 }
 
-/** Why a listed workspace is not the stopped driver's tree; null only after both identities match. */
+/**
+ * Why a listed workspace is not the stopped driver's tree; null only after both identities match.
+ * `proven` is true when the identities were read and differ, false when they could not be read.
+ */
 async function originalTree(
   path: string,
   actor: string,
   clone: string,
-): Promise<string | null> {
+): Promise<{ why: string; proven: boolean } | null> {
   try {
     if (`wt-${worktreePathKey(realpathSync(path))}` !== actor)
-      return `${path}: its actor differs from the stopped driver's ${actor}`;
+      return {
+        why: `${path}: its actor differs from the stopped driver's ${actor}`,
+        proven: true,
+      };
     const common = await git(["rev-parse", "--git-common-dir"], {
       cwd: path,
       env: gitIdentityEnv(),
@@ -468,13 +593,21 @@ async function originalTree(
       timeoutSec: 10,
     });
     if (common.code !== 0)
-      return `${path}: its clone identity cannot be read (git exit ${common.code}: ${common.stderr.trim()})`;
+      return {
+        why: `${path}: its clone identity cannot be read (git exit ${common.code}: ${common.stderr.trim()})`,
+        proven: false,
+      };
     const local = peekCloneKey(resolve(path, common.stdout.trim()));
-    return local !== null && cloneId(local) === clone
-      ? null
-      : `${path}: its clone identity ${local === null ? "missing" : cloneId(local)} differs from the stopped driver's ${clone}`;
+    if (local !== null && cloneId(local) === clone) return null;
+    return {
+      why: `${path}: its clone identity ${local === null ? "missing" : cloneId(local)} differs from the stopped driver's ${clone}`,
+      proven: local !== null,
+    };
   } catch (error) {
-    return `${path}: its original-tree identity cannot be read: ${failureText(error)}`;
+    return {
+      why: `${path}: its original-tree identity cannot be read: ${failureText(error)}`,
+      proven: false,
+    };
   }
 }
 
@@ -494,7 +627,7 @@ async function workspaceFor(
   tree: string | undefined,
   originalActor: string | null,
   originalClone: string,
-): Promise<Opened> {
+): Promise<Opened & { missingOriginal?: true }> {
   // A stall or a deadline that left work runs where the work is, or not at all: a fresh
   // tree would not carry it.
   if (tree !== undefined && originalActor === null) {
@@ -521,14 +654,29 @@ async function workspaceFor(
     ),
   );
   const matched = candidates.filter((_, i) => verified[i] === null);
+  const mismatched = verified.filter((v) => v !== null);
   const held = matched[0];
   if (matched.length === 1 && held !== undefined)
     return provenWorkspace(state, repo, pr, head, held);
   if (originalActor !== null)
     return {
-      waits: `recovery requires exactly one existing tree linked to the pull request and matching the stopped driver's actor and clone; no replacement workspace is opened${verified.length === 0 ? "" : `: ${verified.filter((why) => why !== null).join("; ")}`}`,
+      ...(sessions.ok && originalGone(candidates.length, mismatched)
+        ? { missingOriginal: true }
+        : {}),
+      waits: `recovery requires exactly one existing tree linked to the pull request and matching the stopped driver's actor and clone; no replacement workspace is opened${mismatched.length === 0 ? "" : `: ${mismatched.map((v) => v.why).join("; ")}`}`,
     };
   return openWithinBudget(state, repo, { pr, head, dispatched: named });
+}
+
+/** Whether no listed workspace could be the stopped driver's tree: none is linked, or every one is proven another. */
+function originalGone(
+  candidates: number,
+  mismatched: { proven: boolean }[],
+): boolean {
+  return (
+    candidates === 0 ||
+    (mismatched.length === candidates && mismatched.every((v) => v.proven))
+  );
 }
 
 /** The ledger's round, which the launch's outcome row counts its rounds from; `null` when the ledger does not say. */
@@ -582,8 +730,11 @@ function driveRecord(
     round: roundOf(pr),
     redrive: action.redrive ?? null,
     ...(heads === null ? {} : { heads }),
+    ...(typeof pr.evidence.rearmRequestId === "number"
+      ? { rearmRequestId: pr.evidence.rearmRequestId }
+      : {}),
     rearmLabel:
-      typeof pr.evidence.rearmLabel === "string"
+      pr.evidence.rearm === true && typeof pr.evidence.rearmLabel === "string"
         ? pr.evidence.rearmLabel
         : null,
     mark: named.mark,
@@ -598,6 +749,7 @@ async function launchOne(
   fresh: DrivenPr | null,
   sessions: SessionsReport,
   drive: FreshDrive,
+  report: RepoReport,
 ): Promise<LaunchOutcome> {
   const late = outOfTime(state);
   if (late !== null) return waits(action, late);
@@ -610,23 +762,26 @@ async function launchOne(
   const id = newRecordId();
   const kind = isTakeover(action) ? "takeover" : "rearm";
   const named = dispatched(kind, `#${pr.number}`, id);
+  const opening = await workspaceFor(
+    state,
+    repo,
+    pr.number,
+    pr.head,
+    sessions,
+    named,
+    action.redrive?.tree?.actor,
+    action.redrive?.uncleanTree === true || pr.evidence.rearm === true
+      ? String(pr.evidence.driverActor)
+      : null,
+    String(pr.evidence.driverClone),
+  );
+  if (opening.missingOriginal && "waits" in opening && pr.evidence.rearm)
+    failedRearmRequest(report, repo.slug, pr, opening.waits);
   const opened = await openedFor(
     state,
     action,
     slots,
-    workspaceFor(
-      state,
-      repo,
-      pr.number,
-      pr.head,
-      sessions,
-      named,
-      action.redrive?.tree?.actor,
-      action.redrive?.uncleanTree === true || pr.evidence.rearm === true
-        ? String(pr.evidence.driverActor)
-        : null,
-      String(pr.evidence.driverClone),
-    ),
+    Promise.resolve(opening),
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
@@ -634,6 +789,8 @@ async function launchOne(
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
   const heads = await launchHeads(repo.slug, pr, undefined, timeLeftMs(state));
+  const moved = await requestMovedSince(action, pr, drive);
+  if (moved !== null) return waits(action, moved);
   const result = await startCheckedRecovery(
     state,
     action,
@@ -641,17 +798,33 @@ async function launchOne(
     slots,
     drive.claimer,
   );
-  if (
-    pr.evidence.rearm === true &&
-    (result.outcome === "launched" || result.outcome === "retried")
-  ) {
-    const record = state.records.find(
-      (r) => r.record.id === result.record,
-    )?.record;
-    if (record !== undefined)
-      await consumeRequest(state, record, result, drive);
-  }
+  if (pr.evidence.rearm === true) await consumeLaunched(state, result, drive);
   return result;
+}
+
+/** Why a rearm request's pull request changed between the plan's read and the launch; `null` when it did not, or for any other launch. */
+async function requestMovedSince(
+  action: Action,
+  pr: DrivenPr,
+  drive: FreshDrive,
+): Promise<string | null> {
+  if (action.steward !== undefined || pr.evidence.rearm !== true) return null;
+  const again = await drive.read(pr.number);
+  if (!again.ok) return again.failure.reason;
+  return stillWanted(action, again.value, drive.held);
+}
+
+/** Acknowledges the request a launch carried out, once the launch started. */
+async function consumeLaunched(
+  state: ApplyState,
+  result: LaunchOutcome,
+  drive: FreshDrive,
+): Promise<void> {
+  if (result.outcome !== "launched" && result.outcome !== "retried") return;
+  const record = state.records.find(
+    (r) => r.record.id === result.record,
+  )?.record;
+  if (record !== undefined) await consumeRequest(state, record, result, drive);
 }
 
 /** `--apply` for one repository's drives; `fresh` re-reads one pull request's ledger and labels. */
@@ -701,6 +874,7 @@ export async function applyDrives(
       ),
       sessions,
       fresh,
+      report,
     );
     report.launches.push(result);
     if (
@@ -734,9 +908,7 @@ async function retryRequests(
       report.launches.push(result);
       continue;
     }
-    const consumed = await consumeRearm(record, state.root, undefined, () =>
-      timeLeftMs(state),
-    );
+    const consumed = await acknowledgeRequest(state, record, fresh);
     if (!consumed.ok) {
       result.detail += `: ${consumed.failure.reason}`;
       report.launches.push(result);

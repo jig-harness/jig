@@ -28,6 +28,17 @@ const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
 export const FORGE: RecordKind[] = [
+  {
+    name: "dispatch-rearm-request",
+    medium: "forge",
+    owner: "dispatch/lib/rearm-binding.ts",
+    at: "a comment on the pull request per request or withdrawal",
+    markers: ["jig-dispatch-rearm-request", "jig-dispatch-rearm-request-data"],
+    version: 1,
+    key: /^rearm$/,
+    meaning:
+      "Binds the rearm label to the ledger comment and generation that a person asked to restart. The newest trusted record for the label takes precedence, and a withdrawal ends the request.",
+  },
   // The ledger mirrors optional ciActions without extending the control-event vocabulary.
   {
     name: "drive-ledger",

@@ -292,9 +292,10 @@ export function gitHubTracker(client: Client): Tracker {
           duplicateIssueId: null,
         },
         signal,
+        issue.ref,
       );
     } else if (!issue.open) {
-      await client.mutate(M.reopen, { issueId: issue.id }, signal);
+      await client.mutate(M.reopen, { issueId: issue.id }, signal, issue.ref);
     }
   }
 
@@ -607,6 +608,7 @@ export function gitHubTracker(client: Client): Tracker {
           labelIds: idsOf(labels.add),
         },
         signal,
+        issue.ref,
       );
     if (labels.remove.length > 0)
       await client.mutate(
@@ -616,6 +618,7 @@ export function gitHubTracker(client: Client): Tracker {
           labelIds: idsOf(labels.remove),
         },
         signal,
+        issue.ref,
       );
   }
 
@@ -632,6 +635,7 @@ export function gitHubTracker(client: Client): Tracker {
           subIssueId: issue.id,
         },
         signal,
+        parents.to.ref,
       );
     if (parents.from !== null)
       await client.mutate(
@@ -641,6 +645,7 @@ export function gitHubTracker(client: Client): Tracker {
           subIssueId: issue.id,
         },
         signal,
+        parents.from.ref,
       );
   }
 
@@ -722,14 +727,15 @@ export function gitHubTracker(client: Client): Tracker {
     },
 
     async postComment(issue, body, signal) {
-      const subjectId = NODE_ID.test(issue)
-        ? issue
-        : (await client.mustIssue(issue, signal)).id;
+      const found = NODE_ID.test(issue)
+        ? null
+        : await client.mustIssue(issue, signal);
+      const subjectId = found === null ? issue : found.id;
       if (signal?.aborted === true)
         throw new GitHubApiError(
           "the comment was cancelled before it was sent",
         );
-      await client.transport(M.comment, { subjectId, body }, signal);
+      await client.mutate(M.comment, { subjectId, body }, signal, found?.ref);
     },
 
     async deleteComment(key, id) {
@@ -844,7 +850,7 @@ export function gitHubTracker(client: Client): Tracker {
       const parents = await parentChange(issue, patch.parent, signal);
       signal?.throwIfAborted();
       if (fields !== null)
-        await client.mutate(M.update, { input: fields }, signal);
+        await client.mutate(M.update, { input: fields }, signal, issue.ref);
       signal?.throwIfAborted();
       await relabel(issue, labels, ids, signal);
       signal?.throwIfAborted();
@@ -896,27 +902,36 @@ export function gitHubTracker(client: Client): Tracker {
       // `#1`, `1`, the qualified key and the address all name one issue.
       refuseSameIssue([a.id, b.id], key, target, a.key);
       if (type === "blocks") {
-        await client.mutate(M.addBlockedBy, {
-          issueId: b.id,
-          blockingIssueId: a.id,
-        });
+        await client.mutate(
+          M.addBlockedBy,
+          { issueId: b.id, blockingIssueId: a.id },
+          undefined,
+          b.ref,
+        );
         return;
       }
       if (type === "duplicate") {
-        await client.mutate(M.close, {
-          issueId: a.id,
-          stateReason: "DUPLICATE",
-          duplicateIssueId: b.id,
-        });
+        await client.mutate(
+          M.close,
+          {
+            issueId: a.id,
+            stateReason: "DUPLICATE",
+            duplicateIssueId: b.id,
+          },
+          undefined,
+          a.ref,
+        );
         return;
       }
       const found = await client.issue(a.ref, RELATES_TO);
       const own = found === null ? [] : nativeRelated(found.raw, a.key);
       if (own.some((r) => r.issue === b.key)) return;
-      await client.mutate(M.addRelatesTo, {
-        issueId: a.id,
-        relatedIssueId: b.id,
-      });
+      await client.mutate(
+        M.addRelatesTo,
+        { issueId: a.id, relatedIssueId: b.id },
+        undefined,
+        a.ref,
+      );
     },
   };
   return withFacets(tracker, client.facetSlots, client.facets.own);
