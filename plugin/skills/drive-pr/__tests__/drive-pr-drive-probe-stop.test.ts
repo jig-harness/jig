@@ -5,6 +5,7 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { PASS_LOUD, spawnDriveIn, state } from "./drive-loop-harness.ts";
 import {
   type Fixture,
+  DORMANT_ARM,
   REVIEWER_RUN,
   scratchClean,
   useDrivePrSuite,
@@ -29,6 +30,7 @@ const cases: {
   probeState: string;
   reason: string;
   fixture: Partial<Fixture>;
+  env?: Record<string, string>;
 }[] = [
   {
     code: 1,
@@ -42,9 +44,21 @@ const cases: {
     reason: "gave up after 5s",
     fixture: { reviewedSha: null, checkRuns: [REVIEWER_RUN] },
   },
+  {
+    code: 9,
+    probeState: "PR_CONFLICTING",
+    reason: "conflicts with its base",
+    fixture: {
+      threads: [],
+      checkRuns: [DORMANT_ARM],
+      mergeable: "CONFLICTING",
+      mergeStateStatus: "DIRTY",
+    },
+    env: { DRIVE_PR_CONFLICT_REPAIR_ROUNDS: "0" },
+  },
 ];
 
-for (const { code, probeState, reason, fixture } of cases) {
+for (const { code, probeState, reason, fixture, env } of cases) {
   test(`a status probe exit ${code} records its state and reason across the stop`, async () => {
     const { dir, stateDir } = writeFixture(
       { threads: [], head: scratchClean.head, ...fixture },
@@ -64,7 +78,13 @@ for (const { code, probeState, reason, fixture } of cases) {
         ...PASS_LOUD,
       ],
       undefined,
-      { env: { JIG_DRIVER_REPORT: reportFile, JIG_LAUNCH: launch } },
+      {
+        env: {
+          JIG_DRIVER_REPORT: reportFile,
+          JIG_LAUNCH: launch,
+          ...env,
+        },
+      },
     );
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(run.stdout).text(),

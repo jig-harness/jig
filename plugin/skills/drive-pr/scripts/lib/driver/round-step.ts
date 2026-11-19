@@ -119,6 +119,11 @@ async function gateRoundStatus(
     case 9: {
       const phase = await runConflictPhase(context, status, reasonLine);
       if (phase === "continue") return "continue";
+      // A conflict may be repaired in this drive.  Keep the probe only when
+      // the conflict branch actually terminates, so the stop event, ledger
+      // and closing report retain the same evidence as other terminal gates.
+      if (phase === code)
+        driverRuntime.stopProbe = recordProbeStop(code, status);
       return phase;
     }
     // There is no `case 10`. It was `PR_IS_DRAFT`, terminal and un-re-armed
