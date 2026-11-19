@@ -672,12 +672,9 @@ async function joinTimedOut(
       : [];
   if (timedOut.length === 0)
     return { timedOut, finalVerdict, failing, staleRequiredFailure };
-  // Failures not yet confirmed fresh leave the set, so the repair names only
-  // the timed-out jobs; the next gate judges the others again.
-  const joined = withTimedOut(staleRequiredFailure ? null : failing, {
-    timedOut,
-    recovery: "none",
-  });
+  // Every reported failure stays in the set, so the policy still sees the
+  // advisory ones and their workflows beside the timed-out job.
+  const joined = withTimedOut(failing, { timedOut, recovery: "none" });
   return {
     timedOut,
     staleRequiredFailure: false,
