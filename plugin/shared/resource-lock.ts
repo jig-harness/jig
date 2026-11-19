@@ -143,6 +143,8 @@ import {
 export { lockPlace };
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
+/** The lock waits one minute when `LOCK_TIMEOUT` is absent. */
+export const DEFAULT_TIMEOUT_SECONDS = 60;
 /** The most slots a lock has, and so the slots an exclusive holder takes. */
 const MAX_SLOTS = 64;
 /** The slot ceiling when the count is static rather than decided by load. */
@@ -355,7 +357,7 @@ function lockArguments(args: string[], env: NodeJS.ProcessEnv) {
     name,
     exclusive,
   } = commandArguments(args, env.LOCK_NAME || "heavy");
-  const timeout = env.LOCK_TIMEOUT || "60",
+  const timeout = env.LOCK_TIMEOUT || String(DEFAULT_TIMEOUT_SECONDS),
     poll = env.LOCK_POLL || "0.2",
     root = lockPlace(env).root;
   const timeoutSeconds = waitSeconds(timeout),

@@ -85,6 +85,7 @@ test("a failed telemetry write preserves the command's exit", () => {
     runLock(scratch, "--", process.execPath, "-e", "process.exitCode = 9;"),
     9,
   );
+  expect(existsSync(scratch.samples)).toBe(true);
 });
 
 test("the reader excludes other locks, records past the retention window, and malformed records", () => {
@@ -127,4 +128,15 @@ test("the reader excludes other locks, records past the retention window, and ma
       holdMs: 1000,
     },
   ]);
+});
+
+test("the reader skips oversized sample files", () => {
+  const scratch = fixture();
+  mkdirSync(scratch.samples, { recursive: true });
+  const now = 1_800_000_000_000;
+  writeFileSync(
+    join(scratch.samples, `${now}-${crypto.randomUUID()}.json`),
+    "x".repeat(4097),
+  );
+  expect(readResourceLockSamples("heavy", now, scratch.env)).toEqual([]);
 });

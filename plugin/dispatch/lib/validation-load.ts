@@ -1,6 +1,10 @@
 /** Adapt the host's lock and launch records to the validation forecast. */
 import { dirname, resolve } from "node:path";
 import { lockPlace } from "../../shared/resource-lock-waits.ts";
+import {
+  DEFAULT_TIMEOUT_SECONDS,
+  MAX_TIMEOUT_SECONDS,
+} from "../../shared/resource-lock.ts";
 import { readResourceLockSamples } from "../../shared/resource-lock-samples.ts";
 import { parseMs } from "../../shared/time.ts";
 import type { LineLoadGauge } from "./dashboard-contract.ts";
@@ -17,8 +21,6 @@ import {
   type ValidationMeasurements,
   type ValidationPass,
 } from "./validation-capacity.ts";
-
-const HOUR_MS = 3_600_000;
 
 export interface ValidationLoad {
   measured: ValidationMeasurements;
@@ -79,7 +81,8 @@ export function readValidationLoad(
     }),
   );
   const measured = measureValidation(samples, passes);
-  const waitSeconds = Number(process.env.LOCK_TIMEOUT || NaN);
+  const timeout = process.env.LOCK_TIMEOUT ?? String(DEFAULT_TIMEOUT_SECONDS);
+  const waitSeconds = Number(timeout || Number.NaN);
   return {
     measured,
     demand:
@@ -97,9 +100,9 @@ export function readValidationLoad(
             samples,
           ),
     waitLimitMs:
-      Number.isSafeInteger(waitSeconds) && waitSeconds >= 0
+      /^[0-9]+$/.test(timeout) && waitSeconds <= MAX_TIMEOUT_SECONDS
         ? waitSeconds * 1000
-        : HOUR_MS,
+        : DEFAULT_TIMEOUT_SECONDS * 1000,
     driveDeadlineMs,
     admittedRuns: 0,
   };

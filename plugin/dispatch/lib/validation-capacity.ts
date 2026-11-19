@@ -215,12 +215,13 @@ export function validationDemand(
   let toArrive = 0;
   for (const pass of inFlight) {
     const atLock =
-      pass.workspace !== null && Boolean(active.get(pass.workspace)?.pop());
+      pass.workspace === null ? 0 : (active.get(pass.workspace)?.length ?? 0);
+    if (pass.workspace !== null) active.delete(pass.workspace);
     toArrive += Math.max(
       0,
       measured.kinds[pass.kind].runsPerPass -
         (completed.get(pass)?.count ?? 0) -
-        Number(atLock),
+        atLock,
     );
   }
   return { atLock: lockRuns.length, toArrive };
@@ -242,7 +243,7 @@ export function forecastValidation(
     toArrive + Math.max(0, atLock - (concurrency * timeToValidationMs) / runMs);
   const waitWindowMs = Math.max(
     0,
-    Math.min(waitLimitMs, passLimitMs - timeToValidationMs - runMs),
+    Math.min(waitLimitMs, passLimitMs - timeToValidationMs),
   );
   const capacity = (concurrency * waitWindowMs) / runMs;
   const required = ahead + ownRuns;

@@ -1,8 +1,12 @@
 /** Completed runs of the machine-wide resource lock, kept for seven days. */
 import {
+  closeSync,
+  constants,
+  fstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
-  readFileSync,
+  readSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -15,6 +19,8 @@ import { currentMs, parseMs } from "./time.ts";
 
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 const SAMPLE_FILE = /^(\d{1,16})-[0-9a-f-]{36}\.json$/;
+const MAX_SAMPLE_BYTES = 4096;
+const MAX_SAMPLES = 10_000;
 
 export interface ResourceLockSample {
   name: string;
@@ -38,6 +44,13 @@ function sampleEntries(dir: string): string[] {
       swallow(error, "resource lock samples are unavailable");
     return [];
   }
+}
+
+function recentEntries(dir: string): string[] {
+  return sampleEntries(dir)
+    .filter((entry) => SAMPLE_FILE.test(entry))
+    .sort((left, right) => releaseTime(right) - releaseTime(left))
+    .slice(0, MAX_SAMPLES);
 }
 
 function releaseTime(entry: string): number {
@@ -64,13 +77,19 @@ export function recordResourceLockSample(
       },
     );
     renameSync(staged, path);
-    for (const entry of sampleEntries(dir)) {
+    const entries = sampleEntries(dir);
+    for (const entry of entries) {
       if (
         releaseTime(entry.endsWith(".json.tmp") ? entry.slice(0, -4) : entry) <
         releasedAt - KEEP_MS
       )
         rmSync(join(dir, entry), { force: true });
     }
+    const retained = sampleEntries(dir)
+      .filter((entry) => SAMPLE_FILE.test(entry))
+      .sort((left, right) => releaseTime(right) - releaseTime(left));
+    for (const entry of retained.slice(MAX_SAMPLES))
+      rmSync(join(dir, entry), { force: true });
   } catch (error) {
     swallow(error, "resource lock samples could not be recorded or pruned");
   }
@@ -78,7 +97,18 @@ export function recordResourceLockSample(
 
 function readSample(path: string, name: string): ResourceLockSample | null {
   try {
-    const data: unknown = JSON.parse(readFileSync(path, "utf8"));
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    let text: string;
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile() || stat.size > MAX_SAMPLE_BYTES) return null;
+      const buffer = Buffer.alloc(MAX_SAMPLE_BYTES);
+      const read = readSync(fd, buffer, 0, MAX_SAMPLE_BYTES, 0);
+      text = buffer.toString("utf8", 0, read);
+    } finally {
+      closeSync(fd);
+    }
+    const data: unknown = JSON.parse(text);
     if (
       !isMapping(data) ||
       data.kind !== "resource-lock-sample" ||
@@ -114,7 +144,7 @@ export function readResourceLockSamples(
 ): ResourceLockSample[] {
   const dir = sampleDirectory(env);
   const samples: ResourceLockSample[] = [];
-  for (const entry of sampleEntries(dir)) {
+  for (const entry of recentEntries(dir)) {
     const at = releaseTime(entry);
     if (at >= nowMs - KEEP_MS && at <= nowMs) {
       const sample = readSample(join(dir, entry), name);

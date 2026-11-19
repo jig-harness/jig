@@ -125,10 +125,21 @@ describe("validation forecast", () => {
         HOUR,
         deadline,
       );
-    expect(forecast(90 * MINUTE).waitWindowMs).toBe(15 * MINUTE);
-    expect(forecast(90 * MINUTE).fill).toBe(1);
+    expect(forecast(90 * MINUTE).waitWindowMs).toBe(30 * MINUTE);
+    expect(forecast(90 * MINUTE).fill).toBe(0.5);
     expect(forecast(HOUR).waitWindowMs).toBe(0);
     expect(forecast(HOUR).fill).toBeNull();
+  });
+
+  test("counts every active run attributed to a pass before forecasting arrivals", () => {
+    const measured = measureValidation([], []);
+    const demand = validationDemand(
+      measured,
+      [{ workspace: "busy" }, { workspace: "busy" }],
+      [pickup("busy")],
+      [],
+    );
+    expect(demand).toEqual({ atLock: 2, toArrive: 0 });
   });
 
   test("the November 14 receipt and launch replay holds pickups before the deadline wave", () => {
