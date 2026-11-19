@@ -424,6 +424,22 @@ describe("staleness", () => {
     ).toEqual([3, 2, undefined]);
   });
 
+  it("words a shared failure other than a rate limit by its step, and keeps steps apart", () => {
+    const refusedAt = (step: "lookup" | "configuration") => ({
+      step,
+      failure: { class: "unauthorized" as const, account: "one" },
+    });
+    const repos = refusedRepos(3).map((repo, index) => ({
+      ...repo,
+      refusal: refusedAt(index < 2 ? "lookup" : "configuration"),
+    }));
+    const banners = staleBanners({ ...line, repos }, CLOCK);
+    expect(banners.map((b) => b.title)).toEqual([
+      "2 repositories have not been read since 16:10: Repository lookup failed (credential refused).",
+      "example-org/repo-2: Dispatch section unreadable (credential refused); showing 16:12 data.",
+    ]);
+  });
+
   it("keeps one banner per repository on a line written before refusals kept their cause", () => {
     const partial = lineOf("partial");
     const legacy = refusedRepos(5).map(

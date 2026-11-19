@@ -134,7 +134,8 @@ export interface StaleBanner {
 /** A stale repository's own banner, with the cause it shares when a failed call stopped its read. */
 interface StaleReading {
   read: number;
-  failure: NonNullable<LineRepo["refusal"]>["failure"];
+  /** The refusal in parts, when this page can word it and a failed call stopped the read. */
+  refusal: LineRepo["refusal"];
   own: StaleBanner;
   entry: StaleRepository;
 }
@@ -149,7 +150,6 @@ function staleReading(
   if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
   const name = retainedSlug(repo) ?? repo.path;
   const lastRead = clock(read, timeZone);
-  const failure = repo.refused === null ? undefined : repo.refusal?.failure;
   const brief =
     repo.refused === null ? null : refusalLine(repo, read, timeZone);
   if (brief !== null && repo.refused !== null) {
@@ -157,7 +157,7 @@ function staleReading(
     return [
       {
         read,
-        failure,
+        refusal: repo.refusal?.failure === undefined ? undefined : repo.refusal,
         own: {
           key: repo.path,
           title: `${name}: ${brief}.`,
@@ -181,7 +181,7 @@ function staleReading(
   return [
     {
       read,
-      failure,
+      refusal: undefined,
       own: {
         key: repo.path,
         title: `${name} has not been read since ${lastRead}, ${ago(read, nowMs)} ago.`,
@@ -194,16 +194,22 @@ function staleReading(
 
 /**
  * What groups stale repositories into one banner: the failed call's class,
- * the account or credential it used, and whose quota it met. `null` for a
- * repository no classified failure stopped (held busy, not reached, or
- * written before the line kept the failure), which keeps its own banner.
+ * the account or credential it used, whose quota it met and whether only the
+ * dispatcher's share of it, and, for a class other than a rate limit, the
+ * step it stopped. `null` for a repository no classified failure stopped
+ * (held busy, not reached, or written before the line kept the failure),
+ * which keeps its own banner.
  */
-function causeKey(failure: StaleReading["failure"]): string | null {
-  if (failure === undefined) return null;
+function causeKey(refusal: StaleReading["refusal"]): string | null {
+  const failure = refusal?.failure;
+  if (refusal === undefined || failure === undefined) return null;
+  const limited = failure.class === "rate-limited";
   return JSON.stringify([
     failure.class,
     failure.account ?? null,
     typeof failure.quota?.system === "string" ? failure.quota.system : null,
+    failure.quota?.share === true,
+    limited ? null : refusal.step,
   ]);
 }
 
@@ -211,19 +217,20 @@ function causeKey(failure: StaleReading["failure"]): string | null {
 function sharedBanner(
   key: string,
   group: StaleReading[],
-  failure: NonNullable<StaleReading["failure"]>,
+  refusal: NonNullable<StaleReading["refusal"]>,
   timeZone: string,
 ): StaleBanner {
   const earliest = Math.min(...group.map(({ read }) => read));
   const resets = group
-    .map(({ failure }) => Date.parse(failure?.until ?? ""))
+    .map(({ refusal }) => Date.parse(refusal?.failure?.until ?? ""))
     .filter(Number.isFinite);
   const at =
     resets.length === 0 ? "" : ` until ${clock(Math.max(...resets), timeZone)}`;
+  const step = STEP_WORDS[String(refusal.step)] ?? String(refusal.step);
   const cause =
-    failure.class === "rate-limited"
-      ? rateLimitCause(failure.quota, at, "them")
-      : (CLASS_WORDS[String(failure.class)] ?? String(failure.class));
+    refusal.failure?.class === "rate-limited"
+      ? rateLimitCause(refusal.failure.quota, at, "them")
+      : classCause(refusal, step);
   return {
     key,
     title: `${group.length} repositories have not been read since ${clock(earliest, timeZone)}: ${cause}.`,
@@ -252,7 +259,7 @@ export function staleBanners(
     staleReading(repo, line, clockNow),
   )) {
     const key =
-      causeKey(reading.failure) ??
+      causeKey(reading.refusal) ??
       JSON.stringify(["repository", reading.own.key]);
     const group = groups.get(key);
     if (group === undefined) groups.set(key, [reading]);
@@ -262,9 +269,9 @@ export function staleBanners(
     const [first] = group;
     return first === undefined ||
       group.length === 1 ||
-      first.failure === undefined
+      first.refusal === undefined
       ? group.map(({ own }) => own)
-      : [sharedBanner(key, group, first.failure, clockNow.timeZone)];
+      : [sharedBanner(key, group, first.refusal, clockNow.timeZone)];
   }).flat();
 }
 
