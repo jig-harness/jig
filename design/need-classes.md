@@ -200,8 +200,8 @@ follow-up then asks the same question.
   the newest tag (#958). A required check a finished run never
   reported does not hold every later tag (#722).
 - A follow-up that finds its release untagged records "release owed" as a
-  step a person owes (the `person-owed` routine class) and finishes, and the
-  line keeps one need per release, not one per merge (#957).
+  step a person owes (the `person-owed` routine class) and finishes. The
+  tracker keeps one record per release, not one per merge (#957).
 - Untagged releases of one repository that share a remedy are shown as one
   need, not one per version (#1533). The remedy is what is left to try:
   releases whose failed gates can still be re-run once group together, and
