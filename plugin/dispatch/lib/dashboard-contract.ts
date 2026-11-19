@@ -162,6 +162,8 @@ export interface LineNeed {
   workspaces: string[];
   /** For a stuck launch record: its id, which `jig dispatch clear` takes. */
   stuckRecord?: string | null;
+  /** For a group of releases: the tracker item of every release it lists. */
+  covers?: string[];
   /** For a drive a launch nobody can show running holds: when the hold began, later of the launch and the stop. */
   heldSince?: string | null;
 }

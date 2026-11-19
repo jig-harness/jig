@@ -34,6 +34,7 @@ import { holds, targetOf } from "./launches.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
+import { groupItems } from "./release-groups.ts";
 import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -378,13 +379,24 @@ function firstSeen(
   )?.since;
 }
 
+/** A need that carries on keeps its age, a group of releases through any item it held: the item it is answered on moves as versions are tagged. */
 function sightedSince(
   previous: LineNeed[],
   repo: string,
-  action: { target: string; cause: string },
+  action: { target: string; cause: string; evidence: Evidence },
   nowIso: string,
 ): string {
-  return firstSeen(previous, repo, action.target, action.cause) ?? nowIso;
+  const held = new Set([action.target, ...groupItems(action.evidence)]);
+  const seen = previous
+    .filter(
+      (n) =>
+        n.repo === repo &&
+        n.cause === action.cause &&
+        [n.target, ...(n.covers ?? [])].some((target) => held.has(target)),
+    )
+    .map((n) => n.since)
+    .sort((a, b) => a.localeCompare(b));
+  return seen[0] ?? nowIso;
 }
 
 /** The one outcome a need shows when several channels answered for its key: one that delivered, else the failure, else the wait. */
@@ -402,6 +414,11 @@ function aggregateNotification(
 function concludedOf(action: Action): { concluded?: string } {
   const concluded = text(action.evidence, "concluded");
   return concluded === null ? {} : { concluded };
+}
+
+function coveredItems(evidence: Evidence): Pick<LineNeed, "covers"> {
+  const covers = groupItems(evidence);
+  return covers.length === 0 ? {} : { covers };
 }
 
 /** How the need's notice went out; nothing when it has none. */
@@ -488,6 +505,7 @@ function needsOf(
         text(action.evidence, "stuck") === null
           ? null
           : text(action.evidence, "record"),
+      ...coveredItems(action.evidence),
       ...heldSinceOf(action),
     };
   });
