@@ -224,6 +224,17 @@ function fixtureWriterRefusal(writer: string): GcError {
   );
 }
 
+/** The text of the first reader token, not held by this isolate, whose owner is alive. */
+function liveReaderBlocker(dir: string): string | null {
+  for (const name of readdirSync(dir)) {
+    const token = join(dir, name);
+    if (!name.startsWith("reader-") || heldReaderTokens.has(token)) continue;
+    const held = judged(token, namedPid(name));
+    if (held !== null && !held.gone) return held.text;
+  }
+  return null;
+}
+
 /**
  * Exclude older fixture publishers while a fresh registration inventories and
  * modifies the store. Readers held by this isolate cannot publish in parallel.
@@ -238,16 +249,7 @@ export function exclusiveFixtureGcLock<T>(root: string, body: () => T): T {
   let failure: unknown;
   let value: T | undefined;
   try {
-    let blocker: string | null = null;
-    for (const name of readdirSync(dir)) {
-      const token = join(dir, name);
-      if (!name.startsWith("reader-") || heldReaderTokens.has(token)) continue;
-      const held = judged(token, namedPid(name));
-      if (held !== null && !held.gone) {
-        blocker = held.text;
-        break;
-      }
-    }
+    const blocker = liveReaderBlocker(dir);
     if (blocker !== null)
       throw new GcAdmissionBusy(
         `gc scratch: another creator holds the lock: ${blocker}`,

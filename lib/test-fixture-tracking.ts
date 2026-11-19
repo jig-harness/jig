@@ -65,28 +65,35 @@ function acknowledgeTrackedFixture(): void {
   state.started = true;
   if (trusted) install();
 }
+/** A refused registration the scope survives as report-only, with its warning printed. */
+function staysReportOnly(
+  failure: { cause?: unknown; code: string; reason: string },
+  fresh: boolean,
+  root: string,
+): boolean {
+  const { cause, code, reason } = failure;
+  const errno = (cause as NodeJS.ErrnoException | undefined)?.code;
+  // The live owner still protects the root, and without durable
+  // membership the scratch collector leaves it report-only.
+  const freshRefused =
+    fresh &&
+    (code === "fixture-registry-full" || code === "fixture-stale-collector");
+  if (!freshRefused && !["EROFS", "EACCES", "EPERM"].includes(errno ?? ""))
+    return false;
+  console.warn(
+    `[test-fixtures] ${reason}; the scope remains report-only: ${root}`,
+    ...(cause === undefined ? [] : [cause]),
+  );
+  return true;
+}
 /** Register every scope, including scopes manually nested by tests. */
 export function trackFixtureScope(root: string, startup = false): void {
   const parent = state.current ?? inherited();
   const rootStartup = !parent && !state.started && startup;
   state.started = true;
   const registration = registerFixtureScope(root, parent);
-  if (!registration.ok) {
-    const { cause, code, reason } = registration.failure;
-    const errno = (cause as NodeJS.ErrnoException | undefined)?.code;
-    // The live owner still protects the root, and without durable
-    // membership the scratch collector leaves it report-only.
-    const freshRefused =
-      !parent &&
-      (code === "fixture-registry-full" || code === "fixture-stale-collector");
-    if (freshRefused || ["EROFS", "EACCES", "EPERM"].includes(errno ?? "")) {
-      console.warn(
-        `[test-fixtures] ${reason}; the scope remains report-only: ${root}`,
-        ...(cause === undefined ? [] : [cause]),
-      );
-      return;
-    }
-  }
+  if (!registration.ok && staysReportOnly(registration.failure, !parent, root))
+    return;
   const membership = must(registration);
   // A helper called halfway through a program cannot account for children
   // started before interception. Only the runner's initial preload claims
