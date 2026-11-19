@@ -774,7 +774,7 @@ give them:
 |---------|---------------|---------|
 | Scout | `haiku` | `luna` (`gpt-6-luna`) |
 | Execution | `sonnet` | `terra` (`gpt-5.6-terra`) |
-| Strategic | `opus` | `sol` (`gpt-6.1-sol`) |
+| Strategic | `opus` | `sol` (`gpt-6.2-sol`) |
 | Judgment | `fable` | `astra` (`gpt-6-astra`) |
 
 Loading `routing.models` refuses, for a runtime with a list: an alias

@@ -48,7 +48,7 @@ const MODEL_FAMILIES: Readonly<Record<string, RuntimeFamilies>> = {
     families: [
       { alias: "luna", model: "gpt-6-luna", tier: "scout" },
       { alias: "terra", model: "gpt-5.6-terra", tier: "execution" },
-      { alias: "sol", model: "gpt-6.1-sol", tier: "strategic" },
+      { alias: "sol", model: "gpt-6.2-sol", tier: "strategic" },
       { alias: "astra", model: "gpt-6-astra", tier: "judgment" },
     ],
   },
