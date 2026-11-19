@@ -187,7 +187,7 @@ describe("drive.ts's closing report", () => {
     expect(report.cause).toBe("needs-person");
     expect(report.suggested_next.act).toBe("Decide");
     expect(report.concluded).toBe(
-      "PR #999 parked: Did the arbiter escalate it?",
+      "PR #999 parked stopped at HITL_PARKED (exit 8): every remaining item awaits a human decision (1 thread(s), 0 summary finding(s), 0 other reversed provisional decision(s)) — handing back rather than re-arming; Did the arbiter escalate it?",
     );
   }, 120_000);
 
