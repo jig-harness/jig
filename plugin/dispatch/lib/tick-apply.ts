@@ -470,6 +470,15 @@ async function freshDriveReading(
     currentMs(),
     labels,
     adoption,
+    undefined,
+    undefined,
+    undefined,
+    {
+      cwd: repo.path,
+      ...(section.reviewerFailures === undefined
+        ? {}
+        : { policy: section.reviewerFailures }),
+    },
   );
   if (again === undefined) return ok(null);
   if (steward) return ok({ ...again, labels: listed.labels ?? [] });

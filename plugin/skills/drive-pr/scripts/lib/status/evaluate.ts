@@ -84,7 +84,11 @@ import {
 } from "./inherited-head.ts";
 import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
 import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
-import { judgeReviewObject, latestReviewBy } from "./review-object.ts";
+import {
+  incompleteReviewReason,
+  judgeReviewObject,
+  latestReviewBy,
+} from "./review-object.ts";
 import { missingReviewerVerdict } from "./comment-draft-skip.ts";
 import { strandedRunNote } from "./stranded-run.ts";
 import { terminal } from "./terminal-states.ts";
@@ -945,25 +949,10 @@ async function evaluateFresh(
     }
   }
 
-  // A conflicting head skips the reviewed-SHA GATE — every return inside it is
-  // STALE_REVIEW (exit 4), the same poll-to-timeout stall as the reviewer gate
-  // above, for the same reason: the marker only advances when the reviewer
-  // publishes, and nothing here becomes true with time while the conflict sits.
-  //
-  // It does NOT skip READING the marker. Skipping the read as well threw away
-  // the one piece of evidence that says whether a conflicting head's findings
-  // are current or left over from an earlier review, so the report claimed
-  // nothing either way and a caller could not tell. Gating on it is the wrong
-  // answer — that reinstates exactly the stall that ordering mergeability ahead
-  // of the reviewer exists to remove, and an unresolved thread is open work
-  // regardless of which head it was posted on — so the marker is read,
-  // published in the report, and named in the ROUND_READY `reason`. Report, do
-  // not gate.
-  //
-  // Reuses `earlySticky` when the stranded-check-run bypass above already
-  // fetched it, rather than issuing a second `issues/{pr}/comments` call —
-  // see that variable's own doc comment for why this is about correctness
-  // (one snapshot, not two that could disagree), not merely avoiding a call.
+  // Report the sticky on a conflicting head so callers can tell whether
+  // open threads are current. Skip gating on it there: unresolved threads
+  // are work regardless of their head, and gating would stall conflict repair.
+  // Reuse the stranded-check-run bypass's read when available.
   const sticky = await reviewerStamp(ctx, earlySticky);
   let marker: string;
   if (sticky === null) {
@@ -990,6 +979,16 @@ async function evaluateFresh(
   const markerFull = await resolveMarkerSha(marker);
 
   if (awaitReviewer && !byObject) {
+    const failure = incompleteReviewReason(
+      reviewer,
+      report.apiHead,
+      reviewerLabel(),
+    );
+    if (failure !== null && markerFull !== report.apiHead) {
+      const rc = await stillOnHead();
+      if (rc !== 0) return rc;
+      return terminal(report, "REVIEWER_FAILED", failure);
+    }
     // Second witness: the reviewer's stamp must name THIS head, or the head
     // it reviewed before skipping this one unchanged (`reviewed-sha.ts`).
     const stop = await reviewedShaGate(

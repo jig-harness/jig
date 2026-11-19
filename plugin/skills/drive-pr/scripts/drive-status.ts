@@ -39,7 +39,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *   --once               evaluate once; never sleep. A not-yet-settled state
  *                        returns 4 rather than waiting.
  *   --timeout SECONDS    give up waiting (default 1800). Exits 4.
- *   --interval SECONDS   poll spacing while waiting (default 30, min 5).
+ *   --interval SECONDS   initial poll spacing (default 30, min 5).
  *   --bots-only          count only bot-authored threads, matching the set a
  *                        --bots-only pass actually resolves.
  *   --head SHA           the local head to compare the API head against.
@@ -158,9 +158,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       pull_requests.mark_ready declares — see
  *                       lib/status/evaluate.ts's header. Not recycled: an old
  *                       log's `10` should mean nothing, not something new
- *   7  REVIEWER_FAILED  [state] the posting reviewer's check-run did not
- *                       pass, so it may never have reported; a zero thread
- *                       count means nothing
+ *   7  REVIEWER_FAILED  [state] the posting reviewer's check-run failed or
+ *                       says it did not complete a review of this head
  *   8  HITL_PARKED      [state] everything still open awaits a human
  *                       decision
  *   9  PR_CONFLICTING   [state] the PR conflicts with its base AND has
@@ -258,7 +257,7 @@ import {
   runInlineProbe,
   tsArgv,
 } from "./lib/proc.ts";
-import { reviewerApp } from "./lib/overlay.ts";
+import { reviewerApp, reviewerPollMaxSeconds } from "./lib/overlay.ts";
 // The code itself, not hand-written `11`/`13` literals repeated here: this
 // script's exit means what `drive-state.ts`'s means, and two independent
 // numbers are exactly how that stops being true.
@@ -280,6 +279,7 @@ import {
   type StatusReport,
 } from "./lib/status/evaluate.ts";
 import { takeInheritedHead } from "./lib/status/inherited-head.ts";
+import { reviewerPollSeconds } from "./lib/status/reviewer-poll.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
@@ -412,6 +412,7 @@ async function main(): Promise<number> {
       2,
       `--timeout (${timeout}s) must be at least one --interval (${interval}s)`,
     );
+  const reviewerPollMax = reviewerPollMaxSeconds();
 
   // The helper deadline bounds the sibling-script spawns the same way
   // GH_CALL_TIMEOUT bounds direct `gh` calls — mode 13 in
@@ -1095,33 +1096,12 @@ async function main(): Promise<number> {
   // matter: it will not clear, and `evaluate()` is about to return PR_NOT_OPEN
   // for it anyway.
   const deadline = currentMs() + timeout * 1000;
-  /**
-   * What is LEFT of the caller's `--timeout`. Non-positive means spent.
-   *
-   * ONE function, read by every site in this loop that is about to spend time,
-   * because the deadline used to be consulted at `case 4` alone and every
-   * other path overran it by construction: `case 1` slept a full interval
-   * without looking, the spawn block floored an already-expired budget to one
-   * second, and the loop top let `evaluate()` begin on a spent budget. The
-   * invariant is what to preserve — no site spends time it has not checked for
-   * — rather than a tally of which sites currently do, since that number is
-   * derivable from the control flow below and goes stale the moment another
-   * wait or spawn is added.
-   *
-   * Worth recording because it is why this is one bug rather than several:
-   * every such site is a different instance of the same omission.
-   */
+  // Check this shared budget before a new wait or spawn.
   const budgetLeftMs = (): number => deadline - currentMs();
-  /**
-   * Whether a further `--interval` sleep still fits inside `--timeout`.
-   *
-   * The predicate every waiting site stops on, so the answer cannot differ by
-   * site. Refusing a sleep that would not fit is the same rule as refusing to
-   * act after the deadline has passed, stated one poll earlier: `--timeout 30
-   * --interval 30` must not return at 50s because a sweep spent the first 20.
-   */
-  const intervalFits = (): boolean => budgetLeftMs() >= interval * 1000;
+  const intervalFits = (seconds = interval): boolean =>
+    budgetLeftMs() >= seconds * 1000;
   let queryErrors = 0;
+  let lastReviewerPoll: { head: string; seconds: number } | undefined;
   /**
    * The caller forbade the sweep on this invocation. `--no-reconcile` says so
    * outright; `--no-count` says the invocation is a mid-round re-read rather
@@ -1208,6 +1188,7 @@ async function main(): Promise<number> {
   async function degrade(reason: string): Promise<number | null> {
     report.state = "INDETERMINATE";
     report.reason = reason;
+    lastReviewerPoll = undefined;
     // Not re-armed when a flag suppressed the sweep: the caller has forbidden
     // it, so retrying the probe could only produce the same answer, more
     // slowly. The bounded budget below still ends the invocation honestly.
@@ -1504,6 +1485,9 @@ async function main(): Promise<number> {
     }
 
     const code = await evaluate(ctx, report);
+    const reviewerWaiting =
+      report.state === "AWAITING_REVIEWER" || report.state === "STALE_REVIEW";
+    if (!reviewerWaiting) lastReviewerPoll = undefined;
 
     // RETRACT a skip the evaluation just contradicted. The liveness read said
     // the PR was finished, so the sweep was skipped as pointless; the
@@ -1718,32 +1702,35 @@ async function main(): Promise<number> {
         continue;
       }
       case 4: {
-        // Not settled yet. These are the states that BECOME something else
-        // with time — head lag resolves, the reviewer finishes, the marker
-        // catches up.
+        // Wait for head lag, the reviewer, or the review marker to settle.
         queryErrors = 0;
         if (once) {
           await emit(4);
           return 4;
         }
-        // The budget is spent when the NEXT sleep no longer fits, not when the
-        // clock has already passed the deadline. `currentMs() >= deadline` let
-        // a full `--interval` be slept on top of whatever the iteration had
-        // already spent, so `--timeout 30 --interval 30` returned at ~50s when
-        // a sweep took the first 20 — and
-        // then handed the following iteration a spent budget. `intervalFits()`
-        // is the shared predicate — `degrade()` and `case 1` stop on it too —
-        // so no waiting site can answer this differently from another.
-        if (!intervalFits()) {
-          report.reason = `${report.reason} (gave up after ${timeout}s)`;
-          await emit(4);
-          return 4;
+        // Count only consecutive reviewer waits for the same head.
+        const seconds = reviewerWaiting
+          ? reviewerPollSeconds(
+              interval,
+              reviewerPollMax,
+              lastReviewerPoll?.head === report.apiHead
+                ? lastReviewerPoll.seconds
+                : 0,
+              budgetLeftMs(),
+            )
+          : interval;
+        if (intervalFits(seconds)) {
+          if (reviewerWaiting)
+            lastReviewerPoll = { head: report.apiHead, seconds };
+          console.error(
+            `${report.state}: ${report.reason}; waiting ${seconds}s`,
+          );
+          await sleep(seconds);
+          if (!reviewerWaiting || budgetLeftMs() > 0) continue;
         }
-        console.error(
-          `${report.state}: ${report.reason}; waiting ${interval}s`,
-        );
-        await sleep(interval);
-        continue;
+        report.reason = `${report.reason} (gave up after ${timeout}s)`;
+        await emit(4);
+        return 4;
       }
       case 0: {
         // A round is a distinct push, not a distinct invocation: retrying the

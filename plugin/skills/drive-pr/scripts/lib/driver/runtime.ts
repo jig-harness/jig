@@ -8,6 +8,8 @@ interface DriverRuntime {
    * (`events.ts`). `null` for a stop that measured nothing.
    */
   stopLeftWork: { leftWork: boolean; tree: string } | null;
+  /** The reviewer failure the status probe measured on this drive's stop. */
+  reviewerFailure: { reviewerHead: string; reviewerApp?: string } | null;
   /**
    * The round of the last pass this driver started, review or repair, which
    * every pass reads as `DRIVE_PR_ROUND`; `null` before the first. The
@@ -88,6 +90,7 @@ interface DriverRuntime {
 
 export const driverRuntime: DriverRuntime = {
   stopLeftWork: null,
+  reviewerFailure: null,
   passRound: null,
   passStartedAt: null,
   compromised: "",

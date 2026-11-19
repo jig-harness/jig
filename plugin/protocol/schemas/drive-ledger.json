@@ -559,7 +559,9 @@
                       "tree": {
                         "type": "string",
                         "minLength": 1
-                      }
+                      },
+                      "reviewerHead": true,
+                      "reviewerApp": true
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true
@@ -1399,7 +1401,9 @@
                   "tree": {
                     "type": "string",
                     "minLength": 1
-                  }
+                  },
+                  "reviewerHead": true,
+                  "reviewerApp": true
                 },
                 "required": ["at", "round", "kind", "cause"],
                 "additionalProperties": true

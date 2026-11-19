@@ -16,8 +16,9 @@
  * A review object naming the head is a review of the head. A check run that
  * completed on the head with no review object naming it also is: such a
  * reviewer posts no review when a push gives it nothing new to say, so the
- * completed run is the only trace of that review. A review submitted after
- * that run completed, against another commit, makes the head's run stale.
+ * completed run is the only trace of that review, unless its title says the
+ * review did not complete. A review submitted after that run completed,
+ * against another commit, makes the head's run stale.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
 import { readArrayPages } from "../paged-read.ts";
@@ -167,6 +168,8 @@ export function judgeReviewObject(
     };
   if (review?.commit === head)
     return { state: "witnessed", source: "review-object" };
+  const failure = incompleteReviewReason(run, head, label);
+  if (failure !== null) return { state: "REVIEWER_FAILED", reason: failure };
   if (review !== null) {
     const completed = parseMs(run.completed ?? "");
     const submitted = parseMs(review.submittedAt);
@@ -184,4 +187,17 @@ export function judgeReviewObject(
       };
   }
   return { state: "witnessed", source: "review-check-run" };
+}
+
+/** A neutral check can explicitly say the reviewer ended without a review. */
+export function incompleteReviewReason(
+  run: CheckRun | null,
+  head: string,
+  label: string,
+): string | null {
+  return run?.status === "completed" &&
+    run.conclusion === "neutral" &&
+    run.title.trim() === "Review did not complete"
+    ? `${label} check-run on ${head} reads "${run.title}" and there is no review of this head`
+    : null;
 }

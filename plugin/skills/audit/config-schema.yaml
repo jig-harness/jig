@@ -300,6 +300,13 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.149.0
+  dispatch.reviewer_failures_before_escalation:
+    type: integer
+    min: 1
+    default: 3
+    read_by: [dispatch]
+    repository_only: true
+    since: next
   dispatch.labels.enabled:
     type: boolean
     default: false
@@ -446,6 +453,12 @@ fields:
   review.reviewer_check_pattern:
     type: regex
     read_by: [drive-pr, dispatch]
+  review.reviewer_poll_max_seconds:
+    type: integer
+    min: 1
+    default: 300
+    read_by: [drive-pr]
+    since: next
   review.reviewer_evidence:
     type: enum
     values: [sticky, review_object]

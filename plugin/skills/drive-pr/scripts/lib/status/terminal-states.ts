@@ -288,9 +288,9 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: EVALUATE_EMITTER,
     meaning:
-      "The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming.",
+      "The reviewer's check failed or says the review did not complete. The drive stops. The dispatcher can retry a neutral check that reports an incomplete review and escalate repeated stops on that head.",
     report: {
-      stop: "stopped: the posting reviewer's check did not pass",
+      stop: "stopped: the posting reviewer's check reported a failure",
       cause: "tool-failed",
       next: {
         step: "Look at the reviewer's failed check, then re-arm the drive.",

@@ -515,6 +515,77 @@ describe("drive-status.ts terminal states", () => {
     expect(r.state).toBe("REVIEWER_FAILED");
     expect(r.exitCode).toBe(7);
   });
+
+  it("stops on a neutral review that did not complete, without polling", async () => {
+    const r = await probe(
+      {
+        threads: [],
+        reviewedSha: null,
+        checkRuns: [
+          { ...REVIEWER_RUN, title: "Review did not complete" },
+          DORMANT_ARM,
+        ],
+      },
+      ["--timeout", "12", "--interval", "5"],
+      { once: false },
+    );
+    expectSpawnExit(
+      { ...r, stdout: JSON.stringify(r.json) },
+      7,
+      "reviewer ran out of attempts on this head",
+    );
+    expect(r.state).toBe("REVIEWER_FAILED");
+    expect(r.json.reason).toContain("Review did not complete");
+    expect(r.stderr).not.toContain("; waiting ");
+  }, 20_000);
+
+  it("keeps a current review when a later neutral attempt did not complete", async () => {
+    const r = await probe({
+      threads: [],
+      reviewedSha: HEAD,
+      checkRuns: [
+        { ...REVIEWER_RUN, title: "Review did not complete" },
+        DORMANT_ARM,
+      ],
+    });
+    expectSpawnExit(
+      { ...r, stdout: JSON.stringify(r.json) },
+      3,
+      "the sticky witnesses the current head",
+    );
+    expect(r.state).toBe("CONVERGED");
+  });
+
+  it("backs off the GraphQL polls for the same head while the reviewer runs", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      reviewedSha: null,
+      checkRuns: [{ ...REVIEWER_RUN, status: "in_progress", conclusion: null }],
+    });
+    const calls = join(dir, "polls.log");
+    const r = await probeIn(
+      dir,
+      stateDir,
+      HEAD,
+      ["--timeout", "11", "--interval", "1", "--no-count"],
+      {
+        once: false,
+        env: {
+          JIG_GH_CACHE: "off",
+          DRIVE_PR_STUB_GH_LOG: calls,
+          DRIVE_PR_STATUS_MIN_INTERVAL: "1",
+          JIG__REVIEW__REVIEWER_POLL_MAX_SECONDS: "3",
+        },
+      },
+    );
+    expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 4);
+    expect(r.state).toBe("AWAITING_REVIEWER");
+    expect(r.stderr).toContain("; waiting 2s");
+    expect(r.stderr).toContain("; waiting 3s");
+    const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
+    expect(polls.length).toBeGreaterThan(0);
+    expect(polls.length).toBeLessThanOrEqual(12);
+  }, 20_000);
 });
 
 // The single pass-start entry point: on ROUND_READY, `--bump-attempt`

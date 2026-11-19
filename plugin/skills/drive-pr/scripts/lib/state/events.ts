@@ -47,6 +47,10 @@ export interface DriveEvent {
   leftWork?: boolean;
   /** On a `stop` that measured: the tree it ran in, `<actor>@<host>`. */
   tree?: string;
+  /** Commit whose reviewer failed, witnessed by the status probe. */
+  reviewerHead?: string;
+  /** GitHub App that owns the reviewer check, when configured. */
+  reviewerApp?: string;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -121,6 +125,21 @@ export async function recordEvent(
   if (!isRecord(input))
     fail(2, 'record-event reads one JSON object on stdin: {"kind", "cause"}');
   if (input.kind === "ci") return recordCiAction(store, input.cause);
+  const hasReviewerHead =
+    typeof input.reviewerHead === "string" &&
+    /^[0-9a-f]{40}$/.test(input.reviewerHead);
+  if (
+    (input.reviewerHead !== undefined &&
+      (input.kind !== "stop" || !hasReviewerHead)) ||
+    (input.reviewerApp !== undefined &&
+      (!hasReviewerHead ||
+        typeof input.reviewerApp !== "string" ||
+        !/^[a-z0-9-]+$/i.test(input.reviewerApp)))
+  )
+    fail(
+      2,
+      "record-event: reviewer evidence requires a stop with its full head commit and optional app slug",
+    );
   await store.update((s) => {
     const event = {
       at: currentIso(),
@@ -129,6 +148,12 @@ export async function recordEvent(
       cause: input.cause,
       ...(input.leftWork === undefined ? {} : { leftWork: input.leftWork }),
       ...(input.tree === undefined ? {} : { tree: input.tree }),
+      ...(input.reviewerHead === undefined
+        ? {}
+        : { reviewerHead: input.reviewerHead }),
+      ...(input.reviewerApp === undefined
+        ? {}
+        : { reviewerApp: input.reviewerApp }),
     };
     if (!isDriveEvent(event))
       fail(

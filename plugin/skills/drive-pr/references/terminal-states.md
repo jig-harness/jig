@@ -1918,13 +1918,15 @@ and no sticky comment:
 | the same draft skip, on a pull request already Ready | `AWAITING_REVIEWER`: the skip predates the Ready mark |
 | completed, any other title `Review skipped…` | `REVIEW_SKIPPED`, the reason naming the skip and quoting the title |
 | completed `success` or `neutral`, the newest review naming the head | reviewed (`reviewedShaSource: "review-object"`) |
+| completed `neutral`, titled `Review did not complete`, no current-head review | [`REVIEWER_FAILED`](../../../protocol/drive-exits.md), with the failed check named |
 | completed `success` or `neutral`, no newer review naming another commit | reviewed, with nothing new to say (`reviewedShaSource: "review-check-run"`) |
 | completed, but a review of another commit was submitted after the run completed | `STALE_REVIEW` |
 | completed `skipped` with another title, or another conclusion | `AWAITING_REVIEWER`, or [`REVIEWER_FAILED`](../../../protocol/drive-exits.md) as for any reviewer |
 
 The completed run counts on its own because such a reviewer posts no review
 of a head it found nothing new on: a run on the head with no review object is
-the only trace that review leaves. An unreadable review list is
+the only trace that review leaves unless its title says it did not complete.
+An unreadable review list is
 `INDETERMINATE`. `arm-drive.ts` refuses a configuration whose reviewer
 evidence the drive cannot read, rather than arm a drive that waits until
 `--timeout`: `review_object` with no `review.reviewer_app`, where a reviewer is expected (the reviews are

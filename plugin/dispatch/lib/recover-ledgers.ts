@@ -68,6 +68,15 @@ export async function recoverLedgers(
       context.nowMs,
       observation.labels,
       adoptionOf(opened.section, forge.login),
+      undefined,
+      undefined,
+      undefined,
+      {
+        cwd: opened.repo.path,
+        ...(opened.section.reviewerFailures === undefined
+          ? {}
+          : { policy: opened.section.reviewerFailures }),
+      },
     );
     // The fresh read is settled as the observed one was, by the records and claims read this tick, into the machine view.
     if (fresh !== undefined)

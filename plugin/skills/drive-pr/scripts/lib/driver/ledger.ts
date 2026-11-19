@@ -811,12 +811,12 @@ export function ledgerSettlement(
     // records the stop and then writes the ledger, in that order.
     const recorded =
       dryRun ||
-      (await recordDriveEvent(
-        pr,
-        "stop",
-        String(code ?? "unknown"),
-        driverRuntime.stopLeftWork,
-      ));
+      (await recordDriveEvent(pr, "stop", String(code ?? "unknown"), {
+        ...driverRuntime.stopLeftWork,
+        ...(code === DRIVE_EXIT.REVIEWER_FAILED
+          ? driverRuntime.reviewerFailure
+          : null),
+      }));
     if (driver === null) return { landed: true, label: null };
     if (!recorded) {
       console.error(

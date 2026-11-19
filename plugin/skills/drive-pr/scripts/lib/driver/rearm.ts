@@ -451,7 +451,12 @@ export async function recordDriveEvent(
   pr: string,
   kind: "restart" | "rearm" | "stop",
   cause: string,
-  measured: { leftWork: boolean; tree: string } | null = null,
+  measured: {
+    leftWork?: boolean;
+    tree?: string;
+    reviewerHead?: string;
+    reviewerApp?: string;
+  } | null = null,
 ): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
     stdin: JSON.stringify({ kind, cause, ...measured }),

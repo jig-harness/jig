@@ -205,6 +205,12 @@ export async function readForge(
       (pr) => reads.comments.read(repo.slug, pr),
       (read) => reads.pool.run(read),
       reads.bound,
+      {
+        cwd: repo.path,
+        ...(section.reviewerFailures === undefined
+          ? {}
+          : { policy: section.reviewerFailures }),
+      },
     );
     forgetClosedParkThreads(
       repo.slug,

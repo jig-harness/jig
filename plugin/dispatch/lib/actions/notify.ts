@@ -602,6 +602,7 @@ function recordSent(
           c.cause === "ready" ||
           (c.cause === "stopped-unknown" && c.evidence.noCause === true) ||
           typeof c.evidence.failedRearm === "string" ||
+          typeof c.evidence.reviewerFailureHead === "string" ||
           typeof c.evidence.usageRefusal === "string",
       },
       // A cause about a stage this machine launched has its ended row instead.

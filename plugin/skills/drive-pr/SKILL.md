@@ -1849,6 +1849,11 @@ head, or last reviewed an earlier commit and these predate it, or never stamped
 this PR at all. It is evidence, not a gate: work the findings either way, and
 read it as what to expect after the push rather than as permission to start.
 
+**Reviewer waits back off on the same head.** Start at `--interval` and
+double the spacing up to `review.reviewer_poll_max_seconds` (default 300
+seconds). A completed neutral check titled `Review did not complete` with
+no review of the current head ends the wait with `REVIEWER_FAILED`.
+
 **Unchanged waiting polls use conditional REST detectors.**
 `evaluate()` reuses only an `AWAITING_REVIEWER` observation with a reviewer
 that has not completed. The final-CI loop skips its full status and `ci-hold`

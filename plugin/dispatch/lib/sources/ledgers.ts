@@ -21,6 +21,7 @@
  * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
  * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `REVIEWER_FAILED` (`7`) with a witnessed head | re-armable up to the per-head threshold; needs-person until reviewed or the head moves |
  * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
@@ -113,6 +114,11 @@ import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events
 import { ledgerTree } from "../stall-tree.ts";
 import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
 import { infraStopClass } from "../infra-backoff.ts";
+import {
+  reviewerFailureDisposition,
+  reviewerFailurePolicy,
+  type ReviewerFailurePolicy,
+} from "../reviewer-failure.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
@@ -743,6 +749,9 @@ interface Reading {
   presence: (pr: number, ledger: Ledger) => Promise<DriverPresence>;
   /** The tick's bound, where it has one: no park thread is read once it has ended. */
   bound?: TickBound;
+  reviewerFailures: ReviewerFailurePolicy;
+  cwd?: string;
+  admit: Admit;
 }
 
 /** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger whose stop a conflict re-drives. */
@@ -839,7 +848,22 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     r.bound,
   );
   const forge = await factsOf(pr, ledger, r);
-  let classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
+  const reviewer = await r.admit(() =>
+    reviewerFailureDisposition(
+      slug,
+      pr.number,
+      ledger,
+      forge.head,
+      listing.value,
+      r.reviewerFailures,
+      pr.isDraft === true,
+      r.cwd,
+      r.bound,
+    ),
+  );
+  let classified =
+    reviewer?.classified ??
+    classifyLedger(ledger, nowMs, windowMs, park, forge);
   const request = rearmRequest(ledger, labels, pr.labels, classified);
   classified = request.classified;
   return {
@@ -848,6 +872,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...(classified.class === "unplaced" ? failedRead(ledger, park, forge) : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
+      ...reviewer?.evidence,
       ...request.evidence,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
       ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
@@ -921,6 +946,7 @@ export async function readDrives(
   comments?: (pr: number) => Promise<Listing>,
   admit: Admit = (read) => read(),
   bound?: TickBound,
+  reviewer?: { policy?: ReviewerFailurePolicy; cwd: string },
 ): Promise<DrivenPr[]> {
   const reading: Reading = {
     slug,
@@ -938,6 +964,9 @@ export async function readDrives(
           })
         : driverPresence(pr, ledger),
     comments: comments ?? ((pr) => listComments({ repo: slug, number: pr })),
+    reviewerFailures: reviewer?.policy ?? reviewerFailurePolicy({}),
+    ...(reviewer === undefined ? {} : { cwd: reviewer.cwd }),
+    admit,
     ...(bound === undefined ? {} : { bound }),
   };
   const out: DrivenPr[] = [];
