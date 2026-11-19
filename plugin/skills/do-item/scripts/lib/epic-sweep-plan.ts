@@ -215,7 +215,23 @@ function operatorSteps(
 
 function uncheckedListItem(line: string): string | undefined {
   const text = line.trimStart();
-  const step = /^(?:[-*+]|\d+[.)])\s+\[ \]\s+(.+)$/.exec(text)?.[1]?.trim();
+  let cursor = 0;
+  if ("-*+".includes(text[0] ?? "")) cursor = 1;
+  else {
+    while (true) {
+      const character = text[cursor];
+      if (character === undefined || character < "0" || character > "9") break;
+      cursor += 1;
+    }
+    if (cursor === 0 || !".)".includes(text[cursor] ?? "")) return undefined;
+    cursor += 1;
+  }
+  while (text[cursor] === " " || text[cursor] === "\t") cursor += 1;
+  if (!text.startsWith("[ ]", cursor)) return undefined;
+  cursor += 3;
+  if (text[cursor] !== " " && text[cursor] !== "\t") return undefined;
+  while (text[cursor] === " " || text[cursor] === "\t") cursor += 1;
+  const step = text.slice(cursor).trim();
   return step === "" ? undefined : step;
 }
 
