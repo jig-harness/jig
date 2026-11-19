@@ -10,6 +10,7 @@ import type {
   EventRow,
   LogRow,
 } from "../../plugin/dispatch/lib/log.ts";
+import type { LineLinks } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { lengthOf, plural, stamp } from "./format.ts";
 import { derivedLink, type Forges, noLinkText } from "./links.ts";
 import type { LogFilter } from "./search.ts";
@@ -41,8 +42,8 @@ export interface RowView {
   run: RunReportView | null;
   evidence: EvidenceRow[];
   url: string | null;
-  /** What its link says: the pull request or the item. */
-  goLabel: string;
+  /** The work the line links the target to; absent when the line does not say. */
+  links?: LineLinks | undefined;
   noLink: string | null;
 }
 
@@ -117,11 +118,11 @@ export function rowView(
     run,
     evidence,
     url,
-    goLabel: pr === null ? `Open ${r.target}` : "Open the pull request",
+    links: forges.links.get(`${r.repo} ${r.target}`),
     // A defect is about a stage, not a target, so it has nothing to link.
     noLink:
       url === null && pr === null && r.target !== ""
-        ? noLinkText(r.repo, r.target)
+        ? noLinkText(r.repo, r.target, forges.trackers.get(r.repo))
         : null,
   };
 }

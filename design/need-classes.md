@@ -140,9 +140,10 @@ finished.
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
-  follow-up's question (#944). Until that relaunch (#950) is built, a
-  pickup whose result could not be written asks a person once, after the
-  health check passes, to settle or release its item.
+  follow-up's question (#944). A pickup whose result could not be
+  written takes that relaunch once the health check passes; a person is
+  asked to settle or release its item only where its tree cannot be
+  relaunched.
 - These re-runs are the tick's rule, beside the routine re-runs
   (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
   tick decides them from its own records.
@@ -163,6 +164,17 @@ with nothing pushed, or the item was an epic.
   the tick comments on the item from a fixed text naming the pull request.
   Where the repository names no `pr_open` state, nothing moves and the need
   is framed with the pull request named.
+- An item no session holds is not a stall while an open pull request of
+  its own repository that the line links to it (its branch names the key,
+  its description closes the item, or the forge says it closes it) has a
+  drive that is live or has converged and waits for its merge: the tick
+  reports it, and the line shows it, as [carried](../GLOSSARY.md) by that
+  pull request, whether or not the repository names a `pr_open` state;
+  an item already in `pr_open`, or with a move to `pr_open` still to make,
+  keeps that rule and is not listed as carried. A pull request
+  from a fork does not carry it; one with no drive or a stopped drive
+  leaves the need, which names it; where the pull requests or the drive
+  did not read, the need says what could not be told.
 - The tick finds unpushed commits or uncommitted edits in a stalled
   pickup's tree and relaunches that pickup once, in that tree and never a
   fresh one, with a fixed prompt to push and record, as an unshipped-edits

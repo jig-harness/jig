@@ -33,7 +33,7 @@ describe("the disclosures", () => {
       );
       try {
         await shows(page, ".slot");
-        const fold = page.locator(".slot .foldBtn").first();
+        const fold = page.locator(".slot .disc").first();
         await fold.focus();
         expect(await page.locator(".slot .kv").count()).toBe(0);
         await page.keyboard.press("Enter");
@@ -65,8 +65,8 @@ describe("the disclosures", () => {
         LAPTOP,
       );
       try {
-        await shows(page, ".rowExpand");
-        const row = page.locator(".rowExpand").first();
+        await shows(page, ".row .disc");
+        const row = page.locator(".row .disc").first();
         await row.focus();
         await page.keyboard.press("Enter");
         await shows(page, ".rowBody");
@@ -171,9 +171,9 @@ describe("the disclosures", () => {
   );
 
   browserIt(
-    "a long list closes from its panel's head as well as its foot",
+    "a long group on a phone opens and closes with its own Show all",
     async () => {
-      const server = await served("loud");
+      const server = await served("queue");
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
@@ -181,41 +181,24 @@ describe("the disclosures", () => {
         PHONE,
       );
       try {
-        await shows(page, ".pQueue .headMore");
-        const items = page.locator(".pQueue .qItem:visible");
-        const closed = await items.count();
-        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
+        const group = page.locator("[data-facet-group]").filter({
+          has: page.getByRole("heading", { name: /^Starts next/ }),
+        });
+        const more = group.locator("[data-group-more]");
+        await more.waitFor();
+        const items = group.locator(".qItem:visible");
+        expect(await items.count()).toBe(2);
+        expect(await more.innerText()).toBe("Show all 3");
+        await more.click();
         await until(
-          "the list has opened",
-          async () => (await items.count()) > closed,
+          "the group has opened",
+          async () => (await items.count()) === 3,
         );
-        expect(await page.locator(".pQueue .headMore").innerText()).toBe(
-          "Show fewer",
-        );
-        await page.locator(".pQueue .headMore").click();
+        expect(await more.textContent()).toBe("Show fewer");
+        await more.click();
         await until(
-          "the list has closed",
-          async () => (await items.count()) === closed,
-        );
-        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
-        await until(
-          "the list has opened again",
-          async () => (await items.count()) > closed,
-        );
-        await page.evaluate(() =>
-          window.scrollTo(0, document.body.scrollHeight),
-        );
-        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
-        await until(
-          "the foot button has closed the list",
-          async () => (await items.count()) === closed,
-        );
-        await until(
-          "the panel's head is back in view",
-          async () =>
-            await page
-              .locator(".pQueue .headMore")
-              .evaluate((el) => el.getBoundingClientRect().top >= 0),
+          "the group has closed",
+          async () => (await items.count()) === 2,
         );
       } finally {
         await context.close();
@@ -365,15 +348,14 @@ describe("a phone with everything open", () => {
           await shows(page, "main :is(h1, h2)");
           const all = page.getByRole("button", { name: /^Show all/ });
           if ((await all.count()) > 0) await all.first().click();
-          const folds = page.locator(".foldBtn[aria-expanded='false']");
-          for (let left = await folds.count(); left > 0; left--)
-            await folds.first().click();
+          const folds = page.locator(".disc[aria-expanded='false']:visible");
+          while ((await folds.count()) > 0) await folds.first().click();
           expect(await overflowOf()).toBeLessThanOrEqual(0);
           expect(await shortControls(page)).toEqual([]);
         }
 
         await openView(page, "History");
-        await page.locator(".rowExpand").first().click();
+        await page.locator(".row .disc").first().click();
         await shows(page, ".rowBody");
         expect(await overflowOf()).toBeLessThanOrEqual(0);
         expect(await shortControls(page)).toEqual([]);

@@ -15,11 +15,7 @@ import {
   applyPrOpenMoves,
   type MoveRoom,
 } from "../lib/actions/pr-open-moves.ts";
-import {
-  type LaunchRecord,
-  type ReadRecord,
-  readRecord,
-} from "../lib/launches.ts";
+import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
 import type { SessionsReport } from "../lib/runtime/port.ts";
 import type { StalledPrInput } from "../lib/stalled-pr.ts";
@@ -31,6 +27,7 @@ import type {
 } from "../lib/types.ts";
 import type { PrLinkText } from "../lib/work-links.ts";
 import type { TickReceipt } from "../receipts.ts";
+import { BRANCH, endedPickup, idleSessions } from "./ended-pickup-fixtures.ts";
 import { assignedIssue, openPr, SLUG, type World, world } from "./fixtures.ts";
 import {
   account,
@@ -43,49 +40,10 @@ import { applyTick, claudeRuns, withOrigin } from "./pickup-fixtures.ts";
 
 const NOW = Date.parse("2026-11-13T08:00:00Z");
 const HOUR = 3_600_000;
-const PATH = "/work/example-repo-12";
-const BRANCH = "12-issue-12";
 const URL = `https://github.com/${SLUG}/pull/31`;
 
-/** The ended pickup of #12 this host launched, in the workspace at `PATH`. */
-const launch: ReadRecord = {
-  record: {
-    id: "20261113T060000Z-abcdef12",
-    action: "pickup",
-    repo: SLUG,
-    item: "#12",
-    pr: null,
-    released: false,
-    workspace: { id: "repo-1::12", path: PATH },
-    claimedItems: ["#12"],
-  } as unknown as LaunchRecord,
-  state: {
-    kind: "ended",
-    exit: { at: "2026-11-13T07:00:00Z", code: 0, signal: null },
-    process: null,
-  },
-  result: null,
-};
-
-/** The runtime's answer: the launch's workspace on its branch, no agent running. */
-const sessions: SessionsReport = {
-  ok: true,
-  source: "fake",
-  workspaces: [
-    {
-      id: "repo-1::12",
-      path: PATH,
-      branch: BRANCH,
-      items: ["#12"],
-      prs: [31],
-      agents: [],
-      unverifiableTerminals: 0,
-      comment: "",
-      unread: null,
-      name: "",
-    },
-  ],
-};
+const launch = endedPickup("20261113T060000Z-abcdef12", "2026-11-13T07:00:00Z");
+const sessions = idleSessions;
 
 function room(over: Partial<MoveRoom> = {}): MoveRoom {
   return { left: () => null, sessions: async () => sessions, ...over };
@@ -207,6 +165,22 @@ describe("a stalled pickup whose launch opened a pull request", () => {
     expect(body).toContain(`pull request #31 (${URL})`);
     expect(body).toContain(`<!-- do-item-pr: ${URL} -->`);
     expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "moved" });
+  });
+
+  it("keeps a recorded question a need, and moves nothing, while the item still has one", () => {
+    const asked = {
+      ...launch,
+      result: "failed" as const,
+      report: { report: { question: "Which branch should win?" } },
+    } as unknown as ReadRecord;
+    const plan = planPickups({
+      ...input(prOpen([pr(BRANCH)])),
+      launches: [asked],
+    });
+    expect(plan.moves).toEqual([]);
+    expect(plan.actions).toEqual([
+      expect.objectContaining({ target: "#12", cause: "pickup-question" }),
+    ]);
   });
 
   it("moves nothing for a pull request naming the item from a branch no launch worked on", () => {

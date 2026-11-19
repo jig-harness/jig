@@ -25,7 +25,7 @@ import {
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { pullRequestFiles } from "../forge.ts";
 import type { Pool } from "../pool.ts";
-import { ended, secondsLeft, type TickBound } from "./bounded.ts";
+import { ended, passedBefore, secondsLeft, type TickBound } from "./bounded.ts";
 import {
   isMergeFact,
   readMergeFact,
@@ -67,15 +67,49 @@ function defaultReads(tracker: Tracker, context: MergeContext): MergeReads {
   };
 }
 
+/** The bound has ended: the proof is unread, and the tick's record says so rather than reading complete. */
+function passedBound(context: MergeContext, what: string): null {
+  context.onFailure?.(new OutboundError("unreachable", passedBefore(what)));
+  return null;
+}
+
+/** A proof that answered in a form that does not read is unread too, never an observed absence. */
+function unreadProof(context: MergeContext, what: string): null {
+  context.onFailure?.(
+    new OutboundError(
+      "invalid",
+      `${what} answered in a form that does not read`,
+    ),
+  );
+  return null;
+}
+
+/** The options of one read, and whether that read reported a cause of its own. */
 function associationOptions(context: MergeContext) {
   const timeoutSec = secondsLeft(context.bound);
-  return {
+  const state = { reported: false };
+  const options = {
     ...(context.bound === undefined ? {} : { signal: context.bound.signal }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
     ...(context.onFailure === undefined
       ? {}
-      : { onFailure: context.onFailure }),
+      : {
+          onFailure: (err: OutboundError) => {
+            state.reported = true;
+            context.onFailure?.(err);
+          },
+        }),
   };
+  return { options, state };
+}
+
+/** A null read that named its cause keeps it; one that named none is unreadable evidence. */
+function nullRead(
+  context: MergeContext,
+  state: { reported: boolean },
+  what: string,
+): null {
+  return state.reported ? null : unreadProof(context, what);
 }
 
 /** One direct merge view, followed by the governed, bounded complete file listing. */
@@ -85,7 +119,7 @@ async function directFact(
 ): Promise<MergeFact | null> {
   const kept = readMergeFact(context.repository, pr);
   if (kept !== null) return kept;
-  if (ended(context.bound)) return null;
+  if (ended(context.bound)) return passedBound(context, "a merge proof");
   const timeoutSec = secondsLeft(context.bound);
   const result = await ghCall(
     [
@@ -110,31 +144,40 @@ async function directFact(
     return null;
   }
   try {
-    const value = JSON.parse(result.stdout);
-    if (typeof value?.mergedAt !== "string") return null;
-    const files = await pullRequestFiles(context.repository, pr, context.bound);
-    if (!files.ok) {
-      const failure = outboundOf(files.failure);
-      if (failure !== null)
-        context.onFailure?.(new OutboundError(failure.code, failure.reason));
-      swallow(
-        files.failure,
-        "an incomplete file listing keeps the conflict edge held",
-      );
-      return null;
-    }
-    const fact = {
-      mergedAt: value.mergedAt,
-      base: value.baseRefName,
-      files: files.value,
-    };
-    if (!isMergeFact(fact)) return null;
-    writeMergeFact(context.repository, pr, fact);
-    return fact;
+    return await factFrom(context, pr, JSON.parse(result.stdout));
   } catch (error) {
     swallow(error, "unreadable merge facts leave a conflict edge held");
+    return unreadProof(context, "a merge proof");
+  }
+}
+
+/** The merge fact a direct merge view and its complete file listing prove, kept once read. */
+async function factFrom(
+  context: MergeContext,
+  pr: number,
+  value: { mergedAt?: unknown; baseRefName?: unknown } | null,
+): Promise<MergeFact | null> {
+  if (typeof value?.mergedAt !== "string")
+    return unreadProof(context, "a merge proof");
+  const files = await pullRequestFiles(context.repository, pr, context.bound);
+  if (!files.ok) {
+    const failure = outboundOf(files.failure);
+    if (failure !== null)
+      context.onFailure?.(new OutboundError(failure.code, failure.reason));
+    swallow(
+      files.failure,
+      "an incomplete file listing keeps the conflict edge held",
+    );
     return null;
   }
+  const fact = {
+    mergedAt: value.mergedAt,
+    base: value.baseRefName,
+    files: files.value,
+  };
+  if (!isMergeFact(fact)) return unreadProof(context, "a merge proof");
+  writeMergeFact(context.repository, pr, fact);
+  return fact;
 }
 
 /** The merge facts of the numbered pull requests that read as merged. */
@@ -171,22 +214,35 @@ export function planMergeReader(
         states.set(pull.number, pull.state.toUpperCase());
       return pulls;
     };
+    // Every association read passes the same checks, so none can drop one: the
+    // tick's bound, the read's own options, and a null that named no cause.
+    const governed = async <T>(
+      what: string,
+      run: (
+        options: ReturnType<typeof associationOptions>["options"],
+      ) => Promise<T | null>,
+    ): Promise<T | null> => {
+      if (ended(context.bound)) return passedBound(context, what);
+      const { options, state } = associationOptions(context);
+      const found = await run(options);
+      return found === null ? nullRead(context, state, what) : found;
+    };
     const currentLinks: LinkedPrReads = {
       comments: (key) =>
-        ended(context.bound)
-          ? Promise.resolve(null)
-          : reads.links.comments(key, associationOptions(context)),
+        governed("a linked-pull-request read", (options) =>
+          reads.links.comments(key, options),
+        ),
       search: async (term) => {
-        if (ended(context.bound)) return null;
-        const found = await reads.links.search(
-          term,
-          associationOptions(context),
+        const found = await governed(
+          "a linked-pull-request search",
+          (options) => reads.links.search(term, options),
         );
         return found === null ? null : note(found);
       },
       view: async (pr) => {
-        if (ended(context.bound)) return null;
-        const found = await reads.links.view(pr, associationOptions(context));
+        const found = await governed("a linked-pull-request view", (options) =>
+          reads.links.view(pr, options),
+        );
         if (found !== null) note([found]);
         return found;
       },

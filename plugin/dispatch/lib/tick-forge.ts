@@ -42,6 +42,7 @@ import {
   writeMergeReads,
 } from "./merge-reads.ts";
 import { readDrives } from "./sources/ledgers.ts";
+import { forgetClosedParkThreads } from "./sources/park-threads.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { PrLinkText } from "./work-links.ts";
@@ -213,6 +214,10 @@ export async function readForge(
         pickupArms,
       },
     );
+    forgetClosedParkThreads(
+      repo.slug,
+      out.open.map((p) => p.number),
+    );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
     const observedMs = currentMs();
@@ -325,11 +330,13 @@ function decideScope(
 function queryNote(queried: RepositoryOutcome): string {
   if (!queried.ok)
     return ` (the repository query did not read, so each was read on its own: ${queried.failure.reason})`;
-  const { pages, cost, overflow, pageSize } = queried.value;
+  const { pages, cost, overflow, pageSize, mode } = queried.value;
   const own =
-    overflow.length === 0
-      ? ""
-      : `; ${overflow.length} with more comments than one page holds, listed on their own`;
+    mode === "state"
+      ? "; comments revalidated separately"
+      : overflow.length === 0
+        ? ""
+        : `; ${overflow.length} with more comments than one page holds, listed on their own`;
   const sized =
     pageSize < PAGE
       ? ` ending at ${pageSize} pull requests per page, as many as the forge answers in time`

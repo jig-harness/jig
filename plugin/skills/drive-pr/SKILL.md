@@ -368,7 +368,13 @@ the drive observes a 30-second grace period, then requests one re-run per
 head. Its SQLite claim survives re-arms and is recorded before the request.
 The drive keeps polling during the grace period and re-run; unrelated pending
 workflows do not hide a cancellation. It never replays an event created under
-the CI hold. A refused or unconfirmed request parks `cancelled-ci`. After
+the CI hold. A refused or unconfirmed request parks `cancelled-ci`. A read
+of the recovery (the head's check runs, its workflow runs, the pull request
+and its hold) that fails in a way waiting can clear is sent once more, except
+under a rate limit; still failing, the drive stops with `NOT_SETTLED` (exit
+`4`), naming the read and its failure class, for the line to re-arm, and a
+claim whose re-run was not requested is given back. The watch after a
+converged stop keeps polling instead. After
 a request the drive judges the runs it re-ran, not the cancelled runs it finds
 again: it waits while a new attempt of one, or a run of its workflow, is
 going, and parks when one of them has no new attempt or result ten minutes
@@ -870,7 +876,23 @@ outlives the session that spawned it, so its console is not where you look:
   and a stop the dispatcher re-drives (where it would read `stale`),
   `driving` for one it re-arms or a second driver refused, nothing for
   `PR_NOT_OPEN` or `TAKEN_OVER` (the full list:
-  [terminal states](references/terminal-states.md#exit-codes)). A person's
+  [terminal states](references/terminal-states.md#exit-codes)). A
+  `converged` write can start CI on the verified head where workflows run
+  on label events, so the drive, still holding the pull request, then
+  watches that head (`lib/driver/converged-ci.ts`): 31 seconds after the
+  write it reads the head's CI again; a cancellation goes to the
+  cancelled-run recovery below, a failure in a first attempt a label write
+  started (created within 30 seconds after one) is re-run once, claimed in
+  the same SQLite table as a label-caused cancellation, and green lets the
+  label stand. A failure no label write started, a commit status failing,
+  a re-run that fails again or is not accepted, or CI not settled within
+  `DRIVE_PR_CONVERGED_CI_MINUTES` (30 by default, `0` writes the label and
+  watches nothing) parks `converged-ci` with a framed decision naming the
+  runs, and the stop is settled again as [`HITL_PARKED`](../../protocol/drive-exits.md),
+  labelled `parked` (as `INDETERMINATE` when the park cannot be recorded or
+  the watch fails). A head that moved, a pull request no longer open, or a
+  window in which the head's CI never read ends the watch with the label as
+  written; until it ends, the drive's locks refuse a re-arm. A person's
   stop through `drives.ts` names no exit and is labelled `parked` once it
   marks the ledger stopped. Never `stale`
   or `held`, nothing on a pull request carrying `hold` or `held`, and never
@@ -3129,7 +3151,7 @@ returned, which is the case this rule covers.
 |---|---|---|
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
 | `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, resolve or abort the reported Git operation, then re-run |
-| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, or the timeline does not yet show a label change | Read the `ci-hold:` line, wait for the checks it names, then re-run |
+| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, the timeline does not yet show a label change, or a read of the cancelled-run recovery kept failing | Read the `ci-hold:` or `cancelled CI recovery:` line, wait for what it names, then re-run |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
 | `6` | Pushed and stamped, but at least one held item was **refused** | Each refusal is named with the refusing script's own exit code and diagnostic. Reconcile it via § 3 — re-hold if the reply still stands, resolve under whatever outcome actually applies if it does not — then re-run |

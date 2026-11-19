@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { queued } from "../fixture-line.ts";
 import { fixture } from "../fixtures.ts";
-import { prStanding } from "./pr-standing.ts";
+import { forgeStanding, prStanding } from "./pr-standing.ts";
 
 class FixtureError extends Error {}
 
@@ -133,4 +133,17 @@ test("a follow-up whose launch is not yet claimed is starting, not under way", (
   if (session.pr === null) throw new FixtureError("Session without a PR");
   const s = prStanding(l, session.repo, session.pr, null, clock);
   expect(s.label).toBe("Follow-up starting");
+});
+
+test("a follow-up session keeps the merged forge standing when the forge was not read", () => {
+  const l = line("loud");
+  const session = l.sessions[0];
+  if (!session) throw new FixtureError("No session in fixture");
+  if (session.pr === null) throw new FixtureError("Session without a PR");
+  l.needs = [];
+  l.queue = [];
+  l.sessions = [{ ...session, stage: "followup" }];
+  expect(forgeStanding(l, session.repo, session.pr, null)).toBe("merged");
+  l.sessions = [{ ...session, stage: "rearm" }];
+  expect(forgeStanding(l, session.repo, session.pr, null)).toBe("not read");
 });

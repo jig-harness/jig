@@ -95,6 +95,7 @@ import type { Stage as TickStage } from "../../plugin/dispatch/lib/types.ts";
 import type { NeedAct } from "../../plugin/shared/acts.ts";
 import type { AnswerState } from "../../plugin/shared/decision-card.ts";
 import type { Lane } from "../../plugin/skills/drive-pr/scripts/lib/merge-ready.ts";
+import type { QueueKind } from "./facets.ts";
 import type { AccountState } from "./view.ts";
 
 export interface IconWord {
@@ -153,7 +154,7 @@ const is = (icon: LucideIcon | null, word: string): IconWord => ({
   word,
 });
 
-const WORK_KIND_ICONS = {
+export const WORK_KIND_ICONS = {
   // A pull request is drawn by its standing (FORGE_ICONS), so it has no icon of its own.
   "pull request": is(null, "pull request, by its standing"),
   issue: is(CircleDot, "issue"),
@@ -194,6 +195,11 @@ export const SOURCE_ICONS = {
   assigned: is(UserRoundCheck, "assigned"),
   merged: is(GitMerge, "merged"),
 } satisfies Record<QueueSource, IconWord>;
+
+export const QUEUE_KIND_ICONS = {
+  "pull request": is(GitPullRequest, "pull request"),
+  item: is(CircleDot, "item"),
+} satisfies Record<QueueKind, IconWord>;
 
 export const GROUP_ICONS = {
   starts: is(Play, "starts"),
@@ -246,7 +252,7 @@ export const CAUSE_ICONS = {
   "pickup-ended": is(RotateCw, "pickup-ended"),
   "double-claim": is(CopyX, "double-claim"),
   "assigner-cannot-write": is(UserRoundX, "assigner-cannot-write"),
-  "tracker-unreachable": is(Unplug, "tracker-unreachable"),
+  "tracker-unreachable": is(Unplug, "issues unreachable"),
   "low-quota": is(Gauge, "low-quota"),
 } satisfies Record<NeedCause, IconWord>;
 
@@ -297,7 +303,7 @@ export const ICON_SETS: readonly IconSet[] = [
     title: "What a card is about",
     container: "bare",
     where:
-      "A bare icon before the key. A pull request is drawn by its standing on the forge, below. The issue and linked-work icons are in the vocabulary for the card system's work identity; no view draws them today.",
+      "A bare icon before the key, which opens what is known of it. A pull request is drawn by its standing on the forge, below; an issue is drawn the same on GitHub Issues, Linear and Jira. Linked work follows the link icon, after the card's own key.",
     members: WORK_KIND_ICONS,
   },
   {
@@ -311,7 +317,7 @@ export const ICON_SETS: readonly IconSet[] = [
     title: "A pull request on the line",
     container: "bare",
     where:
-      "The pull request icon also carries the dispatcher's states while it holds the pull request: these, and queued, held, reported and refused with the icons of what is coming. Driving and waiting are interim icons. The card system moves these states to the status mark and the stage chip.",
+      "Inside a pull request's popover, beside where the dispatcher holds it: these, and queued, held, reported and refused with the icons of what is coming. The pull request's own icon shows only its standing on the forge; on the card, the status mark and the stage chip say where the dispatcher holds it.",
     members: LINE_ICONS,
   },
   {
@@ -337,6 +343,12 @@ export const ICON_SETS: readonly IconSet[] = [
     container: "heading",
     where: "On the group's heading.",
     members: GROUP_ICONS,
+  },
+  {
+    title: "What kind of target is coming",
+    container: "bare",
+    where: "On the Kind filter of What is coming.",
+    members: QUEUE_KIND_ICONS,
   },
   {
     title: "Ready to merge",

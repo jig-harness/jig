@@ -18,6 +18,7 @@ import {
   need,
   queued,
 } from "./fixture-line.ts";
+import { linkedLine } from "./fixture-linked.ts";
 import { picksNeeds } from "./fixture-picks.ts";
 import { mergingReady, waitingReady } from "./fixture-ready.ts";
 import {
@@ -49,6 +50,7 @@ export const SCENARIOS = [
   "long",
   "picks",
   "partial",
+  "linked",
 ] as const;
 export type ScenarioId = (typeof SCENARIOS)[number];
 
@@ -199,7 +201,7 @@ function loudNeeds(): LineNeed[] {
       stage: "pickup",
       repo: API,
       item: "API-77",
-      url: "https://tracker.example/API-77",
+      url: "https://issues.example/API-77",
       title: "Add the audit export",
       since: T(12, 25),
       reason: "a claimed item with no running session past stalled_after",
@@ -325,7 +327,7 @@ function loudQueue(): LineQueued[] {
       group: "reported",
       repo: WEB,
       item: "WEB-412",
-      url: "https://tracker.example/WEB-412",
+      url: "https://issues.example/WEB-412",
       title: "Paginate the audit list",
       why: "assigned by maintainer-a",
       assignedBy: "maintainer-a",
@@ -521,7 +523,7 @@ function queueFixture(): Fixture {
           group: "reported",
           repo: WEB,
           item: "WEB-412",
-          url: "https://tracker.example/WEB-412",
+          url: "https://issues.example/WEB-412",
           title: "Paginate the audit list",
           why: "assigned by maintainer-a",
           assignedBy: "maintainer-a",
@@ -587,7 +589,7 @@ function partialFixture(): Fixture {
         group: "never",
         repo: API,
         item: "API-80",
-        url: "https://tracker.example/acme/issue/API-80/backfill-the-ledger",
+        url: "https://issues.example/acme/issue/API-80/backfill-the-ledger",
         title: "Backfill the ledger",
         why: "the child cannot be read completely",
       }),
@@ -644,7 +646,7 @@ function partialFixture(): Fixture {
           null,
         ),
         title: "Add the audit export",
-        url: "https://tracker.example/acme/issue/API-77/add-the-audit-export",
+        url: "https://issues.example/acme/issue/API-77/add-the-audit-export",
       },
       ended(
         T(13, 20),
@@ -754,5 +756,19 @@ export function fixture(id: ScenarioId): Fixture {
       };
     case "partial":
       return partialFixture();
+    case "linked":
+      return {
+        now,
+        line: linkedLine(
+          line({
+            sessions: loudSessions(),
+            needs: loudNeeds(),
+            queue: loudQueue(),
+            ready: mergingReady(),
+            load: busyLoad(),
+          }),
+        ),
+        rows: loudRows(),
+      };
   }
 }

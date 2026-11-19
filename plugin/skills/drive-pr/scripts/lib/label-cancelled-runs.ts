@@ -64,7 +64,10 @@ function afterWrite(time: number, writes: readonly number[]): boolean {
  * forge keeps a run's creation time across re-runs, so the provenance outlives
  * the re-run that answers for it.
  */
-function labelStarted(run: WorkflowRun, writes: readonly number[]): boolean {
+export function labelStarted(
+  run: Pick<WorkflowRun, "createdAt">,
+  writes: readonly number[],
+): boolean {
   return afterWrite(parseMs(run.createdAt), writes);
 }
 

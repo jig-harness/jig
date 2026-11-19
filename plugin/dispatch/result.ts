@@ -25,7 +25,9 @@
  * `failed --decision <file>` (`-` for standard input) is a pass that stopped
  * for a person and framed what it asks: a `parked-decision/v1` record, the
  * decision a drive's park holds, checked by the same checker and kept with
- * the result and its digest (`lib/framed-result.ts`). The need the tick
+ * the result and its digest (`lib/framed-result.ts`). Every reader takes the
+ * result as `parked`, not a failure, and its handoff names the person who
+ * answers the decision and the act its class asks for. The need the tick
  * shows for it carries that decision, answered as a park is. A decision
  * that does not pass the check records nothing, so the pass can fix it and
  * run the command again.
@@ -41,7 +43,7 @@
  * record's, a drive's record, or a decision the check refuses; 3 the record
  * already has a result; 4 the host could not write it.
  */
-import { derivedNext, type NextOwner } from "./lib/next-owner.ts";
+import { derivedNext, type NextOwner, parkedNext } from "./lib/next-owner.ts";
 import { stateDbFailure } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
@@ -433,8 +435,8 @@ export function framedResultMain(
     );
     return 2;
   }
-  const next = derivedNext(record.action, "gates failed", "result failed");
-  if (!recordResult(id, "failed", root, next, null, undefined, framed.value))
+  const next = parkedNext(framed.value);
+  if (!recordResult(id, "parked", root, next, null, undefined, framed.value))
     return already(id, root);
   console.log(
     JSON.stringify({

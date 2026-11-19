@@ -200,7 +200,7 @@ folder per layout and a conformance test every adapter passes. The
   epic is filed.
 - **`file-issue`** writes the `## Spec` section when the discussion names
   an artifact, so an item Jig files always resolves.
-- **`/followup`** after the merge offers the framework's own post-ship
+- **`/jig:followup`** after the merge offers the framework's own post-ship
   step where the adapter has one (OpenSpec's archive, a converge or sync
   command) and runs none of them unasked.
 - **The epic close** cites the criteria in the acceptance verdict

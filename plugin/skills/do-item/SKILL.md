@@ -2007,6 +2007,18 @@ report. In such a pass:
   never reworded. A push the repository's pre-push hook refuses is no stop:
   go on with validation, fix what it found, and push after it. The pull
   request still opens only after validation and the pre-PR review.
+- **Push and record before the pass ends, whatever ends it.** Push the
+  branch whenever it holds committed work, and record the pickup's result
+  with one of the commands the prompt names. A pass that ends with its
+  work only in its tree, or with no result recorded, leaves its item
+  claimed and stalled; the dispatcher relaunches such a pickup at most
+  once per head, in the same tree (`dispatch.stalled_relaunch`).
+- **A relaunch finishes, it does not start.** A pass whose prompt says it
+  finishes a stalled pickup runs in that pickup's tree under its claim:
+  make no second claim and start no work the tree does not hold. Commit
+  the tree's edits that belong to the item, push the branch, then go on
+  from where the work stands (validation, the pre-PR review, the pull
+  request and its drive) and record how it ended.
 - **The process dispatcher starts a pickup's first drive.** When the arm
   script answers `owed`, record `done --pr <number>` and give the line the
   next step in the closing report. The dispatcher reads that handoff after

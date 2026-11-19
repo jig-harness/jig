@@ -5,7 +5,8 @@
  * running session and no launch record holding it, and removed the first
  * tick that finds a session for it again or the item no longer claimed. A
  * claimed item idle for longer than `dispatch.stalled_after` is a stalled
- * pickup: reported, never relaunched. The clock starts when a tick first
+ * pickup: reported, or relaunched once in its own tree when that tree
+ * holds the work it left (`pickup-relaunch.ts`). The clock starts when a tick first
  * sees the item idle, so a tick that did not run meanwhile reports it late,
  * never early.
  */

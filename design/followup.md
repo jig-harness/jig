@@ -127,8 +127,9 @@ unknown key, an id of a core arm or one used twice is refused. No arm
 widens the authority table: what an arm carries out is an act of the table.
 
 Jig's own
-follow-up becomes the plugin skill with Jig's website, status-page and
-consumer arms declared this way.
+follow-up runs on the plugin skill, with its website, status-page,
+glossary-and-audit and consumer arms declared this way (instructions files
+under `.config/followup/`).
 
 ## Left out
 

@@ -68,7 +68,9 @@ so moves that are harmless alone collide here.
   new ones while it collects. Native Windows uses one worker because
   concurrent process startups and process-table queries exceed the tests'
   budgets; other platforms use four. CI and `RESOURCE_LOCK_BYPASS=1` skip
-  the lock. A single file run with `bun test <file>` takes no lock. After the last test,
+  the lock. A single file run with `bun test <file>` takes no lock, and
+  neither do the targeted tests of a
+  [dispatched pass](#local-validation-in-dispatched-passes). After the last test,
   a test process kills every descendant a test left running whose identity
   it can read, and reports on stderr what it killed and what it had to leave
   (`lib/test-reap-children-bun-preload.ts`): a reported leak is a fixture
@@ -122,14 +124,19 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an
    agent never does ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
-5. Maintainers: after the merge, run `/followup <PR>`
-   ([.claude/skills/followup/](.claude/skills/followup/SKILL.md)): the
-   tracker item and deferred findings, the release tag, what the merge did
-   to the website, the status pages and documents that cite them, the
-   consumer repositories, and active scaffolding. Routine local branch,
-   workspace and scratch-note cleanup is left to periodic maintenance. Its fixes go in one follow-up pull
-   request. A contributor's pull request owes nothing here; the maintainer
-   who merges it runs this step.
+5. Maintainers: after the merge, run `/jig:followup <PR>`
+   ([followup](plugin/skills/followup/README.md)), or let the dispatcher
+   start it: the plugin's core arms (the tracker item and deferred findings,
+   the out-of-tree steps, the release tag, active scaffolding, live
+   verification, the next step) and Jig's own repository arms, declared in
+   [`.config/jig.yaml`](.config/jig.yaml) (`followup.arms`) with their
+   instructions in [`.config/followup/`](.config/followup/): what the merge
+   did to the website, the status pages and the documents that cite them,
+   the glossary and the auditor, and the consumer repositories. Routine
+   local branch, workspace and scratch-note cleanup is left to periodic
+   maintenance. What it finds to fix is filed as one item, which a follow-up
+   pull request takes up. A contributor's pull request owes nothing here;
+   the maintainer who merges it runs this step.
 
 **A host that drives Jig opts in.** Jig's pull requests edit its own skills
 under `.claude/skills/**`, and a pass started without a terminal is denied every
@@ -150,9 +157,7 @@ directory [M0](modules/M0-instruction-architecture/mappings.md#cross-runtime-ski
 recommends. They are not part of the plugin, so changing one ships no
 version. One that opens pull requests or files issues sets
 `disable-model-invocation: true`, so it runs only when a person or a schedule
-starts it; the context budget gate still measures its description. The
-exception is `followup`: every session is told to run it after a merge
-([AGENTS.md](AGENTS.md)), so an agent must be able to start it. Their
+starts it; the context budget gate still measures its description. Their
 scripts and tests live in `scripts/`, where the gates run them. Codex reads
 skills from another directory; link it once per worktree with M0's mirror
 script (the links are gitignored):
@@ -161,8 +166,6 @@ script (the links are gitignored):
 bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
 ```
 
-- [`followup`](.claude/skills/followup/SKILL.md): settles what a merged
-  pull request still owes (step 5 above).
 - [`website-update`](.claude/skills/website-update/SKILL.md): brings the
   site up to date with the commits since its last check, recorded in
   `website/content-sync.yaml`.
@@ -229,8 +232,9 @@ Jig is built with its own tools:
 - an implementer building a step of a plan, picked up by `/jig:do-item`;
 - a drive pass fixing what a reviewer flagged, in whatever file the reviewer
   flagged, the dispatcher's own code included;
-- a follow-up or site-update session (`followup`, `website-update`) editing
-  status pages and the site's copy.
+- a follow-up session (`followup`) checking what a merge owes the status
+  pages and the site's copy, and a site-update session (`website-update`)
+  editing them in a pull request of its own.
 
 What a part is held to follows from who writes it and who runs it:
 
@@ -399,6 +403,22 @@ drive-pr suite and the website's tests, which CI runs in the drive-pr job and
 in the gate-set job's website steps (its checks leg); run
 the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
+
+### Local validation in dispatched passes
+
+Jig's `gates.dispatch_fast` setting selects the fast checks and targeted
+tests for the sessions the dispatcher starts: pickups, drives it launched and
+its other passes. A drive armed by hand keeps the full local gates. The
+targeted run takes changed test files, then nearby tests named for changed
+files, then tests that import changed files directly, up to 40 files; the rest
+are left to CI. The website's tests join only where `website/` has its
+dependencies installed. These tests run through the suite's runner, one file at
+a time, without the shared `heavy` lock and without the session's `JIG_LAUNCH`
+and `DRIVE_PR_*` variables. The lock admits full suites by worker count.
+Applying it to short targeted runs would make them queue behind those suites.
+Required CI jobs still run the full checks and suites.
+
+Turn the setting off to return dispatched passes to the full local gates.
 
 ### Known failures on the nightly run
 

@@ -258,7 +258,9 @@ describe("the tracker's reads under the tick's bound", () => {
       tick,
     });
     expect(reading.wanted).toEqual([]);
-    expect(reading.claimed).toBeNull();
+    // The queue was read before the deadline stopped an item's read.
+    expect(reading.claimed).toEqual([]);
+    expect(reading.partial).toBe(true);
     expect(
       reading.unplaced.some((row) =>
         row.reason.includes("stopped at the tick's deadline"),
@@ -439,6 +441,7 @@ describe("the forge's reads under the tick's bound", () => {
       forgeReads(
         ok({
           target: REPO,
+          mode: "full",
           config: "",
           open: [],
           comments: new Map(),

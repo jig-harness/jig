@@ -5,7 +5,8 @@
  * holds, checked by the same checker, with the digest computed once, when it
  * is recorded, and the time. It is kept in the launch record's
  * `result_decision` column, written by the same update as the result, and
- * read back by the tick, which shows it as the need's decision.
+ * read back by the tick, which shows it as the need's decision; beside it
+ * the result reads as `parked` (`launch-result.ts`).
  */
 import { decisionDigest } from "../../shared/decisions/digest.ts";
 import {
@@ -58,7 +59,7 @@ export function framedResultOf(
 }
 
 /** A kept decision as a reader takes it; `null` for none, or one that does not read. */
-function readFramedResult(
+export function readFramedResult(
   json: string | null | undefined,
 ): FramedResult | null {
   if (json == null) return null;

@@ -55,6 +55,12 @@ const EVERY: StationFacts[] = [
   },
   { kind: "drive", pr: 7, exit: null, started: null, failedRearm: "r-1" },
   { kind: "launch", target: "PR #7", record: "20261110T151827Z-f17108e4" },
+  {
+    kind: "launch",
+    target: "PR #7",
+    record: "20261110T151827Z-f17108e4",
+    held: "the supervised stage ended without confirmed cleanup",
+  },
 ];
 
 const recommendedName = (facts: StationFacts) => {

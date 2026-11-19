@@ -117,7 +117,7 @@ to a human or to a pass.
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
 | Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md), handing the red CI back for repair; [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
-| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer; a cancellation a label write caused gets one re-run per run attempt outside it | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci` |
+| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer; a cancellation a label write caused gets one re-run per run attempt outside it | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci`; a read of the recovery that keeps failing in a way waiting can clear ends in [`NOT_SETTLED`](../../../protocol/drive-exits.md), naming the read and its failure class |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | [`CI_INFRA_PERSISTED`](../../../protocol/drive-exits.md) |
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | [`PR_CONFLICTING`](../../../protocol/drive-exits.md), with its `Fix:` command |
 
@@ -1642,6 +1642,20 @@ false "green":
   completes; another run's success never discharges that obligation. With the
   workflow runs unreadable nothing is dropped: a cancelled check stays unknown
   and a failed one fails.
+- After a `CONVERGED` stop's `converged` label write, which starts the
+  workflows that run on label events, the drive watches the verified head
+  while it still holds its locks (`lib/driver/converged-ci.ts`): a
+  cancellation goes to the recovery above; a failure in a first attempt a
+  label write started has its failed jobs re-run once, claimed
+  in `cancelled_ci_label_rerun`; a failure no label write started, a
+  failing commit status, a second failure, a refused re-run, or CI not
+  settled within `DRIVE_PR_CONVERGED_CI_MINUTES` (30) parks `converged-ci`,
+  and the stop is written again as [`HITL_PARKED`](../../../protocol/drive-exits.md) and labelled
+  `parked`; a park that cannot be recorded, or a watch that fails, writes it
+  again as `INDETERMINATE` instead, for the next drive to judge the head. A
+  moved head, a closed pull request, or a window in which the head's CI never
+  read ends the watch with the label as it is. Until the watch ends, the
+  drive's locks refuse a re-arm.
 
 ### 10. A finding marked answered by someone who cannot merge
 

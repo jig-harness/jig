@@ -22,6 +22,7 @@ import {
   readyForWalk,
   carriedRelations,
   pulledNodes,
+  servedClaim,
 } from "./served-walk-inputs.ts";
 import type {
   PoolIssue,
@@ -30,12 +31,19 @@ import type {
 import { metadata, type Metadata } from "./served-metadata.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
 import { scopeFailureRow } from "./scope-failures.ts";
-import { itemFailed, limitedRow, readFailureRow } from "./served-failures.ts";
+import {
+  claimsUnread,
+  claimsUnreadRow,
+  itemFailed,
+  limitedRow,
+  noteFailure,
+  readFailureRow,
+} from "./served-failures.ts";
 import {
   isRateLimited,
   type TrackerRateLimited,
 } from "../../../shared/outbound/budget.ts";
-import { servedParentHold } from "./served-parents.ts";
+import { parentHoldUnread, servedParentHold } from "./served-parents.ts";
 import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import {
   closed,
@@ -83,8 +91,10 @@ export interface ServedReading {
   claimed: ClaimedItem[];
   /** The tracker refused the reads for its rate limit: until when, in ISO 8601. */
   limitedUntil?: string;
-  /** A served identity's queue, or an item in it, failed to read for another reason: the claims are not known. */
+  /** A served identity's queue, or an item in it, failed to read for another reason: the wanted items are not all known. */
   incomplete?: boolean;
+  /** A served identity's queue itself was not read (it failed, or the rate limit stopped it): its claims are not known. */
+  claimsUnknown?: true;
   /** What each read that fails the record raised: a queue's, or an item's a failed call stopped, so every class reaches the record. */
   failures?: unknown[];
 }
@@ -143,20 +153,10 @@ interface PersonReading {
   limited: { error: TrackerRateLimited; view: ServedView | null } | null;
   /** What failed each read that fails the record: the scope's cause or the error thrown. */
   failures: unknown[];
-  /** An item's read failed, so the claims below it are unknown. */
+  /** An item's read failed, so the items below it are unknown. */
   partial: boolean;
-}
-
-/** A served item in progress, as the claim dispatch monitors. */
-function servedClaim(i: PoolIssue) {
-  return {
-    key: i.identifier,
-    title: i.title,
-    url: i.url,
-    state: i.state.name,
-    ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
-    served: true as const,
-  };
+  /** Why the queue's items in progress were not read, so its claims are unknown; `null` when they were. */
+  claimsUnread: string | null;
 }
 
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
@@ -175,6 +175,7 @@ async function readPerson(
     limited: null,
     failures: [],
     partial: false,
+    claimsUnread: null,
   };
   let view: ServedView | null = null;
   try {
@@ -190,6 +191,7 @@ async function readPerson(
         ),
       );
     }
+    got.claimsUnread = claimsUnread(view);
     const progress = view.progress();
     got.claimed = progress.map(servedClaim);
     // Claims are monitored either way; an invalid scope only starts nothing.
@@ -202,6 +204,7 @@ async function readPerson(
       got,
     );
   } catch (error) {
+    if (view === null) got.claimsUnread = claimsUnread(null, error);
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
       got.failures.push(error);
@@ -211,14 +214,6 @@ async function readPerson(
     view?.save();
   }
   return got;
-}
-
-/** A failed queue or item read makes the reading incomplete; every cause that fails the record is kept. */
-function noteFailure(out: ServedReading, got: PersonReading): void {
-  if (got.failures.length === 0 && !got.partial) return;
-  if (got.failures.length > 0)
-    out.failures = [...(out.failures ?? []), ...got.failures];
-  out.incomplete = true;
 }
 
 /** Read every served identity for this adapter; an unreadable identity starts nothing. */
@@ -284,6 +279,10 @@ export async function readServedPickups(
     );
     out.claimed.push(...got.claimed);
     out.unplaced.push(...got.unplaced);
+    if (got.claimsUnread !== null) {
+      out.claimsUnknown = true;
+      out.unplaced.push(claimsUnreadRow(identity, got.claimsUnread));
+    }
     candidates.push(...got.candidates);
     noteFailure(out, got);
     limited ??= got.limited;
@@ -777,6 +776,7 @@ async function placeLeaf(
     view,
     options.mergeEvidence,
   );
+  if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return void unplace(parentHold);
   const admissionHold = await attachAdmissions(
     ctx,
@@ -938,6 +938,7 @@ async function heldReason(
     view,
     options.mergeEvidence,
   );
+  if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return parentHold;
   const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
     hitl: options.hitl,
@@ -949,7 +950,7 @@ async function heldReason(
   });
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
-    return `${pull.reason}; this tracker cannot assign a blocker on its own, so a person assigns it`;
+    return `${pull.reason}; this issue service cannot assign a blocker on its own, so a person assigns it`;
   found.pending.push(...pulledNodes(pull, ctx.seen, candidate.by));
   return pull.reason;
 }

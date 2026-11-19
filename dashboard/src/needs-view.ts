@@ -4,6 +4,7 @@
  */
 import type {
   LineDecision,
+  LineLinks,
   LineNeed,
   NeedCause,
   LineOption,
@@ -22,6 +23,7 @@ import { ago, clock, plural } from "./format.ts";
 import type { EveryoneAnswerState } from "./icons.ts";
 import { type DecisionRow, decisionRows } from "./picking.ts";
 import { noLinkText } from "./links.ts";
+import { itemWords, trackerOf, type Tracker } from "./tracker-name.ts";
 import { type SendTarget, sendTargetOf } from "./send-target.ts";
 import { ROLES, type Role } from "./status.ts";
 import {
@@ -75,8 +77,9 @@ export interface NeedView {
   /** The whole decision as Markdown; `null` when the record holds none. */
   decision: string | null;
   url: string | null;
-  goLabel: string | null;
   noLink: string | null;
+  /** The work the line links it to; absent when the line does not say. */
+  links?: LineLinks;
   /** The decision keys a person answers, each with a line `answer <key>: …`. */
   answerKeys: string[];
   /** One row per decision, oldest first, each picked on its own. */
@@ -99,34 +102,20 @@ function needPeople(n: LineNeed): string[] {
   );
 }
 
-function recordedWord(n: LineNeed): string {
+function recordedWord(n: LineNeed, tracker: Tracker): string {
   if (n.cause === "stopped-unknown")
     return "repeated no-cause stops (needs a person)";
   if (n.cause === "parked") return "parked for a person";
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
-  if (n.cause === "tracker-unreachable") return "tracker unreachable";
+  if (n.cause === "tracker-unreachable")
+    return `${itemWords(tracker).name ?? "issues"} unreachable`;
   return n.cause;
 }
 
-/** What a card with no link says; a need of the host's names an account, which no tracker links. */
-function noLinkOf(n: LineNeed): string | null {
+/** What a card with no link says; a need of the host's names an account, which no item links. */
+function noLinkOf(n: LineNeed, tracker: Tracker): string | null {
   if (n.url !== null || n.cause === "tracker-unreachable") return null;
-  return noLinkText(n.repo, n.target);
-}
-
-function goLabelOf(n: LineNeed): string {
-  if (n.pr === null) return "Open in the tracker";
-  // A stuck launch record has no drive handoff to read; its session is inspected and the record cleared.
-  if (n.stuckRecord != null) return "Open the pull request";
-  if (n.cause === "needs-person") return "Read the handoff on the pull request";
-  if (
-    n.cause === "followup-failed" ||
-    n.cause === "followup-stale" ||
-    n.cause === "nudge-unanswered" ||
-    n.cause === "stopped-unknown"
-  )
-    return "Open the pull request";
-  return "Answer on the pull request";
+  return noLinkText(n.repo, n.target, tracker);
 }
 
 /** Each decision's waiting answers in words, named by its key when the need has several. */
@@ -234,7 +223,11 @@ function sendFor(n: LineNeed, rows: DecisionRow[]): NeedView["send"] {
 }
 
 /** One need as its row shows it. */
-export function needView(n: LineNeed, clockNow: Clock): NeedView {
+export function needView(
+  n: LineNeed,
+  clockNow: Clock,
+  tracker?: Tracker,
+): NeedView {
   const first = n.decisions[0];
   // A park's question is its first decision's; a follow-up's is the line it stopped on.
   const question = first?.question ?? n.question ?? null;
@@ -261,15 +254,15 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
     age: ago(Date.parse(n.since), clockNow.nowMs),
     role: ROLES.needs,
     cause: n.cause,
-    recorded: recordedWord(n),
+    recorded: recordedWord(n, tracker),
     classNote: classNoteOf(first),
     question: question ?? n.reason,
     concluded: n.concluded ?? null,
     recommendation: recommendationLine(first, recommended),
     decision,
     url: n.url,
-    goLabel: n.url === null ? null : goLabelOf(n),
-    noLink: noLinkOf(n),
+    noLink: noLinkOf(n, tracker),
+    ...(n.links === undefined ? {} : { links: n.links }),
     answerKeys: [...new Set(n.decisions.map((d) => d.key))],
     rows,
     send: sendFor(n, rows),
@@ -315,8 +308,8 @@ function notMoving(line: LineSnapshot, nowMs: number): LineSession[] {
 
 export type NeedRow =
   | { type: "head"; head: string }
-  | { type: "need"; need: NeedView }
-  | { type: "stuck"; slot: SlotView };
+  | { type: "need"; need: NeedView; since: string }
+  | { type: "stuck"; slot: SlotView; since: string };
 
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
@@ -335,14 +328,24 @@ export function needRows(
     if (list.length === 0) continue;
     rows.push({ type: "head", head: act });
     for (const n of list)
-      rows.push({ type: "need", need: needView(n, clockNow) });
+      rows.push({
+        type: "need",
+        need: needView(n, clockNow, trackerOf(line, n.repo)),
+        since: n.since,
+      });
   }
   if (person !== null) return rows;
-  const stuck = notMoving(line, clockNow.nowMs);
+  const stuck = notMoving(line, clockNow.nowMs).sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  );
   if (stuck.length > 0) {
     rows.push({ type: "head", head: "Not moving" });
     for (const s of stuck)
-      rows.push({ type: "stuck", slot: slotView(s, clockNow, line) });
+      rows.push({
+        type: "stuck",
+        slot: slotView(s, clockNow, line),
+        since: s.createdAt,
+      });
   }
   return rows;
 }
@@ -405,7 +408,7 @@ export function answerBand(
         : needs.length === 1
           ? "1 needs a person."
           : `${needs.length} need a person.`,
-      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first)}.${unread === null ? "" : ` ${unread}`}`,
+      sub: `Oldest ${ago(oldest, nowMs)}. ${stuckText}${plural(moving, "session")} working. First: ${first.target}, ${recordedWord(first, trackerOf(line, first.repo))}.${unread === null ? "" : ` ${unread}`}`,
       loud: true,
     };
   }
@@ -423,7 +426,10 @@ export function answerBand(
  * names them, each with the tick its part is from: `1 repository not read:
  * acme/web, as of 15:00.`; `null` when the line read every one.
  */
-function unreadText(line: LineSnapshot, timeZone: string): string | null {
+export function unreadText(
+  line: LineSnapshot,
+  timeZone: string,
+): string | null {
   const unread = refusedRepos(line);
   if (unread.length === 0) return null;
   const each = unread.map((r) =>

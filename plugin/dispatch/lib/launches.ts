@@ -50,6 +50,7 @@ import {
   type StageSupervision,
 } from "./launch-supervision.ts";
 import { ordinalAnchors } from "./account-ordinal.ts";
+import { relaunchAnchors } from "./pickup-relaunch.ts";
 import { optionalLaunchFields } from "./launch-record-options.ts";
 import { readNext, type NextOwner } from "./next-owner.ts";
 import { type FramedResult, framedOf } from "./framed-result.ts";
@@ -85,11 +86,18 @@ import { cancelledBeforeExecution } from "./cancellation.ts";
 import type { StandingAnswer } from "./routine-questions.ts";
 export { cancelledBeforeExecution } from "./cancellation.ts";
 export { UNARMED_FACTS } from "./launch-keep.ts";
-import { latestArms, latestDriveRefusals } from "./launch-keep.ts";
+import {
+  idsOf,
+  latestArms,
+  latestBy,
+  latestDriveRefusals,
+} from "./launch-keep.ts";
 import { latestPickups } from "./launch-pickups.ts";
 import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
 import { latestDeaths, witnessedState } from "./launch-recovery.ts";
 import { asResult } from "./launch-result.ts";
+import { isDrive } from "./launch-kind.ts";
+import type { SessionResult } from "./session-result-types.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
 import { isoOf, parseMs } from "../../shared/time.ts";
 
@@ -101,21 +109,7 @@ export type LaunchAction =
   | "followup"
   | "steward";
 
-/** Whether a record starts a drive's headless pass, whose exit is its answer. */
-export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
-  return record.action === "rearm" || record.action === "takeover";
-}
-
-/**
- * Whether a record starts an interactive session, whose agent ends it: a
- * pickup an earlier release started that way. A pickup this release starts
- * is a headless pass (`headless`), as a follow-up is, which its exit ends.
- */
-export function isInteractive(
-  record: Pick<LaunchRecord, "action" | "headless">,
-): boolean {
-  return record.action === "pickup" && record.headless !== true;
-}
+export { isDrive, isInteractive } from "./launch-kind.ts";
 
 /**
  * A pickup's session's or a follow-up pass's own answer, recorded through
@@ -123,7 +117,7 @@ export function isInteractive(
  * stopped, or a follow-up a rate limit or an arm still pending stopped, to
  * be started again once its time has come (`waitsUntil`, `waitsFor`).
  */
-export type SessionResult = "done" | "failed" | "waits";
+export type { SessionResult } from "./session-result-types.ts";
 
 /** The runtime's answer to one `launch` call for the record. */
 export interface LaunchAttempt {
@@ -140,6 +134,10 @@ export interface LaunchRecord {
   stewardResume?: string;
   stewardDecision?: number;
   stewardContext?: string;
+  /** For a stalled pickup's relaunch: the launch record of the pickup it finishes, in that pickup's own tree (`pickup-relaunch.ts`). */
+  relaunchOf?: string;
+  /** For a stalled pickup's relaunch: the tree's head when it was relaunched; one relaunch per item and head. */
+  relaunchHead?: string;
   version: 1;
   id: string;
   token: string;
@@ -305,6 +303,8 @@ export type LaunchState =
       wallUnrecorded?: true;
       /** A registered process proved alive even though the launch cannot be settled. */
       liveProcess?: ProcessIdentity;
+      /** A process of the launch could not be judged from here (another host's, one never recorded, or a failed read), so it may still run. */
+      unjudged?: true;
     }
   | { kind: "died"; reason: string; process: LaunchClaim }
   | {
@@ -318,7 +318,7 @@ export type LaunchState =
 export interface ReadRecord {
   record: LaunchRecord;
   state: LaunchState;
-  /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
+  /** A pickup's session's or a follow-up pass's recorded answer, as a reader takes it; `null` when none. */
   result: SessionResult | null;
   next?: NextOwner | null;
   /** For a `waits` result, when the pickup or the follow-up may start again (ISO 8601). */
@@ -327,7 +327,7 @@ export interface ReadRecord {
   waitsFor?: WaitFor;
   /** A pickup the repository's start rules refused, recorded with its `failed` result; absent otherwise. */
   refusal?: PickupRefusal | null;
-  /** The framed decision the pass recorded with its `failed` result, when it stopped for a person; absent otherwise. */
+  /** The framed decision the pass recorded when it stopped for a person, its result read as `parked`; absent otherwise. */
   framed?: FramedResult;
   /** When the pass's result or the stage's exit could not be written on this host (`unwritten-result.ts`); absent otherwise. */
   unwritten?: string;
@@ -531,7 +531,7 @@ export interface LaunchRow {
   /** What a `waits` result waits for, as JSON (`wait-for.ts`). */
   result_wait?: string | null;
   refusal?: string | null;
-  /** A pass's framed decision, recorded with its `failed` result (`framed-result.ts`). */
+  /** A pass's framed decision, kept beside its `failed` result, which reads as `parked` (`framed-result.ts`). */
   result_decision?: string | null;
   report?: string | null;
   sessions?: string | null;
@@ -599,7 +599,11 @@ function answerOf(
   root: string,
 ): Omit<ReadRecord, "record" | "state"> {
   return {
-    result: asResult(row.result, row.result_until ?? null),
+    result: asResult(
+      row.result,
+      row.result_until ?? null,
+      row.result_decision ?? null,
+    ),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
@@ -732,6 +736,7 @@ function stateOf(
       kind: "unknown",
       reason: "its claim does not read",
       process: NO_PROCESS,
+      unjudged: true,
     };
   return claimState(claim, rows, here);
 }
@@ -780,43 +785,22 @@ export function holds(state: LaunchState): boolean {
   );
 }
 
-/** The newest record per key among those `keep` accepts. */
-function latestBy(
-  records: ReadRecord[],
-  keep: (record: LaunchRecord) => boolean,
-  keyOf: (record: LaunchRecord) => string,
-): Map<string, ReadRecord> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    if (!keep(r.record)) continue;
-    const key = keyOf(r.record);
-    const seen = latest.get(key);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(key, r);
-  }
-  return latest;
-}
-
 /**
  * The ids of each pull request's latest record when it ended on a refusal of
  * a second driver: the stage's answer for as long as the ledger facts hold.
  */
 function latestRefusals(records: ReadRecord[]): Set<string> {
   // Pull request numbers repeat across repositories: key by both.
-  const latest = latestBy(
-    records,
-    (r) => isDrive(r),
-    (r) => `${r.repo}#${String(r.pr)}`,
+  const latest = latestBy(records, ({ record: r }) =>
+    isDrive(r) ? `${r.repo}#${String(r.pr)}` : null,
   );
-  const ids = new Set<string>();
-  for (const { record, state } of latest.values())
-    if (
+  return idsOf(
+    latest,
+    ({ state }) =>
       state.kind === "ended" &&
       state.exit.code !== null &&
-      DRIVER_REFUSAL_EXITS.has(state.exit.code)
-    )
-      ids.add(record.id);
-  return ids;
+      DRIVER_REFUSAL_EXITS.has(state.exit.code),
+  );
 }
 
 /**
@@ -856,6 +840,7 @@ export function pruneLaunches(
   const cutoff = nowMs - days * 86_400_000;
   const kept = latestRefusals(records);
   for (const id of ordinalAnchors(records)) kept.add(id);
+  for (const id of relaunchAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
   for (const id of unsettledStartups(records, settled)) kept.add(id);
   for (const latest of [

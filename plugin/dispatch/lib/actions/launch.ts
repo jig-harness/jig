@@ -665,7 +665,7 @@ export async function accountBlock(
 function noPreflightRoom(state: ApplyState): string | null {
   const left = timeLeftMs(state);
   return left !== null && left < settleMs(state.machine.runtimeTimeoutMs)
-    ? "the tick deadline has no room for the tracker preflight and its receipt; a later tick retries this one"
+    ? "the tick deadline has no room for the issue preflight and its receipt; a later tick retries this one"
     : null;
 }
 

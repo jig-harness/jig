@@ -75,11 +75,14 @@
  * `jig send` refuses that session a person's commands
  * (`shared/launched-session.ts`).
  *
- * A Claude follow-up that exits unsuccessfully within a minute, without a
- * result, a question or its own transcript, could not start: its account
- * backs off and its claim is released for retry. A recognized vendor usage
- * notice identifies a quota wall; otherwise its cause stays unknown. An
- * unreadable transcript scan withholds that classification.
+ * A Claude follow-up, steward or pickup pass that exits unsuccessfully
+ * within a minute, without a result, a question or its own transcript,
+ * could not start: its account is walled, and a follow-up's claim is
+ * released for retry. A recognized vendor usage notice identifies a quota
+ * wall, which lifts at the reset the notice states (`wall_backoff` from now
+ * when that does not read); otherwise its cause stays unknown and the
+ * account backs off for `wall_backoff`. An unreadable transcript scan
+ * withholds that classification.
  * Before it records the exit of a pass that left no closing report, the
  * wrapper records what it saw as the report, `by: wrapper` (a pass that
  * could not start, one it stopped at its deadline, any steward pass), or,
@@ -99,10 +102,20 @@
  * record keeps the tab until the tick finds the record ended without its
  * wrapper and asks the session runtime to end the run (`endRun`).
  *
- * Exit codes: the drive's own; 2 usage, a token that is not the record's,
- * a state database a newer plugin wrote, or a follow-up or pickup whose
- * permission settings do not read; 3 the record was already claimed, so nothing
- * started.
+ * Once its stage has ended, the wrapper reads and writes its own launch
+ * record even when an upgrade during the stage moved the state database past
+ * a step that was not additive (`lib/state.ts`'s `enterAfterStage`), so the
+ * exit and what follows it are recorded as without the upgrade. A database
+ * that refuses it even then (a newer schema without a column it touches)
+ * leaves the exit unrecorded: the wrapper says the stage ran and how it
+ * ended, and exits with the stage's own code.
+ *
+ * Exit codes: the stage's own (a drive's exit), also when the state database
+ * refuses the wrapper after its stage ran; 2 usage, a token that is not the
+ * record's, a state database a newer plugin wrote that refuses the wrapper
+ * before its stage starts, so nothing is started, or a follow-up or pickup
+ * whose permission settings do not read; 3 the record was already claimed,
+ * so nothing started.
  */
 import { runStage, type Ran, type RunOptions } from "./lib/run-stage.ts";
 import { driverCleanupUncertain } from "./lib/stage-cleanup.ts";
@@ -161,11 +174,15 @@ import {
 } from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
-import { newerStateRefusal, stateDbFailure } from "./lib/state.ts";
+import {
+  enterAfterStage,
+  newerStateRefusal,
+  stateDbFailure,
+} from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
 import { writeWall } from "./lib/walls.ts";
-import { failedStartup } from "./lib/session-startup.ts";
+import { failedStartup, startupReset } from "./lib/session-startup.ts";
 import { settleUnreported } from "./lib/end-report.ts";
 import { codexSessionIn } from "./lib/transcript-copy.ts";
 import {
@@ -455,11 +472,29 @@ async function wrap(id: string, token: string): Promise<number> {
   }
   if (!(await publishOwner(record, identity.value))) return 3;
   process.chdir(record.workspace.path);
-  const code = isInteractive(record)
-    ? await executeStage(id, record)
-    : await spawnSupervisor(id, token, record.runtime === "process");
+  let code: number;
+  if (isInteractive(record)) {
+    code = await executeStage(id, record);
+  } else {
+    code = await spawnSupervisor(id, token, record.runtime === "process");
+    enterAfterStage();
+  }
   await finishWrapper(record);
   return code;
+}
+
+/**
+ * Whether the supervisor recorded the stage's exit. A state database that
+ * refuses this wrapper reads as no exit: the supervisor has already said why,
+ * and the tab stays for a person.
+ */
+function supervisedEnded(id: string): boolean {
+  try {
+    return readEnded(id)?.state.kind === "ended";
+  } catch (error) {
+    if (newerStateRefusal(error) === null) throw error;
+    return false;
+  }
 }
 
 async function executeStage(
@@ -554,9 +589,14 @@ function startupOf(record: LaunchRecord, ran: Ran) {
     record,
     ran.code,
     ran.started,
-    ran.startupOutput ?? ran.output ?? "",
+    startupOutputOf(ran),
     ran.exited,
   );
+}
+
+/** What a stage printed at its start, where a vendor's usage notice would be. */
+function startupOutputOf(ran: Ran): string {
+  return ran.startupOutput ?? ran.output ?? "";
 }
 
 /** The session id a Codex pass printed at its start; Claude Code's is the one the tick minted (`sessionId`). */
@@ -566,15 +606,26 @@ function sessionOf(record: LaunchRecord, ran: Ran): string | null {
     : null;
 }
 
-/** Back off an account before releasing the slot held by an unstarted session. */
-function recordStartupWall(record: LaunchRecord, startup: string): boolean {
+/**
+ * Wall an account before releasing the slot held by an unstarted session:
+ * until the reset its usage notice states, else `wall_backoff` from now. The
+ * notice is read before the write, so only the write's failure is the
+ * wall's to absorb.
+ */
+function recordStartupWall(
+  record: LaunchRecord,
+  startup: string,
+  output: string,
+): boolean {
+  const now = currentMs();
+  const notice = startup === "quota" ? startupReset(output, now) : null;
   try {
     writeWall({
       account: record.account,
       vendor: record.vendor,
       configDir: record.configDir,
-      resetAt: isoFromMs(currentMs() + record.wallBackoffMs),
-      source: `session could not start (${startup}); wall_backoff`,
+      resetAt: notice?.resetAt ?? isoFromMs(now + record.wallBackoffMs),
+      source: startupWallSource(startup, notice),
     });
     return true;
   } catch (error) {
@@ -584,6 +635,18 @@ function recordStartupWall(record: LaunchRecord, startup: string): boolean {
     );
     return false;
   }
+}
+
+/** Where a startup wall's reset came from: the notice's reset, or the backoff, naming a notice clause that did not read. */
+function startupWallSource(
+  startup: string,
+  notice: ReturnType<typeof startupReset>,
+): string {
+  if (notice?.resetAt != null)
+    return `session could not start (${startup}); the usage notice's reset`;
+  if (notice?.clause != null)
+    return `session could not start (${startup}); the notice's "${notice.clause.slice(0, 80)}" did not read; wall_backoff`;
+  return `session could not start (${startup}); wall_backoff`;
 }
 
 /** Keep the wrapper's explanation or transcript before publishing the exit. */
@@ -619,9 +682,10 @@ function recordFinishedExit(
     // exit evidence, so a database that refuses reads still leaves it.
     const startup = startupOf(record, ran);
     const startupWallUnrecorded =
-      startup !== undefined && !recordStartupWall(record, startup);
+      startup !== undefined &&
+      !recordStartupWall(record, startup, startupOutputOf(ran));
     // The report before the exit: a tick that reads the exit reads its report too.
-    recordAndSay(id, isDrive(record), startup);
+    recordAndSay(id, record.action, startup, startupWallUnrecorded);
     const session = sessionOf(record, ran);
     settlePassReport(record, ran, startup, session);
     recordExit(id, {
@@ -644,8 +708,37 @@ function recordFinishedExit(
   }
 }
 
-/** Publish a finished stage's exit, unless its processes may still run. */
+/**
+ * Publish a finished stage's exit and what follows it. A state database that
+ * refuses this wrapper even past its stage (`enterAfterStage`) is said here,
+ * as a stage that ran: the wrapper's exit stays the stage's.
+ */
 async function finishRun(
+  id: string,
+  record: LaunchRecord,
+  ran: Ran,
+): Promise<number> {
+  enterAfterStage();
+  try {
+    return await publishEnd(id, record, ran);
+  } catch (error) {
+    const newer = newerStateRefusal(error);
+    if (newer === null) throw error;
+    console.error(
+      `jig dispatch run: the stage ran and ended (${endOf(ran)}), and its exit is not recorded: ${newer}`,
+    );
+    return ran.code ?? 1;
+  }
+}
+
+/** How a stage ended, as one phrase. */
+function endOf(ran: Pick<Ran, "code" | "signal">): string {
+  if (ran.code !== null) return `exit ${ran.code}`;
+  return ran.signal === null ? "without a code" : `signal ${ran.signal}`;
+}
+
+/** Publish a finished stage's exit, unless its processes may still run. */
+async function publishEnd(
   id: string,
   record: LaunchRecord,
   ran: Ran,
@@ -659,7 +752,7 @@ async function finishRun(
     );
     // The driver's report is kept all the same: it never touches the exit.
     if (isDrive(record)) {
-      recordAndSay(id, true, undefined);
+      recordAndSay(id, record.action, undefined);
       printKeptReport(id);
     }
     return code ?? 1;
@@ -729,7 +822,7 @@ async function labelFollowup(id: string): Promise<void> {
 async function closeTabOnExit(id: string): Promise<void> {
   let ended: boolean;
   try {
-    ended = readEnded(id)?.state.kind === "ended";
+    ended = supervisedEnded(id);
   } catch (error) {
     console.error(
       `jig dispatch run: the run's tab stays open: its exit did not read (${failureText(error)})`,
@@ -778,8 +871,6 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
 
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
-  if (argv[0] === "supervise" && argv.length === 3)
-    return supervise(argv[1] as string, argv[2] as string);
   if (argv[0] === "identity" && argv.length === 2) {
     console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
     return 0;
@@ -799,16 +890,20 @@ export async function runMain(argv: string[]): Promise<number> {
   }
   if (argv[0] === "tracker" && argv.length === 3)
     return trackerMain(argv[1] as string, argv[2] as string);
-  if (argv.length !== 2) {
+  const supervising = argv[0] === "supervise" && argv.length === 3;
+  if (!supervising && argv.length !== 2) {
     console.error(
       "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
     );
     return 2;
   }
   try {
-    return await wrap(argv[0] as string, argv[1] as string);
+    return supervising
+      ? await supervise(argv[1] as string, argv[2] as string)
+      : await wrap(argv[0] as string, argv[1] as string);
   } catch (error) {
-    // A state database a newer plugin wrote: nothing is started.
+    // A state database a newer plugin wrote, refusing the wrapper before its
+    // stage starts: nothing is started. Past the stage, `finishRun` says it.
     const newer = newerStateRefusal(error);
     if (newer === null) throw error;
     console.error(`jig dispatch run: ${newer}`);

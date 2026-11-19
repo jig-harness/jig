@@ -33,6 +33,16 @@ export const TICK_PHASE_MEANINGS: Record<string, string> = {
   close: "settling the outcome log and writing this line",
 };
 
+/** What the page calls a repository's phase where the receipt's own name for it is not a person's word. */
+const PHASE_WORDS: Readonly<Record<string, string>> = { tracker: "issues" };
+
+/** A repository's phase as the page names it. */
+function phaseWord(phase: string): string {
+  return Object.hasOwn(PHASE_WORDS, phase)
+    ? (PHASE_WORDS[phase] ?? phase)
+    : phase;
+}
+
 /** The tick-level phases that add up the repositories' own, which the slowest phase names per repository instead. */
 const AGGREGATE = new Set(["repos", "observe", "act"]);
 
@@ -165,7 +175,9 @@ function repoView(repo: LineTick["repos"][number]): TickRepoView {
     phases: Object.entries(repo.phasesMs)
       .sort((a, b) => b[1] - a[1])
       // Each phase and its time stay on one line where the list wraps.
-      .map(([phase, ms]) => `${phase} ${seconds(ms)}`.replace(/ /g, "\u00a0"))
+      .map(([phase, ms]) =>
+        `${phaseWord(phase)} ${seconds(ms)}`.replace(/ /g, "\u00a0"),
+      )
       .join(" · "),
     defect: repo.defect,
   };
@@ -198,7 +210,7 @@ export function tickRows(
       slowest:
         slowest === null
           ? null
-          : `${slowest.phase}${slowest.repo === null ? "" : ` in ${slowest.repo}`}, ${seconds(slowest.ms)}`,
+          : `${phaseWord(slowest.phase)}${slowest.repo === null ? "" : ` in ${slowest.repo}`}, ${seconds(slowest.ms)}`,
       scope: tick.sweep
         ? `${repos}, all`
         : `${tick.repos.length} of ${plural(listed, "repository", "repositories")}`,
