@@ -11,8 +11,9 @@
  * (`conflict-rates-refresh.ts`).
  *
  * A path's rate is the share of its observed merged pull requests that met
- * a conflict, once at least `MIN_OBSERVED` changed it, and
- * `DEFAULT_FILE_RATE` below that. A file that is missing, does not read or
+ * a conflict, once at least `MIN_OBSERVED` changed it, and the
+ * repository's `dispatch.overlap.file_rate` (`DEFAULT_FILE_RATE` unless it
+ * sets one) below that. A file that is missing, does not read or
  * is older than `STALE_AFTER_MS` leaves every rate at its default, and the
  * reading says why, so a receipt can carry it.
  */
@@ -26,9 +27,10 @@ import {
   parseRates,
 } from "../../skills/resolve-conflicts/scripts/lib/rates.ts";
 import { stateRoot } from "../receipts.ts";
+import { DEFAULT_FILE_RATE } from "./overlap-config.ts";
 
-/** A path's rate below `MIN_OBSERVED` observed merged pull requests (`dispatch.overlap.file_rate`'s default). */
-export const DEFAULT_FILE_RATE = 0.5;
+/** A path's rate below `MIN_OBSERVED` observed merged pull requests: `dispatch.overlap.file_rate`'s default. */
+export { DEFAULT_FILE_RATE };
 
 /** The observed merged pull requests a path needs before its own share stands for its rate. */
 export const MIN_OBSERVED = 5;
@@ -103,12 +105,11 @@ export interface ConflictRates {
   observed(path: string): number;
 }
 
-const DEFAULTED = `every path's rate is the default ${DEFAULT_FILE_RATE}`;
-
 function defaults(
   slug: string,
   reason: string,
   lastRefresh: RefreshRecord | null,
+  fileRate: number,
 ): ConflictRates {
   const kept =
     lastRefresh?.outcome === "kept" && lastRefresh.reason !== undefined
@@ -117,18 +118,19 @@ function defaults(
   return {
     slug,
     generatedAt: null,
-    defaulted: `${reason}: ${DEFAULTED}${kept}`,
+    defaulted: `${reason}: every path's rate is the default ${fileRate}${kept}`,
     lastRefresh,
-    rate: () => DEFAULT_FILE_RATE,
+    rate: () => fileRate,
     observed: () => 0,
   };
 }
 
-/** One repository's conflict rates as the tick reads them at `nowMs`. */
+/** One repository's conflict rates as the tick reads them at `nowMs`, a path below `MIN_OBSERVED` at `fileRate`. */
 export function readConflictRates(
   slug: string,
   nowMs: number,
   root = stateRoot(),
+  fileRate = DEFAULT_FILE_RATE,
 ): ConflictRates {
   const paths = ratesPaths(slug, root);
   const lastRefresh = readRefreshRecord(paths.refresh);
@@ -140,7 +142,7 @@ export function readConflictRates(
       errnoCode(err) === "ENOENT"
         ? `no conflict rates for ${slug} have been measured yet`
         : `the conflict rates file for ${slug} does not read (${errnoCode(err) ?? "error"})`;
-    return defaults(slug, why, lastRefresh);
+    return defaults(slug, why, lastRefresh, fileRate);
   }
   let parsed: unknown;
   try {
@@ -158,6 +160,7 @@ export function readConflictRates(
       slug,
       `the conflict rates file for ${slug} does not read as merge-conflict-rates/v1`,
       lastRefresh,
+      fileRate,
     );
   const measured = parseMs(rates.generatedAt);
   if (nowMs - measured > STALE_AFTER_MS)
@@ -165,6 +168,7 @@ export function readConflictRates(
       slug,
       `the conflict rates for ${slug}, measured at ${isoFromMs(measured)}, are stale (more than ${STALE_AFTER_MS / DAY_MS} days old)`,
       lastRefresh,
+      fileRate,
     );
   const byPath = new Map<string, PathRate>(rates.paths.map((p) => [p.path, p]));
   return {
@@ -175,7 +179,7 @@ export function readConflictRates(
     rate: (path) => {
       const p = byPath.get(path);
       return p === undefined || p.merged < MIN_OBSERVED
-        ? DEFAULT_FILE_RATE
+        ? fileRate
         : p.conflicted / p.merged;
     },
     observed: (path) => byPath.get(path)?.merged ?? 0,

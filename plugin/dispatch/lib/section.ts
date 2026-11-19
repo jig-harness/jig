@@ -17,6 +17,7 @@ import {
 import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
+import { parseOverlap, unknownKeys } from "./overlap-config.ts";
 import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
 import type {
   AdoptRule,
@@ -63,6 +64,7 @@ const KEYS = [
   "adopt",
   "pool",
   "epic_width",
+  "overlap",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
@@ -238,11 +240,8 @@ function adoptRule(value: unknown): Checked<AdoptRule> {
   if (value === undefined || value === null) return ok(off);
   if (!isMapping(value)) return invalid("dispatch.adopt must be a mapping");
   const raw = value as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((k) => !ADOPT_KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch.adopt has unknown key(s): ${unknown.join(", ")} (known: ${ADOPT_KEYS.join(", ")})`,
-    );
+  const refused = unknownKeys("dispatch.adopt", raw, ADOPT_KEYS);
+  if (refused !== null) return refused;
   if (raw.enabled !== undefined && typeof raw.enabled !== "boolean")
     return invalid("dispatch.adopt.enabled must be true or false");
   const logins = authors(raw.authors);
@@ -311,11 +310,8 @@ function pool(
   const raw = section.pool;
   if (raw === undefined || raw === null) return ok(undefined);
   if (!isMapping(raw)) return invalid("dispatch.pool must be a mapping");
-  const unknown = Object.keys(raw).filter((k) => !POOL_KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch.pool has unknown key(s): ${unknown.join(", ")} (known: ${POOL_KEYS.join(", ")})`,
-    );
+  const refused = unknownKeys("dispatch.pool", raw, POOL_KEYS);
+  if (refused !== null) return refused;
   const named = (raw as Record<string, unknown>).states;
   if (named === undefined || named === null)
     return invalid(
@@ -348,6 +344,7 @@ type Timings = Omit<
   | "adopt"
   | "pickupDeadlineMs"
   | "epicWidth"
+  | "overlap"
 >;
 
 /** `stalled_scope`: `claimed` unless the section says `assigned`. */
@@ -437,11 +434,8 @@ export function dispatchSection(
   if (raw !== undefined && raw !== null && !isMapping(raw))
     return invalid("dispatch must be a mapping");
   const section = (raw ?? {}) as Record<string, unknown>;
-  const unknown = Object.keys(section).filter((k) => !KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
-    );
+  const refused = unknownKeys("dispatch", section, KEYS);
+  if (refused !== null) return refused;
   const rules = labelsAndAdopt(section);
   if (!rules.ok) return rules;
   let tracker: TrackerConfig;
@@ -464,12 +458,15 @@ export function dispatchSection(
   if (!ready.ok) return ready;
   const epicWidth = width(section.epic_width);
   if (!epicWidth.ok) return epicWidth;
+  const overlap = parseOverlap(section.overlap);
+  if (!overlap.ok) return overlap;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
     epicWidth: epicWidth.value,
+    overlap: overlap.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

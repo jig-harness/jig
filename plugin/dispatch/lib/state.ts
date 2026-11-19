@@ -22,6 +22,8 @@
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
  * | `merge_facts` | repository and directly verified merged pull request | immutable merged time, base branch and complete changed files, independent of follow-up activation; associations and edge release are read again each tick |
+ * | `overlap_waits` | repository and wanted pickup waiting on overlap | since when it waited in tier 2 or 3, since when in tier 3, and when it was promoted past the bound; removed once it starts or is no longer wanted |
+ * | `overlap_hotspots` | repository, day and file | in how many ticks of the day the file kept a pickup over the overlap bound |
  * | `allocation_charge` | pickup claim | its claim id: written once, in the claim's transaction; a replay inserts nothing |
  * | `allocation_week` | completed week | the week, written once by the next week's first tick and never rewritten |
  * | `allocation_lane_epoch` | weighted lane's ready or empty transition | an increasing sequence; the newest is the epochs' revision |
@@ -532,6 +534,14 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: `ALTER TABLE release_needs ADD COLUMN taken_as TEXT;
     ${RELEASES_ALREADY_TAKEN}`,
+  },
+  {
+    // The overlap walk's waits and the files that kept work over the overlap bound (`overlap-waits.ts`).
+    additive: true,
+    sql: `
+    CREATE TABLE overlap_waits (repo TEXT NOT NULL, item TEXT NOT NULL, since_ms INTEGER NOT NULL, tier3_since_ms INTEGER, promoted_ms INTEGER, PRIMARY KEY (repo, item));
+    CREATE TABLE overlap_hotspots (repo TEXT NOT NULL, day TEXT NOT NULL, path TEXT NOT NULL, ticks INTEGER NOT NULL, PRIMARY KEY (repo, day, path));
+  `,
   },
 ];
 
