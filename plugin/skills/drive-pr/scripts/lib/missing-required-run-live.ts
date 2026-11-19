@@ -57,8 +57,8 @@ async function gitText(args: string[]): Promise<string | null> {
   return null;
 }
 
-/** Whether the commits from `head` to the local HEAD change a workflow file. */
-async function changesWorkflows(head: string): Promise<boolean> {
+/** Whether the commits from `head` to the local HEAD change a workflow file; `null` when the diff cannot be read. */
+async function changesWorkflows(head: string): Promise<boolean | null> {
   const out = await gitText([
     "diff",
     "--name-only",
@@ -67,7 +67,7 @@ async function changesWorkflows(head: string): Promise<boolean> {
     "--",
     WORKFLOWS_DIR,
   ]);
-  return out !== null && out.trim() !== "";
+  return out === null ? null : out.trim() !== "";
 }
 
 /** The workflow files `head` holds, as many as are read; none when the tree cannot say. */
@@ -203,7 +203,14 @@ export async function stopOnMissingRequiredRun(
     );
     return "wait";
   }
-  if (await changesWorkflows(head)) {
+  const changes = await changesWorkflows(head);
+  if (changes === null) {
+    console.error(
+      `ci-hold: required check(s) ${verdict.checks.map((c) => `'${c}'`).join(", ")} never ran on this head, and whether the commits about to be pushed change ${WORKFLOWS_DIR} cannot be read; waiting`,
+    );
+    return "wait";
+  }
+  if (changes) {
     console.error(
       `ci-hold: required check(s) ${verdict.checks.map((c) => `'${c}'`).join(", ")} never ran on this head, and the commits about to be pushed change ${WORKFLOWS_DIR}; pushing unheld so the change can start them`,
     );
