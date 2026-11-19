@@ -53,7 +53,11 @@ function setup(config = "", advisory = "scan") {
   );
   return { ...repo, ...fixture, head, repoDir: repo.dir };
 }
-async function child(f: ReturnType<typeof setup>, source: string) {
+async function child(
+  f: ReturnType<typeof setup>,
+  source: string,
+  extraEnv: Record<string, string> = {},
+) {
   const path = join(f.dir, "probe.ts");
   writeFileSync(path, `#!/usr/bin/env bun\n${source}`, { mode: 0o755 });
   const p = Bun.spawn(scriptArgv(path), {
@@ -70,6 +74,7 @@ async function child(f: ReturnType<typeof setup>, source: string) {
       DRIVE_PR_LEDGER: "off",
       JIG_LOG: "debug",
       DRIVE_PR_FINAL_CI_POLL_MS: "1",
+      ...extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -379,19 +384,25 @@ test("mixed failure provenance excludes advisory-only runs from the repair chann
  * dropped.
  */
 const timedOutJob = `{name:"tests",checkRunId:11,limitMs:1800000,ranMs:1800000,run:{id:300,conclusion:"cancelled",jobNames:["tests"],createdAt:"2026-11-13T09:00:00Z"}}`;
-function evaluateStale(extra = "") {
+/** Module paths reach the probe through its environment, never spliced into its source. */
+const staleEnv = {
+  PROBE_LIVE: join(SCRIPTS, "lib/cancelled-recovery-live.ts"),
+  PROBE_POLICY_BASE: join(SCRIPTS, "lib/driver/policy-base.ts"),
+  PROBE_FAILED_RUNS: join(SCRIPTS, "lib/driver/failed-runs.ts"),
+  PROBE_REPAIR: join(SCRIPTS, "lib/driver/repair.ts"),
+  PROBE_CONVERGENCE: convergence,
+};
+function evaluateStale() {
   const failing = `{checkRunNames:["scan","build","tests"],statusNames:[],runs:[{id:100,createdAt:"2026-11-13T09:00:00Z",jobNames:["build"]},{id:200,createdAt:"2026-11-13T09:00:00Z",jobNames:["scan","tests"]},{id:300,createdAt:"2026-11-13T09:00:00Z",jobNames:["tests"]}]}`;
-  const spy = (rel: string, body: string) =>
-    `{const m=await import(${JSON.stringify(join(SCRIPTS, rel))}); mock.module(${JSON.stringify(join(SCRIPTS, rel))},()=>({...m,${body}}));}`;
   // The repair pass is stubbed so the inputs it would be handed are observable.
-  return `import {mock} from "bun:test"; const live=await import(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))}); mock.module(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))},()=>({...live,timedOutOnHead:async()=>[${timedOutJob}]})); ${spy("lib/driver/policy-base.ts", "announcePolicyBase:async()=>{}")} ${spy("lib/driver/failed-runs.ts", `failedRunsToTell:async(_pr,runs)=>{console.error("repair runs: "+JSON.stringify(runs.map(r=>r.id)));return []}`)} ${spy("lib/driver/repair.ts", `runRepairPass:async(...a)=>{console.error("repair detail: "+a[3]);return {dispatched:false,resumed:true,code:0}}`)} const {evaluateFinalCi}=await import(${JSON.stringify(convergence)}); ${extra} const c={pr:"999",ciRepairs:0,ciRepairBudget:2,dryRun:false,agent:["true"],held:[],mailboxCheckpoint:async()=>"clear"}; const result=await evaluateFinalCi("failing: scan, build, tests",true,c,{code:4},process.env.DRIVE_PR_POLICY_BASE,null,${failing}); console.log(JSON.stringify({result}));`;
+  return `import {mock} from "bun:test"; const spy=async(key,over)=>{const path=process.env[key];const m=await import(path);mock.module(path,()=>({...m,...over}));}; await spy("PROBE_LIVE",{timedOutOnHead:async()=>[${timedOutJob}]}); await spy("PROBE_POLICY_BASE",{announcePolicyBase:async()=>{}}); await spy("PROBE_FAILED_RUNS",{failedRunsToTell:async(_pr,runs)=>{console.error("repair runs: "+JSON.stringify(runs.map(r=>r.id)));return []}}); await spy("PROBE_REPAIR",{runRepairPass:async(...a)=>{console.error("repair detail: "+a[3]);return {dispatched:false,resumed:true,code:0}}}); const {evaluateFinalCi}=await import(process.env.PROBE_CONVERGENCE); const c={pr:"999",ciRepairs:0,ciRepairBudget:2,dryRun:false,agent:["true"],held:[],mailboxCheckpoint:async()=>"clear"}; const result=await evaluateFinalCi("failing: scan, build, tests",true,c,{code:4},process.env.DRIVE_PR_POLICY_BASE,null,${failing}); console.log(JSON.stringify({result}));`;
 }
 const detailLine = /repair detail: ([^\n]*)/;
 const runsLine = /repair runs: ([^\n]*)/;
 
 test("stale reported failures: the ordinary policy return repairs only the timed-out job", async () => {
   const f = setup();
-  const r = await child(f, evaluateStale());
+  const r = await child(f, evaluateStale(), staleEnv);
   const told = detailLine.exec(r.stderr)?.[1] ?? "";
   expect(told).toStartWith("tests; timed out:");
   expect(told).not.toContain("build");
@@ -424,7 +435,7 @@ test("stale reported failures: an authorized advisory fix repairs only the timed
       },
     ],
   });
-  const r = await child(f, evaluateStale());
+  const r = await child(f, evaluateStale(), staleEnv);
   const told = detailLine.exec(r.stderr)?.[1] ?? "";
   expect(told).toStartWith("tests; timed out:");
   expect(told).not.toContain("build");
