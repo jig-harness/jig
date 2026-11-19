@@ -32,6 +32,7 @@
  */
 import { recoveryReservationRefusal } from "./no-cause-stops.ts";
 import { budgeted, sameFacts } from "./recovery-facts.ts";
+import { endedOnLimit } from "./forge-limit-redrive.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import type { ActionBook } from "./failures.ts";
 import {
@@ -287,11 +288,18 @@ export function foreignHold(
   );
 }
 
-/** Another host already armed this head, or re-drove this change. */
+/** Another host already armed this head, or re-drove this change; a launch the forge's spent rate limit stopped spent neither. */
 function armedOrRedriven(
   pr: DrivenPr,
-  theirs: ReadClaim[],
+  claims: ReadClaim[],
 ): ForeignHold | null {
+  const theirs = claims.filter(
+    (c) =>
+      !(
+        c.says.value.end?.state === "ended" &&
+        endedOnLimit(c.says.value.end.exit)
+      ),
+  );
   if (pr.class === "unarmed") {
     const facts = factsOf(pr);
     const armed = theirs.findLast((c) => c.says.value.facts === facts);

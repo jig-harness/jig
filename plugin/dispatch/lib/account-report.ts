@@ -11,12 +11,15 @@ import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/set
 import type { AccountWeights } from "./local-weights.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { ReadRecord } from "./launches.ts";
+import { type ServedStage, stageAccounts } from "./account-stages.ts";
 
 export interface AccountWeightReport {
   account: string;
   configured: number | null;
   effective: number;
   reason: string;
+  /** The launching stages the account serves, when the machine file narrows them. */
+  stages?: ServedStage[];
 }
 
 export function weightReport(
@@ -38,6 +41,9 @@ export function weightReport(
     effective: effectiveAccountWeight(slots, refusal),
     reason:
       why === null ? slots.weight.reason : `${why}; ${slots.weight.reason}`,
+    ...(slots.account.stages === undefined
+      ? {}
+      : { stages: [...slots.account.stages] }),
   };
 }
 
@@ -61,6 +67,7 @@ export function accountsReport(
   );
   return {
     ...(refused.length === 0 ? {} : { accountsNotAdmitted: refused }),
+    stageAccounts: stageAccounts(machine.accounts),
     accountWeights: (
       input.table ??
       slotTable(

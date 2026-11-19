@@ -401,6 +401,45 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.285.0] - 2026-11-19
+
+### Added
+
+- **Serialized areas hold pickups.** The dispatcher no longer starts a
+  pickup whose footprint reaches a serialized area of the change-area
+  catalog while an open pull request, a pickup in flight or a pickup it
+  plans ahead touches the area. The pickup is reported among the serialized
+  holds as `held: serialized behind #N in <area>`, in the run's report and
+  the dashboard's queue, and becomes eligible again when that work ends,
+  subject to its other holds and the available capacity.
+  A footprint that is unknown cannot rule an area out, on either side: such
+  a pickup waits while any serialized area is occupied (`, footprint
+unknown`), and such work occupies every serialized area (`, #N's
+footprint unknown`) until its footprint is recorded or it ends. Every open
+  pull request counts, a draft or a quiet one included, so a stale pull
+  request in a serialized area holds new work there until it is closed.
+- An account in the dispatcher's machine file (`~/.jig/dispatch.yaml`) can serve only some of the stages that launch a session: `stages: [pickup, followup]` under the account keeps re-arms, takeovers, re-drives and steward passes off it, while the other accounts take them by their weights and turns. Left out, an account serves every stage, so existing files behave as before. A takeover of a silent driver whose account no longer serves `rearm` starts on a free slot of an account that does. When no account serves a stage, its launches wait and say so. The receipt and the dashboard's account view show each account's stages when they are narrowed, and `jig dispatch` without `--apply` lists the accounts each planned launch could use. An unknown stage, a stage written twice, an empty list, or `notify` or `steer` is refused when the file loads. See `accounts[].stages` in the configuration reference.
+
+### Changed
+
+- In a run where the configured catalog or the open pull requests do not
+  read, including a run whose budget skips the catalog read, no pickup is
+  started: each is reported as `whether it reaches a serialized area cannot
+be told this tick` and waits for the next run, as the drives already did;
+  no pending pickup launch is replayed either.
+  This holds whether or not the catalog marks an area `serialize: true`,
+  since a run that did not read it cannot tell.
+
+### Fixed
+
+- A drive whose forge reads met the credential's spent rate limit no longer ends `INDETERMINATE` (exit `1`) for a person to read and re-arm. The attach and the status probe read the limit's reset from the outbound layer: a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds (30 minutes by default) is waited for, sending nothing before it, and the drive goes on; one further off stops it with the new state [`FORGE_RATE_LIMITED`](plugin/protocol/drive-exits.md) (exit `24`), whose report and closing report name the reset, cause `environment`, the line as the owner of the next step. `jig dispatch` re-drives that stop after the reset its stop recorded, without a person, and `jig ask` names the state and the reset.
+
+## [0.284.1] - 2026-11-19
+
+### Fixed
+
+- `jig ask` reports the local driver lock even if the CI-hold diagnosis times out. `jig send rearm` checks that lock without running the diagnosis and surfaces an unreadable lock as a dispatcher need. **Consumer action:** none.
+
 ## [0.284.0] - 2026-11-19
 
 ### Changed
@@ -10014,7 +10053,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.284.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.285.0...HEAD
+[0.285.0]: https://github.com/jig-harness/jig/compare/v0.284.1...v0.285.0
+[0.284.1]: https://github.com/jig-harness/jig/compare/v0.284.0...v0.284.1
 [0.284.0]: https://github.com/jig-harness/jig/compare/v0.283.2...v0.284.0
 [0.283.2]: https://github.com/jig-harness/jig/compare/v0.283.1...v0.283.2
 [0.283.1]: https://github.com/jig-harness/jig/compare/v0.283.0...v0.283.1

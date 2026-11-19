@@ -297,7 +297,9 @@ reads `DEAD` or `WEDGED`,
 runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
 holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
-the pass to an account the machine file lists, through that account's
+the pass to an account the machine file lists that serves the `rearm`
+stage ([`accounts[].stages`](CONFIGURATION.md#the-machines-dispatch-file)),
+through that account's
 configuration directory, and only while the account has a free slot and no
 recorded usage-limit wall; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
@@ -1136,7 +1138,17 @@ contention cost. When the leader merges or leaves the group, the next run
 promotes the next, which a conflict with the new base re-drives once. A
 pull request in two serialized areas waits unless it leads both. Only the
 dispatcher's own launches wait: a drive a person arms on a held pull
-request runs, and the run reports that the group has two drives. The run
+request runs, and the run reports that the group has two drives. A pickup
+waits too: one whose item's [footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+reaches a serialized area while an open pull request, a pickup in flight or
+a pickup planned ahead of it touches the area is reported as
+`held: serialized behind #N in <area>` and gets no slot. A footprint that
+is unknown cannot rule an area out, on either side: such a pickup waits
+while any serialized area is occupied (`, footprint unknown`), and such
+work occupies every serialized area (`, #N's footprint unknown`) until its
+footprint is known or it ends. Every open pull request counts, a draft or a
+quiet one included, so close a stale one to free its area. A run that
+cannot read the catalog or the open pull requests starts no pickup. The run
 never adds an area: the conflict report proposes them
 (`history.ts --propose-serialize` in
 [resolve-conflicts](skills/resolve-conflicts/README.md#where-past-merges-conflicted)),
