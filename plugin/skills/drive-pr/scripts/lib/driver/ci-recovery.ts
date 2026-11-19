@@ -12,6 +12,7 @@ import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { exportPolicyBase } from "./policy-base.ts";
 import { failedRunsField } from "./failed-runs.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import { recoveryExit } from "../cancelled-recovery-reads.ts";
 import { sleep } from "../cli.ts";
 import { FINAL_CI_POLL_SECONDS, UNLABEL_SETTLE_SECONDS } from "./settings.ts";
 
@@ -75,13 +76,12 @@ export async function cancelledRunRecovery(
     return 1;
   }
   const recovery = await recoverCancelledOnHead(context.pr, head);
-  if (recovery === "parked") return 8;
-  if (recovery === "unknown") {
+  if (recovery === "unknown")
     console.error(
       `review converged; '${finalVerdict}' failed only in cancelled runs, and their recovery could not establish the head's state; stopping`,
     );
-    return 1;
-  }
+  const stop = recoveryExit(recovery);
+  if (stop !== null) return stop;
   if (recovery === "none") return null;
   console.error(
     `review converged; '${finalVerdict}' failed only in cancelled runs, so it is recovered as a cancellation, not repaired`,

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   cardFilterPairs,
   facetsFor,
+  orderedOptions,
   projectFilters,
   readCardFilter,
 } from "./facets.ts";
@@ -59,6 +60,27 @@ test("a view link round trips multiple facet values beside History's filters", (
   });
   expect(cardFilterPairs(cards)).toContainEqual(["source", "assigned"]);
   expect(facetsFor("queue")).toContain("source");
+});
+
+test("the queue's facets keep one order whichever way its cards are grouped", () => {
+  const counts = (...values: string[]) =>
+    values.map((value) => ({ value, count: 1 }));
+  expect(facetsFor("queue")).toEqual(["repo", "source", "kind", "happens"]);
+  expect(
+    orderedOptions("queue", "happens", counts("never", "starts", "held")).map(
+      (o) => o.value,
+    ),
+  ).toEqual(["starts", "held", "never"]);
+  expect(
+    orderedOptions("queue", "repo", counts("org/web", "org/api")).map(
+      (o) => o.value,
+    ),
+  ).toEqual(["org/api", "org/web"]);
+  expect(
+    orderedOptions("needs", "repo", counts("org/web", "org/api")).map(
+      (o) => o.value,
+    ),
+  ).toEqual(["org/web", "org/api"]);
 });
 
 test("the people facet unifies login casing in cards and shared links", () => {

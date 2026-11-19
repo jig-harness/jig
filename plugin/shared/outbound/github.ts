@@ -87,7 +87,7 @@ const RATE_LIMITED =
 
 /** No answer came: the request may not have left. */
 const NOT_SENT =
-  /could not resolve host|no such host|connection refused|network is unreachable|dial tcp/i;
+  /could not resolve host|no such host|connection refused|network is unreachable|dial tcp|error connecting to/i;
 
 /** No answer came after the request left. */
 const LOST =

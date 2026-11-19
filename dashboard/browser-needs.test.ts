@@ -407,12 +407,9 @@ describe("Needs you", () => {
           expect(
             await page.evaluate(() => matchMedia("(hover: none)").matches),
           ).toBe(true);
-          expect(
-            await page
-              .getByText(/source.*assigned/i)
-              .first()
-              .isVisible(),
-          ).toBe(true);
+          const named = page.locator(".phoneFilters");
+          expect(await named.isVisible()).toBe(true);
+          expect(await named.textContent()).toMatch(/source.*assigned/i);
           const sources = await page
             .locator(".qItem:visible")
             .evaluateAll((cards) =>

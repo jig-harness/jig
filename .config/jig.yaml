@@ -21,8 +21,8 @@ gc:
     - ../../orca/workspaces/jig
     - .claude/worktrees # Claude Code's isolated subagent worktrees, inside the clone
 dispatch:
-  # What `jig dispatch` wants after a merge here: Jig's own post-merge pass.
-  followup_command: /followup
+  # The follow-up after a merge is the plugin's default `/jig:followup`, with
+  # Jig's own obligations as the repository arms under `followup` below.
   # The dispatcher's state on every pull request it manages (`jig:driving`,
   # `jig:converged`, `jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up`), and a
   # person's commands: `jig:drive` arms a drive on a pull request with
@@ -179,6 +179,26 @@ changelog:
         - plugin/skills/audit/config-schema.yaml
       from: "since: next"
       to: "since: {version}"
+followup:
+  # What a merge into Jig owes beyond the plugin's core arms (tracker,
+  # deferred findings, out-of-tree steps, release, scaffolding, live
+  # verification, next step). Each needs judgment, so each is an
+  # instructions file, read from main. None names `when`: the site deploys
+  # on every push to main, and a plan item, a term of art, an audit
+  # criterion or a consumer's action can come from a change in any area.
+  arms:
+    - id: website
+      title: The website
+      instructions: .config/followup/website.md
+    - id: status-pages
+      title: The plan, the roadmap and what cites them
+      instructions: .config/followup/status-pages.md
+    - id: glossary-and-audit
+      title: The glossary and the auditor
+      instructions: .config/followup/glossary-and-audit.md
+    - id: consumers
+      title: Consumer repositories
+      instructions: .config/followup/consumers.md
 code_stats:
   # What Jig is made of, for `/jig:code-stats` and the report the website
   # renders from its JSON. The default areas assume a product in the root
