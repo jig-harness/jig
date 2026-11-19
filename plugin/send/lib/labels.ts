@@ -307,6 +307,73 @@ async function rearmWriteFault(
       );
 }
 
+/** The id of the rearm request record the label now stands on; `undefined` when none binds it. */
+async function currentRequestId(
+  ctx: AskContext,
+  target: { repo: string; number: number },
+  label: string,
+): Promise<Outcome<number | undefined, "refused">> {
+  const comments = await readComments(ctx.reading, target.repo, target.number);
+  if (!comments.ok) return failed("refused", comments.failure.reason);
+  return ok(latestRearmBinding(target, ctx.login, comments.value, label)?.id);
+}
+
+/** Why a withdrawal's record, already written, may not be followed by removing the label; `null` when it may. */
+async function withdrawUnsent(
+  ctx: AskContext,
+  target: { repo: string; number: number },
+  label: string,
+  requestId: number | undefined,
+): Promise<string | null> {
+  const current = await currentRequestId(ctx, target, label);
+  if (!current.ok) return current.failure.reason;
+  return current.value === requestId
+    ? null
+    : "the label is now held by a different rearm request";
+}
+
+/** Why a label write does not fit the pull request's labels now; `null` when it does. */
+function labelStateFault(
+  verb: LabelVerb,
+  pr: number,
+  label: string,
+  carries: boolean,
+): string | null {
+  const add = verb !== "release" && verb !== "withdraw-rearm";
+  if (add && carries) return `pull request ${pr} already carries ${label}`;
+  if (add || carries) return null;
+  return `pull request ${pr} carries no ${label}: there is no ${verb === "release" ? "hold to release" : "rearm request to withdraw"}`;
+}
+
+/** Writes the rearm request record before its label; `unsent` says why a withdrawal must not go on to remove the label. */
+async function bindRearm(
+  ctx: AskContext,
+  target: { repo: string; number: number },
+  label: string,
+  verb: LabelVerb,
+  stop: Parameters<typeof rearmWriteFault>[3],
+  requestId: number | undefined,
+): Promise<Outcome<{ url: string | null; unsent?: string }, "refused">> {
+  const fault = await rearmWriteFault(ctx, target, label, stop, requestId);
+  if (!fault.ok) return fault;
+  const bound = await writeRearmBinding(
+    target,
+    ctx.login,
+    label,
+    stop ?? null,
+    {
+      ...(requestId === undefined ? {} : { requestId }),
+    },
+  );
+  if (!bound.ok) return bound;
+  if (verb !== "withdraw-rearm" || bound.value === null)
+    return ok({ url: bound.value });
+  const unsent = await withdrawUnsent(ctx, target, label, requestId);
+  return ok(
+    unsent === null ? { url: bound.value } : { url: bound.value, unsent },
+  );
+}
+
 export async function planLabel(
   ctx: AskContext,
   verb: LabelVerb,
@@ -325,26 +392,17 @@ export async function planLabel(
   const pr = Number(ctx.address.key);
   const carries = facts.value.labels.includes(label);
   const add = verb !== "release" && verb !== "withdraw-rearm";
-  if (add && carries)
-    return refused(`pull request ${pr} already carries ${label}`);
-  if (!add && !carries)
-    return refused(
-      `pull request ${pr} carries no ${label}: there is no ${verb === "release" ? "hold to release" : "rearm request to withdraw"}`,
-    );
+  const stateFault = labelStateFault(verb, pr, label, carries);
+  if (stateFault !== null) return refused(stateFault);
   const { url, stop } = facts.value;
   const target = { repo: ctx.address.repo, number: pr };
   const tick = tickReader(ctx, verb);
   const rearm = stop !== undefined || verb === "withdraw-rearm";
   let requestId: number | undefined;
   if (verb === "withdraw-rearm") {
-    const comments = await readComments(ctx.reading, target.repo, pr);
-    if (!comments.ok) return refused(comments.failure.reason);
-    requestId = latestRearmBinding(
-      target,
-      ctx.login,
-      comments.value,
-      label,
-    )?.id;
+    const current = await currentRequestId(ctx, target, label);
+    if (!current.ok) return refused(current.failure.reason);
+    requestId = current.value;
   }
   const binding = rearm
     ? " and a rearm request record on the pull request"
@@ -363,36 +421,18 @@ export async function planLabel(
     write: async () => {
       let boundUrl: string | null = null;
       if (rearm) {
-        const fault = await rearmWriteFault(
+        const bound = await bindRearm(
           ctx,
           target,
           label,
+          verb,
           stop,
           requestId,
         );
-        if (!fault.ok) return fault;
-        const bound = await writeRearmBinding(
-          target,
-          ctx.login,
-          label,
-          stop ?? null,
-          { ...(requestId === undefined ? {} : { requestId }) },
-        );
         if (!bound.ok) return bound;
-        boundUrl = bound.value;
-        if (verb === "withdraw-rearm" && boundUrl !== null) {
-          const comments = await readComments(ctx.reading, target.repo, pr);
-          if (!comments.ok)
-            return ok({ sent: boundUrl, unsent: comments.failure.reason });
-          if (
-            latestRearmBinding(target, ctx.login, comments.value, label)?.id !==
-            requestId
-          )
-            return ok({
-              sent: boundUrl,
-              unsent: "the label is now held by a different rearm request",
-            });
-        }
+        boundUrl = bound.value.url;
+        if (bound.value.unsent !== undefined)
+          return ok({ sent: boundUrl as string, unsent: bound.value.unsent });
       }
       const wrote = await writeCommandLabel(ctx.address.repo, pr, label, add);
       if (wrote.ok) return ok(url);
