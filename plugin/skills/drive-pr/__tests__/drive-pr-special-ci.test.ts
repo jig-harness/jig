@@ -1,4 +1,4 @@
-import { writeState } from "./state-rows.ts";
+import { readState, writeState } from "./state-rows.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import { advisoryKey } from "../scripts/lib/driver/advisory-ci.ts";
 import type { CheckRun } from "../scripts/lib/status/evidence.ts";
@@ -19,12 +19,12 @@ import {
 
 useDrivePrSuite();
 let sequence = 0;
-function setup(config = "") {
+function setup(config = "", advisory = "scan") {
   const repo = makeScratchRepo(`special-ci-${++sequence}`);
   mkdirSync(join(repo.dir, ".config"), { recursive: true });
   writeFileSync(
     join(repo.dir, ".config/jig.yaml"),
-    `ci:\n  required_checks: [gate]\n  hold_label: ci:hold\n  hold_sentinels: [custom sentinel]\n  advisory_checks: [scan]\ndispatch:\n  person: operator\n${config}`,
+    `ci:\n  required_checks: [gate]\n  hold_label: ci:hold\n  hold_sentinels: [custom sentinel]\n  advisory_checks: [${advisory}]\ndispatch:\n  person: operator\n${config}`,
   );
   mkdirSync(join(repo.dir, ".github/workflows"), { recursive: true });
   writeFileSync(
@@ -381,21 +381,26 @@ test("mixed failure provenance excludes advisory-only runs from the repair chann
 const timedOutJob = `{name:"tests",checkRunId:11,limitMs:1800000,ranMs:1800000,run:{id:300,conclusion:"cancelled",jobNames:["tests"],createdAt:"2026-11-13T09:00:00Z"}}`;
 function evaluateStale(extra = "") {
   const failing = `{checkRunNames:["scan","build","tests"],statusNames:[],runs:[{id:100,createdAt:"2026-11-13T09:00:00Z",jobNames:["build"]},{id:200,createdAt:"2026-11-13T09:00:00Z",jobNames:["scan","tests"]},{id:300,createdAt:"2026-11-13T09:00:00Z",jobNames:["tests"]}]}`;
-  return `import {mock} from "bun:test"; const live=await import(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))}); mock.module(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))},()=>({...live,timedOutOnHead:async()=>[${timedOutJob}]})); const {evaluateFinalCi}=await import(${JSON.stringify(convergence)}); ${extra} const c={pr:"999",ciRepairs:0,ciRepairBudget:2,dryRun:false,agent:[]}; const result=await evaluateFinalCi("failing: scan, build, tests",true,c,{code:4},process.env.DRIVE_PR_POLICY_BASE,null,${failing}); console.log(JSON.stringify({result}));`;
+  const spy = (rel: string, body: string) =>
+    `{const m=await import(${JSON.stringify(join(SCRIPTS, rel))}); mock.module(${JSON.stringify(join(SCRIPTS, rel))},()=>({...m,${body}}));}`;
+  // The repair pass is stubbed so the inputs it would be handed are observable.
+  return `import {mock} from "bun:test"; const live=await import(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))}); mock.module(${JSON.stringify(join(SCRIPTS, "lib/cancelled-recovery-live.ts"))},()=>({...live,timedOutOnHead:async()=>[${timedOutJob}]})); ${spy("lib/driver/policy-base.ts", "announcePolicyBase:async()=>{}")} ${spy("lib/driver/failed-runs.ts", `failedRunsToTell:async(_pr,runs)=>{console.error("repair runs: "+JSON.stringify(runs.map(r=>r.id)));return []}`)} ${spy("lib/driver/repair.ts", `runRepairPass:async(...a)=>{console.error("repair detail: "+a[3]);return {dispatched:false,resumed:true,code:0}}`)} const {evaluateFinalCi}=await import(${JSON.stringify(convergence)}); ${extra} const c={pr:"999",ciRepairs:0,ciRepairBudget:2,dryRun:false,agent:["true"],held:[],mailboxCheckpoint:async()=>"clear"}; const result=await evaluateFinalCi("failing: scan, build, tests",true,c,{code:4},process.env.DRIVE_PR_POLICY_BASE,null,${failing}); console.log(JSON.stringify({result}));`;
 }
-const repairLine = /would run a CI-repair pass for: ([^\n]*)/;
+const detailLine = /repair detail: ([^\n]*)/;
+const runsLine = /repair runs: ([^\n]*)/;
 
 test("stale reported failures: the ordinary policy return repairs only the timed-out job", async () => {
   const f = setup();
   const r = await child(f, evaluateStale());
-  const told = repairLine.exec(r.stderr)?.[1] ?? "";
+  const told = detailLine.exec(r.stderr)?.[1] ?? "";
   expect(told).toStartWith("tests; timed out:");
   expect(told).not.toContain("build");
   expect(told).not.toContain("scan");
+  expect(JSON.parse(runsLine.exec(r.stderr)?.[1] ?? "null")).toEqual([300]);
 });
 
 test("stale reported failures: an authorized advisory fix repairs only the timed-out job", async () => {
-  const f = setup();
+  const f = setup("", "scan, build, tests");
   const at = "2026-11-13T09:00:00.000Z";
   writeState(f.stateDir, "999", {
     ...freshState(999),
@@ -420,8 +425,12 @@ test("stale reported failures: an authorized advisory fix repairs only the timed
     ],
   });
   const r = await child(f, evaluateStale());
-  const told = repairLine.exec(r.stderr)?.[1] ?? "";
+  const told = detailLine.exec(r.stderr)?.[1] ?? "";
   expect(told).toStartWith("tests; timed out:");
   expect(told).not.toContain("build");
   expect(told).not.toContain("scan");
+  expect(
+    readState(f.stateDir, "999")?.resolvedParks?.[0]?.repairStartedAt,
+  ).toBeDefined();
+  expect(JSON.parse(runsLine.exec(r.stderr)?.[1] ?? "null")).toEqual([300]);
 });
