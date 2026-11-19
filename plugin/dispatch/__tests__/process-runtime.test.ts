@@ -322,6 +322,13 @@ oneWrite.close();
 const oneWriteOutput = readFileSync(join(processRunDirectory(oneWriteId), "output.log"), "utf8");
 expect(oneWriteOutput).not.toContain("xxxx");
 expect(oneWriteOutput).toContain("after");
+for (const [i, prefix] of ["password=", "Authorization: Bearer", "Authorization: Basic"].entries()) {
+const padId = "20261118T141627Z-dddddd0" + i;
+const pad = openSpool(padId, (error) => { throw error; });
+pad.write(Buffer.from(prefix + " ".repeat(300) + "\\nsensitive\\n" + "x".repeat(32760)));
+pad.close();
+expect(readFileSync(join(processRunDirectory(padId), "output.log"), "utf8")).not.toContain("sensitive");
+}
 const suffixId = "20261118T141627Z-88888888";
 const suffix = openSpool(suffixId, (error) => { throw error; });
 suffix.write(Buffer.alloc(65536, "y"));

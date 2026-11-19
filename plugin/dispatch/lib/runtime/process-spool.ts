@@ -36,12 +36,13 @@ interface ScanState {
   // A quote seen inside a value: it closes it unless the next character
   // repeats it.
   closing: boolean;
-  // The last characters seen, for the context test across chunks.
-  recent: string;
+  // The last characters seen with each run of whitespace collapsed to one
+  // space, so the context test holds across chunks and any amount of padding.
+  ctx: string;
 }
 
 function freshScan(): ScanState {
-  return { quote: "", last: "", escaped: false, closing: false, recent: "" };
+  return { quote: "", last: "", escaped: false, closing: false, ctx: "" };
 }
 
 /** A quote that closed its value: the line break after it ends the value. */
@@ -70,6 +71,8 @@ function scanQuoted(s: ScanState, c: string): boolean {
 }
 
 function scanChar(s: ScanState, c: string): void {
+  if (!/\s/.test(c)) s.ctx = (s.ctx + c).slice(-8);
+  else if (!s.ctx.endsWith(" ")) s.ctx = (s.ctx + " ").slice(-8);
   if (s.quote !== "" && scanQuoted(s, c)) return;
   if ((c === '"' || c === "'") && (s.last === "=" || s.last === ":"))
     s.quote = c;
@@ -77,11 +80,9 @@ function scanChar(s: ScanState, c: string): void {
 }
 
 /** Whether a line break right here may end a cut without splitting a value. */
-function safeBreak(s: ScanState, text: string, at: number): boolean {
+function safeBreak(s: ScanState): boolean {
   if (s.quote !== "" && !s.closing) return false;
-  const before =
-    at >= 256 ? text.slice(at - 256, at) : s.recent + text.slice(0, at);
-  return !OPEN_CONTEXT.test(before.slice(-256));
+  return !OPEN_CONTEXT.test(s.ctx);
 }
 
 /**
@@ -98,11 +99,10 @@ function scan(
     const c = text[i] as string;
     if (c === "\n") {
       settle(s);
-      if (safeBreak(s, text, i) && onBreak(i)) return;
+      if (safeBreak(s) && onBreak(i)) return;
     }
     scanChar(s, c);
   }
-  s.recent = (s.recent + text).slice(-256);
 }
 
 /** The first line break at which a cut leaves no value open, or -1. */
