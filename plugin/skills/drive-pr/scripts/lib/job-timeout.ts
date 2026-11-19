@@ -12,16 +12,11 @@
  * going on the head (a re-run of it, queued before its jobs exist): the
  * recovery waits for that run as it waits for any replacement.
  */
-import {
-  attempt,
-  failed,
-  ok,
-  type Outcome,
-} from "../../../../shared/outcome.ts";
+import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
 import { parseMs } from "../../../../shared/time.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
-import { forgeReadClass, type ForgeReadCode } from "./forge-read.ts";
-import { ghCall } from "./proc.ts";
+import { ghReadJson } from "./ci-hold-state.ts";
+import type { ForgeReadCode } from "./forge-read.ts";
 import type { FailedRun, WorkflowRun } from "./status/workflow-runs.ts";
 
 /** A workflow job the runner stopped at its time limit. */
@@ -122,19 +117,13 @@ const readAnnotations: AnnotationsRead = async (checkRunId) => {
   if (cached !== undefined) return ok(recalled(cached));
   const all: unknown[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const result = await ghCall([
-      "api",
-      `repos/{owner}/{repo}/check-runs/${checkRunId}/annotations?per_page=${PAGE_SIZE}&page=${page}`,
-    ]);
-    if (result.code !== 0)
-      return failed(
-        forgeReadClass(result),
-        `gh api check-run annotations exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
-      );
-    const decoded = attempt(
-      "malformed",
+    const decoded = await ghReadJson(
+      [
+        "api",
+        `repos/{owner}/{repo}/check-runs/${checkRunId}/annotations?per_page=${PAGE_SIZE}&page=${page}`,
+      ],
+      "gh api check-run annotations",
       "the annotations answer is not JSON",
-      (): unknown => JSON.parse(result.stdout),
     );
     if (!decoded.ok) return decoded;
     if (!Array.isArray(decoded.value))

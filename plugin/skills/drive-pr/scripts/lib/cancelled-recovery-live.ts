@@ -432,31 +432,42 @@ async function recoverRelevant(
   if (fence === "unavailable") return "unknown";
   const lock = fence;
   try {
-    // A caller that can lose the drive to a successor asks again here, where
-    // the first claim is about to be spent.
-    if (mayMutate !== undefined && !(await mayMutate())) return "unknown";
-    // Every durable claim, forge mutation and park asks again immediately
-    // before it commits, after the reads that precede it.
-    const owned = async () => {
-      if (mayMutate !== undefined && !(await mayMutate()))
-        throw new OwnershipLost();
-    };
-    const unread: { failure: RecoveryReadFailure | null } = { failure: null };
-    const answer = await recoverCancelled(
-      pr,
-      head,
-      relevant,
-      runs,
-      fencedDeps(pr, head, mayMutate, owned, unread),
-    );
-    if (answer === "unknown" && unread.failure !== null) return unread.failure;
-    return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
+    return await recoverFenced(pr, head, relevant, runs, mayMutate);
   } catch (err) {
     if (err instanceof OwnershipLost) return "unknown";
     throw err;
   } finally {
     lock?.dispose();
   }
+}
+
+/** The recovery proper, with the mutation fence already held. */
+async function recoverFenced(
+  pr: string,
+  head: string,
+  relevant: readonly CheckRunLite[],
+  runs: readonly WorkflowRun[],
+  mayMutate: (() => Promise<boolean>) | undefined,
+): Promise<LiveRecovery> {
+  // A caller that can lose the drive to a successor asks again here, where
+  // the first claim is about to be spent.
+  if (mayMutate !== undefined && !(await mayMutate())) return "unknown";
+  // Every durable claim, forge mutation and park asks again immediately
+  // before it commits, after the reads that precede it.
+  const owned = async () => {
+    if (mayMutate !== undefined && !(await mayMutate()))
+      throw new OwnershipLost();
+  };
+  const unread: { failure: RecoveryReadFailure | null } = { failure: null };
+  const answer = await recoverCancelled(
+    pr,
+    head,
+    relevant,
+    runs,
+    fencedDeps(pr, head, mayMutate, owned, unread),
+  );
+  if (answer === "unknown" && unread.failure !== null) return unread.failure;
+  return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
 }
 
 /** The workflow runs on `head`, read as the recovery reads the forge. */

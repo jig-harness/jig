@@ -193,6 +193,18 @@ function fixture() {
   return { dir, run, failReads, calls, reruns, stderr: () => lastStderr };
 }
 
+// Runs a test body against a fresh fixture and removes its directory after.
+function withFixture(body: (f: ReturnType<typeof fixture>) => Promise<void>) {
+  return async () => {
+    const f = fixture();
+    try {
+      await body(f);
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  };
+}
+
 const BAD_GATEWAY = "gh: HTTP 502: Bad Gateway";
 
 describe("durable cancellation recovery boundary", () => {
@@ -415,9 +427,9 @@ describe("a cancelled-run recovery read that fails", () => {
 });
 
 describe("a cancelled job the runner stopped at its time limit", () => {
-  test("is timed out: not re-run and not parked as cancelled CI", async () => {
-    const f = fixture();
-    try {
+  test(
+    "is timed out: not re-run and not parked as cancelled CI",
+    withFixture(async (f) => {
       await f.run("past-grace");
       writeFileSync(join(f.dir, "phase"), "timeout");
       expect(await f.run("fenced")).toEqual({
@@ -440,14 +452,12 @@ describe("a cancelled job the runner stopped at its time limit", () => {
       expect(f.reruns()).toEqual([]);
       expect(await f.run("parked")).toEqual([]);
       expect((await f.run("observe")).requestedAt).toBeNull();
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
-  test("a job its concurrency group cancelled inside its limit keeps the cancelled-CI recovery", async () => {
-    const f = fixture();
-    try {
+  test(
+    "a job its concurrency group cancelled inside its limit keeps the cancelled-CI recovery",
+    withFixture(async (f) => {
       await f.run("past-grace");
       writeFileSync(join(f.dir, "phase"), "concurrency");
       expect(await f.run("fenced")).toBe("wait");
@@ -455,14 +465,12 @@ describe("a cancelled job the runner stopped at its time limit", () => {
       expect(f.stderr()).toContain(
         "check run 1 (gate) carries 1 annotation(s), none of them the runner's time-limit message",
       );
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
-  test("annotations that are not a list are a malformed read, said in the log", async () => {
-    const f = fixture();
-    try {
+  test(
+    "annotations that are not a list are a malformed read, said in the log",
+    withFixture(async (f) => {
       await f.run("past-grace");
       writeFileSync(join(f.dir, "phase"), "garbled");
       expect(await f.run("fenced")).toBe("wait");
@@ -470,26 +478,22 @@ describe("a cancelled job the runner stopped at its time limit", () => {
       expect(f.stderr()).toContain(
         "the annotations of check run 1 (gate) did not read (malformed: the annotations answer is not a list)",
       );
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
-  test("a run of its workflow still going is waited for, not repaired", async () => {
-    const f = fixture();
-    try {
+  test(
+    "a run of its workflow still going is waited for, not repaired",
+    withFixture(async (f) => {
       await f.run("past-grace");
       writeFileSync(join(f.dir, "phase"), "rerunning");
       expect(await f.run("fenced")).toBe("wait");
       expect(f.reruns()).toEqual([]);
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
-  test("beside an ordinary cancellation, that one is re-run and the answer carries its wait", async () => {
-    const f = fixture();
-    try {
+  test(
+    "beside an ordinary cancellation, that one is re-run and the answer carries its wait",
+    withFixture(async (f) => {
       await f.run("past-grace");
       writeFileSync(join(f.dir, "phase"), "mixed");
       expect(await f.run("fenced")).toMatchObject({
@@ -497,23 +501,19 @@ describe("a cancelled job the runner stopped at its time limit", () => {
         recovery: "wait",
       });
       expect(f.reruns()).toEqual(["3"]);
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
-  test("beside an ordinary cancellation whose head's re-run is spent, the park wins", async () => {
-    const f = fixture();
-    try {
+  test(
+    "beside an ordinary cancellation whose head's re-run is spent, the park wins",
+    withFixture(async (f) => {
       await f.run("spent");
       writeFileSync(join(f.dir, "phase"), "mixed");
       expect(await f.run("fenced")).toBe("parked");
       expect(f.reruns()).toEqual([]);
       expect(await f.run("parked")).toEqual(["cancelled-ci"]);
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
   test("before a pass, a re-run of the other cancellation still going is waited for", async () => {
     const f = fixture();
@@ -537,9 +537,9 @@ describe("a cancelled job the runner stopped at its time limit", () => {
     }
   });
 
-  test("is found on a later page of annotations", async () => {
-    const f = fixture();
-    try {
+  test(
+    "is found on a later page of annotations",
+    withFixture(async (f) => {
       await f.run("past-grace");
       writeFileSync(join(f.dir, "phase"), "paged");
       const answer = (await f.run("fenced")) as {
@@ -547,22 +547,18 @@ describe("a cancelled job the runner stopped at its time limit", () => {
       };
       expect(answer.timedOut.map((job) => job.name)).toEqual(["gate"]);
       expect(f.reruns()).toEqual([]);
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
-  test("annotations that do not read leave the cancellation to the cancelled-CI recovery", async () => {
-    const f = fixture();
-    try {
+  test(
+    "annotations that do not read leave the cancellation to the cancelled-CI recovery",
+    withFixture(async (f) => {
       await f.run("past-grace");
       f.failReads("/annotations", 9, BAD_GATEWAY, { phase: "timeout" });
       expect(await f.run("fenced")).toBe("wait");
       expect(f.reruns()).toEqual(["1"]);
-    } finally {
-      rmSync(f.dir, { recursive: true, force: true });
-    }
-  });
+    }),
+  );
 
   test("its answer is neither a stop nor a failed read", () => {
     const timedOut = {

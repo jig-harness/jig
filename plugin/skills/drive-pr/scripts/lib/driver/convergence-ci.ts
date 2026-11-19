@@ -649,6 +649,36 @@ function witnessBoundSpent(
 }
 
 /**
+ * The jobs the runner stopped at their time limit are failures the status
+ * report does not list: they join the set before any policy judges it.
+ */
+async function joinTimedOut(
+  context: DriveRoundContext,
+  reviewedHead: string,
+  finalVerdict: string,
+  staleRequiredFailure: boolean,
+  failing: FailingChecks,
+): Promise<{
+  timedOut: TimedOutJob[];
+  finalVerdict: string;
+  failing: FailingChecks;
+}> {
+  const timedOut =
+    finalVerdict.startsWith("failing:") &&
+    !staleRequiredFailure &&
+    !context.dryRun
+      ? await timedOutOnHead(reviewedHead)
+      : [];
+  if (timedOut.length === 0) return { timedOut, finalVerdict, failing };
+  const joined = withTimedOut(failing, { timedOut, recovery: "none" });
+  return {
+    timedOut,
+    failing: joined,
+    finalVerdict: `failing: ${[...(joined.checkRunNames ?? []), ...(joined.statusNames ?? [])].join(", ")}`,
+  };
+}
+
+/**
  * Recover an orphaned cancellation through the shared durable budget. A dry
  * run or a stale verdict without a current cancelled workflow uses the witness
  * bound; cancellation itself is never a code repair or passing evidence.
@@ -764,18 +794,15 @@ export async function evaluateFinalCi(
 ): Promise<number | "continue" | null> {
   const pending = await pendingRetryDisposition(context, reviewedHead);
   if (pending !== null) return pending;
-  // The jobs the runner stopped at their time limit are failures the status
-  // report does not list: they join the set before any policy judges it.
-  const timedOut =
-    finalVerdict.startsWith("failing:") &&
-    !staleRequiredFailure &&
-    !context.dryRun
-      ? await timedOutOnHead(reviewedHead)
-      : [];
-  if (timedOut.length > 0) {
-    failing = withTimedOut(failing, { timedOut, recovery: "none" });
-    finalVerdict = `failing: ${[...(failing.checkRunNames ?? []), ...(failing.statusNames ?? [])].join(", ")}`;
-  }
+  const joined = await joinTimedOut(
+    context,
+    reviewedHead,
+    finalVerdict,
+    staleRequiredFailure,
+    failing,
+  );
+  const { timedOut } = joined;
+  ({ finalVerdict, failing } = joined);
   const special = await specialCiDisposition(
     finalVerdict,
     staleRequiredFailure,
