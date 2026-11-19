@@ -12,6 +12,7 @@
  * the deadline and the preflight's answers (preflight.ts), is built here
  * once per tick.
  */
+import { serialUndecided } from "./serial-pickups.ts";
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
@@ -191,6 +192,7 @@ export async function actObserved(
     join: observation.join,
     sessions: observation.sessions,
     rerunsHeld: context.rerunsHeld ?? null,
+    serialUndecided: serialUndecided(observation),
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
     book,
@@ -271,6 +273,8 @@ interface ApplyInputs {
   join: JoinTargets;
   sessions: SessionsReport;
   rerunsHeld: string | null;
+  /** Why serialization could not be decided this tick; `null` when it was. */
+  serialUndecided: string | null;
   shared: SharedContext;
   /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
   unplaced: ReadonlyMap<number, string>;
@@ -365,6 +369,7 @@ async function applyStages(
               : { servedPolicy: tracked.servedPolicy }),
             sessions: fresh,
             rerunsHeld: inputs.rerunsHeld,
+            serialUndecided: inputs.serialUndecided,
           });
       },
     ],

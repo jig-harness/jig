@@ -169,6 +169,20 @@ function globsMeet(a: string, b: string): boolean {
   return globMatchesUnder(a, db) || globMatchesUnder(b, da);
 }
 
+/**
+ * Whether `glob` can match a file under the directory `dir`, read
+ * conservatively for a serialized hold: a plain-name match under it, or a
+ * glob whose fixed directory lies inside it, or a glob that names one file
+ * there, dotfiles and names outside the portable alphabet included.
+ */
+function globReachesDir(glob: string, dir: string): boolean {
+  if (dir === "") return true;
+  if (!WILDCARD.test(glob)) return glob.startsWith(`${dir}/`);
+  const fixed = staticDir(glob);
+  if (fixed === dir || fixed.startsWith(`${dir}/`)) return true;
+  return globMatchesUnder(glob, dir);
+}
+
 /** Whether a coarse element `x` (a directory or an area) holds, or reaches into, the element `y`. */
 function holds(
   x: Element,
@@ -178,14 +192,12 @@ function holds(
   if (x.kind === "file") return false;
   if (x.kind === "dir") {
     if (y.kind === "file" || y.kind === "dir") return y.path.startsWith(x.path);
-    return model
-      .areaGlobs(y.key)
-      .some((g) => globMatchesUnder(g, bare(x.path)));
+    return model.areaGlobs(y.key).some((g) => globReachesDir(g, bare(x.path)));
   }
   const globs = model.areaGlobs(x.key);
   if (y.kind === "file") return globs.some((g) => matchesGlob(y.path, g));
   if (y.kind === "dir")
-    return globs.some((g) => globMatchesUnder(g, bare(y.path)));
+    return globs.some((g) => globReachesDir(g, bare(y.path)));
   if (x.key === y.key) return true;
   const other = model.areaGlobs(y.key);
   return globs.some((g) => other.some((h) => globsMeet(g, h)));

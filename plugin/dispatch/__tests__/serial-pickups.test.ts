@@ -13,7 +13,9 @@ import {
 import {
   type SerialCandidate,
   serialPickupHolds,
+  serialUndecided,
 } from "../lib/serial-pickups.ts";
+import type { RepoObservation } from "../lib/tick-observe.ts";
 
 const GLOBS: Record<string, string[]> = {
   migrations: ["db/migrations/**"],
@@ -101,6 +103,29 @@ describe("reachesArea", () => {
     expect(reachesArea(known(["bun.lock"]), "deps", model)).toBe(true);
     // An unknown footprint reaches nothing: it cannot exclude, which the hold reads separately.
     expect(reachesArea(UNKNOWN_FOOTPRINT, "migrations", model)).toBe(false);
+  });
+});
+
+describe("reachesArea beyond plain names", () => {
+  const dotted = {
+    areaGlobs: (area: string) =>
+      ({
+        env: ["config/.env"],
+        wide: ["config/secrets/**"],
+        mixed: ["config/*/.env"],
+      })[area] ?? [],
+  };
+
+  it("reads a directory as reaching an area whose glob names a dotfile or a deep non-plain path under it, in both directions", () => {
+    for (const area of ["env", "wide"]) {
+      expect(reachesArea(known([], ["config/"]), area, dotted)).toBe(true);
+    }
+    expect(reachesArea(known([], ["config/"]), "mixed", dotted)).toBe(true);
+    expect(reachesArea(known([], ["other/"]), "env", dotted)).toBe(false);
+  });
+
+  it("reads an area-only footprint against a dotfile directory", () => {
+    expect(reachesArea(known([], [], ["env"]), "env", dotted)).toBe(true);
   });
 });
 
@@ -262,5 +287,25 @@ describe("serialPickupHolds", () => {
       (keys) => new Set(keys.includes("#12") ? ["#20"] : []),
     );
     expect(held.size).toBe(0);
+  });
+});
+
+describe("serialUndecided", () => {
+  const observed = (decided: boolean, catalog: string | null) =>
+    ({
+      opened: {
+        values:
+          catalog === null ? {} : { drive: { change_areas_catalog: catalog } },
+      },
+      serialized: { decided, report: null, failure: "not read" },
+      overlap: null,
+    }) as unknown as RepoObservation;
+
+  it("names why serialization could not be decided only where a catalog is configured", () => {
+    expect(serialUndecided(observed(false, ".config/areas.yaml"))).toContain(
+      "not read",
+    );
+    expect(serialUndecided(observed(true, ".config/areas.yaml"))).toBeNull();
+    expect(serialUndecided(observed(false, null))).toBeNull();
   });
 });

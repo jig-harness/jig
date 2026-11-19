@@ -177,6 +177,20 @@ function candidatesOf(
 }
 
 /**
+ * Why serialization could not be decided this tick, `null` when it was, or
+ * when no catalog is configured. A pickup is placed, or replayed from a
+ * pending launch, only when this is `null`.
+ */
+export function serialUndecided(observation: RepoObservation): string | null {
+  const { opened, serialized } = observation;
+  const catalog = observation.overlap?.catalog ?? null;
+  const areas = serialized.report?.areas ?? [];
+  const undecided = !serialized.decided || (areas.length > 0 && !catalog);
+  if (configuredCatalog(opened.values) === null || !undecided) return null;
+  return `${SERIAL_UNDECIDED}: ${serialized.failure ?? "the catalog or the open pull requests were not read whole"}`;
+}
+
+/**
  * Apply the serialized areas' hold to one planned repository's pickups:
  * each held pickup leaves the plan's actions for the report's serialized
  * holds, with its reason; where serialization was not decided this tick and
@@ -193,10 +207,8 @@ export function holdSerialPickups(
   if (pickups.length === 0) return;
   const catalog = observation.overlap?.catalog ?? null;
   const areas = serialized.report?.areas ?? [];
-  const configured = configuredCatalog(opened.values) !== null;
-  const undecided = !serialized.decided || (areas.length > 0 && !catalog);
-  if (configured && undecided) {
-    const why = `${SERIAL_UNDECIDED}: ${serialized.failure ?? "the catalog or the open pull requests were not read whole"}`;
+  const why = serialUndecided(observation);
+  if (why !== null) {
     report.actions = report.actions.filter((a) => a.stage !== "pickup");
     for (const a of pickups)
       report.unplaced.push({ target: a.target, record: "forge", reason: why });
