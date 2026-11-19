@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import {
   facetInputs,
   parseTrackerConfig,
@@ -22,7 +22,7 @@ import {
   requestRepository,
 } from "../scripts/lib/tracker/github/transport.ts";
 import type { ghCall } from "../../drive-pr/scripts/lib/proc.ts";
-import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { runWithFakeGh } from "../../../../lib/test-helpers/run-with-fake-gh.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { conn, issueNode } from "./github-fixtures.ts";
 
@@ -206,10 +206,27 @@ describe("an opened GitHub tracker", () => {
     dir = null;
   });
 
+  const TRACKER = join(import.meta.dir, "..", "scripts", "lib", "tracker");
+
+  /** Open the tracker in a child whose `gh` is `gh`, and run `use` on it. */
+  function runTracker(scratch: string, gh: string, use: string, args = "") {
+    return runWithFakeGh({
+      dir: scratch,
+      gh,
+      unset: ["GH_REPO", "GH_TOKEN", "GITHUB_TOKEN", "JIG_GITHUB_GRAPHQL_URL"],
+      code: `import { openTracker } from ${JSON.stringify(join(TRACKER, "index.ts"))};
+         import { parseTrackerConfig } from ${JSON.stringify(join(TRACKER, "config.ts"))};
+         const t = openTracker(parseTrackerConfig({ issue_tracker: { adapter: "github",
+           github: { repository: ${JSON.stringify(SLUG)} } } }),
+           ${JSON.stringify(scratch)}${args});
+         ${use}`,
+    });
+  }
+
   it("reads its assigned items through an owner-routing gh on PATH", async () => {
     dir = mkdtempSync(join(tmpdir(), "gh-routing-"));
-    writeFakeProgram(
-      join(dir, "gh"),
+    const result = await runTracker(
+      dir,
       `#!/usr/bin/env bun
 const args = process.argv.slice(2);
 if (args[0] === "auth") { console.log("stand-in-token"); process.exit(0); }
@@ -221,64 +238,21 @@ if ((process.env.GH_REPO ?? "").toLowerCase() !== ${JSON.stringify(SLUG.toLowerC
 }
 console.log(JSON.stringify({ data: { repository: { issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } }));
 `,
-    );
-    const index = join(
-      import.meta.dir,
-      "..",
-      "scripts",
-      "lib",
-      "tracker",
-      "index.ts",
-    );
-    const config = join(
-      import.meta.dir,
-      "..",
-      "scripts",
-      "lib",
-      "tracker",
-      "config.ts",
-    );
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      PATH: `${dir}${delimiter}${process.env.PATH ?? ""}`,
-    };
-    for (const name of [
-      "GH_REPO",
-      "GH_TOKEN",
-      "GITHUB_TOKEN",
-      "JIG_GITHUB_GRAPHQL_URL",
-    ])
-      delete env[name];
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        "-e",
-        `import { openTracker } from ${JSON.stringify(index)};
-         import { parseTrackerConfig } from ${JSON.stringify(config)};
-         const t = openTracker(parseTrackerConfig({ issue_tracker: { adapter: "github",
-           github: { repository: ${JSON.stringify(SLUG)} } } }),
-           ${JSON.stringify(dir)});
-         const read = await t.dispatchSource.queue("dana");
+      `const read = await t.dispatchSource.queue("dana");
          console.log(JSON.stringify({ items: read.length }));`,
-      ],
-      { cwd: dir, env, stdout: "pipe", stderr: "pipe" },
     );
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    expectSpawnExit({ exitCode, stdout, stderr }, 0);
-    expect(JSON.parse(stdout.trim().split("\n").at(-1) ?? "")).toEqual({
+    expectSpawnExit(result, 0);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toEqual({
       items: 0,
     });
   });
+
   it("names a foreign issue's repository on a write through a signal-bound tracker", async () => {
     dir = mkdtempSync(join(tmpdir(), "gh-routing-"));
     const log = join(dir, "mutations.log");
     const node = issueNode({ number: 5, repo: "acme/app" });
-    writeFakeProgram(
-      join(dir, "gh"),
+    const result = await runTracker(
+      dir,
       `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
@@ -291,53 +265,10 @@ if (body.includes("mutation")) {
   console.log(JSON.stringify({ data: { repository: { issue: ${JSON.stringify(node)} } } }));
 }
 `,
+      `await t.postComment("acme/app#5", "hello");`,
+      ", new AbortController().signal",
     );
-    const index = join(
-      import.meta.dir,
-      "..",
-      "scripts",
-      "lib",
-      "tracker",
-      "index.ts",
-    );
-    const config = join(
-      import.meta.dir,
-      "..",
-      "scripts",
-      "lib",
-      "tracker",
-      "config.ts",
-    );
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      PATH: `${dir}${delimiter}${process.env.PATH ?? ""}`,
-    };
-    for (const name of [
-      "GH_REPO",
-      "GH_TOKEN",
-      "GITHUB_TOKEN",
-      "JIG_GITHUB_GRAPHQL_URL",
-    ])
-      delete env[name];
-    const child = Bun.spawn(
-      [
-        process.execPath,
-        "-e",
-        `import { openTracker } from ${JSON.stringify(index)};
-         import { parseTrackerConfig } from ${JSON.stringify(config)};
-         const t = openTracker(parseTrackerConfig({ issue_tracker: { adapter: "github",
-           github: { repository: ${JSON.stringify(SLUG)} } } }),
-           ${JSON.stringify(dir)}, new AbortController().signal);
-         await t.postComment("acme/app#5", "hello");`,
-      ],
-      { cwd: dir, env, stdout: "pipe", stderr: "pipe" },
-    );
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    expectSpawnExit({ exitCode, stdout, stderr }, 0);
+    expectSpawnExit(result, 0);
     expect(readFileSync(log, "utf8").trim()).toBe("acme/app");
   });
 });
