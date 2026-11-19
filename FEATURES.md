@@ -153,7 +153,8 @@ database migrations. A team marks such an area of its code as
 [serialized](GLOSSARY.md), and the dispatcher drives its pull requests one
 at a time, the one closest to merge first. The others are
 [held](GLOSSARY.md) until each leads, and the outcome log records how long
-each waited.
+each waited. New work expected to touch the area waits too, until the area
+is free.
 
 A repository can also write down what matters most in a
 [priorities record](GLOSSARY.md). The dispatcher ranks a shortlist from it
