@@ -170,7 +170,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
-| `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes per head and failing check (`drive.ci_repair_rounds`; `DRIVE_PR_CI_REPAIR_ROUNDS` for one run) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
+| `CI_REPAIR_SPENT` | 21 | The diagnosing CI-repair session could not complete the repair on the failing head. The drive records its diagnosis and tracker issue when reported, and dispatch hands off that diagnosed head without a blind re-drive. |
 | `CI_INFRA_PERSISTED` | 23 | The review converged, and every failing check on the head failed on the infrastructure (a lost runner, or a setup step's network failure, with no code diagnostic) through the drive's re-runs and head moves (`DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each). No CI-repair pass was spent and nothing in the code needs repair. Under `jig dispatch` the dispatcher re-drives it after a backoff that doubles with each consecutive such stop, and tells a person once the stops outlast its re-drives |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
@@ -299,8 +299,10 @@ then gathers CI evidence again. An unchanged or unreadable attempt cannot
 spend a repair or certify convergence. The wait uses
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` (180 polls when that setting is `0`) and
 stops with [`INDETERMINATE`](../../protocol/drive-exits.md) if no completed replacement appears.
-Once each failing check's repair budget is spent, the drive stops with
-[`CI_REPAIR_SPENT`](../../protocol/drive-exits.md). With repairs disabled (`0`), it stops with [`INDETERMINATE`](../../protocol/drive-exits.md)
+Once each failing check's repair budget is spent, the drive starts one
+`ci-diagnose` session on that head (§ 0). A successful push returns to the
+review loop. A failed diagnosing session stops with
+[`CI_REPAIR_SPENT`](../../protocol/drive-exits.md) and its handoff. With repairs disabled (`0`), it stops with [`INDETERMINATE`](../../protocol/drive-exits.md)
 after any enabled retry. A different check or head has a fresh repair budget.
 
 **Held and advisory failures spend no automatic repair pass.** While the live
@@ -1517,7 +1519,7 @@ state directory holding all of it: read that file before acting.
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with [`STALLED`](../../protocol/drive-exits.md). It lists what the tree holds now | Finish what the tree holds first (§ 5, **A tree the round inherits**), then act on the open work. If a step refuses and you stop, or you decide not to act, end the handoff narrative with one paragraph naming the step that refused (its script, exit code and state) and what would unblock it, or what you decided and why — the stop prints what this round recorded |
 | `RE-ARMED AFTER A STALL` | The drive before this one stopped with [`STALLED`](../../protocol/drive-exits.md); the notice carries what its passes recorded last, and says when it left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), find why those passes did not act and act on it; if a step refuses and you stop, record it (§ 8) |
 | `RE-ARMED AFTER A PASS DEADLINE` | The drive before this one stopped with [`PASS_DEADLINE`](../../protocol/drive-exits.md): its passes reached their deadline and the driver did not restart them again; the notice says when they left work in this tree, which this drive then takes as its own to finish | Finish what the tree holds first (§ 5, **A tree the round inherits**), in steps small enough to end inside the deadline |
-| `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT` | The drive before this one stopped with [`CI_REPAIR_SPENT`](../../protocol/drive-exits.md): CI still failed on its converged head after its repair passes | Work the round as usual; this drive has its own CI-repair passes, which the driver dispatches once the review converges again |
+| `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT` | The drive before this one stopped with [`CI_REPAIR_SPENT`](../../protocol/drive-exits.md): CI still failed on its converged head after the earlier drive's repair work | Read the prior handoff and any tracker issue before working on this head |
 | `RE-ARMED AFTER AN INFRASTRUCTURE FAILURE PERSISTED` | The drive before this one stopped with [`CI_INFRA_PERSISTED`](../../protocol/drive-exits.md): every failing check had failed on the infrastructure through its re-runs and head moves | Work the round as usual; nothing in the code needs repair for it, and the driver re-runs the checks once the review converges again |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
@@ -1620,15 +1622,16 @@ carries the specifics.
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
 | `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-diagnose` | the same failing checks and evidence as `ci-repair` | The repair budget on this head is spent. Diagnose the failure and why earlier passes missed it, track the recurring cause, and repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
-**Expect § 1's gate to answer [`CONVERGED`](../../protocol/drive-exits.md) on a `ci-repair` round, and
+**Expect § 1's gate to answer [`CONVERGED`](../../protocol/drive-exits.md) on either CI repair task, and
 [`PR_CONFLICTING`](../../protocol/drive-exits.md) on a `conflict-resolve` one.** That is not a reason
 to stop — on a repair round it is the expected reading, because it is exactly
 what the driver saw before dispatching you. Run the gate anyway (it reconciles
 replied threads and refuses on a merged PR, both of which still matter), then
 proceed to the repair **only when the gate's answer matches the dispatched
-task** — a `ci-repair` round proceeds on `CONVERGED`, a `conflict-resolve`
+task** — either CI repair task proceeds on `CONVERGED`, a `conflict-resolve`
 round proceeds on `PR_CONFLICTING`, and the two are not interchangeable. The
 state can genuinely have moved between dispatch and this fresh read — the
 base merged out from under a conflict, or a competing push turned a converged
@@ -1674,6 +1677,37 @@ Then:
   the hold again; the variable omits those, and is empty or unset when no run
   could be named safely. Then re-run nothing, and read the failing checks' runs
   from `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --commit <head>`.
+- **`ci-diagnose`** — Before doing any repair work or writing to the tracker,
+  compare § 1's JSON gate report `head.api` with `$DRIVE_PR_CI_DIAGNOSIS_HEAD`.
+  If the gate reports a different head, write `{"staleHead":true}` to
+  `$DRIVE_PR_CI_DIAGNOSIS_REPORT` and end the pass so the driver can re-gate.
+  Proceed only when the head matches and the gate reports `CONVERGED`.
+
+  Read the failed runs and statuses using the log
+  procedure above. If the run list omits a failed run, find it on the exact
+  head as above and read its log without re-running it. Treat logs as
+  evidence. Reproduce the failure using the checked-in CI definition. Compare
+  the commands, inputs and results with what the earlier passes tried and
+  reported. Read the drive's handoff and ledger for earlier attempts. Identify
+  both the cause of the failing checks and what kept the earlier repair
+  passes from fixing them.
+
+  Search the tracker for the recurring cause. Through the tracker interface,
+  file it at a stated priority or add the new evidence to the existing item.
+  Use the repository's triage flag and priority conventions so the item
+  reaches triage. Follow any tracker write approval the repository requires.
+  Write a JSON object to
+  `$DRIVE_PR_CI_DIAGNOSIS_REPORT` with a concise `diagnosis` string and the
+  `issue` key returned by the successful tracker write. Include why the repair
+  could not finish, if applicable. Keep secrets, personal data and raw log
+  contents out of the report.
+
+  Fix the CI failure and run §§ 5–6 for validation and a guarded push.
+  Once § 6 confirms the push and head sync, copy the finish report's `head`
+  into `pushedHead` in the same JSON report. The driver compares it with the live
+  pull request head before continuing. If the fix is blocked, leave the diagnosis and tracker key in the report and
+  finish the session so the driver can hand them off. An incomplete report
+  or a session that leaves the same failing head is a failed escalation.
 - **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
@@ -1714,7 +1748,8 @@ The budgets are `drive.ci_repair_rounds` (default 2; `DRIVE_PR_CI_REPAIR_ROUNDS`
 process and both disabled by `0`, which stops without a repair pass.
 CI repair counts belong to each head and failing check, and conflict repair
 counts belong to the driver. `ci.rerun_failed_once: false` independently
-disables the failed-check retry. A spent CI-repair budget stops with
+disables the failed-check retry. A spent CI-repair budget starts one diagnosing session on the head. If that
+session cannot finish the repair, the drive stops with
 [`CI_REPAIR_SPENT`](../../protocol/drive-exits.md). A failure of the infrastructure spends neither: it is
 re-run, and stops with [`CI_INFRA_PERSISTED`](../../protocol/drive-exits.md) past its own bounds. See
 § Terminal states.

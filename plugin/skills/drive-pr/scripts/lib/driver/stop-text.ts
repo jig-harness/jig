@@ -7,6 +7,7 @@
  * registry's `report.stop` says for it.
  */
 import type { DriveState } from "../state/schema.ts";
+import { diagnosisDetail } from "../state/ci-actions.ts";
 import { driveExitReport, TERMINAL_STATES } from "../status/terminal-states.ts";
 
 /** The exit `drive.ts` ends with for `state`, as the registry gives it. */
@@ -53,6 +54,11 @@ export function stopText(
 ): string {
   if (code === exitOf("HITL_PARKED")) return parkStop(pr, code, state);
   if (code === exitOf("QUOTA_PARKED")) return quotaStop(pr, code, state);
+  if (code === exitOf("CI_REPAIR_SPENT")) {
+    const diagnosis = diagnosisDetail(state?.ciActions ?? []);
+    if (diagnosis !== undefined)
+      return `PR #${pr} stopped after diagnosing CI (exit ${code}): ${diagnosis}`;
+  }
   const named = driveExitReport(code);
   return named === null
     ? `PR #${pr}'s drive ended with exit ${code}, which names no state the drive ends with`

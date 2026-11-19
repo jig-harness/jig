@@ -21,11 +21,7 @@ import {
 
 import { sleep } from "./../cli.ts";
 
-import {
-  CI_REPAIR_SPENT_EXIT,
-  UNLABEL_SETTLE_SECONDS,
-  FINAL_CI_POLL_SECONDS,
-} from "./settings.ts";
+import { UNLABEL_SETTLE_SECONDS, FINAL_CI_POLL_SECONDS } from "./settings.ts";
 
 import { span } from "./../../../../../shared/trace.ts";
 
@@ -47,6 +43,7 @@ import {
   pendingRetryDisposition,
 } from "./ci-recovery.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
+import { diagnoseCi, diagnosedHeadStop } from "./ci-diagnosis.ts";
 
 /**
  * Why a CI-hold release failed when it printed nothing: what ended it, the
@@ -451,7 +448,7 @@ async function afterTakeover(context: DriveRoundContext): Promise<"continue"> {
 }
 
 async function repairConvergedCi(
-  finalVerdict: string,
+  verdict: string,
   context: DriveRoundContext,
   failing: FailingChecks,
   head: string,
@@ -463,22 +460,43 @@ async function repairConvergedCi(
     attempts,
     context.ciRepairBudget,
   );
-  failing = selection.failing;
-  if (selection.names.length === 0) return selection.exhaustedExit;
-  finalVerdict = `failing: ${selection.names.join(", ")}`;
-  const failingNames = finalVerdict.slice("failing:".length).trim();
+  const diagnosis = selection.names.length === 0;
+  const failingNames = diagnosis
+    ? [...(failing.checkRunNames ?? []), ...(failing.statusNames ?? [])].join(
+        ", ",
+      )
+    : selection.names.join(", ");
+  if (context.ciRepairBudget === 0 || failingNames === "") {
+    console.error(
+      `The fresh non-reviewer CI verdict is '${verdict}', stopping for /fix-ci.`,
+    );
+    return 1;
+  }
   if (context.dryRun || context.agent.length === 0) {
     console.error(
-      `(dry-run) would run a CI-repair pass for: ${failingNames || "<unnamed checks>"}`,
+      diagnosis
+        ? `(dry-run) would start a diagnosing CI repair for: ${failingNames}`
+        : `(dry-run) would run a CI-repair pass for: ${failingNames}`,
     );
     return 1;
   }
   const mailboxBeforeCiRepair = await context.mailboxCheckpoint();
   if (typeof mailboxBeforeCiRepair === "number") return mailboxBeforeCiRepair;
   if (mailboxBeforeCiRepair === "resumed") return "continue";
+  const diagnosed = await diagnosedHeadStop(context, head);
+  if (diagnosed !== null) return diagnosed;
   console.error(
-    `review converged, but the fresh non-reviewer CI verdict is '${finalVerdict}'.`,
+    `review converged, but the fresh non-reviewer CI verdict is 'failing: ${failingNames}'.`,
   );
+  // Re-resolve the policy base before a repair on a retargeted pull request.
+  await announcePolicyBase(context.pr);
+  const told = await repairChannel(
+    context.pr,
+    diagnosis ? failing : selection.failing,
+  );
+  if (told === null) return 1;
+  if (diagnosis) return await diagnoseCi(context, head, failingNames, told);
+  failing = selection.failing;
   console.error(
     // A peek, not a charge — `ciRepairs` is committed only once
     // `runRepairPass` confirms it actually dispatched, below: an
@@ -491,11 +509,6 @@ async function repairConvergedCi(
     // dispatch below, if it happens, will actually become.
     `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (drive.ci_repair_rounds, or DRIVE_PR_CI_REPAIR_ROUNDS for one run; 0 stops here instead).`,
   );
-  // The repair dispatches ahead of the round's own refresh: resolve the
-  // policy base again, for a pull request retargeted since.
-  await announcePolicyBase(context.pr);
-  const told = await repairChannel(context.pr, failing);
-  if (told === null) return 1;
   const repair = await runRepairPass(
     context.agent,
     context.held,
@@ -548,6 +561,12 @@ async function repairConvergedCi(
     return 5;
   }
   if (repairCode !== 0) {
+    if (
+      context.held.length > 0 &&
+      repairSelection(head, failing, attempts, context.ciRepairBudget).names
+        .length === 0
+    )
+      return "continue";
     console.error("the CI-repair pass failed; stopping for /fix-ci by hand.");
     return 1;
   }
@@ -737,17 +756,7 @@ export async function evaluateFinalCi(
     failing,
   );
   if (recovered !== null) return recovered;
-  const selection = repairSelection(
-    reviewedHead,
-    failing,
-    attemptsFor(context),
-    context.ciRepairBudget,
-  );
-  if (
-    finalVerdict.startsWith("failing:") &&
-    !staleRequiredFailure &&
-    selection.names.length > 0
-  ) {
+  if (finalVerdict.startsWith("failing:") && !staleRequiredFailure) {
     return await repairConvergedCi(
       finalVerdict,
       context,
@@ -769,15 +778,6 @@ export async function evaluateFinalCi(
     console.error(
       `review converged and the required checks ran, but the fresh non-reviewer CI verdict is '${finalVerdict || "unknown"}'; stopping for /fix-ci`,
     );
-    // A spent budget is its own stop: the fix is a CI repair, which a
-    // re-armed drive starts with a fresh budget, not a decision for a
-    // person, and a caller reading the exit alone must tell it from a crash.
-    if (finalVerdict.startsWith("failing:") && context.ciRepairBudget > 0) {
-      console.error(
-        `  (${selection.used} of ${context.ciRepairBudget} CI-repair pass(es) already run per failing check on head ${reviewedHead} — the budget is spent: exit ${CI_REPAIR_SPENT_EXIT}, CI_REPAIR_SPENT.)`,
-      );
-      return CI_REPAIR_SPENT_EXIT;
-    }
     return 1;
   }
   // DEFERRED from above (widened by the required-check handling

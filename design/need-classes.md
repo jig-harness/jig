@@ -62,7 +62,7 @@ below is a gap, and its weekly reflection finding proposes a row.
 
 | Class | Shows on the line as | Settled |
 | --- | --- | --- |
-| CI repair spent, or a CI verdict misread | a drive handed to a person (exit `21`, or `1`), a park on a cancelled run | at the source; by the steward; by an answer |
+| Diagnosing CI repair failed, or a CI verdict could not be read | a drive handed to a person with its diagnosis and tracker issue when available (exit `21`), a verdict read failure (exit `1`), or a park on a cancelled run | at the source; by the steward; by an answer |
 | A stage ended without a result | a failed follow-up, a pickup's question, a stage that died | at the source; by the tick |
 | A stalled pickup | `stalled` | at the source; by the tick; by the steward; by an answer |
 | A release blocked | a failed follow-up on every merge after the release | at the source; by an answer under `release`; a stuck deployment by a person alone |
@@ -403,7 +403,7 @@ steward's digest or its words:
 | --- | --- | --- |
 | `settle` with `link` (the item, pull request `#N`) | a stalled pickup whose work is in a pull request no launch opened | the pull request is open, in the same repository, opened by a login the repository trusts (a writer, or one of `dispatch.adopt.authors`), and links the item in the repository's `pull_requests.issue_link` form; the tick moves the item to `pr_open`. A merged pull request is not settled this way: its need is framed with the link named, and an item is never moved to done |
 | `settle` with `release` (the item) | a stale claim | a launch record or claim marker of this host made the claim, no session holds the work, no open pull request carries the item and its tree holds no unpushed commit; the tick moves the item back to the state a pickup starts from |
-| `redrive` (the pull request, class `flake`) | a spent CI re-drive (exit `21`) | the forge shows the failing job passed on the base, or on another run of the same head; one per head, at most three a week per repository, on top of `dispatch.redrive.ci` and within the recovery budget. Reaching the weekly cap records a reflection finding proposing a rule |
+| `redrive` (the pull request, class `flake`) | a spent re-drive of a ledger from before CI diagnosis (exit `21`) | the forge shows the failing job passed on the base, or on another run of the same head; one per head, at most three a week per repository, on top of `dispatch.redrive.ci` and within the recovery budget. Reaching the weekly cap records a reflection finding proposing a rule |
 | `rerun-checks` (the run) | a failed run on a converged head or a releasing commit | the run's commit is the pull request's head or the releasing commit, and `shared/ci-infra.ts` or the job's history on the forge classifies the failure as passing; once per run |
 
 For each widened record it applies, the tick comments on the item or the

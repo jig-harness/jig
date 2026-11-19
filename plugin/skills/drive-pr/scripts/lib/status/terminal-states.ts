@@ -569,20 +569,19 @@ export const TERMINAL_STATES: Readonly<
       },
     },
   },
-  // Its CI-repair passes spent on a fresh verdict that still names failing
-  // checks.
+  // The diagnosing repair session could not finish on a failing head.
   CI_REPAIR_SPENT: {
     exitCode: 21,
     category: "driver-only",
     terminal: true,
     emittedBy: "drive.ts only (CI_REPAIR_SPENT_EXIT)",
     meaning:
-      "The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again.",
+      "The diagnosing CI-repair session could not complete the repair on the failing head. The handoff carries its diagnosis and tracker issue when available.",
     report: {
-      stop: "stopped: CI still fails with its CI-repair passes spent",
+      stop: "stopped: the diagnosing CI-repair session could not complete the repair",
       cause: "tool-failed",
       next: {
-        step: "Look at the failing checks, then re-arm the drive to repair again.",
+        step: "Read the diagnosing session’s handoff and address the blocker it recorded.",
         owner: "person",
         act: "Investigate",
       },

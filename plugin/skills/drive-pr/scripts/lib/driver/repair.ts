@@ -31,6 +31,9 @@ import { finishDriverPassRegistrations, touchLock } from "./lifecycle.ts";
 import type { FailingStatus } from "./../../../../../shared/ci-status.ts";
 import { isoOf } from "../../../../../shared/time.ts";
 
+export const DIAGNOSIS_REPORT_VARIABLE = "DRIVE_PR_CI_DIAGNOSIS_REPORT";
+export const DIAGNOSIS_HEAD_VARIABLE = "DRIVE_PR_CI_DIAGNOSIS_HEAD";
+
 // `drive.ts` is itself very often launched from inside a live Claude Code
 // session (do-item's "Arm the drive" step spawns it in the background), and
 // a spawned child inherits that session's env by default — including
@@ -59,6 +62,8 @@ export function passEnv(
   delete env.DRIVE_PR_ROUND_FAILED_RUNS;
   delete env.DRIVE_PR_ROUND_FAILED_STATUSES;
   delete env.DRIVE_PR_ROUND_REPAIR_SKILL;
+  delete env[DIAGNOSIS_REPORT_VARIABLE];
+  delete env[DIAGNOSIS_HEAD_VARIABLE];
   // The same for the notice of a recovered stop: only the driver that
   // recovered it may say so, and only to the review pass it spawns next.
   delete env.DRIVE_PR_PASS_NOTICE;
@@ -77,6 +82,10 @@ export function passEnv(
       env.DRIVE_PR_ROUND_FAILED_STATUSES = JSON.stringify(task.failedStatuses);
     if (task.repairSkill !== undefined)
       env.DRIVE_PR_ROUND_REPAIR_SKILL = task.repairSkill;
+    if (task.task === "ci-diagnose" && task.diagnosisReport !== undefined)
+      env[DIAGNOSIS_REPORT_VARIABLE] = task.diagnosisReport;
+    if (task.task === "ci-diagnose" && task.diagnosisHead !== undefined)
+      env[DIAGNOSIS_HEAD_VARIABLE] = task.diagnosisHead;
   }
   return env;
 }
@@ -89,6 +98,10 @@ export interface RepairCi {
   failedStatuses?: readonly FailingStatus[];
   /** The skill it loads first: `ci.repair_skill`. */
   repairSkill?: string;
+  /** The isolated file a diagnosing pass writes after filing its finding. */
+  diagnosisReport?: string;
+  /** The exact head the diagnosing pass may act on. */
+  diagnosisHead?: string;
 }
 
 /**

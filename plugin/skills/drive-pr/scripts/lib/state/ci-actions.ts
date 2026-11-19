@@ -11,6 +11,30 @@ export interface CiAction {
   action: "rerun" | "repair";
   detail: string;
 }
+export const diagnosisPrefix = (head: string) => `diagnosis: head ${head}: `;
+export const diagnosisStartedPrefix = (head: string) =>
+  `diagnose: head ${head}: `;
+
+export function diagnosisDetail(
+  actions: readonly CiAction[],
+): string | undefined {
+  return actions
+    .findLast(
+      (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
+    )
+    ?.detail.replace(/^diagnosis: head \S+: /, "");
+}
+
+/** Keep the current diagnosis receipt even when the ledger trims its regular CI telemetry. */
+export function retainedDiagnosis(actions: readonly CiAction[]): CiAction[] {
+  const latest = actions.findLast(
+    (a) =>
+      a.action === "repair" &&
+      /^diagnos(?:is|e(?:-skipped)?): head /.test(a.detail),
+  );
+  return latest === undefined ? [] : [latest];
+}
+
 const ACTION_LIMIT = 10;
 const DETAIL_LIMIT = 1024;
 
