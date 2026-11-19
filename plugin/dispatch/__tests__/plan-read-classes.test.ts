@@ -112,6 +112,22 @@ describe("the plan of an item whose read a failed call stopped", () => {
     ).toBeUndefined();
   });
 
+  it("places a drive waiting on a person as unplaced when another host's claims could not be read", () => {
+    const waiting = drive({ class: "needs-person", why: "waits on a person" });
+    expect(
+      rowOf(
+        input({
+          drives: [waiting],
+          shared: {
+            host: "this-host",
+            drives: new Map([[7, failed("unreadable", "not read")]]),
+          },
+        }),
+        "PR #7",
+      ),
+    ).toMatchObject({ readFailed: true });
+  });
+
   it("keeps the class of a failed call that stopped a merged pull request's follow-up markers", () => {
     expect(
       rowOf(

@@ -488,8 +488,14 @@ function planForeign(
     failed("unreadable", "they were not read this tick");
   const hold = foreignHold(pr, claims, shared.host);
   // A drive that waits on a person is only notified of: another host's open
-  // claim holds that notification, and no other claim reading applies.
-  if (pr.class === "needs-person" && hold.kind !== "held") return null;
+  // claim holds that notification, and an unread one may hold it too; no other
+  // claim reading applies.
+  if (
+    pr.class === "needs-person" &&
+    hold.kind !== "held" &&
+    hold.kind !== "unread"
+  )
+    return null;
   if (
     hold.kind === "none" ||
     (hold.kind === "refused" &&
