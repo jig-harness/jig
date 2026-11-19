@@ -478,8 +478,9 @@ narrow once this is built:
   moves an item to `pr_open` when an open pull request on the branch of
   this host's launch names it, and applies a steward `settle` record under
   its guard. It never writes an item's done state.
-- **It relaunches a stalled pickup** once, in the same tree, only to push
-  and record work the tree already holds, where the repository allows it.
+- **It relaunches a stalled pickup** once, in the same tree, to push and
+  record work the tree already holds; where that pickup stopped on a host
+  fault, the relaunch may also finish the item's work once the host is healthy.
 
 And one rule of its launch records widens: a follow-up's run again also
 covers a result write that failed, and waits for the host's health check.
