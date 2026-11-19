@@ -164,6 +164,15 @@ describe("What is coming", () => {
           LAPTOP.height,
         );
         expect(await sideways(page)).toBeLessThanOrEqual(0);
+        const folds = await page
+          .locator(".ghead .disc")
+          .evaluateAll((discs) =>
+            discs.map((disc) => disc.getBoundingClientRect().toJSON()),
+          );
+        expect(folds.length).toBeGreaterThan(0);
+        expect(
+          folds.filter((box) => box.width < 44 || box.height < 44),
+        ).toEqual([]);
 
         // "Starts next" leads and has nothing to fold it.
         expect(
@@ -731,10 +740,12 @@ describe("What is coming", () => {
             async () =>
               (await page
                 .locator(".pQueue .qItem:visible")
-                .evaluateAll((cards) =>
-                  cards.every((card) =>
-                    card.textContent?.includes("example-org/api"),
-                  ),
+                .evaluateAll(
+                  (cards) =>
+                    cards.length > 0 &&
+                    cards.every((card) =>
+                      card.textContent?.includes("example-org/api"),
+                    ),
                 )) === true,
           );
           expect(await sideways(page)).toBeLessThanOrEqual(0);

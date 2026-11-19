@@ -147,6 +147,7 @@ export function useFilterResults(
         ...FACETS.map((facet) => `data-facet-${facet}`),
         "data-facet-since",
         "data-facet-age-label",
+        "data-group-why",
         "hidden",
         "aria-expanded",
       ],

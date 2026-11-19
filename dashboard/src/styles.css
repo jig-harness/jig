@@ -468,7 +468,7 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   .dd > * { --gut: 28px; }
   .disc { width: 24px; height: 24px; margin: 0 0 0 -2px; }
   .spine { margin-left: 9px; }
-  .ghead { min-height: 26px; }
+  .ghead .disc { width: 44px; height: 44px; margin: 0 -16px 0 -8px; }
 }
 
 /* the work identity: an icon for its standing, the key as the link, a Copy, and linked work after it */
