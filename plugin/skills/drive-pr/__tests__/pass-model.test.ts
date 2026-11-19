@@ -76,7 +76,7 @@ describe("resolveModelValue", () => {
     expect(
       resolveModelValue("complex", "--pass-model", noRouting, "codex"),
     ).toEqual({
-      model: "gpt-6.1-sol",
+      model: "gpt-6.2-sol",
       source:
         "--pass-model: the complex tier, routing.models.codex.complex (sol)",
     });

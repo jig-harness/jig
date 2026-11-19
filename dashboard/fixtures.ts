@@ -16,6 +16,7 @@ import {
   framedDecision,
   line,
   need,
+  overLoad,
   queued,
 } from "./fixture-line.ts";
 import { linkedLine } from "./fixture-linked.ts";
@@ -51,6 +52,7 @@ export const SCENARIOS = [
   "picks",
   "partial",
   "linked",
+  "overload",
 ] as const;
 export type ScenarioId = (typeof SCENARIOS)[number];
 
@@ -769,6 +771,17 @@ export function fixture(id: ScenarioId): Fixture {
           }),
         ),
         rows: loudRows(),
+      };
+    case "overload":
+      return {
+        now,
+        line: line({
+          sessions: workingTwo(),
+          walls: quietWall,
+          lastAccount: "codex-a",
+          load: overLoad(),
+        }),
+        rows: nightly(),
       };
   }
 }

@@ -82,6 +82,9 @@ const verdictAt = (
     settleMs: SETTLE,
   });
 
+// A GitHub expression, spelled out so no plain string carries a template marker.
+const expr = (e: string): string => `$\{{ ${e} }}`;
+
 describe("missingRequiredRuns", () => {
   it("names a required check with no run on the head past the grace", () => {
     expect(verdictAt(20, [run(1, "build")])).toEqual({
@@ -191,18 +194,18 @@ describe("workflowForCheck", () => {
   it("does not attribute a name that combines matrix keys or a matrix with exclusions", () => {
     const combined = {
       path: ".github/workflows/combined.yml",
-      text: "on: push\njobs:\n  t:\n    name: ${{ matrix.n }} ${{ matrix.os }}\n    strategy:\n      matrix:\n        n: [1, 2]\n        os: [linux, windows]\n    runs-on: x\n",
+      text: `on: push\njobs:\n  t:\n    name: ${expr("matrix.n")} ${expr("matrix.os")}\n    strategy:\n      matrix:\n        n: [1, 2]\n        os: [linux, windows]\n    runs-on: x\n`,
     };
     const excluded = {
       path: ".github/workflows/excluded.yml",
-      text: "on: push\njobs:\n  t:\n    name: Build ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [linux, windows]\n        exclude:\n          - os: windows\n    runs-on: x\n",
+      text: `on: push\njobs:\n  t:\n    name: Build ${expr("matrix.os")}\n    strategy:\n      matrix:\n        os: [linux, windows]\n        exclude:\n          - os: windows\n    runs-on: x\n`,
     };
     expect(workflowForCheck("1 windows", [ci, combined])).toBeNull();
     expect(workflowForCheck("1 linux", [ci, combined])).toBeNull();
     expect(workflowForCheck("Build windows", [ci, excluded])).toBeNull();
     const repeated = {
       path: ".github/workflows/repeated.yml",
-      text: "on: push\njobs:\n  t:\n    name: Pair ${{ matrix.n }}-${{ matrix.n }}\n    strategy:\n      matrix:\n        n: [1, 2]\n    runs-on: x\n",
+      text: `on: push\njobs:\n  t:\n    name: Pair ${expr("matrix.n")}-${expr("matrix.n")}\n    strategy:\n      matrix:\n        n: [1, 2]\n    runs-on: x\n`,
     };
     expect(workflowForCheck("Pair 1-2", [ci, repeated])).toBeNull();
     expect(workflowForCheck("Pair 1-1", [ci, repeated])).toBeNull();
