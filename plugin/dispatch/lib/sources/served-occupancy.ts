@@ -9,6 +9,7 @@ import type { PickupReads } from "../pickup-reads.ts";
 import type { ServedView } from "./served-reads.ts";
 import { metadata, type Metadata } from "./served-metadata.ts";
 import { servedParentSteps } from "./served-parents.ts";
+import { itemFailed } from "./served-failures.ts";
 import { servedPlan } from "./served-plan.ts";
 import type { Candidate } from "./served-admission.ts";
 import { takeUnreadSlot, type Serial } from "./served-epics.ts";
@@ -89,7 +90,10 @@ export async function attachAdmissions(
 ): Promise<string | null> {
   const { tracker, cache, view, options } = ctx;
   const steps = await servedParentSteps(tracker, candidate.issue, cache, view);
-  if (steps === null) return "the epic ancestry cannot be read";
+  if (steps === null) {
+    itemFailed(found);
+    return "the epic ancestry cannot be read";
+  }
   candidate.admissions = [];
   for (const step of steps) {
     if (

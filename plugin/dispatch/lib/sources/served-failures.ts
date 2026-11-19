@@ -1,7 +1,10 @@
 /** What a served queue's failed reads leave: the rows they report and what fails the record. */
 import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
-import type { TrackerRateLimited } from "../../../shared/outbound/budget.ts";
+import {
+  isRateLimited,
+  type TrackerRateLimited,
+} from "../../../shared/outbound/budget.ts";
 import { isoFromMs } from "../../../shared/time.ts";
 import { failureText } from "../text.ts";
 import type { Unplaced } from "../types.ts";
@@ -44,7 +47,48 @@ export function readFailureRow(
 }
 
 /**
- * An item's read failed: the claims below it are unknown. A thrown failure
+ * Why a served queue's items in progress were not read, from its view or
+ * from what was thrown before it had one; `null` when they were read. A
+ * queue read the limit stopped or that failed leaves only a kept reading's
+ * items in progress, which may no longer hold.
+ */
+export function claimsUnread(
+  view: Pick<ServedView, "limited" | "unavailable"> | null,
+  ...thrown: [] | [error: unknown]
+): string | null {
+  const limited =
+    view?.limited ?? (isRateLimited(thrown[0]) ? thrown[0] : null);
+  if (limited !== null)
+    return `the tracker is rate limited until ${isoFromMs(limited.resetAt)}`;
+  return view === null ? failureText(thrown[0]) : (view.unavailable ?? null);
+}
+
+/** A failed queue or item read makes the reading incomplete; every cause that fails the record is kept. */
+export function noteFailure(
+  out: { failures?: unknown[]; incomplete?: boolean },
+  got: { failures: unknown[]; partial: boolean },
+): void {
+  if (got.failures.length === 0 && !got.partial) return;
+  if (got.failures.length > 0)
+    out.failures = [...(out.failures ?? []), ...got.failures];
+  out.incomplete = true;
+}
+
+/**
+ * The row a served queue whose items in progress were not read leaves: what
+ * goes unchecked while its claims are unknown. The failure that stopped the
+ * read is the queue's own row or the record's, so this row fails nothing.
+ */
+export function claimsUnreadRow(identity: string, why: string): Unplaced {
+  return {
+    target: `the items ${identity} claimed`,
+    record: "tracker",
+    reason: `the items ${identity} claimed could not be read, so stalls, double claims and the questions of started pickups are not checked: ${why}`,
+  };
+}
+
+/**
+ * An item's read failed: the items below it are unknown. A thrown failure
  * fails the record, with its class; an item no read threw for (an answer that
  * names no assigner, a read the tracker cut short, a missing description) is
  * its row alone. A cause is passed only when a read threw, so a rejection

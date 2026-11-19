@@ -5,8 +5,10 @@
 import { describe, expect, it } from "bun:test";
 import { failed, ok, type Outcome } from "../outcome.ts";
 import {
-  GROW_AFTER_MS,
+  FIRST_HOLD_MS,
+  type KeptSize,
   keptSize,
+  LONGEST_HOLD_MS,
   type PagedRun,
   QUICK_MS,
   readShrinking,
@@ -106,38 +108,123 @@ describe("the size a reader keeps between runs", () => {
 
   it("is the size a run shrank to, whether or not the run then read whole", () => {
     const run = { started: 50, size: 6, pages: 5, slowestMs: 100 };
-    expect(sizeToKeep(null, { ...run, whole: true }, 50, NOW)).toEqual({
-      size: 6,
-      shrankAt: NOW,
-    });
-    expect(sizeToKeep(null, { ...run, whole: false }, 50, NOW)).toEqual({
-      size: 6,
-      shrankAt: NOW,
-    });
+    const shrunk = { size: 6, shrankAt: NOW, holdMs: FIRST_HOLD_MS };
+    expect(sizeToKeep(null, { ...run, whole: true }, 50, NOW)).toEqual(shrunk);
+    expect(sizeToKeep(null, { ...run, whole: false }, 50, NOW)).toEqual(shrunk);
   });
 
   it("is half after a page that came close to the limit", () => {
     expect(sizeToKeep(null, whole(12, SLOW_MS), 50, NOW)).toEqual({
       size: 6,
       shrankAt: NOW,
+      holdMs: FIRST_HOLD_MS,
     });
     expect(sizeToKeep(null, whole(1, SLOW_MS + 3_000), 50, NOW)).toBeNull();
   });
 
-  it("is twice the size, up to the most, once pages answer quickly and nothing shrank lately", () => {
-    const long = { size: 6, shrankAt: NOW - GROW_AFTER_MS };
+  it("is twice the size, up to the most, once pages answer quickly and its hold has passed", () => {
+    const long = {
+      size: 6,
+      shrankAt: NOW - FIRST_HOLD_MS,
+      holdMs: FIRST_HOLD_MS,
+    };
     expect(sizeToKeep(long, whole(6, QUICK_MS - 1), 50, NOW)).toEqual({
       size: 12,
       shrankAt: long.shrankAt,
+      holdMs: FIRST_HOLD_MS,
     });
     expect(
       sizeToKeep({ ...long, size: 30 }, whole(30, 100), 50, NOW)?.size,
     ).toBe(50);
   });
 
-  it("stays as it is while a page shrank within the hour, however quickly pages answer", () => {
-    const lately = { size: 6, shrankAt: NOW - GROW_AFTER_MS + 1 };
+  it("stays as it is during its hold, however quickly pages answer", () => {
+    const lately = { size: 6, shrankAt: NOW - FIRST_HOLD_MS + 1 };
     expect(sizeToKeep(lately, whole(6, 10), 50, NOW)).toBeNull();
+    expect(
+      sizeToKeep(
+        {
+          ...lately,
+          shrankAt: NOW - 2 * FIRST_HOLD_MS + 1,
+          holdMs: 2 * FIRST_HOLD_MS,
+        },
+        whole(6, 10),
+        50,
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("grows back well within the hour after one timeout", () => {
+    const shrunk = sizeToKeep(
+      null,
+      { started: 8, size: 4, pages: 2, slowestMs: 100, whole: true },
+      50,
+      NOW,
+    );
+    const later = NOW + FIRST_HOLD_MS;
+    expect(FIRST_HOLD_MS).toBeLessThan(LONGEST_HOLD_MS);
+    expect(sizeToKeep(shrunk, whole(4, 100), 50, later)?.size).toBe(8);
+  });
+
+  it("holds twice as long after each timeout that follows soon, up to the longest hold", () => {
+    const timedOut = {
+      started: 8,
+      size: 4,
+      pages: 1,
+      slowestMs: 100,
+      whole: true,
+    };
+    let kept: KeptSize | null = null;
+    let now = NOW;
+    const holds: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      kept = sizeToKeep(kept, timedOut, 50, now);
+      holds.push(kept?.holdMs ?? 0);
+      // The size it may try again is asked as soon as its hold ends, and times out.
+      now += kept?.holdMs ?? 0;
+    }
+    expect(holds).toEqual([
+      FIRST_HOLD_MS,
+      2 * FIRST_HOLD_MS,
+      4 * FIRST_HOLD_MS,
+      8 * FIRST_HOLD_MS,
+      LONGEST_HOLD_MS,
+      LONGEST_HOLD_MS,
+    ]);
+    expect(kept?.size).toBe(4);
+  });
+
+  it("counts a page that came close to the limit as a shrink that follows soon", () => {
+    const kept = { size: 12, shrankAt: NOW - 1, holdMs: FIRST_HOLD_MS };
+    expect(sizeToKeep(kept, whole(12, SLOW_MS), 50, NOW)).toEqual({
+      size: 6,
+      shrankAt: NOW,
+      holdMs: 2 * FIRST_HOLD_MS,
+    });
+  });
+
+  it("is not held back by a shrink dated after now", () => {
+    const ahead = { size: 6, shrankAt: NOW + 1, holdMs: FIRST_HOLD_MS };
+    expect(sizeToKeep(ahead, whole(6, 10), 50, NOW)?.size).toBe(12);
+  });
+
+  it("starts from the first hold again once timeouts have stopped for a while", () => {
+    const long = {
+      size: 8,
+      shrankAt: NOW - 2 * LONGEST_HOLD_MS,
+      holdMs: LONGEST_HOLD_MS,
+    };
+    const run = { started: 8, size: 4, pages: 1, slowestMs: 100, whole: true };
+    expect(sizeToKeep(long, run, 50, NOW)?.holdMs).toBe(FIRST_HOLD_MS);
+    expect(
+      sizeToKeep(
+        { ...long, shrankAt: NOW - 2 * LONGEST_HOLD_MS + 1 },
+        run,
+        50,
+        NOW,
+      )?.holdMs,
+    ).toBe(LONGEST_HOLD_MS);
   });
 
   it("stays as it is in between, at the most, and after a run that did not read whole or asked nothing", () => {
@@ -156,6 +243,16 @@ describe("the size a reader keeps between runs", () => {
       size: 6,
       shrankAt: 5,
     });
+    expect(keptSize({ size: 6, shrankAt: 5, holdMs: 60_000 }, 50)).toEqual({
+      size: 6,
+      shrankAt: 5,
+      holdMs: 60_000,
+    });
+    for (const holdMs of [0, -1, Number.NaN, "soon", LONGEST_HOLD_MS + 1])
+      expect(keptSize({ size: 6, shrankAt: 5, holdMs }, 50)).toEqual({
+        size: 6,
+        shrankAt: 5,
+      });
     for (const kept of [
       null,
       undefined,

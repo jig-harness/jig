@@ -15,7 +15,7 @@ import {
   applyPrOpenMoves,
   type MoveRoom,
 } from "../lib/actions/pr-open-moves.ts";
-import { readRecord } from "../lib/launches.ts";
+import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
 import type { SessionsReport } from "../lib/runtime/port.ts";
 import type { StalledPrInput } from "../lib/stalled-pr.ts";
@@ -165,6 +165,22 @@ describe("a stalled pickup whose launch opened a pull request", () => {
     expect(body).toContain(`pull request #31 (${URL})`);
     expect(body).toContain(`<!-- do-item-pr: ${URL} -->`);
     expect(report.prOpenMoves?.[0]).toMatchObject({ outcome: "moved" });
+  });
+
+  it("keeps a recorded question a need, and moves nothing, while the item still has one", () => {
+    const asked = {
+      ...launch,
+      result: "failed" as const,
+      report: { report: { question: "Which branch should win?" } },
+    } as unknown as ReadRecord;
+    const plan = planPickups({
+      ...input(prOpen([pr(BRANCH)])),
+      launches: [asked],
+    });
+    expect(plan.moves).toEqual([]);
+    expect(plan.actions).toEqual([
+      expect.objectContaining({ target: "#12", cause: "pickup-question" }),
+    ]);
   });
 
   it("moves nothing for a pull request naming the item from a branch no launch worked on", () => {
