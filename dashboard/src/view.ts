@@ -206,8 +206,8 @@ function causeKey(refusal: StaleReading["refusal"]): string | null {
   const limited = failure.class === "rate-limited";
   const system =
     typeof failure.quota?.system === "string" ? failure.quota.system : null;
-  // Without an account or a quota owner nothing says two failures share a credential.
-  if (failure.account === undefined && system === null) return null;
+  // Only an account names the credential: a quota's system is the adapter, shared by distinct credentials.
+  if (failure.account === undefined) return null;
   return JSON.stringify([
     failure.class,
     failure.account ?? null,
