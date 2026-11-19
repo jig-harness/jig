@@ -12,6 +12,10 @@ interface LockNeed {
   reason: string;
 }
 
+type NeedsRead =
+  | { ok: true; needs: LockNeed[] }
+  | { ok: false; reason: string };
+
 /** Keep one need per pull request; a readable lock clears the matching refusal. */
 export function recordRearmLockRead(
   repo: string,
@@ -50,16 +54,16 @@ export function recordRearmLockRead(
 }
 
 /** A plan reads the record without creating or migrating a database. */
-function readNeeds(repo: string, root: string): LockNeed[] {
+function readNeeds(repo: string, root: string): NeedsRead {
   const opened = readOnlyStateDb(root);
   if (!opened.ok) {
     swallow(
       opened.failure.cause ?? opened.failure.reason,
       "the tick can proceed when the local rearm lock needs could not be read",
     );
-    return [];
+    return { ok: false, reason: opened.failure.reason };
   }
-  if (opened.value === null) return [];
+  if (opened.value === null) return { ok: true, needs: [] };
   const { db } = opened.value;
   try {
     if (
@@ -67,15 +71,21 @@ function readNeeds(repo: string, root: string): LockNeed[] {
         .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
         .get("rearm_lock_needs") === null
     )
-      return [];
-    return db
-      .query(
-        "SELECT pr, generation, heartbeat, reason FROM rearm_lock_needs WHERE repo = ?",
-      )
-      .all(repo.toLowerCase()) as LockNeed[];
+      return { ok: true, needs: [] };
+    return {
+      ok: true,
+      needs: db
+        .query(
+          "SELECT pr, generation, heartbeat, reason FROM rearm_lock_needs WHERE repo = ?",
+        )
+        .all(repo.toLowerCase()) as LockNeed[],
+    };
   } catch (error) {
     swallow(error, "the tick can proceed without the unread rearm lock needs");
-    return [];
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+    };
   } finally {
     db.close();
   }
@@ -86,8 +96,17 @@ export function rearmLockNeeds(
   repo: string,
   drives: readonly DrivenPr[],
   root = stateRoot(),
+  unread?: (reason: string) => void,
+  complete = false,
 ): Action[] {
-  const needs = readNeeds(repo, root);
+  const read = readNeeds(repo, root);
+  if (!read.ok) {
+    unread?.(`the rearm lock needs could not be read: ${read.reason}`);
+    return [];
+  }
+  const needs = complete
+    ? retireSuperseded(repo, read.needs, drives, root)
+    : read.needs;
   const byNumber = new Map(drives.map((drive) => [drive.number, drive]));
   return needs.flatMap((need) => {
     const drive = byNumber.get(need.pr);
@@ -116,4 +135,38 @@ export function rearmLockNeeds(
       } satisfies Action,
     ];
   });
+}
+
+/** A complete forge reading makes a missing, advanced, or no-longer-stopped drive authoritative. */
+function retireSuperseded(
+  repo: string,
+  needs: readonly LockNeed[],
+  drives: readonly DrivenPr[],
+  root: string,
+): LockNeed[] {
+  const current = new Map(drives.map((drive) => [drive.number, drive]));
+  const stale = needs.filter((need) => {
+    const drive = current.get(need.pr);
+    return (
+      drive === undefined ||
+      drive.evidence.driver !== "stopped" ||
+      drive.evidence.generation !== need.generation ||
+      drive.evidence.heartbeat !== need.heartbeat
+    );
+  });
+  if (stale.length === 0) return [...needs];
+  try {
+    const db = existingStateDb(root);
+    if (db === null) return [...needs];
+    for (const need of stale)
+      db.query("DELETE FROM rearm_lock_needs WHERE repo = ? AND pr = ?").run(
+        repo.toLowerCase(),
+        need.pr,
+      );
+  } catch (error) {
+    swallow(error, "superseded rearm lock needs could not be retired");
+    return [...needs];
+  }
+  const retired = new Set(stale);
+  return needs.filter((need) => !retired.has(need));
 }

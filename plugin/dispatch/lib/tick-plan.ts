@@ -128,7 +128,19 @@ export function planObserved(
   const failing = {
     actions: [
       ...planFailureNotices(context, opened),
-      ...rearmLockNeeds(repo.slug, observation.drives, context.apply?.root),
+      ...rearmLockNeeds(
+        repo.slug,
+        observation.drives,
+        context.apply?.root,
+        (reason) =>
+          report.unplaced.push({
+            target: "the rearm lock needs",
+            record: "runtime",
+            reason,
+            readFailed: true,
+          }),
+        observation.forge.ok,
+      ),
     ],
     held: [],
     withheld: report.withheld ?? [],

@@ -109,6 +109,14 @@ async function rearmFacts(
 ): Promise<
   Outcome<{ labels: string[]; url: string; tree?: string }, "refused">
 > {
+  // A successful local-lock read settles an earlier unreadable-lock notice
+  // even when a later eligibility check refuses this rearm.
+  if (d.ledger !== null && typeof d.ledger !== "string" && !dryRun) {
+    const unread = ctx.reading
+      .sources()
+      .records.find((source) => source.record === "drive-lock" && !source.read);
+    if (unread === undefined) noteLockRead(ctx, d.ledger, null);
+  }
   const fault = rearmFault(d, ctx, dryRun);
   if (fault !== null) return refused(fault);
   const tree = await rearmTree(d, ctx);
