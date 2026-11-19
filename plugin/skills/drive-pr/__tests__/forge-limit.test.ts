@@ -25,6 +25,7 @@ import type { DriveState } from "../scripts/lib/state/schema.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import { limitedAtStart } from "../scripts/lib/status/pre-report.ts";
 import { ExitError } from "../../../shared/cli.ts";
+import { isDriveEvent, stopInstant } from "../scripts/lib/state/events.ts";
 import {
   clearForgeLimit,
   forgeLimitHeld,
@@ -105,6 +106,28 @@ describe("the attach on a spent forge rate limit", () => {
     ).catch((e: unknown) => e);
     expect((error as ExitError).code).toBe(DRIVE_EXIT.FORGE_RATE_LIMITED);
     expect(reads).toBe(4);
+  });
+
+  test("an ordinary mailbox stop read while the attach waits ends it with that exit", async () => {
+    let polls = 0;
+    const error = await attachThroughLimits(
+      async () => {
+        throw limited(currentMs() + 3_600_000);
+      },
+      undefined,
+      (limit, mayWait) =>
+        attachForgeLimit(
+          "42",
+          limit,
+          mayWait,
+          { boundMs: 7_200_000 },
+          () => null,
+          async () => (++polls < 2 ? "clear" : 18),
+        ),
+    ).catch((e: unknown) => e);
+    expect((error as ExitError).code).toBe(18);
+    expect(polls).toBe(2);
+    expect(driverRuntime.stopLimitedUntil).toBeNull();
   });
 
   test("any other refusal keeps its own exit", async () => {
@@ -270,5 +293,19 @@ describe("limitedAtStart", () => {
       console.error = errors;
     }
     expect(writes.join("")).toBe("FORGE_RATE_LIMITED\n");
+  });
+});
+
+describe("a stop's reset in the ledger", () => {
+  const stop = { at: isoFromMs(0), round: 1, kind: "stop", cause: "24" };
+
+  test("a malformed reset leaves the ledger readable and is not taken as a reset", () => {
+    for (const until of [null, true, 5, "soon"]) {
+      const event = { ...stop, until };
+      expect(isDriveEvent(event)).toBe(true);
+      expect(stopInstant(event as never)).toBeUndefined();
+    }
+    const until = isoFromMs(3_600_000);
+    expect(stopInstant({ ...stop, until } as never)).toBe(until);
   });
 });

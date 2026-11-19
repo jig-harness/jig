@@ -8,7 +8,7 @@
  * for it.
  */
 import type { DriveState } from "../state/schema.ts";
-import { lastStopEvent } from "../state/events.ts";
+import { lastStopEvent, stopInstant } from "../state/events.ts";
 import { driveExitReport, TERMINAL_STATES } from "../status/terminal-states.ts";
 import { driverRuntime } from "./runtime.ts";
 
@@ -53,7 +53,7 @@ function forgeLimitStop(
   const stop = lastStopEvent(state?.events ?? []);
   const until =
     driverRuntime.stopLimitedUntil ??
-    (stop?.cause === String(code) ? stop.until : undefined) ??
+    (stop?.cause === String(code) ? stopInstant(stop) : undefined) ??
     "at an unknown time";
   return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until} (exit ${code})`;
 }

@@ -82,8 +82,10 @@ export async function answerForgeLimit(
  * The attach's read met the limit before the round loop starts: wait for a
  * near reset while the attach `mayWait`, else stop. `true` once the reset
  * passed and the attach may read again; the exit to stop with otherwise, a
- * lost lock's included. A mailbox stop hands the drive to the lifecycle's
- * shutdown, which acknowledges it.
+ * lost lock's included. An immediate mailbox stop hands the drive to the
+ * lifecycle's shutdown, which acknowledges it; every other directive is read
+ * by `checkpoint` as the round loop reads it: an ordinary stop or a pause
+ * that ran out ends the attach with its exit, and a pause holds the wait.
  */
 export async function attachForgeLimit(
   pr: string,
@@ -91,6 +93,7 @@ export async function attachForgeLimit(
   mayWait: boolean,
   bounds: LimitBounds = {},
   stopRequested: () => string | null = () => null,
+  checkpoint: () => Promise<"clear" | "resumed" | number> = async () => "clear",
 ): Promise<true | number> {
   const plan = limitPlan(limit, currentMs(), bounds);
   if (!mayWait)
@@ -115,6 +118,8 @@ export async function attachForgeLimit(
         return await new Promise<never>(() => {
           // The shutdown coordinator owns process exit.
         });
+      const directive = await checkpoint();
+      if (typeof directive === "number") return directive;
       await sleep(
         Math.min(MAILBOX_POLL_SECONDS, (endsAt - performance.now()) / 1000),
         driverRuntime.quotaSleepAbort.signal,

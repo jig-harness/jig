@@ -49,8 +49,8 @@ export interface DriveEvent {
   leftWork?: boolean;
   /** On a `stop` that measured: the tree it ran in, `<actor>@<host>`. */
   tree?: string;
-  /** On a `stop` on the forge's spent rate limit: when the limit resets, an instant. */
-  until?: string;
+  /** On a `stop` on the forge's spent rate limit: when the limit resets, an instant. The ledger's shape leaves the field open, so a reader takes it only when it is an instant (`stopInstant`) and a malformed value never makes the ledger unreadable. */
+  until?: unknown;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -76,13 +76,16 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
-    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "") &&
-    stopOnly(
-      v.kind,
-      v.until,
-      typeof v.until === "string" && Number.isFinite(parseMs(v.until)),
-    )
+    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
   );
+}
+
+/** The reset a stop recorded, when it is an instant; `undefined` for any other value. */
+export function stopInstant(stop: DriveEvent | undefined): string | undefined {
+  const until = stop?.until;
+  return typeof until === "string" && Number.isFinite(parseMs(until))
+    ? until
+    : undefined;
 }
 
 export function isOptionalEvents(v: unknown): boolean {

@@ -64,6 +64,7 @@ import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
 import { attachForgeLimit } from "./forge-limit-stop.ts";
+import { mailboxCheckpointOrExit } from "./mailbox.ts";
 import { ignoreDriveContext } from "./../context-ignore.ts";
 
 import { clearDeadlineRetries } from "./restart.ts";
@@ -452,6 +453,7 @@ async function drive(ctx: DriveContext): Promise<number> {
         mayWait,
         {},
         watchImmediateStop(mailboxDir, pr, generation),
+        () => mailboxCheckpointOrExit({ dir: mailboxDir, pr, generation }),
       ),
   );
   // The drive's own `.context/` files must not read as uncommitted changes
