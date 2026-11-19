@@ -129,8 +129,8 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
   with `git stash`, install only with `bun install`.
 - **Pull requests** open as drafts and are driven until every thread is
   resolved; a person merges, an agent never does. After the merge,
-  [`/followup`](.claude/skills/followup/SKILL.md) settles what the merge
-  still owes.
+  [`/jig:followup`](plugin/skills/followup/SKILL.md) settles what the merge
+  still owes, with Jig's own arms from `.config/jig.yaml` (`followup.arms`).
 - **Never edit a derived file by hand**; regenerate it.
 - **Tests** are type-checked, change the home directory, working directory
   or environment only in a subprocess they spawn, wait by polling with a

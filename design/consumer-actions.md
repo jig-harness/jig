@@ -23,7 +23,8 @@ audit's `since` and `deprecated` marks on configuration fields
 ([config-schema.yaml](../plugin/skills/audit/config-schema.yaml)), `jig doctor`
 ([plugin/runtime/doctor.ts](../plugin/runtime/doctor.ts)), the dispatcher's
 stages and their `notify` ([dark-factory-dispatch.md](dark-factory-dispatch.md)),
-and the Breaking-changes arm of [`/followup`](../.claude/skills/followup/SKILL.md).
+and the consumer arm of Jig's own follow-up
+([`.config/followup/consumers.md`](../.config/followup/consumers.md)).
 
 ## How it works
 
@@ -234,8 +235,8 @@ jig reconcile file [--repo <path>] [--record <file>] --entry <id> [--entry <id> 
   entry with its id, version, levels, text and evidence. Exit codes: `0`
   nothing required, `4` at least one required entry is open, `1` it could not
   read, `2` usage. A job or script branches on `4`. `--record` reads a record
-  at a path instead of the installed plugin's, which `/followup` uses on
-  Jig's own checkout. The filing form takes `--record` too, so an id from a
+  at a path instead of the installed plugin's, which Jig's consumer
+  follow-up arm uses on Jig's own checkout. The filing form takes `--record` too, so an id from a
   newer release can be filed from a machine that has not upgraded; the filed
   item names the record's version.
 - **The second form files** one tracker item for the entries a person named
@@ -374,11 +375,11 @@ notified is per machine.
 Because the machine's dispatch file lists the repositories it drives, that
 file, not Jig, is the list of consumers the check reaches. Jig names none.
 
-### `/followup` and `/jig:jig`
+### Jig's consumer follow-up arm and `/jig:jig`
 
-`/followup` runs after a release is tagged and before a machine has
+Jig's follow-up runs after a release is tagged and before a machine has
 necessarily upgraded, so the arm cannot read the installed plugin. Its
-Breaking-changes arm runs, once for each repository the machine's dispatch
+consumer arm runs, once for each repository the machine's dispatch
 file lists and one at a time with the stage's 60-second bound,
 `jig reconcile --json --repo <that repository's clone> --record <tag
 checkout>/plugin/consumer-actions.json`. The record is read from the Jig
@@ -459,7 +460,7 @@ One pull request per step, each shippable alone:
    Done when a tick notifies once for a new required id, not again on the next
    tick, and again only for a later id; a stage over its time reports a
    timeout; and no other stage is delayed.
-4. **The skill, `/followup` and `/jig:jig`.** `/jig:reconcile`, the arm's
+4. **The skill, Jig's consumer follow-up arm and `/jig:jig`.** `/jig:reconcile`, the arm's
    change, the `/jig:jig` re-evaluation, and the audit's note that this check
    exists. Done when the arm runs without asking which repositories are
    affected and `/jig:jig` no longer sends a reader to read the changelog by
