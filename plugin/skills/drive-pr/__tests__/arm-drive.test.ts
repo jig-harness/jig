@@ -497,13 +497,10 @@ function cleanEnv(extra: Record<string, string>): Record<string, string> {
   for (const [k, v] of Object.entries(process.env))
     if (
       v !== undefined &&
-      !/^(GIT_|DRIVE_PR_|ORCA_|CONDUCTOR_|CODEX_|JIG__)/.test(k) &&
-      ![
-        "CLAUDECODE",
-        "HERDR_ENV",
-        "CLAUDE_CODE_ENTRYPOINT",
-        "JIG_LAUNCH",
-      ].includes(k)
+      !/^(GIT_|DRIVE_PR_|ORCA_|CONDUCTOR_|CODEX_|JIG__|JIG_LAUNCH$|JIG_DISPATCHED_FROM$)/.test(
+        k,
+      ) &&
+      !["CLAUDECODE", "HERDR_ENV", "CLAUDE_CODE_ENTRYPOINT"].includes(k)
     )
       env[k] = v;
   return { ...env, ...extra };
@@ -640,7 +637,7 @@ describe("arm-drive.ts", () => {
       { CODEX_HOME: "/unused/codex" },
     );
     expectSpawnExit(run, 0);
-    expect(report(run)).toMatchObject({ model: "gpt-6.1-sol" });
+    expect(report(run)).toMatchObject({ model: "gpt-6.2-sol" });
   });
 
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {

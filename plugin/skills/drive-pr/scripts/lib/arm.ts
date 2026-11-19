@@ -34,6 +34,9 @@
  * its lock); under `tab` that is the answer. The tab is recorded as a run
  * tab (`shared/orca-tabs.ts`): the drive closes it when it ends with nothing
  * for a person, and arming the PR again closes its earlier idle run tabs.
+ * Since the tab's shell does not inherit the session's `JIG_LAUNCH`, a
+ * dispatched session's tab carries that launch as `JIG_DISPATCHED_FROM`
+ * (`dispatchedFromEnv`), so the drive's passes know they were dispatched.
  */
 import { shellQuote } from "../../../../shared/cli.ts";
 import { sessionOverrides } from "../../../../shared/session-overrides.ts";
@@ -51,6 +54,10 @@ import type { AccountVendor } from "./identity.ts";
 import type { ArmDriveMode } from "./overlay.ts";
 import { codexPermission, type PassArgs, permissionMode } from "./pass-args.ts";
 import { runTabEnv } from "../../../../shared/orca-tabs.ts";
+import {
+  DISPATCHED_FROM_VARIABLE,
+  dispatchedFrom,
+} from "../../../../shared/launched-session.ts";
 import { passCommand } from "./pass-command.ts";
 import { withCodexModel } from "./pass-model.ts";
 import { parseMs } from "../../../../shared/time.ts";
@@ -530,6 +537,16 @@ export function failedReport(
   };
 }
 
+/**
+ * The dispatched launch a tab's drive comes from, as the tab's
+ * `KEY=value` word: none for a session nobody dispatched, whose drive keeps
+ * the full gates.
+ */
+export function dispatchedFromEnv(env: Env): string[] {
+  const origin = dispatchedFrom(env);
+  return origin === null ? [] : [`${DISPATCHED_FROM_VARIABLE}=${origin}`];
+}
+
 /** Everything the arm decides from, read before it acts. */
 export interface ArmInputs {
   request: ArmRequest;
@@ -582,7 +599,12 @@ export async function arm(
   const outcome = await armInTab(
     choice.orca,
     request,
-    commandLine([...sessionOverrides(env), ...runTabEnv(env), ...base.argv]),
+    commandLine([
+      ...sessionOverrides(env),
+      ...runTabEnv(env),
+      ...dispatchedFromEnv(env),
+      ...base.argv,
+    ]),
     deps,
   );
   return tabReport(chosen, outcome, setting.value === "auto");

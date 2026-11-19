@@ -59,7 +59,7 @@ const JIG = join(PLUGIN, "jig.ts");
 /** The variables a session holds that the timer's tick does not: the line's, the drive's, the agent tools' and Orca's. */
 const SESSION_VARIABLE = /^(?:JIG_|DRIVE_PR_|CLAUDE|CODEX_|ORCA_)/;
 /** The variables a session holds that no tick reads as its own. */
-const LINE_VARIABLE = /^(?:JIG_LAUNCH$|DRIVE_PR_)/;
+const LINE_VARIABLE = /^(?:JIG_LAUNCH$|JIG_DISPATCHED_FROM$|DRIVE_PR_)/;
 
 function environment(drop: RegExp): Record<string, string> {
   return Object.fromEntries(
