@@ -19,16 +19,26 @@ const REDACTION_TAIL_BYTES = 32 * 1024;
 const REDACTION_PENDING_LIMIT = 2 * REDACTION_TAIL_BYTES;
 const TRUNCATED_LINE = "[redacted: oversized line dropped]";
 
+// What a line may end with while its credential value is still to come: a
+// key's separator, a Bearer or Basic scheme, or an opened quote. The mask reads
+// across line breaks there, so a cut after such an ending separates them.
+const OPEN_CONTEXT = /(?:[=:"']|\b(?:Bearer|Basic))\s*$/i;
+
 /**
  * Return the part that is safe to redact and write now: everything up to the
- * last line break before the fixed look-behind window. A key may be followed
- * by whitespace before its value, so a whitespace cut can separate them; a
- * line break ends the context the mask reads.
+ * last line break before the fixed look-behind window whose preceding text
+ * leaves no credential context open.
  */
 function redactionBoundary(text: string): number {
-  const limit = text.length - REDACTION_TAIL_BYTES;
-  if (limit <= 0) return 0;
-  return text.lastIndexOf("\n", limit - 1) + 1;
+  let from = text.length - REDACTION_TAIL_BYTES - 1;
+  while (from >= 0) {
+    const cut = text.lastIndexOf("\n", from);
+    if (cut < 0) return 0;
+    if (!OPEN_CONTEXT.test(text.slice(Math.max(0, cut - 256), cut)))
+      return cut + 1;
+    from = cut - 1;
+  }
+  return 0;
 }
 
 /** Keep the tail in memory and bound the file even while a large chunk arrives. */
@@ -62,8 +72,15 @@ export function openSpool(
     if (boundary === 0) {
       if (redactionTail.length <= REDACTION_PENDING_LIMIT)
         return Buffer.alloc(0);
-      redactionTail = "";
-      dropping = true;
+      // Drop only through the oversized line's own terminator; what follows
+      // it is ordinary pending text.
+      const lineEnd = redactionTail.indexOf("\n");
+      if (lineEnd < 0) {
+        redactionTail = "";
+        dropping = true;
+      } else {
+        redactionTail = redactionTail.slice(lineEnd);
+      }
       return Buffer.from(TRUNCATED_LINE);
     }
     const ready = redactionTail.slice(0, boundary);

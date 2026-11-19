@@ -290,6 +290,20 @@ const longOutput = readFileSync(join(processRunDirectory(longId), "output.log"),
 expect(longOutput).not.toContain("yyyy");
 expect(longOutput).toContain("oversized line dropped");
 expect(longOutput.endsWith("\\nafter\\n")).toBe(true);
+const newlineId = "20261118T141627Z-77777777";
+const newline = openSpool(newlineId, (error) => { throw error; });
+newline.write(Buffer.from("password=\\n"));
+newline.write(Buffer.from("sensitive" + " ".repeat(32768)));
+newline.close();
+expect(readFileSync(join(processRunDirectory(newlineId), "output.log"), "utf8")).not.toContain("sensitive");
+const suffixId = "20261118T141627Z-88888888";
+const suffix = openSpool(suffixId, (error) => { throw error; });
+suffix.write(Buffer.alloc(65536, "y"));
+suffix.write(Buffer.from("\\nafter\\n"));
+suffix.close();
+const suffixOutput = readFileSync(join(processRunDirectory(suffixId), "output.log"), "utf8");
+expect(suffixOutput).not.toContain("yyyy");
+expect(suffixOutput).toContain("after");
 
 `,
       );
