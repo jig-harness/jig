@@ -200,6 +200,12 @@ describe("workflowForCheck", () => {
     expect(workflowForCheck("1 windows", [ci, combined])).toBeNull();
     expect(workflowForCheck("1 linux", [ci, combined])).toBeNull();
     expect(workflowForCheck("Build windows", [ci, excluded])).toBeNull();
+    const repeated = {
+      path: ".github/workflows/repeated.yml",
+      text: "on: push\njobs:\n  t:\n    name: Pair ${{ matrix.n }}-${{ matrix.n }}\n    strategy:\n      matrix:\n        n: [1, 2]\n    runs-on: x\n",
+    };
+    expect(workflowForCheck("Pair 1-2", [ci, repeated])).toBeNull();
+    expect(workflowForCheck("Pair 1-1", [ci, repeated])).toBeNull();
   });
 
   it("says unknown when no workflow, or several, report it", () => {
