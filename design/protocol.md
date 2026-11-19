@@ -443,7 +443,9 @@ A reader learns that it must move from the release notes. The pull request
 that raises a chapter's version carries a change note marked breaking that
 names the chapter's file and says, as a required
 [consumer action](../GLOSSARY.md), what a reader must change; for a stable
-chapter the check above fails a breaking change without it. The chapter's
+chapter [the version check](#what-stable-promises-and-how-the-gate-holds-it)
+fails a breaking change without it. The notes arrive with the release that
+follows the merge, so the withdrawal gives no advance notice. The chapter's
 page and the index name the current version, and a reader that missed the
 notes meets the not-found answer at its next fetch. A reader that must stay on the old
 version for a while keeps its own copy: the plugin release it installed

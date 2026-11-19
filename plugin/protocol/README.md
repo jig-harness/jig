@@ -64,8 +64,9 @@ read.
 
 The release notes tell you to move: the change that raises a chapter's
 version is marked **Breaking:**, names the chapter's file and says what a
-reader must change. The chapter's page and the table below show the
-current version. To stay on an earlier version for a while, keep your own
+reader must change. The notes come with the release that follows that
+change, so the old addresses are withdrawn without advance notice. The
+chapter's page and the table below show the current version. To stay on an earlier version for a while, keep your own
 copy of its files: the plugin release you installed carries them in its
 `protocol/` folder, and Jig's repository holds them at each release's tag.
 Load a schema from that copy rather than from its `$id`, which is withdrawn
