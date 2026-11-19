@@ -1,9 +1,9 @@
 /**
  * A claimed item an open pull request carries: no session holds the item,
- * because its pickup ended once it opened the pull request, and a drive
- * works that pull request or has converged and waits for a person's merge.
- * The stall watch reads such an item as carried, not as a stalled pickup,
- * whether or not the repository names a `pr_open` state (`stalled-pr.ts`).
+ * because its pickup ended once it opened the pull request, and the pull
+ * request's drive holds the work, whatever state it is in. The stall watch
+ * reads such an item as carried, not as a stalled pickup, whether or not
+ * the repository names a `pr_open` state (`stalled-pr.ts`).
  *
  * - A pull request carries the item when the line links it to the item, as
  *   the need's framed decision reads it (`work-links.ts`: its branch names
@@ -11,11 +11,17 @@
  *   closes it), and its head is in the repository itself: one from a fork
  *   carries nothing, and one whose head repository did not read cannot be
  *   told from a fork, so the stall need says so.
- * - Its drive carries the item while the drive's state is `driving` or
- *   `converged`, the state the pull request's dispatch label shows
- *   (`labels.ts`). A pull request with no drive, or one whose drive stopped
- *   for a person, does not: the item is a stalled pickup, and its need names
- *   the pull request.
+ * - Its drive carries the item in every state it has: live, converged and
+ *   waiting for its merge, parked on a person's question, stopped and
+ *   waiting for a re-arm or a re-drive, or unplaced for this tick while the
+ *   forge leaves its state undecided (a mergeability still being computed).
+ *   Whatever a person must do there is the pull request's own need, so the
+ *   item raises no second one and is reported with the drive's state beside
+ *   it. A pull request with no drive does not carry it: the item is a
+ *   stalled pickup, and its need names the pull request.
+ * - A pull request the tick read as merged since the follow-up stage's
+ *   start that the line links to the item settles it: the follow-up moves
+ *   it, so the stall watch raises nothing.
  * - Where the open pull requests, their links or a linked pull request's
  *   drive did not read this tick, the stall watch reads the item as it reads
  *   one no pull request links, and its need says what could not be told.
@@ -24,7 +30,7 @@
  * the repository already read, and makes no forge request of its own.
  */
 import { stateOf } from "./labels.ts";
-import type { DrivenPr } from "./types.ts";
+import type { DrivenPr, MergedPr } from "./types.ts";
 import { type LinkRules, type PrLinkText, workLinks } from "./work-links.ts";
 
 /** An open pull request, by number and link. */
@@ -41,24 +47,41 @@ export interface CarrierInput {
   carriers(key: string): CarrierPr[] | null;
   /** The drive of one open pull request, as this tick read it. */
   drive(pr: number): CarrierDrive;
+  /** The pull requests merged since the follow-up stage's start that the line links to `key`; empty where none read. */
+  merged?(key: string): CarrierPr[];
 }
 
 /** One open pull request's drive, as the stall watch reads it. */
 export type CarrierDrive =
   | { kind: "driving" }
   | { kind: "converged" }
-  | { kind: "none"; why: string }
+  | { kind: "parked"; why: string }
   | { kind: "stopped"; why: string }
+  | { kind: "unplaced"; why: string }
+  | { kind: "none"; why: string }
   | { kind: "unread"; why: string };
 
-/** The drive states that carry an item. */
-export type CarryingDrive = "driving" | "converged";
+/** The drive states that carry an item: every state a drive the tick read can be in. */
+export type CarryingDrive =
+  | "driving"
+  | "converged"
+  | "parked"
+  | "stopped"
+  | "unplaced";
+
+/** The ledger classes of a drive parked on a person's question, which its own need frames. */
+const ASKS_PERSON: ReadonlySet<DrivenPr["class"]> = new Set([
+  "parked",
+  "needs-person",
+]);
 
 /** What the open pull requests make of a claimed item with no running session. */
 export type Carriage =
   /** No open pull request links it, or the carriers were not read: the stall watch reads the item by its other rules. */
   | { kind: "none" }
   | { kind: "carried"; pr: CarrierPr; drive: CarryingDrive; why: string }
+  /** A pull request linking it merged: the follow-up settles it. */
+  | { kind: "merged"; pr: CarrierPr; why: string }
   /** A pull request links it, but no drive carries it, or what carries it could not be told: the stall need says which. */
   | { kind: "stall"; note: string };
 
@@ -81,18 +104,19 @@ function carrierDrive(
     };
   }
   const projected = stateOf(drive);
+  const why = `${drive.class}${drive.why === "" ? "" : `: ${drive.why}`}`;
   if (projected === "unknown")
-    return {
-      kind: "unread",
-      why: `its drive's state could not be told (${drive.class}${drive.why === "" ? "" : `: ${drive.why}`})`,
-    };
+    // An unplaced ledger that read waits on a state the forge leaves undecided; one that did not read cannot be told.
+    return drive.class === "unplaced" && drive.readFailed !== true
+      ? { kind: "unplaced", why }
+      : {
+          kind: "unread",
+          why: `its drive's state could not be told (${why})`,
+        };
   if (projected.state === "driving" || projected.state === "converged")
     return { kind: projected.state };
   if (projected.state === null) return { kind: "none", why: "it has no drive" };
-  return {
-    kind: "stopped",
-    why: `its drive stopped (${drive.class}${drive.why === "" ? "" : `: ${drive.why}`})`,
-  };
+  return { kind: ASKS_PERSON.has(drive.class) ? "parked" : "stopped", why };
 }
 
 /**
@@ -110,6 +134,8 @@ export function carrierInput(read: {
   read: ReadonlySet<number>;
   /** Under `only_labeled`, the pull requests in scope: one outside it has no drive the tick reads. */
   inScope?: ReadonlySet<number>;
+  /** The pull requests merged since the follow-up stage's start, as the tick listed them. */
+  merged?: readonly MergedPr[];
 }): CarrierInput {
   const own = read.prs?.filter((p) => p.crossRepository !== true) ?? null;
   const unknownHead = new Set(
@@ -117,6 +143,19 @@ export function carrierInput(read: {
   );
   const links =
     own === null || read.rules === null ? null : workLinks(own, read.rules);
+  const merged = (read.merged ?? []).map(
+    (p): PrLinkText => ({
+      number: p.number,
+      url: p.url,
+      headRefName: p.head,
+      body: p.body ?? "",
+      closing: [],
+    }),
+  );
+  const mergedLinks =
+    read.rules === null || merged.length === 0
+      ? null
+      : workLinks(merged, read.rules);
   return {
     carriers: (key) =>
       links
@@ -125,6 +164,7 @@ export function carrierInput(read: {
           unknownHead.has(p.number) ? { ...p, headUnread: true } : p,
         ) ?? null,
     drive: (pr) => carrierDrive(pr, read.drives, read.read, read.inScope),
+    merged: (key) => mergedLinks?.prsOf(key) ?? [],
   };
 }
 
@@ -134,21 +174,54 @@ function prName(pr: CarrierPr, named?: number): string {
     : `pull request #${pr.number} (${pr.url})`;
 }
 
+/** What the drive's state makes of the item, after the pull request that links it. */
+const DRIVE_TEXT: Record<CarryingDrive, (why: string) => string> = {
+  driving: () => "its drive is live",
+  converged: () => "its drive converged and it waits for its merge",
+  parked: (why) =>
+    `its drive is parked on a person's question (${why}), which is the pull request's own need`,
+  stopped: (why) =>
+    `its drive stopped (${why}) and waits for a re-arm or a re-drive, which is the pull request's own need`,
+  unplaced: (why) =>
+    `its drive's state is undecided this tick (${why}), which a later tick reads again`,
+};
+
 function carriedWhy(
   state: string,
   pr: CarrierPr,
-  drive: CarryingDrive,
+  drive: CarrierDrive & { kind: CarryingDrive },
 ): string {
-  const how =
-    drive === "driving"
-      ? "its drive is live"
-      : "its drive converged and it waits for its merge";
+  const how = DRIVE_TEXT[drive.kind]("why" in drive ? drive.why : "");
   return `in ${state} with no running session: carried by ${prName(pr)}, which links it; ${how}`;
 }
 
+/** Whether a drive the tick read carries the item. */
+function carries(
+  drive: CarrierDrive,
+): drive is CarrierDrive & { kind: CarryingDrive } {
+  return drive.kind !== "none" && drive.kind !== "unread";
+}
+
+/** The first merged pull request that links the item, if any. */
+function mergedCarriage(
+  item: { key: string; state: string },
+  input: CarrierInput,
+): Carriage | null {
+  const [pr] = [...(input.merged?.(item.key) ?? [])].sort(
+    (a, b) => a.number - b.number,
+  );
+  if (pr === undefined) return null;
+  return {
+    kind: "merged",
+    pr,
+    why: `in ${item.state} with no running session: ${prName(pr)}, which links it, merged; its follow-up settles it`,
+  };
+}
+
 /**
- * What the open pull requests that link a claimed item make of it; `none`
- * without the input. `named` is a pull request the stall need already names
+ * What the pull requests that link a claimed item make of it, an open one
+ * whose drive carries it first, then a merged one; `none` without the
+ * input. `named` is a pull request the stall need already names
  * in full, which the note then names by number alone.
  */
 export function readCarriage(
@@ -157,6 +230,17 @@ export function readCarriage(
   named?: number,
 ): Carriage {
   if (input === undefined) return { kind: "none" };
+  const open = openCarriage(item, input, named);
+  if (open.kind === "carried") return open;
+  return mergedCarriage(item, input) ?? open;
+}
+
+/** What the open pull requests that link the item make of it. */
+function openCarriage(
+  item: { key: string; state: string },
+  input: CarrierInput,
+  named: number | undefined,
+): Carriage {
   const prs = input.carriers(item.key);
   if (prs === null)
     return {
@@ -177,12 +261,12 @@ export function readCarriage(
       unread = true;
       continue;
     }
-    if (drive.kind === "driving" || drive.kind === "converged")
+    if (carries(drive))
       return {
         kind: "carried",
         pr,
         drive: drive.kind,
-        why: carriedWhy(item.state, pr, drive.kind),
+        why: carriedWhy(item.state, pr, drive),
       };
     // The stall need already says the named pull request links the item.
     told.push(

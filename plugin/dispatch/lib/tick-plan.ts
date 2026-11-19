@@ -214,7 +214,7 @@ function withTrees(
   return { trees: (path) => readPickupTree(path, deadlineMs) };
 }
 
-/** Which open pull requests carry an item, and the drives the tick read for them (`carried-pr.ts`). */
+/** Which open pull requests carry an item, the drives the tick read for them, and the merged pull requests that settle one (`carried-pr.ts`). */
 function carriersOf(
   observation: RepoObservation,
   prs: readonly PrLinkText[] | null,
@@ -234,6 +234,7 @@ function carriersOf(
     drives,
     read: forge.read,
     ...(forge.scoped ? { inScope: forge.inScope } : {}),
+    merged: forge.merged,
   });
 }
 

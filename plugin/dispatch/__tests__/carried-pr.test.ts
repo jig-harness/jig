@@ -1,12 +1,14 @@
 /**
  * dispatch and a claimed item an open pull request carries: in a repository
  * that names no `pr_open` state, an item with no running session past
- * `dispatch.stalled_after` whose open pull request links it, while that pull
- * request's drive is live or converged, raises no stall need and is reported
- * as carried by it, on the tick's report and on the line. A pull request
- * with no drive, a stopped drive, a fork's pull request, and open pull
- * requests that did not read leave the stall need, which names what could
- * not be told.
+ * `dispatch.stalled_after` whose open pull request links it raises no stall
+ * need while that pull request's drive is live, converged, parked on a
+ * question, stopped or undecided this tick, and is reported as carried by
+ * it with the drive's state, on the tick's report and on the line; the
+ * drive's own need stays. A merged pull request that links it settles it.
+ * No linking pull request, a pull request with no drive, a fork's pull
+ * request, and open pull requests or a drive that did not read leave the
+ * stall need, which names what could not be told.
  */
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -22,15 +24,18 @@ import { readBy } from "../lib/line-merge.ts";
 import { readLine, writeLine } from "../lib/line-store.ts";
 import { closeStateDb } from "../lib/state.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
+import { planTick } from "../lib/plan.ts";
 import type { StalledPrInput } from "../lib/stalled-pr.ts";
 import type {
   ClaimedItem,
   DispatchSection,
   DrivenPr,
   LedgerClass,
+  MergedPr,
 } from "../lib/types.ts";
 import type { PrLinkText } from "../lib/work-links.ts";
 import { input as lineInput, REPO, report } from "./line-fixtures.ts";
+import { planInput } from "./plan-input-fixtures.ts";
 import { BRANCH, endedPickup, idleSessions } from "./ended-pickup-fixtures.ts";
 import { SLUG } from "./fixtures.ts";
 import { parseMs } from "../../shared/time.ts";
@@ -78,6 +83,7 @@ function stalled(
   drives: DrivenPr[],
   read: ReadonlySet<number> = new Set([31]),
   inScope?: ReadonlySet<number>,
+  merged?: MergedPr[],
 ): StalledPrInput {
   return {
     prs,
@@ -101,6 +107,7 @@ function stalled(
       drives,
       read,
       ...(inScope === undefined ? {} : { inScope }),
+      ...(merged === undefined ? {} : { merged }),
     }),
   };
 }
@@ -172,11 +179,80 @@ describe("a claimed item an open pull request carries", () => {
     expect(reason).toContain("pull request #31: it has no drive");
   });
 
-  it("is still a stalled pickup naming the pull request when its drive stopped", () => {
-    const reason = expectStalled(
-      planPickups(input(stalled([pr()], [drive("parked")]))),
+  it("raises no stall need while the drive is parked on a question, stopped, or undecided this tick, and is reported with the drive's state", () => {
+    const unplaced = {
+      ...drive("unplaced"),
+      why: "whether it conflicts with its base is not known yet",
+    };
+    for (const [ledger, state, text] of [
+      [drive("parked"), "parked", "parked on a person's question"],
+      [drive("needs-person"), "parked", "parked on a person's question"],
+      [drive("stale"), "stopped", "waits for a re-arm or a re-drive"],
+      [
+        drive("stopped-by-person"),
+        "stopped",
+        "waits for a re-arm or a re-drive",
+      ],
+      [
+        unplaced,
+        "unplaced",
+        "undecided this tick (unplaced: whether it conflicts",
+      ],
+    ] as const) {
+      const plan = planPickups(input(stalled([pr()], [ledger])));
+      expect(plan.actions).toEqual([]);
+      const [quiet] = plan.quiet.filter((q) => q.class === "claimed-carried");
+      expect(quiet?.carried).toEqual({ pr: 31, url: URL, drive: state });
+      expect(quiet?.why).toContain(text);
+    }
+  });
+
+  it("leaves the parked drive's own need as the only one", () => {
+    const parked = drive("parked");
+    const pickups = input(stalled([pr()], [parked]));
+    const plan = planTick(planInput(NOW, { ...pickups, drives: [parked] }));
+    expect(plan.actions).toContainEqual(
+      expect.objectContaining({ target: "PR #31", cause: "parked" }),
     );
-    expect(reason).toContain(`pull request #31: its drive stopped (parked`);
+    expect(plan.actions).not.toContainEqual(
+      expect.objectContaining({ cause: "stalled" }),
+    );
+  });
+
+  it("raises no stall need for an item a merged pull request links: its follow-up settles it", () => {
+    const merged: MergedPr = {
+      number: 30,
+      url: `https://github.com/${SLUG}/pull/30`,
+      title: "issue 12",
+      head: BRANCH,
+      mergedAt: "2026-11-14T16:00:00Z",
+    };
+    for (const open of [[], null]) {
+      const plan = planPickups(
+        input(stalled(open, [], new Set(), undefined, [merged])),
+      );
+      expect(plan.actions).toEqual([]);
+      expect(plan.quiet).toContainEqual({
+        target: "#12",
+        class: "claimed-merged",
+        why: expect.stringContaining("pull request #30"),
+      });
+    }
+  });
+
+  it("is a stalled pickup when no pull request links it", () => {
+    const other = pr({
+      number: 32,
+      headRefName: "another-branch",
+      body: "Closes #99",
+      closing: [{ number: 99, repository: SLUG }],
+    });
+    for (const prs of [[], [other]]) {
+      const reason = expectStalled(
+        planPickups(input(stalled(prs, [LIVE], new Set([31, 32])))),
+      );
+      expect(reason).toContain("stalled pickup");
+    }
   });
 
   it("is not quieted by a fork's pull request that links it, or one whose head repository did not read", () => {
@@ -203,7 +279,11 @@ describe("a claimed item an open pull request carries", () => {
   });
 
   it("is a stalled pickup when the linked pull request's drive did not read, and the need says so", () => {
-    const unplaced = { ...drive("unplaced"), why: "its comments did not read" };
+    const unplaced: DrivenPr = {
+      ...drive("unplaced"),
+      why: "its comments did not read",
+      readFailed: true,
+    };
     for (const [drives, read] of [
       [[unplaced], new Set([31])],
       [[], new Set<number>()],
@@ -311,7 +391,7 @@ describe("the line", () => {
       writeLine(
         {
           ...line,
-          carried: [{ ...entry, drive: "parked" } as unknown as LineCarried],
+          carried: [{ ...entry, drive: "merged" } as unknown as LineCarried],
         },
         "{}",
         root,

@@ -410,14 +410,23 @@ function carriageOf(
   );
 }
 
-/** Quiets an item a driven pull request carries, unless it is still to move to pr_open; whether it did. */
+/** Quiets an item a driven pull request carries or a merged one settles, unless it is still to move to pr_open; whether it did. */
 function carriedQuiet(
   item: ClaimedItem,
   carriage: Carriage,
   pr: LaunchPrReading,
   plan: PickupPlan,
 ): boolean {
-  if (carriage.kind !== "carried" || pr.step?.kind === "move") return false;
+  if (pr.step?.kind === "move") return false;
+  if (carriage.kind === "merged") {
+    plan.quiet.push({
+      target: item.key,
+      class: "claimed-merged",
+      why: carriage.why,
+    });
+    return true;
+  }
+  if (carriage.kind !== "carried") return false;
   plan.quiet.push({
     target: item.key,
     class: "claimed-carried",

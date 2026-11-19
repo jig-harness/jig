@@ -163,8 +163,10 @@ export type PickupClass =
   | "claimed"
   | "claimed-by-person"
   | "claimed-pr-open"
-  /** A claimed item with no running session that an open pull request whose drive is live or converged carries (`carried-pr.ts`). */
+  /** A claimed item with no running session that an open pull request's drive carries, in whatever state it is (`carried-pr.ts`). */
   | "claimed-carried"
+  /** A claimed item with no running session that a merged pull request links: its follow-up settles it (`carried-pr.ts`). */
+  | "claimed-merged"
   /** Under the host's `priorities.enforce`: a pickup whose priority lane is out of rotation (`priorities-order.ts`). */
   | "lane-paused";
 
@@ -810,7 +812,7 @@ export interface RepoReport {
     carried?: {
       pr: number;
       url: string;
-      drive: "driving" | "converged";
+      drive: import("./carried-pr.ts").CarryingDrive;
     };
   }>;
 }

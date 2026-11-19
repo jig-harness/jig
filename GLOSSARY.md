@@ -2538,13 +2538,17 @@ make, use the entry's term instead.
   orchestrator, lead agent.
 - **Carried item** — a claimed item no session holds that an open pull
   request of its own repository carries: the line links the pull request to
-  the item, and its drive is live or has converged and waits for a person's
-  merge. The dispatcher reports it, and the line lists it, as carried
-  rather than as a stalled pickup. A pull request with no drive, or a
-  stopped one, does not carry it, and the stall need names the pull
-  request. An item already in the tracker's pull-request-open state, or
-  with a move to it still to make, keeps its existing handling and is not
-  reported as carried.
+  the item, and the pull request has a drive, whatever its state (live,
+  converged and waiting for a person's merge, parked on a person's
+  question, stopped for a re-arm or a re-drive, or undecided for one tick).
+  The dispatcher reports it, and the line lists it, as carried, with the
+  drive's state, rather than as a stalled pickup: a person's step there is
+  the pull request's own need. A pull request with no drive does not carry
+  it, and the stall need names the pull request. An item a merged pull
+  request links is not a stalled pickup either: its follow-up settles it.
+  An item already in the tracker's pull-request-open state, or with a move
+  to it still to make, keeps its existing handling and is not reported as
+  carried.
 - **Dispatch dashboard** — the page a person watches and steers the
   execution line from, and the process that serves it. Today
   `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to
