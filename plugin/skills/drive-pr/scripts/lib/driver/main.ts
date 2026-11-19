@@ -45,10 +45,7 @@ import {
 
 import { registerCleanup } from "./../../../../../shared/cleanup.ts";
 
-import {
-  LAUNCH_VARIABLE,
-  passLaunch,
-} from "./../../../../../shared/launched-session.ts";
+import { passLaunchEnv } from "./../../../../../shared/launched-session.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -486,8 +483,9 @@ async function drive(ctx: DriveContext): Promise<number> {
 
   // A pass is a session the line started, so `jig send` refuses it a
   // person's commands: it carries the launch this driver inherited from the
-  // dispatcher's wrapper, else this driver's own name.
-  process.env[LAUNCH_VARIABLE] = passLaunch(process.env, pr, generation);
+  // dispatcher's wrapper, else this driver's own name; a drive a dispatched
+  // session armed also hands them the launch it came from.
+  Object.assign(process.env, passLaunchEnv(process.env, pr, generation));
 
   // DURABLE knowledge of where this drive's state lives, handed to every pass
   // so the fence never has to re-derive it from a `.git` marker that may be
