@@ -36,6 +36,7 @@ import {
   type RepoObservation,
 } from "./tick-observe.ts";
 import { observeReleaseTags } from "./release-gates.ts";
+import { rereadPendingArms } from "./arm-reread.ts";
 import { releaseStationOn } from "./release-handoff.ts";
 import {
   adoptReleaseHandoffs,
@@ -163,6 +164,19 @@ export async function observeOpenedTurn(
         )
       : [];
 
+  if (forge.ok && opened.section.followupCommand !== null) {
+    const settled = await timer.time("forge", () =>
+      rereadPendingArms(opened.repo, forge.merged, allRecords(context), bound),
+    );
+    if (settled.ok) observation.armsSettled = settled.value;
+    else
+      opened.report.records.push({
+        record: "forge",
+        source: `gh ${opened.repo.slug} release tags`,
+        ok: false,
+        detail: `The pending follow-up arms past dispatch.followup_within were not read again, so they go to a person as their passes read them: ${settled.failure.reason}`,
+      });
+  }
   if (releaseStationOn(opened)) {
     const tags = await timer.time("forge", () =>
       observeReleaseTags(opened.repo, context.nowMs, bound),

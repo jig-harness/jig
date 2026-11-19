@@ -105,6 +105,9 @@ export function planObserved(
       ? {}
       : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
     ...withStalledPr(observation),
     ...withTrees(context, opened.stages.has("pickup")),
   });

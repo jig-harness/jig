@@ -22,10 +22,23 @@
  *    - a rate limit's: the `WAITS_FOR_PERSON`th rate-limit wait of the run;
  *    - a pending arm's: a pending wait launched once the repository's
  *      `dispatch.followup_within` (kept on the launch record) has passed
- *      since the launch of the run's first pending wait, the arm still
+ *      since the launch of the window's first pending wait, the arm still
  *      pending. A pending wait neither counts toward the rate limit's
  *      limit nor starts it again: it is not a rate limit, and the pass that
  *      recorded it met none on the way.
+ *
+ *      A window starts again when a pass names another arm than the one
+ *      its window started on: the release tags each names, or its words
+ *      where it names none (a newer release replaced the one waited for).
+ *      However often it starts again, a run of pending waits is a person's
+ *      once `WINDOWS_FOR_PERSON` windows have passed since its first.
+ *
+ *      Before the first wait past a window goes to a person, the tick reads
+ *      the release tags its arm names again (`armTags`, `arm-reread.ts`):
+ *      when every one now exists, the arm has settled, so the tick releases
+ *      the marker instead and the follow-up runs once more, continuing the
+ *      run. A wait past the window that follows one, or whose arm names no
+ *      tag, goes to a person as it reads.
  *
  * A pass that stopped on a question instead, whose question names a rate
  * limit and carries no routine class's tag (`routine-questions.ts`), waits
@@ -58,9 +71,13 @@ import {
   type WaitFor,
 } from "./wait-for.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
+import { releaseTag } from "../../shared/records/release-tags.ts";
 
 /** The rate-limit waits in a row at which a follow-up is a person's. */
 const WAITS_FOR_PERSON = 3;
+
+/** The windows of `dispatch.followup_within` after a run's first pending wait at which it is a person's, however often a newer arm started its window again. */
+const WINDOWS_FOR_PERSON = 3;
 
 /** `dispatch.followup_within`'s default, for a record written before it kept the repository's. */
 const DEFAULT_WITHIN_MS = 3_600_000;
@@ -81,6 +98,30 @@ export interface WaitStreak {
   withinMs: number;
   /** The newest wait went past its kind's limit: the follow-up is a person's. */
   spent: boolean;
+  /** For the first pending wait past its window: the release tags its arm names, which the tick reads again before the follow-up goes to a person; empty otherwise. */
+  reread: string[];
+}
+
+/** Characters that end a word in an arm's text: a release tag holds none. */
+const WORD_END = /[\s,;:()[\]{}<>"'`]+/;
+
+/** The release tags an arm's words name, as a release tag is spelled (`releaseTag`), in order of first mention. */
+export function armTags(arm: string | undefined): string[] {
+  if (arm === undefined) return [];
+  const words = arm
+    .split(WORD_END)
+    .map((w) => w.replace(/[.…]+$/, ""))
+    .filter((w) => releaseTag(w));
+  return [...new Set(words)];
+}
+
+/** What an arm is, to tell a newer one from the one a window started on: the tags it names, else its words; `null` when it named none. */
+function armKey(wait: WaitFor): string | null {
+  if (wait.arm === undefined) return null;
+  const tags = armTags(wait.arm);
+  return tags.length > 0
+    ? [...tags].sort().join(" ")
+    : wait.arm.replace(/\s+/g, " ").trim();
 }
 
 /** How long a pass that stopped on a rate-limit question waits after it ended: the reset its prompt names when the forge names none. */
@@ -156,30 +197,67 @@ function attemptOf(r: ReadRecord): Attempt {
 /** The run of waits so far, as `streakOf` folds it. */
 interface Run {
   count: number;
+  /** When the current window of pending waits began. */
   pendingSince: string | null;
+  /** When the run's first pending wait was launched, which no newer arm moves. */
+  firstPending: string | null;
+  /** The arm the current window started on (`armKey`). */
+  arm: string | null;
+  /** The pending waits past the current window. */
+  past: number;
   spent: boolean;
+  reread: string[];
 }
 
-const EMPTY: Run = { count: 0, pendingSince: null, spent: false };
+const EMPTY: Run = {
+  count: 0,
+  pendingSince: null,
+  firstPending: null,
+  arm: null,
+  past: 0,
+  spent: false,
+  reread: [],
+};
+
+/** The pending run after `a`, a pending wait, from `from`. */
+function nextPending(from: Run, a: Attempt): Run {
+  const arm = armKey(a.wait);
+  const fresh =
+    from.pendingSince === null ||
+    (arm !== null && from.arm !== null && arm !== from.arm);
+  const pendingSince = fresh ? a.createdAt : (from.pendingSince as string);
+  const firstPending = from.firstPending ?? a.createdAt;
+  const at = parseMs(a.createdAt);
+  const waited = at - parseMs(pendingSince);
+  const overall = at - parseMs(firstPending);
+  const pastWindow = Number.isFinite(waited) && waited >= a.withinMs;
+  const pastRun =
+    Number.isFinite(overall) && overall >= WINDOWS_FOR_PERSON * a.withinMs;
+  const past = (fresh ? 0 : from.past) + (pastWindow ? 1 : 0);
+  return {
+    count: from.count,
+    pendingSince,
+    firstPending,
+    arm: fresh ? arm : from.arm,
+    past,
+    spent: pastWindow || pastRun,
+    reread: pastWindow && !pastRun && past === 1 ? armTags(a.wait.arm) : [],
+  };
+}
 
 /** The run after `a`, a wait: counted by its kind, and spent once past its kind's limit. */
 function nextRun(run: Run, a: Attempt): Run {
-  // A run a person settled, or one a person's answer started again, starts over.
-  const from = run.spent || a.answeredByPerson ? EMPTY : run;
-  if (a.wait.reason === "pending") {
-    const pendingSince = from.pendingSince ?? a.createdAt;
-    const waited = parseMs(a.createdAt) - parseMs(pendingSince);
-    return {
-      count: from.count,
-      pendingSince,
-      spent: Number.isFinite(waited) && waited >= a.withinMs,
-    };
-  }
+  // A run a person settled, or one a person's answer started again, starts
+  // over; one the tick may have run once more on its arm's tags goes on.
+  const from =
+    (run.spent && run.reread.length === 0) || a.answeredByPerson ? EMPTY : run;
+  if (a.wait.reason === "pending") return nextPending(from, a);
   const count = from.count + 1;
   return {
+    ...from,
     count,
-    pendingSince: from.pendingSince,
     spent: count >= WAITS_FOR_PERSON,
+    reread: [],
   };
 }
 
@@ -208,6 +286,7 @@ function streakOf(attempts: Attempt[]): WaitStreak | null {
     pendingSince: run.pendingSince,
     withinMs: newest.withinMs,
     spent: run.spent,
+    reread: run.reread,
   };
 }
 
@@ -371,8 +450,9 @@ function ownMarkers(pr: MarkedPr, host: string, record: string): number[] {
 
 /**
  * With `--apply`: delete the marker of each follow-up whose wait has ended,
- * so a later tick starts it again; only on the pull requests in `scope`
- * when one is given. Returns why a marker could not be deleted, which the
+ * or whose spent wait's arm the tick read as settled (`settled`, by launch
+ * record), so a later tick starts it again; only on the pull requests in
+ * `scope` when one is given. Returns why a marker could not be deleted, which the
  * next tick deletes.
  */
 export async function releaseWaitMarkers(
@@ -381,36 +461,41 @@ export async function releaseWaitMarkers(
   records: readonly ReadRecord[],
   nowMs: number,
   scope?: ReadonlySet<number>,
+  settled: ReadonlySet<string> = new Set(),
 ): Promise<string[]> {
   const failures: string[] = [];
   for (const pr of merged) {
     if (scope !== undefined && !scope.has(pr.number)) continue;
-    const streak = waitEnded(records, ctx.slug, pr.number, nowMs);
+    const streak = waitEnded(records, ctx.slug, pr.number, nowMs, settled);
     if (streak === null) continue;
     failures.push(
       ...(await releaseOwnMarkers(
         ctx,
         pr,
         streak.record,
-        streak.wait.reason === "pending"
-          ? `waited on ${armWords(streak.wait)} still pending`
-          : "waited out a rate limit",
+        streak.spent
+          ? `found ${armWords(streak.wait)} still pending, whose tags now exist`
+          : streak.wait.reason === "pending"
+            ? `waited on ${armWords(streak.wait)} still pending`
+            : "waited out a rate limit",
       )),
     );
   }
   return failures;
 }
 
-/** The wait of the follow-up of `pr` whose time has passed and whose pass has ended; `null` for any other. */
+/** The wait of the follow-up of `pr` whose time has passed, or whose arm the tick read as settled, and whose pass has ended; `null` for any other. */
 function waitEnded(
   records: readonly ReadRecord[],
   slug: string,
   pr: number,
   nowMs: number,
+  settled: ReadonlySet<string>,
 ): WaitStreak | null {
   const streak = waitStreak(records, slug, pr);
-  if (streak === null || streak.spent) return null;
-  if (!waitOver(streak, nowMs)) return null;
+  if (streak === null) return null;
+  if (streak.spent ? !settled.has(streak.record) : !waitOver(streak, nowMs))
+    return null;
   const found = records.find((r) => r.record.id === streak.record);
   const ended = found?.state.kind === "ended" || found?.state.kind === "died";
   return ended ? streak : null;

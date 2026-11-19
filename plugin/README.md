@@ -889,7 +889,13 @@ are never reported as a rate limit, and they do not count toward the rate
 limit's three. The outcome log classes such a pass `arm pending`, which
 the dashboard shows as held back, not as finishing badly. A pass that still finds the arm pending once
 `dispatch.followup_within` has passed since the first pass that found it so
-is notified as a failed follow-up that names the arm. `--reason` absent is
+is notified as a failed follow-up that names the arm. That window starts
+again when a pass names a newer arm than the one it started on (another
+release tag, or other words where it names none), up to three windows after
+the first pending pass. Before the first pass past a window goes to a
+person, the tick reads the release tags its arm names once more: when they
+all exist, it releases the marker instead and the follow-up runs again; a
+pass past the window after that one goes to a person. `--reason` absent is
 `rate-limit`.
 
 A Claude follow-up that exits unsuccessfully within a minute without a
