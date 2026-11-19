@@ -1294,7 +1294,7 @@
       "options": "clear, hold",
       "option": null,
       "reversible": null,
-      "meaning": "A pending launch record that no tick launches again."
+      "meaning": "A pending launch record that no tick launches again, or one of unknown process that holds a drive."
     },
     {
       "kind": "station-option",
