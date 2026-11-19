@@ -781,8 +781,11 @@ development and shipped as a version.
   writes the change through its implementer, and reviews it. It follows the
   route and the plan the scripts print rather than choosing its own.
 - **If it fails.** The `do-item` session stops on a refused claim and says
-  so. A claimed item with no running session is reported by the tick as a
-  stalled pickup and never relaunched; a person settles it. A served
+  so. A claimed item with no running session is a stalled pickup, never
+  started afresh: when its pickup's own tree still holds its work, the tick
+  relaunches it once per head in that tree to push and record it
+  (`dispatch/lib/pickup-relaunch.ts`); otherwise the tick reports it and a
+  person settles it. A served
   person's item counts only when a pickup of this host claimed it.
 
 ### Conflicts and CI repair

@@ -43,6 +43,7 @@ import { applyStewardOrder } from "./steward-queue.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
+import { readPickupTree, type TreeReader } from "./pickup-tree.ts";
 import { type CarrierInput, carrierInput } from "./carried-pr.ts";
 import { branchPattern } from "./section.ts";
 import type { PrLinkText } from "./work-links.ts";
@@ -104,6 +105,7 @@ export function planObserved(
       : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
     ...withStalledPr(observation),
+    ...withTrees(context, opened.stages.has("pickup")),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
   // Reported only, and weighed after the priorities ranking so it sees the pickup order that starts.
@@ -174,6 +176,20 @@ function withStalledPr(observation: RepoObservation): {
         })(body),
     },
   };
+}
+
+/**
+ * What reads a stalled pickup's tree for the work it left, with local git
+ * bounded by the tick's deadline; none where the pickup stage, which
+ * applies a relaunch, is not enabled for the repository on this host.
+ */
+function withTrees(
+  context: TickContext,
+  pickup: boolean,
+): { trees?: TreeReader } {
+  if (!pickup) return {};
+  const deadlineMs = deadlineOf(context.options.machine, context.startedMs);
+  return { trees: (path) => readPickupTree(path, deadlineMs) };
 }
 
 /** Which open pull requests carry an item, and the drives the tick read for them (`carried-pr.ts`). */

@@ -19,7 +19,12 @@ import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
 import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
-import type { AdoptRule, DispatchSection, StalledScope } from "./types.ts";
+import type {
+  AdoptRule,
+  DispatchSection,
+  StalledRelaunch,
+  StalledScope,
+} from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
 /** The command a follow-up runs where the repository names none: the plugin's own follow-up skill. */
@@ -45,6 +50,7 @@ const KEYS = [
   "followup_command",
   "stalled_after",
   "stalled_scope",
+  "stalled_relaunch",
   "blocked_after",
   "drive_rounds_flat",
   "pickup_within",
@@ -349,12 +355,22 @@ function stalledScope(value: unknown): Checked<StalledScope> {
     : invalid("dispatch.stalled_scope must be claimed or assigned");
 }
 
+/** `stalled_relaunch`: `finish-once` unless the section says `never`. */
+function stalledRelaunch(value: unknown): Checked<StalledRelaunch> {
+  if (value === undefined || value === null) return ok("finish-once");
+  return value === "finish-once" || value === "never"
+    ? ok(value)
+    : invalid("dispatch.stalled_relaunch must be finish-once or never");
+}
+
 /** The section's waits and expectations, and where and how often notices go. */
 function timings(section: Record<string, unknown>): Checked<Timings> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
   if (!stalledAfterMs.ok) return stalledAfterMs;
   const scope = stalledScope(section.stalled_scope);
   if (!scope.ok) return scope;
+  const relaunch = stalledRelaunch(section.stalled_relaunch);
+  if (!relaunch.ok) return relaunch;
   const blockedAfterMs = wait(section.blocked_after, "blocked_after");
   if (!blockedAfterMs.ok) return blockedAfterMs;
   const driveRoundsFlat = rounds(section.drive_rounds_flat);
@@ -394,6 +410,7 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   return ok({
     stalledAfterMs: stalledAfterMs.value,
     stalledScope: scope.value,
+    stalledRelaunch: relaunch.value,
     blockedAfterMs: blockedAfterMs.value,
     driveRoundsFlat: driveRoundsFlat.value,
     pickupWithinMs: pickupWithinMs.value,

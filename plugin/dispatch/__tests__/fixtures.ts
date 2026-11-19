@@ -105,8 +105,8 @@ if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("q
   if (answer === null) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   out(answer);
 }
-if (args[0] === "api" && args[1] === "-i")
-  require(${JSON.stringify(QUERY_FAKE)}).replyConditionalCommentPage(F, args);
+if (args[0] === "api" && args[1] === "-i") require(${JSON.stringify(QUERY_FAKE)}).replyConditionalCommentPage(F, args);
+if (args[0] === "api" && args[1] === "graphql") require(${JSON.stringify(QUERY_FAKE)}).replyParkedThread(F, args);
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchBoard"))) {
   // The board read's query: board.json's answer, failing while board-fail exists or when no test wrote one.
   if (fs.existsSync(F + "/board-fail") || !fs.existsSync(F + "/board.json")) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }

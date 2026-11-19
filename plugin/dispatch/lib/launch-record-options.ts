@@ -54,6 +54,8 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "blockingFor",
       "stewardResume",
       "stewardContext",
+      "relaunchOf",
+      "relaunchHead",
       "heads",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(

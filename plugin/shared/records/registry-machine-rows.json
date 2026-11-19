@@ -142,7 +142,7 @@
       "dispatch-pickup-read",
       "dispatch/lib/pickup-reads.ts",
       "pickup_reads",
-      "What a tick's reads keep for the next tick: an item's assignment, which a changed tracker timestamp invalidates, and the page size a forge query read at."
+      "What a tick's reads keep for the next tick: an item's assignment, which a changed tracker timestamp invalidates, the page size a forge query read at, and the comments of parked review threads, until their pull request closes."
     ],
     [
       "dispatch-load-sample",

@@ -1,7 +1,8 @@
 /**
  * What a tick's reads keep for the next tick: assignment metadata, which a
  * changed tracker timestamp invalidates, the page size a forge query read
- * at (`tick-reads.ts`), and open pull requests' changed files.
+ * at (`tick-reads.ts`), open pull requests' changed files, and parked review
+ * threads' comments (`sources/park-threads.ts`).
  */
 import { swallow } from "../../shared/errors.ts";
 import { stateDb } from "./state.ts";
@@ -47,7 +48,7 @@ export const pickupReads: PickupReads & {
         )
         .run(prefix, `${prefix}\uffff`, JSON.stringify(liveKeys));
     } catch (error) {
-      swallow(error, "prune closed pull request file readings");
+      swallow(error, "prune closed pull requests' readings");
     }
   },
 };

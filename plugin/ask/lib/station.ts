@@ -102,6 +102,7 @@ export function recordHolder(r: ReadRecord, generation: number | null): Holder {
     generation,
     process,
     why,
+    since: record.createdAt,
     local: {
       account: record.account,
       record: record.id,

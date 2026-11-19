@@ -661,8 +661,14 @@ it to itself) keeps the item assigned to the factory identity. The tick
 then finds claimed items with the same read over the in-progress state: one
 with no running session and no launch record still running for longer than
 `dispatch.stalled_after` (30 minutes by default) is reported as stalled and
-notified, never relaunched, since a relaunch would start a second
-implementer on a claimed item. A claimed item with no running session whose
+notified, never started afresh, since a fresh session would be a second
+implementer on a claimed item. One whose pickup left its work in its own
+tree (commits not pushed, edits not committed, or no result recorded) is
+relaunched once per head in that tree, with a fixed prompt to push and
+record the work, rather than reported (`dispatch.stalled_relaunch`,
+`finish-once` by default, `never` to turn it off); a second stall at the
+same head, or a tree no open workspace on the host holds, is reported. A
+claimed item with no running session whose
 launch already opened its pull request is finished work, not a stall: when
 an open pull request whose head is the branch the runtime reports in the
 workspace of this host's launch record for the item links it as `do-item`
@@ -1882,7 +1888,9 @@ A person's on-demand start of a pass through `jig send` is not built.
   reported, never taken over.
 - **Re-arm a drive a person may have stopped** (an explicit mailbox stop or
   pause), or relaunch a stalled pickup, unless a person's answer to the
-  need's decision chose that step.
+  need's decision chose that step, or the pickup's own tree holds the work
+  it left: then it relaunches it once per head in that tree, only to push
+  and record that work (`dispatch.stalled_relaunch`).
 - **Keep a converged pull request current with its base.** It re-drives a
   converged pull request on mechanical facts only: the forge reports
   it conflicting with its base, or its head moved past the head the drive
@@ -1912,10 +1920,6 @@ A person's on-demand start of a pass through `jig send` is not built.
   request.** What is serialized is the catalog's, changed by a person; the
   tick never infers contention from a conflict it just saw. A hold keeps
   only the dispatcher's own launches off.
-
-Item 50 narrows one more of these rules, once built: the tick relaunches a
-stalled pickup once in its own tree to push and record work that tree holds
-([need-classes.md § What changes in the dispatcher's rules](need-classes.md#what-changes-in-the-dispatchers-rules)).
 
 ### Notifications
 
