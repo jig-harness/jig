@@ -137,7 +137,7 @@ export function rearmLockNeeds(
   });
 }
 
-/** A complete forge reading makes a missing, advanced, or no-longer-stopped drive authoritative. */
+/** Retire only when the read proves this need's ledger has moved on. */
 function retireSuperseded(
   repo: string,
   needs: readonly LockNeed[],
@@ -147,11 +147,14 @@ function retireSuperseded(
   const current = new Map(drives.map((drive) => [drive.number, drive]));
   const stale = needs.filter((need) => {
     const drive = current.get(need.pr);
+    if (drive === undefined || drive.readFailed === true) return false;
+    const generation = drive.evidence.generation;
+    const heartbeat = drive.evidence.heartbeat;
+    if (typeof generation !== "number" || typeof heartbeat !== "string")
+      return false;
     return (
-      drive === undefined ||
-      drive.evidence.driver !== "stopped" ||
-      drive.evidence.generation !== need.generation ||
-      drive.evidence.heartbeat !== need.heartbeat
+      generation > need.generation ||
+      (generation === need.generation && heartbeat > need.heartbeat)
     );
   });
   if (stale.length === 0) return [...needs];
@@ -159,10 +162,10 @@ function retireSuperseded(
     const db = existingStateDb(root);
     if (db === null) return [...needs];
     for (const need of stale)
-      db.query("DELETE FROM rearm_lock_needs WHERE repo = ? AND pr = ?").run(
-        repo.toLowerCase(),
-        need.pr,
-      );
+      db.query(
+        `DELETE FROM rearm_lock_needs
+           WHERE repo = ? AND pr = ? AND generation = ? AND heartbeat = ?`,
+      ).run(repo.toLowerCase(), need.pr, need.generation, need.heartbeat);
   } catch (error) {
     swallow(error, "superseded rearm lock needs could not be retired");
     return [...needs];

@@ -9,7 +9,10 @@ import {
   stationContextOf,
   stationDecision,
 } from "../../dispatch/lib/line-station.ts";
-import { rearmLockNeeds } from "../../dispatch/lib/rearm-lock-needs.ts";
+import {
+  rearmLockNeeds,
+  recordRearmLockRead,
+} from "../../dispatch/lib/rearm-lock-needs.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import {
   ledgerOn,
@@ -205,6 +208,38 @@ describe("jig send rearm", () => {
     expectSpawnExit(person, 1);
     expect(person.stderr).toContain("person");
     expect(w.writes()).toEqual([]);
+  });
+
+  it("keeps a need until a complete read proves its ledger advanced", () => {
+    const w = world();
+    const drive = {
+      number: 12,
+      url: `https://github.com/${REPO}/pull/12`,
+      title: "A change",
+      head: "work",
+      class: "re-armable" as const,
+      why: "The drive stopped",
+      evidence: { driver: "stopped", generation: 12, heartbeat: "a" },
+    };
+    recordRearmLockRead(REPO, 12, 12, "a", "listing failed", w.state);
+
+    expect(rearmLockNeeds(REPO, [], w.state, undefined, true)).toEqual([]);
+    expect(rearmLockNeeds(REPO, [drive], w.state)).toHaveLength(1);
+    expect(
+      rearmLockNeeds(
+        REPO,
+        [
+          {
+            ...drive,
+            evidence: { driver: "running", generation: 13, heartbeat: "b" },
+          },
+        ],
+        w.state,
+        undefined,
+        true,
+      ),
+    ).toEqual([]);
+    expect(rearmLockNeeds(REPO, [drive], w.state)).toEqual([]);
   });
   it("refuses a stopped ledger with no tree here and a duplicate request", async () => {
     const w = sendWorld();
