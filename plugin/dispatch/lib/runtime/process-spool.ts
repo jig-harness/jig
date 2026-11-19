@@ -20,56 +20,157 @@ const REDACTION_PENDING_LIMIT = 2 * REDACTION_TAIL_BYTES;
 const TRUNCATED_LINE = "[redacted: oversized line dropped]";
 
 // What a line may end with while its credential value is still to come: a
-// key's separator, a Bearer or Basic scheme, or an opened quote. The mask reads
-// across line breaks there, so a cut after such an ending separates them.
-const OPEN_CONTEXT = /(?:[=:"']|\b(?:Bearer|Basic))\s*$/i;
+// key's separator or a Bearer or Basic scheme. The mask reads across line
+// breaks there, so a cut after such an ending separates the key from its value.
+const OPEN_CONTEXT = /(?:[=:]|\b(?:Bearer|Basic))\s*$/i;
 
 /**
- * Whether text ends inside a quoted value opened after a separator. The mask
- * reads a quoted value across line breaks, so a cut inside one separates the
- * value from its key.
+ * Where a scan stands in the output: inside a quoted value opened after a key
+ * separator, or after one. The mask reads a quoted value across line breaks,
+ * so a cut inside one separates the value from its key.
  */
-function endsInsideQuote(text: string): boolean {
-  let quote = "";
-  let last = "";
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i] as string;
-    if (quote === "") {
-      if ((c === '"' || c === "'") && (last === "=" || last === ":")) quote = c;
-      if (!/\s/.test(c)) last = c;
-    } else if (c === "\\") {
-      i++;
-    } else if (c === quote) {
-      if (text[i + 1] === quote) i++;
-      else {
-        quote = "";
-        last = c;
-      }
-    }
-  }
-  return quote !== "";
+interface ScanState {
+  quote: string;
+  last: string;
+  escaped: boolean;
+  // A quote seen inside a value: it closes it unless the next character
+  // repeats it.
+  closing: boolean;
+  // The last characters seen, for the context test across chunks.
+  recent: string;
 }
 
-const BOUNDARY_ATTEMPTS = 16;
+function freshScan(): ScanState {
+  return { quote: "", last: "", escaped: false, closing: false, recent: "" };
+}
+
+/** A quote that closed its value: the line break after it ends the value. */
+function settle(s: ScanState): void {
+  if (!s.closing) return;
+  s.closing = false;
+  s.last = s.quote;
+  s.quote = "";
+}
+
+/** Step inside a quoted value; false when the character is outside it now. */
+function scanQuoted(s: ScanState, c: string): boolean {
+  if (s.escaped) {
+    s.escaped = false;
+    return true;
+  }
+  if (s.closing && c === s.quote) {
+    s.closing = false;
+    return true;
+  }
+  settle(s);
+  if (s.quote === "") return false;
+  if (c === "\\") s.escaped = true;
+  else if (c === s.quote) s.closing = true;
+  return true;
+}
+
+function scanChar(s: ScanState, c: string): void {
+  if (s.quote !== "" && scanQuoted(s, c)) return;
+  if ((c === '"' || c === "'") && (s.last === "=" || s.last === ":"))
+    s.quote = c;
+  if (!/\s/.test(c)) s.last = c;
+}
+
+/** Whether a line break right here may end a cut without splitting a value. */
+function safeBreak(s: ScanState, text: string, at: number): boolean {
+  if (s.quote !== "" && !s.closing) return false;
+  const before =
+    at >= 256 ? text.slice(at - 256, at) : s.recent + text.slice(0, at);
+  return !OPEN_CONTEXT.test(before.slice(-256));
+}
+
+/**
+ * Scan text from the state given, calling `onBreak` with each line break a cut
+ * may end at until it answers true. The state is left at the end of the text
+ * scanned, or at the break scanning stopped.
+ */
+function scan(
+  s: ScanState,
+  text: string,
+  onBreak: (index: number) => boolean,
+): void {
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i] as string;
+    if (c === "\n") {
+      settle(s);
+      if (safeBreak(s, text, i) && onBreak(i)) return;
+    }
+    scanChar(s, c);
+  }
+  s.recent = (s.recent + text).slice(-256);
+}
+
+/** The first line break at which a cut leaves no value open, or -1. */
+function firstSafeBreak(s: ScanState, text: string): number {
+  let found = -1;
+  scan(s, text, (i) => {
+    found = i;
+    return true;
+  });
+  return found;
+}
 
 /**
  * Return the part that is safe to redact and write now: everything up to the
- * last line break before the fixed look-behind window whose preceding text
- * leaves no credential context open.
+ * last line break before the fixed look-behind window that leaves no credential
+ * context open.
  */
 function redactionBoundary(text: string): number {
-  let from = text.length - REDACTION_TAIL_BYTES - 1;
-  for (let attempt = 0; from >= 0 && attempt < BOUNDARY_ATTEMPTS; attempt++) {
-    const cut = text.lastIndexOf("\n", from);
-    if (cut < 0) return 0;
-    if (
-      !OPEN_CONTEXT.test(text.slice(Math.max(0, cut - 256), cut)) &&
-      !endsInsideQuote(text.slice(0, cut))
-    )
-      return cut + 1;
-    from = cut - 1;
-  }
-  return 0;
+  const limit = text.length - REDACTION_TAIL_BYTES - 1;
+  let found = -1;
+  scan(freshScan(), text, (i) => {
+    if (i <= limit) found = i;
+    return false;
+  });
+  return found < 0 ? 0 : found + 1;
+}
+
+/** Redact a stream chunk by chunk, holding back what may still straddle one. */
+function createRedactor(): (chunk: Buffer, final?: boolean) => Buffer {
+  let redactionTail = "";
+  let dropping: ScanState | null = null;
+  return (chunk, final = false) => {
+    let text = chunk.toString("utf8");
+    if (dropping !== null) {
+      // The dropped text may have left a value open: keep scanning it until
+      // a line break that ends it, and resume there.
+      const resume = firstSafeBreak(dropping, text);
+      if (resume < 0) return Buffer.alloc(0);
+      text = text.slice(resume);
+      dropping = null;
+    }
+    redactionTail += text;
+    if (!final && Buffer.byteLength(redactionTail) <= REDACTION_TAIL_BYTES)
+      return Buffer.alloc(0);
+    const boundary = final
+      ? redactionTail.length
+      : redactionBoundary(redactionTail);
+    if (boundary === 0) {
+      if (redactionTail.length <= REDACTION_PENDING_LIMIT)
+        return Buffer.alloc(0);
+      // No cut is provably safe. Drop the oversized text up to the first line
+      // break that ends no credential value, and keep what follows it; when
+      // there is none yet, keep scanning the dropped text's state so no value
+      // survives apart from its key.
+      const state = freshScan();
+      const resume = firstSafeBreak(state, redactionTail);
+      if (resume < 0) {
+        redactionTail = "";
+        dropping = state;
+      } else {
+        redactionTail = redactionTail.slice(resume);
+      }
+      return Buffer.from(TRUNCATED_LINE);
+    }
+    const ready = redactionTail.slice(0, boundary);
+    redactionTail = redactionTail.slice(boundary);
+    return Buffer.from(maskCredentials(ready, "[redacted]"));
+  };
 }
 
 /** Keep the tail in memory and bound the file even while a large chunk arrives. */
@@ -84,48 +185,7 @@ export function openSpool(
   let chunks: Buffer[] = [];
   let size = 0;
   let pending: ReturnType<typeof setTimeout> | undefined;
-  let redactionTail = "";
-  let dropping = false;
-  const redact = (chunk: Buffer, final = false): Buffer => {
-    let text = chunk.toString("utf8");
-    if (dropping) {
-      const lineEnd = text.indexOf("\n");
-      if (lineEnd < 0) return Buffer.alloc(0);
-      text = text.slice(lineEnd);
-      dropping = false;
-    }
-    redactionTail += text;
-    if (!final && Buffer.byteLength(redactionTail) <= REDACTION_TAIL_BYTES)
-      return Buffer.alloc(0);
-    const boundary = final
-      ? redactionTail.length
-      : redactionBoundary(redactionTail);
-    if (boundary === 0) {
-      if (redactionTail.length <= REDACTION_PENDING_LIMIT)
-        return Buffer.alloc(0);
-      // No cut is provably safe, and the mask reads credentials across line
-      // breaks. Drop the oversized line; when it ends with a credential
-      // context still open, drop what follows it too, so no value survives
-      // apart from its key.
-      const lineEnd = redactionTail.indexOf("\n");
-      const head =
-        lineEnd < 0 ? redactionTail : redactionTail.slice(0, lineEnd);
-      if (
-        lineEnd < 0 ||
-        OPEN_CONTEXT.test(head.slice(-256)) ||
-        endsInsideQuote(head)
-      ) {
-        redactionTail = "";
-        dropping = true;
-      } else {
-        redactionTail = redactionTail.slice(lineEnd);
-      }
-      return Buffer.from(TRUNCATED_LINE);
-    }
-    const ready = redactionTail.slice(0, boundary);
-    redactionTail = redactionTail.slice(boundary);
-    return Buffer.from(maskCredentials(ready, "[redacted]"));
-  };
+  const redact = createRedactor();
   const flush = () => {
     const bytes = Buffer.concat(chunks, size);
     writeSync(fd, bytes, 0, bytes.length, 0);
