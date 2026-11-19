@@ -33,6 +33,7 @@
  */
 import {
   globMatchesUnder,
+  globMayMatchUnder,
   globsIntersect,
   matchesGlob,
 } from "../../shared/glob.ts";
@@ -146,22 +147,95 @@ const bare = (dir: string) => {
   return dir.slice(0, end);
 };
 
+const WILDCARD = /[*?[\]{}]/;
+
+/** The directory part of a glob before its first wildcard segment. */
+function staticDir(glob: string): string {
+  const segments = glob.split("/");
+  const fixed: string[] = [];
+  for (const segment of segments.slice(0, -1)) {
+    if (WILDCARD.test(segment)) break;
+    fixed.push(segment);
+  }
+  return fixed.join("/");
+}
+
+/**
+ * Whether two globs can match one file, read through each one's fixed
+ * directory; a glob with no wildcard names one file, which meets the other
+ * only where the other matches it.
+ */
+function globsMeet(a: string, b: string, conservative = false): boolean {
+  if (!WILDCARD.test(a)) return a === b || matchesGlob(a, b);
+  if (!WILDCARD.test(b)) return matchesGlob(b, a);
+  const da = staticDir(a);
+  const db = staticDir(b);
+  if (da === "" || db === "") return true;
+  // A serialized hold reads dotfiles and punctuation names as reachable too.
+  const under = conservative ? globMayMatchUnder : globMatchesUnder;
+  return under(a, db) || under(b, da);
+}
+
+/**
+ * Whether `glob` can match a file under the directory `dir`, read
+ * conservatively for a serialized hold: a plain-name match under it, or a
+ * glob whose fixed directory lies inside it, or a glob that names one file
+ * there, dotfiles and names outside the portable alphabet included.
+ */
+function globReachesDir(glob: string, dir: string): boolean {
+  if (dir === "") return true;
+  if (!WILDCARD.test(glob)) return glob.startsWith(`${dir}/`);
+  const fixed = staticDir(glob);
+  if (fixed === dir || fixed.startsWith(`${dir}/`)) return true;
+  return globMayMatchUnder(glob, dir);
+}
+
 /** Whether a coarse element `x` (a directory or an area) holds, or reaches into, the element `y`. */
-function holds(x: Element, y: Element, model: OverlapModel): boolean {
+function holds(
+  x: Element,
+  y: Element,
+  model: Pick<OverlapModel, "areaGlobs">,
+  conservative = false,
+): boolean {
   if (x.kind === "file") return false;
   if (x.kind === "dir") {
     if (y.kind === "file" || y.kind === "dir") return y.path.startsWith(x.path);
-    return model
-      .areaGlobs(y.key)
-      .some((g) => globMatchesUnder(g, bare(x.path)));
+    return model.areaGlobs(y.key).some((g) => globReachesDir(g, bare(x.path)));
   }
   const globs = model.areaGlobs(x.key);
   if (y.kind === "file") return globs.some((g) => matchesGlob(y.path, g));
   if (y.kind === "dir")
-    return globs.some((g) => globMatchesUnder(g, bare(y.path)));
+    return globs.some((g) => globReachesDir(g, bare(y.path)));
   if (x.key === y.key) return true;
   const other = model.areaGlobs(y.key);
-  return globs.some((g) => other.some((h) => globsIntersect(g, h)));
+  return globs.some((g) =>
+    other.some((h) =>
+      conservative ? globsMeet(g, h, true) : globsIntersect(g, h),
+    ),
+  );
+}
+
+/**
+ * Whether a known footprint reaches an area of the catalog: a file of it lies
+ * in the area, or a directory or an area of it holds, or is held by, a glob
+ * of the area. The coarse match is read conservatively, as a serialized
+ * area's hold reads it; generated and ignored paths count.
+ */
+export function reachesArea(
+  footprint: Footprint,
+  area: string,
+  model: Pick<OverlapModel, "areaGlobs">,
+): boolean {
+  if (!footprint.known) return false;
+  const target: Element = { kind: "area", key: area };
+  const dirs = [
+    ...footprint.dirs,
+    ...footprint.files.filter((f) => f.endsWith("/")),
+  ];
+  const files = footprint.files.filter((f) => !f.endsWith("/"));
+  return elements({ ...footprint, files, dirs }).some(
+    (e) => holds(target, e, model, true) || holds(e, target, model, true),
+  );
 }
 
 function describe(e: Element): string {
