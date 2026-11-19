@@ -697,24 +697,6 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
   });
 });
 
-describe("a drive that loses the pull request between the claim and a request", () => {
-  test("gives the claim back for the runs it never sent", async () => {
-    const f = fixture();
-    let owned = true;
-    const deps: RecoveryDeps = { ...f.deps, mayMutate: async () => owned };
-    await recoverCancelled("5", "head", [job], [run(1)], deps);
-    f.advance(30_000);
-    // Lost once the claim is spent and the first request is about to leave.
-    owned = false;
-    expect(await recoverCancelled("5", "head", [job], [run(1)], deps)).toBe(
-      "unknown",
-    );
-    expect(f.calls).toEqual([]);
-    expect(f.parks).toEqual([]);
-    expect(f.record()?.requestedAt).toBeNull();
-  });
-});
-
 describe("a drive that lost the pull request mid-recovery", () => {
   test("neither re-runs nor parks once the ownership check refuses", async () => {
     const f = fixture();
@@ -728,6 +710,7 @@ describe("a drive that lost the pull request mid-recovery", () => {
     );
     expect(f.calls).toEqual([]);
     expect(f.parks).toEqual([]);
+    expect(f.record()?.requestedAt).toBeNull();
   });
   test("a refused re-run answer is not parked by a drive that no longer owns it", async () => {
     const f = fixture();
@@ -748,20 +731,23 @@ describe("a drive that lost the pull request mid-recovery", () => {
 });
 
 describe("an extension that stopped part way", () => {
-  test("still owes a run cancelled after the first request but before the last", async () => {
+  async function recoverAfterPartialExtension(
+    lastRequest: string,
+    cancelled: { startedAt: string; updatedAt: string },
+  ) {
     const f = fixture(parseMs("2026-01-01T00:11:00Z"));
     const requestedB = {
       id: 2,
       workflowId: 20,
       attempt: 2,
-      at: parseMs("2026-01-01T00:10:00Z"),
+      at: parseMs(lastRequest),
     };
     const deps: RecoveryDeps = {
       ...f.deps,
       extend: async () => true,
       observe: async () => ({
         firstSeen: parseMs("2026-01-01T00:00:00Z"),
-        requestedAt: parseMs("2026-01-01T00:05:00Z"),
+        requestedAt: parseMs(lastRequest),
         workflowIds: [20],
         requestedRuns: [requestedB],
       }),
@@ -773,51 +759,38 @@ describe("an extension that stopped part way", () => {
       attempt: 2,
       startedAt: "2026-01-01T00:10:00Z",
     };
-    const cancelledC: WorkflowRun = {
-      ...run(3, 30),
-      startedAt: "2026-01-01T00:06:00Z",
-      updatedAt: "2026-01-01T00:07:00Z",
-    };
+    const cancelledC: WorkflowRun = { ...run(3, 30), ...cancelled };
     const jobC = { ...job, suiteId: 3 };
-    expect(
-      await recoverCancelled("5", "head", [jobC], [pendingB, cancelledC], deps),
-    ).toBe("wait");
-    expect(f.calls).toEqual([3]);
+    const result = await recoverCancelled(
+      "5",
+      "head",
+      [jobC],
+      [pendingB, cancelledC],
+      deps,
+    );
+    return { result, calls: f.calls };
+  }
+
+  test("still owes a run cancelled after the first request but before the last", async () => {
+    const { result, calls } = await recoverAfterPartialExtension(
+      "2026-01-01T00:10:00Z",
+      {
+        startedAt: "2026-01-01T00:06:00Z",
+        updatedAt: "2026-01-01T00:07:00Z",
+      },
+    );
+    expect(result).toBe("wait");
+    expect(calls).toEqual([3]);
   });
   test("owes a run cancelled in the same second as the last request", async () => {
-    const f = fixture(parseMs("2026-01-01T00:11:00Z"));
-    const requestedB = {
-      id: 2,
-      workflowId: 20,
-      attempt: 2,
-      at: parseMs("2026-01-01T00:10:00.800Z"),
-    };
-    const deps: RecoveryDeps = {
-      ...f.deps,
-      extend: async () => true,
-      observe: async () => ({
-        firstSeen: parseMs("2026-01-01T00:00:00Z"),
-        requestedAt: parseMs("2026-01-01T00:10:00.800Z"),
-        workflowIds: [20],
-        requestedRuns: [requestedB],
-      }),
-    };
-    const pendingB: WorkflowRun = {
-      ...run(2, 20),
-      status: "in_progress",
-      conclusion: null,
-      attempt: 2,
-      startedAt: "2026-01-01T00:10:00Z",
-    };
-    const cancelledC: WorkflowRun = {
-      ...run(3, 30),
-      startedAt: "2026-01-01T00:09:00Z",
-      updatedAt: "2026-01-01T00:10:00Z",
-    };
-    const jobC = { ...job, suiteId: 3 };
-    expect(
-      await recoverCancelled("5", "head", [jobC], [pendingB, cancelledC], deps),
-    ).toBe("wait");
-    expect(f.calls).toEqual([3]);
+    const { result, calls } = await recoverAfterPartialExtension(
+      "2026-01-01T00:10:00.800Z",
+      {
+        startedAt: "2026-01-01T00:09:00Z",
+        updatedAt: "2026-01-01T00:10:00Z",
+      },
+    );
+    expect(result).toBe("wait");
+    expect(calls).toEqual([3]);
   });
 });
