@@ -48,6 +48,15 @@ function fixture(start = 0) {
       calls.push(id);
       return { code: 0, stderr: "" };
     },
+    withdrawClaim: async (_pr, _head, claimed, kept, release) => {
+      if (record === null || record.requestedRuns !== claimed) return;
+      record = {
+        ...record,
+        requestedRuns: kept,
+        ...(release ? { requestedAt: null } : {}),
+      };
+    },
+    withdrawLabelRerun: async () => undefined,
     park: async (_pr, reason) => {
       parks.push(reason);
     },
@@ -80,6 +89,105 @@ const job = {
   conclusion: "cancelled",
   suiteId: 1,
 };
+
+describe("a head read that fails after the re-run is claimed", () => {
+  /** Past the grace period, with the head's confirmations answered in turn, then `true`. */
+  async function pastGrace(runs: WorkflowRun[], jobs = [job]) {
+    const f = fixture();
+    await recoverCancelled("5", "head", jobs, runs, f.deps);
+    f.advance(30_000);
+    return f;
+  }
+  function confirmsInTurn(
+    f: ReturnType<typeof fixture>,
+    answers: (boolean | "unread")[],
+  ) {
+    let at = 0;
+    f.deps.confirm = async () => answers[at++] ?? true;
+  }
+
+  test("gives the claim back, so a re-armed drive requests the re-run", async () => {
+    const f = await pastGrace([run(1)]);
+    // Before the claim the head confirms; the request's own check cannot read.
+    confirmsInTurn(f, [true, "unread"]);
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "unknown",
+    );
+    expect(f.calls).toEqual([]);
+    expect(f.parks).toEqual([]);
+    expect(f.record()?.requestedAt).toBeNull();
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "wait",
+    );
+    expect(f.calls).toEqual([1]);
+  });
+
+  test("the last check before the re-run neither parks nor spends the claim", async () => {
+    const f = await pastGrace([run(1)]);
+    f.deps.rerun = async () => ({ code: 1, stderr: "HTTP 502", unread: true });
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "unknown",
+    );
+    expect(f.parks).toEqual([]);
+    expect(f.record()?.requestedAt).toBeNull();
+  });
+
+  test("keeps the claim for a run already requested, naming only that run", async () => {
+    const other = { ...job, name: "other", suiteId: 2 };
+    const runs = [run(1), run(2, 11)];
+    const f = await pastGrace(runs, [job, other]);
+    // Before the claim, before the first request, then before the second.
+    confirmsInTurn(f, [true, true, "unread"]);
+    expect(
+      await recoverCancelled("5", "head", [job, other], runs, f.deps),
+    ).toBe("unknown");
+    expect(f.calls).toEqual([1]);
+    expect(f.record()?.requestedAt).not.toBeNull();
+    expect(f.record()?.requestedRuns?.map((r) => r.id)).toEqual([1]);
+  });
+
+  test("a run left unrequested is requested while the retained request is still pending", async () => {
+    const other = { ...job, name: "other", suiteId: 2 };
+    const settled = (r: WorkflowRun): WorkflowRun => ({
+      ...r,
+      updatedAt: "2026-01-01T00:00:30Z",
+    });
+    const [first, second] = [settled(run(1)), settled(run(2, 11))];
+    const runs = [first, second];
+    const f = fixture(parseMs("2026-01-01T00:10:00Z"));
+    await recoverCancelled("5", "head", [job, other], runs, f.deps);
+    f.advance(30_000);
+    confirmsInTurn(f, [true, true, "unread"]);
+    await recoverCancelled("5", "head", [job, other], runs, f.deps);
+    expect(f.calls).toEqual([1]);
+    // The first run's re-run is still pending: its attempt has not finished.
+    const pending: WorkflowRun[] = [
+      { ...first, attempt: 2, status: "in_progress", conclusion: null },
+      second,
+    ];
+    expect(
+      await recoverCancelled("5", "head", [job, other], pending, f.deps),
+    ).toBe("wait");
+    expect(f.calls).toEqual([1, 2]);
+    expect(f.parks).toEqual([]);
+  });
+
+  test("a released claim still names the runs it named before", async () => {
+    const f = await pastGrace([run(1)]);
+    await recoverCancelled("5", "head", [job], [run(1)], f.deps);
+    const before = f.record()?.requestedRuns;
+    expect(before?.map((r) => r.id)).toEqual([1]);
+    f.grant();
+    f.advance(REPLACEMENT_WINDOW_MS);
+    confirmsInTurn(f, [true, "unread"]);
+    expect(await recoverCancelled("5", "head", [job], [run(1)], f.deps)).toBe(
+      "unknown",
+    );
+    expect(f.calls).toEqual([1]);
+    expect(f.record()?.requestedAt).toBeNull();
+    expect(f.record()?.requestedRuns).toEqual(before);
+  });
+});
 
 describe("orphaned cancelled workflow recovery", () => {
   test("requests only the newest orphaned run per workflow", async () => {
@@ -520,6 +628,24 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
     expect(f.calls).toEqual([1, 2, 1, 2]);
   });
 
+  test("an extension gives back only what it added", async () => {
+    const f = await grantedRequest();
+    const done = succeeded(requested + 60_000);
+    const later = wf(5, 10, requested + 120_000);
+    const jobs = [...done.checks, check(5, requested + 120_000)];
+    const before = f.record();
+    f.advance(180_000);
+    let confirms = 0;
+    // Before the extension the head confirms; the request's own check cannot read.
+    f.deps.confirm = async () => (++confirms === 2 ? "unread" : true);
+    expect(
+      await recoverCancelled("5", "head", jobs, [...done.runs, later], f.deps),
+    ).toBe("unknown");
+    expect(f.calls).toEqual([1, 2, 1, 2]);
+    expect(f.record()?.requestedAt).toBe(before?.requestedAt ?? -1);
+    expect(f.record()?.requestedRuns).toEqual(before?.requestedRuns);
+  });
+
   test("a run cancelled after the request is requested once, then judged on its own", async () => {
     const f = await grantedRequest();
     const done = succeeded(requested + 60_000);
@@ -568,5 +694,105 @@ describe("a requested re-run is judged by the runs it re-ran", () => {
       await recoverCancelled("5", "head", firstChecks, [A(), B()], f.deps),
     ).toBe("wait");
     expect(f.calls).toEqual([1, 2, 1, 2]);
+  });
+});
+
+describe("a drive that lost the pull request mid-recovery", () => {
+  test("neither re-runs nor parks once the ownership check refuses", async () => {
+    const f = fixture();
+    let owned = true;
+    const deps: RecoveryDeps = { ...f.deps, mayMutate: async () => owned };
+    await recoverCancelled("5", "head", [job], [run(1)], deps);
+    f.advance(30_000);
+    owned = false;
+    expect(await recoverCancelled("5", "head", [job], [run(1)], deps)).toBe(
+      "unknown",
+    );
+    expect(f.calls).toEqual([]);
+    expect(f.parks).toEqual([]);
+    expect(f.record()?.requestedAt).toBeNull();
+  });
+  test("a refused re-run answer is not parked by a drive that no longer owns it", async () => {
+    const f = fixture();
+    let owned = true;
+    const deps: RecoveryDeps = {
+      ...f.deps,
+      mayMutate: async () => owned,
+      rerun: async () => {
+        owned = false;
+        return { code: 1, stderr: "refused" };
+      },
+    };
+    await recoverCancelled("5", "head", [job], [run(1)], deps);
+    f.advance(30_000);
+    await recoverCancelled("5", "head", [job], [run(1)], deps);
+    expect(f.parks).toEqual([]);
+  });
+});
+
+describe("an extension that stopped part way", () => {
+  async function recoverAfterPartialExtension(
+    lastRequest: string,
+    cancelled: { startedAt: string; updatedAt: string },
+    claimedAt = lastRequest,
+  ) {
+    const f = fixture(parseMs("2026-01-01T00:11:00Z"));
+    const requestedB = {
+      id: 2,
+      workflowId: 20,
+      attempt: 2,
+      at: parseMs(lastRequest),
+    };
+    const deps: RecoveryDeps = {
+      ...f.deps,
+      extend: async () => true,
+      observe: async () => ({
+        firstSeen: parseMs("2026-01-01T00:00:00Z"),
+        requestedAt: parseMs(claimedAt),
+        workflowIds: [20],
+        requestedRuns: [requestedB],
+      }),
+    };
+    const pendingB: WorkflowRun = {
+      ...run(2, 20),
+      status: "in_progress",
+      conclusion: null,
+      attempt: 2,
+      startedAt: "2026-01-01T00:10:00Z",
+    };
+    const cancelledC: WorkflowRun = { ...run(3, 30), ...cancelled };
+    const jobC = { ...job, suiteId: 3 };
+    const result = await recoverCancelled(
+      "5",
+      "head",
+      [jobC],
+      [pendingB, cancelledC],
+      deps,
+    );
+    return { result, calls: f.calls };
+  }
+
+  test("still owes a run cancelled after the first request but before the last", async () => {
+    const { result, calls } = await recoverAfterPartialExtension(
+      "2026-01-01T00:10:00Z",
+      {
+        startedAt: "2026-01-01T00:06:00Z",
+        updatedAt: "2026-01-01T00:07:00Z",
+      },
+      "2026-01-01T00:05:00Z",
+    );
+    expect(result).toBe("wait");
+    expect(calls).toEqual([3]);
+  });
+  test("owes a run cancelled in the same second as the last request", async () => {
+    const { result, calls } = await recoverAfterPartialExtension(
+      "2026-01-01T00:10:00.800Z",
+      {
+        startedAt: "2026-01-01T00:09:00Z",
+        updatedAt: "2026-01-01T00:10:00Z",
+      },
+    );
+    expect(result).toBe("wait");
+    expect(calls).toEqual([3]);
   });
 });

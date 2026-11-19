@@ -1,4 +1,4 @@
-/** Shared PR identity: direct navigation, current forge state and hover/focus context. */
+/** What a pull request's identity reads: its current forge state, the line it stands in, and the hover that opens its context (`work.tsx`). */
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   createContext,
@@ -8,21 +8,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { prStanding, type Standing, type StandingKind } from "./pr-standing.ts";
+import { prStanding } from "./pr-standing.ts";
 import type { Clock } from "./view.ts";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { reconcileNeeds } from "./pr-state.ts";
-import { withDerivedLinks } from "./links.ts";
+import { repoHome, withDerivedLinks } from "./links.ts";
 import type { DashboardPr } from "../../plugin/dispatch/lib/dashboard-pr.ts";
-import { CopyButton } from "./copy.tsx";
-import { Hint } from "./fold.tsx";
-import { Glyph } from "./icon-word.tsx";
-import {
-  FORGE_ICONS,
-  GROUP_ICONS,
-  type IconWord,
-  LINE_ICONS,
-} from "./icons.ts";
 import { prNumber } from "./pr-state.ts";
 
 class PrReadError extends Error {}
@@ -58,7 +49,7 @@ function prQuery(repo: string, target: string) {
   };
 }
 
-function usePrFact(repo: string, target: string) {
+export function usePrFact(repo: string, target: string) {
   const query = useQuery(prQuery(repo, target));
   return query.data ?? null;
 }
@@ -90,7 +81,7 @@ export function ItemTitle({ title }: { title: string | null }) {
 }
 
 export function RepoLink({ repo, url }: { repo: string; url?: string | null }) {
-  const base = url?.match(/^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/pull\/\d+$/)?.[1];
+  const base = repoHome(repo, url);
   return base ? (
     <a
       className="m sm mut"
@@ -105,22 +96,6 @@ export function RepoLink({ repo, url }: { repo: string; url?: string | null }) {
   );
 }
 
-interface PrProps {
-  repo: string;
-  target: string;
-  url: string | null;
-  title?: string | null;
-}
-
-function TargetLink({ url, target }: Pick<PrProps, "url" | "target">) {
-  if (url === null) return <span className="tgt">{target}</span>;
-  return (
-    <a className="tgt" href={url} target="_blank" rel="noreferrer noopener">
-      {target}
-    </a>
-  );
-}
-
 const NO_CLOCK: Clock = { nowMs: 0, timeZone: "UTC" };
 
 /** The line the page shows and its clock, which every PR's standing reads; before a line is read it holds neither. */
@@ -129,99 +104,17 @@ export const StandingSource = createContext<{
   clock: Clock;
 }>({ line: null, clock: NO_CLOCK });
 
-/** A standing's icon: the forge's own, or, while the dispatcher holds the pull request, the line's word for it, each drawn as the map draws it elsewhere. */
-const KIND_ICONS: Record<StandingKind, IconWord> = {
-  driving: LINE_ICONS.driving,
-  "following-up": LINE_ICONS["following-up"],
-  waiting: LINE_ICONS.waiting,
-  "needs-person": LINE_ICONS["needs-person"],
-  queued: GROUP_ICONS.starts,
-  reported: GROUP_ICONS.reported,
-  refused: GROUP_ICONS.never,
-  held: GROUP_ICONS.held,
-  merged: FORGE_ICONS.merged,
-  closed: FORGE_ICONS.closed,
-  draft: FORGE_ICONS.draft,
-  open: FORGE_ICONS.open,
-  unknown: FORGE_ICONS["not read"],
-};
-
-/** The standing's icon; one the forge was not read for is drawn dashed. */
-function StandingIcon({ kind, size }: { kind: StandingKind; size: number }) {
-  return <Glyph of={KIND_ICONS[kind]} size={size} />;
-}
-
-function StandingBody({ standing }: { standing: Standing }) {
-  return (
-    <>
-      <p className={`prLabel tone-${standing.tone}`}>
-        <StandingIcon kind={standing.kind} size={14} /> {standing.label}
-      </p>
-      <ul className="prFacts">
-        {standing.facts.map((f) => (
-          <li key={f}>{f}</li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-function OpenLink({ url }: { url: string | null }) {
-  return url === null ? null : (
-    <a href={url} target="_blank" rel="noreferrer noopener">
-      Open pull request
-    </a>
-  );
-}
-
-function PrContext({
-  repo,
-  target,
-  url,
-  title,
-  fact,
-  pr,
-  standing,
-  open,
-  setOpen,
-}: PrProps & {
-  fact: DashboardPr | null;
-  pr: string;
-  standing: Standing;
-  open: boolean;
-  setOpen: (open: boolean) => void;
-}) {
-  return (
-    <Hint
-      className={`prState tone-${standing.tone}`}
-      label={`PR #${pr}: ${standing.label}`}
-      open={open}
-      onOpenChange={setOpen}
-      trigger={<StandingIcon kind={standing.kind} size={16} />}
-    >
-      <strong>{fact?.title ?? title ?? target}</strong>
-      <StandingBody standing={standing} />
-      <p>
-        <RepoLink repo={repo} url={url} /> #{pr}{" "}
-        <CopyButton text={pr} aria={`Copy PR ID ${pr}`} />
-      </p>
-      <OpenLink url={url} />
-    </Hint>
-  );
-}
-
-function useStanding(repo: string, pr: string, fact: DashboardPr | null) {
-  const { line, clock } = useContext(StandingSource);
-  return prStanding(line, repo, Number(pr), fact, clock);
-}
-
 /** How long a mouse may take to cross the gap between the identity and its popup before the hint closes. */
 const LEAVE_GRACE_MS = 300;
 
+/** How soon after a hover opened a hint a click on its trigger still means "show it". */
+const CLICK_AFTER_HOVER_MS = 400;
+
 /** Opens a hint while a mouse rests anywhere on the element it spreads onto, and keeps it open while the mouse is on its popup; touch and keyboard use the hint's trigger. */
-function useMouseHover() {
+export function useMouseHover() {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoveredAt = useRef(Number.NEGATIVE_INFINITY);
   const cancel = () => {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;
@@ -236,6 +129,7 @@ function useMouseHover() {
     onPointerEnter: (event: PointerEvent<HTMLElement>) => {
       if (event.pointerType !== "mouse") return;
       cancel();
+      hoveredAt.current = performance.now();
       setOpen(true);
     },
     onPointerLeave: (event: PointerEvent<HTMLElement>) => {
@@ -246,38 +140,25 @@ function useMouseHover() {
       }, LEAVE_GRACE_MS);
     },
   };
-  return { open, setOpen, hover };
+  // A click that follows the hover which opened the hint is the same wish to see it, not a toggle closed.
+  const request = (next: boolean, reason?: string) => {
+    if (
+      !next &&
+      reason === "trigger-press" &&
+      performance.now() - hoveredAt.current < CLICK_AFTER_HOVER_MS
+    )
+      return;
+    setOpen(next);
+  };
+  return { open, setOpen: request, hover };
 }
 
-function NumberedPr(props: PrProps & { pr: string }) {
-  const { repo, target, url, pr } = props;
-  const fact = usePrFact(repo, target);
-  const { open, setOpen, hover } = useMouseHover();
-  const standing = useStanding(repo, pr, fact);
-  const href = fact?.url ?? url;
-  return (
-    <span className={`prIdentity pr-${standing.kind}`} {...hover}>
-      <PrContext
-        {...props}
-        url={href}
-        fact={fact}
-        standing={standing}
-        open={open}
-        setOpen={setOpen}
-      />
-      <TargetLink url={href} target={target} />
-      <CopyButton text={pr} aria={`Copy PR ID ${pr}`} />
-    </span>
-  );
-}
-
-export function Pr(props: PrProps) {
-  const pr = prNumber(props.target);
-  if (pr !== null) return <NumberedPr {...props} pr={pr} />;
-  return (
-    <span className="tgt">
-      <TargetLink url={props.url} target={props.target} />
-      <CopyButton text={props.target} aria={`Copy ID ${props.target}`} />
-    </span>
-  );
+/** What the page knows of one pull request: the line's story of it and the forge's read. */
+export function useStanding(
+  repo: string,
+  pr: string,
+  fact: DashboardPr | null,
+) {
+  const { line, clock } = useContext(StandingSource);
+  return prStanding(line, repo, Number(pr), fact, clock);
 }

@@ -2,7 +2,8 @@
  * A component's database through `shared/records/db.ts`: created at the
  * schema's version with its meta row, migrated forward, used as it is when a
  * newer copy migrated it additively, refused with both versions named when it
- * needs a newer reader, and reopened when its file is replaced.
+ * needs a newer reader, and reopened when its file is replaced; past a newer
+ * minimum reader, used for named columns only while the database keeps them.
  */
 import { Database } from "bun:sqlite";
 import { afterAll, describe, expect, it } from "bun:test";
@@ -15,6 +16,7 @@ import {
   type Migration,
   minimumReader,
   openDatabase,
+  openKnownColumns,
   schemaVersion,
 } from "../records/db.ts";
 
@@ -223,5 +225,68 @@ describe("openDatabase", () => {
     });
     expect(opened.ok).toBe(false);
     if (!opened.ok) expect(opened.failure.code).toBe("unopenable");
+  });
+});
+
+describe("openKnownColumns", () => {
+  const FENCE: Migration = { additive: false, sql: "SELECT 1;" };
+
+  it("uses, unmigrated, a database one step that was not additive ahead while it keeps the named columns", () => {
+    const path = fresh();
+    expect(openDatabase({ path, migrations: [V1, FENCE] }).ok).toBe(true);
+    closeDatabase(path);
+    expect(openDatabase({ path, migrations: [V1] }).ok).toBe(false);
+    const opened = openKnownColumns(
+      { path, migrations: [V1] },
+      { things: ["id", "name"] },
+    );
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    opened.value.run("INSERT INTO things (name) VALUES ('kept')");
+    expect(schemaVersion(path)).toBe(2);
+    expect(meta(path)).toMatchObject({ version: 2, min_reader: 2 });
+    // Every other open of this copy is still refused, on the same connection too.
+    expect(openDatabase({ path, migrations: [V1] }).ok).toBe(false);
+    closeDatabase(path);
+    const newer = openDatabase({ path, migrations: [V1, FENCE] });
+    expect(newer.ok).toBe(true);
+    if (newer.ok)
+      expect(newer.value.query("SELECT name FROM things").all()).toEqual([
+        { name: "kept" },
+      ]);
+    closeDatabase(path);
+  });
+
+  it("keeps the refusal when a step that was not additive changed a named column", () => {
+    const path = fresh();
+    expect(openDatabase({ path, migrations: [V1, V2_BREAKING] }).ok).toBe(true);
+    closeDatabase(path);
+    const opened = openKnownColumns(
+      { path, migrations: [V1] },
+      { things: ["id", "name"] },
+    );
+    expect(opened.ok).toBe(false);
+    if (opened.ok) return;
+    expect(opened.failure.code).toBe("newer-schema");
+    expect(opened.failure.reason).toContain("it lacks things.name");
+  });
+
+  it("keeps the refusal of a migration history that differs from this copy's", () => {
+    const path = fresh();
+    const OTHER: Migration = {
+      additive: false,
+      sql: "CREATE TABLE things (id INTEGER PRIMARY KEY, name TEXT NOT NULL, kind TEXT);",
+    };
+    expect(openDatabase({ path, migrations: [OTHER, FENCE] }).ok).toBe(true);
+    closeDatabase(path);
+    const opened = openKnownColumns(
+      { path, migrations: [V1] },
+      { things: ["id", "name"] },
+    );
+    expect(opened.ok).toBe(false);
+    if (!opened.ok) {
+      expect(opened.failure.code).toBe("newer-schema");
+      expect(opened.failure.reason).toContain("needs a reader of version 2");
+    }
   });
 });

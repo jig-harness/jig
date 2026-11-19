@@ -1,22 +1,16 @@
 import { FollowupBadge } from "./followups.tsx";
 import { runningFollowup } from "./followup-view.ts";
-import { ItemTitle, Pr } from "./pr.tsx";
+import { ItemTitle } from "./pr.tsx";
+import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
  * What is running: accounts and sessions as one surface. Each account is a row
  * and each held slot a box inside it, so which session holds which slot is a
  * position rather than a join.
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import {
-  Evidence,
-  Fold,
-  Hint,
-  PanelHelp,
-  Pips,
-  StageHint,
-  Term,
-} from "./fold.tsx";
+import { Evidence, Hint, PanelHelp, Pips, StageHint, Term } from "./fold.tsx";
 import { slotCard } from "./cards.ts";
+import { GutterCard, GutterFold } from "./gutter.tsx";
 import { cardAttrs } from "./keys.ts";
 import { BareWord } from "./icon-word.tsx";
 import { ACCOUNT_ICONS } from "./icons.ts";
@@ -35,26 +29,46 @@ import {
 
 function Slot({ slot }: { slot: SlotView }) {
   return (
-    <div className="slot" {...cardAttrs(slotCard(slot, "running"))}>
-      <div className="rowTop">
-        <Mark role={slot.role} />
-        <Pr repo={slot.repo} target={slot.target} url={slot.url} />
-        <StageHint stage={slot.stage} />
-        <FollowupBadge
-          label={slot.stage === "followup" ? runningFollowup(slot.kind) : null}
-        />
-      </div>
-      <ItemTitle title={slot.title} />
-      {slot.noLink === null ? null : (
-        <span className="noLink">{slot.noLink}</span>
-      )}
-      <div className="slotLow">
-        <div className="slotFact">{slot.fact}</div>
-        <Fold label="Evidence">
+    <GutterCard
+      className="slot"
+      attrs={cardAttrs(slotCard(slot, "running"))}
+      label={`Evidence for ${slot.target}`}
+      face={
+        <>
+          <div className="rowTop">
+            <Mark role={slot.role} />
+            <WorkLead
+              repo={slot.repo}
+              target={slot.target}
+              url={slot.url}
+              title={slot.title}
+              links={slot.links}
+            />
+            <StageHint stage={slot.stage} />
+            <FollowupBadge
+              label={
+                slot.stage === "followup" ? runningFollowup(slot.kind) : null
+              }
+            />
+          </div>
+          <ItemTitle title={slot.title} />
+          {slot.noLink === null ? null : (
+            <span className="noLink">{slot.noLink}</span>
+          )}
+          <div className="slotFact">{slot.fact}</div>
+        </>
+      }
+      detail={
+        <>
           <Evidence rows={slot.evidence} />
-        </Fold>
-      </div>
-    </div>
+          <LinkedDetail
+            repo={slot.repo}
+            target={slot.target}
+            links={slot.links}
+          />
+        </>
+      }
+    />
   );
 }
 
@@ -92,46 +106,60 @@ export function LinePanel({
           </Term>
         ))}
       </div>
-      {line?.accounts.map((a) => {
-        const account = accountView(a, clock);
-        const mine = slots.filter((s) => s.account === a.name);
-        return (
-          <div className="acct" key={a.name}>
-            <div className="acctHead">
-              <span className="m acctName">{account.name}</span>
-              <span className="chip">{account.vendor}</span>
-              <Hint
-                className="pips pipsBtn"
-                label={`${account.name} slots`}
-                trigger={<Pips on={account.pips} />}
-              >
-                One square per concurrent-session slot on {account.name}; a
-                filled one is held by a session: {account.heldText} held.
-              </Hint>
-              <span className="m sm">{account.heldText}</span>
-              {account.state === null ? null : (
-                <BareWord
-                  of={ACCOUNT_ICONS[account.state]}
-                  className="sm end"
-                />
-              )}
-            </div>
-            <div className="m sm">{account.weightText}</div>
-            {account.wall === null ? null : (
-              <div className="wallLine m">{account.wall}</div>
-            )}
-            {mine.length === 0 ? null : (
-              <div className="slots">
-                {mine.map((slot) => (
-                  <Slot slot={slot} key={slot.record} />
-                ))}
+      {line === null || line.accounts.length === 0 ? null : (
+        <GutterFold
+          className="acctList"
+          label="Accounts and their slots"
+          defaultOpen
+          keepMounted
+          head={<h3 className="sm">Accounts · {line.accounts.length}</h3>}
+        >
+          {line.accounts.map((a) => {
+            const account = accountView(a, clock);
+            const mine = slots.filter((s) => s.account === a.name);
+            return (
+              <div className="acct" key={a.name}>
+                <div className="acctHead">
+                  <span className="m acctName">{account.name}</span>
+                  <span className="chip">{account.vendor}</span>
+                  <Hint
+                    className="pips pipsBtn"
+                    label={`${account.name} slots`}
+                    trigger={<Pips on={account.pips} />}
+                  >
+                    One square per concurrent-session slot on {account.name}; a
+                    filled one is held by a session: {account.heldText} held.
+                  </Hint>
+                  <span className="m sm">{account.heldText}</span>
+                  {account.state === null ? null : (
+                    <BareWord
+                      of={ACCOUNT_ICONS[account.state]}
+                      className="sm end"
+                    />
+                  )}
+                </div>
+                <div className="m sm">{account.weightText}</div>
+                {account.wall === null ? null : (
+                  <div className="wallLine m">{account.wall}</div>
+                )}
+                {mine.length === 0 ? null : (
+                  <div className="slots">
+                    {mine.map((slot) => (
+                      <Slot slot={slot} key={slot.record} />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </GutterFold>
+      )}
       {line === null || line.repos.length === 0 ? null : (
-        <Fold label={repoSummary(line.repos)}>
+        <GutterFold
+          className="repoList"
+          label="The repositories and how each was read"
+          head={<span className="sm">{repoSummary(line.repos)}</span>}
+        >
           <dl className="kv">
             {line.repos.map((r) => {
               const row = repoRow(r);
@@ -143,7 +171,7 @@ export function LinePanel({
               );
             })}
           </dl>
-        </Fold>
+        </GutterFold>
       )}
     </section>
   );

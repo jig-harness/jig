@@ -11,6 +11,7 @@
  */
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { announce, copyText } from "./copy.tsx";
+import { facetAttrs } from "./facets.ts";
 import { VIEWS, type ViewId } from "./search.ts";
 
 /** What the keys list, in Help and behind `?`. */
@@ -204,6 +205,7 @@ export function cardAttrs(card: {
   target: string;
   url: string | null;
   command: string | null;
+  repo?: string;
   /** What the command is, as the key bar names it. */
   commandLabel?: string;
   /** Whether the card holds decisions its keys pick. */
@@ -211,6 +213,7 @@ export function cardAttrs(card: {
 }): Record<string, string> {
   // A card is a named group, so j announces what it is rather than a blob of text.
   const attrs: Record<string, string> = {
+    ...facetAttrs({ repo: card.repo ? [card.repo] : [] }),
     "data-card": card.key,
     role: "group",
     "aria-label": card.target,
@@ -366,12 +369,9 @@ function move(root: HTMLElement, by: 1 | -1): void {
   if (card !== undefined) focusCard(root, card);
 }
 
-/** The card's own expand control: the one it names, else its first fold (a reply's button is not one). */
+/** The card's own expand control: the chevron in its gutter. */
 function toggleOf(card: HTMLElement): HTMLElement | null {
-  return (
-    card.querySelector<HTMLElement>("[data-card-toggle]") ??
-    card.querySelector<HTMLElement>(".foldBtn.disclosure")
-  );
+  return card.querySelector<HTMLElement>("[data-card-toggle]");
 }
 
 /** Whether Enter landed on a control inside the card, which is that control's own. */

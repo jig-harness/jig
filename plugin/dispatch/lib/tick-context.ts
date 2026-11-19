@@ -16,7 +16,9 @@ import type { ReadRecord } from "./launches.ts";
 import type { RepoLineInput } from "./line.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { RepoReflection } from "./reflection-route.ts";
+import type { RepoObservation } from "./tick-observe.ts";
 import type { SessionRuntime } from "./runtime/port.ts";
+import { currentMs } from "../../shared/time.ts";
 import { boundAt, type TickBound } from "./sources/bounded.ts";
 import type { PreparedPriorities } from "./tick-priorities.ts";
 import type { TickReads } from "./tick-reads.ts";
@@ -65,6 +67,8 @@ export interface TickContext {
   startedMs: number;
   /** The tick's one bound, made the first time it is asked for (`tickBound`); absent for a tick no launcher bounds. */
   bound?: TickBound;
+  /** What a tick with no deadline of its own lets every repository's release re-runs spend together (`rerunBound`). */
+  rerunLimit?: TickBound;
   launches: ReadRecord[];
   weights?: import("./local-weights.ts").AccountWeights | undefined;
   apply: ApplyState | null;
@@ -76,6 +80,8 @@ export interface TickContext {
   pending: PendingRepository[];
   /** Each owned repository's priorities inputs, ranked together once every repository is planned (`tick-priorities.ts`). */
   priorities?: PreparedPriorities[];
+  /** Each planned repository's observation, weighed for overlap once the priorities ranking has fixed the pickup order. */
+  overlaps?: { observation: RepoObservation }[];
   /** The act lock was held when the tick first asked: what serialization read may predate that tick's launches. */
   actWaited?: boolean;
   /** What the tick reads once and shares between its repositories' observe phases. */
@@ -111,6 +117,15 @@ export function tickBound(context: TickContext): TickBound | undefined {
   const bound = boundAt(deadlineOf(context.options.machine, context.startedMs));
   if (bound !== undefined) context.bound = bound;
   return bound;
+}
+
+/** The bound release re-runs share across the tick's repositories: its deadline, else one limit made on first use. */
+export function rerunBound(context: TickContext): TickBound | undefined {
+  const bound = tickBound(context);
+  if (bound !== undefined) return bound;
+  const limit = context.rerunLimit ?? boundAt(currentMs() + 120_000);
+  if (limit !== undefined) context.rerunLimit = limit;
+  return limit;
 }
 
 /**

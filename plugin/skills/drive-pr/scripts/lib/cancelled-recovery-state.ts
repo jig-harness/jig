@@ -69,6 +69,10 @@ function isRequestedRun(value: unknown): value is RequestedRun {
 }
 
 /**
+ * `beforeCommit`, on each claim below, runs after the database is resolved and
+ * immediately before the mutation, so an ownership check made there is the
+ * last thing that can refuse it.
+ *
  * Atomic even when two callers observed the same unclaimed row. `requested`
  * names the runs the claim re-runs, so the recovery judges those runs; a
  * released claim keeps them until the next claim, so a grant re-runs only
@@ -79,8 +83,10 @@ export async function claimCancellation(
   head: string,
   workflowIds: readonly number[] = [],
   requested: readonly RequestedRun[] = [],
+  beforeCommit?: () => Promise<void>,
 ): Promise<boolean> {
   const drive = driveDb(await resolveStateDir());
+  await beforeCommit?.();
   return (
     drive.db
       .query(
@@ -106,8 +112,10 @@ export async function extendCancellation(
   head: string,
   earlier: readonly RequestedRun[],
   requested: readonly RequestedRun[],
+  beforeCommit?: () => Promise<void>,
 ): Promise<boolean> {
   const drive = driveDb(await resolveStateDir());
+  await beforeCommit?.();
   const workflowIds = [...new Set(requested.map((run) => run.workflowId))];
   return (
     drive.db
@@ -123,6 +131,38 @@ export async function extendCancellation(
         JSON.stringify(earlier),
       ) !== null
   );
+}
+
+/**
+ * Give back what a claim holds for re-runs that were never requested: the
+ * claim naming `claimed` then names `kept`, and with `release` it is no longer
+ * spent. Nothing changes when another caller moved the claim since, so this
+ * asks no ownership: it runs when the forge that answers that question did not.
+ */
+export async function withdrawCancellation(
+  pr: string,
+  head: string,
+  claimed: readonly RequestedRun[],
+  kept: readonly RequestedRun[],
+  release: boolean,
+): Promise<void> {
+  const drive = driveDb(await resolveStateDir());
+  const workflowIds = release
+    ? []
+    : [...new Set(kept.map((run) => run.workflowId))];
+  drive.db
+    .query(
+      "UPDATE cancelled_ci SET requested_at = CASE WHEN ? THEN NULL ELSE requested_at END, workflow_ids = ?, requested_runs = ? WHERE clone = ? AND pr = ? AND head = ? AND requested_at IS NOT NULL AND requested_runs = ?",
+    )
+    .run(
+      release ? 1 : 0,
+      JSON.stringify(workflowIds),
+      JSON.stringify(kept),
+      drive.clone,
+      canonicalPr(pr),
+      head,
+      JSON.stringify(claimed),
+    );
 }
 
 /**
@@ -207,8 +247,10 @@ export async function labelReruns(
 export async function claimLabelRerun(
   pr: string,
   run: WorkflowRun,
+  beforeCommit?: () => Promise<void>,
 ): Promise<boolean> {
   const drive = driveDb(await resolveStateDir());
+  await beforeCommit?.();
   return (
     drive.db
       .query(
@@ -217,4 +259,17 @@ export async function claimLabelRerun(
       .get(drive.clone, canonicalPr(pr), run.id, run.attempt, currentMs()) !==
     null
   );
+}
+
+/** Give back the claim of a label-caused re-run that was never requested. */
+export async function withdrawLabelRerun(
+  pr: string,
+  run: Pick<WorkflowRun, "id" | "attempt">,
+): Promise<void> {
+  const drive = driveDb(await resolveStateDir());
+  drive.db
+    .query(
+      "DELETE FROM cancelled_ci_label_rerun WHERE clone = ? AND pr = ? AND run_id = ? AND attempt = ?",
+    )
+    .run(drive.clone, canonicalPr(pr), run.id, run.attempt);
 }

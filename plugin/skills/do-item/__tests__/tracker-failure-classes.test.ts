@@ -255,6 +255,16 @@ const FORGE: Record<
 };
 
 describe("the forge client's gh runs", () => {
+  it("reads gh's own message for a connection it could not make as no answer", () => {
+    const failure = ghRunFailure({
+      code: 1,
+      stderr:
+        "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com",
+      timedOut: false,
+    });
+    expect(failure?.code).toBe("unreachable");
+  });
+
   for (const code of FAILURE_CLASSES)
     it(`classifies a run that met ${code}`, () => {
       const { stderr, tookMs, timedOut } = FORGE[code];

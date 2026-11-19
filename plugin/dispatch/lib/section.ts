@@ -17,8 +17,14 @@ import {
 import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
+import { parseOverlap, unknownKeys } from "./overlap-config.ts";
 import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
-import type { AdoptRule, DispatchSection, StalledScope } from "./types.ts";
+import type {
+  AdoptRule,
+  DispatchSection,
+  StalledRelaunch,
+  StalledScope,
+} from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
 /** The command a follow-up runs where the repository names none: the plugin's own follow-up skill. */
@@ -44,6 +50,7 @@ const KEYS = [
   "followup_command",
   "stalled_after",
   "stalled_scope",
+  "stalled_relaunch",
   "blocked_after",
   "drive_rounds_flat",
   "pickup_within",
@@ -57,6 +64,7 @@ const KEYS = [
   "adopt",
   "pool",
   "epic_width",
+  "overlap",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
@@ -150,7 +158,7 @@ function states(
         );
   if (alias !== undefined)
     return invalid(
-      `dispatch.${field} cannot list ${alias}, which shares the '${tracker.states.pr_open}' tracker state name with pr_open; items there have a pull request open and are never pickups`,
+      `dispatch.${field} cannot list ${alias}, which shares the '${tracker.states.pr_open}' state name with pr_open; items there have a pull request open and are never pickups`,
     );
   return ok(value as string[]);
 }
@@ -232,11 +240,8 @@ function adoptRule(value: unknown): Checked<AdoptRule> {
   if (value === undefined || value === null) return ok(off);
   if (!isMapping(value)) return invalid("dispatch.adopt must be a mapping");
   const raw = value as Record<string, unknown>;
-  const unknown = Object.keys(raw).filter((k) => !ADOPT_KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch.adopt has unknown key(s): ${unknown.join(", ")} (known: ${ADOPT_KEYS.join(", ")})`,
-    );
+  const refused = unknownKeys("dispatch.adopt", raw, ADOPT_KEYS);
+  if (refused !== null) return refused;
   if (raw.enabled !== undefined && typeof raw.enabled !== "boolean")
     return invalid("dispatch.adopt.enabled must be true or false");
   const logins = authors(raw.authors);
@@ -305,11 +310,8 @@ function pool(
   const raw = section.pool;
   if (raw === undefined || raw === null) return ok(undefined);
   if (!isMapping(raw)) return invalid("dispatch.pool must be a mapping");
-  const unknown = Object.keys(raw).filter((k) => !POOL_KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch.pool has unknown key(s): ${unknown.join(", ")} (known: ${POOL_KEYS.join(", ")})`,
-    );
+  const refused = unknownKeys("dispatch.pool", raw, POOL_KEYS);
+  if (refused !== null) return refused;
   const named = (raw as Record<string, unknown>).states;
   if (named === undefined || named === null)
     return invalid(
@@ -342,6 +344,7 @@ type Timings = Omit<
   | "adopt"
   | "pickupDeadlineMs"
   | "epicWidth"
+  | "overlap"
 >;
 
 /** `stalled_scope`: `claimed` unless the section says `assigned`. */
@@ -352,12 +355,22 @@ function stalledScope(value: unknown): Checked<StalledScope> {
     : invalid("dispatch.stalled_scope must be claimed or assigned");
 }
 
+/** `stalled_relaunch`: `finish-once` unless the section says `never`. */
+function stalledRelaunch(value: unknown): Checked<StalledRelaunch> {
+  if (value === undefined || value === null) return ok("finish-once");
+  return value === "finish-once" || value === "never"
+    ? ok(value)
+    : invalid("dispatch.stalled_relaunch must be finish-once or never");
+}
+
 /** The section's waits and expectations, and where and how often notices go. */
 function timings(section: Record<string, unknown>): Checked<Timings> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
   if (!stalledAfterMs.ok) return stalledAfterMs;
   const scope = stalledScope(section.stalled_scope);
   if (!scope.ok) return scope;
+  const relaunch = stalledRelaunch(section.stalled_relaunch);
+  if (!relaunch.ok) return relaunch;
   const blockedAfterMs = wait(section.blocked_after, "blocked_after");
   if (!blockedAfterMs.ok) return blockedAfterMs;
   const driveRoundsFlat = rounds(section.drive_rounds_flat);
@@ -397,6 +410,7 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   return ok({
     stalledAfterMs: stalledAfterMs.value,
     stalledScope: scope.value,
+    stalledRelaunch: relaunch.value,
     blockedAfterMs: blockedAfterMs.value,
     driveRoundsFlat: driveRoundsFlat.value,
     pickupWithinMs: pickupWithinMs.value,
@@ -420,11 +434,8 @@ export function dispatchSection(
   if (raw !== undefined && raw !== null && !isMapping(raw))
     return invalid("dispatch must be a mapping");
   const section = (raw ?? {}) as Record<string, unknown>;
-  const unknown = Object.keys(section).filter((k) => !KEYS.includes(k));
-  if (unknown.length > 0)
-    return invalid(
-      `dispatch has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
-    );
+  const refused = unknownKeys("dispatch", section, KEYS);
+  if (refused !== null) return refused;
   const rules = labelsAndAdopt(section);
   if (!rules.ok) return rules;
   let tracker: TrackerConfig;
@@ -447,12 +458,15 @@ export function dispatchSection(
   if (!ready.ok) return ready;
   const epicWidth = width(section.epic_width);
   if (!epicWidth.ok) return epicWidth;
+  const overlap = parseOverlap(section.overlap);
+  if (!overlap.ok) return overlap;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
     epicWidth: epicWidth.value,
+    overlap: overlap.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

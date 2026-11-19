@@ -18,7 +18,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 40;
+const DISPATCH_DB = 42;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 9;
 const REFLECT = "skills/reflect/scripts/";
@@ -156,7 +156,7 @@ export const DRIVE_STATE: RecordKind[] = [
     "drive-cancelled-ci-label-rerun",
     `${DRIVE}lib/cancelled-recovery-state.ts`,
     "cancelled_ci_label_rerun",
-    "A pull request's re-runs of cancellations a label write caused, one per workflow run and attempt, requested outside the head's one re-run: the claim keeps a re-arm or a second caller from requesting the same attempt again.",
+    "A pull request's re-runs of cancellations a label write caused, and of failures in a run the converged label's write started, one per workflow run and attempt, requested outside the head's one re-run: the claim keeps a re-arm or a second caller from requesting the same attempt again.",
   ),
   driveTable(
     "review-round-counter",

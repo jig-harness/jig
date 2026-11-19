@@ -401,6 +401,315 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.283.0] - 2026-11-19
+
+### Added
+
+- The dispatcher weighs each pickup it plans against the work in flight and
+  says why one waits, without changing what it starts. Every open pull
+  request counts by its changed files, and every pickup with no pull request
+  yet by its footprint record, read through the tracker at most 20 items a
+  tick. Each pickup gets its overlap cost (the conflict resolution rounds it
+  is expected to bring), its tier and the overlap bound. A pickup that waits
+  says so in the tick's receipt and report, on the dashboard's queue and in
+  `jig ask pickup@…`: `waits on overlap: …` or
+  `waits on the overlap bound: …`, with each pull request or pickup it waits
+  on. A pickup whose footprint is unknown, or derived from its area labels
+  alone, carries a `footprint unknown: …` note whether it waits or not. A
+  file that keeps work over the bound in 3 ticks of a day gets a proposal to
+  serialize it with `history.ts --propose-serialize`.
+- `dispatch.overlap` in `.config/jig.yaml`, read from the default branch:
+  `max_per_file`, `patience`, `file_rate`, `area_rate`, `unknown_cost`,
+  `ignore`, `quiet_after` and `bound_patience`. An unknown key under it is
+  refused, as the `dispatch` section refuses one, which stops the
+  repository's dispatch until it is fixed.
+- The state database gains `overlap_waits` and `overlap_hotspots`. They
+  record how long each pickup has waited on overlap and how often a file
+  kept work over the bound.
+- The audit's configuration check validates the `dispatch.overlap` keys; its
+  schema gains a `number` type for the rates, a fraction between bounds.
+
+## [0.282.1] - 2026-11-19
+
+### Added
+
+- The [Jig Protocol](plugin/protocol/README.md) index says what happens to a chapter's earlier version: when a chapter's version is raised, the site withdraws the previous version's data file and schema addresses on its next deploy, without a redirect; the release notes mark the change breaking and say what a reader must change, and a reader that needs the old version keeps its own copy from the plugin release or the release's tag. No chapter has been raised past version 1. **Consumer action:** none.
+
+## [0.282.0] - 2026-11-19
+
+### Fixed
+
+- Untagged releases of one repository that share a remedy now reach a person
+  as one need instead of one card per version. The need lists every version,
+  `jig ask --waiting` counts it once, and one answer on the tracker item it
+  names covers them all. A version leaves the list when it gets its tag, and
+  the need goes with the last one. Releases whose one re-run of the failed
+  gates was requested form their own need, and any such release is offered
+  only **Investigate** and **Tag it by hand**. Each release keeps its own
+  record and tracker item.
+
+## [0.281.0] - 2026-11-19
+
+### Added
+
+- The dispatch dashboard's Queue view can be filtered by repository, source, kind and group, each with its counts, and regrouped by repository or source, with the dispatcher's order one tap away. "Starts next" always leads, and a long "Will not start" group starts folded with its reasons counted in the heading. On a phone the groups fold the same way and repository stays the only filter.
+
+### Changed
+
+- [`followup`](plugin/skills/followup/README.md)'s preview of an open pull
+  request now lists first the provisional decisions a drive took at the
+  `wide` autonomy level, from the drive's report or its ledger, so the
+  person merging reads the calls they may still reverse; a list with an
+  unread part says so rather than passing for complete.
+
+### Fixed
+
+- The dispatcher shows a batch pickup's question on the item it concerns, or
+  once for the batch when no member is named. A question clears when the
+  relevant item moves on. **Consumer action:** none.
+- `drive-pr`: one failed forge read in the cancelled-run recovery (the head's
+  check runs, its workflow runs, or the pull request and its CI hold) no
+  longer ends the drive with exit `1`. A timeout, a server error or a lost
+  connection is read once more, and the recovery goes on when that answers.
+  A read that still fails, or meets a rate limit, stops the drive with
+  `NOT_SETTLED` (exit `4`), which `jig dispatch` re-arms, and the drive's log
+  names the read and its failure class. When that read was the check just
+  before a re-run, the head's one automatic re-run is given back, so the
+  re-armed drive requests it instead of parking on a re-run that never left.
+  A failure waiting cannot clear (a refused credential, an answer that does
+  not read) is not retried and is not re-armed. The same holds when the drive
+  loses the pull request between the claim and a request: the runs never sent
+  go back to the next owner, and a run left unrequested by a partial send is
+  requested while the runs already sent are still pending.
+- GitHub calls: `gh`'s `error connecting to <host>` message now counts as no
+  answer from the forge (`unreachable`), which waiting can clear, instead of a
+  request the forge refused.
+
+## [0.280.0] - 2026-11-19
+
+### Added
+
+- The dispatcher relaunches a stalled pickup once in its own tree to push
+  and record its work. A claimed item idle past `dispatch.stalled_after`
+  whose latest headless pickup left unpushed commits or uncommitted edits in
+  its tree, or recorded no result, is started again in that same workspace,
+  never a fresh one, with a fixed prompt to commit and push the work and
+  record the pickup's result, making no second claim. It happens once per
+  item and head: a second stall at the same head, a tree no open workspace
+  on the host holds, or a batch's pickup is still raised to a person. A pass
+  whose result the host could not write takes the same relaunch once the
+  host's health check passes, instead of asking a person to settle or
+  release the item. `dispatch.stalled_relaunch` in `.config/jig.yaml` is
+  `finish-once` by default; `never` turns it off.
+- Every dispatched pickup's prompt, and `do-item`'s dispatched-pass rules,
+  now tell the pass to push its branch and record its result before it
+  ends, whatever ends it.
+
+### Fixed
+
+- A drive held by a launch whose process nobody can show running no longer reads as waiting on nothing. `jig ask` names the hold, why its process is unknown and how long it has held the drive, and past 30 minutes the dispatcher raises a need for it, where a person can clear this machine's launch record once every process of it has been judged and none runs.
+
+## [0.279.3] - 2026-11-19
+
+### Fixed
+
+- `jig dispatch` no longer reads every parked review thread on every tick.
+  Each tick now asks whether the pull request's review comments changed, a
+  request that costs no rate limit while they have not, and reads a parked
+  thread again when they did, or once its last reading is an hour old. A
+  reading is reused only when it was taken at least 2 minutes after the
+  comments last changed and holds every comment the listing shows for its
+  thread, so the first ticks after a change, and after a pull request is first
+  seen, still read its threads. An answer on a thread is still seen by the
+  next tick.
+- A page size shrunk after the forge ran out of time now recovers after 5
+  minutes rather than an hour. Each further shrink within two hours doubles
+  that wait, up to the hour, so a forge that keeps timing out still gets small
+  pages.
+
+## [0.279.2] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch`: one item a served person's queue could not read (an epic
+  whose children did not read, an item no assigner was found for, a child
+  read that failed) no longer turns off the watch on every claimed item of
+  the repository. The claimed items the queue did read are still watched: a
+  started pickup that stopped on a question raises its need, so it shows in
+  `jig ask --waiting` and `jig send pickup@<repo>#<item> answer …` reaches
+  it; a stall is reported; the idle clock runs. The same holds for a tick
+  whose merge proof did not read. While the queue is read only in part, an
+  ended pickup's record is released only when an item it claimed is back in
+  the dispatch states, and the record of an item it never claimed is kept,
+  since an item the read left out may still be wanted; the one exception is an
+  ended batch that claimed some members and has no question, whose unclaimed
+  siblings are released as before. A ready pool that was not read counts as
+  a partial read too. Where a served queue's items in progress were not read at all (the
+  queue failed, or the tracker's rate limit stopped it), the claimed items
+  stay unknown and the tick says so in a row of its own, naming the person
+  and what goes unchecked: stalls, double claims and the questions of
+  started pickups.
+
+## [0.279.1] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` read every issue an epic's execution plan names one request
+  at a time when it re-checked a pickup just before launching it, and again
+  when the claim checked it: about 40 requests for each pickup under a long
+  plan, repeated for every pickup that waited on the workspace budget. That
+  check now reads the plan's issues, and each parent's own row, together:
+  on GitHub one `TrackerDispatchIssues` request for up to 20 issues, on
+  Linear the batched pool read. It still reads them fresh, with nothing kept
+  from the tick. A batch that names an issue the credential cannot see is
+  read one issue at a time; a batch refused for the rate limit or left
+  without an answer fails the check with that failure, as a single read did.
+
+## [0.279.0] - 2026-11-18
+
+### Added
+
+- [M12's mappings](modules/M12-parallel-agent-ergonomics/mappings.md) map T3 Code as a workspace runtime: a `t3.json` script with `runOnWorktreeCreate` runs the worktree create hook once it is imported into the project's actions, and a wrapper runs the remove hook, since T3 Code has no point before a worktree is removed. A dated assessment says what T3 Code offers Jig's tooling and when Jig would add a launcher provider or a dispatcher session runtime for it.
+- The audit's `M12/worktree-hooks-wired` criterion recognises T3 Code: a tracked `t3.json` whose worktree-create script runs the create hook, with a documented step that imports it, counts as wired creation, and removal counts as wired only when the repository tracks how the remove hook is reached and documents the project's automatic worktree cleanup as off. **Consumer action:** none.
+
+## [0.278.1] - 2026-11-18
+
+### Fixed
+
+- A dispatched drive or headless pass now records how it ended even when the
+  host upgrades Jig during the stage to a release whose state database
+  refuses older readers. The tick logs the launch by its real exit instead of
+  "its wrapper is gone without an exit". If the wrapper still cannot record
+  the exit, it says the stage ran and exits with the stage's own code instead
+  of reporting that nothing was started.
+- The dispatcher no longer counts a pickup or follow-up that ended normally
+  while waiting (a follow-up whose release or deployment is still pending), or
+  that stopped on a decision for a person, as a failure. The outcome log
+  records these as `arm pending` and `parked for a person`; a parked run names
+  who answers it and what they must do; and the dashboard, the recurring
+  classes and the steward stop counting them as failures.
+- A follow-up outcome now preserves the question from its framed decision,
+  including when that decision is recorded after the outcome row, so retained
+  outcomes still show what needs a person's answer after their launch records
+  expire.
+- The dispatch dashboard says a repository the dispatcher paused for its
+  GitHub quota in one short line: what paused it, when it resumes and how old
+  the data shown is, with the full detail on expanding the card. A repository
+  lookup held by a rate limit no longer reads as the forge not knowing which
+  repository it is.
+
+## [0.278.0] - 2026-11-18
+
+### Added
+
+- The dispatch dashboard offers shareable filters with matching counts and folding act headings on Needs you. On a phone, shared filters still apply and can be cleared.
+
+## [0.277.3] - 2026-11-18
+
+### Fixed
+
+- A dispatched pickup or steward pass whose Claude Code session stops at
+  startup on a usage-limit notice now walls its account, as a follow-up's
+  already did; before, the pickup was logged as died, the account stayed
+  admitted, and the item waited for a person to release it. The wall lifts
+  at the reset the notice states, in both its time-of-day form
+  (`resets 3:20am (Europe/Amsterdam)`) and its dated weekly form
+  (`resets Nov 13, 11am (Europe/Amsterdam)`), and `dispatch.wall_backoff`
+  applies only when that reset cannot be read. A pickup stopped this way is
+  picked up again on another account, or on its own once the wall lifts,
+  with no person asked. A pickup or steward pass that stops at startup with
+  no usage notice now backs its account off for `dispatch.wall_backoff`, as
+  a follow-up's already did. **Consumer action:** none.
+
+## [0.277.2] - 2026-11-18
+
+### Changed
+
+- The sessions Jig's dispatcher starts on Jig itself run fast checks and
+  targeted tests locally, leaving the full suites to required CI. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` collects finished Orca workspaces on a machine with more than 200
+  of them. It read Orca's workspace registry without asking for more than
+  Orca's default page of 200 rows, took the cut page for an incomplete
+  registry and marked every Orca workspace unverified, so none was ever
+  removed. It now requests up to 5,000 rows and continues to refuse
+  collection when Orca reports that either registry response is truncated.
+
+## [0.277.1] - 2026-11-18
+
+### Changed
+
+- Dispatch reads open pull requests' checks, threads and heads every tick.
+  Between full repository reads it revalidates comments when it needs them,
+  so unchanged comment pages use no GitHub primary rate-limit points.
+
+## [0.277.0] - 2026-11-18
+
+### Added
+
+- A card shows the work it is linked to after its identity, from the
+  line's links: the issues a pull request closes, or the open pull requests
+  that close an issue, up to two and then "+N more". Its popover and the
+  opened card list them all, or say "none found" or "not known for this
+  read". **Consumer action:** none.
+
+### Changed
+
+- The dispatch dashboard's cards open and close from one place: a chevron
+  in a fixed column at each card's left, the same on every view, History's
+  rows and the tick strip included, or a tap anywhere on the card that is
+  not a link, a button or a field. Enter and `o` open the focused card; a
+  text selection or a scroll over a card leaves it as it is. The load
+  breakdown, the accounts list, the repositories list and Help's folds open
+  from the same column. **Consumer action:** none.
+- A pull request and an issue are drawn the same way wherever a card names
+  them: an icon that opens a popover (title, kind and product, standing,
+  repository, linked work and one link out), the number or key as its link,
+  and a Copy. A pull request's icon now shows only its standing on the
+  forge; where the dispatcher holds it stays with the card's status mark and
+  stage chip. **Consumer action:** none.
+- The dashboard names each repository's tracker by its product (GitHub
+  Issues, Linear, Jira) from the repository's configured adapter, and says
+  "issues" where the line does not say; cards no longer repeat "Open the
+  pull request" or "Open in the tracker" links their identity already
+  gives. **Consumer action:** none.
+- The dispatcher's own sentences that the dashboard and `jig dispatch`
+  show (holds, waits, refusals and probe answers) name the issue service
+  by its product, or say "the issue service" or "issues", instead of
+  "tracker". **Consumer action:** none.
+
+## [0.276.0] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` no longer asks a person about a claimed item as a stalled
+  pickup while an open pull request of its repository carries it: one the
+  line links to the item (its branch names the item's key, its description
+  closes it, or the forge says it closes it), not from a fork, whose drive
+  is live or has converged and waits for its merge. The tick reports the
+  item as carried by that pull request, with its link and the drive's state,
+  and the line the dashboard reads lists it under `carried`, whether or not the
+  repository names a `pr_open` state; an item already in `pr_open`, or with a
+  move to `pr_open` still to make, keeps its existing handling and is not
+  listed as carried. A pull request with no drive or a
+  stopped one still leaves the stalled need, which now names it; where the
+  open pull requests or the drive did not read, the need says what could not
+  be told.
+- A drive that stops `CONVERGED` no longer leaves a pull request labelled
+  `converged` while its own label write blocked CI. In a repository whose
+  workflows run on label events, adding `converged` and removing `driving`
+  starts runs on the head the drive just verified; those runs could cancel
+  each other or fail a flaky test, and no drive was left to notice. The drive
+  now watches that head's CI after the write, while it still holds the pull
+  request: it re-runs a cancellation the write caused through the
+  cancelled-run recovery, re-runs a failure in a run a label write started
+  once, and when CI is still not green, or has not settled within
+  `DRIVE_PR_CONVERGED_CI_MINUTES` (30 minutes by default, `0` turns the watch
+  off), it parks `converged-ci` with the runs it saw, stops with
+  `HITL_PARKED` and labels the pull request `parked`.
+
 ## [0.275.1] - 2026-11-18
 
 ### Fixed
@@ -9665,7 +9974,23 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.275.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.283.0...HEAD
+[0.283.0]: https://github.com/jig-harness/jig/compare/v0.282.1...v0.283.0
+[0.282.1]: https://github.com/jig-harness/jig/compare/v0.282.0...v0.282.1
+[0.282.0]: https://github.com/jig-harness/jig/compare/v0.281.0...v0.282.0
+[0.281.0]: https://github.com/jig-harness/jig/compare/v0.280.0...v0.281.0
+[0.280.0]: https://github.com/jig-harness/jig/compare/v0.279.3...v0.280.0
+[0.279.3]: https://github.com/jig-harness/jig/compare/v0.279.2...v0.279.3
+[0.279.2]: https://github.com/jig-harness/jig/compare/v0.279.1...v0.279.2
+[0.279.1]: https://github.com/jig-harness/jig/compare/v0.279.0...v0.279.1
+[0.279.0]: https://github.com/jig-harness/jig/compare/v0.278.1...v0.279.0
+[0.278.1]: https://github.com/jig-harness/jig/compare/v0.278.0...v0.278.1
+[0.278.0]: https://github.com/jig-harness/jig/compare/v0.277.3...v0.278.0
+[0.277.3]: https://github.com/jig-harness/jig/compare/v0.277.2...v0.277.3
+[0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
+[0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
+[0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
+[0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0
 [0.275.1]: https://github.com/jig-harness/jig/compare/v0.275.0...v0.275.1
 [0.275.0]: https://github.com/jig-harness/jig/compare/v0.274.2...v0.275.0
 [0.274.2]: https://github.com/jig-harness/jig/compare/v0.274.1...v0.274.2

@@ -10,7 +10,7 @@
  * | release a pickup's claim | the `pickup` stage is on; the tracker reads; no session holds the item; the line knows of no open pull request that carries it | moves the item to the first state a pickup starts from |
  * | detach a checkout | it is idle: clean, every commit on the remote, no drive or process in it (`shared/idle-holder.ts`) | detaches it at its commit, as an open does an idle holder |
  * | re-arm a drive | the `rearm` stage is on; the dispatch labels are on; no hold label | adds the rearm label, a person's command the tick then carries out |
- * | clear a launch record | it is still pending and its launch cannot be retried, and no process runs it | removes it, as `jig dispatch clear` does |
+ * | clear a launch record | it is pending and its launch cannot be retried, or its state is unknown with every process judged, none running, no session joined to its target and no account wall resting on it | removes it, as `jig dispatch clear` does |
  */
 import {
   CANONICAL_STATES,
@@ -44,11 +44,13 @@ import {
 } from "./launches.ts";
 import type { TickBound } from "./sources/bounded.ts";
 import { rerunReleaseGates } from "./release-gates.ts";
+import { recordReleasesTaken } from "./release-needs.ts";
 import { writeCommandLabel } from "./requests.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
 import type { StationPorts } from "./station-answers.ts";
-import { retryable } from "./stuck-launches.ts";
+import { clearBlock } from "./stranded-holds.ts";
+import { joinedTo, retryable } from "./stuck-launches.ts";
 import { readTrackerAnswers } from "./tracker-answers.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
@@ -74,6 +76,8 @@ export interface StationInputs {
   sessions: () => Promise<SessionsReport>;
   root?: string;
   bound?: TickBound | undefined;
+  /** What every repository's release re-runs spend together; made when the first is asked for, the tick's `bound` when it has a deadline. */
+  rerunBound?: (() => TickBound | undefined) | undefined;
 }
 
 /** Why a stage the step belongs to is off; `null` when it is on. */
@@ -269,7 +273,7 @@ async function moveTo(
     await tracker.transition(item, state, AbortSignal.timeout(60_000));
     return null;
   } catch (error) {
-    return `the tracker did not move ${item} to ${state}: ${failureText(error)}`;
+    return `the issue service did not move ${item} to ${state}: ${failureText(error)}`;
   }
 }
 
@@ -281,7 +285,8 @@ async function releasePickup(
   const off = stageOff(inputs, "pickup");
   if (off !== null) return refused(off);
   const { tracker } = inputs;
-  if (tracker === null) return refused("the tracker did not open this tick");
+  if (tracker === null)
+    return refused("the issue service did not open this tick");
   const state = startState(inputs.section);
   if (state === null)
     return refused(
@@ -293,7 +298,8 @@ async function releasePickup(
   } catch (error) {
     return refused(`${item} did not read: ${failureText(error)}`);
   }
-  if (current === null) return refused(`${item} is gone from the tracker`);
+  if (current === null)
+    return refused(`${item} is gone from the issue service`);
   if (["completed", "canceled", "duplicate"].includes(current.state.type))
     return refused(
       `${item} is now ${current.state.name}, not a claim to release`,
@@ -373,6 +379,29 @@ async function rearmDrive(
     : refused(written.failure.reason);
 }
 
+/** The stage whose switch governs clearing a launch record of this action; none for another action. */
+function clearStageOf(action: string): "rearm" | "pickup" | "followup" | null {
+  // A re-arm or a takeover record is the rearm stage's.
+  if (action === "rearm" || action === "takeover") return "rearm";
+  return action === "pickup" || action === "followup" ? action : null;
+}
+
+/** Why a launch record of unknown process is not cleared: what bars it, or a session that still holds its target. */
+async function unknownClearRefusal(
+  inputs: StationInputs,
+  id: string,
+  state: Parameters<typeof clearBlock>[0],
+  record: Parameters<typeof joinedTo>[0],
+): Promise<string | null> {
+  const blocked = clearBlock(state);
+  if (blocked !== null) return `launch record ${id}: ${blocked}`;
+  return sessionHolds(
+    inputs,
+    joinedTo(record),
+    `the target of launch record ${id}`,
+  );
+}
+
 async function clearRecord(
   inputs: StationInputs,
   id: string,
@@ -380,19 +409,17 @@ async function clearRecord(
   const root = inputs.root ?? stateRoot();
   const row = await inspectRow(id, root);
   if (row === null) return refused(`launch record ${id} is gone`);
-  if (row.state.kind !== "pending" || row.record === null)
-    return refused(`launch record ${id} is ${row.state.kind}, not stuck`);
-  const { action } = row.record;
-  // A re-arm or a takeover record is the rearm stage's.
-  const stage =
-    action === "rearm" || action === "takeover"
-      ? "rearm"
-      : action === "pickup" || action === "followup"
-        ? action
-        : null;
+  const { state, record } = row;
+  if ((state.kind !== "pending" && state.kind !== "unknown") || record === null)
+    return refused(`launch record ${id} is ${state.kind}, not stuck`);
+  if (state.kind === "unknown") {
+    const barred = await unknownClearRefusal(inputs, id, state, record);
+    if (barred !== null) return refused(barred);
+  }
+  const stage = clearStageOf(record.action);
   const off = stage === null ? null : stageOff(inputs, stage);
   if (off !== null) return refused(off);
-  if (retryable(row.record))
+  if (state.kind === "pending" && retryable(record))
     return refused(`launch record ${id}'s launch can still be retried`);
   return removeRecordIf(id, row, root)
     ? ok(`cleared launch record ${id}`)
@@ -429,9 +456,16 @@ export function stationPorts(inputs: StationInputs): StationPorts {
         ? null
         : stageOff(inputs, "followup");
       return off === null
-        ? rerunReleaseGates(inputs.repo, tag, inputs.root, inputs.bound)
+        ? rerunReleaseGates(
+            inputs.repo,
+            tag,
+            inputs.root,
+            inputs.rerunBound?.() ?? inputs.bound,
+          )
         : Promise.resolve(refused(off));
     },
+    takeReleases: (tags, decision) =>
+      recordReleasesTaken(inputs.repo.slug, tags, decision, inputs.root),
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
     releasePickup: (item, record = null) => releasePickup(inputs, item, record),

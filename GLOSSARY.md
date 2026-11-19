@@ -899,6 +899,10 @@ make, use the entry's term instead.
   such as the stakeholder label beside a human-in-the-loop flag; the
   *label taxonomy* says which label it requires, and the label validator
   rejects it alone. Not an *issue facet*.
+- **Dashboard filter facet** — one independent property of a dashboard card,
+  such as its repository or act, whose selected values narrow that dashboard
+  view. It is unrelated to a *facet* in a label taxonomy or to an *issue
+  facet*.
 - **Issue facet** (facet, where only issues' facts are meant) — one of the
   facts every work item carries beside its labels, its type, its priority
   and its size, held by the *tracker interface* as a value that means the
@@ -1646,7 +1650,10 @@ make, use the entry's term instead.
   only adds (a table, a column with a default) leaves it where it was, so a
   copy of the program one release behind keeps using a database a newer copy
   changed; a change that alters or removes what older copies read raises it,
-  and an older copy then refuses the database and names both versions.
+  and an older copy then refuses the database and names both versions. The
+  dispatcher's wrapper, once its stage has ended, still records the stage's
+  exit in such a database while every column it reads or writes after
+  its stage is unchanged.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
   agent's worktree (in its *worktree scratch*, or in the runner that started
@@ -2417,6 +2424,17 @@ make, use the entry's term instead.
   the session adds the *process identity* it runs as and, when it ends, the
   stage's exit. A launch whose answer is lost still has its record, so it holds its
   stage and its account's *slot*, and is never followed by a second launch.
+- **Launch result** — how a pickup's or a follow-up's pass says it ended,
+  recorded on its *launch record* and read by every reader as one of these
+  words: `done`; `waits`, a pass that will start again once a time has
+  come (a rate limit's reset, or a *follow-up arm* still pending);
+  `parked`, a pass that stopped on a *framed decision* it wrote for a
+  person; and `failed`, any other end, or none recorded. `waits` and
+  `parked` are kept as `failed` beside the wait's time or the decision, so
+  a release that knows neither holds such a pass for a person rather than
+  starting it again; a pending *follow-up arm* and a parked decision do
+  not count as a failure on this release, and a rate-limit wait is logged
+  as a quota wall.
 - **Stuck launch record** — a *launch record* still pending that no tick
   launches again: every launch it is allowed (two) ended as not started or
   unanswered with at least one unanswered, a follow-up's replay can never be
@@ -2499,9 +2517,13 @@ make, use the entry's term instead.
   in-progress state) that has had no running session for longer than the
   repository's `dispatch.stalled_after`. The identity's item counts when a
   launch of this host or a claim marker took it, or always under
-  `dispatch.stalled_scope: assigned`. The *dispatcher* reports it and
-  never starts it again: a second session would be a second implementer on
-  a claimed item, so a person settles it. An item whose pickup already
+  `dispatch.stalled_scope: assigned`. The *dispatcher* never starts it
+  afresh, since a second session would be a second implementer on a
+  claimed item. When the tree its pickup ran in still holds the work it
+  left (commits not pushed, edits not committed, or no result recorded),
+  the dispatcher relaunches that pickup once per head in that same tree to
+  push and record it (`dispatch.stalled_relaunch`); otherwise it reports
+  the stall and a person settles it. An item whose pickup already
   opened its pull request is finished work, not a stall: when an open pull
   request from the branch of the dispatcher's launch of it links it, the
   dispatcher moves it to its `pr_open` state.
@@ -2529,6 +2551,15 @@ make, use the entry's term instead.
   instruction and after showing what it would write, and holds no state of
   its own, so any session on any machine can be the operator. *Avoid:*
   orchestrator, lead agent.
+- **Carried item** — a claimed item no session holds that an open pull
+  request of its own repository carries: the line links the pull request to
+  the item, and its drive is live or has converged and waits for a person's
+  merge. The dispatcher reports it, and the line lists it, as carried
+  rather than as a stalled pickup. A pull request with no drive, or a
+  stopped one, does not carry it, and the stall need names the pull
+  request. An item already in the tracker's pull-request-open state, or
+  with a move to it still to make, keeps its existing handling and is not
+  reported as carried.
 - **Dispatch dashboard** — the page a person watches and steers the
   execution line from, and the process that serves it. Today
   `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to
@@ -2551,6 +2582,21 @@ make, use the entry's term instead.
   item is one, and so is an item with no pull request yet. Each of its
   stations has an *address*. See
   [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-piece-of-work-and-its-views).
+- **Work identity** — how the *dispatch dashboard* draws a pull request or
+  an issue wherever it names one: an icon, the number or key as its link, a
+  Copy, and a popover with its title, kind, standing, repository, *linked
+  work* and one link out. A pull request's icon shows only its standing on
+  the forge; an issue's is the same whichever product holds it. See
+  [design/dispatch-dashboard.md](design/dispatch-dashboard.md#a-piece-of-work-and-its-views).
+- **Linked work** — the pull requests and issues a card's own is joined to:
+  for a pull request, the issues it closes or was opened from; for an issue,
+  the open pull requests that close it. A card shows up to two after its
+  *work identity*, then "+N more", and says when none was found or when the
+  read could not tell.
+- **Card with gutter** — the *dispatch dashboard*'s one way to open and
+  close a card: a chevron in a fixed column at the card's left, so it sits
+  in one place on every card of a view, and a tap anywhere on the card that
+  is not a link, a button or a field.
 - **QR code** (quick response code) — a square barcode a phone camera can
   scan to open an address. `jig dispatch dashboard --access` draws one of
   the *dispatch dashboard*'s private, token-free front address
@@ -2859,7 +2905,8 @@ make, use the entry's term instead.
   file per month: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the
   dispatcher's design defines, among them converged, quota wall, parked
-  for a person, stalled and died; a stop no class in that list fits is
+  for a person, arm pending (a follow-up waiting on a *follow-up arm*
+  still pending), stalled and died; a stop no class in that list fits is
   logged as `unknown` with its last state, never dropped. Beside those
   rows it holds one event row per notification it delivered and per nudge
   it attempted (for a stalled pickup, a double claim or a stage drift),
@@ -2881,8 +2928,8 @@ make, use the entry's term instead.
   again. Quieting differs from clearing, which removes the row and its count
   when a tick of that scope itself exits 0, and from notification
   suppression, which only holds back a repeat of a notice already told.
-- **Recurring class** — a bad outcome class (any but converged, merged and
-  parked for a person) of one stage on one repository in the *outcome log* on
+- **Recurring class** — a bad outcome class (any but converged, merged,
+  parked for a person and arm pending) of one stage on one repository in the *outcome log* on
   at least three of the last seven days of the host's clock, counting the rows
   of ended sessions and the event rows that carry a class, such as a drive
   stopped for a person; a drift carries none and never recurs in this sense.

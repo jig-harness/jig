@@ -29,7 +29,7 @@ const PARTICIPANTS: [string, string][] = [
     join(skills, "resolve-review-comments", "SKILL.md"),
   ],
   ["resolve-conflicts", join(skills, "resolve-conflicts", "SKILL.md")],
-  ["followup", join(plugin, "..", ".claude", "skills", "followup", "SKILL.md")],
+  ["followup", join(skills, "followup", "SKILL.md")],
 ];
 
 /** The blank-line-separated blocks of a file that name a command of the changelog skill. */
@@ -100,8 +100,8 @@ describe("the skills that take part in the changelog", () => {
     });
 
     // Each asks a command that reads the base's configuration (check.ts, or
-    // the conversion itself for resolve-conflicts); /followup reads where
-    // releases stand on main, which is the base.
+    // the conversion itself for resolve-conflicts); followup reads where
+    // releases stand on the integration branch, which is the base.
     const asks = probe(name);
 
     test(`${name} asks ${asks} before any note, and stands down where it is off`, () => {

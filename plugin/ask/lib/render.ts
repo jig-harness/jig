@@ -58,6 +58,17 @@ function waitsLine(w: WaitsOn): string {
   return `person: ${w.person} · ${w.needAct}${w.people?.length ? ` [${w.people.join(", ")}]` : ""} (${w.why})`;
 }
 
+/** The overlap reason: its text, then each piece of work it waits on with its kind, state and link. */
+function overlapLines(o: NonNullable<AskAnswer["overlap"]>): string[] {
+  return [
+    o.text,
+    ...o.on.map(
+      (r) =>
+        `${r.ref} (${r.kind}, ${r.state})${r.url === null ? "" : ` ${r.url}`}`,
+    ),
+  ];
+}
+
 function lastLine(last: Last | null): string {
   return last === null
     ? "none recorded"
@@ -141,6 +152,10 @@ export function renderAnswer(a: AskAnswer): string {
     ...field("holder", holderLines(a.holder)),
     ...field("state", [`${a.state}: ${a.stateDetail}`]),
     ...field("waitsOn", [waitsLine(a.waitsOn)]),
+    ...(a.overlap === undefined
+      ? []
+      : field("overlap", overlapLines(a.overlap))),
+    ...(a.footprint === undefined ? [] : field("footprint", [a.footprint])),
     ...field("last", [lastLine(a.last)]),
     ...(a.last === null
       ? []

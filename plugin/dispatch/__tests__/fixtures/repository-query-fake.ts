@@ -13,9 +13,16 @@
  * requests (`commentsQuery`) answers each from the same files, and fails
  * while `comments-query-fail` exists. A pull request whose comment listing
  * `forge-fails.json` refuses has more comments than the query gives, so the
- * tick lists them on their own.
+ * tick lists them on their own. `review-comments-<pr>.json` holds a pull
+ * request's review comments as their listing gives them, each naming its
+ * `thread`: the conditional listing and a parked thread's query read it.
  */
-import { existsSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+} from "node:fs";
 
 /** How many comments one page of the query holds. */
 const COMMENTS_PAGE = 100;
@@ -35,6 +42,8 @@ interface RestComment {
   updated_at?: string;
   html_url?: string;
   body?: string;
+  /** A review comment's thread, which the forge's listing does not name: the fake's own link to the thread's query. */
+  thread?: string;
 }
 
 const actor = (login: string, bot: boolean) =>
@@ -132,6 +141,73 @@ export function commentsQuery(dir: string, args: string[]): unknown {
   };
 }
 
+/** One page of a REST comment listing, a pull request's own or its review comments, with a validator that follows its contents. */
+export function replyConditionalCommentPage(dir: string, args: string[]): void {
+  const match =
+    /\/(issues|pulls)\/(\d+)\/comments\?per_page=100&page=(\d+)$/.exec(
+      args.at(-1) ?? "",
+    );
+  if (match === null) return;
+  const [, listing, pr, page] = match;
+  const { has, json } = files(dir);
+  const review = listing === "pulls";
+  const specific = `${review ? "review-comments" : "comments"}-${pr}.json`;
+  const all = (
+    has(specific)
+      ? json(specific)
+      : review
+        ? []
+        : json("comments.json")
+  ) as unknown[];
+  const start = (Number(page) - 1) * COMMENTS_PAGE;
+  const body = JSON.stringify(all.slice(start, start + COMMENTS_PAGE));
+  const tag = '"' + Bun.hash(body).toString(16) + '"';
+  const unchanged = args.includes("If-None-Match: " + tag);
+  const status = unchanged ? "304 Not Modified" : "200 OK";
+  appendFileSync(
+    `${dir}/comment-page-responses.log`,
+    `${review ? "review " : ""}${pr} ${unchanged ? "304" : "200"}\n`,
+  );
+  process.stdout.write(
+    `HTTP/2.0 ${status}\r\nEtag: ${tag}\r\n\r\n${unchanged ? "" : body}`,
+  );
+  if (unchanged) process.stderr.write("gh: HTTP 304\n");
+  process.exit(unchanged ? 1 : 0);
+}
+
+/** A parked review thread's query, answered from the review comments that name the thread; a thread none names is left to the next fake. */
+export function replyParkedThread(dir: string, args: string[]): void {
+  if (!args.some((a) => a.includes("on PullRequestReviewThread"))) return;
+  const id = (args.find((a) => a.startsWith("id=")) ?? "").slice("id=".length);
+  const { json } = files(dir);
+  const nodes = readdirSync(dir)
+    .filter((name) => /^review-comments-\d+\.json$/.test(name))
+    .flatMap((name) => json(name) as RestComment[])
+    .filter((c) => c.thread === id);
+  if (nodes.length === 0) return;
+  process.stdout.write(
+    JSON.stringify({
+      data: {
+        node: {
+          isResolved: false,
+          comments: {
+            pageInfo: { hasNextPage: false },
+            nodes: nodes.map((c) => ({
+              url: c.html_url,
+              author: { login: c.user?.login },
+              authorAssociation: c.author_association,
+              createdAt: c.created_at,
+              lastEditedAt: c.updated_at === c.created_at ? null : c.updated_at,
+              body: c.body,
+            })),
+          },
+        },
+      },
+    }),
+  );
+  process.exit(0);
+}
+
 /** The query's answer, or `null` for a query that fails. */
 export function repositoryQuery(
   dir: string,
@@ -144,6 +220,7 @@ export function repositoryQuery(
     (args.find((a) => a.startsWith(`${key}=`)) ?? "").slice(key.length + 1);
   const first = Number(arg("first"));
   const after = arg("after") === "" ? 0 : Number(arg("after"));
+  const query = arg("query");
   const all = json("prs-open.json") as Listed[];
   const nodes = all.slice(after, after + first).map((p) => {
     return {
@@ -156,9 +233,9 @@ export function repositoryQuery(
               p.author.is_bot === true,
             ),
       labels: { pageInfo: { hasNextPage: false }, nodes: p.labels },
-      headRef: headRef(p),
-      reviewThreads: threads(p.number),
-      comments: comments(p.number),
+      ...(query.includes("statusCheckRollup") ? { headRef: headRef(p) } : {}),
+      ...(query.includes("reviewThreads") ? { reviewThreads: threads(p.number) } : {}),
+      ...(query.includes("comments(first:") ? { comments: comments(p.number) } : {}),
     };
   });
   const more = after + first < all.length;

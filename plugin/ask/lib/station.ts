@@ -49,6 +49,10 @@ export interface StationAnswer {
   last: Last | null;
   /** The thread's entries, unwindowed. */
   entries: ThreadEntry[];
+  /** For a pickup: why the newest tick found it waiting on overlap with the work in flight. */
+  overlap?: import("../../dispatch/lib/dashboard-contract.ts").OverlapReason;
+  /** For a pickup: the newest tick's note on its footprint, when it is unknown or from labels alone. */
+  footprint?: string;
 }
 
 /** The answer for a key that names nothing. */
@@ -98,6 +102,7 @@ export function recordHolder(r: ReadRecord, generation: number | null): Holder {
     generation,
     process,
     why,
+    since: record.createdAt,
     local: {
       account: record.account,
       record: record.id,

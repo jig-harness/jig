@@ -3,6 +3,7 @@ import { specialCiDisposition } from "./special-ci.ts";
 
 import type { DriveRoundContext } from "./round-context.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import { recoveryExit } from "../cancelled-recovery-reads.ts";
 
 import {
   run,
@@ -602,8 +603,8 @@ async function waitForReplacement(
 ): Promise<number | "continue"> {
   if (!context.dryRun) {
     const recovery = await recoverCancelledOnHead(context.pr, reviewedHead);
-    if (recovery === "parked") return 8;
-    if (recovery === "unknown") return 1;
+    const stop = recoveryExit(recovery);
+    if (stop !== null) return stop;
     if (recovery === "wait") {
       await sleep(FINAL_CI_POLL_SECONDS);
       return "continue";

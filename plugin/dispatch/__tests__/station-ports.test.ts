@@ -4,16 +4,21 @@
  * cannot carry a re-arm, an open pull request carries the item, a session
  * holds it; and a release moves the item only when none of those stops it.
  */
-import { describe, expect, it } from "bun:test";
+import { claimedLaunchRoot } from "./plan-input-fixtures.ts";
+import { afterEach, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
+import { captureIdentity } from "../../shared/liveness.ts";
 import type {
   CommentFact,
   Tracker,
   TrackerUser,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS } from "../lib/labels.ts";
-import type { SessionsReport } from "../lib/runtime/port.ts";
+import { type LaunchClaim, readLaunches } from "../lib/launches.ts";
+import type { SessionsReport, Workspace } from "../lib/runtime/port.ts";
 import type { SharedContext } from "../lib/shared-launches.ts";
 import { type StationInputs, stationPorts } from "../lib/station-ports.ts";
+import { closeStateDb } from "../lib/state.ts";
 import type { DispatchSection } from "../lib/types.ts";
 import type { WorkLinks } from "../lib/work-links.ts";
 
@@ -132,7 +137,7 @@ describe("the steps on a person's answer", () => {
         },
         "a session holds #513",
       ],
-      [{ tracker: null }, "the tracker did not open"],
+      [{ tracker: null }, "the issue service did not open"],
     ];
     for (const [fields, says] of cases) {
       const i = inputs(fields);
@@ -337,5 +342,104 @@ describe("the answers on an item of another tracker", () => {
       expect(read.ok).toBe(false);
       expect(reasonOf(read)).toContain(says);
     }
+  });
+});
+
+describe("clearing a launch record of unknown process", () => {
+  const ID = "20261118T120000Z-aaaaaaaa";
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      closeStateDb(root);
+      rmSync(root, { recursive: true });
+    }
+  });
+
+  const claimed = (claim: LaunchClaim): string =>
+    claimedLaunchRoot(roots, ID, claim, {
+      prefix: "jig-station-clear-",
+      repo: "example-org/web",
+      repoPath: "/srv/work/web",
+      createdAt: "2026-11-18T12:00:00.000Z",
+    });
+
+  async function ownIdentity() {
+    const captured = await captureIdentity();
+    if (!captured.ok) throw new Error(captured.failure.reason);
+    return { ...captured.value, claimedAt: "2026-11-18T12:00:01.000Z" };
+  }
+
+  /** A supervised claim whose wrapper, supervisor and child have all gone. */
+  async function allGone(): Promise<LaunchClaim> {
+    const own = await ownIdentity();
+    return {
+      ...own,
+      pid: 2147483647,
+      supervision: {
+        supervisor: { ...own, pid: 2147483646 },
+        child: { ...own, pid: 2147483645 },
+      },
+    };
+  }
+
+  it("removes one whose every process was judged gone", async () => {
+    const root = claimed(await allGone());
+    const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
+    expect(outcome).toEqual({ ok: true, value: `cleared launch record ${ID}` });
+    expect((await readLaunches(root)).records).toEqual([]);
+  });
+
+  it("refuses one whose process is on another host, whose handoff names none or whose claim does not read, and keeps it", async () => {
+    const gone = await allGone();
+    for (const claim of [
+      { ...(await ownIdentity()), hostId: "another-host-id" },
+      { ...gone, supervision: { supervisor: null, child: null } },
+      { hostId: 1 } as unknown as LaunchClaim,
+    ]) {
+      const root = claimed(claim);
+      const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
+      expect(reasonOf(outcome)).toContain("could not be judged");
+      expect((await readLaunches(root)).records).toHaveLength(1);
+    }
+  });
+
+  it("refuses one a running session is joined to, and keeps it", async () => {
+    const root = claimed(await allGone());
+    const sessions = async (): Promise<SessionsReport> => ({
+      ok: true,
+      source: "test",
+      workspaces: [
+        {
+          id: "w",
+          path: "/srv/work/web/pr-7",
+          branch: "feature/7",
+          items: [],
+          prs: [7],
+          agents: [{ state: "working" }],
+          unverifiableTerminals: 0,
+          comment: "",
+          unread: false,
+          name: "",
+        },
+      ] as unknown as Workspace[],
+    });
+    const outcome = await stationPorts(inputs({ root, sessions })).clearRecord(
+      ID,
+    );
+    expect(reasonOf(outcome)).toContain("a session holds");
+    expect((await readLaunches(root)).records).toHaveLength(1);
+  });
+
+  it("refuses one whose supervised process is alive, and keeps it", async () => {
+    const child = await ownIdentity();
+    const root = claimed({
+      ...child,
+      pid: 2147483647,
+      supervision: { supervisor: child, child },
+    });
+    const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? "" : outcome.failure.reason).toContain("still runs");
+    expect((await readLaunches(root)).records).toHaveLength(1);
   });
 });

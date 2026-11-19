@@ -62,7 +62,8 @@ export const STATION_KEYS = {
   release: {
     class: "release",
     options: ["gates", "inspect", "tag"],
-    meaning: "One untagged release, answered on its tracker item.",
+    meaning:
+      "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item.",
   },
   pickup: {
     class: "pickup-recovery",
@@ -84,7 +85,8 @@ export const STATION_KEYS = {
   launch: {
     class: "launch-recovery",
     options: ["clear", "hold"],
-    meaning: "A pending launch record that no tick launches again.",
+    meaning:
+      "A pending launch record that no tick launches again, or one of unknown process that holds a drive.",
   },
 } as const satisfies Readonly<Record<string, StationKeyValue>>;
 export type StationKey = keyof typeof STATION_KEYS;
@@ -227,7 +229,21 @@ export type StationFacts =
       ended: string | null;
       carriedBy: readonly number[] | null;
     }
-  | { kind: "release-owed"; repo: string; tag: string }
+  | {
+      kind: "release-owed";
+      repo: string;
+      tag: string;
+      /** Its one re-run of the failed gates was requested; absent while it can be. */
+      rerunSpent?: boolean;
+    }
+  | {
+      kind: "release-group";
+      repo: string;
+      /** Every version the decision settles, oldest first. */
+      tags: readonly string[];
+      /** Whether the one re-run of each one's failed gates was requested. */
+      rerunSpent: boolean;
+    }
   | { kind: "checkout"; target: string; branch: string; path: string }
   | {
       kind: "drive";
@@ -239,7 +255,13 @@ export type StationFacts =
       /** The re-arm whose launch ended without moving the ledger; `null` for none. */
       failedRearm: string | null;
     }
-  | { kind: "launch"; target: string; record: string };
+  | {
+      kind: "launch";
+      target: string;
+      record: string;
+      /** Why the process of a record holding a drive is unknown; absent for a pending record. */
+      held?: string;
+    };
 
 /** A framed decision and the key that answers it. */
 export interface StationDecision {
@@ -253,6 +275,7 @@ function decision(
   recommended: StationOptionId,
   why: string,
   alreadyDone: string,
+  options: readonly StationOptionId[] = STATION_KEYS[key].options,
 ): StationDecision {
   return {
     key,
@@ -262,7 +285,7 @@ function decision(
       call: {
         id: "a",
         question,
-        options: STATION_KEYS[key].options.map(stationOption),
+        options: options.map(stationOption),
         recommended,
         why,
       },
@@ -414,15 +437,52 @@ function launch(f: Extract<StationFacts, { kind: "launch" }>): StationDecision {
     "launch",
     `How should the stuck launch record ${f.record} of ${f.target} be settled?`,
     "clear",
-    "No tick launches the record again, so clearing it frees its slot and its stage.",
-    `Launch record ${f.record} is pending and no tick launches it again.`,
+    f.held === undefined
+      ? "No tick launches the record again, so clearing it frees its slot and its stage."
+      : "No tick acts on the drive while the record holds it, so clearing it lets the next tick do so.",
+    f.held === undefined
+      ? `Launch record ${f.record} is pending and no tick launches it again.`
+      : `Launch record ${f.record} holds the drive of ${f.target}, and whether its process runs is unknown: ${f.held}.`,
   );
+}
+
+/** A release's decision once its one re-run was requested: the dispatcher will not request another. */
+function rerunSpent(question: string, covers: string): StationDecision {
+  return decision(
+    "release",
+    question,
+    "inspect",
+    "The dispatcher requests a re-run of the failed gates only once, so if the tag does not follow, someone has to find what holds it back.",
+    `The one re-run was already requested; it may still be running, or the request may have been refused. A release whose gates pass gets its tag and leaves the line. ${covers}`,
+    ["inspect", "tag"],
+  );
+}
+
+function releaseGroup(
+  f: Extract<StationFacts, { kind: "release-group" }>,
+): StationDecision {
+  const question = `How should the ${f.tags.length} untagged releases of ${f.repo} get their tags: ${f.tags.join(", ")}?`;
+  const covers = "Your answer covers every release listed.";
+  return f.rerunSpent
+    ? rerunSpent(question, covers)
+    : decision(
+        "release",
+        question,
+        "gates",
+        "Another run can clear a transient gate failure while keeping the release checks in force.",
+        `The merged pull requests' follow-ups leave each release tracked in its own item. ${covers}`,
+      );
 }
 
 /** The decision the tick frames for a need from `facts`. */
 export function frameStationDecision(facts: StationFacts): StationDecision {
   switch (facts.kind) {
     case "release-owed":
+      if (facts.rerunSpent === true)
+        return rerunSpent(
+          `How should release ${facts.tag} of ${facts.repo} get its tag?`,
+          "The merged pull requests' follow-ups leave the release tracked in one item.",
+        );
       return decision(
         "release",
         `How should release ${facts.tag} of ${facts.repo} get its tag?`,
@@ -430,6 +490,8 @@ export function frameStationDecision(facts: StationFacts): StationDecision {
         "Another run can clear a transient gate failure while keeping the release checks in force.",
         "The merged pull requests' follow-ups leave the release tracked in one item.",
       );
+    case "release-group":
+      return releaseGroup(facts);
     case "followup-failed":
       return followupFailed(facts);
     case "followup-stale":

@@ -167,6 +167,8 @@ const ENTRY_FIELDS = {
       value === undefined || value === null || isString(value),
     concluded: (value) =>
       value === undefined || value === null || isString(value),
+    covers: (value) =>
+      value === undefined || (Array.isArray(value) && value.every(isString)),
     decisions: listOf(DECISION_FIELDS),
     workspaces: Array.isArray,
     workspace: (value) =>
@@ -291,6 +293,16 @@ const LINE_FIELDS: Fields = {
   answeredHolds: (value) =>
     value === undefined ||
     listOf({ repo: isString, target: isString, why: isString })(value),
+  carried: (value) =>
+    value === undefined ||
+    listOf({
+      repo: isString,
+      target: isString,
+      pr: (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0,
+      url: isString,
+      drive: (v) => v === "driving" || v === "converged",
+      why: isString,
+    })(value),
   sessions: listOf(ENTRY_FIELDS.sessions),
   accounts: listOf(ENTRY_FIELDS.accounts),
   queue: listOf(ENTRY_FIELDS.queue),

@@ -15,6 +15,12 @@
 // Two unrelated failures surface in one run rather than two.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type DispatchTests,
+  dispatchTestEnv,
+  dispatchTestPaths,
+  useDispatchFastGates,
+} from "./dispatch-gates.ts";
 import { cli } from "../lib/cli.ts";
 import { couldNotCheck } from "../lib/findings.ts";
 import { checkLinks } from "./check-md-links.ts";
@@ -179,7 +185,7 @@ function configuredIgnores(): string[] {
  * called in this process with the repository root.
  */
 export type Stage = { name: string } & (
-  | { command: string[] }
+  | { command: string[]; env?: Record<string, string | undefined> }
   | { check: (root: string) => number | Promise<number> }
 );
 
@@ -340,6 +346,7 @@ async function runStage(stage: Stage, root: string): Promise<number> {
   if (!("command" in stage)) return stage.check(root);
   const child = Bun.spawn([process.execPath, ...stage.command], {
     cwd: root,
+    env: stage.env ?? process.env,
     stdout: "inherit",
     stderr: "inherit",
   });
@@ -408,6 +415,120 @@ export function summary(
   ].join("\n");
 }
 
+/**
+ * A dispatched pass's stages: the fast ones, then the tests the change
+ * reaches. Those go through the suite's own runner, which refuses a run that
+ * executed nothing, one file at a time and outside the machine-wide lock,
+ * whose admission is sized for full suites.
+ */
+export function dispatchPlan(
+  tests: string[],
+  env: Record<string, string | undefined> = process.env,
+): Stage[] {
+  const run = command(
+    "scripts/test.ts",
+    "--parallel=1",
+    "--timeout",
+    "60000",
+    ...tests.map((path) => `./${path}`),
+  );
+  const targeted: Stage = {
+    ...run,
+    name: `RESOURCE_LOCK_BYPASS=1 ${run.name}`,
+    env: dispatchTestEnv(env),
+  };
+  return [...plan(true, targeted), ...(tests.length ? [targeted] : [])];
+}
+
+/** What one run of the gates does: its stages and what it says first. */
+export interface GateRun {
+  stages: Stage[];
+  notes: string[];
+  dispatch: boolean;
+}
+
+/**
+ * The targeted run, or none outside an opted-in dispatch launch. A selection
+ * that cannot be made is a stage that could not check, so the others report.
+ */
+function dispatchRun(
+  repository: string,
+  env: Record<string, string | undefined>,
+): GateRun | null {
+  let selection: DispatchTests;
+  try {
+    if (!useDispatchFastGates(repository, env)) return null;
+    selection = dispatchTestPaths(repository);
+  } catch (error: unknown) {
+    const failed: Stage = {
+      name: "dispatch test selection",
+      check: () => {
+        throw error;
+      },
+    };
+    return {
+      stages: [...dispatchPlan([], env), failed],
+      notes: [],
+      dispatch: true,
+    };
+  }
+  const { tests, leftToCi } = selection;
+  return {
+    stages: dispatchPlan(tests, env),
+    notes: [
+      ...(tests.length ? [] : ["dispatch gates: no matching local test files"]),
+      ...(leftToCi
+        ? [`dispatch gates: ${leftToCi} test files left to CI`]
+        : []),
+    ],
+    dispatch: true,
+  };
+}
+
+/** The run these arguments and this environment ask for. */
+export function gateRun(
+  fast: boolean,
+  part: Part | undefined,
+  repository: string,
+  env: Record<string, string | undefined> = process.env,
+): GateRun {
+  const dispatch = fast || part ? null : dispatchRun(repository, env);
+  if (dispatch) return dispatch;
+  // The catalog names the separate suites; when it cannot be read, the test
+  // stage could not check (the change-areas stage reports why), and every
+  // other stage still runs.
+  let unreadable: unknown;
+  const skipped = fast
+    ? []
+    : skippedSuites(process.platform, env, () => {
+        try {
+          return separateSuitesOf(repository);
+        } catch (error: unknown) {
+          unreadable = error;
+          return [];
+        }
+      });
+  const test: Stage =
+    unreadable === undefined
+      ? testStage(skipped, configuredIgnores, () => [
+          ...shardArgs(env),
+          ...testPaths(env),
+        ])
+      : {
+          name: command("run", "test").name,
+          check: () => {
+            throw unreadable;
+          },
+        };
+  return {
+    stages: plan(fast, test, part),
+    notes: skipped.length
+      ? [`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`]
+      : [],
+    dispatch: false,
+  };
+}
+
 async function gates(fast: boolean): Promise<number> {
   let part: Part | undefined;
   try {
@@ -419,37 +540,15 @@ async function gates(fast: boolean): Promise<number> {
       error instanceof Error ? error.message : String(error),
     );
   }
-  // The catalog names the separate suites; when it cannot be read, the test
-  // stage could not check (the change-areas stage reports why), and every
-  // other stage still runs.
-  let unreadable: unknown;
-  const skipped = fast
-    ? []
-    : skippedSuites(process.platform, process.env, () => {
-        try {
-          return separateSuitesOf(root);
-        } catch (error: unknown) {
-          unreadable = error;
-          return [];
-        }
-      });
-  if (skipped.length)
-    console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);
-  const test: Stage =
-    unreadable === undefined
-      ? testStage(skipped, configuredIgnores, () => [
-          ...shardArgs(process.env),
-          ...testPaths(process.env),
-        ])
-      : {
-          name: command("run", "test").name,
-          check: () => {
-            throw unreadable;
-          },
-        };
-  const outcomes = await runStages(plan(fast, test, part), root);
+  const run = gateRun(fast, part, root);
+  for (const note of run.notes) console.log(note);
+  const outcomes = await runStages(run.stages, root);
   const status = verdict(outcomes);
-  (status ? console.error : console.log)(summary(outcomes, fast, part));
+  (status ? console.error : console.log)(
+    run.dispatch && !status
+      ? "dispatch gates passed"
+      : summary(outcomes, fast || run.dispatch, part),
+  );
   return status;
 }
 if (import.meta.main) cli(() => gates(process.argv.includes("--fast")));

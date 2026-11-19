@@ -43,6 +43,7 @@ import {
 import { freshState } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import { releaseTrackerAnswer } from "./fixtures/release-fake.ts";
 import { orcaInstalledName } from "../../shared/orca.ts";
+import { footprintBatch } from "./footprint-fake.ts";
 
 export const SLUG = "example-org/example-repo";
 const JIG = resolve(import.meta.dir, "../../jig.ts");
@@ -104,6 +105,8 @@ if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("q
   if (answer === null) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
   out(answer);
 }
+if (args[0] === "api" && args[1] === "-i") require(${JSON.stringify(QUERY_FAKE)}).replyConditionalCommentPage(F, args);
+if (args[0] === "api" && args[1] === "graphql") require(${JSON.stringify(QUERY_FAKE)}).replyParkedThread(F, args);
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("query DispatchBoard"))) {
   // The board read's query: board.json's answer, failing while board-fail exists or when no test wrote one.
   if (fs.existsSync(F + "/board-fail") || !fs.existsSync(F + "/board.json")) { process.stderr.write("gh: HTTP 422\\n"); process.exit(1); }
@@ -742,10 +745,9 @@ export function world(): World {
   let later: { after: number; nodes: Array<Record<string, unknown>> } | null =
     null;
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
-    // This world scripts whole readings, not an update stream. Declare that
-    // its probe cannot establish completeness, so each tick takes that reading.
     const release = releaseTrackerAnswer(op, v, issues, SLUG);
     if (release !== undefined) return release;
+    if (op === "footprint") return footprintBatch(v);
     if (op === "TrackerDispatchChanges")
       return { repository: { issues: conn([], "unmodelled-changes") } };
     if (op === "TrackerDispatchIssues")

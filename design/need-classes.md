@@ -140,9 +140,10 @@ finished.
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
-  follow-up's question (#944). Until that relaunch (#950) is built, a
-  pickup whose result could not be written asks a person once, after the
-  health check passes, to settle or release its item.
+  follow-up's question (#944). A pickup whose result could not be
+  written takes that relaunch once the health check passes; a person is
+  asked to settle or release its item only where its tree cannot be
+  relaunched.
 - These re-runs are the tick's rule, beside the routine re-runs
   (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
   tick decides them from its own records.
@@ -163,6 +164,17 @@ with nothing pushed, or the item was an epic.
   the tick comments on the item from a fixed text naming the pull request.
   Where the repository names no `pr_open` state, nothing moves and the need
   is framed with the pull request named.
+- An item no session holds is not a stall while an open pull request of
+  its own repository that the line links to it (its branch names the key,
+  its description closes the item, or the forge says it closes it) has a
+  drive that is live or has converged and waits for its merge: the tick
+  reports it, and the line shows it, as [carried](../GLOSSARY.md) by that
+  pull request, whether or not the repository names a `pr_open` state;
+  an item already in `pr_open`, or with a move to `pr_open` still to make,
+  keeps that rule and is not listed as carried. A pull request
+  from a fork does not carry it; one with no drive or a stopped drive
+  leaves the need, which names it; where the pull requests or the drive
+  did not read, the need says what could not be told.
 - The tick finds unpushed commits or uncommitted edits in a stalled
   pickup's tree and relaunches that pickup once, in that tree and never a
   fresh one, with a fixed prompt to push and record, as an unshipped-edits
@@ -188,10 +200,24 @@ follow-up then asks the same question.
   the newest tag (#958). A required check a finished run never
   reported does not hold every later tag (#722).
 - A follow-up that finds its release untagged records "release owed" as a
-  step a person owes (the `person-owed` routine class) and finishes, and the
-  line keeps one need per release, not one per merge (#957).
+  step a person owes (the `person-owed` routine class) and finishes. The
+  tracker keeps one record per release, not one per merge (#957).
+- Untagged releases of one repository that share a remedy are shown as one
+  need, not one per version (#1533). The remedy is what is left to try:
+  releases whose failed gates can still be re-run once group together, and
+  releases whose re-run was requested group together. A lone release keeps
+  its own need. The records stay per version: one reservation and one
+  tracker item each.
+- A group's need lists its versions and is answered on the tracker item of
+  the newest. The answer covers every version listed. A version that gets
+  its tag leaves the list, which changes the decision, and the need goes
+  with the last one. Versions a person took (**Investigate**, **Tag it by
+  hand**) keep the decision they answered, so tagging them one by one does
+  not bring the need back. When that answer stops holding them (a later
+  answer replaced it, or it was removed), they return to the groups above.
 - That need is framed under `release`, act Authorize: **Re-run the failed
-  gates**, **Investigate**, **Tag it by hand**.
+  gates**, **Investigate**, **Tag it by hand**. Once a release's one re-run
+  was requested, its need offers only the last two.
 - Tagging a release by hand where a re-run cannot (#894, #721), an
   environment approval and a stuck deployment (#711) stay a person's alone.
 

@@ -54,6 +54,7 @@ import { readDrives } from "./sources/ledgers.ts";
 import {
   allRecords,
   bookOf,
+  rerunBound,
   tickBound,
   type TickContext,
   type TickOptions,
@@ -189,6 +190,7 @@ export async function actObserved(
     merged: forge.merged,
     join: observation.join,
     sessions: observation.sessions,
+    rerunsHeld: context.rerunsHeld ?? null,
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
     book,
@@ -212,6 +214,7 @@ export async function actObserved(
           tracker: observation.tracked.tracker,
           issueRepository: observation.tracked.issueRepository,
           bound: tickBound(context),
+          rerunBound: () => rerunBound(context),
           links: lineInput?.links,
           sessions: () => readSessions(context.runtime, repo, observation.join),
         }),
@@ -267,6 +270,7 @@ interface ApplyInputs {
   merged: MarkedPr[];
   join: JoinTargets;
   sessions: SessionsReport;
+  rerunsHeld: string | null;
   shared: SharedContext;
   /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
   unplaced: ReadonlyMap<number, string>;
@@ -360,6 +364,7 @@ async function applyStages(
               ? {}
               : { servedPolicy: tracked.servedPolicy }),
             sessions: fresh,
+            rerunsHeld: inputs.rerunsHeld,
           });
       },
     ],

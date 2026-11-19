@@ -252,11 +252,11 @@ the name `hold` had before, still chooses it.
 | Key | Class | Options | Meaning |
 | --- | --- | --- | --- |
 | `followup` | `followup-recovery` | `rerun`, `done`, `hold` | A merged pull request's follow-up whose pass ended without recording done, or whose claim no session is joined to. |
-| `release` | `release` | `gates`, `inspect`, `tag` | One untagged release, answered on its tracker item. |
+| `release` | `release` | `gates`, `inspect`, `tag` | An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. |
 | `pickup` | `pickup-recovery` | `release`, `hold` | A pickup that stalled, stopped on a question it did not frame, or ended without moving its item on. |
 | `checkout` | `checkout-recovery` | `detach`, `hold` | A launch that waits because a checkout the workspace runtime does not list holds its branch and is in use. |
 | `drive` | `drive-recovery` | `rearm`, `hold` | A drive that stopped and handed its pull request to a person. |
-| `launch` | `launch-recovery` | `clear`, `hold` | A pending launch record that no tick launches again. |
+| `launch` | `launch-recovery` | `clear`, `hold` | A pending launch record that no tick launches again, or one of unknown process that holds a drive. |
 
 <!-- /protocol:generated -->
 
