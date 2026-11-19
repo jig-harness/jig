@@ -3,7 +3,10 @@
  * launch record whose state is unknown, or another host's launch claim with
  * no end. The hold keeps the tick off a drive it would act on, and keeps a
  * launch slot of its account taken whatever the drive's class, a merged
- * pull request's included; nothing ends it by itself, so it is **stranded**
+ * pull request's included. A drive the hold does not keep from going on is
+ * raised only once the record's processes are proved gone (`provedGone`), so
+ * a drive that runs while a process read failed is never raised. Nothing
+ * ends a hold by itself, so it is **stranded**
  * once it has outlived `STRANDED_HOLD_MS`, counted from the later of the
  * launch and the drive's stop (its merge, for a merged pull request): a
  * launch that ran for hours before the drive stopped has held the stopped
@@ -63,18 +66,23 @@ export function heldStopSinceMs(
   return times.length === 0 ? Number.NaN : Math.max(...times);
 }
 
-/** What the hold costs while it stands, until `settler` settles it, as a need says it. */
-function holdCost(
-  cls: LedgerClass,
-  settler = "a person",
-): { reason: string; notice: string } {
+/** Whether every process of a record of unknown state was judged, and none runs. */
+export function provedGone(
+  state: Extract<LaunchState, { kind: "unknown" }>,
+): boolean {
+  return state.liveProcess === undefined && state.unjudged !== true;
+}
+
+/** What the hold costs while it stands, as a need says it. */
+function holdCost(cls: LedgerClass): { reason: string; notice: string } {
   return heldUpByLaunch(cls)
     ? {
-        reason: `no tick acts on the drive until ${settler} settles it`,
+        reason: "no tick acts on the drive until a person settles it",
         notice: "so no tick starts it again",
       }
     : {
-        reason: `it keeps a launch slot of its account taken until ${settler} settles it`,
+        reason:
+          "it keeps a launch slot of its account taken until a person settles it",
         notice: "and keeps a launch slot of its account taken",
       };
 }
@@ -151,6 +159,7 @@ export function strandedByRecord(
     return null;
   const { record, state } = read;
   if (state.kind !== "unknown") return null;
+  if (!heldUpByLaunch(pr.class) && !provedGone(state)) return null;
   const since = strandedSince(pr, record.createdAt, nowMs);
   if (since === null) return null;
   const heldSince = isoFromMs(since);
@@ -199,27 +208,27 @@ export function strandedByRecord(
   };
 }
 
-/** The need of a drive another host's open launch claim holds; `null` inside the bound. */
+/** The need of a drive another host's open launch claim keeps from going on; `null` inside the bound, or where this host cannot prove the claim's processes gone. */
 export function strandedByClaim(
   slug: string,
   pr: DrivenPr,
   claim: ReadClaim,
   nowMs: number,
 ): StrandedHold | null {
+  if (!heldUpByLaunch(pr.class)) return null;
   const says = claim.says.value;
   const since = strandedSince(pr, says.at, nowMs);
   if (since === null) return null;
   const heldSince = isoFromMs(since);
   const host = String(says.host);
   const why = "that host has not written its end";
-  const cost = holdCost(pr.class, "that host or a person");
   return {
     joined: (w) => w.prs.includes(pr.number),
     action: {
       stage: "notify",
       target: `PR #${pr.number}`,
       record: "forge",
-      reason: `host ${host}'s launch claim ${claim.id} holds the drive (${why}); it has held it since ${heldSince}, past ${STRANDED_HOLD_TEXT}, and ${cost.reason}`,
+      reason: `host ${host}'s launch claim ${claim.id} holds the drive (${why}); it has held it since ${heldSince}, past ${STRANDED_HOLD_TEXT}, and no tick acts on the drive until that host or a person settles it`,
       evidence: {
         url: pr.url,
         head: pr.head,
@@ -233,7 +242,7 @@ export function strandedByClaim(
       notice: strandedHoldNotice(slug, pr, {
         key: `launch claim ${claim.id} of host ${host}`,
         holder: `host ${host}'s ${says.action} launch claim ${claim.id}`,
-        cost: cost.notice,
+        cost: "so no tick starts it again",
         why,
         heldSince,
         settle: `Check that host: once no session runs for its launch record ${String(says.record)}, settle the record there, and a tick acts on the drive.`,

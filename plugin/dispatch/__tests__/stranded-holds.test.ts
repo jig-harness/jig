@@ -277,6 +277,22 @@ describe("a stopped drive held by a launch of unknown process", () => {
     }
   });
 
+  it("raises nothing for a drive of another class while a process of the holder runs or cannot be judged", () => {
+    for (const state of [
+      { ...unknown, liveProcess: { ...PROCESS, pid: 4242 } },
+      { ...unknown, unjudged: true },
+    ] as ReadRecord["state"][])
+      for (const cls of ["driven", "done"] as const)
+        expect(
+          needsOf(
+            input({
+              drives: [drive(PAST, { class: cls })],
+              launches: [launch(state)],
+            }),
+          ),
+        ).toEqual([]);
+  });
+
   it("counts a running ledger's hold from the launch alone, as the drive has not stopped", () => {
     const running = (createdAt: string) =>
       needsOf(

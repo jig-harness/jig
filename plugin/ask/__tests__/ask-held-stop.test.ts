@@ -127,6 +127,34 @@ function claimElsewhere(w: SendWorld, claimedAt: string): void {
   );
 }
 
+/** Claim the launch on this host for a supervised stage whose wrapper, supervisor and child have all ended. */
+function claimEndedHere(w: SendWorld, claimedAt: string): void {
+  const probe = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `const { captureIdentity } = await import(${JSON.stringify(LIVENESS)}); console.log(JSON.stringify(await captureIdentity()));`,
+    ],
+    { env: w.env, stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(probe, 0);
+  const read = JSON.parse(probe.stdout.toString() || "{}") as {
+    ok: boolean;
+    value: ProcessIdentity;
+  };
+  expect(read.ok).toBe(true);
+  const ended = { ...read.value, pid: 2147483647 };
+  claimRecord(
+    RECORD,
+    {
+      ...ended,
+      claimedAt,
+      supervision: { supervisor: ended, child: read.value },
+    },
+    w.state,
+  );
+}
+
 /** A process that runs until the test ends, with its identity as the world's child reads it. */
 function liveProcess(w: SendWorld): ProcessIdentity {
   const sleeper = Bun.spawn(
@@ -312,7 +340,7 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     const long = isoFromMs(currentMs() - 10 * HOUR_MS);
     merged(w, long);
     launch(w, long);
-    claimElsewhere(w, long);
+    claimEndedHere(w, long);
 
     const answer = await ask(w);
     expect(answer.holder).toMatchObject({ process: "unknown" });
@@ -326,6 +354,16 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     const w = world();
     merged(w, currentIso());
     const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimEndedHere(w, long);
+
+    expect((await ask(w)).waitsOn).toBe("none");
+  });
+
+  it("waits on its class while the holder's processes cannot be judged, past the bound too", async () => {
+    const w = world();
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    merged(w, long);
     launch(w, long);
     claimElsewhere(w, long);
 
@@ -346,7 +384,7 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
     const long = isoFromMs(currentMs() - 10 * HOUR_MS);
     launch(w, long);
-    claimElsewhere(w, long);
+    claimEndedHere(w, long);
 
     const waits = (await ask(w)).waitsOn as { person: string; why: string };
     expect(waits.person).toBe("settle the launch that holds the drive");

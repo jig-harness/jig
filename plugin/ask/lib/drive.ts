@@ -883,7 +883,14 @@ function driveWait(
   }
   const running =
     ledger?.driver.state === "running"
-      ? heldStopWait(holder, "driven", ledger.driver.heartbeat, holdFacts)
+      ? heldStopWait(
+          holder,
+          currentMs() - parseMs(ledger.driver.heartbeat) > stallThresholdMs()
+            ? "silent"
+            : "driven",
+          ledger.driver.heartbeat,
+          holdFacts,
+        )
       : null;
   const diagnosis = diagnosticWait(
     reads.row,
