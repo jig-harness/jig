@@ -1116,7 +1116,7 @@ automation pull request (a bot's the rule does not name, or one carrying
 or re-armed of the dispatcher's own accord only while it needs work: a
 failed check (not a cancelled one or one waiting for approval), a conflict
 with its base, or an unresolved review thread. A healthy one is left for a
-person to merge; `jig:drive` or `jig:rearm` still drives one on request. Each
+person to merge. A person can still ask the dispatcher to drive it. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever
@@ -1746,7 +1746,8 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | --- | --- | --- | --- |
 | `assign` | `pickup` | the item assigned to the factory identity (`dispatch.identity`), moved into the first dispatch state (`dispatch.states`) when it is in none | the dispatcher's next tick, which starts the pick-up when the person who made the assignment can write to the repository |
 | `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
-| `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
+| `rearm` | `drive` | a rearm request naming the stopped drive, plus its dispatch label | the dispatcher, which re-arms it on an admitted account in the original worktree |
+| `withdraw-rearm` | `drive` | withdrawal of the pending request and removal of its dispatch label | the dispatcher, which drops the pending request |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
@@ -1761,7 +1762,8 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   already carries the label; a second `hold`; a `release` with no `hold`;
 - `rearm` without a stopped ledger or an existing worktree on this machine,
   while a driver or launch still holds it, after a person's recorded stop,
-  or while a re-arm request is already pending;
+  or while a re-arm request is already pending. `withdraw-rearm` requires
+  a pending request label;
 - `answer` whose key is not a parked question in the pull request's drive
   ledger, or when not every place an answer could be (the pull request's
   comments, a parked thread's replies) was read; a structured answer
@@ -1858,14 +1860,15 @@ by someone who can write to the repository, an answer from an owner, member
 or collaborator.
 
 **What it refuses outright.** A verb whose record the repository has
-switched off is refused with the setting named: `drive`, `rearm`, `hold` and
-`release` need `dispatch.labels.enabled`, read as the dispatcher reads it,
+switched off is refused with the setting named. The dispatch label verbs
+need `dispatch.labels.enabled`, read as the dispatcher reads it,
 from the configuration on the repository's default branch, and the label
 carries the repository's prefix. A machine whose
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) says
 `send: false` refuses every send. A session the line started (a dispatched
 launch, or a drive's pass) runs with `JIG_LAUNCH` set, and there `send`
-refuses `assign`, `drive`, `rearm`, `hold`, `release` and `answer`, which are a
+refuses `assign`, `drive`, `rearm`, `withdraw-rearm`, `hold`, `release` and
+`answer`, which are a
 person's commands; the mailbox verbs are not refused by it. That stops a
 skill's mistake; a session holding its person's credentials could still
 clear the variable or call the forge itself, as it could before.
@@ -1882,7 +1885,7 @@ generation that holds the drive when it is sent. A `resume` needs only the
 tree, so it also clears a directive a driver left behind.
 
 **It wakes the tick that reads its record.** After `assign`, `drive`, `rearm`,
-`hold`, `release` or `answer`, when this machine's
+`withdraw-rearm`, `hold`, `release` or `answer`, when this machine's
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
 repository with the stage the tick acts under (`pickup` for `assign`,
 `followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
@@ -1908,9 +1911,16 @@ when the send woke it. The forge can take
 a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
-**What can be taken back.** `release` undoes a `hold`, and `hold` a
-`release`; a `drive` or `rearm` label can be removed by hand until the tick has armed
-the drive; `resume` withdraws a directive; an assignment can be undone on
+**What can be taken back.** Use `jig send 'drive@owner/repository#123' withdraw-rearm`
+to withdraw a pending rearm. A request lapses when the drive leaves the stop
+it named or when the pull request closes. The tick removes the label and records
+what happened. A missing or reused worktree, or a request still waiting after
+30 minutes, raises a need. Re-send an older request with `jig send` to bind it
+to a stop after the tick removes its unbound label.
+
+`release` undoes a `hold`, and `hold` a `release`. A `drive` label can be
+removed by hand until the tick has armed the drive. `resume` withdraws a
+directive. An assignment can be undone on
 the tracker until the tick starts the pick-up. An `answer` the re-arm has
 read cannot be taken back, which is why it is checked, shown and sent in
 your own words; until then, deleting the comment withdraws it.
