@@ -489,21 +489,21 @@ describe("the line a tick leaves", () => {
       const sweep = w.dispatch(["--apply", "--json"], undefined, {
         JIG_DISPATCH_OBSERVE_WAIT_MS: "30000",
       });
-      // The tick opened the repository, and now waits for its lock.
-      // The budget call also logs: wait for the repository read itself, which carries the configuration.
-      await waitFor("the tick to read the repository", () => {
-        const log = join(w.dir, "gh-calls.log");
-        return (
-          existsSync(log) &&
-          readFileSync(log, "utf8")
-            .split("\n")
-            .some((line) => line.includes("DispatchRepository"))
-        );
-      });
-      // The holder acted: the repository's configuration and a second parked pull request changed after the tick's first read.
+      // The tick opened the repository and holds its answer: the fake wrote this line after building that answer, so the changes below reach only a later read.
+      await waitFor("the tick to read the repository", () =>
+        existsSync(join(w.dir, "repository-answered.log")),
+      );
+      // The holder acted: the repository's configuration changed, pull request #7's ledger (already in the first read) moved on to a stop nothing re-arms, and a second parked pull request appeared.
       w.setConfig(CONFIG.replace(SLUG, "example-org/moved-tracker"));
       w.setPrs("open", [openPr(7, HEAD), openPr(8, "feature/8-parked")]);
+      w.setComments(7, [ledgerComment(701, stoppedLedger(7, 8))]);
       w.setComments(8, [ledgerComment(801, stoppedLedger(8, 16))]);
+      // The tick polls for the lock every quarter of a second and leaves no trace of a refused attempt: once it has had four polls' time since its read, an attempt was refused. A stall that long fails the test, never passes it.
+      const answeredAt = Date.now();
+      await waitFor(
+        "the tick to have waited for the lock",
+        () => Date.now() - answeredAt >= 1000,
+      );
       held.release();
       released = true;
       expectSpawnExit(await sweep, 0);
@@ -516,9 +516,10 @@ describe("the line a tick leaves", () => {
         adapter: "github",
         repository: "example-org/moved-tracker",
       });
-      expect(parsed.value.line.queue.map((row) => row.target)).toContain(
+      // The new pull request is queued from the new read, and #7, quota-parked in the first read, no longer is.
+      expect(parsed.value.line.queue.map((row) => row.target)).toEqual([
         "PR #8",
-      );
+      ]);
     } finally {
       if (!released) held.release();
     }
