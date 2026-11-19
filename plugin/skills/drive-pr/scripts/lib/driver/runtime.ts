@@ -9,6 +9,12 @@ interface DriverRuntime {
    */
   stopLeftWork: { leftWork: boolean; tree: string } | null;
   /**
+   * When the forge's rate limit resets, for a stop on it
+   * (`FORGE_RATE_LIMITED`): recorded on its `stop` event as `until`, which
+   * the dispatcher re-drives it after. `null` for any other stop.
+   */
+  stopLimitedUntil: string | null;
+  /**
    * The round of the last pass this driver started, review or repair, which
    * every pass reads as `DRIVE_PR_ROUND`; `null` before the first. The
    * closing report reads only the round report stamped with it
@@ -88,6 +94,7 @@ interface DriverRuntime {
 
 export const driverRuntime: DriverRuntime = {
   stopLeftWork: null,
+  stopLimitedUntil: null,
   passRound: null,
   passStartedAt: null,
   compromised: "",

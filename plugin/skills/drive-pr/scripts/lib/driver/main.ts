@@ -60,6 +60,7 @@ import { driveState, captureIntentChain, driveTs } from "./paths.ts";
 import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
+import { attachForgeLimit } from "./forge-limit-stop.ts";
 import { ignoreDriveContext } from "./../context-ignore.ts";
 
 import { clearDeadlineRetries } from "./restart.ts";
@@ -428,14 +429,21 @@ async function drive(ctx: DriveContext): Promise<number> {
   // other driver's tree is ever moved, and no second driver of the PR, in
   // another tree, attaches beside this one. A PR found closed here ends the
   // drive as the round loop's PR_NOT_OPEN does, restart count included, and
-  // as a failure (exit 1) when that count could not be cleared.
-  await attachForDrive(pr, dryRun, async () => {
-    if (!(await clearDeadlineRetries(pr)))
-      fail(
-        1,
-        `drive.ts: PR #${pr} is not open; its restart count still stands`,
-      );
-  });
+  // as a failure (exit 1) when that count could not be cleared. A read the
+  // forge's spent rate limit refused waits for a near reset and reads again,
+  // or stops FORGE_RATE_LIMITED (`forge-limit-stop.ts`).
+  await attachForDrive(
+    pr,
+    dryRun,
+    async () => {
+      if (!(await clearDeadlineRetries(pr)))
+        fail(
+          1,
+          `drive.ts: PR #${pr} is not open; its restart count still stands`,
+        );
+    },
+    (limit, mayWait) => attachForgeLimit(pr, limit, mayWait),
+  );
   // The drive's own `.context/` files must not read as uncommitted changes
   // to any later check (`context-ignore.ts`): the attach made sure of it
   // before it moved the tree, and the branch it left may ignore less.

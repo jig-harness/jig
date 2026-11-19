@@ -1,9 +1,10 @@
 /**
  * A re-arm that failed before its drive moved the ledger: the launch record
  * ended on a non-zero exit that is neither a second driver's refusal
- * (`DRIVER_REFUSAL_EXITS`, which `drive-hold.ts` answers) nor the account's
- * usage-limit wall (`walls.ts`), and the ledger still shows the facts the
- * re-arm acted on. Started again on the same pull request head, branch head
+ * (`DRIVER_REFUSAL_EXITS`, which `drive-hold.ts` answers), the account's
+ * usage-limit wall (`walls.ts`) nor the forge's spent rate limit
+ * (`FORGE_RATE_LIMITED`, which clears at its reset whatever the facts), and
+ * the ledger still shows the facts the re-arm acted on. Started again on the same pull request head, branch head
  * and ledger generation, it fails the same way, so it is not started again
  * until one of them changes: the drive becomes a person's
  * (`needs-person`), notified once for those facts. A pull request whose head
@@ -79,6 +80,7 @@ function failedRearm(
   const exit = s.exit.code;
   const wall =
     exit === DRIVE_EXIT.QUOTA_PARKED ||
+    exit === DRIVE_EXIT.FORGE_RATE_LIMITED ||
     s.exit.startup === "quota" ||
     s.exit.wallUnrecorded === true;
   if (exit === null || exit === 0 || wall || DRIVER_REFUSAL_EXITS.has(exit))

@@ -462,6 +462,19 @@
       "cause": "environment",
       "nextOwner": "line",
       "nextStep": "The line re-arms the drive once the CI service recovers."
+    },
+    {
+      "name": "FORGE_RATE_LIMITED",
+      "kind": "state",
+      "exit": 24,
+      "driveStatusExit": 24,
+      "driveExit": 24,
+      "endsDrive": true,
+      "meaning": "The forge's rate limit for the drive's credential is spent, and its reset is further off than the drive waits: nothing more is sent before it. The report names the reset (`rateLimit.until`); a drive whose reset is near waits for it and goes on instead. Re-arm after the reset.",
+      "stop": "stopped: the forge's rate limit for its credential is spent",
+      "cause": "environment",
+      "nextOwner": "line",
+      "nextStep": "The line drives it again once the forge's rate limit resets."
     }
   ]
 }

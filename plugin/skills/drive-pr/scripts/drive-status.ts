@@ -198,6 +198,10 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       and meaning as `drive-state.ts`'s 13
  *   1  INDETERMINATE    [state] the state could not be read — never reported
  *                       as settled
+ *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit
+ *                       for this credential; nothing more is sent before its
+ *                       reset, which the report names (`rateLimit.until`).
+ *                       `drive.ts` waits for a near reset, else stops with it
  *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite: a `gh` that cannot
  *                       report mergeability. Reported through the JSON
  *                       contract like every other state — only argument
@@ -283,12 +287,18 @@ import { takeInheritedHead } from "./lib/status/inherited-head.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
-import { outOfBand } from "./lib/status/terminal-states.ts";
+import { forgeRateLimited, outOfBand } from "./lib/status/terminal-states.ts";
 import {
   WaitingEvaluationCache,
   waitingChecksMaxAgeMs,
 } from "./lib/status/waiting-cache.ts";
 import { currentMs } from "../../../shared/time.ts";
+import {
+  type ForgeLimit,
+  forgeLimitHeld,
+  limitLine,
+  reportLimit,
+} from "./lib/forge-limit.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -339,6 +349,31 @@ async function boundedRealpath(
  * it is absent.
  */
 const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
+
+/**
+ * A read met the forge's spent rate limit before the round's report exists
+ * (the repository's own read): the report's state, exit and reset alone, so
+ * the caller reads the limit, not a missing prerequisite.
+ */
+function limitedAtStart(pr: string, json: boolean, limit: ForgeLimit): number {
+  const report = { state: "", reason: "" };
+  const code = forgeRateLimited(
+    report,
+    `cannot read PR #${pr}'s repository: ${limitLine(limit)}; nothing more is sent before the reset`,
+  );
+  if (json)
+    process.stdout.write(
+      `${JSON.stringify({
+        state: report.state,
+        exit: code,
+        pr: Number.parseInt(pr, 10),
+        reason: report.reason,
+        rateLimit: reportLimit(limit),
+      })}\n`,
+    );
+  else console.error(`drive-status.ts: ${report.reason}`);
+  return code;
+}
 
 async function main(): Promise<number> {
   let pr = "";
@@ -559,6 +594,8 @@ async function main(): Promise<number> {
   ]);
   if (repoRes.code !== 0) {
     if (repoRes.stderr) process.stderr.write(repoRes.stderr);
+    const limit = forgeLimitHeld();
+    if (limit !== null) return limitedAtStart(pr, json, limit);
     fail(2, "could not resolve the repository");
   }
   const [owner, repo, repoUrl] = repoRes.stdout.trim().split(" ");
@@ -602,6 +639,8 @@ async function main(): Promise<number> {
   };
 
   const report: StatusReport = emptyReport();
+  /** The forge's spent limit a `FORGE_RATE_LIMITED` report names (`stopOnForgeLimit`); `null` otherwise. */
+  let rateLimit: { until: string; reason: string } | null = null;
 
   function countOrNull(n: number | null): number | null {
     return n;
@@ -887,6 +926,8 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
+          // `FORGE_RATE_LIMITED` only: when the forge's spent limit resets.
+          ...(rateLimit === null ? {} : { rateLimit }),
           reflectDue: reflectionDue,
           structuralEscalationDue: escalation.due,
           // The claim the last acknowledgment recorded via
@@ -1206,6 +1247,8 @@ async function main(): Promise<number> {
    * sweep instead of re-deriving the same answer from a stale decision.
    */
   async function degrade(reason: string): Promise<number | null> {
+    const limited = await stopOnForgeLimit();
+    if (limited !== null) return limited;
     report.state = "INDETERMINATE";
     report.reason = reason;
     // Not re-armed when a flag suppressed the sweep: the caller has forbidden
@@ -1229,6 +1272,25 @@ async function main(): Promise<number> {
     );
     await sleep(interval);
     return null;
+  }
+
+  /**
+   * End this invocation on the forge's spent rate limit when a read this
+   * process sent met one whose reset is still ahead: nothing is sent before
+   * the reset, so a retry could only be refused again, and a spent limit is
+   * not a failure to read. Its report names the reset (`rateLimit`); `null`
+   * when no such limit holds.
+   */
+  async function stopOnForgeLimit(): Promise<number | null> {
+    const limit = forgeLimitHeld();
+    if (limit === null) return null;
+    rateLimit = reportLimit(limit);
+    const code = forgeRateLimited(
+      report,
+      `cannot read PR #${pr}: ${limitLine(limit)}; nothing more is sent before the reset`,
+    );
+    await emit(code);
+    return code;
   }
 
   let iterations = 0;
@@ -1697,6 +1759,8 @@ async function main(): Promise<number> {
 
     switch (code) {
       case 1: {
+        const limited = await stopOnForgeLimit();
+        if (limited !== null) return limited;
         // Never let an unreadable state decay into a settled one. Retry a
         // bounded number of times, then say so — guessing here is how a round
         // gets abandoned on an auth blip.

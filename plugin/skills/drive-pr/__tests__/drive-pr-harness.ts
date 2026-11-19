@@ -399,6 +399,12 @@ export interface Fixture {
    */
   transientMergeabilityFailure?: boolean;
   /**
+   * Every `gh` call is refused for the credential's spent rate limit: every
+   * read of the pull request (`reads`), or the repository's own read too
+   * (`all`).
+   */
+  forgeRateLimited?: "reads" | "all";
+  /**
    * ONLY the reconciliation sweep's own liveness probe fails — the `--json
    * state` (exact field, nothing else) read drive-status.ts makes immediately
    * ahead of the sweep. Every other `gh pr view` succeeds, so `evaluate()`
@@ -1004,6 +1010,12 @@ export DRIVE_PR_STUB_GH_NESTED=1
   fi
 ) || exit $?
 F="\${DRIVE_PR_FIXTURES:?fixture dir not set}"
+# The forge's rate limit for the credential is spent: every call is refused
+# as GitHub refuses one, before anything else in this stub answers (the
+# repository's own read too, under \`rate-limited-repo\`).
+if [ -f "$F/rate-limited" ] && { [ "$1 $2" != "repo view" ] || [ -f "$F/rate-limited-repo" ]; }; then
+  echo "GraphQL: API rate limit exceeded for user ID 1." >&2; exit 1
+fi
 gh_kind="$1 $2"
 filter=""
 json_fields=""
@@ -2184,6 +2196,10 @@ export function writeFixture(
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }
+  if (f.forgeRateLimited !== undefined)
+    writeFileSync(join(dir, "rate-limited"), "");
+  if (f.forgeRateLimited === "all")
+    writeFileSync(join(dir, "rate-limited-repo"), "");
   // Every one of these drives the stub's SINGLE-FIELD `state` read — the one
   // drive-status.ts makes immediately ahead of the sweep — and the stub
   // evaluates them in a fixed order (`fails`, then `closed-always`, then
