@@ -6,6 +6,7 @@ import { describe, expect, it } from "bun:test";
 import {
   familiesOf,
   familyOf,
+  familyOfModel,
   M0_TIERS,
   runtimeModel,
 } from "../model-families.ts";
@@ -28,6 +29,10 @@ describe("the known families", () => {
     expect(familyOf("codex", "terra")?.model).toBe("gpt-5.6-terra");
     expect(familyOf("codex", "sol")?.model).toBe("gpt-6.2-sol");
     expect(familyOf("codex", "astra")?.model).toBe("gpt-6-astra");
+  });
+
+  it("recognises an earlier full model id as its family", () => {
+    expect(familyOfModel("codex", "gpt-6.1-sol")?.alias).toBe("sol");
   });
 
   it("has no list for another runtime", () => {

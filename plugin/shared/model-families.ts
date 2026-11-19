@@ -24,6 +24,8 @@ export interface ModelFamily {
   alias: string;
   /** The model the alias names today. */
   model: string;
+  /** Earlier model ids the family named and existing configurations may pin. */
+  legacyModels?: readonly string[];
   tier: M0Tier;
 }
 
@@ -48,7 +50,12 @@ const MODEL_FAMILIES: Readonly<Record<string, RuntimeFamilies>> = {
     families: [
       { alias: "luna", model: "gpt-6-luna", tier: "scout" },
       { alias: "terra", model: "gpt-5.6-terra", tier: "execution" },
-      { alias: "sol", model: "gpt-6.2-sol", tier: "strategic" },
+      {
+        alias: "sol",
+        model: "gpt-6.2-sol",
+        legacyModels: ["gpt-6.1-sol"],
+        tier: "strategic",
+      },
       { alias: "astra", model: "gpt-6-astra", tier: "judgment" },
     ],
   },
@@ -74,7 +81,9 @@ export function familyOfModel(
   runtime: string,
   model: string,
 ): ModelFamily | undefined {
-  return familiesOf(runtime)?.families.find((f) => f.model === model);
+  return familiesOf(runtime)?.families.find(
+    (f) => f.model === model || f.legacyModels?.includes(model),
+  );
 }
 
 /**
