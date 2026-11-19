@@ -269,7 +269,7 @@ function placeLedger(ledger: Ledger, r: DriveReads, base: PrFacts["base"]) {
       ...(base === undefined ? {} : { base }),
     },
   );
-  const placed =
+  return (
     settleNoCauseStops(
       [
         {
@@ -293,19 +293,14 @@ function placeLedger(ledger: Ledger, r: DriveReads, base: PrFacts["base"]) {
       r.records,
       new Map([[r.pull.number, { ok: true, value: r.claims }]]),
       currentMs(),
-    )[0] ?? classification;
-  return placed;
+    )[0] ?? classification
+  );
 }
 
 /** Whether a running launch answers for the drive: it says nothing of a park, a stale ledger or a silent one. */
 function runningLaunchSpeaks(holder: Holder | "none", cls: string): boolean {
-  return (
-    holder !== "none" &&
-    holder.process === "alive" &&
-    cls !== "parked" &&
-    cls !== "stale" &&
-    cls !== "silent"
-  );
+  const alive = holder !== "none" && holder.process === "alive";
+  return alive && !["parked", "stale", "silent"].includes(cls);
 }
 
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
