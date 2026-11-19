@@ -17,9 +17,9 @@
  * - a failure in a run a label write started ({@link labelStarted}, its first
  *   attempt only): re-run once, claimed in the same table the label-caused
  *   cancellations use, so a run is re-run once however many callers see it;
- * - anything else, a failure its one re-run did not clear, or a verdict still
- *   unsettled when the watch's window ends: the drive parks, naming the runs;
- *   a window in which the head's CI never read leaves the label standing.
+ * - anything else, a failure its one re-run did not clear, a verdict still
+ *   unsettled when the watch's window ends, or a window in which CI never
+ *   read: the drive parks, naming the missing or unsettled evidence.
  *
  * A run counts as started by the write only when the forge created it within
  * the label-run window after a label event; a workflow created later is not
@@ -446,7 +446,7 @@ function windowSpent(
       kind: "unverified",
       why: `the drive's ownership did not read within ${minutes} minute(s), so the head's CI was not judged`,
     };
-  // A watch that never read the head's CI saw nothing fail: the label stands.
+  // Missing CI evidence cannot certify the label's converged result.
   return readOnce
     ? {
         kind: "park",
@@ -454,8 +454,8 @@ function windowSpent(
         labelCaused: false,
       }
     : {
-        kind: "stands",
-        why: `the head's CI did not read within ${minutes} minute(s), so nothing was seen to fail`,
+        kind: "unverified",
+        why: `the head's CI did not read within ${minutes} minute(s), so the head was not verified`,
       };
 }
 

@@ -370,8 +370,9 @@ async function markGuarded(
     // A write the guards refused has nothing left to write, and is not ours to label.
     if (res.code === LEDGER_REFUSED_EXIT) return "done";
     if (res.code === 0) {
-      // The live watch was the only place to start CI from this label.
-      if (pending && exit === DRIVE_EXIT.CONVERGED) return "done";
+      // The live watch was the only place to start CI from this label, unless
+      // an operator stop changed the stopped projection to parked.
+      if (pending && exit === DRIVE_EXIT.CONVERGED && !byPerson) return "done";
       let readFailed = false;
       const current = async () => {
         const snapshot = await readLedgerSnapshot(pr, login);

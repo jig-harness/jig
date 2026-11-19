@@ -703,7 +703,13 @@ async function afterStopWrite(
 ): Promise<boolean> {
   const next = afterHandoff(handoff);
   if (next === "unwritten") return false;
-  if (next === "label" && (!pending || code !== DRIVE_EXIT.CONVERGED)) {
+  const stoppedByPerson =
+    personStopFor(await resolveStateDir(), pr, started).personStop !==
+    undefined;
+  if (
+    next === "label" &&
+    (!pending || code !== DRIVE_EXIT.CONVERGED || stoppedByPerson)
+  ) {
     let unreadable = false;
     const label = await labelStop(pr, code, started, async () => {
       const owner = await ledgerOwnership(pr);
