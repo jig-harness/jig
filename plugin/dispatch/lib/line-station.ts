@@ -10,6 +10,7 @@
  */
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { decisionOf } from "./line-decision.ts";
+import { groupTags } from "./release-groups.ts";
 import { dispatcherDecisionDigest } from "../../shared/decisions/station-digest.ts";
 import {
   type AnswerStation,
@@ -158,8 +159,23 @@ const FACTS: Partial<
 > = {
   "followup-failed": followupFailedFacts,
   "release-owed": (action, ctx) => {
+    const tags = groupTags(action.evidence);
+    if (tags.length > 0)
+      return {
+        kind: "release-group",
+        repo: ctx.slug,
+        tags,
+        rerunSpent: action.evidence.rerunSpent === true,
+      };
     const tag = text(action.evidence, "tag");
-    return tag === null ? null : { kind: "release-owed", repo: ctx.slug, tag };
+    return tag === null
+      ? null
+      : {
+          kind: "release-owed",
+          repo: ctx.slug,
+          tag,
+          ...(action.evidence.rerunSpent === true ? { rerunSpent: true } : {}),
+        };
   },
   "followup-stale": followupStaleFacts,
   stalled: stalledFacts,

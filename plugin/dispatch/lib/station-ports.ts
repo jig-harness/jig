@@ -44,6 +44,7 @@ import {
 } from "./launches.ts";
 import type { TickBound } from "./sources/bounded.ts";
 import { rerunReleaseGates } from "./release-gates.ts";
+import { recordReleasesTaken } from "./release-needs.ts";
 import { writeCommandLabel } from "./requests.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -75,6 +76,8 @@ export interface StationInputs {
   sessions: () => Promise<SessionsReport>;
   root?: string;
   bound?: TickBound | undefined;
+  /** What every repository's release re-runs spend together; made when the first is asked for, the tick's `bound` when it has a deadline. */
+  rerunBound?: (() => TickBound | undefined) | undefined;
 }
 
 /** Why a stage the step belongs to is off; `null` when it is on. */
@@ -453,9 +456,16 @@ export function stationPorts(inputs: StationInputs): StationPorts {
         ? null
         : stageOff(inputs, "followup");
       return off === null
-        ? rerunReleaseGates(inputs.repo, tag, inputs.root, inputs.bound)
+        ? rerunReleaseGates(
+            inputs.repo,
+            tag,
+            inputs.root,
+            inputs.rerunBound?.() ?? inputs.bound,
+          )
         : Promise.resolve(refused(off));
     },
+    takeReleases: (tags, decision) =>
+      recordReleasesTaken(inputs.repo.slug, tags, decision, inputs.root),
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
     releasePickup: (item, record = null) => releasePickup(inputs, item, record),
