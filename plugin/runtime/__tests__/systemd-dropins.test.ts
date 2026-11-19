@@ -387,10 +387,28 @@ describe("effectiveJob, what systemd would apply", () => {
     expect(refused("NoNewPrivileges=yes\nNoNewPrivileges=")).toMatchObject({
       ok: false,
     });
-    expect(refused("EnvironmentFile=/a\nEnvironmentFile=")).toMatchObject({
+    expect(refused("ProtectSystem=strict\nProtectSystem=")).toMatchObject({
       ok: false,
     });
     expect(refused("ExecStartPre=")).toMatchObject({ ok: true });
+  });
+
+  test("an empty assignment clears a list, as systemd reads it", () => {
+    expect(refused("EnvironmentFile=/a\nEnvironmentFile=")).toMatchObject({
+      ok: true,
+    });
+    expect(refused("ExecStartPre=/bin/x\nExecStartPre=")).toMatchObject({
+      ok: true,
+    });
+    expect(refused("ReadOnlyPaths=/a\nReadOnlyPaths=")).toMatchObject({
+      ok: true,
+    });
+  });
+
+  test("refuses a sandbox directive no list names", () => {
+    expect(refused("NoExecPaths=/tmp")).toMatchObject({ ok: false });
+    expect(refused("RootImage=/path/to/image")).toMatchObject({ ok: false });
+    expect(refused("ProtectHostname=yes")).toMatchObject({ ok: false });
   });
 
   test("refuses UMask, spelled as systemd spells it", () => {

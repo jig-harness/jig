@@ -302,6 +302,7 @@ async function observeAll(
   // A repository named twice is read once.
   // Checkouts of one repository in this tick share the repository's lock: the first holds it.
   const claimed = new Set<string>();
+  const acquiring = new Map<string, Promise<void>>();
   const prepared: Array<
     Extract<Awaited<ReturnType<typeof openTurn>>, { turn: unknown }>
   > = [];
@@ -334,19 +335,34 @@ async function observeAll(
           },
         });
         const observed = await openTurn(turn, context, async (slug) => {
+          // A checkout of this repository still acquiring answers for the others: its lock is not reentrant.
+          const earlier = acquiring.get(slug);
+          if (earlier !== undefined) await earlier;
           if (claimed.has(slug)) return null;
-          const repository = await waitForLock(
-            () => takeRepositoryLock(slug),
-            context,
-            deadline,
-            () => claimed.has(slug),
+          let settle: () => void = () => undefined;
+          acquiring.set(
+            slug,
+            new Promise<void>((resolve) => {
+              settle = resolve;
+            }),
           );
-          // Another checkout of this repository took the lock while this one waited.
-          if (repository === null) return null;
-          if ("heldBy" in repository) return repository.heldBy;
-          claimed.add(slug);
-          own.push(repository);
-          return null;
+          try {
+            const repository = await waitForLock(
+              () => takeRepositoryLock(slug),
+              context,
+              deadline,
+              () => claimed.has(slug),
+            );
+            // Another checkout of this repository took the lock while this one waited.
+            if (repository === null) return null;
+            if ("heldBy" in repository) return repository.heldBy;
+            claimed.add(slug);
+            own.push(repository);
+            return null;
+          } finally {
+            acquiring.delete(slug);
+            settle();
+          }
         });
         if ("busy" in observed) {
           out.busy.set(path, observed.busy);

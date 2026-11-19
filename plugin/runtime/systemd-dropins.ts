@@ -48,31 +48,34 @@ export interface EffectiveJob {
   unset: string[];
 }
 
-/** `[Service]` keys that change what the job's process runs or sees in a way this reader does not reproduce. */
-const UNREPRODUCED = new Set([
-  "EnvironmentFile",
-  "UnsetEnvironment",
-  "PassEnvironment",
-  "ExecCondition",
-  "ExecStartPre",
-  "LoadCredential",
-  "LoadCredentialEncrypted",
-  "SetCredential",
-  "SetCredentialEncrypted",
-  "ImportCredential",
-  "User",
-  "Group",
-  "WorkingDirectory",
-  "RootDirectory",
+/**
+ * `[Service]` keys a drop-in may set without changing what the job's process
+ * runs or sees: the ones this reader applies, and settings about the unit's
+ * bookkeeping. Every other key (a sandbox, a privilege, a user, a directory,
+ * a credential, a command run around the job, a resource limit) is applied by
+ * systemd and not by a plain child process, so it is refused; a list of the
+ * keys to refuse would miss each directive systemd adds.
+ */
+const REPRODUCED = new Set([
+  "Type",
+  "ExecStart",
+  "Environment",
+  "SyslogIdentifier",
+  "SyslogFacility",
+  "SyslogLevel",
+  "TimeoutStartSec",
+  "TimeoutStopSec",
+  "TimeoutSec",
+  "RemainAfterExit",
 ]);
 
-/** Sandboxing and privilege directives, which systemd applies and a plain child process does not. */
-const RESTRICTION =
-  /^(NoNewPrivileges|Protect[A-Z]\w*|Private[A-Z]\w*|Restrict[A-Z]\w*|Capability\w*|AmbientCapabilities|SystemCall\w*|ReadOnlyPaths|ReadWritePaths|InaccessiblePaths|TemporaryFileSystem|Bind\w*Paths|MemoryDeny\w*|Lock\w*|DynamicUser|SELinux\w*|AppArmor\w*|Smack\w*|Secure\w*|Device\w*|IPAddress\w*|Mount\w*|Namespace\w*|UMask|Nice|CPUSchedul\w*|IOSchedul\w*|OOM\w*|Personality|RemoveIPC|UtmpIdentifier|TTY\w*|StandardInput|StandardOutput|StandardError)$/;
+/** Directives that hold a list, which an empty assignment clears, as systemd reads it; any other keeps its earlier value. */
+const RESETTABLE =
+  /^(Exec\w+|EnvironmentFile|UnsetEnvironment|PassEnvironment|\w*Credential\w*|\w*Paths|TemporaryFileSystem|SystemCall(Filter|Architectures|Log)|CapabilityBoundingSet|AmbientCapabilities|Restrict(AddressFamilies|FileSystems)|IPAddress(Allow|Deny)|DeviceAllow|SupplementaryGroups|BindPaths)$/;
 
 /** Whether `key` changes the process in a way this reader does not reproduce. */
 function unreproduced(key: string): boolean {
-  return UNREPRODUCED.has(key) || RESTRICTION.test(key);
+  return !REPRODUCED.has(key);
 }
 
 /** A variable name systemd accepts: letters, digits and underscores, not starting with a digit. */
@@ -318,8 +321,9 @@ function applyAssignment(
 ): string | null {
   const { key, value } = assignment;
   if (unreproduced(key)) {
-    // An empty assignment resets only some directives (a boolean ignores it), so none lifts the refusal.
+    // An empty assignment clears a list and is ignored by a scalar, which keeps its earlier value.
     if (value !== "") state.active.set(key, path);
+    else if (RESETTABLE.test(key)) state.active.delete(key);
   } else if (key === "Environment")
     return applyEnvironment(state, value, specifiers);
   else if (key === "ExecStart") {

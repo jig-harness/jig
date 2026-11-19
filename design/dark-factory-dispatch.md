@@ -141,7 +141,8 @@ flowchart TD
 
 **The locks, and their order.** A tick takes each repository's observe
 lock (`observe/<digest>.lock` under the state directory) as it starts
-reading that repository, and never waits for one. The lock is taken twice
+reading that repository; only the timer's sweep waits for one, as below.
+The lock is taken twice
 over: for the checkout's path, before anything is read, and for the forge
 repository, once the observation knows which repository the checkout is,
 because the records an observation reads and writes belong to the
