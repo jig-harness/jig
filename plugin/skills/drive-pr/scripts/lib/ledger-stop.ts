@@ -370,9 +370,6 @@ async function markGuarded(
     // A write the guards refused has nothing left to write, and is not ours to label.
     if (res.code === LEDGER_REFUSED_EXIT) return "done";
     if (res.code === 0) {
-      // The live watch was the only place to start CI from this label, unless
-      // an operator stop changed the stopped projection to parked.
-      if (pending && exit === DRIVE_EXIT.CONVERGED && !byPerson) return "done";
       let readFailed = false;
       const current = async () => {
         const snapshot = await readLedgerSnapshot(pr, login);
@@ -387,11 +384,18 @@ async function markGuarded(
       const published = pending ? await current() : found;
       if (published === null) return "retry";
       if ("why" in published) return "done";
+      // The handoff can publish an operator stop after the initial snapshot.
+      // Decide whether the converged-CI watch remains applicable from that
+      // post-handoff state, not from the earlier local read.
+      const currentByPerson =
+        personStopFor(stateDir, pr, diag.started).personStop !== undefined;
+      if (pending && exit === DRIVE_EXIT.CONVERGED && !currentByPerson)
+        return "done";
       const label = await labelDrive(
         pr,
         {
           stopped: exit,
-          byPerson,
+          byPerson: currentByPerson,
           verifiedSha: published.ledger.verifiedSha,
           stop: stopKey(
             published.ledger.driver.started,
@@ -407,7 +411,12 @@ async function markGuarded(
             }
           : undefined,
       );
-      if (readFailed || (pending && label?.write.outcome === "refused"))
+      if (
+        readFailed ||
+        (pending &&
+          currentByPerson &&
+          (label === null || label.write.outcome === "refused"))
+      )
         return "retry";
       return "done";
     }
