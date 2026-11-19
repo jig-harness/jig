@@ -343,8 +343,12 @@ async function observeAll(
         });
         const observed = await openTurn(turn, context, async (slug) => {
           // A checkout of this repository still acquiring answers for the others: its lock is not reentrant.
-          const earlier = acquiring.get(slug);
-          if (earlier !== undefined) await earlier;
+          // A promise published meanwhile is awaited too: only a settled slug is decided on.
+          let earlier = acquiring.get(slug);
+          while (earlier !== undefined) {
+            await earlier;
+            earlier = acquiring.get(slug);
+          }
           if (claimed.has(slug)) return waitedFor.has(slug) ? REOPEN : null;
           let settle: () => void = () => undefined;
           acquiring.set(
@@ -371,12 +375,10 @@ async function observeAll(
             // Sibling checkouts borrow this lock: the tick owns it, so one checkout giving up its turn never releases it.
             locks.set(`${REPOSITORY_LOCK_PREFIX}${slug}`, repository);
             // The holder may have acted during the wait: every checkout's open read of the repository is stale.
-            if (waited) {
-              waitedFor.add(slug);
-              return REOPEN;
-            }
-            return null;
+            return waited || waitedFor.has(slug) ? REOPEN : null;
           } finally {
+            // A wait that gave up still let the holder act: a sibling acquiring afterwards opens again.
+            if (waited) waitedFor.add(slug);
             acquiring.delete(slug);
             settle();
           }
