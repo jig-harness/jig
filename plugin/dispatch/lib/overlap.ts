@@ -164,13 +164,15 @@ function staticDir(glob: string): string {
  * directory; a glob with no wildcard names one file, which meets the other
  * only where the other matches it.
  */
-function globsMeet(a: string, b: string): boolean {
+function globsMeet(a: string, b: string, conservative = false): boolean {
   if (!WILDCARD.test(a)) return a === b || matchesGlob(a, b);
   if (!WILDCARD.test(b)) return matchesGlob(b, a);
   const da = staticDir(a);
   const db = staticDir(b);
   if (da === "" || db === "") return true;
-  return globMatchesUnder(a, db) || globMatchesUnder(b, da);
+  // A serialized hold reads dotfiles and punctuation names as reachable too.
+  const under = conservative ? globMayMatchUnder : globMatchesUnder;
+  return under(a, db) || under(b, da);
 }
 
 /**
@@ -192,6 +194,7 @@ function holds(
   x: Element,
   y: Element,
   model: Pick<OverlapModel, "areaGlobs">,
+  conservative = false,
 ): boolean {
   if (x.kind === "file") return false;
   if (x.kind === "dir") {
@@ -204,7 +207,7 @@ function holds(
     return globs.some((g) => globReachesDir(g, bare(y.path)));
   if (x.key === y.key) return true;
   const other = model.areaGlobs(y.key);
-  return globs.some((g) => other.some((h) => globsMeet(g, h)));
+  return globs.some((g) => other.some((h) => globsMeet(g, h, conservative)));
 }
 
 /**
@@ -226,7 +229,7 @@ export function reachesArea(
   ];
   const files = footprint.files.filter((f) => !f.endsWith("/"));
   return elements({ ...footprint, files, dirs }).some(
-    (e) => holds(target, e, model) || holds(e, target, model),
+    (e) => holds(target, e, model, true) || holds(e, target, model, true),
   );
 }
 

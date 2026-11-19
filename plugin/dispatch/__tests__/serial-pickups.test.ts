@@ -132,6 +132,16 @@ describe("reachesArea beyond plain names", () => {
   });
 });
 
+describe("reachesArea between two areas", () => {
+  it("reads dotfile globs of two distinct areas as intersecting", () => {
+    const areaGlobs = (area: string) =>
+      ({ env: ["config/*/.env"], team: ["config/team/.*"] })[area] ?? [];
+    expect(reachesArea(known([], [], ["team"]), "env", { areaGlobs })).toBe(
+      true,
+    );
+  });
+});
+
 describe("serialPickupHolds", () => {
   it("holds a pickup that reaches an area an open pull request touches, and names the area and the pull request", () => {
     const held = holds(

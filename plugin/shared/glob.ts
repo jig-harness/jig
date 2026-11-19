@@ -182,6 +182,17 @@ const DEVICE_PREFIXES = new Set(
   [...DEVICE_NAMES].flatMap((n) => [...n].map((_, i) => n.slice(0, i + 1))),
 );
 
+// Characters a class may accept beyond its own members, so a negated or
+// ranged class reaches punctuation, a non-ASCII letter, and each half of a
+// supplementary character (the automaton reads UTF-16 code units).
+const EXTRA_CHARS = [
+  ...".~@+= !\"#$%&'()*,:;<>?[\\]^`{|}",
+  "é",
+  "中",
+  "\ud83d",
+  "\ude00",
+];
+
 const automata = new Map<string, Automaton>();
 
 function automatonOf(glob: string): Automaton {
@@ -200,7 +211,7 @@ function automatonOf(glob: string): Automaton {
       slash: test.test("/"),
       dot: test.test("."),
       names: NAME_CHARS.filter((c) => test.test(c)),
-      chars: [...new Set([...source, ".", "~", "@", "+", "="])].filter(
+      chars: [...new Set([...source, ...EXTRA_CHARS])].filter(
         (c) => c !== "/" && test.test(c),
       ),
       to,

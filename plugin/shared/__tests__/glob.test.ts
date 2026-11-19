@@ -4,7 +4,12 @@
  * compile.
  */
 import { describe, expect, it } from "bun:test";
-import { globMatchesUnder, globProblem, globToRegExp } from "../glob.ts";
+import {
+  globMatchesUnder,
+  globMayMatchUnder,
+  globProblem,
+  globToRegExp,
+} from "../glob.ts";
 
 describe("globToRegExp", () => {
   const cases: [string, string, boolean][] = [
@@ -187,5 +192,16 @@ describe("globProblem", () => {
     expect(globProblem("src/{a,b}/**")).toBeNull();
     expect(globProblem("src/{a,b")).toContain("unclosed {");
     expect(globProblem("[z-a]")).toContain('"[z-a]" is not a valid glob');
+  });
+});
+
+describe("globMayMatchUnder", () => {
+  it("reaches a directory through a class that accepts only non-ASCII or punctuation characters", () => {
+    for (const glob of ["config/*/[! -~]*", "config/*/[!a-z]*", "config/*/.*"])
+      expect([glob, globMayMatchUnder(glob, "config/team")]).toEqual([
+        glob,
+        true,
+      ]);
+    expect(globMayMatchUnder("other/*/[! -~]*", "config/team")).toBe(false);
   });
 });
