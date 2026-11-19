@@ -71,7 +71,7 @@ The same values, for a program in any language:
 | `CI_REPAIR_SPENT` | driver-only | — | 21 | yes | The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again. |
 | `REVIEW_SKIPPED` | state | 22 | 22 | yes | The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms. |
 | `CI_INFRA_PERSISTED` | driver-only | — | 23 | yes | The review converged, but checks kept failing on the CI service's own infrastructure after the drive re-ran them. Nothing in the code needs repair; re-arm once the service recovers. |
-| `FORGE_RATE_LIMITED` | state | 24 | 24 | yes | The forge's rate limit for the drive's credential is spent, and its reset is further off than the drive waits: nothing more is sent before it. The report names the reset (`rateLimit.until`); a drive whose reset is near waits for it and goes on instead. Re-arm after the reset. |
+| `FORGE_RATE_LIMITED` | state | 24 | 24 | yes | The forge's rate limit for the drive's credential is spent: nothing more is sent before it resets. The report names the reset (`rateLimit.until`). The driver then waits out a reset within its bound (`DRIVE_PR_RATE_LIMIT_WAIT`) and goes on, or stops on one further off. Re-arm after the reset. |
 
 <!-- /protocol:generated -->
 

@@ -38,7 +38,10 @@ import { markDriverRecordReleased } from "./../ledger-stop.ts";
 import { startDriverObservation } from "../driver-observation.ts";
 import { installDriverLifecycle, createDriverRegistry } from "./lifecycle.ts";
 
-import { nextDriverGeneration } from "./../state/mailbox-stop.ts";
+import {
+  nextDriverGeneration,
+  watchImmediateStop,
+} from "./../state/mailbox-stop.ts";
 
 import { registerCleanup } from "./../../../../../shared/cleanup.ts";
 
@@ -442,7 +445,14 @@ async function drive(ctx: DriveContext): Promise<number> {
           `drive.ts: PR #${pr} is not open; its restart count still stands`,
         );
     },
-    (limit, mayWait) => attachForgeLimit(pr, limit, mayWait),
+    (limit, mayWait) =>
+      attachForgeLimit(
+        pr,
+        limit,
+        mayWait,
+        {},
+        watchImmediateStop(mailboxDir, pr, generation),
+      ),
   );
   // The drive's own `.context/` files must not read as uncommitted changes
   // to any later check (`context-ignore.ts`): the attach made sure of it

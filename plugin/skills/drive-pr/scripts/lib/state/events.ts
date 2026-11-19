@@ -62,6 +62,11 @@ function isCause(kind: unknown, cause: unknown): boolean {
   return causes.includes(cause);
 }
 
+/** Whether the optional field `value` of an event of `kind` is absent, or valid and on a `stop`. */
+function stopOnly(kind: unknown, value: unknown, valid: boolean): boolean {
+  return value === undefined || (valid && kind === "stop");
+}
+
 export function isDriveEvent(v: unknown): v is DriveEvent {
   return (
     isRecord(v) &&
@@ -70,14 +75,13 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     Number.isFinite(parseMs(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
-    (v.leftWork === undefined ||
-      (typeof v.leftWork === "boolean" && v.kind === "stop")) &&
-    (v.tree === undefined ||
-      (typeof v.tree === "string" && v.tree !== "" && v.kind === "stop")) &&
-    (v.until === undefined ||
-      (typeof v.until === "string" &&
-        Number.isFinite(parseMs(v.until)) &&
-        v.kind === "stop"))
+    stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
+    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "") &&
+    stopOnly(
+      v.kind,
+      v.until,
+      typeof v.until === "string" && Number.isFinite(parseMs(v.until)),
+    )
   );
 }
 

@@ -61,6 +61,20 @@ function weighsHeads(pr: DrivenPr): boolean {
   return pr.class === "re-armable" && pr.evidence.noCause !== true;
 }
 
+/** Whether a drive's exit is a wall that clears by itself: the usage limit or the forge's rate limit. */
+function stoppedOnWall(exit: {
+  code: number | null;
+  startup?: string;
+  wallUnrecorded?: boolean;
+}): boolean {
+  return (
+    exit.code === DRIVE_EXIT.QUOTA_PARKED ||
+    exit.code === DRIVE_EXIT.FORGE_RATE_LIMITED ||
+    exit.startup === "quota" ||
+    exit.wallUnrecorded === true
+  );
+}
+
 /** A drive's latest launch record, when it is a re-arm that failed on the ledger facts as they are now, with the heads it launched at. */
 function failedRearm(
   pr: DrivenPr,
@@ -78,12 +92,12 @@ function failedRearm(
   )
     return null;
   const exit = s.exit.code;
-  const wall =
-    exit === DRIVE_EXIT.QUOTA_PARKED ||
-    exit === DRIVE_EXIT.FORGE_RATE_LIMITED ||
-    s.exit.startup === "quota" ||
-    s.exit.wallUnrecorded === true;
-  if (exit === null || exit === 0 || wall || DRIVER_REFUSAL_EXITS.has(exit))
+  if (
+    exit === null ||
+    exit === 0 ||
+    stoppedOnWall(s.exit) ||
+    DRIVER_REFUSAL_EXITS.has(exit)
+  )
     return null;
   return { record: latest, exit, heads: latest.record.heads };
 }

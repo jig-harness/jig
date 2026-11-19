@@ -9,7 +9,11 @@ import type { DriveRoundContext } from "./round-context.ts";
 import { driverRuntime } from "./runtime.ts";
 import { waitBetweenPasses } from "./review-quota.ts";
 import { sleep } from "./../cli.ts";
-import { SINGLE_INSTANCE_LOCK_EXIT } from "./settings.ts";
+import {
+  MAILBOX_POLL_SECONDS,
+  MAILBOX_STOPPED_EXIT,
+  SINGLE_INSTANCE_LOCK_EXIT,
+} from "./settings.ts";
 import {
   type ForgeLimit,
   type LimitBounds,
@@ -89,6 +93,7 @@ export async function attachForgeLimit(
   limit: ForgeLimit,
   mayWait: boolean,
   bounds: LimitBounds = {},
+  stopRequested: () => string | null = () => null,
 ): Promise<true | number> {
   const plan = limitPlan(limit, currentMs(), bounds);
   if (!mayWait)
@@ -103,7 +108,15 @@ export async function attachForgeLimit(
   );
   driverRuntime.quotaSleepAbort = new AbortController();
   try {
-    await sleep(plan.ms / 1000, driverRuntime.quotaSleepAbort.signal);
+    // In slices, so a mailbox stop does not sit behind a multi-hour wait.
+    const endsAt = performance.now() + plan.ms;
+    while (performance.now() < endsAt && driverRuntime.compromised === "") {
+      if (stopRequested() !== null) return MAILBOX_STOPPED_EXIT;
+      await sleep(
+        Math.min(MAILBOX_POLL_SECONDS, (endsAt - performance.now()) / 1000),
+        driverRuntime.quotaSleepAbort.signal,
+      );
+    }
   } finally {
     driverRuntime.quotaSleepAbort = null;
   }

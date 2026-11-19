@@ -606,8 +606,7 @@ export const TERMINAL_STATES: Readonly<
       },
     },
   },
-  // A forge read the credential's spent rate limit refused, with its reset
-  // past what the drive waits (`lib/forge-limit.ts`).
+  // A forge read refused for the credential's spent rate limit (`lib/forge-limit.ts`).
   FORGE_RATE_LIMITED: {
     exitCode: 24,
     category: "state",
@@ -615,7 +614,7 @@ export const TERMINAL_STATES: Readonly<
     emittedBy:
       "drive-status.ts (outside evaluate) and drive.ts (lib/forge-limit.ts)",
     meaning:
-      "The forge's rate limit for the drive's credential is spent, and its reset is further off than the drive waits: nothing more is sent before it. The report names the reset (`rateLimit.until`); a drive whose reset is near waits for it and goes on instead. Re-arm after the reset.",
+      "The forge's rate limit for the drive's credential is spent: nothing more is sent before it resets. The report names the reset (`rateLimit.until`). The driver then waits out a reset within its bound (`DRIVE_PR_RATE_LIMIT_WAIT`) and goes on, or stops on one further off. Re-arm after the reset.",
     report: {
       stop: "stopped: the forge's rate limit for its credential is spent",
       cause: "environment",
@@ -806,12 +805,7 @@ export function outOfBand(
   return entry.exitCode;
 }
 
-/**
- * Set `report.state` to `FORGE_RATE_LIMITED` and return its exit code from
- * ONE lookup, as `terminal` and `outOfBand` do for theirs: `drive-status.ts`
- * sets it outside `evaluate`, wherever a read met the forge's spent rate
- * limit, not at the lease bump `outOfBand` is anchored to.
- */
+/** Set `report.state` to `FORGE_RATE_LIMITED` and return its exit code from ONE lookup, as `outOfBand` does, wherever a read met the limit. */
 export function forgeRateLimited(
   report: { state: string; reason: string },
   reason: string,

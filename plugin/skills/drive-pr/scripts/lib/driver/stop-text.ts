@@ -44,7 +44,7 @@ function quotaStop(pr: string, code: number, state: DriveState | null): string {
   return `PR #${pr} stopped on ${wall}, which resets ${reset} (exit ${code})`;
 }
 
-/** A stop on the forge's rate limit: when it resets, from the stop's event or the stop this driver is recording. */
+/** A stop on the forge's rate limit: when it resets, from the stop this driver is recording, else the stop's event. */
 function forgeLimitStop(
   pr: string,
   code: number,
@@ -52,8 +52,8 @@ function forgeLimitStop(
 ): string {
   const stop = lastStopEvent(state?.events ?? []);
   const until =
-    (stop?.cause === String(code) ? stop.until : undefined) ??
     driverRuntime.stopLimitedUntil ??
+    (stop?.cause === String(code) ? stop.until : undefined) ??
     "at an unknown time";
   return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until} (exit ${code})`;
 }

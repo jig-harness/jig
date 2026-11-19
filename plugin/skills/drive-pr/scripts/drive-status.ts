@@ -198,10 +198,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       and meaning as `drive-state.ts`'s 13
  *   1  INDETERMINATE    [state] the state could not be read — never reported
  *                       as settled
- *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit
- *                       for this credential; nothing more is sent before its
- *                       reset, which the report names (`rateLimit.until`).
- *                       `drive.ts` waits for a near reset, else stops with it
+ *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit;
+ *                       the report names its reset (`rateLimit.until`)
  *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite: a `gh` that cannot
  *                       report mergeability. Reported through the JSON
  *                       contract like every other state — only argument
@@ -232,7 +230,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  * `<skill-dir>/scripts/lib/status/terminal-states.ts`.
  */
 
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type BaseDrift,
@@ -259,7 +257,6 @@ import {
   gitIdentityEnv,
   readTimeoutEnv,
   run,
-  runInlineProbe,
   tsArgv,
 } from "./lib/proc.ts";
 import { reviewerApp } from "./lib/overlay.ts";
@@ -293,12 +290,8 @@ import {
   waitingChecksMaxAgeMs,
 } from "./lib/status/waiting-cache.ts";
 import { currentMs } from "../../../shared/time.ts";
-import {
-  type ForgeLimit,
-  forgeLimitHeld,
-  limitLine,
-  reportLimit,
-} from "./lib/forge-limit.ts";
+import { forgeLimitHeld, limitLine, reportLimit } from "./lib/forge-limit.ts";
+import { boundedRealpath, limitedAtStart } from "./lib/status/pre-report.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -310,70 +303,12 @@ const MIN_INTERVAL = testPacing("DRIVE_PR_STATUS_MIN_INTERVAL", 5, 1);
 const MAX_QUERY_ERRORS = 3;
 
 /**
- * `realpathSync`, bounded — a stalled FUSE/NFS mount can block this SYNCHRONOUS
- * call indefinitely in THIS process, which `GIT_CALL_TIMEOUT` does nothing
- * for. So it runs as a bounded inline probe (`runInlineProbe`, from a neutral
- * directory: the path is made absolute against this process's cwd first).
- */
-const REALPATH_PROBE_SCRIPT = `
-const { realpathSync } = require('node:fs');
-const [p] = process.argv.slice(1);
-try {
-  process.stdout.write(realpathSync(p));
-} catch {}
-process.exit(0);
-`;
-
-async function boundedRealpath(
-  p: string,
-  timeoutSec: number,
-): Promise<string | null> {
-  // `realpathSync('')` resolves to `process.cwd()` instead of throwing (a
-  // Node/Bun quirk, verified empirically) — every caller here treats an empty
-  // string as "nothing to resolve", never as "resolve my cwd", so this must
-  // refuse before ever reaching the probe subprocess.
-  if (p === "") return null;
-  const probe = await runInlineProbe(REALPATH_PROBE_SCRIPT, [resolve(p)], {
-    stderr: "ignore",
-    ...definedFields({ timeoutSec }),
-  });
-  if (probe.code !== 0) return null;
-  const resolved = probe.stdout.trim();
-  return resolved === "" ? null : resolved;
-}
-
-/**
  * Exit codes this gate refuses to report while the replied-thread
  * reconciliation sweep is outstanding. See the guard at the bottom of the poll
  * loop for the criterion that produces this set, and for why each code NOT in
  * it is absent.
  */
 const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
-
-/**
- * A read met the forge's spent rate limit before the round's report exists
- * (the repository's own read): the report's state, exit and reset alone, so
- * the caller reads the limit, not a missing prerequisite.
- */
-function limitedAtStart(pr: string, json: boolean, limit: ForgeLimit): number {
-  const report = { state: "", reason: "" };
-  const code = forgeRateLimited(
-    report,
-    `cannot read PR #${pr}'s repository: ${limitLine(limit)}; nothing more is sent before the reset`,
-  );
-  if (json)
-    process.stdout.write(
-      `${JSON.stringify({
-        state: report.state,
-        exit: code,
-        pr: Number.parseInt(pr, 10),
-        reason: report.reason,
-        rateLimit: reportLimit(limit),
-      })}\n`,
-    );
-  else console.error(`drive-status.ts: ${report.reason}`);
-  return code;
-}
 
 async function main(): Promise<number> {
   let pr = "";
@@ -639,7 +574,7 @@ async function main(): Promise<number> {
   };
 
   const report: StatusReport = emptyReport();
-  /** The forge's spent limit a `FORGE_RATE_LIMITED` report names (`stopOnForgeLimit`); `null` otherwise. */
+  /** The reset a `FORGE_RATE_LIMITED` report names. */
   let rateLimit: { until: string; reason: string } | null = null;
 
   function countOrNull(n: number | null): number | null {
@@ -926,7 +861,6 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
-          // `FORGE_RATE_LIMITED` only: when the forge's spent limit resets.
           ...(rateLimit === null ? {} : { rateLimit }),
           reflectDue: reflectionDue,
           structuralEscalationDue: escalation.due,
@@ -1274,25 +1208,16 @@ async function main(): Promise<number> {
     return null;
   }
 
-  /**
-   * End this invocation on the forge's spent rate limit when a read this
-   * process sent met one whose reset is still ahead: nothing is sent before
-   * the reset, so a retry could only be refused again, and a spent limit is
-   * not a failure to read. Its report names the reset (`rateLimit`); `null`
-   * when no such limit holds. `failed`, the failure the limit is taken to
-   * explain, stays in the log.
-   */
+  /** End on the forge's spent rate limit, when a read this process sent met one still ahead (a retry could only be refused again); `null` otherwise. `failed` stays in the log. */
   async function stopOnForgeLimit(failed: string): Promise<number | null> {
     const limit = forgeLimitHeld();
     if (limit === null) return null;
     console.error(
-      `drive-status.ts: ${failed} — read as the forge's spent rate limit this process met`,
+      `drive-status.ts: ${failed} — read as the forge's rate limit`,
     );
     rateLimit = reportLimit(limit);
-    const code = forgeRateLimited(
-      report,
-      `cannot read PR #${pr}: ${limitLine(limit)}; nothing more is sent before the reset`,
-    );
+    const why = `cannot read PR #${pr}: ${limitLine(limit)}; sending nothing more`;
+    const code = forgeRateLimited(report, why);
     await emit(code);
     return code;
   }

@@ -11,6 +11,7 @@ import {
   useDrivePrSuite,
   writeFixture,
 } from "./drive-pr-harness.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import { currentMs, parseMs } from "../../../shared/time.ts";
 
@@ -24,7 +25,10 @@ describe("drive-status.ts on the forge's spent rate limit", () => {
       // Not `--once`: the retry a failed read would get is what must not run.
       const r = await probeIn(dir, stateDir, HEAD, [], { once: false });
       expect(r.state).toBe("FORGE_RATE_LIMITED");
-      expect(r.exitCode).toBe(DRIVE_EXIT.FORGE_RATE_LIMITED);
+      expectSpawnExit(
+        { exitCode: r.exitCode, stdout: null, stderr: r.stderr },
+        DRIVE_EXIT.FORGE_RATE_LIMITED,
+      );
       expect(r.stderr).not.toContain("retrying");
       const json = r.json as { rateLimit?: { until?: string } };
       expect(parseMs(json.rateLimit?.until ?? "")).toBeGreaterThan(before);

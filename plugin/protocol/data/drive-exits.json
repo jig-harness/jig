@@ -470,7 +470,7 @@
       "driveStatusExit": 24,
       "driveExit": 24,
       "endsDrive": true,
-      "meaning": "The forge's rate limit for the drive's credential is spent, and its reset is further off than the drive waits: nothing more is sent before it. The report names the reset (`rateLimit.until`); a drive whose reset is near waits for it and goes on instead. Re-arm after the reset.",
+      "meaning": "The forge's rate limit for the drive's credential is spent: nothing more is sent before it resets. The report names the reset (`rateLimit.until`). The driver then waits out a reset within its bound (`DRIVE_PR_RATE_LIMIT_WAIT`) and goes on, or stops on one further off. Re-arm after the reset.",
       "stop": "stopped: the forge's rate limit for its credential is spent",
       "cause": "environment",
       "nextOwner": "line",
