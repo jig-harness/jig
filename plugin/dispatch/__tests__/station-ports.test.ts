@@ -22,7 +22,7 @@ import {
   readLaunches,
   writeRecord,
 } from "../lib/launches.ts";
-import type { SessionsReport } from "../lib/runtime/port.ts";
+import type { SessionsReport, Workspace } from "../lib/runtime/port.ts";
 import type { SharedContext } from "../lib/shared-launches.ts";
 import { type StationInputs, stationPorts } from "../lib/station-ports.ts";
 import { closeStateDb } from "../lib/state.ts";
@@ -401,18 +401,65 @@ describe("clearing a launch record of unknown process", () => {
     return { ...captured.value, claimedAt: "2026-11-18T12:00:01.000Z" };
   }
 
-  it("removes one no process is known to run", async () => {
-    const root = claimed({
-      hostId: "another-host-id",
-      host: "another-host",
-      bootId: "another-boot",
-      pid: 4242,
-      start: "Mon Nov  2 10:00:00 2026",
-      claimedAt: "2026-11-18T12:00:01.000Z",
-    });
+  /** A supervised claim whose wrapper, supervisor and child have all gone. */
+  async function allGone(): Promise<LaunchClaim> {
+    const own = await ownIdentity();
+    return {
+      ...own,
+      pid: 2147483647,
+      supervision: {
+        supervisor: { ...own, pid: 2147483646 },
+        child: { ...own, pid: 2147483645 },
+      },
+    };
+  }
+
+  it("removes one whose every process was judged gone", async () => {
+    const root = claimed(await allGone());
     const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
     expect(outcome).toEqual({ ok: true, value: `cleared launch record ${ID}` });
     expect((await readLaunches(root)).records).toEqual([]);
+  });
+
+  it("refuses one whose process is on another host, whose handoff names none or whose claim does not read, and keeps it", async () => {
+    const gone = await allGone();
+    for (const claim of [
+      { ...(await ownIdentity()), hostId: "another-host-id" },
+      { ...gone, supervision: { supervisor: null, child: null } },
+      { hostId: 1 } as unknown as LaunchClaim,
+    ]) {
+      const root = claimed(claim);
+      const outcome = await stationPorts(inputs({ root })).clearRecord(ID);
+      expect(reasonOf(outcome)).toContain("could not be judged");
+      expect((await readLaunches(root)).records).toHaveLength(1);
+    }
+  });
+
+  it("refuses one a running session is joined to, and keeps it", async () => {
+    const root = claimed(await allGone());
+    const sessions = async (): Promise<SessionsReport> => ({
+      ok: true,
+      source: "test",
+      workspaces: [
+        {
+          id: "w",
+          path: "/srv/work/web/pr-7",
+          branch: "feature/7",
+          items: [],
+          prs: [7],
+          agents: [{ state: "working" }],
+          unverifiableTerminals: 0,
+          comment: "",
+          unread: false,
+          name: "",
+        },
+      ] as unknown as Workspace[],
+    });
+    const outcome = await stationPorts(inputs({ root, sessions })).clearRecord(
+      ID,
+    );
+    expect(reasonOf(outcome)).toContain("a session holds");
+    expect((await readLaunches(root)).records).toHaveLength(1);
   });
 
   it("refuses one whose supervised process is alive, and keeps it", async () => {

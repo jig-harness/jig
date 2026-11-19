@@ -212,10 +212,9 @@ describe("a stopped drive a launch of unknown process holds", () => {
     launch(w, long);
     claimElsewhere(w, long);
 
-    expect((await ask(w)).waitsOn).toMatchObject({
-      person: "re-arm",
-      why: expect.stringContaining(`jig dispatch clear ${RECORD}`),
-    });
+    const waits = (await ask(w)).waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain(`jig dispatch clear ${RECORD}`);
   });
 
   it("counts the hold from the drive's stop, not from a launch that ran for hours before it", async () => {
@@ -244,7 +243,7 @@ describe("a stopped drive a launch of unknown process holds", () => {
     expect(waiting).not.toContain("re-drive on any account");
   });
 
-  it("keeps a stop only a person settles as that person's, whatever holds it", async () => {
+  it("names the hold on a stop only a person settles, since no re-arm passes it", async () => {
     const w = world();
     const now = currentIso();
     const ledger = stoppedLedger(12, 2);
@@ -253,7 +252,8 @@ describe("a stopped drive a launch of unknown process holds", () => {
     launch(w, now);
     claimElsewhere(w, now);
 
-    expect((await ask(w)).waitsOn).toMatchObject({ person: "re-arm" });
+    const { waiting } = (await ask(w)).waitsOn as { waiting: string };
+    expect(waiting).toContain(RECORD);
   });
 
   it("leaves a pending launch to the dispatcher, however old", async () => {

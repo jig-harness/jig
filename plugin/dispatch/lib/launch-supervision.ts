@@ -115,7 +115,7 @@ function liveStageProcess(
   });
 }
 
-/** What an unknown launch's processes show: one proved alive, and whether one of this host's could not be judged. */
+/** What an unknown launch's processes show: one proved alive, and whether one could not be judged: seen from another host, never acknowledged by its handoff, or unread. */
 function processFacts(
   claim: LaunchClaim,
   rows: ProcessRow[] | null,
@@ -127,9 +127,8 @@ function processFacts(
     claim.supervision?.supervisor,
     claim.supervision?.child,
   ].some((identity) => {
-    if (identity == null) return false;
-    const verdict = judge(identity, rows, here);
-    return !verdict.ok && verdict.failure.code !== "foreign";
+    if (identity === undefined) return false;
+    return identity === null || !judge(identity, rows, here).ok;
   });
   return {
     ...(liveProcess === undefined ? {} : { liveProcess }),

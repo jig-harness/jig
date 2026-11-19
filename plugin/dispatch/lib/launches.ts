@@ -296,7 +296,7 @@ export type LaunchState =
       wallUnrecorded?: true;
       /** A registered process proved alive even though the launch cannot be settled. */
       liveProcess?: ProcessIdentity;
-      /** A recorded process of this host could not be judged, so it may still run. */
+      /** A process of the launch could not be judged from here (another host's, one never recorded, or a failed read), so it may still run. */
       unjudged?: true;
     }
   | { kind: "died"; reason: string; process: LaunchClaim }
@@ -727,6 +727,7 @@ function stateOf(
       kind: "unknown",
       reason: "its claim does not read",
       process: NO_PROCESS,
+      unjudged: true,
     };
   return claimState(claim, rows, here);
 }

@@ -37,6 +37,7 @@ const HELD_UP: ReadonlySet<LedgerClass> = new Set<LedgerClass>([
   "re-armable",
   "stale",
   "stopped-unknown",
+  "needs-person",
   "unarmed",
 ]);
 

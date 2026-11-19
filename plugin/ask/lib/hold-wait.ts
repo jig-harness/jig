@@ -74,13 +74,13 @@ export function heldStopWait(
     };
   if (Number.isFinite(since) && age >= STRANDED_HOLD_MS)
     return personWait(
-      "re-arm",
+      "settle the launch that holds the drive",
       `${held}, past ${STRANDED_HOLD_TEXT}: ${settleWords(holder, facts.record)}`,
     );
   // A launch record of this machine's own shows a dispatcher runs here.
   if (!facts.dispatched && holder.local?.record === undefined)
     return personWait(
-      "re-arm",
+      "settle the launch that holds the drive",
       `${held}; no dispatcher is known to raise it: ${settleWords(holder, facts.record)}`,
     );
   return {

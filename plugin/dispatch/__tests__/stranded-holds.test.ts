@@ -10,13 +10,14 @@ import { isoFromMs, parseMs } from "../../shared/time.ts";
 import { classOf } from "../lib/actions/notify.ts";
 import type { NeedCause } from "../lib/dashboard-contract.ts";
 import type { ReadRecord } from "../lib/launches.ts";
+import { buildLine } from "../lib/line.ts";
 import { stationDecision } from "../lib/line-station.ts";
 import { type PlanInput, planTick } from "../lib/plan.ts";
 import { dispatchSection } from "../lib/section.ts";
 import { clearBlock, STRANDED_HOLD_MS } from "../lib/stranded-holds.ts";
 import type { Action, DispatchSection, DrivenPr } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
-import { record } from "./line-fixtures.ts";
+import { input as lineInput, PATH, record, report } from "./line-fixtures.ts";
 
 const NOW_MS = parseMs("2026-11-18T22:00:00.000Z");
 const PAST = isoFromMs(NOW_MS - STRANDED_HOLD_MS - 60_000);
@@ -136,8 +137,13 @@ describe("a stopped drive held by a launch of unknown process", () => {
     expect(planTick(plan).running.map((r) => r.target)).toEqual(["PR #7"]);
   });
 
-  it("raises the need for a stale ledger, a stop with no cause and an arm with no ledger", () => {
-    for (const cls of ["stale", "stopped-unknown", "unarmed"] as const)
+  it("raises the need for a stale ledger, a stop with no cause and a stop only a person settles and an arm with no ledger", () => {
+    for (const cls of [
+      "stale",
+      "stopped-unknown",
+      "needs-person",
+      "unarmed",
+    ] as const)
       expect(
         needsOf(
           input({
@@ -192,6 +198,30 @@ describe("a stopped drive held by a launch of unknown process", () => {
       expect(need?.evidence.blocked).toContain(words);
       expect(need?.notice?.text).toContain(words);
     }
+  });
+
+  it("shows the workspace of a need it frames no clearing for", () => {
+    const read = launch({ ...unknown, unjudged: true });
+    const actions = needsOf(input({ drives: [drive(PAST)], launches: [read] }));
+    const line = buildLine(
+      lineInput({
+        inputs: new Map([
+          [
+            PATH,
+            {
+              drives: [],
+              known: [],
+              sessions: { ok: true, source: "fake", workspaces: [] },
+            },
+          ],
+        ]),
+        reports: [report({ slug: SLUG, actions })],
+        records: [read],
+      }),
+    );
+    expect(line.needs[0]?.workspaces).toEqual([
+      read.record.workspace?.path ?? "",
+    ]);
   });
 
   it("lets an answer clear a record every process of which was judged", () => {

@@ -10,7 +10,7 @@
  * | release a pickup's claim | the `pickup` stage is on; the tracker reads; no session holds the item; the line knows of no open pull request that carries it | moves the item to the first state a pickup starts from |
  * | detach a checkout | it is idle: clean, every commit on the remote, no drive or process in it (`shared/idle-holder.ts`) | detaches it at its commit, as an open does an idle holder |
  * | re-arm a drive | the `rearm` stage is on; the dispatch labels are on; no hold label | adds the rearm label, a person's command the tick then carries out |
- * | clear a launch record | it is pending and its launch cannot be retried, or its state is unknown with every process judged, none running and no account wall resting on it | removes it, as `jig dispatch clear` does |
+ * | clear a launch record | it is pending and its launch cannot be retried, or its state is unknown with every process judged, none running, no session joined to its target and no account wall resting on it | removes it, as `jig dispatch clear` does |
  */
 import {
   CANONICAL_STATES,
@@ -49,7 +49,7 @@ import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
 import type { StationPorts } from "./station-answers.ts";
 import { clearBlock } from "./stranded-holds.ts";
-import { retryable } from "./stuck-launches.ts";
+import { joinedTo, retryable } from "./stuck-launches.ts";
 import { readTrackerAnswers } from "./tracker-answers.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
@@ -388,6 +388,14 @@ async function clearRecord(
     return refused(`launch record ${id} is ${state.kind}, not stuck`);
   const blocked = state.kind === "unknown" ? clearBlock(state) : null;
   if (blocked !== null) return refused(`launch record ${id}: ${blocked}`);
+  if (state.kind === "unknown") {
+    const session = await sessionHolds(
+      inputs,
+      joinedTo(record),
+      `the target of launch record ${id}`,
+    );
+    if (session !== null) return refused(session);
+  }
   const { action } = record;
   // A re-arm or a takeover record is the rearm stage's.
   const stage =

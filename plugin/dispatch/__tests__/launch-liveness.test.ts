@@ -22,6 +22,7 @@ import {
   asClaim,
   claimState,
   registerStageProcess,
+  type StageSupervision,
   uncertainStage,
 } from "../lib/launch-supervision.ts";
 import { clearMain } from "../clear.ts";
@@ -147,18 +148,30 @@ describe("a launch record's claim, judged by the shared process identity", () =>
     expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
   });
 
-  it("says when a process of this host could not be judged, and not for another host's", async () => {
+  it("says when a process could not be judged, and not when each was judged gone", async () => {
     const own = await ownClaim();
     const here = thisHost();
-    const unread = claimState(own, null, here);
-    expect(unread.kind === "unknown" && unread.unjudged).toBe(true);
-    const elsewhere = claimState(
-      { ...own, hostId: "another-host" },
-      null,
-      here,
-    );
-    expect(elsewhere.kind).toBe("unknown");
-    expect(elsewhere.kind === "unknown" && elsewhere.unjudged).toBeUndefined();
+    const gone = (pid: number) => ({ ...own, pid });
+    const judged = (claim: LaunchClaim, rows: [] | null) => {
+      const state = claimState(claim, rows, here);
+      expect(state.kind).toBe("unknown");
+      return state.kind === "unknown" ? state.unjudged : undefined;
+    };
+    const supervised = (supervision: StageSupervision) => ({
+      ...gone(2147483647),
+      supervision,
+    });
+    expect(judged(own, null)).toBe(true);
+    expect(judged({ ...own, hostId: "another-host" }, [])).toBe(true);
+    expect(
+      judged(supervised({ supervisor: gone(2147483646), child: null }), []),
+    ).toBe(true);
+    expect(
+      judged(
+        supervised({ supervisor: gone(2147483646), child: gone(2147483645) }),
+        [],
+      ),
+    ).toBeUndefined();
   });
 
   it("keeps missing cleanup evidence unknown even when every recorded process has died or its pid was reused", async () => {
