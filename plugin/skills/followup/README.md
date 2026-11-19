@@ -36,7 +36,8 @@ A release that still owes a tag and needs a person gets one tracker item
 per version. Dispatched follow-ups refer to that item and finish once their
 remaining checks settle. The dispatcher presents one decision for the
 release with the options **Re-run the failed gates**, **Investigate**, and
-**Tag it by hand**.
+**Tag it by hand**. Untagged releases of a repository that share a remedy
+share that decision, which lists every version it covers.
 When another host runs the follow-up, it passes the owed release to the
 repository's owner dispatcher, which finds or files the tracker item.
 An owner with only the notification stage can process this handoff when
