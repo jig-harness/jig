@@ -155,7 +155,11 @@ repositories) waits for a repository another tick holds, up to two minutes
 within its deadline, looking again every quarter of a second, so a woken
 tick that holds a repository when the sweep starts does not drop it from
 the sweep: with wake-ups arriving every minute or two, a sweep that never
-waited would leave a repository to woken ticks on most of its runs. Any
+waited would leave a repository to woken ticks on most of its runs. The
+shared tracker reads start once every repository's lock is settled, so the
+wait delays the sweep's reads of every repository, and while it waits the
+sweep holds the others' observe locks: a wake-up for one of them ends as
+held and its waiter tries again after its minute. Any
 other tick waits for no observe lock. A repository another tick still holds
 after the wait is left to that tick, named on the
 receipt (`busy`), and neither read nor acted on. A tick that finds every

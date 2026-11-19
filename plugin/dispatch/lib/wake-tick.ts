@@ -179,7 +179,7 @@ async function systemdTimer(
   )
     return failed(
       "unsupported",
-      `the command systemd runs (${JSON.stringify(command)}) does not end with the job's arguments ${JSON.stringify(args)}`,
+      `the command systemd runs ends with ${JSON.stringify(tail)}, so it does not end with the job's arguments ${JSON.stringify(args)}`,
     );
   return ok({ prefix: command.slice(0, command.length - args.length), env });
 }

@@ -104,13 +104,26 @@ function expandSpecifiers(
     : failed("unsupported", `the specifier ${unknown} is not one it expands`);
 }
 
-const ESCAPES: Record<string, string> = { n: "\n", t: "\t", r: "\r" };
+/** The C escapes systemd reads in a value that name one character; a numeric one (`\x41`, `\101`, `\u0041`) is refused. */
+const ESCAPES: Record<string, string> = {
+  a: "\x07",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  s: " ",
+  t: "\t",
+  v: "\v",
+  "\\": "\\",
+  '"': '"',
+  "'": "'",
+};
 
 /**
  * The words of a unit's value: separated by whitespace, each quoted in
- * double or single quotes or not, a backslash escaping the next character;
- * then each word's specifiers expanded; unsupported for a quote left open
- * or a specifier it does not know.
+ * double or single quotes or not, a backslash starting a C escape; then
+ * each word's specifiers expanded; unsupported for a quote left open, an
+ * escape it does not read or a specifier it does not know.
  */
 export function unitWords(
   value: string,
@@ -123,7 +136,13 @@ export function unitWords(
     const char = value[at] as string;
     if (char === "\\" && at + 1 < value.length) {
       const next = value[++at] as string;
-      word = (word ?? "") + (ESCAPES[next] ?? next);
+      const escaped = ESCAPES[next];
+      if (escaped === undefined)
+        return failed(
+          "unsupported",
+          `the escape \\${next} is not one it reads`,
+        );
+      word = (word ?? "") + escaped;
     } else if (quote !== null) {
       if (char === quote) quote = null;
       else word = (word ?? "") + char;
@@ -172,16 +191,35 @@ function execWords(
   return ok(argv.map((arg) => arg.replace(/\$\$/g, () => "$")));
 }
 
-/** A unit file's assignments, section by section: continued lines joined, comments left out. */
+/**
+ * A unit file's lines as systemd reads them: a line ending in a backslash
+ * continued on the next, a comment line inside a continuation skipped, and
+ * comment and empty lines left out.
+ */
+function logicalLines(text: string): string[] {
+  const out: string[] = [];
+  let continued: string | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("#") || line.startsWith(";")) continue;
+    const joined: string = continued === null ? line : `${continued} ${line}`;
+    if (line.endsWith("\\")) continued = joined.slice(0, -1);
+    else {
+      continued = null;
+      if (joined !== "") out.push(joined);
+    }
+  }
+  if (continued !== null && continued.trim() !== "") out.push(continued);
+  return out;
+}
+
+/** A unit file's assignments, section by section. */
 function assignments(
   text: string,
 ): Array<{ section: string; key: string; value: string }> {
   const out: Array<{ section: string; key: string; value: string }> = [];
   let section = "";
-  const lines = text.replace(/\\\r?\n/g, " ").split(/\r?\n/);
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#") || line.startsWith(";")) continue;
+  for (const line of logicalLines(text)) {
     const header = /^\[(.+)\]$/.exec(line);
     if (header) {
       section = header[1] as string;

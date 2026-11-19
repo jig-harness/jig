@@ -5,6 +5,10 @@
  * reproduce is refused with its reason, never read as the base command.
  */
 import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readInstalledJob } from "../installed-job.ts";
 import { type Job, jobFiles } from "../scheduler.ts";
 import {
@@ -149,6 +153,24 @@ describe("effectiveJob", () => {
     });
   });
 
+  test("skips a comment line inside a continued line, as systemd does", () => {
+    const result = effectiveJob(
+      installed(),
+      [
+        dropIn(
+          "[Service]\nExecStart=\nExecStart=/wrap jig \\\n# run the dispatcher\n  dispatch --apply\n",
+        ),
+      ],
+      SPECIFIERS,
+    );
+    expect(result.ok && result.value.command).toEqual([
+      "/wrap",
+      "jig",
+      "dispatch",
+      "--apply",
+    ]);
+  });
+
   test("an empty Environment= clears the base unit's variables", () => {
     const result = effectiveJob(
       installed(),
@@ -245,11 +267,20 @@ describe("effectiveJob", () => {
 
 describe("unitWords", () => {
   test("splits on whitespace, joins quoted runs and reads escapes", () => {
-    expect(unitWords(`a "b c"d 'e\\'f' g\\ h`, SPECIFIERS)).toEqual({
+    expect(unitWords(`a "b c"d 'e\\'f' g\\sh i\\\\j`, SPECIFIERS)).toEqual({
       ok: true,
-      value: ["a", "b cd", "e'f", "g h"],
+      value: ["a", "b cd", "e'f", "g h", "i\\j"],
     });
   });
+
+  test.each(["\\x41", "\\101", "\\u0041", "\\q"])(
+    "refuses the escape %s rather than misread it",
+    (sequence) => {
+      const result = unitWords(`/opt/wrap${sequence}`, SPECIFIERS);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.failure.reason).toContain("escape");
+    },
+  );
 
   test("keeps an empty quoted word", () => {
     expect(unitWords(`a "" b`, SPECIFIERS)).toEqual({
@@ -257,4 +288,72 @@ describe("unitWords", () => {
       value: ["a", "", "b"],
     });
   });
+});
+
+describe("readDropIns", () => {
+  /** `readDropIns` in a child whose `systemctl` is a script printing `answer` and exiting `exit`. */
+  function read(answer: string, exit = 0): unknown {
+    const dir = mkdtempSync(join(tmpdir(), "dropins-"));
+    try {
+      writeFileSync(join(dir, "a.conf"), "[Service]\nEnvironment=A=1\n");
+      writeFileSync(join(dir, "b.conf"), "[Service]\nEnvironment=B=2\n");
+      const systemctl = join(dir, "systemctl");
+      writeFileSync(
+        systemctl,
+        `#!/bin/sh\nprintf '%s\\n' '${answer.replaceAll("DIR", dir)}'\nexit ${exit}\n`,
+      );
+      chmodSync(systemctl, 0o755);
+      const module = resolve(import.meta.dir, "../systemd-dropins.ts");
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `const { readDropIns } = await import(${JSON.stringify(module)}); console.log(JSON.stringify(await readDropIns("jig-dispatch.service")));`,
+        ],
+        {
+          env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+          timeout: 10_000,
+        },
+      );
+      expectSpawnExit(result, 0);
+      const out = JSON.parse(result.stdout.toString()) as unknown;
+      return JSON.parse(JSON.stringify(out).replaceAll(dir, "DIR")) as unknown;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test.skipIf(process.platform === "win32")(
+    "reads each drop-in systemd names, in its order",
+    () => {
+      expect(read("DIR/b.conf DIR/a.conf")).toEqual({
+        ok: true,
+        value: [
+          { path: "DIR/b.conf", text: "[Service]\nEnvironment=B=2\n" },
+          { path: "DIR/a.conf", text: "[Service]\nEnvironment=A=1\n" },
+        ],
+      });
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "reads no drop-in when systemd names none",
+    () => {
+      expect(read("")).toEqual({ ok: true, value: [] });
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "is unreadable when systemd does not answer or names a file that is gone",
+    () => {
+      expect(read("", 1)).toMatchObject({
+        ok: false,
+        failure: { code: "unreadable" },
+      });
+      expect(read("DIR/gone.conf")).toMatchObject({
+        ok: false,
+        failure: { code: "unreadable" },
+      });
+    },
+  );
 });
