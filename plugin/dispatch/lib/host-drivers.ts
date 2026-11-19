@@ -25,6 +25,7 @@ import {
   liveHostDrivers,
 } from "../../skills/drive-pr/scripts/lib/driver/host-drivers.ts";
 import { peekCloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
+import { gitIdentityEnv } from "../../shared/git-env.ts";
 import { attempt, type Outcome } from "../../shared/outcome.ts";
 import { accountOf } from "./account-of.ts";
 import { parseMs } from "../../shared/time.ts";
@@ -77,11 +78,11 @@ function canonical(path: string): string {
  * The clone key of the checkout at `repoPath`, read from its Git common
  * directory (`.git` is a file in a linked worktree); `null` when either read fails.
  */
-function readCloneKey(repoPath: string): string | null {
+export function readCloneKey(repoPath: string): string | null {
   const common = spawnSync(
     "git",
     ["-C", repoPath, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-    { encoding: "utf8", timeout: 10_000 },
+    { encoding: "utf8", timeout: 10_000, env: gitIdentityEnv() },
   );
   if (common.status !== 0 || typeof common.stdout !== "string") return null;
   const key = attempt("unreadable", "the clone identity", () =>

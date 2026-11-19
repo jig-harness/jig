@@ -9,6 +9,8 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { lockIdentity } from "../../shared/liveness.ts";
 import { driveDb } from "../../skills/drive-pr/scripts/lib/state/db.ts";
 import { takeLockRow } from "../../skills/drive-pr/scripts/lib/state/lock.ts";
@@ -266,5 +268,37 @@ describe("the host's drivers", () => {
       detail: null,
     });
     expect(drivers(root)).toEqual([]);
+  });
+});
+
+describe("a checkout's clone key", () => {
+  it("is read from that checkout even when the environment names another repository's git directory", () => {
+    const root = tempDir("host-drivers-");
+    const [a, b] = ["clone-a", "clone-b"].map((name) => {
+      const path = join(root, name);
+      mkdirSync(path);
+      expectSpawnExit(Bun.spawnSync(["git", "-C", path, "init", "-q"]), 0);
+      writeFileSync(
+        join(path, ".git", "drive-pr-clone-id"),
+        `${randomUUID()}\n`,
+      );
+      return path;
+    }) as [string, string];
+    const read = (path: string, env: Record<string, string>) => {
+      const child = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `import { readCloneKey } from ${JSON.stringify(join(import.meta.dir, "../lib/host-drivers.ts"))};console.log(readCloneKey(${JSON.stringify(path)}))`,
+        ],
+        { env: { ...process.env, ...env } },
+      );
+      expectSpawnExit(child, 0);
+      return child.stdout.toString().trim();
+    };
+    const own = read(a, {});
+    expect(own).not.toBe("null");
+    expect(read(b, {})).not.toBe(own);
+    expect(read(a, { GIT_DIR: join(b, ".git") })).toBe(own);
   });
 });
