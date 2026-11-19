@@ -401,6 +401,35 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.284.0] - 2026-11-19
+
+### Changed
+
+- The Codex `sol` alias (the strategic tier) now names `gpt-6.2-sol` instead of `gpt-6.1-sol`. Routing, the drive-pr pass model and the dispatcher pick it up without configuration; a configuration that pins `gpt-6.1-sol` by its full name keeps that model.
+- The dispatch dashboard's Running view shows every load gauge against its
+  own line, with nothing to open. The headline names the load factor and the
+  gauge that binds ("Load 150%, processors binds"), with one sentence saying
+  the figure is the fullest gauge against its own line, not a sum. Under it
+  each gauge has a row: its icon and name, a bar from 0 to 150% with its line
+  marked at 100%, its percent, and what it read with its line. A gauge past
+  its line turns the fill past the line to the alarm colour and shows an
+  "over its line" warning, the gauge that binds is bold with a "binds" tag,
+  and a gauge the host could not read shows an empty dashed bar and why. The
+  launches the load held or would have held and each kind's memory
+  reservation sit under the gauges in one fold titled with its count ("Would
+  have held 2 launches · reservations"). On a phone what a gauge read moves
+  under its bar.
+
+### Fixed
+
+- A drive that a dispatched session arms in an Orca terminal tab now knows it was dispatched. The tab's command carries the session's launch as `JIG_DISPATCHED_FROM`, and the driver hands it to every pass, so a repository's gate command can treat those passes as dispatched (Jig's own does, under `gates.dispatch_fast`). Before, the tab's login shell lost `JIG_LAUNCH`, and those passes ran the full gates. What a pass reports as its launch in round reports, closing reports and `jig send`'s refusals is still `JIG_LAUNCH`. A drive armed outside any dispatched session carries no launch record and keeps the full gates.
+
+## [0.283.2] - 2026-11-19
+
+### Fixed
+
+- The dispatch dashboard shows one stale-read banner for repositories with the same refusal cause. It lists when each repository was last read, shows the latest known reset, and keeps individual failure details available on demand.
+
 ## [0.283.1] - 2026-11-19
 
 ### Fixed
@@ -9985,7 +10014,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.283.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.284.0...HEAD
+[0.284.0]: https://github.com/jig-harness/jig/compare/v0.283.2...v0.284.0
+[0.283.2]: https://github.com/jig-harness/jig/compare/v0.283.1...v0.283.2
 [0.283.1]: https://github.com/jig-harness/jig/compare/v0.283.0...v0.283.1
 [0.283.0]: https://github.com/jig-harness/jig/compare/v0.282.1...v0.283.0
 [0.282.1]: https://github.com/jig-harness/jig/compare/v0.282.0...v0.282.1

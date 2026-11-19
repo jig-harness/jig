@@ -67,6 +67,7 @@ const TICK_FACT: Record<ScenarioId, RegExp> = {
   picks: /^Updated 2 min ago$/,
   partial: /^Updated 2 min ago$/,
   linked: /^Updated 2 min ago$/,
+  overload: /^Updated 2 min ago$/,
 };
 
 /** What each scenario's answer must say first. */
@@ -83,6 +84,7 @@ const ANSWER: Partial<Record<ScenarioId, RegExp>> = {
   picks: /3 need a person.*Oldest.*PR #501/s,
   partial: /1 needs a person.*Oldest.*#240/s,
   linked: /9 need a person.*Oldest.*PR #456/s,
+  overload: /Nothing needs a person\./,
 };
 
 const WIDTHS = [

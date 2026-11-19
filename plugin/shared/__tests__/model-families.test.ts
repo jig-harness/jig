@@ -6,6 +6,7 @@ import { describe, expect, it } from "bun:test";
 import {
   familiesOf,
   familyOf,
+  familyOfModel,
   M0_TIERS,
   runtimeModel,
 } from "../model-families.ts";
@@ -26,8 +27,12 @@ describe("the known families", () => {
   it("names OpenAI's models by their ids", () => {
     expect(familyOf("codex", "luna")?.model).toBe("gpt-6-luna");
     expect(familyOf("codex", "terra")?.model).toBe("gpt-5.6-terra");
-    expect(familyOf("codex", "sol")?.model).toBe("gpt-6.1-sol");
+    expect(familyOf("codex", "sol")?.model).toBe("gpt-6.2-sol");
     expect(familyOf("codex", "astra")?.model).toBe("gpt-6-astra");
+  });
+
+  it("recognises an earlier full model id as its family", () => {
+    expect(familyOfModel("codex", "gpt-6.1-sol")?.alias).toBe("sol");
   });
 
   it("has no list for another runtime", () => {
@@ -39,7 +44,7 @@ describe("the known families", () => {
 describe("runtimeModel", () => {
   it("gives Claude Code the alias and Codex the model id", () => {
     expect(runtimeModel("claude-code", "opus")).toBe("opus");
-    expect(runtimeModel("codex", "sol")).toBe("gpt-6.1-sol");
+    expect(runtimeModel("codex", "sol")).toBe("gpt-6.2-sol");
   });
 
   it("passes a name outside the list, or a runtime with none, as written", () => {
