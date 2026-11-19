@@ -290,7 +290,13 @@ function planStopped(
     return;
   }
   const fault = hostFault(hold.record);
-  if (fault !== null) {
+  const held = fault === null ? null : hostHeld(fault, input);
+  if (held !== null) {
+    plan.quiet.push({ target: item.key, class: "pickup-ended", why: held });
+    return;
+  }
+  // A batch's stop stays a person's, as its stall does.
+  if (fault !== null && hold.record.record.batchItems === undefined) {
     stoppedOnHostFault(input, item, hold.record, fault, plan);
     return;
   }
@@ -302,7 +308,7 @@ function planStopped(
   plan.actions.push(endedNeed(input.slug, item, hold.record, why));
 }
 
-/** An unclaimed item whose ended pickup, stopped on a host fault, still holds it: held while the health check fails, else the need that says why it is not picked up afresh. */
+/** An unclaimed item whose ended pickup, stopped on a host fault, still holds it once the health check passes: the need that says why it is not picked up afresh. */
 function stoppedOnHostFault(
   input: PickupInput,
   item: WantedItem,
@@ -310,18 +316,11 @@ function stoppedOnHostFault(
   fault: HostFault,
   plan: PickupPlan,
 ): void {
-  const held = hostHeld(fault, input);
-  if (held !== null) {
-    plan.quiet.push({ target: item.key, class: "pickup-ended", why: held });
-    return;
-  }
   const again = faultedAgain(latest, input.launches, item.key);
   const note =
-    latest.record.batchItems !== undefined
-      ? "a batch's pickup is not restarted on its own"
-      : again !== null
-        ? restartedNote(again)
-        : "its pickup claimed the item before it stopped";
+    again !== null
+      ? restartedNote(again)
+      : "its pickup claimed the item before it stopped";
   plan.actions.push(hostFaultNeed(input.slug, item, latest, fault, note));
 }
 
@@ -364,6 +363,7 @@ function hostFaultNeed(
   note: string,
 ): Action {
   const { record } = latest;
+  const asked = endedQuestion(latest);
   const reason = `the pickup stopped on a fault of this host (${fault.why}), and it is not restarted: ${note}`;
   return {
     stage: "notify",
@@ -378,6 +378,7 @@ function hostFaultNeed(
       account: record.account,
       hostFault: fault.kind,
       ended: endedHow(latest),
+      ...(asked === null ? {} : { question: asked }),
     },
     cause: "pickup-ended",
     notice: pickupNotice(
@@ -617,8 +618,8 @@ function planIdleClaimed(
  * the pickup, without waiting for `dispatch.stalled_after`; a relaunch that
  * stops on a host fault again, or a tree that cannot be relaunched, is one
  * need. `false` when the stop is not a host fault, a pull request it opened
- * moves its item first, or the relaunch rule is off, so the item is planned
- * as before.
+ * moves its item first, it was a batch's, or the relaunch rule is off, so
+ * the item is planned as any end is.
  */
 function hostFaultStop(
   item: ClaimedItem,
@@ -630,16 +631,18 @@ function hostFaultStop(
   if (latest === undefined || pr.step?.kind === "move") return false;
   const fault = hostFault(latest);
   if (fault === null) return false;
+  const held = hostHeld(fault, input);
+  if (held !== null) {
+    plan.quiet.push({ target: item.key, class: "pickup-ended", why: held });
+    return true;
+  }
+  // A batch's stop stays a person's, as its stall does.
+  if (latest.record.batchItems !== undefined) return false;
   const again = faultedAgain(latest, input.launches, item.key);
   if (again !== null) {
     plan.actions.push(
       hostFaultNeed(input.slug, item, latest, fault, restartedNote(again)),
     );
-    return true;
-  }
-  const held = hostHeld(fault, input);
-  if (held !== null) {
-    plan.quiet.push({ target: item.key, class: "pickup-ended", why: held });
     return true;
   }
   const step = relaunchStep(item, latest, { ...input, fault });

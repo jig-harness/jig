@@ -198,6 +198,27 @@ describe("telling a host fault from a question about the work", () => {
       hostFault(ended({}, { result: "done", said: HOST_QUESTION })),
     ).toBeNull();
   });
+
+  it("keeps a question beside an environment cause a person's, and a topic that only mentions the host's terms the work's", () => {
+    const credential =
+      "the tracker credential is missing: may a person add it?";
+    expect(
+      hostFault(ended({}, { cause: "environment", said: credential })),
+    ).toBeNull();
+    for (const topic of [
+      "should the inode warning fire at 90% or 95%?",
+      "the tests mock ENOSPC; should the export retry on it?",
+      "should the cache treat a read-only file system as a soft failure?",
+    ])
+      expect(hostFault(ended({}, { said: topic }))).toBeNull();
+    for (const failure of [
+      "the root filesystem ran out of inodes: may I delete the leaked fixtures?",
+      "ENOSPC: no space left on device while writing the lockfile; retry later?",
+      "the disk is full: may the build cache be pruned?",
+      "the state directory is not writable: may I fix its permissions?",
+    ])
+      expect(hostFault(ended({}, { said: failure }))?.kind).toBe("question");
+  });
 });
 
 describe("a claimed pickup that stopped on a host fault", () => {
@@ -345,6 +366,60 @@ describe("a restart that stops on a host fault again", () => {
       expect.objectContaining({
         cause: "pickup-ended",
         reason: expect.stringContaining("stopped on one again"),
+      }),
+    ]);
+  });
+});
+
+describe("what a host fault does not restart", () => {
+  it("restarts a fresh pickup whose earlier host-fault stop a person released", () => {
+    const first = ended(
+      { claimedItems: [], workspace: null, released: true },
+      { result: null, unwritten: "2026-11-19T08:00:00.000Z" },
+    );
+    const second = ended(
+      {
+        id: RELAUNCH,
+        createdAt: "2026-11-19T09:30:00.000Z",
+        claimedItems: [],
+        workspace: null,
+      },
+      { cause: "environment", at: "2026-11-19T09:50:00Z" },
+    );
+    const p = plan([first, second], { claimed: false });
+    expect(needs(p)).toEqual([]);
+    expect(p.actions).toEqual([
+      expect.objectContaining({ stage: "pickup", target: "#12" }),
+    ]);
+  });
+
+  it("relaunches no batch's pickup, but holds it while the health check fails", () => {
+    const batch = ended(
+      {
+        batchItems: [
+          { key: "#12", person: "writer" },
+          { key: "#13", person: "writer" },
+        ],
+      } as Partial<LaunchRecord>,
+      { result: null, unwritten: "2026-11-19T08:00:00.000Z" },
+    );
+    expect(relaunches(plan([batch]))).toEqual([]);
+    const held = plan([batch], { rerunsHeld: UNHEALTHY });
+    expect(held.actions).toEqual([]);
+    expect(held.quiet).toContainEqual(
+      expect.objectContaining({ target: "#12", class: "pickup-ended" }),
+    );
+  });
+
+  it("carries the question a restart stopped on into its escalation", () => {
+    const again = "the disk is full again: may I prune the cache?";
+    const p = plan(
+      [ended({}, { said: HOST_QUESTION }), relaunched({ said: again })],
+      { tree: unpushedAt(MOVED) },
+    );
+    expect(needs(p)).toEqual([
+      expect.objectContaining({
+        evidence: expect.objectContaining({ question: again }),
       }),
     ]);
   });

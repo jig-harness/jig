@@ -21,10 +21,10 @@
  * the need stays framed for a person with the tree named. While the host's
  * health check fails (`rerun-gate.ts`), the relaunch waits for it.
  *
- * A pickup that stopped on a fault of its host (`pickup-host-fault.ts`) takes
- * the same relaunch to resume its work rather than only to push it: as soon
- * as it is idle and the health check passes, whatever its tree holds, and
- * its record keeps the fault, which the relaunch's prompt names.
+ * A pickup that stopped on a fault of its host (`pickup-host-fault.ts`) is
+ * relaunched the same way, to resume its work: as soon as it is idle and the
+ * health check passes, whatever its tree holds; its record keeps the fault,
+ * which the relaunch's prompt names.
  */
 import type { ReadRecord } from "./launches.ts";
 import type { HostFault } from "./pickup-host-fault.ts";
