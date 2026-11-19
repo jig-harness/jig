@@ -41,6 +41,7 @@ import {
   adoptReleaseHandoffs,
   releaseNeedActions,
   releaseNeeds,
+  tagPrefixOf,
 } from "./release-needs.ts";
 import { readFailureOf } from "./read-failures.ts";
 import { planObserved } from "./tick-plan.ts";
@@ -168,7 +169,10 @@ export async function actTurn(
     await timer.time("plan", () => {
       adoptReleaseHandoffs(opened.repo.slug, observation.forge.merged);
       report.actions.push(
-        ...releaseNeedActions(releaseNeeds(opened.repo.slug)),
+        ...releaseNeedActions(
+          releaseNeeds(opened.repo.slug),
+          tagPrefixOf(opened.values),
+        ),
       );
     });
   await timer.time("log", () =>
