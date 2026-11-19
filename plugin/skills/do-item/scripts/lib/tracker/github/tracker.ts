@@ -635,7 +635,7 @@ export function gitHubTracker(client: Client): Tracker {
           subIssueId: issue.id,
         },
         signal,
-        issue.ref,
+        parents.to.ref,
       );
     if (parents.from !== null)
       await client.mutate(
@@ -645,7 +645,7 @@ export function gitHubTracker(client: Client): Tracker {
           subIssueId: issue.id,
         },
         signal,
-        issue.ref,
+        parents.from.ref,
       );
   }
 
