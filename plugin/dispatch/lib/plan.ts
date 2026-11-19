@@ -68,6 +68,7 @@ import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
 import {
   type StrandedHold,
+  mergedDrive,
   strandedByClaim,
   strandedByRecord,
 } from "./stranded-holds.ts";
@@ -222,6 +223,18 @@ export function planTick(input: PlanInput): Plan {
   const mergedNumbers = new Set(input.merged.map((m) => m.number));
   for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number)))
     planDrive(input, pr, plan, want);
+  // A merged pull request's drive no launch acts on, but a launch of unknown
+  // process still holds its account's slot.
+  for (const pr of input.merged)
+    raiseStranded(
+      strandedByRecord(
+        input.slug,
+        mergedDrive(pr),
+        input.launches,
+        input.nowMs,
+      ),
+      want,
+    );
 
   const command = input.section.followupCommand;
   if (command !== null)

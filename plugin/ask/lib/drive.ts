@@ -856,7 +856,15 @@ function driveWait(
       waiting:
         "the pull request could not be read; its head and CI hold are unknown",
     };
-  if (reads.pull.state !== "OPEN") return "none";
+  const holdFacts = {
+    dispatched: ctx.dispatches || current(reads.claims) !== null,
+    record: holdingRecord(reads.records),
+  };
+  if (reads.pull.state !== "OPEN")
+    return (
+      heldStopWait(holder, "done", reads.pull.mergedAt ?? "", holdFacts) ??
+      "none"
+    );
   if (facts.presence?.gone === true && ledger !== null) {
     const spent = takeoverSettled(
       reads.pull,
@@ -873,24 +881,30 @@ function driveWait(
         }
       : personWait("re-arm", spent);
   }
-  const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
+  const running =
+    ledger?.driver.state === "running"
+      ? heldStopWait(holder, "driven", ledger.driver.heartbeat, holdFacts)
+      : null;
+  const diagnosis = diagnosticWait(
+    reads.row,
+    ledger,
+    reads.pull,
+    holder,
+    running,
+  );
   if (diagnosis !== null) return diagnosis;
   if (ledger === null)
-    return (
-      heldStopWait(holder, "unarmed", "", {
-        dispatched: ctx.dispatches || current(reads.claims) !== null,
-        record: holdingRecord(reads.records),
-      }) ?? "none"
-    );
+    return heldStopWait(holder, "unarmed", "", holdFacts) ?? "none";
   return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 
-/** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */
+/** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe, or the launch whose hold on it outlived its bound (`held`). */
 function diagnosticWait(
   row: DriveRow | null,
   ledger: Ledger | null,
   doc: PullDoc,
   holder: Holder | "none",
+  held: WaitsOn | null,
 ): WaitsOn | null {
   if (ledger !== null && ledger.parked.length > 0) return null;
   const diagnosis = row?.doctor?.ciHold;
@@ -906,6 +920,7 @@ function diagnosticWait(
     ledger?.driver.state === "running" &&
     (holder === "none" || holder.process !== "alive")
   ) {
+    if (held !== null) return held;
     return {
       waiting:
         diagnosis?.driver === "dead"

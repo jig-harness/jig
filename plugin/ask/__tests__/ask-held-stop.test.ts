@@ -2,7 +2,9 @@
  * A stopped drive a launch still holds: `waitsOn` names the hold when nobody
  * can show the launch's process running, and stays `none` only while a
  * holder's process is alive. The hold comes from this machine's launch
- * record or from an open launch claim on the pull request.
+ * record or from an open launch claim on the pull request. A drive the hold
+ * does not keep from going on, a merged pull request's included, is named
+ * the hold's once it has outlived its bound.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
@@ -32,7 +34,9 @@ import {
 import { localWriter } from "../../shared/records/writer.ts";
 import { currentIso, currentMs, isoFromMs } from "../../shared/time.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { AskAnswer } from "../lib/answer.ts";
+import { pullDoc } from "./ask-fixtures.ts";
 
 const RECORD = "20261105T100000Z-abcdef12";
 const LIVENESS = join(import.meta.dir, "../../shared/liveness.ts");
@@ -288,5 +292,64 @@ describe("a stopped drive a launch of unknown process holds", () => {
     const answer = await ask(w);
     expect(answer.holder).toMatchObject({ process: "alive" });
     expect(answer.waitsOn).toBe("none");
+  });
+});
+
+describe("a drive of any other class a launch of unknown process holds", () => {
+  /** A converged ledger on pull request 12, merged at `mergedAt`. */
+  function merged(w: SendWorld, mergedAt: string): void {
+    const ledger = stoppedLedger(12, DRIVE_EXIT.CONVERGED);
+    ledger.driver.heartbeat = mergedAt;
+    w.api(
+      `repos/${REPO}/pulls/12`,
+      pullDoc(12, { state: "closed", merged: true, merged_at: mergedAt }),
+    );
+    w.api(`repos/${REPO}/issues/12/comments`, [ledgerOn(701, ledger)]);
+  }
+
+  it("is a person's to settle on a merged pull request once the hold has outlived its bound", async () => {
+    const w = world();
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    merged(w, long);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    const answer = await ask(w);
+    expect(answer.holder).toMatchObject({ process: "unknown" });
+    const waits = answer.waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain(RECORD);
+    expect(waits.why).toContain(`jig dispatch clear ${RECORD}`);
+  });
+
+  it("waits on nothing on a merged pull request inside the bound, counted from the merge", async () => {
+    const w = world();
+    merged(w, currentIso());
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    expect((await ask(w)).waitsOn).toBe("none");
+  });
+
+  it("is a person's to settle on a running ledger, counted from the launch", async () => {
+    const w = world();
+    const ledger = stoppedLedger(12, undefined, {
+      driver: {
+        actor: "wt-0123456789abcdef",
+        clone: "clone-a",
+        heartbeat: currentIso(),
+        state: "running",
+        started: currentIso(),
+      },
+    });
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    const waits = (await ask(w)).waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain(RECORD);
   });
 });

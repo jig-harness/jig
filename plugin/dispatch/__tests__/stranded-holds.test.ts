@@ -1,7 +1,7 @@
 /**
- * A stopped drive the tick would launch, held only by a launch nobody can
- * show running: the plan keeps it as held, and past the bound it raises a
- * need naming the hold.
+ * A drive held only by a launch nobody can show running, whatever its
+ * class, a merged pull request's included: the plan keeps it as held, and
+ * past the bound it raises a need naming the hold.
  */
 import { describe, expect, it } from "bun:test";
 import { ok } from "../../shared/outcome.ts";
@@ -254,16 +254,39 @@ describe("a stopped drive held by a launch of unknown process", () => {
       ).toEqual([]);
   });
 
-  it("raises nothing for a stop the hold does not keep from a launch", () => {
-    for (const cls of ["done", "stopped-by-person", "parked"] as const)
-      expect(
-        needsOf(
-          input({
-            drives: [drive(PAST, { class: cls })],
-            launches: [launch(unknown)],
-          }),
-        ).filter((a) => a.evidence.stuck === REASON),
-      ).toEqual([]);
+  it("raises the need for a drive of any other class, saying the hold keeps its account's slot", () => {
+    for (const cls of [
+      "done",
+      "driven",
+      "silent",
+      "refused",
+      "stopped-by-person",
+      "parked",
+      "unplaced",
+    ] as const) {
+      const needs = needsOf(
+        input({
+          drives: [drive(PAST, { class: cls })],
+          launches: [launch(unknown)],
+        }),
+      ).filter((a) => a.evidence.stuck === REASON);
+      expect(needs).toHaveLength(1);
+      expect(needs[0]?.reason).toContain("slot");
+      expect(needs[0]?.notice?.text).toContain(`jig dispatch clear ${ID}`);
+      expect(needs[0]?.notice?.text).not.toContain("no tick starts it again");
+    }
+  });
+
+  it("counts a running ledger's hold from the launch alone, as the drive has not stopped", () => {
+    const running = (createdAt: string) =>
+      needsOf(
+        input({
+          drives: [drive(isoFromMs(NOW_MS), { class: "driven" })],
+          launches: [launch(unknown, { createdAt })],
+        }),
+      ).filter((a) => a.evidence.stuck === REASON);
+    expect(running(PAST)).toHaveLength(1);
+    expect(running(RECENT)).toEqual([]);
   });
 
   it("waits while the runtime cannot say which sessions run", () => {
@@ -297,6 +320,53 @@ describe("a stopped drive held by a launch of unknown process", () => {
   it("waits inside the bound for another host's claim", () => {
     expect(
       needsOf(input({ drives: [drive(PAST)], ...foreign(RECENT) })),
+    ).toEqual([]);
+  });
+});
+
+describe("a merged pull request whose drive a launch of unknown process holds", () => {
+  const merged = (mergedAt: string): PlanInput["merged"][number] => ({
+    number: 7,
+    url: `https://github.com/${SLUG}/pull/7`,
+    title: "Pull request 7",
+    head: "feature/7",
+    mergedAt,
+    markers: [],
+  });
+
+  it("raises a need naming the record past the bound, saying the hold keeps its account's slot", () => {
+    const [need, ...rest] = needsOf(
+      input({ merged: [merged(PAST)], launches: [launch(unknown)] }),
+    ).filter((a) => a.evidence.record === ID);
+    expect(rest).toEqual([]);
+    expect(need).toMatchObject({
+      cause: "needs-person",
+      evidence: { record: ID, stuck: REASON, heldSince: PAST },
+    });
+    expect(need?.reason).toContain("merged");
+    expect(need?.reason).toContain("slot");
+    expect(need?.notice?.text).toContain(`jig dispatch clear ${ID}`);
+  });
+
+  it("waits inside the bound, counted from the later of the launch and the merge", () => {
+    for (const plan of [
+      input({ merged: [merged(RECENT)], launches: [launch(unknown)] }),
+      input({
+        merged: [merged(PAST)],
+        launches: [launch(unknown, { createdAt: RECENT })],
+      }),
+    ])
+      expect(needsOf(plan).filter((a) => a.evidence.record === ID)).toEqual([]);
+  });
+
+  it("raises nothing while the holder's process is alive", () => {
+    expect(
+      needsOf(
+        input({
+          merged: [merged(PAST)],
+          launches: [launch({ kind: "alive", process: PROCESS })],
+        }),
+      ).filter((a) => a.evidence.record === ID),
     ).toEqual([]);
   });
 });
