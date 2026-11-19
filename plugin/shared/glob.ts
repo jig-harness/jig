@@ -422,35 +422,71 @@ export function globsIntersect(left: string, right: string): boolean {
 type PathPart = "" | "." | ".." | "name";
 type IntersectionPosition = [number, number, PathPart];
 
+interface ProductWalk {
+  left: Automaton;
+  right: Automaton;
+  seen: Set<string>;
+  pending: IntersectionPosition[];
+  classPairs: Map<string, boolean>;
+}
+
 // The product follows empty steps in either glob independently and consumes
 // a character only when both globs can take it. Track the current path part
 // to rule out empty segments and the special components "." and "..".
 function intersect(left: Automaton, right: Automaton): boolean {
-  const seen = new Set<string>();
-  const classPairs = new Map<string, boolean>();
-  const pending: IntersectionPosition[] = [];
-  const add = (a: number, b: number, part: PathPart) => {
-    const key = `${a},${b},${part}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    pending.push([a, b, part]);
+  const walk: ProductWalk = {
+    left,
+    right,
+    seen: new Set(),
+    pending: [],
+    classPairs: new Map(),
   };
-  add(0, 0, "");
-  for (let at = pending.pop(); at !== undefined; at = pending.pop()) {
-    const [a, b, part] = at;
-    if (a === left.accept && b === right.accept && part === "name") return true;
-    for (const next of left.empty[a] ?? []) add(next, b, part);
-    for (const next of right.empty[b] ?? []) add(a, next, part);
-    for (const x of left.steps[a] ?? []) {
-      for (const y of right.steps[b] ?? []) {
-        if (x.slash && y.slash && part === "name") add(x.to, y.to, "");
-        if (x.dot && y.dot)
-          add(x.to, y.to, part === "" ? "." : part === "." ? ".." : "name");
-        if (sharesNameCharacter(x, y, classPairs)) add(x.to, y.to, "name");
-      }
-    }
+  visit(walk, 0, 0, "");
+  for (let at = walk.pending.pop(); at !== undefined; at = walk.pending.pop()) {
+    if (acceptsBoth(walk, at)) return true;
+    expand(walk, at);
   }
   return false;
+}
+
+function visit(walk: ProductWalk, a: number, b: number, part: PathPart): void {
+  const key = `${a},${b},${part}`;
+  if (walk.seen.has(key)) return;
+  walk.seen.add(key);
+  walk.pending.push([a, b, part]);
+}
+
+function acceptsBoth(
+  { left, right }: ProductWalk,
+  [a, b, part]: IntersectionPosition,
+): boolean {
+  return a === left.accept && b === right.accept && part === "name";
+}
+
+function expand(walk: ProductWalk, [a, b, part]: IntersectionPosition): void {
+  for (const next of walk.left.empty[a] ?? []) visit(walk, next, b, part);
+  for (const next of walk.right.empty[b] ?? []) visit(walk, a, next, part);
+  const rightSteps = walk.right.steps[b] ?? [];
+  for (const x of walk.left.steps[a] ?? [])
+    for (const y of rightSteps) stepBoth(walk, x, y, part);
+}
+
+/** The path part after a `.`: `.`, then `..`, then an ordinary name. */
+function afterDot(part: PathPart): PathPart {
+  if (part === "") return ".";
+  return part === "." ? ".." : "name";
+}
+
+function stepBoth(
+  walk: ProductWalk,
+  x: CharacterStep,
+  y: CharacterStep,
+  part: PathPart,
+): void {
+  if (x.slash && y.slash && part === "name") visit(walk, x.to, y.to, "");
+  if (x.dot && y.dot) visit(walk, x.to, y.to, afterDot(part));
+  if (sharesNameCharacter(x, y, walk.classPairs))
+    visit(walk, x.to, y.to, "name");
 }
 
 function sharesLiteral(literal: string, other: CharacterStep): boolean {
