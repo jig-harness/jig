@@ -85,7 +85,7 @@ import {
   readBranchHead,
   readComments,
 } from "./forge.ts";
-import { driveRow, type DriveRow } from "./local.ts";
+import { localDriveRow, type DriveRow } from "./local.ts";
 import { takeoverSettled } from "./drive-takeover.ts";
 import { convergedWait } from "./merge.ts";
 import {
@@ -673,7 +673,10 @@ export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
 }
 
 /** The `drive` station's answer, and the records it read. */
-export async function readDrive(ctx: AskContext): Promise<DriveReading> {
+export async function readDrive(
+  ctx: AskContext,
+  mode: "diagnose" | "lock-only" = "diagnose",
+): Promise<DriveReading> {
   const pull = await pullFor(ctx);
   if (pull.absent)
     return {
@@ -710,7 +713,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
           ),
     records: local.records,
     rows: local.rows.filter((r) => r.stage !== "followup"),
-    row: await rowOf(ctx, pr),
+    row: await localDriveRow(ctx.reading, ctx.checkout, pr, mode),
   };
   const ledger = ledgerOf(reads.snapshot);
   const read = typeof ledger === "string" ? null : ledger;
@@ -785,37 +788,6 @@ async function baseHeadOf(
     ...(head.ok ? {} : { detail: head.failure.reason }),
   });
   return head.ok ? { oid: head.value } : { unreadable: head.failure.reason };
-}
-
-/** The doctor's verdict on a drive, in words, with the recovery it gives. */
-function doctorDetail(row: DriveRow | null): { detail?: string } {
-  const doctor = row?.doctor;
-  if (doctor == null) return {};
-  const recovery =
-    doctor.recovery === null ? "" : `; recovery: ${doctor.recovery}`;
-  return { detail: `doctor: ${doctor.verdict}: ${doctor.reason}${recovery}` };
-}
-
-/** The drive as its own listing in a checkout of the repository on this machine reads it, noted in the sources. */
-async function rowOf(ctx: AskContext, pr: number): Promise<DriveRow | null> {
-  const { reading } = ctx;
-  if (ctx.checkout === null) {
-    reading.note({
-      record: "drive-lock",
-      read: false,
-      local: true,
-      detail: "no checkout of the repository on this machine",
-    });
-    return null;
-  }
-  const row = await driveRow(reading, ctx.checkout, pr);
-  reading.note({
-    record: "drive-lock",
-    read: row.ok,
-    local: true,
-    ...(row.ok ? doctorDetail(row.value) : { detail: row.failure.reason }),
-  });
-  return row.ok ? row.value : null;
 }
 
 /** What this host shows of a silent ledger's driver that no launch holds, as the dispatcher reads it; `null` for any other ledger. */

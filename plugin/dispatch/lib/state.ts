@@ -556,6 +556,17 @@ export const MIGRATIONS: readonly Migration[] = [
       PRIMARY KEY (repo, item)
     );`,
   },
+  {
+    additive: true,
+    sql: `CREATE TABLE rearm_lock_needs (
+      repo TEXT NOT NULL,
+      pr INTEGER NOT NULL,
+      generation INTEGER NOT NULL,
+      heartbeat TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      PRIMARY KEY (repo, pr)
+    );`,
+  },
 ];
 
 /** The schema version this plugin writes. */
