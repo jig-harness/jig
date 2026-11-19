@@ -414,8 +414,8 @@ async function markGuarded(
       if (
         readFailed ||
         (pending &&
-          currentByPerson &&
-          (label === null || label.write.outcome === "refused"))
+          (label?.write.outcome === "refused" ||
+            (currentByPerson && label === null)))
       )
         return "retry";
       return "done";
