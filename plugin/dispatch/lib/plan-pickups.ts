@@ -826,7 +826,7 @@ function questionAsked(
     : endedQuestion(latest);
   if (
     asked === null ||
-    (!unwritten && batchQuestionForSibling(latest, item.key))
+    ((!unwritten || hasDecision) && batchQuestionForSibling(latest, item.key))
   )
     return null;
   const report = unwritten && !hasDecision ? null : latest.report;

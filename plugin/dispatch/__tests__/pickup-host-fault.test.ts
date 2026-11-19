@@ -210,6 +210,7 @@ describe("telling a host fault from a question about the work", () => {
       "the tests mock ENOSPC; should the export retry on it?",
       "should the cache treat a read-only file system as a soft failure?",
       "should the test assert 'no space left on device'?",
+      "Should tests handle ENOSPC: by retrying or failing?",
       "should the documentation explain how to free inodes?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
