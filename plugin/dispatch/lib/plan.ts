@@ -604,6 +604,7 @@ function plannable(
   input: PlanInput,
   read: DrivenPr,
   plan: Plan,
+  want: Want,
 ): DrivenPr | null {
   const target = `PR #${read.number}`;
   const pr = treeBound(read, input.sessions);
@@ -613,17 +614,29 @@ function plannable(
       class: read.class,
       why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
     });
+    raiseStrandedDrive(input, read, want);
     return null;
   }
   const waiting = backingOff(pr, input.nowMs) ?? idleWhy(pr);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
+  // Nothing is launched for the drive, but a launch of unknown process still
+  // holds its account's slot.
+  raiseStrandedDrive(input, read, want);
   return null;
 }
 
 /** A stranded hold's need, placed beside the sessions the runtime reports as any notification is. */
 function raiseStranded(stranded: StrandedHold | null, want: Want): void {
   if (stranded !== null) want(stranded.action, stranded.joined);
+}
+
+/** A drive's stranded hold, from the launch records this machine holds for it. */
+function raiseStrandedDrive(input: PlanInput, pr: DrivenPr, want: Want): void {
+  raiseStranded(
+    strandedByRecord(input.slug, pr, input.launches, input.nowMs),
+    want,
+  );
 }
 
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
@@ -635,16 +648,11 @@ function planDrive(
 ): void {
   const { slug, launches } = input;
   const target = `PR #${read.number}`;
-  const pr = plannable(input, read, plan);
-  if (pr === null) {
-    // Nothing is launched for the drive yet, but a launch of unknown process
-    // still holds its account's slot.
-    raiseStranded(strandedByRecord(slug, read, launches, input.nowMs), want);
-    return;
-  }
+  const pr = plannable(input, read, plan, want);
+  if (pr === null) return;
   const hold = driveHold(pr, launches);
   if (heldByRecord(target, pr, hold, plan)) {
-    raiseStranded(strandedByRecord(slug, pr, launches, input.nowMs), want);
+    raiseStrandedDrive(input, pr, want);
     return;
   }
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;

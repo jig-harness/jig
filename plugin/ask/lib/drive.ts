@@ -309,6 +309,32 @@ function runningLaunchSpeaks(holder: Holder | "none", cls: string): boolean {
   return alive && !["parked", "stale", "silent"].includes(cls);
 }
 
+/** The wait of a drive that settles by itself where a dispatcher is known to re-arm it, else the person's. */
+function rearmWait(dispatched: boolean, why: string): WaitsOn {
+  return dispatched
+    ? { waiting: why }
+    : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
+}
+
+/** What the hold diagnosis reads of this machine's launch records. */
+function holdFactsOf(dispatched: boolean, r: DriveReads): HoldFacts {
+  return {
+    dispatched,
+    record: holdingRecord(r.records),
+    holding: holdingRecordsOf(r.records),
+  };
+}
+
+/** What a pull request that is no longer open waits on: nothing, unless a launch record still holds its drive. */
+function closedWait(
+  reads: DriveReads,
+  holder: Holder | "none",
+  holdFacts: HoldFacts,
+): WaitsOn {
+  const mergedAt = reads.pull.mergedAt ?? "";
+  return heldStopWait(holder, "done", false, mergedAt, holdFacts) ?? "none";
+}
+
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
 function waitsOnOf(
   ledger: Ledger,
@@ -323,20 +349,13 @@ function waitsOnOf(
   if (settled !== null) return personWait("re-arm", settled);
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
   const dispatched = ctx.dispatches || current(r.claims) !== null;
-  const rearm = (why: string): WaitsOn =>
-    dispatched
-      ? { waiting: why }
-      : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
+  const rearm = (why: string): WaitsOn => rearmWait(dispatched, why);
   const onHold = heldStopWait(
     holder,
     placed.class,
     ledger.driver.state === "running",
     ledger.driver.heartbeat,
-    {
-      dispatched,
-      record: holdingRecord(r.records),
-      holding: holdingRecordsOf(r.records),
-    },
+    holdFactsOf(dispatched, r),
   );
   if (onHold !== null) return onHold;
   // A running launch says nothing of a park nobody answered or of a ledger gone silent.
@@ -924,21 +943,11 @@ function driveWait(
       waiting:
         "the pull request could not be read; its head and CI hold are unknown",
     };
-  const holdFacts = {
-    dispatched: ctx.dispatches || current(reads.claims) !== null,
-    record: holdingRecord(reads.records),
-    holding: holdingRecordsOf(reads.records),
-  };
-  if (reads.pull.state !== "OPEN")
-    return (
-      heldStopWait(
-        holder,
-        "done",
-        false,
-        reads.pull.mergedAt ?? "",
-        holdFacts,
-      ) ?? "none"
-    );
+  const holdFacts = holdFactsOf(
+    ctx.dispatches || current(reads.claims) !== null,
+    reads,
+  );
+  if (reads.pull.state !== "OPEN") return closedWait(reads, holder, holdFacts);
   if (facts.presence?.gone === true && ledger !== null)
     return goneDriverWait(reads, ledger, ctx, facts, facts.presence);
   const running = ledgerHoldWait(reads, ledger, holder, facts, holdFacts);
