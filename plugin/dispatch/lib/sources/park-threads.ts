@@ -14,8 +14,9 @@
  * The listing and the thread query are answered by different parts of the
  * forge, and the listing can show a reply the query does not return yet. A
  * reading is therefore reused only when it was taken `LISTING_SETTLE_MS` or
- * more after the review comments last changed; until then each tick reads
- * the thread again. A kept reading is also read again after
+ * more after this host last saw the review comments change, a pull request
+ * it sees for the first time counting as changed then; until that time each
+ * tick reads the thread again. A kept reading is also read again after
  * `THREAD_BACKSTOP_MS`, whatever the listing says.
  *
  * Keeping is only a saving. A listing that does not read, a record that does
@@ -31,7 +32,7 @@ import { isRecord } from "../../../shared/guards.ts";
 import type { Outcome } from "../../../shared/outcome.ts";
 import { listReviewCommentsKept } from "../../../shared/records/comment-pages.ts";
 import type { Deadline } from "../../../shared/records/forge-claims.ts";
-import { currentMs, parseMs } from "../../../shared/time.ts";
+import { currentMs } from "../../../shared/time.ts";
 import type { CommentLike } from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
 import { ended, secondsLeft, type TickBound } from "./bounded.ts";
@@ -55,7 +56,7 @@ interface KeptThread {
 interface KeptRecord {
   /** The review comments the readings were taken against (`signatureOf`). */
   listing: string;
-  /** When those review comments last changed, as far as this host can tell. */
+  /** When this host first saw those review comments. */
   changedAt: number;
   threads: Record<string, KeptThread>;
 }
@@ -95,15 +96,6 @@ function signatureOf(listing: readonly unknown[]): string {
       c.body,
     ]);
   return createHash("sha256").update(JSON.stringify(facts)).digest("hex");
-}
-
-/** When the newest of the review comments was written or edited; `0` when none says. */
-function newestChange(listing: readonly unknown[]): number {
-  const times = listing
-    .filter(isRecord)
-    .map((c) => (typeof c.updated_at === "string" ? parseMs(c.updated_at) : 0))
-    .filter(Number.isFinite);
-  return Math.max(0, ...times);
 }
 
 function isComment(value: unknown): value is CommentLike {
@@ -161,8 +153,8 @@ export async function keptParkThreads(
   );
   if (!listed.ok) {
     swallow(
-      listed.failure,
-      `list the review comments of ${slug}#${pr}; reading its parked threads instead`,
+      listed.failure.cause ?? listed.failure,
+      `list the review comments of ${slug}#${pr}: ${listed.failure.reason}; reading its parked threads instead`,
     );
     return NOTHING_KEPT;
   }
@@ -172,14 +164,7 @@ export async function keptParkThreads(
   const standing = record?.listing === listing ? record.threads : {};
   // Taken before any thread is read: a reading is never younger than it says.
   const now = currentMs();
-  const newest = newestChange(listed.value);
-  // A listing seen to change changed by now; a first sight has only the comments' own times.
-  const changedAt =
-    record === null
-      ? newest
-      : record.listing === listing
-        ? record.changedAt
-        : Math.max(now, newest);
+  const changedAt = record?.listing === listing ? record.changedAt : now;
   const threads: Record<string, KeptThread> = {};
   let changed = record?.listing !== listing;
   return {

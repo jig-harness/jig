@@ -5,6 +5,7 @@
  * Each tick runs as the installed command in a child with its own home.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -19,6 +20,8 @@ import {
   type World,
   world,
 } from "./fixtures.ts";
+import { dispatchState } from "./launch-fixtures.ts";
+import { statePath } from "../lib/state.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -111,6 +114,18 @@ async function tick(w: World, exit = 0): Promise<TickReceipt> {
   return JSON.parse(r.stdout) as TickReceipt;
 }
 
+/** As when the review comments stopped changing long before the kept readings were taken. */
+function settle(w: World): void {
+  const db = new Database(statePath(dispatchState(w)));
+  try {
+    db.run(
+      "UPDATE pickup_reads SET value = json_set(value, '$.changedAt', 0) WHERE key LIKE 'park-threads:%'",
+    );
+  } finally {
+    db.close();
+  }
+}
+
 function lines(w: World, name: string): string[] {
   const path = join(w.dir, name);
   return existsSync(path)
@@ -140,6 +155,7 @@ describe("a parked drive's review threads over ticks", () => {
     const w = parked();
     expect(reasonsOn7(await tick(w))).toContainEqual(WAITING);
     expect(threadReads(w)).toBe(1);
+    settle(w);
 
     expect(reasonsOn7(await tick(w))).toContainEqual(WAITING);
     expect(threadReads(w)).toBe(0);
@@ -150,7 +166,9 @@ describe("a parked drive's review threads over ticks", () => {
   it("reads a thread with a new reply and acts on the answer", async () => {
     const w = parked();
     await tick(w);
+    settle(w);
     await tick(w);
+    expect(threadReads(w)).toBe(0);
     setReviewComments(w, [QUESTION, ANSWER]);
 
     const answered = await tick(w);
@@ -161,6 +179,7 @@ describe("a parked drive's review threads over ticks", () => {
   it("reads a thread again when one of its comments is edited", async () => {
     const w = parked();
     await tick(w);
+    settle(w);
     setReviewComments(w, [
       { ...QUESTION, body: "Reworded.", updated_at: "2026-10-30T23:00:00Z" },
     ]);
@@ -172,6 +191,7 @@ describe("a parked drive's review threads over ticks", () => {
   it("sees a reply the listing showed before the thread's query returned it", async () => {
     const w = parked();
     await tick(w);
+    settle(w);
     // The listing has the reply; the thread's query does not return it yet.
     setReviewComments(w, [QUESTION, { ...ANSWER, thread: "PRRT_elsewhere" }]);
     expect(reasonsOn7(await tick(w))).toContainEqual(WAITING);
@@ -187,6 +207,7 @@ describe("a parked drive's review threads over ticks", () => {
     w.failCall(`id=${THREAD}`, "gh: HTTP 422");
     await tick(w, 1);
     rmSync(join(w.dir, "forge-fails.json"));
+    settle(w);
 
     expect(reasonsOn7(await tick(w))).toContainEqual(WAITING);
     expect(threadReads(w)).toBe(1);
@@ -195,6 +216,7 @@ describe("a parked drive's review threads over ticks", () => {
   it("forgets a closed pull request's threads", async () => {
     const w = parked();
     await tick(w);
+    settle(w);
     w.setPrs("open", []);
     await tick(w);
     w.setPrs("open", [openPr(7, "feature/7-open")]);

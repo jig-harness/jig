@@ -5,7 +5,6 @@
  */
 import { afterEach, describe, expect, it, setSystemTime } from "bun:test";
 import { failed, ok } from "../../shared/outcome.ts";
-import { isoFromMs } from "../../shared/time.ts";
 import type { CommentLike } from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import {
   forgetClosedParkThreads,
@@ -63,22 +62,44 @@ async function tick(d: ParkThreadDeps): Promise<CommentLike[] | null> {
   return held;
 }
 
+/** Set the clock to `ms` past `START`. */
+const at = (ms: number) => setSystemTime(new Date(START + ms));
+
+/** Read the thread as a pull request first seen, then once the listing has settled, at `LISTING_SETTLE_MS`. */
+async function settled(d: ParkThreadDeps): Promise<void> {
+  at(0);
+  await tick(d);
+  at(LISTING_SETTLE_MS);
+  await tick(d);
+}
+
 describe("a parked thread's kept reading", () => {
-  it("is reused while the review comments stand, and stored once", async () => {
+  it("is reused once the review comments have settled, and stored no more", async () => {
     const { out, state } = deps();
+    await settled(out);
+    const stored = state.sets;
+    expect(await tick(out)).toEqual([COMMENT]);
+    expect(await tick(out)).toEqual([COMMENT]);
+    expect(state.sets).toBe(stored);
+  });
+
+  it("is not reused when taken as the pull request was first seen", async () => {
+    at(0);
+    const { out } = deps();
+    expect(await tick(out)).toBeNull();
+    at(LISTING_SETTLE_MS - 1);
+    expect(await tick(out)).toBeNull();
+    at(LISTING_SETTLE_MS);
     expect(await tick(out)).toBeNull();
     expect(await tick(out)).toEqual([COMMENT]);
-    expect(await tick(out)).toEqual([COMMENT]);
-    expect(state.sets).toBe(1);
   });
 
   it("is not reused once a review comment changed, and a reaction changes nothing", async () => {
-    let now = START;
-    setSystemTime(new Date(now));
     const { out, state } = deps();
-    await tick(out);
+    await settled(out);
     state.listing = [{ ...REVIEW, reactions: { total_count: 1 } }];
     expect(await tick(out)).toEqual([COMMENT]);
+    let now = LISTING_SETTLE_MS;
     for (const changed of [
       [REVIEW, { ...REVIEW, id: 2 }],
       [{ ...REVIEW, body: "Keep two." }],
@@ -90,40 +111,26 @@ describe("a parked thread's kept reading", () => {
       state.listing = changed;
       expect(await tick(out)).toBeNull();
       now += LISTING_SETTLE_MS;
-      setSystemTime(new Date(now));
+      at(now);
       expect(await tick(out)).toBeNull();
       expect(await tick(out)).toEqual([COMMENT]);
     }
   });
 
   it("is not reused from a reading taken just after the review comments changed", async () => {
-    setSystemTime(new Date(START));
     const { out, state } = deps();
-    await tick(out);
+    await settled(out);
     state.listing = [REVIEW, { ...REVIEW, id: 2 }];
     expect(await tick(out)).toBeNull();
-    setSystemTime(new Date(START + LISTING_SETTLE_MS - 1));
+    at(2 * LISTING_SETTLE_MS - 1);
     expect(await tick(out)).toBeNull();
-    setSystemTime(new Date(START + LISTING_SETTLE_MS));
+    at(2 * LISTING_SETTLE_MS);
     expect(await tick(out)).toBeNull();
     expect(await tick(out)).toEqual([COMMENT]);
   });
 
-  it("settles a first reading from the time of the newest review comment", async () => {
-    setSystemTime(new Date(START));
-    const written = isoFromMs(START - LISTING_SETTLE_MS + 1);
-    const { out } = deps([{ ...REVIEW, updated_at: written }]);
-    expect(await tick(out)).toBeNull();
-    expect(await tick(out)).toBeNull();
-
-    const older = isoFromMs(START - LISTING_SETTLE_MS);
-    const { out: settled } = deps([{ ...REVIEW, updated_at: older }]);
-    expect(await tick(settled)).toBeNull();
-    expect(await tick(settled)).toEqual([COMMENT]);
-  });
-
   it("asks nothing once the tick's bound has ended, and gives the listing what is left", async () => {
-    setSystemTime(new Date(START));
+    at(0);
     const asked: Array<number | undefined> = [];
     const { out } = deps();
     const counted: ParkThreadDeps = {
@@ -152,38 +159,37 @@ describe("a parked thread's kept reading", () => {
   });
 
   it("is read again at the backstop, and kept from then", async () => {
-    setSystemTime(new Date(START));
     const { out } = deps();
-    await tick(out);
-    setSystemTime(new Date(START + THREAD_BACKSTOP_MS - 1));
+    await settled(out);
+    at(LISTING_SETTLE_MS + THREAD_BACKSTOP_MS - 1);
     expect(await tick(out)).toEqual([COMMENT]);
-    setSystemTime(new Date(START + THREAD_BACKSTOP_MS));
+    at(LISTING_SETTLE_MS + THREAD_BACKSTOP_MS);
     expect(await tick(out)).toBeNull();
     expect(await tick(out)).toEqual([COMMENT]);
   });
 
   it("is not reused from a reading dated after now", async () => {
-    setSystemTime(new Date(START));
     const { out } = deps();
-    await tick(out);
-    setSystemTime(new Date(START - 1));
+    await settled(out);
+    at(LISTING_SETTLE_MS - 1);
     expect(await tick(out)).toBeNull();
   });
 
   it("is neither reused nor stored while the review comments do not list", async () => {
     const { out, state } = deps();
-    await tick(out);
+    await settled(out);
+    const stored = state.sets;
     const down: ParkThreadDeps = {
       ...out,
       listing: async () => failed("unreadable", "no answer"),
     };
     expect(await tick(down)).toBeNull();
-    expect(state.sets).toBe(1);
+    expect(state.sets).toBe(stored);
   });
 
   it("is read again when the stored record does not read", async () => {
     const { out, held } = deps();
-    await tick(out);
+    await settled(out);
     const [key] = [...held.keys()];
     for (const bad of [
       "garbage",
@@ -202,6 +208,9 @@ describe("a parked thread's kept reading", () => {
 
   it("keeps only what this tick read or reused", async () => {
     const { out, held } = deps();
+    at(0);
+    (await keptParkThreads(SLUG, 7, undefined, out)).save();
+    at(LISTING_SETTLE_MS);
     const first = await keptParkThreads(SLUG, 7, undefined, out);
     first.keep("T", [COMMENT]);
     first.keep("gone", [COMMENT]);
