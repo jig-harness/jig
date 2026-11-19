@@ -136,6 +136,32 @@ const PUSH_BEFORE_VALIDATION_LINE =
   "Once the branch holds committed work, push the branch before a long validation step (the gates, a full test run), and again after each later commit, so a deadline or an interrupted validation strands less on this host. Where the repository's instructions require validation before every push, they win: skip the early push. Push the way the skill's push step does, rewording unpushed commits to the configured commit prefix first, since a pushed commit is never reworded. A push the repository's pre-push hook refuses is no stop: go on with validation, fix what it found and push after it. Pushing opens no pull request: that still waits for validation and the pre-PR review.";
 
 /**
+ * Why a pickup pushes and records before it ends, whatever ends it: work
+ * left only in its tree, or an end with no result, leaves the item claimed
+ * and stalled, and the tick relaunches it at most once to finish that
+ * (`pickup-relaunch.ts`).
+ */
+const PUSH_AND_RECORD_LINE =
+  "Before this pass ends, for any reason, push the branch whenever it holds committed work (under the rule above: the repository's validation-before-push still wins), and record how the pickup ended with one of the result commands below. A pass that ends with its work only in this tree, or with no result recorded, leaves its item claimed and stalled.";
+
+/** Whether the pass continues a claimed pickup (a steward's resume or a relaunch): it claims nothing again. */
+function continuesClaim(
+  record: Pick<LaunchRecord, "stewardResume" | "relaunchOf">,
+): boolean {
+  return record.stewardResume !== undefined || record.relaunchOf !== undefined;
+}
+
+/** The fixed prompt of a stalled pickup's relaunch (`pickup-relaunch.ts`): push and record what the tree holds, under the earlier pass's claim. */
+function relaunchLines(
+  record: Pick<LaunchRecord, "item" | "relaunchOf" | "relaunchHead">,
+): string[] {
+  if (record.relaunchOf === undefined) return [];
+  return [
+    `This pass finishes the stalled pickup ${record.relaunchOf} of ${record.item ?? ""}: it ended with its work in this workspace's tree (at ${record.relaunchHead ?? "its head"}) unpushed, uncommitted or unrecorded. The item is already claimed: make no second claim, and start no work the tree does not already hold. Commit the tree's edits that belong to the item, push the branch the way do-item's push step does, then go on from where the work stands: when its validation and the pre-PR review pass, open its pull request and arm its drive as do-item says; when the work is not complete, stop there. Either way, record how it ended with one of the result commands below.`,
+  ];
+}
+
+/**
  * A person's answer to the decision an earlier session of this target
  * stopped on (`station-answer-store.ts`), quoted as data: the option they
  * chose as the decision states it, and their note, which may narrow the
@@ -226,9 +252,9 @@ function batchScopeLines(
 
 /** The line that tells a pass its item is picked up alone, after the route line. */
 function aloneLines(
-  record: Pick<LaunchRecord, "batchItems" | "stewardResume">,
+  record: Pick<LaunchRecord, "batchItems" | "stewardResume" | "relaunchOf">,
 ): string[] {
-  return record.batchItems !== undefined || record.stewardResume !== undefined
+  return record.batchItems !== undefined || continuesClaim(record)
     ? []
     : [
         "This item is picked up on its own: run the pickup skill's batch check only to confirm that, suggest no batch and ask no question about one.",
@@ -245,10 +271,11 @@ function servedClaimLines(
     | "ancestorEpic"
     | "blockingFor"
     | "stewardResume"
+    | "relaunchOf"
   >,
 ): string[] {
   return [
-    ...(record.servedPerson === undefined || record.stewardResume !== undefined
+    ...(record.servedPerson === undefined || continuesClaim(record)
       ? []
       : [
           `${record.batchItems === undefined ? "Claim this served assignment" : `If the proposal keeps ${record.item ?? ""}, claim it`} using tracker.ts claim ${shellQuote(record.item ?? "")} --for ${shellQuote(record.servedPerson)}${record.ancestorEpic === undefined ? "" : ` --ancestor ${shellQuote(record.ancestorEpic)}`}${record.blockingFor === undefined ? "" : ` --blocking ${shellQuote(record.blockingFor)}`}; preserve the person as the only assignee. A refusal stops the ${record.batchItems === undefined ? "pickup" : "batch"}.`,
@@ -272,6 +299,8 @@ function pickupPassPrompt(
     | "stewardResume"
     | "stewardContext"
     | "answered"
+    | "relaunchOf"
+    | "relaunchHead"
   >,
 ): string {
   return [
@@ -290,10 +319,10 @@ function pickupPassPrompt(
         : `/jig:work-batch ${record.item}`,
     ),
     ...batchScopeLines(record),
+    ...relaunchLines(record),
     ROUTE_RULES_LINE,
     ...aloneLines(record),
-    ...(record.factoryAncestor === undefined ||
-    record.stewardResume !== undefined
+    ...(record.factoryAncestor === undefined || continuesClaim(record)
       ? []
       : [
           `Claim this factory-inherited assignment using tracker.ts claim ${shellQuote(record.item ?? "")} --factory-ancestor ${shellQuote(record.factoryAncestor)}; validate the factory ancestor and assign the child to the credential identity. A refusal stops the pickup.`,
@@ -303,6 +332,7 @@ function pickupPassPrompt(
     "jig dispatch started this headless pass for an item assigned to the factory identity, or for an unassigned item from the repository's ready pool, which your claim assigns; nobody is at the keyboard, and nobody can answer a question while it runs.",
     FOREGROUND_LINE,
     PUSH_BEFORE_VALIDATION_LINE,
+    PUSH_AND_RECORD_LINE,
     `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     ...framingLines(record),
     ...pickupResultLines(record),

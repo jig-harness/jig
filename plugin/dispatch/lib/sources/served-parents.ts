@@ -178,6 +178,17 @@ async function parentOf(
   return full === null ? null : { parent: full.parent };
 }
 
+const UNREAD_HOLDS: ReadonlySet<string> = new Set([
+  "the item's parent plan cannot be read",
+  "the parent cannot be read completely",
+  "the parent plan cannot be read",
+]);
+
+/** A hold that says an ancestry fact was not observed, so the reading is partial. */
+export function parentHoldUnread(hold: string | null): boolean {
+  return hold !== null && UNREAD_HOLDS.has(hold);
+}
+
 /**
  * Tracker completion never substitutes for directly verified delivering
  * merges. Without `reads`, the check reads fresh: straight from the tracker,

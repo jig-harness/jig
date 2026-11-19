@@ -336,13 +336,16 @@ export function recordsWanted(
 
 /**
  * Release every ended pickup record of `repo` whose item is no longer
- * wanted, so a later assignment of that item is a pickup again. Called only
- * after a whole read of the tracker.
+ * wanted, so a later assignment of that item is a pickup again. Called after
+ * a read whose claims are known.
  *
  * An item that is claimed (in progress) keeps its record, so the question its
  * pass stopped on stays a need; the record notes that member's claim, and
  * releases it once it is back among `returned` (the dispatch states), which is
  * how a person settles that question.
+ *
+ * With `partial`, the read left some wanted items out, so an item missing
+ * from `wanted` may still be wanted: only that return releases a record.
  */
 export function releaseEnded(
   records: ReadRecord[],
@@ -352,6 +355,7 @@ export function releaseEnded(
   returned: ReadonlySet<string> = new Set(),
   root?: string,
   served: ReadonlySet<string> = new Set(),
+  partial = false,
 ): void {
   for (const r of records) {
     const { record } = r;
@@ -372,7 +376,8 @@ export function releaseEnded(
     const unclaimed = members.filter((key) => !claimedMembers.includes(key));
     const dropped = unclaimed.filter(
       (key) =>
-        leftUnclaimed(r, key) || !wantsRecord(record, key, wanted, returned),
+        leftUnclaimed(r, key) ||
+        !wantsRecord(record, key, partial ? null : wanted, returned),
     );
     if (dropped.length === 0) continue;
     // A member no longer wanted is released alone, so its siblings keep the
@@ -410,11 +415,13 @@ function noteProvableClaims(
 function wantsRecord(
   record: LaunchRecord,
   item: string,
-  wanted: ReadonlySet<string>,
+  wanted: ReadonlySet<string> | null,
   returned: ReadonlySet<string>,
 ): boolean {
-  if (wasClaimed(record, item)) return !returned.has(item) && wanted.has(item);
-  return wanted.has(item);
+  // An unknown wanted set (a partial read) keeps every record it would judge.
+  const stillWanted = wanted === null || wanted.has(item);
+  if (wasClaimed(record, item)) return !returned.has(item) && stillWanted;
+  return stillWanted;
 }
 
 /** Whether this batch member was seen claimed after its record ended. */

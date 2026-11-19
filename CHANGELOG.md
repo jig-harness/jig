@@ -401,6 +401,71 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.280.0] - 2026-11-19
+
+### Added
+
+- The dispatcher relaunches a stalled pickup once in its own tree to push
+  and record its work. A claimed item idle past `dispatch.stalled_after`
+  whose latest headless pickup left unpushed commits or uncommitted edits in
+  its tree, or recorded no result, is started again in that same workspace,
+  never a fresh one, with a fixed prompt to commit and push the work and
+  record the pickup's result, making no second claim. It happens once per
+  item and head: a second stall at the same head, a tree no open workspace
+  on the host holds, or a batch's pickup is still raised to a person. A pass
+  whose result the host could not write takes the same relaunch once the
+  host's health check passes, instead of asking a person to settle or
+  release the item. `dispatch.stalled_relaunch` in `.config/jig.yaml` is
+  `finish-once` by default; `never` turns it off.
+- Every dispatched pickup's prompt, and `do-item`'s dispatched-pass rules,
+  now tell the pass to push its branch and record its result before it
+  ends, whatever ends it.
+
+### Fixed
+
+- A drive held by a launch whose process nobody can show running no longer reads as waiting on nothing. `jig ask` names the hold, why its process is unknown and how long it has held the drive, and past 30 minutes the dispatcher raises a need for it, where a person can clear this machine's launch record once every process of it has been judged and none runs.
+
+## [0.279.3] - 2026-11-19
+
+### Fixed
+
+- `jig dispatch` no longer reads every parked review thread on every tick.
+  Each tick now asks whether the pull request's review comments changed, a
+  request that costs no rate limit while they have not, and reads a parked
+  thread again when they did, or once its last reading is an hour old. A
+  reading is reused only when it was taken at least 2 minutes after the
+  comments last changed and holds every comment the listing shows for its
+  thread, so the first ticks after a change, and after a pull request is first
+  seen, still read its threads. An answer on a thread is still seen by the
+  next tick.
+- A page size shrunk after the forge ran out of time now recovers after 5
+  minutes rather than an hour. Each further shrink within two hours doubles
+  that wait, up to the hour, so a forge that keeps timing out still gets small
+  pages.
+
+## [0.279.2] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch`: one item a served person's queue could not read (an epic
+  whose children did not read, an item no assigner was found for, a child
+  read that failed) no longer turns off the watch on every claimed item of
+  the repository. The claimed items the queue did read are still watched: a
+  started pickup that stopped on a question raises its need, so it shows in
+  `jig ask --waiting` and `jig send pickup@<repo>#<item> answer …` reaches
+  it; a stall is reported; the idle clock runs. The same holds for a tick
+  whose merge proof did not read. While the queue is read only in part, an
+  ended pickup's record is released only when an item it claimed is back in
+  the dispatch states, and the record of an item it never claimed is kept,
+  since an item the read left out may still be wanted; the one exception is an
+  ended batch that claimed some members and has no question, whose unclaimed
+  siblings are released as before. A ready pool that was not read counts as
+  a partial read too. Where a served queue's items in progress were not read at all (the
+  queue failed, or the tracker's rate limit stopped it), the claimed items
+  stay unknown and the tick says so in a row of its own, naming the person
+  and what goes unchecked: stalls, double claims and the questions of
+  started pickups.
+
 ## [0.279.1] - 2026-11-18
 
 ### Fixed
@@ -9825,7 +9890,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.279.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.280.0...HEAD
+[0.280.0]: https://github.com/jig-harness/jig/compare/v0.279.3...v0.280.0
+[0.279.3]: https://github.com/jig-harness/jig/compare/v0.279.2...v0.279.3
+[0.279.2]: https://github.com/jig-harness/jig/compare/v0.279.1...v0.279.2
 [0.279.1]: https://github.com/jig-harness/jig/compare/v0.279.0...v0.279.1
 [0.279.0]: https://github.com/jig-harness/jig/compare/v0.278.1...v0.279.0
 [0.278.1]: https://github.com/jig-harness/jig/compare/v0.278.0...v0.278.1

@@ -5,23 +5,17 @@
  * host stays unknown, and one claimed under the host's earlier name is judged
  * by its process.
  */
+import { claimedLaunchRoot } from "./plan-input-fixtures.ts";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { captureIdentity, thisHost } from "../../shared/liveness.ts";
-import {
-  claimRecord,
-  holds,
-  type LaunchClaim,
-  type LaunchRecord,
-  readLaunches,
-  writeRecord,
-} from "../lib/launches.ts";
+import { holds, type LaunchClaim, readLaunches } from "../lib/launches.ts";
 import {
   asClaim,
   claimState,
   registerStageProcess,
+  type StageSupervision,
+  uncertainCleanupState,
   uncertainStage,
 } from "../lib/launch-supervision.ts";
 import { clearMain } from "../clear.ts";
@@ -38,38 +32,13 @@ afterEach(() => {
 
 const ID = "20261104T090000Z-aaaaaaaa";
 
-function claimedRoot(claim: LaunchClaim): string {
-  const dir = mkdtempSync(join(tmpdir(), "jig-dispatch-liveness-"));
-  dirs.push(dir);
-  const record: LaunchRecord = {
-    version: 1,
-    id: ID,
-    token: "t",
-    action: "rearm",
+const claimedRoot = (claim: LaunchClaim): string =>
+  claimedLaunchRoot(dirs, ID, claim, {
+    prefix: "jig-dispatch-liveness-",
     repo: "o/a",
     repoPath: "/r",
-    pr: 7,
-    account: "a",
-    vendor: "claude",
-    configDir: "/c",
-    wallBackoffMs: 1,
-    replaces: null,
-    facts: "generation 1, exit 8, heartbeat x",
     createdAt: "2026-11-04T09:00:00.000Z",
-    workspace: null,
-    attempts: [],
-    item: null,
-    agentId: null,
-    model: null,
-    effort: null,
-    released: false,
-    command: null,
-    marker: null,
-  };
-  writeRecord(record, dir);
-  expect(claimRecord(ID, claim, dir)).toBe(true);
-  return dir;
-}
+  });
 
 /** This process's claim, as its wrapper would have written it. */
 async function ownClaim(): Promise<LaunchClaim> {
@@ -145,6 +114,50 @@ describe("a launch record's claim, judged by the shared process identity", () =>
     const state = records[0]?.state;
     expect(state?.kind).toBe("unknown");
     expect(state?.kind === "unknown" && state.liveProcess?.pid).toBe(child.pid);
+  });
+
+  it("counts a stage whose cleanup was never confirmed as not judged, even with its recorded processes gone", async () => {
+    const own = await ownClaim();
+    const state = uncertainCleanupState(
+      {
+        ...own,
+        pid: 2147483647,
+        supervision: {
+          supervisor: { ...own, pid: 2147483646 },
+          child: { ...own, pid: 2147483645 },
+          uncertain: true,
+        },
+      },
+      [],
+      thisHost(),
+    );
+    expect(state?.kind === "unknown" && state.unjudged).toBe(true);
+  });
+
+  it("says when a process could not be judged, and not when each was judged gone", async () => {
+    const own = await ownClaim();
+    const here = thisHost();
+    const gone = (pid: number) => ({ ...own, pid });
+    const judged = (claim: LaunchClaim, rows: [] | null) => {
+      const state = claimState(claim, rows, here);
+      expect(state.kind).toBe("unknown");
+      return state.kind === "unknown" ? state.unjudged : undefined;
+    };
+    const supervised = (supervision: StageSupervision) => ({
+      ...gone(2147483647),
+      supervision,
+    });
+    expect(judged(own, null)).toBe(true);
+    expect(judged({ ...own, hostId: "another-host" }, [])).toBe(true);
+    expect(
+      judged(supervised({ supervisor: gone(2147483646), child: null }), []),
+    ).toBe(true);
+    expect(
+      judged(
+        supervised({ supervisor: gone(2147483646), child: gone(2147483645) }),
+        [],
+      ),
+    ).toBeUndefined();
   });
 
   it("keeps missing cleanup evidence unknown even when every recorded process has died or its pid was reused", async () => {

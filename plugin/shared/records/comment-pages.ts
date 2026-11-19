@@ -17,6 +17,12 @@
  * paged read (`listComments`); a listing longer than `MAX_PAGES` pages is
  * that read too.
  *
+ * A pull request's review comments are listed the same way
+ * (`listReviewCommentsKept`), for a reader that only needs to know whether
+ * they changed. With no cache to revalidate against, or a listing longer
+ * than `MAX_PAGES` pages, that listing does not read: the reader goes
+ * without it.
+ *
  * Costs: one request per page; a page that did not change costs no primary
  * rate limit.
  */
@@ -58,14 +64,25 @@ const PER_PAGE = 100;
 /** The longest listing read page by page. */
 const MAX_PAGES = 30;
 
-export interface CommentPagesDeps {
+/** The forge's answers a page-by-page listing is revalidated through. */
+interface PageReads {
   ghCacheDir: () => string | null;
   ghConditionalGet: (
     path: string,
     ctx?: CallContext,
   ) => Promise<ConditionalGet>;
+}
+
+export interface CommentPagesDeps extends PageReads {
   /** The plain paged read, for a listing kept nowhere or longer than `MAX_PAGES`. */
   plain: typeof listComments;
+}
+
+/** A comment listing on `target`: the conversation's, or the review comments'. */
+interface PagedListing {
+  repo: string;
+  number: number;
+  resource: "issues" | "pulls";
 }
 
 /** Whole seconds of the allowance left since `began`; `null` where there is none. */
@@ -106,8 +123,8 @@ function passed(): Outcome<unknown[], "unreadable"> {
 
 /** One page of the listing, asked within what is left of the deadline. */
 async function readPage(
-  deps: CommentPagesDeps,
-  target: { repo: string; number: number },
+  deps: PageReads,
+  target: PagedListing,
   page: number,
   deadline: Deadline,
   began: number,
@@ -115,7 +132,7 @@ async function readPage(
   const left = allowanceLeft(deadline, began);
   if (left !== null && left <= 0) return passed();
   const read = await deps.ghConditionalGet(
-    `repos/${target.repo}/issues/${target.number}/comments?per_page=${PER_PAGE}&page=${page}`,
+    `repos/${target.repo}/${target.resource}/${target.number}/comments?per_page=${PER_PAGE}&page=${page}`,
     {
       repository: target.repo,
       ...(left === null ? {} : { timeoutSec: left }),
@@ -128,6 +145,23 @@ async function readPage(
       : failedBy("unreadable", read.failure, reason);
   }
   return parsePage(read, page);
+}
+
+/** Every page of `target`'s listing; `null` when it runs past `MAX_PAGES`. */
+async function walkPages(
+  deps: PageReads,
+  target: PagedListing,
+  deadline: Deadline,
+  began: number,
+): Promise<Outcome<unknown[], "unreadable"> | null> {
+  const comments: unknown[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const listed = await readPage(deps, target, page, deadline, began);
+    if (!listed.ok) return listed;
+    comments.push(...listed.value);
+    if (listed.value.length < PER_PAGE) return ok(comments);
+  }
+  return null;
 }
 
 /** The comment listing over `deps`. */
@@ -147,13 +181,13 @@ export function commentPages(
     if (deps.ghCacheDir() === null || target.repo.includes("{"))
       return deps.plain(target, deadline);
     const began = currentMs();
-    const comments: unknown[] = [];
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      const listed = await readPage(deps, target, page, deadline, began);
-      if (!listed.ok) return listed;
-      comments.push(...listed.value);
-      if (listed.value.length < PER_PAGE) return ok(comments);
-    }
+    const walked = await walkPages(
+      deps,
+      { ...target, resource: "issues" },
+      deadline,
+      began,
+    );
+    if (walked !== null) return walked;
     const left = allowanceLeft(deadline, began);
     if (left !== null && left <= 0) return passed();
     return deps.plain(
@@ -163,5 +197,34 @@ export function commentPages(
   };
 }
 
+/** The review comment listing over `deps`. */
+export function reviewCommentPages(
+  deps: PageReads = {
+    ghCacheDir: pageCache.ghCacheDir,
+    ghConditionalGet: pageCache.ghConditionalGet,
+  },
+) {
+  return async (
+    target: { repo: string; number: number },
+    deadline: Deadline = {},
+  ): Promise<Outcome<unknown[], "unreadable">> => {
+    if (deps.ghCacheDir() === null || target.repo.includes("{"))
+      return failed("unreadable", "no kept pages to revalidate against");
+    const walked = await walkPages(
+      deps,
+      { ...target, resource: "pulls" },
+      deadline,
+      currentMs(),
+    );
+    return (
+      walked ??
+      failed("unreadable", `more than ${MAX_PAGES} pages of review comments`)
+    );
+  };
+}
+
 /** Every comment on `target`, revalidated page by page against what was kept. */
 export const listCommentsKept = commentPages();
+
+/** Every review comment on pull request `target`, revalidated the same way. */
+export const listReviewCommentsKept = reviewCommentPages();

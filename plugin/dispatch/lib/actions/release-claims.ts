@@ -17,7 +17,7 @@
  */
 import type { SharedClaim } from "../../../shared/records/shared.ts";
 import { beginRelease, finishRelease } from "../followup-releases.ts";
-import { holding } from "../holding.ts";
+import { holdingAgain } from "../holding.ts";
 import type { LogRow } from "../log.ts";
 import { stateRoot } from "../../receipts.ts";
 import { failureText } from "../text.ts";
@@ -86,15 +86,10 @@ async function changed(
   if (!claims.ok) return claims.failure.reason;
   if (!stillStale(claims.value, marker))
     return `marker comment ${marker} is no longer the stale claim the plan read: it was deleted, marked done or answered, or an earlier marker appeared`;
-  try {
-    const sessions = await ctx.sessions();
-    const held = holding(sessions, (w) => w.prs.includes(pr));
-    if (held.kind === "unknown") return held.reason;
-    if (held.kind === "running")
-      return `a session is joined to it now: ${held.workspaces.map((w) => w.path).join(", ")}`;
-  } catch (error) {
-    return `the runtime cannot be read again: ${failureText(error)}`;
-  }
+  const { held } = await holdingAgain(ctx.sessions, (w) => w.prs.includes(pr));
+  if (held.kind === "unknown") return held.reason;
+  if (held.kind === "running")
+    return `a session is joined to it now: ${held.workspaces.map((w) => w.path).join(", ")}`;
   return null;
 }
 
