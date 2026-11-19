@@ -1,5 +1,6 @@
 /** A tick's receipt as the terminal reads it. */
 import { priorityLines } from "./priorities-lines.ts";
+import { overlapLines } from "./overlap-reasons.ts";
 import { spendingLines } from "./outbound-report.ts";
 import { upgradeLine } from "../../runtime/upgrade-record.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -132,6 +133,7 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
   lines.push(
     ...labelLines(r.labels),
     ...serialLines(r.serialized),
+    ...overlapLines(r.overlap),
     ...sharedLines(r.shared),
     ...priorityLines(r, verb),
     ...took,
