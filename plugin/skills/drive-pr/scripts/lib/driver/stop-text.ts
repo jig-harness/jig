@@ -55,7 +55,9 @@ function forgeLimitStop(
     driverRuntime.stopLimitedUntil ??
     (stop?.cause === String(code) ? stopInstant(stop) : undefined) ??
     "at an unknown time";
-  return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until} (exit ${code})`;
+  const probe = driverRuntime.stopProbe;
+  const reason = probe?.code === code ? `: ${probe.reason}` : "";
+  return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until}${reason} (exit ${code})`;
 }
 
 /**

@@ -16,6 +16,7 @@
  * Neither replaces a report the run's own writer recorded.
  */
 import {
+  CONCLUDED_MAX,
   CLOSING_REPORT_SCHEMA,
   type ClosingReport,
   type ReportCause,
@@ -58,7 +59,7 @@ function report(
 ): ClosingReport {
   return {
     schema: CLOSING_REPORT_SCHEMA,
-    concluded,
+    concluded: [...concluded].slice(0, CONCLUDED_MAX).join(""),
     suggested_next: next,
     cause,
   };

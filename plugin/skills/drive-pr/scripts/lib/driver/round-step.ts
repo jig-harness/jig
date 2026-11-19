@@ -88,6 +88,7 @@ async function gateRoundStatus(
       console.error(
         "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
       );
+      driverRuntime.stopProbe = recordProbeStop(code, status);
       const get = await run(tsArgv(driveState, ["get", context.pr]), {
         stderr: "ignore",
       });

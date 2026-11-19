@@ -369,7 +369,7 @@ function failedRearmNotice(slug: string, pr: DrivenPr): Notice {
           `Read the re-arm's output and the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), settle what stopped it, then run \`/jig:drive-pr ${pr.number}\` there to re-arm it.`,
         ]
       : [
-          `PR #${pr.number} (${pr.title}) is behind its branch '${pr.head}': the pull request's head is ${prHead}, the branch's head is ${branch}. Each re-arm stops ${String(e.rearmExit)}, as the drive's attach refuses a pull request whose head is not its branch's.`,
+          `PR #${pr.number} (${pr.title}) is behind its branch '${pr.head}': the pull request's head is ${prHead}, the branch's head is ${branch}. Each re-arm stops ${String(e.rearmExit)}, as the drive's attach refuses a pull request whose head is not its branch's. ${pr.why}.`,
           "Close and reopen the pull request: the forge then takes the branch's head, and the next tick re-arms the drive.",
         ];
   return {

@@ -103,6 +103,15 @@ function readNotices(w: World, path: string | null | undefined): void {
 describe("a failed re-arm", () => {
   it("of a pull request behind its branch is held, notified once with both heads and the recovery", async () => {
     const w = fixture(BASE_SHA);
+    const probe = {
+      code: DRIVE_EXIT.INDETERMINATE,
+      state: "INDETERMINATE",
+      reason: "cannot read the current review state",
+    };
+    writeFileSync(
+      join(w.dir, "drive-stderr"),
+      `drive.ts: status probe stopped: ${JSON.stringify(probe)}\n`,
+    );
     await rearmed(w);
 
     const second = await tick(w);
@@ -126,6 +135,7 @@ describe("a failed re-arm", () => {
     const text = action?.notice?.text ?? "";
     expect(text).toContain(HEAD_SHA);
     expect(text).toContain(BASE_SHA);
+    expect(text).toContain(probe.reason);
     expect(text).toContain("Close and reopen the pull request");
     expect(repo?.notifications).toMatchObject([
       { cause: "needs-person", outcome: "sent" },
