@@ -259,6 +259,20 @@ it("does not release a malformed reviewer setting from bot evidence", async () =
   ]);
 }, 120_000);
 
+it("keeps a reviewer-failure hold when the configured check pattern is invalid", async () => {
+  const w = fixture([FIRST, SECOND]);
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\nreview:\n  reviewer_app: ${REVIEWER}\n  reviewer_check_pattern: "["\ndispatch:\n  reviewer_failures_before_escalation: 2\n  renotify_after: 1s\n`,
+  );
+  stopped(w, [FIRST, SECOND], [sticky(HEAD_SHA, SECOND.at)]);
+
+  const held = await tick(w);
+  expect(held.launches).toEqual([]);
+  expect(held.notifications).toMatchObject([
+    { cause: "needs-person", outcome: "sent" },
+  ]);
+}, 120_000);
+
 it("validates the configured threshold and applies the default", () => {
   expect(dispatchSection({})).toMatchObject({
     ok: true,

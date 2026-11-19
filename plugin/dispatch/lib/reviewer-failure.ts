@@ -53,15 +53,18 @@ export function reviewerFailurePolicy(
     review.reviewer_check_pattern.trim() !== ""
       ? review.reviewer_check_pattern
       : undefined;
-  const malformedReviewerSetting = [
-    review.reviewer_app,
-    review.reviewer_check_pattern,
-  ].some(
-    (value) =>
-      value !== undefined &&
-      value !== null &&
-      (typeof value !== "string" || value.trim() === ""),
-  );
+  const malformedReviewerCheckPattern =
+    configuredCheckPattern !== undefined &&
+    !attempt("unreadable", "the reviewer check pattern could not be read", () =>
+      checkPattern(configuredCheckPattern),
+    ).ok;
+  const malformedReviewerSetting =
+    [review.reviewer_app, review.reviewer_check_pattern].some(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        (typeof value !== "string" || value.trim() === ""),
+    ) || malformedReviewerCheckPattern;
   const botLogins = bots.flatMap((bot: unknown) => {
     const login = isRecord(bot) ? bot.login : bot;
     return typeof login === "string" && login !== "" ? [login] : [];
