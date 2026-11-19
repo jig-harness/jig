@@ -1144,7 +1144,9 @@ a pickup planned ahead of it touches the area is reported as
 is unknown cannot rule an area out, on either side: such a pickup waits
 while any serialized area is occupied (`, footprint unknown`), and such
 work occupies every serialized area (`, #N's footprint unknown`) until its
-footprint is known or it ends. The run
+footprint is known or it ends. Every open pull request counts, a draft or a
+quiet one included, so close a stale one to free its area. A run that
+cannot read the catalog or the open pull requests starts no pickup. The run
 never adds an area: the conflict report proposes them
 (`history.ts --propose-serialize` in
 [resolve-conflicts](skills/resolve-conflicts/README.md#where-past-merges-conflicted)),

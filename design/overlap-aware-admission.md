@@ -312,8 +312,8 @@ The cost and the bound are weighed. These holds are not, and they apply
 before either:
 
 - **A conflict edge** that an epic's execution plan sets between two steps.
-- **A serialized area** of the change-area catalog. Today it holds only the
-  drives of the pull requests in the area. It also holds a pickup whose
+- **A serialized area** of the change-area catalog. It holds the drives of
+  the pull requests in the area, and a pickup whose
   footprint reaches the area while another piece of work in flight touches
   the area, reported as `held: serialized behind #N in <area>`. A footprint
   reaches the area when a file of it lies in the area, or when a directory
@@ -538,7 +538,7 @@ One pull request each, in this order.
    without changing what it starts. The `dispatch.overlap` keys it reads
    are documented.
 7. **Serialized areas hold pickups.** The declared hold extends from drives
-   to pickups whose footprint names a file of the area.
+   to pickups whose footprint reaches the area.
 8. **Validation capacity.** The lock's samples (`resource-lock-sample`), the
    `validation` gauge in the load factor and its `load.validation` line,
    and the replay of 2026-11-14 as its test.

@@ -31,6 +31,7 @@ import {
 } from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
@@ -702,6 +703,19 @@ function queueOf(view: RepoView): LineQueued[] {
       why: h.reason,
     }),
   );
+  // A pickup serialization could not place this tick waits on the next tick's reads.
+  const undecided = view.report.unplaced
+    .filter(
+      (u) => isItemTarget(u.target) && u.reason.startsWith(SERIAL_UNDECIDED),
+    )
+    .map((u) =>
+      queued(view, {
+        source: "held",
+        group: "held",
+        target: u.target,
+        why: u.reason,
+      }),
+    );
   const refused = view.report.unplaced
     .filter((u) => u.record === "tracker" && isItemTarget(u.target))
     .map((u) =>
@@ -712,7 +726,14 @@ function queueOf(view: RepoView): LineQueued[] {
         why: u.reason,
       }),
     );
-  return [...planned, ...replayed, ...serial, ...labelled, ...refused];
+  return [
+    ...planned,
+    ...replayed,
+    ...serial,
+    ...undecided,
+    ...labelled,
+    ...refused,
+  ];
 }
 
 function repoOf(

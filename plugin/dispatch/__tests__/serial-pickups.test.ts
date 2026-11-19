@@ -20,6 +20,7 @@ const GLOBS: Record<string, string[]> = {
   schema: ["db/schema.sql"],
   docs: ["docs/**"],
   db: ["db/**"],
+  deps: ["package.json", "bun.lock"],
 };
 const globs = (area: string) => GLOBS[area] ?? [];
 const model = { areaGlobs: globs };
@@ -94,6 +95,10 @@ describe("reachesArea", () => {
     expect(reachesArea(known([], [], ["docs"]), "migrations", model)).toBe(
       false,
     );
+    // An area of root files is reached only by an area whose globs match one of them.
+    expect(reachesArea(known([], [], ["docs"]), "deps", model)).toBe(false);
+    expect(reachesArea(known([], [], ["deps"]), "deps", model)).toBe(true);
+    expect(reachesArea(known(["bun.lock"]), "deps", model)).toBe(true);
     // An unknown footprint reaches nothing: it cannot exclude, which the hold reads separately.
     expect(reachesArea(UNKNOWN_FOOTPRINT, "migrations", model)).toBe(false);
   });

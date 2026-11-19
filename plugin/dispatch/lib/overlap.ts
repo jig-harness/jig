@@ -142,19 +142,27 @@ const bare = (dir: string) => {
   return dir.slice(0, end);
 };
 
+const WILDCARD = /[*?[\]{}]/;
+
 /** The directory part of a glob before its first wildcard segment. */
 function staticDir(glob: string): string {
   const segments = glob.split("/");
   const fixed: string[] = [];
   for (const segment of segments.slice(0, -1)) {
-    if (/[*?[\]{}]/.test(segment)) break;
+    if (WILDCARD.test(segment)) break;
     fixed.push(segment);
   }
   return fixed.join("/");
 }
 
-/** Whether two globs can match one file, read through each one's fixed directory. */
+/**
+ * Whether two globs can match one file, read through each one's fixed
+ * directory; a glob with no wildcard names one file, which meets the other
+ * only where the other matches it.
+ */
 function globsMeet(a: string, b: string): boolean {
+  if (!WILDCARD.test(a)) return a === b || matchesGlob(a, b);
+  if (!WILDCARD.test(b)) return matchesGlob(b, a);
   const da = staticDir(a);
   const db = staticDir(b);
   if (da === "" || db === "") return true;

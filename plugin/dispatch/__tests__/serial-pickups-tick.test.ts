@@ -152,6 +152,34 @@ describe("serialized areas hold pickups", () => {
         "whether it reaches a serialized area cannot be told this tick: ",
       );
     expect(launched(receipt)).toEqual([]);
+    // The dashboard's queue shows each one as held, with the reason.
+    const line = readLine(dispatchState(w));
+    if (!line.ok || line.value === null) throw new Error("no line was written");
+    const queued = (line.value as LineSnapshot).queue.find(
+      (q) => q.item === "#12",
+    );
+    expect(queued).toMatchObject({ group: "held", source: "held" });
+    expect(queued?.why).toStartWith(
+      "whether it reaches a serialized area cannot be told this tick: ",
+    );
+  }, 120_000);
+
+  it("holds nothing where the catalog marks no area serialized", async () => {
+    const w = fixture();
+    w.setRepoFile(
+      ".config/change-areas.yaml",
+      CATALOG.replace("    serialize: true\n", ""),
+    );
+    const receipt = await applyTick(w, false);
+    expect(heldOf(receipt).size).toBe(0);
+    expect(
+      reportOf(receipt).unplaced.filter((u) => u.target.startsWith("#")),
+    ).toEqual([]);
+    expect(launched(receipt)).toEqual([
+      ["#12", "launched"],
+      ["#13", "waits"],
+      ["#14", "waits"],
+    ]);
   }, 120_000);
 
   it("releases the hold once the pull request it waited behind is no longer open", async () => {

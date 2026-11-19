@@ -41,6 +41,7 @@ import {
   pullRequestsInFlight,
 } from "./overlap-plan.ts";
 import { membersOf } from "./priorities-order.ts";
+import { SERIAL_UNDECIDED } from "./contention.ts";
 import { configuredCatalog } from "./sources/contention.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import type { Action } from "./types.ts";
@@ -161,6 +162,7 @@ function candidatesOf(
   return pickups.flatMap((a) => {
     if (seen.has(a.target)) return [];
     const keys = membersOf(a).filter((key) => !seen.has(key));
+    if (keys.length === 0) return [];
     for (const key of keys) seen.add(key);
     return [
       {
@@ -194,7 +196,7 @@ export function holdSerialPickups(
   const configured = configuredCatalog(opened.values) !== null;
   const undecided = !serialized.decided || (areas.length > 0 && !catalog);
   if (configured && undecided) {
-    const why = `whether it reaches a serialized area cannot be told this tick: ${serialized.failure ?? "the catalog or the open pull requests were not read whole"}`;
+    const why = `${SERIAL_UNDECIDED}: ${serialized.failure ?? "the catalog or the open pull requests were not read whole"}`;
     report.actions = report.actions.filter((a) => a.stage !== "pickup");
     for (const a of pickups)
       report.unplaced.push({ target: a.target, record: "forge", reason: why });
