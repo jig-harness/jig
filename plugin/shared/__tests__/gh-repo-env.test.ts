@@ -22,6 +22,7 @@ test("ghRepoEnv drops an inherited GH_REPO", async () => {
   ]);
   const exitCode = await proc.exited;
   expectSpawnExit({ exitCode, stdout, stderr }, 0);
+  expect(exitCode).toBe(0);
 });
 
 test("ghRepoEnvFor names the repository, or none", () => {
