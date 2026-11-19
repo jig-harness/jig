@@ -45,8 +45,11 @@ id `$DRIVE_PR_SESSION` holds. The driver's prompt says so after the skill's
 invocation. The invocation's words are the ones an arm uses too, but you are
 not arming, watching or handing off a drive:
 
-- A drive, lock or lease you find on this pull request whose pid matches
-  `$DRIVE_PR_SESSION` is your own driver, not a competing drive. Never stand
+- A drive, lock or lease you find on this pull request that
+  `drives.ts` (or a lock refusal) classifies `self` is your own driver,
+  not a competing drive. That classification is authoritative: it checks the
+  host, the process namespace and the driver's start time as well as the pid,
+  so never judge by a matching pid alone. Never stand
   down for it, arm another or stop it. Any other live drive on this pull
   request is a competitor: stop, as § 6's exits `11` and `13` say.
 - Finish the round yourself, in this turn: work the findings (§ One round),

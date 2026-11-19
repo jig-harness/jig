@@ -35,7 +35,7 @@ describe("the pass prompt", () => {
       expect(prompt).toContain("pull request 7");
       expect(prompt).toContain("not a request to arm");
       expect(prompt).toContain(
-        "A drive or lock whose pid is the one DRIVE_PR_SESSION holds is that driver",
+        "A drive or lock that the drives.ts listing marks self is that driver",
       );
       expect(prompt).toContain(
         "any other live drive on this pull request is one",
