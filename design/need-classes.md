@@ -142,8 +142,9 @@ finished.
   to the host need of its cause, never to a person as a pickup's or a
   follow-up's question (#944). A pickup stopped by a fault of its host
   (its result could not be written, its closing report gives the cause
-  `environment`, or its question is about the host's space, inodes or an
-  unwritable directory) is held with the fault named while the health
+  `environment` without a question or decision, or every recorded question
+  reports the host's space, inodes or an unwritable directory as a failure)
+  is held with the fault named while the health
   check fails, then relaunched once in its tree to resume the work, or
   picked up afresh when it never claimed the item (#1623). A restart that
   stops on a host fault again is one need for a diagnosing session, never

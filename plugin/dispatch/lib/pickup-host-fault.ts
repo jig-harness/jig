@@ -33,7 +33,7 @@ import { questionOf } from "./session.ts";
  * as the host reports it (space or inodes run out, a write refused), never a
  * mere mention of inodes, `ENOSPC` or read-only file systems as a topic.
  */
-export const HOST_FAULT_QUESTION = new RegExp(
+const HOST_FAULT_QUESTION = new RegExp(
   [
     String.raw`\b(?:(?:ran |runs |running |run )?out of |exhausted (?:the |its )?|no (?:free )?|free (?:up )?(?:the |some )?)inodes\b`,
     String.raw`\binodes (?:are |were )?(?:exhausted|used up|all used)\b`,
@@ -45,6 +45,18 @@ export const HOST_FAULT_QUESTION = new RegExp(
   ].join("|"),
   "i",
 );
+
+/** A question that is explicitly about an observed host failure, not a test, documentation or implementation question that quotes one. */
+function isHostFaultQuestion(question: string): boolean {
+  const text = question.trim();
+  if (
+    /^(?:should|would|could|can|do|does|did)\b.{0,160}\b(?:assert|test|tests|mock|include|document|documentation|explain|describe|mention)\b/i.test(
+      text,
+    )
+  )
+    return false;
+  return HOST_FAULT_QUESTION.test(text);
+}
 
 /** How the tick told a host fault. */
 export type HostFaultKind = "unwritten" | "environment" | "question";
@@ -71,23 +83,38 @@ export function endedQuestion(r: ReadRecord): string | null {
   );
 }
 
+/** Every recorded question, preserving the distinction between no question and a later question that changes its meaning. */
+function endedQuestions(r: ReadRecord): string[] {
+  return [
+    questionOf(r.state),
+    r.report?.report.question ?? null,
+    r.framed?.decision.call.question ?? null,
+  ].filter((question): question is string => question !== null);
+}
+
+/** A framed decision is a durable human checkpoint and may never be discharged by host-fault text. */
+function hasHumanDecision(r: ReadRecord): boolean {
+  return r.framed !== undefined || r.report?.report.decision !== undefined;
+}
+
 /** The host fault an ended pickup stopped on, or `null` when it ended on its work, handed its item on or is still running. */
 export function hostFault(r: ReadRecord): HostFault | null {
   if (r.record.action !== "pickup") return null;
   if (r.state.kind !== "ended" && r.state.kind !== "died") return null;
+  if (hasHumanDecision(r)) return null;
   if (unwrittenResult(r))
     return {
       kind: "unwritten",
       why: `its result or exit could not be written on this host (since ${r.unwritten})`,
     };
   if (r.result === "done" || r.result === "waits") return null;
-  const asked = endedQuestion(r);
-  if (asked !== null && HOST_FAULT_QUESTION.test(asked))
+  const questions = endedQuestions(r);
+  if (questions.length > 0 && questions.every(isHostFaultQuestion))
     return {
       kind: "question",
-      why: `the question it stopped on is about the host's own fault: ${asked.replace(/\s+/g, " ").trim().slice(0, 300)}`,
+      why: `the question it stopped on is about the host's own fault: ${questions.at(-1)!.replace(/\s+/g, " ").trim().slice(0, 300)}`,
     };
-  if (asked === null && r.report?.report.cause === "environment")
+  if (questions.length === 0 && r.report?.report.cause === "environment")
     return {
       kind: "environment",
       why: "its closing report names the host's environment as the cause",
