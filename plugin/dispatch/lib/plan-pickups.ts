@@ -811,25 +811,33 @@ function questionAsked(
   latest: ReadRecord,
 ): Action | null {
   const { slug } = input;
-  // What a pass whose result the host could not write asked is the host's fault, never a person's question.
   const unwritten = unwrittenResult(latest);
   if (unwritten && (input.rerunsHeld ?? null) !== null) return null;
+  // An unwritten result normally leaves no durable question, but never replace
+  // a decision the pass did manage to frame or report with the generic prompt.
+  const hasDecision =
+    latest.framed !== undefined || latest.report?.report.decision !== undefined;
   const asked = unwritten
-    ? `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
+    ? hasDecision
+      ? (latest.report?.report.question ??
+        latest.framed?.decision.call.question ??
+        endedQuestion(latest))
+      : `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
     : endedQuestion(latest);
   if (
     asked === null ||
     (!unwritten && batchQuestionForSibling(latest, item.key))
   )
     return null;
-  // A pass whose result the host could not write wrote no report a person reads.
-  const report = unwritten ? null : latest.report;
+  const report = unwritten && !hasDecision ? null : latest.report;
   const question = reportQuestion(report, asked);
-  const framed = unwritten ? undefined : reportFramed(latest.framed, report);
+  const framed =
+    unwritten && !hasDecision ? undefined : reportFramed(latest.framed, report);
   const { record } = latest;
-  const reason = unwritten
-    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again, but the relaunch rule did not take it: ${question}`
-    : `the pickup stopped on a question for a person: ${question}`;
+  const reason =
+    unwritten && !hasDecision
+      ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again, but the relaunch rule did not take it: ${question}`
+      : `the pickup stopped on a question for a person: ${question}`;
   return {
     stage: "notify",
     target: item.key,

@@ -24,6 +24,7 @@
  * stays a person's, as a batch's stall does.
  */
 import type { ReadRecord } from "./launches.ts";
+import { holdsItem } from "./launch-pickups.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import { questionOf } from "./session.ts";
 
@@ -49,7 +50,7 @@ const HOST_FAULT_QUESTION = new RegExp(
 function isHostFaultQuestion(question: string): boolean {
   const text = question.trim();
   if (
-    /^(?:should|would|could|can|do|does|did)\b.{0,160}\b(?:assert|test|tests|mock|include|document|documentation|explain|describe|mention)\b/i.test(
+    /^(?:should|would|could|can|do|does|did)\b.{0,160}\b(?:assert|mock|include|document|documentation|explain|describe|mention)\b/i.test(
       text,
     )
   )
@@ -139,7 +140,7 @@ export function faultedAgain(
       ? previousPickup(latest, launches, item)
       : launches.find((r) => r.record.id === latest.record.relaunchOf);
   return source !== undefined &&
-    !source.record.released &&
+    holdsItem(source.record, item) &&
     hostFault(source) !== null
     ? source
     : null;

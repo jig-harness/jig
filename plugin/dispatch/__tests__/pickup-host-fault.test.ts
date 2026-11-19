@@ -215,6 +215,7 @@ describe("telling a host fault from a question about the work", () => {
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
     for (const failure of [
       "the root filesystem ran out of inodes: may I delete the leaked fixtures?",
+      "Can I remove leaked test fixtures to free inodes?",
       "ENOSPC: no space left on device while writing the lockfile; retry later?",
       "the disk is full: may the build cache be pruned?",
       "the state directory is not writable: may I fix its permissions?",
@@ -329,6 +330,22 @@ describe("a pickup whose result the host could not write", () => {
     ]);
     expect(relaunches(p)).toEqual([]);
   });
+
+  it("keeps a framed decision when the host could not write the result", () => {
+    const record = unwritten();
+    record.framed = {
+      decision: { call: { question: "May the legacy column be retained?" } },
+    } as NonNullable<ReadRecord["framed"]>;
+    const p = plan([record], { tree: clean });
+    expect(needs(p)).toEqual([
+      expect.objectContaining({
+        cause: "pickup-question",
+        evidence: expect.objectContaining({
+          question: "May the legacy column be retained?",
+        }),
+      }),
+    ]);
+  });
 });
 
 describe("a restart that stops on a host fault again", () => {
@@ -440,6 +457,32 @@ describe("what a host fault does not restart", () => {
     );
     const p = plan([first, second], { claimed: false });
     expect(needs(p)).toEqual([]);
+    expect(p.actions).toEqual([
+      expect.objectContaining({ stage: "pickup", target: "#12" }),
+    ]);
+  });
+
+  it("treats a person's partial release from a batch as a restart boundary", () => {
+    const first = ended(
+      {
+        batchItems: [
+          { key: "#12", person: "writer" },
+          { key: "#13", person: "writer" },
+        ],
+        releasedItems: ["#12"],
+      } as Partial<LaunchRecord>,
+      { result: null, unwritten: "2026-11-19T08:00:00.000Z" },
+    );
+    const latest = ended(
+      {
+        id: RELAUNCH,
+        createdAt: "2026-11-19T09:30:00.000Z",
+        claimedItems: [],
+        workspace: null,
+      },
+      { cause: "environment" },
+    );
+    const p = plan([first, latest], { claimed: false });
     expect(p.actions).toEqual([
       expect.objectContaining({ stage: "pickup", target: "#12" }),
     ]);
