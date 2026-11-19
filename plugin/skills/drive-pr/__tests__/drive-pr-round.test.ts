@@ -1588,6 +1588,10 @@ describe("summary-findings marker overrides", () => {
            defaultSha: m.SHA_MARKER,
            sticky: o.stickyMarker(),
            parsed: m.reviewedShaFrom('<!-- custom-sha: abc1234 -->'),
+           selected: m.reviewerSticky([
+             { id: 1, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- custom-marker finding' },
+             { id: 2, user: { login: 'reviewer[bot]' }, body: '<!-- ai-code-review -->\\n- default-marker finding' },
+           ], false)?.id,
          }));`,
       ],
       {
@@ -1595,6 +1599,7 @@ describe("summary-findings marker overrides", () => {
           ...process.env,
           DRIVE_PR_STICKY_MARKER: "<!-- other-review -->",
           DRIVE_PR_SHA_MARKER: "custom-sha",
+          DRIVE_PR_REVIEWER_APP: "reviewer",
         },
         stdout: "pipe",
         stderr: "pipe",
@@ -1609,6 +1614,7 @@ describe("summary-findings marker overrides", () => {
     expect(got.defaultSticky).toBe("<!-- ai-code-review -->");
     expect(got.defaultSha).toBe("ai-reviewed-sha");
     expect(got.sticky).toBe("<!-- other-review -->");
+    expect(got.selected).toBe(1);
     // And the reviewed SHA is actually extracted under the custom name — it
     // scopes the unaccounted-slot keys, so failing to read it degrades every
     // slot to the shared `nohead` scope, where an answer given on one head

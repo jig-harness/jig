@@ -1327,7 +1327,7 @@ async function issueCommentsFor(
  * backlog and reviewed-SHA stamp are never decoded. Without it, a `review.bots`
  * login's sticky is read, which is what the standalone resolver relies on.
  */
-function reviewerSticky(
+export function reviewerSticky(
   comments: IssueComment[],
   configuredOnly: boolean,
 ): IssueComment | undefined {
