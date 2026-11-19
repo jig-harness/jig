@@ -145,6 +145,10 @@ and its epic's reconciliation.
    accepted verdict or a waiver (its closing authorization in Step 5a),
    never because its children are closed; when this merge was its last
    piece and no verdict exists, the next step is that review, not a close.
+   Before closing one, read the instructions file of each of the
+   repository's own arms (`followup.arms`) for a rule about epics: a
+   repository may reserve some epics' close to one of its later arms, and
+   the epic stays open here until that arm decides.
 
 ### deferred-findings: review findings deferred to later
 
