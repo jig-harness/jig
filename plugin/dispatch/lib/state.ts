@@ -543,6 +543,17 @@ export const MIGRATIONS: readonly Migration[] = [
     CREATE TABLE overlap_hotspots (repo TEXT NOT NULL, day TEXT NOT NULL, path TEXT NOT NULL, ticks INTEGER NOT NULL, PRIMARY KEY (repo, day, path));
   `,
   },
+  {
+    additive: true,
+    sql: `CREATE TABLE rearm_lock_needs (
+      repo TEXT NOT NULL,
+      pr INTEGER NOT NULL,
+      generation INTEGER NOT NULL,
+      heartbeat TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      PRIMARY KEY (repo, pr)
+    );`,
+  },
 ];
 
 /** The schema version this plugin writes. */

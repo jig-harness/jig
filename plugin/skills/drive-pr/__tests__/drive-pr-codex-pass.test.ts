@@ -124,10 +124,10 @@ describe("the documented Codex pass command", () => {
       JIG__ROUTING__MODELS__CODEX__STANDARD: "sol",
     });
     expect(wouldRun(r.stderr)).toStartWith(
-      "codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox",
+      "codex exec -m gpt-6.2-sol --dangerously-bypass-approvals-and-sandbox",
     );
     expect(r.stderr).toContain(
-      "pass model: gpt-6.1-sol (routing.models.codex.standard (sol))",
+      "pass model: gpt-6.2-sol (routing.models.codex.standard (sol))",
     );
     expect(r.stderr).toContain(
       "permission mode: no sandbox, no approvals (the pass command's --dangerously-bypass-approvals-and-sandbox)",

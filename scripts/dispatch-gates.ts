@@ -2,14 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { parseSync } from "oxc-parser";
 import { loadLayeredConfig, valueAt } from "../plugin/shared/config-layers.ts";
-import { launchOf } from "../plugin/shared/launched-session.ts";
-import { LAUNCH_RECORD_ID_PATTERN } from "../plugin/shared/records/forge-claim-shapes.ts";
+import { dispatchedFrom } from "../plugin/shared/launched-session.ts";
 
 const { basename, dirname, extname, normalize } = posix;
-const dispatchLaunchId = new RegExp(LAUNCH_RECORD_ID_PATTERN);
 const testSuffix = /\.(test|spec)\.[cm]?[jt]sx?$/;
 /** What a session of the line carries and a test must not read as its own. */
-const lineVariable = /^(?:JIG_LAUNCH$|DRIVE_PR_)/;
+const lineVariable = /^(?:JIG_LAUNCH$|JIG_DISPATCHED_FROM$|DRIVE_PR_)/;
 const moduleExtensions = [".ts", ".tsx", ".mts", ".js", ".mjs"];
 const moduleSuffixes = [
   ...moduleExtensions,
@@ -56,7 +54,7 @@ export function dispatchFastEnabled(
     setting === true &&
     env.CI !== "1" &&
     env.CI !== "true" &&
-    dispatchLaunchId.test(launchOf(env) ?? "")
+    dispatchedFrom(env) !== null
   );
 }
 

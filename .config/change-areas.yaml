@@ -410,6 +410,7 @@ areas:
           - "plugin/protocol/schemas/record-envelope.json"
           - "plugin/protocol/schemas/drive-ledger.json"
           - "plugin/protocol/schemas/drive-answer.json"
+          - "plugin/protocol/schemas/dispatch-rearm-request.json"
           - "plugin/protocol/schemas/tracker-claim-marker.json"
           - "plugin/protocol/schemas/tracker-claim-outcome.json"
           - "plugin/protocol/schemas/tracker-attachment.json"

@@ -401,6 +401,110 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.286.0] - 2026-11-19
+
+### Added
+
+- Use `jig send … withdraw-rearm` to withdraw a pending rearm request.
+
+### Changed
+
+- **Breaking:** A rearm label without a stop-bound request expires. **Consumer action:** required at instructions. Replace steps that apply the rearm label directly with the rearm command in Jig Send. Re-send older pending requests that still need to run. **Detect:** `text:jig:rearm`.
+
+### Fixed
+
+- The dispatcher binds each rearm request to a particular drive stop and retires it when that stop is superseded or the pull request closes. A missing or reused worktree, or a request waiting beyond 30 minutes, raises a need.
+- On a host whose `gh` picks its account by the repository's owner (a
+  wrapper first on `PATH`, for a host that works for two forge accounts),
+  the GitHub tracker read a private repository of the second owner as
+  `NOT_FOUND`, so that repository's tracker record failed on every dispatcher
+  tick. Each `gh api graphql` run of the GitHub tracker and the GitHub
+  reflection store now names the repository its request is about in
+  `GH_REPO`: the one its variables name, else the tracker's or the store's
+  own repository.
+  The dispatcher's merge-facts read and its count of a pull request's
+  unresolved review threads name theirs too. The HTTPS transport
+  (`JIG_GITHUB_GRAPHQL_URL`) is unchanged.
+
+## [0.285.1] - 2026-11-19
+
+### Fixed
+
+- A woken dispatcher tick (from `jig send` or the change probe) now runs with
+  the command and credential the timer's tick runs with. On systemd the wake
+  waiter reads the installed unit as systemd runs it, its drop-ins applied, so
+  a drop-in that replaces `ExecStart=` with a wrapper that resolves a tracker
+  key gives the woken tick the same key. A drop-in the waiter cannot
+  reproduce (an environment file, a credential, a command run first, a
+  variable in the command) starts no tick: the waiter's log says why, and the
+  request waits for the timer's next tick.
+- The timer's sweep (`jig dispatch --apply` over the machine file's
+  repositories) waits up to two minutes for a repository a woken tick holds,
+  and reads it in the same tick, instead of leaving it out of the sweep on
+  every run while wake-ups keep arriving.
+
+## [0.285.0] - 2026-11-19
+
+### Added
+
+- **Serialized areas hold pickups.** The dispatcher no longer starts a
+  pickup whose footprint reaches a serialized area of the change-area
+  catalog while an open pull request, a pickup in flight or a pickup it
+  plans ahead touches the area. The pickup is reported among the serialized
+  holds as `held: serialized behind #N in <area>`, in the run's report and
+  the dashboard's queue, and becomes eligible again when that work ends,
+  subject to its other holds and the available capacity.
+  A footprint that is unknown cannot rule an area out, on either side: such
+  a pickup waits while any serialized area is occupied (`, footprint
+unknown`), and such work occupies every serialized area (`, #N's
+footprint unknown`) until its footprint is recorded or it ends. Every open
+  pull request counts, a draft or a quiet one included, so a stale pull
+  request in a serialized area holds new work there until it is closed.
+- An account in the dispatcher's machine file (`~/.jig/dispatch.yaml`) can serve only some of the stages that launch a session: `stages: [pickup, followup]` under the account keeps re-arms, takeovers, re-drives and steward passes off it, while the other accounts take them by their weights and turns. Left out, an account serves every stage, so existing files behave as before. A takeover of a silent driver whose account no longer serves `rearm` starts on a free slot of an account that does. When no account serves a stage, its launches wait and say so. The receipt and the dashboard's account view show each account's stages when they are narrowed, and `jig dispatch` without `--apply` lists the accounts each planned launch could use. An unknown stage, a stage written twice, an empty list, or `notify` or `steer` is refused when the file loads. See `accounts[].stages` in the configuration reference.
+
+### Changed
+
+- In a run where the configured catalog or the open pull requests do not
+  read, including a run whose budget skips the catalog read, no pickup is
+  started: each is reported as `whether it reaches a serialized area cannot
+be told this tick` and waits for the next run, as the drives already did;
+  no pending pickup launch is replayed either.
+  This holds whether or not the catalog marks an area `serialize: true`,
+  since a run that did not read it cannot tell.
+
+### Fixed
+
+- A drive whose forge reads met the credential's spent rate limit no longer ends `INDETERMINATE` (exit `1`) for a person to read and re-arm. The attach and the status probe read the limit's reset from the outbound layer: a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds (30 minutes by default) is waited for, sending nothing before it, and the drive goes on; one further off stops it with the new state [`FORGE_RATE_LIMITED`](plugin/protocol/drive-exits.md) (exit `24`), whose report and closing report name the reset, cause `environment`, the line as the owner of the next step. `jig dispatch` re-drives that stop after the reset its stop recorded, without a person, and `jig ask` names the state and the reset.
+
+## [0.284.1] - 2026-11-19
+
+### Fixed
+
+- `jig ask` reports the local driver lock even if the CI-hold diagnosis times out. `jig send rearm` checks that lock without running the diagnosis and surfaces an unreadable lock as a dispatcher need. **Consumer action:** none.
+
+## [0.284.0] - 2026-11-19
+
+### Changed
+
+- The Codex `sol` alias (the strategic tier) now names `gpt-6.2-sol` instead of `gpt-6.1-sol`. Routing, the drive-pr pass model and the dispatcher pick it up without configuration; a configuration that pins `gpt-6.1-sol` by its full name keeps that model.
+- The dispatch dashboard's Running view shows every load gauge against its
+  own line, with nothing to open. The headline names the load factor and the
+  gauge that binds ("Load 150%, processors binds"), with one sentence saying
+  the figure is the fullest gauge against its own line, not a sum. Under it
+  each gauge has a row: its icon and name, a bar from 0 to 150% with its line
+  marked at 100%, its percent, and what it read with its line. A gauge past
+  its line turns the fill past the line to the alarm colour and shows an
+  "over its line" warning, the gauge that binds is bold with a "binds" tag,
+  and a gauge the host could not read shows an empty dashed bar and why. The
+  launches the load held or would have held and each kind's memory
+  reservation sit under the gauges in one fold titled with its count ("Would
+  have held 2 launches · reservations"). On a phone what a gauge read moves
+  under its bar.
+
+### Fixed
+
+- A drive that a dispatched session arms in an Orca terminal tab now knows it was dispatched. The tab's command carries the session's launch as `JIG_DISPATCHED_FROM`, and the driver hands it to every pass, so a repository's gate command can treat those passes as dispatched (Jig's own does, under `gates.dispatch_fast`). Before, the tab's login shell lost `JIG_LAUNCH`, and those passes ran the full gates. What a pass reports as its launch in round reports, closing reports and `jig send`'s refusals is still `JIG_LAUNCH`. A drive armed outside any dispatched session carries no launch record and keeps the full gates.
+
 ## [0.283.2] - 2026-11-19
 
 ### Fixed
@@ -9991,7 +10095,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.283.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.0...HEAD
+[0.286.0]: https://github.com/jig-harness/jig/compare/v0.285.1...v0.286.0
+[0.285.1]: https://github.com/jig-harness/jig/compare/v0.285.0...v0.285.1
+[0.285.0]: https://github.com/jig-harness/jig/compare/v0.284.1...v0.285.0
+[0.284.1]: https://github.com/jig-harness/jig/compare/v0.284.0...v0.284.1
+[0.284.0]: https://github.com/jig-harness/jig/compare/v0.283.2...v0.284.0
 [0.283.2]: https://github.com/jig-harness/jig/compare/v0.283.1...v0.283.2
 [0.283.1]: https://github.com/jig-harness/jig/compare/v0.283.0...v0.283.1
 [0.283.0]: https://github.com/jig-harness/jig/compare/v0.282.1...v0.283.0
