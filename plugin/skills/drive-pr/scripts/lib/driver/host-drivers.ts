@@ -15,9 +15,10 @@
  * no drive database has no driver. A database that cannot be opened or
  * read is a failure value, with why. The database is the one under the
  * host's state root; a `$DRIVE_PR_STATE_DIR` naming one clone's directory
- * (as a driver's own environment does) is not that root.
+ * (as a driver's own environment does) is read as the root above it.
  */
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import {
   attempt,
   failed,
@@ -28,7 +29,7 @@ import { openReadOnly } from "../../../../../shared/records/db.ts";
 import { currentMs, parseMs } from "../../../../../shared/time.ts";
 import { heartbeatStaleMs, samePidNamespace } from "../claim.ts";
 import type { AccountVendor } from "../identity.ts";
-import { dbPathFor, MIGRATIONS } from "../state/db.ts";
+import { DB_FILE, dbPathFor, MIGRATIONS } from "../state/db.ts";
 import type { LockRow } from "../state/lock.ts";
 import { stateRoot } from "../state/store.ts";
 import { type Claim, claimAlive, claimOf } from "./locks.ts";
@@ -53,13 +54,20 @@ export interface HostDriver {
 /** A pull request's lock name: `pr-drive-` and the number's digits. */
 const PR_LOCK = /^pr-drive-([0-9]+)$/;
 
+/** The directory holding the database: an inherited clone's directory stands for the root above it. */
+function databaseRoot(root: string): string {
+  if (existsSync(join(root, DB_FILE))) return root;
+  const parent = dirname(root);
+  return existsSync(join(parent, DB_FILE)) ? parent : root;
+}
+
 /** The live pull-request drivers in the database under `root` (the host's state root by default). */
 export function liveHostDrivers(
   root?: string,
 ): Outcome<HostDriver[], "unreadable"> {
   const what = "the drive's database could not be read for its live drivers";
   const path = attempt("unreadable", what, () =>
-    dbPathFor(join(root ?? stateRoot(), "clone")),
+    dbPathFor(join(databaseRoot(root ?? stateRoot()), "clone")),
   );
   if (!path.ok) return path;
   const opened = openReadOnly({ path: path.value, migrations: MIGRATIONS });

@@ -182,6 +182,28 @@ describe("a live driver no holding launch record accounts for", () => {
     ]);
   });
 
+  it("billing another listed account than its tree's holding record holds that account's slot too", () => {
+    const root = tempDir("host-drivers-");
+    const tree = join(root, "pickup-tree");
+    mkdirSync(tree);
+    holdLock(root, 46, tree, "b@example.com");
+    expect(held([pickup("a", tree, ALIVE)], drivers(root))).toEqual({
+      a: 1,
+      b: 1,
+    });
+  });
+
+  it("billing an identity no listed account has holds no slot, even after an ended pickup of its tree", () => {
+    const root = tempDir("host-drivers-");
+    const tree = join(root, "pickup-tree");
+    mkdirSync(tree);
+    holdLock(root, 47, tree, "stranger@example.com");
+    expect(held([pickup("a", tree, ENDED)], drivers(root))).toEqual({
+      a: 0,
+      b: 0,
+    });
+  });
+
   it("frees its slot once its process is gone", () => {
     const root = tempDir("host-drivers-");
     holdLock(root, 45, join(root, "hand-tree"), "a@example.com", {
@@ -196,6 +218,15 @@ describe("a live driver no holding launch record accounts for", () => {
 describe("the host's drivers", () => {
   it("are none on a host with no drive database", () => {
     expect(drivers(tempDir("host-drivers-"))).toEqual([]);
+  });
+
+  it("are read through the clone directory a driver's own environment names", () => {
+    const root = tempDir("host-drivers-");
+    holdLock(root, 48, join(root, "hand-tree"), "a@example.com");
+    expect(readHostDrivers(join(root, "clone-a"))).toEqual(
+      readHostDrivers(root),
+    );
+    expect(drivers(join(root, "clone-a"))).toHaveLength(1);
   });
 
   it("do not read, saying why, from a database that is not one", () => {

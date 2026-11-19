@@ -18,11 +18,12 @@
  * listed and holds no slot.
  */
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   type HostDriver,
   liveHostDrivers,
 } from "../../skills/drive-pr/scripts/lib/driver/host-drivers.ts";
+import { peekCloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { accountOf } from "./account-of.ts";
 import { parseMs } from "../../shared/time.ts";
@@ -75,15 +76,19 @@ function canonical(path: string): string {
 function identityAccount(
   accounts: readonly MachineAccount[],
   driver: HostDriver,
-): { name: string } | { why: string } {
+): { name: string } | { why: string; unresolved: boolean } {
   if (driver.identity === null || driver.vendor === null)
-    return { why: "its claim names no resolved account identity" };
+    return {
+      why: "its claim names no resolved account identity",
+      unresolved: true,
+    };
   const identity = driver.identity.toLowerCase();
   const same = accounts.filter(
     (a) => a.vendor === driver.vendor && a.identity.toLowerCase() === identity,
   );
   if (same.length === 1) return { name: (same[0] as MachineAccount).name };
   return {
+    unresolved: false,
     why:
       same.length === 0
         ? `no listed ${driver.vendor} account has its identity ${driver.identity}`
@@ -110,18 +115,35 @@ export function unrecordedDrivers(
   };
   const byTree = (path: string | null | undefined, tree: string | null) =>
     path != null && tree !== null && real(path) === real(tree);
+  /** The clone key of a record's checkout; `null` when it cannot be read. */
+  const cloneOf = new Map<string, string | null>();
+  const cloneKeyOf = (repoPath: string): string | null => {
+    if (!cloneOf.has(repoPath))
+      cloneOf.set(repoPath, peekCloneKey(join(repoPath, ".git")));
+    return cloneOf.get(repoPath) ?? null;
+  };
+  // A record's slot covers one driver; two drivers never share it.
+  const used = new Set<string>();
   return drivers.flatMap((driver) => {
     const named = identityAccount(accounts, driver);
-    const covered = records.some(
+    const cover = records.find(
       ({ record, state }) =>
         holds(state) &&
-        (byTree(record.workspace?.path, driver.worktree) ||
+        !used.has(record.id) &&
+        // The tree's own record covers a driver billing the account it charges.
+        ((byTree(record.workspace?.path, driver.worktree) &&
+          (!("name" in named) || accountOf(accounts, record) === named.name)) ||
+          // A drive's record of the same pull request, account and clone.
           (isDrive(record) &&
             record.pr === driver.pr &&
             "name" in named &&
-            accountOf(accounts, record) === named.name)),
+            accountOf(accounts, record) === named.name &&
+            cloneKeyOf(record.repoPath) === driver.clone)),
     );
-    if (covered) return [];
+    if (cover !== undefined) {
+      used.add(cover.record.id);
+      return [];
+    }
     // The newest pickup or drive launch of its tree from before it took its lock started it.
     const since = parseMs(driver.since);
     const starter = records
@@ -139,7 +161,9 @@ export function unrecordedDrivers(
         null,
       );
     const fallback =
-      starter === null ? null : accountOf(accounts, starter.record);
+      starter === null || ("why" in named && !named.unresolved)
+        ? null
+        : accountOf(accounts, starter.record);
     const account = "name" in named ? named.name : fallback;
     return [
       {

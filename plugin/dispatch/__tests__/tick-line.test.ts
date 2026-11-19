@@ -135,13 +135,14 @@ describe("the line a tick leaves", () => {
 
     endHolder(root, 99);
     const freed = await tick(w);
-    expect(freed.repos[0]?.launches).not.toContainEqual(
-      expect.objectContaining({ outcome: "waits" }),
+    expect(freed.repos[0]?.launches).toContainEqual(
+      expect.objectContaining({ target: "PR #7", outcome: "launched" }),
     );
     expect(storedLine(w)?.line.drivers).toEqual([]);
-    await waitFor("the re-armed drive's wrapper exits", () =>
-      recordIds(w).every((id) => exitWritten(w, id)),
-    );
+    await waitFor("the re-armed drive's wrapper exits", () => {
+      const ids = recordIds(w);
+      return ids.length > 0 && ids.every((id) => exitWritten(w, id));
+    });
   });
 
   it("reconciles a hand-armed released dead driver before planning and leaves no lease", async () => {

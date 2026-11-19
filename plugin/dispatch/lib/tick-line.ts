@@ -202,7 +202,10 @@ function driversPart(
   machine: MachineConfig,
   records: ReadRecord[],
   drivers: HostDrivers | undefined,
-): { drivers: LineDriver[] } | { driversUnread: string } | object {
+):
+  | { drivers: LineDriver[] }
+  | { driversUnread: string }
+  | Record<never, never> {
   if (drivers === undefined) return {};
   if (!drivers.ok) return { driversUnread: drivers.failure.reason };
   return {
@@ -436,7 +439,7 @@ function writeKept(
             tick.weights,
             driversOf(tick.drivers),
           ),
-          ...driversPart(machine, records, tick.drivers),
+          hostDrivers: driversPart(machine, records, tick.drivers),
           lastAccount: lastAccount(records),
           previousNeeds: before?.needs ?? [],
           ...(receipt.quotaRisks === undefined
