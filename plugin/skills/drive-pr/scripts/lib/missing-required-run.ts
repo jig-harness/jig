@@ -146,20 +146,66 @@ export interface WorkflowFile {
   text: string;
 }
 
-/** The check names a job may report: its `name`, else its id; a templated name by its fixed prefix. */
+/** The values a job's matrix gives `key`, when they are plain listed values; `null` when they cannot be told. */
+function matrixValues(job: unknown, key: string): string[] | null {
+  const strategy = (job as Record<string, unknown> | null)?.strategy;
+  const matrix =
+    typeof strategy === "object" && strategy !== null
+      ? (strategy as Record<string, unknown>).matrix
+      : undefined;
+  if (typeof matrix !== "object" || matrix === null || Array.isArray(matrix))
+    return null;
+  const grid = matrix as Record<string, unknown>;
+  const values: unknown[] = [];
+  if (Array.isArray(grid[key])) values.push(...(grid[key] as unknown[]));
+  else if (key in grid) return null;
+  if (Array.isArray(grid.include))
+    for (const entry of grid.include as unknown[])
+      if (typeof entry === "object" && entry !== null && key in entry)
+        values.push((entry as Record<string, unknown>)[key]);
+  const plain = values.filter(
+    (v) =>
+      typeof v === "string" || typeof v === "number" || typeof v === "boolean",
+  );
+  return plain.length === values.length && plain.length > 0
+    ? plain.map(String)
+    : null;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The check names a job may report: its `name`, else its id; a templated
+ * name as a pattern over the values its matrix lists. A name whose
+ * expressions are not plain `matrix.<key>` references to listed values is
+ * left unattributed rather than matched by its fixed prefix.
+ */
 function jobNames(
   id: string,
   job: unknown,
-): { exact: string[]; prefix: string[] } {
+): { exact: string[]; pattern: RegExp[] } {
   const name =
     typeof job === "object" && job !== null && !Array.isArray(job)
       ? (job as Record<string, unknown>).name
       : undefined;
-  if (typeof name !== "string") return { exact: [id], prefix: [] };
-  const template = name.indexOf("${{");
-  if (template < 0) return { exact: [name], prefix: [] };
-  const fixed = name.slice(0, template).trim();
-  return { exact: [], prefix: fixed === "" ? [] : [fixed] };
+  if (typeof name !== "string") return { exact: [id], pattern: [] };
+  if (!name.includes("${{")) return { exact: [name], pattern: [] };
+  let source = "";
+  let last = 0;
+  for (const m of name.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+    const key = /^\s*matrix\.([A-Za-z_][\w-]*)\s*$/.exec(m[1] ?? "")?.[1];
+    const values = key === undefined ? null : matrixValues(job, key);
+    if (values === null) return { exact: [], pattern: [] };
+    source += `${escapeRegExp(name.slice(last, m.index))}(?:${values.map(escapeRegExp).join("|")})`;
+    last = m.index + m[0].length;
+  }
+  source += escapeRegExp(name.slice(last));
+  return {
+    exact: [],
+    pattern: [new RegExp(`^${source}(?: \\([\\s\\S]*| / [\\s\\S]*)?$`)],
+  };
 }
 
 /**
@@ -198,10 +244,10 @@ export function workflowForCheck(
     if (typeof jobs !== "object" || jobs === null || Array.isArray(jobs))
       continue;
     for (const [id, job] of Object.entries(jobs)) {
-      const { exact, prefix } = jobNames(id, job);
+      const { exact, pattern } = jobNames(id, job);
       if (
         exact.some((name) => reports(check, name)) ||
-        prefix.some((fixed) => check.startsWith(fixed))
+        pattern.some((re) => re.test(check))
       )
         matches.add(file.path);
     }
@@ -215,4 +261,24 @@ export function describeMissing(
   workflow: string | null,
 ): string {
   return `'${check}' (workflow: ${workflow ?? "unknown"})`;
+}
+
+/** The outcomes of `ci-hold.ts ensure` after which the push goes ahead with no hold to roll back. */
+const UNHELD_OUTCOMES: readonly string[] = [
+  "disabled",
+  "conflicting",
+  "workflow-change",
+  "adopted",
+];
+
+/** Whether `ensure`'s stdout names an outcome that pushes unheld. */
+export function isUnheldOutcome(stdout: string): boolean {
+  return UNHELD_OUTCOMES.includes(stdout.trim());
+}
+
+/** Why `finish-round.ts` stops on a park `ensure` made, by what `ensure` printed. */
+export function holdParkReason(stdout: string): string {
+  return stdout.trim() === MISSING_RUN_PARK_KEY
+    ? `a required check has no run on the PR head past the grace after its push; see the ${MISSING_RUN_PARK_KEY} parked finding for the check and its workflow`
+    : "cancelled CI needs a person; see the cancelled-ci parked finding for the run and recovery";
 }

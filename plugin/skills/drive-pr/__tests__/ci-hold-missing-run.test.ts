@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { CheckRunLite } from "../scripts/lib/ci-hold.ts";
+import { missingRunDecision } from "../scripts/lib/missing-required-run-live.ts";
 import {
   describeMissing,
   headPushedMs,
@@ -148,6 +149,17 @@ describe("missingRequiredRuns", () => {
   });
 });
 
+describe("missingRunDecision", () => {
+  it("keeps every missing check in the decision when the question abbreviates them", () => {
+    const named = ["a", "b", "c", "d", "e"].map((c) =>
+      describeMissing(c, null),
+    );
+    const decision = missingRunDecision("f".repeat(40), named, 60_000);
+    expect(decision.call.question).toContain("and 2 more");
+    for (const n of named) expect(decision.steps.join("\n")).toContain(n);
+  });
+});
+
 describe("workflowForCheck", () => {
   const ci = {
     path: ".github/workflows/ci.yml",
@@ -157,7 +169,7 @@ describe("workflowForCheck", () => {
     path: ".github/workflows/matrix.yml",
     text:
       "on: pull_request\njobs:\n  e2e:\n    name: End to end\n    runs-on: x\n  shard:\n    name: Shard $" +
-      "{{ matrix.n }}\n    runs-on: x\n",
+      "{{ matrix.n }}\n    strategy:\n      matrix:\n        n: [1, 2, 3]\n    runs-on: x\n",
   };
 
   it("names the one workflow whose job reports the check, by name, id or matrix", () => {
@@ -167,6 +179,13 @@ describe("workflowForCheck", () => {
       matrix.path,
     );
     expect(workflowForCheck("Shard 3", [ci, matrix])).toBe(matrix.path);
+  });
+
+  it("does not attribute a check a templated name cannot be shown to expand to", () => {
+    expect(
+      workflowForCheck("Shard deployment approval", [ci, matrix]),
+    ).toBeNull();
+    expect(workflowForCheck("Shard 4", [ci, matrix])).toBeNull();
   });
 
   it("says unknown when no workflow, or several, report it", () => {

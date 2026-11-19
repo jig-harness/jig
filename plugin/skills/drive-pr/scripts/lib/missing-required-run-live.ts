@@ -70,25 +70,30 @@ async function changesWorkflows(head: string): Promise<boolean | null> {
   return out === null ? null : out.trim() !== "";
 }
 
-/** The workflow files `head` holds, as many as are read; none when the tree cannot say. */
-async function workflowFiles(head: string): Promise<WorkflowFile[]> {
+/**
+ * The workflow files `head` holds, as many as are read, and whether that is
+ * every one: a census that stopped at the cap or failed to read a file
+ * cannot say a workflow is the only one reporting a check.
+ */
+async function workflowFiles(
+  head: string,
+): Promise<{ files: WorkflowFile[]; complete: boolean }> {
   const listing = await gitText([
     "ls-tree",
     "--name-only",
     head,
     `${WORKFLOWS_DIR}/`,
   ]);
-  if (listing === null) return [];
-  const paths = listing
-    .split("\n")
-    .filter((path) => /\.ya?ml$/.test(path))
-    .slice(0, MAX_WORKFLOW_FILES);
+  if (listing === null) return { files: [], complete: false };
+  const all = listing.split("\n").filter((path) => /\.ya?ml$/.test(path));
+  let complete = all.length <= MAX_WORKFLOW_FILES;
   const files: WorkflowFile[] = [];
-  for (const path of paths) {
+  for (const path of all.slice(0, MAX_WORKFLOW_FILES)) {
     const text = await gitText(["show", `${head}:${path}`]);
-    if (text !== null) files.push({ path, text });
+    if (text === null) complete = false;
+    else files.push({ path, text });
   }
-  return files;
+  return { files, complete };
 }
 
 /** The decision a person makes for checks that never ran on `head`. */
@@ -98,10 +103,8 @@ export function missingRunDecision(
   graceMs: number,
 ): ParkedDecision {
   const listed = named.slice(0, NAMED_CHECKS).join(", ");
-  const more =
-    named.length > NAMED_CHECKS
-      ? ` and ${named.length - NAMED_CHECKS} more`
-      : "";
+  const everyCheck = named.length > NAMED_CHECKS;
+  const more = everyCheck ? ` and ${named.length - NAMED_CHECKS} more` : "";
   const subject =
     named.length === 1
       ? `the required check ${listed}, which has`
@@ -135,6 +138,7 @@ export function missingRunDecision(
       why: "A check no event starts on this head stays missing on later heads until its workflow's triggers change.",
     },
     steps: [
+      ...(everyCheck ? [`The missing checks: ${named.join("; ")}.`] : []),
       "Find the workflow named for each check; where it is unknown, find the workflow whose job reports that check.",
       "Answer in a pull-request comment and re-arm the drive.",
     ],
@@ -197,13 +201,13 @@ export async function stopOnMissingRequiredRun(
     await clearParkedFinding(pr, MISSING_RUN_PARK_KEY);
     return "none";
   }
-  if (verdict.kind === "wait") {
+  const changes = await changesWorkflows(head);
+  if (verdict.kind === "wait" && changes !== true) {
     console.error(
       `ci-hold: required check(s) ${verdict.checks.map((c) => `'${c}'`).join(", ")} have no run on this head yet; ${verdict.reason}`,
     );
     return "wait";
   }
-  const changes = await changesWorkflows(head);
   if (changes === null) {
     console.error(
       `ci-hold: required check(s) ${verdict.checks.map((c) => `'${c}'`).join(", ")} never ran on this head, and whether the commits about to be pushed change ${WORKFLOWS_DIR} cannot be read; waiting`,
@@ -216,9 +220,9 @@ export async function stopOnMissingRequiredRun(
     );
     return "workflow-change";
   }
-  const files = await workflowFiles(head);
+  const { files, complete } = await workflowFiles(head);
   const named = verdict.checks.map((check) =>
-    describeMissing(check, workflowForCheck(check, files)),
+    describeMissing(check, complete ? workflowForCheck(check, files) : null),
   );
   console.error(
     `ci-hold: required check(s) ${named.join(", ")} have no run on this head ${Math.round(graceMs / 60_000)} minutes after its push, and no workflow run on it is still to finish; parking ${MISSING_RUN_PARK_KEY} for a person`,

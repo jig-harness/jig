@@ -3,7 +3,7 @@
  * stop (`lib/state/round-finish.ts`), and what a stall makes of them.
  */
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -11,6 +11,7 @@ import {
   finishSince,
   readRoundFinishes,
   recordRoundFinish,
+  roundFinishFile,
   type RoundFinish,
   sharedFinish,
 } from "../scripts/lib/state/round-finish.ts";
@@ -22,6 +23,12 @@ const finish = (state: string, at: string, reason = `${state} reason`) =>
   ({ round: 1, state, reason, head: "a".repeat(40), at }) as RoundFinish;
 
 describe("round finishes", () => {
+  it("reads nothing from an oversized file", () => {
+    const dir = mkdtempSync(join(tmpRoot, "round-finish-big-"));
+    writeFileSync(roundFinishFile(dir, "7"), " ".repeat(200 * 1024));
+    expect(readRoundFinishes(dir, "7")).toEqual([]);
+  });
+
   it("keeps the newest few, oldest first, and finds the one a pass recorded", () => {
     const dir = mkdtempSync(join(tmpRoot, "round-finish-"));
     for (let i = 0; i < 20; i++)

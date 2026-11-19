@@ -193,11 +193,8 @@ import {
   SESSION_LEASE_HELD_EXIT,
 } from "./lib/state/lease.ts";
 import { ignoreDriveContext } from "./lib/context-ignore.ts";
-import { MISSING_RUN_PARK_KEY } from "./lib/missing-required-run.ts";
-import { recordRoundFinish } from "./lib/state/round-finish.ts";
-import { resolveStateDir } from "./lib/state/store.ts";
-import { swallow } from "../../../shared/errors.ts";
-import { currentIso } from "../../../shared/time.ts";
+import { holdParkReason, isUnheldOutcome } from "./lib/missing-required-run.ts";
+import { roundFinishRecorder } from "./lib/state/round-finish.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -1133,26 +1130,6 @@ async function checkUntriagedThreads(
   };
 }
 
-/**
- * Where a drive's pass records how this round finished, for the driver's
- * stall stop (`lib/state/round-finish.ts`); `null` outside a drive's pass
- * for `pr`, or when its state directory cannot be resolved.
- */
-async function roundFinishTarget(
-  pr: string,
-): Promise<{ stateDir: string; round: number } | null> {
-  const round = process.env.DRIVE_PR_ROUND ?? "";
-  if (!isDigits(round) || process.env.DRIVE_PR_TARGET !== pr) return null;
-  try {
-    const stateDir =
-      process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());
-    return { stateDir, round: Number(round) };
-  } catch (error) {
-    swallow(error, "the state directory for the round's finish is unresolved");
-    return null;
-  }
-}
-
 async function main(): Promise<number> {
   let pr = "";
   let asJson = false;
@@ -1193,7 +1170,7 @@ async function main(): Promise<number> {
     headSynced: false,
     items: [],
   };
-  const finishTarget = await roundFinishTarget(pr);
+  const recordFinish = await roundFinishRecorder(pr);
   const done = (
     code: number,
     state: Report["state"],
@@ -1202,22 +1179,7 @@ async function main(): Promise<number> {
     report.state = state;
     report.reason = reason;
     emit(report, asJson);
-    if (finishTarget !== null) {
-      try {
-        recordRoundFinish(finishTarget.stateDir, pr, {
-          round: finishTarget.round,
-          state,
-          reason,
-          head: report.head,
-          at: currentIso(),
-        });
-      } catch (error) {
-        swallow(
-          error,
-          "the round's finish was not recorded for the stall stop",
-        );
-      }
-    }
+    recordFinish({ state, reason, head: report.head });
     return code;
   };
 
@@ -1326,13 +1288,7 @@ async function main(): Promise<number> {
     );
   }
   if (holdRes.code === 8) {
-    return done(
-      8,
-      "HITL_PARKED",
-      holdRes.stdout.trim() === MISSING_RUN_PARK_KEY
-        ? `a required check has no run on the PR head past the grace after its push; see the ${MISSING_RUN_PARK_KEY} parked finding for the check and its workflow`
-        : "cancelled CI needs a person; see the cancelled-ci parked finding for the run and recovery",
-    );
+    return done(8, "HITL_PARKED", holdParkReason(holdRes.stdout));
   }
   if (holdRes.code === 4) {
     return done(
@@ -1366,14 +1322,9 @@ async function main(): Promise<number> {
     },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
-  // `disabled`, `conflicting` and `workflow-change` pushed without a hold,
-  // and `adopted` under a label this push did not add: none rolls back.
-  const unheld = [
-    "disabled",
-    "conflicting",
-    "workflow-change",
-    "adopted",
-  ].includes(holdRes.stdout.trim());
+  // `disabled`, `conflicting`, `workflow-change` and `adopted` pushed without
+  // a hold this push added: none rolls back.
+  const unheld = isUnheldOutcome(holdRes.stdout);
   if (pushRes.code !== 0 && !unheld) {
     const rollback = await run(
       tsArgv(ciHold, ["rollback", pr, "--expect-head", report.head]),

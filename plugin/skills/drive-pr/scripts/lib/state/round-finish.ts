@@ -6,20 +6,25 @@
  * from what held the rounds. Only a drive's pass records one (the driver
  * hands it `DRIVE_PR_ROUND`); the newest few are kept.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ReportCause } from "../../../../../shared/closing-report.ts";
+import { readBoundedText } from "../../../../../shared/driver-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
-import { parseMs } from "../../../../../shared/time.ts";
+import { currentIso, parseMs } from "../../../../../shared/time.ts";
 import type { Report } from "../finish-round-report.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { resolveStateDir } from "./store.ts";
 
 export const ROUND_FINISH_SCHEMA = "drive-round-finish/v1";
 
 /** How many finishes the file keeps, newest last. */
 const KEPT = 16;
+
+/** The most bytes of the file read: the kept finishes at their longest, with room to spare. */
+const FILE_BYTE_LIMIT = 128 * 1024;
 
 /** The longest reason kept. */
 const REASON_MAX = 2000;
@@ -57,7 +62,12 @@ export function readRoundFinishes(stateDir: string, pr: string): RoundFinish[] {
   const file = roundFinishFile(stateDir, pr);
   if (!existsSync(file)) return [];
   try {
-    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+    const text = readBoundedText(file, FILE_BYTE_LIMIT);
+    if (text === null) {
+      swallow(new Error("too large"), "the round finishes are too large");
+      return [];
+    }
+    const value: unknown = JSON.parse(text);
     if (
       !isRecord(value) ||
       value.schema !== ROUND_FINISH_SCHEMA ||
@@ -145,4 +155,40 @@ export function finishCause(state: string): ReportCause {
   return Object.hasOwn(FINISH_CAUSES, state)
     ? FINISH_CAUSES[state as keyof typeof FINISH_CAUSES]
     : "unknown";
+}
+
+/** The recorder of a finish that is not a drive pass's, or whose directory is unresolved. */
+function noRecord(): void {
+  // Nothing is kept for the stall stop.
+}
+
+/**
+ * What `finish-round.ts` calls as it ends: records the finish for the stall
+ * stop when this is a drive's pass for `pr`, and does nothing otherwise or
+ * when the state directory cannot be resolved or written.
+ */
+export async function roundFinishRecorder(
+  pr: string,
+): Promise<(finish: Pick<RoundFinish, "state" | "reason" | "head">) => void> {
+  const round = process.env.DRIVE_PR_ROUND ?? "";
+  if (!/^\d+$/.test(round) || process.env.DRIVE_PR_TARGET !== pr)
+    return noRecord;
+  let stateDir: string;
+  try {
+    stateDir = process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());
+  } catch (error) {
+    swallow(error, "the state directory for the round's finish is unresolved");
+    return noRecord;
+  }
+  return (finish) => {
+    try {
+      recordRoundFinish(stateDir, pr, {
+        ...finish,
+        round: Number(round),
+        at: currentIso(),
+      });
+    } catch (error) {
+      swallow(error, "the round's finish was not recorded for the stall stop");
+    }
+  };
 }

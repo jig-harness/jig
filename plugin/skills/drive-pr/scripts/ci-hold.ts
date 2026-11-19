@@ -1,10 +1,6 @@
 #!/usr/bin/env bun
 import { retryAttempts } from "../../../shared/retry.ts";
-import { recoverCancelledOnHead } from "./lib/cancelled-recovery-live.ts";
-import { recoveryExit } from "./lib/cancelled-recovery-reads.ts";
-import { stopOnMissingRequiredRun } from "./lib/missing-required-run-live.ts";
-import { MISSING_RUN_PARK_KEY } from "./lib/missing-required-run.ts";
-import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
+import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -465,38 +461,13 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     return 0;
   }
   if (!observed) {
-    const recovery = await recoverCancelledOnHead(
+    return waitOnUnobserved(
       pr,
       head,
       policy.requiredChecks,
-      true,
+      runs,
+      latest?.event === "unlabeled",
     );
-    const stop = recoveryExit(recovery);
-    if (stop !== null) return stop;
-    // A required check with no run at all never completes: past the grace
-    // from the head's push it parks for a person instead of waiting.
-    if (recovery === "none") {
-      const missing = await stopOnMissingRequiredRun(
-        pr,
-        head,
-        policy.requiredChecks,
-        runs,
-      );
-      if (missing === "parked") {
-        process.stdout.write(`${MISSING_RUN_PARK_KEY}\n`);
-        return DRIVE_EXIT.HITL_PARKED;
-      }
-      if (missing === "workflow-change") {
-        process.stdout.write("workflow-change\n");
-        return 0;
-      }
-    }
-    console.error(
-      latest?.event === "unlabeled"
-        ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"
-        : "ci-hold: the initial required checks have not completed on this head; waiting before suppressing intermediate CI",
-    );
-    return 4;
   }
   // Refresh immediately before the mutation while the PR-wide mutation fence
   // is held. A same-login human action through another client remains an API
