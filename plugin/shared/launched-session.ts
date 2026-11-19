@@ -50,15 +50,16 @@ export function passLaunch(
 }
 
 /**
- * The dispatcher's launch record this process comes from: the one a drive
- * was armed from (`JIG_DISPATCHED_FROM`), else the one it runs under
- * (`JIG_LAUNCH`); `null` when neither names a launch record, as in a drive
- * a person armed by hand, whose passes carry the driver's own name.
+ * The dispatcher's launch record this process comes from: the one it runs
+ * under (`JIG_LAUNCH`), else the one its drive was armed from
+ * (`JIG_DISPATCHED_FROM`); `null` when neither names a launch record, as in
+ * a drive armed outside any dispatched session, whose passes carry the
+ * driver's own name.
  */
 export function dispatchedFrom(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
-  for (const name of [DISPATCHED_FROM_VARIABLE, LAUNCH_VARIABLE]) {
+  for (const name of [LAUNCH_VARIABLE, DISPATCHED_FROM_VARIABLE]) {
     const value = (env[name] ?? "").trim();
     if (dispatchLaunchId.test(value)) return value;
   }

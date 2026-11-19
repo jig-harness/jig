@@ -411,14 +411,15 @@ tests for the sessions the dispatcher starts: pickups, drives it launched and
 its other passes, and the drives a dispatched session arms, in a terminal tab
 or in the background. A tab's login shell does not inherit the session's
 `JIG_LAUNCH`, so the arm hands the tab the launch as `JIG_DISPATCHED_FROM`,
-which the driver passes on. A drive armed by hand keeps the full local gates. The
-targeted run takes changed test files, then nearby tests named for changed
+which the driver passes on. A drive armed by hand keeps the full local gates.
+The targeted run takes changed test files, then nearby tests named for changed
 files, then tests that import changed files directly, up to 40 files; the rest
 are left to CI. The website's tests join only where `website/` has its
 dependencies installed. These tests run through the suite's runner, one file at
 a time, without the shared `heavy` lock and without the session's `JIG_LAUNCH`,
-`JIG_DISPATCHED_FROM` and `DRIVE_PR_*` variables. The lock admits full suites by worker count.
-Applying it to short targeted runs would make them queue behind those suites.
+`JIG_DISPATCHED_FROM` and `DRIVE_PR_*` variables. The lock admits full suites
+by worker count. Applying it to short targeted runs would make them queue
+behind those suites.
 Required CI jobs still run the full checks and suites.
 
 Turn the setting off to return dispatched passes to the full local gates.

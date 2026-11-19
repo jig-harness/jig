@@ -34,13 +34,19 @@ describe("passLaunch", () => {
 });
 
 describe("dispatchedFrom", () => {
-  it("reads a launch record from the arm's variable, else from the launch", () => {
+  it("reads a launch record from the launch, else from the arm's variable", () => {
     expect(dispatchedFrom({ JIG_DISPATCHED_FROM: ` ${LAUNCH} ` })).toBe(LAUNCH);
     expect(dispatchedFrom({ JIG_LAUNCH: LAUNCH })).toBe(LAUNCH);
     expect(
       dispatchedFrom({
         JIG_DISPATCHED_FROM: LAUNCH,
         JIG_LAUNCH: "drive-pr 12 driver 3",
+      }),
+    ).toBe(LAUNCH);
+    expect(
+      dispatchedFrom({
+        JIG_DISPATCHED_FROM: "20261105T080000Z-00000000",
+        JIG_LAUNCH: LAUNCH,
       }),
     ).toBe(LAUNCH);
   });

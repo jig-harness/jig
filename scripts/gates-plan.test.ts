@@ -192,14 +192,15 @@ function shellWords(line: string): string[] {
   return done.stdout.toString().split("\n").slice(0, -1);
 }
 
+/** When the test's tab opens, on its fixed clock. */
+const OPENED = 1_800_000_000_000;
+
 /**
  * The environment a drive's pass gets when `session` arms the drive in an
  * Orca terminal tab: the variables the tab's command sets in the tab's fresh
  * login shell (which inherits none of the session's), then the launch
  * variables the driver hands its passes.
  */
-const OPENED = 1_800_000_000_000;
-
 async function tabPassEnv(
   session: Record<string, string | undefined>,
 ): Promise<Record<string, string | undefined>> {
