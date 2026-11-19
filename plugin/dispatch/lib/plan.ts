@@ -718,7 +718,8 @@ function placedByHold(target: string, hold: DriveHold, plan: Plan): boolean {
     });
     return true;
   }
-  const quiet = QUIET_HOLDS.get(hold.kind);
+  const quiet =
+    hold.kind === "limited" ? hold.class : QUIET_HOLDS.get(hold.kind);
   if (quiet === undefined || !("why" in hold)) return false;
   plan.quiet.push({ target, class: quiet, why: hold.why });
   return true;
