@@ -98,8 +98,8 @@ function setReviewComments(w: World, comments: unknown[]): void {
   );
 }
 
-/** One tick with the forge's answers kept; its receipt. Calls logged before it are forgotten. */
-async function tick(w: World): Promise<TickReceipt> {
+/** One tick with the forge's answers kept, exiting `exit`; its receipt. Calls logged before it are forgotten. */
+async function tick(w: World, exit = 0): Promise<TickReceipt> {
   rmSync(join(w.dir, "gh-calls.log"), { force: true });
   rmSync(join(w.dir, "comment-page-responses.log"), { force: true });
   const r = await w.dispatch(
@@ -107,7 +107,7 @@ async function tick(w: World): Promise<TickReceipt> {
     undefined,
     { JIG_GH_CACHE_DIR: join(w.root, "forge-cache") },
   );
-  expectSpawnExit(r, 0);
+  expectSpawnExit(r, exit);
   return JSON.parse(r.stdout) as TickReceipt;
 }
 
@@ -164,6 +164,40 @@ describe("a parked drive's review threads over ticks", () => {
     setReviewComments(w, [
       { ...QUESTION, body: "Reworded.", updated_at: "2026-10-30T23:00:00Z" },
     ]);
+
+    await tick(w);
+    expect(threadReads(w)).toBe(1);
+  }, 60_000);
+
+  it("sees a reply the listing showed before the thread's query returned it", async () => {
+    const w = parked();
+    await tick(w);
+    // The listing has the reply; the thread's query does not return it yet.
+    setReviewComments(w, [QUESTION, { ...ANSWER, thread: "PRRT_elsewhere" }]);
+    expect(reasonsOn7(await tick(w))).toContainEqual(WAITING);
+    expect(threadReads(w)).toBe(1);
+
+    setReviewComments(w, [QUESTION, ANSWER]);
+    expect(reasonsOn7(await tick(w))).toContainEqual(ANSWERED);
+    expect(threadReads(w)).toBe(1);
+  }, 60_000);
+
+  it("keeps nothing of a thread whose read failed", async () => {
+    const w = parked();
+    w.failCall(`id=${THREAD}`, "gh: HTTP 422");
+    await tick(w, 1);
+    rmSync(join(w.dir, "forge-fails.json"));
+
+    expect(reasonsOn7(await tick(w))).toContainEqual(WAITING);
+    expect(threadReads(w)).toBe(1);
+  }, 60_000);
+
+  it("forgets a closed pull request's threads", async () => {
+    const w = parked();
+    await tick(w);
+    w.setPrs("open", []);
+    await tick(w);
+    w.setPrs("open", [openPr(7, "feature/7-open")]);
 
     await tick(w);
     expect(threadReads(w)).toBe(1);

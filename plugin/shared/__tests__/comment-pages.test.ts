@@ -174,8 +174,9 @@ it("lists a pull request's review comments page by page", async () => {
   const asked: string[] = [];
   const list = reviewCommentPages({
     ghCacheDir: () => "/cache",
-    ghConditionalGet: async (path) => {
+    ghConditionalGet: async (path, ctx) => {
       asked.push(path);
+      expect(ctx?.timeoutSec).toBeGreaterThan(0);
       const full = asked.length === 1;
       return {
         ok: true,
@@ -184,7 +185,7 @@ it("lists a pull request's review comments page by page", async () => {
       };
     },
   });
-  const read = await list(TARGET);
+  const read = await list(TARGET, { timeoutSec: 30 });
   expect(read.ok && read.value.length).toBe(101);
   expect(asked).toEqual([
     "repos/acme/app/pulls/7/comments?per_page=100&page=1",

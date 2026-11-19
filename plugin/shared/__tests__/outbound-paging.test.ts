@@ -195,6 +195,20 @@ describe("the size a reader keeps between runs", () => {
     expect(kept?.size).toBe(4);
   });
 
+  it("counts a page that came close to the limit as a shrink that follows soon", () => {
+    const kept = { size: 12, shrankAt: NOW - 1, holdMs: FIRST_HOLD_MS };
+    expect(sizeToKeep(kept, whole(12, SLOW_MS), 50, NOW)).toEqual({
+      size: 6,
+      shrankAt: NOW,
+      holdMs: 2 * FIRST_HOLD_MS,
+    });
+  });
+
+  it("is not held back by a shrink dated after now", () => {
+    const ahead = { size: 6, shrankAt: NOW + 1, holdMs: FIRST_HOLD_MS };
+    expect(sizeToKeep(ahead, whole(6, 10), 50, NOW)?.size).toBe(12);
+  });
+
   it("starts from the first hold again once timeouts have stopped for a while", () => {
     const long = {
       size: 8,
@@ -234,7 +248,7 @@ describe("the size a reader keeps between runs", () => {
       shrankAt: 5,
       holdMs: 60_000,
     });
-    for (const holdMs of [0, -1, Number.NaN, "soon"])
+    for (const holdMs of [0, -1, Number.NaN, "soon", LONGEST_HOLD_MS + 1])
       expect(keptSize({ size: 6, shrankAt: 5, holdMs }, 50)).toEqual({
         size: 6,
         shrankAt: 5,

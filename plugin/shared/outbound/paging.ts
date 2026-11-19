@@ -95,7 +95,9 @@ export function keptSize(value: unknown, most: number): KeptSize | null {
     ? {
         size,
         shrankAt,
-        ...(typeof holdMs === "number" && Number.isFinite(holdMs) && holdMs > 0
+        ...(typeof holdMs === "number" &&
+        holdMs > 0 &&
+        holdMs <= LONGEST_HOLD_MS
           ? { holdMs }
           : {}),
       }
@@ -153,8 +155,10 @@ export function sizeToKeep(
     return run.size === 1
       ? null
       : shrunkTo(Math.floor(run.size / 2), kept, now);
+  // A shrink dated after now says nothing about now, so it holds nothing back.
+  const held = kept === null ? 0 : now - kept.shrankAt;
   const settled =
-    kept === null || now - kept.shrankAt >= (kept.holdMs ?? FIRST_HOLD_MS);
+    kept === null || held < 0 || held >= (kept.holdMs ?? FIRST_HOLD_MS);
   if (run.slowestMs < QUICK_MS && run.size < most && settled)
     return {
       size: Math.min(most, run.size * 2),
