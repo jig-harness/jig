@@ -6,6 +6,7 @@ import {
   type ValidationPass,
   type ValidationSample,
 } from "../lib/validation-capacity.ts";
+import { validationHold, type ValidationLoad } from "../lib/validation-load.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -107,11 +108,11 @@ describe("validation forecast", () => {
       ahead: 2,
       capacity: 4,
       ownRuns: 1,
-      required: 3,
+      required: 2,
       atLock: 2,
       toArrive: 2,
       waitWindowMs: HOUR,
-      fill: 0.75,
+      fill: 0.5,
     });
   });
 
@@ -164,6 +165,40 @@ describe("validation forecast", () => {
     );
     expect(forecast.ahead).toBe(0);
     expect(forecast.required).toBe(0);
+  });
+
+  test("does not charge a candidate's execution after its last acquisition", () => {
+    const measured = measureValidation([], []);
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 0, toArrive: 1 },
+      20 * MINUTE,
+      3 * HOUR,
+    );
+    expect(forecast.required).toBe(1);
+    expect(forecast.fill).toBe(0.75);
+  });
+
+  test("reserves a queued pickup's committed validation runs before admitting its drive", () => {
+    const state: ValidationLoad = {
+      measured: {
+        runMs: 15 * MINUTE,
+        concurrency: 1,
+        kinds: {
+          pickup: { runsPerPass: 1, timeToValidationMs: 0 },
+          drive: { runsPerPass: 2, timeToValidationMs: 0 },
+        },
+        defaults: [],
+      },
+      demand: { atLock: 0, toArrive: 1 },
+      waitLimitMs: HOUR,
+      driveDeadlineMs: HOUR,
+      admittedRuns: 0,
+    };
+    expect(validationHold(state, 0.25, "pickup", HOUR)).toContain(
+      "keep room for a drive",
+    );
   });
 
   test("counts every active run attributed to a pass before forecasting arrivals", () => {

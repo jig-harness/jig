@@ -251,11 +251,10 @@ export function forecastValidation(
   // One candidate run can use each currently idle slot immediately. Its
   // remaining runs must queue behind the work already at the lock, so they
   // consume the same waiting capacity as work from earlier passes.
-  const immediatelyAdmitted = Math.min(
-    ownRuns,
-    Math.max(0, concurrency - ahead),
-  );
-  const required = ahead + ownRuns - immediatelyAdmitted;
+  // Capacity measures service before the candidate's last acquisition. Once
+  // that run acquires a slot, its execution is not lock-wait time; subtract
+  // the slots that serve the work already ahead and the candidate together.
+  const required = Math.max(0, ahead + ownRuns - concurrency);
   return {
     ahead,
     capacity,

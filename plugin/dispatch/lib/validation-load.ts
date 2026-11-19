@@ -147,9 +147,19 @@ export function validationHold(
   if (own.fill === null || own.fill > line)
     return `waits on validation capacity: ${describe(state, own)}`;
   if (kind === "pickup") {
-    // Reserve a drive's runs in the pickup's window. The drive's shorter
-    // window still has to fit the demand already committed on this tick.
-    const reserved = forecast(state, "drive", deadline, state.admittedRuns);
+    // Reserve this pickup and a drive in the pickup's window. The independent
+    // drive-window check only judges work committed before this pickup, which
+    // has not yet been admitted by its caller.
+    // A run that can take an idle slot immediately does not delay a later
+    // drive. Reserve only this pickup's runs which must queue behind demand
+    // already forecast at its arrival.
+    const immediatelyAdmitted = Math.min(
+      own.ownRuns,
+      Math.max(0, state.measured.concurrency - own.ahead),
+    );
+    const committedRuns =
+      state.admittedRuns + own.ownRuns - immediatelyAdmitted;
+    const reserved = forecast(state, "drive", deadline, committedRuns);
     const drive = forecast(
       state,
       "drive",
