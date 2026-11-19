@@ -55,10 +55,13 @@ function deps(start: unknown[] = [REVIEW]) {
 }
 
 /** One tick's reading of thread `T`: what it reused, keeping `COMMENT` when it had to read. */
-async function tick(d: ParkThreadDeps): Promise<CommentLike[] | null> {
+async function tick(
+  d: ParkThreadDeps,
+  read: CommentLike = COMMENT,
+): Promise<CommentLike[] | null> {
   const kept = await keptParkThreads(SLUG, 7, undefined, d);
   const held = kept.held("T");
-  if (held === null) kept.keep("T", [COMMENT]);
+  if (held === null) kept.keep("T", [read]);
   kept.save();
   return held;
 }
@@ -101,19 +104,25 @@ describe("a parked thread's kept reading", () => {
     state.listing = [{ ...REVIEW, reactions: { total_count: 1 } }];
     expect(await tick(out)).toEqual([COMMENT]);
     let now = LISTING_SETTLE_MS;
-    for (const changed of [
-      [REVIEW, { ...REVIEW, id: 2 }],
-      [{ ...REVIEW, body: "Keep two." }],
-      [{ ...REVIEW, updated_at: "2026-10-30T23:00:00Z" }],
-      [{ ...REVIEW, author_association: "NONE" }],
-      [{ ...REVIEW, user: { login: "renamed" } }],
-    ]) {
+    for (const [changed, read] of [
+      [[REVIEW, { ...REVIEW, id: 2 }], COMMENT],
+      [[{ ...REVIEW, body: "Keep two." }], { ...COMMENT, body: "Keep two." }],
+      [[{ ...REVIEW, updated_at: "2026-10-30T23:00:00Z" }], COMMENT],
+      [
+        [{ ...REVIEW, author_association: "NONE" }],
+        { ...COMMENT, association: "NONE" },
+      ],
+      [
+        [{ ...REVIEW, user: { login: "renamed" } }],
+        { ...COMMENT, author: "renamed" },
+      ],
+    ] as [unknown[], CommentLike][]) {
       state.listing = changed;
-      expect(await tick(out)).toBeNull();
+      expect(await tick(out, read)).toBeNull();
       now += LISTING_SETTLE_MS;
       at(now);
-      expect(await tick(out)).toBeNull();
-      expect(await tick(out)).toEqual([COMMENT]);
+      expect(await tick(out, read)).toBeNull();
+      expect(await tick(out, read)).toEqual([read]);
     }
   });
 
@@ -257,6 +266,18 @@ describe("a parked thread's kept reading", () => {
     const { out } = deps([REVIEW, reply]);
     await settled(out);
     expect(await tick(out)).toBeNull();
+  });
+
+  it("is not kept when the thread read lags the listing on what an answer depends on", async () => {
+    for (const lagging of [
+      { ...REVIEW, body: "Keep two retries." },
+      { ...REVIEW, author_association: "NONE" },
+      { ...REVIEW, user: { login: "someone-else" } },
+    ]) {
+      const { out } = deps([lagging]);
+      await settled(out);
+      expect(await tick(out)).toBeNull();
+    }
   });
 
   it("stores a retired thread's removal when only another thread is reused", async () => {

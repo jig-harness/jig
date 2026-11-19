@@ -135,8 +135,17 @@ function recordOf(value: unknown): KeptRecord | null {
     : null;
 }
 
-/** Each review comment's URL, under the URL of the comment its thread starts with. */
-function threadUrlsIn(listing: readonly unknown[]): Map<string, Set<string>> {
+/** What an answer depends on of one review comment, as the listing shows it. */
+interface ListedFacts {
+  author: unknown;
+  association: unknown;
+  body: unknown;
+}
+
+/** Each review comment's facts by URL, under the URL of the comment its thread starts with. */
+function threadsIn(
+  listing: readonly unknown[],
+): Map<string, Map<string, ListedFacts>> {
   const rows = listing.filter(isRecord);
   const rootUrl = new Map<unknown, string>();
   for (const c of rows) {
@@ -144,29 +153,45 @@ function threadUrlsIn(listing: readonly unknown[]): Map<string, Set<string>> {
       rootUrl.set(c.id, c.html_url);
     }
   }
-  const threads = new Map<string, Set<string>>();
+  const threads = new Map<string, Map<string, ListedFacts>>();
   for (const c of rows) {
     if (typeof c.html_url !== "string") continue;
     const root =
       c.in_reply_to_id == null ? c.html_url : rootUrl.get(c.in_reply_to_id);
     if (root === undefined) continue;
-    const urls = threads.get(root) ?? new Set<string>();
-    urls.add(c.html_url);
-    threads.set(root, urls);
+    const comments = threads.get(root) ?? new Map<string, ListedFacts>();
+    comments.set(c.html_url, {
+      author: isRecord(c.user) ? c.user.login : null,
+      association: c.author_association,
+      body: c.body,
+    });
+    threads.set(root, comments);
   }
   return threads;
 }
 
-/** Whether the thread read holds every comment the listing shows for it, and no other. */
+/**
+ * Whether the thread read holds every comment the listing shows for it, and
+ * no other, with the author, association and body the listing shows for each:
+ * the two forge reads can lag one another, and an answer is read from the body.
+ */
 function confirms(
-  threads: Map<string, Set<string>>,
+  threads: Map<string, Map<string, ListedFacts>>,
   comments: readonly CommentLike[],
 ): boolean {
   const first = comments[0];
   if (first === undefined) return false;
   const expected = threads.get(first.url);
   if (expected === undefined || expected.size !== comments.length) return false;
-  return comments.every((c) => expected.has(c.url));
+  return comments.every((c) => {
+    const listed = expected.get(c.url);
+    return (
+      listed !== undefined &&
+      listed.author === c.author &&
+      listed.association === c.association &&
+      listed.body === c.body
+    );
+  });
 }
 
 /**
@@ -209,7 +234,7 @@ export async function keptParkThreads(
   const changedAt = record?.listing === listing ? record.changedAt : now;
   const threads: Record<string, KeptThread> = {};
   let changed = record?.listing !== listing;
-  const urlsOfThread = threadUrlsIn(listed.value);
+  const listedThreads = threadsIn(listed.value);
   return {
     held(thread) {
       const kept = standing[thread];
@@ -222,7 +247,7 @@ export async function keptParkThreads(
     },
     keep(thread, comments) {
       // A reading the listing does not confirm is not kept, so the next tick reads again.
-      if (confirms(urlsOfThread, comments)) {
+      if (confirms(listedThreads, comments)) {
         threads[thread] = { readAt: now, comments };
       } else {
         delete threads[thread];
