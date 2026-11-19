@@ -256,15 +256,8 @@ function staleWhy(placed: { why: string; stale?: { tree?: unknown } }): string {
     : `${placed.why}; the dispatcher refuses it, and a person recovers the work, where no open workspace on its host holds that tree`;
 }
 
-/** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
-function waitsOnOf(
-  ledger: Ledger,
-  r: DriveReads,
-  ctx: AskContext,
-  holder: Holder | "none",
-  base: PrFacts["base"],
-  merge: WaitsOn,
-): WaitsOn {
+/** The class the dispatcher's classifier places a ledger in, with a stop that names no cause settled by its records. */
+function placeLedger(ledger: Ledger, r: DriveReads, base: PrFacts["base"]) {
   const classification = classifyLedger(
     ledger,
     currentMs(),
@@ -301,6 +294,30 @@ function waitsOnOf(
       new Map([[r.pull.number, { ok: true, value: r.claims }]]),
       currentMs(),
     )[0] ?? classification;
+  return placed;
+}
+
+/** Whether a running launch answers for the drive: it says nothing of a park, a stale ledger or a silent one. */
+function runningLaunchSpeaks(holder: Holder | "none", cls: string): boolean {
+  return (
+    holder !== "none" &&
+    holder.process === "alive" &&
+    cls !== "parked" &&
+    cls !== "stale" &&
+    cls !== "silent"
+  );
+}
+
+/** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
+function waitsOnOf(
+  ledger: Ledger,
+  r: DriveReads,
+  ctx: AskContext,
+  holder: Holder | "none",
+  base: PrFacts["base"],
+  merge: WaitsOn,
+): WaitsOn {
+  const placed = placeLedger(ledger, r, base);
   const settled = conflictSettled(placed, ledger, r, ctx.host);
   if (settled !== null) return personWait("re-arm", settled);
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
@@ -315,14 +332,7 @@ function waitsOnOf(
   });
   if (onHold !== null) return onHold;
   // A running launch says nothing of a park nobody answered or of a ledger gone silent.
-  if (
-    holder !== "none" &&
-    holder.process === "alive" &&
-    placed.class !== "parked" &&
-    placed.class !== "stale" &&
-    placed.class !== "silent"
-  )
-    return "none";
+  if (runningLaunchSpeaks(holder, placed.class)) return "none";
   switch (placed.class) {
     case "driven":
       return "none";

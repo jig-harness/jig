@@ -376,6 +376,29 @@ async function rearmDrive(
     : refused(written.failure.reason);
 }
 
+/** The stage whose switch governs clearing a launch record of this action; none for another action. */
+function clearStageOf(action: string): "rearm" | "pickup" | "followup" | null {
+  // A re-arm or a takeover record is the rearm stage's.
+  if (action === "rearm" || action === "takeover") return "rearm";
+  return action === "pickup" || action === "followup" ? action : null;
+}
+
+/** Why a launch record of unknown process is not cleared: what bars it, or a session that still holds its target. */
+async function unknownClearRefusal(
+  inputs: StationInputs,
+  id: string,
+  state: Parameters<typeof clearBlock>[0],
+  record: Parameters<typeof joinedTo>[0],
+): Promise<string | null> {
+  const blocked = clearBlock(state);
+  if (blocked !== null) return `launch record ${id}: ${blocked}`;
+  return sessionHolds(
+    inputs,
+    joinedTo(record),
+    `the target of launch record ${id}`,
+  );
+}
+
 async function clearRecord(
   inputs: StationInputs,
   id: string,
@@ -386,24 +409,11 @@ async function clearRecord(
   const { state, record } = row;
   if ((state.kind !== "pending" && state.kind !== "unknown") || record === null)
     return refused(`launch record ${id} is ${state.kind}, not stuck`);
-  const blocked = state.kind === "unknown" ? clearBlock(state) : null;
-  if (blocked !== null) return refused(`launch record ${id}: ${blocked}`);
   if (state.kind === "unknown") {
-    const session = await sessionHolds(
-      inputs,
-      joinedTo(record),
-      `the target of launch record ${id}`,
-    );
-    if (session !== null) return refused(session);
+    const barred = await unknownClearRefusal(inputs, id, state, record);
+    if (barred !== null) return refused(barred);
   }
-  const { action } = record;
-  // A re-arm or a takeover record is the rearm stage's.
-  const stage =
-    action === "rearm" || action === "takeover"
-      ? "rearm"
-      : action === "pickup" || action === "followup"
-        ? action
-        : null;
+  const stage = clearStageOf(record.action);
   const off = stage === null ? null : stageOff(inputs, stage);
   if (off !== null) return refused(off);
   if (state.kind === "pending" && retryable(record))
