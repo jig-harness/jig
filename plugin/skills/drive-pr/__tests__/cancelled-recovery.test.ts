@@ -152,7 +152,8 @@ describe("a head read that fails after the re-run is claimed", () => {
       ...r,
       updatedAt: "2026-01-01T00:00:30Z",
     });
-    const runs = [settled(run(1)), settled(run(2, 11))];
+    const [first, second] = [settled(run(1)), settled(run(2, 11))];
+    const runs = [first, second];
     const f = fixture(parseMs("2026-01-01T00:10:00Z"));
     await recoverCancelled("5", "head", [job, other], runs, f.deps);
     f.advance(30_000);
@@ -161,8 +162,8 @@ describe("a head read that fails after the re-run is claimed", () => {
     expect(f.calls).toEqual([1]);
     // The first run's re-run is still pending: its attempt has not finished.
     const pending: WorkflowRun[] = [
-      { ...runs[0], attempt: 2, status: "in_progress", conclusion: null },
-      runs[1],
+      { ...first, attempt: 2, status: "in_progress", conclusion: null },
+      second,
     ];
     expect(
       await recoverCancelled("5", "head", [job, other], pending, f.deps),
