@@ -182,8 +182,6 @@ export function containsEntry(document: string, heading: string): boolean {
   return false;
 }
 
-const LIST_MARKER = /^\s*(?:[-*+]|\d+[.)])(?:\s|$)/;
-
 function operatorSteps(
   epic: Issue,
   vocabulary: ReconcileVocabulary,
@@ -196,10 +194,14 @@ function operatorSteps(
   const steps: string[] = [];
   let checklistDepth = 0;
   let found = false;
-  // An unchecked item owns every line up to the next top-level list marker,
-  // heading, or unindented paragraph after a blank line. Only paragraph text
-  // can be carried as one line; any other block inside it is refused.
+  // The scanner's list metadata decides what a line is: `depth` marks a line
+  // that opens an item, `boundary` a block that ends the item above it. An
+  // unchecked item owns the lines after it until a boundary, a heading or
+  // another item; after a blank line only lines indented to its content
+  // column stay in it. Only paragraph text can be carried as one line; any
+  // other block inside the item refuses the checklist.
   let open = false;
+  let column = 0;
   let afterBlank = false;
   for (const line of markdownLines(epic.description)) {
     if (line.kind === "heading" && !line.quoted && !line.inItem) {
@@ -215,35 +217,31 @@ function operatorSteps(
       continue;
     }
     if (!checklistDepth) continue;
-    const blank =
-      line.kind === "text" && !line.quoted && line.line.trim() === "";
-    if (blank) {
+    if (line.kind === "text" && !line.quoted && line.line.trim() === "") {
       afterBlank = true;
       continue;
     }
-    const indented = /^(?: {2,}|\t)/.test(line.line);
-    const step =
-      line.kind === "text" && !line.quoted && !indented
-        ? uncheckedListItem(line.line)
-        : undefined;
-    const sibling = !indented && LIST_MARKER.test(line.line);
-    const ownedByItem = open && !sibling && (indented || !afterBlank);
+    const wasAfterBlank = afterBlank;
     afterBlank = false;
-    if (step) {
-      steps.push(step);
-      open = true;
-    } else if (!ownedByItem) {
-      open = false;
-    } else if (
-      line.kind !== "text" ||
-      line.quoted ||
-      line.inItem ||
-      LIST_MARKER.test(line.line)
-    ) {
-      return null;
-    } else {
-      steps[steps.length - 1] += ` ${line.line.trim()}`;
+    if (line.depth !== undefined) {
+      const step = uncheckedListItem(line.line);
+      if (line.depth > 0 && (open || step)) return null;
+      if (step) steps.push(step);
+      open = step !== undefined;
+      column = line.contentColumn ?? 0;
+      continue;
     }
+    if (!open || line.boundary) {
+      open = false;
+      continue;
+    }
+    const indent = line.line.length - line.line.trimStart().length;
+    if (wasAfterBlank && indent < column) {
+      open = false;
+      continue;
+    }
+    if (line.kind !== "text" || line.quoted || line.inItem) return null;
+    steps[steps.length - 1] += ` ${line.line.trim()}`;
   }
   return found ? steps : null;
 }

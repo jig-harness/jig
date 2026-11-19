@@ -149,6 +149,29 @@ describe("epic sweep assessments", () => {
     ).toEqual(["Deploy", "Verify"]);
   });
 
+  test("reads tasks and block boundaries from the scanner's list metadata", async () => {
+    const manual = { ...epic, labels: ["manual-ops"] };
+    const row = (description: string) =>
+      assessEpic({ ...manual, description }, [done], scope, absent);
+    const head = "## Operator Checklist\n\n";
+    expect(
+      (await row(`${head}  - [ ] Verify production`)).operatorSteps,
+    ).toEqual(["Verify production"]);
+    expect((await row(`${head}- [x] Done\n   - [ ] Nested task`)).outcome).toBe(
+      "needs-operator-checklist",
+    );
+    expect(
+      (
+        await row(
+          `${head}- [ ] Deploy\n> Background information\n\n- [ ] Verify`,
+        )
+      ).operatorSteps,
+    ).toEqual(["Deploy", "Verify"]);
+    expect(
+      (await row(`${head}- [ ] Deploy\n  > nested note\n- [ ] Verify`)).outcome,
+    ).toBe("needs-operator-checklist");
+  });
+
   test("binds a reply to the proposal and supports exclusions", async () => {
     const row = await assessEpic(epic, [done], scope, absent);
     const proposal = createProposal([row, { ...row, epic: "#20" }]);
