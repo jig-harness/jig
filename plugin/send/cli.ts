@@ -212,7 +212,7 @@ async function planFor(
     case "rearm":
     case "hold":
     case "release":
-      return planLabel(ctx, request.verb, writesAs);
+      return planLabel(ctx, request.verb, writesAs, dryRun);
     case "answer":
       return planAnswerRequest(ctx, request, {
         login: login.value,

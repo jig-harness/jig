@@ -210,6 +210,7 @@ function needsPersonFacts(
   pr: number | null,
 ): StationFacts | null {
   const { evidence, target } = action;
+  if (evidence.rearmLockUnread === true) return null;
   const holder = text(evidence, "holder");
   const branch = text(evidence, "branch");
   if (holder !== null && branch !== null)
