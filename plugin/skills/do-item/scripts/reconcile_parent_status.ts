@@ -241,7 +241,12 @@ function childDisposition(
   // distinct Ops Pending state can establish that a check is owed by name.
   if (
     parentIsEpic &&
-    (tails.includes(labels.hitl) ||
+    (tails.some(
+      (label) =>
+        label === labels.hitl ||
+        label.startsWith(`${labels.hitl}:`) ||
+        label === labels.manualOps,
+    ) ||
       (nameTrustworthyForParkedCheck(child.state) &&
         stateNameEquals(child.state?.name, states.ops_pending) &&
         !stateNameEquals(child.state?.name, states.in_review) &&

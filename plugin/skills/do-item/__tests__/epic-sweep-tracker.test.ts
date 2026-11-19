@@ -100,9 +100,10 @@ function fixture() {
       tail.parent = patch.parent ? { identifier: patch.parent } : null;
       epic.children = [];
     },
-    async transition(key: string, state: "done") {
+    async transition(key: string, state: CanonicalState) {
       actions.push(`state ${key} ${state}`);
-      epic.state = done;
+      if (key === epic.identifier) epic.state = done;
+      if (key === tail.identifier && state === "backlog") tail.state = open;
     },
     stateName(state: CanonicalState) {
       return state === "done" ? "Done" : "Backlog";
@@ -141,6 +142,30 @@ describe("sweep tracker integration", () => {
     expect(tail.parent).toEqual({ identifier: "#2" });
     expect(notes.get("#1")?.[0]?.body).toContain(replyUrl);
     expect(notes.get("#1")?.[0]?.body).toEndWith("<!-- jig:epic-waiver -->");
+  });
+
+  test("moves ordinary tails to backlog before closing the epic", async () => {
+    const { tracker, epic, tail, actions } = fixture();
+    tail.state = { name: "In Progress", type: "started" };
+    await (
+      await prepareSweepTracker(tracker, {
+        epic,
+        personTails: [],
+        ordinaryTails: ["#3"],
+        operatorSteps: [],
+        replyUrl,
+      })
+    )();
+    expect(actions).toEqual([
+      "link #3 #1",
+      "comment #3",
+      "parent #3 null",
+      "state #3 backlog",
+      "comment #1",
+      "state #1 done",
+    ]);
+    expect(tail.parent).toBeNull();
+    expect(tail.state).toEqual(open);
   });
 
   test("missing person-checks configuration stops before writes", async () => {
@@ -247,23 +272,28 @@ describe("sweep tracker integration", () => {
     const { tracker, notes } = fixture();
     const marker = `<!-- jig:epic-sweep ${"a".repeat(64)} -->`;
     const proposed = fact(marker, { createdAt: "2026-01-01T00:00:00Z" });
-    const accepted = fact("accept all", { url: replyUrl });
+    const accepted = fact("accept all", {
+      url: replyUrl,
+      createdAt: "2026-01-02T00:00:00Z",
+      editedAt: "2026-01-04T00:00:00Z",
+    });
     notes.set("#1", [proposed, accepted]);
     expect(await readSweepReply(tracker, replyUrl)).toEqual({
       body: "accept all",
       precedingBodies: [marker],
     });
+    const later = `<!-- jig:epic-sweep ${"b".repeat(64)} -->`;
     notes.set("#1", [
       proposed,
       accepted,
-      fact(marker, {
-        createdAt: "2026-01-01T00:00:01Z",
-        editedAt: "2026-01-03T00:00:00Z",
+      fact(later, {
+        createdAt: "2026-01-03T00:00:00Z",
       }),
     ]);
-    await expect(readSweepReply(tracker, replyUrl)).rejects.toThrow(
-      "proposal's time",
-    );
+    expect(await readSweepReply(tracker, replyUrl)).toEqual({
+      body: "accept all",
+      precedingBodies: [marker, later],
+    });
     notes.set("#1", [
       proposed,
       accepted,

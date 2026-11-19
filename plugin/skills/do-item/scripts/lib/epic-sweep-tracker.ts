@@ -111,20 +111,17 @@ export async function readSweepReply(
     const marker = sweepMarkerOnLastLine(comment.body);
     if (!marker) continue;
     const created = parseMs(comment.createdAt);
-    if (created > postedAt) continue;
     const effectiveAt = parseMs(comment.editedAt ?? comment.createdAt);
     if (
       !Number.isFinite(created) ||
       !Number.isFinite(effectiveAt) ||
-      effectiveAt < created ||
-      effectiveAt >= acceptedAt ||
-      created === postedAt
-    ) {
+      effectiveAt < created
+    )
       throw new TrackerRequestError(
         "invalid",
         `Cannot establish the proposal's time relative to the reply (${comment.url ?? comment.id})`,
       );
-    }
+    if (effectiveAt >= acceptedAt) continue;
     preceding.push({ body: comment.body, effectiveAt, marker });
   }
   preceding.sort((left, right) => left.effectiveAt - right.effectiveAt);
@@ -265,6 +262,11 @@ function assertTailKind(
     );
 }
 
+function isInBacklog(tracker: SweepTracker, issue: Issue): boolean {
+  const backlog = tracker.stateName("backlog", issue.nativeType);
+  return backlog !== null && fold(issue.state.name) === fold(backlog);
+}
+
 /** The scope and already settled children still match the preflight read. */
 function sameEpicScope(before: Issue, current: Issue): boolean {
   if (
@@ -348,21 +350,23 @@ export async function prepareSweepTracker(
         `approved tail ${child} is unreadable`,
       );
     const parent = person ? (destination?.identifier ?? null) : null;
-    if (issue.parent?.identifier === key) {
-      if (!isClosed(issue.state)) {
-        assertTailKind(input, issue, person);
-        moves.push({ child, parent });
-      }
-      continue;
-    }
     if (
-      (issue.parent?.identifier ?? null) !== parent ||
-      !(await isRelated(tracker, child, key))
+      issue.parent?.identifier !== key &&
+      ((issue.parent?.identifier ?? null) !== parent ||
+        !(await isRelated(tracker, child, key)))
     )
       throw new TrackerRequestError(
         "invalid",
         `approved tail ${child} moved without the expected link or destination`,
       );
+    if (!isClosed(issue.state)) {
+      assertTailKind(input, issue, person);
+      if (
+        issue.parent?.identifier === key ||
+        (!person && !isInBacklog(tracker, issue))
+      )
+        moves.push({ child, parent });
+    }
   }
 
   return async () => {
@@ -411,25 +415,37 @@ export async function prepareSweepTracker(
     }
     for (const { child, parent } of moves) {
       const issue = await tracker.getIssue(child);
-      if (issue === null || issue.parent?.identifier !== key)
+      if (issue === null)
         throw new TrackerRequestError(
           "invalid",
           `approved tail ${child} changed parent during the sweep`,
         );
       if (isClosed(issue.state)) continue;
       assertTailKind(input, issue, parent !== null);
-      if (!(await isRelated(tracker, child, key)))
+      if (
+        issue.parent?.identifier === key &&
+        !(await isRelated(tracker, child, key))
+      )
         await tracker.relate(child, "related", key);
       const movedTo =
         destination !== null && parent === destination.identifier
           ? ` to the standing person-checks list ${epicRef(destination)}`
           : "";
-      await postOnce(
-        tracker,
-        child,
-        `Moved from epic ${epicRef(epic)}${movedTo} during its closure sweep.`,
-      );
-      await tracker.updateIssue(child, { parent });
+      if (issue.parent?.identifier === key) {
+        await postOnce(
+          tracker,
+          child,
+          `Moved from epic ${epicRef(epic)}${movedTo} during its closure sweep.`,
+        );
+        await tracker.updateIssue(child, { parent });
+      } else if ((issue.parent?.identifier ?? null) !== parent) {
+        throw new TrackerRequestError(
+          "invalid",
+          `approved tail ${child} changed parent during the sweep`,
+        );
+      }
+      if (parent === null && !isInBacklog(tracker, issue))
+        await tracker.transition(child, "backlog");
     }
     const after = await tracker.getIssue(key);
     if (

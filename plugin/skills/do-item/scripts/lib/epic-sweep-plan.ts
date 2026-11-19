@@ -153,13 +153,28 @@ export function readScopes(raw: unknown): Map<string, ScopeAssessment> {
 
 export type ReadEntry = (entry: Entry) => Promise<boolean>;
 
+function withoutClosingHashes(value: string): string {
+  const trimmed = value.trimEnd();
+  let hashes = trimmed.length;
+  while (hashes > 0 && trimmed[hashes - 1] === "#") hashes -= 1;
+  if (
+    hashes === trimmed.length ||
+    hashes === 0 ||
+    !/\s/.test(trimmed[hashes - 1] ?? "")
+  )
+    return trimmed;
+  let end = hashes;
+  while (end > 0 && /\s/.test(trimmed[end - 1] ?? "")) end -= 1;
+  return trimmed.slice(0, end);
+}
+
 export function containsEntry(document: string, heading: string): boolean {
   const key = headingKey(heading);
   const itemNumber = /^\d+\.(?=\s)/.exec(key)?.[0];
   for (const line of markdownLines(document)) {
     if (line.kind !== "heading" || line.quoted || line.inItem) continue;
     const text = headingKey(
-      (HEADING.exec(line.line)?.[2] ?? "").replace(/\s+#+\s*$/, ""),
+      withoutClosingHashes(HEADING.exec(line.line)?.[2] ?? ""),
     );
     if (text === key || (itemNumber && text.startsWith(`${itemNumber} `)))
       return true;
@@ -191,11 +206,25 @@ function operatorSteps(
         checklistDepth = 0;
       }
     } else if (checklistDepth && line.kind === "text") {
-      const step = /^\s*[-*+] \[ \]\s+(.+)$/.exec(line.line)?.[1]?.trim();
+      const step = uncheckedListItem(line.line);
       if (step) steps.push(step);
     }
   }
   return found ? steps : null;
+}
+
+function uncheckedListItem(line: string): string | undefined {
+  const text = line.trimStart();
+  let markerEnd = 0;
+  if ("-*+".includes(text[0] ?? "")) markerEnd = 1;
+  else {
+    while (/\d/.test(text[markerEnd] ?? "")) markerEnd += 1;
+    if (markerEnd === 0 || text[markerEnd] !== ".") return undefined;
+    markerEnd += 1;
+  }
+  if (!text.startsWith("[ ]", markerEnd + 1)) return undefined;
+  const step = text.slice(markerEnd + 4).trim();
+  return step === "" ? undefined : step;
 }
 
 export async function assessEpic(
@@ -290,7 +319,10 @@ export function acceptedRows(
     );
   }
   const reply = body.trim();
-  const exclusions = /^all except\s+(.+)$/i.exec(reply)?.[1];
+  const prefix = "all except ";
+  const exclusions = reply.toLowerCase().startsWith(prefix)
+    ? reply.slice(prefix.length).trim()
+    : undefined;
   const candidates = proposal.rows.filter(isCandidate);
   if (reply.toLowerCase() === "accept all") return candidates;
   if (!exclusions)
@@ -298,7 +330,7 @@ export function acceptedRows(
       'Reply must be "accept all" or "all except <keys>"',
     );
   const excluded = new Set(
-    exclusions.split(/\s*,\s*|\s+/).map((key) => key.toUpperCase()),
+    exclusions.split(/[\s,]+/).map((key) => key.toUpperCase()),
   );
   if (
     [...excluded].some((key) => !candidates.some((row) => row.epic === key))

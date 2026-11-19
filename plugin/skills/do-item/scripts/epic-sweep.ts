@@ -81,6 +81,15 @@ async function committedEntries(
       `Cannot read ${tracking}`,
     ).trim();
     for (const path of paths) {
+      const exists = await git(
+        ["cat-file", "-e", `${commit}:${path}`],
+        options,
+      );
+      if (exists.code === 1) continue;
+      checkedGit(
+        exists,
+        `Cannot establish whether ${path} exists on ${remote}/${branch}`,
+      );
       const contents = checkedGit(
         await git(["show", `${commit}:${path}`], options),
         `Cannot read ${path} on ${remote}/${branch}`,

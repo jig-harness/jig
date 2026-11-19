@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   DEFAULT_VOCABULARY,
+  epicChildDisposition,
   isReconcileInputShape,
   positiveIntEnv,
   type ReconcileChildInput,
@@ -275,6 +276,32 @@ describe("reconcileParentStatus", () => {
         });
         expect(r.verdict).toBe("extract_and_close_eligible");
       }
+    });
+
+    it("keeps person-owned tail roles separate from ordinary follow-ups", () => {
+      for (const tail of [
+        "hitl",
+        "hitl:legal",
+        "hitl:tactical",
+        "manual-ops",
+      ]) {
+        expect(
+          epicChildDisposition(
+            child("Todo", {
+              type: "unstarted",
+              labels: [tail],
+            }),
+          ),
+        ).toBe("person-check");
+      }
+      expect(
+        epicChildDisposition(
+          child("Todo", {
+            type: "unstarted",
+            labels: ["pr-followup"],
+          }),
+        ),
+      ).toBe("extractable-tail");
     });
 
     it("is NOT eligible when only some incomplete children carry a tail label", () => {
