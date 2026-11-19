@@ -28,6 +28,7 @@ import type {
   LineQueued,
 } from "../../dispatch/lib/dashboard-contract.ts";
 import {
+  type PersonPickupHold,
   personPickupHolds,
   pickupHoldReason,
 } from "../../dispatch/lib/person-pickup-holds.ts";
@@ -305,6 +306,62 @@ export async function readPickup(
   return { answer: await issueAnswer(ctx, tracker, issue), issue };
 }
 
+/** The item's state with the person's hold on it, and the hold's own reading: why it did not read, when it did not. */
+function withPersonHold(
+  ctx: AskContext,
+  raw: { state: string; detail: string },
+) {
+  const holds =
+    ctx.dispatcher === null
+      ? null
+      : personPickupHolds(ctx.address.repo, ctx.dispatcher);
+  const personHold = holds?.ok
+    ? holds.value.find((hold) => hold.item === ctx.address.key)
+    : undefined;
+  const holdUnread = holds?.ok === false ? holds.failure.reason : null;
+  const holdDetail =
+    personHold === undefined ? holdUnread : pickupHoldReason(personHold);
+  return {
+    personHold,
+    holdUnread,
+    state: personHold === undefined ? raw.state : "held",
+    detail: holdDetail === null ? raw.detail : `${raw.detail}; ${holdDetail}`,
+  };
+}
+
+/** What a pickup waits on: the person's hold when nothing else holds it, else what the line says. */
+function pickupWaitsOn(
+  ctx: AskContext,
+  w: {
+    personHold: PersonPickupHold | undefined;
+    holdUnread: string | null;
+    state: string;
+    needs: LineNeed[];
+    holding: ReturnType<typeof holdingRecord>;
+    claim: ReturnType<typeof claimHolder>;
+    queued: LineQueued | undefined;
+  },
+) {
+  if (
+    w.personHold !== undefined &&
+    w.needs.length === 0 &&
+    w.holding === null &&
+    w.claim === "none"
+  )
+    return personWait(
+      "release the pickup hold",
+      pickupHoldReason(w.personHold),
+      { people: [w.personHold.by] },
+    );
+  return waitsOnOf(
+    w.holdUnread === null ? w.state : "unknown",
+    w.needs,
+    ctx,
+    w.holding !== null,
+    w.queued,
+  );
+}
+
 /** The answer for an item the tracker read. */
 async function issueAnswer(
   ctx: AskContext,
@@ -323,40 +380,22 @@ async function issueAnswer(
   const member = await membershipOf(ctx, tracker);
   const needs = currentNeeds(needsOf(ctx), issue, tracker.identity, member);
   const raw = stateOf(issue, tracker.identity, needs, member);
-  const holds =
-    ctx.dispatcher === null
-      ? null
-      : personPickupHolds(address.repo, ctx.dispatcher);
-  const personHold = holds?.ok
-    ? holds.value.find((hold) => hold.item === address.key)
-    : undefined;
-  const holdUnread = holds?.ok === false ? holds.failure.reason : null;
-  const state = personHold === undefined ? raw.state : "held";
-  const holdDetail =
-    personHold === undefined ? holdUnread : pickupHoldReason(personHold);
-  const detail =
-    holdDetail === null ? raw.detail : `${raw.detail}; ${holdDetail}`;
+  const { personHold, holdUnread, state, detail } = withPersonHold(ctx, raw);
   const holding = holdingRecord(local.records);
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
   const last = lastEnded(local.rows, ["pickup"]);
   // The newest tick's overlap reason and footprint note hold only while the item still waits to be picked up.
   const queued = state === "assigned" ? queuedOf(ctx) : undefined;
   const claim = claimHolder(raw.state, issue);
-  const waitsOn =
-    personHold !== undefined &&
-    needs.length === 0 &&
-    holding === null &&
-    claim === "none"
-      ? personWait("release the pickup hold", pickupHoldReason(personHold), {
-          people: [personHold.by],
-        })
-      : waitsOnOf(
-          holdUnread === null ? state : "unknown",
-          needs,
-          ctx,
-          holding !== null,
-          queued,
-        );
+  const waitsOn = pickupWaitsOn(ctx, {
+    personHold,
+    holdUnread,
+    state,
+    needs,
+    holding,
+    claim,
+    queued,
+  });
   return {
     found: true,
     title: issue.title,

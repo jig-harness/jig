@@ -31,6 +31,10 @@ import {
 } from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import {
+  type QueuedFields,
+  unplacedQueueFields,
+} from "./person-pickup-holds.ts";
 import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
@@ -544,12 +548,9 @@ function needsOf(
   return [...planned, ...refused];
 }
 
-type QueuedDetail = "stale" | "assignedBy" | "hold" | "pickupHold" | "launch";
-
 function queued(
   view: RepoView,
-  fields: Pick<LineQueued, "source" | "group" | "target" | "why"> &
-    Partial<Pick<LineQueued, QueuedDetail>>,
+  fields: QueuedFields,
   evidence: Evidence = {},
 ): LineQueued {
   const pr = prNumber(fields.target);
@@ -714,15 +715,7 @@ function queueOf(view: RepoView): LineQueued[] {
     .map((u) => entry("held", "held", u.target, u.reason));
   const refused = unplaced
     .filter((u) => u.record === "tracker")
-    .map((u) =>
-      queued(view, {
-        source: u.pickupHold === undefined ? "assigned" : "held",
-        group: u.pickupHold === undefined ? "never" : "held",
-        target: u.target,
-        why: u.reason,
-        ...(u.pickupHold === undefined ? {} : { pickupHold: u.pickupHold }),
-      }),
-    );
+    .map((u) => queued(view, unplacedQueueFields(u)));
   return [planned, replayed, serial, undecided, labelled, refused].flat();
 }
 

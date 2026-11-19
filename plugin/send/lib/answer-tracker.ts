@@ -69,6 +69,44 @@ export interface TrackerHere {
   keys?: TrackerKeyForm;
 }
 
+/** What the repository's default branch says of its tracker: the settings, the tracker's configuration and where they were read; why not otherwise. */
+export async function readTrackerConfig(
+  ctx: AskContext,
+  what: string,
+): Promise<
+  Outcome<
+    {
+      where: string;
+      config: ReturnType<typeof trackerConfigOf>;
+      section: Extract<
+        ReturnType<typeof readSection>,
+        { ok: true }
+      >["value"]["section"];
+    },
+    "refused"
+  >
+> {
+  const { repo } = ctx.address;
+  const where = `${OVERLAY_RELPATH} on ${repo}'s default branch`;
+  const text = await readDefaultConfig(ctx.reading, repo);
+  if (!text.ok)
+    return refused(
+      `${what} ${repo} cannot be told: ${where} did not read (${text.failure.reason})`,
+    );
+  const read = readSection(text.value, where);
+  if (!read.ok)
+    return failed(
+      "refused",
+      `${where} does not read: ${read.failure.reason}`,
+      read.failure.cause,
+    );
+  const { values, section } = read.value;
+  const config = attempt("refused", `${where} does not read`, () =>
+    trackerConfigOf(values, repo),
+  );
+  return config.ok ? ok({ where, config: config.value, section }) : config;
+}
+
 /**
  * The tracker of the repository, opened from the settings the tick reads:
  * the configuration file its default branch holds on the forge, never the
@@ -83,31 +121,19 @@ export async function openTrackerHere(
   if (checkout === null)
     return refused("no checkout of the repository is known here");
   const { repo } = ctx.address;
-  const where = `${OVERLAY_RELPATH} on ${repo}'s default branch`;
-  const text = await readDefaultConfig(ctx.reading, repo);
-  if (!text.ok)
-    return refused(
-      `the tracker and factory identity of ${repo} cannot be told: ${where} did not read (${text.failure.reason})`,
-    );
-  const read = readSection(text.value, where);
-  if (!read.ok)
-    return failed(
-      "refused",
-      `${where} does not read: ${read.failure.reason}`,
-      read.failure.cause,
-    );
-  const { values, section } = read.value;
-  const config = attempt("refused", `${where} does not read`, () =>
-    trackerConfigOf(values, repo),
+  const read = await readTrackerConfig(
+    ctx,
+    "the tracker and factory identity of",
   );
-  if (!config.ok) return config;
-  const keys = issueKeysOf(config.value);
+  if (!read.ok) return read;
+  const { where, config, section } = read.value;
+  const keys = issueKeysOf(config);
   if (keys === null)
     return refused(
       `${where} names no tracker team, so its item keys have no form`,
     );
   const opened = attempt("refused", "the tracker does not open here", () =>
-    openTracker(config.value, checkout),
+    openTracker(config, checkout),
   );
   return opened.ok
     ? ok({

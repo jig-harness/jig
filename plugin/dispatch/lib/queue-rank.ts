@@ -86,3 +86,14 @@ export function compareQueue(a: QueueItem, b: QueueItem): number {
     if (values[key] && Number.isFinite(values[key])) return values[key];
   return 0;
 }
+
+/** Whether a walk met the item already, or a person holds it. */
+export function seenOrHeld(
+  issue: { identifier: string },
+  policy: QueueHoldPolicy,
+  seen: ReadonlySet<string>,
+): boolean {
+  return (
+    seen.has(issue.identifier) || policy.personHold?.(issue.identifier) != null
+  );
+}

@@ -188,6 +188,29 @@ function isPickupHold(station: string, verb: string): boolean {
   return station === "pickup" && (verb === "hold" || verb === "release");
 }
 
+/** The plan of a pick-up's hold or release, or null for any other address or verb. */
+function planPickupHoldHere(
+  resolved: ResolvedAddress,
+  request: Request,
+  as: string | undefined,
+): Promise<Planned> | null {
+  if (!isPickupHold(resolved.address.station, request.verb)) return null;
+  const verb = request.verb === "hold" ? "hold" : "release";
+  const ctx = contextFor(resolved, reading(), null);
+  return planPickupHold(ctx, resolved.checkout, verb, as);
+}
+
+/** The plan of an assignment: the checkout it is written through, else why it cannot be. */
+async function planAssignHere(
+  resolved: ResolvedAddress,
+  as: string | undefined,
+): Promise<Planned> {
+  const ctx = contextFor(resolved, reading(), null);
+  return resolved.checkout === null
+    ? refused("no checkout of the repository is known here")
+    : planAssign(ctx, resolved.checkout, as);
+}
+
 /** The plan of `request` to the resolved address, or why it is refused. */
 async function planFor(
   resolved: ResolvedAddress,
@@ -197,22 +220,9 @@ async function planFor(
   dryRun: boolean,
 ): Promise<Planned> {
   const r = reading();
-  if (request.verb === "assign") {
-    const ctx = contextFor(resolved, r, null);
-    return resolved.checkout === null
-      ? refused("no checkout of the repository is known here")
-      : planAssign(ctx, resolved.checkout, as);
-  }
-  if (
-    resolved.address.station === "pickup" &&
-    (request.verb === "hold" || request.verb === "release")
-  )
-    return planPickupHold(
-      contextFor(resolved, r, null),
-      resolved.checkout,
-      request.verb,
-      as,
-    );
+  if (request.verb === "assign") return planAssignHere(resolved, as);
+  const held = planPickupHoldHere(resolved, request, as);
+  if (held !== null) return held;
   if (request.verb === "answer" && !request.all) {
     const first = await planPickupAnswer(resolved, strict, request, as, dryRun);
     if ("plan" in first) return first.plan;

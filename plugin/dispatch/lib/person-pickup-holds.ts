@@ -1,6 +1,7 @@
 /** A person's hold on one tracker item, stored on the host that dispatches it. */
 import { attempt, failed, ok } from "../../shared/outcome.ts";
 import { currentIso } from "../../shared/time.ts";
+import type { LineQueued } from "./dashboard-contract.ts";
 import type { LaunchRecord } from "./launches.ts";
 import { readOnlyStateDb, stateDb, statePath } from "./state.ts";
 
@@ -10,6 +11,30 @@ export interface PersonPickupHold {
   at: string;
   title: string;
   url: string | null;
+}
+
+/** What a queue entry is built from. */
+export type QueuedFields = Pick<
+  LineQueued,
+  "source" | "group" | "target" | "why"
+> &
+  Partial<
+    Pick<LineQueued, "stale" | "assignedBy" | "hold" | "pickupHold" | "launch">
+  >;
+
+/** Where the line places a tracker item the tick left unplaced: held when a person's hold did it, else refused. */
+export function unplacedQueueFields(u: {
+  target: string;
+  reason: string;
+  pickupHold?: LineQueued["pickupHold"];
+}): QueuedFields {
+  const placed: QueuedFields =
+    u.pickupHold === undefined
+      ? { source: "assigned", group: "never", target: u.target, why: u.reason }
+      : { source: "held", group: "held", target: u.target, why: u.reason };
+  return u.pickupHold === undefined
+    ? placed
+    : { ...placed, pickupHold: u.pickupHold };
 }
 
 export function pickupHoldReason(hold: PersonPickupHold): string {

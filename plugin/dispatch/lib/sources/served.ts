@@ -81,6 +81,7 @@ import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-pl
 import type { ServedPerson } from "../serve-config.ts";
 import { pickupReads, type PickupReads } from "../pickup-reads.ts";
 import { PERSON_HOLD, queueHold, type QueueHoldPolicy } from "../queue-rank.ts";
+import { seenOrHeld } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
@@ -622,8 +623,7 @@ function leavesNode(
 ): boolean {
   const walkedEpic = issue.isEpic && issue.hasOpenChildren && !closed(issue);
   if (
-    seen.has(issue.identifier) ||
-    options.personHold?.(issue.identifier) != null ||
+    seenOrHeld(issue, options, seen) ||
     (!readyForWalk(issue, tracker, options) && !walkedEpic)
   )
     return true;
