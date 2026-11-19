@@ -16,6 +16,14 @@ interface DriverRuntime {
    */
   stallFinish: { state: string; reason: string } | null;
   /**
+   * When the forge's rate limit resets, for a stop on it
+   * (`FORGE_RATE_LIMITED`): recorded on its `stop` event as `until`, which
+   * the dispatcher re-drives it after. `null` for any other stop.
+   */
+  stopLimitedUntil: string | null;
+  /** The round loop's waits for the forge's limit to reset since a status probe last read the pull request (`forge-limit-stop.ts`). */
+  forgeLimitWaits: number;
+  /**
    * The round of the last pass this driver started, review or repair, which
    * every pass reads as `DRIVE_PR_ROUND`; `null` before the first. The
    * closing report reads only the round report stamped with it
@@ -96,6 +104,8 @@ interface DriverRuntime {
 export const driverRuntime: DriverRuntime = {
   stopLeftWork: null,
   stallFinish: null,
+  stopLimitedUntil: null,
+  forgeLimitWaits: 0,
   passRound: null,
   passStartedAt: null,
   compromised: "",

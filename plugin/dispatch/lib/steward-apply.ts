@@ -33,6 +33,7 @@ async function replayResumes(
   state: ApplyState,
   observation: RepoObservation,
   records: KeptStewardRecord[],
+  serialUndecided: string | null,
 ): Promise<void> {
   for (const pending of replayable(state, observation.opened.repo.slug, [
     "pickup",
@@ -53,6 +54,7 @@ async function replayResumes(
         witness.id,
         witness.value,
         pending,
+        serialUndecided,
       );
   }
 }
@@ -182,6 +184,7 @@ async function applyOne(
   observation: RepoObservation,
   kept: KeptStewardRecord,
   records: KeptStewardRecord[],
+  serialUndecided: string | null,
 ): Promise<void> {
   if (kept.value.kind === "order") return;
   if (kept.effect === "refused") return;
@@ -213,7 +216,14 @@ async function applyOne(
     return applyNeed(state, observation, kept, kept.value, digest.value);
   switch (kept.value.kind) {
     case "resume":
-      return resumeSteward(state, observation, kept.id, kept.value);
+      return resumeSteward(
+        state,
+        observation,
+        kept.id,
+        kept.value,
+        undefined,
+        serialUndecided,
+      );
     case "facet":
       return applyFacet(state, observation, kept, kept.value, digest.value);
     case "cause":
@@ -233,6 +243,7 @@ async function applyOne(
 export async function applyStewardRecords(
   state: ApplyState,
   observation: RepoObservation,
+  serialUndecided: string | null = null,
 ): Promise<void> {
   const { opened } = observation;
   if (
@@ -242,8 +253,9 @@ export async function applyStewardRecords(
   )
     return;
   const records = stewardRecords(opened.repo.slug, state.root);
-  await replayResumes(state, observation, records);
-  for (const kept of records) await applyOne(state, observation, kept, records);
+  await replayResumes(state, observation, records, serialUndecided);
+  for (const kept of records)
+    await applyOne(state, observation, kept, records, serialUndecided);
   opened.report.steward = {
     status: "previous records checked",
     records: records.length,

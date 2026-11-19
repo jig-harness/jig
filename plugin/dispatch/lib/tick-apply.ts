@@ -12,6 +12,7 @@
  * the deadline and the preflight's answers (preflight.ts), is built here
  * once per tick.
  */
+import { serialUndecided } from "./serial-pickups.ts";
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
@@ -22,6 +23,7 @@ import {
 } from "./actions/drive.ts";
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
+import { retireRearmRequests } from "./actions/retire-rearm.ts";
 import { applyPickups } from "./actions/pickup.ts";
 import { newPreflight, trackerTargetOf } from "./preflight.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
@@ -156,7 +158,13 @@ export async function actObserved(
   // The tracker stages of this repository, a steward's resume of one included, are checked against its tracker.
   const tracker = trackerTargetOf(opened, observation.tracked);
   if (tracker !== null) apply.preflight?.targets.set(repo.slug, tracker);
-  await hooks.guard("steward", () => applyStewardRecords(apply, observation));
+  // A steward resume can launch a pickup before the ordinary pickup stage, so
+  // it meets the same unreadable-serialization boundary; its other records
+  // (follow-ups, needs, facets, causes, re-arms) do not launch pickups.
+  const undecided = serialUndecided(observation);
+  await hooks.guard("steward", () =>
+    applyStewardRecords(apply, observation, undecided),
+  );
   const book = bookOf(context, repo.slug, report);
   await endOwnClaims(ctx, report, {
     claims,
@@ -188,9 +196,11 @@ export async function actObserved(
     tracked: observation.tracked,
     login: forge.login,
     merged: forge.merged,
+    drives: observation.drives,
     join: observation.join,
     sessions: observation.sessions,
     rerunsHeld: context.rerunsHeld ?? null,
+    serialUndecided: serialUndecided(observation),
     shared: ctx,
     unplaced: withheldFromReplay(afterWait(context, observation.serialized)),
     book,
@@ -268,9 +278,12 @@ interface ApplyInputs {
   tracked: Tracked;
   login: string | null;
   merged: MarkedPr[];
+  drives: DrivenPr[];
   join: JoinTargets;
   sessions: SessionsReport;
   rerunsHeld: string | null;
+  /** Why serialization could not be decided this tick; `null` when it was. */
+  serialUndecided: string | null;
   shared: SharedContext;
   /** Pull requests whose place in a serialized group this tick cannot tell, by number and why. */
   unplaced: ReadonlyMap<number, string>;
@@ -365,6 +378,7 @@ async function applyStages(
               : { servedPolicy: tracked.servedPolicy }),
             sessions: fresh,
             rerunsHeld: inputs.rerunsHeld,
+            serialUndecided: inputs.serialUndecided,
           });
       },
     ],
@@ -422,6 +436,17 @@ async function applyStages(
       await applySteers(apply, repo.slug, report, inputs.book, observed);
     else retireSteers(report, inputs.book, observed);
   });
+  if (labels !== null && inputs.shared.owner && enabled.has("rearm"))
+    await guard("rearm", () =>
+      retireRearmRequests(
+        apply,
+        repo.slug,
+        report,
+        labels,
+        inputs.drives,
+        login,
+      ),
+    );
   if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.

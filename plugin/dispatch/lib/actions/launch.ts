@@ -9,18 +9,19 @@
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
   accountWeightBlock,
-  admitRearm,
-  admitTakeover,
   checkIdentity,
   type CodexOptIn,
   type IdentityCheck,
   notAdmitted,
   refreshWalls,
+  holdingRecords,
+  sharesSlot as takeoverShares,
   type Slots,
   slotsOf,
 } from "../accounts.ts";
+import { serves } from "../account-stages.ts";
+import { admission, takeoverMoves } from "./admission.ts";
 import {
-  holds,
   isInteractive,
   type LaunchAttempt,
   type LaunchRecord,
@@ -408,10 +409,14 @@ async function callLaunch(
   return attempt;
 }
 
-/** Whether a takeover shares the slot of the record it replaces, which still holds it. */
+/** Whether a takeover shares the slot of the record it replaces, which still holds it on the same account. */
 function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
-  const replaced = state.records.find((r) => r.record.id === record.replaces);
-  return replaced !== undefined && holds(replaced.state);
+  if (record.replaces === null) return false;
+  return takeoverShares(
+    state.table.map((s) => s.account),
+    holdingRecords(state.records),
+    record,
+  );
 }
 
 /** A lost earlier answer might have started the wrapper, so only known failures release it. */
@@ -711,6 +716,7 @@ async function preflightHolds(
     accounts.filter(
       (a) =>
         !never.has(a.name) &&
+        serves(a, action.stage) &&
         state.table.some(
           (s) => s.account.name === a.name && (s.weight.configured ?? 0) > 0,
         ),
@@ -723,37 +729,6 @@ async function preflightHolds(
     },
   );
   return { held, ...(deferred ? { waitsOn: "tick-deadline" as const } : {}) };
-}
-
-function admission(
-  state: ApplyState,
-  action: Action,
-  excluded: ReadonlySet<string>,
-  pickupDeadlineSec: number,
-) {
-  const codex = state.codexOptIn;
-  // A pickup is a headless pass under its own deadline (`dispatch.pickup_deadline`).
-  if (action.stage === "pickup" || action.stage === "steward")
-    return admitRearm(
-      state.table,
-      state.last,
-      { kind: "pass", deadlineSec: pickupDeadlineSec, codex },
-      excluded,
-      state.records,
-    );
-  // A follow-up is a headless pass, admitted as a drive's pass is: under the pass deadline it runs under.
-  if (action.takeover === undefined)
-    return admitRearm(
-      state.table,
-      state.last,
-      { kind: "pass", deadlineSec: state.passDeadlineSec, codex },
-      excluded,
-      state.records,
-    );
-  const replaced = state.records.find((r) => r.record.id === action.takeover);
-  return replaced === undefined
-    ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
 }
 
 /** The kind of launch whose reservation an action counts. */
@@ -784,7 +759,8 @@ function byLoad(
  * `load.enforce` a launch a gauge refuses waits, and otherwise it starts and
  * is reported as one the load factor would hold. A re-arm or a pickup tries the next account when one
  * fails its identity check, so a stale login cannot starve the others; a
- * takeover has only its own account. A pickup is admitted as a headless
+ * takeover has only its own account, unless that account does not serve its
+ * stage and it is admitted as a new launch (`admission.ts`). A pickup is admitted as a headless
  * pass under `pickupDeadlineSec`, the repository's `dispatch.pickup_deadline`.
  */
 export async function admitAccount(
@@ -826,7 +802,8 @@ export async function admitAccount(
     if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    if (action.takeover !== undefined) return { outcome: refusal };
+    if (action.takeover !== undefined && !takeoverMoves(state, action))
+      return { outcome: refusal };
     failed.add(name);
   }
 }

@@ -32,7 +32,7 @@ import { listCommentsKept } from "../../shared/records/comment-pages.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { stateRoot } from "../receipts.ts";
 import { readMarkers } from "./followup-marker.ts";
-import { pullRequestLabels } from "./forge.ts";
+import { openPullRequest, pullRequestLabels } from "./forge.ts";
 import { holding } from "./holding.ts";
 import { commandLabel, hasCommand } from "./labels.ts";
 import { holdsItem } from "./launch-pickups.ts";
@@ -45,6 +45,8 @@ import {
 import type { TickBound } from "./sources/bounded.ts";
 import { rerunReleaseGates } from "./release-gates.ts";
 import { recordReleasesTaken } from "./release-needs.ts";
+import { snapshotFromListing } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { rearmableStop, writeRearmBinding } from "./rearm-binding.ts";
 import { writeCommandLabel } from "./requests.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
@@ -370,9 +372,28 @@ async function rearmDrive(
     return refused(
       `${inputs.repo.slug} has its dispatch labels off, so the rearm label cannot carry the re-arm; re-arm the drive by hand`,
     );
-  const held = await heldBy(inputs, pr);
-  if (held !== null) return refused(held);
+  const slug = inputs.repo.slug;
+  const target = { repo: slug, number: pr };
+  const pull = await openPullRequest(slug, pr, { labels: true });
+  if (!pull.ok) return refused(pull.failure.reason);
+  if (hasCommand(labels, pull.value.labels, "hold"))
+    return refused(`a person's hold label is on PR #${pr}`);
   const label = commandLabel(labels, "rearm");
+  if (hasCommand(labels, pull.value.labels, "rearm"))
+    return refused(`PR #${pr} already carries ${label}`);
+  const comments = await listCommentsKept(target, { timeoutSec: 60 });
+  if (!comments.ok) return refused(comments.failure.reason);
+  const { canonical } = snapshotFromListing(comments.value, inputs.login);
+  if (
+    canonical?.parsed.kind !== "ledger" ||
+    !rearmableStop(canonical.parsed.ledger)
+  )
+    return refused(`PR #${pr} has no eligible stopped drive to re-arm`);
+  const bound = await writeRearmBinding(target, inputs.login, label, {
+    comment: canonical.comment.id,
+    generation: canonical.parsed.ledger.generation,
+  });
+  if (!bound.ok) return bound;
   const written = await writeCommandLabel(inputs.repo.slug, pr, label, true);
   return written.ok
     ? ok(`added ${label} to PR #${pr}; the next tick re-arms its drive`)

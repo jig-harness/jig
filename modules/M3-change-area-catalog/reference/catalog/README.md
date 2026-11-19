@@ -35,7 +35,7 @@ Each area:
 | `tracker` | optional | `{ labels?: [..], flags?: [..] }` — tracker labels and flags to derive, whichever tracker the repository uses; `linear` is its older spelling, and an area declares one of the two |
 | `labels` | optional | the area's own labels, a list of text, for tooling that reads them |
 | `agent` | optional | owning-agent label |
-| `serialize` | optional | `true` or `false` (the default): the pull requests that touch the area conflict with each other when two move at once, so the tool that drives pull requests unattended drives them one at a time (read from the seeds; see [§ Seeds vs. closure](#seeds-vs-closure--which-side-each-projection-reads)) |
+| `serialize` | optional | `true` or `false` (the default): the pull requests that touch the area conflict with each other when two move at once, so the tool that drives pull requests unattended drives them one at a time, and starts no new work predicted to touch the area while other work does (read from the seeds; see [§ Seeds vs. closure](#seeds-vs-closure--which-side-each-projection-reads)) |
 | `validation` | optional | `{ profile?, ownTests?, notes? }`, plus the fields a [composer](../../../../GLOSSARY.md) declares — `profile` names one of `profiles` (absent: the deepest), and `ownTests` is the area's own test command; see [§ Agent gate depth](#agent-gate-depth-validation) |
 | `generated` | optional | a list of `{ outputs: [..] (≥1), source: [..] (globs, ≥1), command: "<regenerate command>", check: "<freshness check>", notes? }` — the derived files this area owns, in [M2's inventory format](../../../M2-generated-artifact-freshness/reference/inventory/README.md); see [§ Generated-output coupling](#generated-output-coupling-generated) |
 

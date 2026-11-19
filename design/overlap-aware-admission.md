@@ -24,8 +24,9 @@ This is the design of [plan.md](plan.md) item 57. The tracker footprint
 record, its adapter interface, the pickup, scout and filing writers, the
 merge evidence for conflict edges, the changed-files read of every open pull
 request, the conflict rates with the tick's daily refresh and their reader,
-and overlap reported (each planned pickup's cost, tier, bound and reason, and
-`overlap_waits`, in the receipt, the dashboard and `jig ask`) are built;
+overlap reported (each planned pickup's cost, tier, bound and reason, and
+`overlap_waits`, in the receipt, the dashboard and `jig ask`), and serialized
+areas holding pickups are built;
 admission, the planner's writer and the remaining build steps are open.
 It builds on the change that lets a plan-less epic's ready children start
 in parallel up to a width per epic (#1178), and on that change's decision
@@ -311,8 +312,8 @@ The cost and the bound are weighed. These holds are not, and they apply
 before either:
 
 - **A conflict edge** that an epic's execution plan sets between two steps.
-- **A serialized area** of the change-area catalog. Today it holds only the
-  drives of the pull requests in the area. It also holds a pickup whose
+- **A serialized area** of the change-area catalog. It holds the drives of
+  the pull requests in the area, and a pickup whose
   footprint reaches the area while another piece of work in flight touches
   the area, reported as `held: serialized behind #N in <area>`. A footprint
   reaches the area when a file of it lies in the area, or when a directory
@@ -329,7 +330,16 @@ before either:
   an area is held behind them, reported as
   `held: serialized behind #N in <area>, #N's footprint unknown`. The
   occupation ends when #N's footprint is known, or when #N's pull request
-  merges or closes, or the pickup ends.
+  merges or closes, or the pickup ends. A batch whose footprint is partly
+  unknown is read as unknown on either side. The work in flight includes
+  each pickup the tick plans ahead of the candidate, in rank order, and does
+  not hold, since the tick may start it: two pickups in one area never start
+  in one tick. A pull request that links the candidate's own item never
+  holds it. The hold applies after the priorities ranking and before overlap
+  weighs the pickups it leaves; a held pickup is reported among the
+  serialized holds and gets no slot. Where the catalog is configured and
+  serialization cannot be decided this tick (the catalog or the open pull
+  requests did not read), no pickup is placed, as no drive is.
 - **A person's hold** (`jig:hold`, `hitl`).
 
 ### Merge evidence for a plan's conflict edges
@@ -528,7 +538,7 @@ One pull request each, in this order.
    without changing what it starts. The `dispatch.overlap` keys it reads
    are documented.
 7. **Serialized areas hold pickups.** The declared hold extends from drives
-   to pickups whose footprint names a file of the area.
+   to pickups whose footprint reaches the area.
 8. **Validation capacity.** The lock's samples (`resource-lock-sample`), the
    `validation` gauge in the load factor and its `load.validation` line,
    and the replay of 2026-11-14 as its test.
