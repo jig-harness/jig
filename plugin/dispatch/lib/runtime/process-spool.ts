@@ -1,6 +1,7 @@
 /** A run's private files are in dispatcher state, outside branch control. */
 import { closeSync, mkdirSync, openSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
+import { maskCredentials } from "../../../shared/credentials.ts";
 import { stateRoot } from "../../receipts.ts";
 
 export function processRunDirectory(id: string): string {
@@ -9,6 +10,7 @@ export function processRunDirectory(id: string): string {
 
 const OUTPUT_LIMIT = 4 * 1024 * 1024;
 const FLUSH_INTERVAL_MS = 250;
+const REDACTION_TAIL_BYTES = 8 * 1024;
 
 /** Keep the tail in memory and bound the file even while a large chunk arrives. */
 export function openSpool(
@@ -22,6 +24,16 @@ export function openSpool(
   let chunks: Buffer[] = [];
   let size = 0;
   let pending: ReturnType<typeof setTimeout> | undefined;
+  let redactionTail = "";
+  const redact = (chunk: Buffer, final = false): Buffer => {
+    redactionTail += chunk.toString("utf8");
+    if (!final && Buffer.byteLength(redactionTail) <= REDACTION_TAIL_BYTES)
+      return Buffer.alloc(0);
+    const keep = final ? "" : redactionTail.slice(-REDACTION_TAIL_BYTES);
+    const ready = redactionTail.slice(0, redactionTail.length - keep.length);
+    redactionTail = keep;
+    return Buffer.from(maskCredentials(ready, "[redacted]"));
+  };
   const flush = () => {
     const bytes = Buffer.concat(chunks, size);
     writeSync(fd, bytes, 0, bytes.length, 0);
@@ -41,7 +53,9 @@ export function openSpool(
     }, FLUSH_INTERVAL_MS);
   };
   return {
-    write(chunk) {
+    write(raw) {
+      const chunk = redact(raw);
+      if (chunk.length === 0) return;
       if (chunk.length >= OUTPUT_LIMIT) {
         chunks = [chunk.subarray(chunk.length - OUTPUT_LIMIT)];
         size = OUTPUT_LIMIT;
@@ -64,6 +78,22 @@ export function openSpool(
     },
     close() {
       try {
+        const tail = redact(Buffer.alloc(0), true);
+        if (tail.length > 0) {
+          chunks.push(tail);
+          size += tail.length;
+          if (size > OUTPUT_LIMIT) {
+            while (size - (chunks[0]?.length ?? 0) >= OUTPUT_LIMIT)
+              size -= (chunks.shift() as Buffer).length;
+            const first = chunks[0];
+            if (first !== undefined)
+              chunks[0] = first.subarray(size - OUTPUT_LIMIT);
+            size = OUTPUT_LIMIT;
+            flush();
+          } else if (pending === undefined) {
+            writeSync(fd, tail, 0, tail.length, size - tail.length);
+          }
+        }
         if (pending !== undefined) {
           clearTimeout(pending);
           flush();

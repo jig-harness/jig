@@ -57,6 +57,8 @@ it.skipIf(process.platform === "win32")(
 it("binds only the chosen account and refuses credentials and loader controls in env_keep", () => {
   for (const name of [
     "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CUSTOM_HEADERS",
     "OPENAI_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "CODEX_HOME",
@@ -82,6 +84,8 @@ it("binds only the chosen account and refuses credentials and loader controls in
       CODEX_HOME: "/another/codex",
       CODEX_TEST: "not-kept",
       OPENAI_API_KEY: "not-kept",
+      ANTHROPIC_AUTH_TOKEN: "not-kept",
+      ANTHROPIC_CUSTOM_HEADERS: "not-kept",
       LC_CTYPE: "C",
     },
     { path: "/installed/bin", envKeep: ["GH_TOKEN"] },
@@ -252,6 +256,14 @@ const tail = readFileSync(join(processRunDirectory(overflowId), "output.log"));
 expect(tail.byteLength).toBe(4 * 1024 * 1024);
 expect(tail.includes("first output")).toBe(false);
 expect(tail.subarray(-16).toString()).toBe("the final output");
+const redactedId = "20261118T141627Z-33333333";
+const redacted = openSpool(redactedId, (error) => { throw error; });
+redacted.write(Buffer.from("Authorization: Bearer ghp_abc"));
+redacted.write(Buffer.from("defghijklmnopqrstuvwxyz0123456789\\n"));
+redacted.close();
+const secretOutput = readFileSync(join(processRunDirectory(redactedId), "output.log"), "utf8");
+expect(secretOutput).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
+expect(secretOutput).toContain("[redacted]");
 
 `,
       );
