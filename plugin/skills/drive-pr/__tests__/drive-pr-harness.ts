@@ -306,6 +306,8 @@ export interface Fixture {
   checkRunsHang?: boolean;
   /** The check-runs read answers this many times, then never again. */
   checkRunsHangAfter?: number;
+  /** The check-runs listing's first page links a second that never answers. */
+  checkRunsSecondPageHangs?: boolean;
   /**
    * The mergeability GitHub reports changes between the first `gh pr view`
    * read and later ones — the window `announce-merge-ready.ts` closes with its
@@ -2061,6 +2063,16 @@ for a in "$@"; do
       emit "$F/timeline.json"; exit 0 ;;
     *check-runs*)
       if [ -f "$F/check-runs-hang" ]; then sleep 60; fi
+      # A listing whose first page names a second one that never answers: the
+      # paged read is cut short after exactly one page.
+      if [ -f "$F/check-runs-second-page-hangs" ]; then
+        case "$*" in
+          *page=2*) sleep 60 ;;
+          *--include*)
+            printf 'HTTP/2.0 200 OK\r\nLink: <https://api.github.com/repos/o/r/commits/c/check-runs?page=2>; rel="next"\r\n\r\n'
+            emit "$F/check-runs.json"; exit 0 ;;
+        esac
+      fi
       if [ -f "$F/check-runs-hang-after" ]; then
         left=$(cat "$F/check-runs-hang-after")
         if [ "$left" -le 0 ]; then sleep 60; fi
@@ -2241,6 +2253,8 @@ export function writeFixture(
   }
   if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
   if (f.checkRunsHang) writeFileSync(join(dir, "check-runs-hang"), "");
+  if (f.checkRunsSecondPageHangs)
+    writeFileSync(join(dir, "check-runs-second-page-hangs"), "");
   if (f.checkRunsHangAfter !== undefined)
     writeFileSync(
       join(dir, "check-runs-hang-after"),
