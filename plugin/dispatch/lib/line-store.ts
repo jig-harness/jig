@@ -167,6 +167,8 @@ const ENTRY_FIELDS = {
       value === undefined || value === null || isString(value),
     concluded: (value) =>
       value === undefined || value === null || isString(value),
+    covers: (value) =>
+      value === undefined || (Array.isArray(value) && value.every(isString)),
     decisions: listOf(DECISION_FIELDS),
     workspaces: Array.isArray,
     workspace: (value) =>

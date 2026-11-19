@@ -3,6 +3,7 @@ import {
   applyPatch,
   type LogFilter,
   pageQuery,
+  queueGroupingOf,
   readFilter,
   rowsQuery,
   tokenOf,
@@ -186,5 +187,21 @@ describe("one parameter changed in place", () => {
     expect(
       pageQuery(applyPatch(NONE, { window: "7d" }), "?token=t&view=history"),
     ).toBe("?token=t&view=history&window=7d");
+  });
+
+  it("keeps the queue's grouping when the filter changes", () => {
+    expect(
+      pageQuery(
+        applyPatch(NONE, { window: "7d" }),
+        "?token=t&view=queue&group-by=repo",
+      ),
+    ).toBe("?token=t&view=queue&group-by=repo&window=7d");
+  });
+
+  it("reads the queue's grouping, what happens when it names none it knows", () => {
+    expect(queueGroupingOf("?group-by=source")).toBe("source");
+    expect(queueGroupingOf("?group-by=none")).toBe("none");
+    expect(queueGroupingOf("?group-by=weather")).toBe("group");
+    expect(queueGroupingOf("")).toBe("group");
   });
 });
