@@ -202,6 +202,8 @@ interface Run {
   /** The arm the current window started on (`armKey`). */
   arm: string | null;
   spent: boolean;
+  /** The run was spent by a pending wait, past its window or the run's bound. */
+  pendingSpent: boolean;
   reread: string[];
   /** The arms earlier runs of the pull request went past their window on, which are never read again. */
   spentArms: ReadonlySet<string>;
@@ -213,6 +215,7 @@ const EMPTY: Run = {
   firstPending: null,
   arm: null,
   spent: false,
+  pendingSpent: false,
   reread: [],
   spentArms: new Set(),
 };
@@ -220,7 +223,7 @@ const EMPTY: Run = {
 /** A new run after `run`, keeping the arms runs went past their window on. */
 function restart(run: Run): Run {
   const spentArms =
-    run.spent && run.arm !== null
+    run.pendingSpent && run.arm !== null
       ? new Set([...run.spentArms, run.arm])
       : run.spentArms;
   return { ...EMPTY, spentArms };
@@ -252,6 +255,7 @@ function nextPending(from: Run, a: Attempt): Run {
     firstPending,
     arm: windowArm,
     spent: pastWindow || pastRun,
+    pendingSpent: pastWindow || pastRun,
     reread: readable ? armTags(a.wait.arm) : [],
   };
 }
@@ -267,6 +271,7 @@ function nextRun(run: Run, a: Attempt): Run {
     ...from,
     count,
     spent: count >= WAITS_FOR_PERSON,
+    pendingSpent: false,
     reread: [],
   };
 }

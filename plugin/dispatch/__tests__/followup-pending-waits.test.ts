@@ -256,7 +256,7 @@ it("counts pending waits apart from rate-limit waits", () => {
   expect(waitStreak(late, SLUG, 9)).toMatchObject({ spent: true });
 });
 
-it("starts a pending window again on a newer arm, re-reads only the first wait past a window, and bounds the run", () => {
+it("starts a pending window again on a newer arm, re-reads an arm past its window once, and bounds the run", () => {
   const w = world();
   current = w;
   const base = earlierRecord(w, {
