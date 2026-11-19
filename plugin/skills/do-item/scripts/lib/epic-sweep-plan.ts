@@ -196,10 +196,14 @@ function operatorSteps(
   const steps: string[] = [];
   let checklistDepth = 0;
   let found = false;
-  let continuing = false;
+  // An unchecked item owns every line up to the next top-level list marker,
+  // heading, or unindented paragraph after a blank line. Only paragraph text
+  // can be carried as one line; any other block inside it is refused.
+  let open = false;
+  let afterBlank = false;
   for (const line of markdownLines(epic.description)) {
-    if (line.quoted || line.inItem) continue;
-    if (line.kind === "heading") {
+    if (line.kind === "heading" && !line.quoted && !line.inItem) {
+      open = false;
       const match = HEADING.exec(line.line);
       const depth = match?.[1]?.length ?? 0;
       if (headingKey(match?.[2] ?? "") === "operator checklist") {
@@ -208,21 +212,37 @@ function operatorSteps(
       } else if (depth <= checklistDepth) {
         checklistDepth = 0;
       }
-    } else if (checklistDepth && line.kind === "text") {
-      const step = uncheckedListItem(line.line);
-      if (step) {
-        steps.push(step);
-        continuing = true;
-      } else if (line.line.trim() === "" || LIST_MARKER.test(line.line)) {
-        continuing = false;
-      } else if (continuing) {
-        // A paragraph continuation belongs to the item above it.
-        steps[steps.length - 1] += ` ${line.line.trim()}`;
-      }
-    } else if (checklistDepth && continuing) {
-      // A fenced or indented block inside an item cannot be carried as one
-      // line, so the checklist is refused rather than transferred incomplete.
+      continue;
+    }
+    if (!checklistDepth) continue;
+    const blank =
+      line.kind === "text" && !line.quoted && line.line.trim() === "";
+    if (blank) {
+      afterBlank = true;
+      continue;
+    }
+    const indented = /^(?: {2,}|\t)/.test(line.line);
+    const step =
+      line.kind === "text" && !line.quoted && !indented
+        ? uncheckedListItem(line.line)
+        : undefined;
+    const sibling = !indented && LIST_MARKER.test(line.line);
+    const ownedByItem = open && !sibling && (indented || !afterBlank);
+    afterBlank = false;
+    if (step) {
+      steps.push(step);
+      open = true;
+    } else if (!ownedByItem) {
+      open = false;
+    } else if (
+      line.kind !== "text" ||
+      line.quoted ||
+      line.inItem ||
+      LIST_MARKER.test(line.line)
+    ) {
       return null;
+    } else {
+      steps[steps.length - 1] += ` ${line.line.trim()}`;
     }
   }
   return found ? steps : null;

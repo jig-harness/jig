@@ -123,6 +123,32 @@ describe("epic sweep assessments", () => {
     ).toBe("needs-operator-checklist");
   });
 
+  test("an unchecked item owns its blank-separated, nested and quoted content", async () => {
+    const manual = { ...epic, labels: ["manual-ops"] };
+    const row = (description: string) =>
+      assessEpic({ ...manual, description }, [done], scope, absent);
+    const head = "## Operator Checklist\n\n- [ ] Deploy\n";
+    expect((await row(`${head}\n  only after approval`)).operatorSteps).toEqual(
+      ["Deploy only after approval"],
+    );
+    for (const block of [
+      "  - needs approval",
+      "  > Only after operator approval",
+      "\n  ```sh\n  make\n  ```",
+    ]) {
+      expect((await row(head + block)).outcome).toBe(
+        "needs-operator-checklist",
+      );
+    }
+    expect(
+      (await row(`${head}\n> an unrelated example\n- [ ] Verify`))
+        .operatorSteps,
+    ).toEqual(["Deploy", "Verify"]);
+    expect(
+      (await row(`${head}- [x] Done\n- [ ] Verify`)).operatorSteps,
+    ).toEqual(["Deploy", "Verify"]);
+  });
+
   test("binds a reply to the proposal and supports exclusions", async () => {
     const row = await assessEpic(epic, [done], scope, absent);
     const proposal = createProposal([row, { ...row, epic: "#20" }]);
