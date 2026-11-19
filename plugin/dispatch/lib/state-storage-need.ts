@@ -16,7 +16,6 @@ export function stateStorageNeeds(
       (need) => need.cause === "state-storage" && need.target === check.id,
     );
     if (check.status !== "fail") return [];
-    if (check.fix === undefined) return known === undefined ? [] : [known];
     return [
       {
         cause: "state-storage",
@@ -25,7 +24,10 @@ export function stateStorageNeeds(
         repo: "host",
         target: check.id,
         title: "Jig state storage needs attention",
-        reason: `${check.detail}. ${check.fix}.`,
+        reason:
+          check.fix === undefined
+            ? `${check.detail}.`
+            : `${check.detail}. ${check.fix}.`,
         since: known?.since ?? now,
         question: null,
         pr: null,

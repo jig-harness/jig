@@ -188,14 +188,20 @@ function makeFixtureRoom(
     if (performance.now() >= deadline) break;
     index.advance("admission_cursor", name);
     const registry = join(store, name);
-    if (
-      fixtureRetirementProof(
-        registry,
-        (identity) => isAliveSync(identity, undefined, deadline),
-        enclosing,
-      ).state !== "dead"
-    )
+    const proof = fixtureRetirementProof(
+      registry,
+      (identity) => isAliveSync(identity, undefined, deadline),
+      enclosing,
+    );
+    if (proof.state !== "dead") {
+      // Keep the conservative refusal, but say why a probe could not prove it.
+      if (proof.state === "unverified")
+        log.warn("Cannot prove a fixture registration retired", {
+          registry,
+          reason: proof.reason,
+        });
       continue;
+    }
     if (!deleteFixtureRegistration(registry, true).ok) continue;
     index.remove(name);
     if (index.count() <= Math.max(0, limit - ADMISSION_HEADROOM)) break;

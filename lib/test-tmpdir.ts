@@ -134,6 +134,17 @@ function validateOptions(
  * removal still deletes whatever is under its root, including a still-live
  * inner scope's directory, if released first.
  */
+/** Remove a root a failed creation left; a cleanup fault never replaces the failure being propagated. */
+function removeAfterFailure(root: string): void {
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch (cleanup) {
+    process.stderr.write(
+      `test-tmpdir: could not remove ${root} after a failure: ${cleanup instanceof Error ? cleanup.message : String(cleanup)}\n`,
+    );
+  }
+}
+
 export function scopeTestTmpdir(
   options: TestTmpdirOptions = {},
 ): TestTmpdirScope {
@@ -149,7 +160,7 @@ export function scopeTestTmpdir(
     try {
       writeScratchOwner(root);
     } catch (error) {
-      rmSync(root, { recursive: true, force: true });
+      removeAfterFailure(root);
       throw error;
     }
   } finally {
@@ -161,7 +172,7 @@ export function scopeTestTmpdir(
   try {
     trackFixtureScope(root, options.fixtureStartup);
   } catch (error) {
-    rmSync(root, { recursive: true, force: true });
+    removeAfterFailure(root);
     throw error;
   }
   const previous = new Map<string, string | undefined>();

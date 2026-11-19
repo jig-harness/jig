@@ -73,7 +73,11 @@ function judged(
     content = readFileSync(path, "utf8");
   } catch (error) {
     if (errnoCode(error) === "ENOENT") return null;
-    return { gone: false, text: `${path}: its holder cannot be read` };
+    const cause = error instanceof Error ? error.message : String(error);
+    return {
+      gone: false,
+      text: `${path}: its holder cannot be read (${cause})`,
+    };
   }
   const identity = recorded(content, namedPid);
   if (identity === null)
@@ -230,20 +234,39 @@ export function exclusiveFixtureGcLock<T>(root: string, body: () => T): T {
   const writer = join(dir, "writer");
   if (!publishWriter(writer, true) && !recoverFixturePublisher(writer))
     throw fixtureWriterRefusal(writer);
+  let failure: unknown;
+  let value: T | undefined;
   try {
-    const others = readdirSync(dir).some((name) => {
+    let blocker: string | null = null;
+    for (const name of readdirSync(dir)) {
       const token = join(dir, name);
-      if (!name.startsWith("reader-") || heldReaderTokens.has(token))
-        return false;
+      if (!name.startsWith("reader-") || heldReaderTokens.has(token)) continue;
       const held = judged(token, namedPid(name));
-      return held !== null && !held.gone;
-    });
-    if (others)
-      throw new GcAdmissionBusy("gc scratch: another creator holds the lock");
-    return body();
-  } finally {
-    rmSync(writer);
+      if (held !== null && !held.gone) {
+        blocker = held.text;
+        break;
+      }
+    }
+    if (blocker !== null)
+      throw new GcAdmissionBusy(
+        `gc scratch: another creator holds the lock: ${blocker}`,
+      );
+    value = body();
+  } catch (error) {
+    failure = error;
   }
+  try {
+    rmSync(writer);
+  } catch (error) {
+    // The body's own failure, and its retry class, outranks a cleanup fault.
+    if (failure === undefined) throw error;
+    log.warn("Could not remove the fixture publisher's lock", {
+      writer,
+      cause: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (failure !== undefined) throw failure;
+  return value as T;
 }
 
 const FIXTURE_ADMISSION_WAIT_MS = 6000;

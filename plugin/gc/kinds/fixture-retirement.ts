@@ -32,13 +32,20 @@ export function verifyFixtureRetirement(receipt: Receipt) {
       (line) =>
         line.kind === "scratch" &&
         line.resource.startsWith(BATCH_PREFIX) &&
-        line.outcome === "collected",
+        retiredCount(line.details) > 0,
     )
   )
     return null;
   return fixtureCapacityFailure(
     "The scheduled run did not retire any fixture registrations in its page.",
   );
+}
+
+/** Registrations a batch line records as retired, whether or not the whole batch succeeded. */
+function retiredCount(details: unknown): number {
+  const retired = (details as { retired?: unknown } | null | undefined)
+    ?.retired;
+  return Array.isArray(retired) ? retired.length : 0;
 }
 
 type Kept = { registration: string; state: Proof["state"]; reason: string };
