@@ -5,7 +5,7 @@ import { KILL_ESCALATE_MS } from "../../../skills/drive-pr/scripts/lib/proc.ts";
 import { snapshotFromListing } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import type { Failure } from "../../../shared/outcome.ts";
 import { closedWithLabel, editLabels, pullStateLabels } from "../forge.ts";
-import { commandLabel, type LabelConfig } from "../labels.ts";
+import { commandLabel, hasCommand, type LabelConfig } from "../labels.ts";
 import {
   latestRearmBinding,
   rearmBinding,
@@ -16,6 +16,7 @@ import { rearmFailureNotice } from "../notices.ts";
 import { readFailureOf } from "../read-failures.ts";
 import type { DrivenPr, Evidence, RepoReport } from "../types.ts";
 import { timeLeftMs, type ApplyState } from "./launch.ts";
+import { pendingRearm } from "../rearm-state.ts";
 
 const REARM_WAIT_MS = 30 * 60_000;
 
@@ -44,7 +45,22 @@ export function failedRearmRequest(
   });
 }
 
-function retirementReason(report: RepoReport, pr: DrivenPr): string | null {
+/** An accepted launch still awaiting its label removal is delivered, not a request that could not launch. */
+function delivered(state: ApplyState, slug: string, pr: DrivenPr): boolean {
+  return state.records.some(
+    ({ record, state: launchState }) =>
+      record.repo === slug &&
+      Number(record.pr) === pr.number &&
+      pendingRearm(record, launchState),
+  );
+}
+
+function retirementReason(
+  state: ApplyState,
+  slug: string,
+  report: RepoReport,
+  pr: DrivenPr,
+): string | null {
   const { rearmExpired, rearmRequestId, rearm } = pr.evidence;
   if (typeof rearmExpired === "string") return rearmExpired;
   if (rearm !== true) return null;
@@ -56,7 +72,7 @@ function retirementReason(report: RepoReport, pr: DrivenPr): string | null {
   );
   return (
     failure?.reason ??
-    (rearmTimedOut(pr)
+    (rearmTimedOut(pr) && !delivered(state, slug, pr)
       ? "the request could not launch within 30 minutes"
       : null)
   );
@@ -94,6 +110,7 @@ async function retire(
   pr: number,
   why: string,
   evidence: Evidence,
+  held = false,
 ): Promise<void> {
   const { state, slug, report, label, login } = run;
   const target = { repo: slug, number: pr };
@@ -105,7 +122,7 @@ async function retire(
     const ended = await writeRearmBinding(target, login, label, null, {
       requestId,
       reason: why,
-      ...(evidence.rearm === true ? { needsPerson: true } : {}),
+      ...(evidence.rearm === true && !held ? { needsPerson: true } : {}),
       deadline: room,
     });
     if (!ended.ok) {
@@ -219,7 +236,7 @@ export async function retireRearmRequests(
   for (const pr of observed) {
     if (deadline(state) === null) return;
     if (!pr.labels?.includes(label)) continue;
-    const why = retirementReason(report, pr);
+    const why = retirementReason(state, slug, report, pr);
     if (why === null) continue;
     const current = await readRequest(run, pr.number, true);
     if (
@@ -228,9 +245,12 @@ export async function retireRearmRequests(
     )
       continue;
     const now = { ...pr, evidence: current.evidence };
-    if (retirementReason(report, now) !== why) continue;
+    if (retirementReason(state, slug, report, now) !== why) continue;
+    // Planning withholds a held pull request's notifications; retirement runs after it, so it applies the same hold.
+    const held = hasCommand(labels, pr.labels, "hold");
     if (
       now.evidence.rearm === true &&
+      !held &&
       !report.actions.some(
         (a) =>
           a.target === `PR #${now.number}` &&
@@ -238,7 +258,7 @@ export async function retireRearmRequests(
       )
     )
       failedRearmRequest(report, slug, now, why);
-    await retire(run, pr.number, why, now.evidence);
+    await retire(run, pr.number, why, now.evidence, held);
   }
   await retireClosed(run);
 }

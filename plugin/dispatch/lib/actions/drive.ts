@@ -92,6 +92,10 @@ import {
   rotated,
   waits,
 } from "./launch.ts";
+import {
+  ghCallTimeoutSeconds,
+  KILL_ESCALATE_MS,
+} from "../../../skills/drive-pr/scripts/lib/proc.ts";
 import { failedRearmRequest, rearmTimedOut } from "./retire-rearm.ts";
 import { currentIso } from "../../../shared/time.ts";
 
@@ -125,6 +129,9 @@ async function consumeRequest(
     result.detail += `; rearm request was carried out but its label could not be removed: ${consumed.failure.reason}; this launch record prevents another launch until its removal is acknowledged`;
 }
 
+/** The most forge calls one fresh drive reading makes: the view, its threads and its ledger reads. */
+const FRESH_READ_CALLS = 4;
+
 /** An acknowledgment belongs to its request, even if a newer one uses the same label. */
 function acknowledgeRequest(
   state: ApplyState,
@@ -137,11 +144,32 @@ function acknowledgeRequest(
     undefined,
     () => timeLeftMs(state),
     async () => {
+      // The fresh read makes several forge calls that take no tick bound, so
+      // it starts only with room for each of them at its own deadline.
+      const callMs = ghCallTimeoutSeconds() * 1000 + KILL_ESCALATE_MS;
+      const room = (calls: number) => {
+        const left = timeLeftMs(state);
+        return left === null || left >= calls * callMs;
+      };
+      const later = () =>
+        failed(
+          "refused" as const,
+          "the tick deadline has no room to read the pull request again for rearm acknowledgment; a later tick retries it",
+        );
+      if (!room(FRESH_READ_CALLS)) return later();
       const read = await fresh.read(Number(record.pr));
       if (!read.ok) {
         if (read.failure.code !== "not-open")
           return failed("refused", read.failure.reason, read.failure.cause);
-        const terminal = await pullStateLabels(record.repo, Number(record.pr));
+        const left = timeLeftMs(state);
+        if (!room(1)) return later();
+        const terminal = await pullStateLabels(
+          record.repo,
+          Number(record.pr),
+          left === null
+            ? undefined
+            : Math.floor((left - KILL_ESCALATE_MS) / 1000),
+        );
         if (!terminal.ok)
           return failed(
             "refused",
@@ -351,7 +379,7 @@ async function replayOriginalTree(
       String(read.evidence.driverActor),
       String(read.evidence.driverClone),
     );
-    if (different !== null) return different;
+    if (different !== null) return different.why;
   }
   return null;
 }
@@ -524,15 +552,21 @@ function stillWanted(
   return changedStale(action.redrive, fresh);
 }
 
-/** Why a listed workspace is not the stopped driver's tree; null only after both identities match. */
+/**
+ * Why a listed workspace is not the stopped driver's tree; null only after both identities match.
+ * `proven` is true when the identities were read and differ, false when they could not be read.
+ */
 async function originalTree(
   path: string,
   actor: string,
   clone: string,
-): Promise<string | null> {
+): Promise<{ why: string; proven: boolean } | null> {
   try {
     if (`wt-${worktreePathKey(realpathSync(path))}` !== actor)
-      return `${path}: its actor differs from the stopped driver's ${actor}`;
+      return {
+        why: `${path}: its actor differs from the stopped driver's ${actor}`,
+        proven: true,
+      };
     const common = await git(["rev-parse", "--git-common-dir"], {
       cwd: path,
       env: gitIdentityEnv(),
@@ -540,13 +574,21 @@ async function originalTree(
       timeoutSec: 10,
     });
     if (common.code !== 0)
-      return `${path}: its clone identity cannot be read (git exit ${common.code}: ${common.stderr.trim()})`;
+      return {
+        why: `${path}: its clone identity cannot be read (git exit ${common.code}: ${common.stderr.trim()})`,
+        proven: false,
+      };
     const local = peekCloneKey(resolve(path, common.stdout.trim()));
-    return local !== null && cloneId(local) === clone
-      ? null
-      : `${path}: its clone identity ${local === null ? "missing" : cloneId(local)} differs from the stopped driver's ${clone}`;
+    if (local !== null && cloneId(local) === clone) return null;
+    return {
+      why: `${path}: its clone identity ${local === null ? "missing" : cloneId(local)} differs from the stopped driver's ${clone}`,
+      proven: local !== null,
+    };
   } catch (error) {
-    return `${path}: its original-tree identity cannot be read: ${failureText(error)}`;
+    return {
+      why: `${path}: its original-tree identity cannot be read: ${failureText(error)}`,
+      proven: false,
+    };
   }
 }
 
@@ -593,15 +635,19 @@ async function workspaceFor(
     ),
   );
   const matched = candidates.filter((_, i) => verified[i] === null);
+  const mismatched = verified.filter((v) => v !== null);
   const held = matched[0];
   if (matched.length === 1 && held !== undefined)
     return provenWorkspace(state, repo, pr, head, held);
   if (originalActor !== null)
     return {
-      ...(sessions.ok && candidates.length === 0
+      ...(sessions.ok &&
+      (candidates.length === 0 ||
+        (mismatched.length === candidates.length &&
+          mismatched.every((v) => v.proven)))
         ? { missingOriginal: true }
         : {}),
-      waits: `recovery requires exactly one existing tree linked to the pull request and matching the stopped driver's actor and clone; no replacement workspace is opened${verified.length === 0 ? "" : `: ${verified.filter((why) => why !== null).join("; ")}`}`,
+      waits: `recovery requires exactly one existing tree linked to the pull request and matching the stopped driver's actor and clone; no replacement workspace is opened${mismatched.length === 0 ? "" : `: ${mismatched.map((v) => v.why).join("; ")}`}`,
     };
   return openWithinBudget(state, repo, { pr, head, dispatched: named });
 }
