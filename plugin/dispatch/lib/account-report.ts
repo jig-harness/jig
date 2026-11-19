@@ -65,10 +65,9 @@ export function accountsReport(
     input.passDeadlineSec ?? passTimeoutSeconds(),
     input.codexOptIn ?? hostCodexOptIn(),
   );
-  const served = stageAccounts(machine.accounts);
   return {
     ...(refused.length === 0 ? {} : { accountsNotAdmitted: refused }),
-    ...(served === undefined ? {} : { stageAccounts: served }),
+    stageAccounts: stageAccounts(machine.accounts),
     accountWeights: (
       input.table ??
       slotTable(

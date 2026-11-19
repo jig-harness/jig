@@ -67,7 +67,7 @@ export function accountStages(
   value: unknown,
   where: string,
 ): Checked<ServedStage[] | undefined> {
-  if (value === undefined || value === null) return ok(undefined);
+  if (value === undefined) return ok(undefined);
   const known = SERVED_STAGES.join(", ");
   if (!Array.isArray(value))
     return invalid(`${where} must be a list of stages from ${known}`);
@@ -103,17 +103,14 @@ export function serves(
 }
 
 /**
- * The accounts that serve each launching stage, by name, when the file
- * narrows any account's stages; `undefined` when every account serves every
- * stage.
+ * The accounts that serve each launching stage, by name.
  */
 export function stageAccounts(
   accounts: ReadonlyArray<{
     name: string;
     stages?: readonly ServedStage[] | undefined;
   }>,
-): Record<ServedStage, string[]> | undefined {
-  if (accounts.every((a) => a.stages === undefined)) return undefined;
+): Record<ServedStage, string[]> {
   const out = {} as Record<ServedStage, string[]>;
   for (const stage of SERVED_STAGES)
     out[stage] = accounts.filter((a) => serves(a, stage)).map((a) => a.name);

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { slotTable } from "../lib/accounts.ts";
-import { serves } from "../lib/account-stages.ts";
+import { serves, stageAccounts } from "../lib/account-stages.ts";
 import { admission } from "../lib/actions/admission.ts";
 import { admitAccount, type ApplyState } from "../lib/actions/launch.ts";
 import { takesPickup } from "../lib/tick-trackers.ts";
@@ -51,6 +51,7 @@ describe("an account's stages in the machine file", () => {
     ["[notify]", "names notify, a stage that launches no session"],
     ["[pickup, steer]", "names steer, a stage that launches no session"],
     ["pickup", "must be a list"],
+    ["null", "must be a list"],
   ] as const)
     it(`refuses ${value}, naming the account and the value`, () => {
       const read = parsed(`, stages: ${value}`);
@@ -62,6 +63,15 @@ describe("an account's stages in the machine file", () => {
       expect(read.failure.reason).toContain("work");
       expect(read.failure.reason).toContain(says);
     });
+});
+
+it("reports every account for every launching stage when none narrows its stages", () => {
+  expect(stageAccounts([{ name: "one" }, { name: "two" }])).toEqual({
+    pickup: ["one", "two"],
+    rearm: ["one", "two"],
+    followup: ["one", "two"],
+    steward: ["one", "two"],
+  });
 });
 
 const account = (
