@@ -489,6 +489,18 @@ function planClaimed(
   plan.idleNow.push(item.key);
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   if (quietByPr(item, input, pr, plan)) return;
+  planIdleClaim(item, input, plan, held, pickup, pr);
+}
+
+/** Plans the next action for an idle claimed item that no session or pull request settles. */
+function planIdleClaim(
+  item: ClaimedItem,
+  input: PickupInput,
+  plan: PickupPlan,
+  held: Holding,
+  pickup: PickupHold,
+  pr: LaunchPrReading,
+): void {
   const asked =
     pickup.kind === "ended" ? questionAsked(input, item, pickup.record) : null;
   if (asked !== null) {
