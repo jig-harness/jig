@@ -92,6 +92,11 @@ the tick. The observe phase reads the served people's assigned items
 beside the factory identity's, and makes the board read, a query of its
 own once a repository's ledgers name its converged drives
 ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
+While a repository wants pickups, it also reads the footprints of the
+wanted and claimed items through the tracker it opened, and the plan
+weighs each planned pickup against the work in flight and reports its
+overlap, without changing what starts
+([overlap-aware-admission.md § Overlap, reported](overlap-aware-admission.md#build-order)).
 The act phase reads the host's gauges when it builds its apply state, and
 admits each launch within the load factor. And the steward is one more
 stage, launched on the owner host when its judgment backlog holds work no
@@ -109,7 +114,7 @@ flowchart TD
     O3[forge: open PRs, login, a ledger per PR,<br/>merges and their follow-up markers]
     O3b[claims: every host's launch claims]
     O4[runtime: the sessions joined to items and PRs]
-    C[observe: thread samples, session walls,<br/>contention; the samples and contention<br/>skipped while the budget is low]
+    C[observe: thread samples, session walls,<br/>contention; the samples and contention<br/>skipped while the budget is low;<br/>the footprints overlap weighs]
     OL --> O1 --> O2 & O3
     O3 --> O3b
     O2 & O3 --> O4
@@ -122,7 +127,7 @@ flowchart TD
   A --> LOOP{{for each repository read, in rotated order}}
   subgraph act [one repository's act part, inside its boundary]
     direction TB
-    P[plan: wanted minus running, nudges,<br/>hold-back, idle clocks]
+    P[plan: wanted minus running, nudges,<br/>hold-back, idle clocks; the planned pickups'<br/>overlap, reported only]
     G[log: outcome rows for launch records that ended]
     P --> G
   end
