@@ -107,7 +107,7 @@ function defectLines(r: RepoReport): string[] {
   ];
 }
 
-/** The accounts a planned launch of `stage` could use, when the machine file narrows any account's stages. */
+/** The accounts a planned launch of `stage` could use; absent for older runs and runs without a machine file. */
 function stageLine(
   stage: string,
   served: TickReceipt["stageAccounts"],
