@@ -1,5 +1,0 @@
-fix(drive-pr): defer summary marker configuration
-
-Repair CI run 44606247727 by avoiding configuration reads while the audit
-loads the summary parser to validate malformed consumer configuration.
-Verified with focused audit config-fit tests and bun run gates.
