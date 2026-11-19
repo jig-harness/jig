@@ -26,11 +26,16 @@ export function oneLine(text: string): string {
 function parkStop(pr: string, code: number, state: DriveState | null): string {
   const parked = state?.parked ?? [];
   const first = parked[0];
+  const probe = driverRuntime.stopProbe;
+  const prefix =
+    probe?.code === code
+      ? ` stopped at ${probe.state} (exit ${code}): ${probe.reason};`
+      : ":";
   if (first === undefined)
-    return `PR #${pr} parked: a decision waits for a person (exit ${code})`;
+    return `PR #${pr} parked${prefix} a decision waits for a person (exit ${code})`;
   const more =
     parked.length > 1 ? ` (and ${parked.length - 1} more decisions)` : "";
-  return `PR #${pr} parked: ${oneLine(first.reason)}${more}`;
+  return `PR #${pr} parked${prefix} ${oneLine(first.reason)}${more}`;
 }
 
 /** A usage-limit stop's line: the wall, and when it resets. */

@@ -88,7 +88,6 @@ async function gateRoundStatus(
       console.error(
         "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
       );
-      driverRuntime.stopProbe = recordProbeStop(code, status);
       const get = await run(tsArgv(driveState, ["get", context.pr]), {
         stderr: "ignore",
       });
@@ -114,6 +113,9 @@ async function gateRoundStatus(
       // about to weigh by hand — so it gets the same economy block the
       // converged and exhausted exits do.
       process.stderr.write(await loopEconomy(context.pr));
+      // Keep the structured marker in the retained diagnostic tail, after the
+      // potentially long parked-decision listing and economy report.
+      driverRuntime.stopProbe = recordProbeStop(code, status);
       return 8;
     }
     case 9: {
