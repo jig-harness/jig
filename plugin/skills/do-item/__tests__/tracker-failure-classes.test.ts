@@ -221,6 +221,25 @@ describe("the GitHub tracker transport through gh", () => {
       );
       takesPolicy(error, code, sent);
     });
+
+  it("keeps the run's account on GraphQL errors answered with a success status", async () => {
+    const transport = ghTransport(async () => ({
+      code: 1,
+      stdout:
+        'HTTP/2.0 200 OK\r\n\r\n{"data":{"repository":null},"errors":[{"type":"NOT_FOUND"}]}',
+      stderr: "",
+      stderrTail: "",
+      timedOut: false,
+      bufferExceeded: false,
+      spawnFailed: false,
+      failureAccount: "acct-one",
+    }));
+    const error = await thrown(
+      transport("query { viewer { login } }", {}, undefined, true),
+    );
+    expect(error.account).toBe("acct-one");
+    expect(error.code).toBe("not-found");
+  });
 });
 
 describe("the Jira transport", () => {

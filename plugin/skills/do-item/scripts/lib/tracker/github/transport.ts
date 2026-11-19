@@ -344,7 +344,12 @@ function ghExitAnswer(
     account === undefined || base.account === account
       ? base
       : { ...base, account };
-  const named = errorsFailure(body, answered ? failure : null, parsed.headers);
+  const named = errorsFailure(
+    body,
+    answered ? failure : null,
+    parsed.headers,
+    account,
+  );
   if (named !== null) return named;
   const said = (r.stderr || parsed.body).trim().slice(0, 300);
   return errorOf({
@@ -358,6 +363,7 @@ function errorsFailure(
   body: unknown,
   failure: OutboundFailure | null,
   headers: Headers | null = null,
+  account?: string,
 ): GitHubApiError | null {
   if (
     !isRecord(body) ||
@@ -368,7 +374,19 @@ function errorsFailure(
   try {
     unwrapResponse(body, failure, headers);
   } catch (err) {
-    if (err instanceof GitHubApiError) return err;
+    if (err instanceof GitHubApiError)
+      // A success status leaves the class to the errors' types, but the run
+      // still says whose credential it used.
+      return err.account !== undefined || account === undefined
+        ? err
+        : new GitHubApiError(err.message, {
+            code: err.code,
+            data: err.data,
+            account,
+            until: err.until,
+            sent: err.sent,
+            retryAfterMs: err.retryAfterMs,
+          });
     throw err;
   }
   return null;
