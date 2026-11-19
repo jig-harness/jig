@@ -28,7 +28,7 @@ import {
   type RunResult,
   ghCall,
 } from "../../../../../drive-pr/scripts/lib/proc.ts";
-import { ghRepoEnvFor } from "../../../../../drive-pr/scripts/lib/gh-repo-env.ts";
+import { ghRepoEnvFor } from "../../../../../../shared/gh-repo-env.ts";
 import { unheldForm } from "../../../../../../shared/trace.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";

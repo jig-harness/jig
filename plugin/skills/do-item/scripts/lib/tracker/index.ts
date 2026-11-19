@@ -83,12 +83,13 @@ function gitHub(
     transport:
       signal === undefined
         ? transport
-        : (query, variables, request, idempotent) =>
+        : (query, variables, request, idempotent, target) =>
             transport(
               query,
               variables,
               boundedSignal(request, signal),
               idempotent,
+              target,
             ),
     facets: resolve(),
     entries: config.facets,

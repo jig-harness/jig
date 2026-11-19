@@ -23,7 +23,7 @@ import {
   type Outcome,
 } from "../../../../shared/outcome.ts";
 import type { ForgeFacts, HeadCheck, HeadReview } from "./merge-ready.ts";
-import { ghRepoEnvFor } from "./gh-repo-env.ts";
+import { ghRepoEnvFor } from "../../../../shared/gh-repo-env.ts";
 import { ghCall } from "./proc.ts";
 import { currentMs } from "../../../../shared/time.ts";
 

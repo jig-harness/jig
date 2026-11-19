@@ -727,14 +727,15 @@ export function gitHubTracker(client: Client): Tracker {
     },
 
     async postComment(issue, body, signal) {
-      const subjectId = NODE_ID.test(issue)
-        ? issue
-        : (await client.mustIssue(issue, signal)).id;
+      const found = NODE_ID.test(issue)
+        ? null
+        : await client.mustIssue(issue, signal);
+      const subjectId = found === null ? issue : found.id;
       if (signal?.aborted === true)
         throw new GitHubApiError(
           "the comment was cancelled before it was sent",
         );
-      await client.transport(M.comment, { subjectId, body }, signal);
+      await client.mutate(M.comment, { subjectId, body }, signal, found?.ref);
     },
 
     async deleteComment(key, id) {

@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import {
@@ -272,5 +272,72 @@ console.log(JSON.stringify({ data: { repository: { issues: { pageInfo: { hasNext
     expect(JSON.parse(stdout.trim().split("\n").at(-1) ?? "")).toEqual({
       items: 0,
     });
+  });
+  it("names a foreign issue's repository on a write through a signal-bound tracker", async () => {
+    dir = mkdtempSync(join(tmpdir(), "gh-routing-"));
+    const log = join(dir, "mutations.log");
+    const node = issueNode({ number: 5, repo: "acme/app" });
+    writeFakeProgram(
+      join(dir, "gh"),
+      `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "auth") { console.log("stand-in-token"); process.exit(0); }
+const body = await Bun.stdin.text();
+if (body.includes("mutation")) {
+  appendFileSync(${JSON.stringify(log)}, (process.env.GH_REPO ?? "") + "\\n");
+  console.log(JSON.stringify({ data: { addComment: { commentEdge: { node: { id: "C_1" } } } } }));
+} else {
+  console.log(JSON.stringify({ data: { repository: { issue: ${JSON.stringify(node)} } } }));
+}
+`,
+    );
+    const index = join(
+      import.meta.dir,
+      "..",
+      "scripts",
+      "lib",
+      "tracker",
+      "index.ts",
+    );
+    const config = join(
+      import.meta.dir,
+      "..",
+      "scripts",
+      "lib",
+      "tracker",
+      "config.ts",
+    );
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      PATH: `${dir}${delimiter}${process.env.PATH ?? ""}`,
+    };
+    for (const name of [
+      "GH_REPO",
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "JIG_GITHUB_GRAPHQL_URL",
+    ])
+      delete env[name];
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `import { openTracker } from ${JSON.stringify(index)};
+         import { parseTrackerConfig } from ${JSON.stringify(config)};
+         const t = openTracker(parseTrackerConfig({ issue_tracker: { adapter: "github",
+           github: { repository: ${JSON.stringify(SLUG)} } } }),
+           ${JSON.stringify(dir)}, new AbortController().signal);
+         await t.postComment("acme/app#5", "hello");`,
+      ],
+      { cwd: dir, env, stdout: "pipe", stderr: "pipe" },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expectSpawnExit({ exitCode, stdout, stderr }, 0);
+    expect(readFileSync(log, "utf8").trim()).toBe("acme/app");
   });
 });
