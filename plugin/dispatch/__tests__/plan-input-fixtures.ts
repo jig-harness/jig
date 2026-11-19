@@ -14,7 +14,7 @@ import type { PlanInput } from "../lib/plan.ts";
 import type { DispatchSection } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
 
-export function section(): DispatchSection {
+function section(): DispatchSection {
   const read = dispatchSection({
     issue_tracker: { adapter: "github", github: { repository: SLUG } },
     dispatch: { identity: "factory-bot", followup_command: "/followup" },
