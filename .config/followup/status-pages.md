@@ -36,17 +36,17 @@ Each place that still lists or cites the item as open is owed.
 
 ## 2. A roadmap epic stays open while its plan item is listed
 
-Settle this before the tracker arm's epic write, not after: the core
-arms run first, and a closed epic cannot be taken back without its
-notifications. So when `epics` names an epic labelled `roadmap`, read
-`design/plan.md` before the tracker arm closes it, and leave the close
-undone while its item is listed. An epic labelled `roadmap` is closed only once its plan item has left
-`design/plan.md`, whatever its children's states or the tracker arm's epic
-rule say. When the tracker arm would close such an epic while its item is still in
-the plan, do not close it and record this arm `owed`: either the plan item
-was left behind (file its removal) or the epic is not finished (say so in the
-tracker arm's evidence). When it has already closed one, reopen it and say
-so there.
+This arm runs after the tracker arm, so it can only check what that arm
+did; the tracker arm's own rule (an epic closes only on an accepted verdict
+or a waiver) is what keeps an epic open beforehand. Check every epic the
+tracker arm reconciled: those `epics` names, the parent of each item in
+`items`, and any item in `items` that is itself an epic. An epic labelled
+`roadmap` is closed only once its plan item has left `design/plan.md`,
+whatever its children's states or the tracker arm's epic rule say. When
+one is closed while its item is still in the plan, reopen it, say so in the
+tracker arm's evidence, and record this arm `owed`: either the plan item
+was left behind (file its removal) or the epic is not finished. Reopening
+sends its own notifications; it is the repair, not a prevention.
 
 ## 3. What comes next on the plan
 

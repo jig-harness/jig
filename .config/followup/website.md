@@ -27,11 +27,15 @@ gh run list --workflow website.yml --commit <range.head> --json status,conclusio
 - Succeeded: the deploy is settled; go on.
 - Cancelled, skipped or timed out, or no run for that commit: a later
   commit's deploy supersedes it. Look at the newest `website.yml` run on
-  `main` (`gh run list --workflow website.yml --branch main --limit 1`): when
-  it succeeded and its commit contains `range.head`
-  (`git merge-base --is-ancestor <range.head> <that commit>`), the merge is
-  deployed and this part is settled. Otherwise record the arm `owed` with
-  the run's link as the actionable evidence.
+  `main` (`gh run list --workflow website.yml --branch main --limit 1`).
+  When the listing cannot be read, record `unread`. When that run has not
+  finished (queued or in progress) and its commit contains `range.head`
+  (`git merge-base --is-ancestor <range.head> <that commit>`), record
+  `pending` with its link: it settles by itself. When it succeeded and its
+  commit contains `range.head`, the merge is deployed and this part is
+  settled. Otherwise (it failed, or its commit does not contain
+  `range.head`) record the arm `owed` with the run's link as the actionable
+  evidence.
 
 ## 2. What did the merge change on the site?
 
