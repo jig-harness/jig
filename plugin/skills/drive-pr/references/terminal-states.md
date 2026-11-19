@@ -1656,10 +1656,10 @@ false "green":
   its limit and its run time (completion less start). The final CI repairs
   it through the CI-repair path as a failing check, its run named in
   `DRIVE_PR_ROUND_FAILED_RUNS`; `recoverBeforePass` logs it and goes on,
-  and `ci-hold.ts ensure`, which waits only for required checks to
+  and the CI hold's `ensure`, which waits only for required checks to
   complete, logs it and counts it completed, as any failure; the converged
-  watch parks `converged-ci` naming it. When other cancellations on the head take the
-  recovery on the same poll, a `wait` or `none` they end in gives way to the
+  watch parks `converged-ci` naming it. When other cancellations on the head
+  take the recovery on the same poll, a `wait` or `none` they end in gives way to the
   repair, and a park, an unknown head or a read that kept failing ends the
   drive first. Annotations that do not read, or carry no such message, leave
   the job a cancelled check.
