@@ -336,7 +336,13 @@ export async function labelDrive(
       console.error(
         `labels: PR #${pr}'s state label is not written: dispatch.labels does not read (${settings.failure.reason})`,
       );
-      return null;
+      // Keep an unreadable setting distinct from labels being deliberately off:
+      // recovery must retain its witness and retry this pending projection.
+      return {
+        moment,
+        converged: false,
+        write: { outcome: "refused", detail: settings.failure.reason },
+      };
     }
     const projected = ledgerState(ledger, DONE_EXITS);
     const converged =
