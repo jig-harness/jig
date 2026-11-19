@@ -12,4 +12,4 @@ release: minor
 
 ### Changed
 
-- With `JIG_FORGE_BUDGET=off`, `gh` pages the check-runs listing itself under one deadline and no page bound; the configuration reference and the drive-pr README now say so. A listing past the page bound is read once, not asked again.
+- With `JIG_FORGE_BUDGET=off`, a fresh check-runs listing or a fallback whole read is paged by `gh` itself, under the whole-read bound (four times `GH_CALL_TIMEOUT`) and no page bound, while a listing read through the cache still goes a page at a time; the configuration reference and the drive-pr README now say so. A listing past the page bound is read once, not asked again.

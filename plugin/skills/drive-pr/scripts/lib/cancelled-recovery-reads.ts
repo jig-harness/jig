@@ -62,8 +62,11 @@ export async function recoveryRead<T>(
   ask: () => Promise<Outcome<T, ForgeReadCode>>,
   /** True when the failure just seen cannot clear by asking again, such as a listing past its page bound. */
   settled: () => boolean = () => false,
+  /** Milliseconds between attempts, in place of the environment's pacing (for a test). */
+  retryMs?: number,
 ): Promise<RecoveryRead<T>> {
-  const wait = testPacing("DRIVE_PR_RECOVERY_READ_RETRY_MS", READ_RETRY_MS, 10);
+  const wait =
+    retryMs ?? testPacing("DRIVE_PR_RECOVERY_READ_RETRY_MS", READ_RETRY_MS, 10);
   let last: Failure<ForgeReadCode> | null = null;
   for await (const attempt of retryAttempts({
     attempts: READ_ATTEMPTS,

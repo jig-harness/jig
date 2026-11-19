@@ -10,16 +10,14 @@ describe("recoveryRead stops asking when the failure cannot clear by waiting", (
 
   test("a settled failure is asked once", async () => {
     const calls = { n: 0 };
-    process.env.DRIVE_PR_RECOVERY_READ_RETRY_MS = "10";
-    const read = await recoveryRead("check runs", ask(calls), () => true);
+    const read = await recoveryRead("check runs", ask(calls), () => true, 10);
     expect(read.ok).toBe(false);
     expect(calls.n).toBe(1);
   });
 
   test("an unsettled transient failure is still asked again", async () => {
     const calls = { n: 0 };
-    process.env.DRIVE_PR_RECOVERY_READ_RETRY_MS = "10";
-    await recoveryRead("check runs", ask(calls), () => false);
+    await recoveryRead("check runs", ask(calls), () => false, 10);
     expect(calls.n).toBe(2);
   });
 });
