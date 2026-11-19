@@ -85,7 +85,7 @@ export function facetsFor(view: ViewId): readonly Facet[] {
 }
 
 /** What will happen to a queued target, in the order the dispatcher lists it. */
-export const QUEUE_GROUPS = [
+const QUEUE_GROUPS = [
   "starts",
   "held",
   "reported",
@@ -100,7 +100,7 @@ export const QUEUE_SOURCES = [
   "merged",
 ] as const satisfies readonly QueueSource[];
 
-export const QUEUE_KINDS = ["pull request", "item"] as const;
+const QUEUE_KINDS = ["pull request", "item"] as const;
 export type QueueKind = (typeof QUEUE_KINDS)[number];
 
 /** The ways What is coming can be grouped; the first is the dispatcher's order. */

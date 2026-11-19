@@ -445,11 +445,7 @@ function ViewTop({
             filter={steer.cardFilter}
             results={steer.filterResults}
             needs={needs}
-            grouping={
-              tab === "queue"
-                ? { value: grouping, set: setGrouping }
-                : undefined
-            }
+            grouping={{ value: grouping, set: setGrouping }}
             replace={steer.replaceCardFilter}
             clear={() => {
               steer.replaceCardFilter(EMPTY_CARD_FILTER);

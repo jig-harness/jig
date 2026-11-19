@@ -321,7 +321,9 @@ export function FacetControls({
           />
         );
       })}
-      {grouping === undefined || results.total === 0 ? null : (
+      {view !== "queue" ||
+      grouping === undefined ||
+      results.total === 0 ? null : (
         <GroupingRow {...grouping} />
       )}
       <OldestWait oldest={results.oldest} />
