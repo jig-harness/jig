@@ -34,19 +34,25 @@ When it did:
 
 Each place that still lists or cites the item as open is owed.
 
-## 2. A roadmap epic stays open while its plan item is listed
+## 2. A roadmap epic closes here, after its plan item has left
 
-This arm runs after the tracker arm, so it can only check what that arm
-did; the tracker arm's own rule (an epic closes only on an accepted verdict
-or a waiver) is what keeps an epic open beforehand. Check every epic the
-tracker arm reconciled: those `epics` names, the parent of each item in
-`items`, and any item in `items` that is itself an epic. An epic labelled
-`roadmap` is closed only once its plan item has left `design/plan.md`,
-whatever its children's states or the tracker arm's epic rule say. When
-one is closed while its item is still in the plan, reopen it, say so in the
-tracker arm's evidence, and record this arm `owed`: either the plan item
-was left behind (file its removal) or the epic is not finished. Reopening
-sends its own notifications; it is the repair, not a prevention.
+This arm runs after the tracker arm, so the tracker arm must not close an
+epic labelled `roadmap`: it leaves that epic open and says in its evidence
+that this arm decides. Check every epic the tracker arm reconciled: those
+`epics` names, the parent of each item in `items`, and any item in `items`
+that is itself an epic. A roadmap epic is closed only once its plan item has
+left `design/plan.md`, whatever its children's states, and only on an
+accepted verdict or a waiver (the tracker arm's epic rule).
+
+- Item gone from `design/plan.md`: close the epic here, if the epic rule
+  allows it, and say so in this arm's evidence.
+- Item still listed: leave the epic open and record this arm `owed`: either
+  the plan item was left behind (file its removal) or the epic is not
+  finished.
+- An epic already closed while its item is still listed (an earlier run or a
+  person closed it): reopen it, say so in the tracker arm's evidence and
+  record this arm `owed`. Reopening sends its own notifications; it is the
+  repair, never the plan.
 
 ## 3. What comes next on the plan
 
