@@ -9,11 +9,7 @@ import type { DriveRoundContext } from "./round-context.ts";
 import { driverRuntime } from "./runtime.ts";
 import { waitBetweenPasses } from "./review-quota.ts";
 import { sleep } from "./../cli.ts";
-import {
-  MAILBOX_POLL_SECONDS,
-  MAILBOX_STOPPED_EXIT,
-  SINGLE_INSTANCE_LOCK_EXIT,
-} from "./settings.ts";
+import { MAILBOX_POLL_SECONDS, SINGLE_INSTANCE_LOCK_EXIT } from "./settings.ts";
 import {
   type ForgeLimit,
   type LimitBounds,
@@ -86,7 +82,8 @@ export async function answerForgeLimit(
  * The attach's read met the limit before the round loop starts: wait for a
  * near reset while the attach `mayWait`, else stop. `true` once the reset
  * passed and the attach may read again; the exit to stop with otherwise, a
- * lost lock's included.
+ * lost lock's included. A mailbox stop hands the drive to the lifecycle's
+ * shutdown, which acknowledges it.
  */
 export async function attachForgeLimit(
   pr: string,
@@ -111,7 +108,13 @@ export async function attachForgeLimit(
     // In slices, so a mailbox stop does not sit behind a multi-hour wait.
     const endsAt = performance.now() + plan.ms;
     while (performance.now() < endsAt && driverRuntime.compromised === "") {
-      if (stopRequested() !== null) return MAILBOX_STOPPED_EXIT;
+      if (stopRequested() !== null)
+        // The lifecycle's own poll sees the same stop: its shutdown path
+        // witnesses the cleanup and acknowledges the stop, then owns the
+        // exit, so this wait never returns an exit of its own.
+        return await new Promise<never>(() => {
+          // The shutdown coordinator owns process exit.
+        });
       await sleep(
         Math.min(MAILBOX_POLL_SECONDS, (endsAt - performance.now()) / 1000),
         driverRuntime.quotaSleepAbort.signal,

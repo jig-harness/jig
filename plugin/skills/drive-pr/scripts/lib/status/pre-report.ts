@@ -67,6 +67,9 @@ export function limitedAtStart(
         rateLimit: reportLimit(limit),
       })}\n`,
     );
-  else console.error(`drive-status.ts: ${report.reason}`);
+  else {
+    process.stdout.write(`${report.state}\n`);
+    console.error(`drive-status.ts: ${report.reason}`);
+  }
   return code;
 }

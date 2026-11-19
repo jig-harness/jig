@@ -23,6 +23,7 @@ import {
 } from "../scripts/lib/forge-limit.ts";
 import type { DriveState } from "../scripts/lib/state/schema.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
+import { limitedAtStart } from "../scripts/lib/status/pre-report.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import {
   clearForgeLimit,
@@ -245,5 +246,29 @@ describe("the limit's reading", () => {
     expect(
       limitPlan({ until: now + 60_001 }, now, { boundMs: 60_000 }),
     ).toEqual({ action: "stop" });
+  });
+});
+
+describe("limitedAtStart", () => {
+  test("prints the state name on standard output outside --json", () => {
+    const writes: string[] = [];
+    const original = process.stdout.write;
+    const errors = console.error;
+    process.stdout.write = ((chunk: string) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    console.error = () => undefined;
+    try {
+      const code = limitedAtStart("42", false, {
+        until: currentMs() + 1000,
+        reason: "spent",
+      });
+      expect(code).toBe(DRIVE_EXIT.FORGE_RATE_LIMITED);
+    } finally {
+      process.stdout.write = original;
+      console.error = errors;
+    }
+    expect(writes.join("")).toBe("FORGE_RATE_LIMITED\n");
   });
 });
