@@ -89,6 +89,7 @@ export class GitHubApiError extends OutboundError {
     opts: {
       code?: FailureClass;
       data?: unknown;
+      account?: string | undefined;
       until?: number | null;
       sent?: boolean;
       retryAfterMs?: number | null;
@@ -114,6 +115,7 @@ function errorOf(failure: OutboundFailure, data?: unknown): GitHubApiError {
   return new GitHubApiError(failure.reason, {
     code: failure.code,
     data,
+    account: failure.account,
     until: failure.until ?? null,
     sent: failure.sent ?? false,
     retryAfterMs: failure.retryAfterMs ?? null,
@@ -163,6 +165,7 @@ export function unwrapResponse(
         : null;
     throw errorOf(
       outboundFailure(code, message, {
+        account: failure?.account,
         until: failure?.until ?? limit?.until ?? null,
         retryAfterMs: failure?.retryAfterMs ?? limit?.retryAfterMs ?? null,
       }),
@@ -328,13 +331,25 @@ function ghExitAnswer(
   tookMs: number,
 ): GitHubApiError {
   const answered = parsed.status !== 200;
-  const failure =
-    (answered
-      ? gitHubHttpFailure(parsed.status, parsed.headers, parsed.body, tookMs)
-      : null) ??
+  const http = answered
+    ? gitHubHttpFailure(parsed.status, parsed.headers, parsed.body, tookMs)
+    : null;
+  const base =
+    http ??
     run ??
     outboundFailure("invalid", `gh api graphql exited ${r.code}`);
-  const named = errorsFailure(body, answered ? failure : null, parsed.headers);
+  // The status classifies the failure; the run still says whose credential it used.
+  const account = base.account ?? run?.account;
+  const failure =
+    account === undefined || base.account === account
+      ? base
+      : { ...base, account };
+  const named = errorsFailure(
+    body,
+    answered ? failure : null,
+    parsed.headers,
+    account,
+  );
   if (named !== null) return named;
   const said = (r.stderr || parsed.body).trim().slice(0, 300);
   return errorOf({
@@ -348,6 +363,7 @@ function errorsFailure(
   body: unknown,
   failure: OutboundFailure | null,
   headers: Headers | null = null,
+  account?: string,
 ): GitHubApiError | null {
   if (
     !isRecord(body) ||
@@ -358,7 +374,19 @@ function errorsFailure(
   try {
     unwrapResponse(body, failure, headers);
   } catch (err) {
-    if (err instanceof GitHubApiError) return err;
+    if (err instanceof GitHubApiError)
+      // A success status leaves the class to the errors' types, but the run
+      // still says whose credential it used.
+      return err.account !== undefined || account === undefined
+        ? err
+        : new GitHubApiError(err.message, {
+            code: err.code,
+            data: err.data,
+            account,
+            until: err.until,
+            sent: err.sent,
+            retryAfterMs: err.retryAfterMs,
+          });
     throw err;
   }
   return null;
