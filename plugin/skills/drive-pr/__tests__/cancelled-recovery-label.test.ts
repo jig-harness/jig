@@ -67,6 +67,10 @@ function fixture(now: string, writes: string[]) {
       calls.push(id);
       return { code: 0, stderr: "" };
     },
+    withdrawClaim: async () => undefined,
+    withdrawLabelRerun: async (_pr, r) => {
+      reruns.delete(labelRerunKey(r));
+    },
     park: async (_pr, reason) => {
       parks.push(reason);
     },
@@ -82,6 +86,7 @@ function fixture(now: string, writes: string[]) {
     deps,
     calls,
     parks,
+    reruns,
     advance: (ms: number) => {
       clock += ms;
     },
@@ -117,6 +122,27 @@ describe("cancellations a label write caused", () => {
       "wait",
     );
     expect(f.calls).toEqual([3]);
+  });
+
+  test("a head read that fails gives back the claims of the runs not requested", async () => {
+    const f = fixture("00:01:40", rearm);
+    const other = run(4, "00:01:03", { workflowId: 11 });
+    const jobs = [...labelJobs, gate(4, "cancelled")];
+    let confirms = 0;
+    // Before the claims, before the first request, then before the second.
+    f.deps.confirm = async () => (++confirms === 3 ? "unread" : true);
+    expect(
+      await recoverCancelled(
+        "5",
+        "head",
+        jobs,
+        [rerunByHand, ...labelRuns, other],
+        f.deps,
+      ),
+    ).toBe("unknown");
+    expect(f.calls).toHaveLength(1);
+    expect([...f.reruns.keys()]).toEqual([`${f.calls[0]}:1`]);
+    expect(f.parks).toEqual([]);
   });
 
   test("a label run's first attempt is recovered however late it started", async () => {
