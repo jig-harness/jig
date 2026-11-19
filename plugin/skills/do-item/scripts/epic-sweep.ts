@@ -27,7 +27,11 @@ import {
   readSweepReply,
   validateSweepRemainder,
 } from "./lib/epic-sweep-tracker.ts";
-import { epicChildDisposition } from "./reconcile_parent_status.ts";
+import {
+  epicChildDisposition,
+  type ReconcileVocabulary,
+} from "./reconcile_parent_status.ts";
+import type { Issue } from "./lib/tracker/port.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { openTracker } from "./lib/tracker/index.ts";
 import { issueKeysOf } from "./lib/tracker/keys.ts";
@@ -112,6 +116,128 @@ async function readJson(path: string): Promise<unknown> {
   return Bun.file(path).json();
 }
 
+type Config = ReturnType<typeof ownTrackerConfig>;
+type Tracker = ReturnType<typeof openTracker>;
+
+interface Context {
+  config: Config;
+  root: string;
+  tracker: Tracker;
+  vocabulary: ReconcileVocabulary &
+    Required<Pick<ReconcileVocabulary, "statesByType">>;
+  scopes: Map<string, ScopeAssessment>;
+}
+
+function stateOf(context: Context, epic: Issue) {
+  const { vocabulary } = context;
+  return classifyChildState(
+    epic.state,
+    statesForType(vocabulary.states, vocabulary, epic.nativeType),
+  );
+}
+
+async function propose(context: Context): Promise<number> {
+  const { config, root, tracker, vocabulary, scopes } = context;
+  const readEntry = await committedEntries(root, [...scopes.values()]);
+  const keys = await listSweepEpics(tracker, config.labels.epic);
+  const rows = [];
+  const personChecks =
+    config.personChecks && issueKeysOf(config)?.normalize(config.personChecks);
+  for (const key of keys) {
+    const { epic, children } = await readSweepEpic(tracker, key);
+    if (personChecks === epic.identifier) continue;
+    if (stateOf(context, epic) !== "incomplete") continue;
+    rows.push(
+      await assessEpic(epic, children, scopes.get(key), readEntry, vocabulary),
+    );
+  }
+  console.log(JSON.stringify(createProposal(rows), null, 2));
+  return 0;
+}
+
+function remainderOf(scope: ScopeAssessment | undefined, epic: string) {
+  return (scope?.remainder ?? []).map(({ title, issue }) => {
+    if (!issue)
+      throw new EpicSweepError(
+        `${epic} still needs a linked backlog issue for "${title}"`,
+      );
+    return { title, issue };
+  });
+}
+
+/** Recheck one approved epic and return its write phase, or null when it is already closed. */
+async function prepareApproved(
+  context: Context,
+  row: ReturnType<typeof acceptedRows>[number],
+  readEntry: ReadEntry,
+  replyUrl: string,
+): Promise<{ epic: string; apply: () => Promise<void> } | null> {
+  const { config, tracker, vocabulary, scopes } = context;
+  const { epic, children } = await readSweepEpic(tracker, row.epic);
+  const state = stateOf(context, epic);
+  if (state === "completed") return null;
+  if (state === "abandoned")
+    throw new EpicSweepError(
+      `${epic.identifier} was abandoned since the proposal`,
+    );
+  const scope = scopes.get(row.epic);
+  const fresh = await assessEpic(epic, children, scope, readEntry, vocabulary);
+  verifyApprovedScope(row, fresh);
+  await validateSweepRemainder(tracker, epic, remainderOf(scope, row.epic));
+  const apply = await prepareSweepTracker(tracker, {
+    epic,
+    ...(config.personChecks === undefined
+      ? {}
+      : { personChecks: config.personChecks }),
+    personTails: row.personTails,
+    ordinaryTails: row.ordinaryTails,
+    operatorSteps: fresh.operatorSteps,
+    replyUrl,
+    classifyTail(child) {
+      const kind = epicChildDisposition(child, vocabulary);
+      if (kind === "person-check") return "person";
+      if (kind === "extractable-tail") return "ordinary";
+      return null;
+    },
+  });
+  return { epic: epic.identifier, apply };
+}
+
+async function accept(
+  context: Context,
+  proposal: string,
+  replyUrl: string,
+): Promise<number> {
+  const { root, tracker, scopes } = context;
+  const reply = await readSweepReply(tracker, replyUrl);
+  const approved = acceptedRows(
+    await readJson(proposal),
+    reply.body,
+    reply.precedingBodies,
+  );
+  const assessments = approved.map(({ epic }) => {
+    const scope = scopes.get(epic);
+    if (!scope)
+      throw new EpicSweepError(`Missing scope assessment for ${epic}`);
+    return scope;
+  });
+  const readEntry = await committedEntries(root, assessments);
+  const pending = [];
+  const alreadyClosed = [];
+  for (const row of approved) {
+    const prepared = await prepareApproved(context, row, readEntry, replyUrl);
+    if (prepared === null) alreadyClosed.push(row.epic);
+    else pending.push(prepared);
+  }
+  const closed = [];
+  for (const { epic, apply } of pending) {
+    await apply();
+    closed.push(epic);
+  }
+  console.log(JSON.stringify({ closed, alreadyClosed }, null, 2));
+  return 0;
+}
+
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
     flags: ["propose", "accept"],
@@ -127,131 +253,33 @@ async function main(): Promise<number> {
   const input = values.get("input");
   const proposal = values.get("proposal");
   const replyUrl = values.get("reply");
-  const propose = flags.has("propose");
+  const proposing = flags.has("propose");
   if (
     !input ||
     flags.size !== 1 ||
-    (propose ? Boolean(proposal || replyUrl) : !proposal || !replyUrl)
+    (proposing ? Boolean(proposal || replyUrl) : !proposal || !replyUrl)
   ) {
     console.error(USAGE);
     return 2;
   }
 
   return failingAsError(false, async () => {
-    const scopes = readScopes(await readJson(input));
     const config = ownTrackerConfig();
     const root = consumerRoot();
-    const tracker = openTracker(config, root);
-    const vocabulary = {
-      labels: config.labels,
-      states: config.states,
-      statesByType: config.adapter === "jira" ? config.jira.statesByType : {},
+    const context: Context = {
+      config,
+      root,
+      tracker: openTracker(config, root),
+      vocabulary: {
+        labels: config.labels,
+        states: config.states,
+        statesByType: config.adapter === "jira" ? config.jira.statesByType : {},
+      },
+      scopes: readScopes(await readJson(input)),
     };
-
-    if (propose) {
-      const readEntry = await committedEntries(root, [...scopes.values()]);
-      const keys = await listSweepEpics(tracker, config.labels.epic);
-      const rows = [];
-      const personChecks =
-        config.personChecks &&
-        issueKeysOf(config)?.normalize(config.personChecks);
-      for (const key of keys) {
-        const { epic, children } = await readSweepEpic(tracker, key);
-        if (personChecks === epic.identifier) continue;
-        if (
-          classifyChildState(
-            epic.state,
-            statesForType(vocabulary.states, vocabulary, epic.nativeType),
-          ) !== "incomplete"
-        )
-          continue;
-        rows.push(
-          await assessEpic(
-            epic,
-            children,
-            scopes.get(key),
-            readEntry,
-            vocabulary,
-          ),
-        );
-      }
-      console.log(JSON.stringify(createProposal(rows), null, 2));
-      return 0;
-    }
-
+    if (proposing) return propose(context);
     if (!proposal || !replyUrl) return 2;
-    const reply = await readSweepReply(tracker, replyUrl);
-    const approved = acceptedRows(
-      await readJson(proposal),
-      reply.body,
-      reply.precedingBodies,
-    );
-    const assessments = approved.map(({ epic }) => {
-      const scope = scopes.get(epic);
-      if (!scope)
-        throw new EpicSweepError(`Missing scope assessment for ${epic}`);
-      return scope;
-    });
-    const readEntry = await committedEntries(root, assessments);
-    const pending = [];
-    const alreadyClosed = [];
-    for (const row of approved) {
-      const { epic, children } = await readSweepEpic(tracker, row.epic);
-      const state = classifyChildState(
-        epic.state,
-        statesForType(vocabulary.states, vocabulary, epic.nativeType),
-      );
-      if (state === "completed") {
-        alreadyClosed.push(epic.identifier);
-        continue;
-      }
-      if (state === "abandoned")
-        throw new EpicSweepError(
-          `${epic.identifier} was abandoned since the proposal`,
-        );
-      const scope = scopes.get(row.epic);
-      const fresh = await assessEpic(
-        epic,
-        children,
-        scope,
-        readEntry,
-        vocabulary,
-      );
-      verifyApprovedScope(row, fresh);
-      const remainder = (scope?.remainder ?? []).map(({ title, issue }) => {
-        if (!issue)
-          throw new EpicSweepError(
-            `${row.epic} still needs a linked backlog issue for "${title}"`,
-          );
-        return { title, issue };
-      });
-      await validateSweepRemainder(tracker, epic, remainder);
-      const apply = await prepareSweepTracker(tracker, {
-        epic,
-        ...(config.personChecks === undefined
-          ? {}
-          : { personChecks: config.personChecks }),
-        personTails: row.personTails,
-        ordinaryTails: row.ordinaryTails,
-        operatorSteps: fresh.operatorSteps,
-        replyUrl,
-        classifyTail(child) {
-          const kind = epicChildDisposition(child, vocabulary);
-          if (kind === "person-check") return "person";
-          if (kind === "extractable-tail") return "ordinary";
-          return null;
-        },
-      });
-      pending.push({ epic: epic.identifier, apply });
-    }
-
-    const closed = [];
-    for (const { epic, apply } of pending) {
-      await apply();
-      closed.push(epic);
-    }
-    console.log(JSON.stringify({ closed, alreadyClosed }, null, 2));
-    return 0;
+    return accept(context, proposal, replyUrl);
   });
 }
 

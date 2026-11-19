@@ -182,6 +182,84 @@ export function containsEntry(document: string, heading: string): boolean {
   return false;
 }
 
+type MarkdownLine =
+  ReturnType<typeof markdownLines> extends Iterable<infer L> ? L : never;
+
+// The scanner's list metadata decides what a line is: `depth` marks a line
+// that opens an item, `boundary` a block that ends the item above it. An
+// unchecked item owns the lines after it until a boundary, a heading or
+// another item; after a blank line only lines indented to its content
+// column stay in it. Only paragraph text can be carried as one line; any
+// other block inside the item refuses the checklist.
+interface ChecklistScan {
+  steps: string[];
+  checklistDepth: number;
+  found: boolean;
+  open: boolean;
+  column: number;
+  afterBlank: boolean;
+}
+
+function scanHeading(scan: ChecklistScan, line: MarkdownLine) {
+  scan.open = false;
+  const match = HEADING.exec(line.line);
+  const depth = match?.[1]?.length ?? 0;
+  if (headingKey(match?.[2] ?? "") === "operator checklist") {
+    scan.checklistDepth = depth;
+    scan.found = true;
+  } else if (depth <= scan.checklistDepth) {
+    scan.checklistDepth = 0;
+  }
+}
+
+/** A line that opens a list item; false when the checklist cannot carry it. */
+function scanItem(scan: ChecklistScan, line: MarkdownLine): boolean {
+  const step = uncheckedListItem(line.line);
+  if ((line.depth ?? 0) > 0 && (scan.open || step)) return false;
+  if (nestsOnItsOwnLine(line.line)) return false;
+  if (step) scan.steps.push(step);
+  scan.open = step !== undefined;
+  scan.column = line.contentColumn ?? 0;
+  return true;
+}
+
+/** Any other line; false when the checklist cannot carry it. */
+function scanContinuation(
+  scan: ChecklistScan,
+  line: MarkdownLine,
+  wasAfterBlank: boolean,
+): boolean {
+  const indent = line.line.length - line.line.trimStart().length;
+  // A boundary indented to the item's content column is a block inside the
+  // item, which the checklist cannot carry as one line.
+  if (scan.open && line.boundary && indent >= scan.column) return false;
+  if (!scan.open || line.boundary || (wasAfterBlank && indent < scan.column)) {
+    scan.open = false;
+    return true;
+  }
+  if (line.kind !== "text" || line.quoted || line.inItem) return false;
+  scan.steps[scan.steps.length - 1] += ` ${line.line.trim()}`;
+  return true;
+}
+
+/** One line of the description; false when the checklist cannot carry it. */
+function scanLine(scan: ChecklistScan, line: MarkdownLine): boolean {
+  if (line.kind === "heading" && !line.quoted && !line.inItem) {
+    scanHeading(scan, line);
+    return true;
+  }
+  if (!scan.checklistDepth) return true;
+  if (line.kind === "text" && !line.quoted && line.line.trim() === "") {
+    scan.afterBlank = true;
+    return true;
+  }
+  const wasAfterBlank = scan.afterBlank;
+  scan.afterBlank = false;
+  return line.depth !== undefined
+    ? scanItem(scan, line)
+    : scanContinuation(scan, line, wasAfterBlank);
+}
+
 function operatorSteps(
   epic: Issue,
   vocabulary: ReconcileVocabulary,
@@ -191,63 +269,18 @@ function operatorSteps(
     epicChildDisposition({ ...epic, labels: [] }, vocabulary) ===
       "person-check";
   if (!owesOperatorCheck) return [];
-  const steps: string[] = [];
-  let checklistDepth = 0;
-  let found = false;
-  // The scanner's list metadata decides what a line is: `depth` marks a line
-  // that opens an item, `boundary` a block that ends the item above it. An
-  // unchecked item owns the lines after it until a boundary, a heading or
-  // another item; after a blank line only lines indented to its content
-  // column stay in it. Only paragraph text can be carried as one line; any
-  // other block inside the item refuses the checklist.
-  let open = false;
-  let column = 0;
-  let afterBlank = false;
+  const scan: ChecklistScan = {
+    steps: [],
+    checklistDepth: 0,
+    found: false,
+    open: false,
+    column: 0,
+    afterBlank: false,
+  };
   for (const line of markdownLines(epic.description)) {
-    if (line.kind === "heading" && !line.quoted && !line.inItem) {
-      open = false;
-      const match = HEADING.exec(line.line);
-      const depth = match?.[1]?.length ?? 0;
-      if (headingKey(match?.[2] ?? "") === "operator checklist") {
-        checklistDepth = depth;
-        found = true;
-      } else if (depth <= checklistDepth) {
-        checklistDepth = 0;
-      }
-      continue;
-    }
-    if (!checklistDepth) continue;
-    if (line.kind === "text" && !line.quoted && line.line.trim() === "") {
-      afterBlank = true;
-      continue;
-    }
-    const wasAfterBlank = afterBlank;
-    afterBlank = false;
-    if (line.depth !== undefined) {
-      const step = uncheckedListItem(line.line);
-      if (line.depth > 0 && (open || step)) return null;
-      if (nestsOnItsOwnLine(line.line)) return null;
-      if (step) steps.push(step);
-      open = step !== undefined;
-      column = line.contentColumn ?? 0;
-      continue;
-    }
-    const indent = line.line.length - line.line.trimStart().length;
-    // A boundary indented to the item's content column is a block inside the
-    // item, which the checklist cannot carry as one line.
-    if (open && line.boundary && indent >= column) return null;
-    if (!open || line.boundary) {
-      open = false;
-      continue;
-    }
-    if (wasAfterBlank && indent < column) {
-      open = false;
-      continue;
-    }
-    if (line.kind !== "text" || line.quoted || line.inItem) return null;
-    steps[steps.length - 1] += ` ${line.line.trim()}`;
+    if (!scanLine(scan, line)) return null;
   }
-  return found ? steps : null;
+  return scan.found ? scan.steps : null;
 }
 
 const LIST_MARKER = /^[ \t]*(?:[-*+]|\d+[.)])(?:[ \t]|$)/;
@@ -259,25 +292,31 @@ function nestsOnItsOwnLine(line: string): boolean {
   return marker !== undefined && LIST_MARKER.test(text.slice(marker.length));
 }
 
+/** Where the text after a list marker starts, or undefined when there is none. */
+function afterListMarker(text: string): number | undefined {
+  if ("-*+".includes(text[0] ?? "")) return 1;
+  let cursor = 0;
+  while (/[0-9]/.test(text[cursor] ?? "")) cursor += 1;
+  return cursor > 0 && ".)".includes(text[cursor] ?? "")
+    ? cursor + 1
+    : undefined;
+}
+
+function skipBlanks(text: string, from: number): number {
+  let cursor = from;
+  while (text[cursor] === " " || text[cursor] === "\t") cursor += 1;
+  return cursor;
+}
+
 function uncheckedListItem(line: string): string | undefined {
   const text = line.trimStart();
-  let cursor = 0;
-  if ("-*+".includes(text[0] ?? "")) cursor = 1;
-  else {
-    while (true) {
-      const character = text[cursor];
-      if (character === undefined || character < "0" || character > "9") break;
-      cursor += 1;
-    }
-    if (cursor === 0 || !".)".includes(text[cursor] ?? "")) return undefined;
-    cursor += 1;
-  }
-  while (text[cursor] === " " || text[cursor] === "\t") cursor += 1;
-  if (!text.startsWith("[ ]", cursor)) return undefined;
-  cursor += 3;
-  if (text[cursor] !== " " && text[cursor] !== "\t") return undefined;
-  while (text[cursor] === " " || text[cursor] === "\t") cursor += 1;
-  const step = text.slice(cursor).trim();
+  const marker = afterListMarker(text);
+  if (marker === undefined) return undefined;
+  const box = skipBlanks(text, marker);
+  if (!text.startsWith("[ ]", box)) return undefined;
+  const after = box + 3;
+  if (text[after] !== " " && text[after] !== "\t") return undefined;
+  const step = text.slice(skipBlanks(text, after)).trim();
   return step === "" ? undefined : step;
 }
 

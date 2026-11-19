@@ -70,6 +70,54 @@ function trustedReply(comment: CommentFact): boolean {
   );
 }
 
+function invalid(message: string): TrackerRequestError {
+  return new TrackerRequestError("invalid", message);
+}
+
+/** The moment a comment was posted and the moment its current text took effect. */
+function commentTimes(comment: CommentFact): {
+  created: number;
+  effectiveAt: number;
+} | null {
+  const created = parseMs(comment.createdAt);
+  const effectiveAt = parseMs(comment.editedAt ?? comment.createdAt);
+  return Number.isFinite(created) &&
+    Number.isFinite(effectiveAt) &&
+    effectiveAt >= created
+    ? { created, effectiveAt }
+    : null;
+}
+
+type Proposal = { body: string; effectiveAt: number; marker: string };
+
+/** The proposals visible before the acceptance, each in the form the person read. */
+function precedingProposals(
+  comments: CommentFact[],
+  acceptedAt: number,
+): Proposal[] {
+  const preceding: Proposal[] = [];
+  for (const comment of comments) {
+    const marker = comment.trusted && sweepMarkerOnLastLine(comment.body);
+    if (!marker) continue;
+    const times = commentTimes(comment);
+    if (times === null)
+      throw invalid(
+        `Cannot establish the proposal's time relative to the reply (${comment.url ?? comment.id})`,
+      );
+    const { created, effectiveAt } = times;
+    // A proposal that was already visible when the person accepted cannot be
+    // silently ignored when an edit changes it afterwards. A genuinely later
+    // proposal, however, is outside that authorization.
+    if (created < acceptedAt && effectiveAt >= acceptedAt)
+      throw invalid(
+        `Proposal changed after the reply (${comment.url ?? comment.id})`,
+      );
+    if (created < acceptedAt)
+      preceding.push({ body: comment.body, effectiveAt, marker });
+  }
+  return preceding.sort((left, right) => left.effectiveAt - right.effectiveAt);
+}
+
 /** Resolve the actual tracker reply, never the caller's transcription of it. */
 export async function readSweepReply(
   tracker: CommentTracker,
@@ -81,58 +129,19 @@ export async function readSweepReply(
       ? issueForReply(tracker, url)
       : null;
   if (url === null || key === null)
-    throw new TrackerRequestError(
-      "invalid",
+    throw invalid(
       "supply a tracker comment URL on an issue in this repository",
     );
   const { comments } = await tracker.issueComments(key);
   const reply = comments.find((comment) => comment.url === url.href);
   if (reply === undefined || !trustedReply(reply))
-    throw new TrackerRequestError(
-      "invalid",
-      "the comment URL must name a trusted person's tracker reply",
-    );
+    throw invalid("the comment URL must name a trusted person's tracker reply");
   // An edited answer is new authorization at its edit time. A proposal
   // edited after that authorization could now describe a different sweep.
-  const postedAt = parseMs(reply.createdAt);
-  const acceptedAt = parseMs(reply.editedAt ?? reply.createdAt);
-  if (
-    !Number.isFinite(postedAt) ||
-    !Number.isFinite(acceptedAt) ||
-    acceptedAt < postedAt
-  )
-    throw new TrackerRequestError(
-      "invalid",
-      "the tracker reply has no readable acceptance time",
-    );
-  const preceding: { body: string; effectiveAt: number; marker: string }[] = [];
-  for (const comment of comments) {
-    if (!comment.trusted) continue;
-    const marker = sweepMarkerOnLastLine(comment.body);
-    if (!marker) continue;
-    const created = parseMs(comment.createdAt);
-    const effectiveAt = parseMs(comment.editedAt ?? comment.createdAt);
-    if (
-      !Number.isFinite(created) ||
-      !Number.isFinite(effectiveAt) ||
-      effectiveAt < created
-    )
-      throw new TrackerRequestError(
-        "invalid",
-        `Cannot establish the proposal's time relative to the reply (${comment.url ?? comment.id})`,
-      );
-    // A proposal that was already visible when the person accepted cannot be
-    // silently ignored when an edit changes it afterwards. A genuinely later
-    // proposal, however, is outside that authorization.
-    if (created < acceptedAt && effectiveAt >= acceptedAt)
-      throw new TrackerRequestError(
-        "invalid",
-        `Proposal changed after the reply (${comment.url ?? comment.id})`,
-      );
-    if (created >= acceptedAt) continue;
-    preceding.push({ body: comment.body, effectiveAt, marker });
-  }
-  preceding.sort((left, right) => left.effectiveAt - right.effectiveAt);
+  const acceptance = commentTimes(reply);
+  if (acceptance === null)
+    throw invalid("the tracker reply has no readable acceptance time");
+  const preceding = precedingProposals(comments, acceptance.effectiveAt);
   const latest = preceding.at(-1);
   if (
     latest &&
@@ -140,12 +149,8 @@ export async function readSweepReply(
       ({ effectiveAt, marker }) =>
         effectiveAt === latest.effectiveAt && marker !== latest.marker,
     )
-  ) {
-    throw new TrackerRequestError(
-      "invalid",
-      "Multiple latest proposals have the same tracker time",
-    );
-  }
+  )
+    throw invalid("Multiple latest proposals have the same tracker time");
   return {
     body: reply.body,
     precedingBodies: preceding.map(({ body }) => body),
@@ -300,184 +305,229 @@ function sameEpicScope(before: Issue, current: Issue): boolean {
   );
 }
 
+interface Move {
+  child: string;
+  parent: string | null;
+}
+
+interface SweepPlan {
+  tracker: SweepTracker;
+  input: SweepTrackerInput;
+  key: string;
+  tails: Map<string, boolean>;
+  destination: Issue | null;
+  moves: Move[];
+}
+
+function refuse(message: string): TrackerRequestError {
+  return new TrackerRequestError("invalid", message);
+}
+
+/** The tails the person approved, each marked as a person check or not. */
+function approvedTails(input: SweepTrackerInput): Map<string, boolean> {
+  const tails = new Map([
+    ...input.personTails.map((child) => [child, true] as const),
+    ...input.ordinaryTails.map((child) => [child, false] as const),
+  ]);
+  if (tails.size !== input.personTails.length + input.ordinaryTails.length)
+    throw refuse(`${input.epic.identifier} has duplicate approved tails`);
+  return tails;
+}
+
+/** The standing person-checks issue, read when the sweep has something to hand it. */
+async function readDestination(
+  tracker: SweepTracker,
+  input: SweepTrackerInput,
+  tails: Map<string, boolean>,
+): Promise<Issue | null> {
+  if (input.personTails.length === 0 && input.operatorSteps.length === 0)
+    return null;
+  const key = input.epic.identifier;
+  const destinationKey = localKey(tracker, input.personChecks ?? "");
+  if (destinationKey === null)
+    throw refuse(
+      "set issue_tracker.person_checks to the standing open issue's key",
+    );
+  const destination = await tracker.getIssue(destinationKey);
+  if (
+    destination === null ||
+    isClosed(destination.state) ||
+    destination.identifier === key ||
+    destination.parent?.identifier === key ||
+    tails.has(destination.identifier)
+  )
+    throw refuse(
+      "issue_tracker.person_checks must name an open issue outside the epic",
+    );
+  return destination;
+}
+
+/** Whether an approved tail still sits where the proposal found it. */
+async function assertTailPlace(
+  tracker: SweepTracker,
+  issue: Issue,
+  key: string,
+  parent: string | null,
+) {
+  const current = issue.parent?.identifier ?? null;
+  if (
+    current !== key &&
+    (current !== parent || !(await isRelated(tracker, issue.identifier, key)))
+  )
+    throw refuse(
+      `approved tail ${issue.identifier} moved without the expected link or destination`,
+    );
+}
+
+/** Check each approved tail and list the ones that still have to move. */
+async function planMoves(
+  tracker: SweepTracker,
+  input: SweepTrackerInput,
+  tails: Map<string, boolean>,
+  destination: Issue | null,
+): Promise<Move[]> {
+  const key = input.epic.identifier;
+  const moves: Move[] = [];
+  for (const [child, person] of tails) {
+    const issue = await tracker.getIssue(child);
+    if (issue === null) throw refuse(`approved tail ${child} is unreadable`);
+    const parent = person ? (destination?.identifier ?? null) : null;
+    await assertTailPlace(tracker, issue, key, parent);
+    if (isClosed(issue.state)) continue;
+    assertTailKind(input, issue, person);
+    if (
+      issue.parent?.identifier === key ||
+      (!person && !isInBacklog(tracker, issue))
+    )
+      moves.push({ child, parent });
+  }
+  return moves;
+}
+
+/** The epic is still the one proposed, and only approved tails remain open. */
+async function assertEpicUnchanged(plan: SweepPlan): Promise<"done" | "open"> {
+  const { tracker, input, key, tails } = plan;
+  const before = await tracker.getIssue(key);
+  if (before === null || !before.isEpic)
+    throw refuse(`${key} is no longer a readable epic`);
+  if (before.state.type === "completed") return "done";
+  if (
+    isClosed(before.state) ||
+    !sameEpicScope(input.epic, before) ||
+    before.children.some(
+      (child) => !isClosed(child.state) && !tails.has(child.identifier),
+    )
+  )
+    throw refuse(`${key} changed since its closure proposal`);
+  return "open";
+}
+
+async function assertDestinationOpen(plan: SweepPlan) {
+  const { tracker, key, destination } = plan;
+  if (destination === null) return;
+  const current = await tracker.getIssue(destination.identifier);
+  if (
+    current === null ||
+    isClosed(current.state) ||
+    current.parent?.identifier === key
+  )
+    throw refuse(
+      "issue_tracker.person_checks must still name an open issue outside the epic",
+    );
+}
+
+async function postOperatorSteps(plan: SweepPlan) {
+  const { tracker, input, destination } = plan;
+  if (destination === null || input.operatorSteps.length === 0) return;
+  const steps = input.operatorSteps.map(
+    (step) => `- [ ] ${step.replace(/\s+/g, " ")}`,
+  );
+  await postOnce(
+    tracker,
+    destination.identifier,
+    [`Operator checks from epic ${epicRef(input.epic)}.`, "", ...steps].join(
+      "\n",
+    ),
+  );
+}
+
+async function applyMove(plan: SweepPlan, { child, parent }: Move) {
+  const { tracker, input, key, destination } = plan;
+  const issue = await tracker.getIssue(child);
+  if (issue === null)
+    throw refuse(`approved tail ${child} changed parent during the sweep`);
+  if (isClosed(issue.state)) return;
+  assertTailKind(input, issue, parent !== null);
+  const underEpic = issue.parent?.identifier === key;
+  if (underEpic && !(await isRelated(tracker, child, key)))
+    await tracker.relate(child, "related", key);
+  if (underEpic) {
+    const movedTo =
+      destination !== null && parent === destination.identifier
+        ? ` to the standing person-checks list ${epicRef(destination)}`
+        : "";
+    await postOnce(
+      tracker,
+      child,
+      `Moved from epic ${epicRef(input.epic)}${movedTo} during its closure sweep.`,
+    );
+    await tracker.updateIssue(child, { parent });
+  } else if ((issue.parent?.identifier ?? null) !== parent) {
+    throw refuse(`approved tail ${child} changed parent during the sweep`);
+  }
+  if (parent === null && !isInBacklog(tracker, issue))
+    await tracker.transition(child, "backlog");
+}
+
+async function closeEpic(plan: SweepPlan) {
+  const { tracker, input, key } = plan;
+  const after = await tracker.getIssue(key);
+  if (
+    after === null ||
+    isClosed(after.state) ||
+    !sameEpicScope(input.epic, after) ||
+    after.children.some((child) => !isClosed(child.state))
+  )
+    throw refuse(`${key} has changed or still has open children`);
+  const comments = await assertAuthorized(tracker, key);
+  if (!hasEpicWaiver(comments, input.replyUrl)) {
+    await tracker.postComment(
+      key,
+      `Epic closure accepted in <${input.replyUrl}>.\n\n${EPIC_WAIVER_MARKER}`,
+    );
+  }
+  await tracker.transition(key, "done");
+  if ((await tracker.getIssue(key))?.state.type !== "completed")
+    throw new TrackerRequestError(
+      "unresolved",
+      `${key} did not reach its done state`,
+    );
+}
+
 /** Verify all tracker-side prerequisites before returning the write phase. */
 export async function prepareSweepTracker(
   tracker: SweepTracker,
   input: SweepTrackerInput,
 ): Promise<() => Promise<void>> {
-  const { epic, personTails, ordinaryTails, operatorSteps, replyUrl } = input;
-  const key = epic.identifier;
-  const destinationKey = localKey(tracker, input.personChecks ?? "");
-  if (destinationKey === key)
-    throw new TrackerRequestError(
-      "invalid",
+  const key = input.epic.identifier;
+  if (localKey(tracker, input.personChecks ?? "") === key)
+    throw refuse(
       `${key} is the standing issue_tracker.person_checks destination`,
     );
-  if (tracker.stateName("done", epic.nativeType) === null)
-    throw new TrackerRequestError(
-      "invalid",
-      `${key} has no configured done state`,
-    );
+  if (tracker.stateName("done", input.epic.nativeType) === null)
+    throw refuse(`${key} has no configured done state`);
   await assertAuthorized(tracker, key);
-  const tails = new Map([
-    ...personTails.map((child) => [child, true] as const),
-    ...ordinaryTails.map((child) => [child, false] as const),
-  ]);
-  if (tails.size !== personTails.length + ordinaryTails.length)
-    throw new TrackerRequestError(
-      "invalid",
-      `${key} has duplicate approved tails`,
-    );
-
-  let destination: Issue | null = null;
-  if (personTails.length > 0 || operatorSteps.length > 0) {
-    if (destinationKey === null)
-      throw new TrackerRequestError(
-        "invalid",
-        "set issue_tracker.person_checks to the standing open issue's key",
-      );
-    destination = await tracker.getIssue(destinationKey);
-    if (
-      destination === null ||
-      isClosed(destination.state) ||
-      destination.identifier === key ||
-      destination.parent?.identifier === key ||
-      tails.has(destination.identifier)
-    )
-      throw new TrackerRequestError(
-        "invalid",
-        "issue_tracker.person_checks must name an open issue outside the epic",
-      );
-  }
-  const moves: Array<{ child: string; parent: string | null }> = [];
-  for (const [child, person] of tails) {
-    const issue = await tracker.getIssue(child);
-    if (issue === null)
-      throw new TrackerRequestError(
-        "invalid",
-        `approved tail ${child} is unreadable`,
-      );
-    const parent = person ? (destination?.identifier ?? null) : null;
-    if (
-      issue.parent?.identifier !== key &&
-      ((issue.parent?.identifier ?? null) !== parent ||
-        !(await isRelated(tracker, child, key)))
-    )
-      throw new TrackerRequestError(
-        "invalid",
-        `approved tail ${child} moved without the expected link or destination`,
-      );
-    if (!isClosed(issue.state)) {
-      assertTailKind(input, issue, person);
-      if (
-        issue.parent?.identifier === key ||
-        (!person && !isInBacklog(tracker, issue))
-      )
-        moves.push({ child, parent });
-    }
-  }
+  const tails = approvedTails(input);
+  const destination = await readDestination(tracker, input, tails);
+  const moves = await planMoves(tracker, input, tails, destination);
+  const plan: SweepPlan = { tracker, input, key, tails, destination, moves };
 
   return async () => {
-    const before = await tracker.getIssue(key);
-    if (before === null || !before.isEpic)
-      throw new TrackerRequestError(
-        "invalid",
-        `${key} is no longer a readable epic`,
-      );
-    if (before.state.type === "completed") return;
-    if (
-      isClosed(before.state) ||
-      !sameEpicScope(epic, before) ||
-      before.children.some(
-        (child) => !isClosed(child.state) && !tails.has(child.identifier),
-      )
-    )
-      throw new TrackerRequestError(
-        "invalid",
-        `${key} changed since its closure proposal`,
-      );
+    if ((await assertEpicUnchanged(plan)) === "done") return;
     await assertAuthorized(tracker, key);
-    if (destination !== null) {
-      const current = await tracker.getIssue(destination.identifier);
-      if (
-        current === null ||
-        isClosed(current.state) ||
-        current.parent?.identifier === key
-      )
-        throw new TrackerRequestError(
-          "invalid",
-          "issue_tracker.person_checks must still name an open issue outside the epic",
-        );
-    }
-    if (destination !== null && operatorSteps.length > 0) {
-      const steps = operatorSteps.map(
-        (step) => `- [ ] ${step.replace(/\s+/g, " ")}`,
-      );
-      await postOnce(
-        tracker,
-        destination.identifier,
-        [`Operator checks from epic ${epicRef(epic)}.`, "", ...steps].join(
-          "\n",
-        ),
-      );
-    }
-    for (const { child, parent } of moves) {
-      const issue = await tracker.getIssue(child);
-      if (issue === null)
-        throw new TrackerRequestError(
-          "invalid",
-          `approved tail ${child} changed parent during the sweep`,
-        );
-      if (isClosed(issue.state)) continue;
-      assertTailKind(input, issue, parent !== null);
-      if (
-        issue.parent?.identifier === key &&
-        !(await isRelated(tracker, child, key))
-      )
-        await tracker.relate(child, "related", key);
-      const movedTo =
-        destination !== null && parent === destination.identifier
-          ? ` to the standing person-checks list ${epicRef(destination)}`
-          : "";
-      if (issue.parent?.identifier === key) {
-        await postOnce(
-          tracker,
-          child,
-          `Moved from epic ${epicRef(epic)}${movedTo} during its closure sweep.`,
-        );
-        await tracker.updateIssue(child, { parent });
-      } else if ((issue.parent?.identifier ?? null) !== parent) {
-        throw new TrackerRequestError(
-          "invalid",
-          `approved tail ${child} changed parent during the sweep`,
-        );
-      }
-      if (parent === null && !isInBacklog(tracker, issue))
-        await tracker.transition(child, "backlog");
-    }
-    const after = await tracker.getIssue(key);
-    if (
-      after === null ||
-      isClosed(after.state) ||
-      !sameEpicScope(epic, after) ||
-      after.children.some((child) => !isClosed(child.state))
-    )
-      throw new TrackerRequestError(
-        "invalid",
-        `${key} has changed or still has open children`,
-      );
-    const comments = await assertAuthorized(tracker, key);
-    if (!hasEpicWaiver(comments, replyUrl)) {
-      await tracker.postComment(
-        key,
-        `Epic closure accepted in <${replyUrl}>.\n\n${EPIC_WAIVER_MARKER}`,
-      );
-    }
-    await tracker.transition(key, "done");
-    if ((await tracker.getIssue(key))?.state.type !== "completed")
-      throw new TrackerRequestError(
-        "unresolved",
-        `${key} did not reach its done state`,
-      );
+    await assertDestinationOpen(plan);
+    await postOperatorSteps(plan);
+    for (const move of moves) await applyMove(plan, move);
+    await closeEpic(plan);
   };
 }
