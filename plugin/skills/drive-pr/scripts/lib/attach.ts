@@ -863,6 +863,26 @@ export function attachOff(script: string): boolean {
 const ATTACH_LIMIT_WAITS = 3;
 
 /**
+ * A refusal of the attach: returns once the forge's limit was waited out and
+ * the attach may read again, and otherwise ends the drive with the refusal's
+ * code (`onNotOpen` first for a pull request not open).
+ */
+async function settleRefusal(
+  e: AttachRefusal,
+  mayWait: boolean,
+  onNotOpen?: () => Promise<void>,
+  onLimit?: (limit: ForgeLimit, mayWait: boolean) => Promise<true | number>,
+): Promise<void> {
+  if (e.limit !== undefined && onLimit !== undefined) {
+    const answer = await onLimit(e.limit, mayWait);
+    if (answer === true) return;
+    fail(answer, `drive.ts: ${e.message}`);
+  }
+  if (e.code === 5) await onNotOpen?.();
+  fail(e.code, `drive.ts: ${e.message}`);
+}
+
+/**
  * `attach` until it attaches, as `attachForDrive` runs it: a refusal ends
  * the drive with its code (`onNotOpen` first for a pull request not open),
  * and a read the forge's spent rate limit refused goes to `onLimit`, which
@@ -878,13 +898,7 @@ export async function attachThroughLimits<T>(
       return await attach();
     } catch (e) {
       if (!(e instanceof AttachRefusal)) throw e;
-      if (e.limit !== undefined && onLimit !== undefined) {
-        const answer = await onLimit(e.limit, waits < ATTACH_LIMIT_WAITS);
-        if (answer === true) continue;
-        fail(answer, `drive.ts: ${e.message}`);
-      }
-      if (e.code === 5) await onNotOpen?.();
-      fail(e.code, `drive.ts: ${e.message}`);
+      await settleRefusal(e, waits < ATTACH_LIMIT_WAITS, onNotOpen, onLimit);
     }
   }
 }
