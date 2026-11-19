@@ -1,6 +1,7 @@
 /** Order one round boundary, status gate, pass and Ready transition without bypassing admission checks. */
 import type { DriveRoundContext } from "./round-context.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import { recoveryExit } from "../cancelled-recovery-reads.ts";
 
 import { run, tsArgv } from "./../proc.ts";
 
@@ -344,17 +345,9 @@ async function recoverBeforePass(
   const head = String((status.head as { api?: string } | undefined)?.api ?? "");
   if (head === "") return null;
   const recovery = await recoverCancelledOnHead(context.pr, head);
-  switch (recovery) {
-    case "parked":
-      return 8;
-    case "listing-cut-short":
-      return CHECK_RUNS_UNREADABLE_EXIT;
-    case "unknown":
-      return 1;
-    case "wait":
-      await sleep(FINAL_CI_POLL_SECONDS);
-      return "continue";
-    default:
-      return null;
-  }
+  const stop = recoveryExit(recovery);
+  if (stop !== null) return stop;
+  if (recovery !== "wait") return null;
+  await sleep(FINAL_CI_POLL_SECONDS);
+  return "continue";
 }

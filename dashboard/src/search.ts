@@ -4,11 +4,14 @@
  * view is a link a laptop can open. A change replaces the address; it adds no
  * history entry.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   CARD_FILTER_PARAMS,
   type CardFilter,
   cardFilterPairs,
+  DEFAULT_QUEUE_GROUPING,
+  QUEUE_GROUPINGS,
+  type QueueGrouping,
   readCardFilter,
 } from "./facets.ts";
 import { instantOf } from "./format.ts";
@@ -164,10 +167,12 @@ export function rowsQuery(filter: LogFilter, timeZone: string | null): string {
   return queryOf(pairs);
 }
 
+const GROUPING_PARAM = "group-by";
+
 /** The whole query string: what the page was opened with, then the filter. */
 export function pageQuery(filter: LogFilter, search: string): string {
   const params = new URLSearchParams(search);
-  const kept = ["token", "theme", "view"].flatMap(
+  const kept = ["token", "theme", "view", GROUPING_PARAM].flatMap(
     (name): Array<[string, string]> => {
       const value = params.get(name);
       return value === null ? [] : [[name, value]];
@@ -257,6 +262,47 @@ export function useFilter(): [LogFilter, (patch: Partial<LogFilter>) => void] {
     );
   }, []);
   return [filter, patch];
+}
+
+/** The grouping the address names for What is coming; the default when it names none the page knows. */
+export function queueGroupingOf(search: string): QueueGrouping {
+  const named = new URLSearchParams(search).get(GROUPING_PARAM);
+  return (
+    QUEUE_GROUPINGS.find((grouping) => grouping.id === named)?.id ??
+    DEFAULT_QUEUE_GROUPING
+  );
+}
+
+/** The width below which the page is its phone layout, as `styles.css` draws it. */
+const PHONE_WIDTH = "(max-width: 899px)";
+
+function usePhoneWidth(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      const query = matchMedia(PHONE_WIDTH);
+      query.addEventListener("change", listener);
+      return () => query.removeEventListener("change", listener);
+    },
+    () => matchMedia(PHONE_WIDTH).matches,
+    () => false,
+  );
+}
+
+/** How What is coming is grouped, kept in the address; a phone stays on the default, whatever a shared link says. */
+export function useQueueGrouping(): [
+  QueueGrouping,
+  (grouping: QueueGrouping) => void,
+] {
+  const [chosen, setChosen] = useState(() => queueGroupingOf(location.search));
+  const phone = usePhoneWidth();
+  const choose = useCallback((grouping: QueueGrouping) => {
+    setChosen(grouping);
+    replaceParam(
+      GROUPING_PARAM,
+      grouping === DEFAULT_QUEUE_GROUPING ? null : grouping,
+    );
+  }, []);
+  return [phone ? DEFAULT_QUEUE_GROUPING : chosen, choose];
 }
 
 /** The card filters travel in the page address beside the history filters. */

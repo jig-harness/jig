@@ -31,6 +31,8 @@ export interface Holder {
   process: ProcessState;
   /** Why the process state is what it is, in words. */
   why: string;
+  /** When its launch began, where its record or claim says. */
+  since?: string;
   /** What only this machine's records name. */
   local?: {
     account?: string;
@@ -62,6 +64,7 @@ export const PERSON_ACTS = [
   "assign the item as someone who can write",
   "authorize the account's tracker credential",
   "inspect the quota spending",
+  "settle the launch that holds the drive",
 ] as const;
 export type PersonAct = (typeof PERSON_ACTS)[number];
 
@@ -92,6 +95,7 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   "assign the item as someone who can write": "Do",
   "authorize the account's tracker credential": "Authorize",
   "inspect the quota spending": "Investigate",
+  "settle the launch that holds the drive": "Investigate",
 };
 
 /** What a station waits on: nothing, something that settles by itself, or a person's act. */

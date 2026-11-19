@@ -114,9 +114,12 @@ prompt appears:
   that member is left out, work on the branch named for the member you claim
   (step 4, or `/jig:do-item`'s), so the member's own pickup can use its branch.
 
-Any other question that needs a person ends the pass with `Question:`; frame
+Any other question that needs a person ends the pass with `Question:`. Frame
 it as a decision record and record the failed result with it through the
 launch's result command (`failed --decision <file>`, as the prompt says).
+Include the exact tracker key of each member the person is being asked to
+decide about in the question itself. For a batch-wide question, leave the
+member keys out so the dispatcher shows one question for the batch.
 Never choose for them.
 
 ```bash

@@ -7,10 +7,7 @@
  * reported with its age. A repository with no record ranks with no
  * objectives: urgent and bug work still rank.
  */
-import {
-  spawnSync,
-  withoutLeakyGitEnv,
-} from "../../shared/guarded-git-spawn.ts";
+import { boundedGit, type GitResult } from "./bounded-git.ts";
 import {
   isOwnReferenceProblem,
   parsePrioritiesRecord,
@@ -18,11 +15,10 @@ import {
   PRIORITIES_FILE,
   referenceProblems,
 } from "../../shared/priorities/record.ts";
-import { currentMs, parseMs } from "../../shared/time.ts";
+import { parseMs } from "../../shared/time.ts";
 
 /** How many earlier revisions of the file are tried for the last valid one. */
 const HISTORY = 20;
-const GIT_TIMEOUT_MS = 10_000;
 
 export interface PrioritiesRecordRead {
   /** The record allocation uses; `null` when there is none or the newest is blocked. */
@@ -49,7 +45,8 @@ export function readRepositoryRecord(
   nowMs: number,
   deadlineMs?: number,
 ): PrioritiesRecordRead {
-  const git = (cwd: string, args: string[]) => run(cwd, args, deadlineMs);
+  const git = (cwd: string, args: string[]) =>
+    boundedGit(cwd, args, deadlineMs);
   const readAt = (p: string, sha: string) => readAtWith(git, p, sha);
   const ref = `origin/${defaultBranch}`;
   const log = git(path, [
@@ -182,39 +179,4 @@ function readAtWith(
     : { ok: true, record: parsed.value };
 }
 
-type GitRun = (
-  cwd: string,
-  args: string[],
-) => { ok: true; stdout: string } | { ok: false; why: string };
-
-/** A git command's output, or why it failed: its last line of error output, or that it timed out or the tick's time was spent. */
-function run(
-  cwd: string,
-  args: string[],
-  deadlineMs: number | undefined,
-): { ok: true; stdout: string } | { ok: false; why: string } {
-  const left = deadlineMs === undefined ? Infinity : deadlineMs - currentMs();
-  if (left < 1)
-    return {
-      ok: false,
-      why: `git ${args[0]} not run: the tick's time is spent`,
-    };
-  const r = spawnSync("git", args, {
-    cwd,
-    timeout: Math.min(GIT_TIMEOUT_MS, Math.floor(left)),
-    env: withoutLeakyGitEnv(process.env),
-  });
-  if (r.status === 0) return { ok: true, stdout: r.stdout };
-  if (r.error !== undefined)
-    return { ok: false, why: `git ${args[0]}: ${r.error.message}` };
-  if (r.signal !== null)
-    return {
-      ok: false,
-      why: `git ${args[0]} did not finish within ${GIT_TIMEOUT_MS / 1000}s (${r.signal})`,
-    };
-  const last = (r.stderr ?? "").trim().split("\n").at(-1)?.trim();
-  return {
-    ok: false,
-    why: `git ${args[0]} exited ${r.status}${last ? `: ${last}` : ""}`,
-  };
-}
+type GitRun = (cwd: string, args: string[]) => GitResult;

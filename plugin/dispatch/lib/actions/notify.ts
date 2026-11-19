@@ -205,7 +205,7 @@ function stageOf(cause: Cause): string {
 }
 
 /** The class the closed list places a cause in; `null` for an observation no class names. */
-function classOf(cause: Cause): OutcomeClass | null {
+export function classOf(cause: Cause): OutcomeClass | null {
   switch (cause.cause) {
     case "double-claim":
       return "double claim";
@@ -222,6 +222,8 @@ function classOf(cause: Cause): OutcomeClass | null {
     case "stopped-unknown":
       return "unknown";
     case "needs-person": {
+      // A held drive's need is about its hold, not the exit the drive stopped on.
+      if (cause.evidence.heldSince !== undefined) return null;
       const exit = cause.evidence.rearmExit ?? cause.evidence.exit;
       return typeof exit === "number"
         ? driveClass(exit, null).class

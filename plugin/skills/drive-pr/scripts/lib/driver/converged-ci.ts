@@ -32,10 +32,10 @@ import {
   labelStarted,
   LABEL_SETTLE_MS,
 } from "../label-cancelled-runs.ts";
-import type { Recovery } from "../cancelled-recovery.ts";
-
-/** The recovery's answers, and the one a check-runs listing cut short gives. */
-export type WatchRecovery = Recovery | "listing-cut-short";
+import {
+  type LiveRecovery,
+  recoveryLabel,
+} from "../cancelled-recovery-reads.ts";
 import type { FailedRun, WorkflowRun } from "../status/workflow-runs.ts";
 
 /** What the watch reads of the pull request: whether it is open, and its head. */
@@ -90,7 +90,7 @@ export interface ConvergedCiDeps {
     pr: string,
     head: string,
     mayMutate: () => Promise<boolean>,
-  ): Promise<WatchRecovery>;
+  ): Promise<LiveRecovery>;
   /**
    * Whether this drive still owns the pull request. Asked before every
    * change to CI and before a park; unset means owned.
@@ -383,7 +383,7 @@ async function recoverCancelledStep(
   if (recovery !== "none")
     return {
       next: "wait",
-      saw: `${verdict} (cancelled-run recovery: ${recovery})`,
+      saw: `${verdict} (cancelled-run recovery: ${recoveryLabel(recovery)})`,
     };
   if (verdict.startsWith("cancelled:"))
     return {

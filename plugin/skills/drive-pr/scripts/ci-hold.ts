@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { retryAttempts } from "../../../shared/retry.ts";
 import { recoverCancelledOnHead } from "./lib/cancelled-recovery-live.ts";
+import { recoveryExit } from "./lib/cancelled-recovery-reads.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -479,10 +480,10 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
       policy.requiredChecks,
       true,
     );
-    if (recovery === "parked") return 8;
     if (recovery === "listing-cut-short")
       return listingStopExit(driverRuntime.stopListingPages);
-    if (recovery === "unknown") return 1;
+    const stop = recoveryExit(recovery);
+    if (stop !== null) return stop;
     console.error(
       latest?.event === "unlabeled"
         ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"

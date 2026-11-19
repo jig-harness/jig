@@ -139,3 +139,19 @@ export function withDerivedLinks(line: LineSnapshot): LineSnapshot {
     queue: line.queue.map(fill),
   };
 }
+
+/** A repository's own page, from its pull request's address or an issue it holds; an issue kept in another repository gives none. */
+export function repoHome(
+  repo: string,
+  url: string | null | undefined,
+): string | null {
+  const found = url?.match(
+    /^(https?:\/\/[^/]+\/([^/]+\/[^/]+))\/(pull|issues)\/\d+$/,
+  );
+  if (found === null || found === undefined) return null;
+  const [, home, path, kind] = found;
+  if (home === undefined) return null;
+  return kind === "pull" || path?.toLowerCase() === repo.toLowerCase()
+    ? home
+    : null;
+}

@@ -1302,7 +1302,7 @@ async function main(): Promise<number> {
     return done(
       4,
       "CI_HOLD_WAIT",
-      `the CI hold is not ready on the current PR head; wait for the checks the ci-hold line names, then re-run`,
+      `the CI hold is not ready on the current PR head; wait for what the ci-hold or cancelled CI recovery line names, then re-run`,
     );
   }
   if (holdRes.code === DRIVE_EXIT.CHECK_RUNS_UNREADABLE) {

@@ -64,7 +64,8 @@ export const WORKTREE_LOCK = await worktreeLockName();
  * that genuinely needs git to answer uses instead, and
  * `the head tokens are not objects in this repository` pins the property.
  */
-export const HEAD = "a91d4f7c05444444444444444444444444444444";
+import { HEAD, stickyBody } from "./drive-pr-sticky-fixture.ts";
+export { HEAD, stickyBody } from "./drive-pr-sticky-fixture.ts";
 export const PREV = "7bd2ca906c111111111111111111111111111111";
 // Keep the fake git push contract independent of guarded-push.ts's own
 // forwarding allowlist. Both the fully stubbed and recording git shims use it.
@@ -159,88 +160,6 @@ export async function realHead(): Promise<string> {
 }
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
-
-const backlogJson = JSON.stringify([
-  {
-    fingerprint: "b9a7a18089043564",
-    path: "AGENTS.md",
-    line: null,
-    severity: "medium",
-    dimension: "correctness",
-    // Present on one fixture entry and absent on the sibling below,
-    // so `decodeBacklog`'s value-present and value-absent (→ 'unknown') paths
-    // are both exercised by the same shared fixture every other test here
-    // already reuses.
-    category: "drift",
-    comment:
-      "The Linear section claims issue creation is blocked unless Context is present.",
-    firstRound: 6,
-    reason: "winddown-deferred",
-  },
-  // No `reason`/`firstRound`: a plain "Beyond this PR" carry-forward. The
-  // one-head grace keys on backlog MEMBERSHIP, so this entry must
-  // get exactly the same treatment there as the wind-down-reasoned one above.
-  // `reason` is NOT retired: past that one head it still selects the separate,
-  // round-bounded exemption, which this entry does not get — the
-  // two rules are stacked, not one superseding the other.
-  {
-    fingerprint: "c773d9fdb7974e6d",
-    path: "AGENTS.md",
-    line: null,
-    severity: "low",
-    dimension: "maintainability",
-    comment:
-      "hand-maintains the count of the four bullets immediately below it.",
-  },
-]);
-
-export function stickyBody(
-  opts: {
-    sha?: string;
-    backlog?: boolean;
-    unanchored?: number;
-    /** `null` omits the `ai-review-round` marker, as a format regression would. */
-    round?: number | null;
-  } = {},
-): string {
-  const sha = opts.sha ?? HEAD;
-  return [
-    "<!-- ai-code-review -->",
-    "### 🟡 Some headline",
-    "",
-    "Found 1 cross-file contract gap in the latest delta.",
-    "",
-    "### 🎯 correctness",
-    "",
-    "- `.claude/agents/review-arbiter.md:31` — 🟡 **medium** (high confidence, quick) — The arbiter’s sensitivity input omits the shared-schema exception.",
-    ...(opts.unanchored
-      ? [
-          "",
-          `> ${opts.unanchored} finding(s) without a diff-anchorable line are in the summary above only.`,
-        ]
-      : []),
-    "",
-    ...(opts.backlog === false
-      ? []
-      : [
-          "<details><summary>🗂️ <b>Beyond this PR</b></summary>",
-          "",
-          "- `AGENTS.md` — 🟡 **medium** (correctness · adjacent) — The Linear section claims…",
-          "",
-          "</details>",
-        ]),
-    "",
-    `<!-- ai-reviewed-sha: ${sha} -->`,
-    ...(opts.round === null
-      ? []
-      : [`<!-- ai-review-round: ${opts.round ?? 7} -->`]),
-    ...(opts.backlog === false
-      ? []
-      : [
-          `<!-- ai-review-backlog: ${Buffer.from(backlogJson).toString("base64")} -->`,
-        ]),
-  ].join("\n");
-}
 
 // ── Scripted probes: drive-status.ts against a stubbed forge ────────────────
 
@@ -1176,6 +1095,17 @@ emit() {
   if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
 }
 
+# Answer a 502 while the count in file $1 is above zero, spending one per call.
+fail_counted() {
+  [ -f "$1" ] || return 0
+  local left
+  left=$(< "$1")
+  [ "$left" -gt 0 ] || return 0
+  printf '%s' "$(( left - 1 ))" > "$1"
+  echo 'gh: HTTP 502: Bad Gateway' >&2
+  exit 1
+}
+
 # Unconditional poll counter, distinct from \`head-reads\` below: every \`gh pr
 # view\` call whose --json list names \`isDraft\` is one evaluate() OPENING
 # snapshot, and exactly one — no recheck asks for the field any more, since
@@ -1655,6 +1585,26 @@ if [ -f "$F/head-moves-after" ]; then
   fi
 fi
 
+# The forge failing the cancelled-run recovery's reads. Its hold read asks for
+# this exact field list: \`hold-read-passes\` lets that many through first, and
+# \`hold-read-fails\` then fails that many. \`hold-read-seen\` arms
+# \`runs-read-fails\` below, so the failures land on the recovery's read of the
+# workflow runs and not on the status reads before it.
+if [ "\${1:-}" = "pr" ]; then
+  for a in "$@"; do
+    if [ "$a" = "state,headRefOid,labels" ]; then
+      : > "$F/hold-read-seen"
+      passes=0
+      [ -f "$F/hold-read-passes" ] && passes=$(< "$F/hold-read-passes")
+      if [ "$passes" -gt 0 ]; then
+        printf '%s' "$(( passes - 1 ))" > "$F/hold-read-passes"
+      else
+        fail_counted "$F/hold-read-fails"
+      fi
+    fi
+  done
+fi
+
 # Model a scratch edit landing only after final-ready has established the
 # exact-head CI registration and set-verified starts its own evidence chain.
 # Both use this exact field list; call 1 is final-ready and call 2 is the first
@@ -2079,7 +2029,9 @@ for a in "$@"; do
         echo $((left - 1)) > "$F/check-runs-hang-after"
       fi
       emit "$F/check-runs.json"; exit 0 ;;
-    *actions/runs*)      emit "$F/workflow-runs.json"; exit 0 ;;
+    *actions/runs*)
+      [ -f "$F/hold-read-seen" ] && fail_counted "$F/runs-read-fails"
+      emit "$F/workflow-runs.json"; exit 0 ;;
     # Query string included: drive-status.ts paginates this endpoint with an
     # explicit \`?per_page=\`, and a stub matching only the bare path would make
     # every commit-status test read as "API unreadable" instead of exercising it.
