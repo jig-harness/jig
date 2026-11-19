@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.284.1] - 2026-11-19
+
+### Fixed
+
+- `jig ask` reports the local driver lock even if the CI-hold diagnosis times out. `jig send rearm` checks that lock without running the diagnosis and surfaces an unreadable lock as a dispatcher need. **Consumer action:** none.
+
 ## [0.284.0] - 2026-11-19
 
 ### Changed
@@ -10014,7 +10020,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.284.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.284.1...HEAD
+[0.284.1]: https://github.com/jig-harness/jig/compare/v0.284.0...v0.284.1
 [0.284.0]: https://github.com/jig-harness/jig/compare/v0.283.2...v0.284.0
 [0.283.2]: https://github.com/jig-harness/jig/compare/v0.283.1...v0.283.2
 [0.283.1]: https://github.com/jig-harness/jig/compare/v0.283.0...v0.283.1

@@ -307,7 +307,9 @@ runs as `drive.ts <PR> [--take-over] -- <pass>` in the pull request's
 workspace, opened from the pull request when none holds it. A wrapper
 (`dispatch/run.ts`) starts the drive in an Orca tab or a managed process,
 according to the machine file. The wrapper bills
-the pass to an account the machine file lists, through that account's
+the pass to an account the machine file lists that serves the `rearm`
+stage ([`accounts[].stages`](CONFIGURATION.md#the-machines-dispatch-file)),
+through that account's
 configuration directory, and only while the account has a free slot and no
 recorded usage-limit wall; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
@@ -1146,7 +1148,17 @@ contention cost. When the leader merges or leaves the group, the next run
 promotes the next, which a conflict with the new base re-drives once. A
 pull request in two serialized areas waits unless it leads both. Only the
 dispatcher's own launches wait: a drive a person arms on a held pull
-request runs, and the run reports that the group has two drives. The run
+request runs, and the run reports that the group has two drives. A pickup
+waits too: one whose item's [footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+reaches a serialized area while an open pull request, a pickup in flight or
+a pickup planned ahead of it touches the area is reported as
+`held: serialized behind #N in <area>` and gets no slot. A footprint that
+is unknown cannot rule an area out, on either side: such a pickup waits
+while any serialized area is occupied (`, footprint unknown`), and such
+work occupies every serialized area (`, #N's footprint unknown`) until its
+footprint is known or it ends. Every open pull request counts, a draft or a
+quiet one included, so close a stale one to free its area. A run that
+cannot read the catalog or the open pull requests starts no pickup. The run
 never adds an area: the conflict report proposes them
 (`history.ts --propose-serialize` in
 [resolve-conflicts](skills/resolve-conflicts/README.md#where-past-merges-conflicted)),
@@ -1659,9 +1671,9 @@ not changed since the last read costs nothing against the forge's limit; it
 never calls the tracker. A `pickup` reads the item through the tracker the
 repository's configuration names, and makes no forge call. On the machine
 that dispatched the work it also reads the dispatcher's launch records, its
-outcome log and, for a drive, the drive's own listing in a checkout of the
-repository (`drives-read-only.ts`), whose doctor verdict and recovery command
-it prints and never runs. It opens these databases read-only and migrates
+outcome log. For a drive, it reads the local driver lock and the doctor's
+diagnosis as separate sources in a checkout of the repository. It prints
+the doctor's recovery command when available. It opens these databases read-only and migrates
 none: against one an older schema holds, it reads what that schema allows or
 names the source in `sources` as not read until the owner's next run brings
 it forward. On a machine that never dispatched, it answers

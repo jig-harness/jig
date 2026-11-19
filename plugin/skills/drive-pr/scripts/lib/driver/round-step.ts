@@ -28,6 +28,10 @@ import { type MarkReady, markReadyDueAfterRound } from "./../pr-policy.ts";
 
 import { readRoundStatus } from "./round-status.ts";
 
+import { answerForgeLimit } from "./forge-limit-stop.ts";
+
+import { DRIVE_EXIT } from "./../status/terminal-states.ts";
+
 import {
   checkRoundStall,
   readRoundBudget,
@@ -55,6 +59,12 @@ async function gateRoundStatus(
   // Keep the resumable trail current even if the pass below dies mid-round:
   // the handoff file, and under a driver the pull request's drive ledger.
   await publishRunning(context.pr);
+
+  // A spent forge rate limit is waited out or stopped on, never reported as
+  // a failure to read (`forge-limit-stop.ts`).
+  if (code === DRIVE_EXIT.FORGE_RATE_LIMITED)
+    return await answerForgeLimit(context, status);
+  driverRuntime.forgeLimitWaits = 0;
 
   switch (code) {
     case 3: {
