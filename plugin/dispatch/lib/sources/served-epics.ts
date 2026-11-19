@@ -30,7 +30,7 @@ export function takeUnreadSlot(
   return Promise.resolve(null);
 }
 
-/** A person owns the next step, so this child takes none of a plan-less epic's width. */
+/** A person owns the next step, so this child takes none of a plan-less epic's width; a pickup hold stops only new starts, so a started child keeps its slot. */
 export function parkedOnPerson(
   child: PoolIssue,
   tracker: Pick<Tracker, "stateName">,
@@ -43,7 +43,8 @@ export function parkedOnPerson(
       states.every(
         (state) => state === "ops_pending" || state === "in_review",
       )) ||
-    policy.personHold?.(child.identifier) != null ||
+    (child.state.type !== "started" &&
+      policy.personHold?.(child.identifier) != null) ||
     queueHold({ issue: child, blockers: [], unblocks: 0 }, policy) ===
       PERSON_HOLD
   );

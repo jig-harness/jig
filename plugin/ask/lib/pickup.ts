@@ -319,6 +319,12 @@ function withPersonHold(
     ? holds.value.find((hold) => hold.item === ctx.address.key)
     : undefined;
   const holdUnread = holds?.ok === false ? holds.failure.reason : null;
+  if (holds !== null)
+    ctx.reading.note({
+      record: "pickup-hold",
+      read: holds.ok,
+      ...(holdUnread === null ? {} : { detail: holdUnread }),
+    });
   const holdDetail =
     personHold === undefined ? holdUnread : pickupHoldReason(personHold);
   return {

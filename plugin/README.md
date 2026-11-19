@@ -1859,7 +1859,7 @@ each reader keeps its own rule for whose record counts, an assignment made
 by someone who can write to the repository, an answer from an owner, member
 or collaborator.
 
-**Pickup holds.** Run `jig send 'pickup@owner/name#KEY' hold` on the
+**Pickup holds.** A [pickup hold](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) stops new launches only; work already running keeps its place. Run `jig send 'pickup@owner/name#KEY' hold` on the
 dispatching host. The hold works with GitHub Issues, Linear and Jira without
 a tracker label and leaves the item's assignee and state intact. The line
 and `jig ask` show who held the item and when. Use `release` at the same

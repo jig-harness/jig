@@ -4,6 +4,7 @@ import type {
   Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { readServedPickups } from "../lib/sources/served.ts";
+import { parkedOnPerson } from "../lib/sources/served-epics.ts";
 import { readPickups } from "../lib/sources/tracker.ts";
 import type { DispatchSection } from "../lib/types.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
@@ -336,6 +337,20 @@ describe("served pickups", () => {
       expect(read.wanted.map((i) => i.key)).not.toContain("#3");
     },
   );
+  it("keeps a held child's slot once it is started, and frees it before", () => {
+    const tracker = { stateName: (s: string) => s } as Pick<
+      Tracker,
+      "stateName"
+    >;
+    const policy = { personHold: () => "held by a person" };
+    const waiting = issue("#3", [], null);
+    const running = {
+      ...waiting,
+      state: { id: "s", name: "in_progress", type: "started" },
+    };
+    expect(parkedOnPerson(waiting, tracker, policy)).toBe(true);
+    expect(parkedOnPerson(running, tracker, policy)).toBe(false);
+  });
   it("keeps the title and link the listing returned on an item it cannot place and on a claimed item", async () => {
     const f = fake();
     const held = {
