@@ -10,7 +10,8 @@ release: patch
   `NOT_FOUND`, so that repository's tracker record failed on every dispatcher
   tick. Each `gh api graphql` run of the GitHub tracker and the GitHub
   reflection store now names the repository its request is about in
-  `GH_REPO`: the one its variables name, else the tracker's own repository.
+  `GH_REPO`: the one its variables name, else the tracker's or the store's
+  own repository.
   The dispatcher's merge-facts read and its count of a pull request's
   unresolved review threads name theirs too. The HTTPS transport
   (`JIG_GITHUB_GRAPHQL_URL`) is unchanged.

@@ -4,9 +4,10 @@
  *
  * Two transports exist. By default every request is `gh api graphql`, which
  * holds its own credential (`gh auth login`, or `GH_TOKEN` / `GITHUB_TOKEN`)
- * and knows the host; each run names the repository its request is about in
- * `GH_REPO` (`requestRepository`), so whatever picks the account `gh` runs
- * as sees it. With `JIG_GITHUB_GRAPHQL_URL` set, requests go over
+ * and knows the host; each run names the repository its request is about
+ * (`requestRepository`: the one its variables name, else the repository the
+ * transport serves) in `GH_REPO`, so whatever picks the account `gh` runs as
+ * sees it. With `JIG_GITHUB_GRAPHQL_URL` set, requests go over
  * HTTPS to that endpoint with the token from `GH_TOKEN` or `GITHUB_TOKEN`
  * instead: a GitHub Enterprise endpoint `gh` is not signed in to, or a local
  * fake (plain `http` is accepted for a loopback address only). Tests of the
@@ -295,6 +296,8 @@ function namedRepositories(variables: Record<string, unknown>): string[] {
  * The repository a request is about, as `owner/name`: the one its variables
  * name (`owner` and `name`, or each batched `owner<i>` and `name<i>`) when
  * they name exactly one, else `home`, the repository the transport serves.
+ * A batch over several repositories gets `home`: one run has one account,
+ * and the serving repository's owner is the likeliest to see them all.
  * `null` when neither says.
  */
 export function requestRepository(
