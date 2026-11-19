@@ -53,7 +53,7 @@ export interface UnclaimedClock {
 }
 
 /** `ms` as the machine file writes a duration. */
-function durationText(ms: number): string {
+export function durationText(ms: number): string {
   if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
   if (ms % 60_000 === 0) return `${ms / 60_000}m`;
   return `${Math.ceil(ms / 1000)}s`;

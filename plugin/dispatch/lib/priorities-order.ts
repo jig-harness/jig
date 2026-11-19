@@ -95,7 +95,7 @@ export function enforcePickupOrder(
   const placed: Placed[] = [];
   const withheld: EnforcedOrder["withheld"] = [];
   actions.forEach((action, index) => {
-    if (action.stage !== "pickup") return;
+    if (action.stage !== "pickup" || action.relaunch !== undefined) return;
     const kept = withoutPaused(action, paused, withheld, own);
     if (kept !== null) placed.push(place(kept, index, places, classes));
   });
@@ -103,7 +103,8 @@ export function enforcePickupOrder(
   const queue = placed.map((p) => p.action);
   const out: Action[] = [];
   for (const action of actions)
-    if (action.stage !== "pickup") out.push(action);
+    if (action.stage !== "pickup" || action.relaunch !== undefined)
+      out.push(action);
     else {
       const next = queue.shift();
       if (next !== undefined) out.push(next);
