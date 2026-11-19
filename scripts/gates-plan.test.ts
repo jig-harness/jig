@@ -242,10 +242,10 @@ async function tabPassEnv(
               doctor: null,
             },
       now: () => OPENED,
-      sleep: async () => {},
+      sleep: async () => undefined,
       confirmMs: 1_000,
       pollMs: 1,
-      runTab: async () => {},
+      runTab: async () => undefined,
     },
   );
   expect(answer.report.status).toBe("armed");
