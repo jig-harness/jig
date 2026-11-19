@@ -401,6 +401,23 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.285.1] - 2026-11-19
+
+### Fixed
+
+- A woken dispatcher tick (from `jig send` or the change probe) now runs with
+  the command and credential the timer's tick runs with. On systemd the wake
+  waiter reads the installed unit as systemd runs it, its drop-ins applied, so
+  a drop-in that replaces `ExecStart=` with a wrapper that resolves a tracker
+  key gives the woken tick the same key. A drop-in the waiter cannot
+  reproduce (an environment file, a credential, a command run first, a
+  variable in the command) starts no tick: the waiter's log says why, and the
+  request waits for the timer's next tick.
+- The timer's sweep (`jig dispatch --apply` over the machine file's
+  repositories) waits up to two minutes for a repository a woken tick holds,
+  and reads it in the same tick, instead of leaving it out of the sweep on
+  every run while wake-ups keep arriving.
+
 ## [0.285.0] - 2026-11-19
 
 ### Added
@@ -10053,7 +10070,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.285.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.285.1...HEAD
+[0.285.1]: https://github.com/jig-harness/jig/compare/v0.285.0...v0.285.1
 [0.285.0]: https://github.com/jig-harness/jig/compare/v0.284.1...v0.285.0
 [0.284.1]: https://github.com/jig-harness/jig/compare/v0.284.0...v0.284.1
 [0.284.0]: https://github.com/jig-harness/jig/compare/v0.283.2...v0.284.0

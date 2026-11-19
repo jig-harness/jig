@@ -11,7 +11,11 @@
  * session of its own, so it outlives the command that asked. The waiter runs
  * the tick the way the installed timer does: the job's own launcher command
  * and environment, read back from the scheduler, with `dispatch --apply
- * --repo <path>` as its arguments. With no timer installed it runs this copy
+ * --repo <path>` as its arguments. A systemd job is read as systemd runs it,
+ * its drop-ins applied (`runtime/systemd-dropins.ts`), so a drop-in's
+ * wrapper that gives the timer's tick a credential gives the woken tick the
+ * same; a job whose command cannot be run that way runs no tick, and the
+ * request waits for the timer's. With no timer installed it runs this copy
  * of the plugin's `jig.ts`. The launcher is told it runs a woken tick
  * (`JIG_LAUNCHER_ROLE=wake`), so the plugin is not upgraded first: that is
  * the timer's, and a woken tick is to run soon. A tick that ends with exit 3
@@ -105,7 +109,7 @@ function testCommand(): Outcome<string[] | null, "unstarted"> {
  */
 async function installedTimer(): Promise<
   Outcome<
-    { prefix: string[]; env: Record<string, string> } | null,
+    { prefix: string[]; env: Record<string, string>; unset?: string[] } | null,
     "malformed" | "unsupported" | "unreadable"
   >
 > {
@@ -137,7 +141,51 @@ async function installedTimer(): Promise<
       "malformed",
       "the installed timer is incomplete or malformed",
     );
-  return ok({ prefix: job.command.slice(0, separator + 1), env: job.env });
+  if (scheduler.value !== "systemd")
+    return ok({ prefix: job.command.slice(0, separator + 1), env: job.env });
+  return systemdTimer(job, separator, `${snapshot.spec.name}.service`);
+}
+
+/**
+ * The systemd job's tick prefix and environment as systemd runs them, its
+ * drop-ins applied: the command a drop-in puts in place of the base file's
+ * (a wrapper that resolves a credential, say) must end with the job's own
+ * `jig.ts` arguments, which the tick's take the place of; or why that
+ * command cannot be run for one repository.
+ */
+async function systemdTimer(
+  job: { command: string[]; env: Record<string, string> },
+  separator: number,
+  unit: string,
+): Promise<
+  Outcome<
+    { prefix: string[]; env: Record<string, string>; unset: string[] },
+    "unsupported" | "unreadable"
+  >
+> {
+  const { readDropIns, effectiveJob, userSpecifiers } = await import(
+    "../../runtime/systemd-dropins.ts"
+  );
+  const dropIns = await readDropIns(unit);
+  if (!dropIns.ok) return dropIns;
+  const effective = effectiveJob(job, dropIns.value, userSpecifiers(unit));
+  if (!effective.ok) return effective;
+  const { command, env, unset } = effective.value;
+  const args = job.command.slice(separator + 1);
+  const tail = command.slice(command.length - args.length);
+  if (
+    command.length <= args.length ||
+    tail.some((word, at) => word !== args[at])
+  )
+    return failed(
+      "unsupported",
+      `the command systemd runs does not end with the job's ${args.length} arguments (the command's own words are not printed: they may carry a credential)`,
+    );
+  return ok({
+    prefix: command.slice(0, command.length - args.length),
+    env,
+    unset,
+  });
 }
 
 /** How the waiter runs the tick for the repository at `path`. */
@@ -165,46 +213,61 @@ export async function tickCall(
   if (!installed.ok)
     return failed(
       "unstarted",
-      `the installed timer does not read: ${installed.failure.reason}`,
+      installed.failure.code === "unsupported"
+        ? `the timer's command cannot be run for one repository, so no tick runs without what the timer's tick has, and the request is left for the timer's next tick: ${installed.failure.reason}`
+        : `the installed timer does not read: ${installed.failure.reason}`,
       installed.failure.cause,
     );
-  const timer = installed.value;
-  if (timer === null) {
-    const machine = readMachineConfig();
-    if (!machine.ok)
-      return failed(
-        "unstarted",
-        `the machine configuration does not read: ${machine.failure.reason}`,
-        machine.failure.cause,
-      );
-    return ok({
-      argv: [
-        process.execPath,
-        "--no-env-file",
-        `--config=${BUNFIG}`,
-        JIG,
-        ...tickArgs(path),
-      ],
-      env: environment(LINE_VARIABLE),
-      timeoutSec:
-        (machine.value === null
-          ? DEFAULT_DEADLINE_SEC
-          : tickDeadlineMs(machine.value) / 1000) + GRACE_SEC,
-    });
-  }
-  const deadline = Number(timer.env.JIG_LAUNCHER_DEADLINE_SEC);
+  if (installed.value === null) return ownCall(path);
+  return ok(timerCall(installed.value, path));
+}
+
+/** The tick for a machine with no installed timer: this checkout's own `jig.ts`. */
+function ownCall(path: string): Outcome<TickCall, "unstarted"> {
+  const machine = readMachineConfig();
+  if (!machine.ok)
+    return failed(
+      "unstarted",
+      `the machine configuration does not read: ${machine.failure.reason}`,
+      machine.failure.cause,
+    );
   return ok({
+    argv: [
+      process.execPath,
+      "--no-env-file",
+      `--config=${BUNFIG}`,
+      JIG,
+      ...tickArgs(path),
+    ],
+    env: environment(LINE_VARIABLE),
+    timeoutSec:
+      (machine.value === null
+        ? DEFAULT_DEADLINE_SEC
+        : tickDeadlineMs(machine.value) / 1000) + GRACE_SEC,
+  });
+}
+
+/** The tick as the installed timer runs it: its command and environment, which the requesting session's variables the timer clears do not survive. */
+function timerCall(
+  timer: { prefix: string[]; env: Record<string, string>; unset?: string[] },
+  path: string,
+): TickCall {
+  const deadline = Number(timer.env.JIG_LAUNCHER_DEADLINE_SEC);
+  const env: Record<string, string> = {
+    ...environment(SESSION_VARIABLE),
+    ...timer.env,
+    JIG_LAUNCHER_ROLE: "wake",
+  };
+  for (const name of timer.unset ?? [])
+    if (!(name in timer.env)) delete env[name];
+  return {
     argv: [...timer.prefix, ...tickArgs(path)],
-    env: {
-      ...environment(SESSION_VARIABLE),
-      ...timer.env,
-      JIG_LAUNCHER_ROLE: "wake",
-    },
+    env,
     timeoutSec:
       (Number.isSafeInteger(deadline) && deadline > 0
         ? deadline
         : DEFAULT_DEADLINE_SEC) + GRACE_SEC,
-  });
+  };
 }
 
 /** The wake of the repository at `path`. */
@@ -314,8 +377,9 @@ async function waiterMain(path: string): Promise<WaitEnd> {
           "unstarted",
           `${argv[0]} did not start: ${result.stderr}`,
         );
+      // The program and the count of arguments only: a wrapper's arguments may carry a credential.
       note(
-        `${JSON.stringify(argv)} exited ${result.code}\n${result.stdout}${result.stderr}`,
+        `${JSON.stringify(argv[0])} with ${argv.length - 1} arguments exited ${result.code}\n${result.stdout}${result.stderr}`,
       );
       return ok(result.code);
     },

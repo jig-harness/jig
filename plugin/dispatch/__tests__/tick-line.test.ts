@@ -8,7 +8,8 @@
  */
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { hostname } from "node:os";
 import { scopedStateDir } from "../../skills/drive-pr/__tests__/scoped-state-dir.ts";
@@ -24,7 +25,11 @@ import {
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { dump, load } from "../../shared/yaml.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
-import { takeObserveLock, type TickReceipt } from "../receipts.ts";
+import {
+  takeObserveLock,
+  takeRepositoryLock,
+  type TickReceipt,
+} from "../receipts.ts";
 import {
   ledgerComment,
   openPr,
@@ -56,6 +61,12 @@ afterEach(() => {
   current?.close();
   current = null;
 });
+
+/** Where a repository's observe lock lives, as `receipts.ts` names it. */
+function observeLock(w: World, path: string): string {
+  const digest = createHash("sha256").update(resolve(path)).digest("hex");
+  return join(dispatchState(w), "observe", `${digest.slice(0, 16)}.lock`);
+}
 
 /** A quota-parked PR #7 whose workspace exists. */
 function fixture(): World {
@@ -93,8 +104,12 @@ function storedLine(
   }
 }
 
-async function tick(w: World, exit = 0): Promise<TickReceipt> {
-  const r = await w.dispatch(["--apply", "--json"]);
+async function tick(
+  w: World,
+  exit = 0,
+  env: Record<string, string> = {},
+): Promise<TickReceipt> {
+  const r = await w.dispatch(["--apply", "--json"], undefined, env);
   expectSpawnExit(r, exit);
   return JSON.parse(r.stdout) as TickReceipt;
 }
@@ -449,7 +464,8 @@ describe("the line a tick leaves", () => {
     if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
     let second: TickReceipt;
     try {
-      second = await tick(w, 1);
+      // The sweep waits for no repository: the one held stays busy.
+      second = await tick(w, 1, { JIG_DISPATCH_OBSERVE_WAIT_MS: "0" });
     } finally {
       held.release();
     }
@@ -471,6 +487,89 @@ describe("the line a tick leaves", () => {
       { runId: second.runId, busy: [w.repo] },
     ]);
   });
+
+  it("reads, in the same tick, a repository another tick held when the timer's sweep began, once that tick gives it up", async () => {
+    const { w, other } = twoRepositories();
+    const first = await tick(w, 1);
+    // A woken tick for the repository, holding its observe lock.
+    const held = takeObserveLock(w.repo, dispatchState(w));
+    if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
+    let released = false;
+    try {
+      const sweep = w.dispatch(["--apply", "--json"], undefined, {
+        JIG_DISPATCH_OBSERVE_WAIT_MS: "30000",
+      });
+      // The sweep is observing: it holds the other repository's observe lock while it waits for this one.
+      await waitFor("the sweep to observe", () =>
+        existsSync(observeLock(w, other)),
+      );
+      held.release();
+      released = true;
+      const r = await sweep;
+      expectSpawnExit(r, 1);
+      const second = JSON.parse(r.stdout) as TickReceipt;
+      expect(second.busy).toBeUndefined();
+      expect(second.repos.map((repo) => repo.path)).toEqual([w.repo, other]);
+      const stored = storedLine(w);
+      expect(stored?.line.repos.map((repo) => [repo.path, repo.runId])).toEqual(
+        [
+          [w.repo, second.runId],
+          [other, undefined],
+        ],
+      );
+      expect(stored?.line.ticks?.map((t) => t.busy)).toEqual([[], []]);
+      expect(first.runId).not.toBe(second.runId);
+    } finally {
+      if (!released) held.release();
+    }
+  }, 60_000);
+
+  it("plans from the forge as it is once a contended repository lock is released, not from the read before the wait", async () => {
+    const w = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+    // Another checkout of the repository holds its lock while this tick opens it.
+    const held = takeRepositoryLock(SLUG, dispatchState(w));
+    if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
+    let released = false;
+    try {
+      const sweep = w.dispatch(["--apply", "--json"], undefined, {
+        JIG_DISPATCH_OBSERVE_WAIT_MS: "30000",
+      });
+      // The tick opened the repository and holds its answer: the fake wrote this line after building that answer, so the changes below reach only a later read.
+      await waitFor("the tick to read the repository", () =>
+        existsSync(join(w.dir, "repository-answered.log")),
+      );
+      // The holder acted: the repository's configuration changed, pull request #7's ledger (already in the first read) moved on to a stop nothing re-arms, and a second parked pull request appeared.
+      w.setConfig(CONFIG.replace(SLUG, "example-org/moved-tracker"));
+      w.setPrs("open", [openPr(7, HEAD), openPr(8, "feature/8-parked")]);
+      w.setComments(7, [ledgerComment(701, stoppedLedger(7, 8))]);
+      w.setComments(8, [ledgerComment(801, stoppedLedger(8, 16))]);
+      // The tick polls for the lock every quarter of a second and leaves no trace of a refused attempt: once it has had four polls' time since its read, an attempt was refused. A stall that long fails the test, never passes it.
+      const answeredAt = Date.now();
+      await waitFor(
+        "the tick to have waited for the lock",
+        () => Date.now() - answeredAt >= 1000,
+      );
+      held.release();
+      released = true;
+      expectSpawnExit(await sweep, 0);
+      const answer = await w.dispatch(["line", "--json"]);
+      expectSpawnExit(answer, 0);
+      const parsed = JSON.parse(answer.stdout) as {
+        value: { line: LineSnapshot };
+      };
+      expect(parsed.value.line.repos[0]?.tracker).toEqual({
+        adapter: "github",
+        repository: "example-org/moved-tracker",
+      });
+      // The new pull request is queued from the new read, and #7, quota-parked in the first read, no longer is.
+      expect(parsed.value.line.queue.map((row) => row.target)).toEqual([
+        "PR #8",
+      ]);
+    } finally {
+      if (!released) held.release();
+    }
+  }, 60_000);
 
   it("moves the line's machine part on a timer's tick that finds its only repository held", async () => {
     const w = fixture();
