@@ -82,7 +82,10 @@ async function opened(
 async function checkResult(
   nameWithOwner: string,
 ): Promise<Record<string, unknown>> {
-  const repo = await openRepository(GitHubClient.fromEnv(), nameWithOwner);
+  const repo = await openRepository(
+    GitHubClient.fromEnv(process.env, nameWithOwner),
+    nameWithOwner,
+  );
   const unusable = repo === null ? notVisible(nameWithOwner) : unwritable(repo);
   return unusable === null ? { ok: true } : { ok: false, ...unusable };
 }
@@ -109,7 +112,7 @@ async function append(nameWithOwner: string): Promise<number> {
     console.log(JSON.stringify({ stored: [] }));
     return 0;
   }
-  const client = GitHubClient.fromEnv();
+  const client = GitHubClient.fromEnv(process.env, nameWithOwner);
   const repo = await opened(client, nameWithOwner, unwritable);
   const result = await appendEvents(
     client,
@@ -127,7 +130,7 @@ async function append(nameWithOwner: string): Promise<number> {
 
 async function list(nameWithOwner: string): Promise<number> {
   const after = await sinceInput();
-  const client = GitHubClient.fromEnv();
+  const client = GitHubClient.fromEnv(process.env, nameWithOwner);
   const issues = await readStore(
     client,
     await opened(client, nameWithOwner, unreadable),
@@ -138,7 +141,7 @@ async function list(nameWithOwner: string): Promise<number> {
 }
 
 async function diagnoseOp(nameWithOwner: string): Promise<number> {
-  const client = GitHubClient.fromEnv();
+  const client = GitHubClient.fromEnv(process.env, nameWithOwner);
   const repo = await opened(client, nameWithOwner, unreadable);
   for (const notice of await diagnose(client, repo))
     process.stdout.write(`${JSON.stringify(notice)}\n`);
@@ -146,7 +149,7 @@ async function diagnoseOp(nameWithOwner: string): Promise<number> {
 }
 
 async function repairOp(nameWithOwner: string): Promise<number> {
-  const client = GitHubClient.fromEnv();
+  const client = GitHubClient.fromEnv(process.env, nameWithOwner);
   const repo = await opened(client, nameWithOwner, unwritable);
   const result = await repair(client, repo);
   console.log(

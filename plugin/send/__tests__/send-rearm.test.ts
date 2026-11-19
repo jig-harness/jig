@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { writeRecord } from "../../dispatch/lib/launches.ts";
+import { REARM_REQUEST } from "../../dispatch/lib/rearm-binding.ts";
+import { claimBody, readClaim } from "../../shared/records/forge-claims.ts";
+import { localWriter } from "../../shared/records/writer.ts";
 import { isNeed } from "../../dispatch/lib/line.ts";
 import {
   stationContextOf,
@@ -15,6 +18,7 @@ import {
 } from "../../dispatch/lib/rearm-lock-needs.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import {
+  comment,
   ledgerOn,
   pullRequest,
   REPO,
@@ -36,6 +40,54 @@ function world() {
 }
 
 describe("jig send rearm", () => {
+  it("withdraws a pending rearm and refuses if there is no request label", async () => {
+    const w = world();
+    const ledger = stoppedLedger(12, 12);
+    const request = comment(
+      702,
+      claimBody(REARM_REQUEST, {
+        key: "rearm",
+        generation: ledger.generation,
+        writer: localWriter("forge"),
+        payload: { label: "jig:rearm", stopComment: 701 },
+        text: "Requested a re-arm.",
+      }),
+    );
+    pullRequest(
+      w,
+      12,
+      ["jig:rearm", "jig:hold"],
+      [ledgerOn(701, ledger), request],
+    );
+    const withdrawn = await w.send([ADDRESS, "withdraw-rearm"]);
+    expectSpawnExit(withdrawn, 0);
+    expect(withdrawn.stdout).toContain("removed from pull request 12");
+    expect(w.writes().at(-1)).toEqual([
+      "pr",
+      "edit",
+      "12",
+      "--repo",
+      REPO,
+      "--remove-label",
+      "jig:rearm",
+    ]);
+    const { body } = JSON.parse(
+      readFileSync(join(w.dir, "gh-posted-comment.json"), "utf8"),
+    );
+    expect(readClaim(REARM_REQUEST, body)).toMatchObject({
+      ok: true,
+      value: {
+        payload: { label: "jig:rearm", requestId: 702, stopComment: null },
+      },
+    });
+    const writes = w.writes();
+    pullRequest(w, 12, ["jig:hold"], [ledgerOn(701, stoppedLedger(12, 12))]);
+    const absent = await w.send([ADDRESS, "withdraw-rearm"]);
+    expectSpawnExit(absent, 1);
+    expect(absent.stderr).toContain("no rearm request to withdraw");
+    expect(w.writes()).toEqual(writes);
+  });
+
   it("refuses a new request while an earlier delivered request still awaits acknowledgment even with no forge label", async () => {
     const w = world();
     pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 12))]);
@@ -77,7 +129,8 @@ describe("jig send rearm", () => {
   });
   it("writes the request for a stopped ledger in its existing tree, with dry run leaving no record", async () => {
     const w = world();
-    pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 12))]);
+    const ledger = stoppedLedger(12, 12);
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
     const dry = await w.send([ADDRESS, "rearm", "--dry-run"]);
     expectSpawnExit(dry, 0);
     expect(dry.stdout).toContain(w.tree);
@@ -93,6 +146,17 @@ describe("jig send rearm", () => {
       "--add-label",
       "jig:rearm",
     ]);
+    const { body } = JSON.parse(
+      readFileSync(join(w.dir, "gh-posted-comment.json"), "utf8"),
+    );
+    expect(readClaim(REARM_REQUEST, body)).toMatchObject({
+      ok: true,
+      value: {
+        generation: ledger.generation,
+        payload: { label: "jig:rearm", stopComment: 701 },
+      },
+    });
+    expect(w.writes().map(([cmd]) => cmd)).toEqual(["api", "pr"]);
     expect(real.stdout).toContain("admitted account");
   });
   it("rearms a stopped drive from its lock without starting CI hold diagnosis", async () => {

@@ -188,7 +188,7 @@ describe("jig send refuses before it writes", () => {
     const unknown = await w.send([ADDRESS, "merge"]);
     expectSpawnExit(unknown, 2);
     expect(unknown.stderr).toContain(
-      "drive takes drive, rearm, hold, release, answer <key> <text>",
+      "drive takes drive, rearm, withdraw-rearm, hold, release, answer <key> <text>",
     );
     const wrong = await w.send([`followup@${REPO}#12`, "pause"]);
     expectSpawnExit(wrong, 2);

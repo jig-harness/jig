@@ -107,6 +107,8 @@ export interface Client {
     query: string,
     variables: Record<string, unknown>,
     signal?: AbortSignal,
+    /** The repository of the issue the mutation changes, when it is not the home repository. */
+    target?: Repo,
   ): Promise<Record<string, unknown>>;
   /** The board, its status field and that field's options (project mode). */
   board(signal?: AbortSignal): Promise<BoardIds>;
@@ -197,15 +199,16 @@ export function gitHubClient(opts: ClientOptions): Client {
     variables,
     signal,
     idempotent = false,
+    target,
   ) =>
     cancellableRequest(signal, () =>
       idempotent && /\bquery\s+TrackerFacet\w*/.test(query)
         ? sharedDispatchRead(
             DISPATCH_READS.get(opts.transport),
             { query, variables },
-            () => opts.transport(query, variables, signal, idempotent),
+            () => opts.transport(query, variables, signal, idempotent, target),
           )
-        : opts.transport(query, variables, signal, idempotent),
+        : opts.transport(query, variables, signal, idempotent, target),
     );
   const board: Board | null =
     settings.statesFrom === "project" && settings.project !== null
@@ -387,9 +390,18 @@ export function gitHubClient(opts: ClientOptions): Client {
       return { id: str(m.id, "milestone.id"), number };
     },
 
-    async mutate(query, variables, signal) {
+    async mutate(query, variables, signal, target) {
       signal?.throwIfAborted();
-      return record(await transport(query, variables, signal, false), "data");
+      return record(
+        await transport(
+          query,
+          variables,
+          signal,
+          false,
+          target === undefined ? undefined : slug(target),
+        ),
+        "data",
+      );
     },
 
     board(signal) {
