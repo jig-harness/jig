@@ -67,24 +67,43 @@ export type Observed =
   | { report: RepoReport }
   | { busy: string };
 
+/** What `claim` answers when the lock was waited for: another tick may have acted, so the open read is stale. */
+export const REOPEN = Symbol("reopen");
+
 /**
  * Open one repository; the report that refuses it when it does
  * not open. `claim` takes the repository's own lock once its slug is known
  * (waiting for it, if it must) and returns who holds it when another tick does: nothing is read then.
+ * It answers `REOPEN` when a wait for the lock came between the open read and
+ * the lock: the repository is then opened again from refreshed facts, its
+ * target and configuration included, never planned from the earlier read.
  */
 export async function openTurn(
   turn: RepoTurn,
   context: TickContext,
-  claim: (slug: string) => string | null | Promise<string | null> = () => null,
+  claim: (
+    slug: string,
+  ) =>
+    | string
+    | null
+    | typeof REOPEN
+    | Promise<string | null | typeof REOPEN> = () => null,
 ): Promise<
   | { turn: RepoTurn; opened: OpenedRepo }
   | { report: RepoReport }
   | { busy: string }
 > {
   const { path, timer } = turn;
-  const opened = await timer.time("open", () => openRepo(path, context));
+  let opened = await timer.time("open", () => openRepo(path, context));
   if (!("repo" in opened)) return { report: timed(opened, timer) };
-  const heldBy = await claim(opened.repo.slug);
+  let heldBy = await claim(opened.repo.slug);
+  if (heldBy === REOPEN) {
+    context.reads.refreshRepository(path);
+    opened = await timer.time("open", () => openRepo(path, context));
+    if (!("repo" in opened)) return { report: timed(opened, timer) };
+    heldBy = await claim(opened.repo.slug);
+    if (heldBy === REOPEN) heldBy = null;
+  }
   if (heldBy !== null) return { busy: heldBy };
   turn.report = opened.report;
   const { owner, reflection } = opened;

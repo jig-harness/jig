@@ -133,6 +133,7 @@ import {
   defectReport,
   type Observed,
   openTurn,
+  REOPEN,
   observeOpenedTurn,
   startTurn,
 } from "./lib/tick-repo.ts";
@@ -303,6 +304,8 @@ async function observeAll(
   // Checkouts of one repository in this tick share the repository's lock: the first holds it.
   const claimed = new Set<string>();
   const acquiring = new Map<string, Promise<void>>();
+  // Repositories whose lock was waited for: a checkout opened before the wait opens again.
+  const waitedFor = new Set<string>();
   const prepared: Array<
     Extract<Awaited<ReturnType<typeof openTurn>>, { turn: unknown }>
   > = [];
@@ -338,7 +341,7 @@ async function observeAll(
           // A checkout of this repository still acquiring answers for the others: its lock is not reentrant.
           const earlier = acquiring.get(slug);
           if (earlier !== undefined) await earlier;
-          if (claimed.has(slug)) return null;
+          if (claimed.has(slug)) return waitedFor.has(slug) ? REOPEN : null;
           let settle: () => void = () => undefined;
           acquiring.set(
             slug,
@@ -362,8 +365,11 @@ async function observeAll(
             if ("heldBy" in repository) return repository.heldBy;
             claimed.add(slug);
             own.push(repository);
-            // The holder may have acted during the wait: what the open read of the repository is stale.
-            if (waited) context.reads.refreshRepository(path);
+            // The holder may have acted during the wait: every checkout's open read of the repository is stale.
+            if (waited) {
+              waitedFor.add(slug);
+              return REOPEN;
+            }
             return null;
           } finally {
             acquiring.delete(slug);
