@@ -73,6 +73,8 @@ export interface TrackerConfig {
   states: StateNames;
   /** The labels the skills act on, by role, defaults filled in. */
   labels: TrackerLabels;
+  /** Issue key of the standing person-checks list, when configured. */
+  personChecks?: string;
   /** The GitHub adapter's settings, defaults filled in. */
   github: GitHubSettings;
   /** The Jira adapter's settings, defaults filled in. */
@@ -401,6 +403,16 @@ export function parseTrackerConfig(
 
   refuseTeamWithoutAdapter(section.adapter, team);
 
+  const personChecks = section.person_checks;
+  if (
+    personChecks !== undefined &&
+    (typeof personChecks !== "string" || !/^\S+$/.test(personChecks))
+  )
+    throw new TrackerConfigError(
+      "issue_tracker.person_checks",
+      "issue_tracker.person_checks must be a nonempty issue key",
+    );
+
   const states = defaultStateNames();
   const rawStates = section.states;
   if (rawStates !== undefined && rawStates !== null) {
@@ -438,6 +450,7 @@ export function parseTrackerConfig(
     team,
     states,
     labels: parseTrackerLabels(overlay),
+    ...(personChecks === undefined ? {} : { personChecks }),
     github,
     jira,
     facets,

@@ -357,12 +357,32 @@ export const TRACKER: RecordKind[] = [
   {
     name: "epic-acceptance-verdict",
     medium: "tracker",
-    owner: `${DRIVE}lib/fleet-health-sources.ts`,
+    owner: "shared/epic-closure.ts",
     foreign: "a person accepting an epic",
     at: "a line in a comment on an epic",
     markers: ["epic-acceptance-verdict"],
     version: 0,
     meaning:
       "A person's verdict on an epic, `ACCEPT`, `ACCEPT-WITH-FOLLOWUPS` or `REJECT`, on the comment's last line. The fleet-health sensor counts an epic accepted when its newest verdict from a trusted author accepts it.",
+  },
+  {
+    name: "epic-sweep",
+    medium: "tracker",
+    owner: "skills/do-item/scripts/lib/epic-sweep-plan.ts",
+    at: "a comment presenting epic closure proposals to a person",
+    markers: ["jig:epic-sweep"],
+    version: 0,
+    meaning:
+      "Identifies the rows in an epic closure proposal by their digest. The reply applies to that proposal.",
+  },
+  {
+    name: "epic-waiver",
+    medium: "tracker",
+    owner: "shared/epic-closure.ts",
+    at: "a comment on an epic linking the person's reply",
+    markers: ["jig:epic-waiver"],
+    version: 0,
+    meaning:
+      "Records a person's acceptance of an epic closure proposal. An epic may close with this waiver when its newest trusted acceptance verdict is absent or accepting.",
   },
 ];

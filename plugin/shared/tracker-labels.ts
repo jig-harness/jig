@@ -218,6 +218,7 @@ export function parseTrackerLabels(
   let extractableTails: string[];
   if (raw.extractable_tails === undefined) {
     extractableTails = [
+      hitl,
       ...EXTRACTABLE_HITL_FACETS.map((f) => `${hitl}:${f}`),
       manualOps,
       followup,

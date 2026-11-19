@@ -80,6 +80,8 @@ Jig only reads.
 | `reflection-github-store` | tracker | `jig-reflection-change`, `jig-reflection-events` | 1 | — | Jig | The GitHub reflection store: an issue per change, and comments holding the change's events, read only from authors who can write to the repository. |
 | `fleet-health-suspicion` | tracker | `fleet-health` | 0 | — | Jig | A suspicion the fleet-health sensor raised on an epic, of work that shows ceremony without progress: never a diagnosis, which only a person's comment on the epic makes. |
 | `epic-acceptance-verdict` | tracker | `epic-acceptance-verdict` | 0 | — | a person accepting an epic | A person's verdict on an epic, `ACCEPT`, `ACCEPT-WITH-FOLLOWUPS` or `REJECT`, on the comment's last line. The fleet-health sensor counts an epic accepted when its newest verdict from a trusted author accepts it. |
+| `epic-sweep` | tracker | `jig:epic-sweep` | 0 | — | Jig | Identifies the rows in an epic closure proposal by their digest. The reply applies to that proposal. |
+| `epic-waiver` | tracker | `jig:epic-waiver` | 0 | — | Jig | Records a person's acceptance of an epic closure proposal. An epic may close with this waiver when its newest trusted acceptance verdict is absent or accepting. |
 
 <!-- /protocol:generated -->
 

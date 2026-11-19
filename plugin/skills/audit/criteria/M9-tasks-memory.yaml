@@ -80,7 +80,7 @@ criteria:
       - "new deferred findings enter the backlog with related links to their originating issue and epic, never as their children; existing parented follow-ups leave as tails at closure"
       - "person-only checks, including plain hitl and ops-pending, move to one standing person-checks list at closure; an epic's own operator step is filed there rather than keeping delivered scope open"
       - "the pull request finishing an epic's designed scope removes its active-plan and roadmap entries where listed"
-      - "a tool that refuses to close an epic without the verdict or waiver counts as mechanical"
+      - "an on-demand sweep counts as mechanical when it proposes closure without writes, verifies scope and tail prerequisites, and records the person's accepting reply as the waiver before closing"
     since: 0.19.0
 
   - id: issues-prioritized-at-creation
