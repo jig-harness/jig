@@ -7,6 +7,18 @@ import type { PickupReads } from "../pickup-reads.ts";
 import type { ServedOptions } from "./served.ts";
 import type { pullBlockers } from "./served-pull.ts";
 
+/** A served item in progress, as the claim dispatch monitors. */
+export function servedClaim(i: PoolIssue) {
+  return {
+    key: i.identifier,
+    title: i.title,
+    url: i.url,
+    state: i.state.name,
+    ...(i.nativeType === undefined ? {} : { nativeType: i.nativeType }),
+    served: true as const,
+  };
+}
+
 /** Assigned work and active epics are roots even when the epic itself has not started. */
 export function personRoots(
   view: ServedView,

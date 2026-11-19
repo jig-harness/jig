@@ -404,6 +404,38 @@ function concludedOf(action: Action): { concluded?: string } {
   return concluded === null ? {} : { concluded };
 }
 
+/** How the need's notice went out; nothing when it has none. */
+function notifiedOf(
+  notification: ReturnType<typeof aggregateNotification>,
+  at: string | undefined,
+): LineNeed["notified"] {
+  if (notification === undefined) return null;
+  return {
+    at: at ?? null,
+    outcome: notification.outcome,
+    workspace: notification.workspace,
+    ...(notification.outcome === "waits" || notification.outcome === "lost"
+      ? { detail: notification.detail }
+      : {}),
+  };
+}
+
+/** The workspaces a need names: every holder of a double claim, else the one a stuck or blocked need runs in. */
+function workspacesOf(view: RepoView, action: Action): string[] {
+  if (action.cause === "double-claim")
+    return view.workspacesHolding(action.target);
+  const stuck =
+    text(action.evidence, "stuck") !== null ||
+    text(action.evidence, "blocked") !== null;
+  return stuck && action.workspace !== undefined ? [action.workspace] : [];
+}
+
+/** When the hold on the need's drive began, where the dispatcher recorded one. */
+function heldSinceOf(action: Action): { heldSince?: string } {
+  const heldSince = text(action.evidence, "heldSince");
+  return heldSince === null ? {} : { heldSince };
+}
+
 function needsOf(
   view: RepoView,
   nowIso: string,
@@ -439,6 +471,7 @@ function needsOf(
         action,
       ),
       since:
+        text(action.evidence, "heldSince") ??
         text(action.evidence, "heartbeat") ??
         text(action.evidence, "idleSince") ??
         at ??
@@ -449,29 +482,13 @@ function needsOf(
         text(action.evidence, "question"),
       ...concludedOf(action),
       decisions,
-      notified:
-        notification === undefined
-          ? null
-          : {
-              at: at ?? null,
-              outcome: notification.outcome,
-              workspace: notification.workspace,
-              ...(notification.outcome === "waits" ||
-              notification.outcome === "lost"
-                ? { detail: notification.detail }
-                : {}),
-            },
-      workspaces:
-        action.cause === "double-claim"
-          ? view.workspacesHolding(action.target)
-          : text(action.evidence, "stuck") !== null &&
-              action.workspace !== undefined
-            ? [action.workspace]
-            : [],
+      notified: notifiedOf(notification, at),
+      workspaces: workspacesOf(view, action),
       stuckRecord:
         text(action.evidence, "stuck") === null
           ? null
           : text(action.evidence, "record"),
+      ...heldSinceOf(action),
     };
   });
   const refused = view.report.unplaced
@@ -682,6 +699,16 @@ function repoOf(
     stages: entry?.stages ?? [],
     ...(input?.tracker === undefined ? {} : { tracker: input.tracker }),
     refused: report.refused,
+    ...(report.refused === null || report.refusedStep === undefined
+      ? {}
+      : {
+          refusal: {
+            step: report.refusedStep,
+            ...(report.refusedBy === undefined
+              ? {}
+              : { failure: report.refusedBy }),
+          },
+        }),
     ...(report.slug !== null &&
     report.refused !== null &&
     report.section === null

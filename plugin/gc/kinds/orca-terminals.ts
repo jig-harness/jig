@@ -20,6 +20,7 @@
  */
 import { isRecord } from "../../shared/guards.ts";
 import {
+  ORCA_LIST_LIMIT,
   orcaEnvelope,
   orcaErrorText,
   orcaFailure,
@@ -38,9 +39,6 @@ import type { ProcessRow } from "../../shared/process-table.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import type { CollectionKind, Proof, Resource } from "../types.ts";
-
-/** More rows than a machine holds terminals; a listing Orca still cuts short is incomplete. */
-const LIST_LIMIT = 5000;
 
 /** The latest epoch millisecond a Temporal instant holds. */
 const MAX_EPOCH_MS = 8.64e15;
@@ -127,7 +125,7 @@ async function listTerminals(
     "terminal",
     "list",
     "--limit",
-    String(LIST_LIMIT),
+    String(ORCA_LIST_LIMIT),
     "--json",
   ]);
   const envelope = orcaEnvelope(done.stdout);

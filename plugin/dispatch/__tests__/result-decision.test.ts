@@ -1,7 +1,7 @@
 /**
  * `jig dispatch result <record> <token> failed --decision <file>`: a pass
  * that stopped for a person records the decision it framed with its result,
- * checked as a park's is, kept with its digest; a decision the check refuses
+ * checked as a park's is, kept with its digest and read as `parked`; a decision the check refuses
  * records nothing, so the pass can fix it and send it again.
  */
 import { afterEach, describe, expect, it } from "bun:test";
@@ -94,8 +94,9 @@ describe("jig dispatch result … failed --decision", () => {
       result: "failed",
       decision: decisionDigest(DECISION),
     });
+    // Kept as failed beside the decision, it reads as parked.
     const read = readEnded(ID, dispatchState(w));
-    expect(read?.result).toBe("failed");
+    expect(read?.result).toBe("parked");
     expect(read?.framed).toMatchObject({
       decision: DECISION,
       digest: decisionDigest(DECISION),

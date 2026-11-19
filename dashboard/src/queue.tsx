@@ -8,6 +8,7 @@ import { LinkedDetail, WorkLead } from "./work.tsx";
  */
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { Evidence, PanelHelp, SourceHint } from "./fold.tsx";
+import { facetAttrs } from "./facets.ts";
 import { GutterCard } from "./gutter.tsx";
 import { queueCard } from "./cards.ts";
 import { Glyph } from "./icon-word.tsx";
@@ -22,7 +23,10 @@ function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
   return (
     <GutterCard
       className={rest ? "qItem rest" : "qItem"}
-      attrs={cardAttrs(queueCard(item))}
+      attrs={{
+        ...cardAttrs(queueCard(item)),
+        ...facetAttrs({ source: [item.source] }),
+      }}
       label={`The record for ${item.target}`}
       face={
         <>

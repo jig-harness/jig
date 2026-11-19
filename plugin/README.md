@@ -362,6 +362,11 @@ not (stop its session first), and, among the records that read, an ended
 or died one and a pending one whose launch can still be retried: those
 the tick settles.
 
+A drive the tick would act on waits while such a record, or another host's
+launch claim with no end, holds it, and `jig ask` names that hold as what it
+waits on. Once the hold has lasted 30 minutes, counted from the later of the
+launch and the drive's stop, the tick notifies it as needing a person.
+
 **The account picks the agent.** Each account in the machine file names its
 `vendor`, and that decides the agent every session on it runs in: a re-arm
 admitted on a `claude` account runs Claude Code's pass command with
@@ -547,8 +552,22 @@ batch is picked up again without them. Every ended
 launch's outcome keeps its next owner: a station address, a person and their
 act, or nobody with a reason. `jig ask` shows this as `last.next`; older
 outcomes that did not keep it say it was not recorded. A converged drive
-hands to a repository maintainer to merge, and a completed follow-up hands
-to nobody. The session holds its
+hands to a repository maintainer to merge, a pass parked on the decision it
+framed (below) to a repository maintainer and the act the decision's class
+asks for, and a completed follow-up to nobody.
+
+A pass's recorded answer is read as one of these
+[launch results](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+`done`; `waits`, a pass that recorded a wait; `parked`, a pass that
+recorded `failed --decision <file>` and so stopped on the decision it
+framed for a person; and `failed`, a pass that recorded `failed` with
+neither, or ended with no result at all. The state database keeps `waits`
+and `parked` as `failed`, with the wait's time or the decision beside it,
+so a host that rolls back to a release that knows neither holds such a pass
+for a person rather than starting it again; every reader on this release
+takes a pending-arm wait and a parked decision apart from a failure, rows
+written before it included, and neither counts as one. A rate-limit wait
+remains a quota wall. The session holds its
 slot while the runtime reports its agent working or waiting, and gives it
 back when the agent finishes. `do-item` claims the item itself
 (`tracker.ts claim`: refused when the item is already in progress or
@@ -563,10 +582,14 @@ stands a claim down after its writes)
 ([do-item's start rules](skills/do-item/README.md#the-repositorys-own-start-rules)).
 Without it, claims serialize on one host only. A claimed item
 with no running session for longer than `dispatch.stalled_after` is
-reported as stalled and never relaunched (a served person's item only when
+reported as stalled and never started afresh (a served person's item only when
 a pickup of the host claimed it: the rest of their work in progress is
 their own; the identity's item only when a launch record of the host or a
-claim marker took it, unless `dispatch.stalled_scope` is `assigned`); an
+claim marker took it, unless `dispatch.stalled_scope` is `assigned`). A
+stalled pickup whose own tree still holds its work (commits not pushed,
+edits not committed, or no result recorded) is relaunched once per head in
+that tree, with a fixed prompt to push and record the work, rather than
+reported (`dispatch.stalled_relaunch`); an
 item more than one running
 session joins to is reported as a double claim; a session waiting longer
 than `dispatch.blocked_after` is reported.
@@ -695,7 +718,9 @@ park: it writes a [`parked-decision/v1` record](protocol/needs-and-answers.md#th
 one it recommends and why, the class, the steps a person must take and what
 it already did) and
 records `failed --decision <file>`, which checks the record as a park's is
-and keeps it with the result; a record the check refuses records nothing,
+and keeps it with the result, read as `parked`: the outcome log classes it
+parked for a person, with the person and act the decision names as its next
+owner, never as a failure. A record the check refuses records nothing,
 so the pass fixes it and sends it again. The need it raises (a failed
 follow-up, a pickup's question) carries that decision. For what the tick
 finds itself it frames the decision from the facts that identify it. For
@@ -714,7 +739,7 @@ The keys, the options and the answer forms are listed in
 | a stalled pickup, or a pickup's question it did not frame | `pickup` | **Release the claim**: moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
 | a checkout the workspace runtime does not list holds the launch's branch | `checkout` | **Detach the checkout**: detaches it at its commit, only when it is idle (clean, its commits on the remote, no drive or process in it) |
 | a drive handed to a person, or stopped with no cause | `drive` | **Re-arm the drive**: adds the `rearm` label |
-| a launch record stuck pending | `launch` | **Clear the record**: as `jig dispatch clear` does |
+| a launch record stuck pending, or one of unknown process that holds a drive | `launch` | **Clear the record**: as `jig dispatch clear` does; for a record of unknown process, only when every process of it could be judged, none runs, no session is joined to its target and no account wall rests on it |
 
 A double claim, an unanswered nudge and an item assigned by someone who
 cannot write keep their free text. Answer a need's decision as a park is
@@ -859,7 +884,8 @@ nothing either and records
 `waits --until <time> --reason pending --arm <name>`, the time to look
 again and the arm. It is held and started again the same way, its waits
 are never reported as a rate limit, and they do not count toward the rate
-limit's three. A pass that still finds the arm pending once
+limit's three. The outcome log classes such a pass `arm pending`, which
+the dashboard shows as held back, not as finishing badly. A pass that still finds the arm pending once
 `dispatch.followup_within` has passed since the first pass that found it so
 is notified as a failed follow-up that names the arm. `--reason` absent is
 `rate-limit`.
@@ -1133,7 +1159,8 @@ stages' results into these outcome classes:
 | converged | a drive converged; a pickup or follow-up recorded success |
 | merged | a drive's pull request merged while it ran |
 | quota wall | a usage limit, or a session that ended with no result while its wall stood |
-| parked for a person | a drive parked, or a follow-up stopped on a question |
+| parked for a person | a drive parked, or a pickup or follow-up stopped on a question or parked on the decision it framed |
+| arm pending | a follow-up that recorded a wait on an arm still pending |
 | stalled | a drive stalled, reached its round limit or was replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
 | refused | a stage's own refusal or a stop it was given |
@@ -1352,7 +1379,8 @@ writes nothing to the host:
   seven or thirty days, or a range), repository, stage, account, class,
   reason, the closing report's cause and who wrote it, and the piece of
   work, whose page lists its runs with their reports, counting each class over the window and naming each recurring
-  class: a bad class (any but converged, merged and parked for a person) of
+  class: a bad class (any but converged, merged, parked for a person and arm
+  pending) of
   one stage on one repository on at least three of the last seven host days,
   counting the ended rows and the event rows that carry a class, such as a
   drive stopped for a person (a drift carries none). A question about
@@ -1606,9 +1634,9 @@ whose configuration names the tracker.
 
 | Field | What it says |
 | --- | --- |
-| `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
+| `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, whether its process is alive, dead or unknown, why, and when its launch began (`since`); the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential` or `inspect the quota spending`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `inspect the quota spending` or `settle the launch that holds the drive`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 

@@ -17,6 +17,10 @@
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
  *   launched again after it, with no person asked;
+ * - except a record whose pass stopped at startup on its account's usage
+ *   notice, with the account's wall recorded (`run.ts`): the wall keeps the
+ *   next pickup off that account until its reset, so the item is wanted
+ *   again at once, with no person asked;
  * - a record whose claim the repository's start rules refused (its
  *   `refusal`) holds the item, with the reason, only until the item's
  *   `updatedAt` moves past the time the rules saw: a person changed the
@@ -156,7 +160,18 @@ export function pickupHold(
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
     return waitsHold(latest, latest.waitsUntil, nowMs);
+  if (stoppedOnWall(latest)) return { kind: "none" };
   return stoppedHold(latest, item, updatedAt);
+}
+
+/** Whether a pass stopped at startup on its account's usage notice, and the wrapper walled that account. */
+function stoppedOnWall(r: ReadRecord): boolean {
+  return (
+    r.result === null &&
+    r.state.kind === "ended" &&
+    r.state.exit.startup === "quota" &&
+    r.state.exit.wallUnrecorded !== true
+  );
 }
 
 /** A rate-limit wait: held until the reset it names, then nothing. */
@@ -203,7 +218,7 @@ function stoppedHold(
 /**
  * The question an ended pickup left for a person, or `null`: none after
  * `done` or a rate-limit wait, else the pass's trailing question, else the
- * question its closing report asks, or for a failed pass the question of its
+ * question its closing report asks, or for a parked pass the question of its
  * framed decision. Question planning and
  * the release of unclaimed members read this one policy.
  */
@@ -212,7 +227,7 @@ export function endedQuestion(r: ReadRecord): string | null {
   return (
     questionOf(r.state) ??
     r.report?.report.question ??
-    (r.result === "failed" ? (r.framed?.decision.call.question ?? null) : null)
+    (r.result === "parked" ? (r.framed?.decision.call.question ?? null) : null)
   );
 }
 
@@ -321,13 +336,16 @@ export function recordsWanted(
 
 /**
  * Release every ended pickup record of `repo` whose item is no longer
- * wanted, so a later assignment of that item is a pickup again. Called only
- * after a whole read of the tracker.
+ * wanted, so a later assignment of that item is a pickup again. Called after
+ * a read whose claims are known.
  *
  * An item that is claimed (in progress) keeps its record, so the question its
  * pass stopped on stays a need; the record notes that member's claim, and
  * releases it once it is back among `returned` (the dispatch states), which is
  * how a person settles that question.
+ *
+ * With `partial`, the read left some wanted items out, so an item missing
+ * from `wanted` may still be wanted: only that return releases a record.
  */
 export function releaseEnded(
   records: ReadRecord[],
@@ -337,6 +355,7 @@ export function releaseEnded(
   returned: ReadonlySet<string> = new Set(),
   root?: string,
   served: ReadonlySet<string> = new Set(),
+  partial = false,
 ): void {
   for (const r of records) {
     const { record } = r;
@@ -357,7 +376,8 @@ export function releaseEnded(
     const unclaimed = members.filter((key) => !claimedMembers.includes(key));
     const dropped = unclaimed.filter(
       (key) =>
-        leftUnclaimed(r, key) || !wantsRecord(record, key, wanted, returned),
+        leftUnclaimed(r, key) ||
+        !wantsRecord(record, key, partial ? null : wanted, returned),
     );
     if (dropped.length === 0) continue;
     // A member no longer wanted is released alone, so its siblings keep the
@@ -395,11 +415,13 @@ function noteProvableClaims(
 function wantsRecord(
   record: LaunchRecord,
   item: string,
-  wanted: ReadonlySet<string>,
+  wanted: ReadonlySet<string> | null,
   returned: ReadonlySet<string>,
 ): boolean {
-  if (wasClaimed(record, item)) return !returned.has(item) && wanted.has(item);
-  return wanted.has(item);
+  // An unknown wanted set (a partial read) keeps every record it would judge.
+  const stillWanted = wanted === null || wanted.has(item);
+  if (wasClaimed(record, item)) return !returned.has(item) && stillWanted;
+  return stillWanted;
 }
 
 /** Whether this batch member was seen claimed after its record ended. */

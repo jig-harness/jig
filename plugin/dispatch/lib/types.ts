@@ -10,7 +10,7 @@ import type {
 import type { NoticeFields } from "../../chat/channel.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { TickOutcome } from "../../shared/records/followup-values.ts";
-import type { FailureClass } from "../../shared/outbound/failure.ts";
+import type { FailureClass, QuotaHold } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
@@ -43,6 +43,8 @@ export interface DispatchSection {
   stalledAfterMs: number;
   /** Which of the identity's claimed items the stall watch reads as pickups: `claimed`, only those a launch record of this host or a claim marker took; `assigned`, every one. */
   stalledScope: StalledScope;
+  /** Whether a stalled pickup whose tree holds its unshipped work is relaunched once in that tree to push and record it (`stalled_relaunch`): `finish-once`, or `never`. */
+  stalledRelaunch: StalledRelaunch;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
@@ -112,6 +114,16 @@ export interface ClaimedItem {
 
 /** `dispatch.stalled_scope`'s values. */
 export type StalledScope = "claimed" | "assigned";
+
+/** A stalled pickup's relaunch: the launch record it finishes, the workspace that holds its tree, and the tree's head when the plan read it. */
+export interface PickupRelaunch {
+  record: string;
+  workspace: { id: string; path: string };
+  head: string;
+}
+
+/** `dispatch.stalled_relaunch`'s values. */
+export type StalledRelaunch = "finish-once" | "never";
 
 /** An item the tracker wants picked up, with the evidence for it. */
 export interface WantedItem {
@@ -412,6 +424,8 @@ export interface Action {
   takeoverGone?: string;
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
+  /** For a pickup: the stalled pickup it relaunches in that pickup's own tree, at the tree's head (`pickup-relaunch.ts`), rather than a fresh pickup. */
+  relaunch?: PickupRelaunch;
   /** For a notification: its cause. */
   cause?: NotifyCause;
   /** For a notification: the message, with the key that suppresses a repeat. */
@@ -589,12 +603,18 @@ export interface Running {
 /**
  * How a read failed when a call to an outside system failed it: the call's
  * failure class (`shared/outbound/failure.ts`) and, for `rate-limited`, when
- * the system lets the credential send again.
+ * the system lets the credential send again and, when a credential's quota
+ * stopped the call (`TrackerRateLimited`), whose quota it is and whether only the
+ * dispatcher's share of it is spent.
  */
 export interface ReadFailure {
   class: FailureClass;
   until?: string;
+  quota?: QuotaHold;
 }
+
+/** Where opening a repository for its tick stopped: looking up which repository the path is, reading its dispatch section, or the tick's time ran out first. */
+export type RefusedStep = "lookup" | "configuration" | "time";
 
 /** How one record read for one repository. */
 export interface RecordRead {
@@ -719,6 +739,8 @@ export interface RepoReport {
   refused: string | null;
   /** A refusal a failed call to the forge caused: that call's failure class. */
   refusedBy?: ReadFailure;
+  /** A refusal that stopped opening the repository: the step it stopped at. */
+  refusedStep?: RefusedStep;
   /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
   defect?: Defect;
   /** The defects a stage of `--apply` caught, each of which stopped its own stage only; absent when there were none. */

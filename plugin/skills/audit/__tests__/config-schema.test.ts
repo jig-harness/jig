@@ -715,7 +715,9 @@ describe("the reading skills", () => {
               ? join(plugin, "jig.ts")
               : skill === "evidence"
                 ? join(plugin, "shared", "evidence.ts")
-                : join(plugin, "skills", skill, "SKILL.md"),
+                : skill === "jig-gates"
+                  ? join(repoRoot, "scripts", "dispatch-gates.ts")
+                  : join(plugin, "skills", skill, "SKILL.md"),
           ),
         ]).toEqual([f.path, skill, true]);
   });

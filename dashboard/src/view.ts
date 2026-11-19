@@ -110,24 +110,44 @@ export function timerBanner(
   };
 }
 
+/** A stale repository's banner; `detail` is what it shows only on expanding. */
+export interface StaleBanner {
+  key: string;
+  title: string;
+  body: string;
+  detail?: string;
+}
+
 /**
  * A banner for each repository whose part of the line is past the timer's
  * next tick and its longest recent one while the line itself is current:
  * the ticks since ran, and none of them read it. Each names the repository,
  * when its part was read, and why the ticks since did not read it: the
  * newest that tried was refused, another tick held it busy, or they read
- * other repositories.
+ * other repositories. A refusal the line keeps in parts leads with one short
+ * line (`refusalLine`), its whole sentence kept for expanding.
  */
 export function staleBanners(
   line: LineSnapshot,
   clockNow: Clock,
-): Array<{ key: string; title: string; body: string }> {
+): StaleBanner[] {
   const { nowMs, timeZone } = clockNow;
   return line.repos.flatMap((repo) => {
     if (repo.readAt === undefined) return [];
     const read = Date.parse(repo.readAt);
     if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
     const name = retainedSlug(repo) ?? repo.path;
+    const brief =
+      repo.refused === null ? null : refusalLine(repo, read, timeZone);
+    if (brief !== null && repo.refused !== null)
+      return [
+        {
+          key: repo.path,
+          title: `${name}: ${brief}.`,
+          body: `Its needs, queue and sessions below are as of the ${clock(read, timeZone)} tick, ${ago(read, nowMs)} ago.`,
+          detail: `The newest tick that tried could not read it: ${repo.refused}`,
+        },
+      ];
     const since = (line.ticks ?? []).filter(
       (t) => Date.parse(t.startedAt) > read,
     );
@@ -146,6 +166,80 @@ export function staleBanners(
       },
     ];
   });
+}
+
+/** A failed call's class in a few words; a class this page does not know has none. */
+const CLASS_WORDS: Readonly<Record<string, string>> = {
+  unreachable: "no answer",
+  "server-fault": "server error",
+  "too-costly": "request too costly",
+  unauthorized: "credential refused",
+  "not-found": "not found",
+  invalid: "answer unreadable",
+};
+
+/** What each step of opening a repository says when it fails for a reason other than a rate limit. */
+const STEP_WORDS: Readonly<Record<string, string>> = {
+  lookup: "Repository lookup failed",
+  configuration: "Dispatch section unreadable",
+  time: "Tick ran out of time before reading it",
+};
+
+/** A system's name as a sentence starts it: `GitHub`, `Linear`. */
+function systemName(system: string): string {
+  return `${system.charAt(0).toUpperCase()}${system.slice(1)}`;
+}
+
+/** What a rate limit says: which system's quota, and whose share it is. */
+function rateLimitCause(
+  quota: { system?: unknown; share?: unknown } | undefined,
+  at: string,
+): string {
+  if (quota === undefined || typeof quota.system !== "string")
+    return `Rate limit holds it${at}`;
+  const system = systemName(quota.system);
+  return quota.share === true
+    ? `${system} quota paused${at}, dispatcher's share spent`
+    : `${system} quota spent${at}`;
+}
+
+/** The step that was refused, with the failure's class in words where it has them. */
+function classCause(
+  refusal: NonNullable<LineRepo["refusal"]>,
+  step: string,
+): string {
+  const failure = refusal.failure;
+  const words =
+    refusal.step === "time" || failure === undefined
+      ? undefined
+      : CLASS_WORDS[String(failure.class)];
+  return words === undefined ? step : `${step} (${words})`;
+}
+
+/**
+ * A refusal the line keeps in parts, as one short line: what stopped the
+ * read, when it clears where that is known, and the tick the shown data is
+ * from, e.g. `GitHub quota paused until 17:30, dispatcher's share spent;
+ * showing 16:05 data`. `null` when the entry keeps no parts or parts this
+ * page cannot read, so the banner shows the whole sentence instead.
+ */
+function refusalLine(
+  repo: Pick<LineRepo, "refusal">,
+  readMs: number,
+  timeZone: string,
+): string | null {
+  const refusal = repo.refusal;
+  const step =
+    refusal === undefined ? undefined : STEP_WORDS[String(refusal.step)];
+  if (refusal === undefined || step === undefined) return null;
+  const failure = refusal.failure;
+  const resumes = Date.parse(failure?.until ?? "");
+  const at = Number.isNaN(resumes) ? "" : ` until ${clock(resumes, timeZone)}`;
+  const cause =
+    failure?.class === "rate-limited"
+      ? rateLimitCause(failure.quota, at)
+      : classCause(refusal, step);
+  return `${cause}; showing ${clock(readMs, timeZone)} data`;
 }
 
 // ---------- sessions ----------
