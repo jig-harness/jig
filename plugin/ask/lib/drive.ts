@@ -661,6 +661,7 @@ export interface DriveReading {
   comments: CommentFields[] | null;
   /** The drive ledger, why it does not read, or `null` when there is none. */
   ledger: Ledger | string | null;
+  ledgerCommentId: number | null;
   /** The drive as its own listing in a checkout here reads it. */
   row: DriveRow | null;
   /** This machine's launch records of the drive. */
@@ -682,6 +683,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       pull: null,
       comments: null,
       ledger: null,
+      ledgerCommentId: null,
       row: null,
       records: [],
     };
@@ -759,6 +761,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
     pull: { doc, read: pull.read },
     comments,
     ledger,
+    ledgerCommentId: reads.snapshot?.canonical?.comment.id ?? null,
     row: reads.row,
     records: reads.records,
   };

@@ -96,6 +96,32 @@
   "values": [
     {
       "kind": "active",
+      "name": "dispatch-rearm-request",
+      "part": "marker",
+      "marker": "jig-dispatch-rearm-request",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 1,
+      "key": "^rearm$",
+      "writtenBy": "Jig",
+      "meaning": "Binds the rearm label to the ledger comment and generation that a person asked to restart. The newest trusted record for the label takes precedence, and a withdrawal ends the request."
+    },
+    {
+      "kind": "active",
+      "name": "dispatch-rearm-request",
+      "part": "marker",
+      "marker": "jig-dispatch-rearm-request-data",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "forge",
+      "version": 1,
+      "key": "^rearm$",
+      "writtenBy": "Jig",
+      "meaning": "Binds the rearm label to the ledger comment and generation that a person asked to restart. The newest trusted record for the label takes precedence, and a withdrawal ends the request."
+    },
+    {
+      "kind": "active",
       "name": "drive-ledger",
       "part": "marker",
       "marker": "drive-pr-ledger",

@@ -1541,7 +1541,7 @@ person's approval is no failure), it conflicts with its base, or a review
 thread is unresolved. That holds for its adoption (below) and for every
 re-drive, takeover and re-arm the dispatcher would start of itself, a
 converged drive whose head moved among them: a healthy one is reported and
-left for a person to merge. A person's `jig:drive` or `jig:rearm` still
+left for a person to merge. A person's `jig:drive` label or bound `jig send … rearm` request still
 starts one.
 
 A serialized change area (`serialize: true` on an area of the
