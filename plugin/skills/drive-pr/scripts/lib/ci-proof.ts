@@ -14,6 +14,21 @@ export function listingStopExit(pagesRead: number | null): number {
   return DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
 }
 
+/** The page count a script's stdout record carries with a listing stop; null when it carries none. */
+export function listingPagesReadFrom(stdout: string): number | null {
+  for (const line of stdout.split("\n").reverse()) {
+    try {
+      const record: unknown = JSON.parse(line);
+      if (typeof record !== "object" || record === null) continue;
+      const pages = Reflect.get(record, "listingPagesRead");
+      if (typeof pages === "number") return pages;
+    } catch {
+      // Not the stop record.
+    }
+  }
+  return null;
+}
+
 /** A failed read that carries its listing's classification when it has one. */
 export function unreadable<T extends { reason: string }>(
   failed: T,

@@ -193,6 +193,8 @@ import {
   SESSION_LEASE_HELD_EXIT,
 } from "./lib/state/lease.ts";
 import { ignoreDriveContext } from "./lib/context-ignore.ts";
+import { listingPagesReadFrom } from "./lib/ci-proof.ts";
+import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -1295,6 +1297,14 @@ async function main(): Promise<number> {
       4,
       "CI_HOLD_WAIT",
       `the CI hold is not ready on the current PR head; wait for the checks the ci-hold line names, then re-run`,
+    );
+  }
+  if (holdRes.code === DRIVE_EXIT.CHECK_RUNS_UNREADABLE) {
+    report.listingPagesRead = listingPagesReadFrom(holdRes.stdout);
+    return done(
+      DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+      "CHECK_RUNS_UNREADABLE",
+      "the head's check-runs listing could not be read whole — nothing was pushed",
     );
   }
   if (holdRes.code !== 0) {

@@ -461,6 +461,17 @@ describe("finish-round.ts", () => {
     }
   });
 
+  it("stops with the named listing stop and its page count when the hold's check-runs listing is cut short", async () => {
+    const r = await finishRound({
+      fixture: { threads: [], checkRunsHang: true },
+      env: { GH_CALL_TIMEOUT: "1" },
+    });
+    expectSpawnExit(r, 24);
+    expect(r.report.state).toBe("CHECK_RUNS_UNREADABLE");
+    expect(r.report).toHaveProperty("listingPagesRead");
+    expect(r.pushed).toBe("");
+  });
+
   it("pushes a PR that has conflicted since it opened, before any CI ran on it, without taking the hold", async () => {
     const r = await finishRound({
       fixture: { threads: [], mergeable: "CONFLICTING" },
