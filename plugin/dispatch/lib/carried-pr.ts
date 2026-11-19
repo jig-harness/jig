@@ -20,9 +20,13 @@
  *   it. A pull request with no drive does not carry it: the item is a
  *   stalled pickup, and its need names the pull request.
  * - A pull request the tick read as merged within `MERGED_SETTLES_MS` that
- *   the line links to the item settles it: the follow-up moves it, so the
- *   stall watch raises nothing. One merged longer ago no longer does: an
- *   item its follow-up has not moved by then is a stalled pickup again.
+ *   the line links to the item, by its branch or its description, settles
+ *   it: the follow-up moves it, so the stall watch raises nothing. A link
+ *   that rests on the forge's closing references (an issue in a separate
+ *   repository) is unknown for a merged pull request, whose listing does
+ *   not carry them, so it settles nothing. One merged longer ago no longer
+ *   does: an item its follow-up has not moved by then is a stalled pickup
+ *   again.
  * - Where the open pull requests, their links or a linked pull request's
  *   drive did not read this tick, the stall watch reads the item as it reads
  *   one no pull request links, and its need says what could not be told.
@@ -33,7 +37,12 @@
 import { parseMs } from "../../shared/time.ts";
 import { stateOf } from "./labels.ts";
 import type { DrivenPr, MergedPr } from "./types.ts";
-import { type LinkRules, type PrLinkText, workLinks } from "./work-links.ts";
+import {
+  type LinkRules,
+  type PrLinkText,
+  sameRepository,
+  workLinks,
+} from "./work-links.ts";
 
 /** An open pull request, by number and link. */
 export interface CarrierPr {
@@ -111,10 +120,10 @@ function carrierDrive(
   const projected = stateOf(drive);
   const why = `${drive.class}${drive.why === "" ? "" : `: ${drive.why}`}`;
   if (projected === "unknown")
-    // A stopped ledger that read waits on a state the forge leaves undecided; one with no stop, or that did not read, cannot be told.
+    // Only a ledger that read and waits on a state the forge leaves undecided is carried; an unreadable heartbeat, a ledger naming no verified head or one with no stop cannot be told.
     return drive.class === "unplaced" &&
       drive.readFailed !== true &&
-      typeof drive.evidence.exit === "number"
+      drive.forgeUndecided === true
       ? { kind: "unplaced", why }
       : {
           kind: "unread",
@@ -155,19 +164,26 @@ export function carrierInput(read: {
   const { nowMs } = read;
   const recent = (p: MergedPr) =>
     nowMs !== undefined && nowMs - parseMs(p.mergedAt) <= MERGED_SETTLES_MS;
+  const separateIssues =
+    read.rules?.issueRepository != null &&
+    !sameRepository(read.rules.issueRepository, read.rules.repository);
   const merged = (read.merged ?? []).filter(recent).map(
     (p): PrLinkText => ({
       number: p.number,
       url: p.url,
       headRefName: p.head,
       body: p.body ?? "",
-      closing: [],
+      // The merged listing carries no closing references; an issue in another repository is linked only by them, so there the pull request's links are unknown.
+      closing: separateIssues ? null : [],
     }),
   );
   const mergedLinks =
-    read.rules === null || merged.length === 0
+    read.rules === null
       ? null
-      : workLinks(merged, read.rules);
+      : merged.map((p) => ({
+          p,
+          links: workLinks([p], read.rules as LinkRules),
+        }));
   return {
     carriers: (key) =>
       links
@@ -176,7 +192,8 @@ export function carrierInput(read: {
           unknownHead.has(p.number) ? { ...p, headUnread: true } : p,
         ) ?? null,
     drive: (pr) => carrierDrive(pr, read.drives, read.read, read.inScope),
-    merged: (key) => mergedLinks?.prsOf(key) ?? [],
+    merged: (key) =>
+      (mergedLinks ?? []).flatMap(({ links }) => links.prsOf(key) ?? []),
   };
 }
 

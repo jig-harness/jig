@@ -273,6 +273,8 @@ export interface DrivenPr {
   labels?: string[];
   /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
   readFailed?: true;
+  /** For an `unplaced` ledger: the forge leaves its pull request's mergeability, head or base undecided, which a later tick reads again. */
+  forgeUndecided?: true;
   /** For a `readFailed` ledger a failed call caused: that call's failure class, which decides whether the read is waited out. */
   failure?: ReadFailure;
   /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */

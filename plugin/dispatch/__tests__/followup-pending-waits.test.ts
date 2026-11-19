@@ -308,6 +308,16 @@ it("starts a pending window again on a newer arm, re-reads an arm past its windo
     waited(base, at(8, 1), { reason: "pending", arm: "deploy: still going" }),
   ];
   expect(waitStreak(reworded, SLUG, 9)).toMatchObject({ spent: true });
+  // A window that began untagged takes the first tag a later pass names, so a newer tag after it starts a window again.
+  const adopted = [
+    waited(base, at(6, 55), { reason: "pending", arm: "deploy" }),
+    waited(base, at(7, 10), on("v1.0.0")),
+    waited(base, at(8, 1), on("v1.0.1")),
+  ];
+  expect(waitStreak(adopted, SLUG, 9)).toMatchObject({
+    spent: false,
+    pendingSince: at(8, 1),
+  });
   // An arm naming no tag past its window is spent with nothing to read.
   const untagged = [
     waited(base, at(6, 55), { reason: "pending", arm: "deploy" }),

@@ -183,6 +183,7 @@ describe("a claimed item an open pull request carries", () => {
   it("raises no stall need while the drive is parked on a question, stopped, or undecided this tick, and is reported with the drive's state", () => {
     const unplaced = drive("unplaced", { exit: DRIVE_EXIT.CONVERGED });
     unplaced.why = "whether it conflicts with its base is not known yet";
+    unplaced.forgeUndecided = true;
     for (const [ledger, state, text] of [
       [drive("parked"), "parked", "parked on a person's question"],
       [drive("needs-person"), "parked", "parked on a person's question"],
@@ -288,6 +289,11 @@ describe("a claimed item an open pull request carries", () => {
       why: "its comments did not read",
       readFailed: true,
     };
+    // A stop that read but names no verified head is unplaced for a reason the forge does not clear.
+    const unverified = {
+      ...drive("unplaced", { exit: DRIVE_EXIT.CONVERGED }),
+      why: "its ledger names no head the drive verified",
+    };
     // An unplaced drive with no stop of its own (no ledger, a heartbeat that does not read) cannot be told either.
     const unstopped = {
       ...drive("unplaced"),
@@ -296,6 +302,7 @@ describe("a claimed item an open pull request carries", () => {
     for (const [drives, read] of [
       [[unplaced], new Set([31])],
       [[unstopped], new Set([31])],
+      [[unverified], new Set([31])],
       [[], new Set<number>()],
     ] as const) {
       const reason = expectStalled(
@@ -419,5 +426,39 @@ describe("the line", () => {
       closeStateDb(root);
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("a merged pull request whose link rests on the forge's closing references", () => {
+  const merged: MergedPr = {
+    number: 30,
+    url: `https://github.com/${SLUG}/pull/30`,
+    title: "issue 12",
+    head: "unrelated-branch",
+    mergedAt: "2026-11-14T16:00:00Z",
+    body: "",
+  };
+  const rules = (issueRepository: string) => ({
+    keys: numberKeys(issueRepository),
+    branchPattern: "{key_lower}-{slug}",
+    repository: SLUG,
+    issueRepository,
+  });
+  const read = (issueRepository: string) =>
+    carrierInput({
+      prs: [],
+      rules: rules(issueRepository),
+      drives: [],
+      read: new Set(),
+      merged: [merged],
+      nowMs: NOW,
+    });
+
+  it("settles nothing where the issues are in another repository, since the merged listing does not carry the references", () => {
+    expect(read("example-org/issues").merged?.("#12")).toEqual([]);
+  });
+
+  it("is read as before where the issues are in the repository itself", () => {
+    expect(read(SLUG).merged?.("#12")).toEqual([]);
   });
 });

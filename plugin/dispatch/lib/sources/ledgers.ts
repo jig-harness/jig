@@ -157,6 +157,8 @@ export interface PrFacts {
 export interface Classified {
   class: LedgerClass;
   why: string;
+  /** For `unplaced`: the forge leaves the pull request's mergeability, head or base undecided, which a later tick reads again. */
+  forgeUndecided?: true;
   /** For `stale`: what its stop does not fix. */
   stale?: StaleCause;
 }
@@ -192,12 +194,13 @@ function readFacts({
  */
 function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
   const verified = ledger.verifiedSha;
-  const unplaced = (why: string): Classified => ({
+  const unplaced = (why: string, forgeUndecided = false): Classified => ({
     class: "unplaced",
+    ...(forgeUndecided ? { forgeUndecided: true as const } : {}),
     why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), and ${why}, so whether it is stale cannot be told`,
   });
   const facts = readFacts(forge);
-  if ("unread" in facts) return unplaced(facts.unread);
+  if ("unread" in facts) return unplaced(facts.unread, true);
   const { head, conflicting } = facts;
   if (verified === "" && !conflicting)
     return unplaced("its ledger names no head the drive verified");
@@ -250,6 +253,7 @@ function conflictStopClass(forge: PrFacts): Classified {
     return {
       class: "unplaced",
       why: `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${pair.unread}, so the change a re-drive would act on cannot be told`,
+      forgeUndecided: true,
     };
   return conflictRedrive(
     pair.facts.conflicting
@@ -295,6 +299,7 @@ function failedConflictClass(forge: PrFacts): Classified | null {
     return {
       class: "unplaced",
       why: `stopped ${FAILED}, and ${pair.unread}, so whether its conflict-resolve round settles it cannot be told`,
+      forgeUndecided: true,
     };
   const { facts, base } = pair;
   return {
@@ -511,6 +516,7 @@ function parkConflictClass(waiting: string, forge: PrFacts): Classified | null {
     return {
       class: "unplaced",
       why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), ${waiting}, and conflicting with its base, but ${pair.unread}, so the change a re-drive would act on cannot be told`,
+      forgeUndecided: true,
     };
   return conflictRedrive(
     `parked ${waiting}, and conflicting with its base`,

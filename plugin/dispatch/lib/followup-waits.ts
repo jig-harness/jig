@@ -243,7 +243,8 @@ function nextPending(from: Run, a: Attempt): Run {
   const pastWindow = Number.isFinite(waited) && waited >= a.withinMs;
   const pastRun =
     Number.isFinite(overall) && overall >= WINDOWS_FOR_PERSON * a.withinMs;
-  const windowArm = fresh ? arm : from.arm;
+  // A window that began on an untagged pass takes the first tag a later pass names.
+  const windowArm = fresh ? arm : (from.arm ?? arm);
   const readable =
     pastWindow &&
     !pastRun &&
