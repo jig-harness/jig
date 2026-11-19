@@ -382,7 +382,7 @@ async function recoverCancelledStep(
   if (isTimedOut(recovery))
     return {
       next: "park",
-      reason: `required CI on head ${head} failed after the converged label was written: ${timedOutWords(recovery)}; a re-run stops at the same limit, so the drive does not re-run it`,
+      reason: `CI on head ${head} failed after the converged label was written: ${timedOutWords(recovery)}; a re-run stops at the same limit, so the drive does not re-run it`,
       labelCaused: false,
     };
   if (recovery !== "none")

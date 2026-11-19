@@ -33,15 +33,27 @@ export interface RecoveryReadFailure {
 }
 
 /**
- * Required jobs the runner stopped at their time limit: a failure for the
- * CI-repair path, never re-run or parked by the recovery.
+ * Workflow jobs the runner stopped at their time limit (the required ones
+ * alone where the caller asks only for those): a failure for the CI-repair
+ * path, never re-run or parked by the recovery. `recovery` is what the
+ * recovery answered for the head's other cancellations: `wait` while a
+ * re-run of theirs is going.
  */
 export interface TimedOutRecovery {
   timedOut: readonly TimedOutJob[];
+  recovery: "wait" | "none";
 }
 
 /** The recovery's answer on a live head. */
 export type LiveRecovery = Recovery | RecoveryReadFailure | TimedOutRecovery;
+
+/** Whether the recovery asks its caller to poll again before going on. */
+export function recoveryWaits(recovery: LiveRecovery): boolean {
+  return (
+    recovery === "wait" ||
+    (isTimedOut(recovery) && recovery.recovery === "wait")
+  );
+}
 
 /** Whether the answer names jobs the runner stopped at their time limit. */
 export function isTimedOut(

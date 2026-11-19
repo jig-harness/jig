@@ -425,7 +425,10 @@ run time in its log and in the pass's detail: "job `test` ran 30m 4s and
 stopped at its 30-minute limit (timeout-minutes)". Other cancellations on
 the head still take the recovery above on the same poll; a re-run they
 request does not hold up the repair, and a park or stop they end in ends
-the drive first. Before a pass the drive logs a timed-out job and goes on.
+the drive first. Before a pass the drive logs a timed-out job and goes on,
+still polling while a re-run of another cancellation is going. A run of the
+timed-out job's workflow still going on the head (a queued re-run of it) is
+waited for, as any replacement is.
 A cancellation the annotations do not attribute to a time limit (none
 carries that message, or they could not be read) is a cancelled check.
 

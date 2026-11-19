@@ -8,7 +8,9 @@
  *
  * Its annotations are read only for a cancelled job whose check run carries
  * any, one request per job; a read that fails, or an answer that does not
- * parse, leaves the job a cancellation.
+ * parse, leaves the job a cancellation. So does a run of its workflow still
+ * going on the head (a re-run of it, queued before its jobs exist): the
+ * recovery waits for that run as it waits for any replacement.
  */
 import {
   attempt,
@@ -22,7 +24,7 @@ import { forgeReadClass, type ForgeReadCode } from "./forge-read.ts";
 import { ghCall } from "./proc.ts";
 import type { FailedRun, WorkflowRun } from "./status/workflow-runs.ts";
 
-/** A required job the runner stopped at its time limit. */
+/** A workflow job the runner stopped at its time limit. */
 export interface TimedOutJob {
   name: string;
   checkRunId: number;
@@ -100,9 +102,26 @@ const readAnnotations: AnnotationsRead = async (checkRunId) => {
     "the annotations answer is not JSON",
     (): unknown => JSON.parse(result.stdout),
   );
-  if (decoded.ok) readBefore.set(checkRunId, decoded.value);
+  if (!decoded.ok) return decoded;
+  if (!Array.isArray(decoded.value))
+    return failed("malformed", "the annotations answer is not a list");
+  readBefore.set(checkRunId, decoded.value);
   return decoded;
 };
+
+/** Whether a run of the job's workflow is still going on the head. */
+function workflowGoing(
+  job: CheckRunLite,
+  runs: readonly WorkflowRun[],
+): boolean {
+  const own = runs.find((r) => r.checkSuiteId === job.suiteId);
+  return (
+    own !== undefined &&
+    runs.some(
+      (run) => run.workflowId === own.workflowId && run.status !== "completed",
+    )
+  );
+}
 
 function ranFor(job: CheckRunLite): number | null {
   if (job.startedAt === null || (job.completedAt ?? null) === null) return null;
@@ -127,8 +146,9 @@ function runBehind(
 
 /**
  * The completed `cancelled` jobs among `jobs` that the runner stopped at
- * their time limit. Only a job whose check run carries annotations is asked
- * about; a read that fails is logged and leaves the job a cancellation.
+ * their time limit. Only a job whose check run carries annotations, and whose
+ * workflow has no run still going on the head, is asked about; a read that
+ * fails is logged and leaves the job a cancellation.
  */
 export async function timedOutJobs(
   jobs: readonly CheckRunLite[],
@@ -140,7 +160,8 @@ export async function timedOutJobs(
     if (
       job.status !== "completed" ||
       job.conclusion !== "cancelled" ||
-      (job.annotationsCount ?? 0) === 0
+      (job.annotationsCount ?? 0) === 0 ||
+      workflowGoing(job, runs)
     )
       continue;
     const annotations = await read(job.id);
@@ -151,7 +172,13 @@ export async function timedOutJobs(
       continue;
     }
     const limitMs = timeLimitOf(annotations.value);
-    if (limitMs === null) continue;
+    if (limitMs === null) {
+      if (Array.isArray(annotations.value) && annotations.value.length > 0)
+        console.error(
+          `cancelled CI recovery: check run ${job.id} (${job.name}) carries ${annotations.value.length} annotation(s), none of them the runner's time-limit message; it stays a cancellation`,
+        );
+      continue;
+    }
     timedOut.push({
       name: job.name,
       checkRunId: job.id,

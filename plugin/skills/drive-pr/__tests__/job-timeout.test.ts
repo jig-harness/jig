@@ -196,6 +196,24 @@ describe("which cancelled jobs ran out of time", () => {
     ).toEqual([]);
   });
 
+  test("a job whose workflow has a run still going is not asked about", async () => {
+    const asked: number[] = [];
+    const rerun: WorkflowRun = {
+      ...(RUNS[0] as WorkflowRun),
+      id: 401,
+      checkSuiteId: 41,
+      status: "queued",
+      conclusion: null,
+    };
+    expect(
+      await timedOutJobs([job()], [...RUNS, rerun], async (id) => {
+        asked.push(id);
+        return ok(TIMEOUT);
+      }),
+    ).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
   test("only a completed cancelled job is asked about", async () => {
     const asked: number[] = [];
     await timedOutJobs(

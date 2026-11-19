@@ -366,7 +366,7 @@ export async function recoverCancelledOnHead(
     mayMutate,
   );
   return timedOut.length > 0 && (answer === "none" || answer === "wait")
-    ? { timedOut }
+    ? { timedOut, recovery: answer }
     : answer;
 }
 

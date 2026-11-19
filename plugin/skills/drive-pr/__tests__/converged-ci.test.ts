@@ -211,6 +211,7 @@ describe("the converged CI watch", () => {
               run: null,
             },
           ],
+          recovery: "none",
         },
       ],
     });
