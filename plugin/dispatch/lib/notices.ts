@@ -304,6 +304,26 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
   };
 }
 
+/** A rearm refused before launch because this host's lock could not be read. */
+export function rearmLockNotice(
+  slug: string,
+  pr: DrivenPr,
+  heartbeat: string,
+  reason: string,
+): Notice {
+  return {
+    ...notice(
+      `${slug} PR #${pr.number} rearm lock unreadable, generation ${generation(pr)}, heartbeat ${heartbeat}`,
+      [
+        `PR #${pr.number} (${pr.title}): ${reason}.`,
+        "Investigate the drive-lock read on the host where rearm was refused. Retry rearm once that read succeeds.",
+      ],
+      [pr.url],
+    ),
+    ...driveFields(slug, pr),
+  };
+}
+
 /** A silent drive's key and text: its heartbeat expired and its end cannot be confirmed. */
 function silentText(slug: string, pr: DrivenPr): Notice {
   return notice(

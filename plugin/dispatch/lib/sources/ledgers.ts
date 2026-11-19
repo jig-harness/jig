@@ -14,6 +14,7 @@
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`), `PASS_DEADLINE` (`15`) | stale, once per head commit |
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
+ * | stopped `FORGE_RATE_LIMITED` (`24`) | stale, once per stop from the forge limit's reset (`forge-limit-redrive.ts`) |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
@@ -113,6 +114,7 @@ import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events
 import { ledgerTree } from "../stall-tree.ts";
 import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
 import { infraStopClass } from "../infra-backoff.ts";
+import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
@@ -356,6 +358,13 @@ const MECHANICAL_STOPS: ReadonlyMap<
       words: "CI still failing on the infrastructure through its re-runs",
     },
   ],
+  [
+    DRIVE_EXIT.FORGE_RATE_LIMITED,
+    {
+      kind: "forge-limit",
+      words: "the forge's rate limit for its credential spent",
+    },
+  ],
 ]);
 
 /** What a needs-person reason adds when the pull request conflicts with its base. */
@@ -391,6 +400,8 @@ function mechanicalStopClass(
     };
   if (stop.kind === "ci-infra")
     return infraStopClass(ledger, exit, head, stop.words);
+  if (stop.kind === "forge-limit")
+    return forgeLimitStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
   return {

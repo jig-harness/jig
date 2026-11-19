@@ -374,6 +374,22 @@ describe("a model id and its family alias", () => {
     expect(() => rules(codexRow)).not.toThrow();
   });
 
+  it("keeps an earlier full Codex model id in its former family", () => {
+    expect(() =>
+      rules({
+        routing: {
+          models: {
+            codex: {
+              simple: "gpt-6.1-sol",
+              standard: "gpt-6.1-sol",
+              complex: "gpt-6.1-sol",
+            },
+          },
+        },
+      }),
+    ).not.toThrow();
+  });
+
   it.each(["terra", "gpt-5.6-terra"])(
     "applies a family declaration to the spelling %s alike",
     (spelling) => {
