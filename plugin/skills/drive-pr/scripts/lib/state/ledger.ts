@@ -111,6 +111,7 @@ import {
   type LedgerDriver,
   type LedgerClaimRef,
 } from "./ledger-shapes.ts";
+import { CONVERGED_CI_PHASE } from "./ledger-values.ts";
 import { matches } from "../../../../../shared/shapes.ts";
 import {
   TAKEOVER_GENERATION_SHAPE,
@@ -912,7 +913,7 @@ export function seedFromLedger(
     attempts: l.attempts,
     attemptsHead: l.attemptsHead,
     deadlineRetries: l.deadlineRetries,
-    phase: l.phase,
+    phase: l.phase === CONVERGED_CI_PHASE ? local.phase : l.phase,
     lastCountedHead: l.lastCountedHead,
     verifiedSha: l.verifiedSha,
     readyMarkedRound: l.readyMarkedRound,

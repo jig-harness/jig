@@ -42,6 +42,8 @@ import type { StateStore } from "./store.ts";
 export const LEDGER_DRIVER_ENV = "DRIVE_PR_LEDGER_DRIVER";
 
 /** What a driver publishes about itself for the ledger's writers. */
+import { CONVERGED_CI_PHASE } from "./ledger-values.ts";
+
 export interface LedgerDriverEnv {
   actor: string;
   clone: string;
@@ -64,6 +66,9 @@ export interface LedgerDriverEnv {
    * running (`ledgerOfStoppedDriver`), so it never overwrites a successor.
    */
   recovering?: boolean;
+  /** Recovery carries an exit saved for this acquisition after its CI watch. */
+  pending?: boolean;
+  watchingConvergedCi?: boolean;
 }
 
 export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
@@ -82,7 +87,10 @@ export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
         v.stopped === null ||
         typeof v.stopped === "number") &&
       (v.started === undefined || typeof v.started === "string") &&
-      (v.recovering === undefined || typeof v.recovering === "boolean")
+      (v.recovering === undefined || typeof v.recovering === "boolean") &&
+      (v.pending === undefined || typeof v.pending === "boolean") &&
+      (v.watchingConvergedCi === undefined ||
+        typeof v.watchingConvergedCi === "boolean")
     )
       return v as unknown as LedgerDriverEnv;
   } catch {
@@ -115,7 +123,7 @@ function writeRefused(
         clone: driver.clone,
         started: driver.started ?? "",
       },
-      allowStopped,
+      allowStopped || driver.pending === true,
     );
     if ("why" in found)
       return `the ledger is not the stopped driver's: ${found.why}`;
@@ -247,22 +255,27 @@ async function mirrorUnlocked(
     // not an older read.
     const { state } = store.read();
     const narrative = narrativeOf(handoff);
-    return ledgerFromState(state, {
-      generation:
-        Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
-      driver: ledgerDriverRecord(driver, store.stateDir, pr),
-      narrative,
-      claims: effectiveClaims(
-        driver.claim === null ||
-          snapshot.claims.some((c) => c.id === driver.claim?.id)
-          ? snapshot.claims
-          : [...snapshot.claims, driver.claim],
-      ).map((c) => ({
-        id: c.id,
-        clone: c.claim.clone,
-        generation: c.claim.generation,
-      })),
-    });
+    const watching =
+      driver.watchingConvergedCi === true && driver.stopped === undefined;
+    return ledgerFromState(
+      watching ? { ...state, phase: CONVERGED_CI_PHASE } : state,
+      {
+        generation:
+          Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
+        driver: ledgerDriverRecord(driver, store.stateDir, pr),
+        narrative,
+        claims: effectiveClaims(
+          driver.claim === null ||
+            snapshot.claims.some((c) => c.id === driver.claim?.id)
+            ? snapshot.claims
+            : [...snapshot.claims, driver.claim],
+        ).map((c) => ({
+          id: c.id,
+          clone: c.claim.clone,
+          generation: c.claim.generation,
+        })),
+      },
+    );
   });
   if (result.kind !== "written") {
     console.error(`ledger: not written — ${result.reason}.`);

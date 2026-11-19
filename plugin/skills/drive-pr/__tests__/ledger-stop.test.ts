@@ -18,6 +18,7 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   markDriverRecordReleased,
+  recordPendingExit,
   removeDriverRecord,
   writeDriverRecord,
 } from "../scripts/lib/ledger-stop.ts";
@@ -711,6 +712,21 @@ describe("recovering the ledger of a driver that could not write it", () => {
       expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
       expect(driverRecordRow(s.leaf, "999")).toBeNull();
     }
+  });
+
+  it("retries the recorded CI exit against the same acquired stopped ledger", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    await plantRecord(s, true);
+    recordPendingExit(s.leaf, "999", s.started, 8);
+    writeFileSync(join(s.forge.dir, "fail-patch"), "");
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 0 });
+    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+
+    rmSync(join(s.forge.dir, "fail-patch"));
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
+    expect(driverRecordRow(s.leaf, "999")).toBeNull();
   });
 
   it("reserves released recovery retries and preserves an unpublished successor after a forge failure", async () => {

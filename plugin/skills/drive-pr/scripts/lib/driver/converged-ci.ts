@@ -95,6 +95,8 @@ export interface ConvergedCiDeps {
    * change to CI and before a park; unset means owned.
    */
   owned?(): Promise<Ownership>;
+  /** Renew between polls, outside the state locks used by the mutation fences. */
+  renew?(): Promise<number | null>;
 }
 
 /**
@@ -524,6 +526,7 @@ export async function watchConvergedCi(
   let saw = "nothing read yet";
   let readOnce = false;
   for (;;) {
+    await deps.renew?.();
     const { next, read, unread } = await poll(pr, verified, deps);
     if ("kind" in next) return parkOrHold(deps, next);
     if (next.next === "park")

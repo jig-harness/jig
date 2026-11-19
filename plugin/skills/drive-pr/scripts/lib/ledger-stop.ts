@@ -13,9 +13,10 @@ import {
  * or uncertain observations leave the ledger running for inspection.
  *
  * Guarded so it never overwrites a successor: the ledger is marked only
- * while it still names the stopped driver as running (its working tree, its
- * clone and, where recorded, its run), with no claim in force from another
- * clone past its recorded position (`ledgerOfStoppedDriver`). Any other
+ * while it still names that acquisition (its working tree, its clone and,
+ * where recorded, its run), with no claim in force from another
+ * clone past its recorded position (`ledgerOfStoppedDriver`). An operator
+ * stop or a pending CI exit can finish a stop already published. Any other
  * ledger is left as it is, and stderr says so. The write itself goes
  * through `drive-state.ts handoff` under a driver variable naming the
  * stopped driver, the path every ledger write takes.
@@ -24,6 +25,7 @@ import { personStopFor } from "./state/person-stop.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import type { ClaimDiag } from "./claim.ts";
 import { inspectLock, prLockName } from "./driver/locks.ts";
+import { DRIVE_EXIT } from "./status/terminal-states.ts";
 import { driveState } from "./driver/paths.ts";
 import { labelDrive } from "./driver/state-labels.ts";
 import { stopKey } from "../../../../shared/pr-labels/blocked.ts";
@@ -82,6 +84,8 @@ export function writeDriverRecord(
      ON CONFLICT (clone, pr) DO UPDATE SET
        worktree = excluded.worktree, started = excluded.started,
        pid = excluded.pid, host = excluded.host, released = excluded.released,
+       pending_exit = CASE WHEN driver_records.started = excluded.started
+         THEN driver_records.pending_exit ELSE NULL END,
        person_stop = CASE WHEN driver_records.started = excluded.started
          THEN COALESCE(excluded.person_stop, driver_records.person_stop)
          ELSE excluded.person_stop END`,
@@ -97,6 +101,22 @@ export function writeDriverRecord(
         ? null
         : JSON.stringify(record.personStop),
     ],
+  );
+}
+
+/** Save a final exit for recovery, only on the acquisition that computed it. */
+export function recordPendingExit(
+  stateDir: string,
+  pr: string,
+  started: string,
+  exit: number,
+): boolean {
+  const { db, clone } = driveDb(stateDir);
+  return (
+    db.run(
+      "UPDATE driver_records SET pending_exit = ? WHERE clone = ? AND pr = ? AND started = ?",
+      [exit, clone, pr, started],
+    ).changes === 1
   );
 }
 
@@ -245,7 +265,20 @@ export async function markLedgerStopped(
   if (diag.worktree === "") return "done";
   // Best-effort: the stop itself has already happened, and its exit stands.
   try {
-    return await markGuarded(stateDir, pr, diag, exit);
+    const { db, clone } = driveDb(stateDir);
+    const pending =
+      db
+        .query<{ pending_exit: number | null }, [string, string, string]>(
+          "SELECT pending_exit FROM driver_records WHERE clone = ? AND pr = ? AND started = ?",
+        )
+        .get(clone, pr, diag.started)?.pending_exit ?? null;
+    return await markGuarded(
+      stateDir,
+      pr,
+      diag,
+      exit ?? pending,
+      pending !== null,
+    );
   } catch (err) {
     console.error(
       `ledger: PR #${pr}'s ledger was not marked stopped: ${err instanceof Error ? err.message : String(err)}.`,
@@ -259,6 +292,7 @@ async function markGuarded(
   pr: string,
   diag: StoppedDiag,
   exit: number | null,
+  pending: boolean,
 ): Promise<"done" | "retry"> {
   const who = {
     actor: `wt-${worktreePathKey(diag.worktree)}`,
@@ -275,7 +309,7 @@ async function markGuarded(
   }
   const byPerson =
     personStopFor(stateDir, pr, diag.started).personStop !== undefined;
-  const found = ledgerOfStoppedDriver(snapshot, who, byPerson);
+  const found = ledgerOfStoppedDriver(snapshot, who, byPerson || pending);
   if ("why" in found) {
     // Silent when there is nothing to say: no ledger, or one already stopped.
     const parsed = snapshot.canonical?.parsed;
@@ -294,6 +328,7 @@ async function markGuarded(
     // The writer re-checks the guard against every snapshot it builds from:
     // a successor can publish between this read and that write.
     recovering: true,
+    ...(pending ? { pending: true } : {}),
   };
   const recoverySession = randomUUID();
   const env = {
@@ -335,13 +370,44 @@ async function markGuarded(
     // A write the guards refused has nothing left to write, and is not ours to label.
     if (res.code === LEDGER_REFUSED_EXIT) return "done";
     if (res.code === 0) {
-      await labelDrive(pr, {
-        stopped: exit,
-        byPerson,
-        verifiedSha: found.ledger.verifiedSha,
-        stop: stopKey(found.ledger.driver.started, found.ledger.round),
-        parks: found.ledger.parked,
-      });
+      // The live watch was the only place to start CI from this label.
+      if (pending && exit === DRIVE_EXIT.CONVERGED) return "done";
+      let readFailed = false;
+      const current = async () => {
+        const snapshot = await readLedgerSnapshot(pr, login);
+        if (typeof snapshot !== "string")
+          return ledgerOfStoppedDriver(snapshot, who, true);
+        readFailed = true;
+        console.error(
+          `ledger: PR #${pr}'s stopped label ownership did not read: ${snapshot}.`,
+        );
+        return null;
+      };
+      const published = pending ? await current() : found;
+      if (published === null) return "retry";
+      if ("why" in published) return "done";
+      const label = await labelDrive(
+        pr,
+        {
+          stopped: exit,
+          byPerson,
+          verifiedSha: published.ledger.verifiedSha,
+          stop: stopKey(
+            published.ledger.driver.started,
+            published.ledger.round,
+          ),
+          parks: published.ledger.parked,
+        },
+        undefined,
+        pending
+          ? async () => {
+              const fresh = await current();
+              return fresh !== null && !("why" in fresh);
+            }
+          : undefined,
+      );
+      if (readFailed || (pending && label?.write.outcome === "refused"))
+        return "retry";
       return "done";
     }
     console.error(

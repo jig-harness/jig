@@ -3,8 +3,8 @@
  * `dispatch.labels` on and no dispatcher anywhere, a drive writes `driving`
  * (removing the `drive` command) once its running ledger is out and before
  * its first round, `converged` when it stops `CONVERGED` and `parked` when it
- * parks, each replacing the state label before it; a refused write is
- * reported and changes no exit; a pull request carrying `hold` or `held` is
+ * parks, each replacing the state label before it; a refused converged label
+ * write requires another drive to settle CI; a pull request carrying `hold` or `held` is
  * left as it is. A `gh` placed ahead of the suite's stub forge answers the
  * label read and edit from a file and passes every other call through.
  */
@@ -22,6 +22,9 @@ import {
 } from "./drive-pr-harness.ts";
 import { PASS_NOOP, runDriveIn } from "./drive-loop-harness.ts";
 import { labelForge } from "./state-labels-forge.ts";
+import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
+import { CONVERGED_CI_PHASE } from "../scripts/lib/state/ledger-values.ts";
+import { parseLedger } from "../scripts/lib/state/ledger.ts";
 import { readState } from "./state-rows.ts";
 
 useDrivePrSuite();
@@ -90,6 +93,14 @@ describe("a drive writes its own state label", () => {
     const r = await drive(run, PASS_NOOP);
     expectSpawnExit({ ...r, stdout: null }, 0);
     expect(run.labels()).toEqual(["jig:converged"]);
+    const comments: Array<{ body: string }> = JSON.parse(
+      readFileSync(join(run.bin, "comments-at-converged.json"), "utf8"),
+    );
+    const ledger = comments
+      .map(({ body }) => parseLedger(body))
+      .findLast((comment) => comment?.kind === "ledger");
+    expect(ledger?.ledger.driver.state).toBe("running");
+    expect(ledger?.ledger.phase).toBe(CONVERGED_CI_PHASE);
     // The head's CI, read again after the write, is still green.
     expect(r.stderr).toContain("converged CI: the converged label stands");
     expect(run.edits()).toEqual([
@@ -152,18 +163,18 @@ describe("a drive writes its own state label", () => {
     expect(run.labels()).toEqual(["jig:parked"]);
   });
 
-  it("reports a refused write and stops with the exit it would have had", async () => {
+  it("returns indeterminate when the converged label write is refused", async () => {
     const run = labelled({ threads: [] }, []);
     writeFileSync(join(run.bin, "edit-refused"), "");
     const r = await drive(run, PASS_NOOP);
-    expectSpawnExit({ ...r, stdout: null }, 0);
+    expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.INDETERMINATE);
     expect(r.stderr).toContain(
       "labels: PR #999's state label could not be written",
     );
     expect(r.stderr).toContain(
-      "a dispatcher's next tick corrects it where one runs",
+      "retrying the converged label requires a new drive to watch its CI",
     );
-    // Every moment tried (the arm, each ledger write, the stop), and none stopped the drive.
+    // The arm and provisional label were both attempted.
     expect(run.edits().length).toBeGreaterThanOrEqual(2);
     expect(run.labels()).toEqual([]);
   });
@@ -172,7 +183,7 @@ describe("a drive writes its own state label", () => {
     it(`writes no label on a pull request carrying ${stand}`, async () => {
       const run = labelled({ threads: [] }, [stand, "jig:stale"]);
       const r = await drive(run, PASS_NOOP);
-      expectSpawnExit({ ...r, stdout: null }, 0);
+      expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.CONVERGED);
       expect(run.edits()).toEqual([]);
       expect(run.labels()).toEqual([stand, "jig:stale"]);
       expect(r.stderr).toContain(`it carries ${stand}`);

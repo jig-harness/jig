@@ -47,8 +47,15 @@ if (args[0] === "pr" && args[1] === "edit" && [...add, ...remove].some((l) => l.
   }
   fs.writeFileSync(file, JSON.stringify([...read().filter((l) => !remove.includes(l)), ...add]));
   const after = path.join(dir, "status-after-converged.json");
-  if (add.includes("jig:converged") && fs.existsSync(after))
-    fs.copyFileSync(after, path.join(${JSON.stringify(fixture)}, "status.json"));
+  if (add.includes("jig:converged")) {
+    const posted = path.join(${JSON.stringify(fixture)}, "posted.jsonl");
+    if (fs.existsSync(posted)) {
+      const comments = require("node:child_process").execFileSync("jq", ["-s", ".", posted]);
+      fs.writeFileSync(path.join(dir, "comments-at-converged.json"), comments);
+    }
+    if (fs.existsSync(after))
+      fs.copyFileSync(after, path.join(${JSON.stringify(fixture)}, "status.json"));
+  }
   process.exit(0);
 }
 const child = require("node:child_process").spawnSync(${JSON.stringify(stub)}, args, { stdio: "inherit" });
