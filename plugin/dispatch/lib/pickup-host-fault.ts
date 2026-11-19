@@ -55,6 +55,12 @@ function isHostFaultQuestion(question: string): boolean {
     )
   )
     return false;
+  if (
+    /^(?:should|would|could|can|do|does|did)\b(?=.{0,160}\b(?:test|tests|build|code|implementation|workflow)\b)(?=.{0,160}\b(?:retry|fail|failing)\b)/i.test(
+      text,
+    )
+  )
+    return false;
   return HOST_FAULT_QUESTION.test(text);
 }
 
