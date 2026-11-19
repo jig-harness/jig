@@ -217,6 +217,7 @@ describe("telling a host fault from a question about the work", () => {
     for (const failure of [
       "the root filesystem ran out of inodes: may I delete the leaked fixtures?",
       "Can I remove leaked test fixtures to free inodes?",
+      "Can I remove leaked fixtures to free inodes and retry validation?",
       "ENOSPC: no space left on device while writing the lockfile; retry later?",
       "the disk is full: may the build cache be pruned?",
       "the state directory is not writable: may I fix its permissions?",
@@ -346,6 +347,7 @@ describe("a pickup whose result the host could not write", () => {
         }),
       }),
     ]);
+    expect(record.framed).toBeDefined();
   });
 });
 

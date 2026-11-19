@@ -247,6 +247,8 @@ describe("a batch pickup that ended after claiming one member", () => {
 
   it("keeps an unwritten preserved decision on its named batch member", () => {
     const read = questionedBatch("Should #923 change its scope?");
+    read.result = null;
+    expect(read.result).toBeNull();
     read.unwritten = "2026-11-12T17:22:00.000Z";
     read.report = {
       at: "2026-11-12T17:23:00.000Z",

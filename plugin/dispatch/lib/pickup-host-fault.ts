@@ -50,7 +50,7 @@ const HOST_FAULT_QUESTION = new RegExp(
 function isHostFaultQuestion(question: string): boolean {
   const text = question.trim();
   if (
-    /^(?:should|would|could|can|do|does|did)\b.{0,160}\b(?:assert|mock|include|document|documentation|explain|describe|mention|handle|retry|fail|failing)\b/i.test(
+    /^(?:should|would|could|can|do|does|did)\b.{0,160}\b(?:assert|mock|include|document|documentation|explain|describe|mention|handle)\b/i.test(
       text,
     )
   )
