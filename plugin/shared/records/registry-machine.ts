@@ -369,6 +369,26 @@ export const DISPATCHER: RecordKind[] = [
 
 export const MACHINE: RecordKind[] = [
   {
+    name: "test-fixture-registry-names",
+    medium: "machine",
+    owner: "shared/fixture-registry-index.ts",
+    at: "~/.local/state/jig/test-fixtures-v1.index.sqlite",
+    table: "fixture_registry_names",
+    version: 1,
+    meaning:
+      "The names of the fixture registration directory entries, ordered for bounded collection pages and rebuilt from the directory when it changes outside the index.",
+  },
+  {
+    name: "test-fixture-registry-index",
+    medium: "machine",
+    owner: "shared/fixture-registry-index.ts",
+    at: "~/.local/state/jig/test-fixtures-v1.index.sqlite",
+    table: "fixture_registry_index",
+    version: 1,
+    meaning:
+      "The fixture registry directory identity and modification times, entry count, and resume positions for collection and write-time retirement.",
+  },
+  {
     name: "db-migration",
     medium: "machine",
     owner: "shared/records/migrations.ts",

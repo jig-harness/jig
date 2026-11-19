@@ -14,8 +14,9 @@ import { GcError } from "./gc-error.ts";
  * install, a refresh or a scheduled upgrade killed while it held the lock
  * would otherwise refuse every later one until a person removed the file.
  * The takeover runs under a file lock (`file-lock.ts`), and removes the
- * writer only while it still holds what was judged dead. Collection's kinds
- * never take a writer over.
+ * writer only while it still holds what was judged dead. Ordinary collection
+ * never takes a writer over. A fresh fixture publisher may recover its own
+ * kind of writer, which carries a distinct marker alongside the identity.
  */
 import { randomUUID } from "node:crypto";
 import {
@@ -28,8 +29,9 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { errnoCode } from "./errors.ts";
-import { withFileLock } from "./file-lock.ts";
+import { errnoCode, swallow } from "./errors.ts";
+import { tryFileLockSync, withFileLock } from "./file-lock.ts";
+import { isRecord } from "./guards.ts";
 import {
   decodeIdentity,
   describeIdentity,
@@ -39,6 +41,8 @@ import {
   ownIdentity,
   type ProcessIdentity,
 } from "./liveness.ts";
+import { log } from "./log.ts";
+import { attempt, failed, type Outcome } from "./outcome.ts";
 
 function gcLockRoot(): string {
   return join(homedir(), ".local", "state", "jig", "gc-locks");
@@ -88,6 +92,11 @@ function namedPid(name: string): number | null {
   return pid === undefined ? null : Number(pid);
 }
 
+/** A Worker has its own set even when its process id matches this isolate's. */
+const heldReaderTokens = new Set<string>();
+class GcAdmissionBusy extends GcError {}
+class StaleScratchCollector extends GcError {}
+
 export function sharedGcLock(kind: string, root = gcLockRoot()): () => void {
   const dir = join(root, kind);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -105,14 +114,18 @@ export function sharedGcLock(kind: string, root = gcLockRoot()): () => void {
       ? judged(join(dir, "writer"), null)
       : null;
     if (writer !== null && !writer.gone)
-      throw new GcError(
+      throw new GcAdmissionBusy(
         `gc ${kind}: collection in progress (${writer.text}); retry creation`,
       );
   } catch (error) {
     rmSync(token);
     throw error;
   }
-  return () => rmSync(token, { force: true });
+  heldReaderTokens.add(token);
+  return () => {
+    heldReaderTokens.delete(token);
+    rmSync(token, { force: true });
+  };
 }
 
 /**
@@ -144,13 +157,14 @@ function admissionRefusal(kind: string, dir: string, names: string[]): string {
  * exists. The identity is written to a private file and linked into place, so
  * a process killed mid-write leaves no empty or partial writer to refuse.
  */
-function publishWriter(writer: string): boolean {
+function publishWriter(writer: string, fixture = false): boolean {
   const staged = `${writer}.init-${process.pid}-${randomUUID()}`;
   try {
-    writeFileSync(staged, encodeIdentity(ownIdentity()), {
-      flag: "wx",
-      mode: 0o600,
-    });
+    const holder = ownIdentity();
+    const identity = fixture
+      ? JSON.stringify({ ...holder, fixturePublisher: randomUUID() })
+      : encodeIdentity(holder);
+    writeFileSync(staged, identity, { flag: "wx", mode: 0o600 });
     linkSync(staged, writer);
     return true;
   } catch (error) {
@@ -159,6 +173,108 @@ function publishWriter(writer: string): boolean {
   } finally {
     rmSync(staged, { force: true });
   }
+}
+
+/** Earlier collectors decode the identity and ignore this extra marker. */
+function isFixturePublisher(seen: string): boolean {
+  try {
+    const value: unknown = JSON.parse(seen);
+    return isRecord(value) && typeof value.fixturePublisher === "string";
+  } catch (error) {
+    swallow(error, "writer record has no fixture-publisher marker");
+    return false;
+  }
+}
+
+function recoverFixturePublisher(writer: string): boolean {
+  const seen = writerText(writer);
+  if (seen === null || !isFixturePublisher(seen) || !judged(writer, null)?.gone)
+    return false;
+  const taken = tryFileLockSync(
+    writer,
+    () => {
+      if (writerText(writer) !== seen) return false;
+      const held = judged(writer, null);
+      if (!held?.gone) return false;
+      rmSync(writer);
+      log.warn("Recovered a dead fixture publisher's lock", {
+        writer,
+        holder: held.text,
+      });
+      return publishWriter(writer, true);
+    },
+    { root: dirname(writer), name: "writer-takeover" },
+  );
+  return taken?.value === true;
+}
+
+function fixtureWriterRefusal(writer: string): GcError {
+  const seen = writerText(writer);
+  if (seen !== null && !isFixturePublisher(seen)) {
+    const held = judged(writer, null);
+    if (held?.gone && writerText(writer) === seen)
+      return new StaleScratchCollector(refusal("scratch", writer, held));
+  }
+  return new GcAdmissionBusy(
+    "gc scratch: a collector or fixture publisher holds the lock",
+  );
+}
+
+/**
+ * Exclude older fixture publishers while a fresh registration inventories and
+ * modifies the store. Readers held by this isolate cannot publish in parallel.
+ */
+export function exclusiveFixtureGcLock<T>(root: string, body: () => T): T {
+  const dir = join(root, "scratch");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const writer = join(dir, "writer");
+  if (!publishWriter(writer, true) && !recoverFixturePublisher(writer))
+    throw fixtureWriterRefusal(writer);
+  try {
+    const others = readdirSync(dir).some((name) => {
+      const token = join(dir, name);
+      if (!name.startsWith("reader-") || heldReaderTokens.has(token))
+        return false;
+      const held = judged(token, namedPid(name));
+      return held !== null && !held.gone;
+    });
+    if (others)
+      throw new GcAdmissionBusy("gc scratch: another creator holds the lock");
+    return body();
+  } finally {
+    rmSync(writer);
+  }
+}
+
+const FIXTURE_ADMISSION_WAIT_MS = 6000;
+const FIXTURE_ADMISSION_POLL_MS = 20;
+
+/** Retry a fixture admission only after its attempt has released every lock. */
+export function retryFixtureGcAdmission<T>(
+  admit: () => Outcome<T>,
+): Outcome<T> {
+  const deadline = performance.now() + FIXTURE_ADMISSION_WAIT_MS;
+  for (;;) {
+    const result = admit();
+    if (result.ok) return result;
+    const { cause } = result.failure;
+    if (cause instanceof StaleScratchCollector)
+      return failed("fixture-stale-collector", cause.message, cause);
+    if (!(cause instanceof GcAdmissionBusy)) return result;
+    if (performance.now() >= deadline)
+      return failed("fixture-admission-busy", cause.message, cause);
+    Bun.sleepSync(FIXTURE_ADMISSION_POLL_MS);
+  }
+}
+
+export function sharedFixtureGcLock(root = gcLockRoot()): () => void {
+  const result = retryFixtureGcAdmission(() =>
+    attempt("fixture-admission", "Cannot open scratch admission", () =>
+      sharedGcLock("scratch", root),
+    ),
+  );
+  if (!result.ok) throw result.failure.cause;
+  return result.value;
 }
 
 /** The writer file's text; null when it is gone. */

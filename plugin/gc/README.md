@@ -173,15 +173,25 @@ confirms every holder gone. The collector checks again under exclusive
 scratch admission before each action. It does not sweep at test startup or
 use age as ownership evidence.
 
-The registrations themselves are read in bounded pages: each run reads up to
-100,000 registration folders, or as many as it reads in 30 seconds, and a
-collecting run resumes the next one where it stopped, so a store of any size
-is read in full over successive collecting runs. A report run reads the page
-the next collecting run will start from and leaves that position alone. A folder that cannot
-be read as a registration gets an `unverified` receipt line of its own, and
-the rest of the page goes on. Removing a root that still exists needs the
-whole store read in one bounded pass, as before; until the store fits one,
-those roots stay.
+The fixture registry caps new registrations at the
+[host's configured limit](../CONFIGURATION.md#the-machines-collection-policy).
+At the limit, a writer checks a bounded set of existing registrations and
+retires the ones it can prove dead. If that check cannot make room, the
+writer returns a fixture registration failure with the limit. A store
+already over the limit must come back within it before it admits new
+top-level registrations. Jig's test runner logs the refusal and uses
+report-only mode for a fresh scope when there is no slot or a confirmed
+dead collector still owns the scratch writer record. An inherited scope
+uses its existing registration.
+
+The collector reads up to 10,000 registration folders a page, with a
+30-second read budget. It builds a name index from the existing directory
+and records where a collecting run stopped. The next run starts from there
+without listing the earlier pages again. A report leaves this position
+unchanged. An unreadable registration gets an `unverified` receipt line.
+Removing a root that still exists requires a complete read of the registry
+within the scratch proof's scan budget. An opaque launch can still require
+an enclosure check across the store to decide whether it can be retired.
 
 A registration whose every root is gone has nothing left to remove, so it is
 retired on lighter evidence than a root: every registered process has exited
@@ -190,6 +200,9 @@ does not keep it, unless a scratch scope that still exists encloses its root,
 whose own proof still counts that launch. Retirement runs under the same
 exclusive scratch admission, at most 500 registrations per receipt line,
 and the line names each registration it retired.
+
+A scheduled run exits nonzero when the store remains over its limit and the
+run retires no registrations. Its receipt gives the reason.
 
 ### Worktrees an agent tool makes
 

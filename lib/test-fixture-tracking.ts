@@ -72,15 +72,17 @@ export function trackFixtureScope(root: string, startup = false): void {
   state.started = true;
   const registration = registerFixtureScope(root, parent);
   if (!registration.ok) {
-    const code = (
-      registration.failure.cause as NodeJS.ErrnoException | undefined
-    )?.code;
-    // Without a durable registration the general scratch collector remains
-    // report-only. Read-only homes must still be able to run their tests.
-    if (["EROFS", "EACCES", "EPERM"].includes(code ?? "")) {
+    const { cause, code, reason } = registration.failure;
+    const errno = (cause as NodeJS.ErrnoException | undefined)?.code;
+    // The live owner still protects the root, and without durable
+    // membership the scratch collector leaves it report-only.
+    const freshRefused =
+      !parent &&
+      (code === "fixture-registry-full" || code === "fixture-stale-collector");
+    if (freshRefused || ["EROFS", "EACCES", "EPERM"].includes(errno ?? "")) {
       console.warn(
-        `[test-fixtures] ${registration.failure.reason}; the scope remains report-only: ${root}`,
-        registration.failure.cause,
+        `[test-fixtures] ${reason}; the scope remains report-only: ${root}`,
+        ...(cause === undefined ? [] : [cause]),
       );
       return;
     }

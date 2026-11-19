@@ -26,7 +26,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sharedGcLock } from "../plugin/shared/gc-lock.ts";
+import { sharedFixtureGcLock } from "../plugin/shared/gc-lock.ts";
 import { writeScratchOwner } from "../plugin/shared/scratch-owner.ts";
 import { trackFixtureScope } from "./test-fixture-tracking.ts";
 
@@ -38,7 +38,7 @@ import { trackFixtureScope } from "./test-fixture-tracking.ts";
  */
 function scratchAdmission(): () => void {
   try {
-    return sharedGcLock("scratch");
+    return sharedFixtureGcLock();
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EROFS" || code === "EACCES" || code === "EPERM")
@@ -148,7 +148,6 @@ export function scopeTestTmpdir(
     root = mkdtempSync(join(systemTmpdir, prefix));
     try {
       writeScratchOwner(root);
-      trackFixtureScope(root, options.fixtureStartup);
     } catch (error) {
       rmSync(root, { recursive: true, force: true });
       throw error;
@@ -157,6 +156,14 @@ export function scopeTestTmpdir(
     releaseAdmission();
   }
 
+  // The live owner protects this root while top-level registration waits for
+  // the index and exclusive scratch admission without holding a reader.
+  try {
+    trackFixtureScope(root, options.fixtureStartup);
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
   const previous = new Map<string, string | undefined>();
   for (const name of [...TMPDIR_VARS, rootEnv, systemEnv]) {
     previous.set(name, process.env[name]);

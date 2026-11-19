@@ -28,6 +28,34 @@ const onWindows = skipsOnWindows(
   "the platform schedulers the jobs are written for are launchd, systemd and cron",
 );
 
+test.skipIf(onWindows)(
+  "jig doctor asks for action when the fixture registry is over its limit",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    const store = join(m.home, ".local", "state", "jig", "test-fixtures-v1");
+    for (const name of ["first", "second"])
+      mkdirSync(join(store, name), { recursive: true });
+    const result = m.jig(["doctor", "gc", "--json"], {
+      JIG_TEST_FIXTURE_REGISTRY_LIMIT: "1",
+    });
+    expectSpawnExit(result, 1);
+    expect(JSON.parse(result.stdout.toString()).checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "gc:fixture-registry",
+          status: "fail",
+          detail: expect.stringContaining("2 of 1"),
+          fix: expect.stringContaining("jig gc"),
+        }),
+        expect.objectContaining({
+          id: "gc:state-inodes",
+          detail: expect.stringContaining("free inodes"),
+        }),
+      ]),
+    );
+  },
+);
+
 /** A finished dispatcher tick's receipt, with its exit status. */
 function dispatchReceipt(m: Machine, exitStatus: number): void {
   const now = Temporal.Now.instant();

@@ -40,6 +40,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "assigner-cannot-write": "assign the item as someone who can write",
   "tracker-unreachable": "authorize the account's tracker credential",
   "low-quota": "inspect the quota spending",
+  "state-storage": "inspect Jig state storage",
 };
 
 export function personAct(cause: NeedCause): PersonAct {
