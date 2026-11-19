@@ -9,29 +9,50 @@ import {
 } from "../lib/runtime/process-environment.ts";
 import { world } from "./fixtures.ts";
 
-it("reads the process runtime only from host configuration and refuses notices", () => {
-  expect(parseMachineConfigText("", "machine")).toMatchObject({
-    ok: true,
-    value: { runtime: "orca" },
-  });
-  const configured = parseMachineConfigText(
-    "runtime: process\nprocess:\n  env_keep: [GH_TOKEN]\n",
-    "machine",
-  );
-  expect(configured).toMatchObject({
-    ok: true,
-    value: { runtime: "process", process: { envKeep: ["GH_TOKEN"] } },
-  });
-  expect(
-    parseMachineConfigText(
-      `runtime: process\nrepositories:\n  - path: ${JSON.stringify(import.meta.dir)}\n    stages: [pickup, notify]\n`,
-      "machine",
-    ),
-  ).toMatchObject({
+it("refuses to configure the process runtime on Windows", () => {
+  const config = resolve(import.meta.dir, "../lib/machine-config.ts");
+  const child = Bun.spawnSync([
+    process.execPath,
+    "--eval",
+    `
+      import { parseMachineConfigText } from ${JSON.stringify(config)};
+      Object.defineProperty(process, "platform", { value: "win32" });
+      console.log(JSON.stringify(parseMachineConfigText("runtime: process", "machine")));
+    `,
+  ]);
+  expectSpawnExit(child, 0);
+  expect(JSON.parse(child.stdout.toString())).toMatchObject({
     ok: false,
-    failure: { reason: expect.stringContaining("notify") },
+    failure: { reason: expect.stringContaining("Linux and macOS") },
   });
 });
+
+it.skipIf(process.platform === "win32")(
+  "reads the process runtime only from host configuration and refuses notices",
+  () => {
+    expect(parseMachineConfigText("", "machine")).toMatchObject({
+      ok: true,
+      value: { runtime: "orca" },
+    });
+    const configured = parseMachineConfigText(
+      "runtime: process\nprocess:\n  env_keep: [GH_TOKEN]\n",
+      "machine",
+    );
+    expect(configured).toMatchObject({
+      ok: true,
+      value: { runtime: "process", process: { envKeep: ["GH_TOKEN"] } },
+    });
+    expect(
+      parseMachineConfigText(
+        `runtime: process\nrepositories:\n  - path: ${JSON.stringify(import.meta.dir)}\n    stages: [pickup, notify]\n`,
+        "machine",
+      ),
+    ).toMatchObject({
+      ok: false,
+      failure: { reason: expect.stringContaining("notify") },
+    });
+  },
+);
 
 it("binds only the chosen account and refuses credentials and loader controls in env_keep", () => {
   for (const name of [

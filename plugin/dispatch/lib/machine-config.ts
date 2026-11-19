@@ -561,6 +561,10 @@ function machineRepositories(
   const runtime = top.runtime ?? "orca";
   if (runtime !== "orca" && runtime !== "process")
     return invalid(`${where}: runtime must be orca or process`);
+  if (runtime === "process" && !["linux", "darwin"].includes(process.platform))
+    return invalid(
+      `${where}: runtime: process is supported on Linux and macOS only`,
+    );
   const settings = processSettings(top.process);
   if (!settings.ok) return settings;
   if (

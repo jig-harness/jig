@@ -14,11 +14,7 @@ import {
 } from "./process-environment.ts";
 import { openProcessStartupLog } from "./process-spool.ts";
 import { offerProcessRequest } from "./process-ipc.ts";
-import {
-  launchdCommand,
-  processJobName,
-  windowsCommand,
-} from "./process-service.ts";
+import { launchdCommand, processJobName } from "./process-service.ts";
 
 const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
 const RUN = resolve(import.meta.dir, "../../run.ts");
@@ -74,21 +70,19 @@ async function submit(
     return detached(id, argv, timeoutMs);
   const clean = ["/usr/bin/env", "-i", ...argv];
   const command =
-    process.platform === "win32"
-      ? windowsCommand(id, argv)
-      : scheduler.ok && scheduler.value === "launchd"
-        ? launchdCommand(id, clean)
-        : scheduler.ok && scheduler.value === "systemd"
-          ? [
-              "/usr/bin/systemd-run",
-              "--user",
-              `--unit=${processJobName(id)}`,
-              "--collect",
-              "--property=Type=exec",
-              "--",
-              ...clean.map((arg) => arg.replace(/\$/g, () => "$$")),
-            ]
-          : null;
+    scheduler.ok && scheduler.value === "launchd"
+      ? launchdCommand(id, clean)
+      : scheduler.ok && scheduler.value === "systemd"
+        ? [
+            "/usr/bin/systemd-run",
+            "--user",
+            `--unit=${processJobName(id)}`,
+            "--collect",
+            "--property=Type=exec",
+            "--",
+            ...clean.map((arg) => arg.replace(/\$/g, () => "$$")),
+          ]
+        : null;
   if (command === null)
     return {
       ok: false,
