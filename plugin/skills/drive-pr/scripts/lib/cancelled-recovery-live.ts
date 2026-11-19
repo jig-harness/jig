@@ -16,13 +16,17 @@ import {
   recoverCancelled,
   RERUN_OPTION,
   type RecoveryDeps,
+  unreplacedCancelledJobs,
 } from "./cancelled-recovery.ts";
 import {
   type LiveRecovery,
   recoveryRead,
   type RecoveryReadFailure,
 } from "./cancelled-recovery-reads.ts";
+import type { CheckRunLite } from "./ci-hold.ts";
 import { readCheckRuns, readPrSnapshot } from "./ci-hold-state.ts";
+import { timedOutJobs } from "./job-timeout.ts";
+import type { WorkflowRun } from "./status/workflow-runs.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
 import { openStore } from "./state/store.ts";
@@ -306,7 +310,15 @@ function fencedDeps(
   };
 }
 
-/** A required-check subset at acquisition; all cancelled workflow jobs at final convergence. */
+/**
+ * A required-check subset at acquisition; all cancelled workflow jobs at final
+ * convergence. A job the runner stopped at its time limit is no cancellation:
+ * its workflow run is kept out of the recovery (never re-run, counted or
+ * parked), and the answer names it for the CI-repair path once the other
+ * cancellations have had this poll's recovery. A stop those others end in
+ * (a park, an unknown head, a read that kept failing) still wins: it ends the
+ * drive, and the next drive finds the timed-out job again.
+ */
 export async function recoverCancelledOnHead(
   pr: string,
   head: string,
@@ -341,6 +353,49 @@ export async function recoverCancelledOnHead(
       (required === undefined || required.includes(job.name)) &&
       runs.some((run) => run.checkSuiteId === job.suiteId),
   );
+  const timedOut = await timedOutJobs(
+    unreplacedCancelledJobs(relevant, runs),
+    runs,
+  );
+  const answer = await recoverRelevant(
+    pr,
+    head,
+    withoutTimedOutRuns(relevant, timedOut),
+    runs,
+    alreadyFenced,
+    mayMutate,
+  );
+  return timedOut.length > 0 && (answer === "none" || answer === "wait")
+    ? { timedOut }
+    : answer;
+}
+
+/**
+ * The jobs whose workflow run had no job stopped at its time limit. A re-run
+ * of that run would run the timed-out job again, and its other cancelled jobs
+ * (a matrix's siblings, cancelled when it failed) are answered by the repair.
+ */
+function withoutTimedOutRuns(
+  jobs: readonly CheckRunLite[],
+  timedOut: readonly { checkRunId: number }[],
+): CheckRunLite[] {
+  const suites = new Set(
+    jobs
+      .filter((job) => timedOut.some((t) => t.checkRunId === job.id))
+      .map((job) => job.suiteId),
+  );
+  return jobs.filter((job) => !suites.has(job.suiteId));
+}
+
+/** The once-per-head recovery of the cancelled workflow jobs in `relevant`. */
+async function recoverRelevant(
+  pr: string,
+  head: string,
+  relevant: readonly CheckRunLite[],
+  runs: readonly WorkflowRun[],
+  alreadyFenced: boolean,
+  mayMutate: (() => Promise<boolean>) | undefined,
+): Promise<LiveRecovery> {
   if (relevant.length === 0) return await clearRecoveredPark(pr);
   // The durable claim must not be spent until the mutation fence is held.
   // Otherwise a rival can make this invocation unable to re-run after it has

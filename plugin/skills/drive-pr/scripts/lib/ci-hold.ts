@@ -28,6 +28,10 @@ export interface CheckRunLite {
   status: string;
   conclusion: string | null;
   startedAt: string | null;
+  /** When the run completed; `null` while it runs or when the payload omits it. */
+  completedAt?: string | null;
+  /** How many annotations the run carries; `null` when the payload omits the count. */
+  annotationsCount?: number | null;
   /** The GitHub App that published the run; `null` when the payload omits it. */
   appId: number | null;
   /** The check suite of the workflow run behind it, when it names one. */
@@ -193,6 +197,28 @@ export function suiteIdOf(checkSuite: unknown): number | null {
   return typeof id === "number" ? id : null;
 }
 
+/** When a check run completed and its annotation count; either is `null` when it does not read. */
+function detailsOf(
+  run: Record<string, unknown>,
+): Pick<CheckRunLite, "completedAt" | "annotationsCount"> {
+  const completed = run.completed_at;
+  const output = run.output;
+  const count =
+    typeof output === "object" && output !== null && !Array.isArray(output)
+      ? (output as Record<string, unknown>).annotations_count
+      : undefined;
+  return {
+    completedAt:
+      typeof completed === "string" && Number.isFinite(parseMs(completed))
+        ? completed
+        : null,
+    annotationsCount:
+      typeof count === "number" && Number.isSafeInteger(count) && count >= 0
+        ? count
+        : null,
+  };
+}
+
 export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
   const pages = Array.isArray(raw) ? raw : [raw];
   const result: CheckRunLite[] = [];
@@ -245,6 +271,7 @@ export function parseCheckRuns(raw: unknown): CheckRunLite[] | null {
         status,
         conclusion,
         startedAt,
+        ...detailsOf(run),
         appId,
         suiteId: suiteIdOf(run.check_suite),
       });

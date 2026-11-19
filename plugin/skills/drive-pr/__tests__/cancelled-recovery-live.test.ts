@@ -10,7 +10,10 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import { recoveryExit } from "../scripts/lib/cancelled-recovery-reads.ts";
+import {
+  recoveryExit,
+  recoveryLabel,
+} from "../scripts/lib/cancelled-recovery-reads.ts";
 import { classifyDrive, type DoctorInput } from "../scripts/lib/doctor.ts";
 
 const HEAD = "a".repeat(40);
@@ -55,6 +58,11 @@ function fixture() {
       console.log(JSON.stringify([first, await claimLabelRerun("5", run)]));
       process.exit(0);
     }
+    if (mode === "parked") {
+      const { openStore } = await import(${JSON.stringify(join(root, "state/store.ts"))});
+      console.log(JSON.stringify((await openStore("5")).read().state.parked.map((p) => p.key)));
+      process.exit(0);
+    }
     if (mode === "past-grace") {
       await observeCancellation("5", head);
       const drive = driveDb(await resolveStateDir());
@@ -92,18 +100,26 @@ function fixture() {
       appendFileSync(${JSON.stringify(join(dir, "reruns"))}, args[2] + "\\n");
     } else if (args[0] === "api" && args.at(-1).includes("timeline")) {
       console.log("[[]]");
+    } else if (args[0] === "api" && args.at(-1).includes("/annotations")) {
+      const message = phase === "timeout"
+        ? "The job running on runner r1 has exceeded the maximum execution time of 30 minutes."
+        : "Canceling since a higher priority waiting request for 'ci-refs/pull/5' exists";
+      console.log(JSON.stringify([{ annotation_level: "failure", message }]));
     } else if (args[0] === "api" && args.at(-1).includes("check-runs")) {
-      const checks = phase === "external" ? [{id: 2, name: "reviewer", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 2}}] : [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
+      const stopped = phase === "timeout" || phase === "concurrency";
+      const checks = stopped ? [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 1},
+        started_at: "2026-01-01T00:00:00Z", completed_at: phase === "timeout" ? "2026-01-01T00:30:04Z" : "2026-01-01T00:02:00Z", output: {annotations_count: 1}}]
+        : phase === "external" ? [{id: 2, name: "reviewer", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 2}}] : [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
         status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "success" ? "success" : "cancelled", check_suite: {id: 1}}];
       console.log(JSON.stringify([{check_runs: checks}]));
     } else if (args[0] === "api" && args.at(-1).includes("actions/runs")) {
       if (phase === "unreadable") process.exit(1);
       const runs = phase === "external" ? [] : [{id: 1, workflow_id: 10, check_suite_id: 1,
-        status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "orphaned" ? "cancelled" : "success",
+        status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : ["orphaned", "timeout", "concurrency"].includes(phase) ? "cancelled" : "success",
         created_at: "2026-01-01T00:00:00Z", run_attempt: 2}];
       console.log(JSON.stringify([{workflow_runs: runs}]));
     } else if (args[0] === "pr" && args[1] === "view") {
-      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: ["external", "unreadable", "orphaned"].includes(phase) ? [] : [{name: "ci:hold"}]}));
+      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: ["external", "unreadable", "orphaned", "timeout", "concurrency"].includes(phase) ? [] : [{name: "ci:hold"}]}));
     } else { console.error("unexpected outbound call " + JSON.stringify(args)); process.exit(2); }
   `,
   );
@@ -373,6 +389,79 @@ describe("a cancelled-run recovery read that fails", () => {
     expect(recoveryExit("parked")).toBe(8);
     expect(recoveryExit("wait")).toBeNull();
     expect(recoveryExit("none")).toBeNull();
+  });
+});
+
+describe("a cancelled job the runner stopped at its time limit", () => {
+  test("is timed out: not re-run and not parked as cancelled CI", async () => {
+    const f = fixture();
+    try {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "timeout");
+      expect(await f.run("fenced")).toEqual({
+        timedOut: [
+          {
+            name: "gate",
+            checkRunId: 1,
+            limitMs: 30 * 60_000,
+            ranMs: 30 * 60_000 + 4_000,
+            run: {
+              id: 1,
+              createdAt: "2026-01-01T00:00:00Z",
+              conclusion: "cancelled",
+              jobNames: ["gate"],
+            },
+          },
+        ],
+      });
+      expect(f.reruns()).toEqual([]);
+      expect(await f.run("parked")).toEqual([]);
+      expect((await f.run("observe")).requestedAt).toBeNull();
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a job its concurrency group cancelled inside its limit keeps the cancelled-CI recovery", async () => {
+    const f = fixture();
+    try {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "concurrency");
+      expect(await f.run("fenced")).toBe("wait");
+      expect(f.reruns()).toEqual(["1"]);
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("annotations that do not read leave the cancellation to the cancelled-CI recovery", async () => {
+    const f = fixture();
+    try {
+      await f.run("past-grace");
+      f.failReads("/annotations", 9, BAD_GATEWAY, { phase: "timeout" });
+      expect(await f.run("fenced")).toBe("wait");
+      expect(f.reruns()).toEqual(["1"]);
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("its answer is neither a stop nor a failed read", () => {
+    const timedOut = {
+      timedOut: [
+        {
+          name: "gate",
+          checkRunId: 1,
+          limitMs: 60_000,
+          ranMs: 61_000,
+          run: null,
+        },
+      ],
+    };
+    expect(recoveryExit(timedOut)).toBeNull();
+    expect(recoveryLabel(timedOut)).toBe(
+      "timed out: job `gate` ran 1m 1s and stopped at its 1-minute limit (timeout-minutes)",
+    );
   });
 });
 

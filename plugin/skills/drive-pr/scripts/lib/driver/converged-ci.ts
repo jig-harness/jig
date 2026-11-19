@@ -14,6 +14,8 @@
  * - a cancellation: the cancelled-run recovery (`cancelled-recovery.ts`)
  *   takes it, which re-runs a label-caused cancellation once per run attempt
  *   and parks `cancelled-ci` when that does not bring a replacement;
+ * - a job the runner stopped at its time limit: a failure no re-run clears,
+ *   so the drive parks, naming the job, its limit and its run time;
  * - a failure in a run a label write started ({@link labelStarted}, its first
  *   attempt only): re-run once, claimed in the same table the label-caused
  *   cancellations use, so a run is re-run once however many callers see it;
@@ -33,8 +35,10 @@ import {
   LABEL_SETTLE_MS,
 } from "../label-cancelled-runs.ts";
 import {
+  isTimedOut,
   type LiveRecovery,
   recoveryLabel,
+  timedOutWords,
 } from "../cancelled-recovery-reads.ts";
 import type { FailedRun, WorkflowRun } from "../status/workflow-runs.ts";
 
@@ -375,6 +379,12 @@ async function recoverCancelledStep(
     async () => (await ownershipOf(deps)) === "ours",
   );
   if (recovery === "parked") return { kind: "parked" };
+  if (isTimedOut(recovery))
+    return {
+      next: "park",
+      reason: `required CI on head ${head} failed after the converged label was written: ${timedOutWords(recovery)}; a re-run stops at the same limit, so the drive does not re-run it`,
+      labelCaused: false,
+    };
   if (recovery !== "none")
     return {
       next: "wait",

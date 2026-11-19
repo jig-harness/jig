@@ -3,7 +3,8 @@ import { specialCiDisposition } from "./special-ci.ts";
 
 import type { DriveRoundContext } from "./round-context.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
-import { recoveryExit } from "../cancelled-recovery-reads.ts";
+import { isTimedOut, recoveryExit } from "../cancelled-recovery-reads.ts";
+import { type TimedOutJob, timeoutWording } from "../job-timeout.ts";
 
 import {
   run,
@@ -45,6 +46,7 @@ import {
   beforeRepairRecovery,
   cancelledRunRecovery,
   pendingRetryDisposition,
+  withTimedOut,
 } from "./ci-recovery.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 
@@ -450,11 +452,28 @@ async function afterTakeover(context: DriveRoundContext): Promise<"continue"> {
   return "continue";
 }
 
+/**
+ * The repair pass's detail: the failing check names, then each timed-out job
+ * among them with its limit and run time, so the pass looks for why it ran
+ * past its limit.
+ */
+function repairDetail(
+  names: readonly string[],
+  timedOut: readonly TimedOutJob[],
+): string {
+  const told = timedOut.filter((job) => names.includes(job.name));
+  const listed = names.join(", ");
+  return told.length === 0
+    ? listed
+    : `${listed}; timed out: ${told.map(timeoutWording).join("; ")}`;
+}
+
 async function repairConvergedCi(
   finalVerdict: string,
   context: DriveRoundContext,
   failing: FailingChecks,
   head: string,
+  timedOut: readonly TimedOutJob[] = [],
 ): Promise<number | "continue"> {
   const attempts = attemptsFor(context);
   const selection = repairSelection(
@@ -466,7 +485,7 @@ async function repairConvergedCi(
   failing = selection.failing;
   if (selection.names.length === 0) return selection.exhaustedExit;
   finalVerdict = `failing: ${selection.names.join(", ")}`;
-  const failingNames = finalVerdict.slice("failing:".length).trim();
+  const failingNames = repairDetail(selection.names, timedOut);
   if (context.dryRun || context.agent.length === 0) {
     console.error(
       `(dry-run) would run a CI-repair pass for: ${failingNames || "<unnamed checks>"}`,
@@ -605,6 +624,16 @@ async function waitForReplacement(
     const recovery = await recoverCancelledOnHead(context.pr, reviewedHead);
     const stop = recoveryExit(recovery);
     if (stop !== null) return stop;
+    // A job stopped at its time limit is a failure, repaired as one: waiting
+    // for a replacement would wait for a run nothing starts.
+    if (isTimedOut(recovery))
+      return await repairConvergedCi(
+        finalVerdict,
+        context,
+        withTimedOut(null, recovery),
+        reviewedHead,
+        recovery.timedOut,
+      );
     if (recovery === "wait") {
       await sleep(FINAL_CI_POLL_SECONDS);
       return "continue";
@@ -727,6 +756,14 @@ export async function evaluateFinalCi(
     context,
     reviewedHead,
     failing,
+    (failures, timedOut) =>
+      repairConvergedCi(
+        finalVerdict,
+        context,
+        failures,
+        reviewedHead,
+        timedOut,
+      ),
   );
   if (cancelled !== null) return cancelled;
   const recovered = await beforeRepairRecovery(

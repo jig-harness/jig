@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -16,6 +16,7 @@ import {
   expectSpawnExited,
 } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
 import { REPLACEMENT_WINDOW_MS } from "../scripts/lib/cancelled-recovery.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
@@ -533,6 +534,103 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
     expect(r.stderr).toContain("TASK=ci-repair RUNS=[41 42]");
   });
 });
+
+/** Echoes what a repair pass is told, its detail included. */
+const TOLD_PASS = [
+  "sh",
+  "-c",
+  'echo "pass for 999: RAN_TH""E_PASS TASK=$DRIVE_PR_ROUND_TASK RUNS=[$DRIVE_PR_ROUND_FAILED_RUNS] DETAIL=[$DRIVE_PR_ROUND_TASK_DETAIL]" >&2; exit 0',
+];
+
+const RUNNER_TIMEOUT =
+  "The job running on runner r1 has exceeded the maximum execution time of 30 minutes.";
+
+/**
+ * Drive a converged head whose cancelled checks the runner stopped at their
+ * 30-minute limit, with the head's once-per-head re-run already spent: a
+ * cancellation would park there.
+ */
+async function driveTimedOut(
+  checkRuns: CheckRunFixture[],
+  workflowRuns: Array<Record<string, unknown>>,
+) {
+  const { dir, stateDir } = writeFixture({
+    threads: [],
+    head: scratchClean.head,
+    reviewedSha: scratchClean.head,
+    checkRuns: [REVIEWER_RUN, DORMANT_ARM, ...checkRuns],
+    workflowRuns,
+  });
+  await seedRecovery(dir, stateDir, true);
+  const listed = join(dir, "check-runs.json");
+  const runs = JSON.parse(readFileSync(listed, "utf8")) as {
+    check_runs: Array<Record<string, unknown>>;
+  };
+  for (const run of runs.check_runs)
+    if (run.conclusion === "cancelled")
+      run.output = { ...(run.output as object), annotations_count: 1 };
+  writeFileSync(listed, JSON.stringify(runs));
+  const bin = join(dir, "annotations-bin");
+  mkdirSync(bin);
+  writeFakeProgram(
+    join(bin, "gh"),
+    `#!/bin/sh
+case "$*" in
+  *check-runs/*/annotations*)
+    echo '[{"annotation_level":"failure","message":"${RUNNER_TIMEOUT}"}]'; exit 0 ;;
+esac
+exec "${join(binDir, "gh")}" "$@"
+`,
+  );
+  return runDriveIn(
+    dir,
+    stateDir,
+    ["--keep-draft", "--no-head-sync", "--", ...TOLD_PASS],
+    undefined,
+    {
+      env: { JIG_OVERLAY: noHoldOverlay(dir), DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+      extraBinDir: bin,
+    },
+  );
+}
+
+const TIMED_OUT = "job `tests` ran 30m 4s and stopped at its 30-minute limit";
+
+describe.skipIf(skipLongDriveFixture)(
+  "drive.ts on a job stopped at its time limit",
+  () => {
+    const timedOutTests = {
+      ...check("tests", "cancelled", 40),
+      completed_at: "2026-09-10T10:30:04Z",
+    };
+
+    it("repairs it as a failure, naming the job, its limit and its run time", async () => {
+      const r = await driveTimedOut(
+        [timedOutTests],
+        [workflowRun(40, "cancelled")],
+      );
+      exits(r, CI_REPAIR_SPENT_EXIT);
+      expect(r.stderr).toContain(TIMED_OUT);
+      expect(r.stderr).toContain(
+        `TASK=ci-repair RUNS=[40] DETAIL=[tests; timed out: ${TIMED_OUT} (timeout-minutes)]`,
+      );
+      expect(r.stderr).not.toContain("once-per-head re-run");
+      expect(r.stderr).not.toContain("requested run 40");
+    });
+
+    it("repairs an aggregator a timed-out job failed, with the job beside it", async () => {
+      const r = await driveTimedOut(
+        [{ ...check("gates", "failure", 40), started: LATER }, timedOutTests],
+        [workflowRun(40, "cancelled")],
+      );
+      exits(r, CI_REPAIR_SPENT_EXIT);
+      expect(r.stderr).toContain(
+        `TASK=ci-repair RUNS=[40] DETAIL=[gates, tests; timed out: ${TIMED_OUT} (timeout-minutes)]`,
+      );
+      expect(r.stderr).not.toContain("once-per-head re-run");
+    });
+  },
+);
 
 describe("the proof announce-merge-ready relies on", () => {
   /** `final-ready --require-success` on a head with these checks and runs. */
