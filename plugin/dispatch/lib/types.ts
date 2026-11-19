@@ -69,6 +69,8 @@ export interface DispatchSection {
   adopt: AdoptRule;
   /** How many children of an epic with no execution plan are under way at once (`epic_width`). */
   epicWidth: number;
+  /** How the tick weighs a pickup's overlap with the work in flight (`dispatch.overlap`, `overlap-config.ts`); absent reads as the defaults (`overlapOf`). */
+  overlap?: import("./overlap-config.ts").OverlapSettings;
   /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
   pool?: {
     states: import("../../skills/do-item/scripts/lib/tracker/port.ts").CanonicalState[];
@@ -779,6 +781,8 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** The planned pickups weighed against the work in flight (`overlap-plan.ts`): reported only, nothing the tick starts changes; absent when it plans no pickup. */
+  overlap?: import("./overlap-reasons.ts").OverlapReport;
   /** Changed-file evidence for every open pull request, including aged or unread comparisons. */
   prFiles?: import("./sources/pr-files.ts").PrFileSummary[];
   /** The board read's part: its converged pull requests placed in Ready to merge or wherever their reason says, or why it did not read; absent when it did not run. */
