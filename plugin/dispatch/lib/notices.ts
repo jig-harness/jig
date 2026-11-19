@@ -493,6 +493,29 @@ export function stuckNotice(
   );
 }
 
+/** A drive a launch nobody can show running still holds (`stranded-holds.ts`), keyed by what holds it, so it is sent once for that hold. */
+export function strandedHoldNotice(
+  slug: string,
+  pr: DrivenPr,
+  hold: {
+    key: string;
+    holder: string;
+    why: string;
+    heldSince: string;
+    settle: string;
+    acts: string[];
+  },
+): Notice {
+  return {
+    ...notice(`${slug} PR #${pr.number} held by ${hold.key}`, [
+      `PR #${pr.number} (${pr.title}): ${hold.holder} holds its drive, so no tick starts it again: ${hold.why}. It has held the drive since ${hold.heldSince}.`,
+      hold.settle,
+      pr.url,
+    ]),
+    ...driveFields(slug, pr, hold.acts),
+  };
+}
+
 /** A cause a pickup raises (a stalled pickup, a double claim, a session waiting), in the plan's own words. */
 export function pickupNotice(
   slug: string,

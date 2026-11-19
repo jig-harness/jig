@@ -9,37 +9,13 @@ import { failedBy, outboundFailure } from "../../shared/outbound/failure.ts";
 import { failed, type Outcome } from "../../shared/outcome.ts";
 import type { SharedClaim } from "../../shared/records/shared.ts";
 import { type PlanInput, planTick } from "../lib/plan.ts";
-import { dispatchSection } from "../lib/section.ts";
-import type { DispatchSection, DrivenPr, MarkedPr } from "../lib/types.ts";
+import type { DrivenPr, MarkedPr } from "../lib/types.ts";
 import { SLUG } from "./fixtures.ts";
+import { planInput } from "./plan-input-fixtures.ts";
 
 const NOW = Date.parse("2026-11-15T08:00:00Z");
 
-function section(): DispatchSection {
-  const read = dispatchSection({
-    issue_tracker: { adapter: "github", github: { repository: SLUG } },
-    dispatch: { identity: "factory-bot", followup_command: "/followup" },
-  });
-  if (!read.ok) throw new Error(read.failure.reason);
-  return read.value;
-}
-
-function input(over: Partial<PlanInput>): PlanInput {
-  return {
-    slug: SLUG,
-    section: section(),
-    pickups: [],
-    claimed: [],
-    drives: [],
-    merged: [],
-    outcomes: new Map(),
-    sessions: { ok: true, source: "fake", workspaces: [] },
-    launches: [],
-    idleSince: new Map(),
-    nowMs: NOW,
-    ...over,
-  };
-}
+const input = (over: Partial<PlanInput>): PlanInput => planInput(NOW, over);
 
 const drive = (over: Partial<DrivenPr>): DrivenPr => ({
   number: 7,
@@ -110,6 +86,22 @@ describe("the plan of an item whose read a failed call stopped", () => {
     expect(
       rowOf(claims(failed("unreadable", "not read")), "PR #7")?.failure,
     ).toBeUndefined();
+  });
+
+  it("places a drive waiting on a person as unplaced when another host's claims could not be read", () => {
+    const waiting = drive({ class: "needs-person", why: "waits on a person" });
+    expect(
+      rowOf(
+        input({
+          drives: [waiting],
+          shared: {
+            host: "this-host",
+            drives: new Map([[7, failed("unreadable", "not read")]]),
+          },
+        }),
+        "PR #7",
+      ),
+    ).toMatchObject({ readFailed: true });
   });
 
   it("keeps the class of a failed call that stopped a merged pull request's follow-up markers", () => {

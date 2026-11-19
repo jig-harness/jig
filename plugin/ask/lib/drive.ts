@@ -67,6 +67,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
+import { heldStopWait } from "./hold-wait.ts";
 import { lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   parkReading,
@@ -255,15 +256,8 @@ function staleWhy(placed: { why: string; stale?: { tree?: unknown } }): string {
     : `${placed.why}; the dispatcher refuses it, and a person recovers the work, where no open workspace on its host holds that tree`;
 }
 
-/** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
-function waitsOnOf(
-  ledger: Ledger,
-  r: DriveReads,
-  ctx: AskContext,
-  held: boolean,
-  base: PrFacts["base"],
-  merge: WaitsOn,
-): WaitsOn {
+/** The class the dispatcher's classifier places a ledger in, with a stop that names no cause settled by its records. */
+function placeLedger(ledger: Ledger, r: DriveReads, base: PrFacts["base"]) {
   const classification = classifyLedger(
     ledger,
     currentMs(),
@@ -275,7 +269,7 @@ function waitsOnOf(
       ...(base === undefined ? {} : { base }),
     },
   );
-  const placed =
+  return (
     settleNoCauseStops(
       [
         {
@@ -299,7 +293,26 @@ function waitsOnOf(
       r.records,
       new Map([[r.pull.number, { ok: true, value: r.claims }]]),
       currentMs(),
-    )[0] ?? classification;
+    )[0] ?? classification
+  );
+}
+
+/** Whether a running launch answers for the drive: it says nothing of a park, a stale ledger or a silent one. */
+function runningLaunchSpeaks(holder: Holder | "none", cls: string): boolean {
+  const alive = holder !== "none" && holder.process === "alive";
+  return alive && !["parked", "stale", "silent"].includes(cls);
+}
+
+/** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
+function waitsOnOf(
+  ledger: Ledger,
+  r: DriveReads,
+  ctx: AskContext,
+  holder: Holder | "none",
+  base: PrFacts["base"],
+  merge: WaitsOn,
+): WaitsOn {
+  const placed = placeLedger(ledger, r, base);
   const settled = conflictSettled(placed, ledger, r, ctx.host);
   if (settled !== null) return personWait("re-arm", settled);
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
@@ -308,14 +321,13 @@ function waitsOnOf(
     dispatched
       ? { waiting: why }
       : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
-  // A launch that holds the drive says nothing of a park nobody answered or of a ledger gone silent.
-  if (
-    held &&
-    placed.class !== "parked" &&
-    placed.class !== "stale" &&
-    placed.class !== "silent"
-  )
-    return "none";
+  const onHold = heldStopWait(holder, placed.class, ledger.driver.heartbeat, {
+    dispatched,
+    record: holdingRecord(r.records),
+  });
+  if (onHold !== null) return onHold;
+  // A running launch says nothing of a park nobody answered or of a ledger gone silent.
+  if (runningLaunchSpeaks(holder, placed.class)) return "none";
   switch (placed.class) {
     case "driven":
       return "none";
@@ -355,6 +367,7 @@ function claimHolder(
     generation,
     process: "unknown",
     why: `launch claim ${claim.id} has no end; whether its process runs is its host's to know`,
+    ...(claim.says.value.at === "" ? {} : { since: claim.says.value.at }),
   };
 }
 
@@ -834,9 +847,14 @@ function driveWait(
   }
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
-  return ledger === null
-    ? "none"
-    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base, facts.merge);
+  if (ledger === null)
+    return (
+      heldStopWait(holder, "unarmed", "", {
+        dispatched: ctx.dispatches || current(reads.claims) !== null,
+        record: holdingRecord(reads.records),
+      }) ?? "none"
+    );
+  return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 
 /** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */

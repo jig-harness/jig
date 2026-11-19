@@ -43,6 +43,8 @@ export interface DispatchSection {
   stalledAfterMs: number;
   /** Which of the identity's claimed items the stall watch reads as pickups: `claimed`, only those a launch record of this host or a claim marker took; `assigned`, every one. */
   stalledScope: StalledScope;
+  /** Whether a stalled pickup whose tree holds its unshipped work is relaunched once in that tree to push and record it (`stalled_relaunch`): `finish-once`, or `never`. */
+  stalledRelaunch: StalledRelaunch;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
@@ -112,6 +114,16 @@ export interface ClaimedItem {
 
 /** `dispatch.stalled_scope`'s values. */
 export type StalledScope = "claimed" | "assigned";
+
+/** A stalled pickup's relaunch: the launch record it finishes, the workspace that holds its tree, and the tree's head when the plan read it. */
+export interface PickupRelaunch {
+  record: string;
+  workspace: { id: string; path: string };
+  head: string;
+}
+
+/** `dispatch.stalled_relaunch`'s values. */
+export type StalledRelaunch = "finish-once" | "never";
 
 /** An item the tracker wants picked up, with the evidence for it. */
 export interface WantedItem {
@@ -412,6 +424,8 @@ export interface Action {
   takeoverGone?: string;
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
+  /** For a pickup: the stalled pickup it relaunches in that pickup's own tree, at the tree's head (`pickup-relaunch.ts`), rather than a fresh pickup. */
+  relaunch?: PickupRelaunch;
   /** For a notification: its cause. */
   cause?: NotifyCause;
   /** For a notification: the message, with the key that suppresses a repeat. */
