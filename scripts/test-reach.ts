@@ -4,8 +4,8 @@
 // `require` and dynamic imports with literal paths; `import type` loads nothing
 // and gives no edge) and, since tests also start scripts and read data files
 // by path, each file of the test code that names its file name. A Markdown file
-// gives no such edge, so a change to prose alone reaches no test. CI's test legs
-// run the test files the walk reaches (scripts/area-validation.ts).
+// gives no such edge unless it is a fixture (under a `fixtures/` directory),
+// so a change to prose alone reaches no test. CI's test legs run the test files the walk reaches (scripts/area-validation.ts).
 //
 // Every doubt falls toward running more: a code file that cannot be read or
 // scanned may import anything, so it counts as reached by every change. The
@@ -21,7 +21,7 @@ export type ReadFile = (file: string) => string;
 export interface TestReach {
   /** The test files the change reaches, a changed test file among them. */
   tests: string[];
-  /** Changed files every test run loads: its configuration and preloads. */
+  /** Changed files every test run loads: its configuration, launcher and preloads. */
   everyRun: string[];
 }
 
@@ -29,6 +29,9 @@ export interface TestReach {
 export const NO_REACH: TestReach = { tests: [], everyRun: [] };
 
 const BUNFIG = "bunfig.toml";
+
+/** The launcher every test run goes through (`package.json`'s `test`). */
+const LAUNCHER = "scripts/test.ts";
 
 /** What a code file's extension loads as; declaration files load nothing. */
 const LOADERS: Record<string, Bun.JavaScriptLoader> = {
@@ -57,16 +60,24 @@ const IMPLIED = [
   "/index.js",
 ];
 
-/** A script's or data file's name as a test's text spells it, with any path. */
+/**
+ * A script's or data file's name as a test's text spells it, with any path.
+ * It starts only where a name starts, so a long run of name characters is
+ * scanned once rather than from every position.
+ */
 const FILE_NAME =
-  /[\w./-]*[\w-]\.(?:tsx?|mts|cts|jsx?|mjs|cjs|sh|py|ya?ml|json|toml)\b/g;
+  /(?<![\w./-])[\w./-]+\.(?:tsx?|mts|cts|jsx?|mjs|cjs|sh|py|ya?ml|json|toml|txt|tsv|md)\b/g;
 
 /** An import or re-export of types alone: its path names nothing that runs. */
 const TYPE_ONLY =
-  /\b(?:import|export)\s+(?:type\b[^;"'`]*?|\{\s*(?:type\s+[\w$]+(?:\s+as\s+[\w$]+)?\s*,?\s*)+\}\s*)from\s*["'`][^"'`]*["'`]/g;
+  /\b(?:import|export)\s+(?:type\b[^;"'`]*?|\{\s*(?:type\s+[\w$]+(?:\s+as\s+[\w$]+)?\s*(?:,\s*)?)+\}\s*)from\s*["'`][^"'`]*["'`]/g;
 
 /** Helpers beside the tests: they start scripts on the tests' behalf. */
 const TEST_SUPPORT = /(?:^|\/)(?:__tests__|test-helpers)\//;
+
+/** Prose leads to tests only as a fixture, which a test reads as data. */
+const isProse = (file: string) =>
+  /\.md$/.test(file) && !/(?:^|\/)fixtures\//.test(file);
 
 const isDeclaration = (file: string) => /\.d\.[cm]?ts$/.test(file);
 
@@ -232,9 +243,10 @@ function namersOf(
 ): string[] {
   const name = posix.basename(file);
   const shared = (counts.get(name) ?? 0) > 1;
+  // A bare name could mean any file of that name, so it keeps them all.
   return (edges.namedBy.get(name) ?? [])
     .filter(
-      ({ path }) => !shared || (path.includes("/") && pathEndsWith(file, path)),
+      ({ path }) => !shared || !path.includes("/") || pathEndsWith(file, path),
     )
     .map(({ by }) => by);
 }
@@ -252,7 +264,7 @@ function walkBack(
     for (const importer of edges.importers.get(file) ?? [])
       reached.add(importer);
     // A test is run, never started by another, so a name leads on from code only.
-    if (tests.has(file)) continue;
+    if (tests.has(file) || isProse(file)) continue;
     for (const namer of namersOf(file, edges, counts)) reached.add(namer);
   }
   return reached;
@@ -260,10 +272,10 @@ function walkBack(
 
 /**
  * The test files `changed` can affect, walking back through `tracked`, and
- * the changed files every test run loads (`bunfig.toml`, its preloads and what
- * they import), which no selection of tests can narrow. A file name several
+ * the changed files every test run loads (`bunfig.toml`, the launcher, its
+ * preloads and what they import), which no selection of tests can narrow. A file name several
  * files share leads on only where the text spells enough of the path to tell
- * which is meant; otherwise such a file is reached through its imports alone.
+ * which is meant; a bare name leads on from every file of that name.
  */
 export function testReach(
   changed: string[],
@@ -296,7 +308,7 @@ function everyRunFiles(
   opaque: Set<string>,
 ): string[] {
   if (config === undefined) return changed;
-  const loaded = new Set([BUNFIG, ...config.preload]);
+  const loaded = new Set([BUNFIG, LAUNCHER, ...config.preload]);
   for (const file of loaded)
     for (const target of imports.get(file) ?? []) loaded.add(target);
   // A preload that cannot be scanned may load any file.

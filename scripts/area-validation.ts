@@ -241,6 +241,10 @@ export function fullMatrix(): Matrix {
   };
 }
 
+/** Whether `matrix` runs the whole suite: a test leg that names no paths. */
+export const runsWholeSuite = (matrix: Matrix): boolean =>
+  matrix.include.some((leg) => leg.part === "tests" && leg.paths === undefined);
+
 /** Directories without the ones another listed directory already holds. */
 function outermost(dirs: string[]): string[] {
   const unique = [...new Set(dirs)].sort();
@@ -347,15 +351,17 @@ export function ciMatrix(
 /**
  * The areas whose CI jobs a change selects: the `resolved` ones and each
  * separate suite that is owed, all of them when the whole suite is and
- * otherwise those holding a test that depends on the change.
+ * otherwise those holding a test that depends on the change. A `matrix` that
+ * fell back to every shard owes them all, as the whole suite does.
  */
 export function ciAreas(
   resolved: string[],
   plan: ValidationPlan,
   catalog: SharedCatalog,
   reach: TestReach,
+  matrix: Matrix,
 ): string[] {
-  const whole = owesWholeSuite(plan, catalog, reach);
+  const whole = owesWholeSuite(plan, catalog, reach) || runsWholeSuite(matrix);
   const owed = new Set(resolved);
   for (const [id, area] of Object.entries(catalog.areas)) {
     if (area.validation?.separateSuite !== true) continue;

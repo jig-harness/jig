@@ -205,7 +205,7 @@ export function planChange(
     (dirs) => countTestFiles(repoPaths, dirs),
     reach,
   );
-  const areas = ciAreas(resolution.areas, validation, doc, reach);
+  const areas = ciAreas(resolution.areas, validation, doc, reach, matrix);
   return { ...resolution, areas, validation, matrix };
 }
 

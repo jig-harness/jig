@@ -293,7 +293,7 @@ criteria:
     # Every consumer view is a generated projection with a freshness gate; no consumer re-hardcodes the catalog's path patterns.
     # prior: absent: .config/ai-review.yaml rules[].paths and high_risk_path_patterns re-list path patterns by hand; the plugin/ version-bump rule is restated in plugin/AGENTS.md and plugin/README.md
     score: absent
-    evidence: ".config/ai-review.yaml rules[].paths and high_risk_path_patterns are hand-written; scripts/gates.ts reads its separate suites from the catalog, and CI's test legs and the validation plan are derived from it"
+    evidence: ".config/ai-review.yaml rules[].paths are hand-written (its high_risk_path_patterns block is a generated projection of the catalog's reviewRisk areas, checked by scripts/review-risk.ts); scripts/gates.ts reads its separate suites from the catalog, and CI's test legs and the validation plan are derived from it"
   M3/regex-shortcut-sync-checked:   # strict, requires mechanical
     # Any hand-maintained CI shortcut regex is checked against the catalog in both directions and against the union of files tracked at the current and base refs (the two directional checks alone can pass while a whole unmapped tracked file still slips through — see reference/regex-mirror/README.md).
     # prior: expected-absent: No hand-maintained CI shortcut regex in .github/workflows/gates.yml (no paths/paths-ignore/changed-files filters)

@@ -138,7 +138,7 @@ test("a test, or a helper beside the tests, that names a script's file is reache
   ]);
 });
 
-test("a file name two files share leads on only from the file whose path the text spells", () => {
+test("a file name two files share leads on from the file whose path the text spells and from a bare name, not from another path", () => {
   const files = {
     "one/cli.ts": "export {};\n",
     "two/cli.ts": "export {};\n",
@@ -146,23 +146,35 @@ test("a file name two files share leads on only from the file whose path the tex
     "tests/bare.test.ts": 'const script = "cli.ts";\nscript;\n',
     "tests/imports.test.ts": 'import "../two/cli.ts";\n',
   };
-  expect(reach(files, "one/cli.ts").tests).toEqual(["tests/names.test.ts"]);
-  expect(reach(files, "two/cli.ts").tests).toEqual(["tests/imports.test.ts"]);
+  expect(reach(files, "one/cli.ts").tests).toEqual([
+    "tests/bare.test.ts",
+    "tests/names.test.ts",
+  ]);
+  expect(reach(files, "two/cli.ts").tests).toEqual([
+    "tests/bare.test.ts",
+    "tests/imports.test.ts",
+  ]);
 });
 
-test("a data file leads to the tests naming it, and a Markdown file does not", () => {
+test("a data file or a Markdown fixture leads to the tests naming it, and other Markdown does not", () => {
   const files = {
     "config/rules.yaml": "a: 1\n",
     "config/table.json": "{}\n",
     "config/tool.toml": "a = 1\n",
+    "config/rows.tsv": "a\n",
+    "config/list.txt": "a\n",
+    "m/fixtures/good.md": "# Good\n",
     "docs/page.md": "# Page\n",
     "tests/rules.test.ts":
-      'const names = ["rules.yaml", "table.json", "tool.toml", "page.md"];\nnames;\n',
+      'const names = ["rules.yaml", "table.json", "tool.toml", "rows.tsv", "list.txt", "good.md", "page.md"];\nnames;\n',
   };
   for (const data of [
     "config/rules.yaml",
     "config/table.json",
     "config/tool.toml",
+    "config/rows.tsv",
+    "config/list.txt",
+    "m/fixtures/good.md",
   ])
     expect(reach(files, data).tests).toEqual(["tests/rules.test.ts"]);
   expect(reach(files, "docs/page.md").tests).toEqual([]);
@@ -215,7 +227,12 @@ test("what every test run loads is reported apart from the tests it reaches", ()
     "tests/a.test.ts": 'import "../src/a.ts";\n',
   };
   expect(reach(files, "src/a.ts").everyRun).toEqual([]);
-  for (const file of ["bunfig.toml", "lib/preload.ts", "lib/preload-helper.ts"])
+  for (const file of [
+    "bunfig.toml",
+    "scripts/test.ts",
+    "lib/preload.ts",
+    "lib/preload-helper.ts",
+  ])
     expect(reach(files, "src/a.ts", file).everyRun).toEqual([file]);
 });
 

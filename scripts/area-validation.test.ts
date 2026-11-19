@@ -239,11 +239,16 @@ test("a dependent test in a separate suite selects that suite's job instead of a
       { part: "tests", shard: "1/1", paths: "./app/" },
     ],
   });
-  expect(ciAreas(["app"], plan(files), fixture, reach)).toEqual([
-    "app",
-    "long",
-  ]);
-  expect(ciAreas(["app"], plan(files), fixture, NO_REACH)).toEqual(["app"]);
+  const areas = (r: TestReach) =>
+    ciAreas(
+      ["app"],
+      plan(files),
+      fixture,
+      r,
+      ciMatrix(plan(files), files, fixture, () => 3, r),
+    );
+  expect(areas(reach)).toEqual(["app", "long"]);
+  expect(areas(NO_REACH)).toEqual(["app"]);
 });
 
 test("the deepest plan, or a change every test run loads, runs the whole suite and every separate suite", () => {
@@ -251,11 +256,12 @@ test("the deepest plan, or a change every test run loads, runs the whole suite a
   expect(
     ciMatrix(plan(["app/x.ts"]), ["app/x.ts"], fixture, () => 3, everyRun),
   ).toEqual(fullMatrix());
-  expect(ciAreas(["app"], plan(["app/x.ts"]), fixture, everyRun)).toEqual([
-    "app",
-    "long",
-  ]);
-  expect(ciAreas([], plan(["stray.txt"]), fixture, NO_REACH)).toEqual(["long"]);
+  expect(
+    ciAreas(["app"], plan(["app/x.ts"]), fixture, everyRun, fullMatrix()),
+  ).toEqual(["app", "long"]);
+  expect(
+    ciAreas([], plan(["stray.txt"]), fixture, NO_REACH, fullMatrix()),
+  ).toEqual(["long"]);
 });
 
 test("a list of test paths a leg cannot carry, or could not pass on, runs the whole suite", () => {
@@ -269,6 +275,11 @@ test("a list of test paths a leg cannot carry, or could not pass on, runs the wh
   );
   expect(matrix(reachOf(...many))).toEqual(fullMatrix());
   expect(matrix(reachOf("odd dir/a.test.ts"))).toEqual(fullMatrix());
+  // The fallback owes the separate suites too, as the whole suite does.
+  const fallback = reachOf("odd dir/a.test.ts");
+  expect(
+    ciAreas(["app"], plan(files), fixture, fallback, matrix(fallback)),
+  ).toEqual(["app", "long"]);
 });
 
 test("a test path is a directory or a test file inside the repository", () => {
@@ -332,12 +343,17 @@ test("on Jig's catalog a documentation-only change runs no test leg", () => {
   ).toEqual([]);
 });
 
-test("on Jig's catalog a change to a file only its own skill uses runs that skill's tests only", () => {
+test("on Jig's catalog a change to a file only its own skill uses runs that skill's tests and the tests naming its files bare, not the whole suite", () => {
   // Built in parts: a test that spelled the file's name would depend on it.
   const leaf = `plugin/skills/audit/scripts/lib/${"feedback"}.ts`;
-  expect(testLegs(leaf)).toEqual([
-    { part: "tests", shard: "1/1", paths: "./plugin/skills/audit/" },
-  ]);
+  const legs = testLegs(leaf);
+  expect(legs).toHaveLength(1);
+  const paths = (legs[0]?.paths ?? "").split(" ");
+  // Another skill's test that spells a shared file name bare is kept, as the
+  // name could mean the file of that name in any skill.
+  expect(paths[0]).toBe("./plugin/skills/audit/");
+  expect(paths.length).toBeLessThan(40);
+  expect(paths).not.toContain("./website/");
 });
 
 test("on Jig's catalog a change runs the tests that depend on it outside its areas", () => {
