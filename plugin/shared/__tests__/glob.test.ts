@@ -4,7 +4,33 @@
  * compile.
  */
 import { describe, expect, it } from "bun:test";
-import { globMatchesUnder, globProblem, globToRegExp } from "../glob.ts";
+import {
+  globMatchesUnder,
+  globProblem,
+  globsIntersect,
+  globToRegExp,
+} from "../glob.ts";
+
+describe("globsIntersect", () => {
+  it.each([
+    ["src/**/*.ts", "src/**/*.md", false],
+    ["src/*/index.ts", "src/index.ts", false],
+    ["src/**/index.ts", "src/index.ts", true],
+    ["src/**/index.ts", "src/a/b/index.ts", true],
+    ["{src,{lib,app}}/**", "**/{bin,lib}/file", true],
+    ["**/.github/*", ".github/workflow", true],
+    ["a/[a-z].ts", "a/[!a-z].ts", false],
+    ["a/[éè].ts", "a/[èê].ts", true],
+    ["a/😀.ts", "a/??.ts", true],
+    ["a/😀.ts", "a/?.ts", false],
+    ["a/*/x", "a//x", false],
+    ["**", "a/../x", false],
+    ["**", "", false],
+  ] as const)("%s and %s intersect: %s", (left, right, intersects) => {
+    expect(globsIntersect(left, right)).toBe(intersects);
+    expect(globsIntersect(right, left)).toBe(intersects);
+  });
+});
 
 describe("globToRegExp", () => {
   const cases: [string, string, boolean][] = [

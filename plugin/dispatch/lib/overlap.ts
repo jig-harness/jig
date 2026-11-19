@@ -31,7 +31,11 @@
  * first may still start after a higher-ranked one. It reports; it starts
  * nothing.
  */
-import { globMatchesUnder, matchesGlob } from "../../shared/glob.ts";
+import {
+  globMatchesUnder,
+  globsIntersect,
+  matchesGlob,
+} from "../../shared/glob.ts";
 import type { OverlapSettings, PatienceKey } from "./overlap-config.ts";
 
 /** The paths a piece of work is expected to change; `known: false` when nobody predicted them. */
@@ -142,25 +146,6 @@ const bare = (dir: string) => {
   return dir.slice(0, end);
 };
 
-/** The directory part of a glob before its first wildcard segment. */
-function staticDir(glob: string): string {
-  const segments = glob.split("/");
-  const fixed: string[] = [];
-  for (const segment of segments.slice(0, -1)) {
-    if (/[*?[\]{}]/.test(segment)) break;
-    fixed.push(segment);
-  }
-  return fixed.join("/");
-}
-
-/** Whether two globs can match one file, read through each one's fixed directory. */
-function globsMeet(a: string, b: string): boolean {
-  const da = staticDir(a);
-  const db = staticDir(b);
-  if (da === "" || db === "") return true;
-  return globMatchesUnder(a, db) || globMatchesUnder(b, da);
-}
-
 /** Whether a coarse element `x` (a directory or an area) holds, or reaches into, the element `y`. */
 function holds(x: Element, y: Element, model: OverlapModel): boolean {
   if (x.kind === "file") return false;
@@ -176,7 +161,7 @@ function holds(x: Element, y: Element, model: OverlapModel): boolean {
     return globs.some((g) => globMatchesUnder(g, bare(y.path)));
   if (x.key === y.key) return true;
   const other = model.areaGlobs(y.key);
-  return globs.some((g) => other.some((h) => globsMeet(g, h)));
+  return globs.some((g) => other.some((h) => globsIntersect(g, h)));
 }
 
 function describe(e: Element): string {

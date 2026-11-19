@@ -65,7 +65,10 @@ function plainToken(c: string, depth: number): [GlobToken, number] {
   if (c === "{") return [{ kind: "open" }, 1];
   if (c === "}" && depth > 0) return [{ kind: "close" }, -1];
   if (c === "," && depth > 0) return [{ kind: "alt" }, 0];
-  return [{ kind: "one", source: c.replace(/[.+^${}()|\\/\]]/g, "\\$&") }, 0];
+  return [
+    { kind: "one", source: c.replace(/[.+^${}()|\\/\]]/g, "\\$&"), literal: c },
+    0,
+  ];
 }
 
 /**
@@ -75,7 +78,8 @@ function plainToken(c: string, depth: number): [GlobToken, number] {
  * braces and commas of an alternation.
  */
 type GlobToken =
-  | { kind: "one" | "many"; source: string }
+  | { kind: "one"; source: string; literal?: string }
+  | { kind: "many"; source: string }
   | { kind: "dirs" | "open" | "alt" | "close" };
 
 function starTokenOf(glob: string, i: number): [GlobToken, number] {
@@ -143,15 +147,18 @@ function compileGlob(glob: string): RegExp {
 // from the same tokens and as large as the glob: an alternation is a
 // branch, never spelt out. Each step records which characters of the plain
 // alphabet pass it: `/`, `.`, and the characters of `NAME_CHARS`.
+interface CharacterStep {
+  test: RegExp;
+  literal: string | undefined;
+  slash: boolean;
+  dot: boolean;
+  names: string[];
+  to: number;
+}
+
 interface Automaton {
   empty: number[][];
-  steps: {
-    test: RegExp;
-    slash: boolean;
-    dot: boolean;
-    names: string[];
-    to: number;
-  }[][];
+  steps: CharacterStep[][];
   accept: number;
 }
 
@@ -191,10 +198,11 @@ function automatonOf(glob: string): Automaton {
     a.steps.push([]);
     return a.empty.push([]) - 1;
   };
-  const step = (from: number, source: string, to: number) => {
+  const step = (from: number, source: string, to: number, literal?: string) => {
     const test = new RegExp(`^(?:${source})$`);
     a.steps[from]?.push({
       test,
+      literal,
       slash: test.test("/"),
       dot: test.test("."),
       names: NAME_CHARS.filter((c) => test.test(c)),
@@ -209,7 +217,7 @@ function automatonOf(glob: string): Automaton {
       const t = tokens[i] as GlobToken;
       if (t.kind === "alt" || t.kind === "close") return at;
       const next = state();
-      if (t.kind === "one") step(at, t.source, next);
+      if (t.kind === "one") step(at, t.source, next, t.literal);
       else if (t.kind === "many") {
         free(at, next);
         step(next, t.source, next);
@@ -218,7 +226,7 @@ function automatonOf(glob: string): Automaton {
         free(at, next);
         free(at, inside);
         step(inside, "[^]", inside);
-        step(inside, "/", next);
+        step(inside, "/", next, "/");
       } else {
         const from = at;
         do {
@@ -332,6 +340,90 @@ function successors(a: Automaton, [s, segment]: Position): Position[] {
     if (e.slash && closes(segment)) next.push([e.to, EMPTY]);
   }
   return next;
+}
+
+const intersectionCache = new Map<string, boolean>();
+
+/** Whether both globs can match the same repository-relative file path. */
+export function globsIntersect(left: string, right: string): boolean {
+  const key = JSON.stringify(left < right ? [left, right] : [right, left]);
+  const cached = intersectionCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = intersect(automatonOf(left), automatonOf(right));
+  remember(intersectionCache, key, result);
+  return result;
+}
+
+type PathPart = "" | "." | ".." | "name";
+type IntersectionPosition = [number, number, PathPart];
+
+// The product follows empty steps in either glob independently and consumes
+// a character only when both globs can take it. Track the current path part
+// to rule out empty segments and the special components "." and "..".
+function intersect(left: Automaton, right: Automaton): boolean {
+  const seen = new Set<string>();
+  const classPairs = new Map<string, boolean>();
+  const pending: IntersectionPosition[] = [];
+  const add = (a: number, b: number, part: PathPart) => {
+    const key = `${a},${b},${part}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pending.push([a, b, part]);
+  };
+  add(0, 0, "");
+  for (let at = pending.pop(); at !== undefined; at = pending.pop()) {
+    const [a, b, part] = at;
+    if (a === left.accept && b === right.accept && part === "name") return true;
+    for (const next of left.empty[a] ?? []) add(next, b, part);
+    for (const next of right.empty[b] ?? []) add(a, next, part);
+    for (const x of left.steps[a] ?? []) {
+      for (const y of right.steps[b] ?? []) {
+        if (x.slash && y.slash && part === "name") add(x.to, y.to, "");
+        if (x.dot && y.dot) {
+          add(x.to, y.to, part === "" ? "." : part === "." ? ".." : "name");
+        }
+        if (sharesNameCharacter(x, y, classPairs)) add(x.to, y.to, "name");
+      }
+    }
+  }
+  return false;
+}
+
+function sharesLiteral(literal: string, other: CharacterStep): boolean {
+  return (
+    literal !== "/" &&
+    literal !== "." &&
+    literal !== "\0" &&
+    other.test.test(literal)
+  );
+}
+
+function sharesNameCharacter(
+  left: CharacterStep,
+  right: CharacterStep,
+  classPairs: Map<string, boolean>,
+): boolean {
+  if (left.literal !== undefined) return sharesLiteral(left.literal, right);
+  if (right.literal !== undefined) return sharesLiteral(right.literal, left);
+  if (left.names.some((c) => right.names.includes(c))) return true;
+  const key = JSON.stringify([left.test.source, right.test.source]);
+  const cached = classPairs.get(key);
+  if (cached !== undefined) return cached;
+  const shared = sharesOtherCharacter(left.test, right.test);
+  classPairs.set(key, shared);
+  return shared;
+}
+
+function sharesOtherCharacter(left: RegExp, right: RegExp): boolean {
+  // Classes can share a UTF-16 code unit outside the plain-name alphabet.
+  // Start at 1 because a file name cannot contain NUL.
+  for (let code = 1; code <= 0xffff; code++) {
+    const c = String.fromCharCode(code);
+    if (c !== "/" && c !== "." && left.test(c) && right.test(c)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Why `glob` cannot be compiled, or `null` when it can. */
