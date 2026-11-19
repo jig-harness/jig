@@ -401,6 +401,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.282.0] - 2026-11-19
+
+### Fixed
+
+- Untagged releases of one repository that share a remedy now reach a person
+  as one need instead of one card per version. The need lists every version,
+  `jig ask --waiting` counts it once, and one answer on the tracker item it
+  names covers them all. A version leaves the list when it gets its tag, and
+  the need goes with the last one. Releases whose one re-run of the failed
+  gates was requested form their own need, and any such release is offered
+  only **Investigate** and **Tag it by hand**. Each release keeps its own
+  record and tracker item.
+
 ## [0.281.0] - 2026-11-19
 
 ### Added
@@ -9927,7 +9940,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.281.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.282.0...HEAD
+[0.282.0]: https://github.com/jig-harness/jig/compare/v0.281.0...v0.282.0
 [0.281.0]: https://github.com/jig-harness/jig/compare/v0.280.0...v0.281.0
 [0.280.0]: https://github.com/jig-harness/jig/compare/v0.279.3...v0.280.0
 [0.279.3]: https://github.com/jig-harness/jig/compare/v0.279.2...v0.279.3
