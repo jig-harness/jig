@@ -581,7 +581,12 @@ two PRs with every round header looking healthy, and the first of them merged
 over six live findings. The detector only ever stops on **positive evidence of
 sameness**: a gate whose head or key arrays could not be measured produces no
 fingerprint and resets the streak, so degraded telemetry falls back to the
-plain `--max-rounds` bound rather than a guessed stop.
+plain `--max-rounds` bound rather than a guessed stop. Each pass's
+`finish-round.ts` records how its round ended
+(`lib/state/round-finish.ts`); when every stalled pass ended on the same
+state other than `FINISHED`, the stop prints that state and the last reason,
+and the closing report names them and takes its cause from the state
+(`CI_HOLD_WAIT` reads `environment`) instead of `unknown`.
 
 What that rule turns on, each clause measured as a stall stop
 firing over a pass that *had* worked:

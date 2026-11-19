@@ -9,6 +9,13 @@ interface DriverRuntime {
    */
   stopLeftWork: { leftWork: boolean; tree: string } | null;
   /**
+   * The `finish-round.ts` state every stalled pass ended on, with the last
+   * one's reason: set by the stall stop when they all agree
+   * (`state/round-finish.ts`), and named by its line and closing report.
+   * `null` for any other stop.
+   */
+  stallFinish: { state: string; reason: string } | null;
+  /**
    * The round of the last pass this driver started, review or repair, which
    * every pass reads as `DRIVE_PR_ROUND`; `null` before the first. The
    * closing report reads only the round report stamped with it
@@ -88,6 +95,7 @@ interface DriverRuntime {
 
 export const driverRuntime: DriverRuntime = {
   stopLeftWork: null,
+  stallFinish: null,
   passRound: null,
   passStartedAt: null,
   compromised: "",

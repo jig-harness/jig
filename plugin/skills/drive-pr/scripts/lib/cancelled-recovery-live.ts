@@ -25,14 +25,8 @@ import {
 import { readCheckRuns, readPrSnapshot } from "./ci-hold-state.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
-import { openStore } from "./state/store.ts";
-import {
-  parkAdmissionContext,
-  parkAdmissionProblem,
-} from "./state/park-admission.ts";
-import { fail } from "./cli.ts";
+import { clearParkedFinding, parkFinding } from "./state/park-finding.ts";
 import type { ParkedDecision } from "../../../../shared/decisions/park.ts";
-import { resolveParkPerson } from "./state/park-person.ts";
 import {
   assertRemoteMutationAllowed,
   resolveFenceContext,
@@ -40,7 +34,7 @@ import {
 import { swallow } from "../../../../shared/errors.ts";
 import { holdLabelPolicy } from "./ci-policy.ts";
 import { readWorkflowRuns, withoutSuperseded } from "./status/workflow-runs.ts";
-import { currentIso, currentMs } from "../../../../shared/time.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** Thrown by a guarded mutation when the drive passed to another driver; the recovery stands down. */
 class OwnershipLost extends Error {
@@ -73,38 +67,18 @@ const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites" | "park"> & {
   },
   rerun: (id) => ghCall(["run", "rerun", String(id)]),
   async park(pr, reason, stillOwned) {
-    const person = await resolveParkPerson(pr, "cancelled-ci", "finding", "");
-    const decision = cancelledCiDecision(reason);
-    const question = decision.call.question;
-    const store = await openStore(pr);
-    const capacity = await parkAdmissionContext(pr, store.stateDir);
     // Ownership is asked inside the store's lock, after the wait for it, as the
     // write is about to run.
-    if (stillOwned !== undefined)
-      store.setFence(async () => {
-        if (!(await stillOwned())) throw new OwnershipLost();
-      });
-    await store.update((state) => {
-      const next = {
-        ...state,
-        parked: [
-          ...state.parked.filter((p) => p.key !== "cancelled-ci"),
-          {
-            key: "cancelled-ci",
-            kind: "finding" as const,
-            reason: question,
-            class: "human-decision",
-            person,
-            decision,
-            round: state.rounds,
-            at: currentIso(),
+    await parkFinding(
+      pr,
+      "cancelled-ci",
+      cancelledCiDecision(reason),
+      stillOwned === undefined
+        ? undefined
+        : async () => {
+            if (!(await stillOwned())) throw new OwnershipLost();
           },
-        ],
-      };
-      const admission = parkAdmissionProblem(next, decision, capacity);
-      if (admission !== null) fail(2, `park: ${admission}`);
-      return next;
-    });
+    );
   },
 };
 
@@ -425,11 +399,6 @@ async function waitForRequestedRun(
 }
 
 async function clearRecoveredPark(pr: string): Promise<"none"> {
-  const store = await openStore(pr);
-  if (store.read().state.parked.some((p) => p.key === "cancelled-ci"))
-    await store.update((state) => ({
-      ...state,
-      parked: state.parked.filter((p) => p.key !== "cancelled-ci"),
-    }));
+  await clearParkedFinding(pr, "cancelled-ci");
   return "none";
 }

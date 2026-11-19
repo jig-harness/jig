@@ -3,8 +3,9 @@
  * at a stop that needs a person (`orca-card.ts`), and the first part of the
  * closing report's `concluded` (`closing-report.ts`). A park names the first
  * parked item's question and how many more wait; a usage-limit stop names the
- * wall and when it resets; every other exit says what the terminal-state
- * registry's `report.stop` says for it.
+ * wall and when it resets; a stall whose passes all ended `finish-round.ts`
+ * on the same state names that state and its reason; every other exit says
+ * what the terminal-state registry's `report.stop` says for it.
  */
 import type { DriveState } from "../state/schema.ts";
 import { driveExitReport, TERMINAL_STATES } from "../status/terminal-states.ts";
@@ -41,18 +42,28 @@ function quotaStop(pr: string, code: number, state: DriveState | null): string {
   return `PR #${pr} stopped on ${wall}, which resets ${reset} (exit ${code})`;
 }
 
+/** What held a stall's rounds: the `finish-round.ts` state its passes all ended on. */
+export interface StallFinish {
+  state: string;
+  reason: string;
+}
+
 /**
  * The line for a drive that stopped with exit `code`. `state` is the drive
  * state, read for a park's question and a usage limit's reset; `null` when
- * it could not be read.
+ * it could not be read. `stall` is what held a stall's rounds, when its
+ * passes agree on it.
  */
 export function stopText(
   pr: string,
   code: number,
   state: DriveState | null,
+  stall: StallFinish | null = null,
 ): string {
   if (code === exitOf("HITL_PARKED")) return parkStop(pr, code, state);
   if (code === exitOf("QUOTA_PARKED")) return quotaStop(pr, code, state);
+  if (code === exitOf("STALLED") && stall !== null)
+    return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(stall.reason)} (exit ${code})`;
   const named = driveExitReport(code);
   return named === null
     ? `PR #${pr}'s drive ended with exit ${code}, which names no state the drive ends with`

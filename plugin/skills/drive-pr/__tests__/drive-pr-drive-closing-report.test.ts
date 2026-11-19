@@ -191,6 +191,61 @@ describe("drive.ts's closing report", () => {
     );
   }, 120_000);
 
+  it("at a stall whose passes all ended finish-round.ts CI_HOLD_WAIT, names that state and its reason instead of cause unknown", async () => {
+    const { file, env } = dispatched();
+    const { dir, stateDir } = writeFixture(
+      {
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+      },
+      scratchClean.dir,
+    );
+    // Each pass ends its round the way finish-round.ts records it when the
+    // CI hold waits, and changes nothing the drive can observe.
+    const recorder = join(dir, "record-finish.ts");
+    writeFileSync(
+      recorder,
+      [
+        `import { recordRoundFinish } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "round-finish.ts"))};`,
+        `import { resolveStateDir } from ${JSON.stringify(join(SCRIPTS, "lib", "state", "store.ts"))};`,
+        "const stateDir = process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir());",
+        'recordRoundFinish(stateDir, "999", {',
+        "  round: Number(process.env.DRIVE_PR_ROUND),",
+        '  state: "CI_HOLD_WAIT",',
+        '  reason: "the CI hold is not ready on the current PR head",',
+        '  head: "a".repeat(40),',
+        "  at: new Date().toISOString(),",
+        "});",
+      ].join("\n"),
+    );
+    const pass = [
+      "sh",
+      "-c",
+      [
+        ": pass for 999",
+        `'${process.execPath}' '${recorder}' >&2`,
+        "exit 0",
+      ].join("\n"),
+    ];
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--max-rounds", "10", "--", ...pass],
+      undefined,
+      { env: { ...env, DRIVE_PR_STALL_ROUNDS: "2" } },
+    );
+    expectSpawnExit({ ...r, stdout: null }, 14);
+    expect(r.stderr).toContain(
+      "Every one of those passes ended finish-round.ts CI_HOLD_WAIT: the CI hold is not ready on the current PR head",
+    );
+    const report = written(file);
+    expect(report.concluded).toStartWith(
+      "PR #999's drive stalled: every stalled pass's round ended CI_HOLD_WAIT: the CI hold is not ready on the current PR head (exit 14)",
+    );
+    expect(report.cause).toBe("environment");
+  }, 120_000);
+
   it("is not written for a drive no wrapper named a file for", async () => {
     const { file, env } = dispatched();
     const { JIG_DRIVER_REPORT: _file, ...undispatched } = env;
