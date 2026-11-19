@@ -67,7 +67,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
-import { heldStopWait } from "./hold-wait.ts";
+import { type HoldFacts, heldStopWait } from "./hold-wait.ts";
 import { lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   parkReading,
@@ -322,11 +322,17 @@ function waitsOnOf(
     dispatched
       ? { waiting: why }
       : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
-  const onHold = heldStopWait(holder, placed.class, ledger.driver.heartbeat, {
-    dispatched,
-    record: holdingRecord(r.records),
-    holding: holdingRecordsOf(r.records),
-  });
+  const onHold = heldStopWait(
+    holder,
+    placed.class,
+    ledger.driver.state === "running",
+    ledger.driver.heartbeat,
+    {
+      dispatched,
+      record: holdingRecord(r.records),
+      holding: holdingRecordsOf(r.records),
+    },
+  );
   if (onHold !== null) return onHold;
   // A running launch says nothing of a park nobody answered or of a ledger gone silent.
   if (runningLaunchSpeaks(holder, placed.class)) return "none";
@@ -867,8 +873,13 @@ function driveWait(
   };
   if (reads.pull.state !== "OPEN")
     return (
-      heldStopWait(holder, "done", reads.pull.mergedAt ?? "", holdFacts) ??
-      "none"
+      heldStopWait(
+        holder,
+        "done",
+        false,
+        reads.pull.mergedAt ?? "",
+        holdFacts,
+      ) ?? "none"
     );
   if (facts.presence?.gone === true && ledger !== null) {
     const spent = takeoverSettled(
@@ -893,10 +904,11 @@ function driveWait(
           currentMs() - parseMs(ledger.driver.heartbeat) > stallThresholdMs()
             ? "silent"
             : "driven",
+          true,
           ledger.driver.heartbeat,
           holdFacts,
         )
-      : null;
+      : stoppedHoldWait(reads, ledger, holder, facts.base, holdFacts);
   const diagnosis = diagnosticWait(
     reads.row,
     ledger,
@@ -910,11 +922,38 @@ function driveWait(
       heldStopWait(
         holder,
         facts.unread ? "unplaced" : "unarmed",
+        false,
         "",
         holdFacts,
       ) ?? "none"
     );
   return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
+}
+
+/** A stopped ledger's stranded launch, read only where a local CI-hold diagnosis would otherwise answer first: it takes the same precedence as a running ledger's. */
+function stoppedHoldWait(
+  reads: DriveReads,
+  ledger: Ledger | null,
+  holder: Holder | "none",
+  base: PrFacts["base"],
+  holdFacts: HoldFacts,
+): WaitsOn | null {
+  const diagnosis = reads.row?.doctor?.ciHold;
+  if (
+    ledger === null ||
+    ledger.driver.state === "running" ||
+    diagnosis === undefined ||
+    diagnosis.held === false
+  )
+    return null;
+  const placed = placeLedger(ledger, reads, base);
+  return heldStopWait(
+    holder,
+    placed.class,
+    false,
+    ledger.driver.heartbeat,
+    holdFacts,
+  );
 }
 
 /** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe, or the launch whose hold on it outlived its bound (`held`). */
@@ -928,9 +967,7 @@ function diagnosticWait(
   if (ledger !== null && ledger.parked.length > 0) return null;
   const diagnosis = row?.doctor?.ciHold;
   const strandedHold =
-    held !== null &&
-    ledger?.driver.state === "running" &&
-    (holder === "none" || holder.process !== "alive");
+    held !== null && (holder === "none" || holder.process !== "alive");
   if (strandedHold) return withDiagnosis(held, diagnosis);
   if (diagnosis !== undefined && diagnosis.held !== false) {
     return holdWait(

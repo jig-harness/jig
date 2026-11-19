@@ -78,17 +78,19 @@ function settleWords(
     : `${blocked}; then ${clear}`;
 }
 
-/** The wait on a hold of unknown process; `null` when the holder runs, or the hold is not what the drive waits on yet. `stoppedAt` is the drive's last heartbeat, or a merged pull request's merge. */
+/** The wait on a hold of unknown process; `null` when the holder runs, or the hold is not what the drive waits on yet. `running` is whether its ledger records the driver running, whatever its class; `stoppedAt` is the drive's last heartbeat, or a merged pull request's merge. */
 export function heldStopWait(
   holder: Holder | "none",
   placed: LedgerClass,
+  running: boolean,
   stoppedAt: string,
   facts: HoldFacts,
 ): WaitsOn | null {
   if (holder === "none" || holder.process === "alive") return null;
   const heldUp = heldUpByLaunch(placed);
-  if (!heldUp && !ownRecord(holder, facts, needsProof(placed))) return null;
-  const since = heldStopSinceMs(holder.since ?? "", stoppedAt, placed);
+  if (!heldUp && !ownRecord(holder, facts, needsProof(placed, running)))
+    return null;
+  const since = heldStopSinceMs(holder.since ?? "", stoppedAt, running);
   const age = currentMs() - since;
   const held = Number.isFinite(since)
     ? `${holderWords(holder)}; it has held the drive for ${spanText(age)}, since ${isoFromMs(since)}`

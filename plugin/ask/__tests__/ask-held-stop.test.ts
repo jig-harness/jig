@@ -7,6 +7,7 @@
  * the hold's once it has outlived its bound.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
@@ -411,6 +412,67 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     const waits = (await ask(w)).waitsOn as { person: string; why: string };
     expect(waits.person).toBe("settle the launch that holds the drive");
     expect(waits.why).toContain(RECORD);
+  });
+
+  it("names a stopped ledger's stranded launch before a local CI-hold diagnosis", async () => {
+    const w = world();
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    const ledger = stoppedLedger(12, undefined, {
+      driver: {
+        actor: "wt-0123456789abcdef",
+        clone: "clone-a",
+        heartbeat: long,
+        state: "stopped",
+        started: long,
+        exit: DRIVE_EXIT.NOT_SETTLED,
+      },
+    });
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    const script = join(w.root, "drives.ts");
+    const head = "a".repeat(40);
+    writeFileSync(
+      script,
+      `console.log(${JSON.stringify(
+        JSON.stringify({
+          rows: [
+            {
+              kind: "pr",
+              key: "12",
+              state: "empty",
+              host: null,
+              doctor: {
+                verdict: "UNKNOWN",
+                reason: "local driver stopped",
+                recovery: null,
+                ciHold: {
+                  driver: "dead",
+                  driverReason: "the identified local driver stopped",
+                  head,
+                  label: "ci:hold",
+                  held: true,
+                  review: "converged",
+                  reason: "ci:hold blocks final CI",
+                  recovery: `bun ci-hold.ts release 12 --expect-head ${head}`,
+                  worktree: "/checkout",
+                  actor: "wt-0123456789abcdef",
+                  started: long,
+                  generation: 1,
+                  ledgerGeneration: 3,
+                },
+              },
+            },
+          ],
+        }),
+      )});`,
+    );
+    w.env.JIG_ASK_DRIVES_SCRIPT = script;
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    const waits = (await ask(w)).waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain(RECORD);
+    expect(waits.why).toContain("the doctor also reads");
   });
 
   it("asks every holding record's processes proved gone, not only the newest's", async () => {

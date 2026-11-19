@@ -345,12 +345,45 @@ describe("a stopped drive held by a launch of unknown process", () => {
     const running = (createdAt: string) =>
       needsOf(
         input({
-          drives: [drive(isoFromMs(NOW_MS), { class: "driven" })],
+          drives: [
+            drive(isoFromMs(NOW_MS), { class: "driven", running: true }),
+          ],
           launches: [launch(unknown, { createdAt })],
         }),
       ).filter((a) => a.evidence.stuck === REASON);
     expect(running(PAST)).toHaveLength(1);
     expect(running(RECENT)).toEqual([]);
+  });
+
+  it("counts a silent ledger's hold from the launch alone, as no stop occurred", () => {
+    const silent = (createdAt: string) =>
+      needsOf(
+        input({
+          drives: [
+            drive(isoFromMs(NOW_MS - 2 * STRANDED_HOLD_MS), {
+              class: "silent",
+              running: true,
+            }),
+          ],
+          launches: [launch(unknown, { createdAt })],
+        }),
+      ).filter((a) => a.evidence.stuck === REASON);
+    expect(silent(PAST)).toHaveLength(1);
+    expect(silent(RECENT)).toEqual([]);
+  });
+
+  it("asks a person's stop whose ledger still records running for proof its processes are gone", () => {
+    const stop = (state: ReadRecord["state"]) =>
+      needsOf(
+        input({
+          drives: [drive(PAST, { class: "stopped-by-person", running: true })],
+          launches: [launch(state)],
+        }),
+      );
+    expect(stop({ ...unknown, unjudged: true })).toEqual([]);
+    expect(
+      stop(unknown).filter((a) => a.evidence.stuck === REASON),
+    ).toHaveLength(1);
   });
 
   it("waits while the runtime cannot say which sessions run", () => {

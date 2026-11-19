@@ -47,19 +47,16 @@ const HELD_UP: ReadonlySet<LedgerClass> = new Set<LedgerClass>([
   "unarmed",
 ]);
 
-/** The drives whose ledger still runs: they have not stopped. */
-const RUNNING: ReadonlySet<LedgerClass> = new Set<LedgerClass>(["driven"]);
-
-/** The drives the hold does not keep from going on whose driver may still run: a running ledger, a silent one, or one that did not read. */
+/** The classes whose driver may still run whatever the ledger records: a running or silent ledger, or one that did not read. */
 const MAY_RUN: ReadonlySet<LedgerClass> = new Set<LedgerClass>([
   "driven",
   "silent",
   "unplaced",
 ]);
 
-/** Whether a hold of unknown process on a drive of this class is raised only once its processes are proved gone. */
-export function needsProof(cls: LedgerClass): boolean {
-  return MAY_RUN.has(cls);
+/** Whether a hold of unknown process on a drive of this class is raised only once its processes are proved gone: its class says its driver may run, or its ledger records the driver running (`running`). */
+export function needsProof(cls: LedgerClass, running: boolean): boolean {
+  return running || MAY_RUN.has(cls);
 }
 
 /** Whether a launch holding a drive of this class is what keeps it from going on; any other hold keeps only its account's slot. */
@@ -67,13 +64,13 @@ export function heldUpByLaunch(cls: LedgerClass): boolean {
   return HELD_UP.has(cls);
 }
 
-/** Since when a launch from `heldFrom` has held a drive of class `cls` whose ledger last beat at `stoppedAt`; `NaN` when no time reads. */
+/** Since when a launch from `heldFrom` has held a drive whose ledger last beat at `stoppedAt`; `NaN` when no time reads. A ledger that records its driver running (`running`, a silent one included) has not stopped, so the launch alone counts. */
 export function heldStopSinceMs(
   heldFrom: string,
   stoppedAt: string,
-  cls?: LedgerClass,
+  running: boolean,
 ): number {
-  const stop = cls !== undefined && RUNNING.has(cls) ? "" : stoppedAt;
+  const stop = running ? "" : stoppedAt;
   const times = [parseMs(heldFrom), parseMs(stop)].filter(Number.isFinite);
   return times.length === 0 ? Number.NaN : Math.max(...times);
 }
@@ -147,7 +144,7 @@ function strandedSince(
   const since = heldStopSinceMs(
     heldFrom,
     String(pr.evidence.heartbeat ?? ""),
-    pr.class,
+    pr.running === true,
   );
   return Number.isFinite(since) && nowMs - since >= STRANDED_HOLD_MS
     ? since
@@ -172,7 +169,7 @@ export function strandedByRecord(
   const { record, state } = read;
   if (state.kind !== "unknown") return null;
   if (
-    needsProof(pr.class) &&
+    needsProof(pr.class, pr.running === true) &&
     holders.some((r) => r.state.kind === "unknown" && !provedGone(r.state))
   )
     return null;
