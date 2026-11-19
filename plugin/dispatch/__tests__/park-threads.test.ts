@@ -26,6 +26,7 @@ const COMMENT: CommentLike = {
 };
 const REVIEW = {
   id: 1,
+  html_url: COMMENT.url,
   updated_at: "2026-10-30T22:00:00Z",
   author_association: "OWNER",
   user: { login: "a-maintainer" },
@@ -106,7 +107,6 @@ describe("a parked thread's kept reading", () => {
       [{ ...REVIEW, updated_at: "2026-10-30T23:00:00Z" }],
       [{ ...REVIEW, author_association: "NONE" }],
       [{ ...REVIEW, user: { login: "renamed" } }],
-      [],
     ]) {
       state.listing = changed;
       expect(await tick(out)).toBeNull();
@@ -115,6 +115,15 @@ describe("a parked thread's kept reading", () => {
       expect(await tick(out)).toBeNull();
       expect(await tick(out)).toEqual([COMMENT]);
     }
+  });
+
+  it("is never kept for a thread the listing does not show", async () => {
+    const { out, state } = deps([]);
+    await settled(out);
+    state.listing = [];
+    at(LISTING_SETTLE_MS * 3);
+    expect(await tick(out)).toBeNull();
+    expect(await tick(out)).toBeNull();
   });
 
   it("is not reused from a reading taken just after the review comments changed", async () => {
@@ -155,7 +164,7 @@ describe("a parked thread's kept reading", () => {
       { signal, deadline: START + 5_000 },
       counted,
     );
-    expect(asked).toEqual([5]);
+    expect(asked).toEqual([1]);
   });
 
   it("is read again at the backstop, and kept from then", async () => {
@@ -236,5 +245,31 @@ describe("a parked thread's kept reading", () => {
         [`park-threads:${SLUG}#7`, `park-threads:${SLUG}#9`],
       ],
     ]);
+  });
+
+  it("is not kept when the listing shows a reply the thread read lacks", async () => {
+    const reply = {
+      ...REVIEW,
+      id: 2,
+      html_url: "https://example.test/c/2",
+      in_reply_to_id: 1,
+    };
+    const { out } = deps([REVIEW, reply]);
+    await settled(out);
+    expect(await tick(out)).toBeNull();
+  });
+
+  it("stores a retired thread's removal when only another thread is reused", async () => {
+    const { out, held } = deps();
+    await settled(out);
+    const key = [...held.keys()][0] as string;
+    const record = held.get(key) as { threads: Record<string, unknown> };
+    record.threads.gone = record.threads.T;
+    at(LISTING_SETTLE_MS * 2);
+    const kept = await keptParkThreads(SLUG, 7, undefined, out);
+    expect(kept.held("T")).not.toBeNull();
+    kept.save();
+    const after = held.get(key) as { threads: Record<string, unknown> };
+    expect(Object.keys(after.threads)).toEqual(["T"]);
   });
 });

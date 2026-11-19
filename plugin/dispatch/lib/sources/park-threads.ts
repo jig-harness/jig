@@ -35,13 +35,16 @@ import type { Deadline } from "../../../shared/records/forge-claims.ts";
 import { currentMs } from "../../../shared/time.ts";
 import type { CommentLike } from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import { type PickupReads, pickupReads } from "../pickup-reads.ts";
-import { ended, secondsLeft, type TickBound } from "./bounded.ts";
+import { ended, heldRead, secondsLeft, type TickBound } from "./bounded.ts";
 
 /** How long a thread's reading is reused, however unchanged its pull request's review comments look. */
 export const THREAD_BACKSTOP_MS = 60 * 60_000;
 
 /** How long after the review comments change a thread's reading may still miss the change. */
 export const LISTING_SETTLE_MS = 2 * 60_000;
+
+/** The most the cache probe may take of the tick's time; a quarter of what is left is kept back for the thread reads. */
+const PROBE_MAX_SEC = 30;
 
 const KEY_PREFIX = "park-threads:";
 
@@ -132,6 +135,40 @@ function recordOf(value: unknown): KeptRecord | null {
     : null;
 }
 
+/** Each review comment's URL, under the URL of the comment its thread starts with. */
+function threadUrlsIn(listing: readonly unknown[]): Map<string, Set<string>> {
+  const rows = listing.filter(isRecord);
+  const rootUrl = new Map<unknown, string>();
+  for (const c of rows) {
+    if (c.in_reply_to_id == null && typeof c.html_url === "string") {
+      rootUrl.set(c.id, c.html_url);
+    }
+  }
+  const threads = new Map<string, Set<string>>();
+  for (const c of rows) {
+    if (typeof c.html_url !== "string") continue;
+    const root =
+      c.in_reply_to_id == null ? c.html_url : rootUrl.get(c.in_reply_to_id);
+    if (root === undefined) continue;
+    const urls = threads.get(root) ?? new Set<string>();
+    urls.add(c.html_url);
+    threads.set(root, urls);
+  }
+  return threads;
+}
+
+/** Whether the thread read holds every comment the listing shows for it, and no other. */
+function confirms(
+  threads: Map<string, Set<string>>,
+  comments: readonly CommentLike[],
+): boolean {
+  const first = comments[0];
+  if (first === undefined) return false;
+  const expected = threads.get(first.url);
+  if (expected === undefined || expected.size !== comments.length) return false;
+  return comments.every((c) => expected.has(c.url));
+}
+
 /**
  * The parked threads of pull request `pr` as the forge's review comments
  * leave them. Read before the threads, once per pull request and tick.
@@ -147,9 +184,14 @@ export async function keptParkThreads(
 ): Promise<KeptParkThreads> {
   if (ended(bound)) return NOTHING_KEPT;
   const left = secondsLeft(bound);
-  const listed = await deps.listing(
-    { repo: slug, number: pr },
-    left === undefined ? {} : { timeoutSec: left },
+  const probeSec =
+    left === undefined
+      ? PROBE_MAX_SEC
+      : Math.min(PROBE_MAX_SEC, Math.max(1, Math.floor(left / 4)));
+  const listed = await heldRead(
+    bound,
+    `the review comments of ${slug}#${pr} were listed`,
+    () => deps.listing({ repo: slug, number: pr }, { timeoutSec: probeSec }),
   );
   if (!listed.ok) {
     swallow(
@@ -167,6 +209,7 @@ export async function keptParkThreads(
   const changedAt = record?.listing === listing ? record.changedAt : now;
   const threads: Record<string, KeptThread> = {};
   let changed = record?.listing !== listing;
+  const urlsOfThread = threadUrlsIn(listed.value);
   return {
     held(thread) {
       const kept = standing[thread];
@@ -178,11 +221,20 @@ export async function keptParkThreads(
       return kept.comments;
     },
     keep(thread, comments) {
-      threads[thread] = { readAt: now, comments };
+      // A reading the listing does not confirm is not kept, so the next tick reads again.
+      if (confirms(urlsOfThread, comments)) {
+        threads[thread] = { readAt: now, comments };
+      } else {
+        delete threads[thread];
+      }
       changed = true;
     },
     save() {
-      if (changed) deps.store.set(key, { listing, changedAt, threads });
+      if (
+        changed ||
+        Object.keys(threads).length !== Object.keys(standing).length
+      )
+        deps.store.set(key, { listing, changedAt, threads });
     },
   };
 }
