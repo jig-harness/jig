@@ -200,6 +200,38 @@ function pullRequestsInFlight(
   });
 }
 
+/** The state each running or claimed pickup is in, by item key. */
+function pickupStates(observation: RepoObservation): Map<string, string> {
+  const states = new Map<string, string>();
+  for (const r of observation.opened.report.running)
+    if (r.stage === "pickup") states.set(r.target, "running");
+  for (const c of observation.tracked.claimed ?? [])
+    if (!states.has(c.key)) states.set(c.key, "claimed");
+  return states;
+}
+
+/**
+ * The members of one launch are one piece of work: one entry, under the
+ * launch's own target, with the members' footprints together.
+ */
+function launchesOf(
+  records: readonly ReadRecord[],
+  slug: string,
+): Map<string, string> {
+  const launchOf = new Map<string, string>();
+  for (const { record } of records) {
+    if (
+      record.repo !== slug ||
+      record.action !== "pickup" ||
+      record.batchItems === undefined
+    )
+      continue;
+    for (const { key } of record.batchItems)
+      if (holdsItem(record, key)) launchOf.set(key, record.id);
+  }
+  return launchOf;
+}
+
 /** Every pickup in flight with no linked open pull request: this host's running pickups, then the claimed items. */
 function pickupsInFlight(
   observation: RepoObservation,
@@ -220,24 +252,8 @@ function pickupsInFlight(
   const urls = new Map<string, string | null>();
   for (const w of tracked.pickups) urls.set(w.key, w.url);
   for (const c of tracked.claimed ?? []) urls.set(c.key, c.url ?? null);
-  const states = new Map<string, string>();
-  for (const r of opened.report.running)
-    if (r.stage === "pickup") states.set(r.target, "running");
-  for (const c of tracked.claimed ?? [])
-    if (!states.has(c.key)) states.set(c.key, "claimed");
-  // The members of one launch are one piece of work: one entry, under the
-  // launch's own target, with the members' footprints together.
-  const launchOf = new Map<string, string>();
-  for (const { record } of records) {
-    if (
-      record.repo !== opened.repo.slug ||
-      record.action !== "pickup" ||
-      record.batchItems === undefined
-    )
-      continue;
-    for (const { key } of record.batchItems)
-      if (holdsItem(record, key)) launchOf.set(key, record.id);
-  }
+  const states = pickupStates(observation);
+  const launchOf = launchesOf(records, opened.repo.slug);
   const groups = new Map<string, string[]>();
   for (const [key] of states) {
     if (candidates.has(key) || (links?.prsOf(key)?.length ?? 0) > 0) continue;

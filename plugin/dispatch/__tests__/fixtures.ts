@@ -745,8 +745,6 @@ export function world(): World {
   let later: { after: number; nodes: Array<Record<string, unknown>> } | null =
     null;
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
-    // This world scripts whole readings, not an update stream. Declare that
-    // its probe cannot establish completeness, so each tick takes that reading.
     const release = releaseTrackerAnswer(op, v, issues, SLUG);
     if (release !== undefined) return release;
     if (op === "footprint") return footprintBatch(v);

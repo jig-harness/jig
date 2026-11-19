@@ -709,21 +709,20 @@ describe("the reading skills", () => {
   });
 
   test("exist under the names the schema gives as readers", () => {
+    const readerFile = (skill: string): string => {
+      if (skill === "gc" || skill === "dispatch") return join(plugin, "jig.ts");
+      if (skill === "evidence") return join(plugin, "shared", "evidence.ts");
+      if (skill === "jig-gates")
+        return join(repoRoot, "scripts", "dispatch-gates.ts");
+      return join(plugin, "skills", skill, "SKILL.md");
+    };
     for (const f of schema.fields)
       for (const skill of f.read_by)
-        expect([
+        expect([f.path, skill, existsSync(readerFile(skill))]).toEqual([
           f.path,
           skill,
-          existsSync(
-            skill === "gc" || skill === "dispatch"
-              ? join(plugin, "jig.ts")
-              : skill === "evidence"
-                ? join(plugin, "shared", "evidence.ts")
-                : skill === "jig-gates"
-                  ? join(repoRoot, "scripts", "dispatch-gates.ts")
-                  : join(plugin, "skills", skill, "SKILL.md"),
-          ),
-        ]).toEqual([f.path, skill, true]);
+          true,
+        ]);
   });
 });
 
