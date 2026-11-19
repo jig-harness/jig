@@ -7,7 +7,8 @@
  * `unknown`, since the steward is never asked about its own runs. A
  * pickup's or a follow-up's pass that it cannot explain stays `by: none`,
  * and its transcript is copied (`transcript-copy.ts`) for the steward to
- * record its cause from. A drive's report is its driver's.
+ * record its cause from. For a drive, a recorded probe stop can explain an
+ * end when the driver left no report.
  *
  * The wrapper settles this before it records the exit, so the tick that
  * writes the run's outcome row reads it; the tick settles it for a run
@@ -20,6 +21,11 @@ import {
   type ReportCause,
   type SuggestedNext,
 } from "../../shared/closing-report.ts";
+import {
+  probeFailure,
+  readProbeStop,
+} from "../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
+import { driveExitReport } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { swallow } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
 import { recordReportIfNone } from "./closing-report-store.ts";
@@ -78,15 +84,26 @@ function howEnded(seen: SeenEnd | null): string {
 
 /**
  * The report the wrapper records for a pass that left none, from what it
- * saw; `null` where it records none: a drive, or a pickup's or a
- * follow-up's pass whose end it cannot explain.
+ * saw; `null` when the available evidence does not explain the end.
  */
 export function wrapperReport(
   record: Pick<LaunchRecord, "action" | "passTimeoutSec">,
   seen: SeenEnd | null,
   submitted = false,
 ): ClosingReport | null {
-  if (isDrive(record)) return null;
+  if (isDrive(record)) {
+    const probe = readProbeStop(seen?.output ?? "");
+    if (probe === null || probe.code !== seen?.code) return null;
+    const named = driveExitReport(probe.code);
+    if (named === null) return null;
+    return report(
+      `Status probe stopped the drive at exit ${probe.code} (${probe.state}): ${probe.reason}`,
+      named.report.next,
+      probeFailure(probe) === null
+        ? (named.report.cause ?? "unknown")
+        : "environment",
+    );
+  }
   const steward = record.action === "steward";
   if (seen?.startup === "quota")
     return report(

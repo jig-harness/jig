@@ -817,6 +817,7 @@ export function ledgerSettlement(
         String(code ?? "unknown"),
         driverRuntime.stopLeftWork,
         driverRuntime.stopLimitedUntil,
+        driverRuntime.stopProbe?.code === code ? driverRuntime.stopProbe : null,
       ));
     if (driver === null) return { landed: true, label: null };
     if (!recorded) {

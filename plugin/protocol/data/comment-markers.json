@@ -1312,7 +1312,8 @@
                             "type": "string",
                             "minLength": 1
                           },
-                          "until": true
+                          "until": true,
+                          "probe": true
                         },
                         "required": ["at", "round", "kind", "cause"],
                         "additionalProperties": true
@@ -1585,6 +1586,7 @@
                       "minimum": 0,
                       "maximum": 1.7976931348623157e308
                     },
+                    "probe": true,
                     "personStop": {
                       "type": "object",
                       "properties": {
@@ -2153,7 +2155,8 @@
                         "type": "string",
                         "minLength": 1
                       },
-                      "until": true
+                      "until": true,
+                      "probe": true
                     },
                     "required": ["at", "round", "kind", "cause"],
                     "additionalProperties": true
@@ -2426,6 +2429,7 @@
                   "minimum": 0,
                   "maximum": 1.7976931348623157e308
                 },
+                "probe": true,
                 "personStop": {
                   "type": "object",
                   "properties": {

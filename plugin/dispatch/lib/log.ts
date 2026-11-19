@@ -36,6 +36,11 @@
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
+import {
+  type ProbeStop,
+  readProbeStop,
+  probeFailure,
+} from "../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
 import { endedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
@@ -73,6 +78,7 @@ export const OUTCOME_CLASSES = [
   "died",
   "refused",
   "gates failed",
+  "read failed",
   "double claim",
   "unknown",
 ] as const;
@@ -377,6 +383,25 @@ export interface EndFacts {
 export function driveClass(
   code: number,
   merged: boolean | null,
+  probe?: ProbeStop | null,
+): { class: OutcomeClass; reason: string } {
+  const placed = driveExitClass(code, merged);
+  if (probe?.code !== code) return placed;
+  const failure = probeFailure(probe);
+  return {
+    class:
+      failure === "quota"
+        ? "quota wall"
+        : failure === "read"
+          ? "read failed"
+          : placed.class,
+    reason: `exit ${code}, ${probe.state}: ${probe.reason}`,
+  };
+}
+
+function driveExitClass(
+  code: number,
+  merged: boolean | null,
 ): { class: OutcomeClass; reason: string } {
   if (code === DRIVE_EXIT.PR_NOT_OPEN) {
     if (merged === true)
@@ -470,7 +495,7 @@ export function classifyEnded(
   r: ReadRecord,
   endedAt: string,
   facts: EndFacts,
-): { class: OutcomeClass; reason: string } {
+): { class: OutcomeClass; reason: string; probeStopped?: true } {
   const s = r.state;
   if (isDrive(r.record)) {
     const answer =
@@ -481,8 +506,13 @@ export function classifyEnded(
         : goneWithoutExit(s);
     if (facts.takenOver)
       return { class: "stalled", reason: `taken over (${answer})` };
-    if (s.kind === "ended" && s.exit.code !== null)
-      return driveClass(s.exit.code, facts.merged);
+    if (s.kind === "ended" && s.exit.code !== null) {
+      const probe = readProbeStop(s.exit.context ?? "");
+      const placed = driveClass(s.exit.code, facts.merged, probe);
+      return probe?.code === s.exit.code
+        ? { ...placed, probeStopped: true }
+        : placed;
+    }
     return { class: "died", reason: answer };
   }
   return sessionClass(r, endedAt);
@@ -557,6 +587,7 @@ export function endedRow(
       framed: r.framed,
       class: placed.class,
       reason,
+      ...(placed.probeStopped ? { probeStopped: true } : {}),
     }),
     ...aboutFields(about),
     ...reportFields(r.report),

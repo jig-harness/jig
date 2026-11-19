@@ -30,6 +30,7 @@ import { readRoundStatus } from "./round-status.ts";
 
 import { answerForgeLimit } from "./forge-limit-stop.ts";
 
+import { recordProbeStop } from "../status/probe-stop.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 
 import {
@@ -62,8 +63,12 @@ async function gateRoundStatus(
 
   // A spent forge rate limit is waited out or stopped on, never reported as
   // a failure to read (`forge-limit-stop.ts`).
-  if (code === DRIVE_EXIT.FORGE_RATE_LIMITED)
-    return await answerForgeLimit(context, status);
+  if (code === DRIVE_EXIT.FORGE_RATE_LIMITED) {
+    const outcome = await answerForgeLimit(context, status);
+    if (outcome === code)
+      driverRuntime.stopProbe = recordProbeStop(code, status);
+    return outcome;
+  }
   driverRuntime.forgeLimitWaits = 0;
 
   switch (code) {
@@ -141,6 +146,7 @@ async function gateRoundStatus(
       // re-checks immediately before pushing — see SKILL.md § 6. This check
       // keeps the loop from *starting* work it cannot land; guarded-push.ts
       // keeps it from *finishing* one.
+      driverRuntime.stopProbe = recordProbeStop(code, status);
       return code;
   }
 

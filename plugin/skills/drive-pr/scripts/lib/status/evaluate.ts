@@ -87,12 +87,14 @@ import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
 import { judgeReviewObject, latestReviewBy } from "./review-object.ts";
 import { missingReviewerVerdict } from "./comment-draft-skip.ts";
 import { strandedRunNote } from "./stranded-run.ts";
+import type { ProbeFailure } from "./probe-stop.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
 export interface StatusReport extends CiReport {
   state: string;
   reason: string;
+  failure?: ProbeFailure;
   apiHead: string;
   localHead: string;
   mergeable: string;
@@ -449,6 +451,7 @@ async function evaluateFresh(
         report,
         "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s state, head and base to confirm they did not change while the witnesses were gathered`,
+        "read",
       );
     }
     const stateNow = str(parsed, "state");
@@ -458,6 +461,7 @@ async function evaluateFresh(
         report,
         "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s state and head to confirm they did not change while the witnesses were gathered`,
+        "read",
       );
     }
     if (stateNow !== "OPEN") {
@@ -495,6 +499,7 @@ async function evaluateFresh(
         report,
         "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s base to confirm it did not move while the witnesses were gathered`,
+        "read",
       );
     }
     if (baseNow !== report.baseHead) {
@@ -545,6 +550,7 @@ async function evaluateFresh(
         report,
         "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s state to confirm it did not change while the witnesses were gathered (${now.reason})`,
+        "read",
       );
     }
     if (now.state !== "OPEN") {
@@ -619,6 +625,7 @@ async function evaluateFresh(
       report,
       "INDETERMINATE",
       `cannot read PR #${ctx.pr} (a transient failure, not a missing-field error) — retrying rather than treating ordinary network noise as an unmet prerequisite`,
+      "read",
     );
   }
   const prJson = snapshot.json;
@@ -779,6 +786,7 @@ async function evaluateFresh(
         report,
         "INDETERMINATE",
         `cannot read check-runs for ${report.apiHead}`,
+        "read",
       );
     }
     runs = [];
@@ -862,6 +870,7 @@ async function evaluateFresh(
         report,
         "INDETERMINATE",
         `cannot read ${reviewerLabel()}'s pull-request reviews on #${ctx.pr} — refusing to judge its review of ${report.apiHead} without them`,
+        "read",
       );
     const verdict = judgeReviewObject(
       reviewer,
@@ -977,6 +986,7 @@ async function evaluateFresh(
         report,
         "INDETERMINATE",
         `cannot read the reviewer's comments on #${ctx.pr} — refusing to fall back to the weaker witness, which would hide a stale reviewed-SHA`,
+        "read",
       );
     }
     marker = "";
@@ -1027,6 +1037,7 @@ async function evaluateFresh(
       report,
       "INDETERMINATE",
       `cannot enumerate review threads on #${ctx.pr}`,
+      "read",
     );
   }
   report.threadsOpen = threads.length;
@@ -1043,6 +1054,7 @@ async function evaluateFresh(
       report,
       "INDETERMINATE",
       `cannot enumerate summary-only findings on #${ctx.pr}`,
+      "read",
     );
   }
   report.summaryTotal = summary.total;

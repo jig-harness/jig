@@ -84,6 +84,7 @@
  * this binding against the real files as well.
  */
 
+import type { ProbeFailure } from "./probe-stop.ts";
 import type {
   ReportCause,
   SuggestedNext,
@@ -682,9 +683,10 @@ export const TERMINAL_STATES: Readonly<
  * `undefined` as an exit code.
  */
 export function terminal(
-  report: { state: string; reason: string },
+  report: { state: string; reason: string; failure?: ProbeFailure },
   name: EvaluateStateName,
   reason: string,
+  failure?: ProbeFailure,
 ): number {
   const entry = TERMINAL_STATES[name];
   if (entry === undefined) {
@@ -697,6 +699,8 @@ export function terminal(
   }
   report.state = name;
   report.reason = reason;
+  if (failure === undefined) delete report.failure;
+  else report.failure = failure;
   return entry.exitCode;
 }
 
@@ -807,7 +811,7 @@ export function outOfBand(
 
 /** Set `report.state` to `FORGE_RATE_LIMITED` and return its exit code from ONE lookup, as `outOfBand` does, wherever a read met the limit. */
 export function forgeRateLimited(
-  report: { state: string; reason: string },
+  report: { state: string; reason: string; failure?: ProbeFailure },
   reason: string,
 ): number {
   const entry = TERMINAL_STATES.FORGE_RATE_LIMITED;
@@ -818,6 +822,7 @@ export function forgeRateLimited(
   }
   report.state = "FORGE_RATE_LIMITED";
   report.reason = reason;
+  report.failure = "quota";
   return entry.exitCode;
 }
 

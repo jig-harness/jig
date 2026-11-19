@@ -1,7 +1,10 @@
 /** Process-lifetime state shared by cancellation, heartbeat callbacks and round phases. */
+import type { ProbeStop } from "../status/probe-stop.ts";
 import type { RunHandle } from "./../proc.ts";
 
 interface DriverRuntime {
+  /** The status probe report this driver stopped on. */
+  stopProbe: ProbeStop | null;
   /**
    * What the stop about to be recorded measured of its tree: set by the
    * stall stop from what it reports, and recorded on its `stop` event
@@ -95,6 +98,7 @@ interface DriverRuntime {
 }
 
 export const driverRuntime: DriverRuntime = {
+  stopProbe: null,
   stopLeftWork: null,
   stopLimitedUntil: null,
   forgeLimitWaits: 0,

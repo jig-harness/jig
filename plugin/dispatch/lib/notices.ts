@@ -326,7 +326,9 @@ function stopText(slug: string, pr: DrivenPr): Notice {
   return notice(
     `${slug} PR #${pr.number} stopped ${stop}, ledger generation ${generation(pr)}`,
     [
-      `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
+      typeof pr.evidence.probeReason === "string"
+        ? `PR #${pr.number} (${pr.title}): ${pr.why}.`
+        : `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
       `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then run \`/jig:drive-pr ${pr.number}\` there to re-arm it, or stop it. Where dispatch labels are enabled, you can instead use \`jig send drive@${slug}#${pr.number} rearm\`.`,
       pr.url,
     ],

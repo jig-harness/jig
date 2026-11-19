@@ -8,8 +8,10 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { readRows } from "../lib/log.ts";
 import { statePath } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -154,6 +156,45 @@ describe("a failed re-arm", () => {
       "until the pull request's head, its branch's head or the ledger's generation changes",
     );
     expect(action?.notice?.text).not.toContain("Close and reopen");
+  }, 120_000);
+
+  it("keeps the probe's read failure in the re-arm outcome and need", async () => {
+    const w = fixture(HEAD_SHA);
+    const probe = {
+      code: DRIVE_EXIT.INDETERMINATE,
+      state: "INDETERMINATE",
+      failure: "read",
+      reason: "cannot enumerate review threads on #7",
+    };
+    writeFileSync(
+      join(w.dir, "drive-stderr"),
+      `drive.ts: status probe stopped: ${JSON.stringify(probe)}\n`,
+    );
+    await rearmed(w);
+
+    const second = await tick(w);
+    const [need] = second.repos[0]?.actions ?? [];
+    expect(need?.notice?.text).toContain(probe.reason);
+    const row = readRows(undefined, undefined, dispatchState(w)).find(
+      (entry) => entry.kind === "ended",
+    );
+    expect(row).toMatchObject({
+      class: "read failed",
+      by: "wrapper",
+      concluded: expect.stringContaining(probe.reason),
+      cause: "environment",
+    });
+    expect(row?.reason).toContain(`${probe.state}: ${probe.reason}`);
+    expect(JSON.stringify(row)).not.toContain("no handoff was recorded");
+
+    const asked = await w.dispatch(
+      ["ask", `drive@${SLUG}#7`],
+      fileURLToPath(new URL("../../jig.ts", import.meta.url)),
+    );
+    expectSpawnExit(asked, 0);
+    expect(
+      asked.stdout.split("\n").find((line) => line.includes("last.run")),
+    ).toContain(probe.reason);
   }, 120_000);
 
   const changes: Array<[string, (w: World) => void]> = [

@@ -66,7 +66,13 @@ import {
   decisionsSection,
   isUnattendedDecision,
 } from "./decisions.ts";
-import { type DriveEvent, isOptionalEvents } from "./events.ts";
+import {
+  cleanStopEvent,
+  type DriveEvent,
+  isOptionalEvents,
+  lastStopEvent,
+} from "./events.ts";
+import { probeStopOf } from "../status/probe-stop.ts";
 import {
   type CiAction,
   boundedCiDetail,
@@ -219,17 +225,29 @@ export function ledgerFromState(
       record: redact(d.record),
       reverse: redact(d.reverse),
     })),
-    events: s.events ?? [],
+    events: (s.events ?? []).map(cleanStopEvent),
     ciActions: (s.ciActions ?? []).map((action) => ({
       ...action,
       detail: boundedCiDetail(redact(action.detail)),
     })),
     rulings: s.rulings ?? [],
     resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
-    driver: opts.driver,
+    driver: ledgerDriverWithProbe(s, opts.driver),
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
   };
+}
+
+function ledgerDriverWithProbe(
+  s: DriveState,
+  driver: LedgerDriver,
+): LedgerDriver {
+  const probe = probeStopOf(lastStopEvent(s.events ?? [])?.probe);
+  return driver.state === "stopped" &&
+    probe !== null &&
+    probe.code === driver.exit
+    ? { ...driver, probe }
+    : driver;
 }
 
 function withoutAccount(
@@ -524,7 +542,16 @@ export function parseLedger(body: string): ParsedLedger | null {
   const fault = ledgerFault(read.fields);
   if (fault !== "")
     return { kind: "malformed", reason: `ill-formed field(s): ${fault}` };
-  return { kind: "ledger", ledger: read.fields as unknown as Ledger };
+  const ledger = read.fields as unknown as Ledger;
+  const { probe, ...driver } = ledger.driver;
+  const clean = probeStopOf(probe);
+  ledger.driver =
+    driver.state === "stopped" && clean !== null && clean.code === driver.exit
+      ? { ...driver, probe: clean }
+      : driver;
+  if (ledger.events !== undefined)
+    ledger.events = ledger.events.map(cleanStopEvent);
+  return { kind: "ledger", ledger };
 }
 
 /** The takeover claim's key: the ledger generation its claimant read. */

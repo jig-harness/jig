@@ -72,6 +72,9 @@ export function stopText(
   if (code === exitOf("QUOTA_PARKED")) return quotaStop(pr, code, state);
   if (code === exitOf("FORGE_RATE_LIMITED"))
     return forgeLimitStop(pr, code, state);
+  const probe = driverRuntime.stopProbe;
+  if (probe?.code === code)
+    return `PR #${pr} stopped at ${probe.state} (exit ${code}): ${probe.reason}`;
   const named = driveExitReport(code);
   return named === null
     ? `PR #${pr}'s drive ended with exit ${code}, which names no state the drive ends with`

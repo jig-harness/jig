@@ -44,6 +44,7 @@ import { launchOf } from "../../../../../shared/launched-session.ts";
 import type { ParkedItem } from "../state/park-frame.ts";
 import { readRoundReport } from "../state/round-report.ts";
 import type { DriveState } from "../state/schema.ts";
+import { probeFailure } from "../status/probe-stop.ts";
 import { driveExitReport } from "../status/terminal-states.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -124,6 +125,14 @@ export function composeDriverReport(input: {
   const { pr, code, state, round } = input;
   const named = driveExitReport(code);
   const stop = redactReportText(stopText(pr, code, state));
+  const probe = driverRuntime.stopProbe;
+  const failure = probe?.code === code ? probeFailure(probe) : null;
+  const cause =
+    failure !== null
+      ? "environment"
+      : named === null
+        ? "unknown"
+        : named.report.cause;
   const base: ClosingReport = {
     schema: CLOSING_REPORT_SCHEMA,
     concluded: composeConcluded(
@@ -138,11 +147,7 @@ export function composeDriverReport(input: {
             act: "Investigate",
           }
         : { ...named.report.next },
-    ...(named === null
-      ? { cause: "unknown" as const }
-      : named.report.cause === undefined
-        ? {}
-        : { cause: named.report.cause }),
+    ...(cause === undefined ? {} : { cause }),
     evidence: [`pr:#${pr}`],
   };
   const ask = parkAsk(code, state);

@@ -549,6 +549,13 @@ function ledgerEvidence(
     phase: ledger.phase,
     driver: ledger.driver.state,
     exit: ledger.driver.exit ?? null,
+    ...(ledger.driver.probe === undefined
+      ? {}
+      : {
+          probeState: ledger.driver.probe.state,
+          probeReason: ledger.driver.probe.reason,
+          probeFailure: ledger.driver.probe.failure ?? null,
+        }),
     heartbeat: ledger.driver.heartbeat,
     started: ledger.driver.started ?? null,
     ...(ledger.driver.state === "stopped" &&
@@ -616,7 +623,17 @@ export function classifyLedger(
       class: "re-armable",
       why: "stopped with no recorded cause: re-arming within the per-pull-request recovery budget",
     };
-  return exitClass(ledger, exit, park, forge);
+  const placed = exitClass(ledger, exit, park, forge);
+  const probe = ledger.driver.probe;
+  if (probe?.code !== exit) return placed;
+  const detail = `${probe.state}: ${probe.reason}`;
+  return {
+    ...placed,
+    why:
+      placed.class === "needs-person"
+        ? `stopped ${exit} (${detail})${conflictNote(forge.mergeable)}`
+        : `${placed.why}; status probe reported ${detail}`,
+  };
 }
 
 /** A stopped ledger's class by its exit, first match wins. */

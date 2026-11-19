@@ -95,6 +95,7 @@ export interface EndedAnswer {
   framed?: FramedResult | undefined;
   class: string;
   reason: string;
+  probeStopped?: boolean;
 }
 
 /**
@@ -113,6 +114,8 @@ export function endedNext(
     (ended.result === "done" || ended.result === "waits")
   )
     return ended.next;
+  if (ended.probeStopped && ended.class !== "merged")
+    return { none: ended.reason };
   return derivedNext(stage, ended.class, ended.reason);
 }
 

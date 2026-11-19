@@ -861,6 +861,7 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
+          ...(report.failure === undefined ? {} : { failure: report.failure }),
           ...(rateLimit === null ? {} : { rateLimit }),
           reflectDue: reflectionDue,
           structuralEscalationDue: escalation.due,
@@ -1180,11 +1181,16 @@ async function main(): Promise<number> {
    * Re-arms the probe, so the retry re-reads liveness and re-attempts the
    * sweep instead of re-deriving the same answer from a stale decision.
    */
-  async function degrade(reason: string): Promise<number | null> {
+  async function degrade(
+    reason: string,
+    failure?: "read",
+  ): Promise<number | null> {
     const limited = await stopOnForgeLimit(reason);
     if (limited !== null) return limited;
     report.state = "INDETERMINATE";
     report.reason = reason;
+    if (failure === undefined) delete report.failure;
+    else report.failure = failure;
     // Not re-armed when a flag suppressed the sweep: the caller has forbidden
     // it, so retrying the probe could only produce the same answer, more
     // slowly. The bounded budget below still ends the invocation honestly.
@@ -1330,6 +1336,7 @@ async function main(): Promise<number> {
           // unrecognised — both are the retry class, since neither is a
           // confirmed finished PR.
           `cannot read PR #${pr}'s state (${live.reason}) — a transient failure, not a missing-field error — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
+          "read",
         );
         if (stop !== null) return stop;
         continue;
@@ -1798,6 +1805,7 @@ async function main(): Promise<number> {
           }
           if (bump.code !== 0) {
             report.state = "INDETERMINATE";
+            delete report.failure;
             report.reason = `could not record the round for ${report.apiHead} — the durable round budget would not survive a restart`;
             if (bump.stderr) process.stderr.write(bump.stderr);
             await emit(1);
@@ -1871,6 +1879,7 @@ async function main(): Promise<number> {
           }
           if (bumpA.code !== 0) {
             report.state = "INDETERMINATE";
+            delete report.failure;
             report.reason = `could not record this pass attempt for ${report.apiHead} — the durable attempt budget would not survive a restart`;
             // Forwarded for the same reason the `bump-round` branch above
             // forwards its own: the summary names the decision, the child's
