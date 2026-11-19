@@ -53,10 +53,10 @@ import {
   writeCiState,
   checkRunsRead,
 } from "./lib/ci-hold-state.ts";
+import { listingStopExit, type ProofRead } from "./lib/ci-proof.ts";
 import { driverRuntime } from "./lib/driver/runtime.ts";
 import type { ListingCutShort } from "./lib/paged-read.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
-import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import {
   attributeStatuses,
   checkRunListing,
@@ -98,9 +98,6 @@ const snapshot = async (pr: string) =>
 const transitions = async (pr: string) =>
   valueOrNull(await readHoldTransitions(pr, holdLabel()));
 
-/** A proof read that held, or that did not and says whether its listing was cut short. */
-type ProofRead = { ok: true } | { ok: false; cutShort?: ListingCutShort };
-
 /** What final-ready answers for a proof that failed: wait, unless its listing was cut short. */
 function proofStop(proof: { cutShort?: ListingCutShort }): number {
   return proof.cutShort === undefined ? 4 : listingStop(proof.cutShort);
@@ -112,13 +109,7 @@ function proofStop(proof: { cutShort?: ListingCutShort }): number {
  */
 function listingStop(cut: ListingCutShort): number {
   console.error(`ci-hold: ${cut.reason}`);
-  return listingStopPages(cut.pagesRead);
-}
-
-/** The stop record of a listing whose reason an earlier reader already printed. */
-function listingStopPages(pagesRead: number | null): number {
-  process.stdout.write(`${JSON.stringify({ listingPagesRead: pagesRead })}\n`);
-  return DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
+  return listingStopExit(cut.pagesRead);
 }
 
 /** A forge that was not reached is retried later; an answer that does not read stops. */
@@ -490,7 +481,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     );
     if (recovery === "parked") return 8;
     if (recovery === "listing-cut-short")
-      return listingStopPages(driverRuntime.stopListingPages);
+      return listingStopExit(driverRuntime.stopListingPages);
     if (recovery === "unknown") return 1;
     console.error(
       latest?.event === "unlabeled"
@@ -883,20 +874,28 @@ async function finalCiProofGreen(
           { apps },
         );
   if (!requiredFresh) return { ok: false };
+  const overall = await overallCiProof(head, requireSuccess);
+  if (!overall.ok) return overall;
+  return {
+    ok: true,
+    startedAt: requiredCiStartedAt(runs, required, head, apps),
+  };
+}
+
+/** The overall verdict: strict success where asked, and CI registered where no check is named. */
+async function overallCiProof(
+  head: string,
+  requireSuccess: boolean,
+): Promise<ProofRead> {
   if (requireSuccess) {
     const aggregate = await requiredCiAggregateIsGreen(head);
     if (!aggregate.ok) return aggregate;
   }
   // Branch protection names no check: the overall verdict decides, and it
   // reads green before any workflow has registered on the head.
-  if (required.length === 0 && policy.derived) {
-    const any = await anyCiOnHead(head);
-    if (!any.ok) return any;
-  }
-  return {
-    ok: true,
-    startedAt: requiredCiStartedAt(runs, required, head, apps),
-  };
+  return policy.requiredChecks.length === 0 && policy.derived
+    ? anyCiOnHead(head)
+    : { ok: true };
 }
 
 /** Strict success requires both check runs and attributed legacy statuses to be green. */

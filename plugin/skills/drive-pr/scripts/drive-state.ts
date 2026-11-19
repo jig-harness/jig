@@ -299,7 +299,7 @@ import {
   ROUND_VERBS,
   reviewRound,
 } from "./lib/state/review-rounds.ts";
-import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
+import { exitOnProof, unreadable } from "./lib/ci-proof.ts";
 import {
   type ListingCutShort,
   listingCutShort,
@@ -1636,23 +1636,6 @@ async function main(): Promise<number> {
         type CiProof =
           | { ok: true }
           | { ok: false; reason: string; cutShort?: ListingCutShort };
-        // A listing cut short stops as its own named exit, whose stdout line
-        // carries the pages read for the driver's stop record; every other
-        // failure is stale evidence (4). `then` runs before the exit.
-        const failProof = async (
-          proof: Extract<CiProof, { ok: false }>,
-          message: (reason: string) => string,
-          then?: () => Promise<void>,
-        ): Promise<never> => {
-          await then?.();
-          if (proof.cutShort === undefined)
-            return fail(4, message(proof.reason));
-          console.error(`set-verified: ${proof.cutShort.reason}`);
-          process.stdout.write(
-            `${JSON.stringify({ listingPagesRead: proof.cutShort.pagesRead })}\n`,
-          );
-          return process.exit(DRIVE_EXIT.CHECK_RUNS_UNREADABLE);
-        };
         async function proveCiGreen(): Promise<CiProof> {
           const checks = await slurpCheckRuns(
             "{owner}",
@@ -1661,12 +1644,10 @@ async function main(): Promise<number> {
             "fresh",
           );
           if (checks.code !== 0) {
-            const cutShort = listingCutShort(a.sha, checks) ?? undefined;
-            return {
-              ok: false,
-              reason: "cannot read check-runs",
-              ...(cutShort === undefined ? {} : { cutShort }),
-            };
+            return unreadable(
+              { reason: "cannot read check-runs" },
+              listingCutShort(a.sha, checks),
+            );
           }
           let runs: ReturnType<typeof parseCheckRuns>;
           try {
@@ -1682,15 +1663,11 @@ async function main(): Promise<number> {
               checkRunListing("{owner}", "{repo}", a.sha),
               commitStatusesFor("{owner}", "{repo}", a.sha),
             ]);
-          if (secondCut !== null) {
-            return {
-              ok: false,
-              reason: "cannot read complete CI evidence",
-              cutShort: secondCut,
-            };
-          }
-          if (allRuns === null || statuses === null) {
-            return { ok: false, reason: "cannot read complete CI evidence" };
+          if (secondCut !== null || allRuns === null || statuses === null) {
+            return unreadable(
+              { reason: "cannot read complete CI evidence" },
+              secondCut,
+            );
           }
           const workflowRuns = await workflowRunsBehind(
             "{owner}",
@@ -1781,7 +1758,7 @@ async function main(): Promise<number> {
         }
         const initialCi = await proveCiGreen();
         if (!initialCi.ok) {
-          await failProof(initialCi, (r) => `set-verified: ${r}`);
+          exitOnProof(initialCi, 4, (r) => `set-verified: ${r}`);
         }
         // ONE predicate for "is the PR still exactly what we verified", called
         // identically before AND after the write below — a compensating
@@ -1847,8 +1824,9 @@ async function main(): Promise<number> {
         }
         const preWrite = await stillFullyCurrent();
         if (!preWrite.ok) {
-          await failProof(
+          exitOnProof(
             preWrite,
+            4,
             (r) => `set-verified: ${r} while final evidence was read`,
           );
         }
@@ -1871,15 +1849,14 @@ async function main(): Promise<number> {
         // a compensating check-and-clear immediately after the write instead.
         const postWrite = await stillFullyCurrent();
         if (!postWrite.ok) {
-          await failProof(
+          await store.update((s) =>
+            s.verifiedSha === a.sha ? { ...s, verifiedSha: "" } : s,
+          );
+          exitOnProof(
             postWrite,
+            4,
             (r) =>
               `set-verified: ${r} immediately after the verification commit; certificate cleared`,
-            async () => {
-              await store.update((s) =>
-                s.verifiedSha === a.sha ? { ...s, verifiedSha: "" } : s,
-              );
-            },
           );
         }
         // Global CI verification landed — stamped only here, AFTER both the
