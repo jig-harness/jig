@@ -438,7 +438,9 @@ function traceGhCall<T extends GhRun, O extends { timeoutSec?: number }>(
       ? request(args, deadline)
       : drivePages(plan, paged, deadline, refuse));
     // What a reader ending on this call's failure is told of a spent limit.
-    noteForgeAnswer(ghRunFailure(result));
+    // A runner that reports no stderr has nothing to classify.
+    if (typeof result.stderr === "string")
+      noteForgeAnswer(ghRunFailure(result));
     return result;
   });
 }
