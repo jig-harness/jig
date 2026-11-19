@@ -546,6 +546,17 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     additive: true,
+    sql: `CREATE TABLE rearm_lock_needs (
+      repo TEXT NOT NULL,
+      pr INTEGER NOT NULL,
+      generation INTEGER NOT NULL,
+      heartbeat TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      PRIMARY KEY (repo, pr)
+    );`,
+  },
+  {
+    additive: true,
     sql: `CREATE TABLE pickup_holds (
       repo TEXT NOT NULL,
       item TEXT NOT NULL,
@@ -554,17 +565,6 @@ export const MIGRATIONS: readonly Migration[] = [
       title TEXT NOT NULL,
       url TEXT,
       PRIMARY KEY (repo, item)
-    );`,
-  },
-  {
-    additive: true,
-    sql: `CREATE TABLE rearm_lock_needs (
-      repo TEXT NOT NULL,
-      pr INTEGER NOT NULL,
-      generation INTEGER NOT NULL,
-      heartbeat TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      PRIMARY KEY (repo, pr)
     );`,
   },
 ];
