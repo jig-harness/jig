@@ -8,6 +8,7 @@ import {
 import { nativeQueueRequirements } from "../../skills/do-item/scripts/lib/tracker/dispatch-source.ts";
 import { swallow } from "../../shared/errors.ts";
 import { slotTable } from "./accounts.ts";
+import { driversOf } from "./host-drivers.ts";
 import { pickupReads } from "./pickup-reads.ts";
 import { trackerConfigOf } from "./section.ts";
 import { sharedView } from "./sources/served-reads.ts";
@@ -26,7 +27,7 @@ function trackerFor(opened: OpenedRepo): Tracker {
 
 /** Whether some account has room for a pickup, by `records`: always without a machine file. */
 export function pickupHeadroom(
-  context: Pick<TickContext, "options" | "nowMs" | "weights">,
+  context: Pick<TickContext, "options" | "nowMs" | "weights" | "drivers">,
   records: Parameters<typeof slotTable>[1],
 ): boolean {
   const machine = context.options.machine;
@@ -38,6 +39,7 @@ export function pickupHeadroom(
       context.nowMs,
       undefined,
       context.weights,
+      driversOf(context.drivers),
     ).some(
       (slot) =>
         slot.held < slot.account.maxPerAccount &&

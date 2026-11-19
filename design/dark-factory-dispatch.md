@@ -1604,9 +1604,15 @@ the name it carries now.
 The machine file lists the subscription accounts the dispatcher may bill
 and a cap for each (`max_per_account`, 2 by default): the number of
 sessions the dispatcher started on that account that are still running,
-waiting ones and pending launch records (see Launch records) included. Sessions a person started are not counted: the
-runtime does not report their account, and a person who shares an account
-with the dispatcher lowers its cap. A headless pass is admitted on an
+waiting ones and pending launch records (see Launch records) included, and
+every live driver on the host that no such record accounts for: a drive a
+pickup armed, which keeps the pickup's slot when the pickup ends, and one a
+person or a repair session started or took over by hand. Each driver's
+lock names the account identity its passes bill, which picks the listed
+account whose slot it holds; a driver whose process is gone holds none.
+Other sessions a person started are not counted: the runtime does not
+report their account, and a person who shares an account with the
+dispatcher lowers its cap. A headless pass is admitted on an
 account with a free slot and no wall in effect, the accounts taken in turn
 starting after the account of the most recent launch record, so the turn
 survives between ticks without state of its own.

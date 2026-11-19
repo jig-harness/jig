@@ -299,7 +299,11 @@ of the pull request's workspace, opened from the pull request when none
 holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
 the pass to an account the machine file lists, through that account's
 configuration directory, and only while the account has a free slot and no
-recorded usage-limit wall; before the launch the dispatcher checks that the
+recorded usage-limit wall. A slot is held by each launch record still
+running and by each live driver on the host that no such record accounts
+for, whoever started it (a drive a pickup armed, which keeps its pickup's
+slot when the pickup ends, or one a person or a repair session started
+by hand), on the account whose identity its lock says its passes bill; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
 does not. Every launch begins with a launch record in the state database,
 so a launch whose answer is lost
@@ -1472,6 +1476,12 @@ workspaces. It is `null` when none is known or the records are ambiguous.
 It never falls back to the notices workspace: `notified.workspace` still
 names where the notification went. This is an additive version-1 field;
 readers treat its absence in an older snapshot as unknown.
+`line.drivers` lists the live drivers on the host that no running launch
+record accounts for, each with its pull request, its tree, the `account`
+whose slot it holds (`null`, with `accountReason`, when no listed account
+has the identity its passes bill, and then it holds none) and how it was
+started (`startedBy`: `pickup`, `dispatcher` or `unrecorded`); it is absent
+from a line written before they were counted.
 Each entry in `line.repos` carries `tracker`, the adapter its configuration
 names (`{"adapter":"linear"}`), and each row of `needs`, `sessions`, `queue`
 and `ready` carries `links`: for a pull request, the items its branch names,

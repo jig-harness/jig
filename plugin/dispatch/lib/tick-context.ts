@@ -71,6 +71,8 @@ export interface TickContext {
   rerunLimit?: TickBound;
   launches: ReadRecord[];
   weights?: import("./local-weights.ts").AccountWeights | undefined;
+  /** The host's live drivers, read once as the tick starts (`host-drivers.ts`). */
+  drivers?: import("./host-drivers.ts").HostDrivers | undefined;
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
   lineInputs: Map<string, RepoLineInput>;

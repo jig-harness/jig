@@ -15,6 +15,7 @@
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
+import { driversOf, type HostDrivers } from "./host-drivers.ts";
 import {
   type ApplyState,
   applyDrives,
@@ -92,6 +93,7 @@ export function applyState(
   unreadable: string[],
   startedAt: number,
   weights?: import("./local-weights.ts").AccountWeights,
+  drivers?: HostDrivers,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -101,6 +103,11 @@ export function applyState(
     return {
       withheld: `${unreadable.length} launch record(s) do not read, so no slot can be told free`,
     };
+  // A driver no record started still holds its account's slot: unread, no slot can be told free either.
+  if (drivers !== undefined && !drivers.ok)
+    return {
+      withheld: `the host's live drivers do not read (${drivers.failure.reason}), so no slot can be told free`,
+    };
   // A rotation cursor that cannot be recorded would repeat: launch nothing.
   const tick = nextTickIndex();
   if (typeof tick !== "number")
@@ -109,7 +116,14 @@ export function applyState(
     machine,
     runtime,
     records,
-    table: slotTable(machine.accounts, records, nowMs, undefined, weights),
+    table: slotTable(
+      machine.accounts,
+      records,
+      nowMs,
+      undefined,
+      weights,
+      driversOf(drivers),
+    ),
     weights,
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),

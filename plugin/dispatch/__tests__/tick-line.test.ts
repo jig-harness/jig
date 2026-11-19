@@ -41,6 +41,7 @@ import {
   exitWritten,
   recordIds,
 } from "./launch-fixtures.ts";
+import { endHolder, holdLock } from "./host-driver-fixtures.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -99,6 +100,50 @@ async function tick(w: World, exit = 0): Promise<TickReceipt> {
 }
 
 describe("the line a tick leaves", () => {
+  it("lists a driver started by hand, counts it on its account's slots, and frees them once its process is gone", async () => {
+    const w = fixture();
+    machineFile(w, [{ ...account(w, "a", "a@example.com"), max: 1 }]);
+    const root = w.env.DRIVE_PR_STATE_DIR as string;
+    // A driver of another pull request no launch record started, billing a.
+    holdLock(root, 99, join(w.root, "hand-tree"), "a@example.com");
+    const full = await tick(w);
+    expect(full.repos[0]?.launches).toEqual([
+      expect.objectContaining({
+        target: "PR #7",
+        outcome: "waits",
+        detail: expect.stringContaining("no account has a free slot"),
+      }),
+    ]);
+    const line = storedLine(w)?.line;
+    expect(line?.accounts).toEqual([
+      expect.objectContaining({ name: "a", cap: 1, held: 1 }),
+    ]);
+    expect(line?.drivers).toEqual([
+      expect.objectContaining({
+        pr: 99,
+        account: "a",
+        identity: "a@example.com",
+        startedBy: "unrecorded",
+        record: null,
+      }),
+    ]);
+    const printed = await w.dispatch(["line", "--json"]);
+    expectSpawnExit(printed, 0);
+    expect(JSON.parse(printed.stdout).value.line.drivers).toEqual(
+      line?.drivers,
+    );
+
+    endHolder(root, 99);
+    const freed = await tick(w);
+    expect(freed.repos[0]?.launches).not.toContainEqual(
+      expect.objectContaining({ outcome: "waits" }),
+    );
+    expect(storedLine(w)?.line.drivers).toEqual([]);
+    await waitFor("the re-armed drive's wrapper exits", () =>
+      recordIds(w).every((id) => exitWritten(w, id)),
+    );
+  });
+
   it("reconciles a hand-armed released dead driver before planning and leaves no lease", async () => {
     const w = fixture();
     const leaf = scopedStateDir(w.env.DRIVE_PR_STATE_DIR as string, w.repo);

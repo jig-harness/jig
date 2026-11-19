@@ -10,6 +10,7 @@
 import type {
   LineAccount,
   LineDecision,
+  LineDriver,
   LineLinks,
   LineNeed,
   LineQueued,
@@ -115,6 +116,8 @@ export interface LineInput {
   stored: (slug: string) => RepoStored;
   records: ReadRecord[];
   accounts: LineAccount[];
+  /** The host's live drivers no holding record accounts for. */
+  drivers?: LineDriver[];
   lastAccount: string | null;
   /** The durations the previous line carried. */
   recentTicksMs: number[];
@@ -916,6 +919,7 @@ export function buildLine(input: LineInput): LineSnapshot {
     plugin: input.plugin,
     timeZone: input.timeZone,
     accounts: input.accounts,
+    ...(input.drivers === undefined ? {} : { drivers: input.drivers }),
     lastAccount: input.lastAccount,
     sessions: input.records
       .filter((r) => holds(r.state))

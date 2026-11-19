@@ -4,7 +4,9 @@
  *
  * An account's slots held are its launch records that hold their stage
  * (pending, alive, unknown), a takeover and the record it replaces counted
- * as one while both hold. A new launch needs a free slot, a positive readable
+ * as one while both hold, and the live drivers on the host that no such
+ * record accounts for (`host-drivers.ts`): one a pickup armed, or one
+ * started by hand, which bills the account all the same. A new launch needs a free slot, a positive readable
  * weight and no wall. Equal-weight eligible accounts take turns after the
  * most recent launch's account; unequal weights divide launches using the
  * sequence in weighted-turn.ts. Launch records carry both forms of progress
@@ -56,6 +58,8 @@ import {
   type ReadRecord,
   unrecordedWalls,
 } from "./launches.ts";
+import { accountOf } from "./account-of.ts";
+import { type HostDriver, unrecordedDrivers } from "./host-drivers.ts";
 import type { MachineAccount } from "./machine-config.ts";
 import { accountWall, type Wall } from "./walls.ts";
 
@@ -221,24 +225,6 @@ export interface Slots {
   wallUnrecorded: boolean;
 }
 
-/**
- * The listed account a record bills. An account is its vendor and
- * configuration directory; its name is a label a person may change. So the
- * account at the record's vendor and directory is the one, whatever it is
- * called now, and the name decides only when no listed account has them.
- */
-function accountOf(
-  accounts: MachineAccount[],
-  record: { account: string; vendor: string; configDir: string },
-): string | null {
-  const same = accounts.filter(
-    (a) => a.vendor === record.vendor && a.configDir === record.configDir,
-  );
-  if (same.length === 1) return (same[0] as MachineAccount).name;
-  if (same.length > 1) return null;
-  return accounts.find((a) => a.name === record.account)?.name ?? null;
-}
-
 /** The slots of the account a record bills; `undefined` when the machine file lists none. */
 export function slotsOf(
   table: Slots[],
@@ -251,10 +237,11 @@ export function slotsOf(
   return table.find((s) => s.account.name === name);
 }
 
-/** The slots a set of records holds, per listed account name. */
+/** The slots a set of records and the live drivers none of them accounts for hold, per listed account name. */
 function heldByAccount(
   accounts: MachineAccount[],
   records: ReadRecord[],
+  drivers: readonly HostDriver[],
 ): Map<string, number> {
   const holding = records.filter((r) => holds(r.state));
   const ids = new Set(holding.map((r) => r.record.id));
@@ -266,6 +253,8 @@ function heldByAccount(
     if (name === null) continue;
     held.set(name, (held.get(name) ?? 0) + 1);
   }
+  for (const { account } of unrecordedDrivers(accounts, records, drivers))
+    if (account !== null) held.set(account, (held.get(account) ?? 0) + 1);
   return held;
 }
 
@@ -298,8 +287,9 @@ export function slotTable(
   nowMs: number,
   root?: string,
   weights?: AccountWeights,
+  drivers: readonly HostDriver[] = [],
 ): Slots[] {
-  const held = heldByAccount(accounts, records);
+  const held = heldByAccount(accounts, records, drivers);
   const unrecorded = unrecordedAccounts(accounts, records, root);
   return accounts.map((account) => ({
     account,

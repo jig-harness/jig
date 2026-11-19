@@ -90,6 +90,7 @@ import {
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
 import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
 import { accountsReport } from "./lib/account-report.ts";
+import { readHostDrivers } from "./lib/host-drivers.ts";
 import { readAccountWeights } from "./lib/local-weights.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
@@ -258,6 +259,7 @@ async function startTick(
     ...(bound === undefined ? {} : { bound }),
     launches: read.records,
     weights: readAccountWeights(options.machine?.accounts ?? []),
+    drivers: readHostDrivers(),
     apply: null,
     lineInputs: new Map(),
     reflections: [],
@@ -400,6 +402,8 @@ async function startAct(started: StartedTick): Promise<void> {
     receipt.defect = defectOf("start", error);
     logDefect("the follow-up outcomes", receipt.defect, error);
   }
+  // Read again under the act lock, beside the records the launches are admitted by.
+  context.drivers = readHostDrivers();
   const attempt = applyState(
     options,
     runtime,
@@ -408,6 +412,7 @@ async function startAct(started: StartedTick): Promise<void> {
     read.unreadable,
     context.startedMs,
     context.weights,
+    context.drivers,
   );
   // `--apply` with a machine file that was then withheld says why.
   started.withheld =
@@ -423,6 +428,7 @@ async function startAct(started: StartedTick): Promise<void> {
       records: read.records,
       nowMs: context.nowMs,
       weights: context.weights,
+      drivers: context.drivers,
       ...(apply ?? {}),
     }),
   );
@@ -452,6 +458,7 @@ async function readLoadUnderAct(
     nowMs: context.nowMs,
     sample: apply !== null,
     weights: context.weights,
+    drivers: context.drivers,
   });
   if (!load.ok) {
     receipt.loadUnread = load.failure.reason;
@@ -642,6 +649,7 @@ async function closeTick(
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
     weights: context.weights,
+    drivers: context.drivers,
   });
   // Writing the line can set the exit to 1: the tick's failure row follows it.
   finalizeTickFailure(receipt, context);
@@ -701,6 +709,7 @@ function lineOfHeldTick(
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
     weights: context.weights,
+    drivers: context.drivers,
   });
 }
 

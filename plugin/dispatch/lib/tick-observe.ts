@@ -142,6 +142,7 @@ import { observeTestLockWaits } from "./test-lock-waits.ts";
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
   weights?: import("./local-weights.ts").AccountWeights | undefined;
+  drivers?: import("./host-drivers.ts").HostDrivers | undefined;
   options: TickOptions;
   runtime: SessionRuntime;
   nowMs: number;
