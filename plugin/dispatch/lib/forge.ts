@@ -35,6 +35,7 @@
  * that will answer after a wait from one that refused the read.
  */
 import { isRecord } from "../../shared/guards.ts";
+import { ghRepoEnvFor } from "../../shared/gh-repo-env.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -64,11 +65,16 @@ function unreadable(reason: string): Outcome<never, "unreadable"> {
   return failed("unreadable", reason);
 }
 
-/** What `gh` printed; or why it did not answer, with the call's failure class. */
+/**
+ * What `gh` printed; or why it did not answer, with the call's failure class.
+ * `repository` (`owner/name`) is named in `GH_REPO` for a call whose
+ * arguments do not name the repository it is about.
+ */
 async function ghAnswer(
   args: string[],
   cwd?: string,
   timeoutSec?: number,
+  repository?: string,
 ): Promise<
   | { ok: true; value: string }
   | { ok: false; reason: string; outbound: OutboundFailure }
@@ -76,7 +82,7 @@ async function ghAnswer(
   const began = currentMs();
   const r = await ghCall(args, {
     stderr: "pipe",
-    env: ghRepoEnv(),
+    env: ghRepoEnvFor(repository ?? null),
     ...(cwd === undefined ? {} : { cwd }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
   });
@@ -96,10 +102,11 @@ async function gh<Code extends string>(
   code: Code,
   cwd?: string,
   timeoutSec?: number,
+  repository?: string,
 ): Promise<
   { ok: true; value: string } | { ok: false; failure: CausedFailure<Code> }
 > {
-  const answer = await ghAnswer(args, cwd, timeoutSec);
+  const answer = await ghAnswer(args, cwd, timeoutSec, repository);
   return answer.ok ? answer : failedBy(code, answer.outbound, answer.reason);
 }
 
@@ -117,8 +124,9 @@ async function ghJson(
   what: string,
   cwd?: string,
   timeoutSec?: number,
+  repository?: string,
 ): Promise<Outcome<unknown, "unreadable">> {
-  const text = await gh(args, "unreadable", cwd, timeoutSec);
+  const text = await gh(args, "unreadable", cwd, timeoutSec, repository);
   return text.ok ? parsed(text.value, what) : text;
 }
 
@@ -703,6 +711,9 @@ export async function unresolvedThreadCount(
       `pr=${pr}`,
     ],
     "the review threads answer",
+    undefined,
+    undefined,
+    slug,
   );
   if (!answer.ok) return answer;
   const threads = field(
