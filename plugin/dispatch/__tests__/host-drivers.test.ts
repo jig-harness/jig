@@ -17,6 +17,7 @@ import { takeLockRow } from "../../skills/drive-pr/scripts/lib/state/lock.ts";
 import { admitRearm, slotTable } from "../lib/accounts.ts";
 import { exitedPid, holdLock } from "./host-driver-fixtures.ts";
 import {
+  readCloneKey,
   readHostDrivers,
   type HostDriver,
   unrecordedDrivers,
@@ -300,5 +301,33 @@ describe("a checkout's clone key", () => {
     expect(own).not.toBe("null");
     expect(read(b, {})).not.toBe(own);
     expect(read(a, { GIT_DIR: join(b, ".git") })).toBe(own);
+  });
+
+  it("is the clone's own key from a linked worktree, whose .git is a file", () => {
+    const root = tempDir("host-drivers-");
+    const main = join(root, "main");
+    const linked = join(root, "linked");
+    mkdirSync(main);
+    const git = (...args: string[]) =>
+      expectSpawnExit(
+        Bun.spawnSync([
+          "git",
+          "-c",
+          "user.name=t",
+          "-c",
+          "user.email=t@example.com",
+          "-C",
+          main,
+          ...args,
+        ]),
+        0,
+      );
+    git("init", "-q");
+    writeFileSync(join(main, ".git", "drive-pr-clone-id"), `${randomUUID()}\n`);
+    git("commit", "-q", "--allow-empty", "-m", "base");
+    git("worktree", "add", "-q", "--detach", linked);
+    const key = readCloneKey(main);
+    expect(key).not.toBeNull();
+    expect(readCloneKey(linked)).toBe(key);
   });
 });

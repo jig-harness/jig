@@ -7,8 +7,9 @@
  *
  * A holding record accounts for a driver that works the record's workspace
  * (a re-arm's or takeover's drive, a pickup's drive while the pickup still
- * runs: the pickup's slot is the drive's), whichever account each bills, or,
- * for a drive's record, one of the same pull request on the same account. Once the pickup's record stops
+ * runs: the pickup's slot is the drive's) and the driver bills the account
+ * the record charges (or its identity is unresolved), or, for a drive's
+ * record, one of the same pull request and clone on the same account. Once the pickup's record stops
  * holding, its drive keeps the slot rather than freeing it.
  *
  * The account is the listed one of the driver's vendor whose identity is
@@ -166,20 +167,23 @@ export function unrecordedDrivers(
     }
     // The newest pickup or drive launch of its tree from before it took its lock started it.
     const since = parseMs(driver.since);
-    const starter = records
-      .filter(
-        ({ record }) =>
-          (record.action === "pickup" || isDrive(record)) &&
-          !(parseMs(record.createdAt) > since) &&
-          byTree(record.workspace?.path, driver.worktree),
-      )
-      .reduce<ReadRecord | null>(
-        (latest, r) =>
-          latest === null || r.record.createdAt >= latest.record.createdAt
-            ? r
-            : latest,
-        null,
-      );
+    // A claim whose start time does not parse dates no launch: the starter is unknown.
+    const starter = !Number.isFinite(since)
+      ? null
+      : records
+          .filter(
+            ({ record }) =>
+              (record.action === "pickup" || isDrive(record)) &&
+              !(parseMs(record.createdAt) > since) &&
+              byTree(record.workspace?.path, driver.worktree),
+          )
+          .reduce<ReadRecord | null>(
+            (latest, r) =>
+              latest === null || r.record.createdAt >= latest.record.createdAt
+                ? r
+                : latest,
+            null,
+          );
     const fallback =
       starter === null || ("why" in named && !named.unresolved)
         ? null
