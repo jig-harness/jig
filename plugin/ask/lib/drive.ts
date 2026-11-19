@@ -908,7 +908,15 @@ function driveWait(
           ledger.driver.heartbeat,
           holdFacts,
         )
-      : stoppedHoldWait(reads, ledger, holder, facts.base, holdFacts);
+      : ledger === null
+        ? heldStopWait(
+            holder,
+            facts.unread ? "unplaced" : "unarmed",
+            false,
+            "",
+            holdFacts,
+          )
+        : stoppedHoldWait(reads, ledger, holder, facts.base, holdFacts);
   const diagnosis = diagnosticWait(
     reads.row,
     ledger,
@@ -917,16 +925,7 @@ function driveWait(
     running,
   );
   if (diagnosis !== null) return diagnosis;
-  if (ledger === null)
-    return (
-      heldStopWait(
-        holder,
-        facts.unread ? "unplaced" : "unarmed",
-        false,
-        "",
-        holdFacts,
-      ) ?? "none"
-    );
+  if (ledger === null) return running ?? "none";
   return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 

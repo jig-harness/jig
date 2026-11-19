@@ -51,6 +51,7 @@ import {
   asClaim,
   claimState,
   malformedLiveWrapper,
+  processFacts,
   uncertainCleanupState,
   type StageSupervision,
 } from "./launch-supervision.ts";
@@ -700,6 +701,10 @@ function stateOf(
       reason: "it ended on its account's wall, which could not be recorded",
       wallUnrecorded: true,
       process: claim ?? NO_PROCESS,
+      // Only a judged process table proves the stage's processes gone.
+      ...(claim == null
+        ? { unjudged: true as const }
+        : processFacts(claim, rows, here)),
     };
   if (exit !== null)
     return {
