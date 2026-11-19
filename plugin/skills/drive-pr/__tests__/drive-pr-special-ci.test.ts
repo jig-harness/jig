@@ -429,8 +429,9 @@ test("stale reported failures: an authorized advisory fix repairs only the timed
   expect(told).toStartWith("tests; timed out:");
   expect(told).not.toContain("build");
   expect(told).not.toContain("scan");
-  expect(
-    readState(f.stateDir, "999")?.resolvedParks?.[0]?.repairStartedAt,
-  ).toBeDefined();
+  const parks = readState(f.stateDir, "999")?.resolvedParks as
+    | { repairStartedAt?: string }[]
+    | undefined;
+  expect(parks?.[0]?.repairStartedAt).toBeDefined();
   expect(JSON.parse(runsLine.exec(r.stderr)?.[1] ?? "null")).toEqual([300]);
 });
