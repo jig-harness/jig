@@ -41,12 +41,17 @@ const NAMED_CHECKS = 3;
  */
 export type MissingRunAnswer = "none" | "wait" | "parked" | "workflow-change";
 
+/** A git command's output, `null` after saying why it failed. */
 async function gitText(args: string[]): Promise<string | null> {
   const r = await git(args, {
-    stderr: "ignore",
+    stderr: "pipe",
     timeoutSec: gitCallTimeoutSeconds(),
   });
-  return r.code === 0 ? r.stdout : null;
+  if (r.code === 0) return r.stdout;
+  console.error(
+    `ci-hold: git ${args[0]} exited ${r.code}: ${r.stderrTail.trim()}`,
+  );
+  return null;
 }
 
 /** The head commit's committer date, `null` when the tree cannot say. */

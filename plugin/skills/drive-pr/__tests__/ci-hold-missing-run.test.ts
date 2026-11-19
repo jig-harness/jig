@@ -137,7 +137,9 @@ describe("workflowForCheck", () => {
   };
   const matrix = {
     path: ".github/workflows/matrix.yml",
-    text: "on: pull_request\njobs:\n  e2e:\n    name: End to end\n    runs-on: x\n  shard:\n    name: Shard ${{ matrix.n }}\n    runs-on: x\n",
+    text:
+      "on: pull_request\njobs:\n  e2e:\n    name: End to end\n    runs-on: x\n  shard:\n    name: Shard $" +
+      "{{ matrix.n }}\n    runs-on: x\n",
   };
 
   it("names the one workflow whose job reports the check, by name, id or matrix", () => {
@@ -165,6 +167,14 @@ describe("workflowForCheck", () => {
     );
   });
 });
+
+/** The drive's parked items, as the state keeps them. */
+const parkedIn = (stateDir: string) =>
+  (readState(stateDir, "999")?.parked ?? []) as Array<{
+    key: string;
+    reason: string;
+    decision?: { call: { recommended: string } };
+  }>;
 
 describe("ci-hold.ts ensure on a required check that never ran", () => {
   const { finishRound, scratchWithOrigin } =
@@ -203,8 +213,8 @@ describe("ci-hold.ts ensure on a required check that never ran", () => {
         stdout: "pipe",
         stderr: "pipe",
       });
-    expect(git(["add", "."]).exitCode).toBe(0);
-    expect(git(["commit", "-qm", "ci"]).exitCode).toBe(0);
+    expectSpawnExit(git(["add", "."]), 0);
+    expectSpawnExit(git(["commit", "-qm", "ci"]), 0);
     const head = git(["rev-parse", "HEAD"]).stdout.toString().trim();
     return { dir: repo.dir, head };
   };
@@ -220,7 +230,7 @@ describe("ci-hold.ts ensure on a required check that never ran", () => {
     expect(String(r.report.reason)).toContain(MISSING_RUN_PARK_KEY);
     expect(r.pushed).toBe("");
     expect(r.stderr).toContain("'tests' (workflow: .github/workflows/ci.yml)");
-    const parked = readState(r.stateDir, "999")?.parked ?? [];
+    const parked = parkedIn(r.stateDir);
     expect(parked).toHaveLength(1);
     expect(parked[0]).toMatchObject({
       key: MISSING_RUN_PARK_KEY,
@@ -239,7 +249,7 @@ describe("ci-hold.ts ensure on a required check that never ran", () => {
       seedState: async ({ fixtureDir }) => withTests(fixtureDir, false),
     });
     expectSpawnExit(r, 8);
-    const parked = readState(r.stateDir, "999")?.parked ?? [];
+    const parked = parkedIn(r.stateDir);
     expect(parked[0]?.reason).toContain("'tests' (workflow: unknown)");
   });
 
@@ -253,7 +263,7 @@ describe("ci-hold.ts ensure on a required check that never ran", () => {
     expectSpawnExit(r, 4);
     expect(r.report.state).toBe("CI_HOLD_WAIT");
     expect(r.pushed).toBe("");
-    expect(readState(r.stateDir, "999")?.parked ?? []).toEqual([]);
+    expect(parkedIn(r.stateDir)).toEqual([]);
     expect(readRoundFinishes(r.stateDir, "999")).toMatchObject([
       { round: 3, state: "CI_HOLD_WAIT", reason: r.report.reason },
     ]);
