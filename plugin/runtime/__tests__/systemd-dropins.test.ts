@@ -196,7 +196,8 @@ describe("effectiveJob", () => {
     ],
     [
       "a braced variable",
-      "[Service]\nExecStart=\nExecStart=/bin/wrap ${TOKEN} dispatch --apply\n",
+      "[Service]\nExecStart=\nExecStart=/bin/wrap $" +
+        "{TOKEN} dispatch --apply\n",
       "variable",
     ],
     [
