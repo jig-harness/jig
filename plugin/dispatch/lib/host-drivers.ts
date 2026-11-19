@@ -17,14 +17,15 @@
  * before the driver took its lock. A driver no listed account answers is
  * listed and holds no slot.
  */
+import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   type HostDriver,
   liveHostDrivers,
 } from "../../skills/drive-pr/scripts/lib/driver/host-drivers.ts";
 import { peekCloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
-import type { Outcome } from "../../shared/outcome.ts";
+import { attempt, type Outcome } from "../../shared/outcome.ts";
 import { accountOf } from "./account-of.ts";
 import { parseMs } from "../../shared/time.ts";
 import { holds, isDrive, type ReadRecord } from "./launches.ts";
@@ -70,6 +71,23 @@ function canonical(path: string): string {
   } catch {
     return resolve(path);
   }
+}
+
+/**
+ * The clone key of the checkout at `repoPath`, read from its Git common
+ * directory (`.git` is a file in a linked worktree); `null` when either read fails.
+ */
+function readCloneKey(repoPath: string): string | null {
+  const common = spawnSync(
+    "git",
+    ["-C", repoPath, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { encoding: "utf8", timeout: 10_000 },
+  );
+  if (common.status !== 0 || typeof common.stdout !== "string") return null;
+  const key = attempt("unreadable", "the clone identity", () =>
+    peekCloneKey(common.stdout.trim()),
+  );
+  return key.ok ? key.value : null;
 }
 
 /** The listed account a driver's identity names, or why none. */
@@ -118,8 +136,7 @@ export function unrecordedDrivers(
   /** The clone key of a record's checkout; `null` when it cannot be read. */
   const cloneOf = new Map<string, string | null>();
   const cloneKeyOf = (repoPath: string): string | null => {
-    if (!cloneOf.has(repoPath))
-      cloneOf.set(repoPath, peekCloneKey(join(repoPath, ".git")));
+    if (!cloneOf.has(repoPath)) cloneOf.set(repoPath, readCloneKey(repoPath));
     return cloneOf.get(repoPath) ?? null;
   };
   // A record's slot covers one driver; two drivers never share it.
@@ -132,7 +149,9 @@ export function unrecordedDrivers(
         !used.has(record.id) &&
         // The tree's own record covers a driver billing the account it charges.
         ((byTree(record.workspace?.path, driver.worktree) &&
-          (!("name" in named) || accountOf(accounts, record) === named.name)) ||
+          ("name" in named
+            ? accountOf(accounts, record) === named.name
+            : named.unresolved)) ||
           // A drive's record of the same pull request, account and clone.
           (isDrive(record) &&
             record.pr === driver.pr &&

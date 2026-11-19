@@ -204,6 +204,23 @@ describe("a live driver no holding launch record accounts for", () => {
     });
   });
 
+  it("billing an identity no listed account has stays listed beside its tree's live record, with no account", () => {
+    const root = tempDir("host-drivers-");
+    const tree = join(root, "pickup-tree");
+    mkdirSync(tree);
+    holdLock(root, 48, tree, "stranger@example.com");
+    const found = drivers(root);
+    expect(held([pickup("a", tree, ALIVE)], found)).toEqual({ a: 1, b: 0 });
+    expect(
+      unrecordedDrivers(ACCOUNTS, [pickup("a", tree, ALIVE)], found),
+    ).toEqual([
+      expect.objectContaining({
+        account: null,
+        accountReason: expect.stringContaining("stranger@example.com"),
+      }),
+    ]);
+  });
+
   it("frees its slot once its process is gone", () => {
     const root = tempDir("host-drivers-");
     holdLock(root, 45, join(root, "hand-tree"), "a@example.com", {
