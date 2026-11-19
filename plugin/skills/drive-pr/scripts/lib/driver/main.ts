@@ -38,14 +38,14 @@ import { markDriverRecordReleased } from "./../ledger-stop.ts";
 import { startDriverObservation } from "../driver-observation.ts";
 import { installDriverLifecycle, createDriverRegistry } from "./lifecycle.ts";
 
-import { nextDriverGeneration } from "./../state/mailbox-stop.ts";
+import {
+  nextDriverGeneration,
+  watchImmediateStop,
+} from "./../state/mailbox-stop.ts";
 
 import { registerCleanup } from "./../../../../../shared/cleanup.ts";
 
-import {
-  LAUNCH_VARIABLE,
-  passLaunch,
-} from "./../../../../../shared/launched-session.ts";
+import { passLaunchEnv } from "./../../../../../shared/launched-session.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -60,6 +60,8 @@ import { driveState, captureIntentChain, driveTs } from "./paths.ts";
 import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
+import { attachForgeLimit } from "./forge-limit-stop.ts";
+import { mailboxCheckpointOrExit } from "./mailbox.ts";
 import { ignoreDriveContext } from "./../context-ignore.ts";
 
 import { clearDeadlineRetries } from "./restart.ts";
@@ -428,14 +430,29 @@ async function drive(ctx: DriveContext): Promise<number> {
   // other driver's tree is ever moved, and no second driver of the PR, in
   // another tree, attaches beside this one. A PR found closed here ends the
   // drive as the round loop's PR_NOT_OPEN does, restart count included, and
-  // as a failure (exit 1) when that count could not be cleared.
-  await attachForDrive(pr, dryRun, async () => {
-    if (!(await clearDeadlineRetries(pr)))
-      fail(
-        1,
-        `drive.ts: PR #${pr} is not open; its restart count still stands`,
-      );
-  });
+  // as a failure (exit 1) when that count could not be cleared. A read the
+  // forge's spent rate limit refused waits for a near reset and reads again,
+  // or stops FORGE_RATE_LIMITED (`forge-limit-stop.ts`).
+  await attachForDrive(
+    pr,
+    dryRun,
+    async () => {
+      if (!(await clearDeadlineRetries(pr)))
+        fail(
+          1,
+          `drive.ts: PR #${pr} is not open; its restart count still stands`,
+        );
+    },
+    (limit, mayWait) =>
+      attachForgeLimit(
+        pr,
+        limit,
+        mayWait,
+        {},
+        watchImmediateStop(mailboxDir, pr, generation),
+        () => mailboxCheckpointOrExit({ dir: mailboxDir, pr, generation }),
+      ),
+  );
   // The drive's own `.context/` files must not read as uncommitted changes
   // to any later check (`context-ignore.ts`): the attach made sure of it
   // before it moved the tree, and the branch it left may ignore less.
@@ -466,8 +483,9 @@ async function drive(ctx: DriveContext): Promise<number> {
 
   // A pass is a session the line started, so `jig send` refuses it a
   // person's commands: it carries the launch this driver inherited from the
-  // dispatcher's wrapper, else this driver's own name.
-  process.env[LAUNCH_VARIABLE] = passLaunch(process.env, pr, generation);
+  // dispatcher's wrapper, else this driver's own name; a drive a dispatched
+  // session armed also hands them the launch it came from.
+  Object.assign(process.env, passLaunchEnv(process.env, pr, generation));
 
   // DURABLE knowledge of where this drive's state lives, handed to every pass
   // so the fence never has to re-derive it from a `.git` marker that may be

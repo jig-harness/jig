@@ -2851,7 +2851,9 @@ make, use the entry's term instead.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
-  *dispatcher* drives them one at a time, the one closest to merge first.
+  *dispatcher* drives them one at a time, the one closest to merge first,
+  and starts no pickup whose *footprint* reaches the area while other work
+  in flight touches it.
   A person adds the mark, usually after the conflict history report
   proposes it for a *conflict hotspot*; the dispatcher never adds one.
 - **Held (pull request)** — a pull request in a *serialized area* waiting

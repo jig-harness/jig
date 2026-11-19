@@ -21,7 +21,13 @@ import { consumerRoot } from "../../shared/consumer.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isRecord } from "../../shared/guards.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { run, tsArgv } from "../../shared/proc.ts";
+import {
+  ChildFailure,
+  run,
+  tsArgv,
+  type RunOptions,
+  type RunResult,
+} from "../../shared/proc.ts";
 import { FORGE_ACCOUNTING_UNAVAILABLE } from "../../shared/trace.ts";
 import {
   databaseInstance,
@@ -304,38 +310,108 @@ function ciHoldOf(hold: Record<string, unknown>): CiHoldDiagnosis {
   };
 }
 
-/**
- * The drive of pull request `pr` as the drive's own listing in the checkout
- * at `path` reads it (`drives-read-only.ts`, which runs `drives.ts --doctor --json` over a
- * database that is already current: its driver lock and the doctor's
- * verdict on it, which it reads without writing); `null` when that clone
- * holds neither a driver lock nor a retained drive blocker for it.
- */
-export async function driveRow(
+/** Read the local driver lock or the drive doctor's diagnosis under its own source deadline. */
+async function driveRow(
   reading: Reading,
   path: string,
   pr: number,
+  mode: "lock" | "diagnosis",
 ): Promise<Outcome<DriveRow | null, "unreadable">> {
   const sec = reading.sourceSec();
-  if (sec === 0) return failed("unreadable", PAST_DEADLINE);
-  const accounting = mkdtempSync(join(tmpdir(), "jig-ask-forge-"));
+  if (sec === 0)
+    return failed("unreadable", `deadline exceeded: ${PAST_DEADLINE}`);
+  const argv = listingArgv(mode, pr);
+  const options: RunOptions = {
+    cwd: path,
+    // This reader uses the checkout's state rather than a drive's pinned tree.
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) => key !== "DRIVE_PR_WORKTREE",
+      ),
+    ),
+    timeoutSec: sec,
+    stderr: "pipe",
+  };
+  const result =
+    mode === "lock"
+      ? ok(await run(argv, options))
+      : await runWithForgeAccounting(reading, argv, options);
+  if (!result.ok) return result;
+  const r = result.value;
+  return r.code === 0 ? parseListing(r.stdout, pr) : listingFailure(argv, r);
+}
+
+function listingArgv(mode: "lock" | "diagnosis", pr: number): string[] {
+  const args = ["--json", "--pr", String(pr)];
+  return tsArgv(
+    drivesScript(),
+    mode === "lock" ? ["--lock-only", ...args] : args,
+  );
+}
+
+function listingFailure(
+  argv: string[],
+  r: RunResult,
+): Outcome<never, "unreadable"> {
+  if (r.code === 4)
+    // The listing declined because reading would have migrated or imported into the drive's database.
+    return failed(
+      "unreadable",
+      r.stderr.replace(/^drives-read-only\.ts: /, "").trim() ||
+        "the drive's database is not current, and a driver's next run brings it forward",
+    );
+  const cause = new ChildFailure(argv, r);
+  const reason = `${r.timedOut ? "deadline exceeded" : "listing failed"}: the drive's listing exited ${r.code}`;
+  swallow(cause, reason);
+  return failed("unreadable", reason, cause);
+}
+
+function parseListing(
+  stdout: string,
+  pr: number,
+): Outcome<DriveRow | null, "unreadable"> {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdout);
+  } catch (cause) {
+    return failed("unreadable", "the drive's listing printed no JSON", cause);
+  }
+  if (!isRecord(value) || !Array.isArray(value.rows))
+    return failed(
+      "unreadable",
+      "the drive's listing printed an invalid row list",
+    );
+  return ok(findDriveRow(value.rows, pr));
+}
+
+function findDriveRow(rows: unknown[], pr: number): DriveRow | null {
+  const row = rows.find(
+    (value): value is Record<string, unknown> =>
+      isRecord(value) && value.kind === "pr" && value.key === String(pr),
+  );
+  return row === undefined ? null : rowOf(row);
+}
+
+/** The doctor can make forge calls, including before a deadline kills its listing. */
+async function runWithForgeAccounting(
+  reading: Reading,
+  argv: string[],
+  options: RunOptions,
+) {
+  const directory = attempt(
+    "unreadable",
+    "could not prepare forge call accounting for the drive diagnosis",
+    () => mkdtempSync(join(tmpdir(), "jig-ask-forge-")),
+  );
+  if (!directory.ok) return directory;
+  const accounting = directory.value;
   const countFile = join(accounting, "calls");
   let r: Awaited<ReturnType<typeof run>>;
   let accountingUnavailable = false;
   try {
-    r = await run(tsArgv(drivesScript(), ["--json", "--pr", String(pr)]), {
-      cwd: path,
-      // The listing reads the tree a drive pass pins over its directory; this one reads the checkout's.
-      env: {
-        ...Object.fromEntries(
-          Object.entries(process.env).filter(
-            ([k]) => k !== "DRIVE_PR_WORKTREE",
-          ),
-        ),
-        JIG_FORGE_CALL_COUNT_FILE: countFile,
-      },
-      timeoutSec: sec,
-      stderr: "pipe",
+    r = await run(argv, {
+      ...options,
+      env: { ...options.env, JIG_FORGE_CALL_COUNT_FILE: countFile },
     });
     accountingUnavailable = r.stderr.includes(FORGE_ACCOUNTING_UNAVAILABLE);
   } finally {
@@ -365,29 +441,87 @@ export async function driveRow(
       );
     }
   }
-  if (r.code === 4)
-    // The listing declined because reading would have migrated or imported into the drive's database.
-    return failed(
-      "unreadable",
-      r.stderr.replace(/^drives-read-only\.ts: /, "").trim() ||
-        "the drive's database is not current, and a driver's next run brings it forward",
-    );
-  if (r.code !== 0)
-    return failed(
-      "unreadable",
-      `the drive's listing exited ${r.code}${r.timedOut ? " at its deadline" : ""}`,
-    );
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(r.stdout);
-  } catch {
-    return failed("unreadable", "the drive's listing printed no JSON");
+  return ok(r);
+}
+
+/** The doctor's verdict on a drive, in words, with the recovery it gives. */
+function doctorDetail(row: DriveRow | null): { detail?: string } {
+  const doctor = row?.doctor;
+  if (doctor == null) return {};
+  const recovery =
+    doctor.recovery === null ? "" : `; recovery: ${doctor.recovery}`;
+  return { detail: `doctor: ${doctor.verdict}: ${doctor.reason}${recovery}` };
+}
+
+/** The drive as its own listing in a checkout of the repository on this machine reads it, noted in the sources. */
+export async function localDriveRow(
+  reading: Reading,
+  checkout: string | null,
+  pr: number,
+  mode: "diagnose" | "lock-only",
+): Promise<DriveRow | null> {
+  if (checkout === null) {
+    reading.note({
+      record: "drive-lock",
+      read: false,
+      local: true,
+      detail: "no checkout of the repository on this machine",
+    });
+    return null;
   }
-  const rows =
-    isRecord(parsed) && Array.isArray(parsed.rows) ? parsed.rows : [];
-  const row = rows.find(
-    (v): v is Record<string, unknown> =>
-      isRecord(v) && v.kind === "pr" && v.key === String(pr),
-  );
-  return ok(row === undefined ? null : rowOf(row));
+  const lock = await localDriveLock(reading, checkout, pr);
+  if (mode === "lock-only") return lock.ok ? lock.value : null;
+  return localDriveDiagnosis(reading, checkout, pr, lock);
+}
+
+async function localDriveLock(reading: Reading, checkout: string, pr: number) {
+  const row = await driveRow(reading, checkout, pr, "lock");
+  reading.note({
+    record: "drive-lock",
+    read: row.ok,
+    local: true,
+    detail: row.ok
+      ? `driver lock: ${row.value?.lock ?? "empty"}`
+      : row.failure.reason,
+  });
+  return row;
+}
+
+async function localDriveDiagnosis(
+  reading: Reading,
+  checkout: string,
+  pr: number,
+  lock: Outcome<DriveRow | null, "unreadable">,
+): Promise<DriveRow | null> {
+  const diagnosis = await driveRow(reading, checkout, pr, "diagnosis");
+  reading.note({
+    record: "drive-diagnosis",
+    read: diagnosis.ok,
+    local: true,
+    ...(diagnosis.ok
+      ? doctorDetail(diagnosis.value)
+      : { detail: diagnosis.failure.reason }),
+  });
+  if (!lock.ok) return null;
+  return diagnosis.ok ? withDiagnosis(lock.value, diagnosis.value) : lock.value;
+}
+
+const EMPTY_DRIVER = {
+  lock: "empty",
+  host: null,
+  started: null,
+  generation: null,
+};
+const DRIVER_FIELDS = ["lock", "host", "started", "generation"] as const;
+
+/** Attach the verdict only when both reads describe the same driver. */
+function withDiagnosis(
+  lock: DriveRow | null,
+  diagnosis: DriveRow | null,
+): DriveRow | null {
+  if (diagnosis === null) return lock;
+  const driver = lock ?? EMPTY_DRIVER;
+  if (!DRIVER_FIELDS.every((field) => driver[field] === diagnosis[field]))
+    return lock;
+  return { ...(lock ?? diagnosis), doctor: diagnosis.doctor };
 }

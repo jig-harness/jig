@@ -654,6 +654,8 @@ export interface AccountView {
   vendor: string;
   heldText: string;
   weightText: string;
+  /** The stages it serves, when the machine file narrows them; `null` when it serves every one. */
+  stagesText: string | null;
   /** One entry per slot: whether it is held. */
   pips: boolean[];
   state: AccountState | null;
@@ -711,6 +713,8 @@ export function accountView(a: LineAccount, clockNow: Clock): AccountView {
     vendor: a.vendor,
     heldText: `${a.held} of ${a.cap}`,
     weightText: accountWeightText(a, walled, atCap),
+    stagesText:
+      a.stages === undefined ? null : `serves only ${a.stages.join(", ")}`,
     pips: Array.from({ length: a.cap }, (_, i) => i < a.held),
     state,
     wall,
