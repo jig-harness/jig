@@ -208,14 +208,14 @@ fields:
     default: 4
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.overlap.patience:
     type: map
     keys: [urgent, high, medium, low, none]
     values_type: any
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.overlap.file_rate:
     type: number
     min: 0
@@ -223,7 +223,7 @@ fields:
     default: 0.5
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.overlap.area_rate:
     type: number
     min: 0
@@ -231,7 +231,7 @@ fields:
     default: 0.2
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.overlap.unknown_cost:
     type: number
     min: 0
@@ -239,25 +239,25 @@ fields:
     default: 0.5
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.overlap.ignore:
     type: list
     items: string
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.overlap.quiet_after:
     type: string
     pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.overlap.bound_patience:
     type: string
     pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.283.0
   dispatch.pickup_within:
     type: string
     pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
