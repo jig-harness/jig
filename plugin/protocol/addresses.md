@@ -43,9 +43,9 @@ repository or two, an address that leaves its repository out outside a
 checkout, a key not in its station's form, and a `pickup` key with no
 checkout on the machine to name its tracker are each refused as a usage
 error (exit `2`), with a reason; the reason for a malformed address or an
-unknown station lists the valid stations. The one exception is `assign`: it
-resolves its address without checking the key against the tracker, and
-refuses a key the tracker does not know afterwards, as an operational
+unknown station lists the valid stations. The exceptions are `assign` and `pickup` holds and releases: they
+resolve their address without checking the key against the tracker, and
+refuse a key the tracker does not know afterwards, as an operational
 refusal (exit `1`), not a usage error.
 
 ## Stations

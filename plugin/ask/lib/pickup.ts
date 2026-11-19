@@ -339,7 +339,7 @@ async function issueAnswer(
   // The newest tick's overlap reason and footprint note hold only while the item still waits to be picked up.
   const queued = state === "assigned" ? queuedOf(ctx) : undefined;
   const waitsOn =
-    personHold !== undefined
+    personHold !== undefined && needs.length === 0 && holding === null
       ? personWait("release the pickup hold", pickupHoldReason(personHold), {
           people: [personHold.by],
         })
