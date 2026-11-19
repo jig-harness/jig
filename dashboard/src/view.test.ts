@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { ok as assert } from "node:assert/strict";
 import type {
   LineAccount,
   LineRefusal,
@@ -368,6 +369,113 @@ describe("staleness", () => {
         body: `The newest tick that tried could not read it (${refusal}). Its needs, queue and sessions below are as of the 16:05 tick.`,
       },
     ]);
+  });
+
+  /** `count` stale repositories one rate limit on `account` refused, read a minute apart from 16:10. */
+  function refusedRepos(count: number, start = 0, account = "one") {
+    const [template] = lineOf("partial").repos;
+    assert(template);
+    return Array.from({ length: count }, (_, index) => {
+      const number = start + index;
+      return {
+        ...template,
+        slug: `example-org/repo-${number}`,
+        path: `/repos/${number}`,
+        readAt: `2026-11-03T16:${10 + number}:00Z`,
+        refused: `rate limit; last reading for repository ${number}`,
+        refusal: {
+          step: "lookup" as const,
+          failure: {
+            class: "rate-limited" as const,
+            account,
+            until: "2026-11-03T17:00:00.000Z",
+          },
+        },
+      };
+    });
+  }
+
+  it("tells eight repositories one cause refused in one banner, each with its last read", () => {
+    const repos = refusedRepos(8).reverse();
+    const banners = staleBanners({ ...line, repos }, CLOCK);
+    expect(banners).toHaveLength(1);
+    expect(banners[0]?.title).toBe(
+      "8 repositories have not been read since 16:10: Rate limit holds them until 17:00.",
+    );
+    expect(
+      banners[0]?.repositories?.map(({ name, lastRead }) => [name, lastRead]),
+    ).toEqual(repos.map((repo) => [repo.slug, repo.readAt.slice(11, 16)]));
+    expect(banners[0]?.repositories?.[0]?.detail).toContain(
+      "last reading for repository 7",
+    );
+  });
+
+  it("gives each cause its own banner and a repository held busy its own", () => {
+    const partial = lineOf("partial");
+    const busy = partial.repos.find(
+      (repo) => repo.slug === "example-org/mobile",
+    );
+    assert(busy);
+    const repos = [...refusedRepos(3), ...refusedRepos(2, 3, "two"), busy];
+    expect(
+      staleBanners({ ...partial, repos }, CLOCK).map(
+        (banner) => banner.repositories?.length,
+      ),
+    ).toEqual([3, 2, undefined]);
+  });
+
+  it("words a shared failure other than a rate limit by its step, and keeps steps apart", () => {
+    const refusedAt = (step: "lookup" | "configuration") => ({
+      step,
+      failure: { class: "unauthorized" as const, account: "one" },
+    });
+    const repos = refusedRepos(3).map((repo, index) => ({
+      ...repo,
+      refusal: refusedAt(index < 2 ? "lookup" : "configuration"),
+    }));
+    const banners = staleBanners({ ...line, repos }, CLOCK);
+    expect(banners.map((b) => b.title)).toEqual([
+      "2 repositories have not been read since 16:10: Repository lookup failed (credential refused).",
+      "example-org/repo-2: Dispatch section unreadable (credential refused); showing 16:12 data.",
+    ]);
+  });
+
+  it("keeps a banner per repository when a failure names no account or quota owner", () => {
+    const repos = refusedRepos(3).map((repo) => ({
+      ...repo,
+      refusal: {
+        step: "lookup" as const,
+        failure: { class: "unauthorized" as const },
+      },
+    }));
+    expect(
+      staleBanners({ ...line, repos }, CLOCK).map(
+        (banner) => banner.repositories,
+      ),
+    ).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("dates a shared banner and its repositories when a read was not today", () => {
+    const repos = refusedRepos(2).map((repo, index) => ({
+      ...repo,
+      readAt: `2026-11-02T16:${10 + index}:00Z`,
+    }));
+    const [banner] = staleBanners({ ...line, repos }, CLOCK);
+    expect(banner?.title).toContain("since Nov 2 16:10");
+    expect(banner?.repositories?.map(({ lastRead }) => lastRead)).toEqual([
+      "Nov 2 16:10",
+      "Nov 2 16:11",
+    ]);
+  });
+
+  it("keeps one banner per repository on a line written before refusals kept their cause", () => {
+    const partial = lineOf("partial");
+    const legacy = refusedRepos(5).map(
+      ({ refusal: _refusal, ...repo }) => repo,
+    );
+    const banners = staleBanners({ ...partial, repos: legacy }, CLOCK);
+    expect(banners).toHaveLength(5);
+    expect(banners.every((b) => b.repositories === undefined)).toBe(true);
   });
 
   /** The partial line with example-org/mobile refused at its newest tick, as `refused` and `refusal` say. */

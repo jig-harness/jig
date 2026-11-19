@@ -193,21 +193,30 @@ test("tick outcomes distinguish carried out, refused with detail, and held", () 
     expect(html).toContain(word);
     expect(html).toContain("The claim changed.");
   }
+});
+
+test("answered holds fold into one collapsed line, and none draw nothing", () => {
+  const held = renderToStaticMarkup(
+    <AnsweredHolds
+      line={{
+        answeredHolds: [
+          {
+            repo: "example-org/web",
+            target: "#17",
+            why: "maintainer-a chose hold; it returns when its facts change",
+          },
+        ],
+      }}
+    />,
+  );
+  expect(held).toContain("1 card hidden by an answer · show");
+  expect(held).toContain('aria-expanded="false"');
+  expect(held).toContain("maintainer-a chose hold");
+  expect(held).toMatch(/<ul[^>]* hidden=""/);
+  expect(renderToStaticMarkup(<AnsweredHolds line={{}} />)).toBe("");
   expect(
-    renderToStaticMarkup(
-      <AnsweredHolds
-        line={{
-          answeredHolds: [
-            {
-              repo: "example-org/web",
-              target: "#17",
-              why: "maintainer-a chose hold; it returns when its facts change",
-            },
-          ],
-        }}
-      />,
-    ),
-  ).toContain("maintainer-a chose hold");
+    renderToStaticMarkup(<AnsweredHolds line={{ answeredHolds: [] }} />),
+  ).toBe("");
 });
 
 test("confirmation changes with the note, destination, or credential", () => {
