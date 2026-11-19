@@ -23,9 +23,10 @@ for each item that waits, what it waits on.
 This is the design of [plan.md](plan.md) item 57. The tracker footprint
 record, its adapter interface, the pickup, scout and filing writers, the
 merge evidence for conflict edges, the changed-files read of every open pull
-request, and the conflict rates with the tick's daily refresh and their reader
-are built; admission, the planner's writer and the remaining build steps are
-open.
+request, the conflict rates with the tick's daily refresh and their reader,
+and overlap reported (each planned pickup's cost, tier, bound and reason, and
+`overlap_waits`, in the receipt, the dashboard and `jig ask`) are built;
+admission, the planner's writer and the remaining build steps are open.
 It builds on the change that lets a plan-less epic's ready children start
 in parallel up to a width per epic (#1178), and on that change's decision
 record: admission is parallel by default, and overlap is a cost weighed
@@ -146,8 +147,9 @@ its obligations:
   scheduled full read of the tracker scope. Items are read by key, many in
   one request, where the tracker allows it.
 - **Admit and bound.** Each read asks the shared budget record, has a
-  deadline and a page size, and the tick reads at most a declared number of
-  items' footprints fresh in one tick, the wanted pickups first.
+  deadline and a page size, and the tick reads at most 20 items' footprints
+  fresh in one tick, the wanted pickups first, then the claimed items in
+  flight; with no pickup wanted it reads none.
 - **Record.** Each read is recorded in the cost ledger under the operation
   `footprint`.
 - **No answer.** A footprint that does not read keeps its last reading with
@@ -160,9 +162,11 @@ The work in flight is the open pull requests and the running pickups. A
 pull request's changed files are the truth about it, so its footprint is
 those files, whoever opened it: a person's pull request collides as surely
 as the dispatcher's. A running pickup with no pull request yet is
-represented by its footprint record, on whichever host runs it (the tick
-reads every host's launch claims already). A pickup that opened its pull
-request is represented by the pull request alone.
+represented by its footprint record, on whichever host runs it: the
+tracker's claimed items name every host's pickups, and this host's launch
+records the ones not claimed yet. A pickup that opened its pull request (an
+open pull request that links its item) is represented by the pull request
+alone.
 
 The tick reads changed files for every open pull request of the
 repository (`plugin/dispatch/lib/sources/pr-files.ts`, page by page through
@@ -193,10 +197,11 @@ A [serialized area](../GLOSSARY.md) and overlap read the same files:
 request without being the work: derived files, and files a repository
 keeps appending to. A path counts toward neither the cost nor the bound
 when the catalog marks it generated, or when it matches a glob of
-`dispatch.overlap.ignore`. A pull request with no push for
-`dispatch.overlap.quiet_after` (14 days) counts toward the cost but not
-toward the bound: it still conflicts when it moves again, but it is not
-piling onto a file now.
+`dispatch.overlap.ignore`. A pull request with no update for
+`dispatch.overlap.quiet_after` (14 days; its last update, as the listing of
+open pull requests carries it, stands for its last push) counts toward the
+cost but not toward the bound: it still conflicts when it moves again, but
+it is not piling onto a file now.
 
 ### The overlap cost
 
@@ -489,8 +494,10 @@ in one area. It reaches admission in two ways:
   its default and says so in the receipt.
 - **Serialized areas.** `--propose-serialize` stays a proposal a person
   applies to the catalog. The receipt points to it when the same file has
-  kept work in tier 3 in at least 3 ticks of a day: the bound is the
-  weighed answer, and a serialized area the declared one a person chooses.
+  kept work in tier 3 in at least 3 ticks of a day, counted in the state
+  database (`overlap_hotspots`, registered as `dispatch-overlap-hotspot`):
+  the bound is the weighed answer, and a serialized area the declared one a
+  person chooses.
 
 ## Build order
 

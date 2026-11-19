@@ -27,9 +27,7 @@ shape descriptions; the provisional chapters on addresses and the verbs of
 `jig send`, forge claims, tracker facets, needs and structured answers, and
 steward records; the restatements turned into links, with the values a
 skill needs within a step held by the chapter's gate; and the site's pages
-at `/protocol/`. Its open follow-up is backlog issue
-[#1176](https://github.com/jig-harness/jig/issues/1176). The decision that a
-chapter and the code must agree is
+at `/protocol/`. The decision that a chapter and the code must agree is
 [ADR-0020](../docs/adr/ADR-0020-protocol-chapters-are-generated-and-gated.md).
 
 ## How it works
@@ -429,9 +427,32 @@ The site's data address is `/protocol/<chapter>/v<version>/data.json`.
 Schemas are published unchanged at
 `/protocol/<chapter>/v<version>/schemas/<filename>.json`; their `$id` names
 the chapter and its version as path segments (`v<version>` or `<version>`).
-An ambiguous or unmatched chapter/version fails the build. Only the current
-version's files exist in this source tree; publishing a new chapter version
-does not supply an archive of earlier versions.
+An ambiguous or unmatched chapter/version fails the build.
+
+**An earlier version is withdrawn.** The site publishes each chapter's
+current version only, built from the files the source tree holds; it keeps
+no archive of earlier versions. When a chapter's version is raised, the
+previous version's data file and schemas stop being served on the site's
+first deploy after the pull request that raises it merges to `main` (the
+site deploys every push to `main`), and from then on their addresses answer
+not found. A chapter withdrawn from the chapter list loses its addresses on
+the same deploy. No old address redirects to the new version: a reader
+pinned to the old one would be handed a shape it does not read.
+
+A reader learns that it must move from the release notes. The pull request
+that raises a chapter's version carries a change note marked breaking that
+names the chapter's file and says, as a required
+[consumer action](../GLOSSARY.md), what a reader must change; for a stable
+chapter [the version check](#what-stable-promises-and-how-the-gate-holds-it)
+fails a breaking change without it. The notes arrive with the release that
+follows the merge, so the withdrawal gives no advance notice. The chapter's
+page and the index name the current version, and a reader that missed the
+notes meets the not-found answer at its next fetch. A reader that must stay on the old
+version for a while keeps its own copy: the plugin release it installed
+carries that version's files under `protocol/`, and the repository holds
+them at every release's tag. A schema's `$id` is withdrawn with the rest,
+so a reader loads the schema it checks against from its copy rather than
+from that address.
 
 ## Build order
 
