@@ -3,7 +3,7 @@ import { afterEach, expect, it } from "bun:test";
 import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { cloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
@@ -350,6 +350,35 @@ it("does not launch a timed out request when an account becomes available", asyn
     }),
   );
   expect(driveRuns(w)).toEqual([]);
+}, 90000);
+
+it("keeps the durable failure of a held request that timed out, without notifying", async () => {
+  const { w, ledger } = fixture();
+  ledger.driver.exit = DRIVE_EXIT.CI_INFRA_PERSISTED;
+  request(w, ledger);
+  w.setPrs("open", [
+    {
+      ...openPr(7, "feature/unclean"),
+      labels: [{ name: "jig:rearm" }, { name: "jig:hold" }],
+    },
+  ]);
+  w.setComments(7, [
+    ledgerComment(701, ledger),
+    requestFor(ledger, 702, isoFromMs(currentMs() - 31 * 60_000)),
+  ]);
+  const report = (await tick(w)).repos[0];
+  expect(report?.actions.filter((a) => a.stage === "notify")).toEqual([]);
+  expect(report?.records).toContainEqual(
+    expect.objectContaining({
+      source: "PR #7 rearm request",
+      ok: true,
+      detail: expect.stringContaining("removed jig:rearm"),
+    }),
+  );
+  const posted: { body: string }[] = JSON.parse(
+    readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+  );
+  expect(posted.some((c) => c.body.includes("needsPerson"))).toBe(true);
 }, 90000);
 
 it("leaves a request cancelled if closing label cleanup fails and the pull request reopens", async () => {

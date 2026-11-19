@@ -110,7 +110,6 @@ async function retire(
   pr: number,
   why: string,
   evidence: Evidence,
-  held = false,
 ): Promise<void> {
   const { state, slug, report, label, login } = run;
   const target = { repo: slug, number: pr };
@@ -122,7 +121,7 @@ async function retire(
     const ended = await writeRearmBinding(target, login, label, null, {
       requestId,
       reason: why,
-      ...(evidence.rearm === true && !held ? { needsPerson: true } : {}),
+      ...(evidence.rearm === true ? { needsPerson: true } : {}),
       deadline: room,
     });
     if (!ended.ok) {
@@ -246,7 +245,7 @@ export async function retireRearmRequests(
       continue;
     const now = { ...pr, evidence: current.evidence };
     if (retirementReason(state, slug, report, now) !== why) continue;
-    // Planning withholds a held pull request's notifications; retirement runs after it, so it applies the same hold.
+    // Planning withholds a held pull request's notifications, so the notice waits; the binding keeps the failure for after the release.
     const held = hasCommand(labels, pr.labels, "hold");
     if (
       now.evidence.rearm === true &&
@@ -258,7 +257,7 @@ export async function retireRearmRequests(
       )
     )
       failedRearmRequest(report, slug, now, why);
-    await retire(run, pr.number, why, now.evidence, held);
+    await retire(run, pr.number, why, now.evidence);
   }
   await retireClosed(run);
 }
