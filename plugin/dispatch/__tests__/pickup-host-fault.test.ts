@@ -396,6 +396,34 @@ describe("a restart that stops on a host fault again", () => {
 });
 
 describe("what a host fault does not restart", () => {
+  it("treats an intervening released pickup as a fresh restart boundary", () => {
+    const first = ended(
+      { claimedItems: [], workspace: null },
+      { result: null, unwritten: "2026-11-19T08:00:00.000Z" },
+    );
+    const released = ended(
+      {
+        id: "20261119T090000Z-cccccccc",
+        createdAt: "2026-11-19T09:00:00.000Z",
+        released: true,
+      },
+      { said: WORK_QUESTION },
+    );
+    const latest = ended(
+      {
+        id: RELAUNCH,
+        createdAt: "2026-11-19T09:30:00.000Z",
+        claimedItems: [],
+        workspace: null,
+      },
+      { cause: "environment" },
+    );
+    const p = plan([first, released, latest], { claimed: false });
+    expect(p.actions).toEqual([
+      expect.objectContaining({ stage: "pickup", target: "#12" }),
+    ]);
+  });
+
   it("restarts a fresh pickup whose earlier host-fault stop a person released", () => {
     const first = ended(
       { claimedItems: [], workspace: null, released: true },

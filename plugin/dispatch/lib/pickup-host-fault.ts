@@ -24,7 +24,6 @@
  * stays a person's, as a batch's stall does.
  */
 import type { ReadRecord } from "./launches.ts";
-import { holdsItem } from "./launch-pickups.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import { questionOf } from "./session.ts";
 
@@ -109,10 +108,11 @@ export function hostFault(r: ReadRecord): HostFault | null {
     };
   if (r.result === "done" || r.result === "waits") return null;
   const questions = endedQuestions(r);
-  if (questions.length > 0 && questions.every(isHostFaultQuestion))
+  const lastQuestion = questions.at(-1);
+  if (lastQuestion !== undefined && questions.every(isHostFaultQuestion))
     return {
       kind: "question",
-      why: `the question it stopped on is about the host's own fault: ${questions.at(-1)!.replace(/\s+/g, " ").trim().slice(0, 300)}`,
+      why: `the question it stopped on is about the host's own fault: ${lastQuestion.replace(/\s+/g, " ").trim().slice(0, 300)}`,
     };
   if (questions.length === 0 && r.report?.report.cause === "environment")
     return {
@@ -125,7 +125,8 @@ export function hostFault(r: ReadRecord): HostFault | null {
 /**
  * Whether `latest` restarted a pickup that stopped on a host fault and
  * stopped on one again: a relaunch whose source did, or a fresh pickup
- * after one of this item that did. Its pickup is not restarted again.
+ * immediately after one of this item that did. A released intervening
+ * pickup is a human-settled boundary, not something to skip over.
  */
 export function faultedAgain(
   latest: ReadRecord,
@@ -137,10 +138,14 @@ export function faultedAgain(
     latest.record.relaunchOf === undefined
       ? previousPickup(latest, launches, item)
       : launches.find((r) => r.record.id === latest.record.relaunchOf);
-  return source !== undefined && hostFault(source) !== null ? source : null;
+  return source !== undefined &&
+    !source.record.released &&
+    hostFault(source) !== null
+    ? source
+    : null;
 }
 
-/** The item's unreleased pickup made just before `latest`, if any: a released one ended a claim a person settled, so `latest` is no restart of it. */
+/** The item's immediately preceding pickup, if any. Its release is intentionally retained as a restart boundary. */
 function previousPickup(
   latest: ReadRecord,
   launches: readonly ReadRecord[],
@@ -152,7 +157,6 @@ function previousPickup(
         r.record.action === "pickup" &&
         r.record.id !== latest.record.id &&
         r.record.createdAt < latest.record.createdAt &&
-        holdsItem(r.record, item) &&
         (r.record.item === item ||
           r.record.batchItems?.some((i) => i.key === item) === true),
     )
