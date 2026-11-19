@@ -336,6 +336,20 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     w.api(`repos/${REPO}/issues/12/comments`, [ledgerOn(701, ledger)]);
   }
 
+  /** A running ledger on pull request 12, whose driver is on another clone. */
+  function runningLedger(w: SendWorld): void {
+    const ledger = stoppedLedger(12, undefined, {
+      driver: {
+        actor: "wt-0123456789abcdef",
+        clone: "clone-a",
+        heartbeat: currentIso(),
+        state: "running",
+        started: currentIso(),
+      },
+    });
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+  }
+
   it("is a person's to settle on a merged pull request once the hold has outlived its bound", async () => {
     const w = world();
     const long = isoFromMs(currentMs() - 10 * HOUR_MS);
@@ -363,16 +377,7 @@ describe("a drive of any other class a launch of unknown process holds", () => {
 
   it("does not name the hold on a running ledger whose holder's processes cannot be judged, past the bound too", async () => {
     const w = world();
-    const ledger = stoppedLedger(12, undefined, {
-      driver: {
-        actor: "wt-0123456789abcdef",
-        clone: "clone-a",
-        heartbeat: currentIso(),
-        state: "running",
-        started: currentIso(),
-      },
-    });
-    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    runningLedger(w);
     const long = isoFromMs(currentMs() - 10 * HOUR_MS);
     launch(w, long);
     claimElsewhere(w, long);
@@ -395,16 +400,7 @@ describe("a drive of any other class a launch of unknown process holds", () => {
 
   it("is a person's to settle on a running ledger, counted from the launch", async () => {
     const w = world();
-    const ledger = stoppedLedger(12, undefined, {
-      driver: {
-        actor: "wt-0123456789abcdef",
-        clone: "clone-a",
-        heartbeat: currentIso(),
-        state: "running",
-        started: currentIso(),
-      },
-    });
-    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    runningLedger(w);
     const long = isoFromMs(currentMs() - 10 * HOUR_MS);
     launch(w, long);
     claimEndedHere(w, long);
@@ -477,16 +473,7 @@ describe("a drive of any other class a launch of unknown process holds", () => {
 
   it("asks every holding record's processes proved gone, not only the newest's", async () => {
     const w = world();
-    const ledger = stoppedLedger(12, undefined, {
-      driver: {
-        actor: "wt-0123456789abcdef",
-        clone: "clone-a",
-        heartbeat: currentIso(),
-        state: "running",
-        started: currentIso(),
-      },
-    });
-    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    runningLedger(w);
     const older = "20261105T090000Z-00000001";
     launch(w, isoFromMs(currentMs() - 20 * HOUR_MS), older);
     claimElsewhere(w, isoFromMs(currentMs() - 20 * HOUR_MS), older);
