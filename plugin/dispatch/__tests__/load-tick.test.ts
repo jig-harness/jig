@@ -224,7 +224,7 @@ describe("jig dispatch reads the host's load each tick", () => {
   });
 
   for (const enforce of [false, true]) {
-    it(`reports validation capacity and reserves room for a drive (enforce=${enforce})`, async () => {
+    it(`admits an idle host without charging a run's execution to lock waiting (enforce=${enforce})`, async () => {
       const w = fixture(["pickup"], { enforce, validation: 0.4 });
       const receipt = await tick(w, {
         ...host(w, 12 * GIB),
@@ -234,17 +234,10 @@ describe("jig dispatch reads the host's load each tick", () => {
         {
           action: "pickup",
           target: "#12",
-          outcome: enforce ? "waits" : "launched",
+          outcome: "launched",
         },
       ]);
-      expect(receipt.load?.holds).toMatchObject([
-        {
-          target: "#12",
-          gauge: "validation",
-          detail: expect.stringContaining("keep room for a drive"),
-          held: enforce,
-        },
-      ]);
+      expect(receipt.load?.holds).toEqual([]);
     });
   }
 

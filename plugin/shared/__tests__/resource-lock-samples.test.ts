@@ -140,3 +140,53 @@ test("the reader skips oversized sample files", () => {
   );
   expect(readResourceLockSamples("heavy", now, scratch.env)).toEqual([]);
 });
+
+test("the reader accepts a record whose workspace reaches the supported path boundary", () => {
+  const scratch = fixture();
+  const now = 1_800_000_000_000;
+  recordResourceLockSample(
+    {
+      name: "heavy",
+      workspace: `/${"a".repeat(8_000)}`,
+      requestedAt: isoFromMs(now - 1_500),
+      waitMs: 500,
+      holdMs: 1_000,
+    },
+    now,
+    scratch.env,
+  );
+  expect(readResourceLockSamples("heavy", now, scratch.env)).toHaveLength(1);
+});
+
+test("future-dated samples do not displace current samples from the bounded reader", () => {
+  const scratch = fixture();
+  const now = 1_800_000_000_000;
+  mkdirSync(scratch.samples, { recursive: true });
+  for (let offset = 1; offset <= 10_000; offset++) {
+    writeFileSync(
+      join(scratch.samples, `${now + offset}-${crypto.randomUUID()}.json`),
+      JSON.stringify({
+        kind: "resource-lock-sample",
+        v: 1,
+        name: "heavy",
+        workspace: scratch.workspace,
+        requestedAt: isoFromMs(now - 1_500),
+        waitMs: 500,
+        holdMs: 1_000,
+      }),
+    );
+  }
+  writeFileSync(
+    join(scratch.samples, `${now}-${crypto.randomUUID()}.json`),
+    JSON.stringify({
+      kind: "resource-lock-sample",
+      v: 1,
+      name: "heavy",
+      workspace: scratch.workspace,
+      requestedAt: isoFromMs(now - 1_500),
+      waitMs: 500,
+      holdMs: 1_000,
+    }),
+  );
+  expect(readResourceLockSamples("heavy", now, scratch.env)).toHaveLength(1);
+});

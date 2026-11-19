@@ -246,7 +246,9 @@ export function forecastValidation(
     Math.min(waitLimitMs, passLimitMs - timeToValidationMs),
   );
   const capacity = (concurrency * waitWindowMs) / runMs;
-  const required = ahead + ownRuns;
+  // A lock timeout bounds how long a pass may wait to acquire a slot, not how
+  // long its own run may occupy that slot after immediate admission.
+  const required = ahead;
   return {
     ahead,
     capacity,

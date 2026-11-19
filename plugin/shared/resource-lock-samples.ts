@@ -19,7 +19,7 @@ import { currentMs, parseMs } from "./time.ts";
 
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 const SAMPLE_FILE = /^(\d{1,16})-[0-9a-f-]{36}\.json$/;
-const MAX_SAMPLE_BYTES = 4096;
+const MAX_SAMPLE_BYTES = 32 * 1024;
 const MAX_SAMPLES = 10_000;
 
 export interface ResourceLockSample {
@@ -46,9 +46,13 @@ function sampleEntries(dir: string): string[] {
   }
 }
 
-function recentEntries(dir: string): string[] {
+function recentEntries(dir: string, nowMs: number): string[] {
   return sampleEntries(dir)
-    .filter((entry) => SAMPLE_FILE.test(entry))
+    .filter((entry) => {
+      if (!SAMPLE_FILE.test(entry)) return false;
+      const releasedAt = releaseTime(entry);
+      return releasedAt >= nowMs - KEEP_MS && releasedAt <= nowMs;
+    })
     .sort((left, right) => releaseTime(right) - releaseTime(left))
     .slice(0, MAX_SAMPLES);
 }
@@ -85,9 +89,7 @@ export function recordResourceLockSample(
       )
         rmSync(join(dir, entry), { force: true });
     }
-    const retained = sampleEntries(dir)
-      .filter((entry) => SAMPLE_FILE.test(entry))
-      .sort((left, right) => releaseTime(right) - releaseTime(left));
+    const retained = recentEntries(dir, releasedAt);
     for (const entry of retained.slice(MAX_SAMPLES))
       rmSync(join(dir, entry), { force: true });
   } catch (error) {
@@ -144,7 +146,7 @@ export function readResourceLockSamples(
 ): ResourceLockSample[] {
   const dir = sampleDirectory(env);
   const samples: ResourceLockSample[] = [];
-  for (const entry of recentEntries(dir)) {
+  for (const entry of recentEntries(dir, nowMs)) {
     const at = releaseTime(entry);
     if (at >= nowMs - KEEP_MS && at <= nowMs) {
       const sample = readSample(join(dir, entry), name);

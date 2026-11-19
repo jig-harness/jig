@@ -107,11 +107,11 @@ describe("validation forecast", () => {
       ahead: 2,
       capacity: 4,
       ownRuns: 1,
-      required: 3,
+      required: 2,
       atLock: 2,
       toArrive: 2,
       waitWindowMs: HOUR,
-      fill: 0.75,
+      fill: 0.5,
     });
   });
 
@@ -126,7 +126,9 @@ describe("validation forecast", () => {
         deadline,
       );
     expect(forecast(90 * MINUTE).waitWindowMs).toBe(30 * MINUTE);
-    expect(forecast(90 * MINUTE).fill).toBe(0.5);
+    // The wait window governs acquisition, not how long this new run may
+    // execute after it acquires an idle lock.
+    expect(forecast(90 * MINUTE).fill).toBe(0);
     expect(forecast(HOUR).waitWindowMs).toBe(0);
     expect(forecast(HOUR).fill).toBeNull();
   });
