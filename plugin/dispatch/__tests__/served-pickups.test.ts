@@ -323,6 +323,19 @@ describe("served pickups", () => {
       ]),
     );
   });
+  it.each(["#1", "#2", "#3"])(
+    "does not start the epic leaf when %s is held locally",
+    async (key) => {
+      const f = fake();
+      const read = await readServedPickups(f.tracker, people, {
+        cache: f.cache,
+        nowMs: 1,
+        headroom: true,
+        personHold: (item) => (item === key ? "held by a person" : null),
+      });
+      expect(read.wanted.map((i) => i.key)).not.toContain("#3");
+    },
+  );
   it("keeps the title and link the listing returned on an item it cannot place and on a claimed item", async () => {
     const f = fake();
     const held = {

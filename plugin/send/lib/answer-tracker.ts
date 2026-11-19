@@ -120,7 +120,7 @@ export async function openTrackerHere(
 }
 
 /** A tracker read here, bounded by the reading's deadline: its value, or why it did not read. */
-async function readHere<T>(
+export async function readHere<T>(
   ctx: AskContext,
   what: string,
   read: (signal: AbortSignal) => Promise<T>,

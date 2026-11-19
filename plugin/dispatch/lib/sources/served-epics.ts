@@ -1,5 +1,10 @@
 /** An epic's children up to its width unless its plan says otherwise, and why an epic is idle. */
-import { PERSON_HOLD, queueHold, type QueueItem } from "../queue-rank.ts";
+import {
+  PERSON_HOLD,
+  queueHold,
+  type QueueHoldPolicy,
+  type QueueItem,
+} from "../queue-rank.ts";
 import type { Unplaced } from "../types.ts";
 import type {
   CanonicalState,
@@ -29,7 +34,7 @@ export function takeUnreadSlot(
 export function parkedOnPerson(
   child: PoolIssue,
   tracker: Pick<Tracker, "stateName">,
-  policy: { hitl?: string; manualOps?: string },
+  policy: QueueHoldPolicy,
 ): boolean {
   const context = child.nativeType ?? null;
   const states = canonicalStatesFor(tracker, child.state.name, context);
@@ -38,6 +43,7 @@ export function parkedOnPerson(
       states.every(
         (state) => state === "ops_pending" || state === "in_review",
       )) ||
+    policy.personHold?.(child.identifier) != null ||
     queueHold({ issue: child, blockers: [], unblocks: 0 }, policy) ===
       PERSON_HOLD
   );

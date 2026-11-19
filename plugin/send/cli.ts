@@ -56,6 +56,7 @@ import { reading } from "../ask/lib/reading.ts";
 import { planAnswerRequest } from "./lib/answer.ts";
 import { openTrackerHere, planTrackerAnswer } from "./lib/answer-tracker.ts";
 import { planAssign } from "./lib/assign.ts";
+import { planPickupHold } from "./lib/pickup-hold.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
 import {
@@ -84,7 +85,7 @@ export const sendCommand = command(
   object({
     words: multiple(
       argument(string({ metavar: "WORD" }), {
-        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); answer <key> --approve|--choose <option> (drive, followup, pickup); hold, release (drive, followup).`,
+        description: message`The address (station@owner/name#key, or the address and its key as two words: drive@jig 456), then the verb and its arguments. The verbs: assign (pickup); drive, rearm, answer <key> <text>, answer --all --approve, pause, resume <hold-push|pause|stop>, stop, hold-push (drive); answer <key> --approve|--choose <option> (drive, followup, pickup); hold, release (drive, followup, pickup).`,
       }),
     ),
     approve: option("--approve", {
@@ -118,7 +119,7 @@ export const sendCommand = command(
     }),
     as: optional(
       option("--as", string({ metavar: "LOGIN" }), {
-        description: message`Refuse unless this machine writes as LOGIN: the forge login, or for assign and an answer on another tracker's item the tracker's user.`,
+        description: message`Refuse unless this machine writes as LOGIN: the forge login, or for tracker item commands the tracker's user.`,
       }),
     ),
   }),
@@ -183,6 +184,10 @@ async function planPickupAnswer(
   return { resolved: { ...resolved, address } };
 }
 
+function isPickupHold(station: string, verb: string): boolean {
+  return station === "pickup" && (verb === "hold" || verb === "release");
+}
+
 /** The plan of `request` to the resolved address, or why it is refused. */
 async function planFor(
   resolved: ResolvedAddress,
@@ -198,6 +203,16 @@ async function planFor(
       ? refused("no checkout of the repository is known here")
       : planAssign(ctx, resolved.checkout, as);
   }
+  if (
+    resolved.address.station === "pickup" &&
+    (request.verb === "hold" || request.verb === "release")
+  )
+    return planPickupHold(
+      contextFor(resolved, r, null),
+      resolved.checkout,
+      request.verb,
+      as,
+    );
   if (request.verb === "answer" && !request.all) {
     const first = await planPickupAnswer(resolved, strict, request, as, dryRun);
     if ("plan" in first) return first.plan;
@@ -245,7 +260,13 @@ export async function sendMain(args: SendArguments): Promise<number> {
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
   const strict = () =>
-    resolveAddress(text, second, usage, request.verb === "assign");
+    resolveAddress(
+      text,
+      second,
+      usage,
+      request.verb === "assign" ||
+        isPickupHold(written.value.station, request.verb),
+    );
   // A pick-up's answer first meets the tracker the default branch names, its key as written.
   const resolved =
     request.verb === "answer" && !request.all

@@ -34,10 +34,18 @@ export function isPersonHold(reason: string): boolean {
   return reason === PERSON_HOLD || reason.endsWith(`, but ${PERSON_HOLD}`);
 }
 
+export interface QueueHoldPolicy {
+  hitl?: string | undefined;
+  manualOps?: string | undefined;
+  personHold?: (key: string) => string | null;
+}
+
 export function queueHold(
   item: QueueItem,
-  policy: { hitl?: string | undefined; manualOps?: string | undefined } = {},
+  policy: QueueHoldPolicy = {},
 ): string | null {
+  const person = policy.personHold?.(item.issue.identifier);
+  if (person != null) return person;
   if (item.issue.truncated.length > 0) return "the issue read is incomplete";
   if (
     item.issue.labels.some(

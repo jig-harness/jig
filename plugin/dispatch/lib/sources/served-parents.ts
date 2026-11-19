@@ -201,6 +201,7 @@ export async function servedParentHold(
   block?: string,
   reads: ParentReads = freshReads(tracker),
   merges?: PlanMergeReader,
+  personHold?: (key: string) => string | null,
 ): Promise<string | null> {
   const seen = new Set<string>();
   let child = issue;
@@ -211,6 +212,8 @@ export async function servedParentHold(
     seen.add(child.identifier);
     if (up === null) return "the item's parent plan cannot be read";
     if (up.parent === null) return null;
+    const localHold = personHold?.(up.parent);
+    if (localHold != null) return `${up.parent} is ${localHold}`;
     const parent = await reads.pool(up.parent);
     if (parent === null || parent.truncated.length)
       return "the parent cannot be read completely";

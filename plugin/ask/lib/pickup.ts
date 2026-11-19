@@ -27,6 +27,10 @@ import type {
   LineNeed,
   LineQueued,
 } from "../../dispatch/lib/dashboard-contract.ts";
+import {
+  personPickupHolds,
+  pickupHoldReason,
+} from "../../dispatch/lib/person-pickup-holds.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import {
   type Holder,
@@ -315,23 +319,48 @@ async function issueAnswer(
   );
   const member = await membershipOf(ctx, tracker);
   const needs = currentNeeds(needsOf(ctx), issue, tracker.identity, member);
-  const { state, detail } = stateOf(issue, tracker.identity, needs, member);
+  const raw = stateOf(issue, tracker.identity, needs, member);
+  const holds =
+    ctx.dispatcher === null
+      ? null
+      : personPickupHolds(address.repo, ctx.dispatcher);
+  const personHold = holds?.ok
+    ? holds.value.find((hold) => hold.item === address.key)
+    : undefined;
+  const holdUnread = holds?.ok === false ? holds.failure.reason : null;
+  const state = personHold === undefined ? raw.state : "held";
+  const holdDetail =
+    personHold === undefined ? holdUnread : pickupHoldReason(personHold);
+  const detail =
+    holdDetail === null ? raw.detail : `${raw.detail}; ${holdDetail}`;
   const holding = holdingRecord(local.records);
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
   const last = lastEnded(local.rows, ["pickup"]);
   // The newest tick's overlap reason and footprint note hold only while the item still waits to be picked up.
   const queued = state === "assigned" ? queuedOf(ctx) : undefined;
+  const waitsOn =
+    personHold !== undefined
+      ? personWait("release the pickup hold", pickupHoldReason(personHold), {
+          people: [personHold.by],
+        })
+      : waitsOnOf(
+          holdUnread === null ? state : "unknown",
+          needs,
+          ctx,
+          holding !== null,
+          queued,
+        );
   return {
     found: true,
     title: issue.title,
     url: issue.url,
     holder:
       holding === null
-        ? claimHolder(state, issue)
+        ? claimHolder(raw.state, issue)
         : recordHolder(holding, null),
     state,
     stateDetail: detail,
-    waitsOn: waitsOnOf(state, needs, ctx, holding !== null, queued),
+    waitsOn,
     ...(queued?.overlap === undefined ? {} : { overlap: queued.overlap }),
     ...(queued?.footprint === undefined ? {} : { footprint: queued.footprint }),
     last: last === null ? null : lastOfRow(last),

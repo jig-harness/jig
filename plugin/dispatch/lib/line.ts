@@ -543,10 +543,12 @@ function needsOf(
   return [...planned, ...refused];
 }
 
+type QueuedDetail = "stale" | "assignedBy" | "hold" | "pickupHold" | "launch";
+
 function queued(
   view: RepoView,
   fields: Pick<LineQueued, "source" | "group" | "target" | "why"> &
-    Partial<Pick<LineQueued, "stale" | "assignedBy" | "hold" | "launch">>,
+    Partial<Pick<LineQueued, QueuedDetail>>,
   evidence: Evidence = {},
 ): LineQueued {
   const pr = prNumber(fields.target);
@@ -706,10 +708,11 @@ function queueOf(view: RepoView): LineQueued[] {
     .filter((u) => u.record === "tracker" && isItemTarget(u.target))
     .map((u) =>
       queued(view, {
-        source: "assigned",
-        group: "never",
+        source: u.pickupHold === undefined ? "assigned" : "held",
+        group: u.pickupHold === undefined ? "never" : "held",
         target: u.target,
         why: u.reason,
+        ...(u.pickupHold === undefined ? {} : { pickupHold: u.pickupHold }),
       }),
     );
   return [...planned, ...replayed, ...serial, ...labelled, ...refused];

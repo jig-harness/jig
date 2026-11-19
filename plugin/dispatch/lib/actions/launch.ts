@@ -47,6 +47,7 @@ import {
 import { holderRefusal } from "../holder-notices.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { retryable } from "../stuck-launches.ts";
+import { personPickupBlock } from "../person-pickup-holds.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -568,6 +569,7 @@ export async function replay(
   action: Action,
   blocked: string | ReplayBlock | null,
 ): Promise<LaunchOutcome> {
+  blocked ??= personPickupBlock(record, state.root);
   const detail = typeof blocked === "string" ? blocked : blocked?.detail;
   const waitsOn =
     detail === undefined
@@ -923,7 +925,7 @@ export async function launchHeld(
   record: LaunchRecord,
 ): Promise<LaunchOutcome> {
   // The claim and every wait before this point may have spent the time admitted for the launch.
-  const late = launchRoom(state);
+  const late = personPickupBlock(record, state.root) ?? launchRoom(state);
   if (late !== null) {
     release(state, record);
     return {

@@ -130,19 +130,19 @@
       "kind": "verb",
       "name": "hold",
       "key": null,
-      "stations": "drive, followup",
+      "stations": "drive, followup, pickup",
       "person": true,
       "args": null,
-      "meaning": "Keep the line off a pull request: add the hold command label, which every stage of the dispatcher respects"
+      "meaning": "Keep the line off a pull request with the hold command label, or keep a tracker item out of pickups and batches with a hold on its dispatcher host"
     },
     {
       "kind": "verb",
       "name": "release",
       "key": null,
-      "stations": "drive, followup",
+      "stations": "drive, followup, pickup",
       "person": true,
       "args": null,
-      "meaning": "Withdraw a hold: remove the hold command label, so the dispatcher's next tick takes the pull request up again"
+      "meaning": "Withdraw the pull request's hold label or the tracker item's hold on its dispatcher host"
     },
     {
       "kind": "verb",
