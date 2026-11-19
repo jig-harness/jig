@@ -784,4 +784,40 @@ describe("an extension that stopped part way", () => {
     ).toBe("wait");
     expect(f.calls).toEqual([3]);
   });
+  test("owes a run cancelled in the same second as the last request", async () => {
+    const f = fixture(parseMs("2026-01-01T00:11:00Z"));
+    const requestedB = {
+      id: 2,
+      workflowId: 20,
+      attempt: 2,
+      at: parseMs("2026-01-01T00:10:00.800Z"),
+    };
+    const deps: RecoveryDeps = {
+      ...f.deps,
+      extend: async () => true,
+      observe: async () => ({
+        firstSeen: parseMs("2026-01-01T00:00:00Z"),
+        requestedAt: parseMs("2026-01-01T00:10:00.800Z"),
+        workflowIds: [20],
+        requestedRuns: [requestedB],
+      }),
+    };
+    const pendingB: WorkflowRun = {
+      ...run(2, 20),
+      status: "in_progress",
+      conclusion: null,
+      attempt: 2,
+      startedAt: "2026-01-01T00:10:00Z",
+    };
+    const cancelledC: WorkflowRun = {
+      ...run(3, 30),
+      startedAt: "2026-01-01T00:09:00Z",
+      updatedAt: "2026-01-01T00:10:00Z",
+    };
+    const jobC = { ...job, suiteId: 3 };
+    expect(
+      await recoverCancelled("5", "head", [jobC], [pendingB, cancelledC], deps),
+    ).toBe("wait");
+    expect(f.calls).toEqual([3]);
+  });
 });

@@ -278,6 +278,9 @@ async function judgeRequest(
   // A request that stopped part way left runs of other workflows cancelled
   // before it and never requested: they are owed now, whatever the requested
   // runs are doing, and a pending or missing sibling must not hold them back.
+  // Run times have one-second precision, so a run last updated within the
+  // request's own second cannot be told from one cancelled before it: it is
+  // owed, and at worst requested once more under the extension's claim.
   // The newest request time bounds what was owed: an extension that stopped
   // part way keeps only the runs it sent, so a run cancelled after the first
   // request but before a later one is still owed, which the claim's own
@@ -291,7 +294,7 @@ async function judgeRequest(
       !requested.some(
         (request) =>
           request.id === run.id || request.workflowId === run.workflowId,
-      ) && cancelledBefore(run, lastRequestedAt),
+      ) && cancelledBefore(run, floorSecond(lastRequestedAt) + 1000),
   );
   if (owed.length > 0) {
     if ((await deps.confirm(pr, head)) !== true) return "unknown";
