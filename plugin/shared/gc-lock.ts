@@ -234,6 +234,7 @@ export function exclusiveFixtureGcLock<T>(root: string, body: () => T): T {
   const writer = join(dir, "writer");
   if (!publishWriter(writer, true) && !recoverFixturePublisher(writer))
     throw fixtureWriterRefusal(writer);
+  let threw = false;
   let failure: unknown;
   let value: T | undefined;
   try {
@@ -253,19 +254,20 @@ export function exclusiveFixtureGcLock<T>(root: string, body: () => T): T {
       );
     value = body();
   } catch (error) {
+    threw = true;
     failure = error;
   }
   try {
     rmSync(writer);
   } catch (error) {
     // The body's own failure, and its retry class, outranks a cleanup fault.
-    if (failure === undefined) throw error;
+    if (!threw) throw error;
     log.warn("Could not remove the fixture publisher's lock", {
       writer,
       cause: error instanceof Error ? error.message : String(error),
     });
   }
-  if (failure !== undefined) throw failure;
+  if (threw) throw failure;
   return value as T;
 }
 

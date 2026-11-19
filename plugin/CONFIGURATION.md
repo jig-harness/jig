@@ -1352,10 +1352,13 @@ See [test scratch](gc/README.md#test-scratch) for the ownership checks.
 
 The machine's test fixture registry admits at most 100,000 registrations by
 default. Set `JIG_TEST_FIXTURE_REGISTRY_LIMIT` to a positive safe integer to
-override the limit. Other values use the default. Installing or refreshing the
-scheduled collector and dispatcher records the value from the installing
-shell, so set it there as well as for test runners and `jig doctor`, and
-every participant uses the same limit. Every fixture writer on that host must
+override the limit. Other values use the default. Installing the scheduled
+collector and dispatcher records the value from the installing shell, so set
+it there as well as for test runners and `jig doctor`, and every participant
+uses the same limit. `jig upgrade` keeps the value an installed job already
+recorded, so after changing the limit run `jig install gc --yes` and
+`jig install dispatch --yes` again from the shell that sets it. Every fixture
+writer on that host must
 use the admission check for the limit to apply across test runs.
 
 `jig doctor gc` reports the registry count and the free inode share of the
