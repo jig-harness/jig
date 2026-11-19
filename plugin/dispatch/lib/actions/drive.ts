@@ -557,7 +557,9 @@ function stillWanted(
   const want = wantedClass(isTakeover(action), action.redrive, action.facts);
   if (fresh.class !== want)
     return `its ledger now reads ${fresh.class}: ${fresh.why}`;
+  // A steward's rearm marks its fresh read itself; no label request stands behind it.
   if (
+    action.steward === undefined &&
     (action.evidence.rearm === true || fresh.evidence.rearm === true) &&
     (fresh.evidence.rearm !== action.evidence.rearm ||
       requestMoved(fresh, action.evidence.rearmRequestId))
@@ -806,7 +808,7 @@ async function requestMovedSince(
   pr: DrivenPr,
   drive: FreshDrive,
 ): Promise<string | null> {
-  if (pr.evidence.rearm !== true) return null;
+  if (action.steward !== undefined || pr.evidence.rearm !== true) return null;
   const again = await drive.read(pr.number);
   if (!again.ok) return again.failure.reason;
   return stillWanted(action, again.value, drive.held);
