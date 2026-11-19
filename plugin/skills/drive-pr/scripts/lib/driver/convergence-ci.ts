@@ -807,6 +807,7 @@ export async function evaluateFinalCi(
     failing,
   );
   const { timedOut } = joined;
+  const unconfirmed = { finalVerdict, failing, stale: staleRequiredFailure };
   ({ finalVerdict, failing, staleRequiredFailure } = joined);
   const special = await specialCiDisposition(
     finalVerdict,
@@ -819,6 +820,23 @@ export async function evaluateFinalCi(
   );
   if (typeof special !== "object") return special;
   ({ finalVerdict, failing } = special);
+  if (unconfirmed.stale && timedOut.length > 0) {
+    // The policy judged the whole set; the repair inputs exclude the reported
+    // failures whose freshness was never confirmed. With no timed-out job left
+    // after the policy, the original unconfirmed verdict stands.
+    const names = new Set(timedOut.map((job) => job.name));
+    const kept = (failing.checkRunNames ?? []).filter((n) => names.has(n));
+    if (kept.length === 0) {
+      ({ finalVerdict, failing } = unconfirmed);
+      staleRequiredFailure = true;
+    } else {
+      failing = withTimedOut(null, {
+        timedOut: timedOut.filter((job) => kept.includes(job.name)),
+        recovery: "none",
+      });
+      finalVerdict = `failing: ${kept.join(", ")}`;
+    }
+  }
   if (finalVerdict.startsWith("cancelled:"))
     return await waitForReplacement(
       reviewedHead,
