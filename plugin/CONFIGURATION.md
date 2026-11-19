@@ -1700,6 +1700,7 @@ accounts:
     config_dir: /home/me/.claude-work
     identity: me@example.com
     max_per_account: 2
+    # stages: [pickup, followup]     # the launching stages it serves; every one when left out
 serve:
   - name: maintainer
     forge: [maintainer-login, maintainer-work-login]
@@ -1768,6 +1769,7 @@ rejects any other form.
 | `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (`claude`) or `CODEX_HOME` (`codex`) for each session it bills. The session starts with the other variable and `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
 | `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
+| `accounts[].stages` | Every launching stage; the stages whose sessions the account takes, a list of distinct names from `pickup`, `rearm`, `followup` and `steward`. A re-arm, a takeover and a re-drive (a conflict re-drive among them) are the `rearm` stage's. Admission passes over an account that does not serve an action's stage before it weighs anything else, as it does an account the preflight holds back, and the account is not probed for that action; weights, turns, walls and slots then decide among the accounts that remain. A takeover runs in the slot of the launch record it replaces only while that record's account serves `rearm`; otherwise it is admitted as a new re-arm would be, on a free slot of an account that serves `rearm`, where it holds a slot of its own beside the replaced record's until that record ends, and it waits with the usual reasons when none has one. A launch already recorded and retried after a lost answer stays on its own account. The load factor's accounts gauge (`load.enforce`) still counts the slots of every listed account, whatever stages each serves, so the free slot it keeps for a drive or a follow-up may be on an account that serves neither. When no listed account serves a stage, its launches wait with a reason that names the stage and says no account serves it, not that no account has a free slot. The receipt, the terminal report and the dashboard's account view show an account's stages when this narrows them, and a run without `--apply` names, under each planned launch, the accounts that serve its stage. The file is refused, naming the account and the value, for an unknown stage, a stage written twice, an empty list, or `notify` or `steer`, which launch no session |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up, pickup or steward startup that writes no transcript, result or question within its first minute. A startup whose output holds a recognized usage-limit notice is walled until the reset the notice states instead, read in the zone it names (the host's when it names none) and at most eight days out; the backoff applies when that reset cannot be read, and to a startup with no such notice |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
@@ -1871,8 +1873,8 @@ usage limits the dispatcher currently knows.
 
 Weights divide new launches among accounts able to take one now. They reserve
 no concurrent slots. `accounts[].max_per_account` remains the safety ceiling
-on concurrent sessions, while walls and vendor requirements also constrain
-admission. An account unavailable for any of those reasons leaves its share
+on concurrent sessions, while walls, vendor requirements and an account's
+`stages` also constrain admission. An account unavailable for any of those reasons leaves its share
 to the others, with no launches owed when it returns. The sequence is derived
 from launch records, so it survives ticks without a separate allocation
 counter. Each new launch record keeps its account's cumulative launch count; retention

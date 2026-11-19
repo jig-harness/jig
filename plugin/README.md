@@ -297,7 +297,9 @@ reads `DEAD` or `WEDGED`,
 runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
 holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
-the pass to an account the machine file lists, through that account's
+the pass to an account the machine file lists that serves the `rearm`
+stage ([`accounts[].stages`](CONFIGURATION.md#the-machines-dispatch-file)),
+through that account's
 configuration directory, and only while the account has a free slot and no
 recorded usage-limit wall; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
