@@ -173,6 +173,12 @@ const FACTS: Partial<
 function factsOf(action: NeedAction, ctx: StationContext): StationFacts | null {
   const stuck = text(action.evidence, "stuck");
   const record = text(action.evidence, "record");
+  // A session already running for the held drive makes clearing refused, so no clear is offered.
+  if (
+    text(action.evidence, "heldSince") !== null &&
+    text(action.evidence, "runningSessions") !== null
+  )
+    return null;
   if (stuck !== null && record !== null)
     return {
       kind: "launch",

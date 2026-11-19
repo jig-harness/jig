@@ -325,6 +325,32 @@ describe("a stopped drive held by a launch of unknown process", () => {
   });
 });
 
+describe("a drive that waits on a person, held by another host's claim", () => {
+  const waiting = () => drive(PAST, { class: "needs-person" });
+
+  it("is not notified of inside the bound, and raises the hold's need past it", () => {
+    expect(needsOf(input({ drives: [waiting()], ...foreign(RECENT) }))).toEqual(
+      [],
+    );
+    const [need] = needsOf(input({ drives: [waiting()], ...foreign(PAST) }));
+    expect(need).toMatchObject({
+      cause: "needs-person",
+      evidence: { heldClaim: String(CLAIM_ID), heldSince: PAST },
+    });
+  });
+
+  it("still notifies when no claim of another host holds it", () => {
+    const [need] = needsOf(
+      input({
+        drives: [waiting()],
+        shared: { host: "this-host", drives: new Map([[7, ok([])]]) },
+      }),
+    );
+    expect(need?.cause).toBe("needs-person");
+    expect(need?.evidence.heldClaim).toBeUndefined();
+  });
+});
+
 describe("the decision a stranded hold frames", () => {
   const framed = (action: Action) =>
     stationDecision(action as Action & { cause: NeedCause }, {

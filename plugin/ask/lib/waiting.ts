@@ -95,7 +95,10 @@ function shared(need: LineNeed): Omit<WaitingEntry, "address" | "questions"> {
     people: uniqueLogins(
       need.decisions.flatMap((d) => (d.person === undefined ? [] : [d.person])),
     ),
-    act: personAct(need.cause),
+    act:
+      need.heldSince == null
+        ? personAct(need.cause)
+        : "settle the launch that holds the drive",
     needAct: actOfLineNeed(need),
     since: need.since,
     reason: need.reason,

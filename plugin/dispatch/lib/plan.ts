@@ -477,12 +477,19 @@ function planForeign(
   want: Want,
 ): true | TakeoverClaim | null {
   const shared = input.shared;
-  if (shared === undefined || !LAUNCHABLE.has(pr.class)) return null;
+  if (
+    shared === undefined ||
+    !(LAUNCHABLE.has(pr.class) || pr.class === "needs-person")
+  )
+    return null;
   const target = `PR #${pr.number}`;
   const claims =
     shared.drives.get(pr.number) ??
     failed("unreadable", "they were not read this tick");
   const hold = foreignHold(pr, claims, shared.host);
+  // A drive that waits on a person is only notified of: another host's open
+  // claim holds that notification, and no other claim reading applies.
+  if (pr.class === "needs-person" && hold.kind !== "held") return null;
   if (
     hold.kind === "none" ||
     (hold.kind === "refused" &&

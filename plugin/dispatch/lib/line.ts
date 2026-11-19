@@ -439,6 +439,7 @@ function needsOf(
         action,
       ),
       since:
+        text(action.evidence, "heldSince") ??
         text(action.evidence, "heartbeat") ??
         text(action.evidence, "idleSince") ??
         at ??
@@ -473,6 +474,9 @@ function needsOf(
         text(action.evidence, "stuck") === null
           ? null
           : text(action.evidence, "record"),
+      ...(text(action.evidence, "heldSince") === null
+        ? {}
+        : { heldSince: text(action.evidence, "heldSince") }),
     };
   });
   const refused = view.report.unplaced
