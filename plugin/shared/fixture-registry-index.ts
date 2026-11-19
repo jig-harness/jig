@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 import { attempt, failed, JigError, ok, type Outcome } from "./outcome.ts";
 
-export const FIXTURE_REGISTRY_LIMIT = 100_000;
+const FIXTURE_REGISTRY_LIMIT = 100_000;
 
 export function fixtureRegistryLimit(): number {
   const configured = process.env.JIG_TEST_FIXTURE_REGISTRY_LIMIT;

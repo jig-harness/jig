@@ -299,23 +299,15 @@ function scopeRecord(file: string, registry: string): FixtureScope | null {
   const text = readRecord(file);
   if (text === null) return null;
   const value: unknown = JSON.parse(text);
-  const registeredBy = isRecord(value)
-    ? decodeIdentity(value.registeredBy)
-    : null;
-  return isRecord(value) &&
-    value.version === 1 &&
-    typeof value.root === "string" &&
-    isAbsolute(value.root) &&
-    typeof value.createdAt === "string" &&
-    Number.isFinite(parseMs(value.createdAt)) &&
-    registeredBy !== null
-    ? {
-        root: value.root,
-        registry,
-        createdAt: value.createdAt,
-        registeredBy,
-      }
-    : null;
+  if (!isRecord(value) || value.version !== 1) return null;
+  const { root, createdAt } = value;
+  const registeredBy = decodeIdentity(value.registeredBy);
+  if (typeof root !== "string" || !isAbsolute(root)) return null;
+  if (typeof createdAt !== "string" || !Number.isFinite(parseMs(createdAt)))
+    return null;
+  return registeredBy === null
+    ? null
+    : { root, registry, createdAt, registeredBy };
 }
 interface ScanBudget {
   deadline: number;
@@ -478,7 +470,7 @@ export function nextFixtureRegistryPage(
       page.malformed.push({ registry, reason: entry.reason });
   }
   if (options.advance === false || last === undefined) return ok(page);
-  return withFixtureNameIndex(store, (index) => {
+  return withFixtureNameIndex(store, (index: FixtureNameIndex) => {
     index.advanceCollection(after, page.complete ? null : last);
     return page;
   });

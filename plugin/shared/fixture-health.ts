@@ -1,6 +1,5 @@
 import { statfsSync, type StatsFs } from "node:fs";
 import { dirname } from "node:path";
-import type { DoctorCheck } from "../runtime/component.ts";
 import { failureFields } from "./errors.ts";
 import {
   fixtureRegistryUsage,
@@ -10,6 +9,14 @@ import { log } from "./log.ts";
 import { failed, type Failure } from "./outcome.ts";
 
 const FREE_INODE_THRESHOLD = 10;
+
+/** The shape of the runtime's doctor check, kept here so shared code needs no runtime import. */
+interface DoctorCheck {
+  id: string;
+  status: "pass" | "fail" | "skip";
+  detail: string;
+  fix?: string;
+}
 
 function stateFilesystem(): StatsFs {
   let path = dirname(testFixtureRegistryRoot());
