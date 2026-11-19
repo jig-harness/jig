@@ -8,14 +8,15 @@
  * the hold does not keep from going on (one done, running, refused or
  * stopped by a person, a merged pull request's) waits on what its class
  * says until the bound, and past it on the hold, which keeps a launch slot
- * of its account taken, once this machine's record of it shows its
- * processes proved gone.
+ * of its account taken, once it is this machine's record (and, where the
+ * drive's driver may still run, every process of it is proved gone).
  */
 import type { ReadRecord } from "../../dispatch/lib/launches.ts";
 import {
   clearBlock,
   heldStopSinceMs,
   heldUpByLaunch,
+  needsProof,
   provedGone,
   STRANDED_HOLD_MS,
   STRANDED_HOLD_TEXT,
@@ -47,13 +48,17 @@ function holderWords(holder: Holder): string {
   return `held by the ${holder.stage} launch on ${where}${record === undefined ? "" : ` (launch record ${record})`}, whose process is ${holder.process}: ${holder.why}`;
 }
 
-/** Whether the holder is this machine's record of unknown state, every process of which is proved gone. */
-function gone(holder: Holder, read: ReadRecord | null): boolean {
+/** Whether the holder is this machine's record of unknown state, every process of which is proved gone where `proof` asks it. */
+function ownRecord(
+  holder: Holder,
+  read: ReadRecord | null,
+  proof: boolean,
+): boolean {
   return (
     holder.local?.record !== undefined &&
     read?.record.id === holder.local.record &&
     read.state.kind === "unknown" &&
-    provedGone(read.state)
+    (!proof || provedGone(read.state))
   );
 }
 
@@ -83,7 +88,8 @@ export function heldStopWait(
 ): WaitsOn | null {
   if (holder === "none" || holder.process === "alive") return null;
   const heldUp = heldUpByLaunch(placed);
-  if (!heldUp && !gone(holder, facts.record)) return null;
+  if (!heldUp && !ownRecord(holder, facts.record, needsProof(placed)))
+    return null;
   const since = heldStopSinceMs(holder.since ?? "", stoppedAt, placed);
   const age = currentMs() - since;
   const held = Number.isFinite(since)

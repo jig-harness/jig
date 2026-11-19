@@ -360,14 +360,36 @@ describe("a drive of any other class a launch of unknown process holds", () => {
     expect((await ask(w)).waitsOn).toBe("none");
   });
 
-  it("waits on its class while the holder's processes cannot be judged, past the bound too", async () => {
+  it("does not name the hold on a running ledger whose holder's processes cannot be judged, past the bound too", async () => {
+    const w = world();
+    const ledger = stoppedLedger(12, undefined, {
+      driver: {
+        actor: "wt-0123456789abcdef",
+        clone: "clone-a",
+        heartbeat: currentIso(),
+        state: "running",
+        started: currentIso(),
+      },
+    });
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    const { waiting } = (await ask(w)).waitsOn as { waiting: string };
+    expect(waiting).toContain("liveness and ownership are unknown");
+  });
+
+  it("names the hold on a merged pull request whose holder's processes cannot be judged", async () => {
     const w = world();
     const long = isoFromMs(currentMs() - 10 * HOUR_MS);
     merged(w, long);
     launch(w, long);
     claimElsewhere(w, long);
 
-    expect((await ask(w)).waitsOn).toBe("none");
+    const waits = (await ask(w)).waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain("is on another host");
   });
 
   it("is a person's to settle on a running ledger, counted from the launch", async () => {

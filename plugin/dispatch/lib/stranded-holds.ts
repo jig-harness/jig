@@ -3,9 +3,9 @@
  * launch record whose state is unknown, or another host's launch claim with
  * no end. The hold keeps the tick off a drive it would act on, and keeps a
  * launch slot of its account taken whatever the drive's class, a merged
- * pull request's included. A drive the hold does not keep from going on is
- * raised only once the record's processes are proved gone (`provedGone`), so
- * a drive that runs while a process read failed is never raised. Nothing
+ * pull request's included. A drive whose driver may still run is raised
+ * only once the record's processes are proved gone (`provedGone`), so a
+ * drive that runs while a process read failed is never raised. Nothing
  * ends a hold by itself, so it is **stranded**
  * once it has outlived `STRANDED_HOLD_MS`, counted from the later of the
  * launch and the drive's stop (its merge, for a merged pull request): a
@@ -49,6 +49,18 @@ const HELD_UP: ReadonlySet<LedgerClass> = new Set<LedgerClass>([
 
 /** The drives whose ledger still runs: they have not stopped. */
 const RUNNING: ReadonlySet<LedgerClass> = new Set<LedgerClass>(["driven"]);
+
+/** The drives the hold does not keep from going on whose driver may still run: a running ledger, a silent one, or one that did not read. */
+const MAY_RUN: ReadonlySet<LedgerClass> = new Set<LedgerClass>([
+  "driven",
+  "silent",
+  "unplaced",
+]);
+
+/** Whether a hold of unknown process on a drive of this class is raised only once its processes are proved gone. */
+export function needsProof(cls: LedgerClass): boolean {
+  return MAY_RUN.has(cls);
+}
 
 /** Whether a launch holding a drive of this class is what keeps it from going on; any other hold keeps only its account's slot. */
 export function heldUpByLaunch(cls: LedgerClass): boolean {
@@ -159,7 +171,7 @@ export function strandedByRecord(
     return null;
   const { record, state } = read;
   if (state.kind !== "unknown") return null;
-  if (!heldUpByLaunch(pr.class) && !provedGone(state)) return null;
+  if (needsProof(pr.class) && !provedGone(state)) return null;
   const since = strandedSince(pr, record.createdAt, nowMs);
   if (since === null) return null;
   const heldSince = isoFromMs(since);

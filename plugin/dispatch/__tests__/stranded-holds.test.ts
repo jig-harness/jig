@@ -277,12 +277,12 @@ describe("a stopped drive held by a launch of unknown process", () => {
     }
   });
 
-  it("raises nothing for a drive of another class while a process of the holder runs or cannot be judged", () => {
+  it("raises nothing for a drive that may still run while a process of the holder runs or cannot be judged", () => {
     for (const state of [
       { ...unknown, liveProcess: { ...PROCESS, pid: 4242 } },
       { ...unknown, unjudged: true },
     ] as ReadRecord["state"][])
-      for (const cls of ["driven", "done"] as const)
+      for (const cls of ["driven", "silent", "unplaced"] as const)
         expect(
           needsOf(
             input({
@@ -291,6 +291,19 @@ describe("a stopped drive held by a launch of unknown process", () => {
             }),
           ),
         ).toEqual([]);
+  });
+
+  it("raises a stopped drive's hold whose processes cannot be judged, saying what to settle first", () => {
+    for (const cls of ["done", "refused", "parked"] as const) {
+      const [need, ...rest] = needsOf(
+        input({
+          drives: [drive(PAST, { class: cls })],
+          launches: [launch({ ...unknown, unjudged: true })],
+        }),
+      );
+      expect(rest).toEqual([]);
+      expect(need?.evidence.blocked).toContain("could not be judged");
+    }
   });
 
   it("counts a running ledger's hold from the launch alone, as the drive has not stopped", () => {
