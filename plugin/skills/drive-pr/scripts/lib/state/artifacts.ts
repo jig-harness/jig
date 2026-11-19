@@ -14,6 +14,7 @@ export type ArtifactFamily =
   | "pass-handoff"
   | "arm-output"
   | "round-report"
+  | "round-finish"
   | "driver-observation";
 
 interface ClonePattern {
@@ -36,6 +37,10 @@ const CLONE_FILES: readonly ClonePattern[] = [
   {
     re: /^drive-pr-([0-9]+)\.round-report\.json(?:\.[0-9a-f]{6})?$/,
     family: "round-report",
+  },
+  {
+    re: /^drive-pr-([0-9]+)\.round-finish\.json(?:\.[0-9a-f]{6})?$/,
+    family: "round-finish",
   },
 ];
 

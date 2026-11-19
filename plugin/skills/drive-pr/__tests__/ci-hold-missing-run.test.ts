@@ -188,6 +188,20 @@ describe("workflowForCheck", () => {
     expect(workflowForCheck("Shard 4", [ci, matrix])).toBeNull();
   });
 
+  it("does not attribute a name that combines matrix keys or a matrix with exclusions", () => {
+    const combined = {
+      path: ".github/workflows/combined.yml",
+      text: "on: push\njobs:\n  t:\n    name: ${{ matrix.n }} ${{ matrix.os }}\n    strategy:\n      matrix:\n        n: [1, 2]\n        os: [linux, windows]\n    runs-on: x\n",
+    };
+    const excluded = {
+      path: ".github/workflows/excluded.yml",
+      text: "on: push\njobs:\n  t:\n    name: Build ${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [linux, windows]\n        exclude:\n          - os: windows\n    runs-on: x\n",
+    };
+    expect(workflowForCheck("1 windows", [ci, combined])).toBeNull();
+    expect(workflowForCheck("1 linux", [ci, combined])).toBeNull();
+    expect(workflowForCheck("Build windows", [ci, excluded])).toBeNull();
+  });
+
   it("says unknown when no workflow, or several, report it", () => {
     expect(workflowForCheck("deploy", [ci, matrix])).toBeNull();
     expect(

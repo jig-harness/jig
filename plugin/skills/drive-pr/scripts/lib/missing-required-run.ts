@@ -156,6 +156,7 @@ function matrixValues(job: unknown, key: string): string[] | null {
   if (typeof matrix !== "object" || matrix === null || Array.isArray(matrix))
     return null;
   const grid = matrix as Record<string, unknown>;
+  if ("exclude" in grid) return null;
   const values: unknown[] = [];
   if (Array.isArray(grid[key])) values.push(...(grid[key] as unknown[]));
   else if (key in grid) return null;
@@ -179,8 +180,8 @@ function escapeRegExp(text: string): string {
 /**
  * The check names a job may report: its `name`, else its id; a templated
  * name as a pattern over the values its matrix lists. A name whose
- * expressions are not plain `matrix.<key>` references to listed values is
- * left unattributed rather than matched by its fixed prefix.
+ * expressions are not plain references to one matrix key's listed values, or
+ * whose matrix excludes combinations, is left unattributed rather than matched by its fixed prefix.
  */
 function jobNames(
   id: string,
@@ -194,10 +195,13 @@ function jobNames(
   if (!name.includes("${{")) return { exact: [name], pattern: [] };
   let source = "";
   let last = 0;
+  const keys = new Set<string>();
   for (const m of name.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
     const key = /^\s*matrix\.([A-Za-z_][\w-]*)\s*$/.exec(m[1] ?? "")?.[1];
     const values = key === undefined ? null : matrixValues(job, key);
-    if (values === null) return { exact: [], pattern: [] };
+    if (key === undefined || values === null) return { exact: [], pattern: [] };
+    keys.add(key);
+    if (keys.size > 1) return { exact: [], pattern: [] };
     source += `${escapeRegExp(name.slice(last, m.index))}(?:${values.map(escapeRegExp).join("|")})`;
     last = m.index + m[0].length;
   }
