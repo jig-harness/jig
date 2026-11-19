@@ -1,6 +1,31 @@
 import { describe, expect, it } from "bun:test";
 import { fixture } from "../fixtures.ts";
-import { derivedLink, forgesOf, withDerivedLinks } from "./links.ts";
+import { derivedLink, forgesOf, repoHome, withDerivedLinks } from "./links.ts";
+
+describe("a repository's own page", () => {
+  const web = "https://forge.example/example-org/web";
+
+  it("comes from its pull request or its own issue", () => {
+    expect(repoHome("example-org/web", `${web}/pull/7`)).toBe(web);
+    expect(repoHome("example-org/web", `${web}/issues/7`)).toBe(web);
+  });
+
+  it("is not taken from an issue kept in another repository", () => {
+    expect(
+      repoHome(
+        "example-org/web",
+        "https://forge.example/example-org/tracker/issues/7",
+      ),
+    ).toBeNull();
+  });
+
+  it("is unknown from any other address, or none", () => {
+    expect(
+      repoHome("example-org/web", "https://issues.example/WEB-1"),
+    ).toBeNull();
+    expect(repoHome("example-org/web", null)).toBeNull();
+  });
+});
 
 describe("the links the line tells", () => {
   const line = fixture("partial").line;

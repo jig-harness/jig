@@ -401,6 +401,56 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.282.0] - 2026-11-19
+
+### Fixed
+
+- Untagged releases of one repository that share a remedy now reach a person
+  as one need instead of one card per version. The need lists every version,
+  `jig ask --waiting` counts it once, and one answer on the tracker item it
+  names covers them all. A version leaves the list when it gets its tag, and
+  the need goes with the last one. Releases whose one re-run of the failed
+  gates was requested form their own need, and any such release is offered
+  only **Investigate** and **Tag it by hand**. Each release keeps its own
+  record and tracker item.
+
+## [0.281.0] - 2026-11-19
+
+### Added
+
+- The dispatch dashboard's Queue view can be filtered by repository, source, kind and group, each with its counts, and regrouped by repository or source, with the dispatcher's order one tap away. "Starts next" always leads, and a long "Will not start" group starts folded with its reasons counted in the heading. On a phone the groups fold the same way and repository stays the only filter.
+
+### Changed
+
+- [`followup`](plugin/skills/followup/README.md)'s preview of an open pull
+  request now lists first the provisional decisions a drive took at the
+  `wide` autonomy level, from the drive's report or its ledger, so the
+  person merging reads the calls they may still reverse; a list with an
+  unread part says so rather than passing for complete.
+
+### Fixed
+
+- The dispatcher shows a batch pickup's question on the item it concerns, or
+  once for the batch when no member is named. A question clears when the
+  relevant item moves on. **Consumer action:** none.
+- `drive-pr`: one failed forge read in the cancelled-run recovery (the head's
+  check runs, its workflow runs, or the pull request and its CI hold) no
+  longer ends the drive with exit `1`. A timeout, a server error or a lost
+  connection is read once more, and the recovery goes on when that answers.
+  A read that still fails, or meets a rate limit, stops the drive with
+  `NOT_SETTLED` (exit `4`), which `jig dispatch` re-arms, and the drive's log
+  names the read and its failure class. When that read was the check just
+  before a re-run, the head's one automatic re-run is given back, so the
+  re-armed drive requests it instead of parking on a re-run that never left.
+  A failure waiting cannot clear (a refused credential, an answer that does
+  not read) is not retried and is not re-armed. The same holds when the drive
+  loses the pull request between the claim and a request: the runs never sent
+  go back to the next owner, and a run left unrequested by a partial send is
+  requested while the runs already sent are still pending.
+- GitHub calls: `gh`'s `error connecting to <host>` message now counts as no
+  answer from the forge (`unreachable`), which waiting can clear, instead of a
+  request the forge refused.
+
 ## [0.280.0] - 2026-11-19
 
 ### Added
@@ -9890,7 +9940,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.280.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.282.0...HEAD
+[0.282.0]: https://github.com/jig-harness/jig/compare/v0.281.0...v0.282.0
+[0.281.0]: https://github.com/jig-harness/jig/compare/v0.280.0...v0.281.0
 [0.280.0]: https://github.com/jig-harness/jig/compare/v0.279.3...v0.280.0
 [0.279.3]: https://github.com/jig-harness/jig/compare/v0.279.2...v0.279.3
 [0.279.2]: https://github.com/jig-harness/jig/compare/v0.279.1...v0.279.2

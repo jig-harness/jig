@@ -15,7 +15,6 @@ TODO
 # emphasis-caps words, not acronyms
 MANDATORY
 NOT
-OWED
 REQUIRED
 DESCRIBE
 # conventional file names

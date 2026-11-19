@@ -87,6 +87,15 @@ import type { Outcome } from "../../shared/outcome.ts";
 /** The database's file name under the state directory. */
 const STATE_FILE = "state.sqlite";
 
+/** A release a person already took under its own decision stays theirs when it could join a group. */
+export const RELEASES_ALREADY_TAKEN = `UPDATE release_needs
+    SET taken_as = json_object('target', item, 'evidence', json_object('tag', tag))
+    WHERE item IS NOT NULL AND taken_as IS NULL AND EXISTS (
+      SELECT 1 FROM station_answers AS answer
+      WHERE answer.repo = release_needs.repo AND answer.target = release_needs.item
+        AND answer.key = 'release' AND answer.outcome = 'held'
+    );`;
+
 /**
  * Each entry moves the schema from its index to the next version; a new
  * database runs them all. A change to the schema adds an entry, says whether
@@ -518,6 +527,11 @@ export const MIGRATIONS: readonly Migration[] = [
       exit TEXT NOT NULL
     );
   `,
+  },
+  {
+    additive: true,
+    sql: `ALTER TABLE release_needs ADD COLUMN taken_as TEXT;
+    ${RELEASES_ALREADY_TAKEN}`,
   },
 ];
 

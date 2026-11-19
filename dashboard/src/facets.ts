@@ -1,3 +1,7 @@
+import type {
+  QueueGroup,
+  QueueSource,
+} from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import type { ViewId } from "./search.ts";
 
 export const FACETS = [
@@ -7,6 +11,8 @@ export const FACETS = [
   "stage",
   "age",
   "source",
+  "kind",
+  "happens",
 ] as const;
 export type Facet = (typeof FACETS)[number];
 export type FacetValues = Partial<Record<Facet, readonly string[]>>;
@@ -25,6 +31,8 @@ const PARAM: Record<Facet, string> = {
   stage: "facet-stage",
   age: "facet-age",
   source: "source",
+  kind: "facet-kind",
+  happens: "facet-happens",
 };
 
 export const CARD_FILTER_PARAMS = [
@@ -70,10 +78,66 @@ export function facetsFor(view: ViewId): readonly Facet[] {
     case "running":
       return ["repo"];
     case "queue":
-      return ["repo", "source"];
+      return ["repo", "source", "kind", "happens"];
     default:
       return [];
   }
+}
+
+/** What will happen to a queued target, in the order the dispatcher lists it. */
+const QUEUE_GROUPS = [
+  "starts",
+  "held",
+  "reported",
+  "never",
+] as const satisfies readonly QueueGroup[];
+
+export const QUEUE_SOURCES = [
+  "re-armable",
+  "label drive",
+  "held",
+  "assigned",
+  "merged",
+] as const satisfies readonly QueueSource[];
+
+const QUEUE_KINDS = ["pull request", "item"] as const;
+export type QueueKind = (typeof QUEUE_KINDS)[number];
+
+/** The ways What is coming can be grouped; the first is the dispatcher's order. */
+export const QUEUE_GROUPINGS = [
+  { id: "group", word: "what happens" },
+  { id: "repo", word: "repository" },
+  { id: "source", word: "source" },
+  { id: "none", word: "none" },
+] as const;
+export type QueueGrouping = (typeof QUEUE_GROUPINGS)[number]["id"];
+export const DEFAULT_QUEUE_GROUPING: QueueGrouping = "group";
+
+const QUEUE_OPTION_ORDER: Partial<Record<Facet, readonly string[]>> = {
+  source: QUEUE_SOURCES,
+  kind: QUEUE_KINDS,
+  happens: QUEUE_GROUPS,
+};
+
+/**
+ * A facet's options as its row lists them. The counts come in the cards' order,
+ * which regrouping the queue changes, so the queue's rows keep an order of their
+ * own and a chip stays where it was.
+ */
+export function orderedOptions(
+  view: ViewId,
+  facet: Facet,
+  options: readonly FacetCount[],
+): readonly FacetCount[] {
+  if (view !== "queue") return options;
+  const known = QUEUE_OPTION_ORDER[facet];
+  if (known === undefined)
+    return options.toSorted((a, b) => a.value.localeCompare(b.value));
+  const rank = (value: string) => {
+    const at = known.indexOf(value);
+    return at === -1 ? known.length : at;
+  };
+  return options.toSorted((a, b) => rank(a.value) - rank(b.value));
 }
 
 export function facetAttrs(values: FacetValues): Record<string, string> {
@@ -120,16 +184,29 @@ export interface FilterProjection {
   active: boolean;
 }
 
+function queryWords(filter: CardFilter): string[] {
+  return filter.query.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Whether a filter narrows a view with these facets, known as soon as the filter changes. */
+export function filterIsActive(
+  filter: CardFilter,
+  facets: readonly Facet[],
+): boolean {
+  return (
+    queryWords(filter).length > 0 ||
+    facets.some((facet) => Boolean(filter.values[facet]?.length))
+  );
+}
+
 /** Count each candidate against the text and every other facet so its chip describes what it can add. */
 export function projectFilters(
   cards: readonly FacetCard[],
   filter: CardFilter,
   facets: readonly Facet[],
 ): FilterProjection {
-  const words = filter.query.toLowerCase().split(/\s+/).filter(Boolean);
-  const active =
-    words.length > 0 ||
-    facets.some((facet) => Boolean(filter.values[facet]?.length));
+  const words = queryWords(filter);
+  const active = filterIsActive(filter, facets);
   const counts: FilterProjection["counts"] = {};
   const byFacet = new Map(
     facets.map((facet) => [
