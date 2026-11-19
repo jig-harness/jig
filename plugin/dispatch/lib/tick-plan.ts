@@ -135,12 +135,18 @@ export function planObserved(
         observation.drives,
         context.apply?.root,
         (reason) =>
-          report.unplaced.push({
-            target: "the rearm lock needs",
-            record: "runtime",
-            reason,
-            readFailed: true,
-          }),
+          // A failed read leaves each stopped pull request's need unobserved, so its suppression record stays.
+          report.unplaced.push(
+            ...[
+              "the rearm lock needs",
+              ...observation.drives.map((drive) => `PR #${drive.number}`),
+            ].map((target) => ({
+              target,
+              record: "runtime" as const,
+              reason,
+              readFailed: true as const,
+            })),
+          ),
         observation.forge.ok,
       ),
     ],
