@@ -212,4 +212,17 @@ describe("globMayMatchUnder", () => {
         true,
       ]);
   });
+
+  it("never takes U+0000 as the witness of a class git cannot store a match for", () => {
+    expect(globMayMatchUnder("config/*/[^\u0001-\uffff]", "config/team")).toBe(
+      false,
+    );
+  });
+
+  it("reads a long run of literal separators without searching the code units", () => {
+    const glob = `config/${"x/".repeat(40)}*`;
+    const start = performance.now();
+    for (let i = 0; i < 20; i++) globMayMatchUnder(`${glob}${i}`, "config/x");
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
 });

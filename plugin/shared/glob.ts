@@ -197,19 +197,30 @@ const EXTRA_CHARS = [
  * The sampled characters a token accepts besides `/`. When none of the sample
  * passes, the first code unit that does stands in, found over the whole
  * UTF-16 domain, so a class that accepts only characters outside the sample
- * is never read as empty.
+ * is never read as empty. U+0000 is never a witness: git cannot store it in a
+ * file name. A source with no regular-expression syntax is a literal, whose
+ * characters the sample already holds, so it is never searched.
  */
 function acceptedChars(source: string, test: RegExp): string[] {
   const sampled = [...new Set([...source, ...EXTRA_CHARS])].filter(
-    (c) => c !== "/" && test.test(c),
+    (c) => c !== "/" && c !== "\0" && test.test(c),
   );
-  if (sampled.length > 0) return sampled;
-  for (let unit = 0; unit <= 0xffff; unit++) {
+  if (sampled.length > 0 || !/[\\[\]().*+?{}|^$]/.test(source)) return sampled;
+  const hit = fallbackChars.get(source);
+  if (hit !== undefined) return hit;
+  let found: string[] = [];
+  for (let unit = 1; unit <= 0xffff; unit++) {
     const c = String.fromCharCode(unit);
-    if (c !== "/" && test.test(c)) return [c];
+    if (c !== "/" && test.test(c)) {
+      found = [c];
+      break;
+    }
   }
-  return [];
+  remember(fallbackChars, source, found);
+  return found;
 }
+
+const fallbackChars = new Map<string, string[]>();
 
 const automata = new Map<string, Automaton>();
 
