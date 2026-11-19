@@ -89,6 +89,7 @@ export class GitHubApiError extends OutboundError {
     opts: {
       code?: FailureClass;
       data?: unknown;
+      account?: string | undefined;
       until?: number | null;
       sent?: boolean;
       retryAfterMs?: number | null;
@@ -114,6 +115,7 @@ function errorOf(failure: OutboundFailure, data?: unknown): GitHubApiError {
   return new GitHubApiError(failure.reason, {
     code: failure.code,
     data,
+    account: failure.account,
     until: failure.until ?? null,
     sent: failure.sent ?? false,
     retryAfterMs: failure.retryAfterMs ?? null,

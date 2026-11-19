@@ -9,7 +9,7 @@ import type {
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { ago, clock, plural, span, until } from "./format.ts";
+import { ago, clock, hostDay, plural, span, stamp, until } from "./format.ts";
 import { retainedSlug } from "../../plugin/dispatch/lib/line-unread.ts";
 import { noLinkText } from "./links.ts";
 import { trackerOf } from "./tracker-name.ts";
@@ -149,7 +149,7 @@ function staleReading(
   const read = Date.parse(repo.readAt);
   if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
   const name = retainedSlug(repo) ?? repo.path;
-  const lastRead = clock(read, timeZone);
+  const lastRead = stamp(read, hostDay(nowMs, timeZone), timeZone);
   const brief =
     repo.refused === null ? null : refusalLine(repo, read, timeZone);
   if (brief !== null && repo.refused !== null) {
@@ -204,10 +204,14 @@ function causeKey(refusal: StaleReading["refusal"]): string | null {
   const failure = refusal?.failure;
   if (refusal === undefined || failure === undefined) return null;
   const limited = failure.class === "rate-limited";
+  const system =
+    typeof failure.quota?.system === "string" ? failure.quota.system : null;
+  // Without an account or a quota owner nothing says two failures share a credential.
+  if (failure.account === undefined && system === null) return null;
   return JSON.stringify([
     failure.class,
     failure.account ?? null,
-    typeof failure.quota?.system === "string" ? failure.quota.system : null,
+    system,
     failure.quota?.share === true,
     limited ? null : refusal.step,
   ]);
@@ -218,7 +222,7 @@ function sharedBanner(
   key: string,
   group: StaleReading[],
   refusal: NonNullable<StaleReading["refusal"]>,
-  timeZone: string,
+  { nowMs, timeZone }: Clock,
 ): StaleBanner {
   const earliest = Math.min(...group.map(({ read }) => read));
   const resets = group
@@ -233,7 +237,7 @@ function sharedBanner(
       : classCause(refusal, step);
   return {
     key,
-    title: `${group.length} repositories have not been read since ${clock(earliest, timeZone)}: ${cause}.`,
+    title: `${group.length} repositories have not been read since ${stamp(earliest, hostDay(nowMs, timeZone), timeZone)}: ${cause}.`,
     body: "Each one's needs, queue and sessions below are as of its last read.",
     repositories: group.map(({ entry }) => entry),
   };
@@ -271,7 +275,7 @@ export function staleBanners(
       group.length === 1 ||
       first.refusal === undefined
       ? group.map(({ own }) => own)
-      : [sharedBanner(key, group, first.refusal, clockNow.timeZone)];
+      : [sharedBanner(key, group, first.refusal, clockNow)];
   }).flat();
 }
 

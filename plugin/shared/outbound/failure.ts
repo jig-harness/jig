@@ -178,10 +178,12 @@ export class OutboundError extends JigError<FailureClass> {
   readonly until: number | null;
   readonly sent: boolean;
   readonly retryAfterMs: number | null;
+  readonly account: string | undefined;
   constructor(
     code: FailureClass,
     reason: string,
     extra: {
+      account?: string | undefined;
       until?: number | null;
       sent?: boolean;
       retryAfterMs?: number | null;
@@ -196,10 +198,12 @@ export class OutboundError extends JigError<FailureClass> {
     this.until = extra.until ?? null;
     this.sent = extra.sent ?? false;
     this.retryAfterMs = extra.retryAfterMs ?? null;
+    this.account = extra.account;
   }
   /** The failure as an `Outcome`'s. */
   get failure(): OutboundFailure {
     return outboundFailure(this.code, this.message, {
+      account: this.account,
       until: this.until,
       sent: this.sent,
       retryAfterMs: this.retryAfterMs,

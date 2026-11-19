@@ -440,6 +440,34 @@ describe("staleness", () => {
     ]);
   });
 
+  it("keeps a banner per repository when a failure names no account or quota owner", () => {
+    const repos = refusedRepos(3).map((repo) => ({
+      ...repo,
+      refusal: {
+        step: "lookup" as const,
+        failure: { class: "unauthorized" as const },
+      },
+    }));
+    expect(
+      staleBanners({ ...line, repos }, CLOCK).map(
+        (banner) => banner.repositories,
+      ),
+    ).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("dates a shared banner and its repositories when a read was not today", () => {
+    const repos = refusedRepos(2).map((repo, index) => ({
+      ...repo,
+      readAt: `2026-11-02T16:${10 + index}:00Z`,
+    }));
+    const [banner] = staleBanners({ ...line, repos }, CLOCK);
+    expect(banner?.title).toContain("since Nov 2 16:10");
+    expect(banner?.repositories?.map(({ lastRead }) => lastRead)).toEqual([
+      "Nov 2 16:10",
+      "Nov 2 16:11",
+    ]);
+  });
+
   it("keeps one banner per repository on a line written before refusals kept their cause", () => {
     const partial = lineOf("partial");
     const legacy = refusedRepos(5).map(
