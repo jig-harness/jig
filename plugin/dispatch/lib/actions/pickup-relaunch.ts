@@ -55,6 +55,8 @@ export interface RelaunchContext {
   trees?: TreeReader;
   section: Pick<DispatchSection, "stalledRelaunch">;
   rerunsHeld: string | null;
+  /** Why serialization could not be decided this tick: no pending relaunch is replayed then. */
+  serialUndecided?: string | null;
   serves: readonly string[];
 }
 
@@ -259,6 +261,7 @@ async function retryPending(
         : { fault: record.relaunchFault }),
     };
     const blocked =
+      ctx.serialUndecided ??
       (await changed(state, repo, ctx, item, relaunch, record.id)) ??
       (await accountBlock(state, record));
     const action = { target: item, stage: "pickup", relaunch } as Action;

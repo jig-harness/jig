@@ -10,10 +10,6 @@ import {
   finalCiWitnessPolls,
   FINAL_CI_POLL_SECONDS,
   finalRegateLimit,
-  MAILBOX_STOPPED_EXIT,
-  MAILBOX_PAUSE_TIMEOUT_EXIT,
-  SINGLE_INSTANCE_LOCK_EXIT,
-  TAKEN_OVER_EXIT,
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
@@ -22,9 +18,7 @@ import { statusViewFlags } from "./final-regate.ts";
 
 import { infraRecoveryBudget } from "./infra-recovery.ts";
 
-import { waitAtMailboxCheckpoint } from "./mailbox.ts";
-
-import { driverRuntime } from "./runtime.ts";
+import { mailboxCheckpointOrExit } from "./mailbox.ts";
 
 import type { DriveRoundContext } from "./round-context.ts";
 
@@ -156,38 +150,11 @@ export async function runDriverRounds({
     undefined,
     FINAL_CI_POLL_SECONDS * 1000,
   );
-  const pauseMaxRaw = process.env.DRIVE_PR_PAUSE_MAX_SEC ?? "1800";
-  const pauseMaxSec =
-    isDigits(pauseMaxRaw) &&
-    Number(pauseMaxRaw) >= 1 &&
-    Number(pauseMaxRaw) <= 86400
-      ? Number(pauseMaxRaw)
-      : 1800;
-  const mailboxOnly = async (): Promise<"clear" | "resumed" | number> => {
-    const outcome = await waitAtMailboxCheckpoint(
+  const mailboxOnly = (): Promise<"clear" | "resumed" | number> =>
+    mailboxCheckpointOrExit(
       { dir: mailboxDir, pr, generation },
-      pauseMaxSec,
       ledgerRenewal(pr),
     );
-    switch (outcome) {
-      case "clear":
-      case "resumed":
-        return outcome;
-      case "stopped":
-        return MAILBOX_STOPPED_EXIT;
-      case "pause-timeout":
-        return MAILBOX_PAUSE_TIMEOUT_EXIT;
-      case "compromised":
-        console.error(
-          `drive.ts: the ${driverRuntime.compromised} lock was recovered by another driver at a mailbox checkpoint — stopping.`,
-        );
-        return SINGLE_INSTANCE_LOCK_EXIT;
-      case "unreadable":
-        return 1;
-      case "taken-over":
-        return TAKEN_OVER_EXIT;
-    }
-  };
   // The claim check only before a pass, not on every checkpoint: a quota
   // wait polls the mailbox every few seconds for hours, and the claims are a
   // forge read.

@@ -40,7 +40,9 @@ export interface ForgeView {
 }
 
 /** `drive.change_areas_catalog` as configured; `null` when none is, `""` when it is not text. */
-function configuredCatalog(values: Record<string, unknown>): string | null {
+export function configuredCatalog(
+  values: Record<string, unknown>,
+): string | null {
   const drive = values.drive;
   const value = isRecord(drive) ? drive.change_areas_catalog : undefined;
   if (value === undefined || value === null) return null;

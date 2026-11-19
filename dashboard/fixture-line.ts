@@ -413,3 +413,61 @@ export function busyLoad(): LineLoad {
     ],
   };
 }
+
+/** A host past its line: processors bind at 150%, memory is near its line, the disk did not answer, and two launches would have been held, reporting only. */
+export function overLoad(): LineLoad {
+  const busy = busyLoad();
+  const would = (target: string, kind: "pickup" | "drive") => ({
+    repo: kind === "pickup" ? WEB : API,
+    target,
+    kind,
+    gauge: "processors" as const,
+    detail:
+      "processors binds: load 21.6 on 16 cores, at its line of 0.9 per core",
+    held: false,
+  });
+  return {
+    ...busy,
+    factor: 1.5,
+    binds: "processors",
+    gauges: [
+      {
+        gauge: "memory",
+        fill: 0.96,
+        reads: "3.1 GiB available above the 9.4 GiB kept free",
+        line: "15% of memory kept free",
+      },
+      {
+        gauge: "processors",
+        fill: 1.5,
+        reads: "load 21.6 on 16 cores",
+        line: "0.9 per core",
+      },
+      {
+        gauge: "test-lock",
+        fill: 0.5,
+        reads: "2 holding, 1 waiting",
+        line: "2 waiting",
+      },
+      {
+        gauge: "disk",
+        fill: null,
+        reads: "free space not read (df did not answer within 2 s)",
+        line: "10.0 GiB free",
+      },
+      {
+        gauge: "forge",
+        fill: 0.31,
+        reads: "3450 of 5000 left",
+        line: "10% of the budget kept",
+      },
+      {
+        gauge: "accounts",
+        fill: 0.4,
+        reads: "4 of 10 slots held",
+        line: "no free slot",
+      },
+    ],
+    holds: [would("#5521", "pickup"), would("PR #1209", "drive")],
+  };
+}
