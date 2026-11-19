@@ -351,6 +351,26 @@ describe("served pickups", () => {
     expect(parkedOnPerson(waiting, tracker, policy)).toBe(true);
     expect(parkedOnPerson(running, tracker, policy)).toBe(false);
   });
+  it("keeps a held epic's running descendants visible and a label hold parked beside a local one", () => {
+    const tracker = { stateName: (s: string) => s } as Pick<
+      Tracker,
+      "stateName"
+    >;
+    const policy = { personHold: () => "held by a person" };
+    const nested = {
+      ...issue("#3", [], null),
+      isEpic: true,
+      hasOpenChildren: true,
+    };
+    expect(parkedOnPerson(nested, tracker, policy)).toBe(false);
+    expect(parkedOnPerson(nested, tracker, policy, true)).toBe(true);
+    const both = { ...issue("#4", ["hitl"], null), isEpic: false };
+    const running = {
+      ...both,
+      state: { id: "s", name: "in_progress", type: "started" },
+    };
+    expect(parkedOnPerson(running, tracker, policy)).toBe(true);
+  });
   it("keeps the title and link the listing returned on an item it cannot place and on a claimed item", async () => {
     const f = fake();
     const held = {

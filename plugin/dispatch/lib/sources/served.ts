@@ -800,7 +800,7 @@ function nodeHold(
   tracker: Pick<Tracker, "stateName">,
 ): string | null {
   if (node.planHold) return node.planHold;
-  if (parkedOnPerson(node.issue, tracker, options)) return PERSON_HOLD;
+  if (parkedOnPerson(node.issue, tracker, options, true)) return PERSON_HOLD;
   if (
     node.ancestor === undefined &&
     node.pull === undefined &&

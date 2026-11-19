@@ -30,12 +30,17 @@ export function takeUnreadSlot(
   return Promise.resolve(null);
 }
 
-/** A person owns the next step, so this child takes none of a plan-less epic's width; a pickup hold stops only new starts, so a started child keeps its slot. */
+/**
+ * A person owns the next step, so this child takes none of a plan-less epic's width; a pickup hold stops only new starts, so a started child keeps its slot.
+ * Reading occupancy, an unstarted epic with open children is not parked by a pickup hold alone: its running descendants still count. `forStart` asks whether the child may start.
+ */
 export function parkedOnPerson(
   child: PoolIssue,
   tracker: Pick<Tracker, "stateName">,
   policy: QueueHoldPolicy,
+  forStart = false,
 ): boolean {
+  const { personHold: _local, ...labelHolds } = policy;
   const context = child.nativeType ?? null;
   const states = canonicalStatesFor(tracker, child.state.name, context);
   return (
@@ -44,8 +49,9 @@ export function parkedOnPerson(
         (state) => state === "ops_pending" || state === "in_review",
       )) ||
     (child.state.type !== "started" &&
+      (forStart || !(child.isEpic && child.hasOpenChildren)) &&
       policy.personHold?.(child.identifier) != null) ||
-    queueHold({ issue: child, blockers: [], unblocks: 0 }, policy) ===
+    queueHold({ issue: child, blockers: [], unblocks: 0 }, labelHolds) ===
       PERSON_HOLD
   );
 }
