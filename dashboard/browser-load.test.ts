@@ -71,12 +71,17 @@ function rowsOf(page: Page) {
       const shown = (selector: string) => {
         const found = row.querySelector(selector);
         if (found === null) return false;
-        const style = getComputedStyle(found);
-        return (
-          style.visibility === "visible" &&
-          style.display !== "none" &&
-          Number(style.opacity) > 0
-        );
+        // Effective visibility: an ancestor's opacity or display hides the part too.
+        for (
+          let node: Element | null = found;
+          node !== null;
+          node = node.parentElement
+        ) {
+          const style = getComputedStyle(node);
+          if (style.display === "none" || Number(style.opacity) === 0)
+            return false;
+        }
+        return getComputedStyle(found).visibility === "visible";
       };
       const name = row.querySelector(".gName .bareWord");
       return {
