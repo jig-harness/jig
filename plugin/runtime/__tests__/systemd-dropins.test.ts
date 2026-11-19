@@ -405,6 +405,14 @@ describe("effectiveJob, what systemd would apply", () => {
     });
   });
 
+  test("an empty CapabilityBoundingSet= is a restriction to no capability, alone or after a list", () => {
+    expect(refused("CapabilityBoundingSet=")).toMatchObject({ ok: false });
+    expect(
+      refused("CapabilityBoundingSet=CAP_NET_RAW\nCapabilityBoundingSet="),
+    ).toMatchObject({ ok: false });
+    expect(refused("AmbientCapabilities=")).toMatchObject({ ok: true });
+  });
+
   test("refuses a sandbox directive no list names", () => {
     expect(refused("NoExecPaths=/tmp")).toMatchObject({ ok: false });
     expect(refused("RootImage=/path/to/image")).toMatchObject({ ok: false });

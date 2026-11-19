@@ -346,18 +346,24 @@ async function observeAll(
               settle = resolve;
             }),
           );
+          let waited = false;
           try {
             const repository = await waitForLock(
               () => takeRepositoryLock(slug),
               context,
               deadline,
               () => claimed.has(slug),
+              () => {
+                waited = true;
+              },
             );
             // Another checkout of this repository took the lock while this one waited.
             if (repository === null) return null;
             if ("heldBy" in repository) return repository.heldBy;
             claimed.add(slug);
             own.push(repository);
+            // The holder may have acted during the wait: what the open read of the repository is stale.
+            if (waited) context.reads.refreshRepository(path);
             return null;
           } finally {
             acquiring.delete(slug);
@@ -415,6 +421,7 @@ async function waitForLock(
   context: TickContext,
   deadline: number,
   owned?: () => boolean,
+  waiting?: () => void,
 ): Promise<Lock | null> {
   for (;;) {
     if (owned?.() === true) return null;
@@ -425,6 +432,7 @@ async function waitForLock(
       tickBound(context)?.signal.aborted === true
     )
       return lock;
+    waiting?.();
     await Bun.sleep(ACT_LOCK_POLL_MS);
   }
 }

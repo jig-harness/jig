@@ -71,7 +71,10 @@ const REPRODUCED = new Set([
 
 /** Directives that hold a list, which an empty assignment clears, as systemd reads it; any other keeps its earlier value. */
 const RESETTABLE =
-  /^(Exec\w+|EnvironmentFile|UnsetEnvironment|PassEnvironment|\w*Credential\w*|\w*Paths|TemporaryFileSystem|SystemCall(Filter|Architectures|Log)|CapabilityBoundingSet|AmbientCapabilities|Restrict(AddressFamilies|FileSystems)|IPAddress(Allow|Deny)|DeviceAllow|SupplementaryGroups|BindPaths)$/;
+  /^(Exec\w+|EnvironmentFile|UnsetEnvironment|PassEnvironment|\w*Credential\w*|\w*Paths|TemporaryFileSystem|SystemCall(Filter|Architectures|Log)|AmbientCapabilities|Restrict(AddressFamilies|FileSystems)|IPAddress(Allow|Deny)|DeviceAllow|SupplementaryGroups|BindPaths)$/;
+
+/** Directives whose empty assignment is itself a restriction: an empty bounding set holds no capability at all. */
+const EMPTY_RESTRICTS = new Set(["CapabilityBoundingSet"]);
 
 /** Whether `key` changes the process in a way this reader does not reproduce. */
 function unreproduced(key: string): boolean {
@@ -321,8 +324,8 @@ function applyAssignment(
 ): string | null {
   const { key, value } = assignment;
   if (unreproduced(key)) {
-    // An empty assignment clears a list and is ignored by a scalar, which keeps its earlier value.
-    if (value !== "") state.active.set(key, path);
+    // An empty assignment clears a list, is ignored by a scalar (which keeps its earlier value) and, for a bounding set, restricts to nothing.
+    if (value !== "" || EMPTY_RESTRICTS.has(key)) state.active.set(key, path);
     else if (RESETTABLE.test(key)) state.active.delete(key);
   } else if (key === "Environment")
     return applyEnvironment(state, value, specifiers);
