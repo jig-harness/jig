@@ -114,7 +114,8 @@ function resolveSpecifier(
   known: Set<string>,
 ): string | undefined {
   if (!specifier.startsWith(".")) return undefined;
-  const path = specifier.replace(/[?#].*$/, "");
+  const query = specifier.search(/[?#]/);
+  const path = query < 0 ? specifier : specifier.slice(0, query);
   const target = posix.normalize(posix.join(posix.dirname(from), path));
   // TypeScript sources are imported under their compiled `.js` name too.
   const compiled = target.replace(/\.[cm]?jsx?$/, "");
@@ -290,7 +291,9 @@ export function testReach(
   const edges = readEdges(tracked, known, tests, read);
   const reached = walkBack(changed, edges, known, tests);
   return {
-    tests: [...reached].filter((file) => tests.has(file)).sort(),
+    tests: [...reached]
+      .filter((file) => tests.has(file))
+      .sort((a, b) => a.localeCompare(b)),
     everyRun: everyRunFiles(
       changed,
       config,

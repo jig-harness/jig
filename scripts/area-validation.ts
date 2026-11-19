@@ -247,7 +247,7 @@ export const runsWholeSuite = (matrix: Matrix): boolean =>
 
 /** Directories without the ones another listed directory already holds. */
 function outermost(dirs: string[]): string[] {
-  const unique = [...new Set(dirs)].sort();
+  const unique = [...new Set(dirs)].sort((a, b) => a.localeCompare(b));
   return unique.filter(
     (dir) => !unique.some((other) => other !== dir && dir.startsWith(other)),
   );
