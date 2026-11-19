@@ -455,6 +455,10 @@ function groupReport(area: string, members: Member[]): SerialGroup {
   };
 }
 
+/** How a pickup the tick cannot place, because serialization was not decided, is reported. */
+export const SERIAL_UNDECIDED =
+  "whether it reaches a serialized area cannot be told this tick";
+
 /** The reason a held pull request's action is reported with. */
 export function heldReason(hold: Hold): string {
   return `held: serialized behind #${hold.leader} in ${hold.area}`;
