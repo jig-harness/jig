@@ -25,7 +25,11 @@ import {
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { dump, load } from "../../shared/yaml.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
-import { takeObserveLock, type TickReceipt } from "../receipts.ts";
+import {
+  takeObserveLock,
+  takeRepositoryLock,
+  type TickReceipt,
+} from "../receipts.ts";
 import {
   ledgerComment,
   openPr,
@@ -469,6 +473,45 @@ describe("the line a tick leaves", () => {
       );
       expect(stored?.line.ticks?.map((t) => t.busy)).toEqual([[], []]);
       expect(first.runId).not.toBe(second.runId);
+    } finally {
+      if (!released) held.release();
+    }
+  }, 60_000);
+
+  it("plans from the forge as it is once a contended repository lock is released, not from the read before the wait", async () => {
+    const w = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["rearm", "notify"]);
+    // Another checkout of the repository holds its lock while this tick opens it.
+    const held = takeRepositoryLock(SLUG, dispatchState(w));
+    if ("heldBy" in held) throw new Error(`the lock is held: ${held.heldBy}`);
+    let released = false;
+    try {
+      const sweep = w.dispatch(["--apply", "--json"], undefined, {
+        JIG_DISPATCH_OBSERVE_WAIT_MS: "30000",
+      });
+      // The tick opened the repository, and now waits for its lock.
+      await waitFor("the tick to open the repository", () =>
+        existsSync(join(w.dir, "gh-calls.log")),
+      );
+      // The holder acted: the repository's configuration and a second parked pull request changed after the tick's first read.
+      w.setConfig(CONFIG.replace(SLUG, "example-org/moved-tracker"));
+      w.setPrs("open", [openPr(7, HEAD), openPr(8, "feature/8-parked")]);
+      w.setComments(8, [ledgerComment(801, stoppedLedger(8, 16))]);
+      held.release();
+      released = true;
+      expectSpawnExit(await sweep, 0);
+      const answer = await w.dispatch(["line", "--json"]);
+      expectSpawnExit(answer, 0);
+      const parsed = JSON.parse(answer.stdout) as {
+        value: { line: LineSnapshot };
+      };
+      expect(parsed.value.line.repos[0]?.tracker).toEqual({
+        adapter: "github",
+        repository: "example-org/moved-tracker",
+      });
+      expect(parsed.value.line.queue.map((row) => row.target)).toContain(
+        "PR #8",
+      );
     } finally {
       if (!released) held.release();
     }
