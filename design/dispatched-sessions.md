@@ -322,10 +322,12 @@ in the tick changes but the new `endRun`. The implementation is
      --unit=jig-run-<record> --collect`), whose control group holds the
      wrapper and everything it starts;
    - launchd: a job of its own per run, labelled with the record;
-   - Windows: a one-time scheduled task per run, outside the tick's job
-     object;
    - cron, which ends nothing when its command exits: a new session and
      process group (`setsid`).
+
+   The first release supports Linux and macOS. Native Windows support
+   requires verified detection of processes using a worktree before Jig
+   can safely reuse it.
 
    Its working directory is the worktree and its standard input is closed.
    The wrapper reads its pass's output through a pipe it owns, passes it to

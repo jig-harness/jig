@@ -286,11 +286,13 @@ database written by a newer plugin is refused, with its version named,
 until the plugin is updated.
 
 The machine file can select [`runtime: process`](CONFIGURATION.md#the-machines-dispatch-file)
-on Linux and macOS to run without Orca. The dispatcher opens plain Git worktrees and starts
-headless runs through the host's service manager. Each run receives an
+on Linux and macOS to run without Orca. The dispatcher opens plain Git
+worktrees and starts headless runs through the host's service manager. Each run receives an
 allowlisted environment for its account. A pickup hands its first drive
-back to the dispatcher, which admits it when the pickup has ended. The
-dashboard shows causes that need attention.
+back to the dispatcher, which admits it when the pickup has ended. With
+`dispatch.labels.only_labeled` enabled, the pull request needs a dispatch
+label before the dispatcher can admit the drive.
+The dashboard shows causes that need attention.
 
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))

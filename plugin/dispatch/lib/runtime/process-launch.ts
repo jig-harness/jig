@@ -3,6 +3,11 @@ import { closeSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { detectScheduler } from "../../../runtime/scheduler.ts";
+import { assertLinkedWorktree } from "../../../shared/orca-workspace/git.ts";
+import {
+  localContext,
+  withLimit,
+} from "../../../shared/orca-workspace/runner.ts";
 import { run } from "../../../shared/proc.ts";
 import { currentMs } from "../../../shared/time.ts";
 import { stateRoot } from "../../receipts.ts";
@@ -122,6 +127,15 @@ export async function launchProcess(
       detail: "the process runtime does not run interactive sessions",
     };
   try {
+    const until = currentMs() + timeoutMs;
+    assertLinkedWorktree(
+      withLimit(
+        localContext(() => undefined),
+        timeoutMs,
+      ),
+      workspace.path,
+      "launch a process session",
+    );
     const record = readRecord(stage.record);
     if (
       record?.runtime !== "process" ||
@@ -133,11 +147,10 @@ export async function launchProcess(
         ok: false,
         detail: "the process launch does not match its record",
       };
-    const until = currentMs() + timeoutMs;
     const env = processEnvironment(process.env, settings, record, record.id);
     const request = await offerProcessRequest(
       { id: record.id, token, workspace: workspace.path, env },
-      timeoutMs,
+      Math.max(1, until - currentMs()),
     );
     if (!request.ok) return { ok: false, detail: request.failure.reason };
     try {

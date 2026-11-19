@@ -57,7 +57,7 @@ export function spawnSupervisor(
       ],
       {
         stdio: processRuntime ? ["ignore", "pipe", "pipe"] : "inherit",
-        detached: process.platform !== "win32",
+        detached: true,
       },
     );
     child.stdout?.on("data", save);

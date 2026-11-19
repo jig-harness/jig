@@ -1272,6 +1272,8 @@ could forge or forget.
      `drives.ts` did not list the drive in time: read `tail`, what the tab
      printed, once, as step 5 reads a spawned driver's output. Open no
      second tab and spawn nothing.
+   - `owed` → the process dispatcher will start the pickup's first drive
+     after the pickup records its result and ends. Report the handoff.
    - `spawn` → spawn `command` with the harness's background execution
      (Claude Code: Bash `run_in_background`; Codex: `exec_command` with a
      short `yield_time_ms`, keeping the returned `session_id` for

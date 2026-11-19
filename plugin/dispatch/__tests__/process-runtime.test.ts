@@ -177,6 +177,11 @@ const id = "20261118T141627Z-11111111";
 const named = dispatched("rearm", "#7", id);
 const runtime = processRuntime({ runtimeTimeoutMs: 8_000, workspaceTimeoutMs: 8_000,
   process: { envKeep: ["DISPATCH_FAKE_DIR", "JIG_DISPATCH_DRIVE_SCRIPT", "GH_TOKEN"] } });
+const primary = await runtime.launch({ path: repo.path }, { kind: "headless",
+  record: id, title: named.name, mark: named.mark }, "fixture", "unused");
+expect(primary).toMatchObject({
+  ok: false, detail: expect.stringContaining("primary checkout"),
+});
 const opened = await runtime.openWorkspace(repo, { item: "#7", branch: "7-test",
   tracker: "github", dispatched: named });
 if (!opened.ok || opened.workspace === undefined) throw new Error(opened.detail);
