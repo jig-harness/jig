@@ -11,7 +11,7 @@
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 
 /** The stages a machine file can enable. */
-export const MACHINE_STAGES = [
+const MACHINE_STAGES = [
   "rearm",
   "pickup",
   "followup",
@@ -22,12 +22,7 @@ export const MACHINE_STAGES = [
 export type MachineStage = (typeof MACHINE_STAGES)[number];
 
 /** The stages that launch a session on an account. */
-export const SERVED_STAGES = [
-  "pickup",
-  "rearm",
-  "followup",
-  "steward",
-] as const;
+const SERVED_STAGES = ["pickup", "rearm", "followup", "steward"] as const;
 export type ServedStage = (typeof SERVED_STAGES)[number];
 
 /** The machine file's stages that start no session, so no account serves them. */
