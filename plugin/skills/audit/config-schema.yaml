@@ -177,6 +177,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.225.0
+  dispatch.stalled_relaunch:
+    type: enum
+    values: [finish-once, never]
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.280.0
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"
@@ -288,6 +294,12 @@ fields:
     type: command
     read_by: [resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar]
     repository_only: true
+
+  gates.dispatch_fast:
+    type: boolean
+    read_by: [jig-gates]
+    repository_only: true
+    since: 0.277.2
 
   review.bots:
     type: list

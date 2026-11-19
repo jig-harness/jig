@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { ok as assert } from "node:assert/strict";
 import type {
   LineAccount,
+  LineRefusal,
   LineRepo,
   LineSession,
   LineSnapshot,
@@ -370,6 +371,7 @@ describe("staleness", () => {
     ]);
   });
 
+  /** `count` stale repositories one rate limit on `account` refused, read a minute apart from 16:10. */
   function refusedRepos(count: number, start = 0, account = "one") {
     const [template] = lineOf("partial").repos;
     assert(template);
@@ -381,29 +383,34 @@ describe("staleness", () => {
         path: `/repos/${number}`,
         readAt: `2026-11-03T16:${10 + number}:00Z`,
         refused: `rate limit; last reading for repository ${number}`,
-        refusedBy: {
-          class: "rate-limited" as const,
-          account,
-          until: "2026-11-03T17:00:00Z",
+        refusal: {
+          step: "lookup" as const,
+          failure: {
+            class: "rate-limited" as const,
+            account,
+            until: "2026-11-03T17:00:00.000Z",
+          },
         },
       };
     });
   }
 
-  it("groups eight stale repositories by cause and retains each last read", () => {
+  it("tells eight repositories one cause refused in one banner, each with its last read", () => {
     const repos = refusedRepos(8).reverse();
     const banners = staleBanners({ ...line, repos }, CLOCK);
     expect(banners).toHaveLength(1);
     expect(banners[0]?.title).toBe(
-      "8 repositories have not been read since 16:10 · rate limit",
+      "8 repositories have not been read since 16:10: Rate limit holds them until 17:00.",
     );
-    expect(banners[0]?.body).toContain("17:00");
     expect(
       banners[0]?.repositories?.map(({ name, lastRead }) => [name, lastRead]),
     ).toEqual(repos.map((repo) => [repo.slug, repo.readAt.slice(11, 16)]));
+    expect(banners[0]?.repositories?.[0]?.detail).toContain(
+      "last reading for repository 7",
+    );
   });
 
-  it("distinguishes accounts and leaves busy and legacy entries individual", () => {
+  it("gives each cause its own banner and a repository held busy its own", () => {
     const partial = lineOf("partial");
     const busy = partial.repos.find(
       (repo) => repo.slug === "example-org/mobile",
@@ -415,8 +422,103 @@ describe("staleness", () => {
         (banner) => banner.repositories?.length,
       ),
     ).toEqual([3, 2, undefined]);
-    const legacy = repos.map(({ refusedBy: _refusedBy, ...repo }) => repo);
-    expect(staleBanners({ ...partial, repos: legacy }, CLOCK)).toHaveLength(6);
+  });
+
+  it("keeps one banner per repository on a line written before refusals kept their cause", () => {
+    const partial = lineOf("partial");
+    const legacy = refusedRepos(5).map(
+      ({ refusal: _refusal, ...repo }) => repo,
+    );
+    const banners = staleBanners({ ...partial, repos: legacy }, CLOCK);
+    expect(banners).toHaveLength(5);
+    expect(banners.every((b) => b.repositories === undefined)).toBe(true);
+  });
+
+  /** The partial line with example-org/mobile refused at its newest tick, as `refused` and `refusal` say. */
+  const refusedMobile = (refused: string, refusal: unknown): LineSnapshot => {
+    const partial = lineOf("partial");
+    return {
+      ...partial,
+      repos: partial.repos.map((r) =>
+        r.slug === "example-org/mobile"
+          ? {
+              ...r,
+              slug: null,
+              lastSlug: r.slug,
+              refused,
+              ...(refusal === undefined
+                ? {}
+                : { refusal: refusal as LineRefusal }),
+            }
+          : r,
+      ),
+    };
+  };
+
+  it("leads a repository the dispatcher's quota share paused with one short line, its detail only on expanding", () => {
+    const refusal =
+      "the repository lookup waits for the rate limit: gh repo view exited 1: GitHub's rate limit for this credential is spent until 2026-11-03T17:30:00.000Z: the dispatcher's share (50%) of the complexity window is spent; 2400 of 5000 are left to passes and people (dispatcher); nothing was sent; the last reading, of 2026-11-03T16:05:00.000Z (42m old): 1 open pull request(s)";
+    const line = refusedMobile(refusal, {
+      step: "lookup",
+      failure: {
+        class: "rate-limited",
+        until: "2026-11-03T17:30:00.000Z",
+        quota: { system: "GitHub", share: true },
+      },
+    });
+    const [banner] = staleBanners(line, CLOCK);
+    expect(banner).toEqual({
+      key: "/srv/work/mobile",
+      title:
+        "example-org/mobile: GitHub quota paused until 17:30, dispatcher's share spent; showing 16:05 data.",
+      body: "Its needs, queue and sessions below are as of the 16:05 tick, 42 min ago.",
+      detail: `The newest tick that tried could not read it: ${refusal}`,
+    });
+    // The line names neither the failed command, the window's numbers nor the kept reading.
+    for (const shown of [banner?.title, banner?.body])
+      for (const detail of [
+        "gh repo view",
+        "left to passes and people",
+        "the last reading",
+        "cannot say which repository",
+      ])
+        expect(shown).not.toContain(detail);
+  });
+
+  it("gives any other refusal the same shape: what stopped the read in a few words, the rest on expanding", () => {
+    const refusal =
+      "the forge cannot say which repository this is: gh repo view exited 1: HTTP 401: Bad credentials";
+    const line = refusedMobile(refusal, {
+      step: "lookup",
+      failure: { class: "unauthorized" },
+    });
+    expect(staleBanners(line, CLOCK)[0]).toMatchObject({
+      title:
+        "example-org/mobile: Repository lookup failed (credential refused); showing 16:05 data.",
+      detail: `The newest tick that tried could not read it: ${refusal}`,
+    });
+    const own = refusedMobile("GitHub limited it", {
+      step: "configuration",
+      failure: { class: "rate-limited", until: "2026-11-03T17:30:00.000Z" },
+    });
+    expect(staleBanners(own, CLOCK)[0]?.title).toBe(
+      "example-org/mobile: Rate limit holds it until 17:30; showing 16:05 data.",
+    );
+  });
+
+  it("shows the whole sentence for a refusal written without its parts, or with a step this page does not know", () => {
+    const refusal = "the forge cannot say which repository this is";
+    const whole = {
+      key: "/srv/work/mobile",
+      title: "example-org/mobile has not been read since 16:05, 42 min ago.",
+      body: `The newest tick that tried could not read it (${refusal}). Its needs, queue and sessions below are as of the 16:05 tick.`,
+    };
+    expect(staleBanners(refusedMobile(refusal, undefined), CLOCK)).toEqual([
+      whole,
+    ]);
+    expect(
+      staleBanners(refusedMobile(refusal, { step: "a-later-step" }), CLOCK),
+    ).toEqual([whole]);
   });
 
   it("says when the server is not answering, and alarms", () => {

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { OutboundError } from "../../shared/outbound/failure.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { servedParentHold } from "../lib/sources/served-parents.ts";
@@ -277,3 +278,72 @@ test("inherited epic expansion and fresh launch checks use delivering merge evid
     }),
   ).toContain("open or not yet landed");
 });
+
+test("a proof read the tick's bound ended reports an unreachable failure, not a clean hold", async () => {
+  const f = fixture();
+  const failures: unknown[] = [];
+  const read = planMergeReader(
+    {} as Tracker,
+    {
+      ...context,
+      bound: { deadline: 0, signal: AbortSignal.abort() },
+      onFailure: (error) => failures.push(error),
+    },
+    f.reads,
+  );
+  const evidence = await read(description);
+  expect(Object.keys(evidence.held)).toEqual(["#2>#3"]);
+  expect(f.counts).toEqual({ search: 0, fact: 0, comments: 0 });
+  expect(failures.length).toBeGreaterThan(0);
+  expect(failures[0]).toMatchObject({ code: "unreachable" });
+});
+
+for (const name of ["comments", "search"] as const) {
+  test(`a linked-pull-request ${name} that returns no readable answer reports an invalid failure`, async () => {
+    const f = fixture();
+    const failures: unknown[] = [];
+    const read = planMergeReader(
+      {} as Tracker,
+      { ...context, onFailure: (error) => failures.push(error) },
+      { ...f.reads, links: { ...f.reads.links, [name]: async () => null } },
+    );
+    const evidence = await read(description);
+    expect(Object.keys(evidence.held)).toEqual(["#2>#3"]);
+    expect(failures[0]).toMatchObject({ code: "invalid" });
+  });
+}
+
+for (const name of ["comments", "search", "view"] as const) {
+  test(`a linked-pull-request ${name} that reported a transport failure keeps it and adds no invalid one`, async () => {
+    const f = fixture();
+    const failures: unknown[] = [];
+    const cause = new OutboundError("unreachable", "the forge timed out");
+    const read = planMergeReader(
+      {} as Tracker,
+      { ...context, onFailure: (error) => failures.push(error) },
+      {
+        ...f.reads,
+        links: {
+          ...f.reads.links,
+          ...(name === "view"
+            ? {
+                comments: async () => [
+                  "https://github.com/example/repo/pull/10",
+                ],
+                search: async () => [],
+              }
+            : {}),
+          [name]: async (
+            _: unknown,
+            options?: { onFailure?: (e: unknown) => void },
+          ) => {
+            options?.onFailure?.(cause);
+            return null;
+          },
+        },
+      },
+    );
+    await read(description);
+    expect(failures).toEqual([cause]);
+  });
+}

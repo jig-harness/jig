@@ -91,6 +91,12 @@ describe("a forge that refuses or does not answer", () => {
     expect(repo?.refusedBy?.until).toBeString();
     expect(repo?.refusedBy?.account).toBeString();
     expect(repo?.refused).toContain("rate limit");
+    // A quota pause clears by waiting: it is no sign the repository is unknown.
+    expect(repo?.refusedStep).toBe("lookup");
+    expect(repo?.refused).toStartWith(
+      "the repository lookup waits for the rate limit: ",
+    );
+    expect(repo?.refused).not.toContain("cannot say which repository");
     expect(repo?.refused).toMatch(
       /the last reading, of \d{4}-\d\d-\d\dT[\d:.]+Z \(\d+m old\): 1 open pull request\(s\)/,
     );
@@ -101,7 +107,13 @@ describe("a forge that refuses or does not answer", () => {
     writeFileSync(join(w.dir, "forge-unauthorized"), "");
     const refused = await tick(w);
     expect(refused.exit).toBe(1);
-    expect(refused.receipt.repos[0]?.refusedBy?.class).toBe("unauthorized");
+    const repo = refused.receipt.repos[0];
+    expect(repo?.refusedBy?.class).toBe("unauthorized");
+    // Any lookup failure but a rate limit keeps its own cause, with the forge's reason.
+    expect(repo?.refusedStep).toBe("lookup");
+    expect(repo?.refused).toMatch(
+      /^the forge cannot say which repository this is: gh repo view exited \d+: \S/,
+    );
   });
 
   it("sends no second request to a forge that did not answer in a tick, and one probe in the next", async () => {

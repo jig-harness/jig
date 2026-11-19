@@ -41,6 +41,7 @@ import {
   writeMergeReads,
 } from "./merge-reads.ts";
 import { readDrives } from "./sources/ledgers.ts";
+import { forgetClosedParkThreads } from "./sources/park-threads.ts";
 import type { Pool } from "./pool.ts";
 import type { TickComments } from "./tick-comments.ts";
 import type { PrLinkText } from "./work-links.ts";
@@ -204,6 +205,10 @@ export async function readForge(
       (pr) => reads.comments.read(repo.slug, pr),
       (read) => reads.pool.run(read),
       reads.bound,
+    );
+    forgetClosedParkThreads(
+      repo.slug,
+      out.open.map((p) => p.number),
     );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));

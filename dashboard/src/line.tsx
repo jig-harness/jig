@@ -111,6 +111,7 @@ export function LinePanel({
           className="acctList"
           label="Accounts and their slots"
           defaultOpen
+          keepMounted
           head={<h3 className="sm">Accounts · {line.accounts.length}</h3>}
         >
           {line.accounts.map((a) => {

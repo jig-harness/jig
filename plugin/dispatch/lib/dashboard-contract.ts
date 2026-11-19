@@ -16,6 +16,7 @@ import type {
   NotifyCause,
   NotifyOutcome,
   ReadFailure,
+  RefusedStep,
 } from "./types.ts";
 import type {
   Act,
@@ -161,6 +162,8 @@ export interface LineNeed {
   workspaces: string[];
   /** For a stuck launch record: its id, which `jig dispatch clear` takes. */
   stuckRecord?: string | null;
+  /** For a drive a launch nobody can show running holds: when the hold began, later of the launch and the stop. */
+  heldSince?: string | null;
 }
 
 /** An account's wall as the newest tick read it. */
@@ -288,6 +291,12 @@ export interface LineQueued {
   } | null;
 }
 
+/** What stopped the newest tick that tried to open a repository, in parts (`LineRepo.refusal`). */
+export interface LineRefusal {
+  step: RefusedStep;
+  failure?: ReadFailure;
+}
+
 /** One repository the machine file lists. */
 export interface LineRepo {
   /** `null` when the forge could not say which repository the path is. */
@@ -301,8 +310,16 @@ export interface LineRepo {
   tracker?: { adapter: string; repository?: string } | null;
   /** Why nothing could be dispatched for it at the newest tick that tried; `null` when it was read. Beside an earlier tick's `runId` when that tick's part of the line was kept because this one could not identify the repository. */
   refused: string | null;
-  /** The structured cause of the newest refusal, when the failed call classified it. */
-  refusedBy?: ReadFailure;
+  /**
+   * `refused` in parts, so the page can lead with one short line and keep
+   * `refused` for what it shows on expanding: the step opening the
+   * repository stopped at and, when a failed call stopped it, that call's
+   * failure (its class, when a rate limit clears, and whose credential
+   * quota stopped it, and whether only the dispatcher's share). Absent beside a refusal written before it
+   * was kept and beside one no step names, where the page shows `refused`
+   * whole.
+   */
+  refusal?: LineRefusal;
   /** The records that did not read at the newest tick. */
   failedReads: Array<{ record: string; source: string; detail: string }>;
   /** What each record's read said about what this repository has, such as no pickups. */

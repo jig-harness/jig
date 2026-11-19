@@ -65,3 +65,33 @@ describe("the load gauge", () => {
       TIMEOUT,
     );
 });
+
+browserIt(
+  "folding accounts preserves the Running repository filter and its counts",
+  async () => {
+    const server = await served("loud");
+    const { page, context } = await open(
+      requireBrowser(),
+      server.origin,
+      `${server.url}&view=running`,
+      LAPTOP,
+    );
+    try {
+      const chips = page.locator('[data-facet="repo"] .facetChip');
+      await chips.first().waitFor();
+      expect(await chips.count()).toBeGreaterThan(1);
+      await chips.first().click();
+      const status = page.locator(".facetShowing");
+      const before = await status.textContent();
+      expect(before).toMatch(/Showing [1-9]\d* of [1-9]\d*/);
+      await page
+        .getByRole("button", { name: "Accounts and their slots" })
+        .click();
+      expect(await chips.first().getAttribute("aria-pressed")).toBe("true");
+      expect(await status.textContent()).toBe(before);
+    } finally {
+      await context.close();
+    }
+  },
+  TIMEOUT,
+);

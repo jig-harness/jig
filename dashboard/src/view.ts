@@ -9,7 +9,7 @@ import type {
   LineSession,
   LineSnapshot,
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { ago, clock, hostDay, plural, span, stamp, until } from "./format.ts";
+import { ago, clock, plural, span, until } from "./format.ts";
 import { retainedSlug } from "../../plugin/dispatch/lib/line-unread.ts";
 import { noLinkText } from "./links.ts";
 import { trackerOf } from "./tracker-name.ts";
@@ -110,25 +110,34 @@ export function timerBanner(
   };
 }
 
-interface StaleRepository {
+/** One repository of a banner that tells several: its name, when it was read, and what stopped it. */
+export interface StaleRepository {
   key: string;
   name: string;
   lastRead: string;
   detail: string;
 }
 
+/**
+ * A stale repository's banner, or one for several that one cause stopped;
+ * `detail` is what it shows only on expanding, and `repositories` lists the
+ * repositories a shared banner tells.
+ */
 export interface StaleBanner {
   key: string;
   title: string;
   body: string;
+  detail?: string;
   repositories?: StaleRepository[];
 }
 
-type StaleReading = {
-  cause: LineRepo["refusedBy"];
+/** A stale repository's own banner, with the cause it shares when a failed call stopped its read. */
+interface StaleReading {
   read: number;
+  failure: NonNullable<LineRepo["refusal"]>["failure"];
+  own: StaleBanner;
   entry: StaleRepository;
-};
+}
 
 function staleReading(
   repo: LineRepo,
@@ -139,6 +148,26 @@ function staleReading(
   const read = Date.parse(repo.readAt);
   if (nowMs <= read + line.intervalMs + line.longestTickMs) return [];
   const name = retainedSlug(repo) ?? repo.path;
+  const lastRead = clock(read, timeZone);
+  const failure = repo.refused === null ? undefined : repo.refusal?.failure;
+  const brief =
+    repo.refused === null ? null : refusalLine(repo, read, timeZone);
+  if (brief !== null && repo.refused !== null) {
+    const detail = `The newest tick that tried could not read it: ${repo.refused}`;
+    return [
+      {
+        read,
+        failure,
+        own: {
+          key: repo.path,
+          title: `${name}: ${brief}.`,
+          body: `Its needs, queue and sessions below are as of the ${lastRead} tick, ${ago(read, nowMs)} ago.`,
+          detail,
+        },
+        entry: { key: repo.path, name, lastRead, detail },
+      },
+    ];
+  }
   const since = (line.ticks ?? []).filter(
     (t) => Date.parse(t.startedAt) > read,
   );
@@ -149,75 +178,169 @@ function staleReading(
       : busy === 0
         ? `None of the ${plural(since.length, "tick")} since read it.`
         : `Another tick held it busy on ${busy} of the ${plural(since.length, "tick")} since, so none of them read it.`;
-  const lastRead = clock(read, timeZone);
   return [
     {
-      cause: repo.refused === null ? undefined : repo.refusedBy,
       read,
-      entry: {
+      failure,
+      own: {
         key: repo.path,
-        name,
-        lastRead,
-        detail: `${why} Its needs, queue and sessions below are as of the ${lastRead} tick.`,
+        title: `${name} has not been read since ${lastRead}, ${ago(read, nowMs)} ago.`,
+        body: `${why} Its needs, queue and sessions below are as of the ${lastRead} tick.`,
       },
+      entry: { key: repo.path, name, lastRead, detail: why },
     },
   ];
 }
 
-function staleBanner(
+/**
+ * What groups stale repositories into one banner: the failed call's class,
+ * the account or credential it used, and whose quota it met. `null` for a
+ * repository no classified failure stopped (held busy, not reached, or
+ * written before the line kept the failure), which keeps its own banner.
+ */
+function causeKey(failure: StaleReading["failure"]): string | null {
+  if (failure === undefined) return null;
+  return JSON.stringify([
+    failure.class,
+    failure.account ?? null,
+    typeof failure.quota?.system === "string" ? failure.quota.system : null,
+  ]);
+}
+
+/** One banner for the repositories one cause stopped: how many, since when, the cause, and when it clears. */
+function sharedBanner(
   key: string,
-  group: [StaleReading, ...StaleReading[]],
-  { nowMs, timeZone }: Clock,
+  group: StaleReading[],
+  failure: NonNullable<StaleReading["failure"]>,
+  timeZone: string,
 ): StaleBanner {
-  const [{ cause, entry, read }] = group;
-  if (group.length === 1 || cause === undefined) {
-    return {
-      key: entry.key,
-      title: `${entry.name} has not been read since ${entry.lastRead}, ${ago(read, nowMs)} ago.`,
-      body: entry.detail,
-    };
-  }
   const earliest = Math.min(...group.map(({ read }) => read));
-  const reset = Math.max(
-    ...group
-      .map(({ cause }) => Date.parse(cause?.until ?? ""))
-      .filter(Number.isFinite),
-  );
-  const label =
-    cause.class === "rate-limited"
-      ? "rate limit"
-      : cause.class.replaceAll("-", " ");
+  const resets = group
+    .map(({ failure }) => Date.parse(failure?.until ?? ""))
+    .filter(Number.isFinite);
+  const at =
+    resets.length === 0 ? "" : ` until ${clock(Math.max(...resets), timeZone)}`;
+  const cause =
+    failure.class === "rate-limited"
+      ? rateLimitCause(failure.quota, at, "them")
+      : (CLASS_WORDS[String(failure.class)] ?? String(failure.class));
   return {
     key,
-    title: `${group.length} repositories have not been read since ${clock(earliest, timeZone)} · ${label}`,
-    body: Number.isFinite(reset)
-      ? `The latest known reset is ${stamp(reset, hostDay(nowMs, timeZone), timeZone)}.`
-      : "The newest reads were refused.",
+    title: `${group.length} repositories have not been read since ${clock(earliest, timeZone)}: ${cause}.`,
+    body: "Each one's needs, queue and sessions below are as of its last read.",
     repositories: group.map(({ entry }) => entry),
   };
 }
 
-/** A banner for each stale repository, with shared refusals shown together. */
+/**
+ * A banner for each repository whose part of the line is past the timer's
+ * next tick and its longest recent one while the line itself is current:
+ * the ticks since ran, and none of them read it. Each names the repository,
+ * when its part was read, and why the ticks since did not read it: the
+ * newest that tried was refused, another tick held it busy, or they read
+ * other repositories. A refusal the line keeps in parts leads with one short
+ * line (`refusalLine`), its whole sentence kept for expanding. Repositories
+ * one failed call's cause stopped (`causeKey`) share one banner that lists
+ * each with when it was last read.
+ */
 export function staleBanners(
   line: LineSnapshot,
   clockNow: Clock,
 ): StaleBanner[] {
-  const groups = new Map<string, [StaleReading, ...StaleReading[]]>();
+  const groups = new Map<string, StaleReading[]>();
   for (const reading of line.repos.flatMap((repo) =>
     staleReading(repo, line, clockNow),
   )) {
-    const { cause, entry } = reading;
     const key =
-      cause === undefined
-        ? JSON.stringify(["repository", entry.key])
-        : JSON.stringify(["cause", cause.class, cause.account]);
+      causeKey(reading.failure) ??
+      JSON.stringify(["repository", reading.own.key]);
     const group = groups.get(key);
     if (group === undefined) groups.set(key, [reading]);
     else group.push(reading);
   }
-  return Array.from(groups, ([key, group]) =>
-    staleBanner(key, group, clockNow),
-  );
+  return Array.from(groups, ([key, group]) => {
+    const [first] = group;
+    return first === undefined ||
+      group.length === 1 ||
+      first.failure === undefined
+      ? group.map(({ own }) => own)
+      : [sharedBanner(key, group, first.failure, clockNow.timeZone)];
+  }).flat();
+}
+
+/** A failed call's class in a few words; a class this page does not know has none. */
+const CLASS_WORDS: Readonly<Record<string, string>> = {
+  unreachable: "no answer",
+  "server-fault": "server error",
+  "too-costly": "request too costly",
+  unauthorized: "credential refused",
+  "not-found": "not found",
+  invalid: "answer unreadable",
+};
+
+/** What each step of opening a repository says when it fails for a reason other than a rate limit. */
+const STEP_WORDS: Readonly<Record<string, string>> = {
+  lookup: "Repository lookup failed",
+  configuration: "Dispatch section unreadable",
+  time: "Tick ran out of time before reading it",
+};
+
+/** A system's name as a sentence starts it: `GitHub`, `Linear`. */
+function systemName(system: string): string {
+  return `${system.charAt(0).toUpperCase()}${system.slice(1)}`;
+}
+
+/** What a rate limit says: which system's quota, and whose share it is. */
+function rateLimitCause(
+  quota: { system?: unknown; share?: unknown } | undefined,
+  at: string,
+  held: "it" | "them" = "it",
+): string {
+  if (quota === undefined || typeof quota.system !== "string")
+    return `Rate limit holds ${held}${at}`;
+  const system = systemName(quota.system);
+  return quota.share === true
+    ? `${system} quota paused${at}, dispatcher's share spent`
+    : `${system} quota spent${at}`;
+}
+
+/** The step that was refused, with the failure's class in words where it has them. */
+function classCause(
+  refusal: NonNullable<LineRepo["refusal"]>,
+  step: string,
+): string {
+  const failure = refusal.failure;
+  const words =
+    refusal.step === "time" || failure === undefined
+      ? undefined
+      : CLASS_WORDS[String(failure.class)];
+  return words === undefined ? step : `${step} (${words})`;
+}
+
+/**
+ * A refusal the line keeps in parts, as one short line: what stopped the
+ * read, when it clears where that is known, and the tick the shown data is
+ * from, e.g. `GitHub quota paused until 17:30, dispatcher's share spent;
+ * showing 16:05 data`. `null` when the entry keeps no parts or parts this
+ * page cannot read, so the banner shows the whole sentence instead.
+ */
+function refusalLine(
+  repo: Pick<LineRepo, "refusal">,
+  readMs: number,
+  timeZone: string,
+): string | null {
+  const refusal = repo.refusal;
+  const step =
+    refusal === undefined ? undefined : STEP_WORDS[String(refusal.step)];
+  if (refusal === undefined || step === undefined) return null;
+  const failure = refusal.failure;
+  const resumes = Date.parse(failure?.until ?? "");
+  const at = Number.isNaN(resumes) ? "" : ` until ${clock(resumes, timeZone)}`;
+  const cause =
+    failure?.class === "rate-limited"
+      ? rateLimitCause(failure.quota, at)
+      : classCause(refusal, step);
+  return `${cause}; showing ${clock(readMs, timeZone)} data`;
 }
 
 // ---------- sessions ----------

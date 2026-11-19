@@ -8,21 +8,20 @@ import { StandingSource, useCurrentLine } from "./pr.tsx";
  * it. Keys and the palette reach every card (`keys.ts`, `palette.tsx`).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type {
-  LineSnapshot,
-  RowsAnswer,
-} from "../../plugin/dispatch/lib/dashboard-contract.ts";
+import type { RowsAnswer } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { receiptUrl } from "./api.ts";
 import { PanelBoundary } from "./boundary.tsx";
 import { ReadyBadge } from "./badge.ts";
 import { tabCounts } from "./cards.ts";
 import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
 import { KeyBar } from "./key-bar.tsx";
+import { FacetControls } from "./facet-controls.tsx";
+import { EMPTY_CARD_FILTER } from "./facets.ts";
 import { Fold, Hint, PopupRoot } from "./fold.tsx";
-import { hostDay } from "./format.ts";
+import { clock as clockLabel, hostDay } from "./format.ts";
 import { HelpView } from "./help.tsx";
-import { BareWord } from "./icon-word.tsx";
-import { CONTROL_ICONS, type IconWord } from "./icons.ts";
+import { CONTROL_ICONS } from "./icons.ts";
+import { Banner, COMMAND } from "./banner.tsx";
 import { LinePanel } from "./line.tsx";
 import { LogPanel } from "./log-panel.tsx";
 import { type Forges, forgesOf } from "./links.ts";
@@ -31,7 +30,7 @@ import { Strip } from "./marks.tsx";
 import { MergeFlash, MergePanel, useFlash } from "./merge.tsx";
 import { type FlashView, mergeNowCount } from "./merge-view.ts";
 import { NeedsPanel } from "./needs.tsx";
-import { answerBand, hasNeedRows } from "./needs-view.ts";
+import { answerBand, hasNeedRows, unreadText } from "./needs-view.ts";
 import { Palette } from "./palette.tsx";
 import {
   lastReadLead,
@@ -73,15 +72,8 @@ import {
   themeSearch,
   useTheme,
 } from "./theme.ts";
-import {
-  type Clock,
-  type StaleBanner,
-  staleBanners,
-  timerBanner,
-} from "./view.ts";
+import { staleBanners, timerBanner } from "./view.ts";
 import { WindowPanel } from "./window-panel.tsx";
-
-const COMMAND = "jig dispatch dashboard";
 
 /** How often ages move between reads. */
 const AGES_MOVE_MS = 20_000;
@@ -94,64 +86,6 @@ function useMonoNow(): number {
     return () => clearInterval(timer);
   }, []);
   return mono;
-}
-
-function CommandRow() {
-  return (
-    <div className="copyRow">
-      <span className="m sm">{COMMAND}</span>
-      <CopyButton text={COMMAND} idle="Copy command" />
-    </div>
-  );
-}
-
-function Banner({
-  title,
-  body,
-  command,
-  icon,
-  repositories,
-}: {
-  title: string;
-  body: string;
-  command: boolean;
-  repositories?: StaleBanner["repositories"];
-  /** What the title is about, where the icon vocabulary draws it. */
-  icon?: IconWord;
-}) {
-  return (
-    <section className="banner" role="status">
-      <span className="mk r-unknown" aria-hidden="true">
-        ?
-      </span>
-      <div className="bannerBody">
-        <h2>
-          {icon === undefined ? title : <BareWord of={icon}>{title}</BareWord>}
-        </h2>
-        <p className="sm">{body}</p>
-        {repositories === undefined ? null : (
-          <>
-            <p className="sm">
-              {repositories
-                .map(({ name, lastRead }) => `${name} (${lastRead})`)
-                .join(" · ")}
-            </p>
-            <details>
-              <summary>Read failure details</summary>
-              <ul>
-                {repositories.map(({ key, name, detail }) => (
-                  <li key={key}>
-                    <strong>{name}</strong> {detail}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </>
-        )}
-        {command ? <CommandRow /> : null}
-      </div>
-    </section>
-  );
 }
 
 export function App() {
@@ -369,7 +303,13 @@ function Page({
   const counts = tabCounts(line, clock, rows.data?.total ?? null);
   const [flash, dismissFlash] = useFlash(line);
   const main = useRef<HTMLElement | null>(null);
-  const steer = useSteering(main, { line, clock, counts, setView: setTabNow });
+  const steer = useSteering(main, {
+    line,
+    clock,
+    counts,
+    setView: setTabNow,
+    view: tab,
+  });
   return (
     <div
       className="dd"
@@ -401,7 +341,8 @@ function Page({
               mergeHref={hrefOf("merge", filter, theme)}
               onDismiss={dismissFlash}
               steer={steer}
-              read={view.answer !== null}
+              view={view}
+              logHasRows={rows.data?.logHasRows === true}
             />
             <ViewBody
               tab={tab}
@@ -410,6 +351,8 @@ function Page({
               filter={filter}
               setFilter={setFilter}
               theme={theme}
+              filterActive={steer.filterResults.active}
+              filterKey={JSON.stringify(steer.cardFilter)}
             />
           </main>
           <footer className="foot">
@@ -438,15 +381,30 @@ function ViewTop({
   mergeHref,
   onDismiss,
   steer,
-  read,
+  view,
+  logHasRows,
 }: {
   tab: ViewId;
   flash: FlashView | null;
   mergeHref: string;
   onDismiss: () => void;
   steer: Steering;
-  read: boolean;
+  view: PageView;
+  logHasRows: boolean;
 }) {
+  const { line, clock } = view;
+  const needs =
+    tab !== "needs"
+      ? undefined
+      : {
+          fallback: answerBand(line, clock, logHasRows, view.pastTense),
+          unread: line === null ? null : unreadText(line, clock.timeZone),
+          at:
+            view.pastTense && line !== null
+              ? clockLabel(Date.parse(line.startedAt), clock.timeZone)
+              : null,
+          more: <FollowupSummary line={line} nowMs={clock.nowMs} />,
+        };
   return (
     <>
       {flash === null ? null : (
@@ -460,12 +418,26 @@ function ViewTop({
           }}
         />
       )}
-      {FILTERED_VIEWS.has(tab) && read ? (
-        <ViewFilter
-          value={steer.cardQuery}
-          setValue={steer.setCardQuery}
-          shown={steer.shown}
-        />
+      {FILTERED_VIEWS.has(tab) && view.answer !== null ? (
+        <>
+          <ViewFilter
+            value={steer.cardFilter.query}
+            setValue={(query) =>
+              steer.replaceCardFilter({ ...steer.cardFilter, query })
+            }
+          />
+          <FacetControls
+            view={tab}
+            filter={steer.cardFilter}
+            results={steer.filterResults}
+            needs={needs}
+            replace={steer.replaceCardFilter}
+            clear={() => {
+              steer.replaceCardFilter(EMPTY_CARD_FILTER);
+              steer.focusStart();
+            }}
+          />
+        </>
       ) : null}
     </>
   );
@@ -479,6 +451,8 @@ function ViewBody({
   filter,
   setFilter,
   theme,
+  filterActive,
+  filterKey,
 }: {
   tab: ViewId;
   view: PageView;
@@ -486,6 +460,8 @@ function ViewBody({
   filter: LogFilter;
   setFilter: (patch: Partial<LogFilter>) => void;
   theme: Theme;
+  filterActive: boolean;
+  filterKey: string;
 }) {
   const { line, clock } = view;
   const today = hostDay(clock.nowMs, clock.timeZone);
@@ -496,7 +472,15 @@ function ViewBody({
   const forges = useMemo(() => forgesOf(line), [line]);
   if (tab === "help") return <HelpView Fold={Fold} />;
   if (view.answer === null) return null;
-  if (tab !== "history") return <CardView tab={tab} view={view} log={log} />;
+  if (tab !== "history")
+    return (
+      <CardView
+        tab={tab}
+        view={view}
+        filterActive={filterActive}
+        filterKey={filterKey}
+      />
+    );
   return (
     <HistoryPanels
       theme={theme}
@@ -531,8 +515,11 @@ function Banners({ view }: { view: PageView }) {
             key={b.key}
             title={b.title}
             body={b.body}
-            repositories={b.repositories}
             command={false}
+            {...(b.detail === undefined ? {} : { detail: b.detail })}
+            {...(b.repositories === undefined
+              ? {}
+              : { repositories: b.repositories })}
           />
         ))
       )}
@@ -551,11 +538,13 @@ function Banners({ view }: { view: PageView }) {
 function CardView({
   tab,
   view,
-  log,
+  filterActive,
+  filterKey,
 }: {
   tab: ViewId;
   view: PageView;
-  log: RowsAnswer | null;
+  filterActive: boolean;
+  filterKey: string;
 }) {
   const { line, clock } = view;
   const { kept } = useKeptToken();
@@ -579,17 +568,14 @@ function CardView({
     );
   return (
     <>
-      <PanelBoundary name="The answer" reads={line}>
-        <AnswerBand
-          line={line}
-          clock={clock}
-          logHasRows={log?.logHasRows === true}
-          pastTense={view.pastTense}
-        />
-      </PanelBoundary>
       {line !== null && (hasNeedRows(line, clock.nowMs) || kept !== null) ? (
         <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
-          <NeedsPanel line={line} clock={clock} />
+          <NeedsPanel
+            line={line}
+            clock={clock}
+            filterActive={filterActive}
+            filterKey={filterKey}
+          />
         </PanelBoundary>
       ) : null}
     </>
@@ -675,29 +661,5 @@ function Colophon({ view, token }: { view: PageView; token: string }) {
         token you paste stay in this browser, and Send posts to GitHub directly
       </span>
     </div>
-  );
-}
-
-function AnswerBand({
-  line,
-  clock,
-  logHasRows,
-  pastTense,
-}: {
-  line: LineSnapshot | null;
-  clock: Clock;
-  logHasRows: boolean;
-  pastTense: boolean;
-}) {
-  const view = answerBand(line, clock, logHasRows, pastTense);
-  return (
-    <section
-      className={view.loud ? "answer loud" : "answer"}
-      aria-label="Does anything need a person"
-    >
-      <h1>{view.title}</h1>
-      <p className="sm">{view.sub}</p>
-      <FollowupSummary line={line} nowMs={clock.nowMs} />
-    </section>
   );
 }
