@@ -34,7 +34,12 @@ describe("the pass prompt", () => {
       expect(prompt).toContain("You are a pass");
       expect(prompt).toContain("pull request 7");
       expect(prompt).toContain("not a request to arm");
-      expect(prompt).toContain("DRIVE_PR_SESSION");
+      expect(prompt).toContain(
+        "A drive or lock whose pid is the one DRIVE_PR_SESSION holds is that driver",
+      );
+      expect(prompt).toContain(
+        "any other live drive on this pull request is one",
+      );
       expect(prompt).toContain("finish-round.ts");
     });
   }
@@ -76,6 +81,7 @@ describe("SKILL.md", () => {
       "$DRIVE_PR_SESSION",
       "finish-round.ts",
       "not a competing drive",
+      "Any other live drive on this pull",
       "could not do and why",
     ])
       expect(section).toContain(duty);

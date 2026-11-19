@@ -47,14 +47,15 @@ not arming, watching or handing off a drive:
 
 - A drive, lock or lease you find on this pull request whose pid matches
   `$DRIVE_PR_SESSION` is your own driver, not a competing drive. Never stand
-  down for it, arm another or stop it.
+  down for it, arm another or stop it. Any other live drive on this pull
+  request is a competitor: stop, as § 6's exits `11` and `13` say.
 - Finish the round yourself, in this turn: work the findings (§ One round),
   commit, merge the base when § 5 says so, push through `finish-round.ts`
   (§ 6), reply to or park each finding, and end with the round report
   (§ 8). Unpushed commits in this tree are yours to push now, not a later
   pass's.
-- A round that ends without a commit, a push, a reply or a park says in its
-  round report which of these it could not do and why: the step, its exit
+- A round with work to do that ends without a commit, a push, a reply or a
+  park says in its round report which of these it could not do and why: the step, its exit
   code and the state it printed. The driver's stall stop prints what the
   round recorded.
 

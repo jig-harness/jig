@@ -82,11 +82,12 @@ export function passRole(pr: number | string): string {
     `You are a pass: one round of the drive already running on pull request ${pr}, ` +
     "started by its driver (the process whose id DRIVE_PR_SESSION holds), " +
     "not a request to arm, watch or hand off a drive. " +
-    "A drive or lock you find on this pull request is that driver, not a competitor. " +
+    "A drive or lock whose pid is the one DRIVE_PR_SESSION holds is that driver, not a competitor; " +
+    "any other live drive on this pull request is one, and then you stop. " +
     "Read the skill section Driver pass, then finish the round yourself in this turn: " +
     "commit, merge the base when the round says so, push through finish-round.ts, " +
-    "reply or park each finding, and end with the round report, " +
-    "naming any of these you could not do and why."
+    "reply or park each finding, and end with the round report; " +
+    "a round with work to do that ends without these names which it could not do and why."
   );
 }
 
