@@ -31,6 +31,7 @@ export function reviewerStickyIn(
   reviewerLogin: (login: string) => boolean,
   summaryMarker: string,
   shaMarker: string,
+  skipNoticeMarker = "ai-review-skip-notice",
 ): ReviewerSticky {
   const markerRe = new RegExp(
     `<!--\\s*${shaMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
@@ -61,7 +62,7 @@ export function reviewerStickyIn(
       // on this must fail closed on an undatable sticky rather than treat it
       // as freshly written.
       updatedAt: String(c.updated_at ?? ""),
-      skip: skipNoticeIn(body),
+      skip: skipNoticeIn(body, skipNoticeMarker),
     };
   }
   return sticky;

@@ -28,5 +28,6 @@ it("bounds the forge evaluations during the default 1800-second reviewer wait", 
 it("respects the configured cap, the initial interval, and remaining budget", () => {
   expect(reviewerPollSeconds(30, 90, 60, 180_000)).toBe(90);
   expect(reviewerPollSeconds(30, 10, 30, 180_000)).toBe(30);
-  expect(reviewerPollSeconds(30, 300, 240, 40_000)).toBe(40);
+  expect(reviewerPollSeconds(30, 300, 240, 40_000)).toBe(39);
+  expect(reviewerPollSeconds(30, 300, 240, 150_000)).toBe(149);
 });

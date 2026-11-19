@@ -27,8 +27,10 @@ export const DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION = 3;
 
 export type ReviewerFailurePolicy = {
   threshold: number;
+  app?: string;
   sticky: string;
   stamp: string;
+  skipNoticeMarker: string;
   bots: readonly string[];
   checkPattern?: string;
   evidence?: "sticky" | "review_object";
@@ -46,12 +48,20 @@ export function reviewerFailurePolicy(
     review.reviewer_check_pattern.trim() !== ""
       ? { checkPattern: review.reviewer_check_pattern }
       : {}),
+    ...(typeof review.reviewer_app === "string" &&
+    review.reviewer_app.trim() !== ""
+      ? { app: review.reviewer_app }
+      : {}),
     ...(review.reviewer_evidence === "sticky" ||
     review.reviewer_evidence === "review_object"
       ? { evidence: review.reviewer_evidence }
       : {}),
     sticky: stringOr(review.sticky_marker, DEFAULT_STICKY_MARKER),
     stamp: stringOr(review.reviewed_sha_marker, DEFAULT_REVIEWED_SHA_MARKER),
+    skipNoticeMarker: stringOr(
+      review.skip_notice_marker,
+      "ai-review-skip-notice",
+    ),
     bots: bots.flatMap((bot: unknown) => {
       const login = isRecord(bot) ? bot.login : bot;
       return typeof login === "string" && login !== "" ? [login] : [];
@@ -127,9 +137,10 @@ async function recovered(
   cwd?: string,
   bound?: TickBound,
 ): Promise<Outcome<boolean, "unreadable">> {
-  const logins = stop.app === undefined ? policy.bots : [`${stop.app}[bot]`];
+  const app = policy.app ?? stop.app;
+  const logins = app === undefined ? policy.bots : [`${app}[bot]`];
   const mode =
-    policy.evidence ?? reviewerProfile(stop.app ?? "")?.evidence ?? "sticky";
+    policy.evidence ?? reviewerProfile(app ?? "")?.evidence ?? "sticky";
   return heldRead(bound, "the reviewer's new evidence was read", async () => {
     if (mode === "sticky") {
       const sticky = reviewerStickyIn(
@@ -137,6 +148,7 @@ async function recovered(
         (login) => logins.includes(login),
         policy.sticky,
         policy.stamp,
+        policy.skipNoticeMarker,
       );
       const sha = await resolveMarkerSha(sticky.sha, cwd);
       if (sticky.sha !== "" && sha === "")
@@ -147,7 +159,6 @@ async function recovered(
       return ok(sha === stop.head);
     }
     const [owner, repo] = slug.split("/");
-    const app = stop.app;
     if (app === undefined || !owner || !repo) return ok(false);
     const pattern = attempt(
       "unreadable",

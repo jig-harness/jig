@@ -11,8 +11,6 @@
  * first bare one (7 to 40 lowercase hex). Its text is kept, markup removed,
  * for the reason the drive reports.
  */
-import { skipNoticeMarker } from "../overlay.ts";
-
 export interface SkipNotice {
   /** The head the notice names, as written: a full or abbreviated commit id. */
   head: string;
@@ -27,8 +25,11 @@ function escapeRegExp(text: string): string {
 }
 
 /** The last skip notice in `body`, or `null` when it carries none naming a head. */
-export function skipNoticeIn(body: string): SkipNotice | null {
-  const marker = escapeRegExp(skipNoticeMarker());
+export function skipNoticeIn(
+  body: string,
+  markerName = "ai-review-skip-notice",
+): SkipNotice | null {
+  const marker = escapeRegExp(markerName);
   const blocks = [
     ...body.matchAll(
       new RegExp(

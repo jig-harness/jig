@@ -12,6 +12,7 @@ import {
   reviewerApp,
   reviewerCheckPattern,
   reviewerExpected,
+  skipNoticeMarker,
   stickyMarker,
 } from "../overlay.ts";
 import { checkPattern } from "../merge-ready.ts";
@@ -741,6 +742,7 @@ export async function reviewerStickyMarkers(
     isReviewerLogin,
     STICKY_MARKER,
     SHA_MARKER,
+    skipNoticeMarker(),
   );
 }
 

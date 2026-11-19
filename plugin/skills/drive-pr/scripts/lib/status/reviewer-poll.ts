@@ -1,14 +1,14 @@
 export const DEFAULT_REVIEWER_POLL_MAX_SECONDS = 300;
 
-/** Double consecutive reviewer waits, preserving a last poll when time permits. */
+/** Double consecutive reviewer waits, reserving time for the final poll. */
 export function reviewerPollSeconds(
   interval: number,
   max: number,
   previous: number,
   remainingMs: number,
 ): number {
-  return Math.max(
-    interval,
-    Math.min(previous * 2, max, Math.floor(remainingMs / 1000)),
-  );
+  const usual = Math.max(interval, Math.min(previous * 2, max));
+  // A wait that consumes the whole budget returns the report observed before
+  // sleeping. Leave one second for the loop to read the reviewer once more.
+  return Math.min(usual, Math.max(0, Math.floor(remainingMs / 1000) - 1));
 }
