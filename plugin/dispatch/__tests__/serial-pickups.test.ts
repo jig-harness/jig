@@ -121,6 +121,9 @@ describe("reachesArea beyond plain names", () => {
       expect(reachesArea(known([], ["config/"]), area, dotted)).toBe(true);
     }
     expect(reachesArea(known([], ["config/"]), "mixed", dotted)).toBe(true);
+    expect(reachesArea(known([], ["config/team/"]), "mixed", dotted)).toBe(
+      true,
+    );
     expect(reachesArea(known([], ["other/"]), "env", dotted)).toBe(false);
   });
 

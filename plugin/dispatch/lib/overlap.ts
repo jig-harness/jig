@@ -31,7 +31,11 @@
  * first may still start after a higher-ranked one. It reports; it starts
  * nothing.
  */
-import { globMatchesUnder, matchesGlob } from "../../shared/glob.ts";
+import {
+  globMatchesUnder,
+  globMayMatchUnder,
+  matchesGlob,
+} from "../../shared/glob.ts";
 import type { OverlapSettings, PatienceKey } from "./overlap-config.ts";
 
 /** The paths a piece of work is expected to change; `known: false` when nobody predicted them. */
@@ -180,7 +184,7 @@ function globReachesDir(glob: string, dir: string): boolean {
   if (!WILDCARD.test(glob)) return glob.startsWith(`${dir}/`);
   const fixed = staticDir(glob);
   if (fixed === dir || fixed.startsWith(`${dir}/`)) return true;
-  return globMatchesUnder(glob, dir);
+  return globMayMatchUnder(glob, dir);
 }
 
 /** Whether a coarse element `x` (a directory or an area) holds, or reaches into, the element `y`. */

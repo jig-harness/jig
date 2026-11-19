@@ -150,6 +150,8 @@ interface Automaton {
     slash: boolean;
     dot: boolean;
     names: string[];
+    /** Literal and punctuation characters this token accepts, beyond plain names. */
+    chars: string[];
     to: number;
   }[][];
   accept: number;
@@ -198,6 +200,9 @@ function automatonOf(glob: string): Automaton {
       slash: test.test("/"),
       dot: test.test("."),
       names: NAME_CHARS.filter((c) => test.test(c)),
+      chars: [...new Set([...source, ".", "~", "@", "+", "="])].filter(
+        (c) => c !== "/" && test.test(c),
+      ),
       to,
     });
   };
@@ -248,7 +253,17 @@ function automatonOf(glob: string): Automaton {
  */
 export function globMatchesUnder(glob: string, dir: string): boolean {
   const a = automatonOf(glob);
-  return endsInName(a, statesAfter(a, `${dir}/`));
+  return endsInPlainName(a, statesAfter(a, `${dir}/`));
+}
+
+/**
+ * Whether `glob` can match some path under `dir`, including dotfiles and
+ * punctuation. This is intentionally broader than `globMatchesUnder`: a
+ * serialized-work guard must hold when any supported path may intersect.
+ */
+export function globMayMatchUnder(glob: string, dir: string): boolean {
+  const a = automatonOf(glob);
+  return endsInPathSegment(a, statesAfter(a, `${dir}/`));
 }
 
 /** The states the automaton reaches without reading a character more. */
@@ -277,14 +292,26 @@ function statesAfter(a: Automaton, text: string): Set<number> {
  * only after that, and a `/` or the end of the path closes it only when it
  * is a plain name.
  */
-function endsInName(a: Automaton, states: Set<number>): boolean {
+function endsInPlainName(a: Automaton, states: Set<number>): boolean {
   const seen = new Set<string>();
   const queue: Position[] = [...states].map((s) => [s, EMPTY]);
   for (let at = queue.pop(); at !== undefined; at = queue.pop()) {
     if (seen.has(`${at}`)) continue;
     seen.add(`${at}`);
     if (at[0] === a.accept && closes(at[1])) return true;
-    queue.push(...successors(a, at));
+    queue.push(...plainSuccessors(a, at));
+  }
+  return false;
+}
+
+function endsInPathSegment(a: Automaton, states: Set<number>): boolean {
+  const seen = new Set<string>();
+  const queue: Position[] = [...states].map((s) => [s, EMPTY]);
+  for (let at = queue.pop(); at !== undefined; at = queue.pop()) {
+    if (seen.has(`${at}`)) continue;
+    seen.add(`${at}`);
+    if (at[0] === a.accept && at[1] !== EMPTY) return true;
+    queue.push(...pathSuccessors(a, at));
   }
   return false;
 }
@@ -324,12 +351,23 @@ function closes(segment: Segment): boolean {
   return segment === "n" || (segment.startsWith("s:") && takesDot(segment));
 }
 
-function successors(a: Automaton, [s, segment]: Position): Position[] {
+function plainSuccessors(a: Automaton, [s, segment]: Position): Position[] {
   const next: Position[] = (a.empty[s] ?? []).map((t) => [t, segment]);
   for (const e of a.steps[s] ?? []) {
     for (const c of e.names) next.push([e.to, afterName(segment, c)]);
     if (e.dot && takesDot(segment)) next.push([e.to, "."]);
     if (e.slash && closes(segment)) next.push([e.to, EMPTY]);
+  }
+  return next;
+}
+
+function pathSuccessors(a: Automaton, [s, segment]: Position): Position[] {
+  const next: Position[] = (a.empty[s] ?? []).map((t) => [t, segment]);
+  for (const e of a.steps[s] ?? []) {
+    for (const c of e.names) next.push([e.to, afterName(segment, c)]);
+    for (const c of e.chars) next.push([e.to, afterName(segment, c)]);
+    if (e.dot) next.push([e.to, "."]);
+    if (e.slash && segment !== EMPTY) next.push([e.to, EMPTY]);
   }
   return next;
 }

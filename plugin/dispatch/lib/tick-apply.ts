@@ -157,7 +157,10 @@ export async function actObserved(
   // The tracker stages of this repository, a steward's resume of one included, are checked against its tracker.
   const tracker = trackerTargetOf(opened, observation.tracked);
   if (tracker !== null) apply.preflight?.targets.set(repo.slug, tracker);
-  await hooks.guard("steward", () => applyStewardRecords(apply, observation));
+  // A steward resume can launch a pickup before the ordinary pickup stage.
+  // Do not let it bypass the same unreadable-serialization safety boundary.
+  if (serialUndecided(observation) === null)
+    await hooks.guard("steward", () => applyStewardRecords(apply, observation));
   const book = bookOf(context, repo.slug, report);
   await endOwnClaims(ctx, report, {
     claims,
