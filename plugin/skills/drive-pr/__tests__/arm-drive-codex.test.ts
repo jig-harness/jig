@@ -15,11 +15,12 @@ import {
   driveArgv,
   type TabDeps,
 } from "../scripts/lib/arm.ts";
+import { passPrompt } from "../scripts/lib/pass-command.ts";
 
 const REQUEST: ArmRequest = { pr: "42", tree: "/work/tree", forward: [] };
 const CODEX = { CODEX_HOME: "/x" };
 const CODEX_IN_ORCA = { ...CODEX, ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
-const PROMPT = "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 42";
+const PROMPT = passPrompt("codex", 42);
 
 /** Orca's stand-in, answering every call with `answer`. */
 function orca(answer: { ok: boolean }): OrcaRunner {

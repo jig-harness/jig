@@ -3,12 +3,16 @@
  * each round, one per agent tool the drive documents. Anything else after
  * `drive.ts`'s `--` is a person's own command, run as given.
  *
- *   claude  claude -p "/jig:drive-pr --bots-only <PR>"
- *   codex   codex exec "Use the jig:drive-pr skill: /jig:drive-pr --bots-only <PR>"
+ *   claude  claude -p "/jig:drive-pr --bots-only <PR> <role>"
+ *   codex   codex exec "Use the jig:drive-pr skill: /jig:drive-pr --bots-only <PR> <role>"
  *
  * Claude Code runs a plugin skill from its slash command; Codex runs one
  * when the prompt names it, so its prompt names the skill and carries the
- * same invocation. Neither command takes a permission of its own. A pass
+ * same invocation. The invocation alone is the words a person or the
+ * dispatcher uses to arm a drive, so each prompt goes on to state the pass
+ * role (`passRole`): an agent that settles its role from the first words it
+ * reads takes the right one. `$DRIVE_PR_TARGET` stays the discriminator the
+ * skill routes on. Neither command takes a permission of its own. A pass
  * pushes, calls the forge and writes the worktree's git directory, which
  * Codex's sandboxes refuse, and nobody is there to approve, so a Codex pass
  * needs `--dangerously-bypass-approvals-and-sandbox`; a host opts in to it
@@ -67,6 +71,40 @@ export function skillPrompt(vendor: AccountVendor, invocation: string): string {
 }
 
 /**
+ * What a pass is, in the words its prompt carries after the invocation: one
+ * round of the drive already running on `pr`, under the driver that started
+ * it, not an arm, and what finishing the round takes. One line with no
+ * quote, `$` or backtick, so it survives the arm's printed command in any
+ * shell unchanged.
+ */
+export function passRole(pr: number | string): string {
+  return (
+    `You are a pass: one round of the drive already running on pull request ${pr}, ` +
+    "started by its driver (the process whose id DRIVE_PR_SESSION holds), " +
+    "not a request to arm, watch or hand off a drive. " +
+    "A drive or lock you find on this pull request is that driver, not a competitor. " +
+    "Read the skill section Driver pass, then finish the round yourself in this turn: " +
+    "commit, merge the base when the round says so, push through finish-round.ts, " +
+    "reply or park each finding, and end with the round report, " +
+    "naming any of these you could not do and why."
+  );
+}
+
+/**
+ * The prompt of `vendor`'s documented pass for `pr`: the skill's invocation
+ * as `vendor` takes it (`--bots-only` unless `botsOnly` is false), then the
+ * pass role.
+ */
+export function passPrompt(
+  vendor: AccountVendor,
+  pr: number | string,
+  botsOnly = true,
+): string {
+  const mode = botsOnly ? " --bots-only" : "";
+  return `${skillPrompt(vendor, `/jig:drive-pr${mode} ${pr}`)} ${passRole(pr)}`;
+}
+
+/**
  * The documented pass command of `vendor` for pull request `pr`, its model
  * left to `pass-model.ts`: a Codex pass with the bypass when `codexBypass`
  * says the host opted in, then `codexPassArgs` (the host's
@@ -78,7 +116,7 @@ export function passCommand(
   codexBypass = false,
   codexPassArgs: readonly string[] = [],
 ): string[] {
-  const prompt = skillPrompt(vendor, `/jig:drive-pr --bots-only ${pr}`);
+  const prompt = passPrompt(vendor, pr);
   return vendor === "claude"
     ? ["claude", "-p", prompt]
     : [
