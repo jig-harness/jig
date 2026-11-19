@@ -108,6 +108,7 @@ function stalled(
       read,
       ...(inScope === undefined ? {} : { inScope }),
       ...(merged === undefined ? {} : { merged }),
+      nowMs: NOW,
     }),
   };
 }
@@ -180,10 +181,8 @@ describe("a claimed item an open pull request carries", () => {
   });
 
   it("raises no stall need while the drive is parked on a question, stopped, or undecided this tick, and is reported with the drive's state", () => {
-    const unplaced = {
-      ...drive("unplaced"),
-      why: "whether it conflicts with its base is not known yet",
-    };
+    const unplaced = drive("unplaced", { exit: DRIVE_EXIT.CONVERGED });
+    unplaced.why = "whether it conflicts with its base is not known yet";
     for (const [ledger, state, text] of [
       [drive("parked"), "parked", "parked on a person's question"],
       [drive("needs-person"), "parked", "parked on a person's question"],
@@ -238,6 +237,11 @@ describe("a claimed item an open pull request carries", () => {
         why: expect.stringContaining("pull request #30"),
       });
     }
+    // A day after its merge the follow-up has had its time: the item is a stalled pickup again.
+    const old = { ...merged, mergedAt: "2026-11-13T16:00:00Z" };
+    expectStalled(
+      planPickups(input(stalled([], [], new Set(), undefined, [old]))),
+    );
   });
 
   it("is a stalled pickup when no pull request links it", () => {
@@ -280,12 +284,18 @@ describe("a claimed item an open pull request carries", () => {
 
   it("is a stalled pickup when the linked pull request's drive did not read, and the need says so", () => {
     const unplaced: DrivenPr = {
-      ...drive("unplaced"),
+      ...drive("unplaced", { exit: DRIVE_EXIT.CONVERGED }),
       why: "its comments did not read",
       readFailed: true,
     };
+    // An unplaced drive with no stop of its own (no ledger, a heartbeat that does not read) cannot be told either.
+    const unstopped = {
+      ...drive("unplaced"),
+      why: "its heartbeat is unreadable",
+    };
     for (const [drives, read] of [
       [[unplaced], new Set([31])],
+      [[unstopped], new Set([31])],
       [[], new Set<number>()],
     ] as const) {
       const reason = expectStalled(

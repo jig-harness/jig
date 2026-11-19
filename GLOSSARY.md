@@ -2544,8 +2544,9 @@ make, use the entry's term instead.
   The dispatcher reports it, and the line lists it, as carried, with the
   drive's state, rather than as a stalled pickup: a person's step there is
   the pull request's own need. A pull request with no drive does not carry
-  it, and the stall need names the pull request. An item a merged pull
-  request links is not a stalled pickup either: its follow-up settles it.
+  it, and the stall need names the pull request. An item a pull request
+  merged within the last day links is not a stalled pickup either: its
+  follow-up settles it.
   An item already in the tracker's pull-request-open state, or with a move
   to it still to make, keeps its existing handling and is not reported as
   carried.

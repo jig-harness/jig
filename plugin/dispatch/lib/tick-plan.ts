@@ -108,7 +108,7 @@ export function planObserved(
     ...(observation.armsSettled === undefined
       ? {}
       : { armsSettled: observation.armsSettled }),
-    ...withStalledPr(observation),
+    ...withStalledPr(observation, context.nowMs),
     ...withTrees(context, opened.stages.has("pickup")),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
@@ -176,7 +176,10 @@ export function planObserved(
  * pull requests carry an item with the drives that work them. None where
  * the tracker's keys do not read.
  */
-function withStalledPr(observation: RepoObservation): {
+function withStalledPr(
+  observation: RepoObservation,
+  nowMs: number,
+): {
   prOpen?: StalledPrInput;
 } {
   const { tracked, forge, opened, ctx } = observation;
@@ -189,7 +192,7 @@ function withStalledPr(observation: RepoObservation): {
   return {
     prOpen: {
       prs,
-      carried: carriersOf(observation, prs),
+      carried: carriersOf(observation, prs, nowMs),
       prOpen: (nativeType) => prOpenOf(tracked.tracker, nativeType),
       owner: ctx.owner,
       pickup: opened.stages.has("pickup"),
@@ -221,6 +224,7 @@ function withTrees(
 function carriersOf(
   observation: RepoObservation,
   prs: readonly PrLinkText[] | null,
+  nowMs: number,
 ): CarrierInput {
   const { tracked, forge, opened, drives } = observation;
   return carrierInput({
@@ -238,6 +242,7 @@ function carriersOf(
     read: forge.read,
     ...(forge.scoped ? { inScope: forge.inScope } : {}),
     merged: forge.merged,
+    nowMs,
   });
 }
 

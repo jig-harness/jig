@@ -19,9 +19,10 @@
  *   item raises no second one and is reported with the drive's state beside
  *   it. A pull request with no drive does not carry it: the item is a
  *   stalled pickup, and its need names the pull request.
- * - A pull request the tick read as merged since the follow-up stage's
- *   start that the line links to the item settles it: the follow-up moves
- *   it, so the stall watch raises nothing.
+ * - A pull request the tick read as merged within `MERGED_SETTLES_MS` that
+ *   the line links to the item settles it: the follow-up moves it, so the
+ *   stall watch raises nothing. One merged longer ago no longer does: an
+ *   item its follow-up has not moved by then is a stalled pickup again.
  * - Where the open pull requests, their links or a linked pull request's
  *   drive did not read this tick, the stall watch reads the item as it reads
  *   one no pull request links, and its need says what could not be told.
@@ -29,6 +30,7 @@
  * Like the rest of the stall watch it reads only what the tick's query of
  * the repository already read, and makes no forge request of its own.
  */
+import { parseMs } from "../../shared/time.ts";
 import { stateOf } from "./labels.ts";
 import type { DrivenPr, MergedPr } from "./types.ts";
 import { type LinkRules, type PrLinkText, workLinks } from "./work-links.ts";
@@ -69,6 +71,9 @@ export type CarryingDrive =
   | "stopped"
   | "unplaced";
 
+/** How long after its merge a pull request that links an item settles it for the stall watch: its follow-up's time, waits included. */
+export const MERGED_SETTLES_MS = 24 * 3_600_000;
+
 /** The ledger classes of a drive parked on a person's question, which its own need frames. */
 const ASKS_PERSON: ReadonlySet<DrivenPr["class"]> = new Set([
   "parked",
@@ -106,8 +111,10 @@ function carrierDrive(
   const projected = stateOf(drive);
   const why = `${drive.class}${drive.why === "" ? "" : `: ${drive.why}`}`;
   if (projected === "unknown")
-    // An unplaced ledger that read waits on a state the forge leaves undecided; one that did not read cannot be told.
-    return drive.class === "unplaced" && drive.readFailed !== true
+    // A stopped ledger that read waits on a state the forge leaves undecided; one with no stop, or that did not read, cannot be told.
+    return drive.class === "unplaced" &&
+      drive.readFailed !== true &&
+      typeof drive.evidence.exit === "number"
       ? { kind: "unplaced", why }
       : {
           kind: "unread",
@@ -136,6 +143,8 @@ export function carrierInput(read: {
   inScope?: ReadonlySet<number>;
   /** The pull requests merged since the follow-up stage's start, as the tick listed them. */
   merged?: readonly MergedPr[];
+  /** The tick's time, which a merged pull request's age is read against; without it no merged pull request settles an item. */
+  nowMs?: number;
 }): CarrierInput {
   const own = read.prs?.filter((p) => p.crossRepository !== true) ?? null;
   const unknownHead = new Set(
@@ -143,7 +152,10 @@ export function carrierInput(read: {
   );
   const links =
     own === null || read.rules === null ? null : workLinks(own, read.rules);
-  const merged = (read.merged ?? []).map(
+  const { nowMs } = read;
+  const recent = (p: MergedPr) =>
+    nowMs !== undefined && nowMs - parseMs(p.mergedAt) <= MERGED_SETTLES_MS;
+  const merged = (read.merged ?? []).filter(recent).map(
     (p): PrLinkText => ({
       number: p.number,
       url: p.url,
