@@ -153,6 +153,19 @@ describe("validation forecast", () => {
     expect(forecast.fill).toBe(0.25);
   });
 
+  test("credits a lock slot predicted to be free when the candidate arrives", () => {
+    const measured = measureValidation([], []);
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 1, toArrive: 0 },
+      MINUTE,
+      3 * HOUR,
+    );
+    expect(forecast.ahead).toBe(0);
+    expect(forecast.required).toBe(0);
+  });
+
   test("counts every active run attributed to a pass before forecasting arrivals", () => {
     const measured = measureValidation([], []);
     const demand = validationDemand(

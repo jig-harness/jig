@@ -149,12 +149,12 @@ export function validationHold(
   if (kind === "pickup") {
     // Reserve a drive's runs in the pickup's window. The drive's shorter
     // window still has to fit the demand already committed on this tick.
-    const reserved = forecast(state, "pickup", deadline, state.admittedRuns);
+    const reserved = forecast(state, "drive", deadline, state.admittedRuns);
     const drive = forecast(
       state,
       "drive",
       state.driveDeadlineMs,
-      state.admittedRuns + own.ownRuns,
+      state.admittedRuns,
     );
     for (const result of [reserved, drive]) {
       if (result !== null && (result.fill === null || result.fill > line))

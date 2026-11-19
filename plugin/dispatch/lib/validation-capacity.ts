@@ -253,7 +253,7 @@ export function forecastValidation(
   // consume the same waiting capacity as work from earlier passes.
   const immediatelyAdmitted = Math.min(
     ownRuns,
-    Math.max(0, concurrency - atLock),
+    Math.max(0, concurrency - ahead),
   );
   const required = ahead + ownRuns - immediatelyAdmitted;
   return {
