@@ -86,7 +86,9 @@ export function finalReadListingStop(
  * The drive's stop for a `ci-hold.ts` step that found the check-runs listing
  * cut short: the pages it read, as its last line of output says.
  */
-function heldListingStop(result: Awaited<ReturnType<typeof run>>): number {
+export function heldListingStop(
+  result: Awaited<ReturnType<typeof run>>,
+): number {
   const last = result.stdout.trim().split("\n").at(-1) ?? "";
   const pages = attempt("unreadable", "the listing's page count", (): unknown =>
     JSON.parse(last),

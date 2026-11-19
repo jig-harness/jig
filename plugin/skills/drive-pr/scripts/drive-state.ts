@@ -299,10 +299,15 @@ import {
   ROUND_VERBS,
   reviewRound,
 } from "./lib/state/review-rounds.ts";
-import { slurpCheckRuns } from "./lib/paged-read.ts";
+import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
+import {
+  type ListingCutShort,
+  listingCutShort,
+  slurpCheckRuns,
+} from "./lib/paged-read.ts";
 import {
   attributeStatuses,
-  checkRunsFor,
+  checkRunListing,
   ciVerdictOf,
   commitStatusesFor,
   hasNonReviewerCi,
@@ -1628,9 +1633,27 @@ async function main(): Promise<number> {
         // post-unlabel run, even though `completedRequiredCi` rejects it.
         // Sharing one implementation makes that class of drift impossible.
         // Every read in it is fresh (`lib/paged-read.ts`): it proves CI green.
-        async function proveCiGreen(): Promise<
-          { ok: true } | { ok: false; reason: string }
-        > {
+        type CiProof =
+          | { ok: true }
+          | { ok: false; reason: string; cutShort?: ListingCutShort };
+        // A listing cut short stops as its own named exit, whose stdout line
+        // carries the pages read for the driver's stop record; every other
+        // failure is stale evidence (4). `then` runs before the exit.
+        const failProof = async (
+          proof: Extract<CiProof, { ok: false }>,
+          message: (reason: string) => string,
+          then?: () => Promise<void>,
+        ): Promise<never> => {
+          await then?.();
+          if (proof.cutShort === undefined)
+            return fail(4, message(proof.reason));
+          console.error(`set-verified: ${proof.cutShort.reason}`);
+          process.stdout.write(
+            `${JSON.stringify({ listingPagesRead: proof.cutShort.pagesRead })}\n`,
+          );
+          return process.exit(DRIVE_EXIT.CHECK_RUNS_UNREADABLE);
+        };
+        async function proveCiGreen(): Promise<CiProof> {
           const checks = await slurpCheckRuns(
             "{owner}",
             "{repo}",
@@ -1638,7 +1661,12 @@ async function main(): Promise<number> {
             "fresh",
           );
           if (checks.code !== 0) {
-            return { ok: false, reason: "cannot read check-runs" };
+            const cutShort = listingCutShort(a.sha, checks) ?? undefined;
+            return {
+              ok: false,
+              reason: "cannot read check-runs",
+              ...(cutShort === undefined ? {} : { cutShort }),
+            };
           }
           let runs: ReturnType<typeof parseCheckRuns>;
           try {
@@ -1649,10 +1677,18 @@ async function main(): Promise<number> {
           if (runs === null) {
             return { ok: false, reason: "check-runs are malformed" };
           }
-          const [allRuns, statuses] = await Promise.all([
-            checkRunsFor("{owner}", "{repo}", a.sha),
-            commitStatusesFor("{owner}", "{repo}", a.sha),
-          ]);
+          const [{ runs: allRuns, cutShort: secondCut }, statuses] =
+            await Promise.all([
+              checkRunListing("{owner}", "{repo}", a.sha),
+              commitStatusesFor("{owner}", "{repo}", a.sha),
+            ]);
+          if (secondCut !== null) {
+            return {
+              ok: false,
+              reason: "cannot read complete CI evidence",
+              cutShort: secondCut,
+            };
+          }
           if (allRuns === null || statuses === null) {
             return { ok: false, reason: "cannot read complete CI evidence" };
           }
@@ -1745,7 +1781,7 @@ async function main(): Promise<number> {
         }
         const initialCi = await proveCiGreen();
         if (!initialCi.ok) {
-          fail(4, `set-verified: ${initialCi.reason}`);
+          await failProof(initialCi, (r) => `set-verified: ${r}`);
         }
         // ONE predicate for "is the PR still exactly what we verified", called
         // identically before AND after the write below — a compensating
@@ -1771,9 +1807,7 @@ async function main(): Promise<number> {
         // way, since the post-write check catches whatever the pre-write check
         // misses), but a reader of `verified` in the narrow window between the
         // write and that clear genuinely could.
-        async function stillFullyCurrent(): Promise<
-          { ok: true } | { ok: false; reason: string }
-        > {
+        async function stillFullyCurrent(): Promise<CiProof> {
           const ci = await proveCiGreen();
           if (!ci.ok) return ci;
           const timeline = await readTimeline();
@@ -1813,9 +1847,9 @@ async function main(): Promise<number> {
         }
         const preWrite = await stillFullyCurrent();
         if (!preWrite.ok) {
-          fail(
-            4,
-            `set-verified: ${preWrite.reason} while final evidence was read`,
+          await failProof(
+            preWrite,
+            (r) => `set-verified: ${r} while final evidence was read`,
           );
         }
         await store.update((s) => {
@@ -1837,12 +1871,15 @@ async function main(): Promise<number> {
         // a compensating check-and-clear immediately after the write instead.
         const postWrite = await stillFullyCurrent();
         if (!postWrite.ok) {
-          await store.update((s) =>
-            s.verifiedSha === a.sha ? { ...s, verifiedSha: "" } : s,
-          );
-          fail(
-            4,
-            `set-verified: ${postWrite.reason} immediately after the verification commit; certificate cleared`,
+          await failProof(
+            postWrite,
+            (r) =>
+              `set-verified: ${r} immediately after the verification commit; certificate cleared`,
+            async () => {
+              await store.update((s) =>
+                s.verifiedSha === a.sha ? { ...s, verifiedSha: "" } : s,
+              );
+            },
           );
         }
         // Global CI verification landed — stamped only here, AFTER both the

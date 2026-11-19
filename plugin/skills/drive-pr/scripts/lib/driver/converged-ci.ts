@@ -33,6 +33,9 @@ import {
   LABEL_SETTLE_MS,
 } from "../label-cancelled-runs.ts";
 import type { Recovery } from "../cancelled-recovery.ts";
+
+/** The recovery's answers, and the one a check-runs listing cut short gives. */
+export type WatchRecovery = Recovery | "listing-cut-short";
 import type { FailedRun, WorkflowRun } from "../status/workflow-runs.ts";
 
 /** What the watch reads of the pull request: whether it is open, and its head. */
@@ -60,7 +63,8 @@ export interface ConvergedCiDeps {
   /** How long the watch waits for the verdict to settle, from the label write. */
   windowMs: number;
   pullRequest(pr: string): Promise<PullRequestRead | null>;
-  ci(pr: string, head: string): Promise<CiRead | null>;
+  /** `listing-cut-short` when the check-runs listing stopped at a bound; `null` when unread. */
+  ci(pr: string, head: string): Promise<CiRead | "listing-cut-short" | null>;
   /** Every workflow run on the head, each with its attempt; `null` when unread. */
   workflowRuns(head: string): Promise<WorkflowRun[] | null>;
   /** When each label was added or removed, the CI hold's left out; `null` when unread. */
@@ -86,7 +90,7 @@ export interface ConvergedCiDeps {
     pr: string,
     head: string,
     mayMutate: () => Promise<boolean>,
-  ): Promise<Recovery>;
+  ): Promise<WatchRecovery>;
   /**
    * Whether this drive still owns the pull request. Asked before every
    * change to CI and before a park; unset means owned.
@@ -106,12 +110,15 @@ export type Ownership = "ours" | "lost" | "unreadable";
  * `parked` means the cancelled-run recovery parked `cancelled-ci` itself;
  * `park` asks the drive to park with `reason`; `unverified` means the watch
  * could not tell whether this drive still owns the pull request, so the
- * stop is settled for a next drive to judge the head again.
+ * stop is settled for a next drive to judge the head again;
+ * `listing-cut-short` means the head's check-runs listing stopped at a bound,
+ * a named stop the dispatcher re-drives once per head.
  */
 export type ConvergedCiVerdict =
   | { kind: "stands"; why: string }
   | { kind: "unverified"; why: string }
   | { kind: "parked" }
+  | { kind: "listing-cut-short" }
   | { kind: "park"; reason: string; labelCaused: boolean };
 
 /** How long after a requested re-run the run must show its new attempt. */
@@ -372,6 +379,7 @@ async function recoverCancelledStep(
     async () => (await ownershipOf(deps)) === "ours",
   );
   if (recovery === "parked") return { kind: "parked" };
+  if (recovery === "listing-cut-short") return { kind: "listing-cut-short" };
   if (recovery !== "none")
     return {
       next: "wait",
@@ -490,6 +498,8 @@ async function poll(
       unread: true,
     };
   const read = current === null ? null : await deps.ci(pr, verified);
+  if (read === "listing-cut-short")
+    return { next: { kind: "listing-cut-short" }, read: false, unread: false };
   if (read === null)
     return {
       next: { next: "wait", saw: "the pull request or its CI did not read" },

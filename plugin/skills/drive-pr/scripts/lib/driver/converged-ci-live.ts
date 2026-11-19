@@ -9,7 +9,7 @@ import { sleep, testPacing } from "../cli.ts";
 import { LABEL_SETTLE_MS, labelWriteTimes } from "../label-cancelled-runs.ts";
 import { readTimeline } from "../pr-timeline.ts";
 import { ghCall } from "../proc.ts";
-import { checkRunsFor, ciReportFor } from "../status/evidence.ts";
+import { checkRunListing, ciReportFor } from "../status/evidence.ts";
 import { workflowRunsFor } from "../status/workflow-runs.ts";
 import {
   parkAdmissionContext,
@@ -26,6 +26,7 @@ import {
 } from "./converged-ci.ts";
 import type { DriveLabelWrite } from "./state-labels.ts";
 import { rerunnableRuns } from "./failed-runs.ts";
+import { driverRuntime } from "./runtime.ts";
 import { DRIVE_EXIT } from "../status/terminal-states.ts";
 
 /** The park key a converged head's unsettled CI parks under. */
@@ -81,7 +82,12 @@ async function pullRequest(pr: string) {
 }
 
 async function ci(pr: string, head: string) {
-  const runs = await checkRunsFor("{owner}", "{repo}", head);
+  const { runs, cutShort } = await checkRunListing("{owner}", "{repo}", head);
+  if (cutShort !== null) {
+    console.error(`converged CI: ${cutShort.reason}`);
+    driverRuntime.stopListingPages = cutShort.pagesRead;
+    return "listing-cut-short" as const;
+  }
   if (runs === null) return null;
   const report = await ciReportFor("{owner}", "{repo}", head, runs, false, pr);
   return {
@@ -174,18 +180,8 @@ export function liveConvergedCi(
         ...(asked.indeterminate === true ? { indeterminate: true } : {}),
       };
     },
-    // This watch reads an unknown recovery as its own stop; a listing cut
-    // short is one to it.
-    recoverCancelled: async (pr, head, mayMutate) => {
-      const recovery = await recoverCancelledOnHead(
-        pr,
-        head,
-        undefined,
-        false,
-        mayMutate,
-      );
-      return recovery === "listing-cut-short" ? "unknown" : recovery;
-    },
+    recoverCancelled: (pr, head, mayMutate) =>
+      recoverCancelledOnHead(pr, head, undefined, false, mayMutate),
   };
 }
 
@@ -354,6 +350,12 @@ export async function convergedStopExit(
         `converged CI: ${verdict.why}, so the stop is settled as INDETERMINATE for the next drive to judge the head again`,
       );
       return DRIVE_EXIT.INDETERMINATE;
+    }
+    if (verdict.kind === "listing-cut-short") {
+      console.error(
+        "converged CI: the head's check-runs listing was cut short, so the stop is the named listing stop",
+      );
+      return DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
     }
     if (verdict.kind === "parked") {
       console.error(

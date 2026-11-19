@@ -43,7 +43,6 @@ import { lockHeartbeatMs } from "./lib/state/lock.ts";
 import {
   adopt,
   confirmLiveHold,
-  checkRuns,
   headWatermark,
   readCiState,
   type HoldReadFailure,
@@ -54,12 +53,13 @@ import {
   writeCiState,
   checkRunsRead,
 } from "./lib/ci-hold-state.ts";
+import { driverRuntime } from "./lib/driver/runtime.ts";
 import type { ListingCutShort } from "./lib/paged-read.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
 import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import {
   attributeStatuses,
-  checkRunsFor,
+  checkRunListing,
   ciVerdictOf,
   commitStatusesFor,
   hasNonReviewerCi,
@@ -98,6 +98,9 @@ const snapshot = async (pr: string) =>
 const transitions = async (pr: string) =>
   valueOrNull(await readHoldTransitions(pr, holdLabel()));
 
+/** A proof read that held, or that did not and says whether its listing was cut short. */
+type ProofRead = { ok: true } | { ok: false; cutShort?: ListingCutShort };
+
 /** What final-ready answers for a proof that failed: wait, unless its listing was cut short. */
 function proofStop(proof: { cutShort?: ListingCutShort }): number {
   return proof.cutShort === undefined ? 4 : listingStop(proof.cutShort);
@@ -109,9 +112,12 @@ function proofStop(proof: { cutShort?: ListingCutShort }): number {
  */
 function listingStop(cut: ListingCutShort): number {
   console.error(`ci-hold: ${cut.reason}`);
-  process.stdout.write(
-    `${JSON.stringify({ listingPagesRead: cut.pagesRead })}\n`,
-  );
+  return listingStopPages(cut.pagesRead);
+}
+
+/** The stop record of a listing whose reason an earlier reader already printed. */
+function listingStopPages(pagesRead: number | null): number {
+  process.stdout.write(`${JSON.stringify({ listingPagesRead: pagesRead })}\n`);
   return DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
 }
 
@@ -446,7 +452,9 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     await writeCiState(pr, persisted);
   }
 
-  const runs = await checkRuns(head);
+  const listed = await checkRunsRead(head);
+  if (listed.cutShort !== null) return listingStop(listed.cutShort);
+  const runs = valueOrNull(listed.runs);
   if (runs === null) fail(1, "ci-hold: cannot read check-runs");
   const watermark =
     persisted?.phase === "released" &&
@@ -481,7 +489,9 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
       true,
     );
     if (recovery === "parked") return 8;
-    if (recovery === "unknown" || recovery === "listing-cut-short") return 1;
+    if (recovery === "listing-cut-short")
+      return listingStopPages(driverRuntime.stopListingPages);
+    if (recovery === "unknown") return 1;
     console.error(
       latest?.event === "unlabeled"
         ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"
@@ -873,12 +883,16 @@ async function finalCiProofGreen(
           { apps },
         );
   if (!requiredFresh) return { ok: false };
-  if (requireSuccess && !(await requiredCiAggregateIsGreen(head)))
-    return { ok: false };
+  if (requireSuccess) {
+    const aggregate = await requiredCiAggregateIsGreen(head);
+    if (!aggregate.ok) return aggregate;
+  }
   // Branch protection names no check: the overall verdict decides, and it
   // reads green before any workflow has registered on the head.
-  if (required.length === 0 && policy.derived && !(await anyCiOnHead(head)))
-    return { ok: false };
+  if (required.length === 0 && policy.derived) {
+    const any = await anyCiOnHead(head);
+    if (!any.ok) return any;
+  }
   return {
     ok: true,
     startedAt: requiredCiStartedAt(runs, required, head, apps),
@@ -886,30 +900,33 @@ async function finalCiProofGreen(
 }
 
 /** Strict success requires both check runs and attributed legacy statuses to be green. */
-async function requiredCiAggregateIsGreen(head: string): Promise<boolean> {
-  const [allRuns, statuses] = await Promise.all([
-    checkRunsFor("{owner}", "{repo}", head),
+async function requiredCiAggregateIsGreen(head: string): Promise<ProofRead> {
+  const [{ runs: allRuns, cutShort }, statuses] = await Promise.all([
+    checkRunListing("{owner}", "{repo}", head),
     commitStatusesFor("{owner}", "{repo}", head),
   ]);
-  if (allRuns === null || statuses === null) return false;
+  if (cutShort !== null) return { ok: false, cutShort };
+  if (allRuns === null || statuses === null) return { ok: false };
   const workflowRuns = await workflowRunsBehind(
     "{owner}",
     "{repo}",
     head,
     allRuns,
   );
-  return ciVerdictOf(allRuns, statuses, false, head, workflowRuns) === "green";
+  return ciVerdictOf(allRuns, statuses, false, head, workflowRuns) === "green"
+    ? { ok: true }
+    : { ok: false };
 }
 
 /** Has any non-reviewer check run or commit status registered on `head`? */
-async function anyCiOnHead(head: string): Promise<boolean> {
-  const [allRuns, statuses] = await Promise.all([
-    checkRunsFor("{owner}", "{repo}", head),
+async function anyCiOnHead(head: string): Promise<ProofRead> {
+  const [{ runs: allRuns, cutShort }, statuses] = await Promise.all([
+    checkRunListing("{owner}", "{repo}", head),
     commitStatusesFor("{owner}", "{repo}", head),
   ]);
-  return (
-    allRuns !== null && statuses !== null && hasNonReviewerCi(allRuns, statuses)
-  );
+  if (cutShort !== null) return { ok: false, cutShort };
+  if (allRuns === null || statuses === null) return { ok: false };
+  return hasNonReviewerCi(allRuns, statuses) ? { ok: true } : { ok: false };
 }
 
 /**
@@ -940,10 +957,10 @@ async function stillCurrentForFinalReady(
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
   expectation: { emptyTimeline: true } | { latestTransitionId: string } | null,
   requireSuccess: boolean,
-): Promise<boolean> {
+): Promise<ProofRead> {
   if (requireSuccess) {
     const proof = await finalCiProofGreen(head, persisted, true);
-    if (!proof.ok) return false;
+    if (!proof.ok) return proof;
   }
   // Timeline BEFORE head/state/held — putting the CI proof first and this
   // snapshot last is not enough if `snapshot()` (the head check) still runs
@@ -958,20 +975,20 @@ async function stillCurrentForFinalReady(
   // ordering puts that irreducible tail on the one fact worth protecting most.
   if (expectation !== null) {
     const finalTimeline = await transitions(pr);
-    if (finalTimeline === null) return false;
+    if (finalTimeline === null) return { ok: false };
     const timelineMatches =
       "emptyTimeline" in expectation
         ? finalTimeline.length === 0
         : latestOf(finalTimeline)?.id === expectation.latestTransitionId;
-    if (!timelineMatches) return false;
+    if (!timelineMatches) return { ok: false };
   }
   const finalLive = await snapshot(pr);
-  return (
-    finalLive !== null &&
+  return finalLive !== null &&
     finalLive.state === "OPEN" &&
     finalLive.head === head &&
     !finalLive.held
-  );
+    ? { ok: true }
+    : { ok: false };
 }
 
 async function finalReady(
@@ -988,10 +1005,14 @@ async function finalReady(
     // exact head are the witness.
     const proof = await finalCiProofGreen(head, null, requireSuccess);
     if (!proof.ok) return proofStop(proof);
-    if (
-      !(await stillCurrentForFinalReady(pr, head, null, null, requireSuccess))
-    )
-      return 4;
+    const current = await stillCurrentForFinalReady(
+      pr,
+      head,
+      null,
+      null,
+      requireSuccess,
+    );
+    if (!current.ok) return proofStop(current);
     process.stdout.write(`${proof.startedAt ?? ""}\n`);
     return 0;
   }
@@ -1004,16 +1025,14 @@ async function finalReady(
     // checks is the full-CI witness for this exact head.
     const initialProof = await finalCiProofGreen(head, null, requireSuccess);
     if (!initialProof.ok) return proofStop(initialProof);
-    if (
-      !(await stillCurrentForFinalReady(
-        pr,
-        head,
-        null,
-        { emptyTimeline: true },
-        requireSuccess,
-      ))
-    )
-      return 4;
+    const current = await stillCurrentForFinalReady(
+      pr,
+      head,
+      null,
+      { emptyTimeline: true },
+      requireSuccess,
+    );
+    if (!current.ok) return proofStop(current);
     process.stdout.write(`${initialProof.startedAt ?? ""}\n`);
     return 0;
   }
@@ -1021,16 +1040,14 @@ async function finalReady(
   if (latestOf(timeline)?.id !== persisted.eventId) return 4;
   const initialProof = await finalCiProofGreen(head, persisted, requireSuccess);
   if (!initialProof.ok) return proofStop(initialProof);
-  if (
-    !(await stillCurrentForFinalReady(
-      pr,
-      head,
-      persisted,
-      { latestTransitionId: persisted.eventId },
-      requireSuccess,
-    ))
-  )
-    return 4;
+  const current = await stillCurrentForFinalReady(
+    pr,
+    head,
+    persisted,
+    { latestTransitionId: persisted.eventId },
+    requireSuccess,
+  );
+  if (!current.ok) return proofStop(current);
   process.stdout.write(`${persisted.createdAt}\n`);
   return 0;
 }

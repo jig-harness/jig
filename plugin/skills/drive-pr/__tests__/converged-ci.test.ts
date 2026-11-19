@@ -11,7 +11,7 @@ import {
   watchConvergedCi,
 } from "../scripts/lib/driver/converged-ci.ts";
 import type { Ownership } from "../scripts/lib/driver/converged-ci.ts";
-import type { Recovery } from "../scripts/lib/cancelled-recovery.ts";
+import type { WatchRecovery as Recovery } from "../scripts/lib/driver/converged-ci.ts";
 import { convergedStopExit } from "../scripts/lib/driver/converged-ci-live.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import type { WorkflowRun } from "../scripts/lib/status/workflow-runs.ts";
@@ -55,7 +55,7 @@ const GREEN: CiRead = {
 };
 
 interface Script {
-  ci: Array<CiRead | null>;
+  ci: Array<CiRead | "listing-cut-short" | null>;
   runs?: Array<WorkflowRun[] | null>;
   recovery?: Recovery[];
   head?: string;
@@ -140,6 +140,28 @@ function fake(script: Script) {
 }
 
 describe("the converged CI watch", () => {
+  it("ends with the listing stop when the head's check-runs listing is cut short, polling no further", async () => {
+    const f = fake({ ci: ["listing-cut-short", GREEN] });
+    expect(await watchConvergedCi("999", HEAD, WRITTEN, f.deps)).toEqual({
+      kind: "listing-cut-short",
+    });
+  });
+
+  it("ends with the listing stop when the cancelled-run recovery's listing is cut short", async () => {
+    const cancelled: CiRead = {
+      verdict: "cancelled: tests",
+      failingRuns: [],
+      failingStatusNames: [],
+    };
+    const f = fake({
+      ci: [cancelled],
+      recovery: ["listing-cut-short"],
+    });
+    expect(await watchConvergedCi("999", HEAD, WRITTEN, f.deps)).toEqual({
+      kind: "listing-cut-short",
+    });
+  });
+
   it("lets the label stand when the head's CI reads green after the write's runs exist", async () => {
     const f = fake({ ci: [GREEN] });
     const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
@@ -581,6 +603,11 @@ describe("the stop a converged label's watch settles", () => {
         kind: "parked",
       })),
     ).toBe(DRIVE_EXIT.HITL_PARKED);
+    expect(
+      await convergedStopExit("999", write, WRITTEN, async () => ({
+        kind: "listing-cut-short",
+      })),
+    ).toBe(DRIVE_EXIT.CHECK_RUNS_UNREADABLE);
     expect(
       await convergedStopExit("999", write, WRITTEN, async () => {
         throw new Error("the store did not open");
