@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
@@ -8,6 +15,7 @@ import packageJson from "../package.json" with { type: "json" };
 test("audit checks the pushed branch against the remote default branch", () => {
   const scratch = mkdtempSync(join(tmpdir(), "jig-audit-"));
   const cwd = join(scratch, "checkout");
+  const untrustedBin = join(scratch, "untrusted-bin");
   mkdirSync(cwd);
   const git = (...args: string[]) => {
     const result = Bun.spawnSync(["git", ...args], { cwd });
@@ -21,6 +29,8 @@ test("audit checks the pushed branch against the remote default branch", () => {
         ...Bun.env,
         FALLOW_AUDIT_BASE: upstreamBase,
         PATH:
+          untrustedBin +
+          delimiter +
           join(import.meta.dir, "../node_modules/.bin") +
           delimiter +
           (Bun.env.PATH ?? ""),
@@ -32,6 +42,13 @@ test("audit checks the pushed branch against the remote default branch", () => {
     git("config", "user.email", "audit@example.invalid");
     git("init", "--bare", join(scratch, "remote"));
     git("remote", "add", "origin", join(scratch, "remote"));
+    mkdirSync(untrustedBin);
+    const hijackedGit = join(untrustedBin, "git");
+    writeFileSync(
+      hijackedGit,
+      `#!/bin/sh\ntouch ${join(scratch, "hijacked-git")}\n`,
+    );
+    chmodSync(hijackedGit, 0o755);
     writeFileSync(join(cwd, ".gitignore"), "node_modules/\n");
     writeFileSync(
       join(cwd, "package.json"),
@@ -69,6 +86,7 @@ test("audit checks the pushed branch against the remote default branch", () => {
 
     const result = audit();
     expectSpawnExit(result, 1);
+    expect(existsSync(join(scratch, "hijacked-git"))).toBeFalse();
     expect(result.stdout.toString() + result.stderr.toString()).toContain(
       "auditFinding",
     );

@@ -1,10 +1,25 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { couldNotCheck } from "../lib/findings.ts";
 
-const git = (...args: string[]) => spawnSync("git", args, { encoding: "utf8" });
+const systemPath =
+  process.platform === "win32"
+    ? [
+        join(process.env.SystemRoot ?? "C:\\Windows", "System32"),
+        join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "cmd"),
+      ].join(delimiter)
+    : "/usr/local/bin:/usr/bin:/bin";
+
+const git = (...args: string[]) =>
+  spawnSync("git", args, { encoding: "utf8", env: { PATH: systemPath } });
+
+const fallow = join(
+  import.meta.dir,
+  "../node_modules/.bin",
+  process.platform === "win32" ? "fallow.cmd" : "fallow",
+);
 
 function gitError(result: ReturnType<typeof git>): string {
   return result.error?.message ?? result.stderr.trim();
@@ -39,9 +54,9 @@ async function audit(): Promise<number> {
     mkdirSync(cache, { recursive: true });
     console.log(`audit: base ${commit} (merge base with ${ref})`);
     return await Bun.spawn(
-      ["fallow", "audit", "-q", "--changed-since", commit],
+      [process.execPath, fallow, "audit", "-q", "--changed-since", commit],
       {
-        env: { ...process.env, TMPDIR: cache },
+        env: { ...process.env, PATH: systemPath, TMPDIR: cache },
         stdout: "inherit",
         stderr: "inherit",
       },
