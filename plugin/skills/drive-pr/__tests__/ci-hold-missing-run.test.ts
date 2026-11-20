@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { CheckRunLite } from "../scripts/lib/ci-hold.ts";
+import { timedOutEscape } from "../scripts/lib/ci-hold-unobserved.ts";
 import { missingRunDecision } from "../scripts/lib/missing-required-run-live.ts";
 import {
   describeMissing,
@@ -90,6 +91,14 @@ describe("isUnheldOutcome", () => {
   it("pushes unheld after a timed-out required check, so the round can carry its repair", () => {
     expect(isUnheldOutcome("timed-out\n")).toBe(true);
     expect(isUnheldOutcome("missing-required-run")).toBe(false);
+  });
+});
+
+describe("timedOutEscape", () => {
+  it("lets a timed-out job through unless the missing-run answer is wait", () => {
+    expect(timedOutEscape(true, "none")).toBe(true);
+    expect(timedOutEscape(true, "wait")).toBe(false);
+    expect(timedOutEscape(false, "none")).toBe(false);
   });
 });
 

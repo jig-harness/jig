@@ -6,9 +6,24 @@
 import { recoverCancelledOnHead } from "./cancelled-recovery-live.ts";
 import { isTimedOut, recoveryExit } from "./cancelled-recovery-reads.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
-import { stopOnMissingRequiredRun } from "./missing-required-run-live.ts";
+import {
+  stopOnMissingRequiredRun,
+  type MissingRunAnswer,
+} from "./missing-required-run-live.ts";
 import { MISSING_RUN_PARK_KEY } from "./missing-required-run.ts";
 import { DRIVE_EXIT } from "./status/terminal-states.ts";
+
+/**
+ * A job the runner stopped at its time limit is a failure to repair: with no
+ * other recovery outstanding and no missing-run wait, the round's push may
+ * carry the repair. A missing-run `wait` (including a failed read) outranks it.
+ */
+export function timedOutEscape(
+  timedOut: boolean,
+  missing: MissingRunAnswer,
+): boolean {
+  return timedOut && missing !== "wait";
+}
 
 /** `ensure`'s exit code (and stdout outcome) for a head whose required checks are not all in. */
 export async function waitOnUnobserved(
@@ -34,9 +49,7 @@ export async function waitOnUnobserved(
       process.stdout.write("workflow-change\n");
       return 0;
     }
-    // A job the runner stopped at its time limit is a failure to repair: with
-    // no other recovery outstanding, the round's push may carry the repair.
-    if (isTimedOut(recovery)) {
+    if (timedOutEscape(isTimedOut(recovery), missing)) {
       process.stdout.write("timed-out\n");
       return 0;
     }
