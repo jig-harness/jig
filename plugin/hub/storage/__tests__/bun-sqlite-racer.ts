@@ -12,7 +12,7 @@ const { path } = workerData as { path: string };
 const sqlite = openHubSqlite(path);
 if (!sqlite.ok) throw new Error(sqlite.failure.reason);
 try {
-  await race(createStorage(sqlite.value.db));
+  await race(createStorage(sqlite.value.db, sqlite.value));
 } finally {
   sqlite.value.close();
 }

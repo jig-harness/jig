@@ -32,7 +32,9 @@ import {
   type StoragePort,
   step,
 } from "../../core/storage.ts";
-import type { UnitContext } from "../../core/unit.ts";
+import { runUnit, type UnitContext } from "../../core/unit.ts";
+import { Defect } from "../../../shared/outcome.ts";
+import { fakePorts } from "../../core/__tests__/fake-ports.ts";
 import { Worker } from "node:worker_threads";
 import type { StorageInspection } from "../storage.ts";
 import type { RaceAnswer } from "./racer.ts";
@@ -300,6 +302,64 @@ export function storageContract(
           { table: "job_leases", column: "started_at", before: T0, limit: 1 },
         );
         expect(refused.ok ? null : refused.failure.code).toBe("refused");
+      });
+    });
+
+    describe("what the store throws", () => {
+      test("a broken constraint is refused", async () => {
+        const { storage } = store();
+        const refused = await storage.run(context(), P, takeInFlightRead, {
+          target: "a",
+          holder: null as unknown as string,
+          now: T0,
+        });
+        expect(refused.ok ? null : refused.failure.code).toBe("refused");
+      });
+
+      test("a closed store is unavailable", async () => {
+        const harness = store();
+        harness.close();
+        const closed = await harness.storage.run(
+          context(),
+          DIRECTORY_PARTITION,
+          readJob,
+          { job: "sweep" },
+        );
+        expect(closed.ok ? null : closed.failure.code).toBe("unavailable");
+      });
+
+      test("an operation's own throw is a defect for the unit's boundary, not an unavailable store", async () => {
+        const { storage } = store();
+        // JSON cannot hold a BigInt, so preparing the save throws a TypeError.
+        const input = {
+          job: "sweep",
+          holder: "a",
+          now: T0,
+          leaseMs: 1_000,
+          progress: 1n as unknown as number,
+        };
+        await expect(
+          storage.run(context(), DIRECTORY_PARTITION, saveJobProgress, input),
+        ).rejects.toBeInstanceOf(Defect);
+        await expect(
+          storage.batch(context(), DIRECTORY_PARTITION, [
+            step(saveJobProgress, input),
+          ]),
+        ).rejects.toBeInstanceOf(Defect);
+        const ports = fakePorts();
+        const unit = await runUnit(
+          ports,
+          { name: "test:defect", timeoutMs: 5_000 },
+          (unitContext) =>
+            storage.run(
+              unitContext,
+              DIRECTORY_PARTITION,
+              saveJobProgress,
+              input,
+            ),
+        );
+        expect(unit.ok ? null : unit.failure.code).toBe("defect");
+        expect(ports.defects).toHaveLength(1);
       });
     });
 

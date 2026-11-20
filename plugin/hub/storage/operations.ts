@@ -12,9 +12,12 @@
  * partition it was prepared for. A decision sits in a statement's
  * condition (an insert that takes a row only where it is free), never in
  * code between a read and a write: `run` reads what a conditional
- * statement returned to say whether it applied.
+ * statement returned to say whether it applied. What breaks an invariant
+ * the statements keep (a row a conflict proved there that a read then
+ * misses, a stored progress cell that is not JSON) is a `Defect`, thrown to
+ * the unit's boundary, never answered as data.
  */
-import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { Defect, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
   and,
   type BaseSQLiteDatabase,
@@ -122,13 +125,13 @@ const takeInFlightReadImpl = implement(
         const taken = first(take.all());
         if (taken !== undefined)
           return { taken: true, until: taken.deadlineAt } as const;
-        const row = first(held.all());
         // The row the insert conflicted with is there in this transaction.
-        return {
-          taken: false,
-          holder: row?.holder ?? "",
-          until: row?.until ?? 0,
-        } as const;
+        const row = first(held.all());
+        if (row === undefined)
+          throw new Defect(
+            `the in-flight read of ${target} in ${partition} was neither taken nor found`,
+          );
+        return { taken: false, holder: row.holder, until: row.until } as const;
       },
     });
   },
@@ -197,11 +200,25 @@ function isJsonValue(value: unknown): value is JsonValue {
   }
 }
 
-/** Stored progress as the value it was stored from; `null` when none is stored. */
-function progressOf(text: string | null): JsonValue | null {
+/**
+ * `job`'s stored progress as the value it was stored from; `null` when none
+ * is stored. Only `saveJobProgress` writes it, as JSON, so a cell that does
+ * not parse is a broken invariant: a defect, which the unit's boundary
+ * reports, never progress a run would resume from.
+ */
+function progressOf(job: string, text: string | null): JsonValue | null {
   if (text === null) return null;
-  const parsed: unknown = JSON.parse(text);
-  return isJsonValue(parsed) ? parsed : null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Defect(`the stored progress of ${job} is not JSON`, {
+      cause: error,
+    });
+  }
+  if (!isJsonValue(parsed))
+    throw new Defect(`the stored progress of ${job} is not a JSON value`);
+  return parsed;
 }
 
 const takeJobLeaseImpl = implement(
@@ -250,14 +267,15 @@ const takeJobLeaseImpl = implement(
           return {
             taken: true,
             until,
-            progress: progressOf(taken.progress),
+            progress: progressOf(job, taken.progress),
           } as const;
+        // A lease not taken is held: a holder and an unlapsed time.
         const row = first(held.all());
-        return {
-          taken: false,
-          holder: row?.holder ?? "",
-          until: row?.until ?? 0,
-        } as const;
+        if (row?.holder == null || row.until === null)
+          throw new Defect(
+            `the lease of ${job} in ${partition} was neither taken nor found held`,
+          );
+        return { taken: false, holder: row.holder, until: row.until } as const;
       },
     });
   },
@@ -344,7 +362,7 @@ const readJobImpl = implement(readJob, (db, partition, { job }) => {
       const row = first(read.all());
       return row === undefined
         ? null
-        : { ...row, progress: progressOf(row.progress) };
+        : { ...row, progress: progressOf(job, row.progress) };
     },
   });
 });

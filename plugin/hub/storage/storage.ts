@@ -13,14 +13,16 @@
  * them.
  *
  * What the platform throws becomes a failure
- * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)): a broken
- * constraint is `refused`, anything else the database throws (a closed or
- * busy database, a file it cannot read) is `unavailable`. The platforms
- * throw plain errors for these (`bun:sqlite` a `RangeError` for a closed
- * database), so whatever a call throws while it prepares or sends its
- * statements is the store's answer, never a defect, and its cause is kept.
+ * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)), as the
+ * adapter's classifier says, since only the adapter knows its driver's
+ * errors: a broken constraint is `refused`; a closed or busy database, a
+ * file it cannot read, is `unavailable`. Anything else is a defect: a
+ * `Defect`, or a throw the classifier does not recognize as the database's
+ * (an operation's own bug), is thrown on to the unit's defect boundary
+ * (`runUnit`), never answered as a failure, so a bug is reported with its
+ * stack rather than hidden as an unavailable store.
  */
-import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { Defect, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { sql } from "../../shared/vendor/drizzle.mjs";
 import { parsePartition } from "../core/partitions.ts";
 import type {
@@ -65,26 +67,48 @@ type Failed = {
   failure: { code: StorageFailureCode; reason: string; cause?: unknown };
 };
 
-/** The codes and messages along an error's chain of causes. */
-function texts(thrown: unknown): string[] {
-  const out: string[] = [];
-  let at: unknown = thrown;
-  for (let depth = 0; depth < 5 && at instanceof Error; depth++) {
-    const code = (at as { code?: unknown }).code;
-    if (typeof code === "string") out.push(code);
-    out.push(at.message);
-    at = at.cause;
-  }
-  return out;
+/**
+ * What a throw from the database is: a refusal (a broken constraint), the
+ * store being unavailable (closed, busy, unreadable), or a defect (not the
+ * database's answer at all).
+ */
+export type ThrownClass = "refused" | "unavailable" | "defect";
+
+/** What the adapter tells the storage implementation about its driver. */
+export interface StorageOptions {
+  /** Classifies what the driver, or Drizzle wrapping it, threw. */
+  classify(thrown: unknown): ThrownClass;
 }
 
-/** What the database threw, as a failure. */
-function failureOf(what: string, thrown: unknown): Failed {
-  const said = texts(thrown);
-  const reason = said.at(-1) ?? String(thrown);
-  if (said.some((text) => /CONSTRAINT/i.test(text)))
-    return failed("refused", `${what} broke a constraint: ${reason}`, thrown);
-  return failed("unavailable", `${what} could not run: ${reason}`, thrown);
+/** The message of what was thrown, for a failure's reason. */
+function messageOf(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : String(thrown);
+}
+
+/**
+ * What the database threw, as a failure; what the classifier calls a
+ * defect, thrown on to the unit's boundary as one. A `Defect` itself is
+ * rethrown by each caller's catch before it gets here.
+ */
+function failureOf(
+  what: string,
+  thrown: unknown,
+  classify: StorageOptions["classify"],
+): Failed {
+  const kind = classify(thrown);
+  if (kind === "refused")
+    return failed(
+      "refused",
+      `${what} broke a constraint: ${messageOf(thrown)}`,
+      thrown,
+    );
+  if (kind === "unavailable")
+    return failed(
+      "unavailable",
+      `${what} could not run: ${messageOf(thrown)}`,
+      thrown,
+    );
+  throw new Defect(`${what} threw: ${messageOf(thrown)}`, { cause: thrown });
 }
 
 /** Why a call cannot start: the unit stopped, or a partition that does not parse. */
@@ -98,6 +122,7 @@ function cannotStart(context: UnitContext, partition: string): Failed | null {
 /** Prepares `op` for `input`, or why it cannot be. */
 function prepare(
   db: HubDatabase,
+  classify: StorageOptions["classify"],
   partition: string,
   op: StorageOperation<unknown, unknown>,
   input: unknown,
@@ -111,7 +136,8 @@ function prepare(
   try {
     return implementation.prepare(db, partition, input);
   } catch (thrown) {
-    return failureOf(`preparing ${op.name}`, thrown);
+    if (thrown instanceof Defect) throw thrown;
+    return failureOf(`preparing ${op.name}`, thrown, classify);
   }
 }
 
@@ -142,6 +168,7 @@ function explainOf(statement: PreparedStatement) {
 /** The storage port over `db`, and the inspection the contract suite reads. */
 export function createStorage(
   db: HubDatabase,
+  { classify }: StorageOptions,
 ): StoragePort & { readonly inspection: StorageInspection } {
   const run = async <Input, Result>(
     context: UnitContext,
@@ -153,6 +180,7 @@ export function createStorage(
     if (stopped !== null) return stopped;
     const prepared = prepare(
       db,
+      classify,
       partition,
       op as StorageOperation<unknown, unknown>,
       input,
@@ -165,7 +193,8 @@ export function createStorage(
           : prepared.value.run();
       return ok(result as Result);
     } catch (thrown) {
-      return failureOf(op.name, thrown);
+      if (thrown instanceof Defect) throw thrown;
+      return failureOf(op.name, thrown, classify);
     }
   };
 
@@ -185,7 +214,7 @@ export function createStorage(
           "refused",
           `a batch holds changes only, and ${op.name} reads`,
         );
-      const one = prepare(db, partition, op, input);
+      const one = prepare(db, classify, partition, op, input);
       if (!one.ok) return one;
       prepared.push(one.value);
     }
@@ -193,9 +222,11 @@ export function createStorage(
       const results = transact(db, () => prepared.map((p) => p.run()));
       return ok(results as BatchResults<Steps>);
     } catch (thrown) {
+      if (thrown instanceof Defect) throw thrown;
       return failureOf(
         `the batch of ${steps.map((s) => s.op.name).join(", ")}`,
         thrown,
+        classify,
       );
     }
   };
@@ -205,7 +236,7 @@ export function createStorage(
     explain: (partition, op, input) => {
       const parsed = parsePartition(partition);
       if (!parsed.ok) return failed("refused", parsed.failure.reason);
-      const prepared = prepare(db, partition, op, input);
+      const prepared = prepare(db, classify, partition, op, input);
       if (!prepared.ok) return prepared;
       try {
         return ok(
@@ -214,7 +245,8 @@ export function createStorage(
           ),
         );
       } catch (thrown) {
-        return failureOf(`explaining ${op.name}`, thrown);
+        if (thrown instanceof Defect) throw thrown;
+        return failureOf(`explaining ${op.name}`, thrown, classify);
       }
     },
   };

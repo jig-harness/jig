@@ -10,8 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RECORD_KINDS } from "../../../shared/records/registry.ts";
 import { HUB_SCHEMA } from "../../../shared/records/registry-hub.ts";
+import { Database, SQLiteError } from "bun:sqlite";
+import { Defect } from "../../../shared/outcome.ts";
+import { readJob } from "../../core/operations.ts";
 import {
   BUSY_TIMEOUT_MS,
+  classifyBunSqlite,
   MIGRATIONS_FOLDER,
   openHubSqlite,
 } from "../../process/sqlite.ts";
@@ -32,7 +36,7 @@ storageContract("bun:sqlite", (): StorageHarness => {
   const path = join(scratch, `hub-${++opened}.sqlite`);
   const first = open(path);
   return {
-    storage: createStorage(first.db),
+    storage: createStorage(first.db, first),
     racer: {
       script: new URL("./bun-sqlite-racer.ts", import.meta.url),
       data: { path },
@@ -71,22 +75,55 @@ test("the process adapter's database is in write-ahead-log mode with its migrati
   }
 });
 
-test("a closed database answers unavailable, not a throw", async () => {
-  const sqlite = open(join(scratch, "closed.sqlite"));
-  const storage = createStorage(sqlite.db);
-  sqlite.close();
-  const { readJob } = await import("../../core/operations.ts");
-  const answer = await storage.run(
-    {
-      unit: "test:closed",
-      signal: new AbortController().signal,
-      deadlineAt: 0,
-    },
-    "directory",
-    readJob,
-    { job: "sweep" },
+test("a corrupt stored progress cell is a defect, never progress to resume from", async () => {
+  const sqlite = open(join(scratch, "corrupt.sqlite"));
+  try {
+    const storage = createStorage(sqlite.db, sqlite);
+    sqlite.client.run(
+      "INSERT INTO job_leases (partition, job, progress, started_at, updated_at) VALUES ('directory', 'sweep', 'not json', 0, 0)",
+    );
+    await expect(
+      storage.run(
+        { unit: "test", signal: new AbortController().signal, deadlineAt: 0 },
+        "directory",
+        readJob,
+        { job: "sweep" },
+      ),
+    ).rejects.toBeInstanceOf(Defect);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("the bun:sqlite classifier reads errors by type and code", () => {
+  // bun:sqlite alone constructs its errors, so these are its own.
+  const thrownBy = (statement: string): unknown => {
+    const client = new Database(":memory:");
+    try {
+      client.run("CREATE TABLE t (a TEXT NOT NULL)");
+      client.run(statement);
+      return null;
+    } catch (error) {
+      return error;
+    } finally {
+      client.close();
+    }
+  };
+  const constraint = thrownBy("INSERT INTO t VALUES (NULL)");
+  const other = thrownBy("SELECT * FROM no_such_table");
+  expect(constraint).toBeInstanceOf(SQLiteError);
+  expect(other).toBeInstanceOf(SQLiteError);
+  const open = classifyBunSqlite(() => false);
+  const closed = classifyBunSqlite(() => true);
+  expect(open(constraint)).toBe("refused");
+  expect(open(new Error("wrapped", { cause: constraint }))).toBe("refused");
+  expect(open(new Error("wrapped", { cause: other }))).toBe("unavailable");
+  expect(open(new RangeError("Cannot use a closed database"))).toBe("defect");
+  expect(closed(new RangeError("Cannot use a closed database"))).toBe(
+    "unavailable",
   );
-  expect(answer.ok ? null : answer.failure.code).toBe("unavailable");
+  expect(open(new TypeError("a bug"))).toBe("defect");
+  expect(open(new Error("CONSTRAINT in a message only"))).toBe("defect");
 });
 
 test("a file that cannot be opened answers unavailable", () => {

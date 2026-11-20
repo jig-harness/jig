@@ -12,9 +12,10 @@
  * writes, and the busy timeout makes a writer wait its turn instead of
  * failing at once.
  */
-import { Database } from "bun:sqlite";
+import { Database, SQLiteError } from "bun:sqlite";
 import { join } from "node:path";
 import { attempt, type Outcome } from "../../shared/outcome.ts";
+import type { ThrownClass } from "../storage/storage.ts";
 import {
   type BunSQLiteDatabase,
   drizzle,
@@ -32,8 +33,47 @@ export interface HubSqlite {
   readonly db: BunSQLiteDatabase;
   /** The connection itself, for what Drizzle does not cover (a pragma, a checkpoint). */
   readonly client: Database;
-  /** Closes the connection; the database is unusable after. */
+  /**
+   * What a throw from this connection is, for the storage implementation
+   * (`createStorage(db, { classify })`).
+   */
+  classify(thrown: unknown): ThrownClass;
+  /** Closes the connection, once; the database is unusable after. */
   close(): void;
+}
+
+/** How many causes deep a classifier looks: Drizzle wraps a driver's error once. */
+const CAUSE_DEPTH = 4;
+
+/**
+ * Classifies what `bun:sqlite`, or Drizzle wrapping it, threw, walking the
+ * chain of causes by type and code, never by message: a `SQLiteError`
+ * whose code is a constraint's (`SQLITE_CONSTRAINT…`) is `refused`, and any
+ * other `SQLiteError` (busy, locked, unreadable) `unavailable`; the
+ * `RangeError` `bun:sqlite` throws for a closed connection is
+ * `unavailable` when `closed()` says this connection was closed. Anything
+ * else is a `defect`.
+ */
+export function classifyBunSqlite(
+  closed: () => boolean,
+): (thrown: unknown) => ThrownClass {
+  return (thrown) => {
+    let link: unknown = thrown;
+    for (
+      let depth = 0;
+      depth <= CAUSE_DEPTH && link instanceof Error;
+      depth++
+    ) {
+      if (link instanceof SQLiteError)
+        return typeof link.code === "string" &&
+          link.code.startsWith("SQLITE_CONSTRAINT")
+          ? "refused"
+          : "unavailable";
+      if (link instanceof RangeError && closed()) return "unavailable";
+      link = link.cause;
+    }
+    return "defect";
+  };
 }
 
 /**
@@ -66,8 +106,18 @@ export function openHubSqlite(path: string): Outcome<HubSqlite, "unavailable"> {
     client.close();
     return ready;
   }
+  let closed = false;
   return {
     ok: true,
-    value: { db: ready.value, client, close: () => client.close() },
+    value: {
+      db: ready.value,
+      client,
+      classify: classifyBunSqlite(() => closed),
+      close: () => {
+        if (closed) return;
+        closed = true;
+        client.close();
+      },
+    },
   };
 }

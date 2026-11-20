@@ -48,7 +48,7 @@ function portsWithStore() {
   closers.push(() => sqlite.value.close());
   const ports = fakePorts();
   return Object.assign(ports, {
-    storage: createStorage(sqlite.value.db),
+    storage: createStorage(sqlite.value.db, sqlite.value),
   }) as typeof ports & Pick<HubPorts, "storage">;
 }
 
