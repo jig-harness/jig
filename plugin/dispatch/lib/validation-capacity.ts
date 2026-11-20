@@ -252,13 +252,27 @@ export function forecastValidation(
   // remaining runs must queue behind the work already at the lock, so they
   // consume the same waiting capacity as work from earlier passes.
   // Capacity measures service before the candidate's last acquisition. Once
-  // that run acquires a slot, its execution is not lock-wait time. Service
-  // completes in whole concurrency-sized waves: aggregate fractional capacity
-  // would otherwise claim a slot becomes free before any current holder ends.
+  // that run acquires a slot, its execution is not lock-wait time. A partial
+  // service wave does not make a slot free, but it does shorten the wait
+  // until the next release.
+  const completedWaves = Math.floor(timeToValidationMs / runMs);
+  const activeRuns = Math.max(0, atLock - concurrency * completedWaves);
+  const residualMs =
+    activeRuns === 0 ? 0 : runMs - (timeToValidationMs % runMs);
   const queuedRuns = Math.ceil(ahead) + ownRuns;
-  const required =
+  const requiredWithoutActiveRuns =
     concurrency *
     Math.ceil(Math.max(0, queuedRuns - concurrency) / concurrency);
+  const immediateSlots = Math.max(0, concurrency - activeRuns);
+  const waitingRuns = Math.max(0, toArrive + ownRuns - immediateSlots);
+  const required =
+    // `atLock` includes waiters. Once it exceeds the observed concurrency,
+    // their individual acquisition times are unknown, so retain the
+    // conservative aggregate forecast rather than treating them as one wave.
+    activeRuns === 0 || atLock > concurrency || waitingRuns === 0
+      ? requiredWithoutActiveRuns
+      : concurrency *
+        (residualMs / runMs + Math.ceil(waitingRuns / concurrency) - 1);
   return {
     ahead,
     capacity,

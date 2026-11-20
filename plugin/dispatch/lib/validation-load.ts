@@ -113,12 +113,13 @@ function forecast(
   kind: ValidationKind,
   deadlineMs: number,
   admittedRuns: number,
+  demand?: ValidationDemand,
 ): ValidationForecast | null {
   if ("unread" in state.demand) return null;
   return forecastValidation(
     state.measured,
     kind,
-    state.demand,
+    demand ?? state.demand,
     state.waitLimitMs,
     deadlineMs || Infinity,
     admittedRuns,
@@ -141,6 +142,7 @@ export function validationHold(
   kind: ValidationKind,
   pickupDeadlineMs: number,
 ): string | null {
+  if ("unread" in state.demand) return null;
   const deadline = kind === "pickup" ? pickupDeadlineMs : state.driveDeadlineMs;
   const own = forecast(state, kind, deadline, state.admittedRuns);
   if (own === null) return null;
@@ -154,7 +156,21 @@ export function validationHold(
     // arrives next. Reserve every run this pickup commits, not only runs that
     // wait before their own acquisition.
     const committedRuns = state.admittedRuns + own.ownRuns;
-    const reserved = forecast(state, "drive", deadline, committedRuns);
+    // A reserved drive starts after this pickup has begun. Its measured time
+    // to validation is therefore time in which the pickup's whole service
+    // waves can finish. Keep only the runs that can still occupy the lock
+    // when that downstream drive asks for it.
+    const completedBeforeDrive =
+      state.measured.concurrency *
+      Math.floor(
+        state.measured.kinds.drive.timeToValidationMs / state.measured.runMs,
+      );
+    const stillRunning = Math.max(0, committedRuns - completedBeforeDrive);
+    const reservedDemand: ValidationDemand = {
+      atLock: state.demand.atLock + stillRunning,
+      toArrive: state.demand.toArrive,
+    };
+    const reserved = forecast(state, "drive", deadline, 0, reservedDemand);
     const drive = forecast(
       state,
       "drive",

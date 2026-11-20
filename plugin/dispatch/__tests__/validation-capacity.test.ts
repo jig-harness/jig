@@ -200,6 +200,27 @@ describe("validation forecast", () => {
     expect(forecast.fill).toBe(1.5);
   });
 
+  test("does not credit a partial service wave before its slots release", () => {
+    const measured = {
+      ...measureValidation([], []),
+      concurrency: 2,
+      kinds: {
+        pickup: { runsPerPass: 1, timeToValidationMs: 10 * MINUTE },
+        drive: { runsPerPass: 1, timeToValidationMs: 0 },
+      },
+    };
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 2, toArrive: 0 },
+      MINUTE,
+      HOUR,
+    );
+    expect(forecast.ahead).toBeCloseTo(2 / 3);
+    expect(forecast.required).toBeCloseTo(2 / 3);
+    expect(forecast.fill).toBeCloseTo(5);
+  });
+
   test("reserves an immediately admitted pickup before admitting its drive", () => {
     const state: ValidationLoad = {
       measured: {
@@ -219,6 +240,17 @@ describe("validation forecast", () => {
     expect(validationHold(state, 0.2, "pickup", HOUR)).toContain(
       "keep room for a drive",
     );
+  });
+
+  test("does not reserve a completed pickup against a downstream drive", () => {
+    const state: ValidationLoad = {
+      measured: measureValidation([], []),
+      demand: { atLock: 0, toArrive: 0 },
+      waitLimitMs: MINUTE,
+      driveDeadlineMs: 90 * MINUTE,
+      admittedRuns: 0,
+    };
+    expect(validationHold(state, 1, "pickup", 3 * HOUR)).toBeNull();
   });
 
   test("counts every active run attributed to a pass before forecasting arrivals", () => {
