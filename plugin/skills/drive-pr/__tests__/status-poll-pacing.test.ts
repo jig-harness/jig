@@ -85,7 +85,7 @@ describe("waiting status poll pacing", () => {
     while (await probe.wait("reviewer", deadline, undefined, 3 * second))
       wakes.push(probe.clock.now());
 
-    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second).concat(9_000));
+    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second));
     expect(probe.clock.now()).toBe(deadline);
   });
 
@@ -109,10 +109,6 @@ describe("waiting status poll pacing", () => {
       true,
     );
     expect(probe.clock.now()).toBe(9 * second);
-    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
-      true,
-    );
-    expect(probe.clock.now()).toBe(deadline - second);
     expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
       false,
     );

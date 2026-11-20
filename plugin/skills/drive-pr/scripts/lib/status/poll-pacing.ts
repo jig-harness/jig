@@ -282,8 +282,12 @@ export class StatusPollPacing {
       // Reserve a practical margin before the deadline for a final evaluation.
       // Otherwise timer lateness and the wait's own telemetry can leave the
       // consuming loop with no time to observe evidence from its last interval.
+      // An ordinary cadence wake inside the final margin is itself the final
+      // evaluation. Reserving another wake at the same time would return a
+      // zero-delay poll on the next call.
       const reservesFinalEvaluation =
-        pollAt >= deadline && pollAt === cadencePollAt;
+        pollAt >= deadline - FINAL_EVALUATION_MARGIN_MS &&
+        pollAt === cadencePollAt;
       const wakeAt = Math.min(
         pollAt,
         reservesFinalEvaluation
