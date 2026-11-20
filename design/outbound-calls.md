@@ -361,7 +361,7 @@ dispatcher never reads a status or a message to tell them apart:
   the daily cap. The need raised when the cap is reached says which cap.
 - `unauthorized`, `server-fault`, `unreachable` and `invalid` mean what they
   mean for any system. A stop the harness implementation cannot classify
-  stays a pass failure, as before; it is never recorded as a wall.
+  is a pass failure and is never recorded as a wall.
 
 **Admission happens per launch.** A launch on a provider account is admitted
 before it starts, in this order, and the first refusal ends it:
@@ -371,9 +371,9 @@ before it starts, in this order, and the first refusal ends it:
    code to a provider the list lacks is refused, and nothing is reserved.
 2. The account is not parked, and its credential reference resolves.
 3. The day's remaining cap covers the reservation: the per-run ceiling when
-   the account has one, else the account's configured reservation (the
-   account's mean pass cost over its last 20 passes, else one tenth of the
-   cap). The budget record holds the reservation, as it holds a request's.
+   the account has one, else the account's mean pass cost over its last 20 passes, read from
+   its launch records, else one tenth of the cap. The budget record holds
+   the reservation, as it holds a request's.
 
 A pass that ends gives back its reservation and the budget record takes the
 cost the harness reported. A pass that ends with no report keeps the full
@@ -388,8 +388,8 @@ system's:
 
 - the system is `model-provider:<provider>`, the credential's key is the hash
   of the account's identity ([provider-accounts.md](provider-accounts.md#the-identity-of-each-kind-of-account)),
-  and the operation is the stage that ran (`DrivePass`, `Pickup`, `Steward`,
-  `Measurement`), the key the cost report groups by;
+  and the operation is the stage that ran (`Pickup`, `Rearm`, `Followup`,
+  `Steward`, `Measurement`), the key the cost report groups by;
 - the caller is the dispatcher's tick, or the person's skill that started the
   pass;
 - the requests are the model requests the program reports, else 1 for the
@@ -397,7 +397,7 @@ system's:
   numbers like every other unit; the time is the pass's own.
 
 **Where the provider reports no cost, the cost comes from a configured
-price.** The account's `prices` give dollars per million input tokens and per
+price.** Each `models` entry's `price` gives dollars per million input tokens and per
 million output tokens for each model it may run, and the row is marked as an
 estimate, as the `gh` wrapper marks its own. For example, Gemini 4 Neon costs
 $3 per million input tokens and $15 per million output tokens on the Gemini

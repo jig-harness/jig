@@ -14,6 +14,7 @@ related:
   - docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md
   - docs/adr/ADR-0021-outbound-calls-are-governed.md
   - docs/adr/ADR-0012-failures-as-values.md
+  - docs/adr/ADR-0013-records-not-a-daemon.md
 tags: [adr, dispatcher, agents, harness, providers]
 ---
 
@@ -79,8 +80,8 @@ caller holds to a value or an
    including a model outside the family list the configuration maps by name.
 5. **`effort`**: the program's own level for an effort.
 6. **`environment`**: what a launch on a given account carries and what it
-   removes. A subscription account's launch removes every provider key, as it
-   does; a provider account's launch carries that account's credential, which
+   removes. A launch removes the vendors' credential variables and every
+   provider key, whatever the letter case of a name; a provider account's launch carries that account's credential, which
    the host's secret command resolves, and no other.
 7. **`usage`**: the tokens, the model and the cost the program reports at the
    end of a pass, read from its output or its transcript. This is what the

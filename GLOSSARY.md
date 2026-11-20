@@ -2393,7 +2393,7 @@ make, use the entry's term instead.
   item 59).
 - **Agent harness** — the program that runs an AI model as an agent: it
   reads the prompt, calls the tools, edits files and ends with a result.
-  Claude Code and Codex are the harnesses Jig's tooling is built on. Jig
+  Claude Code and Codex are the harnesses Jig supports. Jig
   reaches a harness through one interface, whose operations are what the
   *dispatcher* and the skills need of it: the command that starts a
   pass, the name a model has there, what a launch carries, what a run cost
@@ -2401,11 +2401,12 @@ make, use the entry's term instead.
   ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)).
   Not the *session runtime*, which says where a session runs and not which
   program runs in it. Planned.
-- **Spend cap** — the most money a *provider account* may spend: a daily
-  amount every account has, and an optional ceiling for one run. The
-  *dispatcher* admits a launch against the day's remaining amount and
-  records the cost the harness reports in the *cost ledger*, so a launch
-  that would pass the cap is refused before it starts. Planned
+- **Spend cap** — the amount of money per day against which the
+  *dispatcher* admits a *provider account*'s launches, with an optional
+  ceiling for one run. A launch the day's remaining amount does not cover
+  is refused before it starts, and the cost the harness reports goes into
+  the *cost ledger*. It bounds what is admitted, and a pass that finishes
+  over its reservation is not stopped. Planned
   ([design/provider-accounts.md](design/provider-accounts.md)).
 - **Harness profile** — the configuration a stage's *agent harness* runs
   with, kept apart from the host's own configuration of that harness: its

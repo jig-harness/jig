@@ -3,7 +3,8 @@
 **What problem this solves.** The [dispatcher](../GLOSSARY.md) bills every
 launch to a subscription account and runs every stage on Claude Code or
 Codex. A host that holds its own key with a model provider cannot have the
-dispatcher use it. Launch environments remove every provider key. A Claude
+dispatcher use it. Launch environments remove the vendors' credential variables, and a
+provider's own key never reaches a pass. A Claude
 account's identity is a login email. A provider's refusal is read as a
 subscription [wall](../GLOSSARY.md): a 429 parks the account for an hour as an
 unknown wall, and a 402 is a plain pass failure that is tried again on the
@@ -58,17 +59,29 @@ unknown key in the file is.
 | `base_url` | an `https://` URL | the harness's default for the provider | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address |
 | `credential` | a [credential reference](#the-credential-reference) | required | Never the credential itself |
 | `spend_cap.daily` | decimal US dollars, as a string | required | The day's [spend cap](#the-spend-cap) |
-| `spend_cap.per_run` | decimal US dollars | none | The ceiling of one pass |
+| `spend_cap.per_run` | decimal US dollars, as a string | none | The ceiling of one pass |
 | `spend_cap.timezone` | a time zone name such as `Europe/Amsterdam` | `UTC` | Where the day starts |
-| `models` | list of `{id, price}` | none | The models the account may run and, where the provider reports no cost, what each costs: `price.input` and `price.output` in dollars per million tokens |
+| `models` | list of `{id, price}` | none: any model the harness accepts | The models the account may run. A launch whose route names a model outside a given list is refused with that reason. Where the provider reports no cost, `price.input` and `price.output` give what each costs in dollars per million tokens |
 | `config_dir` | absolute path | `~/.local/state/jig/harness/<name>` | The directory the harness runs with: its own state, and none of the host's configuration of that harness |
 | `max_per_account` | whole number | 2 | Slots, as today |
 | `stages` | subset of `pickup`, `rearm`, `followup`, `steward` | as today | The stages the account may serve |
 
 `vendor` and `identity` are not keys of a `provider` entry: the provider is
 named by `provider`, and the identity is [derived](#the-identity-of-each-kind-of-account),
-never configured. The existing uniqueness rules hold, and `harness:config_dir`
-joins `vendor:config_dir` in them.
+never configured. The existing uniqueness rules hold, and `config_dir` is
+unique across every account of both kinds, so a provider account cannot share
+a subscription account's directory.
+
+A **subscription** entry may also name a `harness`, for a plan whose login a
+third-party harness may use (see [the trial](#the-harness-trial)). It defaults
+to the harness of the vendor's own program. The loader refuses a Claude
+subscription (`vendor: claude`) with any harness but `claude-code`, so a Claude
+Pro or Max login never reaches another harness; no entry carries a Google
+consumer login at all.
+
+The stages are the dispatcher's launch stages: `pickup` (a `do-item` pass),
+`rearm` (a drive-pr pass), `followup` and `steward`. The routing rows, the
+harness profiles and the ledger's operations use these names.
 
 ```yaml
 credential_command: [op, read, --no-newline]   # see the credential reference
@@ -91,10 +104,13 @@ accounts:
 
 A launch on a provider account carries that account's credential and no
 other. The environment the launch starts from is the one a subscription
-account's launch starts from: every provider key and every vendor
-credential variable removed, whatever the letter case of its name (the
-removal #860 asks for is one function used by both kinds, so a mixed-case
-name that survives on a case-insensitive platform survives for neither).
+account's launch starts from: the vendors' credential variables
+(`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) removed,
+and with them every other provider key, such as `GEMINI_API_KEY` and
+`OPENROUTER_API_KEY`, which a launch carries today. Each removal is by
+name whatever its letter case (#860 asks for the case-insensitive match, which
+is one function used by both kinds, so a mixed-case name that survives on a
+case-insensitive platform survives for neither).
 Then the harness implementation's `environment` operation adds the account's
 resolved credential under the variable name its program reads, and its base
 URL. A subscription account's launch adds only its configuration directory,
@@ -122,10 +138,11 @@ The contract of the command:
 - Its standard output is the value. One trailing newline is removed. A value
   that is empty, holds a newline inside it or is over 4 KiB is refused.
 - It succeeds with exit 0 within `credential_timeout` (10 seconds by
-  default). Anything else is `unauthorized` for that account: the credential
-  is missing, expired or refused. The account is held with the reason, the
-  dispatcher raises one host need for the account, and an account on another
-  provider keeps launching.
+  default). A non-zero exit or an empty value is `unauthorized` for that
+  account: the credential is missing, expired or refused. The account is held
+  with the reason, the dispatcher raises one host need for the account, and an
+  account on another provider keeps launching. A timeout is `unreachable`: the
+  launch waits for the next tick, as for any system that did not answer.
 - Jig resolves it at each launch and keeps the value only in the launching
   process's memory and the pass's environment. The value is never written to a
   launch record, a receipt, the ledger, a transcript Jig keeps, an error
@@ -154,9 +171,11 @@ the key behind a reference then keeps the account's caps, ledger and walls,
 and resolving the identity needs no secret. The cost is that two references to
 one key are two accounts, which the file's author controls. The drive's
 account hash (`acct-<16 hex>`) is computed for a provider account from its
-identity. It is `null` for a `token:` or `api-key:` identity, because those
-name a secret and the comparison then resolves toward stopping, and the
-identity of a provider account names no secret.
+identity. It is `null` for a `token:` or `api-key:` identity: a fingerprint
+never proves which account a wall belongs to, since two credentials can bill
+one account, and the comparison then resolves toward stopping. A provider
+account's identity is the account by definition, since the reference is what
+the file's author declared to be it.
 
 ### The spend cap
 
@@ -167,15 +186,19 @@ A subscription account has neither: its limit is the vendor's.
   (UTC by default). The cap refills whole at the boundary and the refusal's
   reset time is that boundary. A host whose provider bills in another zone
   sets its zone; the provider's own limit is the hard backstop and should be set
-  at or above the daily cap.
-- **What counts.** The day's spend is the cost of every pass that ended that
-  day, as the [ledger](outbound-calls.md#model-providers) records it, plus the
-  reservations of the passes running now. A pass counts on the day it ends.
+  at or above the daily cap. The budget record keeps each account's spend under
+  the account's date in its zone, so a zone whose offset is not a whole hour
+  needs no special case; the record holds a week of days.
+- **What counts.** The day's spend, kept in the budget record, is the cost of
+  every pass that ended that day plus the reservations of the passes running
+  now. A pass counts on the day it ends. The [ledger](outbound-calls.md#model-providers)
+  holds the same costs as hourly totals for reports, and each pass's own cost
+  is on its launch record.
 - **Admission is per launch.** Jig does not send the model requests, so it
   cannot refuse a request. It admits a launch if the remaining cap covers its
   reservation, and refuses it as `rate-limited` until the boundary if not. The
   reservation is the per-run ceiling when the account has one, else the mean
-  cost of the account's last 20 passes, else one tenth of the daily cap.
+  cost of the account's last 20 passes, from its launch records, else one tenth of the daily cap.
 - **The cap is not a hard stop.** A pass that costs more than its
   reservation finishes and the day is then over the cap, and the next launch is
   refused. The per-run ceiling is the bound on one pass: it is passed to the
@@ -212,7 +235,7 @@ stays as the **defaults**, and it stops being an allowlist.
   refused for an implementer, and that refusal cannot be waived.
 - A tier maps to a model **per stage** as well:
   `routing.stages.<stage>.models.<harness>.<tier>`, for the stages the
-  dispatcher names (`pickup`, `drive`, `followup`, `steward`).
+  dispatcher launches (`pickup`, `rearm`, `followup`, `steward`).
 
 **Precedence.** The layers of the
 [configuration reference](../plugin/CONFIGURATION.md#configuration-layers)
@@ -237,8 +260,7 @@ dispatch:
 
 - **The key and its values.** `dispatch.allowed_providers` is a list of provider
   names, spelled as `provider` is in a provider account, and `anthropic` for
-  Claude Code's subscription accounts and `openai` for Codex's. The list
-  replaces a lower layer's whole, as every list does.
+  Claude Code's subscription accounts and `openai` for Codex's.
 - **Where it is read.** From the file as the default branch holds it on the
   forge, by the dispatcher's forge reader and its section parser, never from a
   checkout. A branch, the user file and the environment cannot set it, so an
@@ -270,7 +292,7 @@ dispatch:
 
 ### The harness profile of a stage
 
-A stage (drive-pr, do-item, steward, follow-up) runs under a **harness
+A stage (`pickup`, `rearm`, `followup`, `steward`) runs under a **harness
 profile**: the configuration the harness starts with, kept apart from the
 host's own configuration of that program. A profile has these parts:
 
@@ -296,8 +318,10 @@ their profiles are built, and a subscription account's login stays in it.
 ### The harness trial
 
 pi is an opt-in third harness, proven on one stage first: drive-pr passes on
-one host's trial accounts. Each trial account is a provider account, or for the
-last two a subscription the vendor's terms allow:
+one host's trial accounts. OpenRouter and the Gemini API are provider accounts.
+The rest are plans whose vendor sells a login or a key: a plan's key makes a
+provider account, and a plan that gives only a login makes a subscription entry
+with a `harness` key, where the vendor's terms allow it:
 
 - OpenRouter, through `OPENROUTER_API_KEY`;
 - the Gemini API with a key, through `GEMINI_API_KEY`, running Gemini 4 Neon;

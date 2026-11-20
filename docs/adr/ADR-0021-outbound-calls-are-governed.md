@@ -17,7 +17,7 @@ tags: [adr, integrations, rate-limits, plugin]
 
 # ADR-0021: Every call to an outside system goes through a governed transport
 
-**Status:** Approved · **Date:** 2026-11-13 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Amended · **Date:** 2026-11-13 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
@@ -176,15 +176,15 @@ follows; each is built by plan item 59 and detailed in
 [design/outbound-calls.md](../../design/outbound-calls.md#model-providers):
 
 - **Admit before sending (obligation 3)** is per launch, not per request.
-  The budget record holds each provider account's day, and a launch is
+  The budget record holds each provider account's spend for its day, and a launch is
   admitted against the cap that account declares, with a reservation the
   pass gives back when it ends. A launch that the cap refuses fails as
   `rate-limited` with the next day boundary.
 - **Bound what one call can cost (4)** is the account's per-run ceiling
   where it has one, passed to the harness as its own budget limit where the
   program offers it.
-- **Record what it cost (5)** is one ledger row per pass, from the usage the
-  harness reports. Where the provider reports no cost, the cost is computed
+- **Record what it cost (5)** adds each pass's usage, as the harness reports
+  it, to the ledger's row for the account and the stage. Where the provider reports no cost, the cost is computed
   from a price the account configures and the row is marked as an estimate.
   The ledger's cost unit for a provider is millionths of a US dollar.
 - **Fail as a closed class (6)**: 402 is `too-costly`, meaning the account's
