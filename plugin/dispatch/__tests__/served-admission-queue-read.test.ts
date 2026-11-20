@@ -27,12 +27,7 @@ function pool(identifier: string): PoolIssue {
 
 function admit(candidate: Candidate) {
   const out = { wanted: [], unplaced: [] } as unknown as ServedReading;
-  finishAdmission(
-    [candidate],
-    { walks: [], serials: new Map() },
-    out,
-    {} as ServedOptions,
-  );
+  finishAdmission([candidate], { walks: [] }, out, {} as ServedOptions);
   return out.wanted[0]?.queueIssue;
 }
 

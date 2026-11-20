@@ -107,8 +107,13 @@ export function personPickupBlock(
     record.item,
     record.ancestorEpic,
     record.factoryAncestor,
+    ...(record.ancestors ?? []),
     record.blockingFor,
-    ...(record.batchItems ?? []).flatMap((item) => [item.key, item.ancestor]),
+    ...(record.batchItems ?? []).flatMap((item) => [
+      item.key,
+      item.ancestor,
+      ...(item.ancestors ?? []),
+    ]),
   ]);
   const hold = holds.value.find((row) => keys.has(row.item));
   return hold === undefined

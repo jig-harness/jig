@@ -209,8 +209,9 @@ fields:
     repository_only: true
     since: 0.117.0
   dispatch.epic_width:
-    type: integer
-    min: 1
+    type: any
+    nullable: true
+    deprecated: "ignored; use dispatch.overlap, or execution plan dependency edges or a serialized area for one child at a time"
     read_by: [dispatch]
     repository_only: true
     since: 0.244.0
@@ -873,6 +874,11 @@ fields:
     items: string
     distinct: true
     read_by: [do-item, work-batch]
+  issue_tracker.person_checks:
+    type: string
+    pattern: "^\\S+$"
+    read_by: [do-item]
+    since: 0.290.0
   issue_tracker.labels.extractable_tails:
     type: list
     items: string

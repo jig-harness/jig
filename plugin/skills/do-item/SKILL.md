@@ -180,7 +180,7 @@ The skill acts on a few labels as process signals, by role:
 | `bug` | `bug`, `type:bug` | A bug |
 | `pattern_prefix` | `pattern:` | A recurring pattern, `<prefix><slug>` |
 | `batch_sizes` | `xs`, `small`, `medium` | Sizes the batch check (`/jig:work-batch`) may group |
-| `extractable_tails` | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | Open sub-issues an epic may hand off instead of finishing |
+| `extractable_tails` | `<hitl>`, `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | Labels that identify open sub-issues an epic may hand off at closure. The configured `ops_pending` state also identifies a person check |
 
 This document writes each label by its default name; read it as the
 repository's label for that role. A list-valued role (`bug`, `batch_sizes`,
@@ -1503,10 +1503,9 @@ implementation. Skip this check for issues about the repository's own code.
    operational or legal step remains (an operator checklist, a drill, a
    verification, a sign-off), in which case transition it to `ops_pending`.
    Nothing else moves statuses; deployment state comes from git, not from the
-   tracker. An issue that is itself an epic (`isEpic`; an epic
-   with no sub-issues, worked whole in Step 4a) reaches `done` only with the
-   closing authorization in Step 5a; without one, transition it to
-   `in_review` and report that it waits for an accepting verdict or a waiver.
+   tracker. For an issue that is itself an epic (`isEpic`), apply the epic
+   closure rule in Step 5a, including when it was worked whole without
+   sub-issues. Report the pending scope and authorization checks.
 
    The repository's `do_item.post_merge_state` caps this rule:
    `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` prints
@@ -1556,16 +1555,15 @@ snapshot mapping are **exact**.
 
 A session takes one sub-issue. That is the scope of one session, not a limit
 on the epic: the dispatcher may start several of an epic's children at once,
-each in a session of its own (`dispatch.epic_width`).
+each in a session of its own, subject to the usual dispatch holds and capacity.
 
 1. **exact** — **Check whether everything is complete**:
    - `sub_issue_analysis.all_complete` → Step 5a.
-   - Otherwise, if every remaining incomplete sub-issue carries a label in
-     the repository's `extractable_tails` list (by default `hitl:legal`,
-     `hitl:tactical`, `manual-ops` and `pr-followup`; `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" labels`
-     prints the list in effect) → also Step 5a, which re-verifies eligibility under
-     the extract-and-close rule before acting. Otherwise an epic whose only
-     open work is a tail would pick that tail and work it as ordinary code.
+   - If each remaining incomplete sub-issue is a tail → Step 5a, which
+     rechecks eligibility. A tail carries a configured `extractable_tails`
+     label or is in the tracker's configured `ops_pending` state. Read the
+     effective labels and states through the tracker script's labels and
+     states operations.
 
    `sub_issue_analysis` comes from `get_issue.ts`. On the native transport
    (Linear's `get_issue` has no children field), build the same facts from a
@@ -1701,6 +1699,7 @@ data flow, not an executable harness API.
 > | Condition | Parent status |
 > |-----------|---------------|
 > | Every sub-issue is `done`, or `canceled`/`duplicate` (abandoned, never completing) | `done` — capped at `ops_pending` if the **parent itself** carries `manual-ops`, and at `do_item.post_merge_state` when that is not `done` |
+> | Every open sub-issue is a tail, including a person check in `ops_pending` | Eligible for the epic closure sweep |
 > | Every sub-issue is merged-and-parked (`done`, `ops_pending`, `in_review`) or abandoned | The least advanced of those (any sub-issue in `in_review` → `in_review`; otherwise `ops_pending`) |
 > | Any sub-issue still in progress, with its pull request open (`pr_open`), to do or blocked (`blocked`, or blocked by another issue) | Keep `in_progress`; continue with Step 4b |
 >
@@ -1712,21 +1711,16 @@ data flow, not an executable harness API.
 > `reconcile_parent_status.ts` implements and tests this table; do not
 > re-derive it by hand.
 
-> **Extract-and-close rule (an epic is done on its designed scope, not on a
-> child count of zero).** When an epic's code work is merged and every
-> remaining open child is a tail the epic was never scoped to finish — one
-> carrying a label in the repository's `extractable_tails` list (by default a
-> `hitl:legal` sign-off, `manual-ops` or `hitl:tactical` operations work, or
-> `pr-followup` review debt) — extract each (link it back to the epic,
-> comment on it naming the epic it came from, then remove it from the epic and
-> move it to the repository's standing destination for that kind of work, if
-> it has one) and close the epic. This requires the epic's closing
-> authorization (defined below): "every child is closed or extractable" is not
-> itself the authorization, because sub-issues marked done whose code never
-> landed are a recurring failure. A waiver stands in for a review nobody ran;
-> it never overrides a rejecting verdict. If the repository has a tool that performs
-> the check, move, link and close, run it rather than doing the moves by
-> hand.
+**Epic closure.** The pull request that finishes the epic's designed scope
+removes its active plan and roadmap entries wherever listed. For an epic
+whose scope appears delivered, use the
+[on-demand sweep procedure](references/epic-sweep.md) to propose closure,
+record the person's waiver, and transfer tails before closing. It uses
+current tracker facts and the coordinator's explicit scope assessments.
+Closure requires the newest verdict to accept the scope or a recorded
+person's waiver. The sweep's waiver is a trusted tracker comment that
+links the person's reply and ends with `<!-- jig:epic-waiver -->`.
+A waiver never overrides the newest rejecting verdict.
 
 1. **exact** — **Re-fetch every sub-issue's current state** — never rely on
    stale data — and feed it to `reconcile_parent_status.ts`, which owns the
@@ -1865,40 +1859,15 @@ data flow, not an executable harness API.
    | `skipped` | Report `decision.reason`; leave the parent in its current state because its own workflow has no target state |
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
-   | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |
-   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (its `isEpic` as `get_issue.ts` prints it; on the native transport, `answers.parent.labels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state> --post-merge` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })`, only after `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" post-merge` shows that its `state` allows it. A parent the reconciler capped at `do_item.post_merge_state` gets that output's `closing` sentence in its closing comment |
+   | `extract_and_close_eligible` | For an epic, report eligibility and use the on-demand sweep procedure. |
+   | `set_status` | For an epic whose proposed state is `done`, hold it at `in_review` until its scope and closing authorization are verified. For any other target, transition the parent through the tracker script's transition operation with `--post-merge`. On the native Linear transport, verify the cap through the post-merge operation first. Include the configured closing sentence when the cap applies. |
 
-   **Closing authorization.** An epic may close only when its newest verdict
-   from the repository's epic acceptance review accepts it, or when a person
-   has recorded a waiver on it and its newest verdict, if there is one, is not
-   a rejection. An accepting verdict that a later rejection superseded does
-   not count, and a waiver never overrides a rejection. A count of done
-   children is never the authorization, whichever verdict above produced it.
-
-   **`manual-ops` guard on parent completion.** When `decision.parentState`
-   is `ops_pending` because the parent itself carries `manual-ops` (every
-   sub-issue is done, but the parent cannot close until its operator
-   checklist is acknowledged), comment with every unchecked item from the
-   parent's `## Operator Checklist` as unchecked checkboxes: "All sub-issues
-   are Done — PR merged → Ops Pending. Waiting for manual ops: [list the
-   steps]." If there is no such section, comment: "Parent carries
-   `manual-ops` but has no Operator Checklist. Add the steps to the issue
-   body before this can close." Never silently advance it to `done`. Without
-   an `ops_pending` state, cap at `in_review`.
-
-   **`manual-ops` guard on `extract_and_close_eligible`.** A parent carrying
-   `manual-ops` can never reach `done`, only `ops_pending`. Check
-   `answers.parent.labels` before acting: if `manual-ops` is present, extract
-   the tails but do not close the epic (a sweep tool's "no close" mode, if it
-   has one). The same holds when `do_item.post_merge_state` is not `done`:
-   extract the tails without closing, and move the epic to that state with
-   `--post-merge`. These are exclusive branches: when `manual-ops` is present,
-   transition the parent to `ops_pending` (or `in_review` without that state)
-   and post the operator-checklist comment above; when it is absent, the
-   configured `do_item.post_merge_state` is the final state, with no
-   `ops_pending` move and no checklist comment. Leaving the epic at its old status (e.g. still `in_progress`) after
-   its tails moved would violate the status rule. `decision.reason` states
-   this distinction when it applies.
+   **Operator checklist.** When the parent carries `manual-ops` and the
+   reconciler parks it for operator work, comment with each unchecked entry
+   in its `## Operator Checklist`. If the section is missing, ask for the
+   checklist on the issue. The on-demand sweep may transfer an epic's own
+   outstanding operator steps to the standing person-checks list as part
+   of verified closure.
 
 3. **exact** — **Display completion.** Name abandoned children explicitly
    rather than folding them into "complete": a reader must tell "X shipped"
