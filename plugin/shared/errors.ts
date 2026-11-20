@@ -10,6 +10,7 @@
  * `Defect` and `JigError` live in `outcome.ts`, which imports nothing, so a
  * browser bundle can hold them; they are exported here too.
  */
+import { reportDroppedWith } from "./dropped.ts";
 import { type Fields, log, MAX_CAUSE_DEPTH } from "./log.ts";
 import { JigError } from "./outcome.ts";
 
@@ -63,5 +64,9 @@ export function failureFields(err: unknown): Fields {
 export function swallow(err: unknown, reason: string): void {
   log.debug(reason, failureFields(err));
 }
+
+// The portable modules drop errors through `dropped.ts`; on a machine they
+// are written as this module writes its own.
+reportDroppedWith(swallow);
 
 export { Defect, JigError } from "./outcome.ts";

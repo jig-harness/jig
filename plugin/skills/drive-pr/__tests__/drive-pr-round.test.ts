@@ -336,6 +336,26 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("'ci:hold' is still present");
   });
 
+  // The re-confirming proof reports any stale evidence as exit 1, as it always has.
+  for (const [proof, reads, exit] of [
+    ["first", 1, 4],
+    ["re-confirming", 5, 1],
+  ] as const)
+    it(`withdraws a same-head announcement when the ${proof} final proof's check-runs listing is cut short`, async () => {
+      const r = await announce(
+        { ...CONVERGED, checkRunsHangAfter: reads },
+        false,
+        {
+          staleAnnouncementFor: CONVERGED.head,
+          env: { GH_CALL_TIMEOUT: "1" },
+        },
+      );
+      expect(r.stderr).toContain("check-runs listing");
+      expectSpawnExit({ ...r, stdout: "" }, exit);
+      expect(r.posted).toBe(false);
+      expect(r.deleted).toContain("7");
+    }, 60_000);
+
   it("withdraws a same-head announcement while 'ci:hold' is present", async () => {
     const r = await announce({ ...CONVERGED, ciHeld: true }, false, {
       staleAnnouncementFor: CONVERGED.head,

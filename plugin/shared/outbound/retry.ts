@@ -8,7 +8,7 @@
  * first answer stands. A `rate-limited` answer is not retried: nothing is
  * sent before the time it names.
  */
-import { swallow } from "../errors.ts";
+import { dropped } from "../dropped.ts";
 import { failureOf, type OutboundFailure, retriedOnce } from "./failure.ts";
 import { currentMs } from "../time.ts";
 
@@ -151,7 +151,7 @@ export async function discardBody(
       }),
     ]);
   } catch (err) {
-    swallow(err, "response cleanup failed after its failure was recorded");
+    dropped(err, "response cleanup failed after its failure was recorded");
   }
 }
 

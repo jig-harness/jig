@@ -21,6 +21,10 @@
  *   notice, with the account's wall recorded (`run.ts`): the wall keeps the
  *   next pickup off that account until its reset, so the item is wanted
  *   again at once, with no person asked;
+ * - except a record of one item whose pass stopped on a fault of its host
+ *   without claiming it (`pickup-host-fault.ts`): the item is wanted again,
+ *   and the plan holds it while the host's health check fails; a pass that
+ *   was itself the restart of such a stop holds the item as any end does;
  * - a record whose claim the repository's start rules refused (its
  *   `refusal`) holds the item, with the reason, only until the item's
  *   `updatedAt` moves past the time the rules saw: a person changed the
@@ -45,11 +49,18 @@ import {
 import { holdsItem } from "../launch-pickups.ts";
 import { testLockNote } from "../test-lock-waits.ts";
 import { refusalOf } from "../pickup-refusal.ts";
-import { questionOf } from "../session.ts";
+import {
+  endedQuestion,
+  faultedAgain,
+  hostFault,
+  pickupsOf,
+} from "../pickup-host-fault.ts";
 import { isPersonHold } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
 import type { Unplaced } from "../types.ts";
+
+export { endedQuestion };
 
 export type PickupHold =
   | { kind: "none" }
@@ -127,14 +138,7 @@ export function endedHow(r: ReadRecord): string {
 
 /** The records of one item's pickups, oldest first. */
 function recordsOf(item: string, records: ReadRecord[]): ReadRecord[] {
-  return records
-    .filter(
-      (r) =>
-        r.record.action === "pickup" &&
-        (r.record.item === item ||
-          r.record.batchItems?.some((i) => i.key === item) === true),
-    )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
+  return pickupsOf(item, records);
 }
 
 /** Whether the item changed after its refusal: its `updatedAt` is later than the one the rules saw. */
@@ -161,6 +165,7 @@ export function pickupHold(
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
     return waitsHold(latest, latest.waitsUntil, nowMs);
   if (stoppedOnWall(latest)) return { kind: "none" };
+  if (restartsAfterHostFault(latest, mine, item)) return { kind: "none" };
   return stoppedHold(latest, item, updatedAt);
 }
 
@@ -173,6 +178,25 @@ function stoppedOnWall(r: ReadRecord): boolean {
       r.state.exit.startup === "sign-in" ||
       r.state.exit.startup === "breaker") &&
     r.state.exit.wallUnrecorded !== true
+  );
+}
+
+/**
+ * Whether a pass that stopped on a fault of its host, without claiming the
+ * item, leaves it wanted again: the tick holds it while the host's health
+ * check fails (`plan-pickups.ts`) and picks it up afresh once it passes,
+ * unless that pass was itself such a restart.
+ */
+function restartsAfterHostFault(
+  latest: ReadRecord,
+  mine: readonly ReadRecord[],
+  item: string,
+): boolean {
+  return (
+    latest.record.batchItems === undefined &&
+    !wasClaimed(latest.record, item) &&
+    hostFault(latest) !== null &&
+    faultedAgain(latest, mine, item) === null
   );
 }
 
@@ -215,22 +239,6 @@ function stoppedHold(
     record: latest,
     why: `launch record ${latest.record.id} ended (${endedHow(latest)}) while the item stayed assigned in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`,
   };
-}
-
-/**
- * The question an ended pickup left for a person, or `null`: none after
- * `done` or a rate-limit wait, else the pass's trailing question, else the
- * question its closing report asks, or for a parked pass the question of its
- * framed decision. Question planning and
- * the release of unclaimed members read this one policy.
- */
-export function endedQuestion(r: ReadRecord): string | null {
-  if (r.result === "done" || r.result === "waits") return null;
-  return (
-    questionOf(r.state) ??
-    r.report?.report.question ??
-    (r.result === "parked" ? (r.framed?.decision.call.question ?? null) : null)
-  );
 }
 
 /**

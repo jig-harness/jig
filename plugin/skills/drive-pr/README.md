@@ -374,9 +374,13 @@ window it closes.
 While final CI stays unchanged, its conditional signal observations back off
 from ten seconds through twenty and forty to sixty seconds between starts.
 A changed head, check, review or pull signal restores responsive probing.
-Local mailbox stop, hold and resume and remote takeover/provisional checks
-retain a ten-second idle cadence, independent of bulk CI observation. The
-mailbox runs before remote reads. In-flight work adds its helper deadline;
+Local mailbox stop, hold and resume and the provisional-decision sweep
+retain a ten-second idle cadence, independent of bulk CI observation.
+After a complete round-boundary takeover read, the drive waits at least
+sixty seconds between read starts. If the listing cannot be read, the next
+round checkpoint retries it. The drive still reads claims fresh before
+dispatching a pass and before writing the ledger. The mailbox runs before
+remote reads. In-flight work adds its helper deadline;
 GitHub's Retry-After and primary reset holds still take precedence. These
 bounds describe scheduling while requests can be admitted, not a guarantee
 that an unavailable forge will answer. Terminal verdicts, launches and pushes
@@ -417,7 +421,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_PAUSE_MAX_SEC` | How long a mailbox `pause` may last before [`MAILBOX_PAUSE_TIMEOUT`](../../protocol/drive-exits.md) | `1800` (30 minutes) |
 | `DRIVE_PR_PUSH_TIMEOUT` | One `git push`, pre-push hooks included, in seconds | `3600` |
 | `DRIVE_PR_HELPER_TIMEOUT` | One helper script the drive spawns, in seconds | `120` |
-| `GH_CALL_TIMEOUT` | One `gh` call, in seconds | `30` |
+| `GH_CALL_TIMEOUT` | One `gh` call, in seconds; one page of a head's check-runs listing, whose whole read may take four times this before the drive stops with [`CHECK_RUNS_UNREADABLE`](../../protocol/drive-exits.md); with `JIG_FORGE_BUDGET=off`, a fresh listing or a fallback whole read is paged by `gh` itself, under that same whole-read bound and with no page bound; a listing read through the cache still goes a page at a time | `30` |
 | `DRIVE_PR_STALL_MIN` | Minutes without progress before `bun "<skill-dir>/scripts/drives.ts" --doctor` calls a live drive wedged (never below the default) | `240` |
 
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones

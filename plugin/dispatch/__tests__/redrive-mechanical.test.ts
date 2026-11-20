@@ -13,6 +13,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -109,6 +110,11 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
   for (const [exit, kind, words] of [
     [14, "stall", "stalled"],
     [21, "ci-repair", "CI still failing with its repair passes spent"],
+    [
+      DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+      "check-runs",
+      "its head's check-runs listing could not be read whole",
+    ],
   ] as const) {
     it(`re-arms a stop ${exit} once per head, then tells a person, saying when the pull request conflicts`, async () => {
       const { w } = fixture({ mergeable: "CONFLICTING" }, () =>
@@ -120,13 +126,14 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
               kind: "stop",
               cause: String(exit),
               leftWork: false,
+              ...(kind === "check-runs" ? { listingPages: 14 } : {}),
             },
           ],
         }),
       );
       const record = await redrive(w, exit);
       expect(readRecord(record, dispatchState(w))?.redrive).toEqual({
-        cause: `stopped ${exit}, ${words}`,
+        cause: `stopped ${exit}, ${words}${kind === "check-runs" ? " after 14 page(s)" : ""}`,
         change: `head ${HEAD_SHA}, stopped ${exit}`,
         mechanicalStop: kind,
       });
@@ -155,6 +162,8 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
         `launch record ${record} already re-drove it for this change and ended ${exit}: only a person settles it until its head moves`,
       );
       expect(text).toContain("also conflicts with its base");
+      if (kind === "check-runs")
+        expect(text).toContain("a systematic read failure");
 
       // A new head is a new attempt.
       w.setPrs("open", [

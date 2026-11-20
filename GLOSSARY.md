@@ -366,7 +366,9 @@ make, use the entry's term instead.
   flow.
 - **Defect boundary** — the one place a *defect* is caught, around the work
   it stops: one stage of a dispatcher tick, one repository's turn, the tick
-  itself. It records the defect where a person reads it, with its stack on
+  itself; on the *hub*, one unit of work (a request, a webhook delivery, a
+  scheduled job's run), which also carries the unit's deadline and the one
+  cancellation signal every *port* call it makes receives. It records the defect where a person reads it, with its stack on
   the error output only, and lets the work beside it go on. In Jig's plugin
   an expected failure travels as an `Outcome`, the plugin's *result type*,
   so a throw that reaches a defect boundary is a bug
@@ -1746,6 +1748,29 @@ make, use the entry's term instead.
 - **Reviewer evidence mode** — which record of the forge the drive reads to
   learn that the AI reviewer reviewed the head commit: the reviewer's summary
   comment marker, or its latest *review object* together with its check run.
+- **Reviewer-evidence contract** — what the drive reads to learn that an AI
+  reviewer reviewed the head commit: a check run whose name matches
+  `review.reviewer_check_pattern` (from the configured reviewer app, when one
+  is named), and either a *sticky comment* that the reviewer's own bot account
+  posts, that carries `review.sticky_marker` and that stamps the reviewed
+  commit as an HTML comment, `<!-- <review.reviewed_sha_marker>: <commit SHA> -->`
+  (and may carry a *skip notice*), or, in the `review_object` *reviewer
+  evidence mode*, the commit that the newest *review object* names, or a
+  successful or neutral check run on the head when the reviewer posts nothing
+  for a push with no new findings. This is completion evidence only: the
+  drive reads findings from unresolved review threads, and from summary or
+  review bodies only in a format it has a profile for. Any reviewer that
+  produces the evidence and posts its findings as review threads works with
+  the drive, whoever wrote it
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md),
+  [drive-pr](plugin/skills/drive-pr/README.md)).
+- **Reference reviewer** — the reviewer Jig ships to implement the
+  *reviewer-evidence contract*, so a team with no AI reviewer of its own has
+  one to drive against. It is ai-review, planned as `jig-harness/ai-review`
+  and not yet published, and it lives in its own repository, never in the
+  plugin. It is one implementation of the contract beside the reviewers
+  [M7's mappings](modules/M7-pr-lifecycle-review/mappings.md) name
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)).
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
   equals that head, and no unresolved thread or *summary-only finding* remains.
@@ -2350,8 +2375,9 @@ make, use the entry's term instead.
 - **Cost ledger** — the record of what Jig's calls to outside systems
   cost: for each hour, system, credential, named operation and caller, the
   requests sent, the cost in the system's own unit (a tracker's complexity
-  points, a forge's query points) and the time taken. It answers "what
-  spent this quota" without probing the system. Hourly totals stay 7 days
+  points, a forge's query points) and the time taken, with each known
+  repository's part of it. It answers "what spent this quota" without
+  probing the system. Hourly totals stay 7 days
   in the budget database; `jig budget` and each tick report read them, and
   a low-quota need names the operations projected to empty a quota.
   [Plugin README](plugin/README.md#the-dispatcher).
@@ -2672,6 +2698,14 @@ make, use the entry's term instead.
   platform and runs the core there: a Bun process with SQLite (also a
   container image), or Cloudflare Workers with Durable Objects.
   Unrelated to a *tracker adapter*.
+- **Portability gate** — the check `bun run gates` runs
+  (`scripts/check-portability.ts`) that keeps the *hub*'s *portable core*
+  portable: starting from every file of the core and every shared module
+  declared portable, it follows each import and fails on a `bun:` or
+  `node:` module, a package not on its allowlist, or a reference to a
+  runtime's own global (`Bun`, `process`, `Deno`), naming the chain of
+  imports that brought a shared module's use in. A type-only import is not
+  followed, since it never runs.
 - **World view** — what the *dispatcher* knows of the forge and the
   tracker (pull requests, checks, threads, queues, items), as opposed to
   what it knows of its own machine (its *machine view*). A tick reads it

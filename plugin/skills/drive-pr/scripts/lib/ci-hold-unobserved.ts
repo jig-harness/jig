@@ -15,6 +15,8 @@
 import { recoverCancelledOnHead } from "./cancelled-recovery-live.ts";
 import { isTimedOut, recoveryExit } from "./cancelled-recovery-reads.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
+import { listingStopExit } from "./ci-proof.ts";
+import { driverRuntime } from "./driver/runtime.ts";
 import {
   stopOnMissingRequiredRun,
   type MissingRunAnswer,
@@ -43,6 +45,8 @@ export async function waitOnUnobserved(
   afterUnlabel: boolean,
 ): Promise<number> {
   const recovery = await recoverCancelledOnHead(pr, head, required, true);
+  if (recovery === "listing-cut-short")
+    return listingStopExit(driverRuntime.stopListingPages);
   const stop = recoveryExit(recovery);
   if (stop !== null) return stop;
   // A required check with no run at all never completes: past the grace
