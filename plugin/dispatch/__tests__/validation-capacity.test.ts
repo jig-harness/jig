@@ -180,23 +180,43 @@ describe("validation forecast", () => {
     expect(forecast.fill).toBe(0.75);
   });
 
-  test("reserves a queued pickup's committed validation runs before admitting its drive", () => {
+  test("models acquisition at whole service-wave boundaries", () => {
+    const measured = {
+      ...measureValidation([], []),
+      concurrency: 2,
+      kinds: {
+        pickup: { runsPerPass: 1, timeToValidationMs: 0 },
+        drive: { runsPerPass: 1, timeToValidationMs: 0 },
+      },
+    };
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 2, toArrive: 0 },
+      10 * MINUTE,
+      HOUR,
+    );
+    expect(forecast.required).toBe(2);
+    expect(forecast.fill).toBe(1.5);
+  });
+
+  test("reserves an immediately admitted pickup before admitting its drive", () => {
     const state: ValidationLoad = {
       measured: {
         runMs: 15 * MINUTE,
         concurrency: 1,
         kinds: {
           pickup: { runsPerPass: 1, timeToValidationMs: 0 },
-          drive: { runsPerPass: 2, timeToValidationMs: 0 },
+          drive: { runsPerPass: 1, timeToValidationMs: 0 },
         },
         defaults: [],
       },
-      demand: { atLock: 0, toArrive: 1 },
+      demand: { atLock: 0, toArrive: 0 },
       waitLimitMs: HOUR,
       driveDeadlineMs: HOUR,
       admittedRuns: 0,
     };
-    expect(validationHold(state, 0.25, "pickup", HOUR)).toContain(
+    expect(validationHold(state, 0.2, "pickup", HOUR)).toContain(
       "keep room for a drive",
     );
   });

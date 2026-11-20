@@ -150,15 +150,10 @@ export function validationHold(
     // Reserve this pickup and a drive in the pickup's window. The independent
     // drive-window check only judges work committed before this pickup, which
     // has not yet been admitted by its caller.
-    // A run that can take an idle slot immediately does not delay a later
-    // drive. Reserve only this pickup's runs which must queue behind demand
-    // already forecast at its arrival.
-    const immediatelyAdmitted = Math.min(
-      own.ownRuns,
-      Math.max(0, state.measured.concurrency - own.ahead),
-    );
-    const committedRuns =
-      state.admittedRuns + own.ownRuns - immediatelyAdmitted;
+    // An immediately admitted pickup still occupies its slot when a drive
+    // arrives next. Reserve every run this pickup commits, not only runs that
+    // wait before their own acquisition.
+    const committedRuns = state.admittedRuns + own.ownRuns;
     const reserved = forecast(state, "drive", deadline, committedRuns);
     const drive = forecast(
       state,

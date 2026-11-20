@@ -252,9 +252,13 @@ export function forecastValidation(
   // remaining runs must queue behind the work already at the lock, so they
   // consume the same waiting capacity as work from earlier passes.
   // Capacity measures service before the candidate's last acquisition. Once
-  // that run acquires a slot, its execution is not lock-wait time; subtract
-  // the slots that serve the work already ahead and the candidate together.
-  const required = Math.max(0, ahead + ownRuns - concurrency);
+  // that run acquires a slot, its execution is not lock-wait time. Service
+  // completes in whole concurrency-sized waves: aggregate fractional capacity
+  // would otherwise claim a slot becomes free before any current holder ends.
+  const queuedRuns = Math.ceil(ahead) + ownRuns;
+  const required =
+    concurrency *
+    Math.ceil(Math.max(0, queuedRuns - concurrency) / concurrency);
   return {
     ahead,
     capacity,
