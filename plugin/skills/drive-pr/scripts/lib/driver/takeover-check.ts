@@ -1,5 +1,8 @@
 import { newerClaim } from "../state/ledger.ts";
-import { readLedgerSnapshot } from "../state/ledger-forge.ts";
+import {
+  readCompleteLedgerSnapshot,
+  readLedgerSnapshot,
+} from "../state/ledger-forge.ts";
 import {
   LEDGER_DRIVER_ENV,
   ledgerDriverFromEnv,
@@ -10,10 +13,11 @@ const TAKEOVER_POLL_MS = 60_000;
 
 async function checkForNewerClaim(
   pr: string,
+  readSnapshot = readLedgerSnapshot,
 ): Promise<number | null | "unread"> {
   const driver = ledgerDriverFromEnv();
   if (driver === null || driver.floor === null) return "unread";
-  const snapshot = await readLedgerSnapshot(pr, driver.login);
+  const snapshot = await readSnapshot(pr, driver.login);
   if (typeof snapshot === "string") return "unread";
   const claim = newerClaim(
     snapshot.claims,
@@ -47,7 +51,7 @@ export function roundBoundaryTakeoverCheck(
   return async () => {
     const startedAt = now();
     if (startedAt < dueAt) return null;
-    const result = await checkForNewerClaim(pr);
+    const result = await checkForNewerClaim(pr, readCompleteLedgerSnapshot);
     // A lapse must be retried at the next boundary. Before a pass or ledger
     // write, the separate fresh guards still apply.
     if (result === null) dueAt = startedAt + TAKEOVER_POLL_MS;

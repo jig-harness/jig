@@ -202,14 +202,11 @@ function json(body: string): unknown {
   }
 }
 
-/** Every page's output in turn, or with `slurp` one array of the pages' values. */
+/** Every page's output in turn, or one array that marks blank slurped pages as unreadable. */
 function inTurn(slurp: boolean) {
   return (pages: readonly string[]): string =>
     slurp
-      ? `[${pages
-          .map((p) => p.trim())
-          .filter((p) => p !== "")
-          .join(",")}]`
+      ? `[${pages.map((p) => p.trim() || "null").join(",")}]`
       : pages.join("");
 }
 

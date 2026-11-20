@@ -218,6 +218,9 @@ console.log("DRIVER " + process.env.DRIVE_PR_LEDGER_DRIVER);`,
     ["transport failure", "", 1],
     ["truncated page set", "[[]]", 1],
     ["unreadable page", "[[],null]", 0],
+    ["a listing with zero pages", "[]", 0],
+    ["a comment without an id", "[[{}]]", 0],
+    ["a comment without its body", '[[{"id":901}]]', 0],
     ["304 without a cached listing", "HTTP/2 304 Not Modified\r\n\r\n", 1],
   ] as const) {
     it(`retries at the next round checkpoint after ${failure}`, async () => {

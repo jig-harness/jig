@@ -107,6 +107,19 @@ function forgeComment(c: unknown): ForgeComment | null {
   };
 }
 
+function isCompleteComment(c: unknown): boolean {
+  return (
+    isRecord(c) &&
+    typeof c.id === "number" &&
+    Number.isSafeInteger(c.id) &&
+    c.id > 0 &&
+    typeof c.body === "string" &&
+    typeof c.updated_at === "string" &&
+    typeof c.author_association === "string" &&
+    (c.user === null || (isRecord(c.user) && typeof c.user.login === "string"))
+  );
+}
+
 /**
  * Every comment on the pull request, or why they could not be read. `repo`
  * (`owner/name`) names the repository; without it, the current directory's.
@@ -117,6 +130,7 @@ async function listComments(
   pr: string,
   repo = "{owner}/{repo}",
   signal?: AbortSignal,
+  requireComplete = false,
 ): Promise<ForgeComment[] | string> {
   const r = await forge(
     [
@@ -131,10 +145,14 @@ async function listComments(
   );
   if (!r.ok) return r.why;
   const pages = json(r.stdout, "the comment listing");
+  if (requireComplete && (!Array.isArray(pages) || pages.length === 0))
+    return "the comment listing has no pages";
   const out: ForgeComment[] = [];
   for (const page of Array.isArray(pages) ? pages : [pages]) {
     if (!Array.isArray(page)) return "the comment listing is not a list";
     for (const c of page) {
+      if (requireComplete && !isCompleteComment(c))
+        return "the comment listing has an incomplete comment";
       const comment = forgeComment(c);
       if (comment !== null) out.push(comment);
     }
@@ -167,6 +185,22 @@ export async function readLedgerSnapshot(
   const aborted = abortReason(signal);
   if (aborted !== null) return aborted;
   const comments = await listComments(pr, repo, signal);
+  return snapshotFromComments(comments, selfLogin);
+}
+
+/** A listing complete enough to defer the next round-boundary takeover check. */
+export async function readCompleteLedgerSnapshot(
+  pr: string,
+  selfLogin: string | null,
+): Promise<LedgerSnapshot | string> {
+  const comments = await listComments(pr, undefined, undefined, true);
+  return snapshotFromComments(comments, selfLogin);
+}
+
+function snapshotFromComments(
+  comments: ForgeComment[] | string,
+  selfLogin: string | null,
+): LedgerSnapshot | string {
   return typeof comments === "string"
     ? `the comments could not be read (${comments})`
     : snapshotFrom(comments, selfLogin);
