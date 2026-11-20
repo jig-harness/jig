@@ -18,6 +18,8 @@ export interface Candidate extends QueueItem {
   factory?: boolean;
   by: string;
   ancestor?: string | undefined;
+  /** Every epic above the item, outermost to nearest. */
+  ancestors?: string[] | undefined;
   /** The relations and parent the queue read carried for the issue; absent where it carried no parent. */
   queueRead?: Pick<QueueIssue, "relations" | "parent">;
   blockingFor?: string | undefined;
@@ -102,6 +104,7 @@ export function finishAdmission(
       : c.factory
         ? { factoryAncestor: c.ancestor }
         : { ancestorEpic: c.ancestor }),
+    ...(c.ancestors === undefined ? {} : { ancestors: c.ancestors }),
     ...(c.blockingFor === undefined
       ? {}
       : { blockingFor: c.blockingFor, batchAllowed: false }),

@@ -34,7 +34,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { batchItemsOf } from "../queue-batch.ts";
+import { ancestorsOf, batchItemsOf } from "../queue-batch.ts";
 import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -346,20 +346,23 @@ async function startOrReturn(
 }
 
 /** The optional served-item facts which a pickup preserves in its launch record. */
-function servedEvidence(action: Action): {
+export function servedEvidence(action: Action): {
   pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
   factoryAncestor?: string;
+  ancestors?: string[];
   blockingFor?: string;
 } {
   const { ancestorEpic, factoryAncestor, blockingFor, servedPerson, pooled } =
     action.evidence;
+  const ancestors = ancestorsOf(action.evidence.ancestors);
   return {
     ...(pooled === true ? { pooled: true } : {}),
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
     ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
     ...(typeof factoryAncestor === "string" ? { factoryAncestor } : {}),
+    ...(ancestors === undefined ? {} : { ancestors }),
     ...(typeof blockingFor === "string" ? { blockingFor } : {}),
   };
 }

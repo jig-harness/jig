@@ -378,6 +378,8 @@ export async function freshServedPickup(
 interface Pending {
   issue: PoolIssue;
   ancestor: string | undefined;
+  /** Every epic the walk passed through to reach the item, outermost to nearest. */
+  ancestors?: string[] | undefined;
   by: string | undefined;
   epicOrder: number | undefined;
   planHold: string | undefined;
@@ -514,6 +516,7 @@ async function enqueueChildren(
   ctx: WalkContext,
   issue: PoolIssue,
   ancestor: string | undefined,
+  ancestors: readonly string[],
   meta: Metadata,
   candidate: Candidate,
   found: Found,
@@ -600,6 +603,7 @@ async function enqueueChildren(
     found.pending.push({
       issue: child,
       ancestor: ancestor ?? issue.identifier,
+      ancestors: [...ancestors, issue.identifier],
       by: candidate.by,
       serial,
       epicOrder: selection.present
@@ -723,7 +727,15 @@ async function placeNode(
   const held = await heldReason(ctx, node, candidate, open, found);
   if (held !== null) return void unplace(held);
   if (meta.children.length > 0)
-    return enqueueChildren(ctx, issue, ancestor, meta, candidate, found);
+    return enqueueChildren(
+      ctx,
+      issue,
+      ancestor,
+      node.ancestors ?? [],
+      meta,
+      candidate,
+      found,
+    );
   await placeLeaf(ctx, candidate, found, unplace);
 }
 
@@ -785,7 +797,7 @@ async function placeLeaf(
     found,
     (parent, meta) =>
       withOccupancySetup(found, (setup) =>
-        enqueueChildren(ctx, parent, undefined, meta, candidate, setup),
+        enqueueChildren(ctx, parent, undefined, [], meta, candidate, setup),
       ),
   );
   if (admissionHold !== null) return void unplace(admissionHold);
@@ -909,6 +921,7 @@ function candidateOf(
     identity,
     by: meta.by?.name ?? node.by ?? "",
     ancestor: node.ancestor,
+    ...(node.ancestors === undefined ? {} : { ancestors: node.ancestors }),
     blockers: open.map((b) => b.key),
     ...(node.pull === undefined ? {} : { blockingFor: node.pull.root }),
     ...(node.serial === undefined ? {} : { serial: node.serial }),
@@ -941,7 +954,7 @@ async function heldReason(
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return parentHold;
-  const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
+  const pull = pullBlockers(node.issue, node.pull, node, open, {
     hitl: options.hitl,
     manualOps: options.manualOps,
     repoScope: options.repoScope,

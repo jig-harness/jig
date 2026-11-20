@@ -95,6 +95,8 @@ export async function attachAdmissions(
     return "the epic ancestry cannot be read";
   }
   candidate.admissions = [];
+  const chain = chainOf(steps, candidate.ancestors);
+  if (chain.length > 0) candidate.ancestors = chain;
   for (const step of steps) {
     if (
       servedPlan(
@@ -119,6 +121,19 @@ export async function attachAdmissions(
       candidate.admissions.push({ serial, child: step.child });
   }
   return null;
+}
+
+/**
+ * The item's own epics, outermost to nearest (`steps` runs nearest first),
+ * then each further epic the walk reached it through: a pulled blocker's
+ * walk carries the epics of the item it is pulled forward for.
+ */
+function chainOf(
+  steps: ReadonlyArray<{ parent: { identifier: string } }>,
+  walked: readonly string[] | undefined,
+): string[] {
+  const own = steps.map((s) => s.parent.identifier).reverse();
+  return [...own, ...(walked ?? []).filter((key) => !own.includes(key))];
 }
 
 /** An unread started child still proves work; a plan preserves its own human holds. */

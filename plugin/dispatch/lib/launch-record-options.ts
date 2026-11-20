@@ -64,6 +64,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     batchShape(value.batchItems) &&
     (value.stewardDecision === undefined ||
       Number.isSafeInteger(value.stewardDecision)) &&
+    optionalStrings(value.ancestors) &&
     optionalStrings(value.claimedItems) &&
     optionalStrings(value.releasedItems) &&
     optionalStrings(value.codexPassArgs) &&
@@ -132,7 +133,8 @@ function batchShape(value: unknown): boolean {
           isMapping(i) &&
           typeof i.key === "string" &&
           typeof i.person === "string" &&
-          optionalText(i.ancestor),
+          optionalText(i.ancestor) &&
+          optionalStrings(i.ancestors),
       ))
   );
 }

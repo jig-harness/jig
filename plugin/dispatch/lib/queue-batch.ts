@@ -27,6 +27,8 @@ export interface BatchItem {
   key: string;
   person: string;
   ancestor?: string;
+  /** Every epic above the member, outermost to nearest. */
+  ancestors?: string[];
 }
 
 /** Only launchable actions join: held, running and unreadable items never enter a batch. */
@@ -113,6 +115,7 @@ function groupedActions(
               ...(i.ancestorEpic === undefined
                 ? {}
                 : { ancestor: i.ancestorEpic }),
+              ...(i.ancestors === undefined ? {} : { ancestors: i.ancestors }),
             },
           ];
     });
@@ -121,6 +124,22 @@ function groupedActions(
     for (const action of members.slice(1)) removed.add(action);
   }
   return actions.filter((a) => !removed.has(a));
+}
+
+/** Whether a value is a list of item keys, such as an ancestor chain. */
+export function isKeyList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === "string");
+}
+
+/** An ancestor chain carried as JSON evidence; `undefined` when absent or not a list of keys. */
+export function ancestorsOf(value: unknown): string[] | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isKeyList(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Evidence is parsed as data before it reaches a launch or shell command. */
@@ -144,13 +163,15 @@ export function batchItemsOf(
       !isRecord(i) ||
       typeof i.key !== "string" ||
       typeof i.person !== "string" ||
-      (i.ancestor !== undefined && typeof i.ancestor !== "string")
+      (i.ancestor !== undefined && typeof i.ancestor !== "string") ||
+      (i.ancestors !== undefined && !isKeyList(i.ancestors))
     )
       return failed("invalid", "batch member is malformed");
     items.push({
       key: i.key,
       person: i.person,
       ...(typeof i.ancestor === "string" ? { ancestor: i.ancestor } : {}),
+      ...(isKeyList(i.ancestors) ? { ancestors: i.ancestors } : {}),
     });
   }
   return ok(items);
