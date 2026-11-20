@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
-import { markIdlePersonStop } from "./lib/state/person-stop.ts";
+import {
+  markIdlePersonStop,
+  restoreIdlePersonStop,
+} from "./lib/state/person-stop.ts";
 import { cancelledRecoveryRecord } from "./lib/state/park-frame.ts";
 import {
   prepareOperatorStop,
@@ -725,10 +728,12 @@ async function stop(
       return 3;
     }
     if (idle !== null && idle.personStop === undefined) {
-      // A concurrent recovery may have published and deleted the record meanwhile; settling then would leave the ledger without the person's stop.
       const marked = markIdlePersonStop(stateDir, pr, idle.started, reason);
       const now = ledgerStop.readDriverRecord(stateDir, pr);
-      if (
+      if (!marked && now === null) {
+        // A concurrent recovery published an ordinary stop and deleted the record first. The acquisition is restored with the person's stop so this recovery republishes the ledger with it, and a retry meets that record, never a settled drive without it.
+        restoreIdlePersonStop(stateDir, pr, idle, reason);
+      } else if (
         !marked &&
         (now === null ||
           now.started !== idle.started ||

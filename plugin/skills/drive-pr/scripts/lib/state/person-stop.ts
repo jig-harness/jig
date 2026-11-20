@@ -75,3 +75,27 @@ export function markIdlePersonStop(
     ).changes > 0
   );
 }
+
+/** Put back an acquisition a concurrent recovery deleted, released and carrying the stop, so the next recovery publishes it. */
+export function restoreIdlePersonStop(
+  stateDir: string,
+  pr: string,
+  idle: { worktree: string; started: string; pid: number; host: string },
+  reason: string,
+): void {
+  const drive = driveDb(stateDir);
+  drive.db.run(
+    `INSERT INTO driver_records (clone, pr, worktree, started, pid, host, released, person_stop)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+    ON CONFLICT (clone, pr) DO NOTHING`,
+    [
+      drive.clone,
+      pr,
+      idle.worktree,
+      idle.started,
+      idle.pid,
+      idle.host,
+      JSON.stringify({ at: currentIso(), reason }),
+    ],
+  );
+}

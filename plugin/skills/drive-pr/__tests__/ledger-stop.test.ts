@@ -20,6 +20,7 @@ import {
 } from "../scripts/lib/ledger-stop.ts";
 import {
   markIdlePersonStop,
+  restoreIdlePersonStop,
   recordPersonStop,
   personStopFor,
 } from "../scripts/lib/state/person-stop.ts";
@@ -652,6 +653,32 @@ describe("an idle stop marks only a retained record", () => {
     expect(personStopFor(s.leaf, "999", s.started)).toMatchObject({
       personStop: { reason: "maintenance" },
     });
+  });
+});
+
+describe("an idle stop whose record recovery deleted restores it with the stop", () => {
+  it("leaves a released record carrying the person's stop, and never replaces a newer one", () => {
+    const s = stage();
+    const idle = {
+      worktree: s.forge.repo,
+      started: s.started,
+      pid: 1,
+      host: "h",
+    };
+    expect(readDriverRecord(s.leaf, "999")).toBeNull();
+    restoreIdlePersonStop(s.leaf, "999", idle, "maintenance");
+    expect(readDriverRecord(s.leaf, "999")).toMatchObject({
+      started: s.started,
+      released: true,
+      personStop: { reason: "maintenance" },
+    });
+    restoreIdlePersonStop(
+      s.leaf,
+      "999",
+      { ...idle, started: "2001-01-01T00:00:00.000Z" },
+      "other",
+    );
+    expect(readDriverRecord(s.leaf, "999")?.started).toBe(s.started);
   });
 });
 
