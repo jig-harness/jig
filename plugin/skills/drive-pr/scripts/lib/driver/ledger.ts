@@ -703,32 +703,42 @@ async function afterStopWrite(
 ): Promise<boolean> {
   const next = afterHandoff(handoff);
   if (next === "unwritten") return false;
+  if (
+    next === "label" &&
+    (await stopLabelLeavesPending(pr, code, started, pending))
+  )
+    return false;
+  await dropRecord();
+  return true;
+}
+
+/** Whether a stop-label write leaves a pending converged exit for recovery. */
+async function stopLabelLeavesPending(
+  pr: string,
+  code: number | null,
+  started: string,
+  pending: boolean,
+): Promise<boolean> {
   const stoppedByPerson =
     personStopFor(await resolveStateDir(), pr, started).personStop !==
     undefined;
-  if (
-    next === "label" &&
-    (!pending || code !== DRIVE_EXIT.CONVERGED || stoppedByPerson)
-  ) {
-    let unreadable = false;
-    const label = await labelStop(pr, code, started, async () => {
-      const owner = await ledgerOwnership(pr);
-      unreadable ||= owner === "unreadable";
-      return owner === "ours";
-    });
-    // A missing projection can mean either a confirmed successor owns the
-    // ledger, or that the label operation itself was unavailable. Keep the
-    // pending exit for the latter so recovery can retry the publication.
-    if (
-      pending &&
-      (unreadable ||
-        label?.write.outcome === "refused" ||
-        (label === null && (await ledgerOwnership(pr)) !== "lost"))
-    )
-      return false;
-  }
-  await dropRecord();
-  return true;
+  if (pending && code === DRIVE_EXIT.CONVERGED && !stoppedByPerson)
+    return false;
+  let unreadable = false;
+  const label = await labelStop(pr, code, started, async () => {
+    const owner = await ledgerOwnership(pr);
+    unreadable ||= owner === "unreadable";
+    return owner === "ours";
+  });
+  // A missing projection can mean either a confirmed successor owns the
+  // ledger, or that the label operation itself was unavailable. Keep the
+  // pending exit for the latter so recovery can retry the publication.
+  return (
+    pending &&
+    (unreadable ||
+      label?.write.outcome === "refused" ||
+      (label === null && (await ledgerOwnership(pr)) !== "lost"))
+  );
 }
 
 async function labelStop(
