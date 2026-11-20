@@ -35,6 +35,36 @@ cleanup, live verification) is the consumer's own follow-up step.
 > safely, and the repository values it reads. This file is the agent operator
 > contract.
 
+### Read first: a pass of a running drive
+
+**exact** — Settle your role here, before anything else in this file.
+
+When `$DRIVE_PR_TARGET` is set, you are a **pass**: one round of the drive
+already running on that pull request, started by its driver, whose process
+id `$DRIVE_PR_SESSION` holds. The driver's prompt says so after the skill's
+invocation. The invocation's words are the ones an arm uses too, but you are
+not arming, watching or handing off a drive:
+
+- A drive, lock or lease you find on this pull request that
+  `drives.ts` (or a lock refusal) classifies `self` is your own driver,
+  not a competing drive. That classification is authoritative: it checks the
+  host, the process namespace and the driver's start time as well as the pid,
+  so never judge by a matching pid alone. Never stand
+  down for it, arm another or stop it. Any other live drive on this pull
+  request is a competitor: stop, as § 6's exits `11` and `13` say.
+- Finish the round yourself, in this turn: work the findings (§ One round),
+  commit, merge the base when § 5 says so, push through `finish-round.ts`
+  (§ 6), reply to or park each finding, and end with the round report
+  (§ 8). Unpushed commits in this tree are yours to push now, not a later
+  pass's.
+- A round with work to do that ends without a commit, a push, a reply or a
+  park says in its round report which of these it could not do and why: the step, its exit
+  code and the state it printed. The driver's stall stop prints what the
+  round recorded.
+
+Then read § Driver pass before § 0. Without `$DRIVE_PR_TARGET`, § Entry mode
+decides what this invocation is.
+
 ### Paths and working directory
 
 `${CLAUDE_SKILL_DIR}` in the commands below stands for the absolute path of the
@@ -410,6 +440,33 @@ cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
 that cancels itself blocking the merge.
 
+**A job stopped at its time limit is a failure, not a cancellation.** The
+runner stops a job that runs past its `timeout-minutes` and the forge
+reports it `cancelled`, with an annotation on its check run saying it
+"exceeded the maximum execution time". Before recovering a cancelled job
+whose check run carries annotations, the drive reads them (one request per
+page, once per driver process) and classes such a job as a
+[timed-out job](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): its run is never re-run, counted
+against the head's re-run or parked `cancelled-ci`, since a re-run stops at
+the same limit, and the other cancelled jobs of that run (a matrix's
+siblings) go with it. On the final CI the drive starts a CI-repair pass for
+it as for a failing check, from the same budget and stopping with
+`CI_REPAIR_SPENT` once that is spent, and names the job, its limit and its
+run time in its log and in the pass's detail: "job `test` ran 30m 4s and
+stopped at its 30-minute limit (timeout-minutes)". Other cancellations on
+the head still take the recovery above on the same poll; once the drive is
+at the final CI, a re-run they request does not hold up the repair, and a
+park or stop they end in ends the drive first. Before a round's pass the
+drive logs a timed-out job and goes on, but still waits for a re-run of
+another cancellation that is going, and repairs afterwards. A timed-out
+check the repository lists in `ci.advisory_checks` takes the advisory
+decision first, as any failing check does. A timed-out job beside a failure
+in a run that was not cancelled is named to the repair too. A run of the
+timed-out job's workflow still going on the head (a queued re-run of it) is
+waited for, as any replacement is.
+A cancellation the annotations do not attribute to a time limit (none
+carries that message, or they could not be read) is a cancelled check.
+
 **The "still waiting for a witness" poll is bounded**, at
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` × 10s — 30 minutes by default, `0` to wait
 forever. This is elapsed time on one head, independent of poll count; a new
@@ -482,6 +539,14 @@ names the skill in its prompt, since Codex runs a skill the prompt names:
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- codex exec "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 123"
 ```
+
+An arm writes each prompt with the pass role after the invocation
+(`passRole` in `scripts/lib/pass-command.ts`): one round of the drive
+running on this pull request, under the driver whose id `$DRIVE_PR_SESSION`
+holds, and what finishing the round takes (§ Read first). The invocation
+alone is also an arm's, and an agent that settles its role from its first
+words would act as one. A command typed by hand without the role still
+drives, since `$DRIVE_PR_TARGET` decides the mode.
 
 A pass pushes, calls the forge and has nobody to ask, so on a host that set
 `drive.codex_bypass: true` in its user file an arm writes
@@ -885,8 +950,8 @@ outlives the session that spawned it, so its console is not where you look:
   cancelled-run recovery below, a failure in a first attempt a label write
   started (created within 30 seconds after one) is re-run once, claimed in
   the same SQLite table as a label-caused cancellation, and green lets the
-  label stand. A failure no label write started, a commit status failing,
-  a re-run that fails again or is not accepted, or CI not settled within
+  label stand. A failure no label write started, a job the runner stopped
+  at its time limit, a commit status failing, a re-run that fails again or is not accepted, or CI not settled within
   `DRIVE_PR_CONVERGED_CI_MINUTES` (30 by default, `0` writes the label and
   watches nothing) parks `converged-ci` with a framed decision naming the
   runs, and the stop is settled again as [`HITL_PARKED`](../../protocol/drive-exits.md),
@@ -1256,7 +1321,7 @@ could forge or forget.
    user file or environment, `drive.pass_args` (default none) in that tree, and
    prints one JSON object: `command`, the driver's start command in the
    portable one-line form,
-   `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`,
+   `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR> <pass role>"`,
    with the `drive.pass_args` words before `-p` when it is set (a Codex
    session's command carries `drive.codex_pass_args` before its prompt);
    `model`; `permissionMode`; `handles`; and `status`, which says what to do. A tab is a
@@ -1620,7 +1685,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them, then `; timed out: ` and each job the runner stopped at its time limit, with its limit and run time; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer [`CONVERGED`](../../protocol/drive-exits.md) on a `ci-repair` round, and
@@ -1661,6 +1726,11 @@ Then:
   run the round's validation plan over the cumulative tree, and **§ 6** to
   commit and push. §§ 2–4 have nothing to enumerate — the review converged
   before you were dispatched.
+
+  When the detail names a timed-out job, find why it ran past its limit (a
+  hang, a step that waits on something that never comes, work that grew
+  slower) and fix that; raise its `timeout-minutes` only when the work
+  legitimately needs longer. Re-running it stops at the same limit.
 
   When the log shows the failure is not in the code (a lost runner, a network
   error), re-run the failed workflow runs instead of committing (a commit

@@ -1120,7 +1120,7 @@ automation pull request (a bot's the rule does not name, or one carrying
 or re-armed of the dispatcher's own accord only while it needs work: a
 failed check (not a cancelled one or one waiting for approval), a conflict
 with its base, or an unresolved review thread. A healthy one is left for a
-person to merge; `jig:drive` or `jig:rearm` still drives one on request. Each
+person to merge. A person can still ask the dispatcher to drive it. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever
@@ -1658,8 +1658,8 @@ whose configuration names the tracker.
 | Field | What it says |
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, whether its process is alive, dead or unknown, why, and when its launch began (`since`); the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
-| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `inspect the quota spending` or `settle the launch that holds the drive`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
+| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `held` (a person's pickup hold on the dispatching host, shown even when the item already has a holder or an open need, which stay in `holder` and `waitsOn`), `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `inspect the quota spending`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
 | `overlap`, `footprint` | for a pick-up still assigned, when the newest tick found it so: why it waits on [overlap](https://github.com/jig-harness/jig/blob/main/design/overlap-aware-admission.md#the-reason-a-person-sees) with the work in flight (the relation, `waits on overlap` or `waits on the overlap bound`; each pull request or pickup it waits on with its state and link; how many; and the sentence its `waitsOn` repeats), and the note on a footprint unknown or derived from area labels alone (`footprint unknown: …`). Reported only: the dispatcher does not yet order its starts by them |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
@@ -1757,8 +1757,10 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | --- | --- | --- | --- |
 | `assign` | `pickup` | the item assigned to the factory identity (`dispatch.identity`), moved into the first dispatch state (`dispatch.states`) when it is in none | the dispatcher's next tick, which starts the pick-up when the person who made the assignment can write to the repository |
 | `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
-| `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
+| `rearm` | `drive` | a rearm request naming the stopped drive, plus its dispatch label | the dispatcher, which re-arms it on an admitted account in the original worktree |
+| `withdraw-rearm` | `drive` | withdrawal of the pending request and removal of its dispatch label | the dispatcher, which drops the pending request |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
+| `hold`, `release` | `pickup` | an item hold on the dispatching host, added or withdrawn | the dispatcher, which keeps a held item out of pickups, batches and epic-child starts |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
 | the [mailbox directives](protocol/mailbox.md#the-inbox), with the target argument for `resume` | `drive` | a directive in the mailbox of the working tree that holds the drive on this machine | the driver, at the checkpoints the [mailbox chapter](protocol/mailbox.md) names |
@@ -1772,7 +1774,8 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   already carries the label; a second `hold`; a `release` with no `hold`;
 - `rearm` without a stopped ledger or an existing worktree on this machine,
   while a driver or launch still holds it, after a person's recorded stop,
-  or while a re-arm request is already pending;
+  or while a re-arm request is already pending. `withdraw-rearm` requires
+  a pending request label;
 - `answer` whose key is not a parked question in the pull request's drive
   ledger, or when not every place an answer could be (the pull request's
   comments, a parked thread's replies) was read; a structured answer
@@ -1854,9 +1857,10 @@ the rest.
 
 **It says who writes, and where.** Before it writes it prints the
 repository in full, the login it writes as (the forge login the `gh` client
-here is signed in as, or for `assign` the user the tracker's credential acts
-as), the record, where it goes, the reader that acts on it and how to take
-it back. `--as <login>` refuses when this machine writes as anyone else.
+here is signed in as, or the user the tracker's credential acts as for
+`assign` and pickup holds and releases), the record, where it goes, the
+reader that acts on it and how to take it back. `--as <login>` refuses when
+this machine writes as anyone else.
 When that login cannot be read, `send` refuses, writing nothing, and says
 why: a spent allowance and the time it resets, a refused credential, no
 answer, or an answer that does not read. An `answer` is a comment
@@ -1868,15 +1872,24 @@ each reader keeps its own rule for whose record counts, an assignment made
 by someone who can write to the repository, an answer from an owner, member
 or collaborator.
 
+**Pickup holds.** A [pickup hold](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) stops new launches only; work already running keeps its place. Run `jig send 'pickup@owner/name#KEY' hold` on the
+dispatching host. The hold works with GitHub Issues, Linear and Jira without
+a tracker label and leaves the item's assignee and state intact. The line
+and `jig ask` show who held the item and when. Use `release` at the same
+address to withdraw the host's hold. Tracker labels can still hold the item
+independently.
+
 **What it refuses outright.** A verb whose record the repository has
-switched off is refused with the setting named: `drive`, `rearm`, `hold` and
-`release` need `dispatch.labels.enabled`, read as the dispatcher reads it,
+switched off is refused with the setting named. The dispatch label verbs
+(`drive`, `rearm` and the pull request forms of `hold` and `release`)
+need `dispatch.labels.enabled`, read as the dispatcher reads it,
 from the configuration on the repository's default branch, and the label
 carries the repository's prefix. A machine whose
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) says
 `send: false` refuses every send. A session the line started (a dispatched
 launch, or a drive's pass) runs with `JIG_LAUNCH` set, and there `send`
-refuses `assign`, `drive`, `rearm`, `hold`, `release` and `answer`, which are a
+refuses `assign`, `drive`, `rearm`, `withdraw-rearm`, `hold`, `release` and
+`answer`, which are a
 person's commands; the mailbox verbs are not refused by it. That stops a
 skill's mistake; a session holding its person's credentials could still
 clear the variable or call the forge itself, as it could before.
@@ -1893,9 +1906,10 @@ generation that holds the drive when it is sent. A `resume` needs only the
 tree, so it also clears a directive a driver left behind.
 
 **It wakes the tick that reads its record.** After `assign`, `drive`, `rearm`,
-`hold`, `release` or `answer`, when this machine's
+`withdraw-rearm`, `hold`, `release` or `answer`, when this machine's
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
-repository with the stage the tick acts under (`pickup` for `assign`,
+repository with the stage the tick acts under (`pickup` for `assign` and
+pickup holds and releases,
 `followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
 `send` wakes that repository's tick: a [waiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in the background runs `jig
 dispatch --apply --repo <path>` the way the installed timer does, when idle
@@ -1919,9 +1933,16 @@ when the send woke it. The forge can take
 a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
-**What can be taken back.** `release` undoes a `hold`, and `hold` a
-`release`; a `drive` or `rearm` label can be removed by hand until the tick has armed
-the drive; `resume` withdraws a directive; an assignment can be undone on
+**What can be taken back.** Use `jig send 'drive@owner/repository#123' withdraw-rearm`
+to withdraw a pending rearm. A request lapses when the drive leaves the stop
+it named or when the pull request closes. The tick removes the label and records
+what happened. A missing or reused worktree, or a request still waiting after
+30 minutes, raises a need. Re-send an older request with `jig send` to bind it
+to a stop after the tick removes its unbound label.
+
+`release` undoes a `hold`, and `hold` a `release`. A `drive` label can be
+removed by hand until the tick has armed the drive. `resume` withdraws a
+directive. An assignment can be undone on
 the tracker until the tick starts the pick-up. An `answer` the re-arm has
 read cannot be taken back, which is why it is checked, shown and sent in
 your own words; until then, deleting the comment withdraws it.
@@ -2475,8 +2496,9 @@ them together.
   through `exec_command` and poll that session with `write_stdin`
   ([drive-pr § Driver pass](skills/drive-pr/SKILL.md#driver-pass-you-are-headless-and-one-shot)).
 - **The drive has a pass command for each.** Claude Code's
-  (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
-  (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR>"`, with
+  (`claude -p "/jig:drive-pr <PR> <pass role>"`) is the default; Codex's
+  (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR> <pass role>"`,
+  its prompt stating that it is one round of the running drive, with
   `--dangerously-bypass-approvals-and-sandbox` on a host that set
   [`drive.codex_bypass`](CONFIGURATION.md#a-hosts-opt-in-to-bypass)) is the one
   a drive armed from a Codex session runs, and the one the dispatcher runs on a

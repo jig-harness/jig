@@ -138,6 +138,7 @@ import type {
 } from "./types.ts";
 import { currentIso, isoFromMs } from "../../shared/time.ts";
 import { observeTestLockWaits } from "./test-lock-waits.ts";
+import { stateRoot } from "../receipts.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -402,6 +403,7 @@ export async function observeRepo(
                   : [],
                 serveDefaults: context.options.machine?.serveDefaults,
                 nowMs,
+                root: stateRoot(),
                 headroom: pickupHeadroom(context, records),
                 records,
                 preparedTracker: opened.tracker,

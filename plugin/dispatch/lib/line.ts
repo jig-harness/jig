@@ -32,6 +32,10 @@ import {
 } from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import {
+  type QueuedFields,
+  unplacedQueueFields,
+} from "./person-pickup-holds.ts";
 import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
@@ -548,8 +552,7 @@ function needsOf(
 
 function queued(
   view: RepoView,
-  fields: Pick<LineQueued, "source" | "group" | "target" | "why"> &
-    Partial<Pick<LineQueued, "stale" | "assignedBy" | "hold" | "launch">>,
+  fields: QueuedFields,
   evidence: Evidence = {},
 ): LineQueued {
   const pr = prNumber(fields.target);
@@ -714,7 +717,7 @@ function queueOf(view: RepoView): LineQueued[] {
     .map((u) => entry("held", "held", u.target, u.reason));
   const refused = unplaced
     .filter((u) => u.record === "tracker")
-    .map((u) => entry("assigned", "never", u.target, u.reason));
+    .map((u) => queued(view, unplacedQueueFields(u)));
   return [planned, replayed, serial, undecided, labelled, refused].flat();
 }
 
