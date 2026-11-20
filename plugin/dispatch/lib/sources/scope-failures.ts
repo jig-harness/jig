@@ -3,11 +3,28 @@ import type { Tracker } from "../../../skills/do-item/scripts/lib/tracker/port.t
 import type { RepoReport, Unplaced } from "../types.ts";
 import type { ServedView } from "./served-reads.ts";
 import { isoFromMs } from "../../../shared/time.ts";
+import { failureOf } from "../../../shared/outbound/failure.ts";
 
+/**
+ * The failure a row carries when the call that cut it found the process has
+ * no credential for the tracker at all: what the tick takes out of the
+ * report and names once (`no-credential.ts`). Nothing for any other cause.
+ */
+export function noCredentialFailure(cause: unknown): Pick<Unplaced, "failure"> {
+  if (cause === undefined || cause === null || typeof cause === "string")
+    return {};
+  const failure = failureOf(cause);
+  return failure.noCredential === true
+    ? { failure: { class: failure.code, noCredential: true } }
+    : {};
+}
+
+/** The row a scope that did not answer leaves, with the reading it shows; `cause`, what failed it. */
 export function scopeFailureRow(
   tracker: Pick<Tracker, "adapter" | "team">,
   view: Pick<ServedView, "scope" | "readAt">,
   reason: string,
+  cause?: unknown,
 ): Unplaced {
   const age =
     view.readAt > 0
@@ -18,6 +35,7 @@ export function scopeFailureRow(
     record: "tracker",
     reason: `${reason}; ${age}`,
     ...(view.scope === undefined ? {} : { scopeFailure: view.scope }),
+    ...noCredentialFailure(cause),
   };
 }
 

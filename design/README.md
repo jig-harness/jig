@@ -85,6 +85,7 @@ with the review.
 | [The epic planner, every epic planned and its plan kept current](epic-planner.md) | 56 |
 | [A follow-up skill for every repository](followup.md) | Backlog: #305 |
 | [Overlap-aware admission, each item's footprint weighed against all work in flight](overlap-aware-admission.md) | 57 |
+| [Provider accounts and an agent-harness interface, a host's own model providers and a choice of agent program](provider-accounts.md) | 59 |
 
 ## Starting a design
 
