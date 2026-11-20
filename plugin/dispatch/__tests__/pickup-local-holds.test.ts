@@ -92,8 +92,8 @@ function reading(free: number): LoadReading {
   };
 }
 
-/** The apply state of one account, under an enforced load with `free` bytes available. */
-function applyState(root: string, free: number): ApplyState {
+/** The apply state of one account, under a load (enforced unless `enforce` says not) with `free` bytes available. */
+function applyState(root: string, free: number, enforce = true): ApplyState {
   const accounts = [account(root)];
   return {
     machine: {
@@ -111,7 +111,7 @@ function applyState(root: string, free: number): ApplyState {
     codexOptIn: { on: true },
     root,
     load: loadState(
-      { ...LOAD_DEFAULTS, enforce: true },
+      { ...LOAD_DEFAULTS, enforce },
       reading(free),
       { held: 0, capacity: 4 },
       new Map(),
@@ -173,6 +173,17 @@ describe("a pickup's fresh tracker reads", () => {
       "ENG-3",
     ]);
   });
+
+  it("are sent without enforcement, which leaves the load's report to the admission that follows", async () => {
+    const fake = workspace();
+    const state = applyState(scratch(), 1 * GIB, false);
+    const launches = await apply(state, fake);
+    expect(count(fake, "TrackerAssignmentHistory")).toBe(3);
+    // The identity check refuses each launch before the load judges it, and nothing was recorded earlier.
+    for (const launch of launches)
+      expect(launch).toMatchObject({ outcome: "refused" });
+    expect(state.load?.holds).toEqual([]);
+  }, 60_000);
 
   it("are not sent for a launch no account has a slot for", async () => {
     const fake = workspace();
