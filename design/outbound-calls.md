@@ -257,7 +257,12 @@ window is inferred from its unit and operation and marked as such.
 - The tick report has one line per system: the balance, what the tick
   spent, and its costliest operations.
 - `jig budget` prints the same over the last hours, per operation and per
-  caller, with `--json`.
+  caller, with `--json`. A call with no credential to send with (no Linear
+  key, and a `linear` client holding none) spends nothing and is kept under
+  no credential, with no requests; `jig budget` lists such calls apart,
+  under "no Linear key configured" with their callers, and labels a
+  logged-in client's identity as that client's own login, so neither reads
+  as a key that keeps failing.
 - A quota the last hour's spending would empty before it refills raises one
   [need](../GLOSSARY.md), a class of its own in the needs registry, naming
   the operations that spend it.
@@ -299,6 +304,14 @@ was sent: the caller reads the item again before it writes again.
   does not parse carries none and fails the turn.
 - A pass that meets `rate-limited` before it changed anything records that
   it waits until the reset, and the dispatcher starts it again then.
+- A process with no credential for a system at all (no Linear key, and a
+  `linear` client that is not logged in or not installed) learns it at its
+  first call, and every later call through that client fails
+  `unauthorized` before it leaves (`credential-latch`). A tick names the
+  missing credential once on its receipt and exits with the class's
+  status, `9`; each repository that system tracks keeps its tracker part
+  of the line from the last reading that had a credential, and no account
+  is probed or held for it.
 
 ### Bounding what a call can cost
 

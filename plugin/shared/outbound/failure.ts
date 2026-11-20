@@ -93,6 +93,21 @@ export const POLICIES: Readonly<Record<FailureClass, FailurePolicy>> = {
   invalid: { retried: "never", clearsByWaiting: false, told: "after-count" },
 };
 
+/**
+ * The exit code of a command a failed call stopped, by its failure class:
+ * the tracker's scripts and a dispatch tick that has no tracker credential
+ * exit with it.
+ */
+export const EXIT_OF_CLASS: Readonly<Record<FailureClass, number>> = {
+  "rate-limited": 5,
+  unreachable: 6,
+  "too-costly": 7,
+  "server-fault": 8,
+  unauthorized: 9,
+  "not-found": 10,
+  invalid: 11,
+};
+
 /** Whether `code` names a failure class. */
 function isFailureClass(code: unknown): code is FailureClass {
   return (

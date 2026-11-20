@@ -22,6 +22,13 @@
  * once more inside its deadline (`shared/outbound/retry.ts`); a mutation is
  * never sent twice. In a run that holds the systems that do not answer
  * (`shared/outbound/hold.ts`), Linear is held after such a failure.
+ *
+ * With no key, a client that answers it has no API key configured, is not
+ * logged in or is not installed leaves the process with no Linear
+ * credential: that answer, and every later call through the client in the
+ * same process, fails as `unauthorized` with "no Linear key configured" and
+ * what gives one (`shared/outbound/credential-latch.ts`), and the later
+ * calls are not sent. None of them spends under the client's identity.
  */
 
 import { randomUUID } from "node:crypto";
@@ -39,7 +46,19 @@ import {
 } from "../../../../../shared/outbound/failure.ts";
 import { guarded } from "../../../../../shared/outbound/hold.ts";
 import { retryRead } from "../../../../../shared/outbound/retry.ts";
-import { operationName } from "../../../../../shared/outbound/ledger.ts";
+import {
+  operationName,
+  recordCall,
+} from "../../../../../shared/outbound/ledger.ts";
+import {
+  clientCredential,
+  type MissingCredential,
+  missingCredentialMessage,
+  missingCredentialOf,
+  NO_CREDENTIAL,
+  noCredentialReason,
+  noteMissingCredential,
+} from "../../../../../shared/outbound/credential-latch.ts";
 import {
   recordAttempt,
   type Attempt,
@@ -503,16 +522,63 @@ function runCli(
   return runClient(run, argv, { timeoutMs: LINEAR_TIMEOUT_MS, signal });
 }
 
+/** What gives a process a Linear credential. */
+const LINEAR_REMEDY =
+  "set LINEAR_API_KEY (or LINEAR_API_TOKEN), or log in to the `linear` command-line client";
+
+/** The client's words that say it holds no credential at all, as against one it was refused. */
+const NO_CLIENT_CREDENTIAL = /no api key configured|not logged in/i;
+
+/** What a client run says the process lacks: the client is not installed, or holds no credential; `null` when it says neither. */
+function keylessRun(r: RunResult): MissingCredential | null {
+  const missing = (answer: string): MissingCredential => ({
+    system: LINEAR,
+    reason: noCredentialReason(LINEAR),
+    remedy: LINEAR_REMEDY,
+    answer,
+  });
+  if (r.spawnFailed)
+    return r.stderr.includes("ENOENT")
+      ? missing("the client is not installed")
+      : null;
+  const said = (r.stderr || r.stdout).replace(/\s+/g, " ").trim().slice(0, 200);
+  return r.code !== 0 && NO_CLIENT_CREDENTIAL.test(said) ? missing(said) : null;
+}
+
+/** The failure of a call the process has no Linear credential for. */
+const keylessError = (missing: MissingCredential): LinearApiError =>
+  new LinearApiError(missingCredentialMessage(missing), null, "unauthorized");
+
+/**
+ * A call refused before it left: the process has no Linear credential. The
+ * ledger keeps it under no credential, with no request.
+ */
+function refusedKeyless(
+  missing: MissingCredential,
+  query: string,
+): Promise<never> {
+  recordCall({
+    system: LINEAR,
+    credential: NO_CREDENTIAL,
+    operation: operationName(query),
+    requests: 0,
+    cost: null,
+    unit: "points",
+    estimated: false,
+    durationMs: 0,
+    failure: "unauthorized",
+  });
+  return Promise.reject(keylessError(missing));
+}
+
 /** Why a finished client run cannot be read as a response, if it cannot. */
 function cliFailure(r: RunResult): LinearApiError | null {
   if (r.spawnFailed)
-    return r.stderr.includes("ENOENT")
-      ? new LinearApiError(
-          "no Linear credential: set LINEAR_API_KEY (or LINEAR_API_TOKEN), or install and log in to the `linear` command-line client",
-          null,
-          "unauthorized",
-        )
-      : new LinearApiError(`linear api failed: ${r.stderr}`, null, "invalid");
+    return new LinearApiError(
+      `linear api failed: ${r.stderr}`,
+      null,
+      "invalid",
+    );
   if (r.timedOut)
     return new LinearApiError("linear api timed out", null, "unreachable", {
       sent: true,
@@ -556,6 +622,14 @@ async function cliOnce(
     signal,
   );
   if (cancelled(signal)) return abortedError(signal, true);
+  const keyless = keylessRun(r);
+  if (keyless !== null) {
+    // The client reached nothing: no credential spent, and none is named.
+    noteMissingCredential(clientCredential(LINEAR, bin), keyless);
+    observation.credential = NO_CREDENTIAL;
+    observation.requests = 0;
+    return keylessError(keyless);
+  }
   return cliFailure(r) ?? cliAnswer(r, governed);
 }
 
@@ -606,22 +680,25 @@ const CLI_DISPATCH_SESSION = randomUUID();
  * `governor` only a refusal is recorded, for `FALLBACK_LIMIT_MS`. The record
  * is the executable's (`bin`), not an authenticated profile's: every profile
  * the client holds shares it, and it is not shared with a token's HTTP record.
+ * Once the client said it holds no credential, the process sends it nothing
+ * more (`refusedKeyless`).
  */
 export function cliTransport(
   bin = "linear",
   governor?: BudgetGovernor,
 ): LinearTransport {
+  const identity = clientCredential(LINEAR, bin);
   const governed: Governed | null =
-    governor === undefined
-      ? null
-      : { governor, key: credentialKey("linear", `cli:${bin}`) };
+    governor === undefined ? null : { governor, key: identity };
   return dispatchTagged(
-    (query, variables, signal) =>
-      call(
+    (query, variables, signal) => {
+      const keyless = missingCredentialOf(identity);
+      if (keyless !== undefined) return refusedKeyless(keyless, query);
+      return call(
         (bound) => {
           const observation: Attempt = {
             system: LINEAR,
-            credential: credentialKey(LINEAR, `cli:${bin}`),
+            credential: identity,
             operation: operationName(query),
             requests: 0,
             cost: null,
@@ -636,7 +713,8 @@ export function cliTransport(
         },
         query,
         signal,
-      ),
+      );
+    },
     credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
     false,
   );

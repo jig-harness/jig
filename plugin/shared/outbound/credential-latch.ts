@@ -1,0 +1,112 @@
+/**
+ * A process that has no credential for an outside system learns it once,
+ * at its first call, and asks the system nothing more.
+ *
+ * A transport whose first answer says no credential is configured (no key
+ * in the environment, and a command-line client that is not logged in or
+ * not installed) notes it here under the identity it would have sent with
+ * (`noteMissingCredential`); from then, every call through that identity is
+ * refused before it leaves, as an `unauthorized` failure that names what was
+ * looked for. A dispatch tick forgets what an earlier run noted as it starts
+ * (`forgetMissingCredentials`) and lists what this run noted on its receipt
+ * (`missingCredentials`).
+ *
+ * The cost ledger keeps a call that had no credential under `NO_CREDENTIAL`
+ * with no requests, never under a credential's identity: no credential spent
+ * anything, and every keyless process on a machine would otherwise share
+ * one identity that reads like a failing key. `credentialLabel` names the
+ * identities that are not a hashed key: that one, and a logged-in client's
+ * own login.
+ */
+import { credentialKey } from "./budget.ts";
+
+/** The ledger's credential of a call that had no credential to send with. No hashed credential takes this form. */
+export const NO_CREDENTIAL = "(no credential)";
+
+/** What a process found it lacks for one system. */
+export interface MissingCredential {
+  system: string;
+  /** What is missing, in a few words: `no Linear key configured`. */
+  reason: string;
+  /** What gives the process one: the variables looked for and the client's login. */
+  remedy: string;
+  /** What the client answered, when a client was asked. */
+  answer?: string;
+}
+
+/** The few words that name a system's missing credential. */
+const NO_CREDENTIAL_REASONS: Readonly<Record<string, string>> = {
+  linear: "no Linear key configured",
+};
+
+/** The reason a call to `system` had no credential: `no Linear key configured`. */
+export function noCredentialReason(system: string): string {
+  return NO_CREDENTIAL_REASONS[system] ?? `no ${system} credential configured`;
+}
+
+/** The command-line clients whose own login a transport sends with, by system: their identity is `cli:<program>`. */
+const CLIENTS: ReadonlyArray<{ system: string; program: string }> = [
+  { system: "linear", program: "linear" },
+];
+
+/** The identity a client's own login is recorded under. */
+export function clientCredential(system: string, program: string): string {
+  return credentialKey(system, `cli:${program}`);
+}
+
+/**
+ * How a report names a ledger credential that is not a hashed key: a call
+ * with none, or a client's own login; `null` for a key's identity.
+ */
+export function credentialLabel(
+  system: string,
+  credential: string,
+): string | null {
+  if (credential === NO_CREDENTIAL) return noCredentialReason(system);
+  const client = CLIENTS.find(
+    (c) =>
+      c.system === system && clientCredential(system, c.program) === credential,
+  );
+  return client === undefined
+    ? null
+    : `the \`${client.program}\` client's own login`;
+}
+
+/** The message a refused call fails with: the reason, the remedy and what the client answered. */
+export function missingCredentialMessage(missing: MissingCredential): string {
+  const answered =
+    missing.answer === undefined
+      ? ""
+      : ` (the client answered: ${missing.answer})`;
+  return `${missing.reason}: ${missing.remedy}${answered}`;
+}
+
+const noted = new Map<string, MissingCredential>();
+
+/** Note that the process has no credential behind `identity`: later calls through it are refused before they leave. */
+export function noteMissingCredential(
+  identity: string,
+  missing: MissingCredential,
+): void {
+  if (!noted.has(identity)) noted.set(identity, missing);
+}
+
+/** What the process noted it lacks behind `identity`, if anything. */
+export function missingCredentialOf(
+  identity: string,
+): MissingCredential | undefined {
+  return noted.get(identity);
+}
+
+/** What the process noted it lacks, one entry per system, in the order noted. */
+export function missingCredentials(): MissingCredential[] {
+  const bySystem = new Map<string, MissingCredential>();
+  for (const missing of noted.values())
+    if (!bySystem.has(missing.system)) bySystem.set(missing.system, missing);
+  return [...bySystem.values()];
+}
+
+/** Forget what was noted: a new run asks again. */
+export function forgetMissingCredentials(): void {
+  noted.clear();
+}

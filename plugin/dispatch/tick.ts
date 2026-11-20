@@ -93,7 +93,6 @@ import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
 import { accountsReport } from "./lib/account-report.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
-import { timeLeftMs } from "./lib/actions/launch.ts";
 import { applyInTurns } from "./lib/apply-order.ts";
 import { tickWorld, worldOf } from "./lib/world-view.ts";
 import {
@@ -128,12 +127,7 @@ import {
 } from "./lib/tick-locks.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { rerunsHeld } from "./lib/rerun-gate.ts";
-import {
-  fillBudgets,
-  lowBudget,
-  OPTIONAL_READS,
-  tickReads,
-} from "./lib/tick-reads.ts";
+import { fillBudgets, tickReads } from "./lib/tick-reads.ts";
 import {
   actTurn,
   defectReport,
@@ -143,7 +137,10 @@ import {
   observeOpenedTurn,
   startTurn,
 } from "./lib/tick-repo.ts";
-import { routeRecurrences } from "./lib/reflection-route.ts";
+import { noteBudget, routeReflection } from "./lib/tick-close.ts";
+import { noCredentialExit, settleNoCredential } from "./lib/no-credential.ts";
+import { takeTickStarter } from "./lib/tick-starter.ts";
+import { forgetMissingCredentials } from "../shared/outbound/credential-latch.ts";
 import {
   finalizeTickFailure,
   settleFailures,
@@ -230,10 +227,16 @@ function upgradeField(): Pick<TickReceipt, "upgrade"> {
   return upgrade === undefined ? {} : { upgrade };
 }
 
-/** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
+/** What started the tick, as the receipt's field, taken out of the environment like the upgrade. */
+function starterField(): Pick<TickReceipt, "startedBy"> {
+  const startedBy = takeTickStarter();
+  return startedBy === undefined ? {} : { startedBy };
+}
+
 /** Where the systems a tick held outlive it, for the next tick's probe (`shared/outbound/hold.ts`). */
 const UNANSWERED_FILE = "unanswered.json";
 
+/** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
 async function startTick(
   options: TickOptions,
   runId: string,
@@ -251,6 +254,8 @@ async function startTick(
   setDispatcherShare(machine?.outboundShare ?? DEFAULT_DISPATCHER_SHARE);
   // A system that does not answer is not asked again in this tick, and the next tick probes it once first.
   holdUnanswered(join(stateRoot(), UNANSWERED_FILE));
+  // A tracker this run has no credential for is learnt again at its first call.
+  forgetMissingCredentials();
   const runtime = options.runtime ?? defaultRuntime(machine);
   // One bound for every read the tick makes, from the launcher's deadline; none when no launcher bounds it.
   const bound = boundAt(deadlineOf(machine, startedMs));
@@ -264,6 +269,8 @@ async function startTick(
     completed: false,
     apply: false,
     exitStatus: 0,
+    // What started the tick is read before the scheduled upgrade is taken.
+    ...starterField(),
     ...upgradeField(),
     unreadableLaunches: read.unreadable,
     repos: [],
@@ -614,44 +621,6 @@ async function boundedAct(
   }
 }
 
-/**
- * The reflection route, after every launch: each class that recurs recorded
- * where reflection is on. What it did goes on the receipt; a failure there
- * leaves the tick's exit status as it is.
- */
-async function routeReflection(
-  receipt: TickReceipt,
-  context: TickContext,
-): Promise<void> {
-  const { apply } = context;
-  // In the order the repositories were named, not the order their reads finished.
-  const named = [...new Set(context.options.repos)];
-  const rank = (path: string) => named.indexOf(path);
-  const ordered = [...context.reflections].sort(
-    (a, b) => rank(a.path) - rank(b.path),
-  );
-  const reflection = await routeRecurrences(ordered, {
-    apply: apply !== null,
-    nowMs: currentMs(),
-    timeLeftMs: apply === null ? null : timeLeftMs(apply),
-  });
-  if (reflection !== null) receipt.reflection = reflection;
-}
-
-/** Say on the receipt that the optional reads were skipped, when the forge's budget was low as the tick started. */
-async function noteBudget(
-  receipt: TickReceipt,
-  context: TickContext,
-): Promise<void> {
-  const budget = await context.reads.budget();
-  if (lowBudget(budget))
-    receipt.lowBudget = {
-      remaining: budget.remaining,
-      limit: budget.limit,
-      skipped: [...OPTIONAL_READS],
-    };
-}
-
 /** The closing steps: the records of repositories not read settled, the outcome log copied, the exit decided, the line written. */
 async function closeTick(
   started: StartedTick,
@@ -659,6 +628,8 @@ async function closeTick(
 ): Promise<void> {
   const { receipt, context, withheld, settleFailed } = started;
   const machine = context.options.machine ?? null;
+  // A tracker the tick had no credential for is named once, not as each repository's failure.
+  settleNoCredential(receipt);
   // Settle again before anything expires: a record whose outcome is still unwritten is kept.
   let unsettled = settleFailed;
   if (unsettled) {
@@ -680,7 +651,8 @@ async function closeTick(
   await noteBudget(receipt, context);
   await routeReflection(receipt, context);
   receipt.exitStatus =
-    failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
+    noCredentialExit(receipt) ??
+    (failed || !copied || settleFailed || withheld !== undefined ? 1 : 0);
   const held = [...heldSystems()].map(([system, f]) => ({
     system,
     class: f.code,

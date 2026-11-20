@@ -14,8 +14,13 @@ import { admitAccount, type ApplyState } from "../lib/actions/launch.ts";
 import type { LineNeed } from "../lib/dashboard-contract.ts";
 import { parseMachineConfigText } from "../lib/machine-config.ts";
 import {
+  forgetMissingCredentials,
+  noteMissingCredential,
+} from "../../shared/outbound/credential-latch.ts";
+import {
   HOST_NEED_REPO,
   heldAccounts,
+  heldDetail,
   newPreflight,
   preflightNeeds,
 } from "../lib/preflight.ts";
@@ -228,4 +233,44 @@ it("bounds new tracker probes while retaining each account's answer", async () =
 
   expect(peak).toBe(4);
   expect(preflight.answers.size).toBe(6);
+});
+
+it("asks no account and holds none for a tracker the tick has no credential for, and says why once", async () => {
+  let asked = 0;
+  const preflight = newPreflight({ preflight: ["tracker"] }, async () => {
+    asked += 1;
+    return { ok: false, kind: "unreachable", reason: "refused" };
+  });
+  const held = report("example-org/tracked", []);
+  preflight.targets.set("example-org/tracked", {
+    slug: "example-org/tracked",
+    path: process.cwd(),
+    tracker: "linear:ENG",
+    values: {},
+    report: held,
+  });
+  const accounts = ["a", "b"].map((name) => ({ name }) as never);
+  noteMissingCredential("linear:preflight-test", {
+    system: "linear",
+    reason: "no Linear key configured",
+    remedy: "set LINEAR_API_KEY",
+  });
+  try {
+    const answer = await heldAccounts(
+      preflight,
+      "example-org/tracked",
+      "followup",
+      accounts,
+      30,
+    );
+    expect(asked).toBe(0);
+    expect(held.preflight ?? []).toEqual([]);
+    expect([...answer.keys()]).toEqual(["a", "b"]);
+    const detail = heldDetail(answer);
+    expect(detail).toContain("no Linear credential");
+    expect(detail).not.toContain("no Linear key configured");
+    expect(detail.split("Linear")).toHaveLength(2);
+  } finally {
+    forgetMissingCredentials();
+  }
 });

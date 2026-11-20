@@ -392,6 +392,14 @@ export interface LineRepo {
   unobserved?: true;
   /** When the newest tick that tried started, read or refused: what ticks that write out of order are ordered by, apart from `readAt`. Set only on an entry that kept an earlier tick's part. */
   triedAt?: string;
+  /**
+   * Set when the newest tick had no credential for the repository's tracker
+   * (`line-keyless.ts`): its tracker part (the item cards, the needs about
+   * items, the carried items) is from the last reading that had one, the
+   * tick `runId` that started at `readAt` (`null` when no tick has read it
+   * with one), and `reason` says what was missing (`no Linear key configured`).
+   */
+  trackerKept?: { readAt: string | null; runId?: string; reason: string };
 }
 
 /**

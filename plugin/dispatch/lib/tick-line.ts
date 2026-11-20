@@ -47,6 +47,8 @@ import {
   withLastSlugs,
 } from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
+import { keepTrackerPart } from "./line-keyless.ts";
+import { keylessSystems } from "./no-credential.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
@@ -458,16 +460,21 @@ function writeKept(
         receipt.startedAt,
       );
       // Even a whole tick merges: another tick may have written a newer part since this one read.
-      const line = withLastSlugs(
-        before === null
-          ? fresh
-          : mergeLine(
-              before,
-              fresh,
-              machine.repositories,
-              receiptText === null ? "fresh" : "kept",
-            ),
+      // A tracker the tick had no credential for leaves its repositories' tracker part as last read with one.
+      const line = keepTrackerPart(
+        withLastSlugs(
+          before === null
+            ? fresh
+            : mergeLine(
+                before,
+                fresh,
+                machine.repositories,
+                receiptText === null ? "fresh" : "kept",
+              ),
+          before,
+        ),
         before,
+        { runId: receipt.runId, systems: keylessSystems(receipt) },
       );
       if (receiptText === null && storage !== undefined) {
         const remaining = line.needs.filter(

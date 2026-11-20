@@ -16,6 +16,9 @@
  * gets the upgrade's line of JSON in `JIG_SCHEDULED_UPGRADE` for its receipt.
  * The `jig` command's script sets `JIG_LAUNCHER_ROLE=command`, and a woken
  * dispatcher tick `wake`: neither is a timer's job, and neither upgrades.
+ * The job is told what started it in `JIG_STARTED_BY`: that role, or
+ * `timer` for a job that upgrades first; a value its caller already set
+ * (the wake waiter's, another launcher's own name) is kept.
  *
  * It runs alone, from that copy: Bun's built-ins and `node:` modules only.
  * Copies written by earlier releases keep running, so what it passes to
@@ -415,6 +418,8 @@ export async function runCollector(
 const ROLE = "JIG_LAUNCHER_ROLE";
 /** The scheduled upgrade's line, passed to the job (`upgrade-record.ts`). */
 const UPGRADE_RESULT = "JIG_SCHEDULED_UPGRADE";
+/** What started the job, passed to it (`dispatch/lib/tick-starter.ts` reads it). */
+const STARTED_BY = "JIG_STARTED_BY";
 /** How long the scheduled upgrade may run before the job goes on without it. */
 const UPGRADE_DEADLINE_MS = 30 * 60_000;
 
@@ -643,6 +648,8 @@ async function main(argv: string[]): Promise<number> {
     const role = env[ROLE];
     delete env[ROLE];
     delete env[UPGRADE_RESULT];
+    const starter = role || (upgradesFirst(rest) ? "timer" : "");
+    if (starter !== "" && !env[STARTED_BY]) env[STARTED_BY] = starter;
     let entry = await installedEntry(programs, async (program) => {
       try {
         return await listPlugins(
