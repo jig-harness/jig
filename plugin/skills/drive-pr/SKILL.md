@@ -1944,8 +1944,9 @@ that has not completed. The final-CI loop skips its full status and `ci-hold`
 reads only after a live evaluation says to keep waiting. Both expire reuse at
 `AWAIT_ROUND_CHECKS_MAX_AGE` (seconds, default 300; 0 disables reuse), refresh
 on changed or unreadable signals, and make every terminal decision live.
-Mergeability, `mergeStateStatus`, `baseRefOid`, and `stillOnHead` remain
-GraphQL. `--once` always evaluates afresh; `JIG_GH_CACHE=off` disables
+The evaluation's own reads of the pull request (the opening snapshot and
+`stillOnHead`) are conditional REST reads as well. `--once` always evaluates
+afresh; `JIG_GH_CACHE=off` disables
 both waiting gates. Detectors watch bounded first pages, so the age limit also
 bounds changes beyond those pages. Skipped final-CI ticks still count toward
 the witness-wait budget; the last poll at that bound gathers live evidence.
@@ -4048,11 +4049,17 @@ never sees) that fails closed to "cannot read" and, for a URL or branch argument
 with no REST path, falls back to `gh pr view`. The probe passes its remaining
 `--timeout` through, so the read is bounded by the poll budget: every stage
 (scope resolution, the API call, the `gh pr view` fallback) debits it and none
-starts once it is spent. The field-rich
-`gh pr view` reads (`mergeStateStatus`, `baseRefOid`, `isDraft`, …, and
-`stillOnHead`'s `state,headRefOid,baseRefOid`) deliberately stay on GraphQL:
-REST and GraphQL disagree on mergeability and `baseRefOid`, and this skill's
-replication-lag guards compare reads against each other. `await-round.ts`
+starts once it is spent. The evaluation's field-rich read of the pull
+request (state, draft, head and base commit and branch, `mergeable` and the
+merge state) and `stillOnHead`'s recheck of it are one conditional REST read
+of the pull document, `lib/status/pr-snapshot.ts`'s `readPrSnapshot`: an
+unchanged PR answers `304` and the kept reading is reused, and both reads
+take every compared value from that one document, so no guard compares a
+REST value with a GraphQL one. A failed conditional read, or a kept reading
+that is not a whole pull document, is followed by one full read; a `null`
+`mergeable`, which GitHub sends while it computes mergeability, reads as
+`UNKNOWN`. `drive-status.ts` resolves a URL or branch argument to its number
+once, before the first evaluation. `await-round.ts`
 (the `resolve-review-comments` skill) documents the conditional-REST polling of
 PR state and checks; `JIG_GH_CACHE` / `JIG_GH_CACHE_DIR` control the
 cache, and it is off under `NODE_ENV=test` unless a directory is given.

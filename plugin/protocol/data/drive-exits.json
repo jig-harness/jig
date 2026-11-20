@@ -132,7 +132,7 @@
       "driveStatusExit": 2,
       "driveExit": 2,
       "endsDrive": true,
-      "meaning": "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
+      "meaning": "A prerequisite is missing. `drive.ts` exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
       "stop": "stopped: a usage error, or a gh that cannot report the pull request",
       "cause": "environment",
       "nextOwner": "person",

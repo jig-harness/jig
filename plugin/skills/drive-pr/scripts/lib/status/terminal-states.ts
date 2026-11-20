@@ -373,9 +373,9 @@ export const TERMINAL_STATES: Readonly<
     exitCode: 2,
     category: "state",
     terminal: true,
-    emittedBy: EVALUATE_EMITTER,
+    emittedBy: "drive.ts (exit 2, no report)",
     meaning:
-      "A prerequisite is missing: the installed `gh` cannot report a field the round needs. `drive.ts` also exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
+      "A prerequisite is missing. `drive.ts` exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
     report: {
       stop: "stopped: a usage error, or a gh that cannot report the pull request",
       cause: "environment",

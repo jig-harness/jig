@@ -25,6 +25,7 @@
  * is ever taken for an unchanged pull request.
  */
 
+import { swallow } from "../../../../../shared/errors.ts";
 import { type ConditionalGet, ghConditionalGet } from "../gh-conditional.ts";
 
 /** The snapshot's fields, in the spelling `evaluate.ts` compares. */
@@ -81,7 +82,8 @@ function parseDocument(body: string): PullDocument | null {
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
       return null;
     return parsed as PullDocument;
-  } catch {
+  } catch (err) {
+    swallow(err, "the pull document's body is not JSON");
     return null;
   }
 }

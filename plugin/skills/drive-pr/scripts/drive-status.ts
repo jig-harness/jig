@@ -204,11 +204,11 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       as settled
  *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit;
  *                       the report names its reset (`rateLimit.until`)
- *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite: a `gh` that cannot
- *                       report mergeability. Reported through the JSON
- *                       contract like every other state — only argument
- *                       errors, which happen before there is a PR to
- *                       describe, exit without a report
+ *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite. The status
+ *                       evaluation does not report it: its reads of the
+ *                       pull request are REST, which every `gh` serves.
+ *                       Argument errors, which happen before there is a PR
+ *                       to describe, exit 2 without a report
  *
  *  12  —  [drive.ts only, no report] converged, but the worktree is not
  *         clean. No named `state` — this exit never reaches `--json` at all
@@ -1085,9 +1085,8 @@ async function main(): Promise<number> {
   // all; `--all-open` already scopes itself to OPEN PRs, so the embedded sweep
   // was the one caller that did not.
   //
-  // A separate `gh` read, on `state` alone — the same cheap read, for the
-  // same reason, as the liveness probe on `evaluate()`'s missing-field path.
-  // It gates the sweep ONLY: the verdict still comes from the full snapshot
+  // A separate `gh` read, on `state` alone (`readPrState`, a conditional REST
+  // read). It gates the sweep ONLY: the verdict still comes from the full snapshot
   // below, so a stale or racing answer here can suppress a sweep but can never
   // decide the round.
   //
