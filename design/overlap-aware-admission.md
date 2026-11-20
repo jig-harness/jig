@@ -380,16 +380,19 @@ kept for 7 days. From them the tick reads:
   what its admission allowed; with no samples at all, 1. The lock admits by
   load, so the number is measured, not configured. Runs that waited do not
   lower it: a wait behind one holder on a day with few runs says when runs
-  arrived, not how many the lock admits.
+  arrived, not how many the lock admits. It errs toward admitting: one
+  moment of high overlap sets it for the samples' seven days, while the
+  lock's own load check still decides each run.
 - **Runs per pass**: for each kind of pass, the median number of runs a
   finished pass made, from the samples whose worktree is a pass's
   workspace, never under 1. A pass that made no run counts, so one pass of
   many short targeted runs does not set the figure for every pass. It is
-  measured per repository and charged to that repository's passes; a
-  repository with no measure of its own, such as one whose lock wrapper
-  records no samples, is charged every repository's median, and its passes
-  are left out of that median. Passes that ended before the oldest kept
-  sample are left out too. 1 until a kind has samples.
+  measured per repository once it has three finished passes, and charged
+  to that repository's passes; a repository with no measure of its own (a
+  new one, or one whose lock wrapper records no samples) is charged every
+  repository's median. Passes of a repository whose runs the lock never
+  recorded are left out of that median, as are passes that ended before
+  the oldest kept sample. 1 until a kind has samples.
 - **Time to validation**: for each kind, the median time from a pass's
   launch to its first run's request; one hour until a kind has samples.
 

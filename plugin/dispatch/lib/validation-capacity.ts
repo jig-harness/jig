@@ -133,6 +133,9 @@ function attributeRuns(
   return attributed;
 }
 
+/** The finished passes a repository needs before its own runs per pass replace every repository's. */
+const OWN_MEASURE = 3;
+
 /**
  * The median number of runs a finished pass made, never under one: a pass
  * admitted for validation makes at least one. Passes that made none count, so
@@ -203,7 +206,8 @@ export function measureValidation(
     const runsPerRepository = new Map<string, number>();
     for (const [repo, repoCounts] of counts) {
       const runs = runsPerPassOf(repoCounts);
-      if (repo !== null && runs !== null) runsPerRepository.set(repo, runs);
+      if (repo !== null && runs !== null && repoCounts.length >= OWN_MEASURE)
+        runsPerRepository.set(repo, runs);
     }
     return {
       runsPerPass: measuredOr(
@@ -335,9 +339,9 @@ export function forecastValidation(
   // Preserve each slot's release time. In particular, a predecessor can take
   // an idle slot while another waits for an occupied slot; treating both as
   // one residual wave would let the candidate acquire too early.
-  // A measured concurrency may be fractional (the midpoint of two observed
-  // contention levels). The aggregate calculation above preserves that
-  // estimate; a slot simulation requires physical, whole slots.
+  // A concurrency that is not measured may be fractional. The aggregate
+  // calculation above preserves it; a slot simulation requires physical,
+  // whole slots.
   if (Number.isInteger(concurrency)) {
     // `atLock` contains both holders and queued runs. Model the queued runs
     // too: when it exceeds the number of slots, omitting them lets a later

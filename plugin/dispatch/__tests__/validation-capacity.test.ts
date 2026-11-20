@@ -113,12 +113,10 @@ describe("validation estimates", () => {
       passes.push({
         ...pickup(workspace, launchedAtMs),
         repo,
-        endedAtMs: launchedAtMs + HOUR,
+        endedAtMs: launchedAtMs + HOUR / 2,
       });
       for (let run = 0; run < count; run++)
-        samples.push(
-          sample(launchedAtMs + (run + 1) * MINUTE, 0, 30_000, workspace),
-        );
+        samples.push(sample(launchedAtMs + run * MINUTE, 0, 30_000, workspace));
     });
     return { passes, samples };
   }
@@ -144,14 +142,16 @@ describe("validation estimates", () => {
   });
 
   test("measures runs per pass per repository and charges a repository whose lock records nothing the others' median", () => {
-    const heavy = endedPickups("heavy/repo", [3, 3, 3]);
-    const light = endedPickups("light/repo", [1]);
+    const heavy = endedPickups("heavy/repo", [3, 3, 3, 3]);
+    const light = endedPickups("light/repo", [1, 1, 1]);
+    // Too few passes for a measure of its own.
+    const young = endedPickups("young/repo", [21]);
     // A repository whose lock wrapper records no samples: its passes would
     // read as making no runs and pull every repository's median to zero.
-    const silent = endedPickups("silent/repo", [0, 0, 0, 0, 0]);
+    const silent = endedPickups("silent/repo", Array(9).fill(0));
     const measured = measureValidation(
-      [...heavy.samples, ...light.samples, ...silent.samples],
-      [...heavy.passes, ...light.passes, ...silent.passes],
+      [...heavy.samples, ...light.samples, ...young.samples, ...silent.samples],
+      [...heavy.passes, ...light.passes, ...young.passes, ...silent.passes],
     );
     expect(measured.kinds.pickup.runsPerPass).toBe(3);
     expect(measured.kinds.pickup.runsPerRepository).toEqual(
@@ -162,12 +162,13 @@ describe("validation estimates", () => {
     );
     expect(runsPerPassFor(measured, "pickup", "light/repo")).toBe(1);
     expect(runsPerPassFor(measured, "pickup", "silent/repo")).toBe(3);
+    expect(runsPerPassFor(measured, "pickup", "young/repo")).toBe(3);
     expect(runsPerPassFor(measured, "pickup")).toBe(3);
   });
 
   test("charges each pass in flight its own repository's runs per pass", () => {
-    const heavy = endedPickups("heavy/repo", [5, 5, 5]);
-    const light = endedPickups("light/repo", [1]);
+    const heavy = endedPickups("heavy/repo", [5, 5, 5, 5]);
+    const light = endedPickups("light/repo", [1, 1, 1]);
     const measured = measureValidation(
       [...heavy.samples, ...light.samples],
       [...heavy.passes, ...light.passes],
@@ -544,6 +545,35 @@ describe("validation forecast", () => {
     }
     expect(heldBeforeDeadline).toBeGreaterThanOrEqual(6);
   });
+
+  test("judges a pickup by its own repository's runs per pass", () => {
+    const state: ValidationLoad = {
+      measured: {
+        runMs: 15 * MINUTE,
+        concurrency: 1,
+        kinds: {
+          pickup: {
+            runsPerPass: 1,
+            runsPerRepository: new Map([["heavy/repo", 10]]),
+            timeToValidationMs: 0,
+          },
+          drive: { runsPerPass: 1, timeToValidationMs: 0 },
+        },
+        defaults: [],
+      },
+      demand: { atLock: 0, toArrive: 0 },
+      waitLimitMs: HOUR,
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(
+      validationHold(state, 1, "pickup", 3 * HOUR, "light/repo"),
+    ).toBeNull();
+    expect(
+      validationHold(state, 1, "pickup", 3 * HOUR, "heavy/repo"),
+    ).toContain("waits on validation capacity");
+  });
+
   test("the November 20 receipt replay admits a pickup on an idle host", () => {
     // From the 15:32:21 UTC tick receipt of 2026-11-20, its launch records
     // and the lock's samples: the gauge read 13.39 runs ahead at one run at
