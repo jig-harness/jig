@@ -796,6 +796,25 @@ describe("recovering the ledger of a driver that could not write it", () => {
     expect(labels.labels()).toEqual(["jig:parked"]);
   });
 
+  it("keeps a pending ordinary stop when the label ownership recheck is unreadable", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
+    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
+    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
+    await plantRecord(s, true);
+    recordPendingExit(s.leaf, "999", s.started, 8);
+    writeFileSync(join(labels.bin, "fail-ownership-recheck"), "");
+
+    expectSpawnExit(
+      await drives(s, ["--doctor"], {
+        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
+      }),
+      0,
+    );
+    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+    expect(labels.labels()).toEqual(["jig:converged"]);
+  });
+
   it("reserves released recovery retries and preserves an unpublished successor after a forge failure", async () => {
     const s = stage();
     await plantRecord(s, true);

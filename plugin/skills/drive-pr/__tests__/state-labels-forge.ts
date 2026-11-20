@@ -32,8 +32,14 @@ if (args[0] === "repo" && args[1] === "view" && args.at(-1) === "nameWithOwner,d
   out({ nameWithOwner: "example/project", defaultBranchRef: { name: "main" } });
 if (args[0] === "api" && args[1] === "repos/example/project/contents/.config/jig.yaml?ref=main")
   out({ encoding: "base64", content: fs.readFileSync(path.join(dir, "jig.yaml")).toString("base64") });
-if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid")
+if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid") {
+  if (fs.existsSync(path.join(dir, "fail-ownership-recheck")))
+    fs.writeFileSync(
+      path.join(${JSON.stringify(fixture)}, "fail-list-after"),
+      fs.readFileSync(path.join(${JSON.stringify(fixture)}, "list-count"), "utf8"),
+    );
   out({ labels: read().map((name) => ({ name })), headRefOid: fs.readFileSync(path.join(dir, "head"), "utf8") });
+}
 if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "author")
   out({ author: { login: "example-user" } });
 const values = (flag) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));

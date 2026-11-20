@@ -252,6 +252,11 @@ type StoppedLedger = Exclude<
   { why: string }
 >;
 
+type StoppedLedgerRead = {
+  found: ReturnType<typeof ledgerOfStoppedDriver> | null;
+  failed: boolean;
+};
+
 function stoppedDriver(
   snapshot: Exclude<Awaited<ReturnType<typeof readLedgerSnapshot>>, string>,
   who: { actor: string; clone: string; started: string },
@@ -284,14 +289,14 @@ async function readStoppedLedger(
   pr: string,
   login: string | null,
   who: { actor: string; clone: string; started: string },
-): Promise<ReturnType<typeof ledgerOfStoppedDriver> | null> {
+): Promise<StoppedLedgerRead> {
   const snapshot = await readLedgerSnapshot(pr, login);
   if (typeof snapshot !== "string")
-    return stoppedDriver(snapshot, who, true, false);
+    return { found: stoppedDriver(snapshot, who, true, false), failed: false };
   console.error(
     `ledger: PR #${pr}'s stopped label ownership did not read: ${snapshot}.`,
   );
-  return null;
+  return { found: null, failed: true };
 }
 
 async function labelPublishedStop(
@@ -304,9 +309,13 @@ async function labelPublishedStop(
   who: { actor: string; clone: string; started: string },
   found: StoppedLedger,
 ): Promise<"done" | "retry"> {
-  const published = pending ? await readStoppedLedger(pr, login, who) : found;
-  if (published === null) return "retry";
-  if ("why" in published) return "done";
+  const publication = pending
+    ? await readStoppedLedger(pr, login, who)
+    : { found, failed: false };
+  if (publication.found === null) return "retry";
+  if ("why" in publication.found) return "done";
+  const published = publication.found;
+  let ownershipReadFailed = publication.failed;
   const byPerson =
     personStopFor(stateDir, pr, diag.started).personStop !== undefined;
   if (pending && exit === DRIVE_EXIT.CONVERGED && !byPerson) return "done";
@@ -323,19 +332,22 @@ async function labelPublishedStop(
     pending
       ? async () => {
           const fresh = await readStoppedLedger(pr, login, who);
-          return fresh !== null && !("why" in fresh);
+          ownershipReadFailed ||= fresh.failed;
+          return fresh.found !== null && !("why" in fresh.found);
         }
       : undefined,
   );
-  return projectionOutcome(label, pending, byPerson);
+  return projectionOutcome(label, pending, byPerson, ownershipReadFailed);
 }
 
 function projectionOutcome(
   label: Awaited<ReturnType<typeof labelDrive>>,
   pending: boolean,
   byPerson: boolean,
+  ownershipReadFailed: boolean,
 ): "done" | "retry" {
   if (!pending) return "done";
+  if (ownershipReadFailed) return "retry";
   if (label?.write.outcome === "refused") return "retry";
   return byPerson && label === null ? "retry" : "done";
 }
