@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 const SKILL = readFileSync(resolve(import.meta.dir, "../SKILL.md"), "utf8");
 const LOCK = resolve(import.meta.dir, "../../../shared/resource-lock.ts");
@@ -58,7 +59,12 @@ it("names the lock wrapper's exit for a lock-wait timeout", () => {
   expect(protocol).toContain("`with-resource-lock` exits `3`");
 });
 
-it.if(process.platform !== "win32")(
+it.skipIf(
+  skipsOnWindows(
+    "file-system",
+    "the lock's slot is a symlink to a pid, which Windows refuses",
+  ),
+)(
   "quotes the refusal the host's test lock prints when its wait runs out, which exits 3",
   () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "jig-prepush-lock-")));

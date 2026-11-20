@@ -21,11 +21,13 @@ import {
 import { LOAD_DEFAULTS } from "../lib/load-config.ts";
 import type { LoadReading } from "../lib/load-read.ts";
 import {
+  type LoadState,
   holdsReplay,
   judge,
   loadState,
   VALIDATION_GAUGES,
 } from "../lib/load.ts";
+import type { ValidationLoad } from "../lib/validation-load.ts";
 import { LOCK_WAIT_BOUND } from "../lib/pickup-lock-wait.ts";
 import type { PickupTree } from "../lib/pickup-tree.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
@@ -324,14 +326,16 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
     forge: { remaining: 4000, limit: 5000 },
     sessions: new Map(),
   };
-  const withDemand = (atLock: number) => {
+  const withDemand = (
+    atLock: number,
+  ): LoadState & { validation: ValidationLoad } => {
     const load = loadState(
       LOAD_DEFAULTS,
       { ...reading, host: { ...reading.host } },
       { held: 0, capacity: 8 },
       new Map(),
     );
-    load.validation = {
+    const validation: ValidationLoad = {
       measured: measureValidation([], []),
       demand: { atLock, toArrive: 0 },
       waitLimitMs: HOUR,
@@ -339,7 +343,8 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
       driveDeadlineMs: 3 * HOUR,
       admittedRuns: 0,
     };
-    return load;
+    load.validation = validation;
+    return Object.assign(load, { validation });
   };
 
   it("holds it without load.enforce while the validation capacity has no room, and reports the hold", () => {
@@ -357,15 +362,15 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
 
   it("counts the validation runs of a pinned relaunch an advisory gauge lets start", () => {
     const load = withDemand(0);
-    load.validation!.demand = { atLock: 0, toArrive: 0 };
+    load.validation.demand = { atLock: 0, toArrive: 0 };
     // Memory over its line refuses the launch advisorily; it still starts and still validates.
     load.reading.host.availableBytes = 0;
-    const before = load.validation!.admittedRuns;
+    const before = load.validation.admittedRuns;
     expect(
       judge(load, "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
     ).toBeNull();
     expect(load.holds.length).toBeGreaterThan(0);
-    expect(load.validation!.admittedRuns).toBeGreaterThan(before);
+    expect(load.validation.admittedRuns).toBeGreaterThan(before);
   });
 
   it("counts the validation runs of any launch an advisory gauge lets start", () => {
@@ -373,16 +378,16 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
     load.reading.host.availableBytes = 0;
     expect(judge(load, "pickup", SLUG, "#12", 3 * HOUR)).toBeNull();
     expect(load.holds.length).toBeGreaterThan(0);
-    expect(load.validation!.admittedRuns).toBeGreaterThan(0);
+    expect(load.validation.admittedRuns).toBeGreaterThan(0);
   });
 
   it("judges a pending replay without charging its own reserved runs again", () => {
-    const own = withDemand(0).validation!.measured.kinds.pickup.runsPerPass;
+    const own = withDemand(0).validation.measured.kinds.pickup.runsPerPass;
     // The wait window permits four runs: the replay's own reserved run
     // is the one that fills it, so it is admitted only once subtracted.
     const room = 4;
     const atBoundary = withDemand(0);
-    atBoundary.validation!.demand = { atLock: 0, toArrive: room - 1 + own };
+    atBoundary.validation.demand = { atLock: 0, toArrive: room - 1 + own };
     expect(
       holdsReplay(
         atBoundary,
@@ -393,11 +398,11 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
         VALIDATION_GAUGES,
       ),
     ).toBeNull();
-    expect(atBoundary.validation!.admittedRuns).toBe(0);
+    expect(atBoundary.validation.admittedRuns).toBe(0);
     expect(atBoundary.holds).toEqual([]);
     // One run more in the forecast and the replay waits, and says so.
     const over = withDemand(0);
-    over.validation!.demand = { atLock: 0, toArrive: room + own };
+    over.validation.demand = { atLock: 0, toArrive: room + own };
     expect(
       holdsReplay(over, "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
     ).toContain("the host's validation capacity holds it");
