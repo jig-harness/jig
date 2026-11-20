@@ -459,7 +459,7 @@ line: the repository's factory identity (`dispatch.identity`) or a person
 this host serves. Otherwise leave the issue unassigned and skip this step.
 The issue was filed unassigned; never assign it in the creation itself or
 by hand right after it. On a tracker whose history leaves out changes made
-just after an issue's creation (the [creation window](../../../GLOSSARY.md#creation-window); Linear: its first three minutes), the
+just after an issue's creation (the [creation window](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#creation-window); Linear: its first three minutes), the
 dispatcher never sees who made such an assignment and never starts the
 item. Hand the issue (with sub-issues, the one to start, usually the
 parent) over with the command for its taker, in the foreground and with
