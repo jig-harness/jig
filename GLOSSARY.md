@@ -1746,6 +1746,22 @@ make, use the entry's term instead.
 - **Reviewer evidence mode** — which record of the forge the drive reads to
   learn that the AI reviewer reviewed the head commit: the reviewer's summary
   comment marker, or its latest *review object* together with its check run.
+- **Reviewer-evidence contract** — what the drive reads to learn that an AI
+  reviewer reviewed the head commit: a check run whose name matches
+  `review.reviewer_check_pattern`, and either a *sticky comment* that carries
+  `review.sticky_marker` and stamps the reviewed commit (and may carry a *skip
+  notice*), or, in the `review_object` *reviewer evidence mode*, the commit
+  that the newest *review object* names. Any reviewer that produces this
+  evidence works with the drive, whoever wrote it
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md),
+  [drive-pr](plugin/skills/drive-pr/README.md)).
+- **Reference reviewer** — the reviewer Jig ships to implement the
+  *reviewer-evidence contract*, so a team with no AI reviewer of its own has
+  one to drive against. It is ai-review, planned as `jig-harness/ai-review`
+  and not yet published, and it lives in its own repository, never in the
+  plugin. It is one implementation of the contract beside the reviewers
+  [M7's mappings](modules/M7-pr-lifecycle-review/mappings.md) name
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)).
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
   equals that head, and no unresolved thread or *summary-only finding* remains.
