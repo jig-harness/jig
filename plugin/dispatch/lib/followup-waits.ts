@@ -205,7 +205,7 @@ interface Run {
   /** The run was spent by a pending wait, past its window or the run's bound. */
   pendingSpent: boolean;
   reread: string[];
-  /** The arm the run's re-read pass actually read, which may name fewer tags than the window's. */
+  /** The arm of the newest pass past its window, whether or not a re-read was allowed on it. */
   rereadArm: string | null;
   /** The arms earlier runs of the pull request went past their window on, which are never read again. */
   spentArms: ReadonlySet<string>;
@@ -268,7 +268,7 @@ function nextPending(from: Run, a: Attempt): Run {
     spent: pastWindow || pastRun,
     pendingSpent: pastWindow || pastRun,
     reread: readable ? armTags(a.wait.arm) : [],
-    rereadArm: readable ? arm : from.rereadArm,
+    rereadArm: pastWindow || pastRun ? arm : from.rereadArm,
   };
 }
 

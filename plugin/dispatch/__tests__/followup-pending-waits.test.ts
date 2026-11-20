@@ -313,6 +313,40 @@ it("reads a shrunken arm once, and never reads it again in a later run", () => {
   });
 });
 
+it("never reads an arm a run went past its window on, though that run's re-read was suppressed", () => {
+  const w = world();
+  current = w;
+  const base = earlierRecord(w, {
+    id: "20261031T100000Z-aaaaaaaa",
+    account: "a",
+    action: "followup",
+    pr: 9,
+    repo: SLUG,
+  });
+  const both: WaitFor = { reason: "pending", arm: "v1.0.0 v1.0.1" };
+  const rest: WaitFor = { reason: "pending", arm: "v1.0.1" };
+  const at = (h: number, m: number) =>
+    `2026-10-31T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  // The first run reads the combined arm; the second goes past its window on the shrunken arm with no re-read allowed.
+  const runs = [
+    waited(base, at(6, 0), both),
+    waited(base, at(7, 10), both),
+    waited(base, at(7, 20), both),
+    waited(base, at(8, 30), rest),
+  ];
+  expect(waitStreak(runs, SLUG, 9)).toMatchObject({ spent: true, reread: [] });
+  // A person restarts it: the same arm, past its window again, is not read.
+  const restarted = [
+    ...runs,
+    waited(base, at(8, 40), rest),
+    waited(base, at(9, 50), rest),
+  ];
+  expect(waitStreak(restarted, SLUG, 9)).toMatchObject({
+    spent: true,
+    reread: [],
+  });
+});
+
 it("starts a pending window again on a newer arm, re-reads an arm past its window once, and bounds the run", () => {
   const w = world();
   current = w;
