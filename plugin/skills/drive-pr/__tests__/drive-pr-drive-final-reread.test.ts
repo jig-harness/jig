@@ -236,11 +236,13 @@ describe.skipIf(
         "CI hold removal is still unproven after 2 consecutive read(s)",
     },
     {
-      name: "continues convergence when a recovery snapshot fails after its entry check succeeds",
+      name: "continues convergence when a recovery snapshot fails after a timed-out proof",
       signal: "pr-snapshot-timeout-after-unlabel",
       signalContent: "",
+      precedingSignal: "timeline-timeout-after-unlabel",
+      precedingSignalContent: "",
       expectedExit: 0,
-      expectedWaits: 1,
+      expectedWaits: 2,
       expectedMessage: "simulated recovery snapshot timeout",
     },
   ];
@@ -268,6 +270,11 @@ describe.skipIf(
           ]),
         );
         writeFileSync(join(dir, testCase.signal), testCase.signalContent);
+        if (testCase.precedingSignal)
+          writeFileSync(
+            join(dir, testCase.precedingSignal),
+            testCase.precedingSignalContent ?? "",
+          );
         const r = await driveUntilEnd(
           dir,
           stateDir,
