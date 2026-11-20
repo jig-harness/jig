@@ -496,26 +496,31 @@ export function classifyEnded(
   endedAt: string,
   facts: EndFacts,
 ): { class: OutcomeClass; reason: string; probeStopped?: true } {
+  return isDrive(r.record)
+    ? driveEndedClass(r, facts)
+    : sessionClass(r, endedAt);
+}
+
+function driveEndedClass(
+  r: ReadRecord,
+  facts: EndFacts,
+): { class: OutcomeClass; reason: string; probeStopped?: true } {
   const s = r.state;
-  if (isDrive(r.record)) {
-    const answer =
-      s.kind === "ended"
-        ? s.exit.code === null
-          ? `signal ${s.exit.signal ?? "unknown"}`
-          : `exit ${s.exit.code}`
-        : goneWithoutExit(s);
-    if (facts.takenOver)
-      return { class: "stalled", reason: `taken over (${answer})` };
-    if (s.kind === "ended" && s.exit.code !== null) {
-      const probe = readProbeStop(s.exit.context ?? "");
-      const placed = driveClass(s.exit.code, facts.merged, probe);
-      return probe?.code === s.exit.code
-        ? { ...placed, probeStopped: true }
-        : placed;
-    }
+  const answer =
+    s.kind === "ended"
+      ? s.exit.code === null
+        ? `signal ${s.exit.signal ?? "unknown"}`
+        : `exit ${s.exit.code}`
+      : goneWithoutExit(s);
+  if (facts.takenOver)
+    return { class: "stalled", reason: `taken over (${answer})` };
+  if (s.kind !== "ended" || s.exit.code === null)
     return { class: "died", reason: answer };
-  }
-  return sessionClass(r, endedAt);
+  const probe = readProbeStop(s.exit.context ?? "");
+  const placed = driveClass(s.exit.code, facts.merged, probe);
+  return probe?.code === s.exit.code
+    ? { ...placed, probeStopped: true }
+    : placed;
 }
 
 /** Whether a record has ended, as the log counts an end: an exit, or a process gone without one. */

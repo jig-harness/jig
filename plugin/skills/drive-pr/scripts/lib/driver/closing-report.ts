@@ -31,6 +31,7 @@
  */
 import {
   type ClosingReport,
+  type ReportCause,
   CLOSING_REPORT_SCHEMA,
   CONCLUDED_MAX,
   closingReportOf,
@@ -140,12 +141,24 @@ export function composeDriverReport(input: {
         : stall !== null
           ? finishCause(stall.state)
           : named.report.cause;
-  const base: ClosingReport = {
+  const concluded = composeConcluded(
+    stop,
+    round === null ? null : redactReportText(round.concluded),
+  );
+  const base = baseDriverReport(pr, concluded, named, cause);
+  const ask = parkAsk(code, state);
+  return checkedDriverReport(base, ask, state, stop);
+}
+
+function baseDriverReport(
+  pr: string,
+  concluded: string,
+  named: ReturnType<typeof driveExitReport>,
+  cause: ReportCause | undefined,
+): ClosingReport {
+  return {
     schema: CLOSING_REPORT_SCHEMA,
-    concluded: composeConcluded(
-      stop,
-      round === null ? null : redactReportText(round.concluded),
-    ),
+    concluded,
     suggested_next:
       named === null
         ? {
@@ -157,7 +170,14 @@ export function composeDriverReport(input: {
     ...(cause === undefined ? {} : { cause }),
     evidence: [`pr:#${pr}`],
   };
-  const ask = parkAsk(code, state);
+}
+
+function checkedDriverReport(
+  base: ClosingReport,
+  ask: ReturnType<typeof parkAsk>,
+  state: DriveState | null,
+  stop: string,
+): ClosingReport {
   const tries: ClosingReport[] =
     ask === null
       ? [base]

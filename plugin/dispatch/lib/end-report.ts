@@ -92,19 +92,29 @@ export function wrapperReport(
   seen: SeenEnd | null,
   submitted = false,
 ): ClosingReport | null {
-  if (isDrive(record)) {
-    const probe = readProbeStop(seen?.output ?? "");
-    if (probe === null || probe.code !== seen?.code) return null;
-    const named = driveExitReport(probe.code);
-    if (named === null) return null;
-    return report(
-      `Status probe stopped the drive at exit ${probe.code} (${probe.state}): ${probe.reason}`,
-      named.report.next,
-      probeFailure(probe) === null
-        ? (named.report.cause ?? "unknown")
-        : "environment",
-    );
-  }
+  if (isDrive(record)) return driveWrapperReport(seen);
+  return sessionWrapperReport(record, seen, submitted);
+}
+
+function driveWrapperReport(seen: SeenEnd | null): ClosingReport | null {
+  const probe = readProbeStop(seen?.output ?? "");
+  if (probe === null || probe.code !== seen?.code) return null;
+  const named = driveExitReport(probe.code);
+  if (named === null) return null;
+  return report(
+    `Status probe stopped the drive at exit ${probe.code} (${probe.state}): ${probe.reason}`,
+    named.report.next,
+    probeFailure(probe) === null
+      ? (named.report.cause ?? "unknown")
+      : "environment",
+  );
+}
+
+function sessionWrapperReport(
+  record: Pick<LaunchRecord, "action" | "passTimeoutSec">,
+  seen: SeenEnd | null,
+  submitted: boolean,
+): ClosingReport | null {
   const steward = record.action === "steward";
   if (seen?.startup === "quota")
     return report(
