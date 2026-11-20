@@ -13,10 +13,7 @@ import { LinkedDetail, WorkLead } from "./work.tsx";
  * the list (`AnsweredHolds`).
  */
 import { type ReactNode, useId, useRef, useState } from "react";
-import {
-  DecisionCounts,
-  filterAnswerStates,
-} from "./decision-counts.tsx";
+import { DecisionCounts, filterAnswerStates } from "./decision-counts.tsx";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
