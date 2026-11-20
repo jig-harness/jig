@@ -217,7 +217,7 @@ const result = command(
       description: message`The record's token, named in the session's prompt.`,
     }),
     outcome: argument(string({ metavar: "done|failed|waits" }), {
-      description: message`How the session ended; waits is a pickup or a follow-up a rate limit stopped, or a follow-up whose arm is still pending.`,
+      description: message`How the session ended; waits is a pickup or a follow-up a rate limit stopped, a follow-up whose arm is still pending, or a claimed pickup whose push the host's test lock held past its wait.`,
     }),
     pr: optional(
       option("--pr", countValue("PR"), {
@@ -241,12 +241,12 @@ const result = command(
     ),
     reasons: multiple(
       option("--reason", string({ metavar: "REASON" }), {
-        description: message`The reason the refused claim printed: once, or once per --key. With waits: what it waits for, rate-limit (the default) or pending, a follow-up's arm still pending.`,
+        description: message`The reason the refused claim printed: once, or once per --key. With waits: what it waits for, rate-limit (the default), pending, a follow-up's arm still pending, or test-lock, a claimed pickup whose push the pre-push hook refused only because its wait for the host's test lock ran out.`,
       }),
     ),
     until: optional(
       option("--until", string({ metavar: "TIME" }), {
-        description: message`With waits: when the rate limit resets, or when to look at the pending arm again (ISO 8601, at most a day ahead); the item or the follow-up starts again after it.`,
+        description: message`With waits: when the rate limit resets, or when to look at the pending arm again (ISO 8601, at most a day ahead); the item or the follow-up starts again after it. Optional with --reason test-lock, whose relaunch waits for the host's validation capacity.`,
       }),
     ),
     arm: optional(
@@ -649,7 +649,7 @@ async function decisionResult(
   return framedResultMain(args.record, args.token, args.outcome, text);
 }
 
-/** `waits --until <time> [--reason rate-limit|pending] [--arm <name>]`: no handoff, refusal or decision beside it. */
+/** `waits --until <time> [--reason rate-limit|pending|test-lock] [--arm <name>]`: no handoff, refusal or decision beside it. */
 function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
   if (
     [args.pr, args.none, args.decision].some((v) => v !== undefined) ||
@@ -658,7 +658,7 @@ function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
     args.reasons.length > 1
   ) {
     console.error(
-      "jig dispatch result: waits takes --until, and at most one --reason and one --arm; no --pr, --none, --decision, --refused or --key",
+      "jig dispatch result: waits takes --until (optional with --reason test-lock), and at most one --reason and one --arm; no --pr, --none, --decision, --refused or --key",
     );
     return 2;
   }
