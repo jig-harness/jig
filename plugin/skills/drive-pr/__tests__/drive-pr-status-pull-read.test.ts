@@ -72,4 +72,40 @@ describe("drive-status.ts reads the pull request conditionally", () => {
     ]);
     expect(lines(dir, "graphql-pull-reads")).toEqual([]);
   });
+
+  it("resolves a pull request URL or a branch of this repository", async () => {
+    for (const pr of [
+      "https://github.com/example-org/example-repo/pull/999",
+      "feature-branch",
+    ]) {
+      const { dir, stateDir } = writeFixture({
+        threads: [],
+        checkRuns: [DORMANT_ARM],
+      });
+      const r = await probeIn(dir, stateDir, HEAD, [], {
+        reconcile: false,
+        pr,
+      });
+
+      expect(r.exitCode).toBe(4);
+      expect(r.state).toBe("AWAITING_REVIEWER");
+    }
+  });
+
+  it("refuses a URL of another repository or host before reading the pull request", async () => {
+    for (const pr of [
+      "https://github.com/other-org/example-repo/pull/999",
+      "https://github.example.com/example-org/example-repo/pull/999",
+    ]) {
+      const { dir, stateDir } = writeFixture({ threads: [] });
+      const r = await probeIn(dir, stateDir, HEAD, [], {
+        reconcile: false,
+        pr,
+      });
+
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toMatch(/not in this checkout|another forge host/);
+      expect(lines(dir, "pull-reads")).toEqual([]);
+    }
+  });
 });

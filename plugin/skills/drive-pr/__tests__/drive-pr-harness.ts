@@ -997,7 +997,11 @@ export DRIVE_PR_STUB_GH_NESTED=1
   fi
   if [[ "\${is_api:-0}" -eq 0 ]]; then
     case "$command:$json_fields" in
-      'pr view:number'|'repo view:owner,name'|'repo view:owner,name,url')
+      'pr view:number')
+        # A selector is a pull request URL or a branch, which gh resolves to
+        # the number; only the fixture's pull request (999) resolves.
+        [[ "$has_positional" -eq 0 || "$selector" == 'feature-branch' || "$selector" =~ /pull/999$ ]] || { echo "gh: no pull request found for: $selector" >&2; exit 1; } ;;
+      'repo view:owner,name'|'repo view:owner,name,url')
         [[ "$has_positional" -eq 0 ]] || { echo "gh: unexpected selector: $selector" >&2; exit 2; } ;;
       'run view:'|'run view:headSha,status,attempt'|'run rerun:')
         [[ "$has_positional" -eq 1 && "$selector" =~ ^[0-9]+$ ]] || { echo "gh: expected a run id, got: $selector" >&2; exit 2; } ;;
@@ -2380,6 +2384,7 @@ export function writeFixture(
     owner: { login: "example-org" },
     name: "example-repo",
     nameWithOwner: "example-org/example-repo",
+    url: "https://github.com/example-org/example-repo",
   });
   if (!f.checkRunsUnreadable)
     w("check-runs.json", {
@@ -2588,12 +2593,14 @@ export async function probeIn(
     once?: boolean;
     reconcile?: boolean;
     env?: Record<string, string>;
+    /** The pull request argument: a number, a URL or a branch. */
+    pr?: string;
   } = {},
 ): Promise<ProbeResult> {
   const proc = Bun.spawn(
     scriptArgv(
       join(SCRIPTS, "drive-status.ts"),
-      "999",
+      opts.pr ?? "999",
       "--json",
       ...(opts.once === false ? [] : ["--once"]),
       // The sweep is on in production, so it is on HERE, and a probe
