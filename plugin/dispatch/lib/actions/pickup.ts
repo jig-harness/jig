@@ -63,7 +63,6 @@ import {
   accountBlock,
   admitAccount,
   type ApplyState,
-  localHold,
   type Opened,
   openedFor,
   openWithinBudget,
@@ -74,6 +73,7 @@ import {
   startRecord,
   waits,
 } from "./launch.ts";
+import { localHold } from "./local-hold.ts";
 import {
   holdingRecords,
   leftBehindWorkspaces,
