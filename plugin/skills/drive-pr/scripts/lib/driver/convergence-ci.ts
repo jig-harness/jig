@@ -106,6 +106,34 @@ export function heldListingStop(
   return CHECK_RUNS_UNREADABLE_EXIT;
 }
 
+async function awaitReleaseProof(
+  context: DriveRoundContext,
+  reviewedHead: string,
+): Promise<number | "continue"> {
+  const releasing = await readCiState(context.pr);
+  if (releasing?.phase !== "releasing") {
+    console.error(
+      "CI hold removal reported an unproven release without its durable releasing record; stopping rather than carrying a retry count across an unknown transition.",
+    );
+    return 1;
+  }
+  const key = `${reviewedHead}:${releasing.heldEventId}`;
+  if (context.releaseProofKey !== key) {
+    context.releaseProofKey = key;
+    context.releaseProofWaits = 0;
+  }
+  context.releaseProofWaits += 1;
+  if (context.releaseProofWaits > context.releaseProofWaitLimit) {
+    console.error(
+      `CI hold removal is still unproven after ${context.releaseProofWaits} consecutive read(s); stopping with the releasing record retained for reconciliation. Run 'ci-hold.ts release ${context.pr} --expect-head ${reviewedHead}' to inspect the current forge response, then re-arm. (DRIVE_PR_RELEASE_PROOF_ATTEMPTS=${context.releaseProofWaitLimit})`,
+    );
+    return 1;
+  }
+  console.error("Waiting to verify the CI hold label removal");
+  await sleep(UNLABEL_SETTLE_SECONDS);
+  return "continue";
+}
+
 /** Releases the CI hold, re-reads on `"continue"`, or returns when CI is ready. */
 async function releaseCiHold(
   context: DriveRoundContext,
@@ -119,30 +147,8 @@ async function releaseCiHold(
   );
   if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
-  if (release.code === 4 && release.stdout.trim() === "release-proof-pending") {
-    const releasing = await readCiState(context.pr);
-    if (releasing?.phase !== "releasing") {
-      console.error(
-        "CI hold removal reported an unproven release without its durable releasing record; stopping rather than carrying a retry count across an unknown transition.",
-      );
-      return 1;
-    }
-    const key = `${reviewedHead}:${releasing.heldEventId}`;
-    if (context.releaseProofKey !== key) {
-      context.releaseProofKey = key;
-      context.releaseProofWaits = 0;
-    }
-    context.releaseProofWaits += 1;
-    if (context.releaseProofWaits > context.releaseProofWaitLimit) {
-      console.error(
-        `CI hold removal is still unproven after ${context.releaseProofWaits} consecutive read(s); stopping with the releasing record retained for reconciliation. Run 'ci-hold.ts release ${context.pr} --expect-head ${reviewedHead}' to inspect the current forge response, then re-arm. (DRIVE_PR_RELEASE_PROOF_ATTEMPTS=${context.releaseProofWaitLimit})`,
-      );
-      return 1;
-    }
-    console.error("Waiting to verify the CI hold label removal");
-    await sleep(UNLABEL_SETTLE_SECONDS);
-    return "continue";
-  }
+  if (release.code === 4 && release.stdout.trim() === "release-proof-pending")
+    return awaitReleaseProof(context, reviewedHead);
   context.releaseProofWaits = 0;
   context.releaseProofKey = "";
   if (release.code === CHECK_RUNS_UNREADABLE_EXIT)
