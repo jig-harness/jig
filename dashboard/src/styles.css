@@ -608,10 +608,12 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   margin: 0;
   font: 600 19px/1.3 var(--serif);
 }
-.needGroupTitle [data-group-count], .needGroupTitle [data-group-oldest], .needGroupTitle [data-group-why] {
+.needGroupTitle [data-group-count], .needGroupTitle [data-group-oldest], .needGroupTitle [data-group-why], .needGroupTitle [data-group-decisions] {
   color: var(--muted);
   font: 500 12px/1.3 var(--sans);
 }
+/* The totals count every card; a filter hides cards, so it hides them too. */
+.main.filtering .needGroupTitle [data-group-decisions], .main.filtering .pNeeds > .decCounts { display: none; }
 .needGroup:not(.all) .need.groupRest { display: none; }
 .main.filtering .needGroup .need.groupRest:not([hidden]) { display: grid; }
 .main.filtering [data-group-more] { display: none; }
@@ -649,3 +651,15 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   .facetControls .phoneRepo { display: flex; }
   .phoneFilters { display: block; }
 }
+
+/* Decision details follow the card disclosure. Touch cards keep the pick and copy controls. */
+.card:not(.open) .decExpanded { display: none; }
+@media (hover: none), (pointer: coarse) {
+  .decFields { display: none; }
+  .opt { min-height: 44px; }
+  .opt .optNum { display: none; }
+}
+
+/* The answer-state filter in the Needs you head. */
+.answerFilter { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); }
+.answerFilter select { min-height: var(--tap); font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-tag); }

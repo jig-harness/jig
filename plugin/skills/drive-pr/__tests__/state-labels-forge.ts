@@ -32,8 +32,19 @@ if (args[0] === "repo" && args[1] === "view" && args.at(-1) === "nameWithOwner,d
   out({ nameWithOwner: "example/project", defaultBranchRef: { name: "main" } });
 if (args[0] === "api" && args[1] === "repos/example/project/contents/.config/jig.yaml?ref=main")
   out({ encoding: "base64", content: fs.readFileSync(path.join(dir, "jig.yaml")).toString("base64") });
-if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid")
+if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid") {
+  const reads = path.join(dir, "label-read-count");
+  const readCount = fs.existsSync(reads) ? Number(fs.readFileSync(reads, "utf8")) : 0;
+  fs.writeFileSync(reads, String(readCount + 1));
+  if (fs.existsSync(path.join(dir, "malformed-label-read"))) out(null);
+  if (fs.existsSync(path.join(dir, "malformed-label-read-after-first")) && readCount > 0) out(null);
+  if (fs.existsSync(path.join(dir, "fail-ownership-recheck")))
+    fs.writeFileSync(
+      path.join(${JSON.stringify(fixture)}, "fail-list-after"),
+      fs.readFileSync(path.join(${JSON.stringify(fixture)}, "list-count"), "utf8"),
+    );
   out({ labels: read().map((name) => ({ name })), headRefOid: fs.readFileSync(path.join(dir, "head"), "utf8") });
+}
 if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "author")
   out({ author: { login: "example-user" } });
 const values = (flag) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
@@ -47,8 +58,15 @@ if (args[0] === "pr" && args[1] === "edit" && [...add, ...remove].some((l) => l.
   }
   fs.writeFileSync(file, JSON.stringify([...read().filter((l) => !remove.includes(l)), ...add]));
   const after = path.join(dir, "status-after-converged.json");
-  if (add.includes("jig:converged") && fs.existsSync(after))
-    fs.copyFileSync(after, path.join(${JSON.stringify(fixture)}, "status.json"));
+  if (add.includes("jig:converged")) {
+    const posted = path.join(${JSON.stringify(fixture)}, "posted.jsonl");
+    if (fs.existsSync(posted)) {
+      const comments = require("node:child_process").execFileSync("jq", ["-s", ".", posted]);
+      fs.writeFileSync(path.join(dir, "comments-at-converged.json"), comments);
+    }
+    if (fs.existsSync(after))
+      fs.copyFileSync(after, path.join(${JSON.stringify(fixture)}, "status.json"));
+  }
   process.exit(0);
 }
 const child = require("node:child_process").spawnSync(${JSON.stringify(stub)}, args, { stdio: "inherit" });

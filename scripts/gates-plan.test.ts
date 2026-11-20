@@ -352,6 +352,29 @@ test("a selection that fails could not check, and the other stages still run", a
   ]);
 });
 
+test("a catalog the gates cannot read leaves the test stage unable to check, and the named test paths reach it", async () => {
+  const { gateRun, runStages, SKIP_SEPARATE_ENV, TEST_PATHS_ENV } =
+    await import("./gates.ts");
+  // This repository has no change-area catalog to name the separate suites.
+  const root = changedRepository("gates:\n  command: bun run gates\n");
+  const unreadable = gateRun(false, "tests", root, {
+    [SKIP_SEPARATE_ENV]: "1",
+  });
+  expect(unreadable.dispatch).toBe(false);
+  const test = unreadable.stages.find((stage) => stage.name === "bun run test");
+  if (!test) throw new Error("the run has no test stage");
+  expect("check" in test).toBe(true);
+  expect(await runStages([test], root)).toEqual([
+    { name: "bun run test", status: 2 },
+  ]);
+  const confined = gateRun(false, "tests", root, {
+    [TEST_PATHS_ENV]: "./lib/ ./other/late.test.ts",
+  });
+  expect(confined.stages.map((stage) => stage.name)).toContain(
+    "bun run test ./lib/ ./other/late.test.ts",
+  );
+});
+
 test("a test whose imports cannot be read stops the selection", async () => {
   const { dispatchTestPaths } = await import("./dispatch-gates.ts");
   const root = changedRepository("gates:\n  dispatch_fast: true\n");

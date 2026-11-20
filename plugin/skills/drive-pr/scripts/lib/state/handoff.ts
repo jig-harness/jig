@@ -45,6 +45,7 @@ import { DEFAULT_BRANCH_PATTERN, prPolicy } from "../pr-policy.ts";
 import { drivenBranchName } from "../driven-branch.ts";
 import { git, gitIdentityEnv } from "../proc.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { appendProbeStop, isProbeStopNote } from "./handoff-probe.ts";
 import type { DriveState } from "./schema.ts";
 import { currentMs } from "../../../../../shared/time.ts";
 
@@ -643,6 +644,7 @@ export async function renderHandoff(
       for (const line of prevLines.slice(idx + 1)) {
         if (
           line === NARRATIVE_MARKER ||
+          isProbeStopNote(line) ||
           /^\*\*Resume:\*\* `\/drive-pr \d+`$/.test(line)
         )
           continue;
@@ -650,6 +652,7 @@ export async function renderHandoff(
       }
     }
   }
+  content = appendProbeStop(content, s);
   content = `${content.trimEnd()}\n\n**Resume:** \`/drive-pr ${pr}\`\n`;
   atomicWrite(out, content);
   return out;

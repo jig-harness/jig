@@ -47,6 +47,8 @@ const idle = JSON.stringify({ load1: 0, cores: 64, availableBytes: 2 ** 40 });
 const busy = JSON.stringify({ load1: 100, cores: 4, availableBytes: 2 ** 40 });
 const environment = (extra: Record<string, string>) => ({
   ...process.env,
+  HOME: scratch,
+  USERPROFILE: scratch,
   CI: "",
   RESOURCE_LOCK_BYPASS: "",
   LOCK_ROOT: scratch,

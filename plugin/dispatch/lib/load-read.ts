@@ -19,7 +19,7 @@ import { join, sep } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { type HostLoad, readHostLoad } from "../../shared/host-load.ts";
-import { lockOccupancy, lockPlace } from "../../shared/resource-lock.ts";
+import { lockPlace, resourceLockRuns } from "../../shared/resource-lock.ts";
 import { failureText } from "./text.ts";
 import type { TickBudget } from "./tick-reads.ts";
 
@@ -38,7 +38,11 @@ export interface LoadReading {
     /** Some workspace filesystems could not be read. */
     incomplete?: string;
   }>;
-  lock: Read<{ holders: number; waiters: number }>;
+  lock: Read<{
+    holders: number;
+    waiters: number;
+    runs?: { workspace: string | null }[];
+  }>;
   forge: Read<{ remaining: number; limit: number }>;
   /** The bytes the processes in each workspace use, by its path; `null` where the platform shows no process's working directory. */
   sessions: Map<string, number> | null;
@@ -132,7 +136,7 @@ function readDisk(paths: readonly string[]): LoadReading["disk"] {
 function readLock(env: NodeJS.ProcessEnv): LoadReading["lock"] {
   try {
     const { root, name } = lockPlace(env);
-    return lockOccupancy(root, name);
+    return resourceLockRuns(root, name);
   } catch (error) {
     return { unread: `the test lock not read: ${failureText(error)}` };
   }

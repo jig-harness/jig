@@ -50,7 +50,7 @@ import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
 import { idleBlocksStart } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
-import { conflictNote } from "./sources/ledgers.ts";
+import { conflictNote } from "./sources/ledger-probe.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
@@ -68,6 +68,7 @@ import { UNCLAIMED_AFTER_MS } from "./machine-config.ts";
 import { planStuck } from "./stuck-launches.ts";
 import {
   type StrandedHold,
+  mergedDrive,
   strandedByClaim,
   strandedByRecord,
 } from "./stranded-holds.ts";
@@ -113,6 +114,8 @@ export interface PlanInput {
   retried?: ReadonlySet<string>;
   /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
   rerunsHeld?: string | null;
+  /** The launch records of follow-ups whose spent pending arm the tick read again as settled (`arm-reread.ts`). */
+  armsSettled?: ReadonlySet<string>;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -222,6 +225,18 @@ export function planTick(input: PlanInput): Plan {
   const mergedNumbers = new Set(input.merged.map((m) => m.number));
   for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number)))
     planDrive(input, pr, plan, want);
+  // A merged pull request's drive no launch acts on, but a launch of unknown
+  // process still holds its account's slot.
+  for (const pr of input.merged)
+    raiseStranded(
+      strandedByRecord(
+        input.slug,
+        mergedDrive(pr),
+        input.launches,
+        input.nowMs,
+      ),
+      want,
+    );
 
   const command = input.section.followupCommand;
   if (command !== null)
@@ -239,6 +254,9 @@ export function planTick(input: PlanInput): Plan {
         owner: input.shared?.owner ?? true,
         retried: input.retried ?? new Set(),
         rerunsHeld: input.rerunsHeld ?? null,
+        ...(input.armsSettled === undefined
+          ? {}
+          : { armsSettled: input.armsSettled }),
         nowMs: input.nowMs,
       },
       plan,
@@ -432,7 +450,9 @@ function wantReason(
       ? "drive ledger"
       : typeof pr.evidence.adopted === "string"
         ? "adoption rule"
-        : "drive label";
+        : pr.evidence.pickupArm === true
+          ? "pickup handoff"
+          : "drive label";
   return `${source} ${pr.class}: ${pr.why}`;
 }
 
@@ -598,6 +618,7 @@ function plannable(
   input: PlanInput,
   read: DrivenPr,
   plan: Plan,
+  want: Want,
 ): DrivenPr | null {
   const target = `PR #${read.number}`;
   const pr = treeBound(read, input.sessions);
@@ -607,17 +628,29 @@ function plannable(
       class: read.class,
       why: `${read.why}; that tree is on another host, whose dispatcher re-drives it there`,
     });
+    raiseStrandedDrive(input, read, want);
     return null;
   }
   const waiting = backingOff(pr, input.nowMs) ?? idleWhy(pr);
   if (waiting === null) return pr;
   plan.quiet.push({ target, class: pr.class, why: waiting });
+  // Nothing is launched for the drive, but a launch of unknown process still
+  // holds its account's slot.
+  raiseStrandedDrive(input, read, want);
   return null;
 }
 
 /** A stranded hold's need, placed beside the sessions the runtime reports as any notification is. */
 function raiseStranded(stranded: StrandedHold | null, want: Want): void {
   if (stranded !== null) want(stranded.action, stranded.joined);
+}
+
+/** A drive's stranded hold, from the launch records this machine holds for it. */
+function raiseStrandedDrive(input: PlanInput, pr: DrivenPr, want: Want): void {
+  raiseStranded(
+    strandedByRecord(input.slug, pr, input.launches, input.nowMs),
+    want,
+  );
 }
 
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
@@ -629,11 +662,11 @@ function planDrive(
 ): void {
   const { slug, launches } = input;
   const target = `PR #${read.number}`;
-  const pr = plannable(input, read, plan);
+  const pr = plannable(input, read, plan, want);
   if (pr === null) return;
   const hold = driveHold(pr, launches);
   if (heldByRecord(target, pr, hold, plan)) {
-    raiseStranded(strandedByRecord(slug, pr, launches, input.nowMs), want);
+    raiseStrandedDrive(input, pr, want);
     return;
   }
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;

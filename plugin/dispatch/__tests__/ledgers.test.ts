@@ -240,6 +240,22 @@ describe("classifyLedger", () => {
       "unplaced",
     );
     expect(converged().class).toBe("unplaced");
+    expect(computing.forgeUndecided).toBe(true);
+  });
+
+  it("does not call a converged ledger that names no verified head undecided by the forge, whatever the forge reports", () => {
+    for (const mergeable of ["UNKNOWN", null]) {
+      const unverified = classifyLedger(
+        stoppedLedger(7, 0, { verifiedSha: "" }),
+        NOW,
+        WINDOW,
+        undefined,
+        { head: "b".repeat(40), mergeable },
+      );
+      expect(unverified.class).toBe("unplaced");
+      expect(unverified.why).toContain("names no head the drive verified");
+      expect(unverified.forgeUndecided).toBeUndefined();
+    }
   });
 
   describe("a ledger that stopped 9", () => {

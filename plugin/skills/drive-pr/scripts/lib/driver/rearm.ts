@@ -30,6 +30,7 @@
  *     the drive posts with the operator's own credentials, so a comment that
  *     merely mentions a parked key must not unpark it.
  */
+import type { ProbeStop } from "../status/probe-stop.ts";
 import { fail, shellQuote } from "./../cli.ts";
 
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
@@ -64,6 +65,7 @@ import { parkAnswers } from "./park-answers.ts";
 import { laggingAnswerPublication } from "./answer-publication.ts";
 
 import { pinsEmptyPassArgs } from "./../pass-args.ts";
+import { passPrompt } from "./../pass-command.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
@@ -78,7 +80,8 @@ export { humanVerdictNotice, NOTICE_MAX } from "./human-answer-notice.ts";
  * The arm command, in the drive's own mode, for a person to copy: with the
  * drive's own pass command when `agent` holds it (the driver passes the
  * command it runs, whose `--model` names the pass model), else the documented
- * Claude Code one, to which `drive.ts` adds the configured model.
+ * Claude Code one with its pass role, to which `drive.ts` adds the configured
+ * model.
  */
 export function armCommand(
   driveTs: string,
@@ -92,7 +95,7 @@ export function armCommand(
   const pass =
     agent.length > 0
       ? agent.map(shellQuote).join(" ")
-      : `claude -p "/jig:drive-pr${mode} ${pr}"`;
+      : `claude -p "${passPrompt("claude", pr, botsOnly)}"`;
   return `bun ${shellQuote(driveTs)} ${pr}${extra}${pinned}${mode} -- ${pass}`;
 }
 
@@ -453,6 +456,7 @@ export async function recordDriveEvent(
   cause: string,
   measured: { leftWork: boolean; tree: string } | null = null,
   until: string | null = null,
+  probe: ProbeStop | null = null,
 ): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
     stdin: JSON.stringify({
@@ -460,6 +464,7 @@ export async function recordDriveEvent(
       cause,
       ...measured,
       ...(until === null ? {} : { until }),
+      ...(probe === null ? {} : { probe }),
     }),
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),

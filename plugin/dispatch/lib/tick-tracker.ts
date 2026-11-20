@@ -13,6 +13,7 @@ import {
   issueKeysOf,
 } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import { personPickupHolds, pickupHoldReason } from "./person-pickup-holds.ts";
 import { endedPassOver } from "./actions/pickup-hold.ts";
 import type { ReadRecord } from "./launches.ts";
 import { batchSafePickups } from "./queue-batch-areas.ts";
@@ -69,6 +70,8 @@ export interface TrackerRequest {
   people: readonly ServedPerson[];
   serveDefaults: Readonly<Record<string, string>> | undefined;
   nowMs: number;
+  /** State directory whose pickup holds this tick reads. */
+  root: string;
   /** Whether some account has room for a pickup this tick. */
   headroom: boolean;
   /** This machine's launch records, for the pickups a person passed over. */
@@ -223,6 +226,27 @@ export async function readTracker(
     tracked.adapter = config.adapter;
     tracked.issueRepository =
       config.adapter === "github" ? config.github.repository : null;
+    const holds = personPickupHolds(repo.slug, request.root);
+    if (!holds.ok) {
+      report.records.push({
+        record: "tracker",
+        source: where,
+        ok: false,
+        detail: holds.failure.reason,
+      });
+      return { ...tracked, partial: true };
+    }
+    const byKey = new Map(holds.value.map((hold) => [hold.item, hold]));
+    for (const hold of holds.value) {
+      report.unplaced.push({
+        target: hold.item,
+        record: "tracker",
+        reason: pickupHoldReason(hold),
+        title: hold.title,
+        url: hold.url,
+        pickupHold: { by: hold.by, at: hold.at },
+      });
+    }
     const tracker = request.preparedTracker ?? openTracker(config, repo.path);
     const mergeFailures: unknown[] = [];
     tracked.servedPolicy = servedPolicyOf(
@@ -234,6 +258,10 @@ export async function readTracker(
         mergeFailures,
       ),
     );
+    tracked.servedPolicy.personHold = (key) => {
+      const hold = byKey.get(key);
+      return hold === undefined ? null : pickupHoldReason(hold);
+    };
     const reading = await readPickups(
       () => {
         tracked.tracker = tracker;
@@ -254,7 +282,9 @@ export async function readTracker(
     );
     reading.read = withMergeFailures(reading.read, mergeFailures);
     report.records.push(reading.read);
-    report.unplaced.push(...reading.unplaced);
+    report.unplaced.push(
+      ...reading.unplaced.filter((row) => !byKey.has(row.target)),
+    );
     tracked.pickups = await batchSafePickups(
       repo,
       values,

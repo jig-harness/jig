@@ -374,7 +374,7 @@ import { readDrives } from ${JSON.stringify(dispatch)};
 const comments = ${JSON.stringify(comments)};
 const ledger = ${JSON.stringify(ledger)};
 const rearm = await parkAnswers(12, ledger.parked, ${JSON.stringify(REPO)}, comments);
-const tick = await readDrives(${JSON.stringify(REPO)}, "maintainer", [{number:12,title:"Change",url:"u",headRefName:"work",headRefOid:"a".repeat(40),mergeable:"MERGEABLE"}], Date.now(), null, null, async () => ({ok:true,value:comments}));
+const tick = await readDrives(${JSON.stringify(REPO)}, "maintainer", [{number:12,title:"Change",url:"u",headRefName:"work",headRefOid:"a".repeat(40),mergeable:"MERGEABLE"}], Date.now(), null, null, {comments: async () => ({ok:true,value:comments})});
 console.log(JSON.stringify({ rearm, tick }));
 `,
     );

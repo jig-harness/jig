@@ -21,6 +21,13 @@ export interface PrSnapshot {
   held: boolean;
 }
 
+/** A label mutation may proceed only while the open pull request still has this head and the live hold is as expected. */
+export const mayMutateHold = (
+  live: PrSnapshot,
+  head: string,
+  held: boolean,
+): boolean => live.state === "OPEN" && live.head === head && live.held === held;
+
 export interface CheckRunLite {
   id: number;
   name: string;
