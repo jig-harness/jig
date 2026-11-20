@@ -4,9 +4,10 @@
  * `bun:sqlite`). It holds every named operation to its behaviour, the
  * atomic batch to all-or-nothing, the in-flight read row and the job lease
  * rows to their conditions, the trimming to its partition and its limit,
- * and every operation's query plan to an index: every statement a sample
- * input prepares reads through an index or a primary key, and the suite
- * fails an operation that has no sample.
+ * and every operation's query plan to its index: the statements a sample
+ * input prepares make exactly the searches the sample names (the index or
+ * key, and the columns it is searched on) and no scan, and the suite fails
+ * an operation that has no sample.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import * as operations from "../../core/operations.ts";
@@ -55,25 +56,50 @@ function context(): UnitContext {
   };
 }
 
-/** A sample input for an operation, in a partition, for its query plan. */
+/**
+ * A sample input for an operation, in a partition, and the searches its
+ * statements' query plan must make, each as SQLite names it after
+ * `SEARCH` (a covering index named as an index): the table, the index or
+ * key, and the columns the search is constrained on.
+ */
 interface Sample {
   readonly partition: string;
   readonly input: unknown;
+  readonly searches: readonly string[];
 }
+
+/** A search through the in-flight reads' primary key. */
+const READ_KEY =
+  "in_flight_reads USING INDEX sqlite_autoindex_in_flight_reads_1 (partition=? AND target=?)";
+/** A search through the job leases' primary key. */
+const LEASE_KEY =
+  "job_leases USING INDEX sqlite_autoindex_job_leases_1 (partition=? AND job=?)";
 
 /** At least one sample per operation the storage holds. */
 const SAMPLES: Record<string, readonly Sample[]> = {
   takeInFlightRead: [
-    { partition: P, input: { target: "pull:12", holder: "a", now: T0 } },
+    {
+      partition: P,
+      input: { target: "pull:12", holder: "a", now: T0 },
+      // The insert by its key shows no plan; the read of the holder does.
+      searches: [READ_KEY],
+    },
   ],
   releaseInFlightRead: [
-    { partition: P, input: { target: "pull:12", holder: "a" } },
+    {
+      partition: P,
+      input: { target: "pull:12", holder: "a" },
+      searches: [READ_KEY],
+    },
   ],
-  readInFlightRead: [{ partition: P, input: { target: "pull:12" } }],
+  readInFlightRead: [
+    { partition: P, input: { target: "pull:12" }, searches: [READ_KEY] },
+  ],
   takeJobLease: [
     {
       partition: DIRECTORY_PARTITION,
       input: { job: "sweep", holder: "a", now: T0, leaseMs: 1_000 },
+      searches: [LEASE_KEY],
     },
   ],
   saveJobProgress: [
@@ -86,15 +112,23 @@ const SAMPLES: Record<string, readonly Sample[]> = {
         leaseMs: 1_000,
         progress: { at: 1 },
       },
+      searches: [LEASE_KEY],
     },
   ],
   finishJob: [
     {
       partition: DIRECTORY_PARTITION,
       input: { job: "sweep", holder: "a", now: T0 },
+      searches: [LEASE_KEY],
     },
   ],
-  readJob: [{ partition: DIRECTORY_PARTITION, input: { job: "sweep" } }],
+  readJob: [
+    {
+      partition: DIRECTORY_PARTITION,
+      input: { job: "sweep" },
+      searches: [LEASE_KEY],
+    },
+  ],
   trimExpired: [
     {
       partition: P,
@@ -104,6 +138,12 @@ const SAMPLES: Record<string, readonly Sample[]> = {
         before: T0,
         limit: 100,
       },
+      // The expired rows through the (partition, time) index, then each
+      // deleted by its row id.
+      searches: [
+        "in_flight_reads USING INDEX in_flight_reads_deadline (partition=? AND deadline_at<?)",
+        "in_flight_reads USING INTEGER PRIMARY KEY (rowid=?)",
+      ],
     },
   ],
 };
@@ -118,10 +158,6 @@ function declaredOperations(): StorageOperation<unknown, unknown>[] {
       "kind" in value,
   );
 }
-
-/** Whether a plan row reads a table through an index or a primary key. */
-const INDEXED =
-  /^SEARCH \S+ USING (?:COVERING )?(?:INDEX \S+|(?:INTEGER )?PRIMARY KEY) \(/;
 
 /** Registers the storage contract's tests against stores `open` gives. */
 export function storageContract(
@@ -160,32 +196,33 @@ export function storageContract(
         );
       });
 
-      test("each operation's query plan reads through an index", () => {
+      test("each operation's query plan makes the searches its sample names, and no scan", () => {
         const { inspection } = store().storage;
         const byName = new Map(declaredOperations().map((op) => [op.name, op]));
         for (const name of inspection.operations) {
           const op = byName.get(name) as StorageOperation<unknown, unknown>;
           for (const sample of SAMPLES[name] ?? []) {
-            const plans = ok(
+            const rows = ok(
               inspection.explain(sample.partition, op, sample.input),
-            );
-            const rows = plans.flat().map((row) => row.detail);
-            // An insert by its key shows no plan; every other read is a search.
+            )
+              .flat()
+              .map((row) => row.detail);
+            const searches = rows
+              .filter((row) => /^SEARCH /.test(row))
+              .map((row) =>
+                row
+                  .replace(/^SEARCH /, "")
+                  .replace("USING COVERING INDEX", "USING INDEX"),
+              );
             expect({
               name,
-              scans: rows.filter((r) => /^SCAN /.test(r)),
-            }).toEqual({ name, scans: [] });
-            const searches = rows.filter((r) => /^SEARCH /.test(r));
-            expect({ name, searched: searches.length > 0 }).toEqual({
+              scans: rows.filter((row) => /^SCAN /.test(row)),
+              searches: searches.sort(),
+            }).toEqual({
               name,
-              searched: true,
+              scans: [],
+              searches: [...sample.searches].sort(),
             });
-            for (const row of searches)
-              expect({ name, row, indexed: INDEXED.test(row) }).toEqual({
-                name,
-                row,
-                indexed: true,
-              });
           }
         }
       });

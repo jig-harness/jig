@@ -352,7 +352,8 @@ const readJobImpl = implement(readJob, (db, partition, { job }) => {
 /**
  * The tables a retention rule may trim, and the time columns it may trim
  * them by: each the second column of an index that starts with the
- * partition, so a trim reads only the rows it deletes.
+ * partition, so a trim finds the partition's expired rows through that
+ * index alone and deletes them by row id.
  */
 const TRIMMABLE: Readonly<
   Record<
@@ -391,8 +392,9 @@ const trimExpiredImpl = implement(
         trimExpired.name,
         "before must be whole milliseconds and limit a whole number above 0",
       );
-    // The oldest rows of the partition, through its (partition, time)
-    // index, deleted by their row ids.
+    // The oldest expired rows of the partition, through its (partition,
+    // time) index; the delete looks each up by its row id, so the subquery
+    // holds the partition's filter for both.
     const oldest = db
       .select({ id: sql<number>`rowid` })
       .from(trimmable.table)
@@ -401,9 +403,7 @@ const trimExpiredImpl = implement(
       .limit(limit);
     const trim = db
       .delete(trimmable.table)
-      .where(
-        and(eq(trimmable.partition, partition), inArray(sql`rowid`, oldest)),
-      )
+      .where(inArray(sql`rowid`, oldest))
       .returning({ id: sql<number>`rowid` })
       .prepare();
     return ok({
