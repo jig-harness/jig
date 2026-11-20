@@ -1613,6 +1613,13 @@ make, use the entry's term instead.
   head is visibly not mergeable from the moment the label lands until the
   release; its message names the label to remove. M13's workflow-convention
   lint accepts it in one shape only.
+- **Timed-out job** — a continuous-integration job the runner stopped because
+  it ran past its time limit (`timeout-minutes` in GitHub Actions). The forge
+  reports it `cancelled`, like a job its concurrency group or a person
+  cancelled, and only the runner's annotation on its check run ("exceeded the
+  maximum execution time") tells it apart. A *PR drive loop* repairs it as a
+  failure instead of re-running it, since a re-run stops at the same limit
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Required checks** — the continuous-integration checks a repository's
   branch protection requires to pass before a pull request may merge. A drive
   derives them from the protection settings unless the repository lists them
