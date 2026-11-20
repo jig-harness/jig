@@ -874,6 +874,11 @@ fields:
     items: string
     distinct: true
     read_by: [do-item, work-batch]
+  issue_tracker.person_checks:
+    type: string
+    pattern: "^\\S+$"
+    read_by: [do-item]
+    since: 0.290.0
   issue_tracker.labels.extractable_tails:
     type: list
     items: string

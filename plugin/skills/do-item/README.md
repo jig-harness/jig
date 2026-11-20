@@ -16,6 +16,18 @@ base snapshot of its own: each lens the diff triggers runs with fresh
 context, the gate's summary says why it skipped the others, and the lenses'
 warnings go into the pull request body under Review Notes.
 
+## The epic closure sweep
+
+A coordinator can propose closure for open epics on demand. The sweep reads
+current tracker issues and uses explicit assessments for their plan entries
+and any unbuilt remainder. A person can accept the whole proposal in one
+reply or name the epics to leave open. The sweep verifies the reply and the
+closure prerequisites, records the waiver, and moves person-only checks to
+the standing issue configured as `issue_tracker.person_checks`.
+
+See the [sweep procedure](references/epic-sweep.md) for the assessment format,
+the commands, and how to record the reply.
+
 ## Scouts before a pickup
 
 At pickup, a claim about a third-party tool is checked against the version in
