@@ -80,10 +80,6 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     Number.isFinite(parseMs(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
-    (v.leftWork === undefined ||
-      (typeof v.leftWork === "boolean" && v.kind === "stop")) &&
-    (v.tree === undefined ||
-      (typeof v.tree === "string" && v.tree !== "" && v.kind === "stop")) &&
     (v.listingPages === undefined ||
       (Number.isSafeInteger(v.listingPages) &&
         (v.listingPages as number) >= 0 &&
@@ -135,8 +131,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, `"leftWork"` with `"tree"` on a stop that measured its tree, `"listingPages"` on a stop for a listing cut short). */
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, `"leftWork"` with `"tree"` on a stop that measured its tree, and `"until"` on a stop on the forge's rate limit). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, and `"until"` on a forge-rate-limit stop). */
 export async function recordEvent(
   store: StateStore,
   raw: string,

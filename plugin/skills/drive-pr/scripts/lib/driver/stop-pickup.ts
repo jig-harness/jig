@@ -1,6 +1,6 @@
 /**
  * A drive armed after a stop whose next step is the drive's own: a stall
- * (`STALLED`, exit `14`), CI still red with its repair passes spent
+ * (`STALLED`, exit `14`), an unreadable check-runs listing (exit `25`), CI still red with its repair passes spent
  * (`CI_REPAIR_SPENT`, exit `21`), checks still failing on the infrastructure
  * after their re-runs (`CI_INFRA_PERSISTED`, exit `23`) or a pass deadline the driver did not
  * restart from (`PASS_DEADLINE`, exit `15`). The dispatcher re-drives each once per head
@@ -26,6 +26,7 @@ import { recordedDecisions } from "./restart.ts";
 import {
   CI_INFRA_PERSISTED_EXIT,
   CI_REPAIR_SPENT_EXIT,
+  CHECK_RUNS_UNREADABLE_EXIT,
   PASS_DEADLINE_EXIT,
   STALLED_EXIT,
 } from "./settings.ts";
@@ -68,7 +69,11 @@ export async function stopPickup(
       notice: ciStop(String(stop?.round ?? "?")).join("\n"),
       inheritsEdits: false,
     };
-  if (code !== STALLED_EXIT && code !== PASS_DEADLINE_EXIT)
+  if (
+    code !== STALLED_EXIT &&
+    code !== PASS_DEADLINE_EXIT &&
+    code !== CHECK_RUNS_UNREADABLE_EXIT
+  )
     return { notice: "", inheritsEdits: false };
   const leftWork = stop?.leftWork === true;
   const here = stop?.tree === `${await resolveActor()}@${hostLabel()}`;
@@ -79,6 +84,15 @@ export async function stopPickup(
         `RE-ARMED AFTER A PASS DEADLINE: the drive before this one stopped with exit ${PASS_DEADLINE_EXIT} (PASS_DEADLINE) at round ${stop?.round ?? "?"}: its passes reached their deadline and the driver did not restart them again (drive.pass_deadline_retries).`,
         ...leftWorkLines(inherits, leftWork, stop?.tree),
         "Finish the round in smaller steps than the killed passes tried, so it ends inside the deadline.",
+      ].join("\n"),
+      inheritsEdits: inherits,
+    };
+  if (code === CHECK_RUNS_UNREADABLE_EXIT)
+    return {
+      notice: [
+        `RE-ARMED AFTER A CHECK-RUNS LISTING STOP: the drive before this one stopped with exit ${CHECK_RUNS_UNREADABLE_EXIT} (CHECK_RUNS_UNREADABLE) at round ${stop?.round ?? "?"}: it could not read the head's check-runs listing whole.`,
+        ...leftWorkLines(inherits, leftWork, stop?.tree),
+        "Finish any inherited work first, then re-run the round; a fresh listing may complete.",
       ].join("\n"),
       inheritsEdits: inherits,
     };
