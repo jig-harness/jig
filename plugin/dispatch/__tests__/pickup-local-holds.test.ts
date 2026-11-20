@@ -18,6 +18,7 @@ import type { LoadReading } from "../lib/load-read.ts";
 import type { MachineAccount } from "../lib/machine-config.ts";
 import { closeStateDb } from "../lib/state.ts";
 import type { Action, RepoReport } from "../lib/types.ts";
+import { currentMs } from "../../shared/time.ts";
 import { FakeLinear } from "./served-linear-fake.ts";
 
 const PERSON = "person@example.com";
@@ -105,7 +106,7 @@ function applyState(root: string, free: number, enforce = true): ApplyState {
     },
     runtime: { name: "orca" },
     records: [],
-    table: slotTable(accounts, [], Date.now(), root),
+    table: slotTable(accounts, [], currentMs(), root),
     last: null,
     passDeadlineSec: 5400,
     codexOptIn: { on: true },
