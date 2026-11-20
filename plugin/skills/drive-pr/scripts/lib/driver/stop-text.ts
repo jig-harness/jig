@@ -30,11 +30,16 @@ export function oneLine(text: string): string {
 function parkStop(pr: string, code: number, state: DriveState | null): string {
   const parked = state?.parked ?? [];
   const first = parked[0];
+  const probe = driverRuntime.stopProbe;
+  const prefix =
+    probe?.code === code
+      ? ` stopped at ${probe.state} (exit ${code}): ${probe.reason};`
+      : ":";
   if (first === undefined)
-    return `PR #${pr} parked: a decision waits for a person (exit ${code})`;
+    return `PR #${pr} parked${prefix} a decision waits for a person (exit ${code})`;
   const more =
     parked.length > 1 ? ` (and ${parked.length - 1} more decisions)` : "";
-  return `PR #${pr} parked: ${oneLine(first.reason)}${more}`;
+  return `PR #${pr} parked${prefix} ${oneLine(first.reason)}${more}`;
 }
 
 /** A usage-limit stop's line: the wall, and when it resets. */
@@ -65,7 +70,9 @@ function forgeLimitStop(
     driverRuntime.stopLimitedUntil ??
     (stop?.cause === String(code) ? stopInstant(stop) : undefined) ??
     "at an unknown time";
-  return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until} (exit ${code})`;
+  const probe = driverRuntime.stopProbe;
+  const reason = probe?.code === code ? `: ${probe.reason}` : "";
+  return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until}${reason} (exit ${code})`;
 }
 
 /**
@@ -86,6 +93,9 @@ export function stopText(
     return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(stall.reason)} (exit ${code})`;
   if (code === exitOf("FORGE_RATE_LIMITED"))
     return forgeLimitStop(pr, code, state);
+  const probe = driverRuntime.stopProbe;
+  if (probe?.code === code)
+    return `PR #${pr} stopped at ${probe.state} (exit ${code}): ${probe.reason}`;
   const named = driveExitReport(code);
   if (named === null)
     return `PR #${pr}'s drive ended with exit ${code}, which names no state the drive ends with`;

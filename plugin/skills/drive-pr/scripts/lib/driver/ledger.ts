@@ -950,6 +950,7 @@ export function ledgerSettlement(
           ? driverRuntime.stopListingPages
           : null,
         driverRuntime.stopLimitedUntil,
+        driverRuntime.stopProbe?.code === code ? driverRuntime.stopProbe : null,
       ));
     if (driver === null) return true;
     if (!recorded) {

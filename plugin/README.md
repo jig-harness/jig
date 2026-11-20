@@ -1198,6 +1198,7 @@ stages' results into these outcome classes:
 | died | a process gone without an exit; a session that ended with no result |
 | refused | a stage's own refusal or a stop it was given |
 | gates failed | a stage that ran to its end without achieving it, or recorded failure |
+| read failed | a stage could not read the state it needs to continue safely |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 

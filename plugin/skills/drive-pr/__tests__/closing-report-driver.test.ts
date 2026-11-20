@@ -195,6 +195,29 @@ describe("the driver's closing report", () => {
     );
   });
 
+  test("at a park, retains the status probe before a long parked-decision summary", () => {
+    driverRuntime.stopProbe = {
+      code: DRIVE_EXIT.HITL_PARKED,
+      state: "HITL_PARKED",
+      reason: "the public API choice needs a person",
+    };
+    try {
+      const report = composeDriverReport({
+        pr: "42",
+        code: DRIVE_EXIT.HITL_PARKED,
+        state: parked({ reason: "x".repeat(3000) }),
+        round: null,
+      });
+      expect(checkClosingReport(report)).toEqual([]);
+      expect(report.concluded).toContain("HITL_PARKED");
+      expect(report.concluded).toContain(
+        "the public API choice needs a person",
+      );
+    } finally {
+      driverRuntime.stopProbe = null;
+    }
+  });
+
   test("at a park without a framed decision, asks the parked item's reason as a question", () => {
     const report = composeDriverReport({
       pr: "42",

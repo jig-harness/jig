@@ -34,6 +34,7 @@
 import {
   globMatchesUnder,
   globMayMatchUnder,
+  globsIntersect,
   matchesGlob,
 } from "../../shared/glob.ts";
 import type { OverlapSettings, PatienceKey } from "./overlap-config.ts";
@@ -207,7 +208,11 @@ function holds(
     return globs.some((g) => globReachesDir(g, bare(y.path)));
   if (x.key === y.key) return true;
   const other = model.areaGlobs(y.key);
-  return globs.some((g) => other.some((h) => globsMeet(g, h, conservative)));
+  return globs.some((g) =>
+    other.some((h) =>
+      conservative ? globsMeet(g, h, true) : globsIntersect(g, h),
+    ),
+  );
 }
 
 /**
