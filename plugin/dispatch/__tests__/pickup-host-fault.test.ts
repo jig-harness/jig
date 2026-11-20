@@ -220,6 +220,7 @@ describe("telling a host fault from a question about the work", () => {
       "the root filesystem ran out of inodes: may I delete the leaked fixtures?",
       "Can I remove leaked test fixtures to free inodes?",
       "Can I remove leaked fixtures to free inodes and retry validation?",
+      "Can I remove leaked test fixtures to free inodes and retry the build?",
       "ENOSPC: no space left on device while writing the lockfile; retry later?",
       "the disk is full: may the build cache be pruned?",
       "the state directory is not writable: may I fix its permissions?",
