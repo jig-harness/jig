@@ -268,34 +268,27 @@ async function waitForWindow(
   return stopped === null ? { waited: true } : { result: stopped };
 }
 
-/**
- * Hand `key` to `identity`. With `wait`, an issue younger than the
- * tracker's creation window is waited for; without it, the result names
- * the time from which the hand-off may run. An aborted `signal`, or the
- * operation's own deadline (the creation window, its margin and
- * `WORK_BUDGET_MS`, counted from the start and covering the prerequisite
- * reads, the wait, the write and the confirmation), ends the wait and
- * starts no further read or write; the result is then a not-handed-over
- * one.
- */
-export async function handOff(
+type HandOffOptions = {
+  wait: boolean;
+  clock?: Pick<Clock, "now" | "sleep">;
+  signal?: AbortSignal;
+  /** Replaces the operation's deadline (tests). */
+  deadlineMs?: number;
+  /**
+   * Aborted when the operation's deadline expires, so a tracker opened
+   * with its signal stops its in-flight assignment requests too, which
+   * take no signal of their own.
+   */
+  operation?: AbortController;
+};
+
+/** The run for one hand-off, and the release of its deadline listener. */
+function openRun(
   tracker: HandOffTracker,
   key: string,
   identity: string,
-  opts: {
-    wait: boolean;
-    clock?: Pick<Clock, "now" | "sleep">;
-    signal?: AbortSignal;
-    /** Replaces the operation's deadline (tests). */
-    deadlineMs?: number;
-    /**
-     * Aborted when the operation's deadline expires, so a tracker opened
-     * with its signal stops its in-flight assignment requests too, which
-     * take no signal of their own.
-     */
-    operation?: AbortController;
-  },
-): Promise<HandOff> {
+  opts: HandOffOptions,
+): { run: Run; release: () => void } {
   const quiet = tracker.creationQuietMs ?? 0;
   const deadline = AbortSignal.timeout(
     opts.deadlineMs ??
@@ -316,6 +309,29 @@ export async function handOff(
         : AbortSignal.any([opts.signal, deadline]),
     step: "read the issue",
   };
+  return {
+    run,
+    release: () => deadline.removeEventListener("abort", expire),
+  };
+}
+
+/**
+ * Hand `key` to `identity`. With `wait`, an issue younger than the
+ * tracker's creation window is waited for; without it, the result names
+ * the time from which the hand-off may run. An aborted `signal`, or the
+ * operation's own deadline (the creation window, its margin and
+ * `WORK_BUDGET_MS`, counted from the start and covering the prerequisite
+ * reads, the wait, the write and the confirmation), ends the wait and
+ * starts no further read or write; the result is then a not-handed-over
+ * one.
+ */
+export async function handOff(
+  tracker: HandOffTracker,
+  key: string,
+  identity: string,
+  opts: HandOffOptions,
+): Promise<HandOff> {
+  const { run, release } = openRun(tracker, key, identity, opts);
   try {
     const issue = await tracker.poolIssue(key, run.signal);
     const refused = unfit(run, issue);
@@ -353,6 +369,6 @@ export async function handOff(
       `read ${key} on the tracker, then ${rerunWords(run)}`,
     );
   } finally {
-    deadline.removeEventListener("abort", expire);
+    release();
   }
 }

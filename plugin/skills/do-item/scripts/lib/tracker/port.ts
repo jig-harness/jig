@@ -28,12 +28,10 @@ export type { DispatchRawIssue, DispatchSource } from "./dispatch-source.ts";
 import type { PoolScopeCounts } from "./pool-counts.ts";
 
 /**
- * The workflow states the skills reason about, by role rather than by the
- * tracker's own name. `issue_tracker.states` maps each to the tracker's name.
- * `pr_open` is the active work whose pull request is open; `in_review` is
- * merged and parked. `blocked` is started work whose drive stopped on parked
- * work: only the drive-ledger projection or a person moves an item into or
- * out of it, and a claim never starts from it.
+ * The workflow states the skills reason about, by role; `issue_tracker.states`
+ * maps each to the tracker's name. `pr_open` is work with an open pull request;
+ * `in_review` is merged and parked. `blocked` is started work whose drive
+ * stopped on parked work: only the ledger projection or a person moves it.
  */
 export const CANONICAL_STATES = [
   "triage",
