@@ -399,6 +399,24 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(readJson<unknown[]>(join(r.dir, "timeline.json"))).toHaveLength(5);
   });
 
+  it("keeps the release retry when the live race snapshot is unreadable", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "intervening-release-race"), "");
+      writeFileSync(join(dir, "recovery-snapshot-timeout"), "");
+    });
+    expectSpawnExit(r, 4);
+    expect(r.stdout).toContain("release-proof-pending");
+    expect(r.stderr).toContain("simulated recovery snapshot timeout");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+    });
+    expect(
+      readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
+        .labels,
+    ).not.toContainEqual({ name: "ci:hold" });
+  });
+
   it("rejects an unproven readable transition before confirmation can become unreadable", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) => {
       writeFileSync(join(dir, "omit-unlabel-event"), "");

@@ -91,10 +91,11 @@ async function refuseRace(
   label: string,
   transitions: () => Promise<readonly LabelTransition[] | null>,
   mutate: (args: string[]) => Promise<{ code: number }>,
+  unread: (failure: HoldReadFailure) => number,
 ): Promise<number> {
   const live = await readPrSnapshot(pr, label);
+  if (!live.ok) return unread(live.failure);
   if (
-    live.ok &&
     live.value.state === "OPEN" &&
     live.value.head === head &&
     !live.value.held
@@ -131,7 +132,7 @@ export async function releaseHeldLabel(
   if (!proof.ok) return unread(proof.failure);
   const mutation = valueOrNull(proof);
   if (mutation?.intervening === true)
-    return refuseRace(pr, head, login, label, transitions, mutate);
+    return refuseRace(pr, head, login, label, transitions, mutate, unread);
   if (mutation === null)
     fail(1, "ci-hold: the unlabeled transition could not be proven");
   const confirmed = await readPrSnapshot(pr, label);
