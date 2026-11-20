@@ -12,7 +12,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
-import { servedEvidence } from "../lib/actions/pickup.ts";
+import { applyPickups, servedEvidence } from "../lib/actions/pickup.ts";
 import {
   isLaunchRecord,
   type LaunchRecord,
@@ -28,6 +28,8 @@ import { planPickups } from "../lib/plan-pickups.ts";
 import { ancestorsOf, batchItemsOf } from "../lib/queue-batch.ts";
 import { readServedPickups } from "../lib/sources/served.ts";
 import { closeStateDb } from "../lib/state.ts";
+import type { ApplyState } from "../lib/actions/launch.ts";
+import type { PickupContext } from "../lib/actions/pickup.ts";
 import type { Action, DispatchSection } from "../lib/types.ts";
 import { issue } from "./served-fixtures.ts";
 
@@ -53,6 +55,8 @@ function nested(
   leaves: PoolIssue[],
   direct: PoolIssue[] = [],
   readsParents = true,
+  waits: Record<string, string[]> = {},
+  extra: { parents?: Record<string, string>; pool?: PoolIssue[] } = {},
 ) {
   const roots = [issue("#1", ["epic"]), ...direct];
   const children: Record<string, PoolIssue[]> = {
@@ -62,8 +66,13 @@ function nested(
   const parents: Record<string, string> = Object.fromEntries([
     ["#2", "#1"],
     ...leaves.map((l) => [l.identifier, "#2"]),
+    ...Object.entries(extra.parents ?? {}),
   ]);
-  const all = [...roots, ...Object.values(children).flat()];
+  const all = [
+    ...roots,
+    ...Object.values(children).flat(),
+    ...(extra.pool ?? []),
+  ];
   const store = new Map<string, unknown>();
   const cache: PickupReads = {
     get: <T>(k: string) => (store.get(k) as T) ?? null,
@@ -80,7 +89,8 @@ function nested(
       s.includes("in_progress") ? [] : roots,
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
     openChildren: async (k: string) => children[k] ?? [],
-    listRelations: async () => [],
+    listRelations: async (k: string) =>
+      (waits[k] ?? []).map((i) => ({ type: "blocked_by", issue: i })),
     poolIssue: async (k: string) => all.find((i) => i.identifier === k) ?? null,
     getIssue: async (k: string) => ({
       identifier: k,
@@ -190,6 +200,57 @@ describe("the late pickup-hold check", () => {
     expect(personPickupBlock(record, root)).toStartWith(
       "#2 is held by operator",
     );
+  });
+
+  it("carries the tracker epics of the blocked item to the blocker pulled for it", async () => {
+    // The assigned #3 sits under #2 under #1 in the tracker and waits on the unrelated #4.
+    const world = nested(
+      [],
+      [issue("#3")],
+      true,
+      { "#3": ["#4"] },
+      {
+        parents: { "#3": "#2" },
+        pool: [issue("#4", [], null)],
+      },
+    );
+    const actions = await tick(world);
+    const action = actions.find((a) => a.target === "#4");
+    expect(action).toBeDefined();
+    const record = recordOf(action as Action);
+    expect(record.ancestors).toEqual(expect.arrayContaining(["#1", "#2"]));
+    const root = scratch();
+    hold("#2", root);
+    expect(personPickupBlock(record, root)).toStartWith(
+      "#2 is held by operator",
+    );
+  });
+
+  it("waits before launching when the planned ancestor chain does not read", async () => {
+    const actions = await tick(nested([issue("#3", [], null)]));
+    const planned = actions.find((a) => a.target === "#3") as Action;
+    const action: Action = {
+      ...planned,
+      evidence: { ...planned.evidence, ancestors: "not json" },
+    };
+    const report = { actions: [action], launches: [] };
+    const state = {
+      records: [],
+      machine: { serve: people },
+    } as unknown as ApplyState;
+    const ctx = {
+      tracker: { adapter: "github" },
+      section: { pickupDeadlineMs: 60_000 },
+      sessions: async () => ({ ok: true, workspaces: [] }),
+    } as unknown as PickupContext;
+    await applyPickups(
+      state,
+      { path: "/r", slug: REPO, defaultBranch: "main" },
+      report as never,
+      ctx,
+    );
+    expect(report.launches).toHaveLength(1);
+    expect(JSON.stringify(report.launches[0])).toContain("ancestor evidence");
   });
 
   it("refuses a batch whose member sits under a nested epic held after the tick", async () => {

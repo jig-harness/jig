@@ -128,7 +128,7 @@ export async function attachAdmissions(
  * then each further epic the walk reached it through: a pulled blocker's
  * walk carries the epics of the item it is pulled forward for.
  */
-function chainOf(
+export function chainOf(
   steps: ReadonlyArray<{ parent: { identifier: string } }>,
   walked: readonly string[] | undefined,
 ): string[] {

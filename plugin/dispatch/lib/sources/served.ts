@@ -2,6 +2,7 @@ import type { PlanMergeReader } from "./plan-merges.ts";
 import { anyWorking } from "./served-occupancy.ts";
 import {
   attachAdmissions,
+  chainOf,
   withOccupancySetup,
   occupancySlots,
   occupancyMetadata,
@@ -43,7 +44,11 @@ import {
   isRateLimited,
   type TrackerRateLimited,
 } from "../../../shared/outbound/budget.ts";
-import { parentHoldUnread, servedParentHold } from "./served-parents.ts";
+import {
+  parentHoldUnread,
+  servedParentHold,
+  servedParentSteps,
+} from "./served-parents.ts";
 import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import {
   closed,
@@ -954,14 +959,39 @@ async function heldReason(
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return parentHold;
-  const pull = pullBlockers(node.issue, node.pull, node, open, {
-    hitl: options.hitl,
-    manualOps: options.manualOps,
-    repoScope: options.repoScope,
-    canAssign: tracker.assignUnassigned !== undefined,
-    blockedState: (item) =>
-      tracker.stateName("blocked", item.nativeType ?? null),
-  });
+  // The blocked node's own tracker epics reach every blocker pulled for it, whether or not the walk passed through them.
+  const steps = await servedParentSteps(tracker, node.issue, cache, view);
+  if (steps === null) {
+    itemFailed(found);
+    return "the epic ancestry cannot be read";
+  }
+  const chain = chainOf(steps, node.ancestors);
+  const origin =
+    node.pull === undefined
+      ? undefined
+      : {
+          ...node.pull,
+          rootAncestors: [
+            ...(node.pull.rootAncestors ?? []),
+            ...chain.filter(
+              (k) => !(node.pull?.rootAncestors ?? []).includes(k),
+            ),
+          ],
+        };
+  const pull = pullBlockers(
+    node.issue,
+    origin,
+    { ancestor: node.ancestor, ancestors: chain },
+    open,
+    {
+      hitl: options.hitl,
+      manualOps: options.manualOps,
+      repoScope: options.repoScope,
+      canAssign: tracker.assignUnassigned !== undefined,
+      blockedState: (item) =>
+        tracker.stateName("blocked", item.nativeType ?? null),
+    },
+  );
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
     return `${pull.reason}; this issue service cannot assign a blocker on its own, so a person assigns it`;
