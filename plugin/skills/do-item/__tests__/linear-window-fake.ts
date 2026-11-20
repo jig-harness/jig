@@ -58,6 +58,7 @@ export function fakeLinear(
     to: string | null;
   }> = [];
   let failAssign = false;
+  let afterPoolRead: (() => void) | null = null;
   const person = (who: string) => ({
     id: who,
     email: who,
@@ -67,8 +68,8 @@ export function fakeLinear(
   const transport: LinearTransport = async (query, variables) => {
     const op = /(?:query|mutation) (\w+)/.exec(query)?.[1] ?? "anonymous";
     switch (op) {
-      case "TrackerPoolIssue":
-        return {
+      case "TrackerPoolIssue": {
+        const answer = {
           issue: {
             identifier: "ENG-1",
             title: "filed",
@@ -85,6 +86,9 @@ export function fakeLinear(
             children: { pageInfo: { hasNextPage: false }, nodes: [] },
           },
         };
+        afterPoolRead?.();
+        return answer;
+      }
       case "TrackerUsers":
         return {
           users: { nodes: [{ id: variables.who, name: variables.who }] },
@@ -114,12 +118,16 @@ export function fakeLinear(
           issue: {
             history: {
               pageInfo: { hasNextPage: false, endCursor: null },
-              nodes: writes.map((w, i) => ({
-                id: `w${i}`,
-                createdAt: iso(w.at),
-                fromAssignee: w.from === null ? null : { id: w.from },
-                toAssignee: w.to === null ? null : { id: w.to },
-              })),
+              // Like the adapter's other history read, leaves out what was
+              // written inside the creation window.
+              nodes: writes
+                .filter((w) => w.at >= T0 + WINDOW_MS)
+                .map((w, i) => ({
+                  id: `w${i}`,
+                  createdAt: iso(w.at),
+                  fromAssignee: w.from === null ? null : { id: w.from },
+                  toAssignee: w.to === null ? null : { id: w.to },
+                })),
             },
           },
         };
@@ -156,6 +164,10 @@ export function fakeLinear(
     /** Assign the issue as a person would, outside the code under test. */
     setAssignee: (who: string | null) => {
       issue.assignee = who;
+    },
+    /** Run `fn` just after each read of the issue is answered, as a racing person would. */
+    onPoolRead: (fn: () => void) => {
+      afterPoolRead = fn;
     },
   };
 }

@@ -134,6 +134,26 @@ describe("handOff on Linear", () => {
     expect(linear.writes).toEqual([]);
   });
 
+  it("keeps an assignment made after the final read of the issue", async () => {
+    const clock = fakeClock(T0 + 10 * 60_000);
+    const linear = fakeLinear(clock);
+    let reads = 0;
+    // The hand-off's final read is its second; a person assigns just after it.
+    linear.onPoolRead(() => {
+      reads += 1;
+      if (reads === 2) linear.setAssignee("dana@example.com");
+    });
+    const result = await handOff(linear.tracker, "ENG-1", FACTORY, {
+      wait: true,
+      clock,
+    });
+    expect(result.handedOver).toBe(false);
+    expect(!result.handedOver && result.reason).toContain("was not assigned");
+    expect(linear.writes).toEqual([]);
+    const held = await linear.tracker.poolIssue("ENG-1");
+    expect(held?.assignee?.id).toBe("dana@example.com");
+  });
+
   it("does not count an assignment by someone who may not start work as handed over", async () => {
     const clock = fakeClock(T0 + 10 * 60_000);
     const linear = fakeLinear(clock, {

@@ -9,11 +9,16 @@
  * never changed: assigned to the identity with its history showing it, it
  * is already handed over; otherwise the result says what a person does.
  *
- * Cost: one read of the issue (a second after a wait, so an assignment or a
- * start made meanwhile is never overwritten), the identity's lookup, one
- * assignment write and the read that confirms it; an issue already
- * assigned costs one history read instead of the write. Waiting costs no
- * request.
+ * Cost: two reads of the issue (the second after the identity's lookup and
+ * any wait, so an assignment or a start made meanwhile is never
+ * overwritten), the identity's lookup, the protected write and the read
+ * that confirms it, then the assigner read. On a tracker with
+ * `assignUnassigned` the protected write reads the current assignee and
+ * the assignment history, the issue's id, the assignee again, then
+ * the history after the write; a history not yet showing the write is read
+ * again until that operation's own deadline, and a long history is read in
+ * pages. An issue already assigned costs the assigner read (one history
+ * read) instead of the write. Waiting costs no request.
  */
 import { type Clock, systemClock } from "../../../../shared/clock.ts";
 import { failureOf } from "../../../../shared/outbound/failure.ts";
@@ -177,16 +182,19 @@ export async function handOff(
       await clock.sleep(waitMs, signal);
       const stopped = interrupted(`read ${key} again after the wait`);
       if (stopped !== null) return stopped;
-      step = `read ${key} again after the wait`;
-      const fresh = await tracker.poolIssue(key, signal);
-      const changed = unfit(fresh);
-      if (changed !== null) return changed;
-      if (fresh?.assignee != null)
-        return notYet(
-          `${key} was assigned to ${fresh.assignee.name} while the hand-off waited; nothing written`,
-          `a hand-off does not take an issue from its assignee: unassign ${key} first if that is meant, then ${again}`,
-        );
     }
+    // The state and assignee are read once more after the identity's lookup
+    // and any wait, so neither a start nor an assignment made meanwhile is
+    // overwritten.
+    step = `read ${key} again before assigning`;
+    const fresh = await tracker.poolIssue(key, signal);
+    const changed = unfit(fresh);
+    if (changed !== null) return changed;
+    if (fresh?.assignee != null)
+      return notYet(
+        `${key} was assigned to ${fresh.assignee.name} while the hand-off ${waitMs > 0 ? "waited" : "looked up the identity"}; nothing written`,
+        `a hand-off does not take an issue from its assignee: unassign ${key} first if that is meant, then ${again}`,
+      );
     const stopped = interrupted(`assign ${key}`);
     if (stopped !== null) return stopped;
     step = `assign ${key} to ${identity}`;
