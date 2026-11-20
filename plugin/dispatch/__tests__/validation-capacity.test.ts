@@ -243,6 +243,28 @@ describe("validation forecast", () => {
     expect(forecast.fill).toBe(1.5);
   });
 
+  test("keeps queued lock runs ahead of a later candidate", () => {
+    const measured = {
+      ...measureValidation([], []),
+      concurrency: 2,
+      kinds: {
+        pickup: { runsPerPass: 1, timeToValidationMs: 10 * MINUTE },
+        drive: { runsPerPass: 1, timeToValidationMs: 0 },
+      },
+    };
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 4, toArrive: 0 },
+      16 * MINUTE,
+      HOUR,
+    );
+    // The queued runs take both slots when the two holders release, so the
+    // candidate cannot acquire until their wave finishes at minute 20.
+    expect(forecast.required).toBeCloseTo(8 / 3);
+    expect(forecast.fill).toBeGreaterThan(1);
+  });
+
   test("reserves an immediately admitted pickup before admitting its drive", () => {
     const state: ValidationLoad = {
       measured: {
@@ -292,6 +314,27 @@ describe("validation forecast", () => {
       admittedRuns: 1,
     };
     expect(validationHold(state, 0.5, "pickup", 90 * MINUTE)).toContain(
+      "keep room for a drive",
+    );
+  });
+
+  test("does not credit admitted runs with service before they reach the lock", () => {
+    const state: ValidationLoad = {
+      measured: {
+        runMs: 15 * MINUTE,
+        concurrency: 1,
+        kinds: {
+          pickup: { runsPerPass: 1, timeToValidationMs: HOUR },
+          drive: { runsPerPass: 1, timeToValidationMs: HOUR },
+        },
+        defaults: [],
+      },
+      demand: { atLock: 0, toArrive: 0 },
+      waitLimitMs: HOUR,
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 4,
+    };
+    expect(validationHold(state, 1, "pickup", 3 * HOUR)).toContain(
       "keep room for a drive",
     );
   });

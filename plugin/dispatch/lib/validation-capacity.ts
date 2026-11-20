@@ -270,9 +270,14 @@ export function forecastValidation(
   // A measured concurrency may be fractional (the midpoint of two observed
   // contention levels). The aggregate calculation above preserves that
   // estimate; a slot simulation requires physical, whole slots.
-  if (atLock <= concurrency && Number.isInteger(concurrency)) {
+  if (Number.isInteger(concurrency)) {
+    // `atLock` contains both holders and queued runs. Model the queued runs
+    // too: when it exceeds the number of slots, omitting them lets a later
+    // candidate take a holder's release before the runs already waiting do.
+    const holdingRuns = Math.min(activeRuns, concurrency);
+    const queuedAtLock = activeRuns - holdingRuns;
     const releases = Array.from({ length: concurrency }, (_, index) =>
-      index < activeRuns ? residualMs : 0,
+      index < holdingRuns ? residualMs : 0,
     );
     const acquire = () => {
       releases.sort((left, right) => left - right);
@@ -280,6 +285,7 @@ export function forecastValidation(
       releases[0] = at + runMs;
       return at;
     };
+    for (let index = 0; index < queuedAtLock; index++) acquire();
     for (let index = 0; index < toArrive; index++) acquire();
     let lastAcquisition = 0;
     for (let index = 0; index < ownRuns; index++) lastAcquisition = acquire();

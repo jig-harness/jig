@@ -177,8 +177,11 @@ export function validationHold(
     );
     const stillRunning = Math.max(0, own.ownRuns - pickupCompletedBeforeDrive);
     const reservedDemand: ValidationDemand = {
-      atLock: state.demand.atLock + state.admittedRuns + stillRunning,
-      toArrive: state.demand.toArrive,
+      // Only work already at the lock may consume service before the drive
+      // arrives. Admitted passes still have to reach validation, even when
+      // their eventual runs are being reserved for this downstream drive.
+      atLock: state.demand.atLock,
+      toArrive: state.demand.toArrive + state.admittedRuns + stillRunning,
     };
     const reserved = forecast(
       state,
