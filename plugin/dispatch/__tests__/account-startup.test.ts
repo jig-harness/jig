@@ -3,7 +3,12 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
+import {
+  recordStartupDeath,
+  recordWorkingStartup,
+} from "../lib/account-startup.ts";
 import { readRecord } from "../lib/launches.ts";
+import { readTranscriptCopy } from "../lib/transcript-copy.ts";
 import { stateDb } from "../lib/state.ts";
 import { wallOf } from "../lib/walls.ts";
 import {
@@ -176,3 +181,50 @@ test("a successful pass resets the count of consecutive unrecognised startup dea
     (await needs(w)).filter((n) => n.cause === "account-startup"),
   ).toMatchObject([{ cause: "account-startup", target: "account a" }]);
 }, 60_000);
+
+test("keeps only a recognised vendor phrase from a sign-in failure", async () => {
+  const w = fixture();
+  readyItem(w, 12);
+  machineFile(w, [account(w, "a", "a@example.com")], {}, ["pickup"]);
+  const launch = (await applyTick(w, false)).repos[0]?.launches.find(
+    (l) => l.outcome === "launched",
+  );
+  expect(launch?.account).toBe("a");
+  const id = String(launch?.record);
+  await waitFor("the pass", () => claudeRuns(w).length === 1);
+  const sentinel = "private startup diagnostic";
+  transcript(w, id, `Failed to authenticate: ${sentinel}`);
+  writeFileSync(
+    join(w.dir, "claude-said"),
+    `Failed to authenticate: ${sentinel}
+`,
+  );
+  writeFileSync(join(w.dir, "claude-exit"), "1");
+  await waitFor("the exit", () => exitWritten(w, id));
+  await applyTick(w, false);
+  const row = stateDb(dispatchState(w))
+    .query("SELECT exit, report FROM launches WHERE id = ?")
+    .get(id) as { exit: string; report: string };
+  expect(JSON.parse(row.exit)).toMatchObject({
+    startup: "sign-in",
+    signInPhrase: "Failed to authenticate",
+  });
+  expect(JSON.stringify([row, endRow(w, id)])).not.toContain(sentinel);
+  expect(readTranscriptCopy(id, dispatchState(w))).toBeNull();
+}, 60_000);
+
+test("a success from an older concurrent launch preserves newer deaths", () => {
+  const w = fixture();
+  const a = {
+    vendor: "claude",
+    configDir: account(w, "a", "a@example.com").dir,
+  };
+  const root = dispatchState(w);
+  const start = (n: number) => `2026-11-20T09:00:0${n}.000Z`;
+  expect(recordStartupDeath(a, "died", start(2), root)).toBe(1);
+  recordWorkingStartup(a, start(1), root);
+  expect(recordStartupDeath(a, "died", start(3), root)).toBe(2);
+  recordWorkingStartup(a, start(4), root);
+  expect(recordStartupDeath(a, "died", start(3), root)).toBe(0);
+  expect(recordStartupDeath(a, "died", start(5), root)).toBe(1);
+});

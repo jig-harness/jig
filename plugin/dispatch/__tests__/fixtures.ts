@@ -433,12 +433,17 @@ const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
 if (process.argv.includes("--max-budget-usd")) {
   const fixture = F + "/claude-sign-in";
+  fs.appendFileSync(F + "/claude-sign-in-runs", "probe\\n");
   const outcome = fs.existsSync(fixture) ? fs.readFileSync(fixture, "utf8") : "success";
   if (outcome === "timeout") Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000);
-  const rejected = outcome === "unauthorized";
+  const response = {
+    unauthorized: "Failed to authenticate: OAuth session expired",
+    "rate-limited": "You've hit your session limit · resets unknown",
+  }[outcome];
+  const rejected = response !== undefined;
   console.log(JSON.stringify({
     is_error: rejected,
-    result: rejected ? "Failed to authenticate: OAuth session expired" : "OK",
+    result: response ?? "OK",
     total_cost_usd: 0,
   }));
   process.exit(rejected ? 1 : 0);

@@ -1,7 +1,11 @@
 /** The dispatcher checks the account through Claude Code without reading its credentials. */
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
-import { readJsonFile, writeJsonFile } from "../../shared/gh-cache-storage.ts";
+import {
+  entryFile,
+  readJsonFile,
+  writeJsonFile,
+} from "../../shared/gh-cache-storage.ts";
 import {
   credentialKey,
   defaultGovernor,
@@ -10,9 +14,9 @@ import {
 import type { FailureClass } from "../../shared/outbound/failure.ts";
 import { recordCall } from "../../shared/outbound/ledger.ts";
 import { run, type RunResult } from "../../shared/proc.ts";
-import { currentMs } from "../../shared/time.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 import { stateRoot } from "../receipts.ts";
-import { signInPhrase } from "./session-startup.ts";
+import { signInPhrase, startupReset } from "./session-startup.ts";
 
 export const SIGN_IN_TIMEOUT_SEC = 8;
 const REUSE_MS = 10 * 60_000;
@@ -23,6 +27,7 @@ function probeEnvironment(env: Record<string, string>): Record<string, string> {
   const isolated: Record<string, string> = {
     ...env,
     DISABLE_NONESSENTIAL_MODEL_CALLS: "1",
+    CLAUDE_CODE_MAX_RETRIES: "0",
   };
   for (const key of Object.keys(isolated))
     if (/^(ANTHROPIC_|CLAUDE_CODE_(?:OAUTH|USE_))/i.test(key))
@@ -33,13 +38,16 @@ function probeEnvironment(env: Record<string, string>): Record<string, string> {
 export type SignInCheck = { failure: FailureClass | null; at: number };
 type Probe = Pick<
   RunResult,
-  "stdout" | "stderr" | "code" | "timedOut" | "spawnFailed"
+  "stdout" | "stderr" | "code" | "timedOut" | "spawnFailed" | "bufferExceeded"
 >;
 
-function resultOf(child: Probe): {
+interface ProbeResult {
   failure: FailureClass | null;
   cost: number | null;
-} {
+  resetAt?: number;
+}
+
+function resultOf(child: Probe, at: number): ProbeResult {
   let json: unknown;
   try {
     json = JSON.parse(child.stdout);
@@ -49,17 +57,32 @@ function resultOf(child: Probe): {
   const result = isMapping(json) ? json : {};
   const cost =
     typeof result.total_cost_usd === "number" ? result.total_cost_usd : null;
+  if (child.bufferExceeded) return { failure: "too-costly", cost };
   if (child.timedOut || child.spawnFailed)
     return { failure: "unreachable", cost };
   if (child.code === 0 && result.is_error === false)
     return { failure: null, cost };
+  const detail = [
+    child.stderr,
+    typeof result.result === "string" ? result.result : child.stdout,
+    ...(Array.isArray(result.errors)
+      ? result.errors.filter(
+          (error): error is string => typeof error === "string",
+        )
+      : []),
+  ].join("\n");
   if (
-    signInPhrase(child.stderr) !== undefined ||
-    signInPhrase(
-      typeof result.result === "string" ? result.result : child.stdout,
-    ) !== undefined
+    signInPhrase(detail) !== undefined ||
+    /^\s*API Error: 401\b/im.test(detail)
   )
     return { failure: "unauthorized", cost };
+  const quota = startupReset(detail, at);
+  if (quota !== null || /^\s*API Error: 429\b/im.test(detail))
+    return quota?.resetAt == null
+      ? { failure: "rate-limited", cost }
+      : { failure: "rate-limited", cost, resetAt: parseMs(quota.resetAt) };
+  if (/^\s*API Error: 5\d\d\b/im.test(detail))
+    return { failure: "server-fault", cost };
   return { failure: "invalid", cost };
 }
 
@@ -72,7 +95,7 @@ export async function checkClaudeSignIn(
 ): Promise<SignInCheck> {
   const credential = credentialKey("claude", configDir);
   const dir = join(root, "claude-sign-in");
-  const file = join(dir, `${credential.split(":").at(-1)}.json`);
+  const file = entryFile(dir, "claude", configDir);
   const cached = readJsonFile(file);
   const at = currentMs();
   const failure = cached?.failure;
@@ -83,18 +106,21 @@ export async function checkClaudeSignIn(
       failure === "unauthorized" ||
       failure === "unreachable" ||
       failure === "invalid" ||
-      failure === "rate-limited") &&
+      failure === "too-costly" ||
+      failure === "server-fault") &&
     at - cached.at < (failure === null ? REUSE_MS : NO_ANSWER_REUSE_MS)
   )
     return { failure, at: cached.at };
 
-  let answer: ReturnType<typeof resultOf>;
+  let answer: ProbeResult;
+  const budget = defaultGovernor();
   let requests = 0;
   try {
-    defaultGovernor().admit("claude", credential);
+    const sentAt = budget.admit("claude", credential, { reserve: null });
     const child = await run(
       [
         "claude",
+        "--safe-mode",
         "--print",
         "--output-format",
         "json",
@@ -121,12 +147,22 @@ export async function checkClaudeSignIn(
       },
     );
     requests = child.spawnFailed ? 0 : 1;
-    answer = resultOf(child);
+    answer = resultOf(child, currentMs());
+    if (answer.failure === "rate-limited")
+      budget.observe(
+        credential,
+        {
+          why: "Claude Code sign-in probe met a usage limit",
+          ...(answer.resetAt === undefined
+            ? { unnamedRefusal: { floorMs: 60_000, capMs: 15 * 60_000 } }
+            : { limitedUntil: answer.resetAt }),
+        },
+        sentAt,
+        null,
+      );
   } catch (error) {
-    answer = {
-      failure: isRateLimited(error) ? "rate-limited" : "unreachable",
-      cost: null,
-    };
+    if (!isRateLimited(error)) throw error;
+    answer = { failure: "rate-limited", cost: null };
   }
   recordCall({
     system: "claude",
@@ -139,6 +175,6 @@ export async function checkClaudeSignIn(
     failure: answer.failure,
   });
   const check = { failure: answer.failure, at: currentMs() };
-  writeJsonFile(dir, file, check);
+  if (check.failure !== "rate-limited") writeJsonFile(dir, file, check);
   return check;
 }

@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readLine } from "../lib/line-store.ts";
 import {
@@ -69,3 +69,30 @@ it("keeps identity admission when the sign-in check times out", async () => {
     exitWritten(w, String(launch?.record)),
   );
 }, 20_000);
+
+it("keeps a probe's usage limit across ticks without sending another request", async () => {
+  const w = fixture("rate-limited");
+  const first = await applyTick(w, false);
+  const pickup = first.repos[0]?.launches[0];
+  expect(pickup?.outcome).toBe("launched");
+  expect(first.signInFallbacks).toEqual([
+    { account: "a", failure: "rate-limited" },
+  ]);
+  await waitFor("the first launch to exit", () =>
+    exitWritten(w, String(pickup?.record)),
+  );
+
+  w.setIssues([assignedIssue(13, "factory-bot", [])]);
+  w.setAssigner(13, "maintainer", "WRITE");
+  const second = await applyTick(w, false);
+  expect(second.repos[0]?.launches[0]).toMatchObject({
+    target: "#13",
+    outcome: "launched",
+  });
+  expect(second.signInFallbacks).toEqual([
+    { account: "a", failure: "rate-limited" },
+  ]);
+  expect(
+    readFileSync(join(w.dir, "claude-sign-in-runs"), "utf8").trim().split("\n"),
+  ).toEqual(["probe"]);
+});

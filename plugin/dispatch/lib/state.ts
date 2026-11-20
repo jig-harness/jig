@@ -577,6 +577,8 @@ export const MIGRATIONS: readonly Migration[] = [
       since TEXT,
       seen_at TEXT,
       death_class TEXT,
+      death_at TEXT,
+      working_at TEXT,
       deaths INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (vendor, config_dir)
     );`,
@@ -654,6 +656,8 @@ const AFTER_STAGE_COLUMNS: KnownColumns = {
     "since",
     "seen_at",
     "death_class",
+    "death_at",
+    "working_at",
     "deaths",
   ],
   launches: [

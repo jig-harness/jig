@@ -34,6 +34,10 @@ import { isMapping } from "../../shared/config-layers.ts";
 /** Startup failures are limited to the first minute of the vendor process. */
 const STARTUP_MS = 60_000;
 
+export function passedStartupWindow(started: number, exited: number): boolean {
+  return exited - started > STARTUP_MS;
+}
+
 /**
  * A complete bounded scan must confirm absence. A matching filename proves
  * presence conservatively; content also catches transcripts named differently.
@@ -152,6 +156,7 @@ const SIGN_IN_PHRASES = [
   "OAuth session expired",
   "Please run /login",
   "Not logged in",
+  "Authentication required · Sign in again to continue",
 ] as const;
 export type SignInPhrase = (typeof SIGN_IN_PHRASES)[number];
 
@@ -219,7 +224,7 @@ export function quickStartupDeath(
     typeof record.sessionId === "string" &&
     code !== null &&
     code !== 0 &&
-    exited - started <= STARTUP_MS
+    !passedStartupWindow(started, exited)
   );
 }
 

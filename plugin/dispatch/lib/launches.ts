@@ -16,8 +16,7 @@
  *   wins, and only its bounded output (`context`) is ever taken out again,
  *   with the run's transcript copy (`transcript-copy.ts`);
  * - `result`, a pickup's session's or a follow-up pass's own answer
- *   (`done` or `failed`), written once by `jig dispatch result` under the
- *   record's token.
+ *   (`done` or `failed`), written once by `jig dispatch result` under its token.
  *
  * A record's state is read from those columns and the process table, the
  * claim judged by the shared rules (`shared/liveness.ts`):

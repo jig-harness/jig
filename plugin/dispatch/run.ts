@@ -185,6 +185,7 @@ import { DEFAULT_STARTUP_THRESHOLD } from "./lib/failures.ts";
 import { writeWall } from "./lib/walls.ts";
 import {
   failedStartup,
+  passedStartupWindow,
   quickStartupDeath,
   type SignInPhrase,
   type StartupFailure,
@@ -605,12 +606,16 @@ function startupOf(
     return {};
   const started = ran.started;
   const exited = ran.exited;
-  if (readResult(record.id) !== null || ran.code === 0) {
+  if (
+    readResult(record.id) !== null ||
+    ran.code === 0 ||
+    ran.said ||
+    passedStartupWindow(started, exited)
+  ) {
     recordWorkingStartup(record, isoFromMs(started));
     return {};
   }
-  if (ran.said || !quickStartupDeath(record, ran.code, started, exited))
-    return {};
+  if (!quickStartupDeath(record, ran.code, started, exited)) return {};
   let phrase: SignInPhrase | undefined;
   const startup = failedStartup(
     record,
@@ -622,7 +627,11 @@ function startupOf(
       phrase = found;
     },
   );
-  const deaths = recordStartupDeath(record, startup ?? "died");
+  const deaths = recordStartupDeath(
+    record,
+    startup ?? "died",
+    isoFromMs(started),
+  );
   const at = isoFromMs(exited);
   if (startup === "sign-in") {
     recordAccountStartupProblem(record, "sign-in", at);
@@ -707,7 +716,9 @@ function settlePassReport(
       signal: ran.signal,
       ...(startup === undefined ? {} : { startup }),
       timedOut: ran.timedOut === true,
-      ...(ran.output === undefined ? {} : { output: ran.output }),
+      ...(startup === "sign-in" || ran.output === undefined
+        ? {}
+        : { output: ran.output }),
     },
     record.sessionId ?? session,
   );
@@ -742,7 +753,7 @@ function recordFinishedExit(
       ...(startup === undefined ? {} : { startup }),
       ...(phrase === undefined ? {} : { signInPhrase: phrase }),
       ...(session === null ? {} : { session }),
-      ...saidOf(record, ran),
+      ...(startup === "sign-in" ? {} : saidOf(record, ran)),
       ...usageOf(record, ran),
     });
   } catch (error) {
