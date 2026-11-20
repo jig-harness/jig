@@ -354,7 +354,7 @@ export function assignedOperations(
         .at(-1);
       if (latest === undefined)
         throw new AssignerUnknown(
-          `issue ${key}: its history holds no assignment of ${who}; Linear omits property changes made in an issue's first three minutes, so re-assign it to start a pickup`,
+          `issue ${key}: its history holds no assignment of ${who}; Linear omits property changes made in an issue's first three minutes, so once the issue is older than that, unassign it and assign it again to start a pickup`,
         );
       return assigner(latest.actor, key, team);
     },
