@@ -2863,7 +2863,12 @@ forge's, wake under the same rule, and say nothing and wake nothing when the
 service does not answer: a failed probe is logged, the sweep still runs.
 Each service's probe is its own instance of the probe job, with its own
 timer at that service's interval, and the instance is the waiter of the ticks
-it woke. A tick that runs for minutes therefore delays only the next probe of
+it woke. An interval is whole minutes, and on a host whose scheduler is cron
+it is also an interval a crontab line can express (one that divides an hour,
+or a whole number of hours that divides a day): the floor rounds up to the
+next such interval, so 432 seconds becomes 10 minutes there, and `jig
+dispatch install` prints the interval it installed beside the configured
+one. A tick that runs for minutes therefore delays only the next probe of
 the service that woke it, never another service's, and an interval is the
 least time between two of a service's probes: a probe whose woken ticks
 outlast the interval starts when they end, since the scheduler never overlaps
@@ -3089,7 +3094,9 @@ has reviewed the plan.
     map of service to duration beside its boolean form; `jig dispatch
     install` printing each floor. Tests: a request over the share is
     refused and the probe skips that run, saying why; an interval under the
-    floor is raised to it and says so; `change_probe: true` and `false`
+    floor is raised to it and says so; on the cron backend a floor that no
+    crontab line expresses (30 Linear scopes on one allowance: 432 seconds)
+    installs at the next interval that one does, and says so; `change_probe: true` and `false`
     read as before. Usable alone: the forge's probe is bounded by its
     share, and a host can set its interval without a timer override.
 16. **A Linear change probe.** The scope-level probe described above, its

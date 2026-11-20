@@ -311,8 +311,10 @@ forge's search 8 seconds, each repository's issue listing 8 seconds for each
 repository (about 80 seconds for eleven, so the listing runs every second
 minute there while the search runs every minute), Linear's 15 seconds for one scope (a multiple of that for several scopes on one allowance), and
 Jira's 5 minutes, a fixed floor until its transport reads Jira's limit
-headers into a window. The probe job runs once a minute, so an interval is
-whole minutes and the floor rounds up to one. A configured interval under its
+headers into a window. Each service's probe runs as its own job on its own timer, so an interval
+is whole minutes and the floor rounds up to one; where the scheduler is cron,
+the floor rounds further up to an interval a crontab line expresses (one that
+divides an hour, or a whole number of hours that divides a day). A configured interval under its
 floor is raised to the floor, and install, the tick's report and the
 dashboard's quota view say so; it is never refused, so a host that sets 1
 minute everywhere gets the fastest the budget allows. The floor protects the
