@@ -15,18 +15,18 @@
  *   - `stop`: the driver exited, its cause the exit code (`0` converged,
  *     `8` HITL-parked, …) or `unknown` (a thrown refusal or a crash), so a
  *     report reads how the drive last ended from the state as well as from
- *     the ledger. A dry run records none. `leftWork` records, on a stall
- *     and on a pass deadline the driver did not restart from, whether the stop
+ *     the ledger. A dry run records none. `leftWork` records, on a stall,
+ *     check-runs listing stop and pass deadline the driver did not restart
+ *     from, whether the stop
  *     measured work in its tree that no push carries (uncommitted edits, an
  *     open git operation, unpushed commits), and `tree` names that tree
  *     (`<actor>@<host>`): the dispatcher re-drives such a stop that left
  *     work only in that tree, and a re-arm in that tree inherits the edits as
- *     its own. A stall's stop without `leftWork` was never measured, so it
- *     is read as possibly holding work; a deadline's, written by a driver
- *     that did not record it, is read as holding none. `listingPages`
+ *     its own. A stall or listing stop without `leftWork` was never measured,
+ *     so it is read as possibly holding work; a deadline's, written by a
+ *     driver that did not record it, is read as holding none. `listingPages`
  *     records, on a `CHECK_RUNS_UNREADABLE` stop, how many pages of the
- *     head's check-runs listing were read.
- *     that did not record it, is read as holding none. `until` records, on
+ *     head's check-runs listing were read. `until` records, on
  *     a stop on the forge's spent rate limit, when the limit resets: the
  *     dispatcher re-drives it from then.
  *

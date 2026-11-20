@@ -118,7 +118,7 @@ describe("classifyLedger", () => {
       change: `head ${head}, stopped ${DRIVE_EXIT.CHECK_RUNS_UNREADABLE}`,
       mechanicalStop: "check-runs",
     });
-    expect(placed.stale?.tree).toBeUndefined();
+    expect(placed.stale?.tree?.actor).toBe(ledger.driver.actor);
   });
 
   it("binds a stall that left work to the tree it stalled in", () => {

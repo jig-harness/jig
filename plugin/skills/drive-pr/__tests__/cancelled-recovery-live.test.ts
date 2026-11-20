@@ -114,6 +114,8 @@ function fixture() {
       appendFileSync(${JSON.stringify(join(dir, "reruns"))}, args[2] + "\\n");
     } else if (args[0] === "api" && args.at(-1).includes("timeline")) {
       console.log("[[]]");
+    } else if (args[0] === "api" && args.at(-1).includes("/issues/") && args.at(-1).includes("/comments")) {
+      console.log("[[]]");
     } else if (args[0] === "api" && args.at(-1).includes("/annotations")) {
       const message = phase === "concurrency"
         ? "Canceling since a higher priority waiting request for 'ci-refs/pull/5' exists"
@@ -123,7 +125,6 @@ function fixture() {
       console.log(JSON.stringify(phase === "garbled" ? { message: "Not Found" } : phase === "paged" ? (onPage === 1 ? filler : [{annotation_level: "failure", message}]) : [{ annotation_level: "failure", message }]));
     } else if (args[0] === "api" && args.at(-1).includes("check-runs")) {
       if (phase === "listing-hangs") await Bun.sleep(30_000);
-      const checks = phase === "external" ? [{id: 2, name: "reviewer", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 2}}] : [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
       const stopped = STOPPED.includes(phase);
       const lint = {id: 3, name: "lint", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 3}};
       const checks = stopped ? [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 1},

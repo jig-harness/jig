@@ -55,7 +55,8 @@
  * could not resolve, such as two requirements that contradict each other, is
  * that person's decision too.
  *
- * A ledger that stopped `STALLED` or `CI_REPAIR_SPENT` is a stop the drive's
+ * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or
+ * `CHECK_RUNS_UNREADABLE` is a stop the drive's
  * own next step settles: a pass that finds why the stalled passes did not
  * act, or a CI repair with a fresh budget. Its change is its head commit and
  * its exit, so it is re-driven once for each; once this machine or another
@@ -420,8 +421,8 @@ function mechanicalStopClass(
 
 /**
  * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
- * stall that left work there or never measured it, and a pass deadline whose
- * stop measured work left. A deadline stop that never measured comes from a
+ * stall or listing stop that left work there or never measured it, and a pass
+ * deadline whose stop measured work left. A deadline stop that never measured comes from a
  * driver that did not record it, so it re-drives on any account.
  */
 function boundToTree(
@@ -430,7 +431,8 @@ function boundToTree(
   last: ReturnType<typeof lastStopEvent>,
 ): boolean {
   const own = last === undefined || last.cause === String(exit);
-  if (kind === "stall") return own && last?.leftWork !== false;
+  if (kind === "stall" || kind === "check-runs")
+    return own && last?.leftWork !== false;
   return kind === "deadline" && own && last?.leftWork === true;
 }
 

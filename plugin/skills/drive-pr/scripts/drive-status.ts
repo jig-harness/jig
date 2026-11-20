@@ -1695,7 +1695,8 @@ async function main(): Promise<number> {
     }
 
     switch (code) {
-      case 1: {
+      case 1:
+      case 25: {
         const limited = await stopOnForgeLimit(report.reason);
         if (limited !== null) return limited;
         // Never let an unreadable state decay into a settled one. Retry a
