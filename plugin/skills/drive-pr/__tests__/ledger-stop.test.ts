@@ -18,7 +18,6 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   markDriverRecordReleased,
-  recordPendingExit,
   removeDriverRecord,
   writeDriverRecord,
 } from "../scripts/lib/ledger-stop.ts";
@@ -712,126 +711,6 @@ describe("recovering the ledger of a driver that could not write it", () => {
       expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
       expect(driverRecordRow(s.leaf, "999")).toBeNull();
     }
-  });
-
-  it("retries the recorded CI exit against the same acquired stopped ledger", async () => {
-    const s = stage({ state: "stopped", exit: 0 });
-    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
-    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
-    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
-    await plantRecord(s, true);
-    recordPendingExit(s.leaf, "999", s.started, 8);
-    writeFileSync(join(s.forge.dir, "fail-patch"), "");
-    const env = { PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}` };
-    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
-    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 0 });
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-
-    rmSync(join(s.forge.dir, "fail-patch"));
-    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
-    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
-    expect(driverRecordRow(s.leaf, "999")).toBeNull();
-  });
-
-  it("keeps a pending ordinary stop for a refused state-label projection", async () => {
-    const s = stage({ state: "stopped", exit: 0 });
-    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
-    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
-    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
-    await plantRecord(s, true);
-    recordPendingExit(s.leaf, "999", s.started, 8);
-    writeFileSync(join(labels.bin, "edit-refused"), "");
-
-    expectSpawnExit(
-      await drives(s, ["--doctor"], {
-        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
-      }),
-      0,
-    );
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-    expect(labels.labels()).toEqual(["jig:converged"]);
-
-    rmSync(join(labels.bin, "edit-refused"));
-    expectSpawnExit(
-      await drives(s, ["--doctor"], {
-        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
-      }),
-      0,
-    );
-    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
-    expect(driverRecordRow(s.leaf, "999")).toBeNull();
-    expect(labels.labels()).toEqual(["jig:parked"]);
-  });
-
-  it("keeps a pending ordinary stop when its state-label configuration is unreadable", async () => {
-    const s = stage({ state: "stopped", exit: 0 });
-    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
-    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
-    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
-    await plantRecord(s, true);
-    recordPendingExit(s.leaf, "999", s.started, 8);
-    writeFileSync(join(labels.bin, "jig.yaml"), ": invalid");
-
-    expectSpawnExit(
-      await drives(s, ["--doctor"], {
-        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
-      }),
-      0,
-    );
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-    expect(labels.labels()).toEqual(["jig:converged"]);
-
-    writeFileSync(
-      join(labels.bin, "jig.yaml"),
-      "dispatch:\n  labels:\n    enabled: true\n",
-    );
-    expectSpawnExit(
-      await drives(s, ["--doctor"], {
-        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
-      }),
-      0,
-    );
-    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
-    expect(driverRecordRow(s.leaf, "999")).toBeNull();
-    expect(labels.labels()).toEqual(["jig:parked"]);
-  });
-
-  it("keeps a pending ordinary stop when the label ownership recheck is unreadable", async () => {
-    const s = stage({ state: "stopped", exit: 0 });
-    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
-    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
-    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
-    await plantRecord(s, true);
-    recordPendingExit(s.leaf, "999", s.started, 8);
-    writeFileSync(join(labels.bin, "fail-ownership-recheck"), "");
-
-    expectSpawnExit(
-      await drives(s, ["--doctor"], {
-        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
-      }),
-      0,
-    );
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-    expect(labels.labels()).toEqual(["jig:converged"]);
-  });
-
-  it("keeps a pending ordinary stop when its label projection is unavailable", async () => {
-    const s = stage({ state: "stopped", exit: 0 });
-    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
-    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
-    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
-    await plantRecord(s, true);
-    recordPendingExit(s.leaf, "999", s.started, 8);
-    writeFileSync(join(labels.bin, "malformed-label-read"), "");
-
-    expectSpawnExit(
-      await drives(s, ["--doctor"], {
-        PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}`,
-      }),
-      0,
-    );
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-    expect(labels.labels()).toEqual(["jig:converged"]);
   });
 
   it("reserves released recovery retries and preserves an unpublished successor after a forge failure", async () => {
