@@ -7,6 +7,7 @@ import type { AccountIdentity } from "./../identity.ts";
 
 import type { InfraRecovery } from "./infra-recovery.ts";
 import type { CiAttempts } from "./ci-attempts.ts";
+import type { RoundFinish } from "../state/round-finish.ts";
 
 export interface DriveRoundContext {
   /** A requested worktree settlement is pending until a review pass succeeds. */
@@ -70,6 +71,8 @@ export interface DriveRoundContext {
   stallExtraRound: boolean;
   /** The handoff narrative as it stood when that extra round was granted: what its pass adds is what the stop prints. */
   stallNarrative: string[] | null;
+  /** How each pass of the current stall streak's round finished, `null` for one that recorded none. */
+  stallFinishes?: (RoundFinish | null)[];
   /**
    * What the next review pass is told about the stop the driver recovered
    * from (`$DRIVE_PR_PASS_NOTICE`): a killed pass, a stall. Cleared once a

@@ -578,7 +578,8 @@ export interface LineCarried {
   target: string;
   pr: number;
   url: string;
-  drive: "driving" | "converged";
+  /** The drive's state: `parked` on a person's question, `stopped` for a re-arm or a re-drive, `unplaced` while the forge leaves it undecided. */
+  drive: "driving" | "converged" | "parked" | "stopped" | "unplaced";
   /** The tick's reason, verbatim. */
   why: string;
 }

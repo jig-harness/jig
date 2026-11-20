@@ -700,12 +700,20 @@ already in `pr_open`, or with a move to `pr_open` still to make, keeps the
 rule above and is not listed as carried. Any other claimed item is not a
 stall while an open pull request of the
 repository's own branches that the line links to it (as the need's framed
-decision reads the links) has a drive that is live or has converged and
-waits for its merge, the drive's state being the one its dispatch label
-shows: the tick reports the item as carried by that pull request, with its
-link and the drive's state, and the line lists it as [carried](../GLOSSARY.md). With no drive
-on that pull request, a stopped one, or a drive or open pull requests that
-did not read, the stall need stands and says which. One with more than one running session is
+decision reads the links) has a drive, whatever its state: live, converged
+and waiting for its merge, parked on a person's question, stopped for a
+re-arm or a re-drive, or unplaced for the tick while the forge leaves its
+state undecided (a mergeability still being computed). The tick reports the
+item as carried by that pull request, with its link and the drive's state,
+and the line lists it as [carried](../GLOSSARY.md); what a person must do
+there is the pull request's own need, shown once. A pull request merged
+within the last day that the line links to the item settles it too: the
+follow-up moves it, and no stall need is raised; one its follow-up has not
+moved a day after the merge is a stalled pickup again. A drive unplaced for
+the tick carries the item only when its ledger stopped and the forge leaves
+the rest undecided. With no
+pull request linking it, no drive on the one that does, or a drive or open
+pull requests that did not read, the stall need stands and says which. One with more than one running session is
 a double claim (see Guards against a second launch). A repository with no factory identity
 configured has no pickups of its own; its other stages still run.
 
