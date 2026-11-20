@@ -347,11 +347,14 @@ test("on Jig's catalog a change to a file only its own skill uses runs that skil
   // Built in parts: a test that spelled the file's name would depend on it.
   const leaf = `plugin/skills/audit/scripts/lib/${"feedback"}.ts`;
   const legs = testLegs(leaf);
-  expect(legs).toHaveLength(1);
+  // The skill's tests and the shared tests are one leg, sharded; every shard
+  // carries the same paths.
   const paths = (legs[0]?.paths ?? "").split(" ");
+  expect(new Set(legs.map((leg) => leg.paths)).size).toBe(1);
   // Another skill's test that spells a shared file name bare is kept, as the
   // name could mean the file of that name in any skill.
-  expect(paths[0]).toBe("./plugin/skills/audit/");
+  expect(paths).toContain("./plugin/skills/audit/");
+  expect(paths).toContain("./plugin/shared/__tests__/");
   expect(paths.length).toBeLessThan(40);
   expect(paths).not.toContain("./website/");
 });

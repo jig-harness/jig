@@ -7,7 +7,9 @@ import { log } from "../shared/log.ts";
 import { type Failure, failed } from "../shared/outcome.ts";
 import { main as withResourceLock } from "../shared/resource-lock.ts";
 import { gcConfiguration } from "./config.ts";
+import { fixtureCapacityFailure } from "../shared/fixture-health.ts";
 import { install } from "./install.ts";
+import { verifyFixtureRetirement } from "./kinds/fixture-retirement.ts";
 import { collectionPlan } from "./plan.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
 import {
@@ -219,7 +221,22 @@ function failedRun(options: Options, failure: Failure): number {
 async function executeRun(options: Options): Promise<number> {
   const kinds = await collectionPlan(options);
   if (!kinds.ok) return failedRun(options, kinds.failure);
-  const { receipt, path } = await runCollection(kinds.value, options);
+  if (
+    options.scheduled &&
+    options.collect &&
+    !kinds.value.some((kind) => kind.name === "scratch")
+  ) {
+    const failure = fixtureCapacityFailure(
+      "The scheduled run has no scratch collection plan.",
+    );
+    if (failure !== null) return failedRun(options, failure);
+  }
+  const { receipt, path } = await runCollection(kinds.value, {
+    ...options,
+    ...(options.scheduled && options.collect
+      ? { verify: verifyFixtureRetirement }
+      : {}),
+  });
   console.log(
     options.json
       ? JSON.stringify(receipt, null, 2)
@@ -261,13 +278,15 @@ function applySchedule(options: Options): Failure | null {
     Temporal.Now.plainDateISO(),
     stat.bavail * stat.bsize,
   );
-  return null;
+  return options.collect
+    ? null
+    : fixtureCapacityFailure("The scheduled run is report-only.");
 }
 /** The collecting run the heavy-run lock wraps: this one's selection, collecting. */
 function collectingArguments(options: Options): string[] {
   return [
     "gc",
-    "--collect",
+    options.scheduled ? "--scheduled" : "--collect",
     ...(options.repository === undefined ? [] : ["--repo", options.repository]),
     ...(options.kind === undefined ? [] : ["--kind", options.kind]),
     ...(options.json ? ["--json"] : []),

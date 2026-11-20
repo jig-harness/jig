@@ -5,6 +5,9 @@
  * by its configuration directory, so it needs no runtime that binds an
  * interactive session. For each one:
  *
+ * 0. what the host can tell alone: an account with a free slot, and a
+ *    host load that does not hold the launch (`localHold`), so a launch
+ *    these hold spends no tracker read;
  * 1. the fresh read: the item still assigned to the factory identity in a
  *    dispatch state, no running session joined to it, no launch record
  *    holding it;
@@ -34,7 +37,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { batchItemsOf } from "../queue-batch.ts";
+import { ancestorsOf, batchItemsOf } from "../queue-batch.ts";
 import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -70,6 +73,7 @@ import {
   startRecord,
   waits,
 } from "./launch.ts";
+import { localHold } from "./local-hold.ts";
 import {
   holdingRecords,
   leftBehindWorkspaces,
@@ -240,6 +244,11 @@ async function launchOne(
   const batchRead = batchItemsOf(action.evidence.batchItems);
   if (!batchRead.ok) return waits(action, batchRead.failure.reason);
   const batch = batchRead.value;
+  const chain = ancestorsOf(action.evidence.ancestors);
+  if (!chain.ok) return waits(action, chain.failure.reason);
+  // A launch the host would hold anyway spends no tracker read.
+  const local = localHold(state, repo.slug, action, deadlineSec(ctx));
+  if (local !== null) return local;
   const checkBatch = async () => {
     for (const member of batch ?? []) {
       const fresh = await changed(state, repo, ctx, member.key, {
@@ -254,7 +263,7 @@ async function launchOne(
   };
   const beforeBatch = await checkBatch();
   if (beforeBatch !== null) return waits(action, beforeBatch);
-  const served = servedEvidence(action);
+  const served = servedEvidence(action, chain.value);
   const before = await changed(state, repo, ctx, action.target, served);
   if ("why" in before) return waits(action, before.why);
   const admitted = await admitAccount(
@@ -351,11 +360,15 @@ async function startOrReturn(
 }
 
 /** The optional served-item facts which a pickup preserves in its launch record. */
-function servedEvidence(action: Action): {
+export function servedEvidence(
+  action: Action,
+  ancestors: string[] | undefined,
+): {
   pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
   factoryAncestor?: string;
+  ancestors?: string[];
   blockingFor?: string;
 } {
   const { ancestorEpic, factoryAncestor, blockingFor, servedPerson, pooled } =
@@ -365,6 +378,7 @@ function servedEvidence(action: Action): {
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
     ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
     ...(typeof factoryAncestor === "string" ? { factoryAncestor } : {}),
+    ...(ancestors === undefined ? {} : { ancestors }),
     ...(typeof blockingFor === "string" ? { blockingFor } : {}),
   };
 }

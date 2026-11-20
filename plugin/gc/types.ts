@@ -68,11 +68,7 @@ export interface Receipt {
   exitStatus: number;
   /** The plugin upgrade the launcher ran before this scheduled run (`runtime/upgrade-record.ts`). */
   upgrade?: ScheduledUpgrade;
-  /**
-   * Why the run collected nothing before any kind was planned: its
-   * configuration was refused (`configuration`, exit 2) or could not be read
-   * (`unreadable`, exit 1). Absent when the run planned its kinds.
-   */
+  /** A run-level failure, such as refused configuration or unresolved fixture registry pressure. */
   failure?: RunFailure;
 }
 /** A run's failure as its receipt records it: a stable code and its reason. */

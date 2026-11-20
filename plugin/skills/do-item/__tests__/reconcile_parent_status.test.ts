@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   DEFAULT_VOCABULARY,
+  epicChildDisposition,
   isReconcileInputShape,
   positiveIntEnv,
   type ReconcileChildInput,
@@ -215,7 +216,7 @@ describe("reconcileParentStatus", () => {
       });
     });
 
-    it('caps the parent at "Ops Pending" when every open child is Ops Pending or Done', () => {
+    it("recognizes an Ops Pending child as a tail beside a Done child", () => {
       const r = reconcileParentStatus({
         parentLabels: [],
         children: [
@@ -224,12 +225,12 @@ describe("reconcileParentStatus", () => {
         ],
       });
       expect(r).toMatchObject({
-        verdict: "set_status",
-        parentState: "ops_pending",
+        verdict: "extract_and_close_eligible",
+        parentState: null,
       });
     });
 
-    it('Canceled/Duplicate children fall out of the ladder and never win as "least advanced"', () => {
+    it("Canceled/Duplicate children do not block an Ops Pending tail", () => {
       const r = reconcileParentStatus({
         parentLabels: [],
         children: [
@@ -238,8 +239,8 @@ describe("reconcileParentStatus", () => {
         ],
       });
       expect(r).toMatchObject({
-        verdict: "set_status",
-        parentState: "ops_pending",
+        verdict: "extract_and_close_eligible",
+        parentState: null,
       });
     });
   });
@@ -261,8 +262,9 @@ describe("reconcileParentStatus", () => {
       });
     });
 
-    it("accepts any of the four tail labels", () => {
+    it("accepts any default tail label", () => {
       for (const tail of [
+        "hitl",
         "hitl:legal",
         "manual-ops",
         "hitl:tactical",
@@ -274,6 +276,32 @@ describe("reconcileParentStatus", () => {
         });
         expect(r.verdict).toBe("extract_and_close_eligible");
       }
+    });
+
+    it("keeps person-owned tail roles separate from ordinary follow-ups", () => {
+      for (const tail of [
+        "hitl",
+        "hitl:legal",
+        "hitl:tactical",
+        "manual-ops",
+      ]) {
+        expect(
+          epicChildDisposition(
+            child("Todo", {
+              type: "unstarted",
+              labels: [tail],
+            }),
+          ),
+        ).toBe("person-check");
+      }
+      expect(
+        epicChildDisposition(
+          child("Todo", {
+            type: "unstarted",
+            labels: ["pr-followup"],
+          }),
+        ),
+      ).toBe("extractable-tail");
     });
 
     it("is NOT eligible when only some incomplete children carry a tail label", () => {
@@ -404,7 +432,7 @@ describe("reconcileParentStatus", () => {
       expect(r.parentState).toBeNull();
     });
 
-    it('mixes a "Closed"-bucket-completed child with a genuine "Ops Pending" child and caps at Ops Pending', () => {
+    it("recognizes an Ops Pending tail beside a child completed by its state name", () => {
       const r = reconcileParentStatus({
         parentLabels: [],
         children: [
@@ -413,12 +441,12 @@ describe("reconcileParentStatus", () => {
         ],
       });
       expect(r).toMatchObject({
-        verdict: "set_status",
-        parentState: "ops_pending",
+        verdict: "extract_and_close_eligible",
+        parentState: null,
       });
     });
 
-    it('a completed child name-contradicting as "In Progress" does not out-vote a genuine "Ops Pending" child on the ladder', () => {
+    it("a completed child with an active state name does not block an Ops Pending tail", () => {
       // `type: 'completed'` wins the bucket over the name — this child is
       // actually done — but its exact name still matches STATE_LADDER's
       // "In Progress" rung. The ladder must not consider it at all.
@@ -430,12 +458,12 @@ describe("reconcileParentStatus", () => {
         ],
       });
       expect(r).toMatchObject({
-        verdict: "set_status",
-        parentState: "ops_pending",
+        verdict: "extract_and_close_eligible",
+        parentState: null,
       });
     });
 
-    it('an abandoned child name-contradicting as "In Review" does not out-vote a genuine "Ops Pending" child on the ladder', () => {
+    it("an abandoned child with a review state name does not block an Ops Pending tail", () => {
       const r = reconcileParentStatus({
         parentLabels: [],
         children: [
@@ -444,8 +472,8 @@ describe("reconcileParentStatus", () => {
         ],
       });
       expect(r).toMatchObject({
-        verdict: "set_status",
-        parentState: "ops_pending",
+        verdict: "extract_and_close_eligible",
+        parentState: null,
       });
     });
 

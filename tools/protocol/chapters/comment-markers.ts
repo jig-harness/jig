@@ -121,6 +121,8 @@ export const NON_JSON_MARKERS: Readonly<Record<string, string>> = {
   "issue-fields-sweep": "A prose facet-sweep marker.",
   "fleet-health-suspicion": "A prose suspicion marker.",
   "epic-acceptance-verdict": "A verdict word on a marker line.",
+  "epic-sweep": "A digest on an epic closure proposal marker.",
+  "epic-waiver": "A marker on a person's epic closure decision.",
 };
 
 /** The media whose kinds the chapter covers. */

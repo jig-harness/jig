@@ -144,6 +144,8 @@ export interface WantedItem {
   ancestorEpic?: string;
   /** Factory-assigned epic whose authority an unassigned child inherits. */
   factoryAncestor?: string;
+  /** Every epic above the item, outermost to nearest, then for a pulled blocker those of the item it is pulled forward for; the late hold check reads each. */
+  ancestors?: string[];
   /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
   blockingFor?: string;
   batchAllowed?: boolean;

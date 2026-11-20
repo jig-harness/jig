@@ -312,7 +312,7 @@ branch from that base and switch to it before the first commit
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>" --issue-json <that issue's JSON file>
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> <remote>/<base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git switch -c <printed-branch-name> <remote>/<base>
 ```
 
 When a branch of that name already exists for this batch, switch to it

@@ -985,6 +985,9 @@ function pickupAction(
       ...(item.factoryAncestor === undefined
         ? {}
         : { factoryAncestor: item.factoryAncestor }),
+      ...(item.ancestors === undefined
+        ? {}
+        : { ancestors: JSON.stringify(item.ancestors) }),
       ...(item.blockingFor === undefined
         ? {}
         : { blockingFor: item.blockingFor }),
