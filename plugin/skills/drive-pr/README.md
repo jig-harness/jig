@@ -531,7 +531,7 @@ It builds the command above for that tree and prints it with what to do next, as
 | `background` | With the session's background execution, as below |
 | `print` | Nowhere: the command is printed for a person to run |
 
-A pickup running under the process runtime gets `status: owed`. It hands
+Unless arming is set to `print`, a pickup running under the process runtime gets `status: owed`. It hands
 the pull request to the dispatcher, which admits its first drive after
 the pickup ends.
 
