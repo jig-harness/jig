@@ -15,9 +15,11 @@ release: minor
   `drizzle-kit` generates the migrations from the schema; the hub has no
   command yet that opens the store.
 - The hub's job helper and the trimming job's framework: a scheduled job runs
-  its steps under a deadline and its lease, storing its progress after each
-  step, so a run that stops is resumed by the next one; the trimming job runs
-  hourly and deletes each table's expired rows in chunks, by the retention
+  its steps under a deadline and a lease that outlives it, storing its
+  progress after each step, so a run that stops is resumed by the next one.
+  The trimming job runs hourly and deletes, in chunks, the expired rows of
+  each table that declares a retention rule. Only the in-flight reads have
+  one so far; each later table declares its own as it arrives, by the
   periods [design/control-plane.md](../design/control-plane.md#how-long-it-keeps-things)
   sets.
 - The plugin vendors Drizzle (`drizzle-orm` 0.45.4, Apache License 2.0) under
