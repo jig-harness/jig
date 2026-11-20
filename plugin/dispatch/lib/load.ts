@@ -380,6 +380,7 @@ function refusal(
   kind: LoadKind,
   repo: string,
   pickupDeadlineMs: number,
+  immediate = false,
 ): Refusal | null {
   const mem = memoryRefusal(state, kind);
   if (mem !== null) return mem;
@@ -393,6 +394,7 @@ function refusal(
       kind,
       pickupDeadlineMs,
       repo,
+      immediate,
     );
     if (detail !== null) return { gauge: "validation", detail };
   }
@@ -460,7 +462,7 @@ export function judge(
     state.holds.push({ repo, target, kind, ...pinnedHold, held: true });
     return `the host's validation capacity holds it: ${pinnedHold.detail}`;
   }
-  const refused = refusal(state, kind, repo, pickupDeadlineMs);
+  const refused = refusal(state, kind, repo, pickupDeadlineMs, immediate);
   if (refused === null) {
     state.spentBytes += reservation(state, kind);
     state.spentSlots += 1;

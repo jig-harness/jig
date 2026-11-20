@@ -450,6 +450,28 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
     ).toContain("the host's validation capacity holds it");
   });
 
+  it("applies the immediate forecast under enforcement as it does without it", () => {
+    const hold = (enforce: boolean, atLock: number) => {
+      const load = withDemand(atLock);
+      load.settings = { ...load.settings, enforce };
+      return judge(
+        load,
+        "pickup",
+        SLUG,
+        "#12",
+        3 * HOUR,
+        enforce ? [] : VALIDATION_GAUGES,
+        true,
+      );
+    };
+    const room = Array.from({ length: 80 }, (_, n) => n).find(
+      (atLock) => hold(false, atLock) !== null,
+    );
+    expect(room).toBeDefined();
+    expect(hold(true, room as number)).not.toBeNull();
+    expect(hold(true, 0)).toBeNull();
+  });
+
   it("admits it when the validation capacity has room, or when the gauge does not read", () => {
     expect(
       judge(withDemand(0), "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
