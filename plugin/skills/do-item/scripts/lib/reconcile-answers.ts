@@ -32,6 +32,7 @@ export interface IssueAnswer {
   /** The parent's own children, as `get_issue.ts` prints them: the keys the listing must answer for. */
   children?: Array<{ identifier?: string }>;
   nativeType?: string | null;
+  isEpic?: boolean;
   /** A child's linked pull request, set by the caller (`linked-pr.ts`). */
   pullRequest?: LinkedPrState;
 }
@@ -146,6 +147,9 @@ export function listingFromAnswers(input: AnswersInput): ReconcileInput {
     parentLabels,
     parentNativeType:
       typeof parent.nativeType === "string" ? parent.nativeType : null,
+    ...(typeof parent.isEpic === "boolean"
+      ? { parentIsEpic: parent.isEpic }
+      : {}),
     children: children as ReconcileChildInput[],
   };
 }

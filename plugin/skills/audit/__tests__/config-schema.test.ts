@@ -59,6 +59,7 @@ import {
   codexPassArgsProblem,
   DEFAULT_CODEX_PASS_ARGS,
 } from "../../drive-pr/scripts/lib/codex-pass-args.ts";
+import { readStatusPolling } from "../../drive-pr/scripts/lib/status/poll-pacing.ts";
 import { CI_REPAIR_ROUNDS_DEFAULT } from "../../drive-pr/scripts/lib/driver/settings.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
@@ -148,6 +149,11 @@ import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
 const repoRoot = join(plugin, "..");
+import {
+  LOAD_DEFAULTS,
+  loadSettings,
+} from "../../../dispatch/lib/load-config.ts";
+
 const schema = loadSchema();
 const field = (path: string) => schema.fields.find((f) => f.path === path);
 const under = (prefix: string) =>
@@ -206,6 +212,22 @@ function completeExample(): Record<string, unknown> {
   return load(block) as Record<string, unknown>;
 }
 
+test("documents the dispatch machine file's validation share in the audit schema", () => {
+  const validation = schema.machineFields?.find(
+    ({ path }) => path === "load.validation",
+  );
+  expect(validation).toMatchObject({
+    type: "number",
+    min: Number.MIN_VALUE,
+    max: 1,
+    default: LOAD_DEFAULTS.validation,
+    read_by: ["dispatch"],
+  });
+  expect(loadSettings({ validation: validation?.min }).ok).toBe(true);
+  expect(loadSettings({ validation: validation?.max }).ok).toBe(true);
+  expect(loadSettings({ validation: 0 }).ok).toBe(false);
+});
+
 describe("CONFIGURATION.md", () => {
   const documented = documentedFields();
 
@@ -249,12 +271,13 @@ describe("CONFIGURATION.md", () => {
         ]);
   });
 
-  test("its complete example sets every field and passes the schema and the skills", () => {
+  test("its complete example sets every active field and passes the schema and the skills", () => {
     const example = completeExample();
     const findings = checkConfig(example, schema);
     expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
+    expect(() => readStatusPolling(example)).not.toThrow();
     expect(() => parseWorkTypes(example)).not.toThrow();
     expect(() => parseRouting(example, parseWorkTypes(example))).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
@@ -272,12 +295,12 @@ describe("CONFIGURATION.md", () => {
           (node, key) => (node as Record<string, unknown> | undefined)?.[key],
           example,
         );
-    // A repository's file refuses what only the host sets.
-    for (const f of schema.fields)
-      expect([f.path, set(f.path) !== undefined]).toEqual([
-        f.path,
-        f.user_only !== true,
-      ]);
+    // The example may omit deprecated keys. A repository file refuses host-only keys.
+    for (const f of schema.fields) {
+      const present = set(f.path) !== undefined;
+      if (!present && f.deprecated !== undefined) continue;
+      expect([f.path, present]).toEqual([f.path, f.user_only !== true]);
+    }
   });
 });
 
@@ -439,6 +462,7 @@ describe("the reading skills", () => {
 
   test("use the defaults the schema lists", () => {
     const policy = parsePrPolicy({});
+    const statusPolling = readStatusPolling({});
     const dispatch = dispatchSection({});
     if (!dispatch.ok) throw new Error(dispatch.failure.reason);
     const defaults = Object.fromEntries(
@@ -452,6 +476,9 @@ describe("the reading skills", () => {
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
+      "drive.status_poll.waiting_share": statusPolling.waitingShare,
+      "drive.status_poll.max_interval_seconds":
+        statusPolling.maxIntervalSeconds,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
       "drive.ci_repair_rounds": CI_REPAIR_ROUNDS_DEFAULT,
       "drive.pass_model": DEFAULT_PASS_MODEL,

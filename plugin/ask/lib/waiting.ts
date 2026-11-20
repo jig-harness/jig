@@ -12,6 +12,7 @@ import { uniqueLogins } from "../../shared/forge-logins.ts";
 import { formatAddress, type Station } from "../../shared/address.ts";
 import type {
   LineNeed,
+  LineQueued,
   NeedCause,
 } from "../../dispatch/lib/dashboard-contract.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
@@ -40,6 +41,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "assigner-cannot-write": "assign the item as someone who can write",
   "tracker-unreachable": "authorize the account's tracker credential",
   "low-quota": "inspect the quota spending",
+  "state-storage": "inspect Jig state storage",
 };
 
 export function personAct(cause: NeedCause): PersonAct {
@@ -134,6 +136,24 @@ function entryOf(need: LineNeed): WaitingEntry | null {
   };
 }
 
+function heldPickupEntry(entry: LineQueued): WaitingEntry | null {
+  const { pickupHold, item } = entry;
+  if (pickupHold === undefined || item === null) return null;
+  return {
+    address: formatAddress({ station: "pickup", repo: entry.repo, key: item }),
+    target: entry.target,
+    people: [pickupHold.by],
+    act: "release the pickup hold",
+    needAct: "Authorize",
+    since: pickupHold.at,
+    reason: entry.why,
+    url: entry.url,
+    title: entry.title,
+    questions: [],
+    notice: null,
+  };
+}
+
 /** What waits on a person, from the newest tick's line under the dispatcher's state directory `root`. */
 export function waitingAnswer(
   root: string | null,
@@ -157,8 +177,10 @@ export function waitingAnswer(
   return {
     v: ANSWER_VERSION,
     tick: { runId: line.value.runId, finishedAt: line.value.finishedAt },
-    waiting: line.value.needs
-      .map(entryOf)
+    waiting: [
+      ...line.value.needs.map(entryOf),
+      ...line.value.queue.map(heldPickupEntry),
+    ]
       .filter((e): e is WaitingEntry => e !== null)
       .filter(
         (e) =>

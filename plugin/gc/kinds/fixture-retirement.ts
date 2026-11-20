@@ -1,5 +1,6 @@
 /** Registrations whose every root is gone, retired in bounded batches that name what they retired. */
 import { basename, join } from "node:path";
+import { fixtureCapacityFailure } from "../../shared/fixture-health.ts";
 import { processTable } from "../../shared/process-table.ts";
 import {
   cachedFixtureEnclosure,
@@ -7,11 +8,11 @@ import {
   type FixtureEnclosureIndex,
   fixtureRetirementProof,
   fixtureRootGone,
-  retireFixtureRegistration,
+  retireFixtureRegistrations,
   type FixtureRegistryPage,
   type FixtureScope,
 } from "../../shared/test-fixture-registry.ts";
-import type { Proof, Resource } from "../types.ts";
+import type { Proof, Receipt, Resource } from "../types.ts";
 import { recordFixtureFailure } from "./fixture-scratch.ts";
 
 /**
@@ -24,6 +25,28 @@ const BATCH = 500;
 const KEPT_NAMED = 20;
 const BATCH_PREFIX = "fixture-registrations:";
 const MALFORMED_PREFIX = "fixture-registration:";
+
+export function verifyFixtureRetirement(receipt: Receipt) {
+  if (
+    receipt.resources.some(
+      (line) =>
+        line.kind === "scratch" &&
+        line.resource.startsWith(BATCH_PREFIX) &&
+        retiredCount(line.details) > 0,
+    )
+  )
+    return null;
+  return fixtureCapacityFailure(
+    "The scheduled run did not retire any fixture registrations in its page.",
+  );
+}
+
+/** Registrations a batch line records as retired, whether or not the whole batch succeeded. */
+function retiredCount(details: unknown): number {
+  const retired = (details as { retired?: unknown } | null | undefined)
+    ?.retired;
+  return Array.isArray(retired) ? retired.length : 0;
+}
 
 type Kept = { registration: string; state: Proof["state"]; reason: string };
 type Collected = {
@@ -139,8 +162,16 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
     collect(resource: Resource): Collected {
       const retired: string[] = [];
       const failures: { registration: string; reason: string }[] = [];
-      for (const registry of proved.get(resource.id) ?? []) {
-        const result = retireFixtureRegistration(registry);
+      const retirable = proved.get(resource.id) ?? [];
+      proved.delete(resource.id);
+      const removal = retireFixtureRegistrations(store, retirable);
+      if (!removal.ok)
+        return {
+          outcome: "failed",
+          reason: recordFixtureFailure(removal.failure),
+          details: { store, retired },
+        };
+      for (const { registry, result } of removal.value) {
         if (result.ok) {
           retired.push(basename(registry));
         } else
@@ -149,7 +180,6 @@ export function fixtureRetirement(store: string, batchSize = BATCH) {
             reason: recordFixtureFailure(result.failure),
           });
       }
-      proved.delete(resource.id);
       if (cached && retired.length > 0)
         cached = withoutRetired(
           cached,

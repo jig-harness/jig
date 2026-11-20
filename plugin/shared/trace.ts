@@ -14,6 +14,7 @@ import { admitPaced, endedFailure } from "./outbound/forge-pacing.ts";
 import {
   type GhAttribution,
   forgeBudgetOn,
+  forgeGovernorPacingOn,
   forgeOwner,
   ghHostIn,
   ghGovernance,
@@ -268,7 +269,9 @@ async function governedRun<T extends GhRun, O>(
     attribution,
   });
   if (governance === null) return send(args);
-  const admitted = await admitPaced(governance, deadlineAt, o.signal);
+  const admitted = forgeGovernorPacingOn()
+    ? await admitPaced(governance, deadlineAt, o.signal)
+    : governance.admit();
   if ("failure" in admitted) return refuse(admitted.failure);
   if ("refused" in admitted) return refuse(admitted.refused);
   const late = endedFailure(deadlineAt, o.signal, "during budget admission");

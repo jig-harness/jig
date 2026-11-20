@@ -91,12 +91,14 @@ import {
 } from "./review-object.ts";
 import { missingReviewerVerdict } from "./comment-draft-skip.ts";
 import { strandedRunNote } from "./stranded-run.ts";
+import { readFailure, type ProbeFailure } from "./probe-stop.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
 export interface StatusReport extends CiReport {
   state: string;
   reason: string;
+  failure?: ProbeFailure;
   apiHead: string;
   localHead: string;
   mergeable: string;
@@ -110,6 +112,8 @@ export interface StatusReport extends CiReport {
    * without having asked. */
   isDraft: boolean | null;
   reviewerPresent: boolean;
+  /** Check-run changes observed even while the aggregate CI state stays the same. */
+  checkProgress?: string;
   reviewerStatus: string;
   reviewerConclusion: string;
   reviewedSha: string;
@@ -368,6 +372,9 @@ async function evaluateFresh(
   // from the pass before the reviewer's check-run vanished from a re-query.
   // The report is what callers act on, so a stale field in it is a correctness
   // bug, not a cosmetic one.
+  // `failure` is optional, so it is absent from `emptyReport()` and would
+  // otherwise survive Object.assign from a prior transient forge-read error.
+  delete report.failure;
   Object.assign(report, emptyReport(), { localHead: ctx.localHead });
 
   // Every witness below is measured against `apiHead`, read at the TOP.
@@ -449,18 +456,16 @@ async function evaluateFresh(
       }
     }
     if (parsed === null) {
-      return terminal(
+      return readFailure(
         report,
-        "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s state, head and base to confirm they did not change while the witnesses were gathered`,
       );
     }
     const stateNow = str(parsed, "state");
     const headNow = str(parsed, "headRefOid");
     if (stateNow === "" || headNow === "") {
-      return terminal(
+      return readFailure(
         report,
-        "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s state and head to confirm they did not change while the witnesses were gathered`,
       );
     }
@@ -495,9 +500,8 @@ async function evaluateFresh(
     // CONVERGED or PR_CONFLICTING anyway.
     const baseNow = str(parsed, "baseRefOid");
     if (baseNow === "") {
-      return terminal(
+      return readFailure(
         report,
-        "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s base to confirm it did not move while the witnesses were gathered`,
       );
     }
@@ -545,9 +549,8 @@ async function evaluateFresh(
     // `stillOnHead` and the opening snapshot on GraphQL.
     const now = await readPrState(ctx.pr, { caller: "recheck" });
     if (!now.ok) {
-      return terminal(
+      return readFailure(
         report,
-        "INDETERMINATE",
         `cannot re-read #${ctx.pr}'s state to confirm it did not change while the witnesses were gathered (${now.reason})`,
       );
     }
@@ -619,9 +622,8 @@ async function evaluateFresh(
     );
   }
   if (!snapshot.ok) {
-    return terminal(
+    return readFailure(
       report,
-      "INDETERMINATE",
       `cannot read PR #${ctx.pr} (a transient failure, not a missing-field error) — retrying rather than treating ordinary network noise as an unmet prerequisite`,
     );
   }
@@ -779,9 +781,8 @@ async function evaluateFresh(
   let runsUnreadable = false;
   if (runs === null) {
     if (!conflicting) {
-      return terminal(
+      return readFailure(
         report,
-        "INDETERMINATE",
         `cannot read check-runs for ${report.apiHead}`,
       );
     }
@@ -789,10 +790,12 @@ async function evaluateFresh(
     runsUnreadable = true;
   }
 
-  // Bound to the app slug AND a check name, not the app alone: an app may
-  // publish several checks on one SHA, and picking "the newest run from this
-  // app" would let an unrelated sibling check attest that the review completed.
-  // Newest wins within that pair (a re-run, or a cancelled first attempt).
+  report.checkProgress = JSON.stringify(
+    runs
+      .map((r) => `${r.id}:${r.status}:${r.conclusion}`)
+      .sort((a, b) => a.localeCompare(b)),
+  );
+  // The newest check matching both the reviewer app and check name is its witness.
   const reviewer = reviewerRun(runs);
 
   const awaitReviewer = reviewerGatesApply(conflicting);
@@ -809,11 +812,7 @@ async function evaluateFresh(
     ),
   );
 
-  // A conflicting head SKIPS every reviewer gate below. Each of them returns
-  // AWAITING_REVIEWER (exit 4, "becomes something else with time"), and on a
-  // conflicting PR that state polls until `--timeout`. The work enumeration
-  // further down still runs, so findings the poller DID post are picked up
-  // rather than discarded.
+  // Conflicting heads still enumerate review findings without waiting for a reviewer.
   const byObject = reviewerEvidence() === "review_object";
   if (awaitReviewer && reviewer === null) {
     const verdict = await missingReviewerVerdict(
@@ -824,7 +823,9 @@ async function evaluateFresh(
       report.isDraft === true,
     );
     if (verdict.state !== "draft-skip")
-      return terminal(report, verdict.state, verdict.reason);
+      return verdict.state === "INDETERMINATE"
+        ? readFailure(report, verdict.reason)
+        : terminal(report, verdict.state, verdict.reason);
     report.reviewedShaSource = "draft-skip";
   }
 
@@ -862,9 +863,8 @@ async function evaluateFresh(
           )
         : { review: null };
     if (latest === null)
-      return terminal(
+      return readFailure(
         report,
-        "INDETERMINATE",
         `cannot read ${reviewerLabel()}'s pull-request reviews on #${ctx.pr} — refusing to judge its review of ${report.apiHead} without them`,
       );
     const verdict = judgeReviewObject(
@@ -962,9 +962,8 @@ async function evaluateFresh(
     // than blocking PR_CONFLICTING over evidence no gate consumes — the same
     // rule the check-runs read follows.
     if (!conflicting) {
-      return terminal(
+      return readFailure(
         report,
-        "INDETERMINATE",
         `cannot read the reviewer's comments on #${ctx.pr} — refusing to fall back to the weaker witness, which would hide a stale reviewed-SHA`,
       );
     }
@@ -1022,11 +1021,7 @@ async function evaluateFresh(
     ctx.helperTimeoutSec,
   );
   if (threads === null) {
-    return terminal(
-      report,
-      "INDETERMINATE",
-      `cannot enumerate review threads on #${ctx.pr}`,
-    );
+    return readFailure(report, `cannot enumerate review threads on #${ctx.pr}`);
   }
   report.threadsOpen = threads.length;
   report.openThreadKeys = threads.map((t) => String(t.threadId)).sort();
@@ -1038,9 +1033,8 @@ async function evaluateFresh(
     true,
   );
   if (summary === null) {
-    return terminal(
+    return readFailure(
       report,
-      "INDETERMINATE",
       `cannot enumerate summary-only findings on #${ctx.pr}`,
     );
   }

@@ -461,6 +461,7 @@ for (const legacy of [false, true]) {
         const state = {
           root,
           records: [],
+          runtime: { name: "orca" },
           table: [slots],
           last: null,
         } as unknown as ApplyState;

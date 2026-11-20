@@ -700,12 +700,20 @@ already in `pr_open`, or with a move to `pr_open` still to make, keeps the
 rule above and is not listed as carried. Any other claimed item is not a
 stall while an open pull request of the
 repository's own branches that the line links to it (as the need's framed
-decision reads the links) has a drive that is live or has converged and
-waits for its merge, the drive's state being the one its dispatch label
-shows: the tick reports the item as carried by that pull request, with its
-link and the drive's state, and the line lists it as [carried](../GLOSSARY.md). With no drive
-on that pull request, a stopped one, or a drive or open pull requests that
-did not read, the stall need stands and says which. One with more than one running session is
+decision reads the links) has a drive, whatever its state: live, converged
+and waiting for its merge, parked on a person's question, stopped for a
+re-arm or a re-drive, or unplaced for the tick while the forge leaves its
+state undecided (a mergeability still being computed). The tick reports the
+item as carried by that pull request, with its link and the drive's state,
+and the line lists it as [carried](../GLOSSARY.md); what a person must do
+there is the pull request's own need, shown once. A pull request merged
+within the last day that the line links to the item settles it too: the
+follow-up moves it, and no stall need is raised; one its follow-up has not
+moved a day after the merge is a stalled pickup again. A drive unplaced for
+the tick carries the item only when its ledger stopped and the forge leaves
+the rest undecided. With no
+pull request linking it, no drive on the one that does, or a drive or open
+pull requests that did not read, the stall need stands and says which. One with more than one running session is
 a double claim (see Guards against a second launch). A repository with no factory identity
 configured has no pickups of its own; its other stages still run.
 
@@ -735,16 +743,12 @@ links from the assigned item and ends at a cycle. A blocker that is assigned
 to someone else, in progress, an epic, held, another repository's or unreadable
 is never started on the strength of the relation, since anyone with write
 access to the tracker can add one: the blocked item waits, and its reason
-names the blocker and why it was left. An epic's ready children are started
-in parallel
-([ADR-0024](../docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)):
-without an execution plan, its best-ranked ready children are wanted until
-`dispatch.epic_width` of them (4 by default) are under way, counting a
-started child that still needs an agent and a child that cannot be read, and
-a child that waits on the width names the epic and the width; a plan that
-lists several eligible steps sets its own order and parallelism. An epic
-none of whose open children can start reports one reason of its own, so the
-queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
+names the blocker and why it was left. An epic's ready children are eligible
+in parallel. Execution plan dependencies and serialized areas may hold
+them. Overlap with work in flight orders pickups across the repository's
+queues, and the host's available slots and validation capacity limit how
+many can start. An epic none of whose open children can start reports one
+reason of its own, so the queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the
@@ -1618,9 +1622,15 @@ the name it carries now.
 The machine file lists the subscription accounts the dispatcher may bill
 and a cap for each (`max_per_account`, 2 by default): the number of
 sessions the dispatcher started on that account that are still running,
-waiting ones and pending launch records (see Launch records) included. Sessions a person started are not counted: the
-runtime does not report their account, and a person who shares an account
-with the dispatcher lowers its cap. A headless pass is admitted on an
+waiting ones and pending launch records (see Launch records) included, and
+every live driver on the host that no such record accounts for: a drive a
+pickup armed, which keeps the pickup's slot when the pickup ends, and one a
+person or a repair session started or took over by hand. Each driver's
+lock names the account identity its passes bill, which picks the listed
+account whose slot it holds; a driver whose process is gone holds none.
+Other sessions a person started are not counted: the runtime does not
+report their account, and a person who shares an account with the
+dispatcher lowers its cap. A headless pass is admitted on an
 account with a free slot and no wall in effect, the accounts taken in turn
 starting after the account of the most recent launch record, so the turn
 survives between ticks without state of its own.

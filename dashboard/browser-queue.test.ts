@@ -368,7 +368,7 @@ describe("What is coming", () => {
 
         await jumpTo(page, "PR #202");
         const held = page.getByRole("button", {
-          name: "Held behind a serialized leader group",
+          name: "Held group",
         });
         await held.click();
         expect(await held.getAttribute("aria-expanded")).toBe("false");
@@ -715,7 +715,7 @@ describe("What is coming", () => {
           });
           expect(await never.getAttribute("aria-expanded")).toBe("false");
           const held = page.getByRole("button", {
-            name: "Held behind a serialized leader group",
+            name: "Held group",
           });
           expect(await held.getAttribute("aria-expanded")).toBe("true");
           // Every open group shows its first cards before Show all.

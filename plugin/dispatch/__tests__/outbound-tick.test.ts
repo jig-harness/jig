@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
+import { mkdirSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -37,6 +38,35 @@ function line(w: World): LineSnapshot {
     db.close();
   }
 }
+
+test("a tick raises one host storage need until the fixture registry recovers", async () => {
+  const w = world();
+  current = w;
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n`,
+  );
+  machineFile(w, [account(w, "a", "a@example.com")], {}, []);
+  const store = join(w.home, ".local", "state", "jig", "test-fixtures-v1");
+  for (const name of ["first", "second"])
+    mkdirSync(join(store, name), { recursive: true });
+  const tick = async () => {
+    const result = await w.dispatch(["--json"], undefined, {
+      JIG_TEST_FIXTURE_REGISTRY_LIMIT: "1",
+    });
+    expectSpawnExit(result, 0);
+    return line(w).needs.filter((need) => need.cause === "state-storage");
+  };
+  const first = await tick();
+  expect(first).toHaveLength(1);
+  expect(first[0]).toMatchObject({
+    repo: "host",
+    act: "Investigate",
+    reason: expect.stringContaining("2 of 1 registrations"),
+  });
+  expect((await tick())[0]?.since).toBe(first[0]?.since);
+  rmdirSync(join(store, "second"));
+  expect(await tick()).toHaveLength(0);
+});
 
 test("real ticks keep one low-quota need while it stands and withdraw it after balance recovery", async () => {
   const w = world();

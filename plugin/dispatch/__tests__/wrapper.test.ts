@@ -21,6 +21,7 @@ import {
   earlierRecord,
   machineFile,
 } from "./launch-fixtures.ts";
+import { passPrompt } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 
 /** The preview's cadence in whichever scheduler's own form it was rendered: systemd, launchd or cron. */
 const cadence = (minutes: number) =>
@@ -180,12 +181,7 @@ describe("the wrapper", () => {
         { codexBypass: true },
         { JIG_HOME: "/nonexistent-jig-home" },
       );
-      expect(pass).toEqual([
-        "codex",
-        "exec",
-        BYPASS,
-        "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 7",
-      ]);
+      expect(pass).toEqual(["codex", "exec", BYPASS, passPrompt("codex", 7)]);
     });
 
     it.each([
@@ -197,11 +193,7 @@ describe("the wrapper", () => {
         const pass = await passOf(fields, {
           JIG__DRIVE__CODEX_BYPASS: "true",
         });
-        expect(pass).toEqual([
-          "codex",
-          "exec",
-          "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 7",
-        ]);
+        expect(pass).toEqual(["codex", "exec", passPrompt("codex", 7)]);
       },
     );
   });

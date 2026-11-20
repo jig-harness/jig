@@ -7,7 +7,7 @@
  * launch records settle them in `actions/drive-hold.ts`, another host's
  * launch claims in `shared-launches.ts`, both in these words.
  */
-import { conflictNote } from "./sources/ledgers.ts";
+import { conflictNote } from "./sources/ledger-probe.ts";
 import type { DrivenPr, StaleCause } from "./types.ts";
 
 /**

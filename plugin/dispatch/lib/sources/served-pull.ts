@@ -97,6 +97,8 @@ export interface PullOrigin {
   root: string;
   /** The epic the root inherits its assignment through. */
   rootAncestor: string | undefined;
+  /** Every epic above the root, outermost to nearest. */
+  rootAncestors?: string[] | undefined;
   /** Links between the root and this item. */
   depth: number;
 }
@@ -105,14 +107,19 @@ export interface PullOrigin {
 export function pullBlockers(
   blocked: PoolIssue,
   origin: PullOrigin | undefined,
-  ancestor: string | undefined,
+  above: {
+    ancestor: string | undefined;
+    ancestors?: string[] | undefined;
+  },
   open: readonly OpenBlocker[],
   policy: PullPolicy,
 ): { reason: string; pulled: PoolIssue[]; origin: PullOrigin } {
   const depth = origin?.depth ?? 0;
   const next: PullOrigin = {
     root: origin?.root ?? blocked.identifier,
-    rootAncestor: origin === undefined ? ancestor : origin.rootAncestor,
+    rootAncestor: origin === undefined ? above.ancestor : origin.rootAncestor,
+    rootAncestors:
+      origin === undefined ? above.ancestors : origin.rootAncestors,
     depth: depth + 1,
   };
   const pulled: PoolIssue[] = [];

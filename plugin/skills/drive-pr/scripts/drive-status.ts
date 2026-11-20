@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
-import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
+import {
+  consumerRoot,
+  readConfig,
+  readRemoteName,
+} from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
@@ -39,7 +43,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *   --once               evaluate once; never sleep. A not-yet-settled state
  *                        returns 4 rather than waiting.
  *   --timeout SECONDS    give up waiting (default 1800). Exits 4.
- *   --interval SECONDS   initial poll spacing (default 30, min 5).
+ *   --interval SECONDS   poll spacing while waiting (default 30, min 5).
  *   --bots-only          count only bot-authored threads, matching the set a
  *                        --bots-only pass actually resolves.
  *   --head SHA           the local head to compare the API head against.
@@ -158,8 +162,9 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       pull_requests.mark_ready declares — see
  *                       lib/status/evaluate.ts's header. Not recycled: an old
  *                       log's `10` should mean nothing, not something new
- *   7  REVIEWER_FAILED  [state] the posting reviewer's check-run failed or
- *                       says it did not complete a review of this head
+ *   7  REVIEWER_FAILED  [state] the posting reviewer's check-run did not
+ *                       pass, so it may never have reported; a zero thread
+ *                       count means nothing
  *   8  HITL_PARKED      [state] everything still open awaits a human
  *                       decision
  *   9  PR_CONFLICTING   [state] the PR conflicts with its base AND has
@@ -239,9 +244,17 @@ import {
   verifyCheckoutIsPrHead,
   verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
-import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
+import {
+  fail,
+  failFrom,
+  isDigits,
+  runMain,
+  sleep,
+  testPacing,
+} from "./lib/cli.ts";
 import {
   fleetHealthLine,
+  fleetHealthPayload,
   readFleetHealthAdvisory,
 } from "./lib/fleet-health-advisory.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
@@ -258,7 +271,7 @@ import {
   run,
   tsArgv,
 } from "./lib/proc.ts";
-import { reviewerApp, reviewerPollMaxSeconds } from "./lib/overlay.ts";
+import { reviewerApp } from "./lib/overlay.ts";
 // The code itself, not hand-written `11`/`13` literals repeated here: this
 // script's exit means what `drive-state.ts`'s means, and two independent
 // numbers are exactly how that stops being true.
@@ -280,7 +293,7 @@ import {
   type StatusReport,
 } from "./lib/status/evaluate.ts";
 import { takeInheritedHead } from "./lib/status/inherited-head.ts";
-import { reviewerPollSeconds } from "./lib/status/reviewer-poll.ts";
+import { setProbeFailure } from "./lib/status/probe-stop.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
@@ -290,7 +303,14 @@ import {
   waitingChecksMaxAgeMs,
 } from "./lib/status/waiting-cache.ts";
 import { currentMs } from "../../../shared/time.ts";
+import { systemClock } from "../../../shared/clock.ts";
 import { forgeLimitHeld, limitLine, reportLimit } from "./lib/forge-limit.ts";
+import {
+  pollDependencies,
+  pollFingerprint,
+  readStatusPolling,
+  StatusPollPacing,
+} from "./lib/status/poll-pacing.ts";
 import { boundedRealpath, limitedAtStart } from "./lib/status/pre-report.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -309,6 +329,17 @@ const MAX_QUERY_ERRORS = 3;
  * it is absent.
  */
 const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
+
+/** The advisory fields of a report that reads none of them. */
+function unreadAdvisory<Drift>(drift: Drift | null) {
+  return {
+    drift,
+    reflectionDue: null,
+    escalationDue: null,
+    escalationInvariant: null,
+    fleetHealth: null,
+  };
+}
 
 async function main(): Promise<number> {
   let pr = "";
@@ -382,7 +413,6 @@ async function main(): Promise<number> {
       2,
       `--timeout (${timeout}s) must be at least one --interval (${interval}s)`,
     );
-  const reviewerPollMax = reviewerPollMaxSeconds();
 
   // The helper deadline bounds the sibling-script spawns the same way
   // GH_CALL_TIMEOUT bounds direct `gh` calls — mode 13 in
@@ -545,11 +575,21 @@ async function main(): Promise<number> {
   }
 
   let waitingCache: WaitingEvaluationCache | undefined;
+  let pollPacing: StatusPollPacing | undefined;
   if (!once) {
     try {
       waitingCache = new WaitingEvaluationCache(waitingChecksMaxAgeMs());
+      pollPacing = new StatusPollPacing(
+        interval * 1000,
+        readStatusPolling(readConfig()),
+        pollDependencies(systemClock),
+      );
     } catch (error) {
-      fail(2, error instanceof Error ? error.message : String(error));
+      failFrom(
+        error,
+        2,
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
   const ctx = {
@@ -840,31 +880,36 @@ async function main(): Promise<number> {
     return driftMemo;
   }
 
-  async function emit(code: number): Promise<void> {
-    const drift = await baseDrift();
-    const reflectionDue = await reflectDue();
-    if (json) {
-      // Computed only here — never used outside
-      // the JSON payload, so hoisting it above this branch (the way `drift`
-      // has to be, since the plain-text path's stderr narration reads it
-      // below) would cost the non-`--json` caller a `drive-state.ts get`
-      // subprocess call for a field it never reports.
-      const escalation = await structuralEscalationStatus();
-      // ADVISORY: read from the snapshot the dev-dashboard
-      // collector already published, never sampled here.
-      const fleetHealth = readFleetHealthAdvisory(
+  /** The base drift and advisory fields `emit` reports; `enabled` false reads none. */
+  async function readAdvisory(enabled: boolean) {
+    if (!enabled) return unreadAdvisory(driftMemo ?? null);
+    const escalation = json ? await structuralEscalationStatus() : null;
+    return {
+      ...unreadAdvisory(await baseDrift()),
+      reflectionDue: await reflectDue(),
+      escalationDue: escalation?.due ?? null,
+      escalationInvariant: escalation?.invariant ?? null,
+      fleetHealth: readFleetHealthAdvisory(
         Number.parseInt(pr, 10),
         currentMs(),
-      );
+      ),
+    };
+  }
+
+  async function emit(code: number, full = true): Promise<void> {
+    const advisory = await readAdvisory(full);
+    const { drift } = advisory;
+    if (json) {
       process.stdout.write(
         `${JSON.stringify({
           state: report.state,
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
+          ...(report.failure === undefined ? {} : { failure: report.failure }),
           ...(rateLimit === null ? {} : { rateLimit }),
-          reflectDue: reflectionDue,
-          structuralEscalationDue: escalation.due,
+          reflectDue: advisory.reflectionDue,
+          structuralEscalationDue: advisory.escalationDue,
           // The claim the last acknowledgment recorded via
           // `set-escalated --invariant`, echoed back ONLY while
           // `structuralEscalationDue` is true — `null` while
@@ -872,18 +917,13 @@ async function main(): Promise<number> {
           // one. See `structuralEscalationInvariant`'s own doc for why the
           // two `null` causes are not distinguished here: either way there is
           // no prior claim to check this round's finding against.
-          structuralEscalationInvariant: escalation.invariant,
+          structuralEscalationInvariant: advisory.escalationInvariant,
           // PR-scoped fleet-health suspicions for THIS PR (review carousel,
           // follow-up depth) — a count crossing a threshold, never a finding,
           // and never a change to `state` or the exit code. `[]` when the
           // snapshot is absent, which is the ordinary case off the dashboard
           // host. See SKILL.md § 1.
-          fleetHealth: {
-            warnings: fleetHealth.warnings,
-            snapshotAgeSec: fleetHealth.snapshotAgeSec,
-            stale: fleetHealth.stale,
-            partial: fleetHealth.partial,
-          },
+          fleetHealth: fleetHealthPayload(advisory.fleetHealth),
           head: {
             api: report.apiHead,
             local: localHead,
@@ -950,15 +990,12 @@ async function main(): Promise<number> {
       process.stdout.write(`${report.state}\n`);
     }
     console.error(
-      `${reflectionDue ? "[REFLECT DUE] " : ""}${report.state}: ${report.reason}`,
+      `${advisory.reflectionDue ? "[REFLECT DUE] " : ""}${report.state}: ${report.reason}`,
     );
-    if (!json) {
-      const fh = fleetHealthLine(
-        Number.parseInt(pr, 10),
-        readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs()),
-      );
-      if (fh !== null) console.error(fh);
-    }
+    const fh = json
+      ? null
+      : fleetHealthLine(Number.parseInt(pr, 10), advisory.fleetHealth);
+    if (fh !== null) console.error(fh);
     // On stderr with the rest of the round's narration, so the non-`--json`
     // caller — whose stdout is the state name and nothing else — sees it too.
     if (drift !== null) {
@@ -1071,18 +1108,12 @@ async function main(): Promise<number> {
   // matter: it will not clear, and `evaluate()` is about to return PR_NOT_OPEN
   // for it anyway.
   const deadline = currentMs() + timeout * 1000;
-  // Check this shared budget before a new wait or spawn.
+  /** Remaining wall-clock time for work or waits after the first evaluation. */
   const budgetLeftMs = (): number => deadline - currentMs();
-  const intervalFits = (seconds = interval): boolean =>
-    budgetLeftMs() >= seconds * 1000;
+  /** Whether another `--interval` sleep fits inside `--timeout`; every waiting site stops on it. */
+  const intervalFits = (): boolean => budgetLeftMs() >= interval * 1000;
   let queryErrors = 0;
-  let lastReviewerPoll: { head: string; seconds: number } | undefined;
-  /**
-   * The caller forbade the sweep on this invocation. `--no-reconcile` says so
-   * outright; `--no-count` says the invocation is a mid-round re-read rather
-   * than a pass entry, and one sweep per pass is the point of running it from
-   * the gate at all.
-   */
+  /** The caller forbade the sweep: `--no-reconcile`, or `--no-count` (a mid-round re-read). */
   const sweepSuppressed = noCount || noReconcile;
   /**
    * Scope for the SWEEP, which is not always the scope for the COUNT.
@@ -1160,12 +1191,12 @@ async function main(): Promise<number> {
    * Re-arms the probe, so the retry re-reads liveness and re-attempts the
    * sweep instead of re-deriving the same answer from a stale decision.
    */
-  async function degrade(reason: string): Promise<number | null> {
+  async function degrade(reason: string, f?: "read"): Promise<number | null> {
     const limited = await stopOnForgeLimit(reason);
     if (limited !== null) return limited;
     report.state = "INDETERMINATE";
     report.reason = reason;
-    lastReviewerPoll = undefined;
+    setProbeFailure(report, f);
     // Not re-armed when a flag suppressed the sweep: the caller has forbidden
     // it, so retrying the probe could only produce the same answer, more
     // slowly. The bounded budget below still ends the invocation honestly.
@@ -1311,6 +1342,7 @@ async function main(): Promise<number> {
           // unrecognised — both are the retry class, since neither is a
           // confirmed finished PR.
           `cannot read PR #${pr}'s state (${live.reason}) — a transient failure, not a missing-field error — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
+          "read",
         );
         if (stop !== null) return stop;
         continue;
@@ -1476,9 +1508,6 @@ async function main(): Promise<number> {
     }
 
     const code = await evaluate(ctx, report);
-    const reviewerWaiting =
-      report.state === "AWAITING_REVIEWER" || report.state === "STALE_REVIEW";
-    if (!reviewerWaiting) lastReviewerPoll = undefined;
 
     // RETRACT a skip the evaluation just contradicted. The liveness read said
     // the PR was finished, so the sweep was skipped as pointless; the
@@ -1674,15 +1703,8 @@ async function main(): Promise<number> {
       case 1: {
         const limited = await stopOnForgeLimit(report.reason);
         if (limited !== null) return limited;
-        // Never let an unreadable state decay into a settled one. Retry a
-        // bounded number of times, then say so — guessing here is how a round
-        // gets abandoned on an auth blip.
-        //
-        // Bounded by the CLOCK as well as by the error count, through the same
-        // `intervalFits()` every other waiting site uses. This branch consulted
-        // neither `deadline` nor anything derived from it, so it slept a full
-        // interval past the advertised timeout and handed the next iteration a
-        // spent budget to spawn a reconciliation sweep with.
+        // Retry an unreadable state within both the query-error limit and
+        // the wall-clock deadline.
         queryErrors += 1;
         if (once || queryErrors >= MAX_QUERY_ERRORS || !intervalFits()) {
           await emit(1);
@@ -1695,35 +1717,22 @@ async function main(): Promise<number> {
         continue;
       }
       case 4: {
-        // Wait for head lag, the reviewer, or the review marker to settle.
         queryErrors = 0;
-        if (once) {
+        if (pollPacing === undefined) {
           await emit(4);
           return 4;
         }
-        // Count only consecutive reviewer waits for the same head.
-        const seconds = reviewerWaiting
-          ? reviewerPollSeconds(
-              interval,
-              reviewerPollMax,
-              lastReviewerPoll?.head === report.apiHead
-                ? lastReviewerPoll.seconds
-                : 0,
-              budgetLeftMs(),
-            )
-          : interval;
-        if (intervalFits(seconds)) {
-          if (reviewerWaiting)
-            lastReviewerPoll = { head: report.apiHead, seconds };
-          console.error(
-            `${report.state}: ${report.reason}; waiting ${seconds}s`,
-          );
-          await sleep(seconds);
-          if (!reviewerWaiting || budgetLeftMs() > 0) continue;
+        const fits = intervalFits();
+        if (fits) console.error(`${report.state}: ${report.reason}; waiting`);
+        if (
+          !fits ||
+          !(await pollPacing.wait(pollFingerprint(report), deadline))
+        ) {
+          report.reason = `${report.reason} (gave up after ${timeout}s)`;
+          await emit(4, false);
+          return 4;
         }
-        report.reason = `${report.reason} (gave up after ${timeout}s)`;
-        await emit(4);
-        return 4;
+        continue;
       }
       case 0: {
         // A round is a distinct push, not a distinct invocation: retrying the

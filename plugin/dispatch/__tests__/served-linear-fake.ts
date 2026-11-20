@@ -366,6 +366,17 @@ export class FakeLinear {
           },
         };
       }
+      case "TrackerUsers": {
+        // A user's id is the email or display name it is assigned by.
+        const who = String(variables.who);
+        return {
+          users: {
+            nodes: all.some((i) => i.assignee === who)
+              ? [{ id: who, name: who }]
+              : [],
+          },
+        };
+      }
       case "TrackerAssignmentHistory": {
         const i = this.issues.get(String(variables.id));
         if (i?.history === "fail")

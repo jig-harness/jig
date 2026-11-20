@@ -1,26 +1,24 @@
-/**
- * What every `--apply` launch shares, a headless pass (a drive's, a
- * follow-up's, a pickup's):
- * the state carried across a tick's repositories, the account admitted
- * afresh against its walls and the identity check, the launch record
- * written before the runtime's `launch` and the slot it holds, and the
- * outcome each launch reports.
- */
+/** Account admission, launch records and outcomes shared by the apply stages. */
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
-  accountWeightBlock,
   checkIdentity,
   type CodexOptIn,
   type IdentityCheck,
   notAdmitted,
   refreshWalls,
+  replaySlotBlock,
   holdingRecords,
   sharesSlot as takeoverShares,
   type Slots,
   slotsOf,
 } from "../accounts.ts";
+import {
+  unrecordedDriverMatches,
+  takeoverHostDriver,
+} from "../host-drivers.ts";
 import { serves } from "../account-stages.ts";
-import { admission, takeoverMoves } from "./admission.ts";
+import { admission, keepsTakeoverAccount } from "./admission.ts";
+import type { HostDrivers } from "../host-drivers.ts";
 import {
   isInteractive,
   type LaunchAttempt,
@@ -48,6 +46,7 @@ import {
 import { holderRefusal } from "../holder-notices.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { retryable } from "../stuck-launches.ts";
+import { personPickupBlock } from "../person-pickup-holds.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -92,6 +91,8 @@ export interface ApplyState {
    * it, so the pass command does what was judged.
    */
   codexOptIn: CodexOptIn;
+  /** Live driver locks read at the start of this apply phase. */
+  drivers?: HostDrivers;
   /** Each repository's sessions as its observation read them, by slug, for judging another repository's stuck records (`followup-lane.ts`). */
   sessionsOf?: Map<string, SessionsReport>;
   /** The workspaces this tick has opened so far, within `opens_per_tick`. */
@@ -230,7 +231,10 @@ export function rotated<T>(
 }
 
 export type Opened =
-  | { workspace: { id: string; path: string }; cleanupFailure?: string }
+  | {
+      workspace: NonNullable<LaunchRecord["workspace"]>;
+      cleanupFailure?: string;
+    }
   | { waits: string; waitsOn?: LaneWait }
   | { refused: string; holder?: BusyHolder };
 
@@ -343,7 +347,6 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
     detail: receipt.detail,
   };
 }
-
 /** What the dispatcher's names call a record's target: the item's key, else `#<pr>`. */
 function nameKey(
   record: Pick<LaunchRecord, "item" | "pr"> &
@@ -352,14 +355,12 @@ function nameKey(
   if (record.action === "steward") return "line";
   return record.item ?? `#${String(record.pr)}`;
 }
-
 /** The mark a record carries: the one it was written with, else the convention's for it. */
 function markOf(record: LaunchRecord): string {
   return (
     record.mark ?? dispatchedMark(record.action, nameKey(record), record.id)
   );
 }
-
 /** What the runtime starts for a record: a headless pass (a drive's, a follow-up's, a pickup's), or an interactive pickup an earlier release recorded, which a runtime that cannot bind one refuses. */
 function stageOf(record: LaunchRecord): LaunchStage {
   const named = {
@@ -378,7 +379,6 @@ function stageOf(record: LaunchRecord): LaunchStage {
     };
   return { kind: "headless", ...named, record: record.id };
 }
-
 /** Call the runtime's `launch` under the record's token, and keep its answer (and agent id) on the record. */
 async function callLaunch(
   state: ApplyState,
@@ -408,15 +408,26 @@ async function callLaunch(
   writeRecord(record, state.root);
   return attempt;
 }
-
-/** Whether a takeover shares the slot of the record it replaces, which still holds it on the same account. */
+/** Whether a takeover shares the slot of the record or live host driver it replaces on the same account. */
 function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
-  if (record.replaces === null) return false;
-  return takeoverShares(
-    state.table.map((s) => s.account),
-    holdingRecords(state.records),
-    record,
-  );
+  if (
+    record.replaces !== null &&
+    takeoverShares(
+      state.table.map((s) => s.account),
+      holdingRecords(state.records),
+      record,
+    )
+  )
+    return true;
+  return state.drivers?.ok === true && record.replacesHostDriver !== undefined
+    ? unrecordedDriverMatches(
+        state.table.map((s) => s.account),
+        state.records,
+        state.drivers.value,
+        slotsOf(state.table, record)?.account.name,
+        record.replacesHostDriver,
+      )
+    : false;
 }
 
 /** A lost earlier answer might have started the wrapper, so only known failures release it. */
@@ -506,7 +517,9 @@ function workspaceOr(
   action: Action,
   opened: Opened,
   account: string,
-): { workspace: { id: string; path: string } } | { outcome: LaunchOutcome } {
+):
+  | { workspace: NonNullable<LaunchRecord["workspace"]> }
+  | { outcome: LaunchOutcome } {
   if ("waits" in opened)
     return {
       outcome: {
@@ -538,7 +551,8 @@ export async function openedFor(
   slots: Slots,
   opening: Promise<Opened>,
 ): Promise<
-  { workspace: { id: string; path: string } } | { outcome: LaunchOutcome }
+  | { workspace: NonNullable<LaunchRecord["workspace"]> }
+  | { outcome: LaunchOutcome }
 > {
   const opened = workspaceOr(action, await opening, slots.account.name);
   if ("outcome" in opened) return opened;
@@ -573,6 +587,7 @@ export async function replay(
   action: Action,
   blocked: string | ReplayBlock | null,
 ): Promise<LaunchOutcome> {
+  blocked ??= personPickupBlock(record, state.root);
   const detail = typeof blocked === "string" ? blocked : blocked?.detail;
   const waitsOn =
     detail === undefined
@@ -617,7 +632,13 @@ async function identityOf(
       waitsOn: "tick-deadline",
     };
   // Read afresh each time: a login file can change between two launches.
-  return checkIdentity(slots.account, timeoutSec);
+  return checkIdentity(
+    slots.account,
+    timeoutSec,
+    state.runtime.name === "process"
+      ? (state.machine.process ?? { envKeep: [] })
+      : undefined,
+  );
 }
 
 /** Why the account a pending record names cannot take its replayed launch now; `null` when it can. */
@@ -629,30 +650,19 @@ export async function accountBlock(
     detail,
     waitsOn,
   });
+  const runtime = state.runtime.name === "process" ? "process" : "orca";
+  const recordedRuntime = record.runtime ?? "orca";
+  if (runtime !== recordedRuntime)
+    return blocked(
+      `the launch was reserved on the ${recordedRuntime} runtime and the machine now uses ${runtime}`,
+      "admission",
+    );
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const slots = slotsOf(state.table, record);
   if (slots === undefined)
     return blocked(`${record.account} is no longer in the machine file`);
-  if (
-    slots.account.vendor !== record.vendor ||
-    slots.account.configDir !== record.configDir
-  )
-    return blocked(
-      `${slots.account.name} no longer has the vendor and directory the launch was recorded with`,
-    );
-  const weightBlock = accountWeightBlock(slots);
-  if (weightBlock !== null)
-    return blocked(`${slots.account.name}: ${weightBlock}`);
-  if (record.vendor === "codex" && !state.codexOptIn.on)
-    return blocked(`${slots.account.name}: ${state.codexOptIn.why}`);
-  if (slots.wallUnrecorded)
-    return blocked(
-      `${slots.account.name} ended on a wall that was not recorded`,
-    );
-  if (slots.wall !== null)
-    return blocked(
-      `${slots.account.name} is walled until ${slots.wall.resetAt}`,
-    );
+  const unavailable = replaySlotBlock(slots, record, state.codexOptIn);
+  if (unavailable !== null) return blocked(unavailable);
   const identity = await identityOf(state, slots);
   if ("waits" in identity) return blocked(identity.waits, identity.waitsOn);
   if (!identity.ok)
@@ -732,7 +742,7 @@ async function preflightHolds(
 }
 
 /** The kind of launch whose reservation an action counts. */
-function loadKindOf(action: Action): LoadKind {
+export function loadKindOf(action: Action): LoadKind {
   if (action.stage === "steward") return "steward";
   if (action.stage === "pickup" || action.stage === "followup")
     return action.stage;
@@ -745,9 +755,16 @@ function byLoad(
   repo: string,
   action: Action,
   slots: Slots,
+  pickupDeadlineSec: number,
 ): { slots: Slots } | { outcome: LaunchOutcome } {
   if (state.load === undefined) return { slots };
-  const held = judge(state.load, loadKindOf(action), repo, action.target);
+  const held = judge(
+    state.load,
+    loadKindOf(action),
+    repo,
+    action.target,
+    pickupDeadlineSec * 1000,
+  );
   return held === null
     ? { slots }
     : { outcome: waits(action, held, slots.account.name) };
@@ -768,6 +785,7 @@ export async function admitAccount(
   repo: string,
   action: Action,
   pickupDeadlineSec = 0,
+  clone: string | null = null,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
@@ -777,7 +795,7 @@ export async function admitAccount(
   const failed = new Set<string>(held.keys());
   let refusal: LaunchOutcome | null = null;
   for (;;) {
-    const admitted = admission(state, action, failed, pickupDeadlineSec);
+    const admitted = admission(state, action, failed, pickupDeadlineSec, clone);
     if ("waits" in admitted)
       return {
         outcome: refusal ?? {
@@ -799,10 +817,19 @@ export async function admitAccount(
           identity.waitsOn,
         ),
       };
-    if (identity.ok) return byLoad(state, repo, action, slots);
+    if (identity.ok)
+      return byLoad(state, repo, action, slots, pickupDeadlineSec);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    if (action.takeover !== undefined && !takeoverMoves(state, action))
+    const holder = takeoverHostDriver(
+      action.takeoverHolder,
+      state.drivers,
+      state.table.map((entry) => entry.account),
+      state.records,
+      clone,
+      Number(action.target.replace("PR #", "")),
+    );
+    if (keepsTakeoverAccount(state, action, holder?.account, name))
       return { outcome: refusal };
     failed.add(name);
   }
@@ -866,6 +893,8 @@ export function holdRecord(
   slots: Slots,
 ): void {
   record.accountLaunchOrdinal = accountLaunchOrdinal(state.records, record) + 1;
+  if (state.runtime.name === "process") record.runtime = "process";
+  else delete record.runtime;
   writeRecord(record, state.root);
   if (!sharesSlot(state, record)) slots.held += 1;
   state.records.push({ record, state: { kind: "pending" }, result: null });
@@ -900,7 +929,7 @@ export async function launchHeld(
   record: LaunchRecord,
 ): Promise<LaunchOutcome> {
   // The claim and every wait before this point may have spent the time admitted for the launch.
-  const late = launchRoom(state);
+  const late = personPickupBlock(record, state.root) ?? launchRoom(state);
   if (late !== null) {
     release(state, record);
     return {

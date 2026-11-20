@@ -16,6 +16,7 @@ import { serialUndecided } from "./serial-pickups.ts";
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
+import { driversOf, type HostDrivers } from "./host-drivers.ts";
 import {
   type ApplyState,
   applyDrives,
@@ -24,7 +25,8 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { retireRearmRequests } from "./actions/retire-rearm.ts";
-import { applyPickups } from "./actions/pickup.ts";
+import { applyPickups, type PickupContext } from "./actions/pickup.ts";
+import { planOverlap } from "./overlap-plan.ts";
 import { newPreflight, trackerTargetOf } from "./preflight.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
 import { timeLeftMs } from "./actions/launch.ts";
@@ -45,6 +47,7 @@ import {
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
+import { pickupArms, pickupAsked, type PickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
 import type {
   JoinTargets,
@@ -94,6 +97,7 @@ export function applyState(
   unreadable: string[],
   startedAt: number,
   weights?: import("./local-weights.ts").AccountWeights,
+  drivers?: HostDrivers,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -103,6 +107,11 @@ export function applyState(
     return {
       withheld: `${unreadable.length} launch record(s) do not read, so no slot can be told free`,
     };
+  // A driver no record started still holds its account's slot: unread, no slot can be told free either.
+  if (drivers !== undefined && !drivers.ok)
+    return {
+      withheld: `the host's live drivers do not read (${drivers.failure.reason}), so no slot can be told free`,
+    };
   // A rotation cursor that cannot be recorded would repeat: launch nothing.
   const tick = nextTickIndex();
   if (typeof tick !== "number")
@@ -111,11 +120,19 @@ export function applyState(
     machine,
     runtime,
     records,
-    table: slotTable(machine.accounts, records, nowMs, undefined, weights),
+    table: slotTable(
+      machine.accounts,
+      records,
+      nowMs,
+      undefined,
+      weights,
+      driversOf(drivers),
+    ),
     weights,
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),
+    ...(drivers === undefined ? {} : { drivers }),
     startedAt,
     tick,
     repos: options.repos.length,
@@ -174,6 +191,9 @@ export async function actObserved(
     nowMs: context.nowMs,
     book,
     rerunsHeld: context.rerunsHeld ?? null,
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
@@ -192,8 +212,11 @@ export async function actObserved(
   const inputs: ApplyInputs = {
     repo,
     runtime: context.runtime,
+    pickupArms: pickupArms(allRecords(context), repo),
     section,
     tracked: observation.tracked,
+    admitPickups: (wanted, launch) =>
+      planOverlap(context, observation, wanted, launch),
     login: forge.login,
     merged: forge.merged,
     drives: observation.drives,
@@ -272,10 +295,12 @@ export function withheldFromReplay(
 
 /** What `--apply` acts on for one repository, as its tick read it. */
 interface ApplyInputs {
+  pickupArms: PickupArms;
   repo: RepoTarget;
   runtime: SessionRuntime;
   section: DispatchSection;
   tracked: Tracked;
+  admitPickups: NonNullable<PickupContext["admit"]>;
   login: string | null;
   merged: MarkedPr[];
   drives: DrivenPr[];
@@ -322,8 +347,13 @@ async function withThreads(
   return ok({ ...pr, unresolvedThreads: threads.value });
 }
 
-/** Whether a person's `drive` or `rearm` label is on the pull request. */
-function asksForDrive(labels: LabelConfig | null, pr: ListedPr): boolean {
+/** Whether the pickup or a person's label asks for a drive. */
+function asksForDrive(
+  pickupArms: PickupArms,
+  labels: LabelConfig | null,
+  pr: ListedPr,
+): boolean {
+  if (pickupAsked(pickupArms, pr)) return true;
   return (
     labels !== null &&
     (hasCommand(labels, pr.labels, "drive") ||
@@ -369,6 +399,7 @@ async function applyStages(
         const { tracker, keys } = tracked;
         if (enabled.has("pickup") && tracker !== null && keys)
           await applyPickups(apply, repo, report, {
+            admit: inputs.admitPickups,
             section,
             tracker,
             keys,
@@ -475,6 +506,7 @@ async function freshDriveReading(
   const { repo, login, section } = inputs;
   const view = await openPullRequest(repo.slug, pr, {
     labels: labels !== null || steward,
+    headRepository: inputs.pickupArms.has(pr),
   });
   if (!view.ok) return view;
   const listed = view.value;
@@ -485,7 +517,7 @@ async function freshDriveReading(
     repo.slug,
     listed,
     ownAuthors(adoption, login),
-    asksForDrive(labels, listed),
+    asksForDrive(inputs.pickupArms, labels, listed),
   );
   if (!counted.ok) return counted;
   const [again] = await readDrives(
@@ -495,14 +527,14 @@ async function freshDriveReading(
     currentMs(),
     labels,
     adoption,
-    undefined,
-    undefined,
-    undefined,
     {
-      cwd: repo.path,
-      ...(section.reviewerFailures === undefined
-        ? {}
-        : { policy: section.reviewerFailures }),
+      pickupArms: inputs.pickupArms,
+      reviewer: {
+        cwd: repo.path,
+        ...(section.reviewerFailures === undefined
+          ? {}
+          : { policy: section.reviewerFailures }),
+      },
     },
   );
   if (again === undefined) return ok(null);

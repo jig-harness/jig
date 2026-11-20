@@ -33,7 +33,8 @@ import { checkRecordsRegistry } from "./check-records-registry.ts";
 import { checkLicences } from "./check-licences.ts";
 import { checkChangelog } from "./check-changelog.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
-import { checkChangeAreas } from "./change-areas.ts";
+import { checkChangeAreas, validDocument } from "./change-areas.ts";
+import { separateSuites, TEST_PATH } from "./area-validation.ts";
 import { checkGeneratedFiles } from "./check-generated-files.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
@@ -73,25 +74,33 @@ export const POSIX_ONLY_SUITES = [
 ];
 
 /**
- * Suites that run in their own CI job (`.github/workflows/gates.yml` and `nightly.yml`), which
- * sets this variable in the gate job so no suite runs twice. The drive-pr
+ * Suites that run in their own CI job (`.github/workflows/gates.yml` and
+ * `nightly.yml`), which sets this variable in the gate job so no suite runs
+ * twice: the own tests of the change areas the catalog marks
+ * `validation.separateSuite` (scripts/area-validation.ts). The drive-pr
  * suite takes about twelve minutes one file at a time, so CI splits it across
  * parallel jobs; the website's parser tests need the website's own
  * dependencies, which only the website job installs. Locally `bun run gates`
  * runs everything.
  */
-export const SEPARATE_SUITES = ["plugin/skills/drive-pr/**", "website/**"];
+export function separateSuitesOf(root: string): string[] {
+  return separateSuites(validDocument(root));
+}
 export const SKIP_SEPARATE_ENV = "JIG_GATES_SKIP_SEPARATE_SUITES";
 
-/** The suite patterns this platform and environment leave out of the test step. */
+/**
+ * The suite patterns this platform and environment leave out of the test
+ * step; `separate` is read only when the environment asks to skip them.
+ */
 export function skippedSuites(
   platform: string,
   env: Record<string, string | undefined>,
+  separate: () => string[],
 ): string[] {
   const skipped = new Set<string>();
   if (platform === "win32") for (const p of POSIX_ONLY_SUITES) skipped.add(p);
   if (env[SKIP_SEPARATE_ENV] === "1")
-    for (const p of SEPARATE_SUITES) skipped.add(p);
+    for (const p of separate()) skipped.add(p);
   return [...skipped];
 }
 
@@ -124,9 +133,30 @@ export function shardArgs(env: Record<string, string | undefined>): string[] {
 }
 
 /**
+ * The paths this run's tests are confined to, directories as `./dir/` and
+ * test files as `./dir/name.test.ts` (CI's legs for a narrowed change,
+ * scripts/area-validation.ts): none when unset, the whole suite. A malformed
+ * list throws.
+ */
+export const TEST_PATHS_ENV = "JIG_GATES_TEST_PATHS";
+
+/** The test paths `env` names: none when unset; a malformed one throws. */
+export function testPaths(env: Record<string, string | undefined>): string[] {
+  const value = env[TEST_PATHS_ENV];
+  if (value === undefined || value.trim() === "") return [];
+  const paths = value.trim().split(/\s+/);
+  const bad = paths.filter((p) => !TEST_PATH.test(p));
+  if (bad.length)
+    throw new ShardError(
+      `${TEST_PATHS_ENV} must list directories as ./dir/ and test files as ./dir/name.test.ts, not ${JSON.stringify(bad.join(" "))}`,
+    );
+  return paths;
+}
+
+/**
  * The `bun run test` arguments. Bun's `--path-ignore-patterns` replaces the
  * `bunfig.toml` list rather than adding to it, so the configured patterns are
- * passed along with the skipped suites. `shard` comes last.
+ * passed along with the skipped suites. `shard` and the test paths come last.
  */
 export function testArgs(
   skipped: string[],
@@ -464,13 +494,34 @@ export function gateRun(
 ): GateRun {
   const dispatch = fast || part ? null : dispatchRun(repository, env);
   if (dispatch) return dispatch;
-  const skipped = fast ? [] : skippedSuites(process.platform, env);
+  // The catalog names the separate suites; when it cannot be read, the test
+  // stage could not check (the change-areas stage reports why), and every
+  // other stage still runs.
+  let unreadable: unknown;
+  const skipped = fast
+    ? []
+    : skippedSuites(process.platform, env, () => {
+        try {
+          return separateSuitesOf(repository);
+        } catch (error: unknown) {
+          unreadable = error;
+          return [];
+        }
+      });
+  const test: Stage =
+    unreadable === undefined
+      ? testStage(skipped, configuredIgnores, () => [
+          ...shardArgs(env),
+          ...testPaths(env),
+        ])
+      : {
+          name: command("run", "test").name,
+          check: () => {
+            throw unreadable;
+          },
+        };
   return {
-    stages: plan(
-      fast,
-      testStage(skipped, configuredIgnores, () => shardArgs(env)),
-      part,
-    ),
+    stages: plan(fast, test, part),
     notes: skipped.length
       ? [`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`]
       : [],

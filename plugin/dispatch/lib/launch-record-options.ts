@@ -64,9 +64,13 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     batchShape(value.batchItems) &&
     (value.stewardDecision === undefined ||
       Number.isSafeInteger(value.stewardDecision)) &&
-    optionalStrings(value.claimedItems) &&
-    optionalStrings(value.releasedItems) &&
-    optionalStrings(value.codexPassArgs) &&
+    [
+      value.ancestors,
+      value.claimedItems,
+      value.releasedItems,
+      value.codexPassArgs,
+    ].every(optionalStrings) &&
+    optionalHostDriverReplacement(value.replacesHostDriver) &&
     [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&
     [
       value.followupWithinMs,
@@ -90,6 +94,18 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     ) &&
     optionalTestLockWait(value.testLockWait) &&
     isRedrive(value.redrive)
+  );
+}
+
+/** Whether a value is absent or identifies the host driver a takeover replaces. */
+function optionalHostDriverReplacement(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isMapping(value) &&
+      typeof value.clone === "string" &&
+      Number.isSafeInteger(value.pr) &&
+      (value.pr as number) > 0 &&
+      typeof value.since === "string")
   );
 }
 
@@ -132,7 +148,8 @@ function batchShape(value: unknown): boolean {
           isMapping(i) &&
           typeof i.key === "string" &&
           typeof i.person === "string" &&
-          optionalText(i.ancestor),
+          optionalText(i.ancestor) &&
+          optionalStrings(i.ancestors),
       ))
   );
 }

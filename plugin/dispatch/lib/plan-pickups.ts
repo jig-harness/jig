@@ -25,10 +25,12 @@
  *   and in `pr_open` it is quiet while that pull request is open. Where it
  *   cannot move, the stall need names the pull request.
  * - A claimed item with no running session that an open pull request of the
- *   repository links, while that pull request's drive is live or converged,
- *   is carried by it, not a stall, whatever state the item is in
- *   (`carried-pr.ts`). A linked pull request with no drive, or a stopped
- *   one, leaves the stall need, which names it.
+ *   repository links, while that pull request has a drive in any state it
+ *   reads in, is carried by it, not a stall, whatever state the item is in
+ *   (`carried-pr.ts`): what a person must do there is the pull request's own
+ *   need. One a recently merged pull request links is quiet too, for its
+ *   follow-up. A linked pull request with no drive, or a drive that did not
+ *   read, leaves the stall need, which names it.
  * - A session this machine launched that the runtime reports waiting for
  *   longer than `dispatch.blocked_after` is reported; it keeps its slot.
  * - An item whose latest pickup pass ended on a question, without recording
@@ -410,14 +412,23 @@ function carriageOf(
   );
 }
 
-/** Quiets an item a driven pull request carries, unless it is still to move to pr_open; whether it did. */
+/** Quiets an item a driven pull request carries or a merged one settles, unless it is still to move to pr_open; whether it did. */
 function carriedQuiet(
   item: ClaimedItem,
   carriage: Carriage,
   pr: LaunchPrReading,
   plan: PickupPlan,
 ): boolean {
-  if (carriage.kind !== "carried" || pr.step?.kind === "move") return false;
+  if (pr.step?.kind === "move") return false;
+  if (carriage.kind === "merged") {
+    plan.quiet.push({
+      target: item.key,
+      class: "claimed-merged",
+      why: carriage.why,
+    });
+    return true;
+  }
+  if (carriage.kind !== "carried") return false;
   plan.quiet.push({
     target: item.key,
     class: "claimed-carried",
@@ -856,6 +867,9 @@ function pickupAction(
       ...(item.factoryAncestor === undefined
         ? {}
         : { factoryAncestor: item.factoryAncestor }),
+      ...(item.ancestors === undefined
+        ? {}
+        : { ancestors: JSON.stringify(item.ancestors) }),
       ...(item.blockingFor === undefined
         ? {}
         : { blockingFor: item.blockingFor }),

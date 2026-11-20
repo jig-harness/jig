@@ -64,6 +64,9 @@ make, use the entry's term instead.
 - **Module** — Jig's unit of adoption: one practice area (e.g.,
   "generated-artifact freshness") packaged with its invariant, maturity
   levels, templates, and reference code. Modules adopt independently.
+- **Inode** — a filesystem record that identifies a file or directory and
+  holds its metadata. A filesystem has a finite number of inodes, so it can
+  run out of them even when disk space remains.
 - **Maturity level** — how deeply a module is adopted: **Lite** (minimum
   useful), **Standard** (production teams), **Strict** (regulated/compliance
   posture). Brownfield projects climb one level at a time. *Avoid*: tier
@@ -444,6 +447,21 @@ make, use the entry's term instead.
   ships, and `deep`, which runs them all). An area may name its profile; one
   that names none gets the deepest — the same fail-closed default as a file
   matching no area at all.
+- **Own tests** — the test directories a *change-area catalog* area declares
+  as its own (`validation.ownTests`): what a change to that area runs at the
+  least. Each directory must hold a test file, so a mistyped one cannot drop
+  an area's tests unnoticed.
+- **Separate suite** — an area's *own tests* that CI runs in a job of their
+  own, because they are long or need their own dependencies
+  (`validation.separateSuite`). The gate set leaves them out, and the job runs
+  when the area is affected, when a *dependent test* lies in it and whenever
+  the whole suite runs.
+- **Dependent test** — a test file a change can affect wherever it lives,
+  found by walking back from the changed files through what imports them and
+  through test code that names them (a script, or a YAML, JSON or TOML file).
+  CI runs these beside the *own tests* of the areas the change touches. What
+  the walk cannot see, such as a Markdown file a test reads or a path built at
+  run time, is left to the full runs on the main branch.
 - **Self-check paradox** — the situation where a *check* validates the same
   data its own trigger condition is computed from (e.g. a catalog's structural
   check, triggered by resolving changed paths *through* that catalog). The
@@ -917,7 +935,7 @@ make, use the entry's term instead.
   request, while the epic itself tracks the whole. A `do-item` session takes
   one sub-issue at a time; the dispatcher starts an epic's ready sub-issues
   in parallel, in the order and parallelism its execution plan sets, or
-  without one up to a per-epic width. Jig's `do-item` skill picks up the
+  without one alongside the other ready work. Jig's `do-item` skill picks up the
   next sub-issue and follows the epic's order when a machine-readable
   execution plan is present
   ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
@@ -970,6 +988,11 @@ make, use the entry's term instead.
   "waits on"), object references, a count and an optional reason. Each reference carries its
   kind (issue or pull request), state, link and counterpart, so a view can
   show it as a chip with its link ([design](design/epic-planner.md)).
+- **Pickup hold** — a person's hold on one tracker item, written to the
+  dispatching host's own state by `jig send` rather than to the tracker. It
+  keeps the item out of new launches until `release` withdraws it, and leaves
+  work already running alone. Unlike a tracker label hold, it is host-local;
+  unlike a serialized-area hold, it names one item, not a shared area.
 - **Epic census** — the read-only count of how a repository's started *epics*
   stand, kept by the fleet-health sensor: *finished-but-open* (every child is
   closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
@@ -2545,13 +2568,18 @@ make, use the entry's term instead.
   orchestrator, lead agent.
 - **Carried item** — a claimed item no session holds that an open pull
   request of its own repository carries: the line links the pull request to
-  the item, and its drive is live or has converged and waits for a person's
-  merge. The dispatcher reports it, and the line lists it, as carried
-  rather than as a stalled pickup. A pull request with no drive, or a
-  stopped one, does not carry it, and the stall need names the pull
-  request. An item already in the tracker's pull-request-open state, or
-  with a move to it still to make, keeps its existing handling and is not
-  reported as carried.
+  the item, and the pull request has a drive, whatever its state (live,
+  converged and waiting for a person's merge, parked on a person's
+  question, stopped for a re-arm or a re-drive, or undecided for one tick).
+  The dispatcher reports it, and the line lists it, as carried, with the
+  drive's state, rather than as a stalled pickup: a person's step there is
+  the pull request's own need. A pull request with no drive does not carry
+  it, and the stall need names the pull request. An item a pull request
+  merged within the last day links is not a stalled pickup either: its
+  follow-up settles it.
+  An item already in the tracker's pull-request-open state, or with a move
+  to it still to make, keeps its existing handling and is not reported as
+  carried.
 - **Dispatch dashboard** — the page a person watches and steers the
   execution line from, and the process that serves it. Today
   `jig dispatch dashboard` serves one host's *dispatcher*: what is safe to
@@ -2971,7 +2999,7 @@ make, use the entry's term instead.
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-cost)).
 - **Overlap bound** — how many pieces of work in flight may change one file
   before the *dispatcher* puts more work on that file behind everything
-  else that is ready. It replaces the width per epic, applies across all
+  else that is ready. It applies across all
   work, and like the *overlap cost* only orders: work over the bound still
   starts when nothing else can take a free slot
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-bound)).

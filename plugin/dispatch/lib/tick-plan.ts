@@ -15,9 +15,10 @@
  * tick to rank once every repository is planned (`tick-priorities.ts`); the
  * plan never reads it, and only the host's `priorities.enforce` lets the
  * ranking reorder the planned pickups. The planned pickups are then weighed
- * against the work in flight (`overlap-plan.ts`), for the report only.
+ * against the work in flight (`overlap-plan.ts`), to order their launch attempts.
  */
 import { slotTable } from "./accounts.ts";
+import { driversOf } from "./host-drivers.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
 import {
   recordsWanted,
@@ -105,11 +106,14 @@ export function planObserved(
       ? {}
       : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
-    ...withStalledPr(observation),
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
+    ...withStalledPr(observation, context.nowMs),
     ...withTrees(context, opened.stages.has("pickup")),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
-  // Reported only, and weighed after the priorities ranking so it sees the pickup order that starts.
+  // Weigh overlap after the priorities ranking so its tiers preserve that rank.
   context.overlaps ??= [];
   context.overlaps.push({ observation });
   if (opened.owner) {
@@ -173,7 +177,10 @@ export function planObserved(
  * pull requests carry an item with the drives that work them. None where
  * the tracker's keys do not read.
  */
-function withStalledPr(observation: RepoObservation): {
+function withStalledPr(
+  observation: RepoObservation,
+  nowMs: number,
+): {
   prOpen?: StalledPrInput;
 } {
   const { tracked, forge, opened, ctx } = observation;
@@ -186,7 +193,7 @@ function withStalledPr(observation: RepoObservation): {
   return {
     prOpen: {
       prs,
-      carried: carriersOf(observation, prs),
+      carried: carriersOf(observation, prs, nowMs),
       prOpen: (nativeType) => prOpenOf(tracked.tracker, nativeType),
       owner: ctx.owner,
       pickup: opened.stages.has("pickup"),
@@ -214,10 +221,11 @@ function withTrees(
   return { trees: (path) => readPickupTree(path, deadlineMs) };
 }
 
-/** Which open pull requests carry an item, and the drives the tick read for them (`carried-pr.ts`). */
+/** Which open pull requests carry an item, the drives the tick read for them, and the merged pull requests that settle one (`carried-pr.ts`). */
 function carriersOf(
   observation: RepoObservation,
   prs: readonly PrLinkText[] | null,
+  nowMs: number,
 ): CarrierInput {
   const { tracked, forge, opened, drives } = observation;
   return carrierInput({
@@ -234,6 +242,8 @@ function carriersOf(
     drives,
     read: forge.read,
     ...(forge.scoped ? { inScope: forge.inScope } : {}),
+    merged: forge.merged,
+    nowMs,
   });
 }
 
@@ -390,6 +400,7 @@ function settleRecords(
       nowMs,
       undefined,
       context.weights,
+      driversOf(context.drivers),
     );
   return all.filter((r) => r.record.repo === repo);
 }

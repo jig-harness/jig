@@ -13,11 +13,13 @@ import {
   slotTable,
 } from "./accounts.ts";
 import type { LoadKind } from "./dashboard-contract.ts";
+import { driversOf } from "./host-drivers.ts";
 import { holds, type LaunchRecord, type ReadRecord } from "./launches.ts";
 import { accountsReading, loadState, type LoadState } from "./load.ts";
 import { readLoad } from "./load-read.ts";
 import { type LoadSample, readSamples, recordSamples } from "./load-samples.ts";
 import type { MachineConfig } from "./machine-config.ts";
+import { readValidationLoad } from "./validation-load.ts";
 import type { TickBudget } from "./tick-reads.ts";
 
 /** The kind of launch a record is: a re-arm or takeover is a drive pass. */
@@ -80,6 +82,7 @@ export function readTickLoad(input: {
   nowMs: number;
   sample: boolean;
   weights?: import("./local-weights.ts").AccountWeights | undefined;
+  drivers?: import("./host-drivers.ts").HostDrivers | undefined;
 }): Outcome<LoadState, "load-unread"> {
   return attempt("load-unread", "the host's load was not read", () => {
     const { machine, records, nowMs } = input;
@@ -100,7 +103,14 @@ export function readTickLoad(input: {
     }
     const table =
       input.table ??
-      slotTable(machine.accounts, records, nowMs, undefined, input.weights);
+      slotTable(
+        machine.accounts,
+        records,
+        nowMs,
+        undefined,
+        input.weights,
+        driversOf(input.drivers),
+      );
     const refused = notAdmitted(
       machine.accounts,
       passTimeoutSeconds(),
@@ -111,6 +121,12 @@ export function readTickLoad(input: {
       reading,
       accountsReading(table, refused),
       readSamples(),
+    );
+    load.validation = readValidationLoad(
+      records,
+      reading.lock,
+      nowMs,
+      passTimeoutSeconds() * 1000,
     );
     load.spentBytes = outstandingReservations(records, reading, load);
     return load;

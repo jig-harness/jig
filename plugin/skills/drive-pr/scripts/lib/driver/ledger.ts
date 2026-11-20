@@ -41,7 +41,11 @@
  */
 import { hostname } from "node:os";
 import { ExitError, fail } from "./../cli.ts";
-import { removeDriverRecord, writeDriverRecord } from "./../ledger-stop.ts";
+import {
+  recordPendingExit,
+  removeDriverRecord,
+  writeDriverRecord,
+} from "./../ledger-stop.ts";
 import { resolveStateDir } from "./../state/store.ts";
 import { STALL_THRESHOLD_MIN_DEFAULT, stallThresholdMs } from "./../doctor.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
@@ -86,8 +90,8 @@ import {
 } from "./converged-ci-live.ts";
 import type { Ownership } from "./converged-ci.ts";
 
-/** How many times a converged stop the CI watch overturned is written again. */
-const STOP_REWRITE_ATTEMPTS = 3;
+/** How many times to attempt the final stop after the converged CI watch. */
+const CONVERGED_STOP_ATTEMPTS = 3;
 import { stopKey } from "../../../../../shared/pr-labels/blocked.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -527,14 +531,29 @@ export async function standDownOnNewerClaim(
 export async function mirrorNow(
   pr: string,
   tellsRefused = false,
+  watchingConvergedCi = false,
 ): Promise<number> {
-  if (ledgerDriverFromEnv() === null) return 0;
+  const driver = ledgerDriverFromEnv();
+  if (driver === null) return 0;
   const res = await run(tsArgv(driveState, ["handoff", pr]), {
     stdout: "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
     ...(tellsRefused
-      ? { env: { ...process.env, [HANDOFF_TELLS_REFUSED]: "1" } }
+      ? {
+          env: {
+            ...process.env,
+            [HANDOFF_TELLS_REFUSED]: "1",
+            ...(watchingConvergedCi
+              ? {
+                  [LEDGER_DRIVER_ENV]: JSON.stringify({
+                    ...driver,
+                    watchingConvergedCi,
+                  }),
+                }
+              : {}),
+          },
+        }
       : {}),
   });
   return res.code;
@@ -561,15 +580,23 @@ export const LEDGER_RENEW_MS = (STALL_THRESHOLD_MIN_DEFAULT * 60_000) / 4;
  * clone's newer claim beats this driver, which the wait returns; otherwise
  * `null`.
  */
-export function ledgerRenewal(pr: string): () => Promise<number | null> {
+export function ledgerRenewal(
+  pr: string,
+  onWatchRenewal?: (written: boolean) => void,
+): () => Promise<number | null> {
   let dueAt = Number.NEGATIVE_INFINITY;
   return async () => {
     if (performance.now() < dueAt) return null;
-    const code = await mirrorNow(pr, true);
+    const code = await mirrorNow(pr, true, onWatchRenewal !== undefined);
     // A write the guards refused is not a failed one: the ledger is another's, and the claims below say whether to stand down.
     const landed = afterHandoff(code) !== "unwritten";
-    if (afterHandoff(code) === "label")
-      await labelOwnDrive(pr, { armed: true });
+    if (afterHandoff(code) === "label") {
+      if (onWatchRenewal === undefined)
+        await labelOwnDrive(pr, { armed: true });
+      else onWatchRenewal(true);
+    } else if (landed) {
+      onWatchRenewal?.(false);
+    }
     dueAt = performance.now() + (landed ? LEDGER_RENEW_MS : LEDGER_RETRY_MS);
     if (!landed) {
       console.error(
@@ -612,7 +639,10 @@ async function ledgerOwnership(pr: string): Promise<Ownership> {
   // No position among the claims, so none can be newer.
   if (driver.floor === null) return "ours";
   const snapshot = await readLedgerSnapshot(pr, driver.login);
-  if (typeof snapshot === "string") return "unreadable";
+  if (typeof snapshot === "string") {
+    console.error(`ledger: PR #${pr}'s ownership did not read: ${snapshot}.`);
+    return "unreadable";
+  }
   return newerClaim(
     snapshot.claims,
     driver.floor,
@@ -669,33 +699,160 @@ async function afterStopWrite(
   code: number | null,
   started: string,
   dropRecord: () => Promise<void>,
-): Promise<StopWrite> {
+  pending: boolean,
+): Promise<boolean> {
   const next = afterHandoff(handoff);
-  if (next === "unwritten") return { landed: false, label: null };
+  if (next === "unwritten") return false;
+  if (
+    next === "label" &&
+    (await stopLabelLeavesPending(pr, code, started, pending))
+  )
+    return false;
   await dropRecord();
-  if (next === "refused") return { landed: true, label: null };
-  const label = await labelOwnDrive(pr, async () => {
-    const state = await readDriveState(pr);
-    return {
-      stopped: code,
-      byPerson:
-        personStopFor(await resolveStateDir(), pr, started).personStop !==
-        undefined,
-      verifiedSha: state?.verifiedSha ?? "",
-      stop: stopKey(started, state?.rounds ?? 0),
-      parks: state?.parked ?? [],
-    };
-  });
-  return { landed: true, label };
+  return true;
 }
 
-/**
- * A stop write's two outcomes, kept apart: whether the ledger write landed
- * (or was refused, leaving nothing to write), and the optional state label.
- */
-interface StopWrite {
-  landed: boolean;
-  label: DriveLabelWrite | null;
+/** Whether a stop-label write leaves a pending converged exit for recovery. */
+async function stopLabelLeavesPending(
+  pr: string,
+  code: number | null,
+  started: string,
+  pending: boolean,
+): Promise<boolean> {
+  const stoppedByPerson =
+    personStopFor(await resolveStateDir(), pr, started).personStop !==
+    undefined;
+  if (pending && code === DRIVE_EXIT.CONVERGED && !stoppedByPerson)
+    return false;
+  let unreadable = false;
+  const label = await labelStop(pr, code, started, async () => {
+    const owner = await ledgerOwnership(pr);
+    unreadable ||= owner === "unreadable";
+    return owner === "ours";
+  });
+  // A missing projection can mean either a confirmed successor owns the
+  // ledger, or that the label operation itself was unavailable. Keep the
+  // pending exit for the latter so recovery can retry the publication.
+  return (
+    pending &&
+    (unreadable ||
+      label?.write.outcome === "refused" ||
+      (label === null && (await ledgerOwnership(pr)) !== "lost"))
+  );
+}
+
+async function labelStop(
+  pr: string,
+  code: number | null,
+  started: string,
+  stillOurs: () => Promise<boolean> = () => ledgerIsOurs(pr),
+): Promise<DriveLabelWrite | null> {
+  return labelDrive(
+    pr,
+    async () => {
+      const state = await readDriveState(pr);
+      return {
+        stopped: code,
+        byPerson:
+          personStopFor(await resolveStateDir(), pr, started).personStop !==
+          undefined,
+        verifiedSha: state?.verifiedSha ?? "",
+        stop: stopKey(started, state?.rounds ?? 0),
+        parks: state?.parked ?? [],
+      };
+    },
+    undefined,
+    stillOurs,
+  );
+}
+
+async function watchConvergedStop(
+  pr: string,
+  started: string,
+  recheck: ConvergedRecheck,
+  owned: () => Promise<Ownership>,
+  renew: () => Promise<number | null>,
+): Promise<{ exit: number; ownership: Ownership }> {
+  const labelled = await labelStop(
+    pr,
+    DRIVE_EXIT.CONVERGED,
+    started,
+    async () => {
+      return (await owned()) === "ours";
+    },
+  );
+  let exit = DRIVE_EXIT.INDETERMINATE;
+  if (
+    labelled === null ||
+    (labelled.converged && labelled.write.outcome === "refused")
+  ) {
+    console.error(
+      "converged CI: retrying the converged label requires a new drive to watch its CI.",
+    );
+  } else {
+    exit =
+      (await convergedStopExit(
+        pr,
+        labelled,
+        currentMs(),
+        recheck,
+        owned,
+        renew,
+      )) ?? DRIVE_EXIT.CONVERGED;
+  }
+  const ownership = await owned();
+  return {
+    exit: ownership === "unreadable" ? DRIVE_EXIT.INDETERMINATE : exit,
+    ownership,
+  };
+}
+
+async function settleConvergedStop(
+  pr: string,
+  started: string,
+  recheck: ConvergedRecheck,
+  dropRecord: () => Promise<void>,
+  writeStop: (code: number | null, attempts?: number) => Promise<boolean>,
+): Promise<number> {
+  let renewedAt = Number.NEGATIVE_INFINITY;
+  const renew = ledgerRenewal(pr, (written) => {
+    renewedAt = written ? performance.now() : Number.NEGATIVE_INFINITY;
+  });
+  const owned = async (): Promise<Ownership> => {
+    const owner = await ledgerOwnership(pr);
+    return owner === "ours" &&
+      performance.now() - renewedAt >= STALL_THRESHOLD_MIN_DEFAULT * 60_000
+      ? "unreadable"
+      : owner;
+  };
+  await renew();
+  let ownership = await owned();
+  let finalExit: number = DRIVE_EXIT.INDETERMINATE;
+  if (ownership === "ours") {
+    const watched = await watchConvergedStop(
+      pr,
+      started,
+      recheck,
+      owned,
+      renew,
+    );
+    finalExit = watched.exit;
+    ownership = watched.ownership;
+  }
+  if (ownership === "lost") {
+    await dropRecord();
+    return TAKEN_OVER_EXIT;
+  }
+  if (
+    started !== "" &&
+    !recordPendingExit(await resolveStateDir(), pr, started, finalExit)
+  )
+    console.error(
+      `ledger: PR #${pr}'s final exit could not be saved because this acquisition's driver record is absent.`,
+    );
+  return (await writeStop(finalExit, CONVERGED_STOP_ATTEMPTS))
+    ? finalExit
+    : DRIVE_EXIT.INDETERMINATE;
 }
 
 /**
@@ -713,13 +870,13 @@ interface StopWrite {
  * whose termination was not witnessed may still act): the ledger keeps
  * naming this driver running, its heartbeat ages toward the lease window,
  * and the record stays unmarked, so no recovery marks it stopped either.
- * The same holds when the stop cannot be recorded in the drive state first.
+ * Recovery also handles a stop that could not be written.
  *
- * A stop labelled `converged` then watches the head's CI while the drive
- * still holds its locks (`converged-ci-live.ts`): the label write can start
- * runs on it. When those runs leave CI unsettled after their one re-run, the
- * stop is settled again as `HITL_PARKED` (`INDETERMINATE` when the park could
- * not be recorded), which `done` returns.
+ * A stop labelled `converged` watches the head's CI before publishing its
+ * final stop. The drive holds its locks and renews its ledger lease while it
+ * watches the runs the label write can start (`converged-ci-live.ts`). When
+ * those runs leave CI unsettled after their one re-run, the stop is settled
+ * as `HITL_PARKED` (`INDETERMINATE` when the park could not be recorded).
  */
 export function ledgerSettlement(
   pr: string,
@@ -751,56 +908,25 @@ export function ledgerSettlement(
       );
       return code;
     }
-    const labelled = (await writeStop(code)).label;
-    if (code === null) return code;
-    return await rewriteStop(code, labelled, driver !== null);
-  };
-  /** Watch the head's CI after a `converged` stop; the stop to settle as: `code` when nothing overturned it. */
-  const rewriteStop = async (
-    code: number,
-    labelled: DriveLabelWrite | null,
-    hasDriver: boolean,
-  ): Promise<number> => {
-    const again = await convergedStopExit(
-      pr,
-      labelled,
-      currentMs(),
-      recheck,
-      () => ledgerOwnership(pr),
-    );
-    if (again === null) return code;
-    // The converged stop is already written and its record gone, so no
-    // recovery rewrites the ledger after this: a write that did not land is
-    // tried again.
-    const rewritten = await writeStop(again, STOP_REWRITE_ATTEMPTS);
-    // A rewrite that never landed leaves the ledger and label saying
-    // `converged` over a head no drive settled: the exit becomes the one the
-    // dispatcher drives again, which judges the head afresh.
-    if (hasDriver && !dryRun && !rewritten.landed) {
-      // The first stop removed the driver record; the restored one lets
-      // `--stop` and `--doctor` see this acquisition.
-      const worktree = process.env.DRIVE_PR_WORKTREE ?? "";
-      if (worktree !== "" && started !== "")
-        writeDriverRecord(await resolveStateDir(), pr, {
-          worktree,
-          started,
-          pid: process.pid,
-          host: hostname(),
-          released: true,
-        });
-      console.error(
-        `ledger: PR #${pr}'s replacement stop (exit ${again}) was not written, so the stop is settled as INDETERMINATE for the next drive to judge the head again.`,
-      );
-      return DRIVE_EXIT.INDETERMINATE;
+    if (code !== DRIVE_EXIT.CONVERGED || driver === null) {
+      await writeStop(code);
+      return code;
     }
-    return again;
+
+    return await settleConvergedStop(
+      pr,
+      started,
+      recheck,
+      dropRecord,
+      writeStop,
+    );
   };
 
   /** Record stop `code` in the drive state, then the stopped ledger (up to `attempts` writes) and its label. */
   const writeStop = async (
     code: number | null,
     attempts = 1,
-  ): Promise<StopWrite> => {
+  ): Promise<boolean> => {
     const driver = ledgerDriverFromEnv();
     // The exit goes into the state before the ledger's last write, which
     // mirrors the state's events: an unknown exit names none in the driver
@@ -822,13 +948,14 @@ export function ledgerSettlement(
             : null),
         },
         driverRuntime.stopLimitedUntil,
+        driverRuntime.stopProbe?.code === code ? driverRuntime.stopProbe : null,
       ));
-    if (driver === null) return { landed: true, label: null };
+    if (driver === null) return true;
     if (!recorded) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
-      return { landed: false, label: null };
+      return false;
     }
     let handoff = 0;
     for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -849,7 +976,14 @@ export function ledgerSettlement(
           `ledger: PR #${pr}'s stopped ledger (exit ${code}) was not written (attempt ${attempt} of ${attempts}).`,
         );
     }
-    return await afterStopWrite(pr, handoff, code, started, dropRecord);
+    return await afterStopWrite(
+      pr,
+      handoff,
+      code,
+      started,
+      dropRecord,
+      attempts > 1,
+    );
   };
   return {
     async done(code: number): Promise<number> {

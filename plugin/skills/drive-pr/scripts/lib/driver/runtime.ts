@@ -1,7 +1,10 @@
 /** Process-lifetime state shared by cancellation, heartbeat callbacks and round phases. */
+import type { ProbeStop } from "../status/probe-stop.ts";
 import type { RunHandle } from "./../proc.ts";
 
 interface DriverRuntime {
+  /** The status probe report this driver stopped on. */
+  stopProbe: ProbeStop | null;
   /**
    * What the stop about to be recorded measured of its tree: set by the
    * stall stop from what it reports, and recorded on its `stop` event
@@ -10,6 +13,13 @@ interface DriverRuntime {
   stopLeftWork: { leftWork: boolean; tree: string } | null;
   /** The reviewer failure the status probe measured on this drive's stop. */
   reviewerFailure: { reviewerHead: string; reviewerApp?: string } | null;
+  /**
+   * The `finish-round.ts` state every stalled pass ended on, with the last
+   * one's reason: set by the stall stop when they all agree
+   * (`state/round-finish.ts`), and named by its line and closing report.
+   * `null` for any other stop.
+   */
+  stallFinish: { state: string; reason: string } | null;
   /**
    * When the forge's rate limit resets, for a stop on it
    * (`FORGE_RATE_LIMITED`): recorded on its `stop` event as `until`, which
@@ -97,8 +107,10 @@ interface DriverRuntime {
 }
 
 export const driverRuntime: DriverRuntime = {
+  stopProbe: null,
   stopLeftWork: null,
   reviewerFailure: null,
+  stallFinish: null,
   stopLimitedUntil: null,
   forgeLimitWaits: 0,
   passRound: null,

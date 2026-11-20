@@ -356,7 +356,9 @@ function stopText(slug: string, pr: DrivenPr): Notice {
   return notice(
     `${slug} PR #${pr.number} stopped ${stop}, ledger generation ${generation(pr)}`,
     [
-      `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
+      typeof pr.evidence.probeReason === "string"
+        ? `PR #${pr.number} (${pr.title}): ${pr.why}.`
+        : `PR #${pr.number} (${pr.title}): its drive stopped ${stop}, which only a person settles. ${pr.why}.`,
       `Read the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), then run \`/jig:drive-pr ${pr.number}\` there to re-arm it, or stop it. Where dispatch labels are enabled, you can instead use \`jig send drive@${slug}#${pr.number} rearm\`.`,
       pr.url,
     ],
@@ -397,7 +399,7 @@ function failedRearmNotice(slug: string, pr: DrivenPr): Notice {
           `Read the re-arm's output and the drive's handoff, \`.context/pr-drive-${pr.number}.md\` in the workspace that drove it (named below while it is open), settle what stopped it, then run \`/jig:drive-pr ${pr.number}\` there to re-arm it.`,
         ]
       : [
-          `PR #${pr.number} (${pr.title}) is behind its branch '${pr.head}': the pull request's head is ${prHead}, the branch's head is ${branch}. Each re-arm stops ${String(e.rearmExit)}, as the drive's attach refuses a pull request whose head is not its branch's.`,
+          `PR #${pr.number} (${pr.title}) is behind its branch '${pr.head}': the pull request's head is ${prHead}, the branch's head is ${branch}. Each re-arm stops ${String(e.rearmExit)}, as the drive's attach refuses a pull request whose head is not its branch's. ${pr.why}.`,
           "Close and reopen the pull request: the forge then takes the branch's head, and the next tick re-arms the drive.",
         ];
   return {
@@ -530,6 +532,8 @@ export function strandedHoldNotice(
   hold: {
     key: string;
     holder: string;
+    /** What the hold costs, after "holds its drive". */
+    cost: string;
     why: string;
     heldSince: string;
     settle: string;
@@ -538,7 +542,7 @@ export function strandedHoldNotice(
 ): Notice {
   return {
     ...notice(`${slug} PR #${pr.number} held by ${hold.key}`, [
-      `PR #${pr.number} (${pr.title}): ${hold.holder} holds its drive, so no tick starts it again: ${hold.why}. It has held the drive since ${hold.heldSince}.`,
+      `PR #${pr.number} (${pr.title}): ${hold.holder} holds its drive, ${hold.cost}: ${hold.why}. It has held the drive since ${hold.heldSince}.`,
       hold.settle,
       pr.url,
     ]),

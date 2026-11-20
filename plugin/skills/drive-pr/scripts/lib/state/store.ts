@@ -65,6 +65,11 @@ export function defaultStateRoot(): string {
   return join(homedir(), ".local", "state", "jig", "drive-pr");
 }
 
+/** The directory the database and every clone's directory are under: `$DRIVE_PR_STATE_DIR` when set, else the default. */
+export function stateRoot(): string {
+  return resolvedOverride() ?? defaultStateRoot();
+}
+
 /**
  * The clone's directory under `root` for clone key `key`, refusing a root
  * that holds a drive's files directly (see the header).

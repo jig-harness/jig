@@ -18,7 +18,6 @@ import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
-import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
 import {
   DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
   reviewerFailurePolicy,
@@ -40,7 +39,7 @@ const DEFAULT_ROUNDS_FLAT = 3;
 const DEFAULT_PICKUP_WITHIN_MS = 2 * 3_600_000;
 const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
 /** `pickup_deadline`'s default: an implementation outruns a review pass's deadline. */
-const DEFAULT_PICKUP_DEADLINE_MS = 3 * 3_600_000;
+export const DEFAULT_PICKUP_DEADLINE_MS = 3 * 3_600_000;
 /** `notices_linger`'s default. */
 const DEFAULT_NOTICES_LINGER_MS = 3_600_000;
 /** `renotify_after`'s default: a day. */
@@ -184,14 +183,6 @@ function reviewerFailures(value: unknown): Checked<number> {
     return invalid(
       "dispatch.reviewer_failures_before_escalation must be a positive whole number",
     );
-  return ok(value);
-}
-
-/** `epic_width`: a positive whole number, `DEFAULT_EPIC_WIDTH` when absent. */
-function width(value: unknown): Checked<number> {
-  if (value === undefined || value === null) return ok(DEFAULT_EPIC_WIDTH);
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
-    return invalid("dispatch.epic_width must be a positive whole number");
   return ok(value);
 }
 
@@ -358,7 +349,7 @@ type Timings = Omit<
   | "labels"
   | "adopt"
   | "pickupDeadlineMs"
-  | "epicWidth"
+  | "retiredEpicWidth"
   | "overlap"
 >;
 
@@ -437,26 +428,6 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
-/** The section's epic width, reviewer-failure policy and overlap costs. */
-function admission(
-  values: Record<string, unknown>,
-  section: Record<string, unknown>,
-): Checked<
-  Pick<DispatchSection, "epicWidth" | "reviewerFailures" | "overlap">
-> {
-  const epicWidth = width(section.epic_width);
-  if (!epicWidth.ok) return epicWidth;
-  const before = reviewerFailures(section.reviewer_failures_before_escalation);
-  if (!before.ok) return before;
-  const overlap = parseOverlap(section.overlap);
-  if (!overlap.ok) return overlap;
-  return ok({
-    epicWidth: epicWidth.value,
-    reviewerFailures: reviewerFailurePolicy(values, before.value),
-    overlap: overlap.value,
-  });
-}
-
 /**
  * The `dispatch` section of parsed configuration values, with defaults;
  * `invalid`, its reason naming the setting, for the first value that does
@@ -491,14 +462,28 @@ export function dispatchSection(
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
-  const bounds = admission(values, section);
-  if (!bounds.ok) return bounds;
+  const reviewerFailureThreshold = reviewerFailures(
+    section.reviewer_failures_before_escalation,
+  );
+  if (!reviewerFailureThreshold.ok) return reviewerFailureThreshold;
+  const overlap = parseOverlap(section.overlap);
+  if (!overlap.ok) return overlap;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
-    ...bounds.value,
+    ...(Object.hasOwn(section, "epic_width")
+      ? {
+          retiredEpicWidth:
+            "dispatch.epic_width is retired and ignored. Use dispatch.overlap to weigh shared files, or use execution plan dependency edges or a serialized area for one child at a time.",
+        }
+      : {}),
+    overlap: overlap.value,
+    reviewerFailures: reviewerFailurePolicy(
+      values,
+      reviewerFailureThreshold.value,
+    ),
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

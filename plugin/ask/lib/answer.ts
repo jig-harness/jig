@@ -64,7 +64,9 @@ export const PERSON_ACTS = [
   "assign the item as someone who can write",
   "authorize the account's tracker credential",
   "inspect the quota spending",
+  "inspect Jig state storage",
   "settle the launch that holds the drive",
+  "release the pickup hold",
 ] as const;
 export type PersonAct = (typeof PERSON_ACTS)[number];
 
@@ -95,7 +97,9 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   "assign the item as someone who can write": "Do",
   "authorize the account's tracker credential": "Authorize",
   "inspect the quota spending": "Investigate",
+  "inspect Jig state storage": "Investigate",
   "settle the launch that holds the drive": "Investigate",
+  "release the pickup hold": "Authorize",
 };
 
 /** What a station waits on: nothing, something that settles by itself, or a person's act. */

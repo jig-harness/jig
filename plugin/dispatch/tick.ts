@@ -91,7 +91,6 @@ import {
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
 import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
 import { accountsReport } from "./lib/account-report.ts";
-import { readAccountWeights } from "./lib/local-weights.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { timeLeftMs } from "./lib/actions/launch.ts";
@@ -107,6 +106,7 @@ import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
 import { dropRepeatedLabelNeeds } from "./lib/sources/served-repo.ts";
 import { dropRepeatedScopeFailures } from "./lib/sources/scope-failures.ts";
+import { processRuntime } from "./lib/runtime/process.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
@@ -114,6 +114,8 @@ import { loadReport } from "./lib/load.ts";
 import { readTickLoad } from "./lib/tick-load.ts";
 import {
   allRecords,
+  hostInputs,
+  readHostInputs,
   deadlineOf,
   type TickContext,
   type TickOptions,
@@ -148,7 +150,7 @@ import {
   settleOutcomes,
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
-import { planOverlap } from "./lib/overlap-plan.ts";
+import { planProjectedOverlap } from "./lib/overlap-plan.ts";
 import { holdSerialPickups } from "./lib/serial-pickups.ts";
 import { rankPriorities } from "./lib/tick-priorities.ts";
 import type { RepoReport } from "./lib/types.ts";
@@ -200,6 +202,7 @@ const ACT_LOCK_POLL_MS = 250;
 export const SWEEP_OBSERVE_WAIT_MS = 120_000;
 
 function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
+  if (machine?.runtime === "process") return processRuntime(machine);
   return machine === null
     ? orcaRuntime()
     : orcaRuntime({
@@ -272,7 +275,7 @@ async function startTick(
     startedMs,
     ...(bound === undefined ? {} : { bound }),
     launches: read.records,
-    weights: readAccountWeights(options.machine?.accounts ?? []),
+    ...readHostInputs(options),
     apply: null,
     lineInputs: new Map(),
     reflections: [],
@@ -459,6 +462,7 @@ async function startAct(started: StartedTick): Promise<void> {
     receipt.defect = defectOf("start", error);
     logDefect("the follow-up outcomes", receipt.defect, error);
   }
+  context.drivers = readHostInputs(options).drivers;
   const attempt = applyState(
     options,
     runtime,
@@ -467,6 +471,7 @@ async function startAct(started: StartedTick): Promise<void> {
     read.unreadable,
     context.startedMs,
     context.weights,
+    context.drivers,
   );
   // `--apply` with a machine file that was then withheld says why.
   started.withheld =
@@ -481,7 +486,7 @@ async function startAct(started: StartedTick): Promise<void> {
     accountsReport(options.machine ?? null, {
       records: read.records,
       nowMs: context.nowMs,
-      weights: context.weights,
+      ...hostInputs(context),
       ...(apply ?? {}),
     }),
   );
@@ -510,7 +515,7 @@ async function readLoadUnderAct(
     codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     nowMs: context.nowMs,
     sample: apply !== null,
-    weights: context.weights,
+    ...hostInputs(context),
   });
   if (!load.ok) {
     receipt.loadUnread = load.failure.reason;
@@ -575,12 +580,10 @@ async function actAll(
     complete,
     options.machine?.priorities?.enforce === true,
   );
-  // After the ranking, whose order is the one the pickups start in: a
-  // serialized area's declared hold first, then overlap, reported only, over
-  // the pickups it leaves.
+  // Apply declared holds after ranking; the pickup stage then orders remaining attempts by overlap.
   for (const { observation } of context.overlaps ?? []) {
     holdSerialPickups(observation, allRecords(context), context.nowMs);
-    planOverlap(context, observation);
+    await planProjectedOverlap(context, observation);
   }
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
@@ -705,7 +708,7 @@ async function closeTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
-    weights: context.weights,
+    ...hostInputs(context),
   });
   // Writing the line can set the exit to 1: the tick's failure row follows it.
   finalizeTickFailure(receipt, context);
@@ -764,7 +767,7 @@ function lineOfHeldTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
-    weights: context.weights,
+    ...hostInputs(context),
   });
 }
 

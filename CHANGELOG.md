@@ -401,6 +401,219 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.291.2] - 2026-11-20
+
+### Fixed
+
+- A waiting pull request status probe backs off when the pull request stays
+  unchanged or the shared GitHub GraphQL balance is low. It pauses before
+  spending the last of the balance, leaving room for the dispatcher and for
+  review rounds, and still respects its wait deadline.
+
+## [0.291.1] - 2026-11-20
+
+### Fixed
+
+- A pickup the host would hold no longer spends tracker reads. Before it reads the item from the tracker again, the dispatcher now checks whether any account has a free slot for it and, under `load.enforce`, whether the host's load holds it. A pickup that either check holds sends no request. A line held for many ticks no longer uses up the dispatcher's share of a Linear credential's request window. A pickup that passes both checks still reads the item, its relations and its assignment just before it starts. The Linear adapter now looks up the served person's user once for each repository's tracker in a tick, instead of once per candidate. **Consumer action:** none.
+
+## [0.291.0] - 2026-11-20
+
+### Added
+
+- `jig dispatch attach <record>` follows a run on the process runtime: it
+  prints the run's worktree, account, stage and how long it has run, then
+  shows the run's output as it is written, until the run ends. Interrupting
+  it leaves the run going.
+- `jig dispatch attach <record> --take-over` takes such a run over: it holds
+  the run's pull request or item in your name, as `jig send hold` does, so
+  the dispatcher starts nothing on it; stops the run (a drive through
+  `drives.ts --stop`, so its ledger reads stopped); records its end as
+  yours (`by: person`), which frees the account's slot; and prints the
+  command that resumes the Claude Code or Codex session in the worktree
+  under the same account. Run again after an interruption, it finishes the
+  take-over. Release the hold with `jig send <address> release` when you
+  are done. Runs on Orca are refused: their tab already shows them.
+  A drive taken over has a person's stop on its ledger, so releasing the
+  hold does not re-arm it: restart the drive yourself. Taking over a drive
+  or a follow-up needs the repository's dispatch hold label; where the
+  labels are off, the hold is refused and the run is left going.
+
+### Fixed
+
+- `/jig:resolve-conflicts` no longer loses its concluding commit in a
+  repository whose git hooks run longer than two minutes. Its commits, its
+  merge and `git rebase --continue` run the repository's hooks under an
+  hour's deadline instead of the command wrapper's 120 seconds, and Step 7
+  now says how to finish from a command killed at its deadline (exit `124`):
+  what it leaves, and the retry under a longer deadline that still ends a
+  hook that hangs. `/jig:fix-ci`'s commit and the merge drive-pr prints for
+  a conflicting base get the same deadline.
+- Bound the test fixture registry when a registration is written and retire
+  proven-dead registrations in bounded pages. A scheduled collector that can
+  only report an over-limit store now fails with a receipt that gives the
+  reason.
+- Report fixture registry usage and free inodes in `jig doctor gc` and
+  surface storage pressure as a host need in the dispatch dashboard.
+
+## [0.290.0] - 2026-11-20
+
+### Added
+
+- The [epic closure sweep](plugin/skills/do-item/README.md#the-epic-closure-sweep)
+  proposes closure for delivered scope, identifies unfinished work for the
+  backlog, and records a person's reply as the waiver. It checks the plan
+  and moves outstanding checks before closing an accepted epic.
+  **Consumer action:** advised at configuration. To transfer person-only
+  checks at epic closure, set `issue_tracker.person_checks` to the key of
+  a standing open issue.
+
+### Fixed
+
+- `jig dispatch`: a person's hold on an epic nested inside another epic now stops the work under it even when the hold arrives after the tick read its holds. Before, the check made just before a pickup launches looked only at the item and its outermost epic, so a leaf under a held nested epic could still start, alone or in a batch. The served queue, its batches and the pickup's launch record now carry every epic above the item, and that last check refuses the launch when any of them is held. Launch records written by an earlier release are still read, and checked against the one epic they name.
+
+## [0.289.0] - 2026-11-20
+
+### Changed
+
+- **Breaking:** The dispatcher orders ready pickups by overlap with work in flight and how long each pickup has waited. A free slot can take overlapping work. The retired `dispatch.epic_width` key is ignored and the dispatch receipt points to `dispatch.overlap`. **Consumer action:** advised at configuration, instructions. Remove `dispatch.epic_width` and update runbooks that use it. To require one child at a time, use execution plan dependency edges or a serialized area. Configure `dispatch.overlap` to tune shared-file admission. **Detect:** `config:dispatch.epic_width`.
+- The advice to set an epic width of 1 is obsolete. **Consumer action:** retracts 0.244.0#b4855f8e.
+
+## [0.288.2] - 2026-11-20
+
+### Fixed
+
+- `jig dispatch` counts every live driver on the host against the slots of
+  the account its passes bill, whoever started it. A drive a pickup armed
+  keeps the pickup's slot once the pickup ends instead of freeing it, and a
+  drive a person or a repair session started or took over by hand holds a
+  slot too, so admission no longer launches past `max_per_account` while
+  such drivers run. A driver whose process is gone frees its slot on the
+  next tick. `jig dispatch line --json` lists these drivers in
+  `line.drivers`, with the account whose slot each holds and how it was
+  started.
+
+## [0.288.1] - 2026-11-20
+
+### Fixed
+
+- When a drive stops on an exit from its status probe, the driver log, handoff and drive ledger keep the probe's state and reason. Dispatch and `jig ask` can show what happened, and an indeterminate probe that reports a read failure or rate limit is classified accordingly.
+- Fresh status evaluations clear an earlier failure classification, and an unreadable draft-skip comment is reported as a read failure. **Consumer action:** none.
+- Dispatch overlap reports charge a match between different areas only when their globs can match a common path. Areas that share a directory but match different file extensions no longer add an overlap cost.
+
+## [0.288.0] - 2026-11-20
+
+### Added
+
+- Dispatch receipts show when work already in flight would exhaust the host's test-lock capacity. The validation gauge learns from lock releases, reserves room for a drive pass, and follows the host's existing load enforcement setting.
+
+## [0.287.2] - 2026-11-20
+
+### Fixed
+
+- Drives keep their cross-clone lease during the CI watch after writing the converged label. If the final ledger write fails, recovery can publish the same exit once the drive has released its lock.
+- Drives retain a stopped-driver recovery record when the state-label configuration cannot be read, and retry the projection once it is available.
+
+## [0.287.1] - 2026-11-20
+
+### Changed
+
+- The dispatch dashboard shows parked decisions on the face of Needs you cards. Open a card for the remaining options and use the check panel to confirm a guarded copy.
+
+## [0.287.0] - 2026-11-20
+
+### Added
+
+- Select `runtime: process` in the machine dispatch file to run headless
+  passes in Git worktrees without Orca on Linux and macOS. Jig launches each run through the
+  host's service manager with an allowlisted environment and starts the
+  pickup's first drive through the dispatcher.
+
+### Fixed
+
+- The plugin's instructions for adding a skill now say where a suite is listed: a POSIX-only suite in `POSIX_ONLY_SUITES`, a long-running one with `validation.separateSuite` in the change-area catalog.
+
+## [0.286.4] - 2026-11-20
+
+### Fixed
+
+- `jig dispatch` no longer raises a stalled-pickup need for a claimed item
+  whose open pull request's drive is parked on a person's question, stopped
+  for a re-arm or a re-drive, or undecided for a tick while the forge
+  computes its mergeability: the item is reported as carried by the pull
+  request, with the drive's state, and the drive's own need is the only one a
+  person sees. An item a pull request merged within the last day links is
+  not raised as stalled either; its follow-up settles it.
+- The dispatch retirement checks tolerate a busy CI runner while continuing to
+  reject a worktree with uncommitted local content.
+- A dispatched follow-up whose release arm stays pending past
+  `dispatch.followup_within` no longer goes to a person while the release it
+  waits for is minutes away. The window starts again when a pass names a
+  newer release tag than the one it started on (up to three windows after
+  the first pending pass), and before the follow-up is raised the tick reads
+  the release tags its arm names once more, within 15 minutes of the pass's
+  end: when they all exist, it runs the follow-up again instead. An arm
+  still pending at that read is raised once, naming it, as before, and an
+  arm a run already went past its window on is not read again.
+- drive-pr: a required check whose workflow never runs on the pull request's
+  head (an event or path filter excludes it, or the workflow failed to start)
+  no longer keeps the drive waiting on `CI_HOLD_WAIT` until it stalls. Once no
+  workflow run on the head is still to finish, 15 minutes have passed since
+  the head's push and 5 since its last workflow run finished, `ci-hold.ts
+  ensure` parks `missing-required-run` for a
+  person, naming each such check and the workflow whose job reports it
+  (`unknown` when the head's workflow files name none, or several), and the
+  drive stops `HITL_PARKED`. A check whose run is queued or in progress still
+  waits. A round whose own commits change `.github/workflows/` pushes without
+  the hold, so a repair it carries can start the check.
+- drive-pr: a stall whose passes all ended `finish-round.ts` on the same state
+  names that state and its reason in the stop and its closing report, and
+  takes its cause from it (`environment` for `CI_HOLD_WAIT`) instead of
+  `unknown`.
+- A launch record of this machine whose process nobody can show running,
+  and that holds a drive past 30 minutes, is now raised to a person
+  whatever the drive's class. Before, the hold of a finished, silent,
+  refused or parked drive, or of a merged pull request, stayed silent
+  while it kept a launch slot of its account taken. The need says the
+  hold keeps the account's slot and that `jig dispatch clear` frees it,
+  and `jig ask` names the hold instead of answering `waitsOn: none`. A
+  merged pull request's hold counts from its merge, and a running drive's
+  from the launch. A drive whose driver may still run (a running, silent
+  or unread ledger) is raised only once every process of the record is
+  proved gone (for every record that holds the drive, not only the
+  newest), so a failed process read never raises a working drive; the
+  hold is raised whether or not a launch is planned for the drive, and
+  `jig ask` names a stranded launch ahead of a CI-hold diagnosis and
+  never reads a ledger that did not read as an unarmed drive. The
+  tick sees a merged pull request through the follow-up stage's listing,
+  so it raises that hold where follow-ups are configured.
+
+## [0.286.3] - 2026-11-20
+
+### Fixed
+
+- A drive's pass no longer reads its prompt as a request to arm or watch the
+  drive. The pass command of each agent tool (Claude Code's
+  `claude -p "/jig:drive-pr --bots-only <PR> …"` and Codex's
+  `codex exec "Use the jig:drive-pr skill: …"`) now goes on, after the
+  skill's invocation, to say it is one round of the drive already running on
+  that pull request, that a drive the `drives.ts` listing marks `self` is its own driver, and
+  that it must finish the round: commit, merge the base when told, push,
+  reply or park, and name what it could not do. drive-pr's `SKILL.md` states
+  the same role and duties in its first section, before the arm procedure.
+  A Codex pass that settled its role from the opening words used to arm a
+  second drive, stand down for its own driver or leave its edits unpushed,
+  and the drive stopped as stalled (exit 14). Drives already running keep
+  their old pass command until they are next armed.
+  **Consumer action:** none.
+
+## [0.286.2] - 2026-11-20
+
+### Fixed
+
+- Use `jig send` with `hold` or `release` at a pickup address to keep an item
+  out of dispatch without changing its tracker state or assignee. The hold
+  works without a tracker label, and the line shows who placed it and when.
+
 ## [0.286.1] - 2026-11-20
 
 ### Fixed
@@ -10101,7 +10314,21 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.2...HEAD
+[0.291.2]: https://github.com/jig-harness/jig/compare/v0.291.1...v0.291.2
+[0.291.1]: https://github.com/jig-harness/jig/compare/v0.291.0...v0.291.1
+[0.291.0]: https://github.com/jig-harness/jig/compare/v0.290.0...v0.291.0
+[0.290.0]: https://github.com/jig-harness/jig/compare/v0.289.0...v0.290.0
+[0.289.0]: https://github.com/jig-harness/jig/compare/v0.288.2...v0.289.0
+[0.288.2]: https://github.com/jig-harness/jig/compare/v0.288.1...v0.288.2
+[0.288.1]: https://github.com/jig-harness/jig/compare/v0.288.0...v0.288.1
+[0.288.0]: https://github.com/jig-harness/jig/compare/v0.287.2...v0.288.0
+[0.287.2]: https://github.com/jig-harness/jig/compare/v0.287.1...v0.287.2
+[0.287.1]: https://github.com/jig-harness/jig/compare/v0.287.0...v0.287.1
+[0.287.0]: https://github.com/jig-harness/jig/compare/v0.286.4...v0.287.0
+[0.286.4]: https://github.com/jig-harness/jig/compare/v0.286.3...v0.286.4
+[0.286.3]: https://github.com/jig-harness/jig/compare/v0.286.2...v0.286.3
+[0.286.2]: https://github.com/jig-harness/jig/compare/v0.286.1...v0.286.2
 [0.286.1]: https://github.com/jig-harness/jig/compare/v0.286.0...v0.286.1
 [0.286.0]: https://github.com/jig-harness/jig/compare/v0.285.1...v0.286.0
 [0.285.1]: https://github.com/jig-harness/jig/compare/v0.285.0...v0.285.1

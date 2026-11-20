@@ -8,8 +8,9 @@
 # website dependencies installed. The drive-pr suite runs in its own jobs, one
 # per platform, split into parallel shards; the do-item suite runs inside the
 # gate set on both. On Windows the gate script leaves out only the POSIX-only
-# suites (see SEPARATE_SUITES and POSIX_ONLY_SUITES in scripts/gates.ts), and
-# the gate set runs as parallel jobs, each taking a part of the test files.
+# suites (POSIX_ONLY_SUITES in scripts/gates.ts, and the separate suites the
+# change-area catalog marks), and the gate set runs as parallel jobs, each
+# taking a part of the test files.
 # Before its gates, Windows exercises the documented pickup and drive
 # commands in PowerShell against local fake services. The normal gate set
 # runs the same smoke with native argument arrays.

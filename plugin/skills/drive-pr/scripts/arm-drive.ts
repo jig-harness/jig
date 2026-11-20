@@ -57,6 +57,9 @@
  * that holds a word it cannot (`--model`, `-p`) prints the `failed` report.
  */
 import { resolve } from "node:path";
+import { isRecordId } from "../../../dispatch/lib/launches.ts";
+import { readLaunch } from "../../../dispatch/lib/read-launch.ts";
+import { launchOf } from "../../../shared/launched-session.ts";
 import { fail, isDigits, runMain, sleep } from "./lib/cli.ts";
 import {
   arm,
@@ -415,6 +418,15 @@ async function recordTab(
   for (const line of closed) console.error(`arm-drive.ts: ${line}`);
 }
 
+/** Only the dispatcher's recorded process pickup hands its drive back. */
+function pickupRuntime(env: ArmInputs["env"]): boolean | string {
+  const id = launchOf(env);
+  if (id === null || !isRecordId(id)) return false;
+  const found = readLaunch(id);
+  if (!found.ok) return found.failure.reason;
+  return found.value?.action === "pickup" && found.value.runtime === "process";
+}
+
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
   const inputs = await readInputs(args);
@@ -428,7 +440,23 @@ async function main(): Promise<number> {
     pollMs: 1500,
     runTab: recordTab,
   };
-  return answer(await arm(inputs, deps));
+  const runtime = inputs.setting.value !== "print" && pickupRuntime(inputs.env);
+  if (typeof runtime === "string")
+    return answer({
+      report: failedReport(
+        inputs.request,
+        inputs.setting,
+        {
+          model: inputs.model,
+          passArgs: inputs.passArgs,
+          vendor: sessionVendor(inputs.env) ?? "claude",
+          codexBypass: inputs.codexBypass === true,
+        },
+        runtime,
+      ),
+      exit: 1,
+    });
+  return answer(await arm({ ...inputs, processPickup: runtime }, deps));
 }
 
 if (import.meta.main) runMain("arm-drive.ts", main);

@@ -31,6 +31,10 @@ import {
 } from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import {
+  type QueuedFields,
+  unplacedQueueFields,
+} from "./person-pickup-holds.ts";
 import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
@@ -112,12 +116,11 @@ export interface LineInput {
   reports: RepoReport[];
   /** By repository path; a repository refused before its reads has none. */
   inputs: Map<string, RepoLineInput>;
-  /** By repository slug. */
   stored: (slug: string) => RepoStored;
   records: ReadRecord[];
   accounts: LineAccount[];
+  hostDrivers?: Pick<LineSnapshot, "drivers" | "driversUnread">;
   lastAccount: string | null;
-  /** The durations the previous line carried. */
   recentTicksMs: number[];
 }
 
@@ -546,8 +549,7 @@ function needsOf(
 
 function queued(
   view: RepoView,
-  fields: Pick<LineQueued, "source" | "group" | "target" | "why"> &
-    Partial<Pick<LineQueued, "stale" | "assignedBy" | "hold" | "launch">>,
+  fields: QueuedFields,
   evidence: Evidence = {},
 ): LineQueued {
   const pr = prNumber(fields.target);
@@ -712,7 +714,7 @@ function queueOf(view: RepoView): LineQueued[] {
     .map((u) => entry("held", "held", u.target, u.reason));
   const refused = unplaced
     .filter((u) => u.record === "tracker")
-    .map((u) => entry("assigned", "never", u.target, u.reason));
+    .map((u) => queued(view, unplacedQueueFields(u)));
   return [planned, replayed, serial, undecided, labelled, refused].flat();
 }
 
@@ -917,6 +919,7 @@ export function buildLine(input: LineInput): LineSnapshot {
     plugin: input.plugin,
     timeZone: input.timeZone,
     accounts: input.accounts,
+    ...input.hostDrivers,
     lastAccount: input.lastAccount,
     sessions: input.records
       .filter((r) => holds(r.state))

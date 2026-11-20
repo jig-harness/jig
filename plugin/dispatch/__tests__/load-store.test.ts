@@ -45,6 +45,7 @@ describe("the machine file's load section", () => {
       memoryFree: 0.15,
       loadPerCore: 0.9,
       lockWaiters: 2,
+      validation: 1,
       diskFreeBytes: 10 * GIB,
       forgeFloor: 0.1,
       reservations: {
@@ -58,11 +59,12 @@ describe("the machine file's load section", () => {
 
   it("reads the lines and reservations it names, keeping the defaults of the rest", () => {
     const read = config(
-      "load:\n  enforce: true\n  memory_free: 0.2\n  disk_free_gb: 20\n  reservations_gb:\n    pickup: 3\n",
+      "load:\n  enforce: true\n  memory_free: 0.2\n  validation: 0.75\n  disk_free_gb: 20\n  reservations_gb:\n    pickup: 3\n",
     );
     expect(read.ok && read.value?.load).toMatchObject({
       enforce: true,
       memoryFree: 0.2,
+      validation: 0.75,
       diskFreeBytes: 20 * GIB,
       reservations: { pickup: 3 * GIB, drive: 1.5 * GIB },
     });
@@ -79,6 +81,8 @@ describe("the machine file's load section", () => {
         "load:\n  reservations_gb:\n    review: 1\n",
         "load.reservations_gb has an unknown kind: review",
       ],
+      ["load:\n  validation: 0\n", "load.validation must be a number above 0"],
+      ["load:\n  validation: 1.1\n", "load.validation must be at most 1"],
       ["load:\n  enforce: yes please\n", "load.enforce must be true or false"],
       [
         "load:\n  reservations_gb:\n    pickup:\n",

@@ -8,6 +8,7 @@ const NAMES: Record<LoadGauge, string> = {
   memory: "Memory",
   processors: "Processors",
   "test-lock": "Test lock",
+  validation: "Validation capacity",
   disk: "Disk",
   forge: "Forge budget",
   accounts: "Accounts",
