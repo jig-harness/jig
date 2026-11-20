@@ -68,6 +68,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalStrings(value.claimedItems) &&
     optionalStrings(value.releasedItems) &&
     optionalStrings(value.codexPassArgs) &&
+    optionalHostDriverReplacement(value.replacesHostDriver) &&
     [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&
     [
       value.followupWithinMs,
@@ -91,6 +92,18 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     ) &&
     optionalTestLockWait(value.testLockWait) &&
     isRedrive(value.redrive)
+  );
+}
+
+/** Whether a value is absent or identifies the host driver a takeover replaces. */
+function optionalHostDriverReplacement(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isMapping(value) &&
+      typeof value.clone === "string" &&
+      Number.isSafeInteger(value.pr) &&
+      (value.pr as number) > 0 &&
+      typeof value.since === "string")
   );
 }
 

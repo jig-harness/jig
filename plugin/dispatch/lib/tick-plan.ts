@@ -18,6 +18,7 @@
  * against the work in flight (`overlap-plan.ts`), for the report only.
  */
 import { slotTable } from "./accounts.ts";
+import { driversOf } from "./host-drivers.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
 import {
   recordsWanted,
@@ -399,6 +400,7 @@ function settleRecords(
       nowMs,
       undefined,
       context.weights,
+      driversOf(context.drivers),
     );
   return all.filter((r) => r.record.repo === repo);
 }

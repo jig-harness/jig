@@ -6,6 +6,8 @@
  * them again under the act lock, and builds the apply state from that read.
  */
 import type { ApplyState } from "./actions/drive.ts";
+import { readHostDrivers } from "./host-drivers.ts";
+import { readAccountWeights } from "./local-weights.ts";
 import type { ActedRepository, AfterAct } from "./conflict-rates-refresh.ts";
 import { enforcedDeadlineMs } from "./actions/launch.ts";
 import { actionBook, type ActionBook } from "./failures.ts";
@@ -77,6 +79,8 @@ export interface TickContext {
   rerunLimit?: TickBound;
   launches: ReadRecord[];
   weights?: import("./local-weights.ts").AccountWeights | undefined;
+  /** The host's live drivers, read once as the tick starts (`host-drivers.ts`). */
+  drivers?: import("./host-drivers.ts").HostDrivers | undefined;
   apply: ApplyState | null;
   /** What each repository's tick read beside its report, by path, for the line. */
   lineInputs: Map<string, RepoLineInput>;
@@ -162,6 +166,25 @@ export function bookOf(
   );
   context.books.set(slug, book);
   return book;
+}
+
+/** The host's weights and live drivers, as the account views take them. */
+export function hostInputs(context: TickContext): {
+  weights: TickContext["weights"];
+  drivers: TickContext["drivers"];
+} {
+  return { weights: context.weights, drivers: context.drivers };
+}
+
+/** The host's weights and live drivers, read now. */
+export function readHostInputs(options: TickOptions): {
+  weights: TickContext["weights"];
+  drivers: TickContext["drivers"];
+} {
+  return {
+    weights: readAccountWeights(options.machine?.accounts ?? []),
+    drivers: readHostDrivers(),
+  };
 }
 
 /** This machine's launch records, the ones this tick writes included. */
