@@ -76,7 +76,8 @@ export function readLockMetadata(path: string): {
   let data: unknown;
   try {
     data = JSON.parse(text);
-  } catch {
+  } catch (error) {
+    swallow(error, "the lock metadata was not valid JSON");
     return null;
   }
   const identity = decodeIdentity(data);

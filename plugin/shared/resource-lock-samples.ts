@@ -100,42 +100,69 @@ export function recordResourceLockSample(
   }
 }
 
+function readSampleText(path: string): string | null {
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_SAMPLE_BYTES) return null;
+    const buffer = Buffer.alloc(MAX_SAMPLE_BYTES);
+    const read = readSync(fd, buffer, 0, MAX_SAMPLE_BYTES, 0);
+    return buffer.toString("utf8", 0, read);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function isSampleEnvelope(
+  data: unknown,
+  name: string,
+): data is Record<string, unknown> {
+  return (
+    isMapping(data) &&
+    data.kind === "resource-lock-sample" &&
+    data.v === 1 &&
+    data.name === name
+  );
+}
+
+function isNonemptyText(value: unknown): value is string {
+  return typeof value === "string" && Boolean(value);
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(parseMs(value));
+}
+
+function isNonnegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isPositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function sampleDetails(
+  data: Record<string, unknown>,
+): Omit<ResourceLockSample, "name"> | null {
+  const { workspace, requestedAt, waitMs, holdMs } = data;
+  if (!isNonemptyText(workspace)) return null;
+  if (!isTimestamp(requestedAt)) return null;
+  if (!isNonnegativeNumber(waitMs)) return null;
+  if (!isPositiveNumber(holdMs)) return null;
+  return { workspace, requestedAt, waitMs, holdMs };
+}
+
+function sampleFrom(data: unknown, name: string): ResourceLockSample | null {
+  if (!isSampleEnvelope(data, name)) return null;
+  const details = sampleDetails(data);
+  if (details === null) return null;
+  return { name, ...details };
+}
+
 function readSample(path: string, name: string): ResourceLockSample | null {
   try {
-    const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
-    let text: string;
-    try {
-      const stat = fstatSync(fd);
-      if (!stat.isFile() || stat.size > MAX_SAMPLE_BYTES) return null;
-      const buffer = Buffer.alloc(MAX_SAMPLE_BYTES);
-      const read = readSync(fd, buffer, 0, MAX_SAMPLE_BYTES, 0);
-      text = buffer.toString("utf8", 0, read);
-    } finally {
-      closeSync(fd);
-    }
-    const data: unknown = JSON.parse(text);
-    if (
-      !isMapping(data) ||
-      data.kind !== "resource-lock-sample" ||
-      data.v !== 1 ||
-      data.name !== name
-    )
-      return null;
-    const { workspace, requestedAt, waitMs, holdMs } = data;
-    if (
-      typeof workspace !== "string" ||
-      !workspace ||
-      typeof requestedAt !== "string" ||
-      !Number.isFinite(parseMs(requestedAt)) ||
-      typeof waitMs !== "number" ||
-      !Number.isFinite(waitMs) ||
-      waitMs < 0 ||
-      typeof holdMs !== "number" ||
-      !Number.isFinite(holdMs) ||
-      holdMs <= 0
-    )
-      return null;
-    return { name, workspace, requestedAt, waitMs, holdMs };
+    const text = readSampleText(path);
+    return text === null ? null : sampleFrom(JSON.parse(text), name);
   } catch (error) {
     swallow(error, "this resource lock sample could not be read");
     return null;
