@@ -153,6 +153,7 @@ function ownSession(record: LaunchRecord): boolean {
 export type StartupFailure = "quota" | "unstarted" | "sign-in" | "breaker";
 
 const SIGN_IN_PHRASES = [
+  "API Error: 401",
   "Failed to authenticate",
   "OAuth session expired",
   "Please run /login",
@@ -168,9 +169,14 @@ export function signInPhrase(text: string): SignInPhrase | undefined {
       .trim()
       .replace(/^error:\s*/i, "")
       .toLowerCase();
-    const phrase = SIGN_IN_PHRASES.find((candidate) =>
-      message.startsWith(candidate.toLowerCase()),
-    );
+    const phrase = SIGN_IN_PHRASES.find((candidate) => {
+      const expected = candidate.toLowerCase();
+      if (!message.startsWith(expected)) return false;
+      const remainder = message.slice(expected.length);
+      if (candidate === "API Error: 401")
+        return remainder === "" || /^[\s.:]/.test(remainder);
+      return remainder === "" || /^[.:]/.test(remainder);
+    });
     if (phrase !== undefined) return phrase;
   }
   return undefined;
