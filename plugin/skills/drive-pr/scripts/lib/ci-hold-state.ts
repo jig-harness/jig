@@ -34,27 +34,35 @@ type HeldState = Extract<CiHoldState, { phase: "held" }>;
 /** A hold read that failed: the forge was not reached, or answered with something unreadable. */
 export type HoldReadFailure = Failure<ForgeReadCode | "unreadable">;
 
+/**
+ * One `gh` read whose answer is JSON: a failed call is classed from its
+ * result and named by `what`, an answer that is not JSON is malformed.
+ */
+export async function ghReadJson(
+  args: string[],
+  what: string,
+  notJson: string,
+): Promise<Outcome<unknown, ForgeReadCode | "malformed">> {
+  const result = await ghCall(args);
+  if (result.code !== 0)
+    return failed(
+      forgeReadClass(result),
+      `${what} exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
+    );
+  return attempt("malformed", notJson, (): unknown =>
+    JSON.parse(result.stdout),
+  );
+}
+
 /** The pull request's state, head and hold label. */
 export async function readPrSnapshot(
   pr: string,
   holdLabel: string | null,
 ): Promise<Outcome<PrSnapshot, ForgeReadCode>> {
-  const result = await ghCall([
-    "pr",
-    "view",
-    pr,
-    "--json",
-    "state,headRefOid,labels",
-  ]);
-  if (result.code !== 0)
-    return failed(
-      forgeReadClass(result),
-      `gh pr view exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
-    );
-  const decoded = attempt(
-    "malformed",
+  const decoded = await ghReadJson(
+    ["pr", "view", pr, "--json", "state,headRefOid,labels"],
+    "gh pr view",
     "the pull request view is not JSON",
-    (): unknown => JSON.parse(result.stdout),
   );
   if (!decoded.ok) return decoded;
   const snapshot = parsePrSnapshot(decoded.value, holdLabel);
@@ -135,21 +143,15 @@ export async function writeCiState(
 export async function readCheckRuns(
   head: string,
 ): Promise<Outcome<CheckRunLite[], ForgeReadCode>> {
-  const result = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
-  ]);
-  if (result.code !== 0)
-    return failed(
-      forgeReadClass(result),
-      `gh api check-runs exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
-    );
-  const decoded = attempt(
-    "malformed",
+  const decoded = await ghReadJson(
+    [
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
+    ],
+    "gh api check-runs",
     "the check-runs answer is not JSON",
-    (): unknown => JSON.parse(result.stdout),
   );
   if (!decoded.ok) return decoded;
   const runs = parseCheckRuns(decoded.value);
