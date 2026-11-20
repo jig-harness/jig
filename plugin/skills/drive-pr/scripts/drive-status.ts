@@ -873,7 +873,7 @@ async function main(): Promise<number> {
     readAdvisories = true,
   ): Promise<void> {
     const drift = checkBaseDrift ? await baseDrift() : (driftMemo ?? null);
-    const reflectionDue = readAdvisories ? await reflectDue() : false;
+    const reflectionDue = readAdvisories ? await reflectDue() : null;
     if (json) {
       // Computed only here — never used outside
       // the JSON payload, so hoisting it above this branch (the way `drift`
@@ -882,12 +882,12 @@ async function main(): Promise<number> {
       // subprocess call for a field it never reports.
       const escalation = readAdvisories
         ? await structuralEscalationStatus()
-        : { due: false, invariant: null };
+        : null;
       // ADVISORY: read from the snapshot the dev-dashboard
       // collector already published, never sampled here.
       const fleetHealth = readAdvisories
         ? readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs())
-        : { warnings: [], snapshotAgeSec: null, stale: false, partial: false };
+        : null;
       process.stdout.write(
         `${JSON.stringify({
           state: report.state,
@@ -896,7 +896,7 @@ async function main(): Promise<number> {
           reason: report.reason,
           ...(rateLimit === null ? {} : { rateLimit }),
           reflectDue: reflectionDue,
-          structuralEscalationDue: escalation.due,
+          structuralEscalationDue: escalation?.due ?? null,
           // The claim the last acknowledgment recorded via
           // `set-escalated --invariant`, echoed back ONLY while
           // `structuralEscalationDue` is true — `null` while
@@ -904,18 +904,21 @@ async function main(): Promise<number> {
           // one. See `structuralEscalationInvariant`'s own doc for why the
           // two `null` causes are not distinguished here: either way there is
           // no prior claim to check this round's finding against.
-          structuralEscalationInvariant: escalation.invariant,
+          structuralEscalationInvariant: escalation?.invariant ?? null,
           // PR-scoped fleet-health suspicions for THIS PR (review carousel,
           // follow-up depth) — a count crossing a threshold, never a finding,
           // and never a change to `state` or the exit code. `[]` when the
           // snapshot is absent, which is the ordinary case off the dashboard
           // host. See SKILL.md § 1.
-          fleetHealth: {
-            warnings: fleetHealth.warnings,
-            snapshotAgeSec: fleetHealth.snapshotAgeSec,
-            stale: fleetHealth.stale,
-            partial: fleetHealth.partial,
-          },
+          fleetHealth:
+            fleetHealth === null
+              ? null
+              : {
+                  warnings: fleetHealth.warnings,
+                  snapshotAgeSec: fleetHealth.snapshotAgeSec,
+                  stale: fleetHealth.stale,
+                  partial: fleetHealth.partial,
+                },
           head: {
             api: report.apiHead,
             local: localHead,

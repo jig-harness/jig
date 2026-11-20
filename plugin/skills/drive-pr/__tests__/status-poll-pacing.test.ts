@@ -128,6 +128,48 @@ describe("waiting status poll pacing", () => {
     expect(resumed.clock.now()).toBe(200 * second);
   });
 
+  test("an aborted wait records every suppressed base-cadence poll", async () => {
+    let now = 0;
+    const ledger: CallRecord[] = [];
+    const controller = new AbortController();
+    const pacing = new StatusPollPacing(base, defaultPolicy, {
+      now: () => now,
+      async sleep() {
+        now += 95 * second;
+        controller.abort();
+      },
+      balance: () => ({ windows: [window(4500, 600)] }),
+      record(credential, durationMs, skipped) {
+        const entry = {
+          system: "github" as const,
+          credential: credential ?? "(unavailable)",
+          owner: credential ?? null,
+          window: "none",
+          unit: "polls",
+          requests: 0,
+        };
+        ledger.push({
+          ...entry,
+          operation: "drive-status poll wait",
+          cost: 1,
+          durationMs,
+        });
+        if (skipped > 0)
+          ledger.push({
+            ...entry,
+            operation: "drive-status poll skipped",
+            cost: skipped,
+            durationMs: 0,
+          });
+      },
+    });
+
+    expect(await pacing.wait("same", 300 * second, controller.signal)).toBe(
+      false,
+    );
+    expect(ledger.at(-1)?.cost).toBe(3);
+  });
+
   test("an alternate higher reading cannot override a live lower reading", async () => {
     const probe = fixture((now) =>
       now === 0 ? window(500, 400) : window(4500, 600),
@@ -157,10 +199,56 @@ describe("waiting status poll pacing", () => {
         credential: "test-account",
         windows: [window(400, 500), { ...window(500, 200), limit: 15_000 }],
       }),
-      record() {},
+      record() {
+        // This fixture only measures the selected wake time.
+      },
     });
     expect(await pacing.wait("same", 300 * second)).toBe(true);
     expect(now).toBe(200 * second);
+  });
+
+  test("the governor retains same-reset capacities through a healthy snapshot", async () => {
+    const store = memoryBudgetStore();
+    const governor = budgetGovernor(store, {
+      clock: () => 0,
+      keepGraphqlPollFloor: true,
+    });
+    const owner = "test-account";
+    governor.observe(
+      owner,
+      { snapshot: true, complexity: window(400, 500) },
+      0,
+    );
+    governor.observe(
+      owner,
+      {
+        snapshot: true,
+        complexity: { ...window(500, 500), limit: 15_000 },
+      },
+      0,
+    );
+    governor.observe(
+      owner,
+      { snapshot: true, complexity: window(4500, 600) },
+      0,
+    );
+
+    let now = 0;
+    const pacing = new StatusPollPacing(base, defaultPolicy, {
+      now: () => now,
+      async sleep(ms) {
+        now += ms;
+      },
+      balance: () => ({
+        credential: owner,
+        windows: graphqlPollFloors(store.read(owner)?.windows, now),
+      }),
+      record() {
+        // This fixture only measures the selected wake time.
+      },
+    });
+    expect(await pacing.wait("same", 550 * second)).toBe(true);
+    expect(now).toBe(500 * second);
   });
 
   test("a partial lower balance can use the known capacity of the same account", async () => {

@@ -73,12 +73,17 @@ export function withGraphqlPollFloors(
       ([name]) => name !== GRAPHQL_POLL_FLOOR && !name.startsWith(FLOOR_PREFIX),
     ),
   );
-  const floors = new Map<number, BudgetWindow>();
+  const floors = new Map<string, BudgetWindow>();
   for (const window of [...graphqlPollFloors(windows, now), ...observed]) {
     if (!live(window, now)) continue;
-    const previous = floors.get(window.resetAt);
+    // A reset can carry several capacities. Keep each capacity's lower
+    // balance: one may be the absolute floor while another has the stricter
+    // percentage, and collapsing them would let a later snapshot raise the
+    // polling allowance.
+    const key = `${window.resetAt}:${window.limit ?? "unknown"}`;
+    const previous = floors.get(key);
     floors.set(
-      window.resetAt,
+      key,
       previous === undefined
         ? window
         : (lowerGraphqlBalance([previous, window], now) ?? window),
@@ -87,10 +92,7 @@ export function withGraphqlPollFloors(
   return {
     ...retained,
     ...Object.fromEntries(
-      [...floors].map(([resetAt, window]) => [
-        `${FLOOR_PREFIX}${resetAt}`,
-        window,
-      ]),
+      [...floors].map(([key, window]) => [`${FLOOR_PREFIX}${key}`, window]),
     ),
   };
 }

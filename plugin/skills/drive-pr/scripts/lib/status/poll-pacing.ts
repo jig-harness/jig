@@ -137,6 +137,42 @@ export class StatusPollPacing {
     this.maximumMs = Math.max(baseMs, policy.maxIntervalSeconds * 1000);
   }
 
+  /** Keep only readings another reading enforces at least as strictly. */
+  private compactLower(now: number): void {
+    const live = this.lower.filter(
+      (window) => window.resetAt !== null && window.resetAt > now,
+    );
+    this.lower = live.filter((window, index, all) => {
+      const fraction =
+        window.limit !== null && window.limit > 0
+          ? window.remaining !== null
+            ? window.remaining / window.limit
+            : null
+          : null;
+      return !all.some((other, otherIndex) => {
+        if (otherIndex === index || other.resetAt !== window.resetAt)
+          return false;
+        if (
+          other.remaining === null ||
+          window.remaining === null ||
+          other.remaining > window.remaining
+        )
+          return false;
+        const otherFraction =
+          other.limit !== null && other.limit > 0
+            ? other.remaining / other.limit
+            : null;
+        return (
+          (fraction === null ||
+            (otherFraction !== null && otherFraction <= fraction)) &&
+          (other.remaining < window.remaining ||
+            otherFraction !== fraction ||
+            otherIndex < index)
+        );
+      });
+    });
+  }
+
   async wait(
     signal: string,
     deadline: number,
@@ -160,9 +196,8 @@ export class StatusPollPacing {
         this.credential = sample.credential;
       }
       const share = this.policy.waitingShare;
-      this.lower = [...this.lower, ...sample.windows].filter(
-        (window) => window.resetAt !== null && window.resetAt > now,
-      );
+      this.lower = [...this.lower, ...sample.windows];
+      this.compactLower(now);
       const capacities = new Set(
         this.lower
           .map(({ limit }) => limit)
@@ -205,11 +240,12 @@ export class StatusPollPacing {
       sample = this.deps.balance();
     }
     const ended = this.deps.now();
+    const willPoll = !abort?.aborted && ended < deadline;
     const skipped = Math.max(
       0,
-      Math.floor((ended - started) / this.baseMs) - (ended < deadline ? 1 : 0),
+      Math.floor((ended - started) / this.baseMs) - (willPoll ? 1 : 0),
     );
     this.deps.record(this.credential, ended - started, skipped);
-    return !abort?.aborted && this.deps.now() < deadline;
+    return willPoll;
   }
 }
