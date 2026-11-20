@@ -376,14 +376,33 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
   });
 
   it("judges a pending replay without charging its own reserved runs again", () => {
-    const load = withDemand(0);
-    const own = load.validation!.measured.kinds.pickup.runsPerPass;
-    load.validation!.demand = { atLock: 0, toArrive: own };
+    const own = withDemand(0).validation!.measured.kinds.pickup.runsPerPass;
+    // The wait window permits four runs: the replay's own reserved run
+    // is the one that fills it, so it is admitted only once subtracted.
+    const room = 4;
+    const atBoundary = withDemand(0);
+    atBoundary.validation!.demand = { atLock: 0, toArrive: room - 1 + own };
     expect(
-      holdsReplay(load, "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
+      holdsReplay(
+        atBoundary,
+        "pickup",
+        SLUG,
+        "#12",
+        3 * HOUR,
+        VALIDATION_GAUGES,
+      ),
     ).toBeNull();
-    expect(load.validation!.admittedRuns).toBe(0);
-    expect(load.holds).toEqual([]);
+    expect(atBoundary.validation!.admittedRuns).toBe(0);
+    expect(atBoundary.holds).toEqual([]);
+    // One run more in the forecast and the replay waits, and says so.
+    const over = withDemand(0);
+    over.validation!.demand = { atLock: 0, toArrive: room + own };
+    expect(
+      holdsReplay(over, "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
+    ).toContain("the host's validation capacity holds it");
+    expect(over.holds).toMatchObject([
+      { target: "#12", kind: "pickup", gauge: "validation", held: true },
+    ]);
   });
 
   it("admits it when the validation capacity has room, or when the gauge does not read", () => {
