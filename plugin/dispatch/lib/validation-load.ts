@@ -194,10 +194,12 @@ export function validationHold(
   kind: ValidationKind,
   pickupDeadlineMs: number,
 ): string | null {
-  if ("unread" in state.demand) return null;
-  const deadline = kind === "pickup" ? pickupDeadlineMs : state.driveDeadlineMs;
+  // A launch setting the lock refuses fails validation whatever the lock's
+  // occupancy, so it is judged before the occupancy reading.
   if (state.waitInvalid !== undefined)
     return `waits on validation capacity: ${state.waitInvalid}`;
+  if ("unread" in state.demand) return null;
+  const deadline = kind === "pickup" ? pickupDeadlineMs : state.driveDeadlineMs;
   const own = forecast(state, kind, deadline, state.admittedRuns);
   if (own === null) return null;
   if (own.fill === null || own.fill > line)
@@ -276,9 +278,12 @@ export function validationGauge(
   return {
     gauge: "validation",
     fill:
-      result === null
-        ? null
-        : Math.min((result.fill ?? share) / share, Number.MAX_SAFE_INTEGER),
+      state.waitInvalid !== undefined
+        ? // Refused outright, as an unfit forecast is: at the line.
+          1
+        : result === null
+          ? null
+          : Math.min((result.fill ?? share) / share, Number.MAX_SAFE_INTEGER),
     reads,
     line,
   };

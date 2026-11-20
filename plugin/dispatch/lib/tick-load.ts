@@ -88,10 +88,23 @@ export function readTickLoad(input: {
   return attempt("load-unread", "the host's load was not read", () => {
     const { machine, records, nowMs } = input;
     const sessions = running(records);
+    // The environment a launch's pass runs the test stage in. A process
+    // launch filters the dispatcher's own to the allowlist; an Orca launch's
+    // terminal is not filtered by it, so the dispatcher's own environment
+    // stands in for it. One environment places the lock occupancy and the
+    // forecast, so both name the same lock.
+    const launchEnv: NodeJS.ProcessEnv =
+      machine.runtime === "process"
+        ? processEnvironment(process.env, machine.process ?? { envKeep: [] }, {
+            vendor: "claude",
+            configDir: "",
+          })
+        : process.env;
     const reading = readLoad(
       sessions.map((s) => s.path),
       machine.repositories.map((r) => r.path),
       input.budget,
+      launchEnv,
     );
     if (input.sample && reading.sessions !== null) {
       const samples: LoadSample[] = sessions.flatMap(({ record, path }) => {
@@ -128,11 +141,7 @@ export function readTickLoad(input: {
       reading.lock,
       nowMs,
       passTimeoutSeconds() * 1000,
-      // The environment a pass is launched with, not the dispatcher's own.
-      processEnvironment(process.env, machine.process ?? { envKeep: [] }, {
-        vendor: "claude",
-        configDir: "",
-      }),
+      launchEnv,
     );
     load.spentBytes = outstandingReservations(records, reading, load);
     return load;

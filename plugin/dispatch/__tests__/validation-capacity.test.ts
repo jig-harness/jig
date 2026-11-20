@@ -556,6 +556,13 @@ describe("the wait window a pass's validation has", () => {
     expect(validationHold(state, 1, "pickup", 3 * HOUR)).toContain(
       "LOCK_TIMEOUT=-1",
     );
+    // The refusal does not wait for an occupancy reading, and the gauge's
+    // fill shows it.
+    const unread = { ...state, demand: { unread: "lock unreadable" } };
+    expect(validationHold(unread, 1, "pickup", 3 * HOUR)).toContain(
+      "LOCK_TIMEOUT=-1",
+    );
+    expect(validationGauge(state, 0.5).fill).toBe(1);
     const base = measureValidation([], []);
     const measured = {
       ...base,
