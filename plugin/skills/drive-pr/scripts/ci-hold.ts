@@ -207,6 +207,17 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   const latest = latestOf(timeline);
 
   if (persisted?.phase === "releasing") {
+    if (persisted.raceDetected === true)
+      return refuseRace(
+        pr,
+        head,
+        persisted.actor,
+        holdLabel(),
+        () => transitions(pr),
+        ghCall,
+        unread,
+        persisted,
+      );
     const successor = exactSuccessor(timeline, persisted.heldEventId);
     if (!live.held && successor?.event === "unlabeled") {
       await writeCiState(pr, exactReleaseOf(successor, head, persisted));
@@ -958,6 +969,18 @@ async function main(): Promise<number> {
   } catch (error) {
     configError(error);
   }
+  const recorded = await readCiState(pr);
+  if (recorded?.phase === "releasing" && recorded.raceDetected === true)
+    return refuseRace(
+      pr,
+      head,
+      recorded.actor,
+      holdLabel ?? LEGACY_CI_HOLD_LABEL,
+      () => transitions(pr),
+      ghCall,
+      unread,
+      recorded,
+    );
   const unreadable = await checkRecordedHold(pr, command);
   if (unreadable !== null) return unreadable;
   if (command === "ensure" || command === "release" || command === "rollback") {

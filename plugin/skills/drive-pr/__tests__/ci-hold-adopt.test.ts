@@ -376,7 +376,6 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(ciHoldOf(r.stateDir)).toMatchObject({
       phase: "releasing",
       heldEventId: "LE_1",
-      raceDetected: true,
     });
   });
 
@@ -419,6 +418,7 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(ciHoldOf(r.stateDir)).toMatchObject({
       phase: "releasing",
       heldEventId: "LE_1",
+      raceDetected: true,
     });
     expect(
       readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
@@ -428,7 +428,7 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     const proc = Bun.spawn(
       scriptArgv(
         join(SCRIPTS, "ci-hold.ts"),
-        "release",
+        "ensure",
         "999",
         "--expect-head",
         r.head,
