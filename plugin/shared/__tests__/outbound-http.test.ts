@@ -316,6 +316,8 @@ describe("a request that never leaves", () => {
       "https://localhost/x",
       "https://intranet/x",
       "https://db.internal/x",
+      "https://db.internal./x",
+      "https://localhost./x",
     ])
       expect(httpAddress(raw).ok).toBe(false);
     expect(httpAddress("https://8.8.8.8/x").ok).toBe(true);

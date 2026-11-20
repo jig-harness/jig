@@ -120,7 +120,14 @@ function headline(text: string): string {
   return end < 0 ? text : text.slice(0, end);
 }
 
-/** The paragraphs of the text after the first that the structured fields do not repeat: the decisions, the acts and the address they render are left out. */
+/** `text` with each of `parts` removed, longest first. */
+function without(text: string, parts: string[]): string {
+  return [...parts]
+    .sort((a, b) => b.length - a.length)
+    .reduce((rest, part) => rest.split(part).join(" "), text);
+}
+
+/** The paragraphs of the text after the first that the structured fields do not repeat: a paragraph is left out only when nothing but the fields' own words is in it, so a condition or a warning around them stays. */
 function context(notice: ChannelNotice): string[] {
   const end = notice.text.indexOf("\n\n");
   if (end < 0) return [];
@@ -133,8 +140,14 @@ function context(notice: ChannelNotice): string[] {
   return notice.text
     .slice(end + 2)
     .split("\n\n")
-    .map((p) => p.trim())
-    .filter((p) => p !== "" && !repeated.some((r) => p.includes(r)))
+    .map((p) =>
+      p
+        .split("\n")
+        .filter((line) => /[\p{L}\p{N}]/u.test(without(line, repeated)))
+        .join("\n")
+        .trim(),
+    )
+    .filter((p) => p !== "")
     .flatMap((p) => ["", p]);
 }
 
@@ -170,9 +183,9 @@ function block(title: string | null, lines: string[]): string[] {
 }
 
 /** The notice's message in plain text: the structured fields where it has them, its text where it has none. */
-export function noticeMessage(notice: ChannelNotice): string {
+export function noticeMessage(notice: ChannelNotice, withLink = true): string {
   if (!structured(notice)) return notice.text;
-  const link = notice.links?.pullRequest;
+  const link = withLink ? notice.links?.pullRequest : undefined;
   return [
     headline(notice.text),
     ...context(notice),
@@ -196,8 +209,12 @@ function sizeOf(text: string, format: WebhookFormat): number {
 }
 
 /** `text` cut to `format`'s limit, its first line (the key line) always whole. */
-export function fitted(text: string, format: WebhookFormat): string {
-  const limit = LIMITS[format];
+export function fitted(
+  text: string,
+  format: WebhookFormat,
+  reserve = 0,
+): string {
+  const limit = LIMITS[format] - reserve;
   if (sizeOf(text, format) <= limit) return text;
   const cut =
     "\n… (cut short: the dispatch dashboard and the pull request hold the rest)";
@@ -222,11 +239,17 @@ function headerValue(value: string, max = 200): string {
   return value.replace(/[^\x20-\x7e]/g, "?").slice(0, max);
 }
 
-/** Slack's control characters escaped, and mrkdwn's markers and link-forming URLs defused, so text is never read as a link, a mention or formatting. */
+/** Slack's control characters escaped; the payload turns mrkdwn off, so no marker needs defusing. */
+function slackControls(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Slack's control characters escaped and raw URLs defused, for words that are not Jig's own. */
 function slackText(text: string): string {
-  return defuseLinks(
-    text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
-  ).replace(/[*_~`]/g, (c) => `\u200b${c}`);
+  return defuseLinks(slackControls(text));
 }
 
 /** A raw URL written so neither service links it: the scheme's colon is followed by a zero-width space. */
@@ -241,20 +264,26 @@ function discordText(text: string): string {
 
 /** The request that posts `due` in `format`. */
 export function render(due: DueNotice, format: WebhookFormat): Rendered {
-  const plain = noticeMessage(due.notice);
-  // Escaping grows the text, so it comes before the cut to the limit.
-  const message = fitted(
+  const link = due.notice.links?.pullRequest;
+  // Jig's own link is kept usable: it is added after the untrusted words are escaped, and the cut leaves room for it.
+  const apart =
+    format !== "text" && link !== undefined && structured(due.notice);
+  const plain = noticeMessage(due.notice, !apart);
+  const tail = apart ? `\n\nPull request: ${link}` : "";
+  const escaped =
     format === "slack"
       ? slackText(plain)
       : format === "discord"
         ? discordText(plain)
-        : plain,
-    format,
-  );
+        : plain;
+  const trusted = format === "slack" ? slackControls(tail) : tail;
+  // Escaping grows the text, so it comes before the cut to the limit.
+  const message = fitted(escaped, format, sizeOf(trusted, format)) + trusted;
   if (format === "slack")
     return {
       body: JSON.stringify({
         text: message,
+        mrkdwn: false,
         unfurl_links: false,
         unfurl_media: false,
       }),
@@ -269,7 +298,6 @@ export function render(due: DueNotice, format: WebhookFormat): Rendered {
       }),
       headers: { "Content-Type": "application/json" },
     };
-  const link = due.notice.links?.pullRequest;
   return {
     body: message,
     headers: {

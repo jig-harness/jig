@@ -157,6 +157,23 @@ async function deliver(
 }
 
 describe("rendering", () => {
+  it("turns Slack's mrkdwn off and keeps Jig's own link usable", () => {
+    const { body } = render(parked(), "slack");
+    const payload = JSON.parse(body) as { text: string; mrkdwn: boolean };
+    expect(payload.mrkdwn).toBe(false);
+    expect(payload.text).toEndWith("Pull request: https://example.test/pull/7");
+    const discord = JSON.parse(render(parked(), "discord").body) as {
+      content: string;
+    };
+    expect(discord.content).toContain("https://example.test/pull/7");
+  });
+
+  it("keeps a paragraph's own warning beside a decision key it names", () => {
+    const due = parked();
+    due.notice.text += "\n\nF1 has conflicting answers; settle that first.";
+    expect(noticeMessage(due.notice)).toContain("conflicting answers");
+  });
+
   it("leads with the key line, then the decisions, the acts, the address and the link", () => {
     const message = noticeMessage(parked().notice);
     expect(message.split("\n")[0]).toBe(`[jig dispatch: ${KEY}]`);
@@ -171,7 +188,7 @@ describe("rendering", () => {
     );
     expect(message).toContain("Address: drive@example-org/example-repo#7");
     expect(message).toContain("Pull request: https://example.test/pull/7");
-    expect(message).not.toContain("Answer on the pull request.");
+    expect(message).not.toContain("\nhttps://example.test/pull/7\n\nDecisions");
   });
 
   it("falls back to the notice's text when it carries nothing structured", () => {

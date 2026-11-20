@@ -121,9 +121,12 @@ function internalV6(host: string): boolean {
 const PRIVATE_V4 =
   /^(0|10|127)\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\.|^192\.168\.|^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
 
-/** Whether `hostname` names the machine or its network: a private, loopback or link-local IP literal, `localhost`, or a name with no dot or on a local-only suffix. */
+/** Whether `hostname` names the machine or its network, by how it is spelled (a trailing dot is ignored); the name's resolution is not checked, since the address is the operator's own setting. A private, loopback or link-local IP literal, `localhost`, or a name with no dot or on a local-only suffix. */
 function internalHost(hostname: string): boolean {
-  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const host = hostname
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "")
+    .toLowerCase();
   if (host.includes(":")) return internalV6(host);
   return (
     PRIVATE_V4.test(host) ||

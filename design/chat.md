@@ -43,11 +43,11 @@ changes nothing the line does.
 
 ### Tiers, each whole without the next
 
-| Tier | What runs | What a person gets |
-| --- | --- | --- |
+| Tier     | What runs                                        | What a person gets                                                                                                                          |
+| -------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Messages | the tick, posting through a notification channel | ready to merge, each decision with its options, each stop only a person settles, a daily digest; one thread per piece of work, kept current |
-| Buttons | a chat bridge, on the hub or on the host | a decision answered with a click, or in words through a form |
-| Commands | the same bridge | where an item or a pull request stands, what waits on me, and the `jig send` verbs as commands |
+| Buttons  | a chat bridge, on the hub or on the host         | a decision answered with a click, or in words through a form                                                                                |
+| Commands | the same bridge                                  | where an item or a pull request stands, what waits on me, and the `jig send` verbs as commands                                              |
 
 A team stops at the tier that suits it. Messages need no process beyond the
 tick and no route into any machine. Buttons and commands need the bridge
@@ -238,7 +238,7 @@ The **chat bridge** is one resident process. For each interaction it:
    saying why, and nothing is shown or written;
 5. runs the one request the interaction names, through `jig send`'s
    writers and with its checks: `answer <key> --choose <option> --decision
-   <digest>` for a button, the framing-bound words writer for a form, the
+<digest>` for a button, the framing-bound words writer for a form, the
    command's verb for a command, each carrying the interaction's id as a
    request id that the write records beside it;
 6. edits the message, or replies privately, with what the request wrote or
@@ -407,16 +407,16 @@ conversation between people, never an answer.
 One slash command, `/jig`, with the line's verbs. Every answer to a read is
 private to the person who asked.
 
-| Command | What it does |
-| --- | --- |
-| `/jig ask <pull request, item or address>` | `jig ask`'s fixed card: holder, state, what it waits on, the last launch |
-| `/jig needs [person]` | the needs that wait on the person, as the dashboard's What needs you lists them |
-| `/jig status [repository]` | the dashboard's Now: counts per column, host faults, links |
-| `/jig pickup <item>` | `jig send pickup@… assign` |
-| `/jig drive <pull request>` | `jig send drive@… drive` |
-| `/jig hold`, `/jig release <pull request or item>` | the `hold` label |
-| `/jig pause`, `/jig resume`, `/jig stop <pull request>` | the drive's mailbox, on a host's bridge for a drive that host holds |
-| `/jig link` | links the chat user to a forge login (the hub's bridge only) |
+| Command                                                 | What it does                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/jig ask <pull request, item or address>`              | `jig ask`'s fixed card: holder, state, what it waits on, the last launch        |
+| `/jig needs [person]`                                   | the needs that wait on the person, as the dashboard's What needs you lists them |
+| `/jig status [repository]`                              | the dashboard's Now: counts per column, host faults, links                      |
+| `/jig pickup <item>`                                    | `jig send pickup@… assign`                                                      |
+| `/jig drive <pull request>`                             | `jig send drive@… drive`                                                        |
+| `/jig hold`, `/jig release <pull request or item>`      | the `hold` label                                                                |
+| `/jig pause`, `/jig resume`, `/jig stop <pull request>` | the drive's mailbox, on a host's bridge for a drive that host holds             |
+| `/jig link`                                             | links the chat user to a forge login (the hub's bridge only)                    |
 
 A command whose verb `jig send` would refuse is refused before anything is
 written, with `send`'s reason. On the hub, the read commands answer from
@@ -464,24 +464,24 @@ never in Jig.
 ```yaml
 chat:
   slack:
-    app: A0123456789              # the Slack app id the bridge checks
-    team: T0123456789             # the workspace whose events count
-    enterprise: E0123456789       # only on an enterprise workspace
-    channel: C0123456789          # the default channel
+    app: A0123456789 # the Slack app id the bridge checks
+    team: T0123456789 # the workspace whose events count
+    enterprise: E0123456789 # only on an enterprise workspace
+    channel: C0123456789 # the default channel
     repositories:
       example-org/web: C0234567890
-    host_channel: C0345678901     # host faults and the digest
-  timezone: Europe/Berlin         # quiet hours and the digest's date
-  direct: true                    # a direct message to the person a need waits on
-  quiet: "20:00-08:00"            # posts, no mentions until it ends
+    host_channel: C0345678901 # host faults and the digest
+  timezone: Europe/Berlin # quiet hours and the digest's date
+  direct: true # a direct message to the person a need waits on
+  quiet: "20:00-08:00" # posts, no mentions until it ends
   digest_at: "09:00"
   unfurl: false
-  bridge: true                    # run `jig chat serve` on this host
-  bridges: [example-jig-bridge]   # bridge identities whose assignments this host counts
+  bridge: true # run `jig chat serve` on this host
+  bridges: [example-jig-bridge] # bridge identities whose assignments this host counts
 serve:
   - name: alice
     forge: [alice]
-    chat: { slack: U0123456789 }  # a host's map; the hub links people instead
+    chat: { slack: U0123456789 } # a host's map; the hub links people instead
 ```
 
 A repository says which bridge identities may answer for it, in its own
@@ -489,7 +489,7 @@ configuration, read at the head of its base branch:
 
 ```yaml
 chat:
-  bridges: [example-jig-bridge]   # the forge app the team's hub posts as
+  bridges: [example-jig-bridge] # the forge app the team's hub posts as
 ```
 
 Both lists name the same thing, a bridge whose records are trusted, at the
@@ -619,9 +619,11 @@ One pull request per step, each shippable alone:
 - **A request URL.** It needs an address the chat tool can reach from the
   internet, which Socket Mode avoids. A team that cannot open an outbound
   WebSocket has messages without buttons.
-- **Incoming webhooks as the chat surface.** They post but cannot edit, and
-  editing is how a message stays true, so they carry notifications only
-  (the receive-only channel above), never the thread-maintaining chat.
+- **Incoming webhooks as the chat surface.** This implementation sends
+  each notice once and keeps no message identity to edit later, and editing
+  is how a message stays true, so the webhook channel carries notifications
+  only (the receive-only channel above), never the thread-maintaining chat.
+  A service that can edit a webhook's message could change that.
 - **Thread replies as answers.** People talk in a thread; an answer the
   re-arm has read cannot be taken back, so only a button or the form
   answers.
