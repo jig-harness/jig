@@ -316,10 +316,12 @@ export function gitHubAttachments(client: Client): TrackerAttachments {
 
     async attachFile(key, file, signal) {
       const body = attachmentBody(file);
-      const subjectId = (await client.mustIssue(key, signal)).id;
-      const data = record(
-        await client.transport(ATTACH_COMMENT, { subjectId, body }, signal),
-        "data",
+      const issue = await client.mustIssue(key, signal);
+      const data = await client.mutate(
+        ATTACH_COMMENT,
+        { subjectId: issue.id, body },
+        signal,
+        issue.ref,
       );
       const node = record(
         record(
@@ -339,7 +341,7 @@ export function gitHubAttachments(client: Client): TrackerAttachments {
 
     async removeAttachment(key, id, signal) {
       await one(key, id, signal);
-      await client.transport(DELETE_COMMENT, { id }, signal);
+      await client.mutate(DELETE_COMMENT, { id }, signal, client.ref(key));
     },
 
     async readAttachment(key, id, signal) {

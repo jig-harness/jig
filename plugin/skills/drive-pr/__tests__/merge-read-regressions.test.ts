@@ -105,6 +105,27 @@ it("stops paging once the shared merge-facts deadline is spent", async () => {
   expect(r.calls.trim().split("\n")).toHaveLength(2);
 });
 
+it("names the repository it reads in GH_REPO, for a gh that routes by owner", async () => {
+  const r = await run(
+    `
+    import { readMergeFacts } from ${JSON.stringify(join(LIB, "merge-facts.ts"))};
+    console.log(JSON.stringify(await readMergeFacts("other-owner/private", [1], 30)));
+  `,
+    `#!/usr/bin/env bun
+    import { appendFileSync } from "node:fs";
+    appendFileSync(process.env.MERGE_FIXTURE + "/calls", (process.env.GH_REPO ?? "") + "\\n");
+    if (process.env.GH_REPO !== "other-owner/private") {
+      console.error("gh: Could not resolve to a Repository with the name 'other-owner/private'.");
+      process.exit(1);
+    }
+    console.log(JSON.stringify({ data: { repository: {} } }));
+  `,
+  );
+  expectSpawnExit(r, 0);
+  expect(JSON.parse(r.stdout)).toMatchObject({ ok: true });
+  expect(r.calls.trim().split("\n")).toEqual(["other-owner/private"]);
+});
+
 it("withdraws standing wording when the final readiness read changes", async () => {
   for (const changed of ["approval", "thread", "hold"]) {
     const r = await run(
