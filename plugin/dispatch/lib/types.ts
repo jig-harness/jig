@@ -632,6 +632,8 @@ export interface ReadFailure {
   account?: string;
   until?: string;
   quota?: QuotaHold;
+  /** The read was one item's whose absence is an answer (a parked drive's review thread the credential cannot see), `not-found` only: it fails neither the turn nor the tick (`absence.ts`). */
+  absence?: true;
 }
 
 /** Where opening a repository for its tick stopped: looking up which repository the path is, reading its dispatch section, or the tick's time ran out first. */

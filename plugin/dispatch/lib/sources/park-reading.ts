@@ -50,8 +50,11 @@ export async function readPark(
         failures.set(key, CUT_AT_BOUND);
         return null;
       }
-      const read = await threadComments(key, secondsLeft(bound), (f) =>
-        failures.set(key, readFailureOf(f)),
+      const read = await threadComments(
+        key,
+        secondsLeft(bound),
+        (f) => failures.set(key, readFailureOf(f)),
+        slug,
       );
       if (read !== null) kept?.keep(key, read);
       return read;

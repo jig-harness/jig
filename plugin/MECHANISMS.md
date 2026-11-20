@@ -739,7 +739,8 @@ development and shipped as a version.
 - **If it fails.** The calling session sees exit 1 or 2, or `tracker.ts`'s
   exit for the failure class (5 to 11), and stops; the tick reports a record
   it could not read with the call's class, and does not fail for a class
-  that clears by waiting until the failure ledger's count. A person fixes
+  that clears by waiting until the failure ledger's count, nor for a
+  parked drive's thread answered `not-found`. A person fixes
   credentials or configuration; a missing adapter is a Jig change.
 
 ### Pickup: claim, routing, pull-request plan, intent chain

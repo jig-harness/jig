@@ -1,5 +1,6 @@
 /** Why a tick failed, as its receipt records it: shared by the tick's failure ledger and `jig doctor`. */
 import type { TickReceipt } from "../receipts.ts";
+import { answeredByAbsence } from "./absence.ts";
 import type { RepoReport } from "./types.ts";
 
 /** Why a repository's turn failed this tick; `null` when it was read whole. */
@@ -11,7 +12,9 @@ export function repoFailure(report: RepoReport): string | null {
   if (unread !== undefined)
     return `the ${unread.record} record (${unread.source}) did not read: ${unread.detail}`;
   // An individual comment listing or ledger that failed leaves the aggregate forge record ok.
-  const failed = report.unplaced.find((u) => u.readFailed === true);
+  const failed = report.unplaced.find(
+    (u) => u.readFailed === true && !answeredByAbsence(u),
+  );
   return failed === undefined
     ? null
     : `${failed.target} did not read: ${failed.reason}`;

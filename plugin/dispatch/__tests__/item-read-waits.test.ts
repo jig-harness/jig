@@ -161,6 +161,25 @@ describe("a read for one item a failed call stopped", () => {
     }, 60_000);
   }
 
+  it("answers an item's read of an absence on its row without failing the tick or the ledger", async () => {
+    const w = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")], {}, ["notify"]);
+    w.setComments(7, [
+      ledgerComment(
+        701,
+        stoppedLedger(7, DRIVE_EXIT.HITL_PARKED, { parked: [THREAD_PARK] }),
+      ),
+    ]);
+    w.failCall(
+      `id=${THREAD_PARK.key}`,
+      "gh: Could not resolve to a node with the global id 'PRRT_t1' (HTTP 404)",
+    );
+    const { exit, receipt } = await tick(w, true);
+    expect(rowOf(receipt, "PR #7")?.failure?.class).toBe("not-found");
+    expect(exit).toBe(0);
+    expect(readFailures(undefined, dispatchState(w))).toEqual([]);
+  }, 60_000);
+
   it("tells a person at once of an item's read refused for its credential", async () => {
     const w = fixture();
     machineFile(w, [account(w, "a", "a@example.com")], {}, ["notify"]);

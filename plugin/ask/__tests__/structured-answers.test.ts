@@ -123,6 +123,19 @@ describe("structured answers in station readers", () => {
     expect(sent.stdout).toContain("this one replaces it");
     expect(world.writes()).toEqual([]);
   });
+  it("names the pull request's repository when it reads a parked review thread", async () => {
+    const world = setup();
+    reply(world, "approve");
+    // As for the default login of a host with several accounts: the node-id query is NOT_FOUND unless it names its repository.
+    writeFileSync(join(world.dir, "thread-needs-gh-repo"), REPO);
+    const answer = await ask(world);
+    expect(answer.sources.records).toContainEqual({
+      record: `park-answer-thread:${PARK_KEY}`,
+      read: true,
+    });
+    expect(answer.waitsOn).toMatchObject({ person: "re-arm" });
+  });
+
   it("labels an unknown choice free and leaves a conflicting structured/free pair disputed", async () => {
     const world = setup([
       comment(

@@ -58,6 +58,7 @@ import {
 } from "../receipts.ts";
 import type { EndRunOutcome, RepoReport } from "./types.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
+import { answeredByAbsence } from "./absence.ts";
 import { repoFailure, tickFailure } from "./tick-failure.ts";
 import {
   onlyRateLimited,
@@ -247,7 +248,9 @@ export async function settleOutcomes(
           r.records.some((x) => !x.ok) ||
           // An individual claim, ledger or marker that did not read fails the turn as repoFailure says.
           r.unplaced.some(
-            (u) => u.readFailed === true || u.target === "the outcome log",
+            (u) =>
+              (u.readFailed === true && !answeredByAbsence(u)) ||
+              u.target === "the outcome log",
           )) &&
         !waits(r),
     )
