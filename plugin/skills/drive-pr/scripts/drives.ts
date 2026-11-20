@@ -732,7 +732,12 @@ async function stop(
       const now = ledgerStop.readDriverRecord(stateDir, pr);
       if (!marked && now === null) {
         // A concurrent recovery published an ordinary stop and deleted the record first. The acquisition is restored with the person's stop so this recovery republishes the ledger with it, and a retry meets that record, never a settled drive without it.
-        restoreIdlePersonStop(stateDir, pr, idle, reason);
+        if (!restoreIdlePersonStop(stateDir, pr, idle, reason)) {
+          console.log(
+            `PR #${pr}'s idle driver record was replaced by another acquisition while the stop was recorded — the person's stop (acquisition ${idle.started}) is not on the ledger; not reporting it settled.`,
+          );
+          return 1;
+        }
       } else if (
         !marked &&
         (now === null ||

@@ -76,26 +76,28 @@ export function markIdlePersonStop(
   );
 }
 
-/** Put back an acquisition a concurrent recovery deleted, released and carrying the stop, so the next recovery publishes it. */
+/** Put back an acquisition a concurrent recovery deleted, released and carrying the stop, so the next recovery publishes it. False when a successor's record already stands: the stop is then not on the ledger. */
 export function restoreIdlePersonStop(
   stateDir: string,
   pr: string,
   idle: { worktree: string; started: string; pid: number; host: string },
   reason: string,
-): void {
+): boolean {
   const drive = driveDb(stateDir);
-  drive.db.run(
-    `INSERT INTO driver_records (clone, pr, worktree, started, pid, host, released, person_stop)
+  return (
+    drive.db.run(
+      `INSERT INTO driver_records (clone, pr, worktree, started, pid, host, released, person_stop)
     VALUES (?, ?, ?, ?, ?, ?, 1, ?)
     ON CONFLICT (clone, pr) DO NOTHING`,
-    [
-      drive.clone,
-      pr,
-      idle.worktree,
-      idle.started,
-      idle.pid,
-      idle.host,
-      JSON.stringify({ at: currentIso(), reason }),
-    ],
+      [
+        drive.clone,
+        pr,
+        idle.worktree,
+        idle.started,
+        idle.pid,
+        idle.host,
+        JSON.stringify({ at: currentIso(), reason }),
+      ],
+    ).changes > 0
   );
 }

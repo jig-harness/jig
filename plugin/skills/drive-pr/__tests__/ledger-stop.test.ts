@@ -666,18 +666,22 @@ describe("an idle stop whose record recovery deleted restores it with the stop",
       host: "h",
     };
     expect(readDriverRecord(s.leaf, "999")).toBeNull();
-    restoreIdlePersonStop(s.leaf, "999", idle, "maintenance");
+    expect(restoreIdlePersonStop(s.leaf, "999", idle, "maintenance")).toBe(
+      true,
+    );
     expect(readDriverRecord(s.leaf, "999")).toMatchObject({
       started: s.started,
       released: true,
       personStop: { reason: "maintenance" },
     });
-    restoreIdlePersonStop(
-      s.leaf,
-      "999",
-      { ...idle, started: "2001-01-01T00:00:00.000Z" },
-      "other",
-    );
+    expect(
+      restoreIdlePersonStop(
+        s.leaf,
+        "999",
+        { ...idle, started: "2001-01-01T00:00:00.000Z" },
+        "other",
+      ),
+    ).toBe(false);
     expect(readDriverRecord(s.leaf, "999")?.started).toBe(s.started);
   });
 });
