@@ -422,8 +422,11 @@ was sent: the caller reads the item again before it writes again.
   not a failure of the turn either. Its row keeps the class on the
   repository's report, and the park stays unanswered: nothing it would have
   decided is decided. The repository's other items are planned as usual,
-  the tick's exit and the failure ledger's rows (the repository's and the
-  sweep's) are not touched by it, and nobody is told, so one thread that a
+  the tick's exit is not changed by it, it adds no row to the failure ledger
+  and nobody is told; a turn it leaves otherwise successful settles as any
+  successful turn does, retiring the repository's and the sweep's earlier
+  failure rows. A read of another class beside it decides the failure's class
+  and its waiting policy; the absence never outranks it. So one thread that a
   credential cannot see does not mark every tick of a host failed or grow
   into a host-wide need. Any other `not-found` stays a failed read: an item
   that should exist and does not (a base branch's head, a repository's own

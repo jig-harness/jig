@@ -69,10 +69,14 @@ export async function readPark(
         ? [failures.get(p.key), undefined]
         : [failures.get(p.key)],
     );
-    const combined = combinedFailure(reads);
+    // An absence beside a read of another class does not compete with it: that read decides the class and its waiting policy.
+    const allAbsent = reads.every((f) => f?.class === "not-found");
+    const combined = combinedFailure(
+      allAbsent ? reads : reads.filter((f) => f?.class !== "not-found"),
+    );
     // An absence is an answer only when every unread read was one: a read with no class, or of another class, still fails the turn.
     const failure =
-      combined !== undefined && reads.every((f) => f?.class === "not-found")
+      combined !== undefined && allAbsent
         ? { ...combined, absence: true as const }
         : combined;
     return {

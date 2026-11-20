@@ -421,8 +421,15 @@ describe("a sweep of two repositories, one item's read of which was answered not
     } as never);
   }
 
-  it("leaves the sweep, both repositories' rows and every notice alone", () => {
+  it("adds no row and tells nobody, and retires the rows an earlier failure left", () => {
     const { root, context, receipt } = world(["/a", "/b"]);
+    recordFailure(
+      { repo: "/a", key: "repository", kind: "repository", target: "o/a" },
+      "no answer",
+      Date.now(),
+      FAILURE_DEFAULTS,
+      root,
+    );
     absent(receipt);
     settleFailures(receipt, context);
     finalizeTickFailure(receipt, context);

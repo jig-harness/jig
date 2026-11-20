@@ -26,7 +26,10 @@ export function failedRead(
   if (forge.base !== undefined && "unreadable" in forge.base)
     failed.push(forge.base.failure);
   if (failed.length === 0) return {};
-  const failure = combinedFailure(failed);
+  // An absence is no competitor: a base head that failed beside it decides the class and its waiting policy.
+  const failure = combinedFailure(
+    baseFailed ? failed.filter((f) => f?.absence !== true) : failed,
+  );
   // The park's reading marks an absence (`park-reading.ts`); a base branch's head that failed beside it is no absence, so the mark does not carry.
   const { absence: _absence, ...unmarked } = failure ?? {};
   return {
