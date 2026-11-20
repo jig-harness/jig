@@ -16,6 +16,7 @@ import {
   cutTo,
   writeClosingReport,
 } from "../scripts/lib/driver/closing-report.ts";
+import { driverRuntime } from "../scripts/lib/driver/runtime.ts";
 import { type DriveState, freshState } from "../scripts/lib/state/schema.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import { parkRecord } from "./park-record-fixture.ts";
@@ -174,6 +175,29 @@ describe("the driver's closing report", () => {
     expect(report.concluded).toBe(
       "PR #42 parked: Keep the old field name? (and 2 more decisions)",
     );
+  });
+
+  test("at a park, retains the status probe before a long parked-decision summary", () => {
+    driverRuntime.stopProbe = {
+      code: DRIVE_EXIT.HITL_PARKED,
+      state: "HITL_PARKED",
+      reason: "the public API choice needs a person",
+    };
+    try {
+      const report = composeDriverReport({
+        pr: "42",
+        code: DRIVE_EXIT.HITL_PARKED,
+        state: parked({ reason: "x".repeat(3000) }),
+        round: null,
+      });
+      expect(checkClosingReport(report)).toEqual([]);
+      expect(report.concluded).toContain("HITL_PARKED");
+      expect(report.concluded).toContain(
+        "the public API choice needs a person",
+      );
+    } finally {
+      driverRuntime.stopProbe = null;
+    }
   });
 
   test("at a park without a framed decision, asks the parked item's reason as a question", () => {

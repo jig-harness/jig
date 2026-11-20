@@ -145,6 +145,12 @@ import type {
 import { parseMs } from "../../../shared/time.ts";
 import { readFacts } from "./ledger-facts.ts";
 import { undecided } from "./ledger-undecided.ts";
+import {
+  conflictNote,
+  probeEvidence,
+  rearmTree,
+  withProbeReason,
+} from "./ledger-probe.ts";
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
@@ -356,19 +362,6 @@ const MECHANICAL_STOPS: ReadonlyMap<
   ],
 ]);
 
-/** What a needs-person reason adds when the pull request conflicts with its base. */
-export function conflictNote(mergeable: unknown): string {
-  return mergeable === "CONFLICTING"
-    ? "; its pull request also conflicts with its base"
-    : "";
-}
-
-function stopTreeWhy(leftWork: boolean | undefined): string {
-  return leftWork === true
-    ? "in the tree it stopped in, which holds work it left"
-    : "in the tree it stopped in, whose work was never measured";
-}
-
 /**
  * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE`,
  * read beside its pull request's head: `stale`, keyed on that head and the
@@ -395,7 +388,7 @@ function mechanicalStopClass(
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
   return {
     class: "stale",
-    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stopTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${stop.words}): re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
     stale: {
       cause: `stopped ${exit}, ${stop.words}`,
       change: `head ${head}, stopped ${exit}`,
@@ -542,6 +535,7 @@ function ledgerEvidence(
     phase: ledger.phase,
     driver: ledger.driver.state,
     exit: ledger.driver.exit ?? null,
+    ...probeEvidence(ledger.driver),
     heartbeat: ledger.driver.heartbeat,
     started: ledger.driver.started ?? null,
     ...(ledger.driver.state === "stopped" &&
@@ -609,7 +603,13 @@ export function classifyLedger(
       class: "re-armable",
       why: "stopped with no recorded cause: re-arming within the per-pull-request recovery budget",
     };
-  return exitClass(ledger, exit, park, forge);
+  const placed = exitClass(ledger, exit, park, forge);
+  return withProbeReason(
+    placed,
+    ledger.driver,
+    exit,
+    conflictNote(forge.mergeable),
+  );
 }
 
 /** A stopped ledger's class by its exit, first match wins. */

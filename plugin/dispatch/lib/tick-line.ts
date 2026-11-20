@@ -15,7 +15,18 @@ import {
   slotTable,
 } from "./accounts.ts";
 import { readNudges } from "./actions/steer.ts";
-import type { LineAccount, LineSnapshot } from "./dashboard-contract.ts";
+import type {
+  LineAccount,
+  LineDriver,
+  LineSnapshot,
+} from "./dashboard-contract.ts";
+import {
+  driversOf,
+  type HostDriver,
+  type HostDrivers,
+  type UnrecordedDriver,
+  unrecordedDrivers,
+} from "./host-drivers.ts";
 import type { ReadRecord } from "./launches.ts";
 import {
   buildLine,
@@ -154,32 +165,75 @@ function accountsOf(
   nowMs: number,
   codexOptIn: CodexOptIn,
   weights?: import("./local-weights.ts").AccountWeights,
+  drivers: readonly HostDriver[] = [],
 ): LineAccount[] {
   const refused = notAdmitted(
     machine.accounts,
     passTimeoutSeconds(),
     codexOptIn,
   );
-  return slotTable(machine.accounts, records, nowMs, undefined, weights).map(
-    (slots) => ({
-      name: slots.account.name,
-      weight: weightReport(
-        slots,
-        refused.find((r) => r.account === slots.account.name)?.reason ?? null,
-      ),
-      vendor: slots.account.vendor,
-      cap: slots.account.maxPerAccount,
-      held: slots.held,
-      ...(slots.account.stages === undefined
-        ? {}
-        : { stages: [...slots.account.stages] }),
-      wall:
-        slots.wall === null
-          ? null
-          : { resetAt: slots.wall.resetAt, source: slots.wall.source },
-      wallUnrecorded: slots.wallUnrecorded,
-      notAdmitted:
-        refused.find((r) => r.account === slots.account.name)?.reason ?? null,
+  return slotTable(
+    machine.accounts,
+    records,
+    nowMs,
+    undefined,
+    weights,
+    drivers,
+  ).map((slots) => ({
+    name: slots.account.name,
+    weight: weightReport(
+      slots,
+      refused.find((r) => r.account === slots.account.name)?.reason ?? null,
+    ),
+    vendor: slots.account.vendor,
+    cap: slots.account.maxPerAccount,
+    held: slots.held,
+    ...(slots.account.stages === undefined
+      ? {}
+      : { stages: [...slots.account.stages] }),
+    wall:
+      slots.wall === null
+        ? null
+        : { resetAt: slots.wall.resetAt, source: slots.wall.source },
+    wallUnrecorded: slots.wallUnrecorded,
+    notAdmitted:
+      refused.find((r) => r.account === slots.account.name)?.reason ?? null,
+  }));
+}
+
+/** The line's drivers, or why they could not be read; nothing for a tick that did not read them. */
+function driversPart(
+  machine: MachineConfig,
+  records: ReadRecord[],
+  drivers: HostDrivers | undefined,
+):
+  | { drivers: LineDriver[] }
+  | { driversUnread: string }
+  | Record<never, never> {
+  if (drivers === undefined) return {};
+  if (!drivers.ok) return { driversUnread: drivers.failure.reason };
+  return {
+    drivers: lineDrivers(
+      unrecordedDrivers(machine.accounts, records, drivers.value),
+    ),
+  };
+}
+
+/** Each driver no holding record accounts for, as the line lists it. */
+function lineDrivers(drivers: UnrecordedDriver[]): LineDriver[] {
+  return drivers.map(
+    ({ driver, account, accountReason, startedBy, record }) => ({
+      pr: driver.pr,
+      worktree: driver.worktree,
+      account,
+      accountReason,
+      identity: driver.identity,
+      vendor: driver.vendor,
+      startedBy,
+      record,
+      pid: driver.pid,
+      since: driver.since,
+      log: driver.log,
     }),
   );
 }
@@ -316,6 +370,8 @@ export function writeTickLine(
     /** The admission decision the tick launched under, so line and launches agree. */
     codexOptIn: CodexOptIn;
     weights?: import("./local-weights.ts").AccountWeights | undefined;
+    /** The host's live drivers, as the tick read them. */
+    drivers?: HostDrivers | undefined;
   },
 ): void {
   const { machine } = tick;
@@ -388,7 +444,9 @@ function writeKept(
             parseMs(receipt.finishedAt),
             tick.codexOptIn,
             tick.weights,
+            driversOf(tick.drivers),
           ),
+          hostDrivers: driversPart(machine, records, tick.drivers),
           lastAccount: lastAccount(records),
           previousNeeds: before?.needs ?? [],
           ...(receipt.quotaRisks === undefined

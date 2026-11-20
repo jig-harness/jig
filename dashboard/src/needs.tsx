@@ -13,11 +13,12 @@ import { LinkedDetail, WorkLead } from "./work.tsx";
  * the list (`AnsweredHolds`).
  */
 import { type ReactNode, useId, useRef, useState } from "react";
+import { DecisionCounts, filterAnswerStates } from "./decision-counts.tsx";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
 import { facetAttrs } from "./facets.ts";
-import { cardAttrs } from "./keys.ts";
+import { answerCommentUrl, cardAttrs } from "./keys.ts";
 import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 import { Evidence, PanelHelp, StageHint } from "./fold.tsx";
 import { ago } from "./format.ts";
@@ -265,14 +266,14 @@ function NeedItem({
   const card = useRef<HTMLElement | null>(null);
   const picking = usePicking(need, card);
   const picks = need.rows.length > 0;
+  const attrs = cardAttrs({ ...needCard(need, picking.commit), picks });
+  const commentUrl = picks ? answerCommentUrl(need.url) : null;
+  if (commentUrl !== null) attrs["data-pr"] = commentUrl;
   return (
     <GutterCard
       className={rest ? "need groupRest" : "need"}
       cardRef={card}
-      attrs={{
-        ...cardAttrs({ ...needCard(need, picking.commit), picks }),
-        ...facets,
-      }}
+      attrs={{ ...attrs, ...facets }}
       label={`${need.foldLabel} for ${need.target}`}
       onBlur={(event) => {
         // Copy's first step lasts while focus stays on the card, or in the palette that copies it.
@@ -468,6 +469,9 @@ function NeedGroup({
               {oldest === undefined
                 ? null
                 : `Oldest ${ago(Date.parse(oldest.since), clock.nowMs)}`}
+            </span>{" "}
+            <span data-group-decisions="">
+              <DecisionCounts rows={cards} />
             </span>
           </h3>
         }
@@ -552,12 +556,14 @@ export function NeedsPanel({
   /** Changes whenever the card filter does, reopening matching groups. */
   filterKey?: string;
 }) {
-  const rows = needRows(line, clock);
+  const allRows = needRows(line, clock);
+  const [everyone, setEveryone] = useState("any");
+  const rows = filterAnswerStates(allRows, everyone);
   const groups = groupRows(rows);
   const decisionWaits = groups.some(
     ({ head }) => head === "Decide" || head === "Authorize",
   );
-  const send = useSendSettings(rows);
+  const send = useSendSettings(allRows);
   return (
     <section className="panel pNeeds" aria-labelledby="h-needs">
       <div className="panelHead">
@@ -571,7 +577,25 @@ export function NeedsPanel({
           Send; the next tick re-arms the drive.
         </PanelHelp>
         {send.toggle}
+        {everyone !== "any" ||
+        allRows.some(
+          (row) => row.type === "need" && row.need.answerNotes.length > 0,
+        ) ? (
+          <label className="answerFilter sm">
+            <span className="mut">For everyone</span>
+            <select
+              value={everyone}
+              onChange={(event) => setEveryone(event.currentTarget.value)}
+            >
+              <option value="any">All states</option>
+              <option value="stale">Stale</option>
+              <option value="disputed">Disputed</option>
+              <option value="from the line">From the line</option>
+            </select>
+          </label>
+        ) : null}
       </div>
+      <DecisionCounts rows={rows} />
       {send.panel}
       <AnsweredHolds line={line} />
       <div className="needList">
