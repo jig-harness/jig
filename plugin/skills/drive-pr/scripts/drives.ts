@@ -712,6 +712,12 @@ async function stop(
         : `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
     await ledgerStop.recoverIdleStop(stateDir, pr, row);
+    // A driver record that survives the recovery is a ledger still running or a write deferred.
+    console.log(
+      ledgerStop.readDriverRecord(stateDir, pr) === null
+        ? `PR #${pr}'s idle ledger is settled.`
+        : `PR #${pr}'s idle ledger is not settled: its driver record remains.`,
+    );
     return 1;
   }
   if (row.state !== "live") {

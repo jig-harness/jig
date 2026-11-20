@@ -78,7 +78,12 @@ export const stopDrive: StopStep = async (target) => {
   );
   // `--stop` exits 1 after recovering an idle ledger when no live driver holds the lock: the driver is already gone.
   if (done.code === 1 && /nothing to stop/.test(done.stdout))
-    return "no live driver holds the lock; drives.ts recovered its idle ledger";
+    return /idle ledger is settled\./.test(done.stdout)
+      ? "no live driver holds the lock; drives.ts settled its idle ledger"
+      : {
+          note: `no live driver holds the lock, but drives.ts left its ledger unsettled${lastError(done.stderr)}`,
+          failed: true,
+        };
   if (done.timedOut)
     return {
       note: `drives.ts --stop did not finish before its deadline${lastError(done.stderr)}`,
