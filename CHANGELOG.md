@@ -404,6 +404,44 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.295.0] - 2026-11-20
+
+### Fixed
+
+- The dispatcher's validation-capacity gauge (`load.validation`) no longer
+  holds every pickup and drive on an idle test lock. Its wait window is now
+  the wait a pass's test stage gives the lock: `LOCK_TIMEOUT` from the
+  environment a pass is launched with (for a process launch, retained only where
+  `process.env_keep` names it; an Orca launch is given the dispatcher's `LOCK_TIMEOUT`, and its lock root (made absolute) and name, always), or the test stage's hour
+  when it is unset, rather than the bare lock's one-minute default. A pass's
+  own runs, made one after another, no longer count as waiting behind each
+  other, so a pass always fits a lock with nothing ahead of it. The runs
+  still to come from passes in flight still count ahead of a new pass. The
+  gauge's reason, in the receipt and on the dashboard, names the wait window
+  and where it came from, and says when a window shorter than one run
+  admits a pass only while a slot is free for its first run. A `LOCK_TIMEOUT` the lock
+  refuses holds the pass, with the reason, rather than counting as an hour. The same environment
+  places the lock's holders and waiters. A refused `LOCK_TIMEOUT` takes
+  precedence over the lock's reading: the pass is held with the reason, and
+  the refusal shows in the gauge's fill.
+- A parked drive's review thread is now read with its pull request's
+  repository named, by the dispatcher's tick and by `jig ask`. On a host
+  where the GitHub account is chosen by the repository a call addresses, the
+  read used to run as the default login and was answered `not-found` for a
+  repository owned by another account, so every timer tick exited 1 for as long
+  as such a drive stayed parked, and a person's answer to its park was never
+  read.
+- A parked drive's review thread that the forge answers `not-found`, such as
+  one the credential cannot see, no longer fails the repository's turn or the
+  tick. The item's row in the report still carries the class, the failure
+  ledger counts nothing and nobody is told. Any other `not-found` read of one
+  item, such as a base branch that is gone, and a `not-found` of a repository's
+  own record, still fail the turn.
+- The dispatcher backs off an account when the vendor refuses its sign-in,
+  shows one sign-in request for the account, and lets another available
+  account retry the work. Repeated startup failures also trigger account
+  backoff so a recurring problem stops consuming new work.
+
 ## [0.294.0] - 2026-11-20
 
 ### Added
@@ -10394,7 +10432,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.294.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.295.0...HEAD
+[0.295.0]: https://github.com/jig-harness/jig/compare/v0.294.0...v0.295.0
 [0.294.0]: https://github.com/jig-harness/jig/compare/v0.293.0...v0.294.0
 [0.293.0]: https://github.com/jig-harness/jig/compare/v0.292.0...v0.293.0
 [0.292.0]: https://github.com/jig-harness/jig/compare/v0.291.2...v0.292.0

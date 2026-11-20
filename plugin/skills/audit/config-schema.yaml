@@ -64,7 +64,7 @@ machine_fields:
     min: 1
     default: 3
     read_by: [dispatch]
-    since: next
+    since: 0.295.0
   load.validation:
     type: number
     # The smallest positive JavaScript number makes zero invalid.
