@@ -133,7 +133,9 @@ type BeforeMutation = {
 /** Read the shared mutation fence, reporting a retryable failed read once. */
 async function beforeMutation(pr: string): Promise<BeforeMutation | null> {
   const before = await readBeforeMutation(pr, policy.holdLabel);
-  return before.ok ? before.value : (unread(before.failure), null);
+  if (before.ok) return before.value;
+  unread(before.failure);
+  return null;
 }
 
 /** Where the transitions after `previousId` begin, or null when it is not in the timeline. */
