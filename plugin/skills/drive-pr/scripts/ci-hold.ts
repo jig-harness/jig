@@ -543,14 +543,20 @@ async function release(
   expectedTransition?: string,
 ): Promise<number> {
   let persisted = await readCiState(pr);
+  const unreadDuringReleaseRecovery = (failure: HoldReadFailure): number => {
+    const code = unread(failure);
+    if (persisted?.phase === "releasing")
+      process.stdout.write("release-proof-pending\n");
+    return code;
+  };
   // Nothing has changed yet, so a forge timing out here is retried later.
   const read = await readPrSnapshot(pr, policy.holdLabel);
-  if (!read.ok) return unread(read.failure);
+  if (!read.ok) return unreadDuringReleaseRecovery(read.failure);
   const live = read.value;
   if (live.state !== "OPEN") return 5;
   if (live.head !== head) return 4;
   const timeline = await readHoldTransitions(pr, holdLabel());
-  if (!timeline.ok) return unread(timeline.failure);
+  if (!timeline.ok) return unreadDuringReleaseRecovery(timeline.failure);
   const initialTimeline = timeline.value;
   const latest = latestOf(initialTimeline);
   if (
@@ -650,7 +656,7 @@ async function release(
     );
     return 4;
   }
-  await writeCiState(pr, {
+  persisted = {
     phase: "releasing",
     adopted: persisted.adopted === true,
     heldEventId: persisted.eventId,
@@ -661,7 +667,8 @@ async function release(
     actor: login,
     createdAt: currentIso(),
     checkRunWatermark: watermark,
-  });
+  };
+  await writeCiState(pr, persisted);
   const remove = await ghCall([
     "pr",
     "edit",
@@ -671,7 +678,7 @@ async function release(
   ]);
   const proof = await transitionAfter(
     pr,
-    persisted.eventId,
+    persisted.heldEventId,
     "unlabeled",
     login,
   );
@@ -681,7 +688,10 @@ async function release(
     return code;
   }
   const mutation = valueOrNull(proof);
-  const confirmed = await snapshot(pr);
+  const confirmedRead = await readPrSnapshot(pr, policy.holdLabel);
+  if (!confirmedRead.ok)
+    return unreadDuringReleaseRecovery(confirmedRead.failure);
+  const confirmed = confirmedRead.value;
   if (mutation?.intervening === true) {
     if (
       confirmed?.state === "OPEN" &&

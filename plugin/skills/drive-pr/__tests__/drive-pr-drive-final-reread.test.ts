@@ -289,6 +289,47 @@ describe.skipIf(
   );
 
   it(
+    "continues convergence when a recovery snapshot fails after its entry check succeeds",
+    async () => {
+      const { dir, stateDir } = writeFixture({
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        threads: [],
+        ciHeld: true,
+      });
+      writeFileSync(
+        join(dir, "timeline.json"),
+        JSON.stringify([
+          {
+            node_id: "LE_1",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: { login: "drive-user" },
+            created_at: "2026-09-10T09:59:00Z",
+          },
+        ]),
+      );
+      writeFileSync(join(dir, "pr-snapshot-timeout-after-unlabel"), "");
+      const r = await driveUntilEnd(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--keep-draft", "--", ...PASS_NOOP],
+        {},
+      );
+      expectEnded(r);
+      expectSpawnExit(
+        { exitCode: r.exitCode, stderr: r.stderr, stdout: null },
+        0,
+      );
+      expect(r.stderr).toContain("simulated recovery snapshot timeout");
+      expect(
+        r.stderr.match(/Waiting to verify the CI hold label removal/g),
+      ).toHaveLength(1);
+    },
+    DRIVE_DEADLINE_MS * 2,
+  );
+
+  it(
     "logs why the CI hold's release failed when it exits with nothing on stderr",
     async () => {
       const { dir, stateDir } = writeFixture({

@@ -1847,6 +1847,11 @@ if [ "\${1:-}" = "api" ] && [ "\${2:-}" = "user" ]; then
 fi
 
 ${RUN_FORGE_FIXTURE}
+if [ "\${1:-}" = "pr" ] && [ -f "$F/pr-snapshot-timeout-after-unlabel" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+  rm "$F/pr-snapshot-timeout-after-unlabel"
+  echo "gh-stub: simulated recovery snapshot timeout" >&2
+  exit 124
+fi
 case "\${1:-}" in
   pr)   emit "$F/pr-view.json"; exit 0 ;;
   repo) emit "$F/repo-view.json"; exit 0 ;;
