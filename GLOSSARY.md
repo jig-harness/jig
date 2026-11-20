@@ -64,6 +64,9 @@ make, use the entry's term instead.
 - **Module** — Jig's unit of adoption: one practice area (e.g.,
   "generated-artifact freshness") packaged with its invariant, maturity
   levels, templates, and reference code. Modules adopt independently.
+- **Inode** — a filesystem record that identifies a file or directory and
+  holds its metadata. A filesystem has a finite number of inodes, so it can
+  run out of them even when disk space remains.
 - **Maturity level** — how deeply a module is adopted: **Lite** (minimum
   useful), **Standard** (production teams), **Strict** (regulated/compliance
   posture). Brownfield projects climb one level at a time. *Avoid*: tier
