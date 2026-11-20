@@ -494,8 +494,9 @@ export function createObservedPages<R extends ObservedRun>(
     ctx: ObservedOptions,
     knownScope?: string | null,
     startMs = currentMs(),
-    progress: WalkProgress = { pages: 0, overCap: false },
+    progress?: WalkProgress,
   ): Promise<ObservedRun> {
+    const observedProgress = progress ?? { pages: 0, overCap: false };
     const dir = deps.cacheDir();
     const scope =
       knownScope === undefined ? await deps.repoScope(ctx) : knownScope;
@@ -503,12 +504,13 @@ export function createObservedPages<R extends ObservedRun>(
     const request = `pages ${path}`;
     const file = entryFile(dir, scope, request);
     const kept = readEntry(file, request);
-    const walked = await walk(path, kept, ctx, startMs, progress);
+    const walked = await walk(path, kept, ctx, startMs, observedProgress);
     // Past the cap the forge client refuses the whole read too, after sending
     // every page again; a `gh` paging for itself has no cap and may finish.
-    if (walked === null && progress.overCap && forgeBudgetOn(ctx.env))
+    if (walked === null && observedProgress.overCap && forgeBudgetOn(ctx.env))
       return overCap(path);
-    if (walked === null) return wholeRead(path, ctx, startMs, progress.pages);
+    if (walked === null)
+      return wholeRead(path, ctx, startMs, observedProgress.pages);
     const { entry, changed } = walked;
     if (changed)
       writeJsonFile(dir, file, { v: ENTRY_VERSION, request, ...entry });

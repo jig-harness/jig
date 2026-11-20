@@ -201,6 +201,8 @@ import {
 import { ignoreDriveContext } from "./lib/context-ignore.ts";
 import { listingPagesReadFrom } from "./lib/ci-proof.ts";
 import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
+import { writePassFinish } from "./lib/state/pass-finish.ts";
+import { resolveStateDir } from "./lib/state/store.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -1176,6 +1178,16 @@ async function main(): Promise<number> {
     headSynced: false,
     items: [],
   };
+  const passStamp =
+    isDigits(process.env.DRIVE_PR_TARGET ?? "") &&
+    isDigits(process.env.DRIVE_PR_ROUND ?? "") &&
+    (process.env.JIG_LAUNCH ?? "") !== ""
+      ? {
+          launch: process.env.JIG_LAUNCH as string,
+          round: Number(process.env.DRIVE_PR_ROUND),
+          stateDir: process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir()),
+        }
+      : null;
   const done = (
     code: number,
     state: Report["state"],
@@ -1183,6 +1195,14 @@ async function main(): Promise<number> {
   ): number => {
     report.state = state;
     report.reason = reason;
+    if (passStamp !== null)
+      writePassFinish(
+        passStamp.stateDir,
+        prNum,
+        passStamp.launch,
+        passStamp.round,
+        report,
+      );
     emit(report, asJson);
     return code;
   };

@@ -12,6 +12,10 @@ import { reportPassLeftovers } from "./restart.ts";
 import { clearPendingVerdicts } from "./../state/pass-handoff.ts";
 
 import { resolveStateDir } from "./../state/store.ts";
+import { readPassFinish } from "./../state/pass-finish.ts";
+import { launchOf } from "../../../../../shared/launched-session.ts";
+import { CHECK_RUNS_UNREADABLE_EXIT } from "./settings.ts";
+import { driverRuntime } from "./runtime.ts";
 import { incompletePassExit } from "./incomplete-pass.ts";
 
 export async function runReviewPassPhase(
@@ -41,6 +45,20 @@ export async function runReviewPassPhase(
   if (typeof dispatchReviewPassResult !== "object")
     return dispatchReviewPassResult;
   const { passRes, passHandle } = dispatchReviewPassResult;
+  const stateDir = await resolveStateDir();
+  const finish = readPassFinish(
+    stateDir,
+    context.pr,
+    launchOf(process.env) ?? "",
+    round,
+  );
+  if (
+    passRes.code === CHECK_RUNS_UNREADABLE_EXIT &&
+    finish?.state === "CHECK_RUNS_UNREADABLE"
+  ) {
+    driverRuntime.stopListingPages = finish.listingPagesRead ?? null;
+    return CHECK_RUNS_UNREADABLE_EXIT;
+  }
   const disposition = passExitDisposition(passRes.code);
   // A pass that completed has acted on what it was carried. Until one does (a
   // quota wall retried, say), every pass is told again. Whether it pushed what
