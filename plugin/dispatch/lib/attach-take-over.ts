@@ -25,13 +25,20 @@
  * (its wrapper may have recorded its exit, or died) gets its end recorded.
  * A run that ended on its own, with no mark, is not taken over.
  */
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
   CLOSING_REPORT_SCHEMA,
   type ClosingReport,
 } from "../../shared/closing-report.ts";
 import { shellQuote } from "../../shared/cli.ts";
+import { swallow } from "../../shared/errors.ts";
 import type { ProcessIdentity } from "../../shared/liveness.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
@@ -91,6 +98,33 @@ export function takeOverMark(root: string, id: string): string {
   return join(root, "runs", id, "take-over");
 }
 
+/** The captured processes of a take-over of `id`, kept so a run that dies mid-stop still knows them. */
+function takeOverMembers(root: string, id: string): string {
+  return join(root, "runs", id, "take-over-members.json");
+}
+
+/** The processes an earlier attempt captured; none when it kept none or the file does not read. */
+function keptMembers(root: string, id: string): ProcessIdentity[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      readFileSync(takeOverMembers(root, id), "utf8"),
+    );
+    return Array.isArray(parsed) ? (parsed as ProcessIdentity[]) : [];
+  } catch (error) {
+    swallow(error, "no earlier attempt kept the run's processes");
+    return [];
+  }
+}
+
+/** `members` with those of `more` whose pid and start are not among them. */
+function withMembers(
+  members: ProcessIdentity[],
+  more: ProcessIdentity[],
+): ProcessIdentity[] {
+  const known = new Set(members.map((m) => `${m.pid}@${m.start}`));
+  return [...members, ...more.filter((m) => !known.has(`${m.pid}@${m.start}`))];
+}
+
 /** The station address of a record's target; `null` for a steward run, which has none. */
 export function targetAddress(
   record: Pick<LaunchRecord, "action" | "repo" | "pr" | "item">,
@@ -142,20 +176,28 @@ async function gone(
   }
 }
 
-/** Stop the live run: each step, then its process groups if they outlive them. */
+/** Stop the live run: each step, then its process groups if they outlive them; `driveStopFailed` when the drive's own stop did not succeed, whatever became of the processes. */
 async function stopRun(
   target: StopTarget,
   deps: TakeOverDeps,
-): Promise<boolean> {
+): Promise<{ gone: boolean; driveStopFailed: boolean }> {
+  let driveStopFailed = false;
   for (const step of deps.stops) {
-    deps.out(`stop: ${await step(target)}`);
-    if (await gone(target, deps.graceMs, deps)) return true;
+    const done = await step(target);
+    if (typeof done === "string") deps.out(`stop: ${done}`);
+    else {
+      deps.out(`stop: ${done.note}`);
+      driveStopFailed = true;
+    }
+    if (await gone(target, deps.graceMs, deps))
+      return { gone: true, driveStopFailed };
   }
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     deps.out(`stop: ${await deps.signal(target.members, signal)}`);
-    if (await gone(target, deps.graceMs, deps)) return true;
+    if (await gone(target, deps.graceMs, deps))
+      return { gone: true, driveStopFailed };
   }
-  return false;
+  return { gone: false, driveStopFailed };
 }
 
 /** Take the tick lock, waiting up to `lockWaitMs` for a tick to finish. */
@@ -219,6 +261,7 @@ async function recordEnd(
       return TAKE_OVER_EXIT.FAILED;
     }
     rmSync(takeOverMark(deps.root, id), { force: true });
+    rmSync(takeOverMembers(deps.root, id), { force: true });
     deps.out("end: recorded by person; the account's slot is free");
   } finally {
     release();
@@ -251,14 +294,21 @@ export async function takeOver(
   }
   if (alreadyTaken) return TAKE_OVER_EXIT.DONE;
   const mark = takeOverMark(deps.root, id);
+  const markWasThere = existsSync(mark);
   if (row.state.kind === "ended" && !existsSync(mark)) {
     deps.err(
       `jig dispatch attach: ${id} ended on its own at ${row.state.exit.at}; there is no run to take over. A hold from an earlier take-over may still stand on ${address}: ${releaseCommand(address)} releases it`,
     );
     return TAKE_OVER_EXIT.REFUSED;
   }
+  // The mark first: a take-over interrupted after the hold is written finds
+  // it and finishes, where one with the hold and no mark would be refused.
+  mkdirSync(join(deps.root, "runs", id), { recursive: true, mode: 0o700 });
+  if (!existsSync(mark))
+    writeFileSync(mark, `${currentIso()}\n`, { mode: 0o600 });
   const held = await deps.hold(address);
   if (!held.ok) {
+    if (!markWasThere) rmSync(mark, { force: true });
     deps.err(
       `jig dispatch attach: ${address} could not be held, so the run was left going: ${held.failure.reason}`,
     );
@@ -269,8 +319,6 @@ export async function takeOver(
       ? `hold: ${address} is held in your name; release it with ${releaseCommand(address)}`
       : `hold: ${address} was already held`,
   );
-  mkdirSync(join(deps.root, "runs", id), { recursive: true, mode: 0o700 });
-  writeFileSync(mark, `${currentIso()}\n`, { mode: 0o600 });
   const live = await deps.members(row);
   if (live.uncertain) {
     deps.err(
@@ -288,14 +336,44 @@ export async function takeOver(
           ? record.pr
           : null,
       repoPath: record.repoPath,
-      members: captured ?? live.identities,
+      members: withMembers(
+        captured ?? live.identities,
+        keptMembers(deps.root, id),
+      ),
     };
-    if (!(await stopRun(target, deps))) {
+    // Kept before the first step: a descendant the stop reparents is still known after an interruption.
+    writeFileSync(
+      takeOverMembers(deps.root, id),
+      JSON.stringify(target.members),
+      { mode: 0o600 },
+    );
+    const stopped = await stopRun(target, deps);
+    if (!stopped.gone) {
       deps.err(
         `jig dispatch attach: ${id}'s processes outlived the stop; the hold stands, and running the command again stops it`,
       );
       return TAKE_OVER_EXIT.FAILED;
     }
-  } else deps.out("stop: none of the run's processes is alive");
+    if (stopped.driveStopFailed) {
+      deps.err(
+        `jig dispatch attach: the run's processes are gone, but drives.ts --stop did not stop the drive, so its ledger may not read stopped; the end is not recorded and the hold stands. Stop the drive with drives.ts --stop, then run the command again`,
+      );
+      return TAKE_OVER_EXIT.FAILED;
+    }
+  } else {
+    const kept = keptMembers(deps.root, id);
+    if (kept.length > 0 && (await deps.anyAlive(kept))) {
+      const stopped = await stopRun(
+        { id, drivePr: null, repoPath: record.repoPath, members: kept },
+        deps,
+      );
+      if (!stopped.gone) {
+        deps.err(
+          `jig dispatch attach: processes an earlier attempt captured for ${id} outlived the stop; the hold stands, and running the command again stops them`,
+        );
+        return TAKE_OVER_EXIT.FAILED;
+      }
+    } else deps.out("stop: none of the run's processes is alive");
+  }
   return recordEnd(id, address, deps);
 }

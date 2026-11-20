@@ -355,6 +355,30 @@ describe("jig dispatch attach: watching", () => {
     writeFileSync(spool, "zzzz\n");
     expect(String(next())).toContain("earlier output was skipped");
   });
+
+  it("does not lose a rewrite that ends with the same bytes as the last read", () => {
+    const dir = root();
+    const spool = join(dir, "output.log");
+    const tail = `${"x".repeat(299)}\n`;
+    writeFileSync(spool, `${"a".repeat(99)}\n${tail}`);
+    const next = spoolCursor(spool);
+    next();
+    writeFileSync(spool, `${"b".repeat(99)}\n${tail}`);
+    expect(String(next())).toContain("b".repeat(99));
+    next.close();
+  });
+
+  it("reads output flushed before the spool was deleted", () => {
+    const dir = root();
+    const spool = join(dir, "output.log");
+    writeFileSync(spool, "one\n");
+    const next = spoolCursor(spool);
+    expect(String(next())).toBe("one\n");
+    appendFileSync(spool, "two\n");
+    rmSync(spool);
+    expect(String(next())).toBe("two\n");
+    next.close();
+  });
 });
 
 describe("jig dispatch attach --take-over", () => {

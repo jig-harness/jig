@@ -14,7 +14,8 @@
  * still runs; the stop has worked only when none of those processes is
  * alive, which the caller checks.
  */
-import { run, tsArgv } from "../../shared/proc.ts";
+import { resolve } from "node:path";
+import { run } from "../../shared/proc.ts";
 import {
   judge,
   thisHost,
@@ -26,6 +27,9 @@ import { detectScheduler } from "../../runtime/scheduler.ts";
 import { drives } from "../../skills/drive-pr/scripts/lib/driver/paths.ts";
 import { processJobName } from "./runtime/process-service.ts";
 import { descendants } from "./runtime/process.ts";
+
+/** The installed plugin's Bun configuration: the stop runs in the consumer's clone, which must not choose its own. */
+const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
 
 /** How long `drives.ts --stop` may take: its own grace is 30 seconds. */
 const DRIVE_STOP_SEC = 90;
@@ -42,8 +46,10 @@ export interface StopTarget {
   members: ProcessIdentity[];
 }
 
-/** One step of the stop, as the person is told it. */
-export type StopStep = (target: StopTarget) => Promise<string>;
+/** One step of the stop: what the person is told, or the same as a `failed` step the take-over must not treat as having stopped the drive. */
+export type StopStep = (
+  target: StopTarget,
+) => Promise<string | { note: string; failed: true }>;
 
 /** The last line a failed command wrote to its standard error, after a colon; empty when none. */
 function lastError(stderr: string): string {
@@ -54,16 +60,32 @@ function lastError(stderr: string): string {
 /** `drives.ts --stop <pr>` in the clone, so the drive's ledger reads stopped. */
 export const stopDrive: StopStep = async (target) => {
   if (target.drivePr === null) return "not a drive";
-  const done = await run(tsArgv(drives, ["--stop", String(target.drivePr)]), {
-    cwd: target.repoPath,
-    stderr: "pipe",
-    timeoutSec: DRIVE_STOP_SEC,
-  });
+  const done = await run(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${BUNFIG}`,
+      drives,
+      "--stop",
+      String(target.drivePr),
+    ],
+    {
+      cwd: target.repoPath,
+      stderr: "pipe",
+      timeoutSec: DRIVE_STOP_SEC,
+    },
+  );
   if (done.timedOut)
-    return `drives.ts --stop did not finish before its deadline${lastError(done.stderr)}`;
+    return {
+      note: `drives.ts --stop did not finish before its deadline${lastError(done.stderr)}`,
+      failed: true,
+    };
   return done.code === 0
     ? "drives.ts --stop stopped the driver"
-    : `drives.ts --stop exited ${done.code}${lastError(done.stderr)}`;
+    : {
+        note: `drives.ts --stop exited ${done.code}${lastError(done.stderr)}`,
+        failed: true,
+      };
 };
 
 /** Stop the run's systemd unit or launchd job; on a host with neither there is none. */

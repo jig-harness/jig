@@ -661,8 +661,8 @@ A dispatched run's conclusion is lost: the wrapper keeps only its last
 `Question:` line, so why a run died or stalled is found only in the
 terminal tab it left. And the dispatcher runs nothing
 without Orca. [design/dispatched-sessions.md](dispatched-sessions.md) has
-how it works. The closing report and the process runtime are built: every
-dispatched run ends with a `closing-report/v1` record kept on its launch
+how it works. The closing report and the process runtime are built: a
+dispatched run can end with a `closing-report/v1` record kept on its launch
 record and the outcome log, a host's machine file can choose
 `runtime: process`, and `jig dispatch attach` lets a person follow a process
 run or take it over. What is left:
