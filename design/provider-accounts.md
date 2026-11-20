@@ -56,7 +56,7 @@ unknown key in the file is.
 | `kind` | `provider` | required for this kind | |
 | `harness` | a registered harness (`claude-code`, `codex`, and `pi` once built) | required | The agent harness the account's passes run in |
 | `provider` | lowercase name, `^[a-z][a-z0-9-]*$` | required | The provider the account bills, spelled as a repository's allow list spells it (`openrouter`, `gemini`, `anthropic`) |
-| `base_url` | an `https://` URL | the harness's default for the provider | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address |
+| `base_url` | an `https://` URL | the harness's default for the provider | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address. The host must be one the provider's profile names, or be named in the machine file's `provider_hosts` for that provider. Redirects to another host are refused, and a loopback or private-network address is admitted only when the machine file names it for the account |
 | `credential` | a [credential reference](#the-credential-reference) | required | Never the credential itself |
 | `spend_cap.daily` | decimal US dollars, as a string | required | The day's [spend cap](#the-spend-cap) |
 | `spend_cap.per_run` | decimal US dollars, as a string | none | The ceiling of one pass |
@@ -146,8 +146,11 @@ The contract of the command:
 - Jig resolves it at each launch and keeps the value only in the launching
   process's memory and the pass's environment. The value is never written to a
   launch record, a receipt, the ledger, a transcript Jig keeps, an error
-  message or a command line. [`plugin/shared/credentials.ts`](../plugin/shared/credentials.ts)
-  masks it wherever text is recorded.
+  message or a command line. Every place text is recorded (stdout, stderr and
+  transcripts) is redacted for the **exact resolved value** as well as by
+  [`plugin/shared/credentials.ts`](../plugin/shared/credentials.ts), whose
+  pattern masking recognises only credential-shaped text and cannot catch an
+  opaque value printed alone.
 - `credential_command` is read only from the machine file, so a repository
   cannot choose what runs on the host. With no command, a provider account is
   refused at load with that reason. 1Password's `op://` form is one
@@ -188,20 +191,25 @@ A subscription account has neither: its limit is the vendor's.
   sets its zone; the provider's own limit is the hard backstop and should be set
   at or above the daily cap. The budget record keeps each account's spend under
   the account's date in its zone, so a zone whose offset is not a whole hour
-  needs no special case; the record holds a week of days.
+  needs no special case; the record holds a week of days. `daily` and
+  `per_run` must be positive; a zero or negative value is refused at load.
 - **What counts.** The day's spend, kept in the budget record, is the cost of
-  every pass that ended that day plus the reservations of the passes running
-  now. A pass counts on the day it ends. The [ledger](outbound-calls.md#model-providers)
+  every pass that ended that day with a reported cost, plus the reservations
+  of the passes running now, plus the full reservation retained for a pass that
+  ended with no report or with an unknown cost. A pass counts on the day it
+  ends. The [ledger](outbound-calls.md#model-providers)
   holds the same costs as hourly totals for reports, and each pass's own cost
   is on its launch record.
 - **Admission is per launch.** Jig does not send the model requests, so it
   cannot refuse a request. It admits a launch if the remaining cap covers its
-  reservation, and refuses it as `rate-limited` until the boundary if not. The
+  reservation, and refuses it as `rate-limited` until the boundary if not. A
+  remaining cap of zero or less covers nothing, whatever the reservation. The
   reservation is the per-run ceiling when the account has one, else the mean
   cost of the account's last 20 passes, from its launch records, else one tenth of the daily cap.
 - **The cap is not a hard stop.** A pass that costs more than its
-  reservation finishes and the day is then over the cap, and the next launch is
-  refused. The per-run ceiling is the bound on one pass: it is passed to the
+  reservation finishes and the day's total is recomputed with its real cost; the
+  next launch is refused only if the remaining cap then fails to cover its
+  reservation. The per-run ceiling is the bound on one pass: it is passed to the
   harness as its own budget limit where the program has one. Where it has none,
   the ceiling is checked against the usage reported when the pass ends, and a
   pass over it is recorded and raises one need naming the account, the pass and
@@ -225,13 +233,13 @@ stays as the **defaults**, and it stops being an allowlist.
   accepts, not only a family alias. The harness's key is a registered harness,
   or any runtime key that matches the loader's pattern as today.
 - `routing.model_tiers.<harness>.<model-id>` gives a model outside the list its
-  capability tier, one of the four of the
+  capability tier, one of the tiers of the
   [model routing policy](../modules/M0-instruction-architecture/reference/model-routing-policy.md),
   and a reason. It replaces `family_tiers` as the way to say what a name is
   worth, and `family_tiers` entries are read as its entries. A model with no
-  entry is accepted as **unrated**: the loader's check that a stricter
-  complexity tier never maps to a lower capability tier skips it, and the
-  route says `model unrated` as its reason. A Scout-tier model is still
+  entry is **refused** (fail closed) wherever a route needs its capability
+  tier: names stay open, but an identifier outside the defaults must declare
+  its tier in `model_tiers` before a route uses it. A Scout-tier model is still
   refused for an implementer, and that refusal cannot be waived.
 - A tier maps to a model **per stage** as well:
   `routing.stages.<stage>.models.<harness>.<tier>`, for the stages the
@@ -268,15 +276,18 @@ dispatch:
   that exist and the repositories the host serves, and cannot add a provider
   the repository's list lacks.
 - **What an absent list means.** The repository uses the accounts it uses now:
-  the Claude and OpenAI subscription accounts. Every new provider is opt-in per
-  repository. This is a default, open to the person: the ruling that a
+  the Claude and OpenAI **subscription** accounts. A `provider` account is
+  never admitted by an absent list, even one whose provider is `anthropic` or
+  `openai`: it needs the list to name its provider. Every new provider is
+  opt-in per repository. This is a default, open to the person: the ruling that a
   repository with no list has no provider outside those two accounts stands
   unless the person rules otherwise.
 - **A subscription account is checked like a provider account.** The vendor is
   the provider: Anthropic for Claude Code, OpenAI for Codex. A repository whose
   list names only `openrouter` therefore has no launch on a Claude or Codex
   subscription account, since its code would reach those vendors too. An
-  absent list is the list `[anthropic, openai]`.
+  absent list is the list `[anthropic, openai]` for subscription accounts
+  only.
 - **Its reach.** Every launch that sends the repository's code or its tracker
   text to a provider: pickups, re-arms, follow-ups, steward passes and the
   [measurement's](#measuring-a-fast-decision-model) replays. A session a person
@@ -361,7 +372,9 @@ with its own cap and per-run ceiling.
 **The records.** The steward's recorded runs: the digest the steward was
 given, and the records it submitted (`rearm`, `resume`, `need`, `facet`,
 `order` and `cause`), kept in the dispatcher's state. The replay set is every
-run at least 7 days old, so each record's outcome is known. A repository
+run at least 7 days old whose digest is still retained, so each record's
+outcome is known and the input is intact. A run whose output the dispatcher has
+erased after retention is left out. A repository
 contributes only if its allow list names `openrouter`, and the digest is sent
 as recorded, masked by `credentials.ts`.
 
@@ -370,8 +383,10 @@ person reversed or cleared is scored as the person's answer.
 
 **What is scored.** Most steward records are `need`, so raw agreement rewards
 always answering `need`. The measurement scores each record kind
-**one against the rest**, over every (run, target) decision, where the
-decision is the kind of record the decider made for that target or none. A model
+**one against the rest**, over every (run, target, kind) record, where a
+target may carry several records of different kinds, and several of one kind
+that differ in their identity (a facet's name, for example). A record matches
+the decider's when kind, target and identity agree; a duplicate counts once. A model
 that always answers `need` has no recall on any other kind and no precision on
 `need`'s absences. For each kind it reports precision, recall and field
 agreement (the fields a record's shape requires of a match, such as the target
@@ -386,12 +401,13 @@ the replay set is reported and given the verdict `insufficient`, never `pass`.
 | `rearm` and `resume` | 0.98 | 0.90 | 0.98 (the target and the account) | A wrong action starts a pass or moves a drive |
 | `facet` | 0.95 | 0.85 | 0.90 (the facet and its value) | A wrong value mislabels an item |
 | `cause` | 0.90 | 0.90 | 0.90 (the class) | A diagnosis a person reads |
-| `order` | not scored | not scored | rank correlation of the proposed order with the recorded one, at least 0.80 | Few records; an order is a ranking |
+| `order` | not scored | not scored | Spearman rank correlation of the proposed order with the recorded one, at least 0.80, per run over the targets both orders hold, then the mean over runs; a run with fewer than 3 shared targets is left out | Few records; an order is a ranking |
 
-The report's **verdict** is one of `adequate for a steward trial` (every kind
-with enough records passes its row), `not adequate` (a kind fails: the report
-names it and the figure), or `insufficient` (a kind that decides what the
-steward does has fewer than 30 records). The report also gives the median
+The report's **verdict** is decided in this order: `not adequate` if any kind
+with enough records fails its row (the report names it and the figure);
+otherwise `insufficient` if any kind that decides what the steward does has
+fewer than 30 records; otherwise `adequate for a steward trial`, which needs
+every such kind to have enough records and pass its row. The report also gives the median
 latency and the cost of the replay against the decider's, as figures and not
 as a gate. A verdict that is `adequate` changes nothing: using a fast model for
 a stage is a separate decision a person makes and a separate change.

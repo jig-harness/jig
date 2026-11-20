@@ -116,8 +116,8 @@ text and skills to a profile; an executable extension loads only from a
 host-level allowlist. How a profile is built is in
 [design/provider-accounts.md](../../design/provider-accounts.md#the-harness-profile-of-a-stage).
 
-**A consumer subscription login never goes through a third-party harness.**
-Which harness runs is the account's choice, and Jig's profile
+**A Claude or Google consumer subscription login never goes through a
+third-party harness.** Which harness runs is the account's choice, and Jig's profile
 for a third-party harness disables that program's login with a Claude Pro or
 Max subscription. A Claude or Google consumer subscription login (Gemini CLI
 or Antigravity OAuth) is never routed through pi or any other third-party
