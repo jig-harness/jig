@@ -114,8 +114,7 @@ export { isDrive, isInteractive } from "./launch-kind.ts";
 
 /**
  * A pickup's or follow-up pass's own answer, recorded through `jig dispatch
- * result`: `waits` is one a rate limit or a pending arm stopped, to be
- * started again once its time has come (`waitsUntil`, `waitsFor`).
+ * result`: `waits` is one a rate limit or a pending arm stopped (`waitsUntil`).
  */
 export type { SessionResult } from "./session-result-types.ts";
 
