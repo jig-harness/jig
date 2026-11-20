@@ -21,23 +21,38 @@
  * what the destination accepts. The key line always comes first, so a
  * reader can match the message to the dashboard.
  *
- * A 2xx answer is the receipt (`sent`), and the place it records is the
- * channel's name and the destination's host, never the address. A webhook
- * cannot be read back, so the channel never answers `already`; a delivery
- * whose answer was lost after it was sent is `lost` and is sent again once
- * the back-off allows, so a person may see it twice. Nor can a webhook say
- * whether a notice was read: the `notices_read` observation stays the Orca
- * card's (`dispatch/lib/notices-read.ts`).
+ * Each cause is answered so:
+ *
+ * - `sent`: a 2xx answer, the receipt. The place it records is the
+ *   channel's name and the destination's host, never the address.
+ * - `waits`: nothing was sent (the channel is unreachable, the tick's time
+ *   is spent, the transport's hold refused it, or it was stopped first), or
+ *   the destination asked to wait (a 429). A cause that waits counts no
+ *   failure. A 429 holds the destination in the machine's budget record
+ *   until its `Retry-After`, so no channel object of any repository, in this
+ *   tick or a later one, sends to that address before then.
+ * - `lost`: anything else that was sent and refused or not answered (a 4xx,
+ *   a 5xx, a redirect, no answer within the deadline). It counts in the
+ *   failure ledger and backs off there; one whose answer was lost after it
+ *   left may have arrived, and is sent again once the back-off allows, so a
+ *   person may see it twice.
+ *
+ * After an unanswered post, a 5xx or a 429, the causes left in the tick on
+ * this channel wait. A webhook cannot be read back, so the channel never
+ * answers `already`, nor can it say whether a notice was read: the
+ * `notices_read` observation stays the Orca card's
+ * (`dispatch/lib/notices-read.ts`).
  *
  * The address is a credential: it never appears in a delivery's detail, its
  * place, a reason or a ledger row. A variable that is unset or empty, or that
- * holds an address the transport refuses, makes the channel unreachable, and
- * every due cause waits. Every request goes through the governed transport
+ * holds an address the transport refuses, makes the channel unreachable: the
+ * tick reports it once a tick as the host's fault, and every due cause waits.
+ * Every request goes through the governed transport
  * (`shared/outbound/http.ts`): a deadline, the closed failure classes, the
- * outbound ledger and the run's hold. After a destination fails to answer,
- * or asks to wait, the causes left in the tick wait rather than being sent.
+ * budget record's hold, the outbound ledger and the run's hold.
  */
 import { httpAddress, sendHttp } from "../shared/outbound/http.ts";
+import type { BudgetGovernor } from "../shared/outbound/budget.ts";
 import type { OutboundFailure } from "../shared/outbound/failure.ts";
 import type {
   ChannelNotice,
@@ -69,6 +84,8 @@ export interface WebhookOptions {
   fetchImpl?: typeof fetch;
   /** The longest one request may take; `WEBHOOK_TIMEOUT_MS` unless given. */
   timeoutMs?: number;
+  /** The budget record a 429's hold is kept in; the machine's unless a test hands another. */
+  governor?: BudgetGovernor;
 }
 
 /** The longest one post may take, within the time the tick has left. */
@@ -164,6 +181,9 @@ export function fitted(text: string, format: WebhookFormat): string {
     if (sizeOf(text.slice(0, mid) + cut, format) <= limit) low = mid;
     else high = mid - 1;
   }
+  // Never split a character written as two UTF-16 units.
+  const code = text.charCodeAt(low - 1);
+  if (low > head.length && code >= 0xd800 && code <= 0xdbff) low -= 1;
   return text.slice(0, low) + cut;
 }
 
@@ -249,6 +269,7 @@ interface Post {
   host: string;
   longest: number;
   fetchImpl: typeof fetch | undefined;
+  governor: BudgetGovernor | undefined;
 }
 
 function answer(
@@ -289,6 +310,7 @@ async function postOne(
     timeoutMs: Math.min(post.longest, left ?? post.longest),
     signal: time.signal,
     ...(post.fetchImpl === undefined ? {} : { fetchImpl: post.fetchImpl }),
+    ...(post.governor === undefined ? {} : { governor: post.governor }),
   });
   if (sent.ok)
     return {
@@ -301,12 +323,12 @@ async function postOne(
       stop: null,
     };
   const { failure } = sent;
-  // Stopped before it left: not tried, so it waits rather than counting as lost.
-  const tried = failure.sent === true || !time.signal.aborted;
+  // Never sent (a hold refused it, or it was stopped first), or asked to wait: it waits, counting no failure.
+  const waits = sent.unsent === true || failure.code === "rate-limited";
   return {
     delivery: answer(
       c,
-      tried ? "lost" : "waits",
+      waits ? "waits" : "lost",
       null,
       `${failure.code}: ${failure.reason}`,
     ),
@@ -337,6 +359,7 @@ export function webhookChannel<Due extends DueNotice = DueNotice>(
         ...target,
         longest: options.timeoutMs ?? WEBHOOK_TIMEOUT_MS,
         fetchImpl: options.fetchImpl,
+        governor: options.governor,
       };
       const out: Delivery[] = [];
       for (const c of due) {

@@ -9,30 +9,38 @@
  *   `sent`, since it may have arrived.
  * - **The closed failure classes.** A status, a network error or an abort is
  *   read here alone and answered as one of `failure.ts`'s classes; a 429 is
- *   `rate-limited` until its `Retry-After`, and a redirect is `invalid`,
- *   since a webhook that moved is not followed with its credential.
- * - **The ledger.** Each request that left the machine adds to the outbound
- *   cost ledger: one request under `system`, the operation, and a hash of
- *   the credential, never the credential.
- * - **The hold.** In a run that holds systems that do not answer (the
+ *   `rate-limited`, and a redirect is `invalid`, since a webhook that moved
+ *   is not followed with its credential.
+ * - **The budget record's hold.** A 429 holds the destination in the
+ *   machine's budget record (`budget.ts`, keyed by a hash of the address)
+ *   until its `Retry-After`, or, naming none, for a minute doubled with each
+ *   refusal in a row up to fifteen. While it holds, no request to that
+ *   address leaves the machine, from this process or another: each answers
+ *   `rate-limited` until the time it clears, marked `unsent`. These systems
+ *   report no balance, so the record keeps no window, only the hold.
+ * - **The ledger.** Each request adds to the outbound cost ledger under
+ *   `system`, the operation and a hash of the address, never the address:
+ *   one request when it left, none when the hold refused it.
+ * - **The run's hold.** In a run that holds systems that do not answer (the
  *   dispatcher's tick, `hold.ts`), a destination that met `unreachable` or
  *   `server-fault` is not asked again in the run, and the next run probes it
- *   once first.
+ *   once first; a request that hold refuses is marked `unsent` too.
  *
- * No budget record is kept: these systems report no balance in their
- * answers, and a caller sends at most one request for each thing it has to
- * say, so a refusal (`rate-limited`) is the only limit the caller meets, and
- * it backs off in its own records. The answer's body is not read.
- *
- * The address is the credential: it never appears in a reason, a ledger row
- * or a hold. A reason names the destination by `destination`, a label the
- * caller chooses that holds no secret. Only `https:` addresses are sent,
- * and `http:` to the loopback host (`localhost`, `127.0.0.1`, `[::1]`),
- * which a test or a relay on the same machine listens on.
+ * The answer's body is not read. The address never appears in a reason, a
+ * ledger row or a hold. A reason names the destination by `destination`, a
+ * label the caller chooses that holds no secret. Only `https:` addresses are
+ * sent, and `http:` to the loopback host (`localhost`, `127.0.0.1`,
+ * `[::1]`), which a test or a relay on the same machine listens on.
  */
 import { failed, ok, type Outcome } from "../outcome.ts";
-import { currentMs } from "../time.ts";
-import { credentialKey } from "./budget.ts";
+import { currentMs, isoFromMs } from "../time.ts";
+import {
+  type BudgetGovernor,
+  budgetGovernor,
+  credentialKey,
+  isRateLimited,
+  sqliteBudgetStore,
+} from "./budget.ts";
 import {
   answerClass,
   type FailureClass,
@@ -41,7 +49,7 @@ import {
   retryAfterMs,
 } from "./failure.ts";
 import { guarded } from "./hold.ts";
-import { recordCall } from "./ledger.ts";
+import { defaultLedgerPath, recordCall } from "./ledger.ts";
 
 /** One request. */
 export interface HttpRequest {
@@ -62,6 +70,8 @@ export interface HttpRequest {
   signal?: AbortSignal;
   /** The platform's `fetch`, unless a test hands another. */
   fetchImpl?: typeof fetch;
+  /** The budget record the destination's hold is kept in; the machine's, beside the ledger, unless a test hands another. */
+  governor?: BudgetGovernor;
 }
 
 /** What answered a request that succeeded. */
@@ -70,20 +80,32 @@ export interface HttpAnswer {
   tookMs: number;
 }
 
+/** A request's answer; a failure marked `unsent` never left the machine, so it says nothing of the destination. */
 export type HttpOutcome =
   | { ok: true; value: HttpAnswer }
-  | { ok: false; failure: OutboundFailure };
+  | { ok: false; failure: OutboundFailure; unsent?: true };
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-/** The answers of requests that never left the machine: they say nothing of the destination, so they neither hold it nor release a hold. */
-const UNSENT = new WeakSet<HttpOutcome>();
-
 /** A failure of a request that was not sent. */
 function unsent(failure: OutboundFailure): HttpOutcome {
-  const answer: HttpOutcome = { ok: false, failure };
-  UNSENT.add(answer);
-  return answer;
+  return { ok: false, failure, unsent: true };
+}
+
+/** How long a 429 that names no wait holds the destination: a minute, doubled for each in a row, up to fifteen. */
+const UNNAMED_WAIT = { floorMs: 60_000, capMs: 15 * 60_000 };
+
+const governors = new Map<string, BudgetGovernor>();
+
+/** The machine's budget record, in the database the ledger writes. */
+function machineGovernor(): BudgetGovernor {
+  const path = defaultLedgerPath();
+  let governor = governors.get(path);
+  if (governor === undefined) {
+    governor = budgetGovernor(sqliteBudgetStore(path));
+    governors.set(path, governor);
+  }
+  return governor;
 }
 
 /** The address `raw` names when it is one this transport sends to; why not, without the address, when it is not. */
@@ -174,10 +196,62 @@ function thrownFailure(
   );
 }
 
+/** Whether the budget record holds the destination: the failure a request answers then, else `null` with the time it was admitted. */
+function admitted(
+  governor: BudgetGovernor,
+  key: string,
+  request: HttpRequest,
+): { held: OutboundFailure } | { at: number } {
+  try {
+    return {
+      at: governor.admit(request.system, key, { windows: [], reserve: null }),
+    };
+  } catch (error) {
+    if (!isRateLimited(error)) return { at: currentMs() };
+    return {
+      held: outboundFailure(
+        "rate-limited",
+        `${request.destination} asked to wait until ${isoFromMs(error.resetAt)}; nothing is sent to it before then`,
+        { until: error.resetAt },
+      ),
+    };
+  }
+}
+
+/** Record what the destination's answer says of its hold: a 429 holds it, any other answer ends the refusals in a row. */
+function observeHold(
+  governor: BudgetGovernor,
+  key: string,
+  at: number,
+  failure: OutboundFailure | null,
+): OutboundFailure | null {
+  if (failure?.code !== "rate-limited") {
+    if (failure === null) governor.observe(key, {}, at, null);
+    return failure;
+  }
+  governor.observe(
+    key,
+    failure.until === undefined
+      ? { unnamedRefusal: UNNAMED_WAIT, why: failure.reason }
+      : { limitedUntil: failure.until, why: failure.reason },
+    at,
+    null,
+  );
+  const until = failure.until ?? governor.heldUntil?.(key) ?? null;
+  return until === null ? failure : { ...failure, until };
+}
+
 /** Send once, never throwing: the answer, or the failure's class. */
 async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
   const refused = notSendable(request);
   if (refused !== null) return unsent(refused);
+  const governor = request.governor ?? machineGovernor();
+  const key = credentialKey(request.system, request.url);
+  const admission = admitted(governor, key, request);
+  if ("held" in admission) {
+    record(request, 0, 0, admission.held);
+    return unsent(admission.held);
+  }
   const timeoutMs = Math.max(1, request.timeoutMs);
   const deadline = AbortSignal.timeout(timeoutMs);
   const signal = AbortSignal.any(
@@ -195,7 +269,12 @@ async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
     });
     const tookMs = currentMs() - began;
     discard(response);
-    failure = answerFailure(request, response, tookMs);
+    failure = observeHold(
+      governor,
+      key,
+      admission.at,
+      answerFailure(request, response, tookMs),
+    );
     return failure === null
       ? { ok: true, value: { status: response.status, tookMs } }
       : { ok: false, failure };
@@ -203,16 +282,27 @@ async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
     failure = thrownFailure(request, error, signal, deadline, timeoutMs);
     return { ok: false, failure };
   } finally {
-    recordCall({
-      system: request.system,
-      credential: credentialKey(request.system, request.url),
-      operation: request.operation,
-      cost: 1,
-      unit: "requests",
-      durationMs: currentMs() - began,
-      failure: failure?.code ?? null,
-    });
+    record(request, 1, currentMs() - began, failure);
   }
+}
+
+/** One ledger row: `requests` that left (none when the hold refused it). */
+function record(
+  request: HttpRequest,
+  requests: number,
+  durationMs: number,
+  failure: OutboundFailure | null,
+): void {
+  recordCall({
+    system: request.system,
+    credential: credentialKey(request.system, request.url),
+    operation: request.operation,
+    requests,
+    cost: requests,
+    unit: "requests",
+    durationMs,
+    failure: failure?.code ?? null,
+  });
 }
 
 /**
@@ -226,9 +316,9 @@ export async function sendHttp(request: HttpRequest): Promise<HttpOutcome> {
       `${request.system} ${request.destination}`,
       () => sendOnce(request),
       (answer) => (answer.ok ? null : answer.failure),
-      (held) => ({ ok: false, failure: held }),
+      (held) => unsent(held),
       request.signal,
-      (answer) => UNSENT.has(answer),
+      (answer) => !answer.ok && answer.unsent === true,
     );
   } catch {
     // The hold's wait for another request's probe ends with the signal's reason.

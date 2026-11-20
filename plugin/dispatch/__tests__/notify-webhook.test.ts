@@ -273,6 +273,57 @@ describe.skipIf(process.platform === "win32")("on runtime: process", () => {
     expect(h.hook.posts).toEqual([]);
     expect(readFailures(SLUG, h.root)).toEqual([]);
   });
+
+  it("reports a channel with no address as the host's fault, once a tick, even with nothing due", async () => {
+    const h = host("process");
+    const state = processState(h);
+    const settings = () => ({
+      branch: null,
+      lingerMs: HOUR,
+      renotifyAfterMs: 4 * HOUR,
+      book: h.book(),
+      ...noticeOutlets(h.config, { JIG_TEST_PHONE_URL: "" }),
+    });
+    const first = parkedReport(h.repo);
+    first.actions = [];
+    await applyNotices(state, h.repo, first, LISTED, settings());
+    expect(first.unplaced).toEqual([
+      {
+        target: "the phone notification channel",
+        record: "runtime",
+        reason: expect.stringContaining(
+          "JIG_TEST_PHONE_URL is not set in the tick's environment",
+        ),
+      },
+    ]);
+    // Another repository's turn in the same tick: the host's fault is not repeated.
+    const second = parkedReport(h.repo);
+    await applyNotices(state, h.repo, second, LISTED, settings());
+    expect(second.unplaced).toEqual([]);
+    // The next tick reports it again.
+    const next = parkedReport(h.repo);
+    await applyNotices(processState(h), h.repo, next, LISTED, settings());
+    expect(next.unplaced).toHaveLength(1);
+  });
+
+  it("reports a refused address without echoing it", async () => {
+    const h = host("process");
+    const report = parkedReport(h.repo);
+    await applyNotices(processState(h), h.repo, report, LISTED, {
+      branch: null,
+      lingerMs: HOUR,
+      renotifyAfterMs: 4 * HOUR,
+      ...noticeOutlets(h.config, {
+        JIG_TEST_PHONE_URL: `http://hooks.example.test/${SECRET}`,
+      }),
+    });
+    expect(report.unplaced).toEqual([
+      expect.objectContaining({
+        reason: expect.stringContaining("its value is withheld"),
+      }),
+    ]);
+    expect(JSON.stringify(report)).not.toContain(SECRET);
+  });
 });
 
 describe("on runtime: orca", () => {

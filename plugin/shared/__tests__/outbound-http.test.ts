@@ -5,13 +5,22 @@
  * address, a credential, never in a reason or a row.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { budgetGovernor, memoryBudgetStore } from "../outbound/budget.ts";
+import { holdUnanswered, stopHolding } from "../outbound/hold.ts";
 import { type CallRecord, withLedgerWriter } from "../outbound/ledger.ts";
 import { httpAddress, sendHttp, type HttpRequest } from "../outbound/http.ts";
 
 const SECRET = "s3cr3t-token-path";
 const servers: Array<ReturnType<typeof Bun.serve>> = [];
+const dirs: string[] = [];
 afterEach(() => {
+  stopHolding();
   for (const server of servers.splice(0)) server.stop(true);
+  for (const dir of dirs.splice(0))
+    rmSync(dir, { recursive: true, force: true });
 });
 
 function serve(answer: (request: Request) => Response | Promise<Response>) {
@@ -38,6 +47,7 @@ async function send(
         destination: "the phone webhook",
         body: "hello",
         timeoutMs: 2000,
+        governor: budgetGovernor(memoryBudgetStore()),
         ...extra,
       }),
   );
@@ -109,6 +119,81 @@ describe("an answer", () => {
     });
     if (outcome.ok) throw new Error("expected a failure");
     expect(outcome.failure.until).toBeGreaterThanOrEqual(before + 30_000);
+  });
+});
+
+describe("a destination that asked to wait", () => {
+  it("is held in the budget record until its Retry-After: nothing is sent to it before then, from any caller", async () => {
+    let hits = 0;
+    const url = serve(() => {
+      hits++;
+      return new Response("", {
+        status: 429,
+        headers: { "retry-after": "30" },
+      });
+    });
+    let now = Date.now();
+    const governor = budgetGovernor(memoryBudgetStore(), { clock: () => now });
+    await send(url, { governor });
+    const { outcome, rows } = await send(url, { governor });
+    expect(hits).toBe(1);
+    expect(outcome).toMatchObject({
+      ok: false,
+      unsent: true,
+      failure: {
+        code: "rate-limited",
+        reason: expect.stringContaining("nothing is sent to it before then"),
+      },
+    });
+    if (outcome.ok) throw new Error("expected a failure");
+    expect(outcome.failure.until).toBeGreaterThanOrEqual(now + 29_000);
+    expect(rows).toEqual([
+      expect.objectContaining({ requests: 0, failure: "rate-limited" }),
+    ]);
+    now += 31_000;
+    await send(url, { governor });
+    expect(hits).toBe(2);
+  });
+
+  it("is held for a minute when the 429 names no wait", async () => {
+    let hits = 0;
+    const url = serve(() => {
+      hits++;
+      return new Response("", { status: 429 });
+    });
+    const now = Date.now();
+    const governor = budgetGovernor(memoryBudgetStore(), { clock: () => now });
+    await send(url, { governor });
+    const { outcome } = await send(url, { governor });
+    expect(hits).toBe(1);
+    expect(outcome).toMatchObject({
+      ok: false,
+      unsent: true,
+      failure: { code: "rate-limited", until: now + 60_000 },
+    });
+  });
+});
+
+describe("the run's hold", () => {
+  it("refuses a destination that did not answer earlier in the run, marked unsent", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-http-hold-"));
+    dirs.push(dir);
+    holdUnanswered(join(dir, "unanswered.json"));
+    let hits = 0;
+    const url = serve(() => {
+      hits++;
+      return new Response("", { status: 503 });
+    });
+    const first = await send(url);
+    expect(first.outcome).toMatchObject({
+      ok: false,
+      failure: { code: "server-fault" },
+    });
+    expect(first.outcome).not.toHaveProperty("unsent");
+    const { outcome, rows } = await send(url);
+    expect(hits).toBe(1);
+    expect(outcome).toMatchObject({ ok: false, unsent: true });
+    expect(rows).toEqual([]);
   });
 });
 

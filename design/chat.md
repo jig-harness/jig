@@ -81,9 +81,13 @@ channel the host enables:
   tell whether a notice was read, so the `notices_read` observation stays
   the card's. Its requests go through the governed HTTP transport
   (`plugin/shared/outbound/http.ts`): a deadline, the closed failure
-  classes, the outbound cost ledger and the tick's hold. With no answer,
-  the cause stays due and backs off in the failure ledger, and the
-  dispatch dashboard still lists it.
+  classes, the outbound cost ledger, the tick's hold and the budget
+  record's hold, which a 429 sets until its `Retry-After` so that no
+  repository's tick posts to that address before then. A post that failed
+  backs off in the failure ledger; one that was held, or asked to wait,
+  waits without counting as a failure; the cause stays due either way and
+  the dispatch dashboard lists it. A channel whose address variable is
+  unset or refused is reported once a tick as the host's fault.
 - **`slack`**, which posts with the chat's own API.
 
 Each channel keeps its own suppression record: the state database's

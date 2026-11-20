@@ -5,7 +5,17 @@
  * reaches what it answers.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { DeliveryTime, DueNotice } from "../channel.ts";
+import { channelNameFault } from "../channel.ts";
+import {
+  type BudgetGovernor,
+  budgetGovernor,
+  memoryBudgetStore,
+} from "../../shared/outbound/budget.ts";
+import { holdUnanswered, stopHolding } from "../../shared/outbound/hold.ts";
 import {
   type CallRecord,
   withLedgerWriter,
@@ -108,10 +118,15 @@ function channel(
   url: string | undefined,
   format: WebhookFormat = "text",
   timeoutMs?: number,
+  governor: BudgetGovernor = budgetGovernor(memoryBudgetStore()),
 ) {
   return webhookChannel(
     { name: "phone", urlEnv: "JIG_TEST_HOOK", format },
-    { env: env(url), ...(timeoutMs === undefined ? {} : { timeoutMs }) },
+    {
+      env: env(url),
+      governor,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    },
   );
 }
 
@@ -122,13 +137,14 @@ async function deliver(
     format?: WebhookFormat;
     time?: DeliveryTime;
     timeoutMs?: number;
+    governor?: BudgetGovernor;
   } = {},
 ) {
   const rows: CallRecord[] = [];
   const answers = await withLedgerWriter(
     (row) => rows.push(row),
     () =>
-      channel(url, options.format, options.timeoutMs).deliver(
+      channel(url, options.format, options.timeoutMs, options.governor).deliver(
         due,
         options.time ?? time(),
       ),
@@ -205,6 +221,16 @@ describe("rendering", () => {
       JSON.parse(render(long, "discord").body).content.length,
     ).toBeLessThanOrEqual(2000);
   });
+
+  it("never splits a character written as two UTF-16 units", () => {
+    const key = "k";
+    for (let pad = 0; pad < 4; pad++) {
+      const text = `[jig dispatch: ${key}]\n${"a".repeat(pad)}${"😀".repeat(1500)}`;
+      const cut = fitted(text, "discord");
+      expect(cut.length).toBeLessThanOrEqual(2000);
+      expect(cut).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    }
+  });
 });
 
 describe("delivery", () => {
@@ -248,18 +274,58 @@ describe("delivery", () => {
     expect(answers[0]?.place).toBeNull();
   });
 
-  for (const [status, code] of [
-    [503, "server-fault"],
-    [429, "rate-limited"],
+  for (const [status, code, outcome] of [
+    [503, "server-fault", "lost"],
+    [429, "rate-limited", "waits"],
   ] as const)
-    it(`answers HTTP ${status} lost as ${code}, and the causes after it wait`, async () => {
+    it(`answers HTTP ${status} ${outcome} as ${code}, and the causes after it wait`, async () => {
       const h = hook(() => new Response("", { status }));
       const { answers } = await deliver(h.url, [parked(), plain("second")]);
-      expect(answers.map((a) => a.outcome)).toEqual(["lost", "waits"]);
+      expect(answers.map((a) => a.outcome)).toEqual([outcome, "waits"]);
       expect(answers[0]?.detail).toStartWith(`${code}: `);
       expect(answers[1]?.detail).toStartWith("not sent this tick: ");
       expect(h.hits).toHaveLength(1);
     });
+
+  it("sends nothing from another channel object to a destination that asked to wait, every cause waiting", async () => {
+    const h = hook(
+      () => new Response("", { status: 429, headers: { "retry-after": "60" } }),
+    );
+    const governor = budgetGovernor(memoryBudgetStore());
+    const first = await deliver(h.url, [parked()], { governor });
+    // Another repository's channel object in the same tick, over the same record.
+    const second = await deliver(h.url, [plain("second"), plain("third")], {
+      governor,
+    });
+    expect(h.hits).toHaveLength(1);
+    expect(first.answers.map((a) => a.outcome)).toEqual(["waits"]);
+    expect(second.answers.map((a) => a.outcome)).toEqual(["waits", "waits"]);
+    expect(second.answers[0]?.detail).toContain(
+      "nothing is sent to it before then",
+    );
+    expect(second.rows.map((r) => r.requests)).toEqual([0]);
+  });
+
+  it("answers a post the run's hold refused waits, since it was never sent", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-webhook-hold-"));
+    try {
+      holdUnanswered(join(dir, "unanswered.json"));
+      const h = hook(() => new Response("", { status: 503 }));
+      const first = await deliver(h.url, [parked()]);
+      const second = await deliver(h.url, [plain("second")]);
+      expect(first.answers.map((a) => a.outcome)).toEqual(["lost"]);
+      expect(second.answers).toEqual([
+        expect.objectContaining({
+          outcome: "waits",
+          detail: expect.stringContaining("did not answer earlier in this run"),
+        }),
+      ]);
+      expect(h.hits).toHaveLength(1);
+    } finally {
+      stopHolding();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it("never answers already: a webhook cannot be read back", async () => {
     const h = hook();
@@ -354,5 +420,13 @@ describe("the time it is given", () => {
       time: time(null, controller.signal),
     });
     expect(answers.map((a) => a.outcome)).toEqual(["lost", "waits"]);
+  });
+});
+
+describe("a channel name that looks like an address", () => {
+  it("is refused without being echoed", () => {
+    const fault = channelNameFault(`https://hooks.example.test/${SECRET}`, []);
+    expect(fault).toContain("withheld");
+    expect(fault).not.toContain(SECRET);
   });
 });

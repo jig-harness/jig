@@ -99,6 +99,8 @@ export interface ApplyState {
   opened?: number;
   /** Opens spent on notices, which do not consume the launches' allowance. */
   noticesOpened?: number;
+  /** The notification channels this tick has reported unreachable, so a host's fault is reported once a tick, not once a repository. */
+  channelFaults?: Set<string>;
   /** The follow-up workspaces this tick has opened so far, within `followup_opens_per_tick`, outside `opened` (`followup-lane.ts`). */
   followupOpened?: number;
   /** When the tick began (its invocation, not its act phase), for its overall deadline. */
