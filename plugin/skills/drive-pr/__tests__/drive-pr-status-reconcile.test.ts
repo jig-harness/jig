@@ -455,7 +455,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // probe is the most expensive one in the file under load.
     //
     // Its logic is only ~12s (`--timeout 12`, and the run ends with the gate's
-    // own "gave up after 8s"). The rest is subprocess fan-out: >
+    // own "gave up after 12s"). The rest is subprocess fan-out: >
     // MAX_QUERY_ERRORS poll iterations is the irreducible floor for the
     // assertion below, and EACH iteration spawns a real sweep —
     // `reconcile-replied-threads.ts`, which spawns `list-unresolved-threads.ts`,

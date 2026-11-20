@@ -1523,8 +1523,9 @@ function isEmitterZoneVariableDeclaration(
 
 /**
  * Does `fn`'s parameter list match the real reporter's own call contract —
- * exactly one parameter, typed `number` wherever a type annotation is
- * present? Position alone (`isEmitterZoneStatement` above) accepts every
+ * a first parameter typed `number` wherever a type annotation is present,
+ * with only optional trailing parameters? Position alone
+ * (`isEmitterZoneStatement` above) accepts every
  * direct statement child of a top-level function without regard to what it
  * actually takes — `drive-status.ts`'s `main()` declares OTHER direct
  * function children alongside the real `emit` (`countOrNull(n: number |
@@ -1534,9 +1535,9 @@ function isEmitterZoneVariableDeclaration(
  * `countOrNull(11)` would be classified as an emit call purely on structural
  * depth. The reporting function is therefore identified through a feature
  * unique to its call contract rather than declaration depth alone. The
- * reporter always takes the exit code as its sole argument, so
- * its declared arity and (where annotated) parameter type are real evidence
- * position alone is not. An UNANNOTATED parameter is not rejected — this scan
+ * reporter always takes the exit code as its first argument, so its declared
+ * parameter shape and (where annotated) first-parameter type are real evidence
+ * position alone is not. An UNANNOTATED first parameter is not rejected — this scan
  * has no full program to infer its type from, so the absence of an
  * annotation is "not disproven", not a positive match.
  *
