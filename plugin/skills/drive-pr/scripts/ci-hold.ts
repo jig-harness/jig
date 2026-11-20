@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
-import { releaseHeldLabel } from "./lib/ci-hold-release.ts";
+import { refuseRace, releaseHeldLabel } from "./lib/ci-hold-release.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -465,6 +465,17 @@ async function release(
   }
 
   if (persisted?.phase === "releasing") {
+    if (persisted.raceDetected === true)
+      return refuseRace(
+        pr,
+        head,
+        persisted.actor,
+        holdLabel(),
+        () => transitions(pr),
+        ghCall,
+        unreadDuringReleaseRecovery,
+        persisted,
+      );
     const successor = exactSuccessor(initialTimeline, persisted.heldEventId);
     if (
       !live.held &&

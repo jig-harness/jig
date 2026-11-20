@@ -320,7 +320,15 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    return { dir, stateDir, exitCode, stdout, stderr };
+    return {
+      dir,
+      stateDir,
+      cwd: repo.dir,
+      head: repo.head,
+      exitCode,
+      stdout,
+      stderr,
+    };
   };
 
   it("release adopts a label someone else added and removes it at convergence", async () => {
@@ -368,6 +376,7 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(ciHoldOf(r.stateDir)).toMatchObject({
       phase: "releasing",
       heldEventId: "LE_1",
+      raceDetected: true,
     });
   });
 
@@ -415,6 +424,38 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
         .labels,
     ).not.toContainEqual({ name: "ci:hold" });
+
+    const proc = Bun.spawn(
+      scriptArgv(
+        join(SCRIPTS, "ci-hold.ts"),
+        "release",
+        "999",
+        "--expect-head",
+        r.head,
+      ),
+      {
+        cwd: r.cwd,
+        env: {
+          ...stateEnv(r.stateDir, r.dir),
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_FIXTURES: r.dir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expectSpawnExit({ exitCode, stdout, stderr }, 4);
+    expect(stderr).toContain("ownership changed during removal");
+    expect(
+      readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
+        .labels,
+    ).toContainEqual({ name: "ci:hold" });
+    expect(ciHoldOf(r.stateDir)).toBeNull();
   });
 
   it("rejects an unproven readable transition before confirmation can become unreadable", async () => {

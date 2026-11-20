@@ -194,6 +194,8 @@ export type CiHoldState =
       actor: string;
       createdAt: string;
       checkRunWatermark: number;
+      /** A proven intervening release race still needs reconciliation. */
+      raceDetected?: boolean;
     }
   | {
       phase: "released";
@@ -557,6 +559,7 @@ function hasUsablePhaseFields(hold: Record<string, unknown>): boolean {
     case "releasing":
       return (
         isOptionalBoolean(hold.adopted) &&
+        isOptionalBoolean(hold.raceDetected) &&
         isSha(hold.head) &&
         isNonEmptyString(hold.heldEventId) &&
         isSha(hold.addedAtHead) &&
