@@ -60,17 +60,12 @@ const HOOK_FREE_SUBCOMMANDS = new Set([
   "cat-file",
   "show-ref",
   "for-each-ref",
-  "symbolic-ref",
-  "branch",
   "config",
-  "remote",
-  "fetch",
   "clean",
   "describe",
   "blame",
   "grep",
   "var",
-  "worktree",
   "hash-object",
   "check-ignore",
   "diff-tree",
@@ -79,6 +74,38 @@ const HOOK_FREE_SUBCOMMANDS = new Set([
   "shortlog",
   "version",
 ]);
+
+/**
+ * Subcommands that run no hook only in some forms: a listing or a query reads,
+ * while a creation, a fetch or a ref update runs `reference-transaction` (and a
+ * new worktree `post-checkout`). Each predicate takes the words after the
+ * subcommand and says whether the form reads only.
+ */
+const READ_ONLY_FORMS = new Map<string, (rest: string[]) => boolean>([
+  [
+    "branch",
+    (rest) =>
+      rest.length > 0 &&
+      rest.every((w) =>
+        /^(?:--show-current|--list|-l|-a|-r|-v{1,2}|--all|--remotes|--contains|--no-contains|--merged|--no-merged|--points-at|--format=.*)$/.test(
+          w,
+        ),
+      ),
+  ],
+  ["remote", (rest) => ["get-url", "show", "-v"].includes(rest[0] ?? "")],
+  [
+    "symbolic-ref",
+    (rest) =>
+      !rest.some((w) => w === "-d" || w === "--delete") &&
+      rest.filter((w) => !w.startsWith("-")).length === 1,
+  ],
+  ["worktree", (rest) => rest[0] === "list"],
+]);
+
+/** Whether a word names git's executable, by path or as `git.exe`. */
+function isGit(word: string | undefined): boolean {
+  return /(?:^|[\\/])git(?:\.exe)?$/i.test(word ?? "");
+}
 
 /** The words of a command from `start`, quotes removed, up to where it ends. */
 function words(text: string, start: number): string[] {
@@ -128,7 +155,7 @@ function lacksDeadline(args: string[]): boolean {
     i += arity;
   }
   if (args[i] === "--") i++;
-  if (args[i] !== "git") return false;
+  if (!isGit(args[i])) return false;
   i++;
   while (i < args.length && args[i]?.startsWith("-")) {
     const option = args[i++] as string;
@@ -136,6 +163,7 @@ function lacksDeadline(args: string[]): boolean {
   }
   const subcommand = args[i] ?? "";
   if (!subcommand || HOOK_FREE_SUBCOMMANDS.has(subcommand)) return false;
+  if (READ_ONLY_FORMS.get(subcommand)?.(args.slice(i + 1))) return false;
   // `--quit` forgets an operation's state and touches neither index nor tree;
   // `--abort` resets them, which runs hooks.
   if (args[i + 1] === "--quit") return false;
@@ -201,6 +229,15 @@ describe("hook-running commands carry a deadline", () => {
       'bun "x/shared/command.ts" -- git rebase -q --continue',
       'bun "x/shared/command.ts" -- git rebase --skip',
       'bun "x/shared/command.ts" -- git add -A',
+      'bun "x/shared/command.ts" -- git worktree add ../other HEAD',
+      'bun "x/shared/command.ts" -- git fetch origin',
+      'bun "x/shared/command.ts" -- git branch topic',
+      'bun "x/shared/command.ts" -- git branch -D topic',
+      'bun "x/shared/command.ts" -- git symbolic-ref HEAD refs/heads/x',
+      'bun "x/shared/command.ts" -- git remote add o url',
+      'bun "x/shared/command.ts" -- /usr/bin/git commit -F m.txt',
+      'bun "x/shared/command.ts" -- git.exe commit -F m.txt',
+      'bun "x/shared/command.ts" -- C:/Git/bin/git.exe commit -F m.txt',
       'bun "x/shared/command.ts" -- git checkout -- file.txt',
     ])
       expect(undeadlinedHookCommands(line)).toHaveLength(1);
@@ -217,6 +254,12 @@ describe("hook-running commands carry a deadline", () => {
       'bun "<skill-dir>/../../shared/command.ts" -- git clean -f -- conflict-message.txt',
       'bun "<skill-dir>/../../shared/command.ts" -- git merge-base --is-ancestor a HEAD',
       'bun "<skill-dir>/../../shared/command.ts" -- git rebase --quit',
+      'bun "x/shared/command.ts" -- git branch --show-current',
+      'bun "x/shared/command.ts" -- git remote get-url origin',
+      'bun "x/shared/command.ts" -- git symbolic-ref --short HEAD',
+      'bun "x/shared/command.ts" -- git worktree list',
+      'bun "x/shared/command.ts" --timeout-seconds 600 -- git fetch origin',
+      'bun "x/shared/command.ts" --timeout-seconds 600 -- /usr/bin/git commit -F m.txt',
       'bun "x/shared/command.ts" --timeout-seconds 3600 -- git reset --merge',
     ])
       expect(undeadlinedHookCommands(line)).toEqual([]);

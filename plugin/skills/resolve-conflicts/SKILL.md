@@ -124,7 +124,7 @@ adopted the skill is covered too (`<remote>` here and below is the
 repository's git remote: `repository.remote`, else `origin`):
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch <remote> <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git fetch <remote> <base>
 bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base> --dry-run
 ```
 
@@ -149,7 +149,7 @@ To bring a branch up to date with its base (the `conflict-resolve` round of
 in, with a base section in the markers:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch <remote> <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git fetch <remote> <base>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git -c merge.conflictStyle=zdiff3 merge <remote>/<base>
 ```
 
@@ -504,23 +504,28 @@ hook-running command again: stop there as for a hung hook, below. A reset
 runs the hook for an index change, so it carries the hour's deadline and,
 killed there, is a hung hook too.
 
-- **The concluding commit of a merge, a cherry-pick or a revert.** When the
-  operation is still in progress (`MERGE_HEAD`, `CHERRY_PICK_HEAD` or
-  `REVERT_HEAD` in place), no commit was made. The staged resolution, the
-  snapshot and `conflict-message.txt` are intact, and the message file is
-  this run's, so start again at the commit, not at the command that wrote
-  the file: commit with the longer deadline, then run `git clean` and
-  `events.ts` as above. When no operation is in progress and
+- **The concluding commit of a merge, a cherry-pick or a revert.** Look at
+  the commit first, never at the operation's marker: git moves the branch
+  before its last hook and removes `MERGE_HEAD`, `CHERRY_PICK_HEAD` or
+  `REVERT_HEAD` after it, so a marker can outlive a commit that landed. When
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log -1` shows
-  the commit with the recorded section, the commit landed and only a later
-  hook was killed: run `git clean` and `events.ts`.
+  the concluding commit with the recorded section, it landed and only a
+  later hook was killed: clear a leftover marker with the operation's quit
+  (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge --quit`,
+  or the same with `cherry-pick` or `revert`; a quit runs no hook), then run
+  `git clean` and `events.ts` as above. Otherwise the commit was not made. The staged
+  resolution, the snapshot and `conflict-message.txt` are intact, and the
+  message file is this run's, so start again at the commit, not at the
+  command that wrote the file: commit with the longer deadline, then run
+  `git clean` and `events.ts`.
 - **The changelog conversion commit (Step 1).** When
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log -1` shows the
   conversion commit, it landed and only a later hook was killed: go on to
   the merge. Otherwise the converted files are still staged: commit them
   with the longer deadline, then merge.
-- **The merge (Step 1).** A merge that stops on conflicts runs no hook, so
-  this one was merging cleanly, and where it was killed decides the state.
+- **The merge (Step 1).** A merge can run a hook even when it stops on
+  conflicts (a cached resolution written to the index runs the hook for an
+  index change), so where it was killed decides the state.
   Read the ancestry first, because git moves the branch before its last hook
   and removes `MERGE_HEAD` after it:
   - The base already in the branch
@@ -535,10 +540,13 @@ killed there, is a hung hook too.
     the commit message was prepared or checked): conclude it with
     `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 7200 -- git commit --no-edit`,
     which keeps git's prepared merge message.
-  - Otherwise the index holds the base's changes, staged or as unmerged
-    paths, with no `MERGE_HEAD` (killed in the hook that runs before a merge
-    commit, or in the one that follows the index write of a merge that
-    conflicted, before git recorded the merge). Committing would make a
+  - Otherwise, with `MERGE_HEAD` in place and unmerged paths still listed
+    (the merge stopped on conflicts, and a hook was killed after a cached
+    resolution covered some of them): the merge is under way. Reset nothing;
+    map and resolve the remaining conflicts from Step 2.
+  - Otherwise the index holds the base's changes, staged, with no
+    `MERGE_HEAD` (killed in the hook that runs before a merge commit, or
+    after the index write of a merge, before git recorded it). Committing would make a
     single-parent commit that hides the merge, so return the index and the
     working tree to the branch's commit with
     `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git reset --merge`
