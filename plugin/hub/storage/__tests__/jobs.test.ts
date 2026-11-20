@@ -434,6 +434,27 @@ describe("the trimming job", () => {
     );
   });
 
+  test("a stopped trimming run visits mixed-case partition names in code-unit order", async () => {
+    const ports = portsWithStore();
+    const partitions = ["repo:a/a", "repo:a/B"] as const;
+    const seen: string[] = [];
+    const storage = ports.storage;
+    const watching = Object.assign(Object.create(storage), {
+      run: ((context, partition, op, input) => {
+        if (op.name === "trimExpired") seen.push(partition);
+        return storage.run(context, partition, op, input);
+      }) as typeof storage.run,
+    });
+    const handler = trimmingHandler(
+      { ...ports, storage: watching },
+      { partitions: async () => ok(partitions) },
+    );
+    expect(await handler(unit(), { job: TRIM_JOB, dueAt: 0 })).toEqual(
+      ok(undefined),
+    );
+    expect(seen).toEqual(["repo:a/B", "repo:a/a"]);
+  });
+
   test("a stopped trimming run resumes at the partition it was on", async () => {
     const ports = portsWithStore();
     const partitions = ["repo:a/one", "repo:a/three", "repo:a/two"] as const;

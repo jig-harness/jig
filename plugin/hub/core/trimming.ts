@@ -158,7 +158,10 @@ export function trimmingHandler(
         );
     const listed = await options.partitions(context);
     if (!listed.ok) return listed;
-    const partitions = [...listed.value].sort((a, b) => a.localeCompare(b));
+    // Code-unit order, the order `position()` advances by with `>`.
+    const partitions = [...listed.value].sort((a, b) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
     const remainingMs = context.deadlineAt - ports.clock.now();
     const ran = await runJob<TrimProgress, JobFailureCode>(
       ports,
