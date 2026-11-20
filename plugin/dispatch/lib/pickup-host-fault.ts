@@ -252,21 +252,32 @@ export function faultedAgain(
     : null;
 }
 
+/** The records of one item's pickups (a batch member's included), oldest first. */
+export function pickupsOf(
+  item: string,
+  launches: readonly ReadRecord[],
+): ReadRecord[] {
+  return launches
+    .filter(
+      (r) =>
+        r.record.action === "pickup" &&
+        (r.record.item === item ||
+          r.record.batchItems?.some((i) => i.key === item) === true),
+    )
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
+}
+
 /** The item's immediately preceding pickup, if any. Its release is intentionally retained as a restart boundary. */
 function previousPickup(
   latest: ReadRecord,
   launches: readonly ReadRecord[],
   item: string,
 ): ReadRecord | undefined {
-  return launches
+  return pickupsOf(item, launches)
     .filter(
       (r) =>
-        r.record.action === "pickup" &&
         r.record.id !== latest.record.id &&
-        r.record.createdAt < latest.record.createdAt &&
-        (r.record.item === item ||
-          r.record.batchItems?.some((i) => i.key === item) === true),
+        r.record.createdAt < latest.record.createdAt,
     )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
 }

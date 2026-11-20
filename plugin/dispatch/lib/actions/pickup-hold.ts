@@ -53,6 +53,7 @@ import {
   endedQuestion,
   faultedAgain,
   hostFault,
+  pickupsOf,
 } from "../pickup-host-fault.ts";
 import { isPersonHold } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
@@ -137,14 +138,7 @@ export function endedHow(r: ReadRecord): string {
 
 /** The records of one item's pickups, oldest first. */
 function recordsOf(item: string, records: ReadRecord[]): ReadRecord[] {
-  return records
-    .filter(
-      (r) =>
-        r.record.action === "pickup" &&
-        (r.record.item === item ||
-          r.record.batchItems?.some((i) => i.key === item) === true),
-    )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
+  return pickupsOf(item, records);
 }
 
 /** Whether the item changed after its refusal: its `updatedAt` is later than the one the rules saw. */

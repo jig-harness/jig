@@ -113,10 +113,9 @@ export type LaunchAction =
 export { isDrive, isInteractive } from "./launch-kind.ts";
 
 /**
- * A pickup's session's or a follow-up pass's own answer, recorded through
- * `jig dispatch result`: `waits` is a pickup the tracker's rate limit
- * stopped, or a follow-up a rate limit or an arm still pending stopped, to
- * be started again once its time has come (`waitsUntil`, `waitsFor`).
+ * A pickup's or follow-up pass's own answer, recorded through `jig dispatch
+ * result`: `waits` is one a rate limit or a pending arm stopped, to be
+ * started again once its time has come (`waitsUntil`, `waitsFor`).
  */
 export type { SessionResult } from "./session-result-types.ts";
 

@@ -228,11 +228,18 @@ async function relaunchOne(
   const started = await startRecord(state, record, admitted.slots);
   const begun = started.outcome === "launched" || started.outcome === "retried";
   return begun
-    ? {
-        ...started,
-        detail: `the ${relaunch.fault === undefined ? "stalled" : "host-fault"} pickup ${source.id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to ${relaunch.fault === undefined ? "push and record" : "resume"} its work: ${started.detail}`,
-      }
+    ? { ...started, detail: relaunchedDetail(source.id, relaunch, started) }
     : started;
+}
+
+/** What a begun relaunch says: whose work it finishes, where and to what end. */
+function relaunchedDetail(
+  id: string,
+  relaunch: PickupRelaunch,
+  started: { detail: string },
+): string {
+  const fault = relaunch.fault !== undefined;
+  return `the ${fault ? "host-fault" : "stalled"} pickup ${id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to ${fault ? "resume" : "push and record"} its work: ${started.detail}`;
 }
 
 /** Retry, once and under its own record, each pending relaunch of `repo` whose launch got no answer. */

@@ -258,8 +258,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       planStopped(input, item, hold, plan);
       continue;
     }
-    if (heldAfterHostFault(item.key, input, plan)) continue;
-    plan.actions.push(pickupAction(item, held.evidence));
+    planFresh(item, held.evidence, input, plan);
   }
 
   for (const item of input.claimed ?? [])
@@ -273,6 +272,17 @@ export function planPickups(input: PickupInput): PickupPlan {
       input.root,
     );
   return plan;
+}
+
+/** An item nothing holds: picked up, unless its host-fault hold says to wait. */
+function planFresh(
+  item: WantedItem,
+  evidence: string | null,
+  input: PickupInput,
+  plan: PickupPlan,
+): void {
+  if (heldAfterHostFault(item.key, input, plan)) return;
+  plan.actions.push(pickupAction(item, evidence));
 }
 
 /**
@@ -807,6 +817,27 @@ function batchQuestionForSibling(latest: ReadRecord, item: string): boolean {
 }
 
 /**
+ * The question a pickup's latest record asks. Where the host could not write
+ * the result, one the pass managed to frame or report is kept, and otherwise
+ * a person is asked to settle or release the item.
+ */
+function resultQuestion(
+  latest: ReadRecord,
+  key: string,
+  unwritten: boolean,
+  hasDecision: boolean,
+): string | null {
+  if (!unwritten) return endedQuestion(latest);
+  if (!hasDecision)
+    return `Should ${key} be settled or released, whose pickup ended without a result this host could write?`;
+  return (
+    latest.report?.report.question ??
+    latest.framed?.decision.call.question ??
+    endedQuestion(latest)
+  );
+}
+
+/**
  * The need an item's latest pickup raises when its pass ended on a
  * question without recording `done`: the question, notified once per
  * launch record; `null` otherwise. A pass whose result or exit the host
@@ -824,31 +855,20 @@ function questionAsked(
   const { slug } = input;
   const unwritten = unwrittenResult(latest);
   if (unwritten && (input.rerunsHeld ?? null) !== null) return null;
-  // An unwritten result normally leaves no durable question, but never replace
-  // a decision the pass did manage to frame or report with the generic prompt.
   const hasDecision =
     latest.framed !== undefined || latest.report?.report.decision !== undefined;
-  const asked = unwritten
-    ? hasDecision
-      ? (latest.report?.report.question ??
-        latest.framed?.decision.call.question ??
-        endedQuestion(latest))
-      : `Should ${item.key} be settled or released, whose pickup ended without a result this host could write?`
-    : endedQuestion(latest);
-  if (
-    asked === null ||
-    ((!unwritten || hasDecision) && batchQuestionForSibling(latest, item.key))
-  )
+  // Without a decision the pass framed, an unwritten result gets the generic prompt.
+  const generic = unwritten && !hasDecision;
+  const asked = resultQuestion(latest, item.key, unwritten, hasDecision);
+  if (asked === null || (!generic && batchQuestionForSibling(latest, item.key)))
     return null;
-  const report = unwritten && !hasDecision ? null : latest.report;
+  const report = generic ? null : latest.report;
   const question = reportQuestion(report, asked);
-  const framed =
-    unwritten && !hasDecision ? undefined : reportFramed(latest.framed, report);
+  const framed = generic ? undefined : reportFramed(latest.framed, report);
   const { record } = latest;
-  const reason =
-    unwritten && !hasDecision
-      ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again, but the relaunch rule did not take it: ${question}`
-      : `the pickup stopped on a question for a person: ${question}`;
+  const reason = generic
+    ? `the pickup ended without a result: this host could not write it (since ${latest.unwritten}), and its health check passes again, but the relaunch rule did not take it: ${question}`
+    : `the pickup stopped on a question for a person: ${question}`;
   return {
     stage: "notify",
     target: item.key,
