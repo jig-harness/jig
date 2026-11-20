@@ -179,6 +179,17 @@ describe("a drive writes its own state label", () => {
     expect(run.labels()).toEqual([]);
   });
 
+  it("returns indeterminate when the converged label operation is unavailable", async () => {
+    const run = labelled({ threads: [] }, []);
+    writeFileSync(join(run.bin, "malformed-label-read-after-first"), "");
+    const r = await drive(run, PASS_NOOP);
+    expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.INDETERMINATE);
+    expect(r.stderr).toContain(
+      "retrying the converged label requires a new drive to watch its CI",
+    );
+    expect(run.labels()).not.toContain("jig:converged");
+  });
+
   for (const stand of ["jig:hold", "jig:held"])
     it(`writes no label on a pull request carrying ${stand}`, async () => {
       const run = labelled({ threads: [] }, [stand, "jig:stale"]);

@@ -764,7 +764,10 @@ async function watchConvergedStop(
     },
   );
   let exit = DRIVE_EXIT.INDETERMINATE;
-  if (labelled?.converged && labelled.write.outcome === "refused") {
+  if (
+    labelled === null ||
+    (labelled.converged && labelled.write.outcome === "refused")
+  ) {
     console.error(
       "converged CI: retrying the converged label requires a new drive to watch its CI.",
     );

@@ -33,7 +33,11 @@ if (args[0] === "repo" && args[1] === "view" && args.at(-1) === "nameWithOwner,d
 if (args[0] === "api" && args[1] === "repos/example/project/contents/.config/jig.yaml?ref=main")
   out({ encoding: "base64", content: fs.readFileSync(path.join(dir, "jig.yaml")).toString("base64") });
 if (args[0] === "pr" && args[1] === "view" && args.at(-2) === "--json" && args.at(-1) === "labels,headRefOid") {
+  const reads = path.join(dir, "label-read-count");
+  const readCount = fs.existsSync(reads) ? Number(fs.readFileSync(reads, "utf8")) : 0;
+  fs.writeFileSync(reads, String(readCount + 1));
   if (fs.existsSync(path.join(dir, "malformed-label-read"))) out(null);
+  if (fs.existsSync(path.join(dir, "malformed-label-read-after-first")) && readCount > 0) out(null);
   if (fs.existsSync(path.join(dir, "fail-ownership-recheck")))
     fs.writeFileSync(
       path.join(${JSON.stringify(fixture)}, "fail-list-after"),
