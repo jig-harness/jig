@@ -393,7 +393,9 @@ agreement (the fields a record's shape requires of a match, such as the target
 and the act of a `need`).
 
 **The pass threshold, per record kind.** A kind with fewer than 30 records in
-the replay set is reported and given the verdict `insufficient`, never `pass`.
+the replay set is reported and given the verdict `insufficient`, never `pass`;
+for `order` the count is the scored runs, so thirty recorded orders that are
+all too short to score are `insufficient` too.
 
 | Kind | Precision | Recall | Field agreement on matches | Why this bar |
 | --- | --- | --- | --- | --- |
@@ -401,7 +403,7 @@ the replay set is reported and given the verdict `insufficient`, never `pass`.
 | `rearm` and `resume` | 0.98 | 0.90 | 0.98 (the target and the account) | A wrong action starts a pass or moves a drive |
 | `facet` | 0.95 | 0.85 | 0.90 (the facet and its value) | A wrong value mislabels an item |
 | `cause` | 0.90 | 0.90 | 0.90 (the class) | A diagnosis a person reads |
-| `order` | not scored | not scored | Spearman rank correlation of the proposed order with the recorded one, at least 0.80, per run over the targets both orders hold, then the mean over runs; a run with fewer than 3 shared targets is left out | Few records; an order is a ranking |
+| `order` | not scored | not scored | A run is scored when the recorded order holds at least 3 targets. Its score is 0 when the proposed order names fewer than 0.80 of the recorded targets, else the Spearman rank correlation over the targets both hold. The mean over scored runs is at least 0.80 | Few records; an order is a ranking, and a partial order must not pass by naming only the easy part |
 
 The report's **verdict** is decided in this order: `not adequate` if any kind
 with enough records fails its row (the report names it and the figure);

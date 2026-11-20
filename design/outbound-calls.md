@@ -403,9 +403,13 @@ estimate, as the `gh` wrapper marks its own. For example, Gemini 4 Neon costs
 $3 per million input tokens and $15 per million output tokens on the Gemini
 API (blog.google, read 2026-11-20): a pass that read 400,000 tokens and wrote
 40,000 is $1.20 for the input and $0.60 for the output, $1.80 in all. The
-price is a conservative upper bound: it does not separate cached input, which
-a provider may bill far lower, so the row says so and the real cost replaces it
-where the provider reports one. A model
+price is a conservative estimate of the token charges: it does not separate
+cached input, which a provider may bill far lower, so the row says so and the
+real cost replaces it where the provider reports one. It is not an upper bound
+on the total: a charge that is not per token, such as a provider's paid search
+or map grounding, is outside it, so an account's configuration lists a model
+with such a charge only when the pass turns the feature off, and a pass that
+bills one anyway is recorded at the cost the provider reports. A model
 with neither a reported cost nor a price is recorded with an unknown cost and
 the account's day counts it at the reservation; the dispatcher shows the
 account as `cost unknown` so a person adds the price.
