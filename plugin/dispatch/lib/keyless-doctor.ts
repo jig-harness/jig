@@ -46,6 +46,10 @@ function named(items: readonly string[]): string {
 }
 
 /** The run ids the ledger's rows name as tick callers, newest first. */
+// Code-unit order, so run ids and callers sort the same on every host.
+const byCodeUnit = (a: string, b: string): number =>
+  a < b ? -1 : a > b ? 1 : 0;
+
 function tickRuns(rows: readonly LedgerRow[]): string[] {
   const runs = new Set(
     rows.flatMap((r) => {
@@ -53,7 +57,7 @@ function tickRuns(rows: readonly LedgerRow[]): string[] {
       return run === undefined ? [] : [run];
     }),
   );
-  return [...runs].sort().reverse();
+  return [...runs].sort(byCodeUnit).reverse();
 }
 
 /** Why the receipts under `root` cannot be read; `null` when they can or there are none. */

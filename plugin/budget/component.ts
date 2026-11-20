@@ -60,7 +60,7 @@ function noCredentialGroups(rows: readonly LedgerRow[]) {
       system,
       label: credentialLabel(system, NO_CREDENTIAL) as string,
       calls,
-      callers: [...callers].sort(),
+      callers: [...callers].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     }));
 }
 
