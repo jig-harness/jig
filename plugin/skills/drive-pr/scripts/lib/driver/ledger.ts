@@ -748,6 +748,92 @@ async function labelStop(
   );
 }
 
+async function watchConvergedStop(
+  pr: string,
+  started: string,
+  recheck: ConvergedRecheck,
+  owned: () => Promise<Ownership>,
+  renew: () => Promise<number | null>,
+): Promise<{ exit: number; ownership: Ownership }> {
+  const labelled = await labelStop(
+    pr,
+    DRIVE_EXIT.CONVERGED,
+    started,
+    async () => {
+      return (await owned()) === "ours";
+    },
+  );
+  let exit = DRIVE_EXIT.INDETERMINATE;
+  if (labelled?.converged && labelled.write.outcome === "refused") {
+    console.error(
+      "converged CI: retrying the converged label requires a new drive to watch its CI.",
+    );
+  } else {
+    exit =
+      (await convergedStopExit(
+        pr,
+        labelled,
+        currentMs(),
+        recheck,
+        owned,
+        renew,
+      )) ?? DRIVE_EXIT.CONVERGED;
+  }
+  const ownership = await owned();
+  return {
+    exit: ownership === "unreadable" ? DRIVE_EXIT.INDETERMINATE : exit,
+    ownership,
+  };
+}
+
+async function settleConvergedStop(
+  pr: string,
+  started: string,
+  recheck: ConvergedRecheck,
+  dropRecord: () => Promise<void>,
+  writeStop: (code: number | null, attempts?: number) => Promise<boolean>,
+): Promise<number> {
+  let renewedAt = Number.NEGATIVE_INFINITY;
+  const renew = ledgerRenewal(pr, (written) => {
+    renewedAt = written ? performance.now() : Number.NEGATIVE_INFINITY;
+  });
+  const owned = async (): Promise<Ownership> => {
+    const owner = await ledgerOwnership(pr);
+    return owner === "ours" &&
+      performance.now() - renewedAt >= STALL_THRESHOLD_MIN_DEFAULT * 60_000
+      ? "unreadable"
+      : owner;
+  };
+  await renew();
+  let ownership = await owned();
+  let finalExit: number = DRIVE_EXIT.INDETERMINATE;
+  if (ownership === "ours") {
+    const watched = await watchConvergedStop(
+      pr,
+      started,
+      recheck,
+      owned,
+      renew,
+    );
+    finalExit = watched.exit;
+    ownership = watched.ownership;
+  }
+  if (ownership === "lost") {
+    await dropRecord();
+    return TAKEN_OVER_EXIT;
+  }
+  if (
+    started !== "" &&
+    !recordPendingExit(await resolveStateDir(), pr, started, finalExit)
+  )
+    console.error(
+      `ledger: PR #${pr}'s final exit could not be saved because this acquisition's driver record is absent.`,
+    );
+  return (await writeStop(finalExit, CONVERGED_STOP_ATTEMPTS))
+    ? finalExit
+    : DRIVE_EXIT.INDETERMINATE;
+}
+
 /**
  * The driver's last ledger write, marking it stopped, however the drive's
  * code ends it: `done(code)` on a returned exit, the dispose on a thrown
@@ -806,61 +892,13 @@ export function ledgerSettlement(
       return code;
     }
 
-    // Publish the label while the ledger still holds the cross-clone lease.
-    let renewedAt = Number.NEGATIVE_INFINITY;
-    const renew = ledgerRenewal(pr, (written) => {
-      renewedAt = written ? performance.now() : Number.NEGATIVE_INFINITY;
-    });
-    const owned = async (): Promise<Ownership> => {
-      const owner = await ledgerOwnership(pr);
-      return owner === "ours" &&
-        performance.now() - renewedAt >= STALL_THRESHOLD_MIN_DEFAULT * 60_000
-        ? "unreadable"
-        : owner;
-    };
-    await renew();
-    let ownership = await owned();
-    let finalExit: number = DRIVE_EXIT.INDETERMINATE;
-    if (ownership === "ours") {
-      const labelled = await labelStop(
-        pr,
-        code,
-        started,
-        async () => (await owned()) === "ours",
-      );
-      if (labelled?.converged && labelled.write.outcome === "refused") {
-        console.error(
-          "converged CI: retrying the converged label requires a new drive to watch its CI.",
-        );
-      } else {
-        finalExit =
-          (await convergedStopExit(
-            pr,
-            labelled,
-            currentMs(),
-            recheck,
-            owned,
-            renew,
-          )) ?? code;
-      }
-      ownership = await owned();
-      if (ownership === "unreadable") finalExit = DRIVE_EXIT.INDETERMINATE;
-    }
-    if (ownership === "lost") {
-      await dropRecord();
-      return TAKEN_OVER_EXIT;
-    }
-    // Save the exact exit before the first attempt. Recovery can finish
-    // the stop after this acquisition releases its lock.
-    if (
-      started !== "" &&
-      !recordPendingExit(await resolveStateDir(), pr, started, finalExit)
-    )
-      console.error(
-        `ledger: PR #${pr}'s final exit could not be saved because this acquisition's driver record is absent.`,
-      );
-    const landed = await writeStop(finalExit, CONVERGED_STOP_ATTEMPTS);
-    return landed ? finalExit : DRIVE_EXIT.INDETERMINATE;
+    return await settleConvergedStop(
+      pr,
+      started,
+      recheck,
+      dropRecord,
+      writeStop,
+    );
   };
 
   /** Record stop `code` in the drive state, then the stopped ledger (up to `attempts` writes) and its label. */

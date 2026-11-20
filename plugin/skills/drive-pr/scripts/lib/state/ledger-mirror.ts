@@ -71,6 +71,21 @@ export interface LedgerDriverEnv {
   watchingConvergedCi?: boolean;
 }
 
+function optionalIs<T>(
+  value: unknown,
+  predicate: (candidate: unknown) => candidate is T,
+): boolean {
+  return value === undefined || predicate(value);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
+}
+
 export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
   const raw = process.env[LEDGER_DRIVER_ENV] ?? "";
   if (raw === "") return null;
@@ -80,17 +95,26 @@ export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
       isRecord(v) &&
       typeof v.actor === "string" &&
       typeof v.clone === "string" &&
-      (v.login === null || typeof v.login === "string") &&
-      (v.floor === null || typeof v.floor === "number") &&
+      isNullableString(v.login) &&
+      isNullableNumber(v.floor) &&
       (v.claim === null || isRecord(v.claim)) &&
-      (v.stopped === undefined ||
-        v.stopped === null ||
-        typeof v.stopped === "number") &&
-      (v.started === undefined || typeof v.started === "string") &&
-      (v.recovering === undefined || typeof v.recovering === "boolean") &&
-      (v.pending === undefined || typeof v.pending === "boolean") &&
-      (v.watchingConvergedCi === undefined ||
-        typeof v.watchingConvergedCi === "boolean")
+      optionalIs(v.stopped, isNullableNumber) &&
+      optionalIs(
+        v.started,
+        (value): value is string => typeof value === "string",
+      ) &&
+      optionalIs(
+        v.recovering,
+        (value): value is boolean => typeof value === "boolean",
+      ) &&
+      optionalIs(
+        v.pending,
+        (value): value is boolean => typeof value === "boolean",
+      ) &&
+      optionalIs(
+        v.watchingConvergedCi,
+        (value): value is boolean => typeof value === "boolean",
+      )
     )
       return v as unknown as LedgerDriverEnv;
   } catch {

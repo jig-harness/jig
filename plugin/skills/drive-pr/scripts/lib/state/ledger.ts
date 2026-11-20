@@ -302,25 +302,24 @@ function ciEventLines(actions: readonly CiAction[] | undefined): string[] {
     .flatMap((e) => ["", `CI ${e.action}: ${summaryText(e.detail)}`]);
 }
 
-function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
+function driverSummary(l: Ledger): string {
   const d = l.driver;
-  const lines = [
-    LEDGER_MARKER,
-    `**Drive ledger** · \`drive-pr-ledger\` v${l.ledgerVersion} · generation ${l.generation}. Written by the drive at each round boundary, park and takeover; an edit here is overwritten.`,
-    "",
-    `Round ${l.round}, phase \`${l.phase === "" ? "unset" : l.phase}\` · driver \`${d.actor}\` ${d.state === "running" ? "running" : `stopped${d.exit === undefined ? "" : ` (exit ${d.exit})`}`}, last heartbeat ${d.heartbeat} · ${l.parked.length} parked, ${l.held.length} held, ${l.takeovers.length} takeover(s)`,
-  ];
-  if (d.personStop !== undefined)
-    lines.push("", stopSummary(d.personStop, d.state));
-  lines.push(...ciEventLines(l.ciActions));
-  if (parkedList && l.parked.length > 0) {
-    lines.push("", "Parked, awaiting a person:");
-    for (const p of l.parked)
-      lines.push(
-        `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}${p.digest === undefined ? "" : `, framing ${p.digest}`}): ${summaryText(p.reason)}`,
-        ...decisionAnswerLines(p).map((line) => `  ${line}`),
-      );
-  }
+  const state =
+    d.state === "running"
+      ? "running"
+      : `stopped${d.exit === undefined ? "" : ` (exit ${d.exit})`}`;
+  return `Round ${l.round}, phase \`${l.phase === "" ? "unset" : l.phase}\` · driver \`${d.actor}\` ${state}, last heartbeat ${d.heartbeat} · ${l.parked.length} parked, ${l.held.length} held, ${l.takeovers.length} takeover(s)`;
+}
+
+function parkedLines(parked: Ledger["parked"]): string[] {
+  return parked.flatMap((p) => [
+    `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}${p.digest === undefined ? "" : `, framing ${p.digest}`}): ${summaryText(p.reason)}`,
+    ...decisionAnswerLines(p).map((line) => `  ${line}`),
+  ]);
+}
+
+function closingLines(l: Ledger, writer: Writer): string[] {
+  const lines: string[] = [];
   if (l.decisions.length > 0)
     lines.push("", ...decisionsSection(l.decisions).map(summaryLine));
   if (l.cut.length > 0)
@@ -329,6 +328,25 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
       `Cut to the forge's size limit: ${l.cut.join(", ")} dropped.`,
     );
   lines.push("", `<!-- ${LEDGER_DATA}`, ledgerData(l, writer), "-->");
+  return lines;
+}
+
+function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
+  const d = l.driver;
+  const lines = [
+    LEDGER_MARKER,
+    `**Drive ledger** · \`drive-pr-ledger\` v${l.ledgerVersion} · generation ${l.generation}. Written by the drive at each round boundary, park and takeover; an edit here is overwritten.`,
+    "",
+    driverSummary(l),
+  ];
+  if (d.personStop !== undefined)
+    lines.push("", stopSummary(d.personStop, d.state));
+  lines.push(...ciEventLines(l.ciActions));
+  if (parkedList && l.parked.length > 0) {
+    lines.push("", "Parked, awaiting a person:");
+    lines.push(...parkedLines(l.parked));
+  }
+  lines.push(...closingLines(l, writer));
   return `${lines.join("\n")}\n`;
 }
 
