@@ -14,6 +14,8 @@
  * - a cancellation: the cancelled-run recovery (`cancelled-recovery.ts`)
  *   takes it, which re-runs a label-caused cancellation once per run attempt
  *   and parks `cancelled-ci` when that does not bring a replacement;
+ * - a job the runner stopped at its time limit: a failure no re-run clears,
+ *   so the drive parks, naming the job, its limit and its run time;
  * - a failure in a run a label write started ({@link labelStarted}, its first
  *   attempt only): re-run once, claimed in the same table the label-caused
  *   cancellations use, so a run is re-run once however many callers see it;
@@ -33,10 +35,13 @@ import {
   LABEL_SETTLE_MS,
 } from "../label-cancelled-runs.ts";
 import {
+  isTimedOut,
   type LiveRecovery,
   recoveryLabel,
+  timedOutWords,
 } from "../cancelled-recovery-reads.ts";
 import type { FailedRun, WorkflowRun } from "../status/workflow-runs.ts";
+import type { TimedOutJob } from "../job-timeout.ts";
 
 /** What the watch reads of the pull request: whether it is open, and its head. */
 export interface PullRequestRead {
@@ -90,6 +95,8 @@ export interface ConvergedCiDeps {
     head: string,
     mayMutate: () => Promise<boolean>,
   ): Promise<LiveRecovery>;
+  /** The jobs the runner stopped at their time limit on the head, read only. */
+  timedOutJobs?(head: string): Promise<readonly TimedOutJob[]>;
   /**
    * Whether this drive still owns the pull request. Asked before every
    * change to CI and before a park; unset means owned.
@@ -370,13 +377,30 @@ async function recoverCancelledStep(
   deps: ConvergedCiDeps,
 ): Promise<Step | ConvergedCiVerdict | null> {
   const verdict = read.verdict;
-  if (!onlyCancelled(read)) return null;
+  if (!onlyCancelled(read)) {
+    // A job the runner stopped at its time limit beside a real failure is
+    // still named: the park below says it, not only the failure.
+    const timedOut = (await deps.timedOutJobs?.(head)) ?? [];
+    return timedOut.length === 0
+      ? null
+      : {
+          next: "park",
+          reason: `CI on head ${head} failed after the converged label was written: ${timedOutWords({ timedOut, recovery: "none" })}, beside ${verdict}; a re-run stops at the same limit, so the drive does not re-run it`,
+          labelCaused: false,
+        };
+  }
   const recovery = await deps.recoverCancelled(
     pr,
     head,
     async () => (await ownershipOf(deps)) === "ours",
   );
   if (recovery === "parked") return { kind: "parked" };
+  if (isTimedOut(recovery))
+    return {
+      next: "park",
+      reason: `CI on head ${head} failed after the converged label was written: ${timedOutWords(recovery)}; a re-run stops at the same limit, so the drive does not re-run it`,
+      labelCaused: false,
+    };
   if (recovery !== "none")
     return {
       next: "wait",

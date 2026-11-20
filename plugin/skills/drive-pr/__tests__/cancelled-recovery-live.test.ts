@@ -10,7 +10,10 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import { recoveryExit } from "../scripts/lib/cancelled-recovery-reads.ts";
+import {
+  recoveryExit,
+  recoveryLabel,
+} from "../scripts/lib/cancelled-recovery-reads.ts";
 import { classifyDrive, type DoctorInput } from "../scripts/lib/doctor.ts";
 
 const HEAD = "a".repeat(40);
@@ -21,7 +24,7 @@ function fixture() {
   const overlay = join(dir, "jig.yaml");
   writeFileSync(
     overlay,
-    "ci:\n  hold_label: ci:hold\n  required_checks: [gate]\n",
+    "ci:\n  hold_label: ci:hold\n  required_checks: [gate]\ndispatch:\n  person: drive-user\n",
   );
   const source = join(dir, "probe.ts");
   writeFileSync(
@@ -55,6 +58,23 @@ function fixture() {
       console.log(JSON.stringify([first, await claimLabelRerun("5", run)]));
       process.exit(0);
     }
+    if (mode === "parked") {
+      const { openStore } = await import(${JSON.stringify(join(root, "state/store.ts"))});
+      console.log(JSON.stringify((await openStore("5")).read().state.parked.map((p) => p.key)));
+      process.exit(0);
+    }
+    if (mode === "spent") {
+      await observeCancellation("5", head);
+      const drive = driveDb(await resolveStateDir());
+      drive.db.run("UPDATE cancelled_ci SET first_seen = first_seen - 900000, requested_at = first_seen - 900000");
+      process.exit(0);
+    }
+    if (mode === "before-pass") {
+      const { recoverBeforePass } = await import(${JSON.stringify(join(root, "driver/round-step.ts"))});
+      const recovery = JSON.parse(process.env.PROBE_RECOVERY ?? "null");
+      console.log(JSON.stringify(await recoverBeforePass({ pr: "5", dryRun: false }, 0, { head: { api: head } }, async () => recovery)));
+      process.exit(0);
+    }
     if (mode === "past-grace") {
       await observeCancellation("5", head);
       const drive = driveDb(await resolveStateDir());
@@ -72,6 +92,8 @@ function fixture() {
     import { appendFileSync, readFileSync, existsSync, writeFileSync } from "node:fs";
     const phasePath = ${JSON.stringify(join(dir, "phase"))};
     const phase = existsSync(phasePath) ? readFileSync(phasePath, "utf8") : "held";
+    // Phases with a cancelled gate the runner stopped at its limit, or (concurrency) did not.
+    const STOPPED = ["timeout", "paged", "concurrency", "mixed", "rerunning", "garbled"];
     const args = process.argv.slice(2);
     const failPath = ${JSON.stringify(join(dir, "fail"))};
     if (existsSync(failPath)) {
@@ -92,18 +114,32 @@ function fixture() {
       appendFileSync(${JSON.stringify(join(dir, "reruns"))}, args[2] + "\\n");
     } else if (args[0] === "api" && args.at(-1).includes("timeline")) {
       console.log("[[]]");
+    } else if (args[0] === "api" && args.at(-1).includes("/annotations")) {
+      const message = phase === "concurrency"
+        ? "Canceling since a higher priority waiting request for 'ci-refs/pull/5' exists"
+        : "The job running on runner r1 has exceeded the maximum execution time of 30 minutes.";
+      const onPage = args.at(-1).includes("page=2") ? 2 : 1;
+      const filler = Array.from({length: 100}, () => ({annotation_level: "notice", message: "step output"}));
+      console.log(JSON.stringify(phase === "garbled" ? { message: "Not Found" } : phase === "paged" ? (onPage === 1 ? filler : [{annotation_level: "failure", message}]) : [{ annotation_level: "failure", message }]));
     } else if (args[0] === "api" && args.at(-1).includes("check-runs")) {
-      const checks = phase === "external" ? [{id: 2, name: "reviewer", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 2}}] : [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
+      const stopped = STOPPED.includes(phase);
+      const lint = {id: 3, name: "lint", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 3}};
+      const checks = stopped ? [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 1},
+        started_at: "2026-01-01T00:00:00Z", completed_at: phase === "concurrency" ? "2026-01-01T00:02:00Z" : "2026-01-01T00:30:04Z", output: {annotations_count: 1}},
+        ...(phase === "mixed" ? [lint] : [])]
+        : phase === "external" ? [{id: 2, name: "reviewer", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 2}}] : [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)},
         status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "success" ? "success" : "cancelled", check_suite: {id: 1}}];
       console.log(JSON.stringify([{check_runs: checks}]));
     } else if (args[0] === "api" && args.at(-1).includes("actions/runs")) {
       if (phase === "unreadable") process.exit(1);
+      const going = phase === "pending" || phase === "rerunning";
       const runs = phase === "external" ? [] : [{id: 1, workflow_id: 10, check_suite_id: 1,
-        status: phase === "pending" ? "in_progress" : "completed", conclusion: phase === "pending" ? null : phase === "orphaned" ? "cancelled" : "success",
-        created_at: "2026-01-01T00:00:00Z", run_attempt: 2}];
+        status: going ? "in_progress" : "completed", conclusion: going ? null : ["orphaned", ...STOPPED].includes(phase) ? "cancelled" : "success",
+        created_at: "2026-01-01T00:00:00Z", run_attempt: 2},
+        ...(phase === "mixed" ? [{id: 3, workflow_id: 30, check_suite_id: 3, status: "completed", conclusion: "cancelled", created_at: "2026-01-01T00:00:00Z", run_attempt: 1}] : [])];
       console.log(JSON.stringify([{workflow_runs: runs}]));
     } else if (args[0] === "pr" && args[1] === "view") {
-      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: ["external", "unreadable", "orphaned"].includes(phase) ? [] : [{name: "ci:hold"}]}));
+      console.log(JSON.stringify({state: "OPEN", headRefOid: ${JSON.stringify(HEAD)}, labels: ["external", "unreadable", "orphaned", ...STOPPED].includes(phase) ? [] : [{name: "ci:hold"}]}));
     } else { console.error("unexpected outbound call " + JSON.stringify(args)); process.exit(2); }
   `,
   );
@@ -116,6 +152,7 @@ function fixture() {
     JIG_OVERLAY: overlay,
     PATH: `${dir}${delimiter}${process.env.PATH}`,
   };
+  let lastStderr = "";
   const run = async (
     mode: string,
     head = HEAD,
@@ -132,6 +169,7 @@ function fixture() {
       child.exited,
     ]);
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
+    lastStderr = stderr;
     return stdout === "" ? null : JSON.parse(stdout);
   };
   /** The forge fails the next `times` calls whose arguments hold `match`. */
@@ -152,7 +190,19 @@ function fixture() {
     existsSync(join(dir, "reruns"))
       ? readFileSync(join(dir, "reruns"), "utf8").trim().split("\n")
       : [];
-  return { dir, run, failReads, calls, reruns };
+  return { dir, run, failReads, calls, reruns, stderr: () => lastStderr };
+}
+
+// Runs a test body against a fresh fixture and removes its directory after.
+function withFixture(body: (f: ReturnType<typeof fixture>) => Promise<void>) {
+  return async () => {
+    const f = fixture();
+    try {
+      await body(f);
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  };
 }
 
 const BAD_GATEWAY = "gh: HTTP 502: Bad Gateway";
@@ -373,6 +423,160 @@ describe("a cancelled-run recovery read that fails", () => {
     expect(recoveryExit("parked")).toBe(8);
     expect(recoveryExit("wait")).toBeNull();
     expect(recoveryExit("none")).toBeNull();
+  });
+});
+
+describe("a cancelled job the runner stopped at its time limit", () => {
+  test(
+    "is timed out: not re-run and not parked as cancelled CI",
+    withFixture(async (f) => {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "timeout");
+      expect(await f.run("fenced")).toEqual({
+        timedOut: [
+          {
+            name: "gate",
+            checkRunId: 1,
+            limitMs: 30 * 60_000,
+            ranMs: 30 * 60_000 + 4_000,
+            run: {
+              id: 1,
+              createdAt: "2026-01-01T00:00:00Z",
+              conclusion: "cancelled",
+              jobNames: ["gate"],
+            },
+          },
+        ],
+        recovery: "none",
+      });
+      expect(f.reruns()).toEqual([]);
+      expect(await f.run("parked")).toEqual([]);
+      expect((await f.run("observe")).requestedAt).toBeNull();
+    }),
+  );
+
+  test(
+    "a job its concurrency group cancelled inside its limit keeps the cancelled-CI recovery",
+    withFixture(async (f) => {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "concurrency");
+      expect(await f.run("fenced")).toBe("wait");
+      expect(f.reruns()).toEqual(["1"]);
+      expect(f.stderr()).toContain(
+        "check run 1 (gate) carries 1 annotation(s), none of them the runner's time-limit message",
+      );
+    }),
+  );
+
+  test(
+    "annotations that are not a list are a malformed read, said in the log",
+    withFixture(async (f) => {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "garbled");
+      expect(await f.run("fenced")).toBe("wait");
+      expect(f.reruns()).toEqual(["1"]);
+      expect(f.stderr()).toContain(
+        "the annotations of check run 1 (gate) did not read (malformed: the annotations answer is not a list)",
+      );
+    }),
+  );
+
+  test(
+    "a run of its workflow still going is waited for, not repaired",
+    withFixture(async (f) => {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "rerunning");
+      expect(await f.run("fenced")).toBe("wait");
+      expect(f.reruns()).toEqual([]);
+    }),
+  );
+
+  test(
+    "beside an ordinary cancellation, that one is re-run and the answer carries its wait",
+    withFixture(async (f) => {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "mixed");
+      expect(await f.run("fenced")).toMatchObject({
+        timedOut: [{ name: "gate", checkRunId: 1 }],
+        recovery: "wait",
+      });
+      expect(f.reruns()).toEqual(["3"]);
+    }),
+  );
+
+  test(
+    "beside an ordinary cancellation whose head's re-run is spent, the park wins",
+    withFixture(async (f) => {
+      await f.run("spent");
+      writeFileSync(join(f.dir, "phase"), "mixed");
+      expect(await f.run("fenced")).toBe("parked");
+      expect(f.reruns()).toEqual([]);
+      expect(await f.run("parked")).toEqual(["cancelled-ci"]);
+    }),
+  );
+
+  test("before a pass, a re-run of the other cancellation still going is waited for", async () => {
+    const f = fixture();
+    const job = {
+      name: "gate",
+      checkRunId: 1,
+      limitMs: 60_000,
+      ranMs: 61_000,
+      run: null,
+    };
+    const asked = (recovery: string) =>
+      f.run("before-pass", HEAD, {
+        DRIVE_PR_FINAL_CI_POLL_MS: "10",
+        PROBE_RECOVERY: JSON.stringify({ timedOut: [job], recovery }),
+      });
+    try {
+      expect(await asked("wait")).toBe("continue");
+      expect(await asked("none")).toBeNull();
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  });
+
+  test(
+    "is found on a later page of annotations",
+    withFixture(async (f) => {
+      await f.run("past-grace");
+      writeFileSync(join(f.dir, "phase"), "paged");
+      const answer = (await f.run("fenced")) as {
+        timedOut: { name: string }[];
+      };
+      expect(answer.timedOut.map((job) => job.name)).toEqual(["gate"]);
+      expect(f.reruns()).toEqual([]);
+    }),
+  );
+
+  test(
+    "annotations that do not read leave the cancellation to the cancelled-CI recovery",
+    withFixture(async (f) => {
+      await f.run("past-grace");
+      f.failReads("/annotations", 9, BAD_GATEWAY, { phase: "timeout" });
+      expect(await f.run("fenced")).toBe("wait");
+      expect(f.reruns()).toEqual(["1"]);
+    }),
+  );
+
+  test("its answer is neither a stop nor a failed read", () => {
+    const timedOut = {
+      timedOut: [
+        {
+          name: "gate",
+          checkRunId: 1,
+          limitMs: 60_000,
+          ranMs: 61_000,
+          run: null,
+        },
+      ],
+      recovery: "none" as const,
+    };
+    expect(recoveryExit(timedOut)).toBeNull();
+    expect(recoveryLabel(timedOut)).toBe(
+      "timed out: job `gate` ran 1m 1s and stopped at its 1-minute limit (timeout-minutes)",
+    );
   });
 });
 

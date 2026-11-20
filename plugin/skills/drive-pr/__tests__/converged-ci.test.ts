@@ -58,6 +58,14 @@ interface Script {
   ci: Array<CiRead | null>;
   runs?: Array<WorkflowRun[] | null>;
   recovery?: LiveRecovery[];
+  /** Jobs the runner stopped at their time limit, read beside a failure. */
+  timedOut?: Array<{
+    name: string;
+    checkRunId: number;
+    limitMs: number;
+    ranMs: number | null;
+    run: null;
+  }>;
   head?: string;
   open?: boolean;
   writes?: number[] | null;
@@ -123,6 +131,7 @@ function fake(script: Script) {
       recovered.push(head);
       return last(script.recovery ?? ["none"], recoveryAt++);
     },
+    timedOutJobs: async () => script.timedOut ?? [],
     ...(script.owned === undefined
       ? {}
       : {
@@ -190,6 +199,59 @@ describe("the converged CI watch", () => {
     const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
     expect(verdict.kind).toBe("stands");
     expect(f.recovered).toEqual([HEAD]);
+  });
+
+  it("parks a job the runner stopped at its time limit as a failure, never re-running it", async () => {
+    const cancelled: CiRead = {
+      verdict: "cancelled: tests",
+      failingRuns: [],
+      failingStatusNames: [],
+    };
+    const f = fake({
+      ci: [cancelled, GREEN],
+      recovery: [
+        {
+          timedOut: [
+            {
+              name: "tests",
+              checkRunId: 9,
+              limitMs: 30 * 60_000,
+              ranMs: 30 * 60_000 + 4_000,
+              run: null,
+            },
+          ],
+          recovery: "none",
+        },
+      ],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict).toMatchObject({ kind: "park", labelCaused: false });
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "job `tests` ran 30m 4s and stopped at its 30-minute limit (timeout-minutes)",
+    );
+    expect(f.asked).toEqual([]);
+  });
+
+  it("names a job the runner stopped at its time limit beside a failure in a run that was not cancelled", async () => {
+    const f = fake({
+      ci: [failing(41)],
+      runs: [[workflowRun(41, 2_000)]],
+      timedOut: [
+        {
+          name: "build",
+          checkRunId: 9,
+          limitMs: 30 * 60_000,
+          ranMs: 30 * 60_000 + 4_000,
+          run: null,
+        },
+      ],
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict).toMatchObject({ kind: "park", labelCaused: false });
+    expect(verdict.kind === "park" && verdict.reason).toContain(
+      "job `build` ran 30m 4s and stopped at its 30-minute limit (timeout-minutes), beside failing: tests",
+    );
+    expect(f.asked).toEqual([]);
   });
 
   it("ends parked when the cancelled-run recovery parks cancelled-ci", async () => {
