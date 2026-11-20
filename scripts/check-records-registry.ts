@@ -193,9 +193,12 @@ function drizzleTables(
       Array.isArray(first.expressions) &&
       first.expressions.length === 0 &&
       Array.isArray(first.quasis) &&
-      isNode(first.quasis[0]) &&
-      isNode(first.quasis[0].value)
-        ? first.quasis[0].value.cooked
+      typeof first.quasis[0] === "object" &&
+      first.quasis[0] !== null &&
+      typeof (first.quasis[0] as { value?: unknown }).value === "object" &&
+      (first.quasis[0] as { value: object | null }).value !== null
+        ? ((first.quasis[0] as { value: { cooked?: unknown } }).value.cooked ??
+          null)
         : null;
     const name =
       isNode(first) &&

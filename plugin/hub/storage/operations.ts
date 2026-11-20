@@ -202,6 +202,28 @@ function isJsonValue(value: unknown): value is JsonValue {
   }
 }
 
+/** Whether `value` equals `stored`, its JSON round trip, array holes and own properties included. */
+function sameJson(value: unknown, stored: unknown): boolean {
+  if (value === null || typeof value !== "object") return value === stored;
+  if (stored === null || typeof stored !== "object") return false;
+  if (Array.isArray(value) !== Array.isArray(stored)) return false;
+  if (!Array.isArray(value)) {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return false;
+  }
+  const keys = Reflect.ownKeys(value);
+  const storedKeys = Reflect.ownKeys(stored);
+  if (keys.length !== storedKeys.length) return false;
+  return keys.every(
+    (key) =>
+      Object.hasOwn(stored, key) &&
+      sameJson(
+        (value as Record<PropertyKey, unknown>)[key],
+        (stored as Record<PropertyKey, unknown>)[key],
+      ),
+  );
+}
+
 /**
  * `job`'s stored progress as the value it was stored from; `null` when none
  * is stored. Only `saveJobProgress` writes it, as JSON, so a cell that does
@@ -296,10 +318,16 @@ const saveJobProgressImpl = implement(
         saveJobProgress.name,
         "progress must survive JSON unchanged: no NaN, Infinity or undefined",
       );
+    const text = JSON.stringify(progress);
+    if (!sameJson(progress, JSON.parse(text)))
+      return refuse(
+        saveJobProgress.name,
+        "progress must survive JSON unchanged: no holes, toJSON or non-plain objects",
+      );
     const save = db
       .update(jobLeases)
       .set({
-        progress: JSON.stringify(progress),
+        progress: text,
         leaseUntil: now + leaseMs,
         updatedAt: now,
       })

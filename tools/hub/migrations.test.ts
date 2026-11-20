@@ -9,7 +9,9 @@ import {
   cpSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -61,5 +63,29 @@ test("a migration the base already holds, edited, is found", () => {
     `${MIGRATIONS}/${sql} changes a migration HEAD already holds`,
   ]);
   expect(editedHistory("HEAD", join(root, MIGRATIONS))).toEqual([]);
-  expect(editedHistory("no-such-revision", copy)).toEqual([]);
+  expect(editedHistory("no-such-revision", copy)).toEqual([
+    "could not check the migration history against no-such-revision: the revision does not resolve",
+  ]);
+});
+
+test("a journal timestamp the base already holds, changed, is found", () => {
+  const copy = join(scratch, "journal");
+  cpSync(join(root, MIGRATIONS), copy, { recursive: true });
+  const file = join(copy, "meta", "_journal.json");
+  const journal = JSON.parse(readFileSync(file, "utf8"));
+  journal.entries[0].when += 1;
+  writeFileSync(file, JSON.stringify(journal));
+  expect(editedHistory("HEAD", copy)).toEqual([
+    `${MIGRATIONS}/meta/_journal.json changes a migration HEAD already holds`,
+  ]);
+  journal.entries[0].when -= 1;
+  journal.entries.push({
+    idx: 99,
+    version: "6",
+    when: 1,
+    tag: "x",
+    breakpoints: true,
+  });
+  writeFileSync(file, JSON.stringify(journal));
+  expect(editedHistory("HEAD", copy)).toEqual([]);
 });

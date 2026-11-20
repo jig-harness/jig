@@ -196,10 +196,28 @@ function dataStatements(folder: string, shown: string): string[] {
     );
 }
 
+/** The journal entries of drizzle-kit's `_journal.json` text, or `null` when it is not one. */
+function journalEntries(text: string): unknown[] | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const entries =
+      typeof parsed === "object" && parsed !== null
+        ? (parsed as { entries?: unknown }).entries
+        : undefined;
+    return Array.isArray(entries) ? entries : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Each migration file `base` (a git revision) already holds that `folder`
- * changes or removes: a migration a hub installed is never replayed, so an
- * edit to one reaches only fresh databases. Empty when `base` cannot be read.
+ * changes or removes, and each journal entry it holds that `folder` alters
+ * (its timestamp, tag or place): a migration a hub installed is never
+ * replayed, so an edit to one reaches only fresh databases, and a changed
+ * journal timestamp replays an installed one. New entries may append. When
+ * `base` cannot be read the answer says so: an unchecked history is not a
+ * clean one.
  */
 export function editedHistory(
   base: string,
@@ -208,21 +226,38 @@ export function editedHistory(
 ): string[] {
   const git = (args: string[]) =>
     Bun.spawnSync(["git", ...args], { cwd: ROOT });
+  const unchecked = (why: string) => [
+    `could not check the migration history against ${base}: ${why}`,
+  ];
   if (git(["rev-parse", "--verify", `${base}^{commit}`]).exitCode !== 0)
-    return [];
+    return unchecked("the revision does not resolve");
   const listed = git(["ls-tree", "-r", "--name-only", base, "--", shown]);
-  if (listed.exitCode !== 0) return [];
+  if (listed.exitCode !== 0) return unchecked("git ls-tree failed");
+  const journal = `${shown}/meta/_journal.json`;
   return listed.stdout
     .toString()
     .split("\n")
-    .filter((path) => path.startsWith(`${shown}/`) && !path.includes("/meta/"))
+    .filter(
+      (path) =>
+        path.startsWith(`${shown}/`) &&
+        (!path.includes("/meta/") || path === journal),
+    )
     .filter((path) => {
       const old = git(["show", `${base}:${path}`]);
       const now = join(folder, path.slice(shown.length + 1));
+      if (old.exitCode !== 0) return false;
+      if (!existsSync(now)) return true;
+      const current = readFileSync(now, "utf8");
+      const before = old.stdout.toString();
+      if (path !== journal) return current !== before;
+      const held = journalEntries(before);
+      const kept = journalEntries(current);
       return (
-        old.exitCode === 0 &&
-        (!existsSync(now) ||
-          readFileSync(now, "utf8") !== old.stdout.toString())
+        held === null ||
+        kept === null ||
+        held.some(
+          (entry, at) => JSON.stringify(entry) !== JSON.stringify(kept[at]),
+        )
       );
     })
     .map((path) => `${path} changes a migration ${base} already holds`);

@@ -140,6 +140,42 @@ describe("a job's run", () => {
     expect(steps).toBe(3);
   });
 
+  test("a step that finishes past the deadline stores nothing, done or not", async () => {
+    for (const done of [true, false]) {
+      const ports = portsWithStore();
+      const outcome = await runJob(
+        ports,
+        { ...JOB, timeoutMs: 1_000, leaseMs: 1_000 },
+        async () => {
+          ports.advance(1_500);
+          return ok({ progress: { next: 1 }, done });
+        },
+      );
+      expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
+      const row = await ports.storage.run(
+        { unit: "test", signal: new AbortController().signal, deadlineAt: 0 },
+        DIRECTORY_PARTITION,
+        readJob,
+        { job: JOB.job },
+      );
+      expect(row.ok ? row.value?.progress : "unread").not.toEqual({ next: 1 });
+    }
+  });
+
+  test("progress with array holes or a toJSON is refused", async () => {
+    const hooked = { next: 1 };
+    Object.defineProperty(hooked, "toJSON", { value: () => null });
+    for (const progress of [new Array<number>(1), hooked]) {
+      const ports = portsWithStore();
+      const outcome = await runJob(
+        ports,
+        { ...JOB, timeoutMs: 5_000, leaseMs: 5_000 },
+        async () => ok({ progress: progress as never, done: false }),
+      );
+      expect(outcome.ok ? null : outcome.failure.code).toBe("refused");
+    }
+  });
+
   test("a spec whose lease is shorter than its timeout is refused before it runs", async () => {
     const ports = portsWithStore();
     let stepped = false;
@@ -231,9 +267,8 @@ describe("a job's run", () => {
       async (_context, progress: Progress | null) => {
         const next = progress?.next ?? 0;
         steps.push(next);
-        // The store's clock passes the lease while the run's own timer has
-        // not fired, and another run takes the job over.
-        ports.advance(5_000);
+        // Another run, whose clock is past this lease, takes the job over
+        // while this run's own clock is still inside its deadline.
         const other = await ports.storage.run(
           {
             unit: "other",
@@ -245,7 +280,7 @@ describe("a job's run", () => {
           {
             job: JOB.job,
             holder: "fast",
-            now: ports.clock.now(),
+            now: ports.clock.now() + 5_000,
             leaseMs: 1_000,
           },
         );

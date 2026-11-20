@@ -149,6 +149,13 @@ describe("what the code names", () => {
         ].join("\n"),
       ),
     ).toEqual(["table 3 real_rows"]);
+    // A backtick name is a literal name, not an unclassified table.
+    expect(
+      texts(
+        "plugin/hub/storage/schema.ts",
+        "export const t = sqliteTable(`in_flight_reads`, {});",
+      ),
+    ).toEqual(["table 1 in_flight_reads"]);
     const unread = namedIn(
       "plugin/hub/storage/schema.ts",
       "export const t = sqliteTable(NAME, {});",
