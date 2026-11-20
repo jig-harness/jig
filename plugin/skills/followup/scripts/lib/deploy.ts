@@ -26,7 +26,10 @@
  * names it for the person to judge.
  *
  * A run counts as holding the queue only when it is running and was made for
- * the same branch: the forge does not name a run's concurrency group.
+ * the same named branch: the forge does not name a run's concurrency group,
+ * and a run with no branch name shares nothing that can be shown. The age
+ * counts each run from its current attempt, and never from before the
+ * holder's.
  *
  * It reads from the forge, one request each: the run, its jobs (one per
  * page, for the count) and its workflow's newest runs; a finished run needs
@@ -49,6 +52,8 @@ export interface RunFacts {
   status: string;
   conclusion: string | null;
   createdAt: string;
+  /** When the run's current attempt started; a rerun starts later than `createdAt`. */
+  startedAt: string;
   workflowId: number;
   /** The branch the run was made for; `null` when the forge names none. */
   branch: string | null;
@@ -78,6 +83,7 @@ export function runOf(value: unknown): RunFacts | null {
     status,
     conclusion,
     created_at,
+    run_started_at,
     workflow_id,
     head_branch,
   } = value;
@@ -95,6 +101,7 @@ export function runOf(value: unknown): RunFacts | null {
     status,
     conclusion: typeof conclusion === "string" ? conclusion : null,
     createdAt: created_at,
+    startedAt: typeof run_started_at === "string" ? run_started_at : created_at,
     workflowId: workflow_id,
     branch: typeof head_branch === "string" ? head_branch : null,
   };
@@ -121,8 +128,12 @@ function holderOf(
     .filter((r) => r.id < run.id && r.status === "in_progress")
     .sort((a, b) => a.id - b.id);
   return {
-    holder: running.find((r) => r.branch === run.branch) ?? null,
-    elsewhere: running.find((r) => r.branch !== run.branch) ?? null,
+    holder:
+      run.branch === null
+        ? null
+        : (running.find((r) => r.branch === run.branch) ?? null),
+    elsewhere:
+      running.find((r) => r.branch === null || r.branch !== run.branch) ?? null,
   };
 }
 
@@ -167,9 +178,11 @@ export function classifyRun(
       "moving",
       `the run is ${run.status} with no jobs, but a run since ${holder.url} started ended other than cancelled (${before.join(", ")})`,
     );
-  const first = Math.min(
-    parseMs(run.createdAt),
-    ...since.map((r) => parseMs(r.createdAt)),
+  // A run's id keeps its creation order across reruns, so each run counts from
+  // its current attempt, and nothing counts from before the holder's own.
+  const first = Math.max(
+    parseMs(holder.startedAt),
+    Math.min(parseMs(run.startedAt), ...since.map((r) => parseMs(r.startedAt))),
   );
   const age = nowMs - first;
   if (!Number.isFinite(age) || age < stuckAfterMs)

@@ -11,17 +11,23 @@ import { isoFromMs, parseMs } from "../../../shared/time.ts";
 
 const NOW = parseMs("2026-11-19T12:00:00.000Z");
 
-function run(id: number, over: Partial<RunFacts> = {}): RunFacts {
+function baseRun(id: number, over: Partial<RunFacts> = {}): RunFacts {
   return {
     id,
     url: `https://github.com/o/r/actions/runs/${id}`,
     status: "completed",
     conclusion: "cancelled",
     createdAt: isoFromMs(NOW - (100 - id) * 60_000),
+    startedAt: "",
     workflowId: 9,
     branch: "main",
     ...over,
   };
+}
+
+function run(id: number, over: Partial<RunFacts> = {}): RunFacts {
+  const made = baseRun(id, over);
+  return { ...made, startedAt: over.startedAt ?? made.createdAt };
 }
 
 const waiting = (ageMs: number) =>
@@ -116,6 +122,7 @@ const rest = (r: RunFacts) => ({
   status: r.status,
   conclusion: r.conclusion,
   created_at: r.createdAt,
+  run_started_at: r.startedAt,
   workflow_id: r.workflowId,
   head_branch: r.branch,
 });
@@ -209,4 +216,28 @@ test("a running run of another branch is named but never makes a run stuck", () 
   expect(read.state).toBe("moving");
   expect(read.reason).toContain(other.url);
   expect(read.reason).toContain("not judged stuck");
+});
+
+test("a holder restarted recently makes the blockage young, whatever the waiting runs' ids say", () => {
+  const restarted = run(96, {
+    status: "in_progress",
+    conclusion: null,
+    createdAt: isoFromMs(NOW - 3 * STUCK_AFTER_MS),
+    startedAt: isoFromMs(NOW - 60_000),
+  });
+  const old = run(97, { createdAt: isoFromMs(NOW - 3 * STUCK_AFTER_MS) });
+  const read = classifyRun(waiting(30_000), 0, [restarted, old], NOW);
+  expect(read.state).toBe("moving");
+});
+
+test("runs with no branch name share no queue that can be shown", () => {
+  const nameless = (r: RunFacts) => ({ ...r, branch: null });
+  const read = classifyRun(
+    nameless(waiting(STUCK_AFTER_MS + 60_000)),
+    0,
+    [nameless(holder()), ...cancelledBefore.map(nameless)],
+    NOW,
+  );
+  expect(read.state).toBe("moving");
+  expect(read.holder).toBeNull();
 });
