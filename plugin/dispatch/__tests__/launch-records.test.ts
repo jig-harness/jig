@@ -127,6 +127,29 @@ it("reads legacy launch records but rejects invalid account launch ordinals", ()
     );
 });
 
+it("rejects malformed host-driver replacement metadata", () => {
+  const original = record("host-driver-replacement");
+  const replacement = {
+    clone: "clone@host",
+    pr: 7,
+    since: "2026-11-01T12:00:00.000Z",
+  };
+  expect(isLaunchRecord({ ...original, replacesHostDriver: replacement })).toBe(
+    true,
+  );
+  for (const bad of [
+    null,
+    {},
+    { ...replacement, clone: null },
+    { ...replacement, pr: 0 },
+    { ...replacement, pr: 1.5 },
+    { ...replacement, since: "not a time" },
+  ])
+    expect(isLaunchRecord({ ...original, replacesHostDriver: bad })).toBe(
+      false,
+    );
+});
+
 it("retains one ordinal anchor per account when old records are collected", () => {
   const dir = root();
   const anchor = ended(
