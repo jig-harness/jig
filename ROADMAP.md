@@ -87,16 +87,12 @@ budget the whole machine shares, and keeps each request small enough to be
 answered. Next are gates that enforce the transport boundary and query cost
 ceilings, and checking the spending on a running dispatch host.
 
-### 57. Starting work that will not collide first
+### 57. Verifying overlap-aware admission on a live host
 
-When several pieces of work change the same files, each merge puts the
-others in conflict. Every conflict costs another agent session and another
-test run. Each item gets a record of the files it is expected to change.
-The dispatcher compares those files with every open pull request and every
-item already in progress. It starts work that collides with nothing first,
-and starts colliding work when nothing else is ready. It starts no more
-work than the machine can test in time. Each item that waits says what it
-waits on.
+Jig orders pickups by the files they share with work already in flight and
+can limit starts by the machine's validation capacity. The remaining work
+is to measure whether those rules reduce conflict resolution without test
+lock timeouts, and verify the reasons Jig shows for waiting items.
 
 ### 36. The dispatch board: what is driven and what is ready to merge
 
