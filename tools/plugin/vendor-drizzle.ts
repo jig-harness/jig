@@ -119,8 +119,10 @@ function bundles(banner: string): Record<string, string> {
       throw new VendorError(
         `bun build failed (exit ${build.exitCode}):\n${build.stderr.toString()}`,
       );
-    const written = readdirSync(scratch).sort();
-    const expected = [...ENTRIES.map((e) => e.built), CHUNK].sort();
+    const written = readdirSync(scratch).sort((a, b) => a.localeCompare(b));
+    const expected = [...ENTRIES.map((e) => e.built), CHUNK].sort((a, b) =>
+      a.localeCompare(b),
+    );
     if (written.join() !== expected.join())
       throw new VendorError(
         `bun build wrote ${written.join(", ")}, not ${expected.join(", ")}: a second shared chunk needs its own stable name here`,
