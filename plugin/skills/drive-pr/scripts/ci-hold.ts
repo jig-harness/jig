@@ -998,8 +998,7 @@ async function reconcileRacedRelease(
   );
 }
 
-// The fence's lifetime deliberately brackets every mutation outcome.
-// fallow-ignore-next-line complexity
+// The fence's lifetime brackets every mutation outcome.
 async function runMutationCommand(
   command: "ensure" | "release" | "rollback",
   pr: string,

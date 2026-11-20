@@ -13,9 +13,7 @@ type ReleasingState = Extract<CiHoldState, { phase: "releasing" }>;
 type Snapshot = { state: string; head: string; held: boolean };
 type Mutation = { event: LabelTransition; intervening: boolean } | null;
 
-// The proof combines four independent remote observations; splitting it would
-// obscure the all-of requirement without reducing the release path's risk.
-// fallow-ignore-next-line complexity
+// The proof combines four independent remote observations.
 function provenAtHead(
   mutation: LabelTransition | null,
   head: string,
@@ -87,8 +85,7 @@ async function restoreAfterRace(
     );
 }
 
-// The race recovery must preserve each observable label state before refusing.
-// fallow-ignore-next-line complexity
+// The race recovery preserves each observable label state before refusing.
 export async function refuseRace(
   pr: string,
   head: string,
@@ -121,8 +118,7 @@ export async function refuseRace(
   return 4;
 }
 
-// Release is a single fenced mutation whose proof must remain in this order.
-// fallow-ignore-next-line complexity
+// Release is a single fenced mutation whose proof must remain ordered.
 export async function releaseHeldLabel(
   pr: string,
   head: string,

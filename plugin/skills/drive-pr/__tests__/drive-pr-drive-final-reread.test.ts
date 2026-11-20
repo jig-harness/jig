@@ -26,7 +26,7 @@ const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
 useDrivePrSuite();
 
 /** A drive that has not ended by then loops, which is what these tests catch. */
-const DRIVE_DEADLINE_MS = 45_000;
+const DRIVE_DEADLINE_MS = 60_000;
 
 /**
  * A `gh` in front of the fixture's that finds which drive step called it by

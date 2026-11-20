@@ -106,9 +106,7 @@ export function heldListingStop(
   return CHECK_RUNS_UNREADABLE_EXIT;
 }
 
-/** Releases the CI hold: a final exit, `"continue"` to re-read all evidence, or `null` when CI is ready to be read. */
-// The driver records every release outcome before it decides whether to retry.
-// fallow-ignore-next-line complexity
+/** Releases the CI hold, re-reads on `"continue"`, or returns when CI is ready. */
 async function releaseCiHold(
   context: DriveRoundContext,
   reviewedHead: string,
@@ -195,13 +193,8 @@ export async function releaseAndReadFinalCi(
       >;
     }
 > {
-  // Intermediate synchronize pushes ran under the CI hold, when the
-  // repository has one (`ci.hold_label`; without it `release` prints
-  // `disabled` and nothing below waits on an unlabel). Release only
-  // after convergence, the clean-tree certification, and the Ready
-  // transition above have all settled. `ci-hold.ts` compares the
-  // persisted labelled timeline-event id before removing anything, and
-  // adopts a live label it holds no record of, then removes it.
+  // Release only after convergence, clean-tree certification and the Ready
+  // transition have settled; ci-hold.ts proves the persisted transition.
   const finalCiSignals = await context.finalCiWait.prime();
   const released = await releaseCiHold(context, reviewedHead);
   if (released !== null) return released;
@@ -220,22 +213,8 @@ export async function releaseAndReadFinalCi(
   if (finalCi.code === 5) return 5;
   if (finalCi.code === CHECK_RUNS_UNREADABLE_EXIT)
     return heldListingStop(finalCi);
-  // What used to stand here read `status.ci` — the PRE-UNLABEL
-  // snapshot, which the comment forty lines above this one already
-  // declares unusable for the final decision ("cannot participate") —
-  // and retried on it. `final-ready` returns 4 for BOTH "the fresh
-  // required check has not landed yet" and "it landed and is settled
-  // red", because it does not distinguish them: a post-unlabel
-  // `detect-changes` failure cascades `code-quality-and-build`/`tests`
-  // into `skipped`, which `completedRequiredCi()` correctly refuses to
-  // accept as fresh evidence. So a genuinely-red converged head slept
-  // ten seconds and looped, forever, never reaching the fresh
-  // `finalVerdict` branch below that would have decided it correctly.
-  //
-  // Exit 4 therefore no longer decides anything on its own. It FALLS
-  // THROUGH to the fresh evidence, and only re-takes the wait once that
-  // evidence has positively ruled out a failure — see the deferred
-  // `finalCi.code === 4` check below `finalVerdict`.
+  // Exit 4 can mean either pending or settled-red CI, so fresh evidence below
+  // decides whether to retry.
   if (finalCi.code !== 0 && finalCi.code !== 4) {
     console.error(
       `could not establish final CI freshness (exit ${finalCi.code})`,
