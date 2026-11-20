@@ -40,6 +40,7 @@ export type Gh = typeof realGhCall;
 
 import type { Repo } from "./sample.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { newestEpicVerdict } from "../../../../shared/epic-closure.ts";
 import { isoFromMs, parseMs } from "../../../../shared/time.ts";
 
 // ── GitHub ─────────────────────────────────────────────────────────────────
@@ -538,28 +539,6 @@ export async function fetchEpicActivity(
 }
 
 /**
- * The acceptance-verdict marker: an HTML comment on the comment's own last
- * line. The text is forgeable, so only a trusted author's comment counts —
- * a forged ACCEPT would add a progress unit and suppress a ceremony
- * suspicion. The marker must be the comment's LAST line, and a REJECT is a
- * verdict too: an unanchored search would count a comment that merely quotes
- * an earlier verdict, and ignoring REJECT would leave an epic counted as
- * accepted after a later rejection.
- */
-const VERDICT_MARKER =
-  /^<!--\s*epic-acceptance-verdict:\s*(ACCEPT-WITH-FOLLOWUPS|ACCEPT|REJECT)\s*-->$/;
-
-/**
- * Equal-`createdAt` verdicts resolve the same way whatever order the tracker
- * returns them in, the more restrictive verdict winning.
- */
-const VERDICT_TIE_RANK: Readonly<Record<string, number>> = {
-  ACCEPT: 0,
-  "ACCEPT-WITH-FOLLOWUPS": 1,
-  REJECT: 2,
-};
-
-/**
  * Epics whose NEWEST verdict comment in the window is an accepting one
  * (ACCEPT or ACCEPT-WITH-FOLLOWUPS).
  */
@@ -573,32 +552,19 @@ export async function fetchAcceptedEpics(
     issueLabel: epicLabel,
     createdIn: win,
   });
-  const newest = new Map<string, { verdict: string; at: string }>();
-  for (const n of found) {
-    if (!n.trusted) continue;
-    const lines = n.body.split("\n");
-    const m = VERDICT_MARKER.exec((lines[lines.length - 1] ?? "").trim());
-    if (m === null) continue;
-    const verdict = m[1] as string;
-    const prior = newest.get(n.issue);
-    if (
-      prior === undefined ||
-      n.createdAt > prior.at ||
-      (n.createdAt === prior.at &&
-        (VERDICT_TIE_RANK[verdict] ?? 0) >
-          (VERDICT_TIE_RANK[prior.verdict] ?? 0))
-    ) {
-      newest.set(n.issue, { verdict, at: n.createdAt });
-    }
+  const byIssue = new Map<string, typeof found>();
+  for (const comment of found) {
+    const prior = byIssue.get(comment.issue);
+    if (prior === undefined) byIssue.set(comment.issue, [comment]);
+    else prior.push(comment);
   }
-  return new Set(
-    [...newest]
-      .filter(
-        ([, v]) =>
-          v.verdict === "ACCEPT" || v.verdict === "ACCEPT-WITH-FOLLOWUPS",
-      )
-      .map(([epic]) => epic),
-  );
+  const accepted = new Set<string>();
+  for (const [issue, comments] of byIssue) {
+    const verdict = newestEpicVerdict(comments);
+    if (verdict === "ACCEPT" || verdict === "ACCEPT-WITH-FOLLOWUPS")
+      accepted.add(issue);
+  }
+  return accepted;
 }
 
 export type EpicComments = IssueComments;

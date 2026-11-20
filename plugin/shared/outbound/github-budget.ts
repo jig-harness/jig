@@ -502,6 +502,12 @@ interface Machine {
 let machines = new Map<string, Machine>();
 let override: BudgetGovernor | null = null;
 let overrideOwners: GithubOwnerResolver | null = null;
+let overridePacing = true;
+
+/** Whether the supplied test governor keeps the shared pacing transport. */
+export function forgeGovernorPacingOn(): boolean {
+  return override === null || overridePacing;
+}
 
 /**
  * Govern the forge's runs with `governor` instead of the machine's record;
@@ -512,9 +518,11 @@ let overrideOwners: GithubOwnerResolver | null = null;
 export function setForgeGovernor(
   governor: BudgetGovernor | null,
   owners: GithubOwnerResolver | null = null,
+  pace: boolean = true,
 ): void {
   override = governor;
   overrideOwners = governor === null ? null : owners;
+  overridePacing = pace;
 }
 
 /** The machine's governor, store and owners over the budget database this process writes. */
