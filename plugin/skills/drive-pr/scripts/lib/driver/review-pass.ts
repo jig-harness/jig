@@ -40,6 +40,18 @@ export function pagesRead(finish: Report): number | null {
     : null;
 }
 
+/** The probe reason for a pass's listing stop: finish-round's own reason,
+ * which names the pages it read, else the count the record carries. */
+function passListingReason(finish: Report, read: string): string {
+  const own =
+    typeof finish.reason === "string" && finish.reason.trim() !== ""
+      ? finish.reason
+      : null;
+  return own === null
+    ? `the review pass could not read the head's check-runs listing whole${read}`
+    : `the review pass could not read the head's check-runs listing whole: ${own}`;
+}
+
 /** Stop the drive on the listing stop a pass's finish record reports. */
 async function stopOnPassListing(
   context: DriveRoundContext,
@@ -54,22 +66,24 @@ async function stopOnPassListing(
     return mailboxAfterListingStop;
   const pages = pagesRead(finish);
   driverRuntime.stopListingPages = pages;
+  if (pages === null && finish.listingPagesRead != null)
+    console.error(
+      `pass finish record carried an unusable page count (${JSON.stringify(finish.listingPagesRead)}); the pages read are unknown`,
+    );
   const read = pages === null ? "" : ` after ${pages} page(s)`;
   console.error(
     `pass reported CHECK_RUNS_UNREADABLE${read} on round ${round}; stopping`,
   );
-  // Recorded as the drive's own listing stop is, so the handoff narrative,
-  // the stop line and the ledger's stop event carry the class and the pages.
-  const why =
-    typeof finish.reason === "string" && finish.reason.trim() !== ""
-      ? finish.reason
-      : "the listing was cut short";
-  driverRuntime.stopProbe = recordProbeStop(CHECK_RUNS_UNREADABLE_EXIT, {
-    state: "CHECK_RUNS_UNREADABLE",
-    reason: `the review pass could not read the head's check-runs listing whole${read}: ${why}`,
-  });
   await reportPassLeftovers("What the pass left in the tree:");
   driverRuntime.stopLeftWork = await measureStop();
+  // Recorded as the drive's own listing stop is, so the handoff narrative,
+  // the stop line and the ledger's stop event carry the class and the pages.
+  // Its marker is printed last, so the bounded output tail a dispatcher keeps
+  // still holds it after a long list of leftovers.
+  driverRuntime.stopProbe = recordProbeStop(CHECK_RUNS_UNREADABLE_EXIT, {
+    state: "CHECK_RUNS_UNREADABLE",
+    reason: passListingReason(finish, read),
+  });
   return CHECK_RUNS_UNREADABLE_EXIT;
 }
 
