@@ -1342,15 +1342,12 @@ async function main(): Promise<number> {
       // the three.
       if (!live.ok) {
         const stop = await degrade(
-          // Named as the transient failure it is, in `evaluate()`'s own
-          // vocabulary for the identical condition: this probe runs ahead of
-          // that read, so it is what an operator sees first when `gh` is
-          // failing, and describing the same fault in different words
-          // depending on which call noticed it is how a diagnostic stops being
-          // one. `reason` says whether the read failed or came back
-          // unrecognised — both are the retry class, since neither is a
+          // Named as the transient failure it is: this probe runs ahead of
+          // `evaluate()`'s own read, so it is what an operator sees first when
+          // `gh` is failing. `reason` says whether the read failed or came
+          // back unrecognised — both are the retry class, since neither is a
           // confirmed finished PR.
-          `cannot read PR #${pr}'s state (${live.reason}) — a transient failure, not a missing-field error — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
+          `cannot read PR #${pr}'s state (${live.reason}) — a transient failure — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
           "read",
         );
         if (stop !== null) return stop;
@@ -1594,30 +1591,22 @@ async function main(): Promise<number> {
     // Every exclusion below is stated against that same criterion, so a future
     // code is classified by reading it rather than by adding a case.
     //
-    // UNSUPPORTED_CLI (2) was the last code to be excluded and is now IN the
-    // set, which is worth recording because its exclusion looked sound twice.
-    // The argument was "a retry cannot clear an unsupported `gh`, and the
-    // sweep cannot run under that `gh` either, so gating buys no
-    // reconciliation" — the second clause being the load-bearing one, and it
-    // is simply false: this suite's own `reconciles ahead of the EARLIEST
-    // return — UNSUPPORTED_CLI` test exists because the sweep DOES run, and
-    // can succeed, before exit 2 is reached. A `gh` too old for
-    // `--json mergeable` can still serve the sweep's GraphQL calls.
-    //
-    // An earlier cut of this fix kept the exclusion and made it conditional on
-    // a `sweepSkippedForBudget` flag, which covered the sweep being SKIPPED and
-    // left the sweep having RUN AND FAILED — the same hole, other branch.
-    // Membership needs no flag: a successful sweep sets `sweepReconciled`, so
-    // exit 2 still returns with the one message naming the actual fix in every
-    // case where `gh` can talk to GitHub at all. Only a genuinely unreconciled
-    // pass degrades, which is the criterion above applied without an exception.
+    // UNSUPPORTED_CLI (2) is IN the set by the same criterion: an unmet
+    // prerequisite ends the drive without re-arming, and a sweep can run, and
+    // succeed, before one is found missing. Membership needs no flag: a
+    // successful sweep sets `sweepReconciled`, so exit 2 returns with the one
+    // message naming the actual fix. Only a genuinely unreconciled pass
+    // degrades, which is the criterion above applied without an exception.
+    // The status evaluation itself does not report UNSUPPORTED_CLI (its reads
+    // of the pull request are REST, which every `gh` serves); the membership
+    // keeps any later emitter covered.
     //
     // CONVERGED (3) STAYS out of this set, and that took a false start to
     // learn: a first cut of this fix reasoned "3 needs zero unresolved
     // threads, so a failed sweep cannot be hiding one behind it" is true of
     // the GitHub thread but not of this script's own `held` bookkeeping (see
-    // the next paragraph) and folded 3 in here, blanket, the same way 2
-    // joined above. That broke `announce-merge-ready.ts`: its own `--no-count`
+    // the next paragraph) and folded 3 in here, blanket, the way 2 is
+    // above. That broke `announce-merge-ready.ts`: its own `--no-count`
     // re-read (SKILL.md §§ 3 and 6) exists SPECIFICALLY to check CONVERGED
     // without spending a round, and CONVERGED is the ONLY verdict that caller
     // ever acts on. `--no-count` sets `sweepSuppressed` exactly like

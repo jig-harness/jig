@@ -2245,8 +2245,8 @@ cleanup can leave stale (a superseding merit reply resolves the thread and
 then fails to release a stale prior hold for it) — and because the resolved
 thread has already left every future unresolved-thread listing, no later
 sweep ever revisits that cleanup.
-That gap is real, but folding [`CONVERGED`](../../../protocol/drive-exits.md) into `UNRECONCILED_STOPPERS` blanket — the same
-way [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) joined it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
+That gap is real, but folding [`CONVERGED`](../../../protocol/drive-exits.md) into `UNRECONCILED_STOPPERS` blanket — the
+way [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) is in it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
 sweep unconditionally, so blanket membership would make `CONVERGED` unreachable
 through exactly the path built to reach it without a sweep — see the
 `announce-merge-ready.ts` paragraph just below. Nor is "the sweep was not

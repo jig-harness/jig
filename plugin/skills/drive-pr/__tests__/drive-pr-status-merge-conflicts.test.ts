@@ -317,15 +317,10 @@ describe("drive-status.ts merge conflicts", () => {
   });
 
   it("a TRANSIENT failure is INDETERMINATE, never a silent degrade", async () => {
-    // An earlier fallback conflated ANY failure of the full read with "this
-    // token cannot access mergeability". A transient blip (network, rate
-    // limit, timeout) that happens to clear before the narrower retry would
-    // then silently disable the merge-conflict guard for that evaluation —
-    // and that evaluation can be the one reporting CONVERGED. Distinguished
-    // now by the `gh` error text itself: only "Unknown JSON field" — a
-    // deterministic, client-side, version-based failure — degrades. Anything
-    // else, including this fixture's simulated network failure, must report
-    // INDETERMINATE so the caller's existing MAX_QUERY_ERRORS retry handles it.
+    // A transient blip (network, rate limit, timeout) must never disable the
+    // merge-conflict guard for an evaluation, which can be the one reporting
+    // CONVERGED: it reports INDETERMINATE so the caller's existing
+    // MAX_QUERY_ERRORS retry handles it.
     const r = await probe({
       threads: [],
       reviewedSha: HEAD,
@@ -336,7 +331,6 @@ describe("drive-status.ts merge conflicts", () => {
     expect(r.stderr).toContain("transient failure");
     // Specifically NOT mistaken for the unmet-prerequisite exit.
     expect(r.exitCode).not.toBe(2);
-    expect(r.stderr).not.toContain("upgrade the GitHub CLI");
   });
 });
 

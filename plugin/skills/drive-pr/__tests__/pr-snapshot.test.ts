@@ -19,7 +19,7 @@ const ETAG = '"pull-1"';
 
 interface Wire {
   /** What the next answer is: a document, or a failure. */
-  answer: "document" | "502" | "304-always" | "rate-limited";
+  answer: "document" | "502" | "404" | "304-always" | "rate-limited";
   body: Record<string, unknown>;
   /** One line per request: `<status> <conditional|full>`. */
   sent: string[];
@@ -72,6 +72,15 @@ async function transport(args: string[]): Promise<RunResult> {
       code: 1,
       stdout: "HTTP/2.0 502 Bad Gateway\r\n\r\n",
       stderr: "gh: HTTP 502",
+    };
+  }
+  if (wire.answer === "404") {
+    wire.sent.push(`404 ${kind}`);
+    return {
+      ...base,
+      code: 1,
+      stdout: "HTTP/2.0 404 Not Found\r\n\r\n",
+      stderr: "gh: Not Found (HTTP 404)",
     };
   }
   if (conditional || wire.answer === "304-always") {
@@ -143,7 +152,8 @@ describe("readPrSnapshot", () => {
       "CONFLICTING",
     ],
     [{ mergeable: null, mergeable_state: "unknown" }, "mergeable", "UNKNOWN"],
-    [{ mergeable: "yes" }, "mergeable", ""],
+    [{ mergeable: "yes" }, "mergeable", 'UNRECOGNISED "yes"'],
+    [{ mergeable: "MERGEABLE" }, "mergeable", 'UNRECOGNISED "MERGEABLE"'],
     [{ mergeable_state: "blocked" }, "mergeStateStatus", "BLOCKED"],
     [{ draft: true }, "isDraft", true],
     [{ draft: null }, "isDraft", null],
@@ -169,6 +179,16 @@ describe("readPrSnapshot", () => {
     const r = await read();
     expect(r.ok).toBe(false);
     expect(wire.sent).toEqual(["200 full", "502 conditional", "502 full"]);
+    // Both failures are named, not only the last one.
+    expect(!r.ok && r.reason).toContain("then the full read");
+  });
+
+  it("sends no second request for a pull request that is not there", async () => {
+    await read();
+    wire.answer = "404";
+    const r = await read();
+    expect(r.ok).toBe(false);
+    expect(wire.sent).toEqual(["200 full", "404 conditional"]);
   });
 
   it("takes the full read's document when it answers after a failed conditional one", async () => {

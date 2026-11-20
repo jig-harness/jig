@@ -11,18 +11,21 @@
  * reused, and GitHub's confirmation that it is current is what makes that
  * reading as fresh as a full one.
  *
- * The answer is mapped to the values the evaluation compares, in the GraphQL
- * spelling it has always used: `OPEN`/`CLOSED`/`MERGED`, `MERGEABLE`/
- * `CONFLICTING`/`UNKNOWN` (REST's `null` is mergeability GitHub has not
- * finished computing, so it reads `UNKNOWN`, never clean), and the merge
- * state upper-cased (`clean` → `CLEAN`). A field the document lacks maps to
- * empty or absent, and the evaluation's own validation turns that into
- * INDETERMINATE.
+ * The answer is mapped to the values the evaluation compares:
+ * `OPEN`/`CLOSED`/`MERGED`, `MERGEABLE`/`CONFLICTING`/`UNKNOWN` (REST's
+ * `null` is mergeability GitHub has not finished computing, so it reads
+ * `UNKNOWN`, never clean), and the merge state upper-cased (`clean` →
+ * `CLEAN`). A field the document lacks maps to empty or absent, and a
+ * mergeability that is none of those is kept, marked unrecognised, so the
+ * evaluation's own validation turns either into INDETERMINATE and names
+ * what came back.
  *
  * FALLBACK: a conditional read that failed, or a kept reading that does not
  * read as a whole pull document, is followed by one full read (no validator
- * sent). A request the shared budget held is not: the budget said no. Neither
- * is ever taken for an unchanged pull request.
+ * sent). A failure a repeat cannot clear is not: a request the shared budget
+ * held, a refused credential, a pull request that is not there. Neither is
+ * ever taken for an unchanged pull request, and when the full read fails too,
+ * the reason names both failures.
  */
 
 import { swallow } from "../../../../../shared/errors.ts";
@@ -38,7 +41,7 @@ export interface PrSnapshot {
   headRefName: string;
   baseRefOid: string;
   baseRefName: string;
-  /** `MERGEABLE`, `CONFLICTING`, `UNKNOWN`, or `''` when absent or not a mergeability. */
+  /** `MERGEABLE`, `CONFLICTING`, `UNKNOWN`; `''` when absent, `UNRECOGNISED <json>` when not a mergeability. */
   mergeable: string;
   mergeStateStatus: string;
 }
@@ -72,7 +75,7 @@ function mergeableOf(doc: PullDocument): string {
   if (doc.mergeable === true) return "MERGEABLE";
   if (doc.mergeable === false) return "CONFLICTING";
   if (doc.mergeable === null) return "UNKNOWN";
-  return "";
+  return `UNRECOGNISED ${JSON.stringify(doc.mergeable)}`;
 }
 
 /** The pull document, or null when the body is not a JSON object. */
@@ -112,8 +115,11 @@ function whole(s: PrSnapshot): boolean {
   );
 }
 
-function held(r: ConditionalGet): boolean {
-  return !r.ok && r.failure?.code === "rate-limited";
+/** A failure a second request cannot clear. */
+const FINAL = new Set(["rate-limited", "unauthorized", "not-found"]);
+
+function final(r: ConditionalGet): boolean {
+  return !r.ok && r.failure !== undefined && FINAL.has(r.failure.code);
 }
 
 /**
@@ -143,11 +149,17 @@ export async function readPrSnapshot(
       const kept = snapshotOf(doc);
       if (whole(kept)) return { ok: true, snapshot: kept };
     }
-  } else if (held(first)) {
+  } else if (final(first)) {
     return { ok: false, reason: first.reason };
   }
   const full = await get(path, { caller, unconditional: true });
-  if (!full.ok) return { ok: false, reason: full.reason };
+  if (!full.ok)
+    return {
+      ok: false,
+      reason: first.ok
+        ? full.reason
+        : `${first.reason}; then the full read: ${full.reason}`,
+    };
   const doc = parseDocument(full.body);
   return doc === null
     ? { ok: false, reason: `${path}: the answer is not a pull document` }

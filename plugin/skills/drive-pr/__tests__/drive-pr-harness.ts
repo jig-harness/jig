@@ -386,9 +386,9 @@ export interface Fixture {
    */
   mergeStateStatusMissing?: boolean;
   /**
-   * Every `gh pr view` call fails with a TRANSIENT error (not a missing-field
-   * one) — a network blip, a timeout, a rate limit. Must report INDETERMINATE
-   * (exit 1) and stay retryable, never be mistaken for a prerequisite failure.
+   * Every `gh pr view` call fails with a TRANSIENT error — a network blip, a
+   * timeout, a rate limit. Must report INDETERMINATE (exit 1) and stay
+   * retryable, never be mistaken for a prerequisite failure.
    */
   transientMergeabilityFailure?: boolean;
   /** Every `gh` call is refused for the spent rate limit: the pull request's reads (`reads`), or the repository's too (`all`). */
@@ -1131,10 +1131,9 @@ if [ "\${1:-}" = "pr" ]; then
   done
 fi
 
-# A \`gh pr view\` in either field list the status evaluation used to read the
-# pull request with, made by the code under test rather than by this stub's
-# own REST answer below (which marks its inner call), is logged, so a probe can
-# assert the evaluation no longer makes one.
+# A \`gh pr view\` in either field list the stub's REST answer below asks for,
+# made by the code under test rather than by that answer (which marks its
+# inner call), is logged, so a probe can assert the evaluation makes none.
 if [ "\${1:-} \${2:-}" = "pr view" ] && [ -z "\${DRIVE_PR_STUB_INNER:-}" ]; then
   for a in "$@"; do
     case "$a" in
@@ -1487,10 +1486,9 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
 fi
 
 
-# A TRANSIENT failure — a network blip, a rate limit, a timeout — as opposed
-# to the two fixtures above, which model a permanently unsupported field. The
-# distinguishing property under test: this must NOT degrade the merge-conflict
-# guard, only report INDETERMINATE (exit 1) for the caller to retry. Fails
+# A TRANSIENT failure — a network blip, a rate limit, a timeout. The property
+# under test: this must NOT degrade the merge-conflict guard, only report
+# INDETERMINATE (exit 1) for the caller to retry. Fails
 # every \`gh pr view\` call while present, so a probe that expects retry-then-
 # succeed removes the file between polls itself (see the test).
 if [ -f "$F/transient-failure" ]; then
