@@ -116,12 +116,11 @@ export interface LineInput {
   reports: RepoReport[];
   /** By repository path; a repository refused before its reads has none. */
   inputs: Map<string, RepoLineInput>;
-  /** By repository slug. */
   stored: (slug: string) => RepoStored;
   records: ReadRecord[];
   accounts: LineAccount[];
+  hostDrivers?: Pick<LineSnapshot, "drivers" | "driversUnread">;
   lastAccount: string | null;
-  /** The durations the previous line carried. */
   recentTicksMs: number[];
 }
 
@@ -920,6 +919,7 @@ export function buildLine(input: LineInput): LineSnapshot {
     plugin: input.plugin,
     timeZone: input.timeZone,
     accounts: input.accounts,
+    ...input.hostDrivers,
     lastAccount: input.lastAccount,
     sessions: input.records
       .filter((r) => holds(r.state))
