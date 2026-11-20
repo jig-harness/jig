@@ -114,6 +114,8 @@ function fixture() {
       appendFileSync(${JSON.stringify(join(dir, "reruns"))}, args[2] + "\\n");
     } else if (args[0] === "api" && args.at(-1).includes("timeline")) {
       console.log("[[]]");
+    } else if (args[0] === "api" && args.at(-1).includes("/issues/") && args.at(-1).includes("/comments")) {
+      console.log("[[]]");
     } else if (args[0] === "api" && args.at(-1).includes("/annotations")) {
       const message = phase === "concurrency"
         ? "Canceling since a higher priority waiting request for 'ci-refs/pull/5' exists"
@@ -122,6 +124,7 @@ function fixture() {
       const filler = Array.from({length: 100}, () => ({annotation_level: "notice", message: "step output"}));
       console.log(JSON.stringify(phase === "garbled" ? { message: "Not Found" } : phase === "paged" ? (onPage === 1 ? filler : [{annotation_level: "failure", message}]) : [{ annotation_level: "failure", message }]));
     } else if (args[0] === "api" && args.at(-1).includes("check-runs")) {
+      if (phase === "listing-hangs") await Bun.sleep(30_000);
       const stopped = STOPPED.includes(phase);
       const lint = {id: 3, name: "lint", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 3}};
       const checks = stopped ? [{id: 1, name: "gate", head_sha: ${JSON.stringify(HEAD)}, status: "completed", conclusion: "cancelled", check_suite: {id: 1},
@@ -208,6 +211,18 @@ function withFixture(body: (f: ReturnType<typeof fixture>) => Promise<void>) {
 const BAD_GATEWAY = "gh: HTTP 502: Bad Gateway";
 
 describe("durable cancellation recovery boundary", () => {
+  test("a check-runs listing cut short is its own answer, not an unknown head", async () => {
+    const f = fixture();
+    try {
+      writeFileSync(join(f.dir, "phase"), "listing-hangs");
+      expect(await f.run("recover", HEAD, { GH_CALL_TIMEOUT: "1" })).toBe(
+        "listing-cut-short",
+      );
+    } finally {
+      rmSync(f.dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("a claim survives process restarts and concurrent claimers only win once per head", async () => {
     const f = fixture();
     try {

@@ -9,6 +9,7 @@ import { inTransaction, openDatabase, openReadOnly } from "../records/db.ts";
 import { currentMs } from "../time.ts";
 import { budgetPath, parseRecord, type BudgetRecord } from "./budget.ts";
 import type { FailureClass } from "./failure.ts";
+import { queryOperation } from "./operations.ts";
 import { BUDGET_MIGRATIONS } from "./schema.ts";
 
 const LEDGER_RETENTION_MS = 7 * 24 * 3_600_000;
@@ -28,6 +29,8 @@ export interface CallRecord {
   window?: string | null;
   operation: string;
   caller?: string;
+  /** The repository the call addressed, `owner/name` lowercased, where the transport knows it; absent or `null` for a call on no known repository. */
+  repository?: string | null;
   requests?: number;
   /** Of `requests`, how many a conditional request had answered `304 Not Modified`. */
   notModified?: number;
@@ -62,6 +65,21 @@ export interface LedgerRow {
   owner?: string | null;
   /** The window of that record they spent, as recorded; `null` for a row written without one, whose window a reader infers. */
   window?: string | null;
+  /**
+   * The parts of the row's spending each known repository took, as
+   * recorded; what the row holds beyond them was spent on no known
+   * repository. Empty for a row written without one, or read from a
+   * database that keeps none.
+   */
+  repositories?: RepositoryPart[];
+}
+/** The part of a ledger row's spending one repository took. */
+export interface RepositoryPart {
+  repository: string;
+  requests: number;
+  cost: number;
+  unknownCost: number;
+  notModified: number;
 }
 export interface LedgerReport {
   rows: LedgerRow[];
@@ -126,22 +144,9 @@ export function callerForChild(): string {
 }
 /** Named GraphQL operation, or a stable opaque name for an anonymous document. */
 export function operationName(query: string): string {
-  const clean = query.replace(/^\s*#.*$/gm, "");
-  const named =
-    /^\s*(?:query|mutation|subscription)\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(
-      clean,
-    )?.[1];
-  if (named) return named;
-  const hash = createHash("sha256").update(query).digest("hex").slice(0, 12);
-  // Strip strings before looking for the selection, so an argument's text
-  // cannot become the operation name. Keep the root field, never its values.
-  const shape = clean.replace(/"(?:\\.|[^"\\])*"/g, '""');
-  const field =
-    /\{\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*:\s*)?([A-Za-z_][A-Za-z0-9_]*)/.exec(
-      shape,
-    )?.[1];
-  const kind = /^\s*mutation\b/.test(shape) ? "mutation" : "query";
-  return field ? `${kind}:${field}-${hash}` : `anonymous-${hash}`;
+  return queryOperation(query, (text) =>
+    createHash("sha256").update(text).digest("hex").slice(0, 12),
+  );
 }
 function positive(n: number | undefined, fallback = 0): number {
   return n !== undefined && Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -175,6 +180,28 @@ function writeNotModified(
   db.query(
     "INSERT INTO outbound_cost_not_modified VALUES (?,?,?,?,?,?,?) ON CONFLICT DO UPDATE SET not_modified = not_modified + excluded.not_modified",
   ).run(...keys, count);
+}
+/** Add an attempt to its repository's part of its row, kept beside the row like its quota; an attempt on no known repository adds to none. */
+function writeRepository(
+  db: Database,
+  keys: (string | number)[],
+  input: CallRecord,
+  part: Omit<RepositoryPart, "repository">,
+  cutoff: number,
+): void {
+  db.query("DELETE FROM outbound_cost_repository WHERE hour < ?").run(cutoff);
+  const repository = input.repository?.trim().toLowerCase() ?? "";
+  if (repository === "") return;
+  db.query(
+    "INSERT INTO outbound_cost_repository VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO UPDATE SET requests = requests + excluded.requests, cost = cost + excluded.cost, unknown_cost = unknown_cost + excluded.unknown_cost, not_modified = not_modified + excluded.not_modified",
+  ).run(
+    ...keys,
+    repository,
+    part.requests,
+    part.cost,
+    part.unknownCost,
+    part.notModified,
+  );
 }
 /** Record one actual attempt (or a local refusal with zero requests), retaining no payload or secret. */
 export function recordCall(input: CallRecord): void {
@@ -247,6 +274,18 @@ export function recordCall(input: CallRecord): void {
         const cutoff = Math.ceil((at - LEDGER_RETENTION_MS) / HOUR) * HOUR;
         writeQuota(db, keys, input, cutoff);
         writeNotModified(db, keys, input, cutoff);
+        writeRepository(
+          db,
+          keys,
+          input,
+          {
+            requests,
+            cost,
+            unknownCost: unknown,
+            notModified: positive(input.notModified),
+          },
+          cutoff,
+        );
       });
     } finally {
       db.run("PRAGMA busy_timeout = 10000");
@@ -271,6 +310,55 @@ interface RawRow {
   owner?: string | null;
   quota_window?: string | null;
   not_modified?: number | null;
+}
+/** The key of a row: its hour, system, credential, operation, caller and unit. */
+type RowKeys = Pick<
+  RawRow,
+  "hour" | "system" | "credential" | "operation" | "caller" | "unit"
+>;
+function rowKey(row: RowKeys): string {
+  return JSON.stringify([
+    row.hour,
+    row.system,
+    row.credential,
+    row.operation,
+    row.caller,
+    row.unit,
+  ]);
+}
+/** The repositories' parts of the rows from `from` to `to`, by row key; none from a database that keeps none (`db` null). */
+function repositoryParts(
+  db: Database | null,
+  from: number,
+  to: number,
+): Map<string, RepositoryPart[]> {
+  const parts = new Map<string, RepositoryPart[]>();
+  if (db === null) return parts;
+  const rows = db
+    .query(
+      "SELECT * FROM outbound_cost_repository WHERE hour >= ? AND hour <= ? ORDER BY repository",
+    )
+    .all(from, to) as (RowKeys & {
+    repository: string;
+    requests: number;
+    cost: number;
+    unknown_cost: number;
+    not_modified: number;
+  })[];
+  for (const row of rows) {
+    const key = rowKey(row);
+    const part: RepositoryPart = {
+      repository: row.repository,
+      requests: row.requests,
+      cost: row.cost,
+      unknownCost: row.unknown_cost,
+      notModified: row.not_modified,
+    };
+    const kept = parts.get(key);
+    if (kept === undefined) parts.set(key, [part]);
+    else kept.push(part);
+  }
+  return parts;
 }
 /** Read without creating or migrating a database; absent storage is an empty report. */
 export function ledgerReport(
@@ -326,6 +414,11 @@ export function ledgerReport(
             Math.floor(until / HOUR) * HOUR,
           ) as RawRow[])
       : [];
+    const parts = repositoryParts(
+      has("outbound_cost_repository") ? db : null,
+      Math.floor(since / HOUR) * HOUR,
+      Math.floor(until / HOUR) * HOUR,
+    );
     // The owners the machine knows for credentials, for rows that name none.
     const owners = new Map(
       has("github_owner")
@@ -374,6 +467,7 @@ export function ledgerReport(
             failures: JSON.parse(failures),
             owner: owner ?? owners.get(row.credential) ?? null,
             window: quota_window ?? null,
+            repositories: parts.get(rowKey(row)) ?? [],
           }),
         ),
       balances,
