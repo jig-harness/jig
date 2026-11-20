@@ -466,7 +466,7 @@ describe("finish-round.ts", () => {
       fixture: { threads: [], checkRunsHang: true },
       env: { GH_CALL_TIMEOUT: "1" },
     });
-    expectSpawnExit(r, 24);
+    expectSpawnExit(r, 25);
     expect(r.report.state).toBe("CHECK_RUNS_UNREADABLE");
     expect(r.report).toHaveProperty("listingPagesRead");
     expect(r.pushed).toBe("");
