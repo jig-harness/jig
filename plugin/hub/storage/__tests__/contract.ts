@@ -33,14 +33,79 @@ import {
   step,
 } from "../../core/storage.ts";
 import type { UnitContext } from "../../core/unit.ts";
+import { Worker } from "node:worker_threads";
 import type { StorageInspection } from "../storage.ts";
+import type { RaceAnswer } from "./racer.ts";
 
-/** One opened store: its storage, and a second connection to the same store. */
+/** One opened store: its storage, and how a worker thread opens it again. */
 export interface StorageHarness {
   readonly storage: StoragePort & { readonly inspection: StorageInspection };
-  /** Another connection to the same store, as a second process or worker opens. */
-  connect(): StoragePort;
+  /**
+   * The worker entry that opens its own connection to this store and
+   * races (`racer.ts`), and the data it needs to open it.
+   */
+  readonly racer: { readonly script: string; readonly data: object };
   close(): void;
+}
+
+/** How many rounds the race runs, each on rows of its own. */
+const RACE_ROUNDS = 20;
+/** How long the race may take in all. */
+const RACE_WAIT_MS = 10_000;
+
+/**
+ * Runs `RACE_ROUNDS` rounds of two worker threads, each with its own
+ * connection, released together by a shared barrier; every round's
+ * answers, by round.
+ */
+async function raceTwo(harness: StorageHarness): Promise<RaceAnswer[][]> {
+  const barrier = new SharedArrayBuffer(4);
+  const gate = new Int32Array(barrier);
+  const answers: RaceAnswer[][] = Array.from(
+    { length: RACE_ROUNDS + 1 },
+    () => [],
+  );
+  const ready = new Set<number>();
+  let failure: unknown = null;
+  const workers = [0, 1].map((index) => {
+    const worker = new Worker(harness.racer.script, {
+      workerData: {
+        ...harness.racer.data,
+        barrier,
+        rounds: RACE_ROUNDS,
+        index,
+        waitMs: RACE_WAIT_MS,
+      },
+    });
+    worker.on("message", (message: RaceAnswer | { ready: number }) => {
+      if ("ready" in message) ready.add(message.ready);
+      else answers[message.round]?.push(message);
+    });
+    worker.on("error", (error) => {
+      failure = error;
+    });
+    return worker;
+  });
+  const deadline = performance.now() + RACE_WAIT_MS;
+  const until = async (done: () => boolean, what: string) => {
+    while (!done()) {
+      if (failure !== null) throw failure;
+      if (performance.now() > deadline)
+        throw new Error(`the race did not ${what} within ${RACE_WAIT_MS} ms`);
+      await Bun.sleep(1);
+    }
+  };
+  try {
+    await until(() => ready.size === 2, "get both racers ready");
+    for (let round = 1; round <= RACE_ROUNDS; round++) {
+      Atomics.store(gate, 0, round);
+      Atomics.notify(gate, 0);
+      await until(() => answers[round]?.length === 2, `finish round ${round}`);
+    }
+  } finally {
+    await Promise.all(workers.map((worker) => worker.terminate()));
+  }
+  return answers.slice(1);
 }
 
 const P = repositoryPartition("acme/widgets");
@@ -566,32 +631,22 @@ export function storageContract(
 
     describe("two connections racing", () => {
       test("two concurrent conditional lease writes leave exactly one winner", async () => {
-        const harness = store();
-        const ports = [harness.storage, harness.connect()];
-        const answers = await Promise.all(
-          ports.map((storage, index) =>
-            storage.run(context(), DIRECTORY_PARTITION, takeJobLease, {
-              job: "sweep",
-              holder: `run-${index}`,
-              now: T0,
-              leaseMs: 1_000,
-            }),
-          ),
-        );
-        const taken = answers.map((answer) => ok(answer).taken);
-        expect(taken.filter(Boolean)).toHaveLength(1);
-        const reads = await Promise.all(
-          ports.map((storage, index) =>
-            storage.run(context(), P, takeInFlightRead, {
-              target: "pull:12",
-              holder: `unit-${index}`,
-              now: T0,
-            }),
-          ),
-        );
-        expect(
-          reads.map((read) => ok(read).taken).filter(Boolean),
-        ).toHaveLength(1);
+        const rounds = await raceTwo(store());
+        expect(rounds).toHaveLength(RACE_ROUNDS);
+        for (const [at, round] of rounds.entries()) {
+          const winners = (row: "lease" | "read") =>
+            round.map((answer) => answer[row]).sort();
+          // Each answer is true or false, never a failure, and one is true.
+          expect({
+            round: at + 1,
+            lease: winners("lease"),
+            read: winners("read"),
+          }).toEqual({
+            round: at + 1,
+            lease: [false, true],
+            read: [false, true],
+          });
+        }
       });
     });
 

@@ -1,8 +1,8 @@
 /**
  * The storage contract on `bun:sqlite` in write-ahead-log mode, the process
  * adapter's store: each test opens a fresh database file with the hub's
- * migrations applied, and a second connection to the same file for the
- * races.
+ * migrations applied, and the races open their own connections to the same
+ * file from worker threads (`bun-sqlite-racer.ts`).
  */
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -31,18 +31,13 @@ function open(path: string) {
 storageContract("bun:sqlite", (): StorageHarness => {
   const path = join(scratch, `hub-${++opened}.sqlite`);
   const first = open(path);
-  const more: Array<{ close(): void }> = [];
   return {
     storage: createStorage(first.db),
-    connect: () => {
-      const next = open(path);
-      more.push(next);
-      return createStorage(next.db);
+    racer: {
+      script: join(import.meta.dir, "bun-sqlite-racer.ts"),
+      data: { path },
     },
-    close: () => {
-      for (const connection of more) connection.close();
-      first.close();
-    },
+    close: () => first.close(),
   };
 });
 
