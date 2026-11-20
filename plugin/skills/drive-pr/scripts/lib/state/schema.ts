@@ -541,38 +541,53 @@ const isOptionalBoolean = (v: unknown): boolean =>
   v === undefined || typeof v === "boolean";
 
 /** The fields only one phase of a recorded CI hold carries. */
+function usableAcquiringPhase(hold: Record<string, unknown>): boolean {
+  return (
+    (hold.previousEventId === null || isNonEmptyString(hold.previousEventId)) &&
+    isSha(hold.head) &&
+    (hold.label === undefined || isNonEmptyString(hold.label))
+  );
+}
+
+function usableHeldPhase(hold: Record<string, unknown>): boolean {
+  return (
+    isNonEmptyString(hold.eventId) &&
+    isOptionalBoolean(hold.adopted) &&
+    isSha(hold.addedAtHead)
+  );
+}
+
+function usableReleasingPhase(hold: Record<string, unknown>): boolean {
+  return (
+    isOptionalBoolean(hold.adopted) &&
+    isOptionalBoolean(hold.raceDetected) &&
+    isSha(hold.head) &&
+    isNonEmptyString(hold.heldEventId) &&
+    isSha(hold.addedAtHead) &&
+    isSingleLine(hold.heldActor) &&
+    isTimestamp(hold.heldCreatedAt)
+  );
+}
+
+function usableReleasedPhase(hold: Record<string, unknown>): boolean {
+  return (
+    isNonEmptyString(hold.eventId) &&
+    isSha(hold.head) &&
+    (hold.source === "external" ||
+      (hold.source === "drive" && hold.checkRunWatermark !== 0))
+  );
+}
+
 function hasUsablePhaseFields(hold: Record<string, unknown>): boolean {
   switch (hold.phase) {
     case "acquiring":
-      return (
-        (hold.previousEventId === null ||
-          isNonEmptyString(hold.previousEventId)) &&
-        isSha(hold.head) &&
-        (hold.label === undefined || isNonEmptyString(hold.label))
-      );
+      return usableAcquiringPhase(hold);
     case "held":
-      return (
-        isNonEmptyString(hold.eventId) &&
-        isOptionalBoolean(hold.adopted) &&
-        isSha(hold.addedAtHead)
-      );
+      return usableHeldPhase(hold);
     case "releasing":
-      return (
-        isOptionalBoolean(hold.adopted) &&
-        isOptionalBoolean(hold.raceDetected) &&
-        isSha(hold.head) &&
-        isNonEmptyString(hold.heldEventId) &&
-        isSha(hold.addedAtHead) &&
-        isSingleLine(hold.heldActor) &&
-        isTimestamp(hold.heldCreatedAt)
-      );
+      return usableReleasingPhase(hold);
     case "released":
-      return (
-        isNonEmptyString(hold.eventId) &&
-        isSha(hold.head) &&
-        (hold.source === "external" ||
-          (hold.source === "drive" && hold.checkRunWatermark !== 0))
-      );
+      return usableReleasedPhase(hold);
     default:
       return false;
   }

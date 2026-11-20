@@ -201,7 +201,7 @@ async function assertRecordedHoldMatchesLabel(
   return null;
 }
 
-async function ensure(pr: string, expectedPushHead: string): Promise<number> {
+async function localHeadMatches(expectedPushHead: string): Promise<boolean> {
   const local = await git(["rev-parse", "HEAD"], {
     stderr: "ignore",
     timeoutSec: gitCallTimeoutSeconds(),
@@ -210,8 +210,13 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     console.error(
       `ci-hold: local HEAD is ${local.stdout.trim() || "<unreadable>"}, not expected push head ${expectedPushHead}`,
     );
-    return 4;
+    return false;
   }
+  return true;
+}
+
+async function ensure(pr: string, expectedPushHead: string): Promise<number> {
+  if (!(await localHeadMatches(expectedPushHead))) return 4;
   const live = await snapshot(pr);
   if (live === null) fail(1, "ci-hold: cannot read the PR state");
   if (live.state !== "OPEN") return 5;
@@ -993,6 +998,8 @@ async function reconcileRacedRelease(
   );
 }
 
+// The fence's lifetime deliberately brackets every mutation outcome.
+// fallow-ignore-next-line complexity
 async function runMutationCommand(
   command: "ensure" | "release" | "rollback",
   pr: string,

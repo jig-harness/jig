@@ -107,6 +107,8 @@ export function heldListingStop(
 }
 
 /** Releases the CI hold: a final exit, `"continue"` to re-read all evidence, or `null` when CI is ready to be read. */
+// The driver records every release outcome before it decides whether to retry.
+// fallow-ignore-next-line complexity
 async function releaseCiHold(
   context: DriveRoundContext,
   reviewedHead: string,
