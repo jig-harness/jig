@@ -125,7 +125,7 @@ const RECORDED: Array<{
     set: "answer state",
     words: unionMembers("AnswerState"),
     map: EVERYONE_ICONS,
-    added: ["waiting"],
+    added: ["waiting", "from the line"],
   },
 ];
 
@@ -176,6 +176,7 @@ describe("the icon vocabulary", () => {
     expect(wordOnly).toEqual([
       "What a card is about: pull request",
       "Answers, for everyone: waiting",
+      "Answers, for everyone: from the line",
       "Answers, in this browser: draft",
     ]);
     for (const s of ICON_SETS)

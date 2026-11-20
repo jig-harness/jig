@@ -404,6 +404,39 @@ in the gate-set job's website steps (its checks leg); run
 the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
 
+What a change runs is derived from the areas it touches. Each area of
+`.config/change-areas.yaml` names its [validation profile](GLOSSARY.md)
+(`docs`, `area` or `deep`) and its [own tests](GLOSSARY.md)
+(`validation.ownTests`, `bun run test` and the directories its suites live
+in; a directory with no test file fails `bun run gates`), and
+`printf '%s\n' <files> | bun scripts/validation-plan.ts` prints the plan
+drive-pr, review and fix-ci read: the quick gates (`bun run gates --fast`),
+the touched areas' own tests and the generators the change touches, or the
+whole `bun run gates` when a changed file belongs to no area, or only to areas
+above the `docs` profile that have no own tests.
+
+CI's test legs (the gate set's parallel jobs that run tests) start from the
+same resolution (`scripts/area-validation.ts`) and add the
+[dependent tests](GLOSSARY.md): `scripts/test-reach.ts` walks back from the
+changed files through what imports them and through test code that names them
+(a script, or a YAML, JSON or TOML file), wherever that test lives. It does not
+follow Markdown files or paths built at run time, which the full runs below
+cover. A change the walk and the catalog tie to no test runs no test leg. Any
+other runs its areas' own tests,
+the own tests of the areas that list one of them under `impliedBy` (the
+catalog's way of saying a change to that area also affects this one, for what
+the walk cannot see) and the dependent tests outside those directories, split
+into [test shards](GLOSSARY.md). Every shard of the whole suite runs for the
+deepest profile and for a change to what every test run loads
+(`bunfig.toml`'s preloads and their imports). A
+[separate suite](GLOSSARY.md)'s job runs when its area is affected, when a
+dependent test lies in it, and whenever the whole suite runs. The local plan
+runs only the touched areas' own tests: it neither walks the dependent tests
+nor follows `impliedBy`, so CI can run tests it did not name. A push
+to main and the nightly run still run every suite. A new area, or a new
+directory of tests, declares its profile and own tests in the same change, or
+its code runs the whole gate set.
+
 ### Local validation in dispatched passes
 
 Jig's `gates.dispatch_fast` setting selects the fast checks and targeted
@@ -741,8 +774,9 @@ work as part of the plugin:
   [scripts/gates.ts](scripts/gates.ts), with the reason, so Windows CI
   leaves it out (the launcher's, the Herdr tool's and the Orca tool's suites
   today; § Toolchain says why the Orca tool's are); a suite too long for the
-  gate job goes in `SEPARATE_SUITES`
-  and gets its own sharded job in
+  gate job is marked `validation.separateSuite: true` on its area in
+  `.config/change-areas.yaml` (`scripts/gates.ts` reads the separate suites
+  from there) and gets its own sharded job in
   [the gates workflow](.github/workflows/gates.yml) and
   [the nightly workflow](.github/workflows/nightly.yml), which also runs it on
   Windows. A test that runs on Windows stands in for `gh`, `git` or `claude`

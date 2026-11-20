@@ -49,7 +49,7 @@ test.skipIf(
     writeFileSync(join(f.bin, "lsof"), '#!/bin/sh\\nexit 1\\n'); chmodSync(join(f.bin, "lsof"), 0o755);
     const id = "20261114T234948Z-470fe362";
     const owner = { version: 1, runtime: "process", repository: repo, branch: "topic", launches: [id], processes: [] };
-    const record = { version: 1, id, token: "token", action: "pickup", repo: "acme/app", repoPath: repo, item: "#1", pr: null, account: "account", vendor: "codex", configDir: root, wallBackoffMs: 1000, replaces: null, facts: "", createdAt: "2026-11-14T23:49:48.000Z", workspace: { id: tree, path: tree }, attempts: [] };
+    const record = { version: 1, runtime: "process", id, token: "token", action: "pickup", repo: "acme/app", repoPath: repo, item: "#1", pr: null, account: "account", vendor: "codex", configDir: root, wallBackoffMs: 1000, replaces: null, facts: "", createdAt: "2026-11-14T23:49:48.000Z", workspace: { id: tree, path: tree }, attempts: [] };
     const db = stateDb();
     const identity = ownIdentity();
     const dead = { ...identity, pid: 2147483647, start: "absent" };
@@ -91,7 +91,17 @@ test.skipIf(
     await prove("dead");
     db.query("UPDATE launches SET exit = NULL WHERE id = ?").run(id); await prove("unverified"); await refusedOverlap();
     db.query("UPDATE launches SET exit = ?, claim = ? WHERE id = ?").run(JSON.stringify(exit), JSON.stringify({ ...identity, claimedAt: record.createdAt }), id); await prove("unverified"); await refusedOverlap();
-    db.query("UPDATE launches SET claim = ? WHERE id = ?").run(JSON.stringify(claim), id);
+    const handoff = { ...claim, supervision: { supervisor: null, child: null } };
+    const refusedBeforeStage = { ...exit, code: 3, beforeStage: true };
+    const changeLaunch = db.query("UPDATE launches SET exit = ?, claim = ? WHERE id = ?");
+    changeLaunch.run(JSON.stringify(exit), JSON.stringify(handoff), id);
+    await prove("unverified");
+    changeLaunch.run(JSON.stringify(refusedBeforeStage), JSON.stringify(handoff), id);
+    await prove("dead");
+    const supervisorStillRunning = { ...handoff, supervision: { supervisor: identity, child: null } };
+    changeLaunch.run(JSON.stringify(refusedBeforeStage), JSON.stringify(supervisorStillRunning), id);
+    await prove("unverified");
+    changeLaunch.run(JSON.stringify(exit), JSON.stringify(claim), id);
     const extra = { ...record, id: "20261114T234949Z-470fe362" };
     db.query("INSERT INTO launches (id, repo, action, item, created_at, record) VALUES (?, ?, ?, ?, ?, ?)").run(extra.id, extra.repo, "pickup", "#1", record.createdAt, JSON.stringify(extra)); await prove("unverified");
     db.query("DELETE FROM launches WHERE id = ?").run(extra.id);

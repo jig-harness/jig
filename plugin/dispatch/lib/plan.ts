@@ -450,7 +450,9 @@ function wantReason(
       ? "drive ledger"
       : typeof pr.evidence.adopted === "string"
         ? "adoption rule"
-        : "drive label";
+        : pr.evidence.pickupArm === true
+          ? "pickup handoff"
+          : "drive label";
   return `${source} ${pr.class}: ${pr.why}`;
 }
 

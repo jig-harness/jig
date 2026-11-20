@@ -444,6 +444,21 @@ make, use the entry's term instead.
   ships, and `deep`, which runs them all). An area may name its profile; one
   that names none gets the deepest — the same fail-closed default as a file
   matching no area at all.
+- **Own tests** — the test directories a *change-area catalog* area declares
+  as its own (`validation.ownTests`): what a change to that area runs at the
+  least. Each directory must hold a test file, so a mistyped one cannot drop
+  an area's tests unnoticed.
+- **Separate suite** — an area's *own tests* that CI runs in a job of their
+  own, because they are long or need their own dependencies
+  (`validation.separateSuite`). The gate set leaves them out, and the job runs
+  when the area is affected, when a *dependent test* lies in it and whenever
+  the whole suite runs.
+- **Dependent test** — a test file a change can affect wherever it lives,
+  found by walking back from the changed files through what imports them and
+  through test code that names them (a script, or a YAML, JSON or TOML file).
+  CI runs these beside the *own tests* of the areas the change touches. What
+  the walk cannot see, such as a Markdown file a test reads or a path built at
+  run time, is left to the full runs on the main branch.
 - **Self-check paradox** — the situation where a *check* validates the same
   data its own trigger condition is computed from (e.g. a catalog's structural
   check, triggered by resolving changed paths *through* that catalog). The
