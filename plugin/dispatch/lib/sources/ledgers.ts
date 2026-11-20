@@ -144,7 +144,6 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
-
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
   /** Its head commit. */
@@ -154,19 +153,15 @@ export interface PrFacts {
   /** The head of its base branch, read only for a ledger whose stop a conflict re-drives (`readsBaseHead`). */
   base?: BaseHead;
 }
-
 export interface Classified {
   class: LedgerClass;
   why: string;
   /** For `stale`: what its stop does not fix. */
   stale?: StaleCause;
 }
-
 const short = (sha: string) => sha.slice(0, 7);
-
 /** What a ledger is read beside when the forge said nothing of its pull request. */
 const NO_FACTS: PrFacts = { head: null, mergeable: null };
-
 /** A pull request's mergeability and head commit as the forge reports them, or why they cannot place its stop yet. */
 function readFacts({
   head,
@@ -624,7 +619,6 @@ export function classifyLedger(
     };
   return exitClass(ledger, exit, park, forge);
 }
-
 /** A stopped ledger's class by its exit, first match wins. */
 function exitClass(
   ledger: Ledger,
@@ -670,7 +664,6 @@ export interface OpenPr {
   failingChecks?: boolean;
   unresolvedThreads?: number;
 }
-
 /** Why a snapshot holds no ledger this reader can classify; `null` when it holds one, `""` when it holds none. */
 function unreadable(snapshot: LedgerSnapshot): string | null {
   const canonical = snapshot.canonical;
@@ -683,7 +676,6 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
     ? `its drive ledger is version ${String(canonical.parsed.version)}, which this reader does not know`
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
 }
-
 /**
  * A pull request with no ledger whose `drive` label asks for one, or which
  * the repository's adoption rule adopts: the plan arms it once per head
@@ -711,7 +703,6 @@ function unarmed(
     evidence: { ledger: "none", headSha: pr.headRefOid, ...asked.evidence },
   };
 }
-
 /** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
 function askedToArm(
   pr: OpenPr,
