@@ -63,6 +63,7 @@ import { announcePolicyBase } from "./lib/driver/policy-base.ts";
 const holdName = (): string => ciHoldLabelSetting() ?? "CI hold";
 import { fail, isDigits, readStdinAll, runMain, short } from "./lib/cli.ts";
 import { reviewedClaim } from "./lib/status/reviewed-sha.ts";
+import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -487,7 +488,9 @@ async function main(): Promise<number> {
       ]),
       { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
     );
-    return result.code;
+    // A check-runs listing cut short proves nothing: to an announcement it is
+    // stale evidence like any other.
+    return result.code === DRIVE_EXIT.CHECK_RUNS_UNREADABLE ? 4 : result.code;
   }
   const finalCi = await finalCiProof();
   if (finalCi !== 0) {

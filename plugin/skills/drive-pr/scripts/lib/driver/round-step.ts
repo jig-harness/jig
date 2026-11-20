@@ -22,6 +22,7 @@ import { runConflictPhase } from "./conflict.ts";
 import { driverRuntime } from "./runtime.ts";
 
 import {
+  CHECK_RUNS_UNREADABLE_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
   FINAL_CI_POLL_SECONDS,
 } from "./settings.ts";
@@ -55,6 +56,58 @@ import { parkedFromStateJson } from "./../state/framed-park.ts";
 
 import { framedDecisionLines } from "./../state/park-frame.ts";
 
+async function stopHitlParked(
+  context: DriveRoundContext,
+  code: number,
+  status: Record<string, unknown>,
+): Promise<number> {
+  // Deliberately terminal. Re-arming here is a measured failure: the loop
+  // wakes, re-reads the same undeferrable threads, learns nothing it may
+  // act on, and burns turns until something external stops it.
+  // Only these remain: the drive worked everything they do not block.
+  console.error(
+    "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
+  );
+  const get = await run(tsArgv(driveState, ["get", context.pr]), {
+    stderr: "ignore",
+  });
+  try {
+    for (const p of parkedFromStateJson(get.stdout))
+      console.error(`\n${framedDecisionLines(p).join("\n")}`);
+  } catch {
+    // Best-effort listing: the handoff file and the ledger carry them too.
+  }
+  console.error("");
+  // What picks it up again: answers, not a wake-up (`rearm.ts`).
+  console.error(
+    "  Answer each one on its thread, or in a pull-request comment with a line `answer <key>: …`, as an",
+  );
+  console.error(
+    "  owner, member or collaborator. Once every one is answered, re-arm: the re-arm unparks",
+  );
+  console.error("  them and hands the answers to the first round:");
+  console.error(
+    `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent), "", context.agent)}`,
+  );
+  // A park is a finished drive too, and the one whose cost a human is
+  // about to weigh by hand — so it gets the same economy block the
+  // converged and exhausted exits do.
+  process.stderr.write(await loopEconomy(context.pr));
+  // Keep the structured marker in the retained diagnostic tail, after the
+  // potentially long parked-decision listing and economy report.
+  driverRuntime.stopProbe = terminalProbeStop(code, status, code);
+  return 8;
+}
+
+function noteUnreadableListing(
+  status: Record<string, unknown>,
+  reasonLine: string,
+): void {
+  const pages = status.listingPagesRead;
+  driverRuntime.stopListingPages = typeof pages === "number" ? pages : null;
+  console.error(reasonLine);
+}
+
 async function gateRoundStatus(
   context: DriveRoundContext,
   code: number,
@@ -83,44 +136,8 @@ async function gateRoundStatus(
       if (phase === "continue") return "continue";
       return phase;
     }
-    case 8: {
-      // Deliberately terminal. Re-arming here is a measured failure: the loop
-      // wakes, re-reads the same undeferrable threads, learns nothing it may
-      // act on, and burns turns until something external stops it.
-      // Only these remain: the drive worked everything they do not block.
-      console.error(
-        "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
-      );
-      const get = await run(tsArgv(driveState, ["get", context.pr]), {
-        stderr: "ignore",
-      });
-      try {
-        for (const p of parkedFromStateJson(get.stdout))
-          console.error(`\n${framedDecisionLines(p).join("\n")}`);
-      } catch {
-        // Best-effort listing: the handoff file and the ledger carry them too.
-      }
-      console.error("");
-      // What picks it up again: answers, not a wake-up (`rearm.ts`).
-      console.error(
-        "  Answer each one on its thread, or in a pull-request comment with a line `answer <key>: …`, as an",
-      );
-      console.error(
-        "  owner, member or collaborator. Once every one is answered, re-arm: the re-arm unparks",
-      );
-      console.error("  them and hands the answers to the first round:");
-      console.error(
-        `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent), "", context.agent)}`,
-      );
-      // A park is a finished drive too, and the one whose cost a human is
-      // about to weigh by hand — so it gets the same economy block the
-      // converged and exhausted exits do.
-      process.stderr.write(await loopEconomy(context.pr));
-      // Keep the structured marker in the retained diagnostic tail, after the
-      // potentially long parked-decision listing and economy report.
-      driverRuntime.stopProbe = terminalProbeStop(code, status, code);
-      return 8;
-    }
+    case 8:
+      return stopHitlParked(context, code, status);
     case 9: {
       const phase = await runConflictPhase(context, status, reasonLine);
       if (phase === "continue") return "continue";
@@ -156,6 +173,8 @@ async function gateRoundStatus(
       // re-checks immediately before pushing — see SKILL.md § 6. This check
       // keeps the loop from *starting* work it cannot land; guarded-push.ts
       // keeps it from *finishing* one.
+      if (code === CHECK_RUNS_UNREADABLE_EXIT)
+        noteUnreadableListing(status, reasonLine);
       driverRuntime.stopProbe = terminalProbeStop(code, status, code);
       return code;
   }

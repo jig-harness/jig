@@ -1,0 +1,15 @@
+---
+release: minor
+---
+
+### Fixed
+
+- A drive no longer stops on a pull request whose head has many check runs. Each page of the head's check-runs listing now has its own `GH_CALL_TIMEOUT`, and the whole listing has four times that, at most 100 pages. Before, every page shared one deadline, so a long listing read as unreadable and the drive exited `1`.
+
+### Added
+
+- A drive end state, `CHECK_RUNS_UNREADABLE` (exit `25`), for a listing that still runs into a deadline or the page bound. Its reason, the drive's closing report and the stop recorded in the drive ledger name the pages read. `jig dispatch` re-drives it once per head commit and reports a second such stop on the same head to a person as a systematic read failure. A program that reads `drive-status.ts` or `drive.ts` exits sees the new code where it saw `1` for this failure.
+
+### Changed
+
+- With `JIG_FORGE_BUDGET=off`, a fresh check-runs listing or a fallback whole read is paged by `gh` itself, under the whole-read bound (four times `GH_CALL_TIMEOUT`) and no page bound, while a listing read through the cache still goes a page at a time; the configuration reference and the drive-pr README now say so. A listing past the page bound is read once, not asked again.
