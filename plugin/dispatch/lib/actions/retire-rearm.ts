@@ -21,7 +21,11 @@ import type {
 } from "../types.ts";
 import { timeLeftMs, type ApplyState } from "./launch.ts";
 import { pendingRearm } from "../rearm-state.ts";
-import { clearRearmRequest, rearmWaitAge } from "../rearm-waits.ts";
+import {
+  clearRearmRequest,
+  rearmWaitAge,
+  settleRearmWaits,
+} from "../rearm-waits.ts";
 
 const REARM_WAIT_MS = 30 * 60_000;
 const LONG_CAPACITY_WAIT_MS = 4 * 60 * 60_000;
@@ -308,10 +312,12 @@ export async function retireRearmRequests(
   report: RepoReport,
   labels: LabelConfig,
   observed: readonly DrivenPr[],
+  requested: ReadonlySet<number> | null,
   login: string | null,
 ): Promise<void> {
   const label = commandLabel(labels, "rearm");
   const run = { state, slug, report, label, login };
+  settleRearmWaits(slug, requested, state.root);
   for (const pr of observed) {
     if (deadline(state) === null) return;
     if (!pr.labels?.includes(label)) continue;

@@ -59,3 +59,20 @@ export function clearRearmRequest(
     )
     .run(repo, pr, request);
 }
+
+/** Drop waits once a complete request listing no longer names their pull request. */
+export function settleRearmWaits(
+  repo: string,
+  requested: ReadonlySet<number> | null,
+  root?: string,
+): void {
+  if (requested === null) return;
+  const db = stateDb(root);
+  const rows = db
+    .query<{ pr: number }, [string]>(
+      "SELECT pr FROM rearm_waits WHERE repo = ?",
+    )
+    .all(repo);
+  const drop = db.query("DELETE FROM rearm_waits WHERE repo = ? AND pr = ?");
+  for (const { pr } of rows) if (!requested.has(pr)) drop.run(repo, pr);
+}

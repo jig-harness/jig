@@ -804,20 +804,6 @@ async function launchOne(
       failedRearmRequest(report, repo.slug, pr, original.waits);
     return waits(action, original.waits);
   }
-  if (
-    original !== undefined &&
-    "workspace" in original &&
-    typeof request === "number"
-  ) {
-    clearRearmWait(
-      { repo: repo.slug, pr: pr.number, request, kind: "tree" },
-      state.root,
-    );
-    clearRearmWait(
-      { repo: repo.slug, pr: pr.number, request, kind: "stop" },
-      state.root,
-    );
-  }
   const admitted = await admitAccount(
     state,
     repo.slug,
@@ -846,13 +832,33 @@ async function launchOne(
     original && "workspace" in original
       ? provenWorkspace(state, repo, pr.number, pr.head, original.workspace)
       : (original ?? open(true));
+  const candidate = await opening;
+  if (explicit && "refused" in candidate) {
+    if (rearmBlockExpired(state, repo.slug, pr, "tree", candidate.refused))
+      failedRearmRequest(report, repo.slug, pr, candidate.refused);
+    return waits(action, candidate.refused, slots.account.name);
+  }
   const opened = await openedFor(
     state,
     action,
     slots,
-    Promise.resolve(opening),
+    Promise.resolve(candidate),
   );
   if ("outcome" in opened) return opened.outcome;
+  if (
+    original !== undefined &&
+    "workspace" in original &&
+    typeof request === "number"
+  ) {
+    clearRearmWait(
+      { repo: repo.slug, pr: pr.number, request, kind: "tree" },
+      state.root,
+    );
+    clearRearmWait(
+      { repo: repo.slug, pr: pr.number, request, kind: "stop" },
+      state.root,
+    );
+  }
   const { workspace } = opened;
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)

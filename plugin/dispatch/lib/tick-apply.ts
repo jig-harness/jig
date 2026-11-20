@@ -45,7 +45,12 @@ import {
   unresolvedThreadCount,
 } from "./forge.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
+import {
+  carriesSet,
+  commandLabel,
+  hasCommand,
+  type LabelConfig,
+} from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
 import { pickupArms, pickupAsked, type PickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -56,6 +61,7 @@ import type {
 } from "./runtime/port.ts";
 import { launchClaimer, type SharedContext } from "./shared-launches.ts";
 import { readDrives } from "./sources/ledgers.ts";
+import type { ForgeRead } from "./tick-forge.ts";
 import {
   allRecords,
   bookOf,
@@ -210,6 +216,7 @@ export async function actObserved(
         }),
     );
   const inputs: ApplyInputs = {
+    forge,
     repo,
     runtime: context.runtime,
     pickupArms: pickupArms(allRecords(context), repo),
@@ -304,6 +311,7 @@ export function withheldFromReplay(
 
 /** What `--apply` acts on for one repository, as its tick read it. */
 interface ApplyInputs {
+  forge: ForgeRead;
   pickupArms: PickupArms;
   repo: RepoTarget;
   runtime: SessionRuntime;
@@ -491,6 +499,15 @@ async function applyStages(
         report,
         labels,
         inputs.drives,
+        inputs.forge.openReadable
+          ? new Set(
+              inputs.forge.open
+                .filter((pr) =>
+                  pr.labels?.includes(commandLabel(labels, "rearm")),
+                )
+                .map((pr) => pr.number),
+            )
+          : null,
         login,
       ),
     );

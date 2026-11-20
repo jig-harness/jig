@@ -569,6 +569,10 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   const tree = pr.stale?.tree ?? requestedTree(pr);
   if (tree === undefined) return pr;
   if (!tree.here) return null;
+  // An explicit rearm keeps its request while launch admission observes a
+  // missing original tree. `launchOne` starts the bounded tree-blocker clock
+  // there, rather than turning the first observation into an immediate need.
+  if (typeof pr.evidence.rearmRequestId === "number") return pr;
   if (
     !sessions.ok ||
     workspaceOfTree(sessions.workspaces, tree.actor) !== undefined

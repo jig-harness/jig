@@ -135,6 +135,103 @@ it("never opens a fresh tree for exit 12", async () => {
   expect(driveRuns(w)).toEqual([]);
 });
 
+it("waits before retiring an explicit rearm whose original tree is missing", async () => {
+  const { w, ledger } = fixture(false);
+  request(w, ledger);
+  const waiting = (await tick(w)).repos[0];
+  expect(waiting?.launches).toContainEqual(
+    expect.objectContaining({ action: "rearm", outcome: "waits" }),
+  );
+  expect(waiting?.actions.some((action) => action.stage === "notify")).toBe(
+    false,
+  );
+
+  ageWait(w, "tree", 31);
+  const retired = (await tick(w)).repos[0];
+  expect(retired?.actions).toContainEqual(
+    expect.objectContaining({
+      stage: "notify",
+      cause: "needs-person",
+      reason: expect.stringContaining(
+        "matching the stopped driver's actor and clone",
+      ),
+    }),
+  );
+  expect(driveRuns(w)).toEqual([]);
+}, 90000);
+
+it("clears a tree wait after its rearm request is withdrawn", async () => {
+  const { w, ledger } = fixture(false);
+  request(w, ledger);
+  await tick(w);
+  using db = new Database(statePath(dispatchState(w)));
+  expect(
+    db
+      .query(
+        "SELECT count(*) AS count FROM rearm_waits WHERE repo = ? AND pr = ?",
+      )
+      .get(SLUG, 7),
+  ).toEqual({ count: 1 });
+
+  w.setPrs("open", [openPr(7, "feature/unclean")]);
+  await tick(w);
+  expect(
+    db
+      .query(
+        "SELECT count(*) AS count FROM rearm_waits WHERE repo = ? AND pr = ?",
+      )
+      .get(SLUG, 7),
+  ).toEqual({ count: 0 });
+}, 90000);
+
+it("bounds a reused original tree that no longer proves the pull request checkout", async () => {
+  const { w, ws, ledger } = fixture();
+  request(w, ledger);
+  const tree = Bun.spawnSync(["git", "-C", ws, "rev-parse", "HEAD^{tree}"], {
+    env: w.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(tree, 0, "read the reused tree");
+  const stale = Bun.spawnSync(
+    [
+      "git",
+      "-C",
+      ws,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit-tree",
+      tree.stdout.toString().trim(),
+      "-m",
+      "stale checkout",
+    ],
+    { env: w.env, stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(stale, 0, "create a stale checkout");
+  const checkout = Bun.spawnSync(
+    ["git", "-C", ws, "checkout", "--detach", stale.stdout.toString().trim()],
+    { env: w.env, stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(checkout, 0, "reuse the tree on another history");
+
+  const waiting = (await tick(w)).repos[0];
+  expect(waiting?.launches).toContainEqual(
+    expect.objectContaining({ action: "rearm", outcome: "waits" }),
+  );
+  ageWait(w, "tree", 31);
+  const retired = (await tick(w)).repos[0];
+  expect(retired?.actions).toContainEqual(
+    expect.objectContaining({
+      stage: "notify",
+      cause: "needs-person",
+      reason: expect.stringContaining("is not proven to be PR #7's checkout"),
+    }),
+  );
+  expect(driveRuns(w)).toEqual([]);
+}, 90000);
+
 it("honors an explicit rearm request on a needs-person stop in the existing tree", async () => {
   const { w, ws } = fixture();
   const ledger = stoppedLedger(7, 14);
