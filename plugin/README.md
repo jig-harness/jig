@@ -2485,8 +2485,9 @@ them together.
   through `exec_command` and poll that session with `write_stdin`
   ([drive-pr § Driver pass](skills/drive-pr/SKILL.md#driver-pass-you-are-headless-and-one-shot)).
 - **The drive has a pass command for each.** Claude Code's
-  (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
-  (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR>"`, with
+  (`claude -p "/jig:drive-pr <PR> <pass role>"`) is the default; Codex's
+  (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR> <pass role>"`,
+  its prompt stating that it is one round of the running drive, with
   `--dangerously-bypass-approvals-and-sandbox` on a host that set
   [`drive.codex_bypass`](CONFIGURATION.md#a-hosts-opt-in-to-bypass)) is the one
   a drive armed from a Codex session runs, and the one the dispatcher runs on a
