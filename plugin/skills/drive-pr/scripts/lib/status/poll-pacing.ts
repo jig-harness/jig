@@ -90,6 +90,10 @@ interface Dependencies extends Clock {
   record(credential: string | undefined, ms: number, skipped: number): void;
 }
 
+// Leave enough time for the final loop iteration to start its forge read even
+// when the timer fires late and this wait records its outbound-call telemetry.
+const FINAL_EVALUATION_MARGIN_MS = 1_000;
+
 export function pollDependencies(clock: Clock): Dependencies {
   return {
     ...clock,
@@ -254,7 +258,10 @@ export class StatusPollPacing {
     // cannot turn `--interval` into a faster forge-read cadence.
     const effectiveMaximumMs = Math.max(this.baseMs, maximumMs);
     const started = this.deps.now();
-    if (this.finalEvaluationDeadline === deadline && started >= deadline - 1) {
+    if (
+      this.finalEvaluationDeadline === deadline &&
+      started >= deadline - FINAL_EVALUATION_MARGIN_MS
+    ) {
       this.finalEvaluationDeadline = undefined;
       if (started < deadline) await this.deps.sleep(deadline - started, abort);
       return false;
@@ -272,17 +279,19 @@ export class StatusPollPacing {
       const cadencePollAt = pollAt;
       for (const low of this.lower)
         pollAt = this.pollAfter(low, started, pollAt, effectiveMaximumMs);
-      // Reserve the deadline itself for a final evaluation. Otherwise a wait
-      // ending exactly at the deadline returns false without observing review
-      // evidence that arrived during its last interval.
+      // Reserve a practical margin before the deadline for a final evaluation.
+      // Otherwise timer lateness and the wait's own telemetry can leave the
+      // consuming loop with no time to observe evidence from its last interval.
       const reservesFinalEvaluation =
         pollAt >= deadline && pollAt === cadencePollAt;
       const wakeAt = Math.min(
         pollAt,
-        reservesFinalEvaluation ? deadline - 1 : deadline,
+        reservesFinalEvaluation
+          ? Math.max(now, deadline - FINAL_EVALUATION_MARGIN_MS)
+          : deadline,
       );
-      if (wakeAt <= now || abort?.aborted) break;
       if (reservesFinalEvaluation) this.finalEvaluationDeadline = deadline;
+      if (wakeAt <= now || abort?.aborted) break;
       await this.deps.sleep(wakeAt - now, abort);
       if (abort?.aborted) break;
       sample = this.deps.balance();

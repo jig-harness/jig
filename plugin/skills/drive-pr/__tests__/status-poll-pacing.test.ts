@@ -85,7 +85,7 @@ describe("waiting status poll pacing", () => {
     while (await probe.wait("reviewer", deadline, undefined, 3 * second))
       wakes.push(probe.clock.now());
 
-    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second).concat(9_999));
+    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second).concat(9_000));
     expect(probe.clock.now()).toBe(deadline);
   });
 
@@ -112,11 +112,36 @@ describe("waiting status poll pacing", () => {
     expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
       true,
     );
-    expect(probe.clock.now()).toBe(deadline - 1);
+    expect(probe.clock.now()).toBe(deadline - second);
     expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
       false,
     );
     expect(probe.clock.now()).toBe(deadline);
+  });
+
+  test("keeps the final evaluation margin when its timer wakes late", async () => {
+    let now = 9 * second;
+    const pacing = new StatusPollPacing(second, defaultPolicy, {
+      now: () => now,
+      async sleep(ms) {
+        now += ms + 100;
+      },
+      balance: () => ({ windows: [] }),
+      record() {},
+    });
+
+    expect(
+      await pacing.wait("reviewer", 12 * second, undefined, 3 * second),
+    ).toBe(true);
+    expect(now).toBe(10_100);
+    expect(
+      await pacing.wait("reviewer", 12 * second, undefined, 3 * second),
+    ).toBe(true);
+    expect(now).toBe(11_100);
+    expect(
+      await pacing.wait("reviewer", 12 * second, undefined, 3 * second),
+    ).toBe(false);
+    expect(now).toBe(12_100);
   });
 
   test("fewer polls over half an hour and an observed change resets the cadence", async () => {
