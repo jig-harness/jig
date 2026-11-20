@@ -517,6 +517,13 @@ re-read on the reviewed head that is not `CONVERGED` re-gates at most
 `1` naming what the re-read saw ([terminal-states.md](references/terminal-states.md)
 § The final status re-read). A moved head re-gates uncounted.
 
+**An unproven CI-hold removal is bounded too.** When GitHub accepted the
+removal but a proof or recovery read remains unreadable while its `releasing`
+record remains, the driver retries at most `DRIVE_PR_RELEASE_PROOF_ATTEMPTS`
+times in a row (default 3; `0` stops on the first). It then stops with exit
+`1`, retaining the record so a later drive can reconcile the removal without
+assuming it happened.
+
 If another actor removes the hold, the drive preserves the strongest
 check-run watermark it can prove and treats the removal as external. GitHub
 timeline timestamps have one-second precision, so those external releases
