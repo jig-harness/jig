@@ -572,7 +572,11 @@ operation, caller and repository; use `--hours 1` through `--hours 168` to choos
 window, or `--json` for its rows and balances. Linear complexity comes from
 `x-complexity`; GitHub query points are recorded where the answer includes
 them. Unknown costs and estimates are marked rather than presented as measured
-points. No query body, token or item content is kept.
+points. No query body, token or item content is kept. A call made with no
+credential at all (no Linear key, and a `linear` client that is not logged
+in) spends nothing and is listed apart under "no Linear key configured",
+with its callers; a logged-in client's calls are labelled as that client's
+own login.
 
 A `low-quota` need names the operations spending a quota when the last hour's
 rate would empty it before its refill. It appears once per quota and clears

@@ -3,8 +3,9 @@
  * (`jig dispatch`), the timer that runs its tick with `--apply`, and the
  * lifecycle verbs' install, uninstall, status, doctor and receipts, built
  * from `install.ts` and `receipts.ts`. Its own checks for `jig doctor` are
- * that its machine file reads and that Orca, the session runtime it works
- * through, resolves where its timer runs.
+ * that its machine file reads, that Orca, the session runtime it works
+ * through, resolves where its timer runs, and that no tick of the last day
+ * ran without a tracker credential (`lib/keyless-doctor.ts`).
  *
  * Its opt-in is the machine file (`~/.jig/dispatch.yaml`): the timer starts
  * drives on the accounts that file names, so `jig install` with no component
@@ -35,6 +36,8 @@ import {
 import { dispatchJobSpec, installDispatch, probeJobSpec } from "./install.ts";
 import { dashboardJobSpec } from "./dashboard-install.ts";
 import { installLabels } from "./install-labels.ts";
+import { keylessCheck } from "./lib/keyless-doctor.ts";
+import { currentMs } from "../shared/time.ts";
 import {
   type MachineConfig,
   machineConfigPath,
@@ -133,7 +136,8 @@ async function doctor({ job }: DoctorContext): Promise<DoctorCheck[]> {
         detail: "the dispatcher is not set up on this machine",
       },
     ];
-  return [file, orcaCheck(job)];
+  // The ticks of the last day that had no tracker credential, with their callers.
+  return [file, orcaCheck(job), keylessCheck({ nowMs: currentMs() })];
 }
 
 export const dispatchComponent: Component<DispatchArguments> = {

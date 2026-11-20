@@ -58,6 +58,8 @@ export interface OutboundFailure extends Failure<FailureClass> {
   sent?: boolean;
   /** How long the system asked the caller to wait (`Retry-After`), milliseconds. */
   retryAfterMs?: number;
+  /** `unauthorized` because the process has no credential for the system at all (`missing-credential.ts`), as against one the system refused. */
+  noCredential?: true;
 }
 
 /** What a class's policy says. */
@@ -91,6 +93,21 @@ export const POLICIES: Readonly<Record<FailureClass, FailurePolicy>> = {
   unauthorized: { retried: "never", clearsByWaiting: false, told: "at-once" },
   "not-found": { retried: "never", clearsByWaiting: false, told: "never" },
   invalid: { retried: "never", clearsByWaiting: false, told: "after-count" },
+};
+
+/**
+ * The exit code of a command a failed call stopped, by its failure class:
+ * the tracker's scripts and a dispatch tick that has no tracker credential
+ * exit with it.
+ */
+export const EXIT_OF_CLASS: Readonly<Record<FailureClass, number>> = {
+  "rate-limited": 5,
+  unreachable: 6,
+  "too-costly": 7,
+  "server-fault": 8,
+  unauthorized: 9,
+  "not-found": 10,
+  invalid: 11,
 };
 
 /** Whether `code` names a failure class. */
@@ -127,6 +144,7 @@ export function outboundFailure(
     sent?: boolean;
     retryAfterMs?: number | null;
     cause?: unknown;
+    noCredential?: boolean;
   } = {},
 ): OutboundFailure {
   const failure: OutboundFailure = { code, reason };
@@ -138,6 +156,7 @@ export function outboundFailure(
   if (extra.retryAfterMs !== undefined && extra.retryAfterMs !== null)
     failure.retryAfterMs = extra.retryAfterMs;
   if (extra.cause !== undefined) failure.cause = extra.cause;
+  if (extra.noCredential === true) failure.noCredential = true;
   return failure;
 }
 
@@ -179,6 +198,8 @@ export class OutboundError extends JigError<FailureClass> {
   readonly sent: boolean;
   readonly retryAfterMs: number | null;
   readonly account: string | undefined;
+  /** The process has no credential for the system at all. */
+  readonly noCredential: boolean;
   constructor(
     code: FailureClass,
     reason: string,
@@ -188,6 +209,7 @@ export class OutboundError extends JigError<FailureClass> {
       sent?: boolean;
       retryAfterMs?: number | null;
       cause?: unknown;
+      noCredential?: boolean;
     } = {},
   ) {
     super(
@@ -199,6 +221,7 @@ export class OutboundError extends JigError<FailureClass> {
     this.sent = extra.sent ?? false;
     this.retryAfterMs = extra.retryAfterMs ?? null;
     this.account = extra.account;
+    this.noCredential = extra.noCredential ?? false;
   }
   /** The failure as an `Outcome`'s. */
   get failure(): OutboundFailure {
@@ -207,6 +230,7 @@ export class OutboundError extends JigError<FailureClass> {
       until: this.until,
       sent: this.sent,
       retryAfterMs: this.retryAfterMs,
+      noCredential: this.noCredential,
     });
   }
   /** Whether waiting clears it. */

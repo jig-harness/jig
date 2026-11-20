@@ -74,6 +74,15 @@ function environment(drop: RegExp): Record<string, string> {
   );
 }
 
+/**
+ * `env` naming the wake waiter as what started the tick
+ * (`tick-starter.ts`): it holds even when the command sets its own launcher
+ * role on the way, and replaces the starter of the session that asked.
+ */
+function woken(env: Record<string, string>): Record<string, string> {
+  return { ...env, JIG_STARTED_BY: "wake" };
+}
+
 /** The tick the waiter runs: its command, environment and deadline. */
 interface TickCall {
   argv: string[];
@@ -197,7 +206,7 @@ export async function tickCall(
   if (test.value !== null)
     return ok({
       argv: [...test.value, ...tickArgs(path)],
-      env: environment(LINE_VARIABLE),
+      env: woken(environment(LINE_VARIABLE)),
       timeoutSec: DEFAULT_DEADLINE_SEC,
     });
   let installed: Awaited<ReturnType<typeof installedTimer>>;
@@ -239,7 +248,7 @@ function ownCall(path: string): Outcome<TickCall, "unstarted"> {
       JIG,
       ...tickArgs(path),
     ],
-    env: environment(LINE_VARIABLE),
+    env: woken(environment(LINE_VARIABLE)),
     timeoutSec:
       (machine.value === null
         ? DEFAULT_DEADLINE_SEC
@@ -253,11 +262,11 @@ function timerCall(
   path: string,
 ): TickCall {
   const deadline = Number(timer.env.JIG_LAUNCHER_DEADLINE_SEC);
-  const env: Record<string, string> = {
+  const env = woken({
     ...environment(SESSION_VARIABLE),
     ...timer.env,
     JIG_LAUNCHER_ROLE: "wake",
-  };
+  });
   for (const name of timer.unset ?? [])
     if (!(name in timer.env)) delete env[name];
   return {
