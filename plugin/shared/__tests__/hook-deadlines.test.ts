@@ -50,7 +50,7 @@ const HOOK_SUBCOMMANDS = new Set([
   "rebase",
   "reset",
 ]);
-/** Subcommands whose `--abort` or `--quit` word runs no hook. */
+/** Subcommands whose leading `--abort` or `--quit` runs no hook. */
 const ENDING_SUBCOMMANDS = new Set([
   "merge",
   "rebase",
@@ -111,10 +111,10 @@ function lacksDeadline(args: string[]): boolean {
   const rest = args.slice(i + 1);
   if (
     ENDING_SUBCOMMANDS.has(subcommand) &&
-    rest.some((a) => a === "--abort" || a === "--quit")
+    (rest[0] === "--abort" || rest[0] === "--quit")
   )
     return false;
-  if (subcommand === "rebase" && !rest.includes("--continue")) return false;
+  if (subcommand === "rebase" && rest[0] !== "--continue") return false;
   return !deadline;
 }
 
@@ -122,7 +122,7 @@ function lacksDeadline(args: string[]): boolean {
 function undeadlinedHookCommands(text: string): string[] {
   const found: string[] = [];
   const joined = text.replace(/\\\r?\n\s*/g, " ");
-  for (const match of joined.matchAll(/shared\/command\.ts"?/g)) {
+  for (const match of joined.matchAll(/shared\/command\.ts["']?/g)) {
     const start = match.index + match[0].length;
     if (lacksDeadline(words(joined, start)))
       found.push(joined.slice(match.index, start + 80).split("\n")[0] ?? "");
@@ -164,6 +164,9 @@ describe("hook-running commands carry a deadline", () => {
       'bun "x/shared/command.ts" -- git commit -m "document --abort behavior"',
       'bun "x/shared/command.ts" -- git commit -m "document --quit behavior"',
       'bun "x/shared/command.ts" -- git reset --merge',
+      "bun 'x/shared/command.ts' -- git commit -F m.txt",
+      'bun "x/shared/command.ts" -- git merge -m "--abort" main',
+      'bun "x/shared/command.ts" -- git merge -m "--quit" main',
       'bun "x/shared/command.ts" \\\n  -- git commit -F m.txt',
     ])
       expect(undeadlinedHookCommands(line)).toHaveLength(1);
