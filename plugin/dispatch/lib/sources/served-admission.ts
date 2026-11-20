@@ -1,19 +1,15 @@
-/** Shared width reservations for factory and served candidates, through every ancestor. */
+/** Rank eligible factory and served candidates and summarize their epics. */
 import type { QueueItem } from "../queue-rank.ts";
 import type { QueueIssue } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { rankQueue } from "../queue-rank.ts";
 import type { ServedOptions, ServedReading } from "./served.ts";
 import {
-  serializeEpics,
   summarizeEpics,
-  type Serial,
-  type Admission,
   type EpicWalk,
   type PassedChild,
 } from "./served-epics.ts";
 
 export interface Candidate extends QueueItem {
-  admissions?: Admission[];
   identity: string;
   factory?: boolean;
   by: string;
@@ -21,57 +17,27 @@ export interface Candidate extends QueueItem {
   /** The relations and parent the queue read carried for the issue; absent where it carried no parent. */
   queueRead?: Pick<QueueIssue, "relations" | "parent">;
   blockingFor?: string | undefined;
-  serial?: Serial | undefined;
-}
-
-/** An active descendant occupies its branch's slot even before its epic's tracker state moves. */
-function inheritWorking(shared: {
-  walks: EpicWalk[];
-  serials: Map<string, Serial>;
-}): void {
-  const working = new Set(
-    shared.walks.filter((w) => w.working).map((w) => w.key),
-  );
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const walk of shared.walks) {
-      if (
-        !working.has(walk.key) &&
-        walk.children.some((key) => working.has(key))
-      ) {
-        working.add(walk.key);
-        changed = true;
-      }
-    }
-  }
-  for (const key of working) {
-    const parent = shared.serials.get(key);
-    if (parent !== undefined) {
-      parent.unread = parent.unread.filter((unread) => unread !== key);
-      if (!parent.busy.includes(key)) parent.busy.push(key);
-    }
-  }
 }
 
 export function finishAdmission(
   candidates: Candidate[],
-  shared: { walks: EpicWalk[]; serials: Map<string, Serial> },
+  shared: { walks: EpicWalk[] },
   out: ServedReading,
   options: ServedOptions,
 ): void {
-  inheritWorking(shared);
-  for (const c of candidates) {
-    const serial = shared.serials.get(c.issue.identifier);
-    if (c.serial === undefined && serial !== undefined) c.serial = serial;
-  }
+  const ranked = rankQueue(candidates);
   const passed = new Map<string, PassedChild>();
-  const ranked = serializeEpics(
-    rankQueue(candidates),
-    out.unplaced,
-    options.epicWidth,
-    options.passOver,
-    passed,
+  const parentByChild = new Map(
+    shared.walks.flatMap(({ key, children }) =>
+      children.map((child) => [child, key] as const),
+    ),
   );
+  for (const candidate of ranked) {
+    const key = candidate.issue.identifier;
+    const epic = parentByChild.get(key);
+    const why = options.passOver?.(candidate.issue);
+    if (epic !== undefined && why != null) passed.set(key, { epic, why });
+  }
   summarizeEpics(
     shared.walks,
     new Set(
