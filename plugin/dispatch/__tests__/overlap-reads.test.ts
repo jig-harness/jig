@@ -96,9 +96,14 @@ const base = {
 };
 
 describe("the footprint read", () => {
-  it("reads the wanted pickups first, then the claimed items, with this host's running session named", async () => {
+  it("reads the wanted pickups first, then the claimed items, with each live batch member's session named", async () => {
     const running = {
-      record: { action: "pickup", item: "#30", sessionId: "s-1" },
+      record: {
+        action: "pickup",
+        item: "#30",
+        batchItems: [{ key: "#30" }, { key: "#31" }],
+        sessionId: "s-1",
+      },
       state: { kind: "alive" },
     } as unknown as ReadRecord;
     const items = footprintItems({
@@ -107,6 +112,7 @@ describe("the footprint read", () => {
       wanted: [wanted("#12", ["area:dispatch"]), wanted("#13")],
       claimed: [
         { key: "#30", title: "", state: "In progress" },
+        { key: "#31", title: "", state: "In progress" },
         { key: "#12", title: "", state: "x" },
       ],
       records: [running],
@@ -119,6 +125,7 @@ describe("the footprint read", () => {
       },
       { key: "#13", labels: [], updatedAt: "2026-11-18T10:00:00.000Z" },
       { key: "#30", labels: [], activePickup: "s-1" },
+      { key: "#31", labels: [], activePickup: "s-1" },
     ]);
   });
 

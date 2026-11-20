@@ -96,7 +96,8 @@ function activeSession(
   const holding = records.find(
     (r) =>
       r.record.action === "pickup" &&
-      r.record.item === key &&
+      pickupItems(r.record).includes(key) &&
+      holdsItem(r.record, key) &&
       r.state.kind === "alive" &&
       typeof r.record.sessionId === "string" &&
       r.record.sessionId !== "",
