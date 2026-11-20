@@ -207,7 +207,7 @@ export function editedHistory(
   shown = MIGRATIONS,
 ): string[] {
   const git = (args: string[]) =>
-    Bun.spawnSync(["git", ...args], { cwd: ROOT, stderr: "ignore" });
+    Bun.spawnSync(["git", ...args], { cwd: ROOT });
   if (git(["rev-parse", "--verify", `${base}^{commit}`]).exitCode !== 0)
     return [];
   const listed = git(["ls-tree", "-r", "--name-only", base, "--", shown]);
