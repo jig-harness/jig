@@ -54,6 +54,7 @@ const BY_NAME: Record<DriveExitName, ExitClass> = {
   TAKEN_OVER: fixed("done"),
   CI_REPAIR_SPENT: readsPr("stale"),
   CI_INFRA_PERSISTED: readsPr("stale"),
+  CHECK_RUNS_UNREADABLE: readsPr("stale"),
   FORGE_RATE_LIMITED: readsPr("stale"),
 };
 

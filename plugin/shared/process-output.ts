@@ -23,6 +23,12 @@ export interface ProcessTimers {
   escalate?: NodeJS.Timeout;
   stop?: NodeJS.Timeout;
 }
+/** Cancel every timer a run armed. */
+export function clearProcessTimers(timers: ProcessTimers): void {
+  for (const t of [timers.kill, timers.escalate, timers.stop])
+    if (t) clearTimeout(t);
+}
+
 /** Inspect ignored diagnostics only when a parent requested forge accounting. */
 export function accountingStderr(mode: "pipe" | "inherit" | "ignore" = "pipe") {
   return mode === "ignore" && process.env.JIG_FORGE_CALL_COUNT_FILE
@@ -110,7 +116,17 @@ function accountingOutput(): (text: string) => void {
 }
 
 /** Bounded capture keeps diagnostics after acceptance stops and ends runaway output. */
-export function captureProcessOutput(
+export function captureRun(
+  child: ChildProcess,
+  options: OutputOptions,
+  control: Omit<OutputCancellation, "timers">,
+) {
+  const timers: ProcessTimers = {};
+  const output = captureProcessOutput(child, options, { ...control, timers });
+  return { timers, output };
+}
+
+function captureProcessOutput(
   child: ChildProcess,
   options: OutputOptions,
   cancellation: OutputCancellation,

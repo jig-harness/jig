@@ -10,7 +10,11 @@ import {
   finalVerifyTimeoutSeconds,
 } from "./../proc.ts";
 
-import { WORKTREE_UNCLEAN_EXIT } from "./settings.ts";
+import {
+  CHECK_RUNS_UNREADABLE_EXIT,
+  WORKTREE_UNCLEAN_EXIT,
+} from "./settings.ts";
+import { heldListingStop } from "./convergence-ci.ts";
 
 import { loopEconomy, certifyFinalWorktree } from "./reports.ts";
 
@@ -203,6 +207,8 @@ export async function finishConvergence(
     { stderr: "inherit", timeoutSec: finalVerifyTimeoutSeconds() },
   );
   if (verified.code === 5) return 5;
+  if (verified.code === CHECK_RUNS_UNREADABLE_EXIT)
+    return heldListingStop(verified);
   if (verified.code === 4) {
     console.error(
       "final verification became stale while it was recorded; re-gating",

@@ -401,6 +401,21 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.293.0] - 2026-11-20
+
+### Added
+
+- A drive end state, `CHECK_RUNS_UNREADABLE` (exit `25`), for a listing that still runs into a deadline or the page bound. Its reason, the drive's closing report and the stop recorded in the drive ledger name the pages read. `jig dispatch` re-drives it once per head commit and reports a second such stop on the same head to a person as a systematic read failure. A program that reads `drive-status.ts` or `drive.ts` exits sees the new code where it saw `1` for this failure.
+
+### Changed
+
+- With `JIG_FORGE_BUDGET=off`, a fresh check-runs listing or a fallback whole read is paged by `gh` itself, under the whole-read bound (four times `GH_CALL_TIMEOUT`) and no page bound, while a listing read through the cache still goes a page at a time; the configuration reference and the drive-pr README now say so. A listing past the page bound is read once, not asked again.
+
+### Fixed
+
+- Preserve check-run listing recovery when a review-pass wrapper does not return the finisher's exit status. **Consumer action:** none.
+- A drive no longer stops on a pull request whose head has many check runs. Each page of the head's check-runs listing now has its own `GH_CALL_TIMEOUT`, and the whole listing has four times that, at most 100 pages. Before, every page shared one deadline, so a long listing read as unreadable and the drive exited `1`.
+
 ## [0.292.0] - 2026-11-20
 
 ### Added
@@ -10364,7 +10379,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.292.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.293.0...HEAD
+[0.293.0]: https://github.com/jig-harness/jig/compare/v0.292.0...v0.293.0
 [0.292.0]: https://github.com/jig-harness/jig/compare/v0.291.2...v0.292.0
 [0.291.2]: https://github.com/jig-harness/jig/compare/v0.291.1...v0.291.2
 [0.291.1]: https://github.com/jig-harness/jig/compare/v0.291.0...v0.291.1

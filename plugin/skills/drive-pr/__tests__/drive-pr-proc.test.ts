@@ -1544,7 +1544,8 @@ describe("driveStatusOnceTimeoutSeconds() outlives drive-status.ts --once's evid
       GIT_CALL_TIMEOUT: "45",
     });
     expect(result.driveStatus).toBe(
-      8 * result.helper + 13 * result.gh + 6 * result.git + 27 * 2,
+      // 13 calls, and the check-runs listing's three further call deadlines.
+      8 * result.helper + 16 * result.gh + 6 * result.git + 27 * 2,
     );
     expect(result.driveStatus).toBeGreaterThan(result.helper);
   });
@@ -1566,6 +1567,8 @@ describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case seq
   // MAX_STATUS_PUBLISHERS app lookups. proc.ts mirrors that cap as a literal; reading it from
   // evidence.ts here makes a changed cap fail these assertions.
   const CALLS = 15 + 2 + 3 * (2 + MAX_STATUS_PUBLISHERS);
+  // Each proof lists the check runs twice, and a listing may take four calls' deadlines.
+  const LISTING_EXTRA_CALLS = 3 * 2 * 3;
 
   function readTimeouts(env: Record<string, string>): {
     gh: number;
@@ -1598,7 +1601,9 @@ describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case seq
     // parent kill the child after store.update() persists verifiedSha but
     // before the compensating post-write check can clear it.
     const result = readTimeouts({ GH_CALL_TIMEOUT: "30" });
-    expect(result.finalVerify).toBe(900 + CALLS * result.gh + CALLS * 2);
+    expect(result.finalVerify).toBe(
+      900 + (CALLS + LISTING_EXTRA_CALLS) * result.gh + CALLS * 2,
+    );
   });
 
   it("budgets THREE lock acquisitions, not two", () => {
@@ -1611,7 +1616,7 @@ describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case seq
     // the total-seconds assertion above, so a future GH-call-count change
     // doesn't silently also have to know this number.
     const result = readTimeouts({ GH_CALL_TIMEOUT: "30" });
-    const ghPortion = CALLS * result.gh + CALLS * 2;
+    const ghPortion = (CALLS + LISTING_EXTRA_CALLS) * result.gh + CALLS * 2;
     expect(result.finalVerify - ghPortion).toBe(3 * 300);
   });
 
