@@ -104,7 +104,7 @@ function takeOverMembers(root: string, id: string): string {
   return join(root, "runs", id, "take-over-members.json");
 }
 
-/** The mark that says a drive stop is still owed for `id`: set when `drives.ts --stop` failed, cleared once one succeeds. */
+/** The mark that says a drive stop is still owed for `id`: set before the stop begins, cleared once `drives.ts --stop` has succeeded. */
 function driveStopOwed(root: string, id: string): string {
   return join(root, "runs", id, "take-over-drive-stop");
 }
@@ -394,9 +394,10 @@ export async function takeOver(
     };
     // Kept before the first step: a descendant the stop reparents is still known after an interruption.
     keepMembers(deps.root, id, target.members);
-    const stopped = await stopRun(target, deps);
-    if (stopped.driveStopFailed)
+    // Owed before the first destructive step, cleared only once the drive's stop is verified: a take-over that dies mid-stop retries it.
+    if (drivePr !== null && !owed)
       writeFileSync(owedMark, `${currentIso()}\n`, { mode: 0o600 });
+    const stopped = await stopRun(target, deps);
     if (!stopped.gone) {
       deps.err(
         `jig dispatch attach: ${id}'s processes outlived the stop; the hold stands, and running the command again stops it`,

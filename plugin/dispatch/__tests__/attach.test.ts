@@ -527,6 +527,32 @@ describe("jig dispatch attach --take-over", () => {
     expect(reportBy(dir)).toBe("person");
   });
 
+  it("keeps the drive stop owed when the attempt dies before the stop finishes", async () => {
+    const dir = root();
+    writeRecord(record(), dir);
+    const run = fakeRun();
+    const crashing = deps(dir, run, {
+      stops: [
+        async () => {
+          run.alive = false;
+          throw new Error("the command died");
+        },
+      ],
+    });
+    await expect(
+      attachMain(ID, { takeOver: true }, crashing),
+    ).rejects.toThrow();
+    expect(existsSync(join(dir, "runs", ID, "take-over-drive-stop"))).toBe(
+      true,
+    );
+    run.events.length = 0;
+    expect(await attachMain(ID, { takeOver: true }, deps(dir, run))).toBe(0);
+    expect(run.events).toContain("stop drive");
+    expect(existsSync(join(dir, "runs", ID, "take-over-drive-stop"))).toBe(
+      false,
+    );
+  });
+
   it("reconciles a run already stopped whose end was not recorded", async () => {
     const dir = root();
     writeRecord(record(), dir);
@@ -550,9 +576,9 @@ describe("jig dispatch attach --take-over", () => {
     );
     run.events.length = 0;
     expect(await attachMain(ID, { takeOver: true }, deps(dir, run))).toBe(0);
-    // Held again, and nothing left to stop.
-    expect(run.events).toHaveLength(1);
+    // Held again; the drive's stop was owed when the first attempt died, so it runs once more.
     expect(run.events[0]).toStartWith("hold drive@o/a#7");
+    expect(run.events).toContain("stop drive");
     expect(reportBy(dir)).toBe("person");
     expect(existsSync(takeOverMark(dir, ID))).toBe(false);
   });

@@ -71,10 +71,14 @@ export const stopDrive: StopStep = async (target) => {
     ],
     {
       cwd: target.repoPath,
+      stdout: "pipe",
       stderr: "pipe",
       timeoutSec: DRIVE_STOP_SEC,
     },
   );
+  // `--stop` exits 1 after recovering an idle ledger when no live driver holds the lock: the driver is already gone.
+  if (done.code === 1 && /nothing to stop/.test(done.stdout))
+    return "no live driver holds the lock; drives.ts recovered its idle ledger";
   if (done.timedOut)
     return {
       note: `drives.ts --stop did not finish before its deadline${lastError(done.stderr)}`,

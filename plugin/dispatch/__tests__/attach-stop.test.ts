@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   captureIdentity,
   type ProcessIdentity,
@@ -76,5 +80,37 @@ describe("signalMembers", () => {
     const said = await signalMembers([own], "SIGTERM");
     expect(said).toBe(`sent SIGTERM to ${child.pid}`);
     expect(await endedOn(child, "SIGTERM")).toBe(true);
+  });
+});
+
+describe("stopDrive", () => {
+  it("reads a drive with no live driver as already stopped, not as a failed stop", async () => {
+    const state = mkdtempSync(join(tmpdir(), "jig-stop-drive-"));
+    const repo = mkdtempSync(join(tmpdir(), "jig-stop-repo-"));
+    try {
+      for (const args of [
+        ["init", "-q"],
+        ["commit", "-q", "--allow-empty", "-m", "x"],
+      ])
+        spawnSync(
+          "git",
+          ["-c", "user.name=t", "-c", "user.email=t@t", ...args],
+          { cwd: repo },
+        );
+      const script = `import { stopDrive } from ${JSON.stringify(join(import.meta.dir, "../lib/attach-stop.ts"))};
+console.log(JSON.stringify(await stopDrive({ id: "x", drivePr: 999999, repoPath: ${JSON.stringify(repo)}, members: [] })));`;
+      const done = Bun.spawnSync([process.execPath, "-e", script], {
+        env: { ...process.env, DRIVE_PR_STATE_DIR: state },
+      });
+      expectSpawnExit(done, 0);
+      const out = JSON.parse(
+        done.stdout.toString().trim().split("\n").at(-1) ?? "null",
+      );
+      expect(typeof out).toBe("string");
+      expect(out).toContain("no live driver");
+    } finally {
+      rmSync(state, { recursive: true, force: true });
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
