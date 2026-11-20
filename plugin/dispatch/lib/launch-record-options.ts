@@ -102,8 +102,7 @@ function optionalHostDriverReplacement(value: unknown): boolean {
       typeof value.clone === "string" &&
       Number.isSafeInteger(value.pr) &&
       (value.pr as number) > 0 &&
-      typeof value.since === "string" &&
-      Number.isFinite(parseMs(value.since)))
+      typeof value.since === "string")
   );
 }
 

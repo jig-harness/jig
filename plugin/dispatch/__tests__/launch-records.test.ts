@@ -127,7 +127,7 @@ it("reads legacy launch records but rejects invalid account launch ordinals", ()
     );
 });
 
-it("rejects malformed host-driver replacement metadata", () => {
+it("reads host-driver replacement metadata with an advisory start string", () => {
   const original = record("host-driver-replacement");
   const replacement = {
     clone: "clone@host",
@@ -137,13 +137,19 @@ it("rejects malformed host-driver replacement metadata", () => {
   expect(isLaunchRecord({ ...original, replacesHostDriver: replacement })).toBe(
     true,
   );
+  expect(
+    isLaunchRecord({
+      ...original,
+      replacesHostDriver: { ...replacement, since: "not a time" },
+    }),
+  ).toBe(true);
   for (const bad of [
     null,
     {},
     { ...replacement, clone: null },
     { ...replacement, pr: 0 },
     { ...replacement, pr: 1.5 },
-    { ...replacement, since: "not a time" },
+    { ...replacement, since: null },
   ])
     expect(isLaunchRecord({ ...original, replacesHostDriver: bad })).toBe(
       false,
