@@ -624,12 +624,12 @@ async function release(
 
   const before = await readBeforeMutation(pr, policy.holdLabel);
   if (!before.ok) return unread(before.failure);
-  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
+  const { login, live: heldLive, timeline: heldTimeline } = before.value;
   if (
-    !mayMutateHold(beforeLive, head, true) ||
+    !mayMutateHold(heldLive, head, true) ||
     (expectedTransition !== undefined &&
-      latestOf(beforeTimeline)?.id !== expectedTransition) ||
-    !ownsHeldTransition(persisted, latestOf(beforeTimeline))
+      latestOf(heldTimeline)?.id !== expectedTransition) ||
+    !ownsHeldTransition(persisted, latestOf(heldTimeline))
   )
     return 4;
   const watermarkRead = await headWatermark(head, "before the unlabel");

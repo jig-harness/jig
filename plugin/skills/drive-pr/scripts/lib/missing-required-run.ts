@@ -191,31 +191,41 @@ function matrixCombinations(job: unknown): Set<string> | null {
   const grid = matrixGrid(job);
   if (grid === null) return null;
   const { include, ...axes } = grid;
-  let tuples: unknown[][];
-  if (include !== undefined) {
-    if (Object.keys(axes).length > 0 || !Array.isArray(include)) return null;
-    if (include.length > MAX_MATRIX_COMBINATIONS) return null;
-    if (!include.every(isRecord)) return null;
-    tuples = include.map((entry) => Object.values(entry));
-  } else {
-    const lists = Object.values(axes);
-    if (lists.length === 0 || !lists.every(Array.isArray)) return null;
-    let size = 1;
-    for (const list of lists) {
-      size *= list.length;
-      if (size > MAX_MATRIX_COMBINATIONS) return null;
-    }
-    tuples = lists.reduce<unknown[][]>(
-      (acc, list) => acc.flatMap((t) => list.map((v: unknown) => [...t, v])),
-      [[]],
-    );
-  }
+  const tuples =
+    include === undefined ? axisTuples(axes) : includeTuples(include, axes);
   if (
+    tuples === null ||
     tuples.length === 0 ||
     !tuples.every((t) => t.length > 0 && t.every(isPlain))
   )
     return null;
   return new Set(tuples.map((t) => t.map(String).join(", ")));
+}
+
+/** Each `include` entry's values in key order; `null` beside axes or past the job limit. */
+function includeTuples(
+  include: unknown,
+  axes: Record<string, unknown>,
+): unknown[][] | null {
+  if (Object.keys(axes).length > 0 || !Array.isArray(include)) return null;
+  if (include.length > MAX_MATRIX_COMBINATIONS) return null;
+  if (!include.every(isRecord)) return null;
+  return include.map((entry) => Object.values(entry));
+}
+
+/** The cross product of the axes in key order; `null` past the job limit, checked before it is built. */
+function axisTuples(axes: Record<string, unknown>): unknown[][] | null {
+  const lists = Object.values(axes);
+  if (lists.length === 0 || !lists.every(Array.isArray)) return null;
+  let size = 1;
+  for (const list of lists) {
+    size *= list.length;
+    if (size > MAX_MATRIX_COMBINATIONS) return null;
+  }
+  return lists.reduce<unknown[][]>(
+    (acc, list) => acc.flatMap((t) => list.map((v: unknown) => [...t, v])),
+    [[]],
+  );
 }
 
 /**
@@ -291,8 +301,7 @@ function reports(
   return sources.some((source) => {
     if (new RegExp(`^${source}$`).test(check)) return true;
     const parts = new RegExp(`^${source} \\((.+)\\)$`).exec(check)?.[1];
-    if (parts !== undefined && combinations !== null && combinations.has(parts))
-      return true;
+    if (parts !== undefined && combinations?.has(parts)) return true;
     const rest = new RegExp(`^${source} / ([\\s\\S]+)$`).exec(check)?.[1];
     return (
       rest !== undefined &&
