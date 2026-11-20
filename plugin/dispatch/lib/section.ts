@@ -428,6 +428,14 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
+function trackerOf(values: Record<string, unknown>): Checked<TrackerConfig> {
+  try {
+    return ok(parseTrackerConfig(values));
+  } catch (error) {
+    return invalid(error instanceof Error ? error.message : String(error));
+  }
+}
+
 /**
  * The `dispatch` section of parsed configuration values, with defaults;
  * `invalid`, its reason naming the setting, for the first value that does
@@ -444,12 +452,9 @@ export function dispatchSection(
   if (refused !== null) return refused;
   const rules = labelsAndAdopt(section);
   if (!rules.ok) return rules;
-  let tracker: TrackerConfig;
-  try {
-    tracker = parseTrackerConfig(values);
-  } catch (error) {
-    return invalid(error instanceof Error ? error.message : String(error));
-  }
+  const parsed = trackerOf(values);
+  if (!parsed.ok) return parsed;
+  const tracker = parsed.value;
   const picked = pickup(section, tracker);
   if (!picked.ok) return picked;
   const waits = timings(section);

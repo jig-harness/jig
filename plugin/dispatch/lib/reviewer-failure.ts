@@ -53,33 +53,10 @@ export function reviewerFailurePolicy(
     review.reviewer_check_pattern.trim() !== ""
       ? review.reviewer_check_pattern
       : undefined;
-  const malformedReviewerCheckPattern =
-    configuredCheckPattern !== undefined &&
-    !attempt("unreadable", "the reviewer check pattern could not be read", () =>
-      checkPattern(configuredCheckPattern),
-    ).ok;
-  const malformedReviewerSetting =
-    [review.reviewer_app, review.reviewer_check_pattern].some(
-      (value) =>
-        value !== undefined &&
-        value !== null &&
-        (typeof value !== "string" || value.trim() === ""),
-    ) ||
-    malformedReviewerCheckPattern ||
-    (review.reviewer_evidence !== undefined &&
-      review.reviewer_evidence !== null &&
-      review.reviewer_evidence !== "sticky" &&
-      review.reviewer_evidence !== "review_object") ||
-    [
-      review.sticky_marker,
-      review.reviewed_sha_marker,
-      review.skip_notice_marker,
-    ].some(
-      (value) =>
-        value !== undefined &&
-        value !== null &&
-        (typeof value !== "string" || value.trim() === ""),
-    );
+  const malformedReviewerSetting = hasMalformedReviewerSetting(
+    review,
+    configuredCheckPattern,
+  );
   const botLogins = bots.flatMap((bot: unknown) => {
     const login = isRecord(bot) ? bot.login : bot;
     return typeof login === "string" && login !== "" ? [login] : [];
@@ -108,6 +85,41 @@ export function reviewerFailurePolicy(
     ),
     bots: botLogins,
   };
+}
+
+function isBlankOrNonString(value: unknown): boolean {
+  return (
+    value !== undefined &&
+    value !== null &&
+    (typeof value !== "string" || value.trim() === "")
+  );
+}
+
+function hasMalformedReviewerSetting(
+  review: Record<string, unknown>,
+  configuredCheckPattern: string | undefined,
+): boolean {
+  const unreadablePattern =
+    configuredCheckPattern !== undefined &&
+    !attempt("unreadable", "the reviewer check pattern could not be read", () =>
+      checkPattern(configuredCheckPattern),
+    ).ok;
+  const badEvidence =
+    review.reviewer_evidence !== undefined &&
+    review.reviewer_evidence !== null &&
+    review.reviewer_evidence !== "sticky" &&
+    review.reviewer_evidence !== "review_object";
+  return (
+    [
+      review.reviewer_app,
+      review.reviewer_check_pattern,
+      review.sticky_marker,
+      review.reviewed_sha_marker,
+      review.skip_notice_marker,
+    ].some(isBlankOrNonString) ||
+    unreadablePattern ||
+    badEvidence
+  );
 }
 
 function stringOr(value: unknown, fallback: string): string {
