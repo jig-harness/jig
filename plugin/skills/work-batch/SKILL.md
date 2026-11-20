@@ -110,7 +110,10 @@ JSON form), and no verdict prompt appears:
   record keeps holding every member. Run `/jig:do-item` for the member kept,
   or, when none is, for the first member left out whose priority is set,
   passing that item's `--for` and `--ancestor` to its claim. Every other
-  member stays unclaimed for its own pickup. When no member is kept and
+  member stays unclaimed for its own pickup. Where `dispatch.missing_priority`
+  is `start`, a member with no priority is an ordinary left-out member: it
+  counts as one whose priority is set here, and is never refused for it.
+  Where it is `hold` and no member is kept and
   every one left out lost its priority, claim none and start no item: end
   the pass with the launch's result command as `failed`, naming each member
   and that its priority is missing, and pass `--refused <that member's
