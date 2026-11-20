@@ -206,6 +206,10 @@ consumer polling `--json` for one of these states will never see it there.
 | `FORGE_RATE_LIMITED` | 24 | A read of the drive met the forge's spent rate limit for its credential: the report names the reset (`rateLimit.until`), and nothing more is sent before it. Never `INDETERMINATE`. `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds (default 30 minutes) and goes on, the attach as well as the rounds; past that it stops with this exit, the reset recorded on its stop, and under `jig dispatch` the dispatcher re-drives it after the reset, on any account, without a person |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
+When the driver passes through the status probe's exit, its log, handoff and
+ledger record the probe's state and reason. Read that reason when diagnosing
+the stop.
+
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
 person must settle on the workspace card: a park, a usage-limit stop and
 every failure stop (an operational failure, a usage error, the round budget

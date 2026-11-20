@@ -42,6 +42,7 @@
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
  * through the notification.
  */
+import { probeStopOf } from "../../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
 import {
   channelNameFault,
   type Delivery,
@@ -225,9 +226,14 @@ export function classOf(cause: Cause): OutcomeClass | null {
       // A held drive's need is about its hold, not the exit the drive stopped on.
       if (cause.evidence.heldSince !== undefined) return null;
       const exit = cause.evidence.rearmExit ?? cause.evidence.exit;
-      return typeof exit === "number"
-        ? driveClass(exit, null).class
-        : "unknown";
+      if (typeof exit !== "number") return "unknown";
+      const {
+        probeState: state,
+        probeReason: reason,
+        probeFailure: failure,
+      } = cause.evidence;
+      const probe = probeStopOf({ code: exit, state, reason, failure });
+      return driveClass(exit, null, probe).class;
     }
     default:
       return null;

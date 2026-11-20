@@ -36,6 +36,11 @@
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
+import {
+  type ProbeStop,
+  readProbeStop,
+  probeFailure,
+} from "../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
 import { endedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
@@ -75,6 +80,7 @@ export const OUTCOME_CLASSES = [
   "died",
   "refused",
   "gates failed",
+  "read failed",
   "double claim",
   "unknown",
 ] as const;
@@ -379,6 +385,25 @@ export interface EndFacts {
 export function driveClass(
   code: number,
   merged: boolean | null,
+  probe?: ProbeStop | null,
+): { class: OutcomeClass; reason: string } {
+  const placed = driveExitClass(code, merged);
+  if (probe?.code !== code) return placed;
+  const failure = probeFailure(probe);
+  return {
+    class:
+      failure === "quota"
+        ? "quota wall"
+        : failure === "read"
+          ? "read failed"
+          : placed.class,
+    reason: `exit ${code}, ${probe.state}: ${probe.reason}`,
+  };
+}
+
+function driveExitClass(
+  code: number,
+  merged: boolean | null,
 ): { class: OutcomeClass; reason: string } {
   if (code === DRIVE_EXIT.PR_NOT_OPEN) {
     if (merged === true)
@@ -425,37 +450,56 @@ function sessionClass(
       class: "died",
       reason: `no result recorded: this host could not write it (since ${r.unwritten}); the host's health check reports the cause`,
     };
-  if (r.state.kind === "ended" && r.result === null) {
-    const { startup, signInPhrase } = r.state.exit;
-    if (startup === "sign-in")
-      return {
-        class: "sign-in failure",
-        reason: `the vendor refused its account's sign-in${signInPhrase === undefined ? "" : `: ${signInPhrase}`}; the dispatcher can start it again`,
-      };
-    if (startup === "breaker")
-      return {
-        class: "startup breaker",
-        reason: "repeated startup failures triggered the account's backoff",
-      };
-  }
+  const accountFailure = accountStartupClass(r);
+  if (accountFailure !== null) return accountFailure;
   // A steward that did not submit has no outcome, even if its retained output
   // contains a Question line that the generic classifier can describe.
   if (r.record.action === "steward" && r.result === null)
     return sessionEndClass(r, endedAt);
-  const result = sessionResultClass(
-    r.result,
-    r.state.kind === "ended" ? r.state.exit.said : undefined,
-    r.waitsFor,
-    r.framed,
+  return (
+    sessionResultClass(
+      r.result,
+      r.state.kind === "ended" ? r.state.exit.said : undefined,
+      r.waitsFor,
+      r.framed,
+    ) ??
+    ordinaryStartupClass(r.state) ??
+    sessionEndClass(r, endedAt)
   );
-  if (result !== null) return result;
-  const s = r.state;
-  if (s.kind === "ended" && s.exit.startup !== undefined)
+}
+
+/** Sign-in failures and the startup breaker explain an account-wide stop. */
+function accountStartupClass(
+  r: ReadRecord,
+): { class: OutcomeClass; reason: string } | null {
+  if (r.state.kind !== "ended" || r.result !== null) return null;
+  const { startup, signInPhrase } = r.state.exit;
+  if (startup === "sign-in")
     return {
-      class: s.exit.startup === "quota" ? "quota wall" : "refused",
-      reason: `session could not start: ${s.exit.startup === "quota" ? "vendor usage-limit notice" : "quick unsuccessful exit without a transcript"}; exit ${s.exit.code}`,
+      class: "sign-in failure",
+      reason: `the vendor refused its account's sign-in${signInPhrase === undefined ? "" : `: ${signInPhrase}`}; the dispatcher can start it again`,
     };
-  return sessionEndClass(r, endedAt);
+  if (startup === "breaker")
+    return {
+      class: "startup breaker",
+      reason: "repeated startup failures triggered the account's backoff",
+    };
+  return null;
+}
+
+/** Other startup failures are usage refusals or exits before a transcript. */
+function ordinaryStartupClass(
+  state: ReadRecord["state"],
+): { class: OutcomeClass; reason: string } | null {
+  if (state.kind !== "ended" || state.exit.startup === undefined) return null;
+  const quota = state.exit.startup === "quota";
+  const startup = quota
+    ? "vendor usage-limit notice"
+    : "quick unsuccessful exit without a transcript";
+  return {
+    class: quota ? "quota wall" : "refused",
+    reason: `session could not start: ${startup}; exit ${state.exit.code}`,
+  };
 }
 
 /** Classify a session that supplied neither a result nor a startup failure. */
@@ -485,22 +529,32 @@ export function classifyEnded(
   r: ReadRecord,
   endedAt: string,
   facts: EndFacts,
-): { class: OutcomeClass; reason: string } {
+): { class: OutcomeClass; reason: string; probeStopped?: true } {
+  return isDrive(r.record)
+    ? driveEndedClass(r, facts)
+    : sessionClass(r, endedAt);
+}
+
+function driveEndedClass(
+  r: ReadRecord,
+  facts: EndFacts,
+): { class: OutcomeClass; reason: string; probeStopped?: true } {
   const s = r.state;
-  if (isDrive(r.record)) {
-    const answer =
-      s.kind === "ended"
-        ? s.exit.code === null
-          ? `signal ${s.exit.signal ?? "unknown"}`
-          : `exit ${s.exit.code}`
-        : goneWithoutExit(s);
-    if (facts.takenOver)
-      return { class: "stalled", reason: `taken over (${answer})` };
-    if (s.kind === "ended" && s.exit.code !== null)
-      return driveClass(s.exit.code, facts.merged);
+  const answer =
+    s.kind === "ended"
+      ? s.exit.code === null
+        ? `signal ${s.exit.signal ?? "unknown"}`
+        : `exit ${s.exit.code}`
+      : goneWithoutExit(s);
+  if (facts.takenOver)
+    return { class: "stalled", reason: `taken over (${answer})` };
+  if (s.kind !== "ended" || s.exit.code === null)
     return { class: "died", reason: answer };
-  }
-  return sessionClass(r, endedAt);
+  const probe = readProbeStop(s.exit.context ?? "");
+  const placed = driveClass(s.exit.code, facts.merged, probe);
+  return probe?.code === s.exit.code
+    ? { ...placed, probeStopped: true }
+    : placed;
 }
 
 /** Whether a record has ended, as the log counts an end: an exit, or a process gone without one. */
@@ -572,6 +626,7 @@ export function endedRow(
       framed: r.framed,
       class: placed.class,
       reason,
+      ...(placed.probeStopped ? { probeStopped: true } : {}),
     }),
     ...aboutFields(about),
     ...reportFields(r.report),

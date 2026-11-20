@@ -14,8 +14,13 @@ import {
   type Slots,
   slotsOf,
 } from "../accounts.ts";
+import {
+  unrecordedDriverMatches,
+  takeoverHostDriver,
+} from "../host-drivers.ts";
 import { serves } from "../account-stages.ts";
-import { admission, takeoverMoves } from "./admission.ts";
+import { admission, keepsTakeoverAccount } from "./admission.ts";
+import type { HostDrivers } from "../host-drivers.ts";
 import {
   isInteractive,
   type LaunchAttempt,
@@ -74,20 +79,12 @@ export interface ApplyState {
   table: Slots[];
   /** The account of the most recent launch record, where the turn resumes. */
   last: string | null;
-  /**
-   * The pass deadline every headless pass this tick launches runs under, in
-   * seconds (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`,
-   * else the drive's default), written on the launch record and handed to
-   * `drive.ts` as `--pass-timeout` (a follow-up pass's wrapper enforces it
-   * itself), so the deadline admission judged is the one the pass gets.
-   */
+  /** The tick's pass deadline in seconds (0 for none), recorded for the driver and follow-up wrapper. */
   passDeadlineSec: number;
-  /**
-   * This host's opt-in to Codex's bypass, read once for the tick: admission
-   * judges a Codex account by it, and a headless pass's launch record keeps
-   * it, so the pass command does what was judged.
-   */
+  /** The tick's Codex bypass opt-in, also recorded so the pass uses the admitted options. */
   codexOptIn: CodexOptIn;
+  /** Live driver locks read at the start of this apply phase. */
+  drivers?: HostDrivers;
   /** Each repository's sessions as its observation read them, by slug, for judging another repository's stuck records (`followup-lane.ts`). */
   sessionsOf?: Map<string, SessionsReport>;
   /** The workspaces this tick has opened so far, within `opens_per_tick`. */
@@ -343,7 +340,6 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
     detail: receipt.detail,
   };
 }
-
 /** What the dispatcher's names call a record's target: the item's key, else `#<pr>`. */
 function nameKey(
   record: Pick<LaunchRecord, "item" | "pr"> &
@@ -352,14 +348,12 @@ function nameKey(
   if (record.action === "steward") return "line";
   return record.item ?? `#${String(record.pr)}`;
 }
-
 /** The mark a record carries: the one it was written with, else the convention's for it. */
 function markOf(record: LaunchRecord): string {
   return (
     record.mark ?? dispatchedMark(record.action, nameKey(record), record.id)
   );
 }
-
 /** What the runtime starts for a record: a headless pass (a drive's, a follow-up's, a pickup's), or an interactive pickup an earlier release recorded, which a runtime that cannot bind one refuses. */
 function stageOf(record: LaunchRecord): LaunchStage {
   const named = {
@@ -378,7 +372,6 @@ function stageOf(record: LaunchRecord): LaunchStage {
     };
   return { kind: "headless", ...named, record: record.id };
 }
-
 /** Call the runtime's `launch` under the record's token, and keep its answer (and agent id) on the record. */
 async function callLaunch(
   state: ApplyState,
@@ -408,15 +401,26 @@ async function callLaunch(
   writeRecord(record, state.root);
   return attempt;
 }
-
-/** Whether a takeover shares the slot of the record it replaces, which still holds it on the same account. */
+/** Whether a takeover shares the slot of the record or live host driver it replaces on the same account. */
 function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
-  if (record.replaces === null) return false;
-  return takeoverShares(
-    state.table.map((s) => s.account),
-    holdingRecords(state.records),
-    record,
-  );
+  if (
+    record.replaces !== null &&
+    takeoverShares(
+      state.table.map((s) => s.account),
+      holdingRecords(state.records),
+      record,
+    )
+  )
+    return true;
+  return state.drivers?.ok === true && record.replacesHostDriver !== undefined
+    ? unrecordedDriverMatches(
+        state.table.map((s) => s.account),
+        state.records,
+        state.drivers.value,
+        slotsOf(state.table, record)?.account.name,
+        record.replacesHostDriver,
+      )
+    : false;
 }
 
 /** A lost earlier answer might have started the wrapper, so only known failures release it. */
@@ -781,6 +785,7 @@ export async function admitAccount(
   repo: string,
   action: Action,
   pickupDeadlineSec = 0,
+  clone: string | null = null,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
@@ -790,7 +795,7 @@ export async function admitAccount(
   const failed = new Set<string>(held.keys());
   let refusal: LaunchOutcome | null = null;
   for (;;) {
-    const admitted = admission(state, action, failed, pickupDeadlineSec);
+    const admitted = admission(state, action, failed, pickupDeadlineSec, clone);
     if ("waits" in admitted)
       return {
         outcome: refusal ?? {
@@ -816,7 +821,15 @@ export async function admitAccount(
       return byLoad(state, repo, action, slots, pickupDeadlineSec);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    if (action.takeover !== undefined && !takeoverMoves(state, action))
+    const holder = takeoverHostDriver(
+      action.takeoverHolder,
+      state.drivers,
+      state.table.map((entry) => entry.account),
+      state.records,
+      clone,
+      Number(action.target.replace("PR #", "")),
+    );
+    if (keepsTakeoverAccount(state, action, holder?.account, name))
       return { outcome: refusal };
     failed.add(name);
   }

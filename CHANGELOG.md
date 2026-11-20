@@ -401,6 +401,28 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.288.2] - 2026-11-20
+
+### Fixed
+
+- `jig dispatch` counts every live driver on the host against the slots of
+  the account its passes bill, whoever started it. A drive a pickup armed
+  keeps the pickup's slot once the pickup ends instead of freeing it, and a
+  drive a person or a repair session started or took over by hand holds a
+  slot too, so admission no longer launches past `max_per_account` while
+  such drivers run. A driver whose process is gone frees its slot on the
+  next tick. `jig dispatch line --json` lists these drivers in
+  `line.drivers`, with the account whose slot each holds and how it was
+  started.
+
+## [0.288.1] - 2026-11-20
+
+### Fixed
+
+- When a drive stops on an exit from its status probe, the driver log, handoff and drive ledger keep the probe's state and reason. Dispatch and `jig ask` can show what happened, and an indeterminate probe that reports a read failure or rate limit is classified accordingly.
+- Fresh status evaluations clear an earlier failure classification, and an unreadable draft-skip comment is reported as a read failure. **Consumer action:** none.
+- Dispatch overlap reports charge a match between different areas only when their globs can match a common path. Areas that share a directory but match different file extensions no longer add an overlap cost.
+
 ## [0.288.0] - 2026-11-20
 
 ### Added
@@ -10215,7 +10237,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.288.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.288.2...HEAD
+[0.288.2]: https://github.com/jig-harness/jig/compare/v0.288.1...v0.288.2
+[0.288.1]: https://github.com/jig-harness/jig/compare/v0.288.0...v0.288.1
 [0.288.0]: https://github.com/jig-harness/jig/compare/v0.287.2...v0.288.0
 [0.287.2]: https://github.com/jig-harness/jig/compare/v0.287.1...v0.287.2
 [0.287.1]: https://github.com/jig-harness/jig/compare/v0.287.0...v0.287.1

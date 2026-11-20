@@ -91,7 +91,6 @@ import {
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
 import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
 import { accountsReport } from "./lib/account-report.ts";
-import { readAccountWeights } from "./lib/local-weights.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { timeLeftMs } from "./lib/actions/launch.ts";
@@ -116,6 +115,8 @@ import { loadReport } from "./lib/load.ts";
 import { readTickLoad } from "./lib/tick-load.ts";
 import {
   allRecords,
+  hostInputs,
+  readHostInputs,
   deadlineOf,
   type TickContext,
   type TickOptions,
@@ -230,7 +231,6 @@ function upgradeField(): Pick<TickReceipt, "upgrade"> {
   return upgrade === undefined ? {} : { upgrade };
 }
 
-/** Read this machine's launch records as the observe phase sees them, and the receipt the tick fills. */
 /** Where the systems a tick held outlive it, for the next tick's probe (`shared/outbound/hold.ts`). */
 const UNANSWERED_FILE = "unanswered.json";
 
@@ -275,7 +275,7 @@ async function startTick(
     startedMs,
     ...(bound === undefined ? {} : { bound }),
     launches: read.records,
-    weights: readAccountWeights(options.machine?.accounts ?? []),
+    ...readHostInputs(options),
     apply: null,
     lineInputs: new Map(),
     reflections: [],
@@ -462,6 +462,7 @@ async function startAct(started: StartedTick): Promise<void> {
     receipt.defect = defectOf("start", error);
     logDefect("the follow-up outcomes", receipt.defect, error);
   }
+  context.drivers = readHostInputs(options).drivers;
   const attempt = applyState(
     options,
     runtime,
@@ -470,6 +471,7 @@ async function startAct(started: StartedTick): Promise<void> {
     read.unreadable,
     context.startedMs,
     context.weights,
+    context.drivers,
   );
   // `--apply` with a machine file that was then withheld says why.
   started.withheld =
@@ -484,7 +486,7 @@ async function startAct(started: StartedTick): Promise<void> {
     accountsReport(options.machine ?? null, {
       records: read.records,
       nowMs: context.nowMs,
-      weights: context.weights,
+      ...hostInputs(context),
       ...(apply ?? {}),
     }),
   );
@@ -513,7 +515,7 @@ async function readLoadUnderAct(
     codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     nowMs: context.nowMs,
     sample: apply !== null,
-    weights: context.weights,
+    ...hostInputs(context),
   });
   if (!load.ok) {
     receipt.loadUnread = load.failure.reason;
@@ -652,7 +654,6 @@ async function noteBudget(
     };
 }
 
-/** The closing steps: the records of repositories not read settled, the outcome log copied, the exit decided, the line written. */
 async function closeTick(
   started: StartedTick,
   timer: PhaseTimer<TickPhase>,
@@ -709,7 +710,7 @@ async function closeTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
-    weights: context.weights,
+    ...hostInputs(context),
   });
   // Writing the line can set the exit to 1: the tick's failure row follows it.
   finalizeTickFailure(receipt, context);
@@ -768,7 +769,7 @@ function lineOfHeldTick(
     records: allRecords(context),
     inputs: context.lineInputs,
     codexOptIn: context.apply?.codexOptIn ?? hostCodexOptIn(),
-    weights: context.weights,
+    ...hostInputs(context),
   });
 }
 

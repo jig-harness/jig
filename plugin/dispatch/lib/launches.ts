@@ -1,7 +1,6 @@
 /**
- * Launch records, in the state database's `launches` table (`state.ts`):
- * one row per session, written before launch, so a lost launch answer still
- * holds the stage and account slot. Each column has one writer:
+ * The `launches` table (`state.ts`) holds one row per session, written before
+ * launch so a lost answer still holds the stage and slot. Each column has one writer:
  *
  * - `record`, the tick's: the action, the pull request, the account, the
  *   random token, the workspace, the dispatched mark its workspace carries
@@ -126,7 +125,6 @@ export interface LaunchAttempt {
   outcome: "sent" | "failed" | "lost";
   detail: string;
 }
-
 /** The tick's part of a record. */
 export interface LaunchRecord {
   /** The last attributable test-lock wait this host observed, retained after it ends. */
@@ -178,6 +176,8 @@ export interface LaunchRecord {
   codexPassArgs?: string[];
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
+  /** Host-driver lock this takeover replaces, if any. */
+  replacesHostDriver?: { clone: string; pr: number; since: string };
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
   facts: string;
   createdAt: string;

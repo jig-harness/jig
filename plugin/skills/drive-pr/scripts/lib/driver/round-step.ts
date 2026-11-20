@@ -34,6 +34,7 @@ import { readRoundStatus } from "./round-status.ts";
 
 import { answerForgeLimit } from "./forge-limit-stop.ts";
 
+import { terminalProbeStop } from "../status/probe-stop.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 
 import {
@@ -66,8 +67,11 @@ async function gateRoundStatus(
 
   // A spent forge rate limit is waited out or stopped on, never reported as
   // a failure to read (`forge-limit-stop.ts`).
-  if (code === DRIVE_EXIT.FORGE_RATE_LIMITED)
-    return await answerForgeLimit(context, status);
+  if (code === DRIVE_EXIT.FORGE_RATE_LIMITED) {
+    const outcome = await answerForgeLimit(context, status);
+    driverRuntime.stopProbe = terminalProbeStop(code, status, outcome);
+    return outcome;
+  }
   driverRuntime.forgeLimitWaits = 0;
 
   switch (code) {
@@ -112,11 +116,18 @@ async function gateRoundStatus(
       // about to weigh by hand — so it gets the same economy block the
       // converged and exhausted exits do.
       process.stderr.write(await loopEconomy(context.pr));
+      // Keep the structured marker in the retained diagnostic tail, after the
+      // potentially long parked-decision listing and economy report.
+      driverRuntime.stopProbe = terminalProbeStop(code, status, code);
       return 8;
     }
     case 9: {
       const phase = await runConflictPhase(context, status, reasonLine);
       if (phase === "continue") return "continue";
+      // A conflict may be repaired in this drive.  Keep the probe only when
+      // the conflict branch actually terminates, so the stop event, ledger
+      // and closing report retain the same evidence as other terminal gates.
+      driverRuntime.stopProbe = terminalProbeStop(code, status, phase);
       return phase;
     }
     // There is no `case 10`. It was `PR_IS_DRAFT`, terminal and un-re-armed
@@ -145,6 +156,7 @@ async function gateRoundStatus(
       // re-checks immediately before pushing — see SKILL.md § 6. This check
       // keeps the loop from *starting* work it cannot land; guarded-push.ts
       // keeps it from *finishing* one.
+      driverRuntime.stopProbe = terminalProbeStop(code, status, code);
       return code;
   }
 
