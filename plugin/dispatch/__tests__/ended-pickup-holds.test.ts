@@ -393,6 +393,7 @@ describe("why an ended pickup record holds its item", () => {
       slug: SLUG,
       section: { stalledAfterMs: 3_600_000 } as DispatchSection,
       pickups: [{ ...wanted("#7"), pooled: true, assignee: "factory" }],
+      claimed: [],
       sessions: { ok: true, source: "test", workspaces: [] },
       launches: records,
       idleSince: new Map(),
