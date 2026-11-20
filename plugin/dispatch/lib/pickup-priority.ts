@@ -14,7 +14,7 @@
 import type { DispatchSection, Unplaced, WantedItem } from "./types.ts";
 
 /** What a person does about an item held for its missing priority. */
-export const NEEDS_PRIORITY =
+const NEEDS_PRIORITY =
   "no priority, so it has no place in the queue and is not started: set its priority on the item, and the next tick ranks it (dispatch.missing_priority)";
 
 /** The labelling gap that holds the item back, or `null` when it may start. */
