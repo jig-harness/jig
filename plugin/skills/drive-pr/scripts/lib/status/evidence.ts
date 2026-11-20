@@ -173,29 +173,31 @@ export async function checkRunsFor(
   return (await checkRunListing(owner, repo, sha, read)).runs;
 }
 
+const text = (value: unknown): string => String(value ?? "");
+const nested = (value: unknown, key: string): string =>
+  text((value as Record<string, unknown> | null)?.[key]) || "";
+
+function checkRunOf(c: Record<string, unknown>): CheckRun {
+  return {
+    name: text(c.name),
+    status: text(c.status),
+    conclusion: c.conclusion === null ? null : text(c.conclusion),
+    app: nested(c.app, "slug"),
+    title: nested(c.output, "title"),
+    id: Number(c.id ?? 0),
+    started: c.started_at === null ? null : text(c.started_at) || null,
+    ...jobTiming(c),
+  };
+}
+
 function checkRunsIn(pages: unknown[]): CheckRun[] {
-  const runs: CheckRun[] = [];
-  for (const page of pages) {
-    const list = (page as { check_runs?: unknown[] } | null)?.check_runs ?? [];
-    for (const c of list as Array<Record<string, unknown>>) {
-      runs.push({
-        name: String(c.name ?? ""),
-        status: String(c.status ?? ""),
-        conclusion: c.conclusion === null ? null : String(c.conclusion ?? ""),
-        app: String(
-          ((c.app as Record<string, unknown> | null)?.slug ?? "") || "",
-        ),
-        title: String(
-          ((c.output as Record<string, unknown> | null)?.title ?? "") || "",
-        ),
-        id: Number(c.id ?? 0),
-        started:
-          c.started_at === null ? null : String(c.started_at ?? "") || null,
-        ...jobTiming(c),
-      });
-    }
-  }
-  return runs;
+  return pages.flatMap((page) =>
+    (
+      ((page as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<
+        Record<string, unknown>
+      >
+    ).map(checkRunOf),
+  );
 }
 
 /**

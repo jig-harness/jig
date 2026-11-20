@@ -105,30 +105,11 @@ export function heldListingStop(
   return CHECK_RUNS_UNREADABLE_EXIT;
 }
 
-export async function releaseAndReadFinalCi(
+/** Releases the CI hold: a final exit, `"continue"` to re-read all evidence, or `null` when CI is ready to be read. */
+async function releaseCiHold(
   context: DriveRoundContext,
   reviewedHead: string,
-): Promise<
-  | number
-  | "continue"
-  | {
-      finalStatus: Record<string, unknown>;
-      finalStatusRes: Awaited<ReturnType<typeof run>>;
-      finalVerdict: string;
-      finalCi: Awaited<ReturnType<typeof run>>;
-      finalCiSignals: Awaited<
-        ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
-      >;
-    }
-> {
-  // Intermediate synchronize pushes ran under the CI hold, when the
-  // repository has one (`ci.hold_label`; without it `release` prints
-  // `disabled` and nothing below waits on an unlabel). Release only
-  // after convergence, the clean-tree certification, and the Ready
-  // transition above have all settled. `ci-hold.ts` compares the
-  // persisted labelled timeline-event id before removing anything, and
-  // adopts a live label it holds no record of, then removes it.
-  const finalCiSignals = await context.finalCiWait.prime();
+): Promise<number | "continue" | null> {
   // Captured, then written through the console, so the driver log keeps
   // why a release failed: an inherited stream reaches the terminal only.
   const release = await run(
@@ -166,6 +147,35 @@ export async function releaseAndReadFinalCi(
     await sleep(UNLABEL_SETTLE_SECONDS);
     return "continue";
   }
+  return null;
+}
+
+export async function releaseAndReadFinalCi(
+  context: DriveRoundContext,
+  reviewedHead: string,
+): Promise<
+  | number
+  | "continue"
+  | {
+      finalStatus: Record<string, unknown>;
+      finalStatusRes: Awaited<ReturnType<typeof run>>;
+      finalVerdict: string;
+      finalCi: Awaited<ReturnType<typeof run>>;
+      finalCiSignals: Awaited<
+        ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
+      >;
+    }
+> {
+  // Intermediate synchronize pushes ran under the CI hold, when the
+  // repository has one (`ci.hold_label`; without it `release` prints
+  // `disabled` and nothing below waits on an unlabel). Release only
+  // after convergence, the clean-tree certification, and the Ready
+  // transition above have all settled. `ci-hold.ts` compares the
+  // persisted labelled timeline-event id before removing anything, and
+  // adopts a live label it holds no record of, then removes it.
+  const finalCiSignals = await context.finalCiWait.prime();
+  const released = await releaseCiHold(context, reviewedHead);
+  if (released !== null) return released;
 
   const finalCi = await span("ci.wait", {}, () =>
     run(
