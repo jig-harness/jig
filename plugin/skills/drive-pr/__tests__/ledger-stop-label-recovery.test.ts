@@ -119,13 +119,24 @@ describe("recovering a stopped ledger's pending state-label projection", () => {
     return { labels, env };
   }
 
+  async function expectRecoveryToRemainPending(
+    s: Stage,
+    prepare: (labels: ReturnType<typeof labelForge>) => void,
+  ) {
+    const { labels, env } = await labelsFor(s);
+    prepare(labels);
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+    expect(labels.labels()).toEqual(["jig:converged"]);
+    return { labels, env };
+  }
+
   it("retries the recorded CI exit against the same acquired stopped ledger", async () => {
     const s = stage({ exit: 0 });
-    const { env } = await labelsFor(s);
-    writeFileSync(join(s.forge.dir, "fail-patch"), "");
-    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    const { env } = await expectRecoveryToRemainPending(s, () =>
+      writeFileSync(join(s.forge.dir, "fail-patch"), ""),
+    );
     expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 0 });
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
     rmSync(join(s.forge.dir, "fail-patch"));
     expectSpawnExit(await drives(s, ["--doctor"], env), 0);
     expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
@@ -134,11 +145,10 @@ describe("recovering a stopped ledger's pending state-label projection", () => {
 
   it("keeps a pending ordinary stop for a refused state-label projection", async () => {
     const s = stage({ exit: 0 });
-    const { labels, env } = await labelsFor(s);
-    writeFileSync(join(labels.bin, "edit-refused"), "");
-    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-    expect(labels.labels()).toEqual(["jig:converged"]);
+    const { labels, env } = await expectRecoveryToRemainPending(
+      s,
+      (labelState) => writeFileSync(join(labelState.bin, "edit-refused"), ""),
+    );
     rmSync(join(labels.bin, "edit-refused"));
     expectSpawnExit(await drives(s, ["--doctor"], env), 0);
     expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
@@ -147,11 +157,11 @@ describe("recovering a stopped ledger's pending state-label projection", () => {
 
   it("keeps a pending ordinary stop when its state-label configuration is unreadable", async () => {
     const s = stage({ exit: 0 });
-    const { labels, env } = await labelsFor(s);
-    writeFileSync(join(labels.bin, "jig.yaml"), ": invalid");
-    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
-    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-    expect(labels.labels()).toEqual(["jig:converged"]);
+    const { labels, env } = await expectRecoveryToRemainPending(
+      s,
+      (labelState) =>
+        writeFileSync(join(labelState.bin, "jig.yaml"), ": invalid"),
+    );
     writeFileSync(
       join(labels.bin, "jig.yaml"),
       "dispatch:\n  labels:\n    enabled: true\n",
@@ -170,11 +180,9 @@ describe("recovering a stopped ledger's pending state-label projection", () => {
   ] as const) {
     it(`keeps a pending ordinary stop ${name}`, async () => {
       const s = stage({ exit: 0 });
-      const { labels, env } = await labelsFor(s);
-      writeFileSync(join(labels.bin, marker), "");
-      expectSpawnExit(await drives(s, ["--doctor"], env), 0);
-      expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
-      expect(labels.labels()).toEqual(["jig:converged"]);
+      await expectRecoveryToRemainPending(s, (labels) =>
+        writeFileSync(join(labels.bin, marker), ""),
+      );
     });
   }
 });
