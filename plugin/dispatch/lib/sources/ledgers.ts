@@ -143,6 +143,7 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
+import { readFacts } from "./ledger-facts.ts";
 import { undecided } from "./ledger-undecided.ts";
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
@@ -168,24 +169,6 @@ const short = (sha: string) => sha.slice(0, 7);
 
 /** What a ledger is read beside when the forge said nothing of its pull request. */
 const NO_FACTS: PrFacts = { head: null, mergeable: null };
-
-/** A pull request's mergeability and head commit as the forge reports them, or why they cannot place its stop yet. */
-function readFacts({
-  head,
-  mergeable,
-}: PrFacts): { head: string; conflicting: boolean } | { unread: string } {
-  if (mergeable === "UNKNOWN")
-    return {
-      unread: "the forge is still computing whether it conflicts with its base",
-    };
-  if (mergeable !== "MERGEABLE" && mergeable !== "CONFLICTING")
-    return {
-      unread: `the forge reports its mergeability as ${String(mergeable)}`,
-    };
-  if (head === null || head === "")
-    return { unread: "the forge reports no head commit for it" };
-  return { head, conflicting: mergeable === "CONFLICTING" };
-}
 
 /**
  * A converged ledger's class, read beside its pull request: `stale` when
