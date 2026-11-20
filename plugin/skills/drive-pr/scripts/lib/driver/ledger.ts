@@ -95,7 +95,11 @@ const CONVERGED_STOP_ATTEMPTS = 3;
 import { stopKey } from "../../../../../shared/pr-labels/blocked.ts";
 import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
-import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
+import {
+  CHECK_RUNS_UNREADABLE_EXIT,
+  SINGLE_INSTANCE_LOCK_EXIT,
+  TAKEN_OVER_EXIT,
+} from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 import { standDownOnNewerClaim } from "./takeover-check.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
@@ -919,6 +923,9 @@ export function ledgerSettlement(
             ? driverRuntime.reviewerFailure
             : null),
         },
+        code === CHECK_RUNS_UNREADABLE_EXIT
+          ? driverRuntime.stopListingPages
+          : null,
         driverRuntime.stopLimitedUntil,
         driverRuntime.stopProbe?.code === code ? driverRuntime.stopProbe : null,
       ));

@@ -9,10 +9,23 @@
  *   CI-green proof or an announcement. It reads the forge whole with its own
  *   call and never takes a reading another module took earlier: what it
  *   authorizes must rest on what GitHub says now.
+ *
+ * A head's check-runs listing is the one paged read here that outgrows a
+ * single call's deadline: a large matrix runs to many pages. Each of its pages
+ * keeps `GH_CALL_TIMEOUT`, the whole listing has `checkRunListingSeconds()`,
+ * and the forge client reads at most `PAGE_CAP` pages. GitHub's default
+ * `filter=latest` already leaves out the earlier attempts of a re-run, so the
+ * listing asks for no narrower set.
  */
+import { PAGE_CAP } from "../../../../shared/outbound/gh-paginate.ts";
 import { attempt } from "../../../../shared/outcome.ts";
 import { ghObservedSlurp } from "./gh-conditional.ts";
-import { ghCall, type RunResult } from "./proc.ts";
+import {
+  checkRunListingSeconds,
+  ghCall,
+  ghCallTimeoutSeconds,
+  type RunResult,
+} from "./proc.ts";
 
 export type PagedRead = "observed" | "fresh";
 
@@ -29,6 +42,62 @@ export function slurpPages(
   if (read === "observed") return ghObservedSlurp(path, opts);
   const args = ["api", "--paginate", "--slurp", path];
   return opts === undefined ? ghCall(args) : ghCall(args, opts);
+}
+
+/** Why a check-runs listing the forge was answering could not be read whole. */
+export interface ListingCutShort {
+  /** The pages read before it stopped; `null` when gh paged it and did not say. */
+  pagesRead: number | null;
+  /** It has more pages than a read takes, so reading it again cannot help. */
+  atBound: boolean;
+  reason: string;
+}
+
+/** Every page of `sha`'s check-runs listing, each within its own deadline. */
+export function slurpCheckRuns(
+  owner: string,
+  repo: string,
+  sha: string,
+  read: PagedRead,
+  opts: { stderr?: "pipe" | "inherit" | "ignore" } = {},
+): Promise<RunResult> {
+  const path = `repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=100`;
+  const wholeSec = checkRunListingSeconds();
+  return read === "observed"
+    ? ghObservedSlurp(path, { ...opts, timeoutSec: wholeSec })
+    : ghCall(["api", "--paginate", "--slurp", path], {
+        ...opts,
+        pagedWholeSec: wholeSec,
+      });
+}
+
+/**
+ * How `sha`'s check-runs listing was cut short: a deadline it ran into, or
+ * the bound on its pages. `null` for a read that failed any other way, which
+ * more time would not mend.
+ */
+export function listingCutShort(
+  sha: string,
+  result: RunResult,
+): ListingCutShort | null {
+  const refused = result.held?.code === "too-costly" ? result.held : null;
+  if (!result.timedOut && refused === null) return null;
+  const pagesRead = result.pagesRead ?? null;
+  const atBound =
+    !result.timedOut && pagesRead !== null && pagesRead >= PAGE_CAP;
+  const pages =
+    pagesRead === null ? "an unknown number of pages" : `${pagesRead} page(s)`;
+  const how = result.timedOut
+    ? "at a deadline"
+    : atBound
+      ? "at its page bound"
+      : `because ${refused?.reason ?? "the forge client refused a page"}`;
+  const limits = `each page may take ${ghCallTimeoutSeconds()}s, the listing ${checkRunListingSeconds()}s and ${PAGE_CAP} pages`;
+  return {
+    pagesRead,
+    atBound,
+    reason: `the check-runs listing of ${sha} stopped after ${pages}, ${how} (${limits})`,
+  };
 }
 
 /** All items from array-valued pages; null for an unreadable or malformed list. */

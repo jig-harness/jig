@@ -17,6 +17,7 @@ import { currentMs } from "../time.ts";
 import { traceGhRunner } from "../trace.ts";
 
 interface Run {
+  pagesRead?: number;
   code: number;
   stdout: string;
   stderr: string;
@@ -26,6 +27,7 @@ interface Run {
 interface Opts {
   env?: Record<string, string>;
   timeoutSec?: number;
+  pagedWholeSec?: number;
   stdout?: "pipe" | "inherit" | "ignore";
 }
 
@@ -319,11 +321,59 @@ describe("a paged REST read the forge client sends a page at a time", () => {
     expect(JSON.parse(read.stdout)).toEqual([{ name: "a1" }, { name: "b1" }]);
   });
 
+  it("gives each page the call's deadline under a longer bound for the whole read, and reads past the call's deadline", async () => {
+    budget(1000);
+    const pages = restPages(15);
+    const forge = client((argv) => {
+      setSystemTime(currentMs() + 5_000);
+      return pages(argv);
+    });
+    const read = await forge.run(["api", "--paginate", "repos/o/r/items"], {
+      pagedWholeSec: 120,
+    });
+    expect(read.code).toBe(0);
+    expect(read.pagesRead).toBe(15);
+    expect(JSON.parse(read.stdout)).toHaveLength(30);
+    expect(forge.sent.map((s) => s.timeoutSec)).toEqual(Array(15).fill(30));
+  });
+
+  it("stops at the whole read's bound and says how many pages it read", async () => {
+    budget(1000);
+    const pages = restPages(15);
+    const forge = client((argv) => {
+      setSystemTime(currentMs() + 5_000);
+      return pages(argv);
+    });
+    const read = await forge.run(["api", "--paginate", "repos/o/r/items"], {
+      pagedWholeSec: 40,
+    });
+    expect(read.timedOut).toBe(true);
+    expect(read.code).toBe(124);
+    expect(read.pagesRead).toBe(8);
+    expect(forge.sent).toHaveLength(8);
+  });
+
+  it("counts the pages read before one that timed out", async () => {
+    budget(1000);
+    const pages = restPages(5);
+    const forge = client((argv, n) =>
+      n === 3
+        ? { code: 124, stdout: "", stderr: "", timedOut: true }
+        : pages(argv),
+    );
+    const read = await forge.run(["api", "--paginate", "repos/o/r/items"], {
+      pagedWholeSec: 120,
+    });
+    expect(read.timedOut).toBe(true);
+    expect(read.pagesRead).toBe(2);
+  });
+
   it(`fails as too-costly past ${PAGE_CAP} pages instead of sending more`, async () => {
     const record = budget(1000);
     const forge = client(restPages(PAGE_CAP + 5));
     const read = await forge.run(["api", "--paginate", "repos/o/r/items"]);
     expect(forge.sent).toHaveLength(PAGE_CAP);
+    expect(read.pagesRead).toBe(PAGE_CAP);
     expect(ghRunFailure(read)?.code).toBe("too-costly");
     expect(record.requests()).toBe(1000 - PAGE_CAP);
   });

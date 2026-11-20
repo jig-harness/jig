@@ -241,7 +241,9 @@ the answer's `Link` header (REST) or the first `pageInfo` cursor (GraphQL),
 and the output assembled as the client prints it. A page the record
 refuses ends the read as `rate-limited`, the pages already sent staying
 charged, so a long read cannot pass the dispatcher's floor; a failing page
-ends it with that page's failure; the pages share the call's one deadline;
+ends it with that page's failure; the pages share the call's one deadline,
+unless the caller names a longer bound for the whole read (`pagedWholeSec`,
+which a head's check-runs listing does), when each page keeps that deadline;
 past 100 pages the read fails as `too-costly`. A form the wrapper does not
 reproduce (streamed output, GraphQL with `--jq` or `--template`, the
 caller's own `--include`, `--input`, or REST fields without `GET`) is left

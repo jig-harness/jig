@@ -14,6 +14,7 @@
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`), `PASS_DEADLINE` (`15`) | stale, once per head commit |
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
+ * | stopped `CHECK_RUNS_UNREADABLE` (`25`) | stale, once per head commit, naming the pages read; a second such stop on the head is a person's, as a systematic read failure |
  * | stopped `FORGE_RATE_LIMITED` (`24`) | stale, once per stop from the forge limit's reset (`forge-limit-redrive.ts`) |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
@@ -54,7 +55,8 @@
  * could not resolve, such as two requirements that contradict each other, is
  * that person's decision too.
  *
- * A ledger that stopped `STALLED` or `CI_REPAIR_SPENT` is a stop the drive's
+ * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or
+ * `CHECK_RUNS_UNREADABLE` is a stop the drive's
  * own next step settles: a pass that finds why the stalled passes did not
  * act, or a CI repair with a fresh budget. Its change is its head commit and
  * its exit, so it is re-driven once for each; once this machine or another
@@ -359,6 +361,13 @@ const MECHANICAL_STOPS: ReadonlyMap<
     },
   ],
   [
+    DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+    {
+      kind: "check-runs",
+      words: "its head's check-runs listing could not be read whole",
+    },
+  ],
+  [
     DRIVE_EXIT.FORGE_RATE_LIMITED,
     {
       kind: "forge-limit",
@@ -391,11 +400,15 @@ function mechanicalStopClass(
     return forgeLimitStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
+  const words =
+    stop.kind === "check-runs" && Number.isSafeInteger(last?.listingPages)
+      ? `${stop.words} after ${last?.listingPages} page(s)`
+      : stop.words;
   return {
     class: "stale",
-    why: `stopped ${exit} (${stop.words}): re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${words}): re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
     stale: {
-      cause: `stopped ${exit}, ${stop.words}`,
+      cause: `stopped ${exit}, ${words}`,
       change: `head ${head}, stopped ${exit}`,
       mechanicalStop: stop.kind,
       ...(stop.recovery === true ? { recovery: true as const } : {}),
@@ -406,8 +419,8 @@ function mechanicalStopClass(
 
 /**
  * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
- * stall that left work there or never measured it, and a pass deadline whose
- * stop measured work left. A deadline stop that never measured comes from a
+ * stall or listing stop that left work there or never measured it, and a pass
+ * deadline whose stop measured work left. A deadline stop that never measured comes from a
  * driver that did not record it, so it re-drives on any account.
  */
 function boundToTree(
@@ -416,7 +429,8 @@ function boundToTree(
   last: ReturnType<typeof lastStopEvent>,
 ): boolean {
   const own = last === undefined || last.cause === String(exit);
-  if (kind === "stall") return own && last?.leftWork !== false;
+  if (kind === "stall" || kind === "check-runs")
+    return own && last?.leftWork !== false;
   return kind === "deadline" && own && last?.leftWork === true;
 }
 

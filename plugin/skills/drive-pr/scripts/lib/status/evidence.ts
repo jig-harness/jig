@@ -16,13 +16,15 @@ import {
   stickyMarker,
 } from "../overlay.ts";
 import { checkPattern } from "../merge-ready.ts";
-import { type PagedRead, slurpPages } from "../paged-read.ts";
 import {
-  type CheckRun,
-  commitPages,
-  parsePages,
-} from "./commit-observations.ts";
-export { type CheckRun, checkRunsFor } from "./commit-observations.ts";
+  listingCutShort,
+  type ListingCutShort,
+  type PagedRead,
+  slurpCheckRuns,
+  slurpPages,
+} from "../paged-read.ts";
+import { type CheckRun, parsePages } from "./commit-observations.ts";
+export type { CheckRun } from "./commit-observations.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
 import {
   type FailedRun,
@@ -85,6 +87,82 @@ export const STICKY_MARKER = stickyMarker();
 
 export type { CommitStatus, FailingStatus };
 
+/** A head's check runs, or `null` with how the listing was cut short. */
+export interface CheckRunListing {
+  runs: CheckRun[] | null;
+  cutShort: ListingCutShort | null;
+}
+
+/**
+ * Every check-run on `sha`, preserving a deadline or page-bound failure for
+ * the status decision instead of reducing it to an unreadable listing.
+ */
+export async function checkRunListing(
+  owner: string,
+  repo: string,
+  sha: string,
+  read: PagedRead = "fresh",
+): Promise<CheckRunListing> {
+  const result = await slurpCheckRuns(owner, repo, sha, read);
+  if (result.code !== 0)
+    return { runs: null, cutShort: listingCutShort(sha, result) };
+  const pages = parsePages(result.stdout);
+  if (pages === null) return { runs: null, cutShort: null };
+  return {
+    runs: pages.flatMap((page) =>
+      (
+        ((page as { check_runs?: unknown[] } | null)?.check_runs ??
+          []) as Array<Record<string, unknown>>
+      ).map((run) => ({
+        name: String(run.name ?? ""),
+        status: String(run.status ?? ""),
+        conclusion:
+          run.conclusion === null ? null : String(run.conclusion ?? ""),
+        app: String(
+          ((run.app as Record<string, unknown> | null)?.slug ?? "") || "",
+        ),
+        title: String(
+          ((run.output as Record<string, unknown> | null)?.title ?? "") || "",
+        ),
+        id: Number(run.id ?? 0),
+        started:
+          run.started_at === null ? null : String(run.started_at ?? "") || null,
+        completed:
+          typeof run.completed_at === "string" ? run.completed_at : null,
+        suiteId:
+          typeof (run.check_suite as Record<string, unknown> | null)?.id ===
+          "number"
+            ? ((run.check_suite as Record<string, unknown>).id as number)
+            : null,
+      })),
+    ),
+    cutShort: null,
+  };
+}
+
+/** `checkRunListing`'s runs alone, for callers that do not need the cause. */
+export async function checkRunsFor(
+  owner: string,
+  repo: string,
+  sha: string,
+  read: PagedRead = "fresh",
+): Promise<CheckRun[] | null> {
+  return (await checkRunListing(owner, repo, sha, read)).runs;
+}
+
+/** Every page of a commit's `statuses` listing; `null` when unreadable. */
+async function statusPages(
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<unknown[] | null> {
+  const r = await slurpPages(
+    `repos/${owner}/${repo}/commits/${sha}/statuses?per_page=100`,
+    "fresh",
+    { stderr: "ignore" },
+  );
+  return r.code === 0 ? parsePages(r.stdout) : null;
+}
 /**
  * Paginated for the same reason the check-runs query is: a commit can carry
  * more than one page of legacy status contexts, and reading only the first
@@ -181,7 +259,7 @@ export async function statusesByPublisher(
   contexts: readonly string[],
 ): Promise<(CommitStatus & { appId: number | null })[] | null> {
   const wanted = new Set(contexts.map((context) => context.toLowerCase()));
-  const pages = await commitPages(owner, repo, sha, "statuses");
+  const pages = await statusPages(owner, repo, sha);
   if (pages === null) return null;
   const newest = new Map<
     string,

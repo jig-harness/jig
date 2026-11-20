@@ -385,7 +385,10 @@ and the drive stops (exit `7`), the dispatcher counts the failures on that
 pull request's head. At
 [`dispatch.reviewer_failures_before_escalation`](CONFIGURATION.md#dispatch)
 it raises one need naming the reviewer and waits for a review of that head
-or a new head. A pass deadline that recurred past the drive's restarts (exit `15`)
+or a new head. A drive that could not read its head's check-runs listing whole (exit
+`25`) is re-driven once per head commit, and a second such stop on that head
+goes to a person as a systematic read failure, with the pages read. A pass
+deadline that recurred past the drive's restarts (exit `15`)
 is re-driven once per head commit too, one that left work in its tree only in
 that tree, and a failure (exit `1`) while the
 pull request conflicts with its base once per pair of its head and its base
