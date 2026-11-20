@@ -122,6 +122,8 @@ export interface PickupRelaunch {
   record: string;
   workspace: { id: string; path: string };
   head: string;
+  /** The host fault the pickup stopped on, when it did (`pickup-host-fault.ts`): the relaunch resumes it rather than only pushing it. */
+  fault?: string;
 }
 
 /** `dispatch.stalled_relaunch`'s values. */
@@ -215,18 +217,20 @@ export interface StaleCause {
   /**
    * The drive stopped on a cause its own next step settles: a stall (`14`),
    * a spent CI-repair budget (`21`), a pass deadline with its restarts
-   * spent (`15`), or checks still failing on the infrastructure through
-   * their re-runs (`23`, `ci-infra`), or the forge's rate limit for the
-   * drive's credential spent past what it waits (`24`, `forge-limit`).
-   * Re-driven once per head commit, a `ci-infra` stop once per stop after
-   * its backoff, a `forge-limit` stop once per stop after its reset; a
-   * re-drive that leaves the same stop standing is a person's.
+   * spent (`15`), checks still failing on the infrastructure through their
+   * re-runs (`23`, `ci-infra`), or a check-runs listing cut short (`25`,
+   * `check-runs`). Re-driven once per head commit, a `ci-infra` stop once per
+   * stop after its backoff; a re-drive that leaves the same stop standing is
+   * a person's. The forge's rate limit for the drive's credential spent past
+   * what it waits (`24`, `forge-limit`) is re-driven from that reset.
+   *
    */
   mechanicalStop?:
     | "stall"
     | "ci-repair"
     | "deadline"
     | "ci-infra"
+    | "check-runs"
     | "forge-limit";
   /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`), a `forge-limit` stop's reset (`forge-limit-redrive.ts`). */
   notBefore?: string;
@@ -237,7 +241,8 @@ export interface StaleCause {
    */
   recovery?: true;
   /**
-   * For a stall or a pass deadline that left work in its tree: that tree, as the ledger names it
+   * For a stall, check-runs listing stop or pass deadline that left work in
+   * its tree: that tree, as the ledger names it
    * (`wt-<key>`), and whether it is on this host. The re-drive runs there,
    * never in a fresh tree, which would not carry the work.
    */
@@ -634,6 +639,8 @@ export interface ReadFailure {
   quota?: QuotaHold;
   /** The read was one item's whose absence is an answer (a parked drive's review thread the credential cannot see), `not-found` only: it fails neither the turn nor the tick (`absence.ts`). */
   absence?: true;
+  /** The process had no credential for the system at all: the tick names it once (`no-credential.ts`) rather than as this read's failure. */
+  noCredential?: true;
 }
 
 /** Where opening a repository for its tick stopped: looking up which repository the path is, reading its dispatch section, or the tick's time ran out first. */

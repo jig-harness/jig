@@ -24,6 +24,7 @@ import {
 import { sleep } from "./../cli.ts";
 
 import {
+  CHECK_RUNS_UNREADABLE_EXIT,
   CI_REPAIR_SPENT_EXIT,
   UNLABEL_SETTLE_SECONDS,
   FINAL_CI_POLL_SECONDS,
@@ -41,6 +42,7 @@ import { announcePolicyBase } from "./policy-base.ts";
 
 import type { FailingChecks } from "./infra-recovery.ts";
 
+import { attempt } from "../../../../../shared/outcome.ts";
 import { driverRuntime } from "./runtime.ts";
 import { attemptsFor, chargeRepair, repairSelection } from "./ci-attempts.ts";
 import {
@@ -69,30 +71,45 @@ function silentReleaseCause(
   return `ci-hold.ts release ${ended}. The step that failed is removing the CI hold label from PR #${pr} at head ${head}. Run the release by hand ('ci-hold.ts release ${pr} --expect-head ${head}', which removes the label as this step would) to see its error, check whether something outside the drive stopped it, then re-arm.`;
 }
 
-export async function releaseAndReadFinalCi(
+/**
+ * The drive's stop when the final status re-read found the check-runs listing
+ * cut short: nothing was judged, so it is no disagreement with the review.
+ * `null` for any other answer.
+ */
+export function finalReadListingStop(
+  code: number,
+  status: Record<string, unknown>,
+): number | null {
+  if (code !== CHECK_RUNS_UNREADABLE_EXIT) return null;
+  const pages = status.listingPagesRead;
+  driverRuntime.stopListingPages = typeof pages === "number" ? pages : null;
+  console.error(`  ${String(status.reason ?? "")}`);
+  return CHECK_RUNS_UNREADABLE_EXIT;
+}
+
+/**
+ * The drive's stop for a `ci-hold.ts` step that found the check-runs listing
+ * cut short: the pages it read, as its last line of output says.
+ */
+export function heldListingStop(
+  result: Awaited<ReturnType<typeof run>>,
+): number {
+  const last = result.stdout.trim().split("\n").at(-1) ?? "";
+  const pages = attempt("unreadable", "the listing's page count", (): unknown =>
+    JSON.parse(last),
+  );
+  const count = pages.ok
+    ? (pages.value as { listingPagesRead?: unknown } | null)?.listingPagesRead
+    : null;
+  driverRuntime.stopListingPages = typeof count === "number" ? count : null;
+  return CHECK_RUNS_UNREADABLE_EXIT;
+}
+
+/** Releases the CI hold: a final exit, `"continue"` to re-read all evidence, or `null` when CI is ready to be read. */
+async function releaseCiHold(
   context: DriveRoundContext,
   reviewedHead: string,
-): Promise<
-  | number
-  | "continue"
-  | {
-      finalStatus: Record<string, unknown>;
-      finalStatusRes: Awaited<ReturnType<typeof run>>;
-      finalVerdict: string;
-      finalCi: Awaited<ReturnType<typeof run>>;
-      finalCiSignals: Awaited<
-        ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
-      >;
-    }
-> {
-  // Intermediate synchronize pushes ran under the CI hold, when the
-  // repository has one (`ci.hold_label`; without it `release` prints
-  // `disabled` and nothing below waits on an unlabel). Release only
-  // after convergence, the clean-tree certification, and the Ready
-  // transition above have all settled. `ci-hold.ts` compares the
-  // persisted labelled timeline-event id before removing anything, and
-  // adopts a live label it holds no record of, then removes it.
-  const finalCiSignals = await context.finalCiWait.prime();
+): Promise<number | "continue" | null> {
   // Captured, then written through the console, so the driver log keeps
   // why a release failed: an inherited stream reaches the terminal only.
   const release = await run(
@@ -101,6 +118,8 @@ export async function releaseAndReadFinalCi(
   );
   if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
+  if (release.code === CHECK_RUNS_UNREADABLE_EXIT)
+    return heldListingStop(release);
   if (release.code === 4) {
     console.error(
       "review converged, but the CI hold's release could not settle (the head moved, the label changed, or the forge could not be read); not reporting merge-ready",
@@ -128,6 +147,35 @@ export async function releaseAndReadFinalCi(
     await sleep(UNLABEL_SETTLE_SECONDS);
     return "continue";
   }
+  return null;
+}
+
+export async function releaseAndReadFinalCi(
+  context: DriveRoundContext,
+  reviewedHead: string,
+): Promise<
+  | number
+  | "continue"
+  | {
+      finalStatus: Record<string, unknown>;
+      finalStatusRes: Awaited<ReturnType<typeof run>>;
+      finalVerdict: string;
+      finalCi: Awaited<ReturnType<typeof run>>;
+      finalCiSignals: Awaited<
+        ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
+      >;
+    }
+> {
+  // Intermediate synchronize pushes ran under the CI hold, when the
+  // repository has one (`ci.hold_label`; without it `release` prints
+  // `disabled` and nothing below waits on an unlabel). Release only
+  // after convergence, the clean-tree certification, and the Ready
+  // transition above have all settled. `ci-hold.ts` compares the
+  // persisted labelled timeline-event id before removing anything, and
+  // adopts a live label it holds no record of, then removes it.
+  const finalCiSignals = await context.finalCiWait.prime();
+  const released = await releaseCiHold(context, reviewedHead);
+  if (released !== null) return released;
 
   const finalCi = await span("ci.wait", {}, () =>
     run(
@@ -141,6 +189,8 @@ export async function releaseAndReadFinalCi(
     ),
   );
   if (finalCi.code === 5) return 5;
+  if (finalCi.code === CHECK_RUNS_UNREADABLE_EXIT)
+    return heldListingStop(finalCi);
   // What used to stand here read `status.ci` — the PRE-UNLABEL
   // snapshot, which the comment forty lines above this one already
   // declares unusable for the final decision ("cannot participate") —
@@ -286,6 +336,8 @@ export async function checkFinalCiStatus(
   // fresh, untriaged finding on it, leaving that finding unanswered.
   // Bounded (`final-regate.ts`): a re-read that keeps disagreeing on one
   // head would otherwise re-gate for as long as the drive lives.
+  const listingStop = finalReadListingStop(finalStatusRes.code, finalStatus);
+  if (listingStop !== null) return listingStop;
   if (
     finalRemoteHead === "" ||
     finalStatusRes.code !== 3 ||

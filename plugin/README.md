@@ -126,6 +126,8 @@ install, remove, report on and run each of them; `jig upgrade` and
 `jig doctor` keep the plugin itself current and check it,
 [`jig ask`](#asking-a-station-where-it-stands) says where a piece of work
 stands, and [`jig send`](#telling-a-station-what-to-do) tells it what to do.
+`jig hub` belongs to the hub, an optional control plane many hosts'
+dispatchers can share; it has no commands yet and prints its help.
 The first install runs
 from the installed plugin copy, with trusted Bun startup, and puts `jig` on
 `PATH`:
@@ -378,7 +380,10 @@ its base. A drive whose failing checks kept failing on the CI service's
 infrastructure through its re-runs and head moves (exit `23`) is re-driven
 once per stop, after a backoff from the stop that doubles with each such stop
 in a row (15 minutes, at most 4 hours), and a person is told once 7 stand in a
-row. A pass deadline that recurred past the drive's restarts (exit `15`)
+row. A drive that could not read its head's check-runs listing whole (exit
+`25`) is re-driven once per head commit, and a second such stop on that head
+goes to a person as a systematic read failure, with the pages read. A pass
+deadline that recurred past the drive's restarts (exit `15`)
 is re-driven once per head commit too, one that left work in its tree only in
 that tree, and a failure (exit `1`) while the
 pull request conflicts with its base once per pair of its head and its base
@@ -555,11 +560,15 @@ The [cost ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) reco
 system, hashed credential, operation and caller in the same budget database.
 The tick report shows each system's known balance, this tick's spending and
 its costliest operations. `jig budget` shows the last 24 hours grouped by
-operation and caller; use `--hours 1` through `--hours 168` to choose the
+operation, caller and repository; use `--hours 1` through `--hours 168` to choose the
 window, or `--json` for its rows and balances. Linear complexity comes from
 `x-complexity`; GitHub query points are recorded where the answer includes
 them. Unknown costs and estimates are marked rather than presented as measured
-points. No query body, token or item content is kept.
+points. No query body, token or item content is kept. A call made with no
+credential at all (no Linear key, and a `linear` client that is not logged
+in) spends nothing and is listed apart under "no Linear key configured",
+with its callers; a logged-in client's calls are labelled as that client's
+own login.
 
 A `low-quota` need names the operations spending a quota when the last hour's
 rate would empty it before its refill. It appears once per quota and clears

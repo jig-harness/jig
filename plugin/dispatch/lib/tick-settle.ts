@@ -60,6 +60,11 @@ import type { EndRunOutcome, RepoReport } from "./types.ts";
 import { currentMs, isoFromMs } from "../../shared/time.ts";
 import { answeredByAbsence } from "./absence.ts";
 import { repoFailure, tickFailure } from "./tick-failure.ts";
+import { noCredentialExit } from "./no-credential.ts";
+
+/** Whether the tick's exit is the missing tracker credential's, with nothing else failed. */
+const keyless = (receipt: TickReceipt): boolean =>
+  receipt.exitStatus !== 0 && receipt.exitStatus === noCredentialExit(receipt);
 import {
   onlyRateLimited,
   toldAtOnce,
@@ -386,7 +391,9 @@ export function settleFailures(
 }
 
 /**
- * The tick's own row for the exit as it stands: counted at 1. At 0 it is
+ * The tick's own row for the exit as it stands: counted at 1, and at the
+ * missing tracker credential's exit (`no-credential.ts`) as a failure told
+ * at once, its reason naming what is missing. At 0 it is
  * cleared only once `final`: before the dashboard's line is written the
  * exit may still become 1, and a streak cleared and begun again would hide
  * a failure that never stops. The key of the row left pending, or `null`.
@@ -408,13 +415,15 @@ function settleTick(
   if (receipt.exitStatus === 0) {
     clearFailure("", scope.key, root);
     quietWakeUps(receipt, scope.key, root, nowMs);
-  } else if (receipt.exitStatus === 1)
+  } else if (receipt.exitStatus === 1 || keyless(receipt))
     recordFailure(
       { repo: "", ...scope, kind: "tick" },
       tickFailure(receipt),
       nowMs,
       failureSettings(machine),
       root,
+      // A missing tracker credential is told at once, as `unauthorized` is.
+      keyless(receipt),
     );
   return null;
 }

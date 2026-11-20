@@ -42,5 +42,8 @@ export function tickFailure(receipt: TickReceipt): string {
     return `the outcome log's copy was not written: ${receipt.logCopyFailed}`;
   if (receipt.lineFailed !== undefined)
     return `the dashboard line was not written: ${receipt.lineFailed}`;
+  const missing = receipt.noCredential?.[0];
+  if (missing !== undefined)
+    return `the tick has no ${missing.system} credential (${missing.reason}): ${missing.remedy}`;
   return "the tick exited 1 with no cause on its receipt";
 }

@@ -155,6 +155,7 @@ describe("which drive exits close the run tab", () => {
       "WORKTREE_UNCLEAN",
       "STALLED",
       "PASS_DEADLINE",
+      "CHECK_RUNS_UNREADABLE",
     ];
     for (const name of keeps)
       expect([name, driveExitClosesTab(DRIVE_EXIT[name])]).toEqual([
