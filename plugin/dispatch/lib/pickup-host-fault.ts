@@ -47,45 +47,54 @@ const HOST_FAULT_QUESTION = new RegExp(
 );
 
 const CLEANUP_VERB =
-  /\b(?:i|we)\s+(?:(?:can|could|should|may|will|would|first|safely|now|also|then|just|simply)\s+){0,3}(?:remove|delete|free(?: up)?|clean(?: up)?|purge|prune|clear|wipe)\s+(.*)$/is;
+  /\b(?:i|we)\s+(?:(?:can|could|should|may|will|would|first|safely|now|also|then|just|simply)\s+){0,3}(?:remove|delete|free(?: up)?|clean(?: up)?|purge|prune|clear|wipe)\s+((?:[^,;:?!.]|\.(?!\s|$))*)/gi;
 const HOST_RESOURCE = new Set(
   "cache caches file files fixture fixtures log logs tmp temp artifact artifacts output outputs space disk inodes inode directory directories image images checkout checkouts worktree worktrees".split(
     " ",
   ),
 );
+const SOURCE_EXTENSION =
+  /\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|cs|php|sh|md|json|ya?ml|toml|html?|css)$/i;
+
+/** The first words of one cleanup object (the pattern already cut it at its clause or sentence end). */
+function objectClause(rest: string): string[] {
+  return rest.trim().split(/\s+/).slice(0, 4);
+}
+
+function namesHostResource(raw: string): boolean {
+  const token = raw.replace(/^[`'"([]+|[`'")\].]+$/g, "");
+  if (/^[~/][\w~./-]*$/.test(token)) {
+    return (
+      !SOURCE_EXTENSION.test(token) &&
+      token
+        .toLowerCase()
+        .split(/[/~]/)
+        .some((seg) => HOST_RESOURCE.has(seg.replace(/^\./, "")))
+    );
+  }
+  const plain = token.replace(/^\./, "");
+  if (!/^[\w'\u2019-]+$/.test(plain)) return false;
+  return plain
+    .toLowerCase()
+    .replace(/['\u2019]s$/, "")
+    .split("-")
+    .some((part) => HOST_RESOURCE.has(part));
+}
 
 /**
  * Host recovery is cleanup the asker performs ("I"/"we" is the actor of the
  * verb) on a host resource; cleanup the code, tests or build would perform,
- * or of a work product such as a column, is implementation. The object is the
- * next few words, cut at the first clause punctuation: a plain word or
- * hyphenated name naming a resource (a possessive allowed), or a rooted path
- * (`/` or `~`) with a resource segment and no file extension. A resource word
- * inside a source path (`src/cache.ts`) or past a comma is not the object.
+ * or of a work product such as a column, is implementation. Every cleanup
+ * clause of the question is judged on its own: its object is the next few
+ * words, cut at clause punctuation or a sentence end, and names a resource
+ * as a plain or hyphenated word (a possessive or leading dot allowed) or as
+ * a rooted path (`/` or `~`) that is not a source or document file. A
+ * resource word inside a relative source path (`src/cache.ts`), past a comma
+ * or in the next sentence is not the object.
  */
 function cleansHostResource(text: string): boolean {
-  const rest = CLEANUP_VERB.exec(text)?.[1];
-  if (rest === undefined) return false;
-  for (const raw of rest.split(/\s+/).slice(0, 4)) {
-    const token = raw.replace(/[,;:?!.]+$/, "");
-    const rooted = /^[~/][\w~./-]*$/.test(token);
-    const plain = /^[\w'\u2019-]+$/.test(token);
-    if (plain) {
-      const parts = token
-        .toLowerCase()
-        .replace(/['\u2019]s$/, "")
-        .split("-");
-      if (parts.some((part) => HOST_RESOURCE.has(part))) return true;
-    } else if (rooted && !/\.[A-Za-z]{1,5}$/.test(token)) {
-      if (
-        token
-          .toLowerCase()
-          .split(/[/~]/)
-          .some((seg) => HOST_RESOURCE.has(seg.replace(/^\./, "")))
-      )
-        return true;
-    }
-    if (/[,;:?!]$/.test(raw)) break;
+  for (const m of text.matchAll(CLEANUP_VERB)) {
+    if (objectClause(m[1] ?? "").some(namesHostResource)) return true;
   }
   return false;
 }

@@ -222,6 +222,8 @@ describe("telling a host fault from a question about the work", () => {
       "Should I change the code to clear the cache on ENOSPC: or retry?",
       "Should the code retry on ENOSPC: if we delete the legacy column?",
       "Should the code retry on ENOSPC: if we delete src/cache.ts?",
+      "Should the code retry on ENOSPC: if we delete the column. Cache behavior stays unchanged?",
+      "Should the code retry on ENOSPC: if we delete /src/cache.ts?",
       "Should the code retry on ENOSPC: if we delete the column, keeping cache behavior unchanged?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
@@ -237,6 +239,10 @@ describe("telling a host fault from a question about the work", () => {
       "Can I safely prune the cache and retry the build after ENOSPC:?",
       "Could we first delete the leaked test files and retry the build after ENOSPC:?",
       "Could we delete the cache and retry the build after ENOSPC:?",
+      "Can I delete /tmp/build-cache.log and retry the build after ENOSPC:?",
+      "Can I remove .cache and retry the build after ENOSPC:?",
+      "Can I delete `/tmp/cache` and retry the build after ENOSPC:?",
+      "Can I remove the stale lock, or can we prune the cache and retry the build after ENOSPC:?",
       "Can the build retry after I remove the leaked test fixture that caused ENOSPC:?",
       "Could the build retry after we clear the leaked fixture following ENOSPC:?",
       "ENOSPC: no space left on device while writing the lockfile; retry later?",
