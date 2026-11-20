@@ -2,8 +2,7 @@
  * dispatch --apply: overlap, reported. A tick weighs the pickups it plans
  * against the open pull requests' changed files and says, in its receipt,
  * on the dashboard's line and in the repository's report, why each one that
- * overlaps waits and whose footprint is unknown; it starts the same work it
- * would start without overlap, in the same order. Each tick runs in a child
+ * overlaps waits and whose footprint is unknown; it gives a free slot to a pickup without overlap first. Each tick runs in a child
  * with its own home (fixtures.ts).
  */
 import { afterEach, describe, expect, it } from "bun:test";
@@ -13,6 +12,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import type { LineSnapshot } from "../lib/dashboard-contract.ts";
 import type { OverlapReport } from "../lib/overlap-reasons.ts";
 import { readLine } from "../lib/line-store.ts";
+import { formatReceipt } from "../lib/report.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { assignedIssue, openPr, SLUG, type World, world } from "./fixtures.ts";
 import { account, dispatchState, machineFile } from "./launch-fixtures.ts";
@@ -73,8 +73,18 @@ const overlapOf = (receipt: TickReceipt): OverlapReport | undefined =>
 const launched = (receipt: TickReceipt) =>
   (receipt.repos[0]?.launches ?? []).map((l) => [l.target, l.outcome]);
 
-describe("overlap, reported", () => {
-  it("says why each planned pickup waits and whose footprint is unknown, and starts what the plan ranks first", async () => {
+describe("overlap admission", () => {
+  it("names the retired width and its replacement in the receipt and report", async () => {
+    const receipt = await applyTick(fixture("  epic_width: 1\n"), false);
+    const warning = receipt.repos[0]?.section?.retiredEpicWidth;
+    expect(warning).toContain("dispatch.epic_width is retired and ignored");
+    expect(warning).toContain("dispatch.overlap");
+    expect(formatReceipt(receipt, "fixture.json")).toContain(
+      warning ?? "missing",
+    );
+  });
+
+  it("says why each planned pickup waits and whose footprint is unknown, and starts the pickup without overlap first", async () => {
     const w = fixture();
     const receipt = await applyTick(w, false);
     const overlap = overlapOf(receipt);
@@ -121,11 +131,11 @@ describe("overlap, reported", () => {
     });
     // The rates file has never been written: every rate is at its default, and the receipt says so.
     expect(overlap?.rates.defaulted).toContain("no conflict rates");
-    // Reported only: the account's one slot goes to the pickup the plan ranks first, #12, though it waits on overlap and #13 does not.
+    // The account's one slot goes to #13, which does not overlap.
     expect(entries.get("#12")?.rank).toBe(1);
     expect(launched(receipt)).toEqual([
-      ["#12", "launched"],
-      ["#13", "waits"],
+      ["#13", "launched"],
+      ["#12", "waits"],
       ["#14", "waits"],
     ]);
 
@@ -148,6 +158,31 @@ describe("overlap, reported", () => {
     expect(text.stdout).toContain(
       "  overlap  #14 (rank 2) tier 2, 0.5 round(s): waits on overlap: its footprint is unknown",
     );
+  }, 120_000);
+
+  it("weighs later pickups against a start, then uses remaining room for overlap", async () => {
+    const w = fixture();
+    w.setPrs("open", []);
+    w.setIssues([
+      assignedIssue(12, "factory-bot", ["area:dispatch"]),
+      assignedIssue(13, "factory-bot", ["area:dispatch"]),
+      assignedIssue(14, "factory-bot", ["area:docs"]),
+    ]);
+    machineFile(w, [{ ...account(w, "a", "a@example.com"), max: 3 }], {}, [
+      "pickup",
+    ]);
+
+    const receipt = await applyTick(w, false);
+    expect(launched(receipt)).toEqual([
+      ["#12", "launched"],
+      ["#14", "launched"],
+      ["#13", "launched"],
+    ]);
+    expect(overlapOf(receipt)?.entries.at(-1)).toMatchObject({
+      item: "#13",
+      tier: 2,
+      reason: { on: [{ ref: "#12", state: "started" }] },
+    });
   }, 120_000);
 
   it("refuses a section with an unknown overlap key, as it refuses any unknown key", async () => {
