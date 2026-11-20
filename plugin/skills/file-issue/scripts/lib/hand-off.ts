@@ -301,12 +301,10 @@ export async function handOff(
     opts.deadlineMs ??
       WORK_BUDGET_MS + (opts.wait && quiet > 0 ? quiet + WINDOW_MARGIN_MS : 0),
   );
-  if (opts.operation !== undefined) {
-    const { operation } = opts;
-    deadline.addEventListener("abort", () => operation.abort(deadline.reason), {
-      once: true,
-    });
-  }
+  const { operation } = opts;
+  const expire = () => operation?.abort(deadline.reason);
+  if (operation !== undefined)
+    deadline.addEventListener("abort", expire, { once: true });
   const run: Run = {
     tracker,
     key,
@@ -354,5 +352,7 @@ export async function handOff(
       `could not ${run.step}: ${failure.code}: ${failure.reason}${failure.sent === true ? " (the request may have been applied)" : ""}`,
       `read ${key} on the tracker, then ${rerunWords(run)}`,
     );
+  } finally {
+    deadline.removeEventListener("abort", expire);
   }
 }

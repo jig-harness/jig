@@ -96,6 +96,52 @@ describe("handOff on Linear", () => {
     expect(operation.signal.aborted).toBe(true);
   });
 
+  it("stops an assignment request blocked on the bound operation signal when the deadline expires, and starts no later mutation", async () => {
+    const clock = fakeClock(T0 + 10 * 60_000);
+    const linear = fakeLinear(clock);
+    const operation = new AbortController();
+    const mutations: string[] = [];
+    // As the CLI binds it: assign takes no signal, the tracker holds the operation's.
+    const bound: HandOffTracker = {
+      ...linear.tracker,
+      assign: async () => {
+        mutations.push("assign");
+      },
+      assignUnassigned: (_key, _user) =>
+        new Promise((_, reject) => {
+          mutations.push("assign started");
+          operation.signal.addEventListener("abort", () =>
+            reject(operation.signal.reason),
+          );
+        }),
+    };
+    const result = await handOff(bound, "ENG-1", FACTORY, {
+      wait: true,
+      clock,
+      deadlineMs: 50,
+      operation,
+    });
+    expect(result.handedOver).toBe(false);
+    expect(operation.signal.aborted).toBe(true);
+    expect(mutations).toEqual(["assign started"]);
+    expect(linear.writes).toHaveLength(0);
+  });
+
+  it("detaches its deadline from the supplied controller once it returns", async () => {
+    const clock = fakeClock(T0 + 10 * 60_000);
+    const linear = fakeLinear(clock);
+    const operation = new AbortController();
+    const result = await handOff(linear.tracker, "ENG-1", FACTORY, {
+      wait: false,
+      clock,
+      deadlineMs: 30,
+      operation,
+    });
+    expect(result.handedOver).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(operation.signal.aborted).toBe(false);
+  });
+
   it("without waiting, names the time from which the hand-off may run and writes nothing", async () => {
     const clock = fakeClock(T0 + 58_000);
     const linear = fakeLinear(clock);
