@@ -24,9 +24,6 @@ export interface FollowDeps {
   intervalMs?: number;
 }
 
-/** How much of the start of the new content is searched for in the old. */
-const HEAD_BYTES = 64;
-
 /** The spool as an open descriptor; `null` while it does not exist yet; the reason when it cannot be opened. */
 function openSpool(path: string): number | null | { unreadable: string } {
   try {
@@ -69,16 +66,24 @@ function readFd(fd: number, path: string): Buffer | { unreadable: string } {
  */
 function addedTo(prev: Buffer, next: Buffer): Buffer | null {
   if (prev.length === 0) return next;
-  const head = next.subarray(0, Math.min(HEAD_BYTES, prev.length, next.length));
-  for (let k = prev.indexOf(head); k !== -1; k = prev.indexOf(head, k + 1)) {
-    const overlap = prev.length - k;
-    if (
-      overlap <= next.length &&
-      prev.subarray(k).equals(next.subarray(0, overlap))
-    )
-      return next.subarray(overlap);
+  if (next.length === 0) return next;
+  // Linear time: the longest prefix of `next` that ends `prev`, by the
+  // failure function of `next` run over `prev`.
+  const fail = new Int32Array(next.length);
+  for (let i = 1, k = 0; i < next.length; i++) {
+    while (k > 0 && next[i] !== next[k]) k = fail[k - 1] as number;
+    if (next[i] === next[k]) k++;
+    fail[i] = k;
   }
-  return next.length === 0 ? next : null;
+  let matched = 0;
+  for (const byte of prev) {
+    if (matched === next.length) matched = fail[matched - 1] as number;
+    while (matched > 0 && byte !== next[matched]) {
+      matched = fail[matched - 1] as number;
+    }
+    if (byte === next[matched]) matched++;
+  }
+  return matched > 0 ? next.subarray(matched) : null;
 }
 
 /** A cursor over the spool: what is new since the last call, or why it cannot be read; `close` frees the descriptor it keeps. */

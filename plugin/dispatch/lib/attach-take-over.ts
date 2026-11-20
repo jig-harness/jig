@@ -29,6 +29,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -103,17 +104,57 @@ function takeOverMembers(root: string, id: string): string {
   return join(root, "runs", id, "take-over-members.json");
 }
 
-/** The processes an earlier attempt captured; none when it kept none or the file does not read. */
-function keptMembers(root: string, id: string): ProcessIdentity[] {
+/** The mark that says a drive stop is still owed for `id`: set when `drives.ts --stop` failed, cleared once one succeeds. */
+function driveStopOwed(root: string, id: string): string {
+  return join(root, "runs", id, "take-over-drive-stop");
+}
+
+/** Whether `value` reads as a captured process. */
+function isIdentity(value: unknown): value is ProcessIdentity {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v["pid"] === "number" &&
+    typeof v["start"] === "string" &&
+    typeof v["host"] === "string" &&
+    typeof v["hostId"] === "string" &&
+    typeof v["bootId"] === "string"
+  );
+}
+
+/** The processes an earlier attempt captured: none when it kept none, the reason when what it kept does not read. */
+function keptMembers(
+  root: string,
+  id: string,
+): ProcessIdentity[] | { unreadable: string } {
+  const path = takeOverMembers(root, id);
+  let text: string;
   try {
-    const parsed: unknown = JSON.parse(
-      readFileSync(takeOverMembers(root, id), "utf8"),
-    );
-    return Array.isArray(parsed) ? (parsed as ProcessIdentity[]) : [];
+    text = readFileSync(path, "utf8");
   } catch (error) {
-    swallow(error, "no earlier attempt kept the run's processes");
-    return [];
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      swallow(error, "no earlier attempt kept the run's processes");
+      return [];
+    }
+    return { unreadable: `${path} cannot be read: ${String(error)}` };
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    return { unreadable: `${path} is not valid JSON: ${String(error)}` };
+  }
+  if (!Array.isArray(parsed) || !parsed.every(isIdentity))
+    return { unreadable: `${path} does not hold a list of processes` };
+  return parsed;
+}
+
+/** Keep the captured processes, replacing what was kept whole. */
+function keepMembers(root: string, id: string, members: ProcessIdentity[]) {
+  const path = takeOverMembers(root, id);
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(members), { mode: 0o600 });
+  renameSync(tmp, path);
 }
 
 /** `members` with those of `more` whose pid and start are not among them. */
@@ -262,6 +303,7 @@ async function recordEnd(
     }
     rmSync(takeOverMark(deps.root, id), { force: true });
     rmSync(takeOverMembers(deps.root, id), { force: true });
+    rmSync(driveStopOwed(deps.root, id), { force: true });
     deps.out("end: recorded by person; the account's slot is free");
   } finally {
     release();
@@ -326,28 +368,35 @@ export async function takeOver(
     );
     return TAKE_OVER_EXIT.FAILED;
   }
-  if (live.alive.length > 0) {
+  const kept = keptMembers(deps.root, id);
+  if (!Array.isArray(kept)) {
+    deps.err(
+      `jig dispatch attach: the processes an earlier attempt captured for ${id} cannot be read (${kept.unreadable}), so the end is not recorded and the hold stands; check them, remove the file, then run the command again`,
+    );
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  const drivePr =
+    record.action === "rearm" || record.action === "takeover"
+      ? record.pr
+      : null;
+  const owedMark = driveStopOwed(deps.root, id);
+  const owed = existsSync(owedMark);
+  const keptAlive = kept.length > 0 && (await deps.anyAlive(kept));
+  if (live.alive.length > 0 || keptAlive || owed) {
     // Captured before the first step: a process the stop reparents is still known.
-    const captured = await deps.tree(live.identities);
+    const captured =
+      live.alive.length > 0 ? await deps.tree(live.identities) : null;
     const target: StopTarget = {
       id,
-      drivePr:
-        record.action === "rearm" || record.action === "takeover"
-          ? record.pr
-          : null,
+      drivePr,
       repoPath: record.repoPath,
-      members: withMembers(
-        captured ?? live.identities,
-        keptMembers(deps.root, id),
-      ),
+      members: withMembers(captured ?? live.identities, kept),
     };
     // Kept before the first step: a descendant the stop reparents is still known after an interruption.
-    writeFileSync(
-      takeOverMembers(deps.root, id),
-      JSON.stringify(target.members),
-      { mode: 0o600 },
-    );
+    keepMembers(deps.root, id, target.members);
     const stopped = await stopRun(target, deps);
+    if (stopped.driveStopFailed)
+      writeFileSync(owedMark, `${currentIso()}\n`, { mode: 0o600 });
     if (!stopped.gone) {
       deps.err(
         `jig dispatch attach: ${id}'s processes outlived the stop; the hold stands, and running the command again stops it`,
@@ -360,20 +409,7 @@ export async function takeOver(
       );
       return TAKE_OVER_EXIT.FAILED;
     }
-  } else {
-    const kept = keptMembers(deps.root, id);
-    if (kept.length > 0 && (await deps.anyAlive(kept))) {
-      const stopped = await stopRun(
-        { id, drivePr: null, repoPath: record.repoPath, members: kept },
-        deps,
-      );
-      if (!stopped.gone) {
-        deps.err(
-          `jig dispatch attach: processes an earlier attempt captured for ${id} outlived the stop; the hold stands, and running the command again stops them`,
-        );
-        return TAKE_OVER_EXIT.FAILED;
-      }
-    } else deps.out("stop: none of the run's processes is alive");
-  }
+    rmSync(owedMark, { force: true });
+  } else deps.out("stop: none of the run's processes is alive");
   return recordEnd(id, address, deps);
 }

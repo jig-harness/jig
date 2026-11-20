@@ -368,6 +368,20 @@ describe("jig dispatch attach: watching", () => {
     next.close();
   });
 
+  it("follows a rewritten repetitive spool in linear time", () => {
+    const dir = root();
+    const spool = join(dir, "output.log");
+    const prev = `${"a\n".repeat(1_000_000)}b\n`;
+    writeFileSync(spool, prev);
+    const next = spoolCursor(spool);
+    next();
+    writeFileSync(spool, `${prev.slice(2)}c\n`);
+    const started = performance.now();
+    expect(String(next())).toBe("c\n");
+    expect(performance.now() - started).toBeLessThan(2000);
+    next.close();
+  });
+
   it("reads output flushed before the spool was deleted", () => {
     const dir = root();
     const spool = join(dir, "output.log");
@@ -465,6 +479,51 @@ describe("jig dispatch attach --take-over", () => {
       "stop service",
     ]);
     expect(run.out).toContain("hold: drive@o/a#7 was already held");
+    expect(reportBy(dir)).toBe("person");
+  });
+
+  it("fails closed when the saved processes cannot be read", async () => {
+    const dir = root();
+    writeRecord(record(), dir);
+    const run = fakeRun();
+    const crashing = deps(dir, run, {
+      stops: [
+        async () => {
+          run.alive = false;
+          throw new Error("the command died");
+        },
+      ],
+    });
+    await expect(
+      attachMain(ID, { takeOver: true }, crashing),
+    ).rejects.toThrow();
+    writeFileSync(join(dir, "runs", ID, "take-over-members.json"), "{not json");
+    expect(await attachMain(ID, { takeOver: true }, deps(dir, run))).toBe(1);
+    expect(run.err.join("\n")).toContain("cannot be read");
+    expect(exitColumn(dir)).toBeNull();
+  });
+
+  it("retries a failed drive stop on the next attempt before recording the end", async () => {
+    const dir = root();
+    writeRecord(record(), dir);
+    const run = fakeRun();
+    const failing = deps(dir, run, {
+      stops: [
+        async () => ({
+          note: "drives.ts --stop failed",
+          failed: true as const,
+        }),
+        async () => {
+          run.alive = false;
+          return "unit stopped";
+        },
+      ],
+    });
+    expect(await attachMain(ID, { takeOver: true }, failing)).toBe(1);
+    expect(exitColumn(dir)).toBeNull();
+    run.events.length = 0;
+    expect(await attachMain(ID, { takeOver: true }, deps(dir, run))).toBe(0);
+    expect(run.events).toContain("stop drive");
     expect(reportBy(dir)).toBe("person");
   });
 
