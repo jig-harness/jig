@@ -401,6 +401,45 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.291.0] - 2026-11-20
+
+### Added
+
+- `jig dispatch attach <record>` follows a run on the process runtime: it
+  prints the run's worktree, account, stage and how long it has run, then
+  shows the run's output as it is written, until the run ends. Interrupting
+  it leaves the run going.
+- `jig dispatch attach <record> --take-over` takes such a run over: it holds
+  the run's pull request or item in your name, as `jig send hold` does, so
+  the dispatcher starts nothing on it; stops the run (a drive through
+  `drives.ts --stop`, so its ledger reads stopped); records its end as
+  yours (`by: person`), which frees the account's slot; and prints the
+  command that resumes the Claude Code or Codex session in the worktree
+  under the same account. Run again after an interruption, it finishes the
+  take-over. Release the hold with `jig send <address> release` when you
+  are done. Runs on Orca are refused: their tab already shows them.
+  A drive taken over has a person's stop on its ledger, so releasing the
+  hold does not re-arm it: restart the drive yourself. Taking over a drive
+  or a follow-up needs the repository's dispatch hold label; where the
+  labels are off, the hold is refused and the run is left going.
+
+### Fixed
+
+- `/jig:resolve-conflicts` no longer loses its concluding commit in a
+  repository whose git hooks run longer than two minutes. Its commits, its
+  merge and `git rebase --continue` run the repository's hooks under an
+  hour's deadline instead of the command wrapper's 120 seconds, and Step 7
+  now says how to finish from a command killed at its deadline (exit `124`):
+  what it leaves, and the retry under a longer deadline that still ends a
+  hook that hangs. `/jig:fix-ci`'s commit and the merge drive-pr prints for
+  a conflicting base get the same deadline.
+- Bound the test fixture registry when a registration is written and retire
+  proven-dead registrations in bounded pages. A scheduled collector that can
+  only report an over-limit store now fails with a receipt that gives the
+  reason.
+- Report fixture registry usage and free inodes in `jig doctor gc` and
+  surface storage pressure as a host need in the dispatch dashboard.
+
 ## [0.290.0] - 2026-11-20
 
 ### Added
@@ -10260,7 +10299,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.290.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.0...HEAD
+[0.291.0]: https://github.com/jig-harness/jig/compare/v0.290.0...v0.291.0
 [0.290.0]: https://github.com/jig-harness/jig/compare/v0.289.0...v0.290.0
 [0.289.0]: https://github.com/jig-harness/jig/compare/v0.288.2...v0.289.0
 [0.288.2]: https://github.com/jig-harness/jig/compare/v0.288.1...v0.288.2
