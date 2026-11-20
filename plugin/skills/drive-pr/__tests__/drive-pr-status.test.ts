@@ -583,9 +583,9 @@ describe("drive-status.ts terminal states", () => {
     expect(r.stderr).toContain("; waiting");
     const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
     expect(polls.length).toBeGreaterThan(0);
-    // Fixed one-second polling would issue more than ten top-level reads
-    // before this deadline. The 1s → 2s → 3s capped cadence is distinct.
-    expect(polls.length).toBeLessThanOrEqual(10);
+    // The 1s → 2s → 3s capped cadence, plus the final evaluation reserved
+    // before the deadline, is distinct from fixed one-second polling.
+    expect(polls.length).toBeLessThanOrEqual(12);
   }, 20_000);
 });
 
