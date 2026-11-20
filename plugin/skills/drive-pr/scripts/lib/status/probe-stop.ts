@@ -2,6 +2,7 @@
 import { redactReportText } from "../../../../../shared/closing-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { type Infer, matches, s } from "../../../../../shared/shapes.ts";
+import { terminal } from "./terminal-states.ts";
 
 const PREFIX = "drive.ts: status probe stopped: ";
 const REASON_LIMIT = 512;
@@ -68,4 +69,22 @@ export function readProbeStop(context: string): ProbeStop | null {
 /** Exit 1 also signals non-read failures. Only the failing read can classify itself. */
 export function probeFailure(probe: ProbeStop): ProbeFailure | null {
   return probe.code === 1 ? (probe.failure ?? null) : null;
+}
+
+export function setProbeFailure(
+  report: { failure?: ProbeFailure },
+  failure?: ProbeFailure,
+): void {
+  if (failure === undefined) delete report.failure;
+  else report.failure = failure;
+}
+
+/** Record an indeterminate status caused by a forge read. */
+export function readFailure(
+  report: { state: string; reason: string; failure?: ProbeFailure },
+  reason: string,
+): number {
+  const code = terminal(report, "INDETERMINATE", reason);
+  setProbeFailure(report, "read");
+  return code;
 }
