@@ -59,6 +59,14 @@ while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
         kill -KILL "$pid"
         exit 1
       fi
+      if [ -n "$RECOVERY_SNAPSHOT_TIMEOUT" ] &&
+        [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "view" ] &&
+        jq -e 'last.event == "unlabeled"' "$DRIVE_PR_FIXTURES/timeline.json" >/dev/null &&
+        [ ! -e "$DRIVE_PR_FIXTURES/recovery-snapshot-timeout-consumed" ]; then
+        : > "$DRIVE_PR_FIXTURES/recovery-snapshot-timeout-consumed"
+        echo "gh-stub: simulated recovery snapshot timeout" >&2
+        exit 124
+      fi
       break ;;
     */drive.ts" "*) break ;;
   esac
@@ -237,10 +245,11 @@ describe.skipIf(
     },
     {
       name: "continues convergence when a recovery snapshot fails after a timed-out proof",
-      signal: "pr-snapshot-timeout-after-unlabel",
+      signal: "recovery-snapshot-timeout",
       signalContent: "",
       precedingSignal: "timeline-timeout-after-unlabel",
       precedingSignalContent: "",
+      env: { RECOVERY_SNAPSHOT_TIMEOUT: "1" },
       expectedExit: 0,
       expectedWaits: 2,
       expectedMessage: "simulated recovery snapshot timeout",
