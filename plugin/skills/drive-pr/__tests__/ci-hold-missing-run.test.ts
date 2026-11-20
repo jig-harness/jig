@@ -244,8 +244,20 @@ describe("workflowForCheck", () => {
     expect(workflowForCheck("Build 1 (unlisted)", [plain])).toBeNull();
     expect(workflowForCheck("Solo (x)", [plain])).toBeNull();
     expect(workflowForCheck("Solo / x", [plain])).toBeNull();
-    expect(workflowForCheck("Call / job", [reusable])).toBe(reusable.path);
-    expect(workflowForCheck("Call (x)", [reusable])).toBeNull();
+    const callee = {
+      path: ".github/workflows/x.yml",
+      text: "on: workflow_call\njobs:\n  job:\n    runs-on: x\n",
+    };
+    expect(workflowForCheck("Call / job", [reusable, callee])).toBe(
+      reusable.path,
+    );
+    expect(workflowForCheck("Call / other", [reusable, callee])).toBeNull();
+    expect(workflowForCheck("Call / job", [reusable])).toBeNull();
+    expect(workflowForCheck("Call (x)", [reusable, callee])).toBeNull();
+    expect(workflowForCheck("End to end (firefox)", [ci, matrix])).toBeNull();
+    expect(
+      workflowForCheck("End to end (chromium, chromium)", [ci, matrix]),
+    ).toBe(matrix.path);
   });
 
   it("says unknown when no workflow, or several, report it", () => {

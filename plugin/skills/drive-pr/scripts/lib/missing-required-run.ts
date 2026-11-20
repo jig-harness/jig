@@ -176,25 +176,48 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * The check names a job may report: its `name`, else its id; a templated
- * name as a pattern over the values its matrix lists. A name whose
- * name is not exactly one plain reference to a matrix key's listed values (a second expression, even of the same key, would pair values no job reports), or
- * whose matrix excludes combinations, is left unattributed rather than matched by its fixed prefix.
- */
-function jobNames(
-  id: string,
-  job: unknown,
-): { exact: string[]; pattern: RegExp[] } {
-  const name = isRecord(job) ? job.name : undefined;
-  if (typeof name !== "string") return { exact: [id], pattern: [] };
-  if (!name.includes("${{")) return { exact: [name], pattern: [] };
-  const pattern = templatedPattern(name, job);
-  return { exact: [], pattern: pattern === null ? [] : [pattern] };
+/** Every value the job's matrix lists, when all are plain and no combination is excluded; `null` otherwise. */
+function matrixAllValues(job: unknown): string[] | null {
+  const grid = matrixGrid(job);
+  if (grid === null) return null;
+  const values: unknown[] = [];
+  for (const [key, listed] of Object.entries(grid)) {
+    if (key === "include") {
+      if (!Array.isArray(listed)) return null;
+      for (const entry of listed) {
+        if (!isRecord(entry)) return null;
+        values.push(...Object.values(entry));
+      }
+    } else if (Array.isArray(listed)) values.push(...listed);
+    else return null;
+  }
+  return values.length > 0 && values.every(isPlain) ? values.map(String) : null;
 }
 
-/** The pattern a templated job name matches, or `null` when it is not one plain matrix reference. */
-function templatedPattern(name: string, job: unknown): RegExp | null {
+/**
+ * The patterns (as regular-expression sources) over the check names a job
+ * reports by itself: its `name`, else its id; a templated name as a pattern
+ * over the values its matrix lists. A name that is not exactly one plain
+ * reference to a matrix key's listed values (a second expression, even of the
+ * same key, would pair values no job reports), or whose matrix excludes
+ * combinations, yields none: it is left unattributed rather than matched by
+ * its fixed prefix.
+ */
+function jobBases(
+  id: string,
+  job: unknown,
+): { sources: string[]; templated: boolean } {
+  const name = isRecord(job) ? job.name : undefined;
+  if (typeof name !== "string")
+    return { sources: [escapeRegExp(id)], templated: false };
+  if (!name.includes("${{"))
+    return { sources: [escapeRegExp(name)], templated: false };
+  const source = templatedSource(name, job);
+  return { sources: source === null ? [] : [source], templated: true };
+}
+
+/** The source a templated job name matches, or `null` when it is not one plain matrix reference. */
+function templatedSource(name: string, job: unknown): string | null {
   const expressions = [...name.matchAll(/\$\{\{([\s\S]*?)\}\}/g)];
   if (expressions.length > 1) return null;
   let source = "";
@@ -206,34 +229,63 @@ function templatedPattern(name: string, job: unknown): RegExp | null {
     source += `${escapeRegExp(name.slice(last, m.index))}(?:${values.map(escapeRegExp).join("|")})`;
     last = m.index + m[0].length;
   }
-  source += escapeRegExp(name.slice(last));
-  return new RegExp(
-    `^${source}${reusableSuffix(job) ? "(?: / [\\s\\S]*)?" : ""}$`,
-  );
+  return source + escapeRegExp(name.slice(last));
 }
 
-/** Whether the job calls a reusable workflow, whose jobs report as `name / job`. */
-function reusableSuffix(job: unknown): boolean {
-  return isRecord(job) && typeof job.uses === "string";
+/** The callee a `uses: ./path` job calls, among the files; `null` for a remote or unknown one. */
+function localCallee(
+  job: unknown,
+  files: readonly WorkflowFile[],
+): WorkflowFile | null {
+  const uses = isRecord(job) ? job.uses : undefined;
+  if (typeof uses !== "string" || !uses.startsWith("./")) return null;
+  const path = uses.slice(2);
+  return files.find((f) => f.path === path) ?? null;
+}
+
+/** How deep reusable workflows are followed; a call cycle or a longer chain is unattributed. */
+const MAX_CALL_DEPTH = 3;
+
+/**
+ * Whether the job reports `check`: by a name it can take; as a matrix job's
+ * `name (values)` only where every value is one its plain matrix lists; or as
+ * a reusable workflow's `name / job` only where the called workflow is one of
+ * the files and one of its jobs reports `job`. A suffix that cannot be shown
+ * is not attributed.
+ */
+function reports(
+  check: string,
+  id: string,
+  job: unknown,
+  files: readonly WorkflowFile[],
+  depth: number,
+): boolean {
+  const { sources, templated } = jobBases(id, job);
+  const matrixValuesAll =
+    !templated && matrixSuffix(job) ? matrixAllValues(job) : null;
+  const callee = depth < MAX_CALL_DEPTH ? localCallee(job, files) : null;
+  return sources.some((source) => {
+    if (new RegExp(`^${source}$`).test(check)) return true;
+    const parts = new RegExp(`^${source} \\((.+)\\)$`).exec(check)?.[1];
+    if (
+      parts !== undefined &&
+      matrixValuesAll !== null &&
+      parts.split(", ").every((v) => matrixValuesAll.includes(v))
+    )
+      return true;
+    const rest = new RegExp(`^${source} / ([\\s\\S]+)$`).exec(check)?.[1];
+    return (
+      rest !== undefined &&
+      callee !== null &&
+      fileReports(rest, callee, files, depth + 1)
+    );
+  });
 }
 
 /** Whether the job has a matrix, whose unnamed jobs report as `name (values)`. */
 function matrixSuffix(job: unknown): boolean {
   const strategy = isRecord(job) ? job.strategy : undefined;
   return isRecord(strategy) && strategy.matrix !== undefined;
-}
-
-/**
- * Whether the job named `name` reports `check`: the same name, a matrix
- * job's `name (values)` only where the job has a matrix, or a reusable
- * workflow's `name / job` only where the job calls one.
- */
-function reports(check: string, name: string, job: unknown): boolean {
-  return (
-    check === name ||
-    (matrixSuffix(job) && check.startsWith(`${name} (`)) ||
-    (reusableSuffix(job) && check.startsWith(`${name} / `))
-  );
 }
 
 /**
@@ -245,13 +297,18 @@ export function workflowForCheck(
   files: readonly WorkflowFile[],
 ): string | null {
   const matches = files
-    .filter((file) => fileReports(check, file))
+    .filter((file) => fileReports(check, file, files, 0))
     .map((file) => file.path);
   return new Set(matches).size === 1 ? (matches[0] ?? null) : null;
 }
 
 /** Whether any job of the workflow file reports `check`; a file that does not read as YAML reports nothing. */
-function fileReports(check: string, file: WorkflowFile): boolean {
+function fileReports(
+  check: string,
+  file: WorkflowFile,
+  files: readonly WorkflowFile[],
+  depth: number,
+): boolean {
   let doc: unknown;
   try {
     doc = load(file.text);
@@ -261,13 +318,9 @@ function fileReports(check: string, file: WorkflowFile): boolean {
   }
   const jobs = isRecord(doc) ? doc.jobs : undefined;
   if (!isRecord(jobs)) return false;
-  return Object.entries(jobs).some(([id, job]) => {
-    const { exact, pattern } = jobNames(id, job);
-    return (
-      exact.some((name) => reports(check, name, job)) ||
-      pattern.some((re) => re.test(check))
-    );
-  });
+  return Object.entries(jobs).some(([id, job]) =>
+    reports(check, id, job, files, depth),
+  );
 }
 
 /** One missing check as the stop names it, its workflow `unknown` when no file identifies it. */
