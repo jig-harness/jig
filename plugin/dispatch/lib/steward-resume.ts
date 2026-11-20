@@ -512,6 +512,7 @@ function resumeRecord(
   delete record.relaunchOf;
   delete record.relaunchHead;
   delete record.relaunchFault;
+  delete record.relaunchLockWait;
   return record;
 }
 
