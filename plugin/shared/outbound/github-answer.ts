@@ -549,7 +549,7 @@ export function governedRequest(
 }
 
 /** Whether `url` is an https URL on the API origin of `host` (`api.<host>`, or `<host>` itself for an enterprise server). */
-export function onApiOrigin(url: string, host: string): boolean {
+function onApiOrigin(url: string, host: string): boolean {
   try {
     const at = new URL(url);
     return (
