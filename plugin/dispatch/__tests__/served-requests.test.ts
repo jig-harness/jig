@@ -209,6 +209,8 @@ describe("a served queue's cost in tracker requests", () => {
           ? "its history holds no assignment of"
           : "its assignment was made by no user",
       );
+      if (history === "none")
+        expect(row?.reason).toContain("first three minutes");
       const mark = fake.count();
       const second = await tick(tracker, cache, 2);
       expect(fake.requests.slice(mark)).toEqual(["TrackerChanges"]);
