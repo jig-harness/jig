@@ -132,7 +132,7 @@ describe("drive.ts loop control", () => {
       'bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/scripts/arm-drive.ts" <PR>',
     );
     expect(section).toContain(
-      '`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`',
+      '`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR> <pass role>"`',
     );
     expect(section).toContain('scripts/attach-pr.ts" <PR> --place');
   });

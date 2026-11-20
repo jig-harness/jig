@@ -18,7 +18,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 43;
+const DISPATCH_DB = 44;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 9;
 const REFLECT = "skills/reflect/scripts/";
@@ -191,6 +191,13 @@ export const DRIVE_STATE: RecordKind[] = [
     "drive-pr-<PR>.round-report.json",
     "What a drive pass's round concluded, in the fields of a closing report, stamped with the pass's launch and round; each pass's replaces the one before it. The driver reads the last one of its own launch into the closing report it writes at its stop.",
     "round-report",
+  ),
+  driveFile(
+    "drive-round-finish",
+    `${STATE}round-finish.ts`,
+    "drive-pr-<PR>.round-finish.json",
+    "How each pass's `finish-round.ts` ended (its state, reason, head and time), the newest few kept for the driver's stall stop, which names the state that held the rounds when every stalled pass ended on the same one.",
+    "round-finish",
   ),
   driveFile(
     "drive-report-memory",

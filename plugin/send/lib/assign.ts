@@ -16,9 +16,8 @@
  * state of work in progress.
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
-import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { ok, type Outcome } from "../../shared/outcome.ts";
 import { assignPickup } from "../../dispatch/lib/requests.ts";
-import { readSection, trackerConfigOf } from "../../dispatch/lib/section.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type {
@@ -26,7 +25,7 @@ import type {
   Issue,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { type RepoTracker, readPickup } from "../../ask/lib/pickup.ts";
-import { readDefaultConfig } from "../../ask/lib/forge.ts";
+import { readTrackerConfig } from "./answer-tracker.ts";
 import { formatAddress } from "../../shared/address.ts";
 import type { AskContext } from "../../ask/lib/station.ts";
 import {
@@ -52,25 +51,9 @@ async function tickSettings(
   Outcome<{ tracked: RepoTracker; identity: string; key: string }, "refused">
 > {
   const { repo } = ctx.address;
-  const where = `${OVERLAY_RELPATH} on ${repo}'s default branch`;
-  const text = await readDefaultConfig(ctx.reading, repo);
-  if (!text.ok)
-    return refused(
-      `the factory identity of ${repo} cannot be told: ${where} did not read (${text.failure.reason})`,
-    );
-  const sectionRead = readSection(text.value, where);
-  if (!sectionRead.ok)
-    return failed(
-      "refused",
-      `${where} does not read: ${sectionRead.failure.reason}`,
-      sectionRead.failure.cause,
-    );
-  const { values, section } = sectionRead.value;
-  const read = attempt("refused", `${where} does not read`, () =>
-    trackerConfigOf(values, repo),
-  );
+  const read = await readTrackerConfig(ctx, "the factory identity of");
   if (!read.ok) return read;
-  const config = read.value;
+  const { where, config, section } = read.value;
   const { identity } = section;
   if (identity === null)
     return refused(

@@ -503,7 +503,7 @@ async function readFactoryPickups(
       detail: `${issues.length} item(s) assigned to ${identity} in ${section.states.join(", ")}${claimed.items === null ? "" : `; ${claimed.items.length} in ${workingNames(tracker)}`}${record === undefined ? "" : `; ${facetSummary(record)}`}`,
       ...(record === undefined ? {} : { facets: record }),
     },
-    wanted,
+    wanted: wanted.filter((item) => served?.personHold?.(item.key) == null),
     unplaced,
     epicRoots: epicRootsOf(read.claimed),
     factoryView:
@@ -656,11 +656,12 @@ export async function readPickups(
   servedInput?: {
     cache?: import("../pickup-reads.ts").PickupReads;
     people: readonly ServedPerson[];
+    personHold?: (key: string) => string | null;
     nowMs: number;
     headroom: boolean;
     bound?: FacetBound;
-    hitl?: string;
-    manualOps?: string;
+    hitl?: string | undefined;
+    manualOps?: string | undefined;
     executionPlanBlock?: string;
     mergeEvidence?: import("./plan-merges.ts").PlanMergeReader | undefined;
     repoScope?: import("./served-repo.ts").RepoScope;

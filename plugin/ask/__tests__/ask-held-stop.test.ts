@@ -2,9 +2,12 @@
  * A stopped drive a launch still holds: `waitsOn` names the hold when nobody
  * can show the launch's process running, and stays `none` only while a
  * holder's process is alive. The hold comes from this machine's launch
- * record or from an open launch claim on the pull request.
+ * record or from an open launch claim on the pull request. A drive the hold
+ * does not keep from going on, a merged pull request's included, is named
+ * the hold's once it has outlived its bound.
  */
 import { afterEach, describe, expect, it } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
@@ -32,7 +35,9 @@ import {
 import { localWriter } from "../../shared/records/writer.ts";
 import { currentIso, currentMs, isoFromMs } from "../../shared/time.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { AskAnswer } from "../lib/answer.ts";
+import { pullDoc } from "./ask-fixtures.ts";
 
 const RECORD = "20261105T100000Z-abcdef12";
 const LIVENESS = join(import.meta.dir, "../../shared/liveness.ts");
@@ -77,10 +82,10 @@ function answeredPark(
 }
 
 /** A re-arm's launch record of the pull request, created at `createdAt`. */
-function launch(w: SendWorld, createdAt: string): void {
+function launch(w: SendWorld, createdAt: string, id = RECORD): void {
   const r: LaunchRecord = {
     version: 1,
-    id: RECORD,
+    id,
     token: "token",
     action: "rearm",
     repo: REPO,
@@ -108,9 +113,9 @@ function launch(w: SendWorld, createdAt: string): void {
 }
 
 /** Claim the launch for a process on a host this machine cannot see, whose state reads unknown. */
-function claimElsewhere(w: SendWorld, claimedAt: string): void {
+function claimElsewhere(w: SendWorld, claimedAt: string, id = RECORD): void {
   claimRecord(
-    RECORD,
+    id,
     {
       hostId: "another-host-id",
       host: "another-host",
@@ -118,6 +123,34 @@ function claimElsewhere(w: SendWorld, claimedAt: string): void {
       pid: 4242,
       start: "Mon Nov  2 10:00:00 2026",
       claimedAt,
+    },
+    w.state,
+  );
+}
+
+/** Claim the launch on this host for a supervised stage whose wrapper, supervisor and child have all ended. */
+function claimEndedHere(w: SendWorld, claimedAt: string, id = RECORD): void {
+  const probe = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `const { captureIdentity } = await import(${JSON.stringify(LIVENESS)}); console.log(JSON.stringify(await captureIdentity()));`,
+    ],
+    { env: w.env, stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(probe, 0);
+  const read = JSON.parse(probe.stdout.toString() || "{}") as {
+    ok: boolean;
+    value: ProcessIdentity;
+  };
+  expect(read.ok).toBe(true);
+  const ended = { ...read.value, pid: 2147483647 };
+  claimRecord(
+    id,
+    {
+      ...ended,
+      claimedAt,
+      supervision: { supervisor: ended, child: read.value },
     },
     w.state,
   );
@@ -288,5 +321,193 @@ describe("a stopped drive a launch of unknown process holds", () => {
     const answer = await ask(w);
     expect(answer.holder).toMatchObject({ process: "alive" });
     expect(answer.waitsOn).toBe("none");
+  });
+});
+
+describe("a drive of any other class a launch of unknown process holds", () => {
+  /** A converged ledger on pull request 12, merged at `mergedAt`. */
+  function merged(w: SendWorld, mergedAt: string): void {
+    const ledger = stoppedLedger(12, DRIVE_EXIT.CONVERGED);
+    ledger.driver.heartbeat = mergedAt;
+    w.api(
+      `repos/${REPO}/pulls/12`,
+      pullDoc(12, { state: "closed", merged: true, merged_at: mergedAt }),
+    );
+    w.api(`repos/${REPO}/issues/12/comments`, [ledgerOn(701, ledger)]);
+  }
+
+  /** A running ledger on pull request 12, whose driver is on another clone. */
+  function runningLedger(w: SendWorld): void {
+    const ledger = stoppedLedger(12, undefined, {
+      driver: {
+        actor: "wt-0123456789abcdef",
+        clone: "clone-a",
+        heartbeat: currentIso(),
+        state: "running",
+        started: currentIso(),
+      },
+    });
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+  }
+
+  it("is a person's to settle on a merged pull request once the hold has outlived its bound", async () => {
+    const w = world();
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    merged(w, long);
+    launch(w, long);
+    claimEndedHere(w, long);
+
+    const answer = await ask(w);
+    expect(answer.holder).toMatchObject({ process: "unknown" });
+    const waits = answer.waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain(RECORD);
+    expect(waits.why).toContain(`jig dispatch clear ${RECORD}`);
+  });
+
+  it("waits on nothing on a merged pull request inside the bound, counted from the merge", async () => {
+    const w = world();
+    merged(w, currentIso());
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimEndedHere(w, long);
+
+    expect((await ask(w)).waitsOn).toBe("none");
+  });
+
+  it("does not name the hold on a running ledger whose holder's processes cannot be judged, past the bound too", async () => {
+    const w = world();
+    runningLedger(w);
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    const { waiting } = (await ask(w)).waitsOn as { waiting: string };
+    expect(waiting).toContain("liveness and ownership are unknown");
+  });
+
+  it("names the hold on a merged pull request whose holder's processes cannot be judged", async () => {
+    const w = world();
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    merged(w, long);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    const waits = (await ask(w)).waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain("is on another host");
+  });
+
+  it("is a person's to settle on a running ledger, counted from the launch", async () => {
+    const w = world();
+    runningLedger(w);
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimEndedHere(w, long);
+
+    const waits = (await ask(w)).waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain(RECORD);
+  });
+
+  it("names a stopped ledger's stranded launch before a local CI-hold diagnosis", async () => {
+    const w = world();
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    const ledger = stoppedLedger(12, undefined, {
+      driver: {
+        actor: "wt-0123456789abcdef",
+        clone: "clone-a",
+        heartbeat: long,
+        state: "stopped",
+        started: long,
+        exit: DRIVE_EXIT.NOT_SETTLED,
+      },
+    });
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    const script = join(w.root, "drives.ts");
+    const head = "a".repeat(40);
+    writeFileSync(
+      script,
+      `console.log(${JSON.stringify(
+        JSON.stringify({
+          rows: [
+            {
+              kind: "pr",
+              key: "12",
+              state: "empty",
+              host: null,
+              doctor: {
+                verdict: "UNKNOWN",
+                reason: "local driver stopped",
+                recovery: null,
+                ciHold: {
+                  driver: "dead",
+                  driverReason: "the identified local driver stopped",
+                  head,
+                  label: "ci:hold",
+                  held: true,
+                  review: "converged",
+                  reason: "ci:hold blocks final CI",
+                  recovery: `bun ci-hold.ts release 12 --expect-head ${head}`,
+                  worktree: "/checkout",
+                  actor: "wt-0123456789abcdef",
+                  started: long,
+                  generation: 1,
+                  ledgerGeneration: 3,
+                },
+              },
+            },
+          ],
+        }),
+      )});`,
+    );
+    w.env.JIG_ASK_DRIVES_SCRIPT = script;
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    const waits = (await ask(w)).waitsOn as { person: string; why: string };
+    expect(waits.person).toBe("settle the launch that holds the drive");
+    expect(waits.why).toContain(RECORD);
+    expect(waits.why).toContain("the doctor also reads");
+  });
+
+  it("asks every holding record's processes proved gone, not only the newest's", async () => {
+    const w = world();
+    runningLedger(w);
+    const older = "20261105T090000Z-00000001";
+    launch(w, isoFromMs(currentMs() - 20 * HOUR_MS), older);
+    claimElsewhere(w, isoFromMs(currentMs() - 20 * HOUR_MS), older);
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimEndedHere(w, long);
+
+    const { waiting } = (await ask(w)).waitsOn as { waiting: string };
+    expect(waiting).toContain("liveness and ownership are unknown");
+  });
+
+  it("does not take a ledger that did not read for an unarmed drive", async () => {
+    const w = world();
+    const damaged = ledgerOn(701, stoppedLedger(12, undefined)) as {
+      body: string;
+    };
+    pullRequest(
+      w,
+      12,
+      [],
+      [
+        {
+          ...damaged,
+          body: damaged.body.replace(
+            '{"kind":"drive-ledger"',
+            '{"kind":"drive-ledger",',
+          ),
+        },
+      ],
+    );
+    const long = isoFromMs(currentMs() - 10 * HOUR_MS);
+    launch(w, long);
+    claimElsewhere(w, long);
+
+    expect((await ask(w)).waitsOn).toBe("none");
   });
 });

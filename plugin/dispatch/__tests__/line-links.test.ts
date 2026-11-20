@@ -21,6 +21,32 @@ function readsOf(known: RepoLineInput["known"]): Map<string, RepoLineInput> {
 }
 
 describe("an item's link and title on the line", () => {
+  it("shows a pickup held by a person in the held queue", () => {
+    const pickupHold = { by: "maintainer", at: "2026-11-03T12:25:00.000Z" };
+    const reason = `held by ${pickupHold.by} at ${pickupHold.at}`;
+    const line = buildLine(
+      input({
+        reports: [
+          report({
+            unplaced: [
+              { target: "#240", record: "tracker", reason, pickupHold },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(line.queue).toEqual([
+      expect.objectContaining({
+        item: "#240",
+        group: "held",
+        source: "held",
+        why: reason,
+        pickupHold,
+      }),
+    ]);
+  });
+
   it("comes with an item the walk could not place, as the tracker listing returned it", () => {
     const line = buildLine(
       input({

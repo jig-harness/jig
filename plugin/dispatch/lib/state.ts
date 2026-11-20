@@ -16,6 +16,7 @@
  * | `followup_releases` | repository and merged pull request | the one stale claim the tick released, pending until the forge deleted its marker |
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
+ * | `pickup_holds` | repository and tracker item | the operator's login and time of the hold, kept until release |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository; an ended row's closing-report `cause` and writer (`report_by`) are columns too |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
@@ -552,6 +553,18 @@ export const MIGRATIONS: readonly Migration[] = [
       heartbeat TEXT NOT NULL,
       reason TEXT NOT NULL,
       PRIMARY KEY (repo, pr)
+    );`,
+  },
+  {
+    additive: true,
+    sql: `CREATE TABLE pickup_holds (
+      repo TEXT NOT NULL,
+      item TEXT NOT NULL,
+      held_by TEXT NOT NULL,
+      held_at TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT,
+      PRIMARY KEY (repo, item)
     );`,
   },
 ];

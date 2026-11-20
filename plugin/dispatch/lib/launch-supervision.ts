@@ -116,7 +116,7 @@ function liveStageProcess(
 }
 
 /** What an unknown launch's processes show: one proved alive, and whether one could not be judged: seen from another host, never acknowledged by its handoff, or unread. */
-function processFacts(
+export function processFacts(
   claim: LaunchClaim,
   rows: ProcessRow[] | null,
   here: HostIdentity,

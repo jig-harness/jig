@@ -19,7 +19,8 @@ import {
 } from "../../../../../shared/orca-board.ts";
 import type { DriveState } from "../state/schema.ts";
 import { readDriveState } from "./rearm.ts";
-import { exitOf, stopText } from "./stop-text.ts";
+import { driverRuntime } from "./runtime.ts";
+import { exitOf, type StallFinish, stopText } from "./stop-text.ts";
 
 /** What a card move calls; tests replace both. */
 export interface CardDeps {
@@ -57,12 +58,13 @@ export function stopComment(
   pr: string,
   code: number,
   state: DriveState | null,
+  stall: StallFinish | null = null,
 ): string | null {
   const settled =
     code === exitOf("HITL_PARKED") ||
     code === exitOf("QUOTA_PARKED") ||
     FAILURE_STOPS.some((name) => exitOf(name) === code);
-  return settled ? stopText(pr, code, state) : null;
+  return settled ? stopText(pr, code, state, stall) : null;
 }
 
 /** Report a card move's line; a failure is a warning, never a throw. */
@@ -104,7 +106,7 @@ export async function cardOnStop(
       );
     }
   }
-  const comment = stopComment(pr, code, state);
+  const comment = stopComment(pr, code, state, driverRuntime.stallFinish);
   if (comment === null) return;
   await move(deps, { unread: true, comment });
 }

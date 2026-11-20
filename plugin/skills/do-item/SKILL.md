@@ -1350,8 +1350,9 @@ implementation. Skip this check for issues about the repository's own code.
       user file or environment, `drive.pass_args` (default none), and prints one
       JSON object: `command`, the drive's start command on one line
       (`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model
-      <model> -p "/jig:drive-pr --bots-only <PR>"`, the `drive.pass_args`
-      words before `-p` when it is set); `status`, what to do
+      <model> -p "/jig:drive-pr --bots-only <PR> <pass role>"`, the
+      `drive.pass_args` words before `-p` when it is set, the role telling
+      the pass it is one round of the running drive); `status`, what to do
       next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
       `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
       shell of the user's: `bun`, the agent's command (`claude` or `codex`)
