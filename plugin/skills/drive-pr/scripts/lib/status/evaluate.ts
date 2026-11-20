@@ -195,8 +195,8 @@ export interface EvaluateContext {
   listThreadsScript: string;
   summaryScript: string;
   helperTimeoutSec: number;
-  /** Whole seconds left of the invocation's `--timeout`; omitted: unbounded. */
-  budgetLeftSec?: () => number;
+  /** Whole seconds left of `--timeout` for a later evaluation; undefined: the first, bounded by per-call deadlines only. */
+  budgetLeftSec?: () => number | undefined;
   /** Only polling invocations opt in; --once gathers all evidence directly. */
   waitingCache?: WaitingEvaluationCache;
 }

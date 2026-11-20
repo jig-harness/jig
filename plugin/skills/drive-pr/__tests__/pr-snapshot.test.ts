@@ -183,6 +183,26 @@ describe("readPrSnapshot", () => {
     expect(!r.ok && r.reason).toContain("then the full read");
   });
 
+  it("names the conditional failure too when the full read answers something that is not a pull document", async () => {
+    await read();
+    const inner = get;
+    let calls = 0;
+    const html = async (...args: Parameters<typeof inner>) => {
+      calls++;
+      if (calls === 1) return inner(...args);
+      return {
+        ok: true as const,
+        changed: true,
+        body: "<html>proxy</html>",
+      } as Awaited<ReturnType<typeof inner>>;
+    };
+    wire.answer = "502";
+    const r = await readPrSnapshot("acme", "widgets", "7", "snapshot", html);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.reason).toContain("then the full read");
+    expect(!r.ok && r.reason).toContain("not a pull document");
+  });
+
   it("sends no second request for a pull request that is not there", async () => {
     await read();
     wire.answer = "404";

@@ -173,7 +173,14 @@ export async function readPrSnapshot(
         : `${first.reason}; then the full read: ${full.reason}`,
     };
   const doc = parseDocument(full.body);
-  return doc === null
-    ? { ok: false, reason: `${path}: the answer is not a pull document` }
-    : { ok: true, snapshot: snapshotOf(doc) };
+  if (doc === null) {
+    const unusable = `${path}: the answer is not a pull document`;
+    return {
+      ok: false,
+      reason: first.ok
+        ? unusable
+        : `${first.reason}; then the full read: ${unusable}`,
+    };
+  }
+  return { ok: true, snapshot: snapshotOf(doc) };
 }

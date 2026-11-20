@@ -431,7 +431,9 @@ async function main(): Promise<number> {
   // The evaluation reads the pull request over REST, which names it by
   // number, so a URL or branch argument is resolved to one here, once.
   // A URL names its repository too; it must be the one this checkout drives.
-  const urlRepo = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/\d+/i.exec(pr)?.[1];
+  const urlMatch = /^https?:\/\/([^/]+)\/([^/]+\/[^/]+)\/pull\/\d+/i.exec(pr);
+  const urlHost = urlMatch?.[1];
+  const urlRepo = urlMatch?.[2];
   if (!isDigits(pr)) {
     const r = await ghCall([
       "pr",
@@ -595,6 +597,21 @@ async function main(): Promise<number> {
     );
   }
 
+  if (urlHost !== undefined) {
+    let repoHost = "";
+    try {
+      repoHost = new URL(repoUrl ?? "").host;
+    } catch {
+      // An unreadable repository URL cannot confirm the host: refuse below.
+    }
+    if (repoHost.toLowerCase() !== urlHost.toLowerCase()) {
+      fail(
+        2,
+        `${urlHost}/${urlRepo} is on another forge host than this checkout's repository ${repoHost || "(unknown)"}/${owner}/${repo}; run the gate from a checkout of it`,
+      );
+    }
+  }
+
   let waitingCache: WaitingEvaluationCache | undefined;
   let pollPacing: StatusPollPacing | undefined;
   if (!once) {
@@ -614,10 +631,14 @@ async function main(): Promise<number> {
     }
   }
   const startedMs = currentMs();
+  /** The promised first evaluation keeps its per-call deadlines: `--timeout` bounds only later ones. */
+  let firstEvaluationDone = false;
   const ctx = {
     ...definedFields({ waitingCache }),
-    budgetLeftSec: (): number =>
-      Math.ceil((startedMs + timeout * 1000 - currentMs()) / 1000),
+    budgetLeftSec: (): number | undefined =>
+      firstEvaluationDone
+        ? Math.ceil((startedMs + timeout * 1000 - currentMs()) / 1000)
+        : undefined,
     pr,
     owner,
     repo,
@@ -1526,6 +1547,7 @@ async function main(): Promise<number> {
     }
 
     const code = await evaluate(ctx, report);
+    firstEvaluationDone = true;
 
     // RETRACT a skip the evaluation just contradicted. The liveness read said
     // the PR was finished, so the sweep was skipped as pointless; the
