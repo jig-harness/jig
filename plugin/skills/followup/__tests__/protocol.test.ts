@@ -222,6 +222,29 @@ describe("settling a run", () => {
     expect(pendingArm(long).length).toBeLessThanOrEqual(200);
   });
 
+  test("a shortened pending arm keeps every tag and run it names, or none", () => {
+    const wait = settle(settled(runOf(), { release: "pending" }));
+    if (!wait.ok) throw new Error(wait.failure.reason);
+    const link = (n: number) => `https://github.com/o/r/actions/runs/${n}`;
+    const withEvidence = (evidence: string) => ({
+      ...wait.value,
+      rows: wait.value.rows.map((r) =>
+        r.verdict === "pending" ? { ...r, evidence } : r,
+      ),
+    });
+    const some = pendingArm(
+      withEvidence(`${"x ".repeat(150)}${link(1)} ${link(2)} release: v1.2.3`),
+    );
+    expect(some.length).toBeLessThanOrEqual(200);
+    for (const dep of [link(1), link(2), "v1.2.3"]) expect(some).toContain(dep);
+    const many = pendingArm(
+      withEvidence([1, 2, 3, 4, 5, 6, 7].map(link).join(" ") + " v1.2.3"),
+    );
+    expect(many.length).toBeLessThanOrEqual(200);
+    expect(many).not.toContain("/actions/runs/");
+    expect(many).not.toContain("v1.2.3");
+  });
+
   test("a preview carries out nothing: no marker, no result to record", () => {
     const preview = runOf({
       facts: factsOf({ mode: "preview", mergeSha: null }),

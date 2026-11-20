@@ -6,7 +6,13 @@ import {
   type RunHandle,
 } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { isRecord, isString, isStringArray } from "../../shared/guards.ts";
-import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  attempt,
+  failed,
+  ok,
+  type Failure,
+  type Outcome,
+} from "../../shared/outcome.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import { failedBy, outboundOf } from "../../shared/outbound/failure.ts";
 import { failedGateRuns } from "./release-gate-reads.ts";
@@ -238,6 +244,13 @@ export async function taggedReleases(
   return ok(found);
 }
 
+/** What a read of workflow runs answered: the finished ones, the ones that could not be read, and the first failure. */
+export interface RunReads {
+  finished: Set<string>;
+  unread: Set<string>;
+  failure: Failure<"refused"> | null;
+}
+
 /**
  * Which of `runs`, the workflow runs a pending follow-up arm links to, have
  * finished (`status: completed`) in a conclusion other than `cancelled`, by
@@ -252,10 +265,17 @@ export async function finishedRuns(
   repo: RepoTarget,
   runs: readonly WorkflowRun[],
   bound?: TickBound,
-): Promise<Outcome<Set<string>, "refused">> {
+): Promise<Outcome<RunReads, "refused">> {
   const finished = new Set<string>();
+  const unread = new Set<string>();
+  let failure: Failure<"refused"> | null = null;
   for (const run of runs) {
-    if (ended(bound)) return refused("the tick ran out of time");
+    if (ended(bound)) {
+      // The runs not yet asked about are unread, each for the same reason.
+      failure ??= refused("the tick ran out of time").failure;
+      unread.add(runWord(run));
+      continue;
+    }
     const reply = await forge(
       repo,
       [
@@ -268,7 +288,9 @@ export async function finishedRuns(
     );
     if (!reply.ok) {
       if (outboundOf(reply.failure)?.code === "not-found") continue;
-      return reply;
+      failure ??= reply.failure;
+      unread.add(runWord(run));
+      continue;
     }
     const [status, conclusion] = reply.value.trim().split(" ");
     if (
@@ -279,7 +301,7 @@ export async function finishedRuns(
     )
       finished.add(runWord(run));
   }
-  return ok(finished);
+  return ok({ finished, unread, failure });
 }
 
 export async function observeReleaseTags(

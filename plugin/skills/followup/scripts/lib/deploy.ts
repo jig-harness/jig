@@ -25,8 +25,9 @@
  * holder that is only slow looks the same as one that hangs, so the reading
  * names it for the person to judge.
  *
- * A run counts as holding the queue only when it is running and was made for
- * the same branch: the forge does not name a run's concurrency group.
+ * A run counts as holding the queue when it is running, on any branch: the
+ * forge does not name a run's concurrency group, and a workflow may share
+ * one across branches.
  *
  * It reads from the forge, one request each: the run, its jobs (one per
  * page, for the count) and its workflow's newest runs; a finished run needs
@@ -107,15 +108,15 @@ function minutes(ms: number): string {
 
 /**
  * The oldest run before `run` that is running: what holds the group. The
- * forge does not name a run's concurrency group, so only a run for the same
- * branch counts as sharing it; a run of another branch is not evidence.
+ * forge does not name a run's concurrency group, and a workflow may key it
+ * on a constant (every branch shares one queue) or on the branch, so a
+ * running run of the workflow counts whatever its branch: a run that has no
+ * jobs behind one that is running reads as queued behind it, and the
+ * reading names the holder's link for a person to check.
  */
 function holderOf(run: RunFacts, runs: readonly RunFacts[]): RunFacts | null {
   const running = runs
-    .filter(
-      (r) =>
-        r.id < run.id && r.status === "in_progress" && r.branch === run.branch,
-    )
+    .filter((r) => r.id < run.id && r.status === "in_progress")
     .sort((a, b) => a.id - b.id);
   return running[0] ?? null;
 }
@@ -129,10 +130,7 @@ export function classifyRun(
   stuckAfterMs: number = STUCK_AFTER_MS,
 ): DeployReading {
   const holder = holderOf(run, runs);
-  const since =
-    holder === null
-      ? []
-      : runs.filter((r) => r.id > holder.id && r.branch === run.branch);
+  const since = holder === null ? [] : runs.filter((r) => r.id > holder.id);
   const before = since
     .filter((r) => r.id < run.id && r.status === "completed")
     .sort((a, b) => b.id - a.id)

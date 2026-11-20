@@ -12,6 +12,7 @@
  * - otherwise it is `done`.
  */
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import { armTags } from "../../../../dispatch/lib/followup-waits.ts";
 import { armTitle, repoArmOf } from "./arms.ts";
 import type { RunFile, Verdict } from "./run.ts";
 
@@ -160,6 +161,9 @@ const ARM_MAX = 200;
 const RUN_LINK_TEXT =
   /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d{1,19}(?!\d)/g;
 
+/** A word that is, or starts as, a run link: a prose cut never keeps part of one. */
+const RUN_LINK_WORD = /^https:\/\/github\.com\/\S*\/actions\/runs\//;
+
 /** The pending arms and what each waits for, in one line short enough for `--arm`. */
 export function pendingArm(s: Settled): string {
   const text = s.rows
@@ -167,20 +171,26 @@ export function pendingArm(s: Settled): string {
     .map((r) => `${r.arm}: ${r.evidence.replace(/\s+/g, " ").trim()}`)
     .join("; ");
   if (text.length <= ARM_MAX) return text;
-  // A run link is kept whole or not at all: a cut link would name another run.
-  const links = [...new Set(text.match(RUN_LINK_TEXT) ?? [])];
-  let kept = "";
-  for (const l of links) {
-    const next = kept === "" ? l : `${kept} ${l}`;
-    if (next.length > ARM_MAX - 20) break;
-    kept = next;
-  }
-  const room = ARM_MAX - 1 - (kept === "" ? 0 : kept.length + 1);
-  let head = text.slice(0, room);
+  // The re-read settles an arm only when every tag and run it names is
+  // done, so a shortened arm keeps the whole set or names none of it: a
+  // partial set would let part of the wait release the rest.
+  const deps = [...armTags(text), ...new Set(text.match(RUN_LINK_TEXT) ?? [])];
+  const depText = deps.join(" ");
+  const fits = depText.length <= ARM_MAX - 2;
+  const names = new Set(deps);
+  const prose = text
+    .split(" ")
+    .filter(
+      (w) => !names.has(w) && !RUN_LINK_WORD.test(w) && !armTags(w).length,
+    )
+    .join(" ");
+  const room = fits ? ARM_MAX - 2 - depText.length : ARM_MAX - 1;
+  let head = prose.slice(0, room);
   // A word the cut ran through is dropped whole.
-  if (text[room] !== " ") head = head.replace(/\S*$/, "");
+  if (prose[room] !== undefined && prose[room] !== " ")
+    head = head.replace(/\S*$/, "");
   head = head.trimEnd();
-  return `${head}…${kept === "" ? "" : ` ${kept}`}`;
+  return fits ? `${head}… ${depText}`.trim() : `${head}…`;
 }
 
 /** How the session ends the run, for each way it was started. */

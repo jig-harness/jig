@@ -32,7 +32,12 @@ const waiting = (ageMs: number) =>
   });
 
 // The holder started first; the cancelled runs since waited on it.
-const holder = () => run(96, { status: "in_progress", conclusion: null });
+const holder = () =>
+  run(96, {
+    status: "in_progress",
+    conclusion: null,
+    createdAt: isoFromMs(NOW - 3 * STUCK_AFTER_MS),
+  });
 const cancelledBefore = [run(97), run(98), run(99)];
 const queue = [holder(), ...cancelledBefore];
 
@@ -167,13 +172,8 @@ test("readDeployRun refuses to judge a queue from a run list it could not read w
   expect(!read.ok && read.failure.reason).toContain("cannot be judged");
 });
 
-test("a running run of another branch, or a queued one, does not hold the queue", () => {
+test("a queued run does not hold the queue", () => {
   const age = waiting(STUCK_AFTER_MS + 60_000);
-  const other = [
-    run(96, { status: "in_progress", conclusion: null, branch: "other" }),
-    ...cancelledBefore,
-  ];
-  expect(classifyRun(age, 0, other, NOW).state).toBe("moving");
   const queued = [
     run(96, { status: "queued", conclusion: null }),
     ...cancelledBefore,
@@ -191,4 +191,21 @@ test("a finished run is read from the run alone", async () => {
   const reading = await readDeployRun(100, read, NOW);
   expect(reading.ok && reading.value.state).toBe("finished");
   expect(asked).toHaveLength(1);
+});
+
+test("a running run of another branch holds the queue when the workflow shares one group", () => {
+  const other = run(96, {
+    status: "in_progress",
+    conclusion: null,
+    branch: "feature",
+    createdAt: isoFromMs(NOW - 3 * STUCK_AFTER_MS),
+  });
+  const read = classifyRun(
+    waiting(STUCK_AFTER_MS + 60_000),
+    0,
+    [other, ...cancelledBefore],
+    NOW,
+  );
+  expect(read.state).toBe("stuck");
+  expect(read.holder?.id).toBe(96);
 });

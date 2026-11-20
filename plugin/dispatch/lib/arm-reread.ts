@@ -25,7 +25,11 @@ import { parseMs } from "../../shared/time.ts";
 import { waitStreak } from "./followup-waits.ts";
 import { runWord, type WorkflowRun } from "./wait-for.ts";
 import type { ReadRecord } from "./launches.ts";
-import { finishedRuns, taggedReleases } from "./release-gates.ts";
+import {
+  finishedRuns,
+  type RunReads,
+  taggedReleases,
+} from "./release-gates.ts";
 import type { TickBound } from "./sources/bounded.ts";
 import type { RepoTarget } from "./types.ts";
 
@@ -50,7 +54,7 @@ export type RunReader = (
   repo: RepoTarget,
   runs: readonly WorkflowRun[],
   bound?: TickBound,
-) => Promise<Outcome<Set<string>, "refused">>;
+) => Promise<Outcome<RunReads, "refused">>;
 
 /** What a re-read answered: the settled records, and a read that failed beside them. */
 export interface ArmReread {
@@ -104,21 +108,29 @@ export async function rereadPendingArms(
     return { settled: new Set(), failure: null };
   const found =
     tags.length === 0 ? ok(new Set<string>()) : await read(repo, tags, bound);
-  const finished =
+  const finished: Outcome<RunReads, "refused"> =
     runs.length === 0
-      ? ok(new Set<string>())
+      ? ok({
+          finished: new Set<string>(),
+          unread: new Set<string>(),
+          failure: null,
+        })
       : await readRuns(repo, runs, bound);
-  // A read that failed leaves only the arms that need it unsettled; the arms
+  // A read that failed leaves only the arms that need it unsettled, down to the single run a lookup missed; the arms
   // that wait on the other read keep their answer, and the failure travels
   // with them.
   const tagSet = found.ok ? found.value : new Set<string>();
-  const runSet = finished.ok ? finished.value : new Set<string>();
+  const runSet = finished.ok ? finished.value.finished : new Set<string>();
+  const unread = finished.ok ? finished.value.unread : new Set<string>();
+  const runsRead = (w: { runs: readonly WorkflowRun[] }) =>
+    w.runs.length === 0 ||
+    (finished.ok && w.runs.every((r) => !unread.has(runWord(r))));
   const settled = new Set(
     wanted
       .filter(
         (w) =>
           (found.ok || w.tags.length === 0) &&
-          (finished.ok || w.runs.length === 0) &&
+          runsRead(w) &&
           w.tags.every((t) => tagSet.has(t)) &&
           w.runs.every((r) => runSet.has(runWord(r))),
       )
@@ -128,6 +140,6 @@ export async function rereadPendingArms(
     ? found.failure
     : !finished.ok
       ? finished.failure
-      : null;
+      : finished.value.failure;
   return { settled, failure };
 }

@@ -545,7 +545,11 @@ it("re-reads the runs of a spent pending arm, settling it only once every run it
       async () => ok(new Set(tags)),
       async (_repo, runs) => {
         asked.push(runs);
-        return ok(new Set(finished));
+        return ok({
+          finished: new Set(finished),
+          unread: new Set<string>(),
+          failure: null,
+        });
       },
     );
   const id = records[1]?.record.id ?? "";
@@ -575,6 +579,23 @@ it("re-reads the runs of a spent pending arm, settling it only once every run it
   // The arm names a tag and a run: the failed run read leaves it unsettled
   // and still reports the failure.
   expect(refused.settled).toEqual(new Set());
+  // A run lookup that failed leaves only the arms naming that run unsettled.
+  const partial = await rereadPendingArms(
+    repo,
+    [{ number: 9 }],
+    records,
+    nowMs,
+    undefined,
+    async () => ok(new Set(["v3.0.0"])),
+    async () =>
+      ok({
+        finished: new Set<string>(),
+        unread: new Set([`run:${SLUG}/7`]),
+        failure: failed("refused", "timed out").failure,
+      }),
+  );
+  expect(partial.settled).toEqual(new Set());
+  expect(partial.failure?.reason).toContain("timed out");
   // A failed tag read still reports itself, and a failed read of one kind
   // does not discard what the other answered.
   const tagRefused = await rereadPendingArms(
@@ -584,7 +605,12 @@ it("re-reads the runs of a spent pending arm, settling it only once every run it
     nowMs,
     undefined,
     async () => failed("refused", "no tags"),
-    async () => ok(new Set([`run:${SLUG}/7`])),
+    async () =>
+      ok({
+        finished: new Set([`run:${SLUG}/7`]),
+        unread: new Set<string>(),
+        failure: null,
+      }),
   );
   expect(tagRefused.failure?.reason).toContain("no tags");
 });

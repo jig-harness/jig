@@ -119,7 +119,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" deploy-run <run-id> [--stuck-after
 
 It prints `state` with the `reason`: `finished` (the run completed: read
 its conclusion), `moving` (it has jobs, no running run of its workflow
-holds its queue among the newest runs read (a holder is a running run for the same branch, since the forge does not name concurrency groups), the blockage is younger than
+holds its queue among the newest runs read (a holder is a running run of the workflow on any branch, since the forge does not name concurrency groups and a workflow may share one across branches), the blockage is younger than
 the bound, 30 minutes by default, or a run since the holder started ended
 other than cancelled) or `stuck` (no jobs, an older run of its workflow
 still running, every run since cancelled, and the first run that waited on
