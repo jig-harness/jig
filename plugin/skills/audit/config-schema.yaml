@@ -73,6 +73,17 @@ machine_fields:
     default: 1
     read_by: [dispatch]
     since: 0.288.0
+  notify.channels:
+    type: list
+    items:
+      fields:
+        name: string
+        kind: { type: enum, values: [webhook] }
+        url_env: string
+        format: { type: enum, values: [text, slack, discord] }
+      optional: [format]
+    read_by: [dispatch]
+    since: next
 
 strict:
   - gc
