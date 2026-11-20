@@ -499,8 +499,10 @@ a command again with a longer deadline, `--timeout-seconds 7200`, in place of
 the hour. Never commit outside this procedure or skip the hooks
 (`--no-verify`) to get past it. Inside a drive pass, whose own deadline the
 longer one would outrun, still take every step below that runs no hook (the
-clean-up after a commit that landed, a reset, a quit), but run no
-hook-running command again: stop there as for a hung hook, below.
+clean-up after a commit that landed, a quit), but run no
+hook-running command again: stop there as for a hung hook, below. A reset
+runs the hook for an index change, so it carries the hour's deadline and,
+killed there, is a hung hook too.
 
 - **The concluding commit of a merge, a cherry-pick or a revert.** When the
   operation is still in progress (`MERGE_HEAD`, `CHERRY_PICK_HEAD` or
@@ -531,18 +533,26 @@ hook-running command again: stop there as for a hung hook, below.
     the hook that runs before a merge commit). Committing them would make a
     single-parent commit that hides the merge, so return the index and the
     working tree to the branch's commit with
-    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git reset --merge`
+    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git reset --merge`
     and run the merge again with the longer deadline.
 - **The continued rebase.** When the rebase still stands at the same stop
   with its resolution staged, continue it with the longer deadline. When it
   has moved on, take what it shows as you would after a continue that
   exited `0`: a further stop, or the rebase done. When it is still in
   progress with commands remaining and no conflicted path (killed in a hook
-  while it made a pick's commit or after), continue it with the longer deadline. When
+  while it made a pick's commit or after), continue it with the longer deadline.
+  When the last pick committed and no commands remain but the head is still
+  detached (killed before the branch was attached again), continue it with
+  the longer deadline: that finishes the rebase. When
   `git status` still reports a rebase in progress but with no commands
   remaining and the branch checked out again, the rebase finished and only
-  its last hook was killed; a further continue fails on the moved branch,
-  so clear the leftover state with
+  its last hook was killed; a further continue fails on the moved branch.
+  The rebase's own closing steps (restoring an autostash, moving the
+  branches an `--update-refs` rebase carries) run after that hook, and
+  clearing the state discards the queue of them: when
+  the rebase's state directory still holds an `autostash` or `update-refs`
+  file (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --git-path rebase-merge`
+  names it), stop and report it, as for a hung hook. Otherwise clear the leftover state with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rebase --quit`
   and go on as after a rebase done.
 

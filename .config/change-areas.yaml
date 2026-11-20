@@ -95,7 +95,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/drive-pr/"
+      ownTests: "bun run test ./plugin/skills/drive-pr/ ./plugin/shared/__tests__/"
       separateSuite: true
 
   resolve-review-comments:
@@ -267,7 +267,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/resolve-conflicts/"
+      ownTests: "bun run test ./plugin/skills/resolve-conflicts/ ./plugin/shared/__tests__/"
 
   review:
     title: "review skill and its lenses"
@@ -310,6 +310,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
+      ownTests: "bun run test ./plugin/shared/__tests__/"
     generated:
       - outputs:
           - "plugin/dispatch/dashboard-page/index.html"

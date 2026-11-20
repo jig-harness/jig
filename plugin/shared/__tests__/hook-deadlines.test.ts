@@ -15,27 +15,117 @@ const PLUGIN = join(import.meta.dir, "..", "..");
 /** The skill-directory variable as a `SKILL.md` writes it. */
 const SKILL_DIR = "$" + "{CLAUDE_SKILL_DIR}";
 
-const WRAPPED_GIT = /command\.ts"?(.*?)\s--\s+git\s+(.*)$/;
-const HOOK_RUNNING =
-  /^(?:-[cC]\s+\S+\s+|--[\w-]+(?:=\S+)?\s+)*(?:commit|merge|cherry-pick|revert|push|pull|am|rebase\s+--continue)(?=[\s`'";]|$)/;
-const NO_HOOKS = /\s--(?:abort|quit)\b/;
 /** Where a command's own arguments end on a line of prose or shell. */
-const ARGUMENTS_END = /[`;|]/;
+const ENDS = new Set(["`", ";", "|", "&", ")"]);
+/** Wrapper options and how many words each takes (`command.ts`'s usage). */
+const WRAPPER_ARITY = new Map([
+  ["--env", 2],
+  ["--stdin-file", 1],
+  ["--input", 1],
+  ["--stdout-file", 1],
+  ["--output", 1],
+  ["--stdout-exit-code", 1],
+  ["--cwd", 1],
+  ["--timeout-seconds", 1],
+  ["--unset-prefix", 1],
+]);
+/** Git's global options that take their value as the next word. */
+const GIT_VALUE_OPTIONS = new Set([
+  "-c",
+  "-C",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--super-prefix",
+  "--config-env",
+]);
+const HOOK_SUBCOMMANDS = new Set([
+  "commit",
+  "merge",
+  "cherry-pick",
+  "revert",
+  "push",
+  "pull",
+  "am",
+  "rebase",
+  "reset",
+]);
+/** Subcommands whose `--abort` or `--quit` word runs no hook. */
+const ENDING_SUBCOMMANDS = new Set([
+  "merge",
+  "rebase",
+  "cherry-pick",
+  "revert",
+  "am",
+]);
 
-/** Each wrapped, hook-running git command on a line, without its deadline. */
+/** The words of a command from `start`, quotes removed, up to where it ends. */
+function words(text: string, start: number): string[] {
+  const out: string[] = [];
+  let word = "";
+  let inWord = false;
+  let quote = "";
+  for (let i = start; i < text.length; i++) {
+    const c = text.charAt(i);
+    if (quote) {
+      if (c === quote) quote = "";
+      else word += c;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+      inWord = true;
+    } else if (ENDS.has(c)) break;
+    else if (/\s/.test(c)) {
+      if (inWord) out.push(word);
+      word = "";
+      inWord = false;
+    } else {
+      word += c;
+      inWord = true;
+    }
+  }
+  if (inWord) out.push(word);
+  return out;
+}
+
+/** Whether the wrapped git command runs hooks and the wrapper gave no deadline. */
+function lacksDeadline(args: string[]): boolean {
+  let i = 0;
+  let deadline = false;
+  while (args[i]?.startsWith("--") && args[i] !== "--") {
+    const option = args[i++] as string;
+    const arity = WRAPPER_ARITY.get(option);
+    if (arity === undefined) return false;
+    if (option === "--timeout-seconds" && /^\d+$/.test(args[i] ?? ""))
+      deadline = true;
+    i += arity;
+  }
+  if (args[i] === "--") i++;
+  if (args[i] !== "git") return false;
+  i++;
+  while (i < args.length && args[i]?.startsWith("-")) {
+    const option = args[i++] as string;
+    if (GIT_VALUE_OPTIONS.has(option)) i++;
+  }
+  const subcommand = args[i] ?? "";
+  if (!HOOK_SUBCOMMANDS.has(subcommand)) return false;
+  const rest = args.slice(i + 1);
+  if (
+    ENDING_SUBCOMMANDS.has(subcommand) &&
+    rest.some((a) => a === "--abort" || a === "--quit")
+  )
+    return false;
+  if (subcommand === "rebase" && !rest.includes("--continue")) return false;
+  return !deadline;
+}
+
+/** Each wrapped, hook-running git command in a text, without its deadline. */
 function undeadlinedHookCommands(text: string): string[] {
   const found: string[] = [];
-  for (const line of text.split("\n")) {
-    for (const call of line.split(
-      /(?=bun\s+(?:--\S+\s+)*["']?[^\s"']*shared\/command\.ts)/,
-    )) {
-      const match = WRAPPED_GIT.exec(call);
-      if (!match) continue;
-      const [, options = "", rest = ""] = match;
-      const own = rest.split(ARGUMENTS_END)[0] ?? "";
-      if (!HOOK_RUNNING.test(own) || NO_HOOKS.test(own)) continue;
-      if (!/--timeout-seconds\s+\d+/.test(options)) found.push(call.trim());
-    }
+  const joined = text.replace(/\\\r?\n\s*/g, " ");
+  for (const match of joined.matchAll(/shared\/command\.ts"?/g)) {
+    const start = match.index + match[0].length;
+    if (lacksDeadline(words(joined, start)))
+      found.push(joined.slice(match.index, start + 80).split("\n")[0] ?? "");
   }
   return found;
 }
@@ -68,6 +158,13 @@ describe("hook-running commands carry a deadline", () => {
       'bun "<skill-dir>/../../shared/command.ts" -- git -C sub commit -m x',
       'bun "<skill-dir>/../../shared/command.ts" -- git --no-pager pull',
       'merge with `bun "<skill-dir>/../../shared/command.ts" -- git merge main`, or `git merge --abort` it',
+      'bun "x/shared/command.ts" git commit -m x',
+      'bun "x/shared/command.ts" -- git --git-dir .git commit -m x',
+      'bun "x/shared/command.ts" --env NOTE "--timeout-seconds 3600" -- git commit -m x',
+      'bun "x/shared/command.ts" -- git commit -m "document --abort behavior"',
+      'bun "x/shared/command.ts" -- git commit -m "document --quit behavior"',
+      'bun "x/shared/command.ts" -- git reset --merge',
+      'bun "x/shared/command.ts" \\\n  -- git commit -F m.txt',
     ])
       expect(undeadlinedHookCommands(line)).toHaveLength(1);
   });
@@ -83,7 +180,7 @@ describe("hook-running commands carry a deadline", () => {
       'bun "<skill-dir>/../../shared/command.ts" -- git clean -f -- conflict-message.txt',
       'bun "<skill-dir>/../../shared/command.ts" -- git merge-base --is-ancestor a HEAD',
       'bun "<skill-dir>/../../shared/command.ts" -- git rebase --quit',
-      'bun "<skill-dir>/../../shared/command.ts" -- git reset --merge',
+      'bun "x/shared/command.ts" --timeout-seconds 3600 -- git reset --merge',
     ])
       expect(undeadlinedHookCommands(line)).toEqual([]);
   });
