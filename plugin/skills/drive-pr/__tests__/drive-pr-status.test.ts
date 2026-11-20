@@ -563,6 +563,7 @@ describe("drive-status.ts terminal states", () => {
       checkRuns: [{ ...REVIEWER_RUN, status: "in_progress", conclusion: null }],
     });
     const calls = join(dir, "polls.log");
+    const times = join(dir, "poll-times.log");
     const r = await probeIn(
       dir,
       stateDir,
@@ -573,6 +574,7 @@ describe("drive-status.ts terminal states", () => {
         env: {
           JIG_GH_CACHE: "off",
           DRIVE_PR_STUB_GH_LOG: calls,
+          DRIVE_PR_STUB_GH_TIMES: times,
           DRIVE_PR_STATUS_MIN_INTERVAL: "1",
           JIG__REVIEW__REVIEWER_POLL_MAX_SECONDS: "3",
         },
@@ -589,9 +591,23 @@ describe("drive-status.ts terminal states", () => {
     expect(polls.length % 2).toBe(0);
     expect(polls.length).toBeGreaterThanOrEqual(6);
     expect(polls.length).toBeLessThanOrEqual(12);
-    // The exact cadence is asserted with an injected clock in
-    // status-poll-pacing.test.ts; real-time gaps here would include each
-    // evaluation's own variable duration.
+    // The count cannot tell the backed-off cadence from fixed two-second
+    // polling, so read when each evaluation started (two reads each). A timer
+    // never fires early, so each gap is at least its wait whatever the runner's
+    // load; only lower bounds are asserted, since an evaluation's own duration
+    // only lengthens a gap. Fixed 1s polling fails the second bound and fixed
+    // 2s polling the third.
+    const stamps = readFileSync(times, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => Number(BigInt(l) / 1_000_000n));
+    const starts = stamps.filter((_, i) => i % 2 === 0);
+    const gaps = starts.slice(1).map((t, i) => t - (starts[i] ?? t));
+    expect(gaps.length).toBeGreaterThanOrEqual(3);
+    const slackMs = 50;
+    [1000, 2000, 3000].forEach((waitMs, i) => {
+      expect(gaps[i] ?? 0).toBeGreaterThanOrEqual(waitMs - slackMs);
+    });
   }, 20_000);
 });
 
