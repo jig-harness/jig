@@ -28,7 +28,7 @@ import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { attempt } from "../../shared/outcome.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import { holds, type ReadRecord } from "./launches.ts";
-import { holdsItem } from "./launch-pickups.ts";
+import { holdsItem, pickupItems } from "./launch-pickups.ts";
 import type { TickBound } from "./sources/bounded.ts";
 import { failureText } from "./text.ts";
 import type { ClaimedItem, WantedItem } from "./types.ts";
@@ -142,8 +142,7 @@ export function footprintItems(input: OverlapObserveInput): FootprintItem[] {
   // A pickup this host started and no tracker list carries yet still holds files.
   for (const { record, state } of input.records) {
     if (record.action !== "pickup" || !holds(state)) continue;
-    const items = record.batchItems?.map(({ key }) => key) ?? [record.item];
-    for (const key of items)
+    for (const key of pickupItems(record))
       if (key !== null && holdsItem(record, key)) add({ key });
   }
   return out;

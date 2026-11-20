@@ -12,7 +12,7 @@ import type { FootprintReading } from "../../skills/do-item/scripts/lib/tracker/
 import type { ChangeAreaCatalog } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import { readConflictRates } from "./conflict-rates.ts";
 import { holds, type ReadRecord } from "./launches.ts";
-import { holdsItem } from "./launch-pickups.ts";
+import { holdsItem, pickupItems } from "./launch-pickups.ts";
 import {
   type InFlight,
   type Footprint,
@@ -205,24 +205,27 @@ function pickupStates(
   for (const r of report.running)
     if (r.stage === "pickup" && r.evidence.record === undefined)
       states.set(r.target, "running");
+  recordPickupStates(states, records, repo.slug);
+  for (const c of observation.tracked.claimed ?? [])
+    if (!states.has(c.key)) states.set(c.key, "claimed");
+  return states;
+}
+
+function recordPickupStates(
+  states: Map<string, string>,
+  records: readonly ReadRecord[],
+  repo: string,
+): void {
   for (const { record, state } of records) {
-    if (
-      record.repo !== repo.slug ||
-      record.action !== "pickup" ||
-      !holds(state)
-    )
+    if (record.repo !== repo || record.action !== "pickup" || !holds(state))
       continue;
-    const items = record.batchItems?.map(({ key }) => key) ?? [record.item];
-    for (const key of items)
+    for (const key of pickupItems(record))
       if (key !== null && holdsItem(record, key))
         states.set(
           key,
           state.kind === "pending" ? "launch pending" : "running",
         );
   }
-  for (const c of observation.tracked.claimed ?? [])
-    if (!states.has(c.key)) states.set(c.key, "claimed");
-  return states;
 }
 
 /**
@@ -558,6 +561,20 @@ export async function planOverlap(
     notes,
   };
   report.overlap = overlap;
+}
+
+/** Project overlap only when this tick cannot apply pickups through its turn scheduler. */
+export async function planProjectedOverlap(
+  context: TickContext,
+  observation: RepoObservation,
+): Promise<void> {
+  if (
+    context.apply === null ||
+    !observation.opened.stages.has("pickup") ||
+    observation.tracked.tracker === null ||
+    !observation.tracked.keys
+  )
+    await planOverlap(context, observation);
 }
 
 /** A pending launch with no answer can still be running and already holds a slot. */

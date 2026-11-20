@@ -377,7 +377,7 @@ interface WalkContext {
   reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
-export interface Found {
+interface Found {
   unplaced: Unplaced[];
   candidates: Candidate[];
   pending: Pending[];
