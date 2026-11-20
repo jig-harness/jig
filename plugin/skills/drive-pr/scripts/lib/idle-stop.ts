@@ -7,27 +7,32 @@ import {
 
 /**
  * Record the person's stop on the idle acquisition, so a stop whose first
- * attempt was refused still reads as theirs. Returns the exit code that ends
- * the stop (3: another acquisition than the one expected; 1: the stop is not
- * on the ledger), or null once it is recorded or there is nothing to record.
+ * attempt was refused still reads as theirs. The acquisition it read, checked
+ * and marked is returned with the result, so the settlement binds to that one
+ * and never to a second read. `exit` is the code that ends the stop (3:
+ * another acquisition than the one expected; 1: the stop is not on the
+ * ledger), or null once it is recorded or there is nothing to record.
  */
 function markIdleStop(
   stateDir: string,
   pr: string,
   expectStarted: string,
   reason: string,
-): number | null {
+): { exit: number | null; acquired: string | undefined } {
   const idle = readDriverRecord(stateDir, pr);
-  if (idle === null) return null;
+  if (idle === null) return { exit: null, acquired: undefined };
   if (expectStarted !== "" && idle.started !== expectStarted) {
     console.log(
       `PR #${pr}'s retained driver record is another acquisition (started ${idle.started}, expected ${expectStarted}) — not stopping it.`,
     );
-    return 3;
+    return { exit: 3, acquired: idle.started };
   }
-  if (idle.personStop !== undefined) return null;
-  if (markIdlePersonStop(stateDir, pr, idle.started, reason)) return null;
-  return afterRacedMark(stateDir, pr, idle, reason);
+  const acquired = idle.started;
+  if (idle.personStop !== undefined) return { exit: null, acquired };
+  if (markIdlePersonStop(stateDir, pr, acquired, reason)) {
+    return { exit: null, acquired };
+  }
+  return { exit: afterRacedMark(stateDir, pr, idle, reason), acquired };
 }
 
 /** The mark found no record to update: another recovery or acquisition got there first. */
@@ -63,8 +68,12 @@ export async function settleIdleStop(
   expectStarted: string,
   reason: string,
 ): Promise<number> {
-  const acquired = readDriverRecord(stateDir, pr)?.started;
-  const refused = markIdleStop(stateDir, pr, expectStarted, reason);
+  const { exit: refused, acquired } = markIdleStop(
+    stateDir,
+    pr,
+    expectStarted,
+    reason,
+  );
   if (refused !== null) return refused;
   // A record may stay as a retained CI-hold witness after the ledger is settled; only the outcome says which.
   console.log(
