@@ -110,32 +110,24 @@ function machineGovernor(): BudgetGovernor {
   return governor;
 }
 
-/** Whether `hostname` names the machine or its network: a private, loopback or link-local IP literal, `localhost`, or a name with no public suffix. */
+/** Whether an IPv6 literal (no brackets) is the machine's own, a unique-local, a link-local or an IPv4-mapped address. */
+function internalV6(host: string): boolean {
+  return (
+    host === "::" || host === "::1" || /^(fc|fd|fe[89ab]|::ffff:)/.test(host)
+  );
+}
+
+/** The first two octets that make a private, loopback or link-local IPv4 literal, as a pattern over `a.b`. */
+const PRIVATE_V4 =
+  /^(0|10|127)\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\.|^192\.168\.|^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./;
+
+/** Whether `hostname` names the machine or its network: a private, loopback or link-local IP literal, `localhost`, or a name with no dot or on a local-only suffix. */
 function internalHost(hostname: string): boolean {
   const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (host.includes(":"))
-    return (
-      host === "::" ||
-      host === "::1" ||
-      /^(fc|fd|fe[89ab])/.test(host) ||
-      /^::ffff:/.test(host)
-    );
-  const parts = host.split(".");
-  if (parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p))) {
-    const [a = 0, b = 0] = parts.map(Number);
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127)
-    );
-  }
+  if (host.includes(":")) return internalV6(host);
   return (
-    parts.length < 2 ||
-    host === "localhost" ||
+    PRIVATE_V4.test(host) ||
+    !host.includes(".") ||
     /\.(localhost|local|internal|lan|home|corp|intranet)$/.test(host)
   );
 }
