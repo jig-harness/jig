@@ -887,14 +887,28 @@ async function overallCiProof(
     : { ok: true };
 }
 
-/** Strict success requires both check runs and attributed legacy statuses to be green. */
-async function requiredCiAggregateIsGreen(head: string): Promise<ProofRead> {
+/** A head's check runs and commit statuses, or the refusal that read ended in. */
+async function readHeadCi(head: string): Promise<
+  | ProofRead
+  | {
+      allRuns: NonNullable<Awaited<ReturnType<typeof checkRunListing>>["runs"]>;
+      statuses: NonNullable<Awaited<ReturnType<typeof commitStatusesFor>>>;
+    }
+> {
   const [{ runs: allRuns, cutShort }, statuses] = await Promise.all([
     checkRunListing("{owner}", "{repo}", head),
     commitStatusesFor("{owner}", "{repo}", head),
   ]);
   if (cutShort !== null) return { ok: false, cutShort };
   if (allRuns === null || statuses === null) return { ok: false };
+  return { allRuns, statuses };
+}
+
+/** Strict success requires both check runs and attributed legacy statuses to be green. */
+async function requiredCiAggregateIsGreen(head: string): Promise<ProofRead> {
+  const read = await readHeadCi(head);
+  if ("ok" in read) return read;
+  const { allRuns, statuses } = read;
   const workflowRuns = await workflowRunsBehind(
     "{owner}",
     "{repo}",
@@ -908,12 +922,9 @@ async function requiredCiAggregateIsGreen(head: string): Promise<ProofRead> {
 
 /** Has any non-reviewer check run or commit status registered on `head`? */
 async function anyCiOnHead(head: string): Promise<ProofRead> {
-  const [{ runs: allRuns, cutShort }, statuses] = await Promise.all([
-    checkRunListing("{owner}", "{repo}", head),
-    commitStatusesFor("{owner}", "{repo}", head),
-  ]);
-  if (cutShort !== null) return { ok: false, cutShort };
-  if (allRuns === null || statuses === null) return { ok: false };
+  const read = await readHeadCi(head);
+  if ("ok" in read) return read;
+  const { allRuns, statuses } = read;
   return hasNonReviewerCi(allRuns, statuses) ? { ok: true } : { ok: false };
 }
 
