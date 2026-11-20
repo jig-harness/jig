@@ -95,7 +95,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/drive-pr/"
+      ownTests: "bun run test ./plugin/skills/drive-pr/ ./plugin/shared/__tests__/"
       separateSuite: true
 
   resolve-review-comments:
@@ -107,7 +107,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/resolve-review-comments/"
+      ownTests: "bun run test ./plugin/skills/resolve-review-comments/ ./plugin/shared/__tests__/"
 
   do-item:
     title: "do-item skill"
@@ -118,7 +118,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/do-item/"
+      ownTests: "bun run test ./plugin/skills/do-item/ ./plugin/shared/__tests__/"
 
   # The areas below name the tracker's other `area:` labels, so
   # `/jig:work-batch` can draw a batch from them (do_item.agents.codearea_areas
@@ -163,7 +163,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/do-item/"
+      ownTests: "bun run test ./plugin/skills/do-item/ ./plugin/shared/__tests__/"
 
   audit:
     title: "audit skill"
@@ -190,7 +190,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/audit/"
+      ownTests: "bun run test ./plugin/skills/audit/ ./plugin/shared/__tests__/"
 
   changelog:
     title: "changelog skill and releases"
@@ -201,7 +201,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/changelog/"
+      ownTests: "bun run test ./plugin/skills/changelog/ ./plugin/shared/__tests__/"
 
   code-stats:
     title: "code-stats skill"
@@ -212,7 +212,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/code-stats/"
+      ownTests: "bun run test ./plugin/skills/code-stats/ ./plugin/shared/__tests__/"
 
   decide:
     title: "decide skill and its sheet"
@@ -223,7 +223,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/decide/"
+      ownTests: "bun run test ./plugin/skills/decide/ ./plugin/shared/__tests__/"
 
   explain:
     title: "explain skill"
@@ -234,7 +234,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/explain/"
+      ownTests: "bun run test ./plugin/skills/explain/ ./plugin/shared/__tests__/"
 
   file-issue:
     title: "file-issue skill"
@@ -245,7 +245,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/file-issue/"
+      ownTests: "bun run test ./plugin/skills/file-issue/ ./plugin/shared/__tests__/"
 
   reflect:
     title: "reflect and review-reflections skills"
@@ -256,7 +256,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/reflect/ ./plugin/skills/review-reflections/"
+      ownTests: "bun run test ./plugin/skills/reflect/ ./plugin/skills/review-reflections/ ./plugin/shared/__tests__/"
 
   resolve-conflicts:
     title: "resolve-conflicts skill"
@@ -278,7 +278,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/review/"
+      ownTests: "bun run test ./plugin/skills/review/ ./plugin/shared/__tests__/"
 
   work-batch:
     title: "work-batch skill"
@@ -441,7 +441,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/audit/"
+      ownTests: "bun run test ./plugin/skills/audit/ ./plugin/shared/__tests__/"
     reviewRisk: high
 
   shared-lib:

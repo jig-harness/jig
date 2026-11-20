@@ -499,7 +499,7 @@ a command again with a longer deadline, `--timeout-seconds 7200`, in place of
 the hour. Never commit outside this procedure or skip the hooks
 (`--no-verify`) to get past it. Inside a drive pass, whose own deadline the
 longer one would outrun, still take every step below that runs no hook (the
-clean-up after a commit that landed, a quit), but run no
+clean-up after a commit that landed), but run no
 hook-running command again: stop there as for a hung hook, below. A reset
 runs the hook for an index change, so it carries the hour's deadline and,
 killed there, is a hung hook too.
@@ -510,9 +510,14 @@ killed there, is a hung hook too.
   `REVERT_HEAD` after it, so a marker can outlive a commit that landed. When
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log -1` shows
   the concluding commit with the recorded section, it landed and only a
-  later hook was killed: clear a leftover marker with the operation's quit
-  (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge --quit`,
-  or the same with `cherry-pick` or `revert`; a quit runs no hook), then run
+  later hook was killed. First look for a pending autostash
+  (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --git-path MERGE_AUTOSTASH`
+  names the file): when it exists, stop and report it as for a hung hook,
+  because a quit would save it to the stash list instead of restoring the
+  changes. Otherwise clear a leftover marker with the operation's quit
+  (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git merge --quit`,
+  or the same with `cherry-pick` or `revert`; a quit deletes refs, which runs
+  the reference-transaction hook, so it is a hook-running command), then run
   `git clean` and `events.ts` as above. Otherwise the commit was not made. The staged
   resolution, the snapshot and `conflict-message.txt` are intact, and the
   message file is this run's, so start again at the commit, not at the
@@ -532,10 +537,14 @@ killed there, is a hung hook too.
     (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge-base --is-ancestor <remote>/<base> HEAD`
     exits `0`): the merge landed and only a later hook was killed, with
     `MERGE_HEAD` possibly still in place. Commit nothing, which would add a
-    second, empty commit; clear the leftover state with
-    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge --quit`
-    (a quit runs no hook, so it takes none in a drive pass either).
-    Nothing else is left to do.
+    second, empty commit. Look for a pending autostash first (`merge.autoStash`;
+    the `MERGE_AUTOSTASH` check above): when it exists, stop and report it, since a quit would
+    save it to the stash list and the working changes would stay absent.
+    Otherwise clear the leftover state with
+    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git merge --quit`
+    (a quit deletes refs and can run the reference-transaction hook, so in a
+    drive pass it is a hook-running command: stop there as for a hung hook
+    instead of running it). Nothing else is left to do.
   - Otherwise, with `MERGE_HEAD` in place and no unmerged path (killed while
     the commit message was prepared or checked): conclude it with
     `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 7200 -- git commit --no-edit`,

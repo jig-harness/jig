@@ -92,7 +92,18 @@ const READ_ONLY_FORMS = new Map<string, (rest: string[]) => boolean>([
         ),
       ),
   ],
-  ["remote", (rest) => ["get-url", "show", "-v"].includes(rest[0] ?? "")],
+  [
+    "remote",
+    (rest) => {
+      // `-v` before the operation only widens a listing; `remote -v add -f`
+      // still fetches.
+      const operation = rest.filter((w) => w !== "-v" && w !== "--verbose");
+      return (
+        operation.length === 0 ||
+        ["get-url", "show"].includes(operation[0] ?? "")
+      );
+    },
+  ],
   [
     "symbolic-ref",
     (rest) =>
@@ -164,9 +175,10 @@ function lacksDeadline(args: string[]): boolean {
   const subcommand = args[i] ?? "";
   if (!subcommand || HOOK_FREE_SUBCOMMANDS.has(subcommand)) return false;
   if (READ_ONLY_FORMS.get(subcommand)?.(args.slice(i + 1))) return false;
-  // `--quit` forgets an operation's state and touches neither index nor tree;
-  // `--abort` resets them, which runs hooks.
-  if (args[i + 1] === "--quit") return false;
+  // A rebase's `--quit` only forgets its state directory. A merge's, a
+  // cherry-pick's and a revert's also delete refs (`AUTO_MERGE`), which runs
+  // `reference-transaction`, and `--abort` resets index and tree.
+  if (subcommand === "rebase" && args[i + 1] === "--quit") return false;
   return !deadline;
 }
 
@@ -239,6 +251,10 @@ describe("hook-running commands carry a deadline", () => {
       'bun "x/shared/command.ts" -- git.exe commit -F m.txt',
       'bun "x/shared/command.ts" -- C:/Git/bin/git.exe commit -F m.txt',
       'bun "x/shared/command.ts" -- git checkout -- file.txt',
+      'bun "x/shared/command.ts" -- git remote -v add -f upstream url',
+      'bun "x/shared/command.ts" -- git remote -v update',
+      'bun "x/shared/command.ts" -- git merge --quit',
+      'bun "x/shared/command.ts" -- git cherry-pick --quit',
     ])
       expect(undeadlinedHookCommands(line)).toHaveLength(1);
   });
@@ -258,6 +274,9 @@ describe("hook-running commands carry a deadline", () => {
       'bun "x/shared/command.ts" -- git remote get-url origin',
       'bun "x/shared/command.ts" -- git symbolic-ref --short HEAD',
       'bun "x/shared/command.ts" -- git worktree list',
+      'bun "x/shared/command.ts" -- git remote -v',
+      'bun "x/shared/command.ts" -- git remote -v show origin',
+      'bun "x/shared/command.ts" --timeout-seconds 3600 -- git merge --quit',
       'bun "x/shared/command.ts" --timeout-seconds 600 -- git fetch origin',
       'bun "x/shared/command.ts" --timeout-seconds 600 -- /usr/bin/git commit -F m.txt',
       'bun "x/shared/command.ts" --timeout-seconds 3600 -- git reset --merge',
