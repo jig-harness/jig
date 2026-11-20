@@ -414,14 +414,31 @@ async function callLaunch(
   return attempt;
 }
 
-/** Whether a takeover shares the slot of the record it replaces, which still holds it on the same account. */
+/** Whether a takeover shares the slot of the record or live host driver it replaces on the same account. */
 function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
-  if (record.replaces === null) return false;
-  return takeoverShares(
+  if (
+    record.replaces !== null &&
+    takeoverShares(
+      state.table.map((s) => s.account),
+      holdingRecords(state.records),
+      record,
+    )
+  )
+    return true;
+  if (record.replacesHostDriver === undefined || state.drivers?.ok !== true)
+    return false;
+  const replaced = unrecordedDrivers(
     state.table.map((s) => s.account),
-    holdingRecords(state.records),
-    record,
+    state.records,
+    state.drivers.value,
+  ).find(
+    ({ driver, account }) =>
+      account === slotsOf(state.table, record)?.account.name &&
+      driver.clone === record.replacesHostDriver?.clone &&
+      driver.pr === record.replacesHostDriver?.pr &&
+      driver.since === record.replacesHostDriver?.since,
   );
+  return replaced !== undefined;
 }
 
 /** A lost earlier answer might have started the wrapper, so only known failures release it. */

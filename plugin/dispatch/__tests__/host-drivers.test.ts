@@ -19,6 +19,11 @@ import {
   admitRearm,
   slotTable,
 } from "../lib/accounts.ts";
+import {
+  dropRecord,
+  holdRecord,
+  type ApplyState,
+} from "../lib/actions/launch.ts";
 import { exitedPid, holdLock } from "./host-driver-fixtures.ts";
 import {
   readCloneKey,
@@ -76,6 +81,39 @@ function pickup(
     marker: null,
   };
   return { record, state, result: null };
+}
+
+function takeover(driver: HostDriver, workspace: string): LaunchRecord {
+  return {
+    version: 1,
+    id: "takeover",
+    token: "t",
+    action: "takeover",
+    repo: "o/r",
+    repoPath: "/tmp/r",
+    pr: driver.pr,
+    item: null,
+    account: "a",
+    vendor: "claude",
+    configDir: "/config/a",
+    wallBackoffMs: 1000,
+    replaces: null,
+    replacesHostDriver: {
+      clone: driver.clone,
+      pr: driver.pr,
+      since: driver.since,
+    },
+    facts: "f",
+    createdAt: "2026-11-19T09:00:00.000Z",
+    workspace: { id: "w", path: workspace },
+    attempts: [],
+    agentId: null,
+    model: null,
+    effort: null,
+    released: false,
+    command: null,
+    marker: null,
+  };
 }
 
 const ALIVE: ReadRecord["state"] = {
@@ -259,6 +297,37 @@ describe("a live driver no holding launch record accounts for", () => {
         "rearm",
       ),
     ).toMatchObject({ admitted: { account: { name: "a" } } });
+  });
+
+  it("keeps a host driver's slot held while its replacement record is reserved and released", () => {
+    const root = tempDir("host-drivers-");
+    const tree = join(root, "wedged-tree");
+    holdLock(root, 50, tree, "a@example.com");
+    const found = drivers(root);
+    const table = slotTable(
+      [ACCOUNTS[0] as MachineAccount],
+      [],
+      Date.now(),
+      tempDir("walls-"),
+      undefined,
+      found,
+    );
+    const slots = table[0];
+    if (slots === undefined) throw new Error("missing account slots");
+    expect(slots.held).toBe(1);
+    const state = {
+      root: tempDir("dispatch-state-"),
+      records: [],
+      table,
+      last: null,
+      drivers: { ok: true, value: found },
+    } as unknown as ApplyState;
+    const record = takeover(found[0] as HostDriver, tree);
+
+    holdRecord(state, record, slots);
+    expect(slots.held).toBe(1);
+    dropRecord(state, record);
+    expect(slots.held).toBe(1);
   });
 });
 
