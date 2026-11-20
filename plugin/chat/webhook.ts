@@ -234,7 +234,15 @@ export function fitted(
   }
   // Never split a character written as two UTF-16 units.
   const code = text.charCodeAt(low - 1);
-  if (low > head.length && code >= 0xd800 && code <= 0xdbff) low -= 1;
+  const next = text.charCodeAt(low);
+  if (
+    low > 0 &&
+    code >= 0xd800 &&
+    code <= 0xdbff &&
+    next >= 0xdc00 &&
+    next <= 0xdfff
+  )
+    low -= 1;
   return text.slice(0, low) + cut;
 }
 

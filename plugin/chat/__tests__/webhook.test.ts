@@ -271,6 +271,13 @@ describe("rendering", () => {
       expect(cut).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     }
   });
+
+  it("never splits a pair when the cut falls inside the first line", () => {
+    for (const format of ["discord", "text"] as const) {
+      const cut = fitted("😀".repeat(2500), format);
+      expect(cut).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    }
+  });
 });
 
 describe("delivery", () => {
