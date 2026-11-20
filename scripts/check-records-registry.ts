@@ -17,7 +17,10 @@
 // - SQLite CREATE TABLE declarations in source string literals, read as SQL
 //   tokens with cooked escapes decoded and String.raw escapes preserved. Source
 //   comments, SQL comments and SQL quoted values cannot start declarations. Recognized
-//   headers with unsupported names are findings, never omissions.
+//   headers with unsupported names are findings, never omissions;
+// - Drizzle table declarations, `sqliteTable("<name>", …)` on a line that is
+//   not a comment line (the hub's schema): a call whose first argument is
+//   not a string literal is a finding, never an omission.
 //
 // Each must be a registered kind's marker, state family or table, or a
 // marker the registry lists as not a record (a generated file's banner, a
@@ -83,6 +86,10 @@ const MARKER_OPEN = /<!--(?:[ \t]|\\{1,2}s[*+?]?)*/g;
 const SPLICE = /^\$\{([A-Za-z_$][\w$]*)\}/;
 const FAMILY = /\bfamily:\s*"([a-z][a-z0-9-]*)"/g;
 const NAME_START = /^[A-Za-z]/;
+/** A Drizzle table declaration's call, up to its first argument. */
+const DRIZZLE_TABLE = /\bsqliteTable\s*\(\s*/g;
+/** A string literal naming a table, at the start of a call's arguments. */
+const TABLE_LITERAL = /^(["'`])([A-Za-z_][\w]*)\1/;
 
 /** The string constants a file declares, by name. */
 function constants(text: string): Map<string, string> {
@@ -122,6 +129,20 @@ function captures(source: string, pattern: RegExp): string[] {
   return [...source.matchAll(pattern)].map((m) => m[1] as string);
 }
 
+/** The tables a file declares through Drizzle's `sqliteTable`, each by its name or as unclassified. */
+function drizzleTables(
+  text: string,
+): Array<{ name: string | null; line: number }> {
+  const lines = text.split("\n");
+  return [...text.matchAll(DRIZZLE_TABLE)].flatMap((m) => {
+    const at = m.index ?? 0;
+    const line = text.slice(0, at).split("\n").length;
+    if (COMMENT_LINE.test(lines[line - 1] ?? "")) return [];
+    const literal = TABLE_LITERAL.exec(text.slice(at + m[0].length));
+    return [{ name: literal?.[2] ?? null, line }];
+  });
+}
+
 /** The markers, families and tables one file names. */
 export function namedIn(path: string, text: string): Named[] {
   const consts = constants(text);
@@ -143,10 +164,10 @@ export function namedIn(path: string, text: string): Named[] {
       })),
     ];
   });
-  for (const { name, line } of sqlTables(text)) {
+  for (const { name, line } of [...sqlTables(text), ...drizzleTables(text)]) {
     named.push({
       what: "table",
-      text: name ?? "unclassified CREATE TABLE declaration",
+      text: name ?? "unclassified table declaration",
       ...(name === null ? { unclassified: true } : {}),
       file: path,
       line,
@@ -194,7 +215,7 @@ function unregistered(
       file: n.file,
       line: n.line,
       problem: n.unclassified
-        ? "cannot classify this CREATE TABLE declaration; use a literal unqualified table name or extend the scanner"
+        ? "cannot classify this table declaration; use a literal unqualified table name or extend the scanner"
         : n.what === "marker"
           ? `the hidden marker ${JSON.stringify(nameOf(n.text))} is in no registered record kind`
           : n.what === "family"

@@ -5,10 +5,16 @@
  * races.
  */
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BUSY_TIMEOUT_MS, openHubSqlite } from "../../process/sqlite.ts";
+import { RECORD_KINDS } from "../../../shared/records/registry.ts";
+import { HUB_SCHEMA } from "../../../shared/records/registry-hub.ts";
+import {
+  BUSY_TIMEOUT_MS,
+  MIGRATIONS_FOLDER,
+  openHubSqlite,
+} from "../../process/sqlite.ts";
 import { createStorage } from "../storage.ts";
 import { type StorageHarness, storageContract } from "./contract.ts";
 
@@ -50,14 +56,21 @@ test("the process adapter's database is in write-ahead-log mode with its migrati
     expect(client.query("PRAGMA busy_timeout").get()).toEqual({
       timeout: BUSY_TIMEOUT_MS,
     });
-    expect(
-      client
-        .query<{ name: string }, []>(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('in_flight_reads', 'job_leases') ORDER BY name",
-        )
-        .all()
-        .map((row) => row.name),
-    ).toEqual(["in_flight_reads", "job_leases"]);
+    // Every table the migrations create is a registered kind of the hub
+    // medium, at the schema version the migrations reach.
+    const tables = client
+      .query<{ name: string }, []>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' ORDER BY name",
+      )
+      .all()
+      .map((row) => row.name);
+    const registered = RECORD_KINDS.filter((k) => k.medium === "hub");
+    expect(registered.map((k) => k.table).sort()).toEqual(tables);
+    const journal: { entries: unknown[] } = JSON.parse(
+      readFileSync(join(MIGRATIONS_FOLDER, "meta/_journal.json"), "utf8"),
+    );
+    expect(journal.entries).toHaveLength(HUB_SCHEMA);
+    for (const kind of registered) expect(kind.version).toBe(HUB_SCHEMA);
   } finally {
     sqlite.close();
   }
