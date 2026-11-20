@@ -167,3 +167,9 @@ export function sizeToKeep(
     };
   return null;
 }
+
+/** The URL a `Link` header (RFC 8288) names as the next page; `null` when it names none. */
+export function linkNext(headers: Headers | null): string | null {
+  const link = headers?.get("link") ?? "";
+  return /<([^>]+)>;\s*rel="next"/.exec(link)?.[1] ?? null;
+}

@@ -511,6 +511,7 @@ function resumeRecord(
   // The resume continues the claim on the steward's word, not as the automatic relaunch its source was.
   delete record.relaunchOf;
   delete record.relaunchHead;
+  delete record.relaunchFault;
   return record;
 }
 

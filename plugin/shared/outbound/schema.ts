@@ -55,4 +55,19 @@ export const BUDGET_MIGRATIONS: readonly Migration[] = [
       PRIMARY KEY (hour, system, credential, operation, caller, unit)
     );`,
   },
+  {
+    // The part of an hourly ledger row's spending each repository took
+    // (`ledger.ts`), beside the row for the same reason as the quota table:
+    // a copy that writes the row's columns by position still writes it.
+    // What the row holds beyond its repositories' parts is its spending on
+    // no known repository.
+    additive: true,
+    sql: `CREATE TABLE outbound_cost_repository (
+      hour INTEGER NOT NULL, system TEXT NOT NULL, credential TEXT NOT NULL,
+      operation TEXT NOT NULL, caller TEXT NOT NULL, unit TEXT NOT NULL,
+      repository TEXT NOT NULL, requests INTEGER NOT NULL, cost REAL NOT NULL,
+      unknown_cost INTEGER NOT NULL, not_modified INTEGER NOT NULL,
+      PRIMARY KEY (hour, system, credential, operation, caller, unit, repository)
+    );`,
+  },
 ];

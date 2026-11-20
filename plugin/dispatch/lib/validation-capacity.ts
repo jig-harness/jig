@@ -12,12 +12,17 @@ export interface ValidationSample {
 export interface ValidationPass {
   kind: ValidationKind;
   workspace: string | null;
+  /** The repository the pass works on; absent when unknown. */
+  repo?: string | null;
   launchedAtMs: number;
   endedAtMs?: number;
 }
 
 interface KindMeasurements {
+  /** Every repository's measure, charged to a repository without its own. */
   runsPerPass: number;
+  /** Runs per pass in each repository whose runs the lock records. */
+  runsPerRepository?: ReadonlyMap<string, number>;
   timeToValidationMs: number;
 }
 
@@ -30,64 +35,32 @@ export interface ValidationMeasurements {
 
 interface OccupancyEvent {
   at: number;
-  waiting: number;
   holding: number;
 }
 
 function occupancyEvents(sample: ValidationSample): OccupancyEvent[] {
   const acquired = sample.requestedAtMs + sample.waitMs;
   return [
-    { at: sample.requestedAtMs, waiting: 1, holding: 0 },
-    { at: acquired, waiting: -1, holding: 1 },
-    { at: acquired + sample.holdMs, waiting: 0, holding: -1 },
+    { at: acquired, holding: 1 },
+    { at: acquired + sample.holdMs, holding: -1 },
   ];
 }
 
-function recordContention(
-  durations: Map<number, number>,
-  holding: number,
-  waiting: number,
-  duration: number,
-): void {
-  if (holding > 0 && waiting > 0)
-    durations.set(holding, (durations.get(holding) ?? 0) + duration);
-}
-
-function contentionMedian(durations: Map<number, number>): number | null {
-  const half =
-    [...durations.values()].reduce((sum, duration) => sum + duration, 0) / 2;
-  let elapsed = 0;
-  const distribution = [...durations].sort(([left], [right]) => left - right);
-  for (const [index, [count, duration]] of distribution.entries()) {
-    elapsed += duration;
-    if (elapsed > half) return count;
-    if (elapsed === half)
-      return (count + (distribution[index + 1]?.[0] ?? count)) / 2;
-  }
-  return null;
-}
-
-/** Measure concurrency over elapsed time with a waiter, or peak overlap without contention. */
+/** The most runs that held the lock together: what its admission allowed. */
 function concurrencyOf(samples: readonly ValidationSample[]): number | null {
   const events = samples
     .filter(({ holdMs }) => holdMs > 0)
     .flatMap(occupancyEvents)
     .sort((a, b) => a.at - b.at);
-  let waiting = 0;
   let holding = 0;
   let peak = 0;
   let last = events[0]?.at ?? 0;
-  const durations = new Map<number, number>();
   for (const event of events) {
-    if (event.at > last) {
-      peak = Math.max(peak, holding);
-      recordContention(durations, holding, waiting, event.at - last);
-    }
-    waiting += event.waiting;
+    if (event.at > last) peak = Math.max(peak, holding);
     holding += event.holding;
     last = event.at;
   }
-  return (contentionMedian(durations) ?? peak) || null;
+  return peak || null;
 }
 
 function median(values: number[]): number | null {
@@ -160,6 +133,52 @@ function attributeRuns(
   return attributed;
 }
 
+/** The finished passes a repository needs before its own runs per pass replace every repository's. */
+const OWN_MEASURE = 3;
+
+/**
+ * The median number of runs a finished pass made, never under one: a pass
+ * admitted for validation makes at least one. Passes that made none count, so
+ * one pass of many short runs does not set the figure for every pass.
+ */
+function runsPerPassOf(counts: number[]): number | null {
+  const middle = median(counts);
+  return middle === null ? null : Math.max(1, middle);
+}
+
+/**
+ * The finished passes whose runs the samples can show: ended inside the
+ * samples' retention, and in a repository whose runs the lock records (one
+ * that recorded none, such as a lock wrapper that keeps no samples, would
+ * read as making no runs at all).
+ */
+function measurablePasses(
+  passes: readonly ValidationPass[],
+  samples: readonly ValidationSample[],
+  attributed: ReadonlyMap<ValidationPass, PassRuns>,
+): ValidationPass[] {
+  const earliest = samples.reduce(
+    (first, { requestedAtMs }) => Math.min(first, requestedAtMs),
+    Infinity,
+  );
+  // A repository's runs are observable from its own first attributed sample:
+  // passes before its lock wrapper recorded anything are not zero-run passes.
+  const firstRecorded = new Map<string, number>();
+  for (const [{ repo }, { firstRequest }] of attributed) {
+    if (typeof repo === "string")
+      firstRecorded.set(
+        repo,
+        Math.min(firstRecorded.get(repo) ?? Infinity, firstRequest),
+      );
+  }
+  return passes.filter(({ workspace, repo, endedAtMs }) => {
+    if (workspace === null || endedAtMs === undefined) return false;
+    if (typeof repo !== "string") return endedAtMs >= earliest;
+    const from = firstRecorded.get(repo);
+    return from !== undefined && endedAtMs >= Math.max(earliest, from);
+  });
+}
+
 /** Derive each estimate from observed runs and name every estimate using its default. */
 export function measureValidation(
   samples: readonly ValidationSample[],
@@ -182,19 +201,31 @@ export function measureValidation(
   );
   const concurrency = measuredOr(concurrencyOf(samples), 1, "runs at once");
   const attributed = attributeRuns(passes, samples);
+  const finished = measurablePasses(passes, samples, attributed);
   const measureKind = (kind: ValidationKind): KindMeasurements => {
     const measured = [...attributed].filter(([pass]) => pass.kind === kind);
-    const counts = measured
-      .filter(([pass]) => pass.endedAtMs !== undefined)
-      .map(([, runs]) => runs.count);
+    const counts = new Map<string | null, number[]>();
+    for (const pass of finished) {
+      if (pass.kind !== kind) continue;
+      const repo = pass.repo ?? null;
+      const count = attributed.get(pass)?.count ?? 0;
+      const repoCounts = counts.get(repo);
+      if (repoCounts) repoCounts.push(count);
+      else counts.set(repo, [count]);
+    }
+    const runsPerRepository = new Map<string, number>();
+    for (const [repo, repoCounts] of counts) {
+      const runs = runsPerPassOf(repoCounts);
+      if (repo !== null && runs !== null && repoCounts.length >= OWN_MEASURE)
+        runsPerRepository.set(repo, runs);
+    }
     return {
       runsPerPass: measuredOr(
-        counts.length
-          ? counts.reduce((a, b) => a + b, 0) / counts.length
-          : null,
+        runsPerPassOf([...counts.values()].flat()),
         1,
         `${kind} runs per pass`,
       ),
+      runsPerRepository,
       timeToValidationMs: measuredOr(
         median(
           measured.map(([pass, runs]) => runs.firstRequest - pass.launchedAtMs),
@@ -209,6 +240,33 @@ export function measureValidation(
     concurrency,
     kinds: { pickup: measureKind("pickup"), drive: measureKind("drive") },
     defaults,
+  };
+}
+
+/** The runs a pass of `kind` in `repo` is charged: its repository's measure, else every repository's. */
+export function runsPerPassFor(
+  measured: ValidationMeasurements,
+  kind: ValidationKind,
+  repo?: string | null,
+): number {
+  const { runsPerPass, runsPerRepository } = measured.kinds[kind];
+  const own = repo ? runsPerRepository?.get(repo) : undefined;
+  return own ?? runsPerPass;
+}
+
+/** The measurements as a new pass in `repo` is charged them. */
+export function measurementsFor(
+  measured: ValidationMeasurements,
+  repo?: string | null,
+): ValidationMeasurements {
+  if (!repo) return measured;
+  const kind = (name: ValidationKind): KindMeasurements => ({
+    ...measured.kinds[name],
+    runsPerPass: runsPerPassFor(measured, name, repo),
+  });
+  return {
+    ...measured,
+    kinds: { pickup: kind("pickup"), drive: kind("drive") },
   };
 }
 
@@ -243,7 +301,7 @@ export function validationDemand(
     if (pass.workspace !== null) active.delete(pass.workspace);
     toArrive += Math.max(
       0,
-      measured.kinds[pass.kind].runsPerPass -
+      runsPerPassFor(measured, pass.kind, pass.repo) -
         (completed.get(pass)?.count ?? 0) -
         atLock,
     );
@@ -291,9 +349,9 @@ export function forecastValidation(
   // Preserve each slot's release time. In particular, a predecessor can take
   // an idle slot while another waits for an occupied slot; treating both as
   // one residual wave would let the candidate acquire too early.
-  // A measured concurrency may be fractional (the midpoint of two observed
-  // contention levels). The aggregate calculation above preserves that
-  // estimate; a slot simulation requires physical, whole slots.
+  // A concurrency that is not measured may be fractional. The aggregate
+  // calculation above preserves it; a slot simulation requires physical,
+  // whole slots.
   if (Number.isInteger(concurrency)) {
     // `atLock` contains both holders and queued runs. Model the queued runs
     // too: when it exceeds the number of slots, omitting them lets a later

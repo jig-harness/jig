@@ -68,6 +68,25 @@ module leaves its old path in the same pull request.
 | `paging` | Page caps, and a page that shrinks when the system runs out of time | `shared/outbound/paging.ts` |
 | `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | `shared/outbound/hold.ts`; the hold moves into `budget` once GitHub joins it |
 
+The library's portable parts run on any platform, the hub's included: the
+failure classes, retry, paging, the conditional request (`cache.ts`), the
+budget's arithmetic (`budget-governor.ts`, with its record's shape and
+snapshots), how GitHub's answers report its limits (`github-answer.ts`)
+and the operation names (`operations.ts`). They import no runtime module,
+read no file and run no program; an error one drops on purpose goes to the
+reporter the platform installs (`shared/dropped.ts`). The machine's stores
+are apart from them: the budget database and the ledger's tables
+(`budget.ts`, `ledger.ts`), the `gh` runs and the `gh` client's
+configuration. `scripts/check-portability.ts` holds the split.
+
+GitHub has two transports. The `gh` command-line client carries the
+dispatcher's and the skills' calls. A transport over `fetch`
+(`github-fetch.ts`) carries the calls of code that runs no program: it is
+given the platform's `fetch`, a token, the budget's governor, the held
+bodies and the ledger's recorder, and keeps each obligation through them.
+Both pass the same contract tests
+(`shared/__tests__/outbound-transport-contract.ts`).
+
 A transport supplies its profile, how to send one request
 (an HTTPS request or a run of a command-line client) and how to read a
 call's cost and the limits from an answer. It names every operation it
@@ -224,7 +243,9 @@ the answer's `Link` header (REST) or the first `pageInfo` cursor (GraphQL),
 and the output assembled as the client prints it. A page the record
 refuses ends the read as `rate-limited`, the pages already sent staying
 charged, so a long read cannot pass the dispatcher's floor; a failing page
-ends it with that page's failure; the pages share the call's one deadline;
+ends it with that page's failure; the pages share the call's one deadline,
+unless the caller names a longer bound for the whole read (`pagedWholeSec`,
+which a head's check-runs listing does), when each page keeps that deadline;
 past 100 pages the read fails as `too-costly`. A form the wrapper does not
 reproduce (streamed output, GraphQL with `--jq` or `--template`, the
 caller's own `--include`, `--input`, or REST fields without `GET`) is left
@@ -305,6 +326,16 @@ skill), and for that row the requests, the cost in the system's own unit,
 the time and the count of each failure class. Rows are totals for an hour,
 kept 7 days, in the budget database.
 
+Where a transport knows the repository a call addressed, the row's part
+that repository took (its requests, cost, unknown costs and
+`304 Not Modified` answers) is kept in a table beside the row,
+`outbound_cost_repository`, for the same reason as the quota table. The
+`gh` path reads the repository from the command line alone: its
+`-R`/`--repo`, a `repos/<owner>/<repo>` route, a GraphQL request's
+`owner` and `name` variables, else `GH_REPO`; the `fetch` transport takes
+it from the call or its route. What a row holds beyond its repositories'
+parts, and a row without any, is spending on no known repository.
+
 A GitHub row also names the quota owner's key and the window of the
 owner's record it spent (core, GraphQL, search, none, or unknown), in a
 table beside the rows so a release that writes the row's columns by
@@ -320,8 +351,8 @@ window is inferred from its unit and operation and marked as such.
 
 - The tick report has one line per system: the balance, what the tick
   spent, and its costliest operations.
-- `jig budget` prints the same over the last hours, per operation and per
-  caller, with `--json`.
+- `jig budget` prints the same over the last hours, per operation, per
+  caller and per repository, with `--json`.
 - A quota the last hour's spending would empty before it refills raises one
   [need](../GLOSSARY.md), a class of its own in the needs registry, naming
   the operations that spend it.
