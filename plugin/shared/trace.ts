@@ -442,7 +442,7 @@ function traceGhCall<
     const page = { ...effective, env: { ...env, GH_REPO: pinned } };
     return ghRequest(argv, page, timeoutSec, run, refuse, held);
   };
-  return traceCommand("ghCall", "gh", deadline, async () => {
+  return traceCommand("ghCall", "gh", wholeSec, async () => {
     const result = await (plan === null
       ? request(args, wholeSec)
       : drivePages(plan, paged, deadline, refuse, wholeSec));
