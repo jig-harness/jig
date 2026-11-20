@@ -26,9 +26,12 @@ function scratch(files: Record<string, string>): string {
 const lines = (source: string) => throwSites(source).map((s) => s.line);
 
 describe("scope", () => {
-  test("the dispatcher's and resource collection's code, never tests or vendored code", () => {
+  test("the dispatcher's, resource collection's and the hub's code, never tests or vendored code", () => {
     expect(inScope("plugin/dispatch/lib/forge.ts")).toBe(true);
     expect(inScope("plugin/gc/kinds/worktrees.ts")).toBe(true);
+    expect(inScope("plugin/hub/core/unit.ts")).toBe(true);
+    expect(inScope("plugin/hub/component.ts")).toBe(true);
+    expect(inScope("plugin/hub/core/__tests__/fake-ports.ts")).toBe(false);
     expect(inScope("plugin/dispatch/__tests__/tick.test.ts")).toBe(false);
     expect(inScope("plugin/gc/vendor/x.ts")).toBe(false);
     expect(inScope("plugin/shared/proc.ts")).toBe(false);
@@ -134,12 +137,17 @@ export function read(x: number): number {
     expect(checkThrows(dir)).toBe(0);
   });
 
-  test("fails with a throw added in the dispatcher or resource collection", () => {
-    for (const path of ["plugin/dispatch/lib/read.ts", "plugin/gc/plan.ts"]) {
+  test("fails with a throw added in the dispatcher, resource collection or the hub", () => {
+    for (const path of [
+      "plugin/dispatch/lib/read.ts",
+      "plugin/gc/plan.ts",
+      "plugin/hub/core/unit.ts",
+    ]) {
       const dir = scratch({
         "plugin/dispatch/lib/read.ts": CLEAN,
         "plugin/gc/plan.ts": "export const plan = 1;\n",
       });
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
       writeFileSync(
         join(dir, path),
         `${CLEAN}export function plan(): never {\n  throw new Error("added");\n}\n`,

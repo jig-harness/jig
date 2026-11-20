@@ -39,6 +39,7 @@
  * - past `PAGE_CAP` pages it fails as `too-costly` instead of sending more.
  */
 import { apiRoute, apiRouteAt, splitHeaders } from "./github-budget.ts";
+import { nextLink } from "./github-answer.ts";
 import { type OutboundFailure, outboundFailure } from "./failure.ts";
 import type { GhRun } from "./github.ts";
 import { isRecord } from "../guards.ts";
@@ -133,22 +134,6 @@ function hostOf(
   return (env.GH_HOST ?? "github.com").toLowerCase();
 }
 
-/** Whether `url` is an https URL on the API origin of `host` (`api.<host>`, or `<host>` itself for an enterprise server). */
-function onApiOrigin(url: string, host: string): boolean {
-  try {
-    const at = new URL(url);
-    return (
-      at.protocol === "https:" &&
-      at.username === "" &&
-      at.password === "" &&
-      (at.hostname === host || at.hostname === `api.${host}`)
-    );
-  } catch (error) {
-    swallow(error, "a next link that is not a URL is not followed");
-    return false;
-  }
-}
-
 /**
  * The next page a REST answer's `Link` header names, when it is on the API
  * origin of the host a call in `env` sends to (`GH_HOST`, else github.com).
@@ -158,13 +143,6 @@ export function nextPageUrl(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   return nextLink(headers, hostOf([], env));
-}
-
-/** The URL the `Link` header names as the next page, when it is on `host`'s API origin. */
-function nextLink(headers: Headers | null, host: string): string | null {
-  const link = headers?.get("link") ?? "";
-  const url = /<([^>]+)>;\s*rel="next"/.exec(link)?.[1] ?? null;
-  return url !== null && onApiOrigin(url, host) ? url : null;
 }
 
 /** The cursor of the next page: the first `pageInfo` in the answer, in document order, when it says there is one. */

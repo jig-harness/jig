@@ -2457,11 +2457,18 @@ neither, and the reports infer its window from its unit and operation.
 A row whose requests include conditional reads GitHub answered
 `304 Not Modified` counts those answers in `outbound_cost_not_modified`
 beside it, so a route's unchanged re-reads show apart from its other
-requests. The ledger holds 7 days; an unavailable database never stops an outbound call.
+requests. Where the call's repository is known (the `gh` path reads it
+from the command line: `-R`/`--repo`, a `repos/<owner>/<repo>` route, a
+GraphQL request's `owner` and `name` variables, else `GH_REPO`), the part
+of the row that repository took is kept in `outbound_cost_repository`
+beside it. The ledger holds 7 days; an unavailable database never stops an outbound call.
 
 `jig budget [--hours <1..168>] [--json]` reads the last 24 hours by default,
-with per-operation and per-caller totals (requests, how many of them were
-answered `304 Not Modified`, cost) and the latest known balances.
+with per-operation, per-caller and per-repository totals (requests, how
+many of them were answered `304 Not Modified`, cost) and the latest known
+balances. Spending on no known repository, which includes every row
+written before repositories were kept, is grouped as `(no repository)`;
+`--json` lists the groups under `repositories`.
 Waiting drive status probes record `drive-status poll wait` and
 `drive-status poll skipped` in the `polls` unit. The wait rows include
 elapsed time. The skipped count estimates how many polls the base cadence

@@ -5,7 +5,7 @@ status: approved
 description: "Plugin code returns an Outcome for a failure its caller handles; a throw is a bug, caught once at a boundary. Effect was weighed and declined, with the condition for reopening it"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-11-08
+last_updated: 2026-11-20
 owner: maintainers
 decision_date: 2026-11-02
 supersedes: ~
@@ -101,8 +101,8 @@ Under `plugin/` this holds as follows:
 ## Extraction (decisions-become-checks)
 
 [`scripts/check-throws.ts`](../../scripts/check-throws.ts), which `bun run
-gates` runs, reads the syntax of every file under `plugin/dispatch/` and
-`plugin/gc/` and fails on any `throw` that is not `throw new Defect(…)`,
+gates` runs, reads the syntax of every file under `plugin/dispatch/`,
+`plugin/gc/` and `plugin/hub/` and fails on any `throw` that is not `throw new Defect(…)`,
 `throw new ExitError(USAGE_EXIT, …)` or a rethrow of the enclosing `catch`
 clause's binding. A defect boundary catches what is thrown; it does not
 throw, so the boundaries need no exception of their own. The shared code,
