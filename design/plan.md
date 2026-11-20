@@ -173,6 +173,11 @@ consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.
 
+Also open: the plan for the refresh's [three cadences](dark-factory-dispatch.md#three-refresh-cadences)
+(a local loop, a change probe for each service, the timer sweep as the
+reconcile), steps 13 to 20 of the design's build order, which waits for a
+person's review before any step is filed.
+
 ### 56. The epic planner: every epic planned, and its plan kept current
 
 An epic's children run in parallel only when the epic carries an
