@@ -54,6 +54,15 @@ export function recordProbeStop(
   return probe;
 }
 
+/** Preserve a probe only when the branch returned the status exit it received. */
+export function terminalProbeStop(
+  code: number,
+  status: Record<string, unknown>,
+  outcome: number | "continue" | null,
+): ProbeStop | null {
+  return outcome === code ? recordProbeStop(code, status) : null;
+}
+
 /** The last status-probe stop printed by the driver, from bounded launch output. */
 export function readProbeStop(context: string): ProbeStop | null {
   const line = context.split("\n").findLast((line) => line.startsWith(PREFIX));

@@ -45,8 +45,7 @@ import { DEFAULT_BRANCH_PATTERN, prPolicy } from "../pr-policy.ts";
 import { drivenBranchName } from "../driven-branch.ts";
 import { git, gitIdentityEnv } from "../proc.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { lastStopEvent } from "./events.ts";
-import { probeStopOf } from "../status/probe-stop.ts";
+import { appendProbeStop, isProbeStopNote } from "./handoff-probe.ts";
 import type { DriveState } from "./schema.ts";
 import { currentMs } from "../../../../../shared/time.ts";
 
@@ -58,7 +57,6 @@ import { currentMs } from "../../../../../shared/time.ts";
  */
 export const NARRATIVE_MARKER =
   "<!-- narrative below this line is agent-authored and preserved -->";
-const PROBE_STOP_NOTE = "**Last status probe stop**: ";
 
 /**
  * The driven tree's `.context/` parent. Anchored to `$DRIVE_PR_WORKTREE` when
@@ -646,7 +644,7 @@ export async function renderHandoff(
       for (const line of prevLines.slice(idx + 1)) {
         if (
           line === NARRATIVE_MARKER ||
-          line.startsWith(PROBE_STOP_NOTE) ||
+          isProbeStopNote(line) ||
           /^\*\*Resume:\*\* `\/drive-pr \d+`$/.test(line)
         )
           continue;
@@ -654,10 +652,7 @@ export async function renderHandoff(
       }
     }
   }
-  const stop = probeStopOf(lastStopEvent(s.events ?? [])?.probe);
-  if (stop !== null) {
-    content = `${content.trimEnd()}\n\n${PROBE_STOP_NOTE}${stop.state} (exit ${stop.code}) — ${stop.reason}\n`;
-  }
+  content = appendProbeStop(content, s);
   content = `${content.trimEnd()}\n\n**Resume:** \`/drive-pr ${pr}\`\n`;
   atomicWrite(out, content);
   return out;
