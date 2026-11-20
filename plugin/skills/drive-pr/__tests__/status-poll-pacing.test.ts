@@ -5,7 +5,7 @@ import {
   memoryBudgetStore,
 } from "../../../shared/outbound/budget.ts";
 import {
-  GRAPHQL_POLL_FLOOR,
+  graphqlPollFloors,
   lowerGraphqlBalance,
 } from "../../../shared/outbound/graph-poll-budget.ts";
 import {
@@ -43,8 +43,8 @@ function fixture(balance: (now: number) => BudgetWindow | undefined) {
     balance: () => {
       const observed = balance(now);
       return observed === undefined
-        ? { window: undefined }
-        : { window: observed, credential: "test-account" };
+        ? { windows: [] }
+        : { windows: [observed], credential: "test-account" };
     },
   });
   return {
@@ -146,6 +146,23 @@ describe("waiting status poll pacing", () => {
     expect(probe.clock.now()).toBe(200 * second);
   });
 
+  test("the most restrictive percentage holds despite having more absolute points", async () => {
+    let now = 0;
+    const pacing = new StatusPollPacing(base, defaultPolicy, {
+      now: () => now,
+      async sleep(ms) {
+        now += ms;
+      },
+      balance: () => ({
+        credential: "test-account",
+        windows: [window(400, 500), { ...window(500, 200), limit: 15_000 }],
+      }),
+      record() {},
+    });
+    expect(await pacing.wait("same", 300 * second)).toBe(true);
+    expect(now).toBe(200 * second);
+  });
+
   test("a partial lower balance can use the known capacity of the same account", async () => {
     const probe = fixture((now) =>
       now === 0 ? window(4500, 600) : { ...window(1, 200), limit: null },
@@ -189,8 +206,8 @@ describe("waiting status poll pacing", () => {
       0,
     );
     expect(store.read(owner)?.complexity.remaining).toBe(4500);
-    expect(store.read(owner)?.windows?.[GRAPHQL_POLL_FLOOR]?.remaining).toBe(
-      100,
+    expect(graphqlPollFloors(store.read(owner)?.windows, 0)).toEqual(
+      expect.arrayContaining([window(4500, 600), window(100, 200)]),
     );
   });
 });

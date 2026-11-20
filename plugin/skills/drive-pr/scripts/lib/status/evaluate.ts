@@ -788,7 +788,7 @@ async function evaluateFresh(
       .map(({ id, status, conclusion }) =>
         JSON.stringify([id, status, conclusion]),
       )
-      .sort(),
+      .sort((left, right) => left.localeCompare(right)),
   );
   // The newest check matching both the reviewer app and check name is its witness.
   const reviewer = reviewerRun(runs);

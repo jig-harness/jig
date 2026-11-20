@@ -2,6 +2,7 @@ import type { BudgetWindow } from "./budget.ts";
 
 /** Kept apart from the transport's authoritative GraphQL window. */
 export const GRAPHQL_POLL_FLOOR = "graphql-poll-floor";
+const FLOOR_PREFIX = `${GRAPHQL_POLL_FLOOR}:`;
 
 function live(
   window: BudgetWindow | undefined,
@@ -40,4 +41,56 @@ export function lowerGraphqlBalance(
     if (limit !== undefined) return { ...lowest, limit };
   }
   return lowest;
+}
+
+/** Every still-live conflicting GraphQL reading, keyed by its reset window. */
+export function graphqlPollFloors(
+  windows: Record<string, BudgetWindow> | undefined,
+  now: number,
+): BudgetWindow[] {
+  if (windows === undefined) return [];
+  return Object.entries(windows)
+    .filter(
+      ([name, window]) =>
+        (name === GRAPHQL_POLL_FLOOR || name.startsWith(FLOOR_PREFIX)) &&
+        live(window, now),
+    )
+    .map(([, window]) => window);
+}
+
+/**
+ * Keep each conflicting live reading until its own reset instead of replacing
+ * it with the newest low reading. Older installations' single floor is read
+ * and migrated on the next observation.
+ */
+export function withGraphqlPollFloors(
+  windows: Record<string, BudgetWindow> | undefined,
+  observed: readonly (BudgetWindow | undefined)[],
+  now: number,
+): Record<string, BudgetWindow> {
+  const retained = Object.fromEntries(
+    Object.entries(windows ?? {}).filter(
+      ([name]) => name !== GRAPHQL_POLL_FLOOR && !name.startsWith(FLOOR_PREFIX),
+    ),
+  );
+  const floors = new Map<number, BudgetWindow>();
+  for (const window of [...graphqlPollFloors(windows, now), ...observed]) {
+    if (!live(window, now)) continue;
+    const previous = floors.get(window.resetAt);
+    floors.set(
+      window.resetAt,
+      previous === undefined
+        ? window
+        : (lowerGraphqlBalance([previous, window], now) ?? window),
+    );
+  }
+  return {
+    ...retained,
+    ...Object.fromEntries(
+      [...floors].map(([resetAt, window]) => [
+        `${FLOOR_PREFIX}${resetAt}`,
+        window,
+      ]),
+    ),
+  };
 }

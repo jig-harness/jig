@@ -28,10 +28,7 @@ import { JigError } from "../outcome.ts";
 import { inTransaction, openDatabase } from "../records/db.ts";
 import { currentMs, isoFromMs } from "../time.ts";
 import { parseRecord } from "./budget-shape.ts";
-import {
-  GRAPHQL_POLL_FLOOR,
-  lowerGraphqlBalance,
-} from "./graph-poll-budget.ts";
+import { withGraphqlPollFloors } from "./graph-poll-budget.ts";
 export { parseRecord };
 import {
   EMPTY,
@@ -902,15 +899,11 @@ export function budgetGovernor(
           sentAt,
         );
         if (opts.keepGraphqlPollFloor && answer.complexity !== undefined) {
-          const alternate = [base.complexity, answer.complexity].find(
-            (window) => window.resetAt !== complexity.resetAt,
-          );
-          const floor = lowerGraphqlBalance(
-            [windows?.[GRAPHQL_POLL_FLOOR], alternate],
+          windows = withGraphqlPollFloors(
+            windows,
+            [base.complexity, answer.complexity],
             now,
           );
-          if (floor !== undefined)
-            windows = { ...windows, [GRAPHQL_POLL_FLOOR]: floor };
         }
         unexplained =
           answer.snapshot === true

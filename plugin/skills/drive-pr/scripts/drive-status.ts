@@ -867,22 +867,27 @@ async function main(): Promise<number> {
     return driftMemo;
   }
 
-  async function emit(code: number, checkBaseDrift = true): Promise<void> {
+  async function emit(
+    code: number,
+    checkBaseDrift = true,
+    readAdvisories = true,
+  ): Promise<void> {
     const drift = checkBaseDrift ? await baseDrift() : (driftMemo ?? null);
-    const reflectionDue = await reflectDue();
+    const reflectionDue = readAdvisories ? await reflectDue() : false;
     if (json) {
       // Computed only here — never used outside
       // the JSON payload, so hoisting it above this branch (the way `drift`
       // has to be, since the plain-text path's stderr narration reads it
       // below) would cost the non-`--json` caller a `drive-state.ts get`
       // subprocess call for a field it never reports.
-      const escalation = await structuralEscalationStatus();
+      const escalation = readAdvisories
+        ? await structuralEscalationStatus()
+        : { due: false, invariant: null };
       // ADVISORY: read from the snapshot the dev-dashboard
       // collector already published, never sampled here.
-      const fleetHealth = readFleetHealthAdvisory(
-        Number.parseInt(pr, 10),
-        currentMs(),
-      );
+      const fleetHealth = readAdvisories
+        ? readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs())
+        : { warnings: [], snapshotAgeSec: null, stale: false, partial: false };
       process.stdout.write(
         `${JSON.stringify({
           state: report.state,
@@ -1733,7 +1738,7 @@ async function main(): Promise<number> {
         ) {
           report.reason = `${report.reason} (gave up after ${timeout}s)`;
           // An exhausted wait cannot start a base-drift fetch.
-          await emit(4, false);
+          await emit(4, false, false);
           return 4;
         }
         continue;

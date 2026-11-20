@@ -2,10 +2,7 @@ import type { Clock } from "../../../../../shared/clock.ts";
 import { definedFields } from "../../../../../shared/defined-fields.ts";
 import { DecodeError, isRecord } from "../../../../../shared/guards.ts";
 import type { BudgetWindow } from "../../../../../shared/outbound/budget.ts";
-import {
-  GRAPHQL_POLL_FLOOR,
-  lowerGraphqlBalance,
-} from "../../../../../shared/outbound/graph-poll-budget.ts";
+import { graphqlPollFloors } from "../../../../../shared/outbound/graph-poll-budget.ts";
 import {
   forgeBudgetOn,
   githubBalances,
@@ -75,18 +72,15 @@ export function pollFingerprint(report: StatusReport): string {
 }
 
 interface BalanceSample {
-  window: BudgetWindow | undefined;
+  windows: BudgetWindow[];
   credential?: string;
 }
 
 function readBalance(now: number): BalanceSample {
   const balances = forgeBudgetOn() ? githubBalances() : null;
-  if (balances === null) return { window: undefined };
+  if (balances === null) return { windows: [] };
   return {
-    window: lowerGraphqlBalance(
-      [balances.graphql, balances.windows?.[GRAPHQL_POLL_FLOOR]],
-      now,
-    ),
+    windows: [balances.graphql, ...graphqlPollFloors(balances.windows, now)],
     ...definedFields({ credential: balances.credential }),
   };
 }
@@ -129,7 +123,7 @@ export function pollDependencies(clock: Clock): Dependencies {
 export class StatusPollPacing {
   private previous: string | undefined;
   private cadence = 0;
-  private lower: BudgetWindow | undefined;
+  private lower: BudgetWindow[] = [];
   private credential: string | undefined;
   private readonly maximumMs: number;
   private readonly baseMs: number;
@@ -143,7 +137,11 @@ export class StatusPollPacing {
     this.maximumMs = Math.max(baseMs, policy.maxIntervalSeconds * 1000);
   }
 
-  async wait(signal: string, deadline: number): Promise<boolean> {
+  async wait(
+    signal: string,
+    deadline: number,
+    abort?: AbortSignal,
+  ): Promise<boolean> {
     this.cadence =
       signal === this.previous
         ? Math.min(this.maximumMs, this.cadence * 2)
@@ -158,13 +156,29 @@ export class StatusPollPacing {
         sample.credential !== undefined &&
         sample.credential !== this.credential
       ) {
-        this.lower = undefined;
+        this.lower = [];
         this.credential = sample.credential;
       }
-      this.lower = lowerGraphqlBalance([this.lower, sample.window], now);
-      const low = this.lower;
       const share = this.policy.waitingShare;
-      if (share > 0 && low?.remaining != null && low.resetAt != null) {
+      this.lower = [...this.lower, ...sample.windows].filter(
+        (window) => window.resetAt !== null && window.resetAt > now,
+      );
+      const capacities = new Set(
+        this.lower
+          .map(({ limit }) => limit)
+          .filter((limit): limit is number => limit !== null && limit > 0),
+      );
+      if (capacities.size === 1) {
+        const [limit] = capacities;
+        this.lower = this.lower.map((window) =>
+          window.limit === null && limit !== undefined
+            ? { ...window, limit }
+            : window,
+        );
+      }
+      for (const low of this.lower) {
+        if (share <= 0 || low.remaining === null || low.resetAt === null)
+          continue;
         // Some GraphQL answers give a balance and reset without reporting the limit.
         const fraction =
           low.limit !== null && low.limit > 0
@@ -185,8 +199,9 @@ export class StatusPollPacing {
         }
       }
       const wakeAt = Math.min(pollAt, deadline);
-      if (wakeAt <= now) break;
-      await this.deps.sleep(wakeAt - now);
+      if (wakeAt <= now || abort?.aborted) break;
+      await this.deps.sleep(wakeAt - now, abort);
+      if (abort?.aborted) break;
       sample = this.deps.balance();
     }
     const ended = this.deps.now();
@@ -195,6 +210,6 @@ export class StatusPollPacing {
       Math.floor((ended - started) / this.baseMs) - (ended < deadline ? 1 : 0),
     );
     this.deps.record(this.credential, ended - started, skipped);
-    return this.deps.now() < deadline;
+    return !abort?.aborted && this.deps.now() < deadline;
   }
 }
