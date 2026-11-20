@@ -311,6 +311,9 @@ function newFollowupRecord(
     vendor: admittedVendor(slots.account),
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    ...(state.machine.failures?.startupThreshold === undefined
+      ? {}
+      : { startupFailureThreshold: state.machine.failures.startupThreshold }),
     passTimeoutSec: state.passDeadlineSec,
     ...codexLaunchFields(state.codexOptIn),
     replaces: null,
