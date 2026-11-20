@@ -1555,7 +1555,7 @@ snapshot mapping are **exact**.
 
 A session takes one sub-issue. That is the scope of one session, not a limit
 on the epic: the dispatcher may start several of an epic's children at once,
-each in a session of its own (`dispatch.epic_width`).
+each in a session of its own, subject to the usual dispatch holds and capacity.
 
 1. **exact** — **Check whether everything is complete**:
    - `sub_issue_analysis.all_complete` → Step 5a.

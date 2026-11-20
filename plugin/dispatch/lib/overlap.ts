@@ -22,14 +22,9 @@
  *   promoted after waiting in tier 3 longer than `bound_patience`; tier 2
  *   overlaps within the bound; tier 3 is over it.
  *
- * `walkOverlap` takes the pickups in rank order and, as the admission walk
- * would, takes the next one tier by tier (the promoted first, longest waiter
- * first), counts it in flight as if it started, and weighs the rest again:
- * two pickups that overlap each other are never both weighed as if neither
- * existed. The result is a hypothetical admission plan, not the order the
- * tick launches: launching stays in rank order, so a pickup this walk takes
- * first may still start after a higher-ranked one. It reports; it starts
- * nothing.
+ * The walk takes one pickup at a time, by tier and then rank, adding
+ * each start to the work in flight before it weighs the rest again.
+ * A report-only tick projects starts to show the order an apply would try.
  */
 import {
   globMatchesUnder,
@@ -454,12 +449,47 @@ function next(placed: readonly Placed[]): Placed | undefined {
   return undefined;
 }
 
-/**
- * Weigh the candidates, in rank order, against the work in flight: each
- * takes its turn by tier, and counts in flight for those after it as a
- * pickup that would be admitted ahead of them. Returns them in the order the walk takes
- * them, each as it stood at its turn.
- */
+/** Take the next pickup by tier. Reweigh the rest only when an attempt adds work in flight. */
+export function* overlapTurns(
+  candidates: readonly Candidate[],
+  inFlight: readonly InFlight[],
+  waits: ReadonlyMap<string, Wait>,
+  model: OverlapModel,
+  nowMs: number,
+): Generator<Placed, void, string | null> {
+  const work = [...inFlight];
+  const weigh = (candidate: Candidate, rank: number) =>
+    place(
+      candidate,
+      rank,
+      evaluate(candidate.footprint, work, model),
+      waits.get(candidate.item),
+      nowMs,
+      model.settings,
+    );
+  let remaining = candidates.map((candidate, rank) => weigh(candidate, rank));
+  for (
+    let taken = next(remaining);
+    taken !== undefined;
+    taken = next(remaining)
+  ) {
+    const state = yield taken;
+    const { rank } = taken;
+    remaining = remaining.filter((r) => r.rank !== rank);
+    if (state === null) continue;
+    work.push({
+      kind: "pickup",
+      ref: taken.candidate.item,
+      url: taken.candidate.url,
+      state,
+      footprint: taken.candidate.footprint,
+      quiet: false,
+    });
+    remaining = remaining.map(({ candidate, rank }) => weigh(candidate, rank));
+  }
+}
+
+/** Project a walk for which each candidate takes its turn as though it starts. */
 export function walkOverlap(
   candidates: readonly Candidate[],
   inFlight: readonly InFlight[],
@@ -467,33 +497,13 @@ export function walkOverlap(
   model: OverlapModel,
   nowMs: number,
 ): Placed[] {
-  let remaining = candidates.map((candidate, rank) => ({ candidate, rank }));
-  const ahead: InFlight[] = [];
-  const out: Placed[] = [];
-  while (remaining.length > 0) {
-    const work = [...inFlight, ...ahead];
-    const placed = remaining.map(({ candidate, rank }) =>
-      place(
-        candidate,
-        rank,
-        evaluate(candidate.footprint, work, model),
-        waits.get(candidate.item),
-        nowMs,
-        model.settings,
-      ),
-    );
-    const taken = next(placed);
-    if (taken === undefined) break;
-    out.push(taken);
-    ahead.push({
-      kind: "pickup",
-      ref: taken.candidate.item,
-      url: taken.candidate.url,
-      state: "would be admitted ahead of it",
-      footprint: taken.candidate.footprint,
-      quiet: false,
-    });
-    remaining = remaining.filter((r) => r.rank !== taken.rank);
-  }
-  return out;
+  const turns = overlapTurns(candidates, inFlight, waits, model, nowMs);
+  const placed: Placed[] = [];
+  for (
+    let turn = turns.next();
+    !turn.done;
+    turn = turns.next("would be admitted ahead of it")
+  )
+    placed.push(turn.value);
+  return placed;
 }

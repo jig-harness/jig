@@ -713,7 +713,6 @@ export async function readPickups(
     ...(served === undefined
       ? { nowMs: currentMs(), headroom: true }
       : servedReadOptions(served)),
-    epicWidth: section.epicWidth,
     ...(section.identity === null
       ? {}
       : {

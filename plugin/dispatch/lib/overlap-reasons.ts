@@ -37,7 +37,7 @@ export interface OverlapHotspot {
   proposal: string;
 }
 
-/** The repository report's overlap part. Reported only: it changes nothing the tick starts. */
+/** The repository report's overlap part. */
 export interface OverlapReport {
   rates: { measuredAt: string | null; defaulted: string | null };
   inFlight: { pullRequests: number; pickups: number; unknown: string[] };
