@@ -24,6 +24,7 @@ import type { SuggestedNext } from "../../shared/closing-report.ts";
 import type { LaunchAction, LaunchRecord, ReadRecord } from "./launches.ts";
 import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { questionOf } from "./session.ts";
+import { attempt } from "../../shared/outcome.ts";
 import { swallow } from "../../shared/errors.ts";
 import { SESSION_LEASE_MIN } from "../../shared/liveness.ts";
 import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
@@ -175,6 +176,35 @@ export function signInPhrase(text: string): SignInPhrase | undefined {
   return undefined;
 }
 
+/** Select content outside user entries without keeping any of it. */
+function transcriptEntryParts(entry: unknown): unknown[] {
+  if (!isMapping(entry) || entry.type === "user") return [];
+  const content = isMapping(entry.message)
+    ? entry.message.content
+    : entry.content;
+  return Array.isArray(content)
+    ? content
+    : [content, entry.error, entry.message];
+}
+
+function transcriptLineSignIn(line: string): SignInPhrase | undefined {
+  if (!line.startsWith("{")) return signInPhrase(line);
+  // A failed process can leave a partial entry. Its text is not diagnostic.
+  const entry = attempt(
+    "invalid",
+    "Transcript entry is not JSON",
+    (): unknown => JSON.parse(line),
+  );
+  if (!entry.ok) return undefined;
+  for (const part of transcriptEntryParts(entry.value)) {
+    const text = isMapping(part) ? part.text : part;
+    if (typeof text !== "string") continue;
+    const phrase = signInPhrase(text);
+    if (phrase !== undefined) return phrase;
+  }
+  return undefined;
+}
+
 function transcriptSignIn(record: LaunchRecord): SignInPhrase | undefined {
   const session = record.sessionId;
   if (session === null || session === undefined) return undefined;
@@ -183,28 +213,8 @@ function transcriptSignIn(record: LaunchRecord): SignInPhrase | undefined {
     if (path === null) return undefined;
     const lines = readBoundedTail(path, 16_384).trimEnd().split("\n");
     for (const line of lines.slice(-8).reverse()) {
-      const plain = signInPhrase(line);
-      if (plain !== undefined) return plain;
-      if (!line.startsWith("{")) continue;
-      let entry: unknown;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue; // The bounded tail can begin mid-entry.
-      }
-      if (!isMapping(entry) || entry.type === "user") continue;
-      const content = isMapping(entry.message)
-        ? entry.message.content
-        : entry.content;
-      const parts = Array.isArray(content)
-        ? content
-        : [content, entry.error, entry.message];
-      for (const part of parts) {
-        const text = isMapping(part) ? part.text : part;
-        if (typeof text !== "string") continue;
-        const phrase = signInPhrase(text);
-        if (phrase !== undefined) return phrase;
-      }
+      const phrase = transcriptLineSignIn(line);
+      if (phrase !== undefined) return phrase;
     }
   } catch (error) {
     swallow(error, "the startup transcript could not be read");

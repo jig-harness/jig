@@ -12,6 +12,7 @@ import {
   isRateLimited,
 } from "../../shared/outbound/budget.ts";
 import type { FailureClass } from "../../shared/outbound/failure.ts";
+import { attempt } from "../../shared/outcome.ts";
 import { recordCall } from "../../shared/outbound/ledger.ts";
 import { run, type RunResult } from "../../shared/proc.ts";
 import { currentMs, parseMs } from "../../shared/time.ts";
@@ -47,22 +48,16 @@ interface ProbeResult {
   resetAt?: number;
 }
 
-function resultOf(child: Probe, at: number): ProbeResult {
-  let json: unknown;
-  try {
-    json = JSON.parse(child.stdout);
-  } catch {
-    json = null;
-  }
-  const result = isMapping(json) ? json : {};
-  const cost =
-    typeof result.total_cost_usd === "number" ? result.total_cost_usd : null;
-  if (child.bufferExceeded) return { failure: "too-costly", cost };
-  if (child.timedOut || child.spawnFailed)
-    return { failure: "unreachable", cost };
-  if (child.code === 0 && result.is_error === false)
-    return { failure: null, cost };
-  const detail = [
+function decodeResult(stdout: string): Record<string, unknown> {
+  // Claude Code can emit a plain-text error instead of a JSON result.
+  const decoded = attempt("invalid", "Claude output is not JSON", (): unknown =>
+    JSON.parse(stdout),
+  );
+  return decoded.ok && isMapping(decoded.value) ? decoded.value : {};
+}
+
+function reportedErrors(result: Record<string, unknown>, child: Probe): string {
+  return [
     child.stderr,
     typeof result.result === "string" ? result.result : child.stdout,
     ...(Array.isArray(result.errors)
@@ -71,19 +66,35 @@ function resultOf(child: Probe, at: number): ProbeResult {
         )
       : []),
   ].join("\n");
+}
+
+/** Claude Code can expose API failures as prose in either output stream. */
+function vendorFailure(detail: string, at: number): Omit<ProbeResult, "cost"> {
   if (
     signInPhrase(detail) !== undefined ||
     /^\s*API Error: 401\b/im.test(detail)
   )
-    return { failure: "unauthorized", cost };
+    return { failure: "unauthorized" };
   const quota = startupReset(detail, at);
   if (quota !== null || /^\s*API Error: 429\b/im.test(detail))
     return quota?.resetAt == null
-      ? { failure: "rate-limited", cost }
-      : { failure: "rate-limited", cost, resetAt: parseMs(quota.resetAt) };
+      ? { failure: "rate-limited" }
+      : { failure: "rate-limited", resetAt: parseMs(quota.resetAt) };
   if (/^\s*API Error: 5\d\d\b/im.test(detail))
-    return { failure: "server-fault", cost };
-  return { failure: "invalid", cost };
+    return { failure: "server-fault" };
+  return { failure: "invalid" };
+}
+
+function resultOf(child: Probe, at: number): ProbeResult {
+  const result = decodeResult(child.stdout);
+  const cost =
+    typeof result.total_cost_usd === "number" ? result.total_cost_usd : null;
+  if (child.bufferExceeded) return { failure: "too-costly", cost };
+  if (child.timedOut || child.spawnFailed)
+    return { failure: "unreachable", cost };
+  if (child.code === 0 && result.is_error === false)
+    return { failure: null, cost };
+  return { ...vendorFailure(reportedErrors(result, child), at), cost };
 }
 
 /** A local auth status may report a stored but expired login. A tool-free,
