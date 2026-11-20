@@ -25,14 +25,11 @@ record, its adapter interface, the pickup, scout and filing writers, the
 merge evidence for conflict edges, the changed-files read of every open pull
 request, the conflict rates with the tick's daily refresh and their reader,
 overlap reported (each planned pickup's cost, tier, bound and reason, and
-`overlap_waits`, in the receipt, the dashboard and `jig ask`), and serialized
-areas holding pickups are built;
-admission, the planner's writer and the remaining build steps are open.
-It builds on the change that lets a plan-less epic's ready children start
-in parallel up to a width per epic (#1178), and on that change's decision
-record: admission is parallel by default, and overlap is a cost weighed
-against waiting, never an absolute. The width is the bound this design
-replaces.
+`overlap_waits`, in the receipt, the dashboard and `jig ask`), serialized
+areas holding pickups, and admission are built. The planner's writer and the
+remaining build steps are open. Admission is parallel by default, and overlap
+is a cost weighed against waiting, never an absolute. The overlap bound now
+replaces the retired per-epic width.
 
 ## How it works
 

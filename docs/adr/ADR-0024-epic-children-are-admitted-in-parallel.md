@@ -123,9 +123,10 @@ documented in [CONFIGURATION.md](../../plugin/CONFIGURATION.md#dispatch).
 
 ## Extraction (decisions-become-checks)
 
-Not mechanically checkable as a pattern. The dispatcher's tests hold the
-behaviour: a width of 4 starts four of five ready children, a parked child
-leaves its siblings free, and a width of 1 starts one child at a time.
+Not mechanically checkable as a pattern. The dispatcher's admission and
+configuration tests hold the overlap tiers, the retirement of
+`dispatch.epic_width`, and the rule that a failed launch frees its candidate
+while a lost launch remains work in flight.
 
 ## Amendments
 

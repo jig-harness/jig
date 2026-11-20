@@ -442,7 +442,7 @@ describe("tiers, patience and promotion", () => {
 });
 
 describe("the walk", () => {
-  it("does not charge a later pickup for a launch that did not start", () => {
+  it("does not charge a later pickup for a failed launch", () => {
     const turns = overlapTurns(
       [
         candidate("A", files("src/a.ts")),
@@ -461,6 +461,34 @@ describe("the walk", () => {
     expect(turns.next(null).value).toMatchObject({
       candidate: { item: "B" },
       tier: 1,
+    });
+  });
+
+  it("charges a later pickup for a launch whose answer was lost", () => {
+    const turns = overlapTurns(
+      [candidate("A", files("src/a.ts")), candidate("B", files("src/a.ts"))],
+      [],
+      new Map(),
+      model({ maxPerFile: 1 }),
+      NOW,
+    );
+    expect(turns.next().value).toMatchObject({
+      candidate: { item: "A" },
+      tier: 1,
+    });
+    expect(turns.next("launch pending").value).toMatchObject({
+      candidate: { item: "B" },
+      tier: 3,
+      evaluation: {
+        shares: [
+          expect.objectContaining({
+            work: expect.objectContaining({
+              ref: "A",
+              state: "launch pending",
+            }),
+          }),
+        ],
+      },
     });
   });
 

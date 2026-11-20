@@ -462,7 +462,7 @@ export function* overlapTurns(
       nowMs,
       model.settings,
     );
-  let remaining = candidates.map(weigh);
+  let remaining = candidates.map((candidate, rank) => weigh(candidate, rank));
   for (
     let taken = next(remaining);
     taken !== undefined;
