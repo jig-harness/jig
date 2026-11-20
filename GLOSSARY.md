@@ -3380,15 +3380,13 @@ make, use the entry's term instead.
   immutable. Jig's helpers write a moment as an ISO 8601 string in UTC to
   the millisecond
   ([ADR-0018](docs/adr/ADR-0018-time-is-temporal.md)).
-
-## Creation window
-
-How long after an issue's creation a tracker's history leaves out a change
-made to it. An assignment made inside the window is never read by the
-dispatcher's assigner check, so the item is never started; Linear's is the
-issue's first three minutes, and GitHub Issues has none. A hand-off or a
-send waits until the window has passed before writing an assignment. See
-[file-issue § Hand it over](plugin/skills/file-issue/SKILL.md).
+- **Creation window** — how long after an issue's creation a tracker's
+  history leaves out a change made to it. An assignment made inside the
+  window is never read by the dispatcher's assigner check, so the item is
+  never started; Linear's is the issue's first three minutes, and GitHub
+  Issues has none. A hand-off or a send waits until the window has passed
+  before writing an assignment. See
+  [file-issue § Hand it over](plugin/skills/file-issue/SKILL.md).
 
 ## External precondition
 

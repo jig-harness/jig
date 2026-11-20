@@ -78,14 +78,12 @@ export {
   httpTransport,
   LINEAR_API,
   LINEAR_TIMEOUT_MS,
-  LinearApiError,
-  type LinearTransport,
   resolveLinearToken,
   unwrapResponse,
 } from "./linear-transport.ts";
 import { LinearApiError, type LinearTransport } from "./linear-transport.ts";
+export { LinearApiError, type LinearTransport };
 import { isoFromMs, parseMs } from "../../../../../shared/time.ts";
-
 // ── Shape helpers ──────────────────────────────────────────────────────────
 
 export { labelNames } from "./linear-shapes.ts";

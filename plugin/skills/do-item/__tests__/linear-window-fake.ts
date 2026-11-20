@@ -11,7 +11,7 @@ import {
 } from "../scripts/lib/tracker/linear.ts";
 
 /** Linear's three minutes, written here on purpose: not the adapter's own constant. */
-export const WINDOW_MS = 3 * 60_000;
+const WINDOW_MS = 3 * 60_000;
 export const T0 = Date.parse("2026-11-20T12:00:00.000Z");
 export const iso = (ms: number) => new Date(ms).toISOString();
 export const FACTORY = "factory@example.com";

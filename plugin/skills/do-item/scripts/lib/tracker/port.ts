@@ -13,7 +13,6 @@
  */
 
 import type { StoreHealth } from "./unavailable.ts";
-import type { TrackerAssignmentWindow } from "./assignment-window.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
 import type { TrackerFootprints } from "./footprint-port.ts";
@@ -670,7 +669,6 @@ export type AssignmentResult =
 
 export interface Tracker
   extends TrackerAttachments,
-    TrackerAssignmentWindow,
     TrackerBlockedFields,
     TrackerFootprints {
   /** Native queue reads and this repository’s interpretation, for shared dispatch scopes. */
