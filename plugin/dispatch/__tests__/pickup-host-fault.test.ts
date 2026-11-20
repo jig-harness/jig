@@ -213,6 +213,8 @@ describe("telling a host fault from a question about the work", () => {
       "Should tests handle ENOSPC: by retrying or failing?",
       "Should ENOSPC: fail the build or retry?",
       "Should tests retry when the disk is full?",
+      "Should the code retry on ENOSPC: or restart the worker?",
+      "Should the code retry on ENOSPC: or delete the cache?",
       "should the documentation explain how to free inodes?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();

@@ -46,7 +46,13 @@ const HOST_FAULT_QUESTION = new RegExp(
   "i",
 );
 
-/** A question that is explicitly about an observed host failure, not a test, documentation or implementation question that quotes one. */
+/**
+ * A question that is explicitly about an observed host failure, not a test,
+ * documentation or implementation question that quotes one. An implementation
+ * question stays one unless it asks to repair a host resource (a remediation
+ * verb acting on disk, inodes, space or fixtures); other verbs such as
+ * restart never turn it into host recovery.
+ */
 function isHostFaultQuestion(question: string): boolean {
   const text = question.trim();
   if (
@@ -56,7 +62,7 @@ function isHostFaultQuestion(question: string): boolean {
   )
     return false;
   if (
-    /^(?:should|would|could|can|do|does|did)\b(?=.{0,160}\b(?:test|tests|build|code|implementation|workflow)\b)(?=.{0,160}\b(?:retry|fail|failing)\b)(?!.{0,160}\b(?:remove|delete|free|clean|purge|prune|clear|wipe|restart|reboot)\b)/i.test(
+    /^(?:should|would|could|can|do|does|did)\b(?=.{0,160}\b(?:test|tests|build|code|implementation|workflow)\b)(?=.{0,160}\b(?:retry|fail|failing)\b)(?!.{0,160}\b(?:remove|delete|free|clean|purge|prune|clear|wipe)\b[^?]{0,60}\b(?:inodes?|disk|space|file ?system|volume|fixtures|tmp)\b)/i.test(
       text,
     )
   )
