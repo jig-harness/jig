@@ -120,6 +120,41 @@ export function pollDependencies(clock: Clock): Dependencies {
   };
 }
 
+function remainingFraction(window: BudgetWindow): number | null {
+  if (window.limit === null || window.limit <= 0 || window.remaining === null)
+    return null;
+  return window.remaining / window.limit;
+}
+
+/** Whether `other` leaves no more than `window` on the same reset. */
+function leavesNoMore(other: BudgetWindow, window: BudgetWindow): boolean {
+  return (
+    other.resetAt === window.resetAt &&
+    other.remaining !== null &&
+    window.remaining !== null &&
+    other.remaining <= window.remaining
+  );
+}
+
+/** Whether `other` enforces the same reset at least as strictly as `window`. */
+function enforcesMoreStrictly(
+  other: BudgetWindow,
+  otherIndex: number,
+  window: BudgetWindow,
+  index: number,
+): boolean {
+  if (otherIndex === index || !leavesNoMore(other, window)) return false;
+  const fraction = remainingFraction(window);
+  const otherFraction = remainingFraction(other);
+  if (fraction !== null && (otherFraction === null || otherFraction > fraction))
+    return false;
+  return (
+    other.remaining !== window.remaining ||
+    otherFraction !== fraction ||
+    otherIndex < index
+  );
+}
+
 export class StatusPollPacing {
   private previous: string | undefined;
   private cadence = 0;
@@ -142,35 +177,68 @@ export class StatusPollPacing {
     const live = this.lower.filter(
       (window) => window.resetAt !== null && window.resetAt > now,
     );
-    this.lower = live.filter((window, index, all) => {
-      const fraction =
-        window.limit !== null && window.limit > 0
-          ? window.remaining !== null
-            ? window.remaining / window.limit
-            : null
-          : null;
-      return !all.some((other, otherIndex) => {
-        if (otherIndex === index || other.resetAt !== window.resetAt)
-          return false;
-        if (
-          other.remaining === null ||
-          window.remaining === null ||
-          other.remaining > window.remaining
-        )
-          return false;
-        const otherFraction =
-          other.limit !== null && other.limit > 0
-            ? other.remaining / other.limit
-            : null;
-        return (
-          (fraction === null ||
-            (otherFraction !== null && otherFraction <= fraction)) &&
-          (other.remaining < window.remaining ||
-            otherFraction !== fraction ||
-            otherIndex < index)
-        );
-      });
-    });
+    this.lower = live.filter(
+      (window, index, all) =>
+        !all.some((other, otherIndex) =>
+          enforcesMoreStrictly(other, otherIndex, window, index),
+        ),
+    );
+  }
+
+  /** Forget the readings of another credential. */
+  private adoptCredential(sample: BalanceSample): void {
+    if (
+      sample.credential === undefined ||
+      sample.credential === this.credential
+    )
+      return;
+    this.lower = [];
+    this.credential = sample.credential;
+  }
+
+  /** A single known capacity completes the readings that omit their limit. */
+  private completeLimits(): void {
+    const capacities = new Set(
+      this.lower
+        .map(({ limit }) => limit)
+        .filter((limit): limit is number => limit !== null && limit > 0),
+    );
+    if (capacities.size !== 1) return;
+    const [limit] = capacities;
+    this.lower = this.lower.map((window) =>
+      window.limit === null && limit !== undefined
+        ? { ...window, limit }
+        : window,
+    );
+  }
+
+  /** The earliest the next poll may start, given one reading. */
+  private pollAfter(
+    low: BudgetWindow,
+    started: number,
+    pollAt: number,
+  ): number {
+    const share = this.policy.waitingShare;
+    if (share <= 0 || low.remaining === null || low.resetAt === null)
+      return pollAt;
+    // Some GraphQL answers give a balance and reset without reporting the limit.
+    const fraction = remainingFraction(low);
+    if (low.remaining <= 0 || (fraction !== null && fraction <= share / 5))
+      return Math.max(pollAt, low.resetAt);
+    if (fraction === null || fraction >= share) return pollAt;
+    const stretched = Math.min(
+      this.maximumMs,
+      Math.ceil((this.baseMs * share) / fraction),
+      Math.max(this.baseMs, low.resetAt - started),
+    );
+    return Math.max(pollAt, started + stretched);
+  }
+
+  /** An unchanged signal doubles the interval up to the ceiling. */
+  private nextCadence(signal: string): number {
+    return signal === this.previous
+      ? Math.min(this.maximumMs, this.cadence * 2)
+      : this.baseMs;
   }
 
   async wait(
@@ -178,61 +246,19 @@ export class StatusPollPacing {
     deadline: number,
     abort?: AbortSignal,
   ): Promise<boolean> {
-    this.cadence =
-      signal === this.previous
-        ? Math.min(this.maximumMs, this.cadence * 2)
-        : this.baseMs;
+    this.cadence = this.nextCadence(signal);
     this.previous = signal;
     const started = this.deps.now();
     let pollAt = started + this.cadence;
     let sample = this.deps.balance();
     for (;;) {
       const now = this.deps.now();
-      if (
-        sample.credential !== undefined &&
-        sample.credential !== this.credential
-      ) {
-        this.lower = [];
-        this.credential = sample.credential;
-      }
-      const share = this.policy.waitingShare;
+      this.adoptCredential(sample);
       this.lower = [...this.lower, ...sample.windows];
       this.compactLower(now);
-      const capacities = new Set(
-        this.lower
-          .map(({ limit }) => limit)
-          .filter((limit): limit is number => limit !== null && limit > 0),
-      );
-      if (capacities.size === 1) {
-        const [limit] = capacities;
-        this.lower = this.lower.map((window) =>
-          window.limit === null && limit !== undefined
-            ? { ...window, limit }
-            : window,
-        );
-      }
-      for (const low of this.lower) {
-        if (share <= 0 || low.remaining === null || low.resetAt === null)
-          continue;
-        // Some GraphQL answers give a balance and reset without reporting the limit.
-        const fraction =
-          low.limit !== null && low.limit > 0
-            ? low.remaining / low.limit
-            : null;
-        if (
-          low.remaining <= 0 ||
-          (fraction !== null && fraction <= share / 5)
-        ) {
-          pollAt = Math.max(pollAt, low.resetAt);
-        } else if (fraction !== null && fraction < share) {
-          const stretched = Math.min(
-            this.maximumMs,
-            Math.ceil((this.baseMs * share) / fraction),
-            Math.max(this.baseMs, low.resetAt - started),
-          );
-          pollAt = Math.max(pollAt, started + stretched);
-        }
-      }
+      this.completeLimits();
+      for (const low of this.lower)
+        pollAt = this.pollAfter(low, started, pollAt);
       const wakeAt = Math.min(pollAt, deadline);
       if (wakeAt <= now || abort?.aborted) break;
       await this.deps.sleep(wakeAt - now, abort);
@@ -241,11 +267,23 @@ export class StatusPollPacing {
     }
     const ended = this.deps.now();
     const willPoll = !abort?.aborted && ended < deadline;
-    const skipped = Math.max(
+    this.deps.record(
+      this.credential,
+      ended - started,
+      this.skippedPolls(started, ended, willPoll),
+    );
+    return willPoll;
+  }
+
+  /** The polls the wait stood in for, less the one about to happen. */
+  private skippedPolls(
+    started: number,
+    ended: number,
+    willPoll: boolean,
+  ): number {
+    return Math.max(
       0,
       Math.floor((ended - started) / this.baseMs) - (willPoll ? 1 : 0),
     );
-    this.deps.record(this.credential, ended - started, skipped);
-    return willPoll;
   }
 }

@@ -330,6 +330,17 @@ const MAX_QUERY_ERRORS = 3;
  */
 const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
 
+/** The advisory fields of a report that reads none of them. */
+function unreadAdvisory<Drift>(drift: Drift | null) {
+  return {
+    drift,
+    reflectionDue: null,
+    escalationDue: null,
+    escalationInvariant: null,
+    fleetHealth: null,
+  };
+}
+
 async function main(): Promise<number> {
   let pr = "";
   let json = false;
@@ -871,17 +882,10 @@ async function main(): Promise<number> {
 
   /** The base drift and advisory fields `emit` reports; `enabled` false reads none. */
   async function readAdvisory(enabled: boolean) {
-    if (!enabled)
-      return {
-        drift: driftMemo ?? null,
-        reflectionDue: null,
-        escalationDue: null,
-        escalationInvariant: null,
-        fleetHealth: null,
-      };
+    if (!enabled) return unreadAdvisory(driftMemo ?? null);
     const escalation = json ? await structuralEscalationStatus() : null;
     return {
-      drift: await baseDrift(),
+      ...unreadAdvisory(await baseDrift()),
       reflectionDue: await reflectDue(),
       escalationDue: escalation?.due ?? null,
       escalationInvariant: escalation?.invariant ?? null,
