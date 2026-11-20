@@ -142,6 +142,7 @@ const FINISH_CAUSES: Readonly<
   REFUSED_COMMIT_PREFIX: "refused",
   TRIAGE_CHECK_FAILED: "tool-failed",
   CI_HOLD_FAILED: "tool-failed",
+  CHECK_RUNS_UNREADABLE: "tool-failed",
   PUSH_FAILED: "tool-failed",
   STAMP_FAILED: "tool-failed",
   BATCH_UNREADABLE: "tool-failed",
