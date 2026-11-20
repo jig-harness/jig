@@ -35,7 +35,8 @@ const BINDING = {
   reason: "the process runtime runs headless sessions only",
 };
 
-function identities(read: ReadRecord): ProcessIdentity[] {
+/** A run's recorded processes: the wrapper's claim, its supervisor and its stage child. */
+export function identities(read: Pick<ReadRecord, "state">): ProcessIdentity[] {
   if (!("process" in read.state) || read.state.process === null) return [];
   const claim = read.state.process;
   return [
@@ -45,7 +46,11 @@ function identities(read: ReadRecord): ProcessIdentity[] {
   ].filter((member): member is ProcessIdentity => member != null);
 }
 
-function membersOf(read: ReadRecord, rows: ProcessRow[] | null) {
+/** A run's recorded processes as `rows` judge them: the live pids, and whether any could not be judged. */
+export function membersOf(
+  read: Pick<ReadRecord, "state">,
+  rows: ProcessRow[] | null,
+) {
   const here = thisHost();
   const judged = identities(read).map((identity) => ({
     identity,
@@ -59,7 +64,11 @@ function membersOf(read: ReadRecord, rows: ProcessRow[] | null) {
   };
 }
 
-function descendants(rows: ProcessRow[], roots: Set<number>): Set<number> {
+/** `roots` and every process descended from them in `rows`. */
+export function descendants(
+  rows: ProcessRow[],
+  roots: Set<number>,
+): Set<number> {
   const known = new Set(roots);
   let changed: boolean;
   do {

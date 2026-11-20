@@ -67,8 +67,8 @@ export interface DispatchSection {
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */
   adopt: AdoptRule;
-  /** How many children of an epic with no execution plan are under way at once (`epic_width`). */
-  epicWidth: number;
+  /** Migration notice when the repository still declares the retired width. */
+  retiredEpicWidth?: string;
   /** How the tick weighs a pickup's overlap with the work in flight (`dispatch.overlap`, `overlap-config.ts`); absent reads as the defaults (`overlapOf`). */
   overlap?: import("./overlap-config.ts").OverlapSettings;
   /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
@@ -142,6 +142,8 @@ export interface WantedItem {
   ancestorEpic?: string;
   /** Factory-assigned epic whose authority an unassigned child inherits. */
   factoryAncestor?: string;
+  /** Every epic above the item, outermost to nearest, then for a pulled blocker those of the item it is pulled forward for; the late hold check reads each. */
+  ancestors?: string[];
   /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
   blockingFor?: string;
   batchAllowed?: boolean;
@@ -799,7 +801,7 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
-  /** The planned pickups weighed against the work in flight (`overlap-plan.ts`): reported only, nothing the tick starts changes; absent when it plans no pickup. */
+  /** The planned pickups weighed against the work in flight (`overlap-plan.ts`): absent when it plans no pickup. */
   overlap?: import("./overlap-reasons.ts").OverlapReport;
   /** Changed-file evidence for every open pull request, including aged or unread comparisons. */
   prFiles?: import("./sources/pr-files.ts").PrFileSummary[];

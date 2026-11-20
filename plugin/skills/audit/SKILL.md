@@ -233,7 +233,7 @@ the commit out into a temporary worktree and keeps it: the draft's first
 line, `# snapshot: <dir>`, names it. Every survey reads the repository's
 files there, not the checkout's, so pass that folder to the surveys. When the
 record is done, remove it with
-`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git worktree remove --force <dir>`.
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git worktree remove --force <dir>`.
 
 The draft holds one entry per criterion of every module, with the criterion
 and its pass bar as comments and the prior audit's answer when there is one

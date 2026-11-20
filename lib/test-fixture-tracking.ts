@@ -65,26 +65,35 @@ function acknowledgeTrackedFixture(): void {
   state.started = true;
   if (trusted) install();
 }
+/** A refused registration the scope survives as report-only, with its warning printed. */
+function staysReportOnly(
+  failure: { cause?: unknown; code: string; reason: string },
+  fresh: boolean,
+  root: string,
+): boolean {
+  const { cause, code, reason } = failure;
+  const errno = (cause as NodeJS.ErrnoException | undefined)?.code;
+  // The live owner still protects the root, and without durable
+  // membership the scratch collector leaves it report-only.
+  const freshRefused =
+    fresh &&
+    (code === "fixture-registry-full" || code === "fixture-stale-collector");
+  if (!freshRefused && !["EROFS", "EACCES", "EPERM"].includes(errno ?? ""))
+    return false;
+  console.warn(
+    `[test-fixtures] ${reason}; the scope remains report-only: ${root}`,
+    ...(cause === undefined ? [] : [cause]),
+  );
+  return true;
+}
 /** Register every scope, including scopes manually nested by tests. */
 export function trackFixtureScope(root: string, startup = false): void {
   const parent = state.current ?? inherited();
   const rootStartup = !parent && !state.started && startup;
   state.started = true;
   const registration = registerFixtureScope(root, parent);
-  if (!registration.ok) {
-    const code = (
-      registration.failure.cause as NodeJS.ErrnoException | undefined
-    )?.code;
-    // Without a durable registration the general scratch collector remains
-    // report-only. Read-only homes must still be able to run their tests.
-    if (["EROFS", "EACCES", "EPERM"].includes(code ?? "")) {
-      console.warn(
-        `[test-fixtures] ${registration.failure.reason}; the scope remains report-only: ${root}`,
-        registration.failure.cause,
-      );
-      return;
-    }
-  }
+  if (!registration.ok && staysReportOnly(registration.failure, !parent, root))
+    return;
   const membership = must(registration);
   // A helper called halfway through a program cannot account for children
   // started before interception. Only the runner's initial preload claims

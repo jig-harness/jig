@@ -469,7 +469,7 @@ export function conflictFixCommands(
   const merged = placeholder
     ? `${remote}/${shellQuote(base)}`
     : shellQuote(`${remote}/${base}`);
-  return `bun "<skill-dir>/../../shared/command.ts" -- git fetch ${fetched}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${merged}`;
+  return `bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git fetch ${fetched}; after success, bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git merge ${merged}`;
 }
 
 export function conflictRepairRounds(): number {

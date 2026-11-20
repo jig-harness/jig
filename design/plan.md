@@ -304,32 +304,16 @@ sends one tracker request per team; and both gates run in
 
 ### 57. Overlap-aware admission: each item's footprint weighed against all work in flight
 
-The dispatcher starts work when a slot is free without telling work that
-will collide from work that will not, inside an epic or across epics. A
-plan-less epic's children are bounded only by a fixed width per epic
-(#1178), and admission ignores how many validation runs the host can
-finish: on 2026-11-14, with about 25 passes in flight, the machine-wide test
-lock ran validation one suite at a time and six passes ran out their time
-waiting for it. [design/overlap-aware-admission.md](overlap-aware-admission.md)
-has how it works: a footprint record on each item (the paths it is expected
-to touch, written by the pickup, a scout, the planner or `file-issue`),
-every open pull request's changed files read through the forge's governed
-transport, an overlap cost in expected conflict-resolution rounds that
-orders colliding work behind work that does not collide without ever
-leaving a slot idle, an overlap bound per file that replaces the per-epic
-width and, like the cost, only orders,
-validation capacity as a gauge of the load factor, and the reason shown for
-each item that waits. What it will build, one pull request per step, is the
-design's remaining build order: validation capacity, then overlap
-admission. The planner's footprint writer is part of #1180.
+The dispatcher uses [overlap-aware admission](overlap-aware-admission.md)
+to order ready pickups by the files they share with active pickups and
+open pull requests. Validation capacity limits starts when the host
+enforces its load factor. The planner's footprint writer is part of #1180.
 
-Done when, on a dispatch host over a week with `load.enforce` on: no pass
-times out waiting for the test lock; every item that waits names its reason: overlap, the overlap
-bound, a declared hold or serialized area with the work it waits on, or
-validation capacity or another capacity or account wait of the load
-factor; the per-epic width key is gone; and the share of merged pull
-requests that met a conflict, from M11's metric, is no higher than in the
-week before overlap admission.
+Live verification remains open. Observe a dispatch host for a week with
+`load.enforce` on. Check that no pass times out waiting for the test lock,
+that waiting items name their hold or capacity limit, and that the share
+of merged pull requests that met a conflict, from M11's metric, is no
+higher than in the week before overlap admission.
 
 ### 36. The dispatch board: what is driven and what is ready to merge
 
@@ -661,21 +645,12 @@ A dispatched run's conclusion is lost: the wrapper keeps only its last
 `Question:` line, so why a run died or stalled is found only in the
 terminal tab it left. And the dispatcher runs nothing
 without Orca. [design/dispatched-sessions.md](dispatched-sessions.md) has
-how it works. What it will build, one pull request per step in the design's
-order, after `jig gc`'s fixes (#990, #991):
+how it works. The closing report and the process runtime are built: a
+dispatched run can end with a `closing-report/v1` record kept on its launch
+record and the outcome log, a host's machine file can choose
+`runtime: process`, and `jig dispatch attach` lets a person follow a process
+run or take it over. What is left:
 
-- **The closing report.** Every dispatched run ends with a
-  `closing-report/v1` record, written by the agent that did the work through
-  `jig dispatch report`: what it concluded, its question for a person, the
-  next step it suggests, and a cause when it fell short. A drive's comes
-  from `drive.ts` at its stop, built on its passes' round reports. It is
-  kept on the launch record and the outcome log, and shown on the dashboard
-  and by `jig ask`.
-- **The process runtime.** A second session runtime, chosen in the host's
-  machine file (`runtime: process`), that starts each run as a unit or job of the
-  host's service manager with an environment built from a list and bound to
-  its account as today, launches a pickup's first drive itself, and lets a
-  person follow or take over a run (`jig dispatch attach`).
 - **The default changes** to the process runtime after a week's run on a
   dispatching host, as the
   [ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)

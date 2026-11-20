@@ -70,7 +70,7 @@ describe("driveRepository", () => {
 describe("conflictFixCommands", () => {
   it("leaves a plain remote and base bare", () => {
     expect(conflictFixCommands("main", "upstream")).toContain(
-      '-- git fetch upstream; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge upstream/main',
+      '-- git fetch upstream; after success, bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git merge upstream/main',
     );
   });
 

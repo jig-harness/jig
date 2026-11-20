@@ -286,11 +286,10 @@ practice:
   through a [tracker adapter](../../GLOSSARY.md) and honours its flag labels:
   `hitl` stops it before delegating and keeps the merge human, and
   `manual-ops` surfaces the operator checklist and parks the item until a
-  person completes it. When an epic's only open children are tails, it
-  extracts them and closes the epic only on an accepting verdict or a
-  recorded waiver. The person-checks destination and moving an epic's own
-  operator step there are planned; the current closing tool still parks an
-  epic that owes an operator step. The label names and the tracker's state names are
+  person completes it. The [epic closure sweep](../../plugin/skills/do-item/README.md#the-epic-closure-sweep)
+  proposes closure, records the person's waiver, and moves outstanding person
+  checks and the epic's own operator steps to the configured standing list
+  before closure. The label names and the tracker's state names are
   configuration (`issue_tracker.labels`, `issue_tracker.states` in the
   [configuration reference](../../plugin/CONFIGURATION.md#issue_tracker));
   the template's statuses are the same canonical states.
@@ -368,14 +367,12 @@ build, which rejects a repeated key.
 
 ### Future
 
-- **The epic acceptance review and the tail sweep** as runnable skills. The
-  rules above are stated now; the tools that run them (a review that writes
-  the accepting verdict, and a sweep that extracts tails and closes the epic)
-  are planned to move into the plugin. Until then `do-item` asks for the
-  verdict or waiver and stops without one. The prioritization ranker runs in
-  the dispatcher over a tracker snapshot, the repository's priorities record
-  and the host's weights file, and reports its shortlist beside what the
-  dispatcher starts; a host that opts in (`priorities.enforce`) has its
-  pickups start in the shortlist's order. The
-  [`priorities` skill](../../plugin/skills/priorities/README.md) validates the
-  record and shows how a change moves the shortlist.
+- **The epic acceptance review.** The review that writes an acceptance verdict
+  is planned. The on-demand sweep records human waivers.
+
+The prioritization ranker runs in the dispatcher over a tracker snapshot,
+the repository's priorities record and the host's weights file, and reports
+its shortlist beside what the dispatcher starts. A host that opts in
+(`priorities.enforce`) starts pickups in the shortlist's order. The
+[`priorities` skill](../../plugin/skills/priorities/README.md) validates the
+record and shows how a change moves the shortlist.

@@ -401,6 +401,68 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.291.0] - 2026-11-20
+
+### Added
+
+- `jig dispatch attach <record>` follows a run on the process runtime: it
+  prints the run's worktree, account, stage and how long it has run, then
+  shows the run's output as it is written, until the run ends. Interrupting
+  it leaves the run going.
+- `jig dispatch attach <record> --take-over` takes such a run over: it holds
+  the run's pull request or item in your name, as `jig send hold` does, so
+  the dispatcher starts nothing on it; stops the run (a drive through
+  `drives.ts --stop`, so its ledger reads stopped); records its end as
+  yours (`by: person`), which frees the account's slot; and prints the
+  command that resumes the Claude Code or Codex session in the worktree
+  under the same account. Run again after an interruption, it finishes the
+  take-over. Release the hold with `jig send <address> release` when you
+  are done. Runs on Orca are refused: their tab already shows them.
+  A drive taken over has a person's stop on its ledger, so releasing the
+  hold does not re-arm it: restart the drive yourself. Taking over a drive
+  or a follow-up needs the repository's dispatch hold label; where the
+  labels are off, the hold is refused and the run is left going.
+
+### Fixed
+
+- `/jig:resolve-conflicts` no longer loses its concluding commit in a
+  repository whose git hooks run longer than two minutes. Its commits, its
+  merge and `git rebase --continue` run the repository's hooks under an
+  hour's deadline instead of the command wrapper's 120 seconds, and Step 7
+  now says how to finish from a command killed at its deadline (exit `124`):
+  what it leaves, and the retry under a longer deadline that still ends a
+  hook that hangs. `/jig:fix-ci`'s commit and the merge drive-pr prints for
+  a conflicting base get the same deadline.
+- Bound the test fixture registry when a registration is written and retire
+  proven-dead registrations in bounded pages. A scheduled collector that can
+  only report an over-limit store now fails with a receipt that gives the
+  reason.
+- Report fixture registry usage and free inodes in `jig doctor gc` and
+  surface storage pressure as a host need in the dispatch dashboard.
+
+## [0.290.0] - 2026-11-20
+
+### Added
+
+- The [epic closure sweep](plugin/skills/do-item/README.md#the-epic-closure-sweep)
+  proposes closure for delivered scope, identifies unfinished work for the
+  backlog, and records a person's reply as the waiver. It checks the plan
+  and moves outstanding checks before closing an accepted epic.
+  **Consumer action:** advised at configuration. To transfer person-only
+  checks at epic closure, set `issue_tracker.person_checks` to the key of
+  a standing open issue.
+
+### Fixed
+
+- `jig dispatch`: a person's hold on an epic nested inside another epic now stops the work under it even when the hold arrives after the tick read its holds. Before, the check made just before a pickup launches looked only at the item and its outermost epic, so a leaf under a held nested epic could still start, alone or in a batch. The served queue, its batches and the pickup's launch record now carry every epic above the item, and that last check refuses the launch when any of them is held. Launch records written by an earlier release are still read, and checked against the one epic they name.
+
+## [0.289.0] - 2026-11-20
+
+### Changed
+
+- **Breaking:** The dispatcher orders ready pickups by overlap with work in flight and how long each pickup has waited. A free slot can take overlapping work. The retired `dispatch.epic_width` key is ignored and the dispatch receipt points to `dispatch.overlap`. **Consumer action:** advised at configuration, instructions. Remove `dispatch.epic_width` and update runbooks that use it. To require one child at a time, use execution plan dependency edges or a serialized area. Configure `dispatch.overlap` to tune shared-file admission. **Detect:** `config:dispatch.epic_width`.
+- The advice to set an epic width of 1 is obsolete. **Consumer action:** retracts 0.244.0#b4855f8e.
+
 ## [0.288.2] - 2026-11-20
 
 ### Fixed
@@ -10237,7 +10299,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.288.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.0...HEAD
+[0.291.0]: https://github.com/jig-harness/jig/compare/v0.290.0...v0.291.0
+[0.290.0]: https://github.com/jig-harness/jig/compare/v0.289.0...v0.290.0
+[0.289.0]: https://github.com/jig-harness/jig/compare/v0.288.2...v0.289.0
 [0.288.2]: https://github.com/jig-harness/jig/compare/v0.288.1...v0.288.2
 [0.288.1]: https://github.com/jig-harness/jig/compare/v0.288.0...v0.288.1
 [0.288.0]: https://github.com/jig-harness/jig/compare/v0.287.2...v0.288.0

@@ -34,7 +34,7 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
-import { batchItemsOf } from "../queue-batch.ts";
+import { ancestorsOf, batchItemsOf } from "../queue-batch.ts";
 import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -80,6 +80,11 @@ import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's pickups need beyond the apply state. */
 export interface PickupContext {
+  /** The overlap walk controls the order of new attempts once recovery has run. */
+  admit?: (
+    wanted: Action[],
+    launch: (action: Action) => Promise<LaunchOutcome>,
+  ) => Promise<void>;
   servedPolicy?: import("../sources/served.ts").ServedPolicy;
   section: DispatchSection;
   tracker: Tracker;
@@ -249,7 +254,9 @@ async function launchOne(
   };
   const beforeBatch = await checkBatch();
   if (beforeBatch !== null) return waits(action, beforeBatch);
-  const served = servedEvidence(action);
+  const chain = ancestorsOf(action.evidence.ancestors);
+  if (!chain.ok) return waits(action, chain.failure.reason);
+  const served = servedEvidence(action, chain.value);
   const before = await changed(state, repo, ctx, action.target, served);
   if ("why" in before) return waits(action, before.why);
   const admitted = await admitAccount(
@@ -346,11 +353,15 @@ async function startOrReturn(
 }
 
 /** The optional served-item facts which a pickup preserves in its launch record. */
-function servedEvidence(action: Action): {
+export function servedEvidence(
+  action: Action,
+  ancestors: string[] | undefined,
+): {
   pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
   factoryAncestor?: string;
+  ancestors?: string[];
   blockingFor?: string;
 } {
   const { ancestorEpic, factoryAncestor, blockingFor, servedPerson, pooled } =
@@ -360,6 +371,7 @@ function servedEvidence(action: Action): {
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
     ...(typeof ancestorEpic === "string" ? { ancestorEpic } : {}),
     ...(typeof factoryAncestor === "string" ? { factoryAncestor } : {}),
+    ...(ancestors === undefined ? {} : { ancestors }),
     ...(typeof blockingFor === "string" ? { blockingFor } : {}),
   };
 }
@@ -509,9 +521,14 @@ export async function applyPickups(
         )
         .filter((person): person is string => person !== undefined) ?? [],
   });
-  // A pickup that waits passes its start to the next.
-  for (const action of pickupSequence(state, report, wanted))
-    report.launches.push(await launchOne(state, repo, action, ctx));
+  const ranked = pickupSequence(state, report, wanted);
+  const launch = async (action: Action) => {
+    const outcome = await launchOne(state, repo, action, ctx);
+    report.launches.push(outcome);
+    return outcome;
+  };
+  if (ctx.admit !== undefined) await ctx.admit(ranked, launch);
+  else for (const action of ranked) await launch(action);
 }
 
 export function servedAuthorization(

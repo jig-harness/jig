@@ -10,13 +10,17 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { sharedGcLock } from "./gc-lock.ts";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  exclusiveFixtureGcLock,
+  retryFixtureGcAdmission,
+  sharedFixtureGcLock,
+} from "./gc-lock.ts";
 import {
   decodeIdentity,
   encodeIdentity,
   judge,
+  isAliveSync,
   ownIdentity,
   type ProcessIdentity,
 } from "./liveness.ts";
@@ -27,6 +31,16 @@ import { isRecord } from "./guards.ts";
 import { failureFields, swallow } from "./errors.ts";
 import { log } from "./log.ts";
 import { currentIso, currentMs, parseMs } from "./time.ts";
+import {
+  fixtureRegistryLimit,
+  type FixtureNameIndex,
+  recordFixtureNameChange,
+  testFixtureRegistryRoot,
+  visitFixtureRegistryNames,
+  withFixtureNameIndex,
+} from "./fixture-registry-index.ts";
+
+export { testFixtureRegistryRoot } from "./fixture-registry-index.ts";
 
 export const FIXTURE_REGISTRY_ENV = "JIG_TEST_FIXTURE_REGISTRY";
 export const FIXTURE_NODE_ENV = "JIG_TEST_FIXTURE_NODE";
@@ -54,9 +68,6 @@ export type FixtureProof = {
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_RECORDS = 100_000;
 const MAX_RECORD_BYTES = 64 * 1024;
-export function testFixtureRegistryRoot(home = homedir()): string {
-  return join(home, ".local", "state", "jig", "test-fixtures-v1");
-}
 function scopeName(root: string): string {
   return `scope-${createHash("sha256").update(resolve(root)).digest("hex")}.json`;
 }
@@ -75,51 +86,127 @@ function publish(file: string, value: unknown): void {
     rmSync(temporary, { force: true });
   }
 }
-function admitted<T>(registry: string, action: () => T): Outcome<T> {
-  return attempt("fixture-registration", "Cannot register test fixture", () => {
-    // Membership's original machine store fixes admission, even in a child
-    // whose fixture changes HOME to a disposable fake home.
-    const release = sharedGcLock(
-      "scratch",
-      join(dirname(dirname(registry)), "gc-locks"),
-    );
-    try {
-      return action();
-    } finally {
-      release();
-    }
-  });
+/** A child keeps its parent's machine store even when its fixture changes HOME. */
+function fixtureLockRoot(store: string): string {
+  return join(dirname(store), "gc-locks");
 }
+function inFixtureAdmission<T>(registry: string, action: () => T): T {
+  const release = sharedFixtureGcLock(fixtureLockRoot(dirname(registry)));
+  try {
+    return action();
+  } finally {
+    release();
+  }
+}
+function admitted<T>(registry: string, action: () => T): Outcome<T> {
+  return attempt("fixture-registration", "Cannot register test fixture", () =>
+    inFixtureAdmission(registry, action),
+  );
+}
+const ADMISSION_PAGE = 128;
+const ADMISSION_HEADROOM = 64;
+const ADMISSION_MS = 5000;
+
 /** Register outside disposable scratch, so a surviving child cannot erase membership by recreating its root. */
 export function registerFixtureScope(
   root: string,
   inherited?: FixtureMembership,
   store = testFixtureRegistryRoot(),
 ): Outcome<FixtureMembership> {
-  const membership = inherited ?? {
+  if (inherited)
+    return admitted(inherited.registry, () => {
+      writeFixtureScope(root, inherited, false);
+      return inherited;
+    });
+  const membership = {
     registry: join(store, randomUUID()),
     node: randomUUID(),
   };
-  return admitted(membership.registry, () => {
-    mkdirSync(join(membership.registry, "nodes"), {
-      recursive: true,
-      mode: 0o700,
-    });
-    if (!inherited)
+  const indexed = retryFixtureGcAdmission(() =>
+    withFixtureNameIndex(
+      store,
+      (index): Outcome<FixtureMembership> => {
+        const limit = fixtureRegistryLimit();
+        if (index.count() === limit) makeFixtureRoom(store, limit, index);
+        if (index.count() >= limit)
+          return failed(
+            "fixture-registry-full",
+            `The fixture registry holds ${index.count()} registrations against its bound of ${limit}, with no reusable slot available; run jig gc --collect`,
+          );
+        writeFixtureScope(root, membership, true);
+        index.add(basename(membership.registry));
+        recordFixtureNameChange(index, store);
+        return ok(membership);
+      },
+      (body) => exclusiveFixtureGcLock(fixtureLockRoot(store), body),
+    ),
+  );
+  return indexed.ok ? indexed.value : indexed;
+}
+
+function writeFixtureScope(
+  root: string,
+  membership: FixtureMembership,
+  fresh: boolean,
+): void {
+  try {
+    if (fresh) {
+      mkdirSync(join(membership.registry, "nodes"), {
+        recursive: true,
+        mode: 0o700,
+      });
       publish(nodePath(membership), {
         version: 1,
         state: "registered",
         parent: null,
         identity: encodeIdentity(ownIdentity()),
       } satisfies NodeRecord);
+    }
     publish(join(membership.registry, scopeName(root)), {
       version: 1,
       root: resolve(root),
       createdAt: currentIso(),
       registeredBy: encodeIdentity(ownIdentity()),
     });
-    return membership;
-  });
+  } catch (error) {
+    if (fresh) deleteFixtureRegistration(membership.registry, true);
+    throw error;
+  }
+}
+
+function makeFixtureRoom(
+  store: string,
+  limit: number,
+  index: FixtureNameIndex,
+): void {
+  const { names } = index.page("admission_cursor", ADMISSION_PAGE);
+  const deadline = performance.now() + ADMISSION_MS;
+  let enclosure: FixtureEnclosureIndex | undefined;
+  const enclosing = () =>
+    (enclosure ??= fixtureEnclosureIndex(store, deadline));
+  for (const name of names) {
+    if (performance.now() >= deadline) break;
+    index.advance("admission_cursor", name);
+    const registry = join(store, name);
+    const proof = fixtureRetirementProof(
+      registry,
+      (identity) => isAliveSync(identity, undefined, deadline),
+      enclosing,
+    );
+    if (proof.state !== "dead") {
+      // Keep the conservative refusal, but say why a probe could not prove it.
+      if (proof.state === "unverified")
+        log.warn("Cannot prove a fixture registration retired", {
+          registry,
+          reason: proof.reason,
+        });
+      continue;
+    }
+    if (!deleteFixtureRegistration(registry, true).ok) continue;
+    index.remove(name);
+    if (index.count() <= Math.max(0, limit - ADMISSION_HEADROOM)) break;
+  }
+  if (index.count() < limit) recordFixtureNameChange(index, store);
 }
 /** This pending edge must land before the spawn. A missed acknowledgement keeps the whole tree unverified. */
 export function beginFixtureLaunch(
@@ -212,23 +299,15 @@ function scopeRecord(file: string, registry: string): FixtureScope | null {
   const text = readRecord(file);
   if (text === null) return null;
   const value: unknown = JSON.parse(text);
-  const registeredBy = isRecord(value)
-    ? decodeIdentity(value.registeredBy)
-    : null;
-  return isRecord(value) &&
-    value.version === 1 &&
-    typeof value.root === "string" &&
-    isAbsolute(value.root) &&
-    typeof value.createdAt === "string" &&
-    Number.isFinite(parseMs(value.createdAt)) &&
-    registeredBy !== null
-    ? {
-        root: value.root,
-        registry,
-        createdAt: value.createdAt,
-        registeredBy,
-      }
-    : null;
+  if (!isRecord(value) || value.version !== 1) return null;
+  const { root, createdAt } = value;
+  const registeredBy = decodeIdentity(value.registeredBy);
+  if (typeof root !== "string" || !isAbsolute(root)) return null;
+  if (typeof createdAt !== "string" || !Number.isFinite(parseMs(createdAt)))
+    return null;
+  return registeredBy === null
+    ? null
+    : { root, registry, createdAt, registeredBy };
 }
 interface ScanBudget {
   deadline: number;
@@ -310,7 +389,7 @@ export interface FixtureRegistryPage {
   /** True when this page read every folder the store held. */
   complete: boolean;
 }
-const PAGE_REGISTRIES = 100_000;
+const PAGE_REGISTRIES = 10_000;
 const PAGE_MS = 30_000;
 type PageEntry =
   | { kind: "registration"; registration: FixtureRegistration }
@@ -357,94 +436,44 @@ export function fixtureRegistryScopes(
       : `malformed registration: ${entry.reason}`,
   );
 }
-/** A name `readdir` could have returned for a folder of the store. */
-function folderName(name: string): boolean {
-  return (
-    name !== "" &&
-    name !== "." &&
-    name !== ".." &&
-    !name.includes("/") &&
-    !name.includes("\0") &&
-    (process.platform !== "win32" || !name.includes("\\"))
-  );
-}
-/** Where the last page stopped; a missing or unreadable cursor starts from the beginning. */
-function readCursor(file: string): string | null {
-  try {
-    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
-    return typeof value === "string" && folderName(value) ? value : null;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-      log.debug("Cannot read the fixture inventory cursor", {
-        file,
-        ...failureFields(error),
-      });
-    return null;
-  }
-}
-function compareCodeUnits(a: string, b: string): number {
-  if (a < b) return -1;
-  return a > b ? 1 : 0;
-}
-/** The folder names in a stable order, resuming after the name the last page stopped at. */
-function resumedOrder(names: string[], after: string | null): string[] {
-  // Code-unit order, the order the `>` below compares in; a locale order would disagree.
-  const sorted = names.toSorted(compareCodeUnits);
-  if (after === null) return sorted;
-  const start = sorted.findIndex((name) => name > after);
-  return start < 0
-    ? sorted
-    : [...sorted.slice(start), ...sorted.slice(0, start)];
-}
 /**
- * Read the next bounded page of the store, resuming where the last page
- * stopped, so a store larger than one read is still read in full over
- * successive runs. A malformed folder is reported as itself. Without
- * `advance`, the page is read and the cursor stays where it was.
+ * Read the next bounded page of the store. The index resumes by folder name
+ * without enumerating earlier pages; report mode leaves its cursor untouched.
  */
 export function nextFixtureRegistryPage(
   store = testFixtureRegistryRoot(),
   options: { limit?: number | undefined; advance?: boolean | undefined } = {},
 ): Outcome<FixtureRegistryPage> {
-  const limit = options.limit ?? PAGE_REGISTRIES;
-  return attempt(
-    "fixture-inventory",
-    "Cannot read a page of fixture registrations",
-    () => {
-      const page: FixtureRegistryPage = {
-        registrations: [],
-        malformed: [],
-        complete: true,
-      };
-      let names: string[];
-      try {
-        names = readdirSync(store);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return page;
-        throw error;
-      }
-      const cursor = `${store}.cursor`;
-      const order = resumedOrder(names, readCursor(cursor));
-      const deadline = currentMs() + PAGE_MS;
-      let read = 0;
-      for (const name of order) {
-        if (read >= limit || currentMs() > deadline) break;
-        read++;
-        const registry = join(store, name);
-        const entry = pageEntry(registry);
-        if (entry.kind === "registration")
-          page.registrations.push(entry.registration);
-        else if (entry.kind === "malformed")
-          page.malformed.push({ registry, reason: entry.reason });
-      }
-      page.complete = read === order.length;
-      const last = order[read - 1];
-      if (options.advance === false) return page;
-      if (page.complete || last === undefined) rmSync(cursor, { force: true });
-      else publish(cursor, last);
-      return page;
-    },
+  const listed = withFixtureNameIndex(store, (index) =>
+    index.page("collection_cursor", options.limit ?? PAGE_REGISTRIES),
   );
+  if (!listed.ok) return listed;
+  const { names, complete, after } = listed.value;
+  const page: FixtureRegistryPage = {
+    registrations: [],
+    malformed: [],
+    complete,
+  };
+  const deadline = currentMs() + PAGE_MS;
+  let last: string | undefined;
+  for (const name of names) {
+    if (currentMs() > deadline) {
+      page.complete = false;
+      break;
+    }
+    last = name;
+    const registry = join(store, name);
+    const entry = pageEntry(registry);
+    if (entry.kind === "registration")
+      page.registrations.push(entry.registration);
+    else if (entry.kind === "malformed")
+      page.malformed.push({ registry, reason: entry.reason });
+  }
+  if (options.advance === false || last === undefined) return ok(page);
+  return withFixtureNameIndex(store, (index: FixtureNameIndex) => {
+    index.advanceCollection(after, page.complete ? null : last);
+    return page;
+  });
 }
 /** True only when the root is certainly absent; an unreadable path counts as present. */
 export function fixtureRootGone(root: string): boolean {
@@ -475,38 +504,38 @@ export interface FixtureEnclosureIndex {
  */
 function fixtureEnclosureIndex(
   store = testFixtureRegistryRoot(),
+  deadline = performance.now() + PAGE_MS,
 ): FixtureEnclosureIndex {
   const index: FixtureEnclosureIndex = {
     roots: new Map(),
     held: new Map(),
     complete: true,
   };
-  let names: string[];
   try {
-    names = readdirSync(store);
+    const complete = visitFixtureRegistryNames(store, (name) => {
+      if (performance.now() > deadline) return false;
+      const registry = join(store, name);
+      const entry = pageEntry(registry);
+      if (entry.kind === "malformed") index.complete = false;
+      if (entry.kind !== "registration") return true;
+      for (const scope of entry.registration.scopes) {
+        const root = resolve(scope.root);
+        const holders = index.roots.get(root) ?? new Set<string>();
+        holders.add(registry);
+        index.roots.set(root, holders);
+        const own = index.held.get(registry) ?? new Set<string>();
+        own.add(root);
+        index.held.set(registry, own);
+      }
+      return true;
+    });
+    index.complete &&= complete;
   } catch (error) {
-    index.complete = (error as NodeJS.ErrnoException).code === "ENOENT";
-    return index;
-  }
-  const deadline = currentMs() + PAGE_MS;
-  for (const name of names) {
-    if (currentMs() > deadline) {
-      index.complete = false;
-      break;
-    }
-    const registry = join(store, name);
-    const entry = pageEntry(registry);
-    if (entry.kind === "malformed") index.complete = false;
-    if (entry.kind !== "registration") continue;
-    for (const scope of entry.registration.scopes) {
-      const root = resolve(scope.root);
-      const holders = index.roots.get(root) ?? new Set<string>();
-      holders.add(registry);
-      index.roots.set(root, holders);
-      const own = index.held.get(registry) ?? new Set<string>();
-      own.add(root);
-      index.held.set(registry, own);
-    }
+    log.warn("Cannot inspect fixture registration enclosure", {
+      store,
+      ...failureFields(error),
+    });
+    index.complete = false;
   }
   return index;
 }
@@ -519,18 +548,20 @@ const RACY_NS = 2_000_000_000n;
 /** Null when the store cannot be summarized inside its time bound. Scope files land by atomic rename, so adding one moves its folder's change time. */
 function storeWitness(store: string): StoreWitness | null {
   try {
-    const names = readdirSync(store);
     const deadline = currentMs() + PAGE_MS;
     let newestNs = 0n;
-    for (const name of names) {
-      if (currentMs() > deadline) return null;
+    let entries = 0;
+    const complete = visitFixtureRegistryNames(store, (name) => {
+      if (currentMs() > deadline) return false;
+      entries++;
       const stat = lstatSync(join(store, name), {
         bigint: true,
         throwIfNoEntry: false,
       });
       if (stat && stat.mtimeNs > newestNs) newestNs = stat.mtimeNs;
-    }
-    return { entries: names.length, newestNs };
+      return true;
+    });
+    return complete ? { entries, newestNs } : null;
   } catch (error) {
     swallow(
       error,
@@ -659,10 +690,12 @@ function retirementVeto(
  * identity, which no node records. Such a writer, still running, can write the
  * registration again after every root is gone.
  */
+type IdentityCheck = (identity: ProcessIdentity) => ReturnType<typeof judge>;
+
 function unrecordedWriters(
   scopes: FixtureScope[],
   nodes: NodeRecord[],
-  rows: ProcessRow[] | null,
+  check: IdentityCheck,
 ): FixtureProof | null {
   const recorded = new Set(nodes.map((node) => node.identity));
   for (const scope of scopes) {
@@ -672,7 +705,7 @@ function unrecordedWriters(
         state: "unverified",
         reason: "a scope's registering process identity is unreadable",
       };
-    const alive = judge(scope.registeredBy, rows);
+    const alive = check(scope.registeredBy);
     if (!alive.ok) return { state: "unverified", reason: alive.failure.reason };
     if (alive.value.state === "alive")
       return {
@@ -684,7 +717,7 @@ function unrecordedWriters(
 }
 function registeredProcesses(
   nodes: NodeRecord[],
-  rows: ProcessRow[] | null,
+  check: IdentityCheck,
 ): FixtureProof {
   for (const node of nodes) {
     if (node.state !== "registered") continue;
@@ -695,7 +728,7 @@ function registeredProcesses(
         state: "unverified",
         reason: "fixture process identity is unreadable",
       };
-    const alive = judge(identity, rows);
+    const alive = check(identity);
     if (!alive.ok) return { state: "unverified", reason: alive.failure.reason };
     if (alive.value.state === "alive")
       return {
@@ -719,9 +752,11 @@ function registeredProcesses(
  */
 export function fixtureRetirementProof(
   registry: string,
-  rows: ProcessRow[] | null,
+  rows: ProcessRow[] | null | IdentityCheck,
   enclosure?: () => FixtureEnclosureIndex,
 ): FixtureProof {
+  const check: IdentityCheck =
+    typeof rows === "function" ? rows : (identity) => judge(identity, rows);
   const enclosureIndex =
     enclosure ??
     ((): FixtureEnclosureIndex => fixtureEnclosureIndex(dirname(registry)));
@@ -739,8 +774,8 @@ export function fixtureRetirementProof(
         } satisfies FixtureProof;
       return (
         retirementVeto(registry, scopes, [...nodes.values()], enclosureIndex) ??
-        unrecordedWriters(scopes, [...nodes.values()], rows) ??
-        registeredProcesses([...nodes.values()], rows)
+        unrecordedWriters(scopes, [...nodes.values()], check) ??
+        registeredProcesses([...nodes.values()], check)
       );
     },
   );
@@ -761,13 +796,37 @@ export function fixtureRetirementProof(
     });
   return { state: "unverified", reason: read.failure.reason };
 }
-/** Caller holds scratch's exclusive lock and has just proved the registration retirable. */
-export function retireFixtureRegistration(registry: string): Outcome<void> {
-  return attempt(
+function deleteFixtureRegistration(
+  registry: string,
+  reportFailure = false,
+): Outcome<void> {
+  const result = attempt(
     "fixture-retirement",
     "Cannot retire fixture registration",
     () => rmSync(registry, { recursive: true, force: true }),
   );
+  if (!result.ok && reportFailure)
+    log.warn(result.failure.reason, {
+      registry,
+      ...failureFields(result.failure.cause),
+    });
+  return result;
+}
+/** Caller holds scratch's exclusive lock and has just proved each registration retirable. */
+export function retireFixtureRegistrations(
+  store: string,
+  registries: string[],
+): Outcome<{ registry: string; result: Outcome<void> }[]> {
+  return withFixtureNameIndex(store, (index) => {
+    const results = registries.map((registry) => {
+      const result = deleteFixtureRegistration(registry);
+      if (result.ok) index.remove(basename(registry));
+      return { registry, result };
+    });
+    if (results.some(({ result }) => result.ok))
+      recordFixtureNameChange(index, store);
+    return results;
+  });
 }
 function linkedParents(
   nodes: Map<string, NodeRecord>,
