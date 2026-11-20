@@ -1,3 +1,4 @@
+import type { PickupArms } from "./pickup-arms.ts";
 /**
  * The forge's part of a repository's tick: the open pull requests (with
  * their labels where the repository turns dispatch labels on), read with
@@ -125,8 +126,12 @@ export async function readForge(
   nowMs: number,
   shared: (login: string | null) => SharedRecords,
   reads: ForgeReads,
+  pickupArms?: PickupArms,
 ): Promise<ForgeRead> {
-  const read = { labels: labels !== null };
+  const read = {
+    labels: labels !== null,
+    headRepository: (pickupArms?.size ?? 0) > 0,
+  };
   const managed = <T extends { labels?: string[] }>(prs: T[]): T[] =>
     labels?.onlyLabeled === true
       ? prs.filter((p) => carriesSet(labels, p.labels ?? []))
@@ -202,9 +207,12 @@ export async function readForge(
       nowMs,
       labels,
       adoption,
-      (pr) => reads.comments.read(repo.slug, pr),
-      (read) => reads.pool.run(read),
-      reads.bound,
+      {
+        comments: (pr) => reads.comments.read(repo.slug, pr),
+        admit: (read) => reads.pool.run(read),
+        bound: reads.bound,
+        pickupArms,
+      },
     );
     forgetClosedParkThreads(
       repo.slug,

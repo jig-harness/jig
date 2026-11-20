@@ -311,6 +311,8 @@ export interface LineQueued {
   assignedBy: string | null;
   /** For a pull request held behind a serialized leader. */
   hold: { leader: number; area: string; since: string } | null;
+  /** The person and time recorded by a pickup hold. */
+  pickupHold?: { by: string; at: string };
   /** What the newest tick's launch of it did, and, for a follow-up held back this tick, what it waits on; `null` when it did not try. */
   launch: {
     outcome: LaunchOutcome["outcome"];
@@ -551,7 +553,8 @@ export interface LineCarried {
   target: string;
   pr: number;
   url: string;
-  drive: "driving" | "converged";
+  /** The drive's state: `parked` on a person's question, `stopped` for a re-arm or a re-drive, `unplaced` while the forge leaves it undecided. */
+  drive: "driving" | "converged" | "parked" | "stopped" | "unplaced";
   /** The tick's reason, verbatim. */
   why: string;
 }

@@ -520,6 +520,8 @@ export function strandedHoldNotice(
   hold: {
     key: string;
     holder: string;
+    /** What the hold costs, after "holds its drive". */
+    cost: string;
     why: string;
     heldSince: string;
     settle: string;
@@ -528,7 +530,7 @@ export function strandedHoldNotice(
 ): Notice {
   return {
     ...notice(`${slug} PR #${pr.number} held by ${hold.key}`, [
-      `PR #${pr.number} (${pr.title}): ${hold.holder} holds its drive, so no tick starts it again: ${hold.why}. It has held the drive since ${hold.heldSince}.`,
+      `PR #${pr.number} (${pr.title}): ${hold.holder} holds its drive, ${hold.cost}: ${hold.why}. It has held the drive since ${hold.heldSince}.`,
       hold.settle,
       pr.url,
     ]),

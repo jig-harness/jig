@@ -8,7 +8,9 @@
  *
  * - `cause` and `suggested_next` are the terminal-state registry's `report`
  *   for the exit (`status/terminal-states.ts`); an exit the registry does
- *   not name has cause `unknown` and asks a person to investigate.
+ *   not name has cause `unknown` and asks a person to investigate. A stall
+ *   whose passes all ended `finish-round.ts` on the same state takes its
+ *   cause from that state (`state/round-finish.ts`).
  * - `concluded` is the stop's own text (`stop-text.ts`) followed by the
  *   `concluded` of the last round report of this launch, the stop's text
  *   first and the round's cut to the room left in the 600 characters; the
@@ -48,7 +50,8 @@ import { probeFailure } from "../status/probe-stop.ts";
 import { driveExitReport } from "../status/terminal-states.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
-import { exitOf, oneLine, stopText } from "./stop-text.ts";
+import { finishCause } from "../state/round-finish.ts";
+import { exitOf, oneLine, type StallFinish, stopText } from "./stop-text.ts";
 
 /** What marks a text cut short. */
 const ELLIPSIS = "…";
@@ -121,10 +124,12 @@ export function composeDriverReport(input: {
   code: number;
   state: DriveState | null;
   round: ClosingReport | null;
+  stall?: StallFinish | null;
 }): ClosingReport {
   const { pr, code, state, round } = input;
+  const stall = code === exitOf("STALLED") ? (input.stall ?? null) : null;
   const named = driveExitReport(code);
-  const stop = redactReportText(stopText(pr, code, state));
+  const stop = redactReportText(stopText(pr, code, state, stall));
   const probe = driverRuntime.stopProbe;
   const failure = probe?.code === code ? probeFailure(probe) : null;
   const cause =
@@ -132,7 +137,9 @@ export function composeDriverReport(input: {
       ? "environment"
       : named === null
         ? "unknown"
-        : named.report.cause;
+        : stall !== null
+          ? finishCause(stall.state)
+          : named.report.cause;
   const base: ClosingReport = {
     schema: CLOSING_REPORT_SCHEMA,
     concluded: composeConcluded(
@@ -212,7 +219,13 @@ export async function writeClosingReport(
     writeDriverReport(
       path,
       launch,
-      composeDriverReport({ pr, code, state, round }),
+      composeDriverReport({
+        pr,
+        code,
+        state,
+        round,
+        stall: driverRuntime.stallFinish,
+      }),
     );
   } catch (error) {
     console.error(

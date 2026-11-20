@@ -1,7 +1,10 @@
 /** The converged CI watch's live reads and writes, and the park it ends in; every forge call is bounded. */
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
 import { currentIso, currentMs } from "../../../../../shared/time.ts";
-import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import {
+  recoverCancelledOnHead,
+  timedOutOnHead,
+} from "../cancelled-recovery-live.ts";
 import { claimLabelRerun, labelReruns } from "../cancelled-recovery-state.ts";
 import { parsePrSnapshot } from "../ci-hold.ts";
 import { holdLabelPolicy } from "../ci-policy.ts";
@@ -176,6 +179,7 @@ export function liveConvergedCi(
     },
     recoverCancelled: (pr, head, mayMutate) =>
       recoverCancelledOnHead(pr, head, undefined, false, mayMutate),
+    timedOutJobs: (head) => timedOutOnHead(head),
   };
 }
 

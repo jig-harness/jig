@@ -18,7 +18,8 @@
  */
 import { failureText } from "./text.ts";
 import { type ReadRecord, targetOf, writeRecord } from "./launches.ts";
-import { hasEnded } from "./log.ts";
+import { hasEnded, insertRow } from "./log.ts";
+import { inTransaction, stateDb } from "./state.ts";
 import type { EndedRun, RuntimeReceipt } from "./runtime/port.ts";
 import type { EndRunOutcome } from "./types.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
@@ -54,7 +55,11 @@ export async function endRuns(
     const about = { record: record.id, target: targetOf(record) };
     let receipt: RuntimeReceipt;
     try {
-      const asked = endRun({ id: record.id, workspace: record.workspace });
+      const asked = endRun({
+        id: record.id,
+        workspace: record.workspace,
+        ...(record.runtime === undefined ? {} : { runtime: record.runtime }),
+      });
       if (asked === null) break;
       receipt = await asked;
     } catch (error) {
@@ -68,7 +73,23 @@ export async function endRuns(
     }
     try {
       const runEndedAt = isoFromMs(nowMs);
-      writeRecord({ ...record, runEndedAt }, root);
+      const db = stateDb(root);
+      inTransaction(db, () => {
+        if (receipt.outlived === true)
+          insertRow(db, {
+            kind: "event",
+            key: `outlived ${record.id}`,
+            at: runEndedAt,
+            repo: record.repo,
+            stage: record.action,
+            target: about.target,
+            event: "outlived",
+            account: record.account,
+            class: null,
+            reason: receipt.detail,
+          });
+        writeRecord({ ...record, runEndedAt }, root);
+      });
       record.runEndedAt = runEndedAt;
     } catch (error) {
       outcomes.push({

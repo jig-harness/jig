@@ -147,7 +147,7 @@ export type HereAnswerState =
   | "draft";
 
 /** A state of the line's answers to a decision, the same for every viewer. */
-export type EveryoneAnswerState = AnswerState | "waiting";
+export type EveryoneAnswerState = AnswerState | "waiting" | "from the line";
 
 const is = (icon: LucideIcon | null, word: string): IconWord => ({
   icon,
@@ -260,6 +260,7 @@ export const EVERYONE_ICONS = {
   stale: is(History, "stale"),
   disputed: is(MessagesSquare, "disputed"),
   waiting: is(null, "waiting"),
+  "from the line": is(null, "from the line"),
 } satisfies Record<EveryoneAnswerState, IconWord>;
 
 export const HERE_ICONS = {
