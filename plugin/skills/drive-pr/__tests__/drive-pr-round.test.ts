@@ -351,7 +351,7 @@ describe("announce-merge-ready.ts", () => {
         },
       );
       expect(r.stderr).toContain("check-runs listing");
-      expect(r.exitCode).toBe(exit);
+      expectSpawnExit({ ...r, stdout: "" }, exit);
       expect(r.posted).toBe(false);
       expect(r.deleted).toContain("7");
     }, 60_000);

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { readBoundedText } from "../../../../../shared/driver-report.ts";
+import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { atomicWrite } from "./fsutil.ts";
 import type { Report } from "../finish-round-report.ts";
@@ -66,7 +67,8 @@ export function readPassFinish(
     )
       return null;
     return value.report as unknown as Report;
-  } catch {
+  } catch (err) {
+    swallow(err, "an unreadable or malformed finish record reads as absent");
     return null;
   }
 }

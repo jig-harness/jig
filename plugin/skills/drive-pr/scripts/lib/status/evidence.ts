@@ -157,7 +157,7 @@ export async function checkRunListing(
   sha: string,
   read: PagedRead = "fresh",
 ): Promise<CheckRunListing> {
-  const r = await slurpCheckRuns(owner, repo, sha, read, { stderr: "ignore" });
+  const r = await slurpCheckRuns(owner, repo, sha, read);
   if (r.code !== 0) return { runs: null, cutShort: listingCutShort(sha, r) };
   const pages = parsePages(r.stdout);
   return { runs: pages === null ? null : checkRunsIn(pages), cutShort: null };

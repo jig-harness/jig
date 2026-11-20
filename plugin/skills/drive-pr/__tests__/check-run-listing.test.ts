@@ -56,7 +56,7 @@ async function readListing(f: {
     ["init", "-q"],
     ["remote", "add", "origin", "https://github.com/o/r.git"],
   ])
-    expect(Bun.spawnSync(["git", ...args], { cwd: dir }).exitCode).toBe(0);
+    expectSpawnExit(Bun.spawnSync(["git", ...args], { cwd: dir }), 0, "git");
   writeFakeProgram(
     join(dir, "gh"),
     `#!/usr/bin/env bun
@@ -283,7 +283,10 @@ describe("a listing cut short ends the round and the drive by name", () => {
   it("drive-status.ts reports CHECK_RUNS_UNREADABLE, not INDETERMINATE", async () => {
     const r = await probe({ threads: [], checkRunsHang: true }, [], { env });
     expect(r.state).toBe("CHECK_RUNS_UNREADABLE");
-    expect(r.exitCode).toBe(CHECK_RUNS_UNREADABLE_EXIT);
+    expectSpawnExit(
+      { exitCode: r.exitCode, stdout: JSON.stringify(r.json), stderr: "" },
+      CHECK_RUNS_UNREADABLE_EXIT,
+    );
     expect(String(r.json.reason)).toContain(HEAD);
     expect(String(r.json.reason)).toContain("an unknown number of pages");
     expect(r.json).toHaveProperty("listingPagesRead", null);

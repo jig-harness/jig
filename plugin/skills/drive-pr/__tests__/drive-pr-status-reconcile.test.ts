@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -604,7 +605,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     });
 
     expect(r.state).toBe("CHECK_RUNS_UNREADABLE");
-    expect(r.exitCode).toBe(25);
+    expectSpawnExit({ ...r, stdout: "" }, 25);
     expect(r.stderr).not.toContain("retracting the skip");
   });
 
