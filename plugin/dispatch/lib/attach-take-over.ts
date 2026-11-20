@@ -13,7 +13,12 @@
  *    processes is alive.
  * 4. Under the tick lock, so no tick holding the record writes it back,
  *    record its end with a closing report `by: person`, which releases the
- *    account's slot, and remove the mark.
+ *    account's slot, and remove the mark. A record that still holds its
+ *    slot after its end (a stage whose cleanup was never confirmed) keeps
+ *    the mark and names `jig dispatch clear`. Then, outside the lock, write
+ *    the end onto this host's launch claims on the forge that have none yet,
+ *    as the wrapper does at its exit; a claim whose end the wrapper already
+ *    wrote keeps that end.
  *
  * Run again after dying between the hold and the end, it reconciles: the
  * hold stands (`already`), a live run is stopped, and a run already stopped
@@ -26,12 +31,14 @@ import {
   CLOSING_REPORT_SCHEMA,
   type ClosingReport,
 } from "../../shared/closing-report.ts";
+import { shellQuote } from "../../shared/cli.ts";
 import type { ProcessIdentity } from "../../shared/liveness.ts";
 import type { Outcome } from "../../shared/outcome.ts";
 import { currentIso, currentMs } from "../../shared/time.ts";
 import { takeTickLock } from "../receipts.ts";
 import { recordReport } from "./closing-report-store.ts";
 import {
+  holds,
   type InspectedRow,
   type LaunchRecord,
   recordExit,
@@ -59,7 +66,13 @@ export interface TakeOverDeps {
   hold: (address: string) => Promise<Outcome<"held" | "already", "refused">>;
   /** The stop's steps, in order: the drive's stop, then the unit's or job's. */
   stops: StopStep[];
-  /** Signal the recorded processes' groups. */
+  /** The live recorded processes and their descendants, captured before the stop; `null` when the process table does not read. */
+  tree: (members: ProcessIdentity[]) => Promise<ProcessIdentity[] | null>;
+  /** Whether any of the captured processes is still alive, or cannot be judged. */
+  anyAlive: (members: ProcessIdentity[]) => Promise<boolean>;
+  /** Write the run's end onto this host's launch claims on the forge that have none yet; why any was not written. */
+  settleClaims: (id: string) => Promise<string[]>;
+  /** Signal the captured processes, or their groups. */
   signal: (
     members: ProcessIdentity[],
     signal: "SIGTERM" | "SIGKILL",
@@ -92,6 +105,11 @@ export function targetAddress(
   return null;
 }
 
+/** The command that releases the hold on `address`. */
+function releaseCommand(address: string): string {
+  return `jig send ${shellQuote(address)} release`;
+}
+
 /** The closing report a person's take-over leaves on the run. */
 function personReport(address: string): ClosingReport {
   return {
@@ -99,25 +117,26 @@ function personReport(address: string): ClosingReport {
     concluded:
       "A person took the run over with jig dispatch attach --take-over and stopped it; its session is theirs to resume.",
     suggested_next: {
-      step: `Finish the work in the resumed session, then release the hold: jig send '${address}' release`,
+      step: `Finish the work in the resumed session, then release the hold: ${releaseCommand(address)}`,
       owner: "person",
       act: "Do",
     },
   };
 }
 
-/** Wait until none of the run's processes is alive, within `ms`; whether they are gone. */
+/** Wait until none of the run's processes, recorded or captured, is alive, within `ms`; whether they are gone. */
 async function gone(
-  id: string,
+  target: StopTarget,
   ms: number,
   deps: TakeOverDeps,
 ): Promise<boolean> {
   const until = currentMs() + ms;
   for (;;) {
-    const row = await deps.inspect(id);
-    if (row === null) return true;
-    const live = await deps.members(row);
-    if (live.alive.length === 0 && !live.uncertain) return true;
+    const row = await deps.inspect(target.id);
+    const live = row === null ? null : await deps.members(row);
+    const recordedGone =
+      live === null || (live.alive.length === 0 && !live.uncertain);
+    if (recordedGone && !(await deps.anyAlive(target.members))) return true;
     if (currentMs() >= until) return false;
     await deps.sleep(Math.min(500, Math.max(1, until - currentMs())));
   }
@@ -130,11 +149,11 @@ async function stopRun(
 ): Promise<boolean> {
   for (const step of deps.stops) {
     deps.out(`stop: ${await step(target)}`);
-    if (await gone(target.id, deps.graceMs, deps)) return true;
+    if (await gone(target, deps.graceMs, deps)) return true;
   }
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     deps.out(`stop: ${await deps.signal(target.members, signal)}`);
-    if (await gone(target.id, deps.graceMs, deps)) return true;
+    if (await gone(target, deps.graceMs, deps)) return true;
   }
   return false;
 }
@@ -186,13 +205,29 @@ async function recordEnd(
       },
       deps.root,
     );
-    recordReport(id, personReport(address), "person", deps.root);
+    if (!recordReport(id, personReport(address), "person", deps.root)) {
+      deps.err(
+        `jig dispatch attach: the person's report could not be kept on ${id}; running the command again records it`,
+      );
+      return TAKE_OVER_EXIT.FAILED;
+    }
+    const ended = await deps.inspect(id);
+    if (ended !== null && holds(ended.state)) {
+      deps.err(
+        `jig dispatch attach: ${id} is stopped and its end recorded, but it still holds its slot (${ended.state.kind}${"reason" in ended.state ? `: ${ended.state.reason}` : ""}); free it with jig dispatch clear ${id}`,
+      );
+      return TAKE_OVER_EXIT.FAILED;
+    }
     rmSync(takeOverMark(deps.root, id), { force: true });
-    deps.out(`end: recorded by person; the account's slot is free`);
-    return TAKE_OVER_EXIT.DONE;
+    deps.out("end: recorded by person; the account's slot is free");
   } finally {
     release();
   }
+  for (const failure of await deps.settleClaims(id))
+    deps.out(
+      `end: not yet on the forge's launch claim, which the next tick writes: ${failure}`,
+    );
+  return TAKE_OVER_EXIT.DONE;
 }
 
 /**
@@ -218,7 +253,7 @@ export async function takeOver(
   const mark = takeOverMark(deps.root, id);
   if (row.state.kind === "ended" && !existsSync(mark)) {
     deps.err(
-      `jig dispatch attach: ${id} ended on its own at ${row.state.exit.at}; there is no run to take over`,
+      `jig dispatch attach: ${id} ended on its own at ${row.state.exit.at}; there is no run to take over. A hold from an earlier take-over may still stand on ${address}: ${releaseCommand(address)} releases it`,
     );
     return TAKE_OVER_EXIT.REFUSED;
   }
@@ -231,7 +266,7 @@ export async function takeOver(
   }
   deps.out(
     held.value === "held"
-      ? `hold: ${address} is held in your name; release it with jig send '${address}' release`
+      ? `hold: ${address} is held in your name; release it with ${releaseCommand(address)}`
       : `hold: ${address} was already held`,
   );
   mkdirSync(join(deps.root, "runs", id), { recursive: true, mode: 0o700 });
@@ -244,6 +279,8 @@ export async function takeOver(
     return TAKE_OVER_EXIT.FAILED;
   }
   if (live.alive.length > 0) {
+    // Captured before the first step: a process the stop reparents is still known.
+    const captured = await deps.tree(live.identities);
     const target: StopTarget = {
       id,
       drivePr:
@@ -251,7 +288,7 @@ export async function takeOver(
           ? record.pr
           : null,
       repoPath: record.repoPath,
-      members: live.identities,
+      members: captured ?? live.identities,
     };
     if (!(await stopRun(target, deps))) {
       deps.err(

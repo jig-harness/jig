@@ -64,7 +64,11 @@ export function membersOf(
   };
 }
 
-function descendants(rows: ProcessRow[], roots: Set<number>): Set<number> {
+/** `roots` and every process descended from them in `rows`. */
+export function descendants(
+  rows: ProcessRow[],
+  roots: Set<number>,
+): Set<number> {
   const known = new Set(roots);
   let changed: boolean;
   do {

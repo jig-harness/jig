@@ -87,6 +87,8 @@ const CLAIM: LaunchClaim = {
   claimedAt: "2026-01-01T00:00:10.000Z",
 };
 
+const DESCENDANT: ProcessIdentity = { ...CLAIM, pid: 4343, start: "d" };
+
 /** A fake run: its state and liveness, which the suite moves on. */
 interface Run {
   state: LaunchState;
@@ -95,6 +97,13 @@ interface Run {
   out: string[];
   err: string[];
   written: string[];
+  /** A descendant of the run the stop reparents, which outlives its recorded processes. */
+  descendantAlive: boolean;
+  /** The records whose forge claim end was written, and the failures that settle reports. */
+  settled: string[];
+  settleFailures: string[];
+  /** What the take-over signalled, per signal. */
+  signalled: ProcessIdentity[][];
 }
 
 function fakeRun(): Run {
@@ -105,6 +114,10 @@ function fakeRun(): Run {
     out: [],
     err: [],
     written: [],
+    descendantAlive: false,
+    settled: [],
+    settleFailures: [],
+    signalled: [],
   };
 }
 
@@ -169,8 +182,20 @@ function deps(
         return "unit stopped";
       },
     ],
-    signal: async (_m, signal) => {
+    tree: async (members) => [...members, DESCENDANT],
+    anyAlive: async (members) =>
+      members.some(
+        (m) =>
+          (m.pid === CLAIM.pid && run.alive) ||
+          (m.pid === DESCENDANT.pid && run.descendantAlive),
+      ),
+    settleClaims: async (id) => {
+      run.settled.push(id);
+      return run.settleFailures;
+    },
+    signal: async (members, signal) => {
       run.events.push(signal);
+      run.signalled.push(members);
       return "signalled";
     },
     sleep: async () => undefined,
@@ -291,6 +316,29 @@ describe("jig dispatch attach: watching", () => {
     expect(run.out.at(-1)).toBe("detached; the run goes on");
     expect(run.events).toEqual([]);
     expect(exitColumn(dir)).toBeNull();
+  });
+
+  it("says why when the spool exists but cannot be read", async () => {
+    if (process.getuid?.() === 0) return; // root reads a file of mode 000
+    const dir = root();
+    writeRecord(record(), dir);
+    const spool = join(dir, "runs", ID, "output.log");
+    mkdirSync(join(dir, "runs", ID), { recursive: true });
+    writeFileSync(spool, "secret\n", { mode: 0o000 });
+    const run = fakeRun();
+    // A watch that missed the failure would poll on: detach it after a few reads.
+    const controller = new AbortController();
+    let polls = 0;
+    const watched = deps(dir, run, {
+      signalAbort: controller.signal,
+      sleep: async () => {
+        polls += 1;
+        if (polls === 3) controller.abort();
+      },
+    });
+    expect(await attachMain(ID, { takeOver: false }, watched)).toBe(1);
+    expect(run.err.join("\n")).toContain("EACCES");
+    expect(run.written).toEqual([]);
   });
 
   it("finds its place again in a spool rewritten from its start", () => {
@@ -439,6 +487,82 @@ describe("jig dispatch attach --take-over", () => {
     expect(await attachMain(ID, { takeOver: true }, deps(dir, run))).toBe(2);
     expect(run.events).toEqual([]);
     expect(reportBy(dir)).toBeUndefined();
+    expect(run.err.join("\n")).toContain(
+      "A hold from an earlier take-over may still stand on drive@o/a#7: jig send 'drive@o/a#7' release releases it",
+    );
+  });
+
+  it("keeps the mark and names jig dispatch clear when the ended record still holds its slot", async () => {
+    const dir = root();
+    writeRecord(record(), dir);
+    const run = fakeRun();
+    const unknown: LaunchState = {
+      kind: "unknown",
+      reason: "the stage cleanup could not be confirmed",
+      process: CLAIM,
+      unjudged: true,
+    };
+    const base = deps(dir, run);
+    const code = await attachMain(
+      ID,
+      { takeOver: true },
+      {
+        ...base,
+        inspect: async (id) => {
+          const row = await base.inspect(id);
+          return row !== null && row.exit !== null
+            ? { ...row, state: unknown }
+            : row;
+        },
+      },
+    );
+    expect(code).toBe(1);
+    expect(run.err.join("\n")).toContain(`jig dispatch clear ${ID}`);
+    expect(run.out.join("\n")).not.toContain("slot is free");
+    expect(existsSync(takeOverMark(dir, ID))).toBe(true);
+    expect(run.settled).toEqual([]);
+  });
+
+  it("writes the end onto the forge's launch claim after recording it, and says when it could not", async () => {
+    const dir = root();
+    writeRecord(record(), dir);
+    const run = fakeRun();
+    run.settleFailures = ["PR #7: the forge did not answer"];
+    expect(await attachMain(ID, { takeOver: true }, deps(dir, run))).toBe(0);
+    expect(run.settled).toEqual([ID]);
+    expect(run.out.join("\n")).toContain(
+      "not yet on the forge's launch claim, which the next tick writes: PR #7: the forge did not answer",
+    );
+  });
+
+  it("waits for and signals the descendants it captured before the stop", async () => {
+    const dir = root();
+    writeRecord(record(), dir);
+    const run = fakeRun();
+    run.descendantAlive = true;
+    const code = await attachMain(
+      ID,
+      { takeOver: true },
+      deps(dir, run, {
+        signal: async (members, signal) => {
+          run.events.push(signal);
+          run.signalled.push(members);
+          run.descendantAlive = false;
+          return "signalled";
+        },
+      }),
+    );
+    expect(code).toBe(0);
+    expect(run.events).toEqual([
+      "hold drive@o/a#7 exit=none",
+      "stop drive",
+      "stop service",
+      "SIGTERM",
+    ]);
+    expect(run.signalled[0]?.map((m) => m.pid)).toEqual([
+      CLAIM.pid,
+      DESCENDANT.pid,
+    ]);
   });
 
   it("waits out no tick: with the lock held it exits 3, and a second run records the end", async () => {

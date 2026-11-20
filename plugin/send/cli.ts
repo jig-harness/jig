@@ -31,7 +31,7 @@
  * `--choose`, `--note`, `--all`, `--decision`, `--decision-set`) are the
  * `answer` verb's alone (`lib/answer-request.ts`).
  */
-import { ExitError } from "../shared/cli.ts";
+import { ExitError, shellQuote } from "../shared/cli.ts";
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { formatAddress, parseAddress } from "../shared/address.ts";
 import { launchOf, LAUNCH_VARIABLE } from "../shared/launched-session.ts";
@@ -262,6 +262,12 @@ async function planFor(
 export async function holdTarget(
   address: string,
 ): Promise<Outcome<"held" | "already", "refused">> {
+  // A refusal keeps its reason: the command line's usage error would carry only its words wrapped for a terminal.
+  let refusedWith: string | null = null;
+  const usage = (reason: string): never => {
+    refusedWith = reason;
+    throw new ExitError(SEND_EXIT.USAGE, reason);
+  };
   try {
     const written = parseAddress(address);
     if (!written.ok) return failed("refused", written.failure.reason);
@@ -286,8 +292,13 @@ export async function holdTarget(
     const wrote = await planned.value.write();
     return wrote.ok ? ok("held") : failed("refused", wrote.failure.reason);
   } catch (error) {
-    if (error instanceof ExitError) return failed("refused", error.message);
-    throw error;
+    if (!(error instanceof ExitError)) throw error;
+    // A deeper `fail()` printed its reason above and carries only its code.
+    return failed(
+      "refused",
+      refusedWith ??
+        `jig send stopped (exit ${error.code}) before writing the hold, for the reason printed above; jig send ${shellQuote(address)} hold --dry-run shows it again`,
+    );
   }
 }
 

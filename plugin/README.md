@@ -315,6 +315,16 @@ worktree under the same account's directory; it does not run it. Run again
 after an interruption, it finishes the take-over. A run on Orca is refused,
 since its tab already shows it.
 
+- A drive taken over has a person's stop recorded on its ledger by
+  `drives.ts --stop`, so releasing the hold does not make the tick re-arm
+  it: a person restarts the drive.
+- Taking over a drive or a follow-up holds its pull request with the
+  repository's dispatch hold label (`dispatch.labels`). Where that label is
+  off, the hold is refused and the run is left going.
+- The end reaches this host's launch claim on the forge, as the wrapper's
+  end does, only where the claim has no end yet: a claim whose end the
+  wrapper already wrote when the run stopped keeps that end.
+
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,

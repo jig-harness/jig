@@ -17,3 +17,7 @@ release: minor
   under the same account. Run again after an interruption, it finishes the
   take-over. Release the hold with `jig send <address> release` when you
   are done. Runs on Orca are refused: their tab already shows them.
+  A drive taken over has a person's stop on its ledger, so releasing the
+  hold does not re-arm it: restart the drive yourself. Taking over a drive
+  or a follow-up needs the repository's dispatch hold label; where the
+  labels are off, the hold is refused and the run is left going.

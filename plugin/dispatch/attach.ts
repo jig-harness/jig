@@ -18,9 +18,10 @@
  * run's tab already shows it.
  *
  * Exit codes: 0 followed to the end, or taken over (an interrupt detaches
- * and ends the command as an interrupt does, 130); 1 the hold
- * could not be written, the run's processes could not be judged or outlived
- * the stop; 2 usage, no such record, a record that does not read, one not on
+ * and ends the command as an interrupt does, 130); 1 the spool could not be
+ * read, the hold could not be written, the run's processes could not be
+ * judged or outlived the stop, its report could not be kept, or it still
+ * holds its slot after its end (`jig dispatch clear` frees it); 2 usage, no such record, a record that does not read, one not on
  * the process runtime, a steward run to take over, or one that ended on its
  * own; 3 a tick holds the lock while the end is to be written (the run is
  * held and stopped; run the command again).
@@ -31,7 +32,13 @@ import { processTable } from "../shared/process-table.ts";
 import { currentMs, parseMs } from "../shared/time.ts";
 import { followSpool } from "./lib/attach-follow.ts";
 import { resumeLine } from "./lib/attach-resume.ts";
-import { signalMembers, stopDrive, stopService } from "./lib/attach-stop.ts";
+import {
+  anyAlive,
+  processTree,
+  signalMembers,
+  stopDrive,
+  stopService,
+} from "./lib/attach-stop.ts";
 import { takeOver, type TakeOverDeps } from "./lib/attach-take-over.ts";
 import { readKeptReport } from "./lib/closing-report-store.ts";
 import {
@@ -40,7 +47,9 @@ import {
   isRecordId,
   type LaunchExit,
   type LaunchRecord,
+  readEnded,
 } from "./lib/launches.ts";
+import { failureText } from "./lib/text.ts";
 import { readRoundSessions } from "./lib/round-sessions.ts";
 import { identities, membersOf } from "./lib/runtime/process.ts";
 import { existingStateDb } from "./lib/state.ts";
@@ -150,6 +159,18 @@ function attachDeps(root: string, signalAbort: AbortSignal): AttachDeps {
     hold: async (address) =>
       (await import("../send/cli.ts")).holdTarget(address),
     stops: [stopDrive, stopService],
+    tree: processTree,
+    anyAlive,
+    settleClaims: async (id) => {
+      const ended = readEnded(id, root);
+      if (ended === null) return [];
+      try {
+        const { settleAtExit } = await import("./lib/shared-launches.ts");
+        return await settleAtExit(ended, root);
+      } catch (error) {
+        return [failureText(error)];
+      }
+    },
     signal: signalMembers,
     sleep,
     out: (line) => console.log(line),
@@ -220,6 +241,10 @@ async function attachRun(
       signal: deps.signalAbort,
       intervalMs: deps.intervalMs,
     });
+    if (typeof how !== "string") {
+      deps.err(`jig dispatch attach: ${how.unreadable}`);
+      return 1;
+    }
     deps.out(
       how === "ended" ? "the run has ended" : "detached; the run goes on",
     );

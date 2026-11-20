@@ -26,12 +26,17 @@ export interface FollowDeps {
   intervalMs?: number;
 }
 
-/** The spool's bytes, or `null` while it does not exist or does not read. */
-function readAll(path: string): Buffer | null {
+/** The spool's bytes; `null` while it does not exist yet; the reason when it cannot be opened. */
+function readAll(path: string): Buffer | null | { unreadable: string } {
   let fd: number;
   try {
     fd = openSync(path, "r");
   } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT")
+      return {
+        unreadable: `the run's output ${path} cannot be read: ${code ?? String(error)}`,
+      };
     swallow(error, "the run's spool does not exist yet");
     return null;
   }
@@ -50,13 +55,16 @@ function readAll(path: string): Buffer | null {
   }
 }
 
-/** A cursor over the spool: what is new since the last call. */
-export function spoolCursor(path: string): () => Buffer | string {
+/** A cursor over the spool: what is new since the last call, or why it cannot be read. */
+export function spoolCursor(
+  path: string,
+): () => Buffer | string | { unreadable: string } {
   let offset = 0;
   let anchor = Buffer.alloc(0);
   return () => {
     const all = readAll(path);
     if (all === null) return "";
+    if (!Buffer.isBuffer(all)) return all;
     let fresh: Buffer | string;
     const anchorAt = offset - anchor.length;
     const inPlace =
@@ -80,11 +88,11 @@ export function spoolCursor(path: string): () => Buffer | string {
   };
 }
 
-/** Print the spool as it grows: `ended` once the run is over and its last output printed, `detached` when the person stopped watching. */
+/** Print the spool as it grows: `ended` once the run is over and its last output printed, `detached` when the person stopped watching, or why the spool cannot be read. */
 export async function followSpool(
   path: string,
   deps: FollowDeps,
-): Promise<"ended" | "detached"> {
+): Promise<"ended" | "detached" | { unreadable: string }> {
   const next = spoolCursor(path);
   const interval = deps.intervalMs ?? FOLLOW_INTERVAL_MS;
   for (;;) {
@@ -92,6 +100,7 @@ export async function followSpool(
     const over = await deps.over();
     // Read after the check, so output written before the end is printed.
     const fresh = next();
+    if (typeof fresh === "object" && !Buffer.isBuffer(fresh)) return fresh;
     if (fresh.length > 0) deps.write(fresh);
     if (over) return "ended";
     await deps.sleep(interval);
