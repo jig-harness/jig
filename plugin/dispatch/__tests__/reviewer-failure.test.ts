@@ -304,3 +304,17 @@ it("validates the configured threshold and applies the default", () => {
     dispatchSection({ dispatch: { reviewer_failures_before_escalation: 0 } }),
   ).toMatchObject({ ok: false });
 });
+
+it("keeps a reviewer-failure hold when its evidence contract is malformed", async () => {
+  const w = fixture([FIRST, SECOND]);
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\nreview:\n  reviewer_app: ${REVIEWER}\n  reviewer_evidence: typo\n  sticky_marker: 123\ndispatch:\n  reviewer_failures_before_escalation: 2\n  renotify_after: 1s\n`,
+  );
+  stopped(w, [FIRST, SECOND], [sticky(HEAD_SHA, SECOND.at)]);
+
+  const held = await tick(w);
+  expect(held.launches).toEqual([]);
+  expect(held.notifications).toMatchObject([
+    { cause: "needs-person", outcome: "sent" },
+  ]);
+}, 120_000);

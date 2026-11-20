@@ -64,7 +64,22 @@ export function reviewerFailurePolicy(
         value !== undefined &&
         value !== null &&
         (typeof value !== "string" || value.trim() === ""),
-    ) || malformedReviewerCheckPattern;
+    ) ||
+    malformedReviewerCheckPattern ||
+    (review.reviewer_evidence !== undefined &&
+      review.reviewer_evidence !== null &&
+      review.reviewer_evidence !== "sticky" &&
+      review.reviewer_evidence !== "review_object") ||
+    [
+      review.sticky_marker,
+      review.reviewed_sha_marker,
+      review.skip_notice_marker,
+    ].some(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        (typeof value !== "string" || value.trim() === ""),
+    );
   const botLogins = bots.flatMap((bot: unknown) => {
     const login = isRecord(bot) ? bot.login : bot;
     return typeof login === "string" && login !== "" ? [login] : [];

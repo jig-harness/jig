@@ -85,7 +85,37 @@ describe("waiting status poll pacing", () => {
     while (await probe.wait("reviewer", deadline, undefined, 3 * second))
       wakes.push(probe.clock.now());
 
-    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second));
+    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second).concat(9_999));
+    expect(probe.clock.now()).toBe(deadline);
+  });
+
+  test("reserves a final evaluation instead of sleeping through the deadline", async () => {
+    const probe = fixture(() => window(4500, 3600), second);
+    const deadline = 10 * second;
+
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(3 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(6 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(9 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(deadline - 1);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      false,
+    );
     expect(probe.clock.now()).toBe(deadline);
   });
 

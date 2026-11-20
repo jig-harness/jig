@@ -160,6 +160,7 @@ export class StatusPollPacing {
   private cadence = 0;
   private lower: BudgetWindow[] = [];
   private credential: string | undefined;
+  private finalEvaluationDeadline: number | undefined;
   private readonly maximumMs: number;
   private readonly baseMs: number;
   private readonly policy: StatusPolling;
@@ -252,9 +253,14 @@ export class StatusPollPacing {
     // polling interval. Keep the base interval as the floor so a low ceiling
     // cannot turn `--interval` into a faster forge-read cadence.
     const effectiveMaximumMs = Math.max(this.baseMs, maximumMs);
+    const started = this.deps.now();
+    if (this.finalEvaluationDeadline === deadline && started >= deadline - 1) {
+      this.finalEvaluationDeadline = undefined;
+      if (started < deadline) await this.deps.sleep(deadline - started, abort);
+      return false;
+    }
     this.cadence = this.nextCadence(signal, effectiveMaximumMs);
     this.previous = signal;
-    const started = this.deps.now();
     let pollAt = started + this.cadence;
     let sample = this.deps.balance();
     for (;;) {
@@ -263,10 +269,20 @@ export class StatusPollPacing {
       this.lower = [...this.lower, ...sample.windows];
       this.compactLower(now);
       this.completeLimits();
+      const cadencePollAt = pollAt;
       for (const low of this.lower)
         pollAt = this.pollAfter(low, started, pollAt, effectiveMaximumMs);
-      const wakeAt = Math.min(pollAt, deadline);
+      // Reserve the deadline itself for a final evaluation. Otherwise a wait
+      // ending exactly at the deadline returns false without observing review
+      // evidence that arrived during its last interval.
+      const reservesFinalEvaluation =
+        pollAt >= deadline && pollAt === cadencePollAt;
+      const wakeAt = Math.min(
+        pollAt,
+        reservesFinalEvaluation ? deadline - 1 : deadline,
+      );
       if (wakeAt <= now || abort?.aborted) break;
+      if (reservesFinalEvaluation) this.finalEvaluationDeadline = deadline;
       await this.deps.sleep(wakeAt - now, abort);
       if (abort?.aborted) break;
       sample = this.deps.balance();
