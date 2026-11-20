@@ -198,3 +198,29 @@ it("names a park under release Authorize, as the dashboard's card does", async (
   const text = await w.ask([`drive@${REPO}#7`]);
   expect(text.stdout).toContain("person: answer · Authorize");
 });
+
+it("keeps the lock readable when the CI-hold diagnosis exceeds its source deadline", async () => {
+  const w = world();
+  writeFileSync(
+    join(w.root, "drives.ts"),
+    `if (!process.argv.includes("--lock-only")) await Bun.sleep(60_000);
+console.log(JSON.stringify({ rows: [{ kind: "pr", key: "7", state: "empty" }] }));`,
+  );
+  const result = await w.ask([`drive@${REPO}#7`, "--json"]);
+  expectSpawnExit(result, 0);
+  const answer = JSON.parse(result.stdout) as AskAnswer;
+  expect(answer.sources.records).toContainEqual(
+    expect.objectContaining({
+      record: "drive-lock",
+      read: true,
+      detail: "driver lock: empty",
+    }),
+  );
+  expect(answer.sources.records).toContainEqual(
+    expect.objectContaining({
+      record: "drive-diagnosis",
+      read: false,
+      detail: expect.stringContaining("deadline"),
+    }),
+  );
+}, 25_000);

@@ -405,9 +405,9 @@ describe("the translation", () => {
   it("runs Codex on Sol for a complex item and Terra for a standard one with no routing.models", () => {
     const complex = route({ runtime: "codex", type: "spike" });
     expect(complex.model).toBe("sol");
-    expect(complex.runtime_model).toBe("gpt-6.1-sol");
+    expect(complex.runtime_model).toBe("gpt-6.2-sol");
     expect(complex.reasons).toContain(
-      "model: gpt-6.1-sol for codex (the model sol names)",
+      "model: gpt-6.2-sol for codex (the model sol names)",
     );
     const standard = route({ runtime: "codex", type: "bug" });
     expect(standard.model).toBe("terra");

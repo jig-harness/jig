@@ -27,7 +27,12 @@ const VERBS = Object.keys(SEND_VERBS) as Verb[];
 /** The verbs that write a mailbox directive. */
 export type MailboxVerb = "pause" | "resume" | "stop" | "hold-push";
 /** The verbs that write a dispatch label. */
-export type LabelVerb = "drive" | "rearm" | "hold" | "release";
+export type LabelVerb =
+  | "drive"
+  | "rearm"
+  | "withdraw-rearm"
+  | "hold"
+  | "release";
 
 /** One request, its arguments parsed. */
 export type Request =

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 import { withoutLeakyGitEnv } from "../plugin/shared/guarded-git-spawn.ts";
+import { isoFromMs } from "../plugin/shared/time.ts";
 
 test("the gate set runs its cheap stages first and --fast runs only those", async () => {
   const { plan, CHECKS, heavyStages, testStage } = await import("./gates.ts");
@@ -167,6 +168,11 @@ test("only an opted-in dispatch launch runs the targeted form", async () => {
     gateRun(false, undefined, off, launch),
     gateRun(false, undefined, on, {}),
     gateRun(false, undefined, on, { JIG_LAUNCH: "drive-pr 14 driver 2" }),
+    gateRun(false, undefined, on, {
+      JIG_LAUNCH: "drive-pr 14 driver 2",
+      JIG_DISPATCHED_FROM: "a person",
+      JIG_HOME: launch.JIG_HOME,
+    }),
     gateRun(false, undefined, on, { ...launch, CI: "true" }),
   ]) {
     expect(run.dispatch).toBe(false);
@@ -174,6 +180,99 @@ test("only an opted-in dispatch launch runs the targeted form", async () => {
   }
   expect(gateRun(true, undefined, on, launch).dispatch).toBe(false);
   expect(gateRun(false, "checks", on, launch).dispatch).toBe(false);
+});
+
+/** The words a POSIX shell reads `line` as. */
+function shellWords(line: string): string[] {
+  const done = Bun.spawnSync(["sh", "-c", `printf '%s\\n' ${line}`], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(done, 0, "sh");
+  return done.stdout.toString().split("\n").slice(0, -1);
+}
+
+/** When the test's tab opens, on its fixed clock. */
+const OPENED = 1_800_000_000_000;
+
+/**
+ * The environment a drive's pass gets when `session` arms the drive in an
+ * Orca terminal tab: the variables the tab's command sets in the tab's fresh
+ * login shell (which inherits none of the session's), then the launch
+ * variables the driver hands its passes.
+ */
+async function tabPassEnv(
+  session: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  const { arm } = await import("../plugin/skills/drive-pr/scripts/lib/arm.ts");
+  const { passLaunchEnv } = await import(
+    "../plugin/shared/launched-session.ts"
+  );
+  const typed: string[] = [];
+  const answer = await arm(
+    {
+      request: { pr: "42", tree: "/work/tree", forward: [] },
+      setting: { value: "tab", source: "the test" },
+      model: { model: "sonnet", source: "the test" },
+      passArgs: { words: [], source: "the test" },
+      env: { CLAUDECODE: "1", ORCA_CLI_COMMAND: "orca", ...session },
+      platform: "linux",
+    },
+    {
+      orca: async (_orca, args) => {
+        typed.push(args[args.indexOf("--command") + 1] ?? "");
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            result: { terminal: { handle: "term_1" } },
+          }),
+          stderr: "",
+        };
+      },
+      // No drive before the tab opens; the tab's drive once it has.
+      liveDrive: async () =>
+        typed.length === 0
+          ? null
+          : {
+              pid: 1,
+              started: isoFromMs(OPENED),
+              log: null,
+              model: "sonnet",
+              permissionMode: null,
+              doctor: null,
+            },
+      now: () => OPENED,
+      sleep: async () => undefined,
+      confirmMs: 1_000,
+      pollMs: 1,
+      runTab: async () => undefined,
+    },
+  );
+  expect(answer.report.status).toBe("armed");
+  const words = shellWords(typed[0] ?? "");
+  const tab: Record<string, string | undefined> = {
+    JIG_HOME: process.env.JIG_HOME,
+  };
+  for (const word of words.slice(words.indexOf("env") + 1)) {
+    if (word === "bun") break;
+    const at = word.indexOf("=");
+    if (at > 0) tab[word.slice(0, at)] = word.slice(at + 1);
+  }
+  return { ...tab, ...passLaunchEnv(tab, "42", 1) };
+}
+
+test("a drive a dispatched session arms in a tab runs its passes on the targeted form", async () => {
+  const { gateRun } = await import("./gates.ts");
+  const on = changedRepository("gates:\n  dispatch_fast: true\n");
+  const dispatched = await tabPassEnv({ JIG_LAUNCH: launch.JIG_LAUNCH });
+  // The pass reports the launch it reported before: the driver's own.
+  expect(dispatched.JIG_LAUNCH).toBe("drive-pr 42 driver 1");
+  expect(gateRun(false, undefined, on, dispatched).dispatch).toBe(true);
+  const byHand = await tabPassEnv({});
+  expect(byHand.JIG_LAUNCH).toBe("drive-pr 42 driver 1");
+  expect(byHand.JIG_DISPATCHED_FROM).toBeUndefined();
+  expect(gateRun(false, undefined, on, byHand).dispatch).toBe(false);
 });
 
 test("the configuration layers decide the targeted form, the environment last", async () => {
@@ -206,6 +305,7 @@ test("the targeted tests run outside the lock, without the line's variables", as
   const { dispatchPlan } = await import("./gates.ts");
   const stage = dispatchPlan(["scripts/example.test.ts"], {
     JIG_LAUNCH: launch.JIG_LAUNCH,
+    JIG_DISPATCHED_FROM: launch.JIG_LAUNCH,
     DRIVE_PR_TARGET: "14",
     PATH: "/bin",
   }).at(-1);

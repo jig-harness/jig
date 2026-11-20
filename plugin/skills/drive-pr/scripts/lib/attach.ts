@@ -65,6 +65,7 @@ import {
   unconcludedGitOpMarker,
 } from "./proc.ts";
 import { repoOfUrl } from "./repo-url.ts";
+import { type ForgeLimit, forgeLimitOf, limitLine } from "./forge-limit.ts";
 import {
   assertTreeMutationAllowed,
   resolveFenceContext,
@@ -95,9 +96,12 @@ export function driveRemote(
 export class AttachRefusal extends Error {
   /** 1 unreadable, 2 refused for the state named, 5 not open. */
   readonly code: 1 | 2 | 5;
-  constructor(code: 1 | 2 | 5, message: string) {
+  /** An unreadable pull request the forge's spent rate limit refused: when it resets. */
+  readonly limit?: ForgeLimit;
+  constructor(code: 1 | 2 | 5, message: string, limit?: ForgeLimit) {
     super(message);
     this.code = code;
+    if (limit !== undefined) this.limit = limit;
   }
 }
 
@@ -190,8 +194,16 @@ async function readPr(
     ],
     { cwd, stderr: "pipe" },
   );
-  if (view.code !== 0)
+  if (view.code !== 0) {
+    const limit = forgeLimitOf(view);
+    if (limit !== null)
+      throw new AttachRefusal(
+        1,
+        `cannot read PR #${pr}: ${limitLine(limit)}`,
+        limit,
+      );
     refuse(1, `cannot read PR #${pr}: ${view.stderr.trim()}`);
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(view.stdout);
@@ -847,30 +859,73 @@ export function attachOff(script: string): boolean {
   return mode === "off";
 }
 
+/** How many resets the attach waits for before it stops on the limit: a limit spent again at every reset is not waited out for good (`LIMIT_WAITS` between rounds). */
+const ATTACH_LIMIT_WAITS = 3;
+
+/**
+ * A refusal of the attach: returns once the forge's limit was waited out and
+ * the attach may read again, and otherwise ends the drive with the refusal's
+ * code (`onNotOpen` first for a pull request not open).
+ */
+async function settleRefusal(
+  e: AttachRefusal,
+  mayWait: boolean,
+  onNotOpen?: () => Promise<void>,
+  onLimit?: (limit: ForgeLimit, mayWait: boolean) => Promise<true | number>,
+): Promise<void> {
+  if (e.limit !== undefined && onLimit !== undefined) {
+    const answer = await onLimit(e.limit, mayWait);
+    if (answer === true) return;
+    fail(answer, `drive.ts: ${e.message}`);
+  }
+  if (e.code === 5) await onNotOpen?.();
+  fail(e.code, `drive.ts: ${e.message}`);
+}
+
+/**
+ * `attach` until it attaches, as `attachForDrive` runs it: a refusal ends
+ * the drive with its code (`onNotOpen` first for a pull request not open),
+ * and a read the forge's spent rate limit refused goes to `onLimit`, which
+ * waits and reads again or names the exit to stop with.
+ */
+export async function attachThroughLimits<T>(
+  attach: () => Promise<T>,
+  onNotOpen?: () => Promise<void>,
+  onLimit?: (limit: ForgeLimit, mayWait: boolean) => Promise<true | number>,
+): Promise<T> {
+  for (let waits = 0; ; waits++) {
+    try {
+      return await attach();
+    } catch (e) {
+      if (!(e instanceof AttachRefusal)) throw e;
+      await settleRefusal(e, waits < ATTACH_LIMIT_WAITS, onNotOpen, onLimit);
+    }
+  }
+}
+
 /**
  * `drive.ts`'s attach, once it holds the tree's driver lock and the pull
  * request's. Skipped by a dry run, which moves nothing, and by
  * `DRIVE_PR_ATTACH=off`, which drives the tree as it stands (a harness that
  * prepares its trees itself). `onNotOpen` runs before a PR that is not open
  * ends the drive with exit 5, so the drive's end-of-drive cleanup runs on that
- * exit as it does when the round loop finds the PR closed.
+ * exit as it does when the round loop finds the PR closed. `onLimit` answers
+ * a read the forge's spent rate limit refused, told whether the attach may
+ * still wait (`ATTACH_LIMIT_WAITS`): `true` once it waited for the reset, and
+ * the attach reads again, or the exit to stop with.
  */
 export async function attachForDrive(
   pr: string,
   dryRun: boolean,
   onNotOpen?: () => Promise<void>,
+  onLimit?: (limit: ForgeLimit, mayWait: boolean) => Promise<true | number>,
 ): Promise<void> {
   if (dryRun || attachOff("drive.ts")) return;
-  let attached: Attached;
-  try {
-    attached = await attachPr(pr, { locksHeld: true });
-  } catch (e) {
-    if (e instanceof AttachRefusal) {
-      if (e.code === 5) await onNotOpen?.();
-      fail(e.code, `drive.ts: ${e.message}`);
-    }
-    throw e;
-  }
+  const attached = await attachThroughLimits(
+    () => attachPr(pr, { locksHeld: true }),
+    onNotOpen,
+    onLimit,
+  );
   setDrivenRemoteRef(attached.remote, attached.branch);
   console.error(
     attached.skipped !== undefined

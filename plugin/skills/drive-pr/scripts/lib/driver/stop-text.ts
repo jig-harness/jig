@@ -3,12 +3,15 @@
  * at a stop that needs a person (`orca-card.ts`), and the first part of the
  * closing report's `concluded` (`closing-report.ts`). A park names the first
  * parked item's question and how many more wait; a usage-limit stop names the
- * wall and when it resets; every other exit says what the terminal-state
- * registry's `report.stop` says for it.
+ * wall and when it resets, a stop on the forge's rate limit when that resets;
+ * every other exit says what the terminal-state registry's `report.stop` says
+ * for it.
  */
 import type { DriveState } from "../state/schema.ts";
 import { diagnosisDetail } from "../state/ci-actions.ts";
+import { lastStopEvent, stopInstant } from "../state/events.ts";
 import { driveExitReport, TERMINAL_STATES } from "../status/terminal-states.ts";
+import { driverRuntime } from "./runtime.ts";
 
 /** The exit `drive.ts` ends with for `state`, as the registry gives it. */
 export function exitOf(state: string): number | undefined {
@@ -42,10 +45,24 @@ function quotaStop(pr: string, code: number, state: DriveState | null): string {
   return `PR #${pr} stopped on ${wall}, which resets ${reset} (exit ${code})`;
 }
 
+/** A stop on the forge's rate limit: when it resets, from the stop this driver is recording, else the stop's event. */
+function forgeLimitStop(
+  pr: string,
+  code: number,
+  state: DriveState | null,
+): string {
+  const stop = lastStopEvent(state?.events ?? []);
+  const until =
+    driverRuntime.stopLimitedUntil ??
+    (stop?.cause === String(code) ? stopInstant(stop) : undefined) ??
+    "at an unknown time";
+  return `PR #${pr} stopped on the forge's rate limit for its credential, which resets ${until} (exit ${code})`;
+}
+
 /**
  * The line for a drive that stopped with exit `code`. `state` is the drive
- * state, read for a park's question and a usage limit's reset; `null` when
- * it could not be read.
+ * state, read for a park's question and a limit's reset; `null` when it
+ * could not be read.
  */
 export function stopText(
   pr: string,
@@ -59,6 +76,8 @@ export function stopText(
     if (diagnosis !== undefined)
       return `PR #${pr} stopped after diagnosing CI (exit ${code}): ${diagnosis}`;
   }
+  if (code === exitOf("FORGE_RATE_LIMITED"))
+    return forgeLimitStop(pr, code, state);
   const named = driveExitReport(code);
   return named === null
     ? `PR #${pr}'s drive ended with exit ${code}, which names no state the drive ends with`

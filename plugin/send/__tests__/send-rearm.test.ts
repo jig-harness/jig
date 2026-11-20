@@ -1,8 +1,24 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { stoppedLedger } from "../../dispatch/__tests__/fixtures.ts";
 import { writeRecord } from "../../dispatch/lib/launches.ts";
+import { REARM_REQUEST } from "../../dispatch/lib/rearm-binding.ts";
+import { claimBody, readClaim } from "../../shared/records/forge-claims.ts";
+import { localWriter } from "../../shared/records/writer.ts";
+import { isNeed } from "../../dispatch/lib/line.ts";
 import {
+  stationContextOf,
+  stationDecision,
+} from "../../dispatch/lib/line-station.ts";
+import {
+  rearmLockNeeds,
+  recordRearmLockRead,
+} from "../../dispatch/lib/rearm-lock-needs.ts";
+import { statePath } from "../../dispatch/lib/state.ts";
+import {
+  comment,
   ledgerOn,
   pullRequest,
   REPO,
@@ -24,6 +40,54 @@ function world() {
 }
 
 describe("jig send rearm", () => {
+  it("withdraws a pending rearm and refuses if there is no request label", async () => {
+    const w = world();
+    const ledger = stoppedLedger(12, 12);
+    const request = comment(
+      702,
+      claimBody(REARM_REQUEST, {
+        key: "rearm",
+        generation: ledger.generation,
+        writer: localWriter("forge"),
+        payload: { label: "jig:rearm", stopComment: 701 },
+        text: "Requested a re-arm.",
+      }),
+    );
+    pullRequest(
+      w,
+      12,
+      ["jig:rearm", "jig:hold"],
+      [ledgerOn(701, ledger), request],
+    );
+    const withdrawn = await w.send([ADDRESS, "withdraw-rearm"]);
+    expectSpawnExit(withdrawn, 0);
+    expect(withdrawn.stdout).toContain("removed from pull request 12");
+    expect(w.writes().at(-1)).toEqual([
+      "pr",
+      "edit",
+      "12",
+      "--repo",
+      REPO,
+      "--remove-label",
+      "jig:rearm",
+    ]);
+    const { body } = JSON.parse(
+      readFileSync(join(w.dir, "gh-posted-comment.json"), "utf8"),
+    );
+    expect(readClaim(REARM_REQUEST, body)).toMatchObject({
+      ok: true,
+      value: {
+        payload: { label: "jig:rearm", requestId: 702, stopComment: null },
+      },
+    });
+    const writes = w.writes();
+    pullRequest(w, 12, ["jig:hold"], [ledgerOn(701, stoppedLedger(12, 12))]);
+    const absent = await w.send([ADDRESS, "withdraw-rearm"]);
+    expectSpawnExit(absent, 1);
+    expect(absent.stderr).toContain("no rearm request to withdraw");
+    expect(w.writes()).toEqual(writes);
+  });
+
   it("refuses a new request while an earlier delivered request still awaits acknowledgment even with no forge label", async () => {
     const w = world();
     pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 12))]);
@@ -65,7 +129,8 @@ describe("jig send rearm", () => {
   });
   it("writes the request for a stopped ledger in its existing tree, with dry run leaving no record", async () => {
     const w = world();
-    pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 12))]);
+    const ledger = stoppedLedger(12, 12);
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
     const dry = await w.send([ADDRESS, "rearm", "--dry-run"]);
     expectSpawnExit(dry, 0);
     expect(dry.stdout).toContain(w.tree);
@@ -81,7 +146,111 @@ describe("jig send rearm", () => {
       "--add-label",
       "jig:rearm",
     ]);
+    const { body } = JSON.parse(
+      readFileSync(join(w.dir, "gh-posted-comment.json"), "utf8"),
+    );
+    expect(readClaim(REARM_REQUEST, body)).toMatchObject({
+      ok: true,
+      value: {
+        generation: ledger.generation,
+        payload: { label: "jig:rearm", stopComment: 701 },
+      },
+    });
+    expect(w.writes().map(([cmd]) => cmd)).toEqual(["api", "pr"]);
     expect(real.stdout).toContain("admitted account");
+  });
+  it("rearms a stopped drive from its lock without starting CI hold diagnosis", async () => {
+    const w = world();
+    pullRequest(w, 12, [], [ledgerOn(701, stoppedLedger(12, 12))]);
+    const diagnosed = join(w.root, "diagnosed");
+    const listing = w.env.JIG_ASK_DRIVES_SCRIPT as string;
+    const rows = {
+      rows: [
+        { kind: "pr", key: "12", state: "stale", diag: { worktree: w.tree } },
+      ],
+    };
+    writeFileSync(
+      listing,
+      `if (!process.argv.includes("--lock-only")) {
+        await Bun.write(${JSON.stringify(diagnosed)}, "diagnosis started");
+        process.exit(1);
+      }
+      console.log(JSON.stringify(${JSON.stringify(rows)}));`,
+    );
+    expectSpawnExit(await w.send([ADDRESS, "rearm"]), 0);
+    expect(existsSync(diagnosed)).toBe(false);
+    expect(w.writes()).toContainEqual([
+      "pr",
+      "edit",
+      "12",
+      "--repo",
+      REPO,
+      "--add-label",
+      "jig:rearm",
+    ]);
+  });
+  it("refuses a failed lock read and records one investigation need for that stop", async () => {
+    const w = world();
+    const ledger = stoppedLedger(12, 12);
+    pullRequest(w, 12, [], [ledgerOn(701, ledger)]);
+    const listing = w.env.JIG_ASK_DRIVES_SCRIPT as string;
+    writeFileSync(listing, "process.exit(1);");
+    const dry = await w.send([ADDRESS, "rearm", "--dry-run"]);
+    expectSpawnExit(dry, 1);
+    expect(existsSync(statePath(w.state))).toBe(false);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const real = await w.send([ADDRESS, "rearm"]);
+      expectSpawnExit(real, 1);
+      expect(real.stderr).toContain("the driver lock could not be read");
+      expect(real.stderr).toContain(
+        "listing failed: the drive's listing exited 1",
+      );
+      expect(real.stderr).toContain("recorded a need");
+    }
+    expect(w.writes()).toEqual([]);
+    const drive = {
+      number: 12,
+      url: `https://github.com/${REPO}/pull/12`,
+      title: "A change",
+      head: "work",
+      class: "re-armable" as const,
+      why: "The drive stopped",
+      evidence: {
+        driver: "stopped",
+        generation: ledger.generation,
+        heartbeat: ledger.driver.heartbeat,
+      },
+    };
+    const needs = rearmLockNeeds(REPO.toUpperCase(), [drive], w.state);
+    expect(needs).toHaveLength(1);
+    expect(needs[0]).toMatchObject({
+      cause: "needs-person",
+      target: "PR #12",
+      reason: expect.stringContaining("exited 1"),
+      evidence: { stewardAct: "Investigate" },
+    });
+    expect(
+      needs
+        .filter(isNeed)
+        .map((need) =>
+          stationDecision(need, stationContextOf(REPO, undefined)),
+        ),
+    ).toEqual([null]);
+    expect(
+      rearmLockNeeds(
+        REPO,
+        [
+          {
+            ...drive,
+            evidence: { ...drive.evidence, generation: ledger.generation + 1 },
+          },
+        ],
+        w.state,
+      ),
+    ).toEqual([]);
+    writeFileSync(listing, "console.log(JSON.stringify({ rows: [] }));");
+    expectSpawnExit(await w.send([ADDRESS, "rearm"]), 1); // The now-readable fixture has no worktree.
+    expect(rearmLockNeeds(REPO, [drive], w.state)).toEqual([]);
   });
   it("refuses a running ledger, a live local lock and a stop a person recorded", async () => {
     const w = world();
@@ -103,6 +272,38 @@ describe("jig send rearm", () => {
     expectSpawnExit(person, 1);
     expect(person.stderr).toContain("person");
     expect(w.writes()).toEqual([]);
+  });
+
+  it("keeps a need until a complete read proves its ledger advanced", () => {
+    const w = world();
+    const drive = {
+      number: 12,
+      url: `https://github.com/${REPO}/pull/12`,
+      title: "A change",
+      head: "work",
+      class: "re-armable" as const,
+      why: "The drive stopped",
+      evidence: { driver: "stopped", generation: 12, heartbeat: "a" },
+    };
+    recordRearmLockRead(REPO, 12, 12, "a", "listing failed", w.state);
+
+    expect(rearmLockNeeds(REPO, [], w.state, undefined, true)).toEqual([]);
+    expect(rearmLockNeeds(REPO, [drive], w.state)).toHaveLength(1);
+    expect(
+      rearmLockNeeds(
+        REPO,
+        [
+          {
+            ...drive,
+            evidence: { driver: "running", generation: 13, heartbeat: "b" },
+          },
+        ],
+        w.state,
+        undefined,
+        true,
+      ),
+    ).toEqual([]);
+    expect(rearmLockNeeds(REPO, [drive], w.state)).toEqual([]);
   });
   it("refuses a stopped ledger with no tree here and a duplicate request", async () => {
     const w = sendWorld();

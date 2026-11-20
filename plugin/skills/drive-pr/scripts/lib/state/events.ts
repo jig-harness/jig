@@ -23,7 +23,9 @@
  *     work only in that tree, and a re-arm in that tree inherits the edits as
  *     its own. A stall's stop without `leftWork` was never measured, so it
  *     is read as possibly holding work; a deadline's, written by a driver
- *     that did not record it, is read as holding none.
+ *     that did not record it, is read as holding none. `until` records, on
+ *     a stop on the forge's spent rate limit, when the limit resets: the
+ *     dispatcher re-drives it from then.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -47,6 +49,8 @@ export interface DriveEvent {
   leftWork?: boolean;
   /** On a `stop` that measured: the tree it ran in, `<actor>@<host>`. */
   tree?: string;
+  /** On a `stop` on the forge's spent rate limit: when the limit resets, an instant. The ledger's shape leaves the field open, so a reader takes it only when it is an instant (`stopInstant`) and a malformed value never makes the ledger unreadable. */
+  until?: unknown;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -58,6 +62,11 @@ function isCause(kind: unknown, cause: unknown): boolean {
   return causes.includes(cause);
 }
 
+/** Whether the optional field `value` of an event of `kind` is absent, or valid and on a `stop`. */
+function stopOnly(kind: unknown, value: unknown, valid: boolean): boolean {
+  return value === undefined || (valid && kind === "stop");
+}
+
 export function isDriveEvent(v: unknown): v is DriveEvent {
   return (
     isRecord(v) &&
@@ -66,11 +75,17 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     Number.isFinite(parseMs(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
-    (v.leftWork === undefined ||
-      (typeof v.leftWork === "boolean" && v.kind === "stop")) &&
-    (v.tree === undefined ||
-      (typeof v.tree === "string" && v.tree !== "" && v.kind === "stop"))
+    stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
+    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
   );
+}
+
+/** The reset a stop recorded, when it is an instant; `undefined` for any other value. */
+export function stopInstant(stop: DriveEvent | undefined): string | undefined {
+  const until = stop?.until;
+  return typeof until === "string" && Number.isFinite(parseMs(until))
+    ? until
+    : undefined;
 }
 
 export function isOptionalEvents(v: unknown): boolean {
@@ -107,7 +122,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, and `"leftWork"` with `"tree"` on a stop that measured its tree). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, `"leftWork"` with `"tree"` on a stop that measured its tree, and `"until"` on a stop on the forge's rate limit). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -129,6 +144,7 @@ export async function recordEvent(
       cause: input.cause,
       ...(input.leftWork === undefined ? {} : { leftWork: input.leftWork }),
       ...(input.tree === undefined ? {} : { tree: input.tree }),
+      ...(input.until === undefined ? {} : { until: input.until }),
     };
     if (!isDriveEvent(event))
       fail(

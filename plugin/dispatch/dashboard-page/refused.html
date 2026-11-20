@@ -249,11 +249,53 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 .kv dd.prose { font-family: var(--sans); }
 .wallLine { font-size: var(--small); }
-.load { display: flex; flex-direction: column; gap: 4px; padding: 0 0 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
-.loadHead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.loadBar { flex: 1 1 120px; min-width: 120px; height: 8px; background: var(--sunk); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
-.loadBar i { display: block; height: 100%; background: var(--accent); }
-.loadBar i.over { background: var(--bad); }
+/* Running's load: the headline, then every gauge against its own line on a bar to 150% */
+.load { container: load / inline-size; display: flex; flex-direction: column; gap: 4px; padding: 0 0 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.loadHead { display: flex; align-items: center; gap: 4px 10px; }
+.loadTitle { font-size: 16px; }
+.loadTitle b { font-weight: 700; }
+.gauges { display: flex; flex-direction: column; margin: 2px 0 0; padding: 0; list-style: none; }
+.gRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n p" "b b" "r r"; align-items: center; gap: 2px 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--small); }
+.gName { grid-area: n; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.gRow.binds .gName > .bareWord:first-child { font-weight: 700; }
+.gTag { display: inline-flex; align-items: center; padding: 0 5px; border: 1px solid var(--ink); border-radius: var(--r-tag); font: 600 12px/1.5 var(--sans); white-space: nowrap; }
+.gTag.gOverTag { border-color: var(--bad); color: var(--bad); }
+.gBar { grid-area: b; position: relative; display: block; height: 12px; margin: 4px 0; min-width: 0; }
+.gTrack { position: absolute; inset: 0; overflow: hidden; background: var(--sunk); border: 1px solid var(--line-strong); border-radius: 3px; }
+.gFill, .gPast { position: absolute; top: 0; bottom: 0; left: 0; }
+.gFill { background: var(--accent); }
+.gPast { background: repeating-linear-gradient(135deg, var(--bad) 0 4px, color-mix(in srgb, var(--bad) 55%, var(--card)) 4px 6px); }
+.gRow.unread .gTrack { background: transparent; border-style: dashed; }
+.gLine { position: absolute; top: -4px; bottom: -4px; width: 0; margin-left: -1px; border-left: 2px solid var(--ink); }
+.gPct { grid-area: p; text-align: right; white-space: nowrap; }
+.gRow.over .gPct { color: var(--bad); font-weight: 700; }
+.gRow.unread .gPct { color: var(--muted); }
+.gReads { grid-area: r; min-width: 0; overflow-wrap: anywhere; }
+.loadFold .kv { grid-template-columns: minmax(0, 1fr); }
+.loadFold .kv dt { overflow-wrap: anywhere; }
+.loadFold .kv dd + dt { margin-top: 4px; }
+@container load (min-width: 640px) {
+  .loadFold .kv { grid-template-columns: max-content minmax(0, 1fr); }
+  .loadFold .kv dd + dt { margin-top: 0; }
+}
+@supports (grid-template-columns: subgrid) {
+  @container load (min-width: 640px) {
+    .gauges { display: grid; grid-template-columns: max-content minmax(160px, 2fr) max-content minmax(0, 3fr); column-gap: 14px; }
+    .gRow { grid-column: 1 / -1; grid-template-columns: subgrid; grid-template-areas: none; }
+    .gName { grid-area: 1 / 1; }
+    .gBar { grid-area: 1 / 2; }
+    .gPct { grid-area: 1 / 3; }
+    .gReads { grid-area: 1 / 4; }
+  }
+}
+@media (forced-colors: active) {
+  .gTrack, .gFill, .gPast, .gLine { forced-color-adjust: none; }
+  .gTrack { background: Canvas; border-color: CanvasText; }
+  .gFill { background: CanvasText; }
+  .gPast { background: repeating-linear-gradient(135deg, CanvasText 0 4px, Canvas 4px 6px); }
+  .gLine { border-color: CanvasText; outline: 1px solid Canvas; }
+  .gTag, .gTag.gOverTag { border-color: CanvasText; }
+}
 
 /* queue */
 .qList > [data-facet-group] + [data-facet-group] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line-strong); }

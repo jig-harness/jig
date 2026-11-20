@@ -8,6 +8,7 @@ count alone — which measured failure each guard exists to prevent.
 ## Contents
 
 - [Exit codes](#exit-codes)
+- [The forge's spent rate limit](#the-forges-spent-rate-limit)
 - [Repair rounds](#repair-rounds)
 - [What convergence requires](#what-converged-requires)
 - [Reviewer identity](#the-reviewer-is-identified-by-app-slug-not-by-check-name)
@@ -56,7 +57,10 @@ The JSON report (`--json`) carries `state`, `exit`, `reason`, the head pair, the
 `base` block (`refName`, `oid`, `drift`), the `merge` pair (`mergeable`,
 `stateStatus`), the reviewer's identity/status/reviewed-SHA, the work counts,
 and a `ci` verdict (`green`, or `held:`, `failing:`, `pending:`, `cancelled:` or
-`unknown:` with the names) with the failing names and runs behind it.
+`unknown:` with the names) with the failing names and runs behind it. A
+[`FORGE_RATE_LIMITED`](../../../protocol/drive-exits.md) report also carries
+`rateLimit`: `until`, when the forge's spent limit resets, and `reason`, the
+refusal's own words.
 
 A live CI hold's intentional failing check reads `held:`, using M13's job
 shape or `ci.hold_sentinels`; it waits without repair and never counts as
@@ -104,6 +108,33 @@ next arm's driving label moves them back
 ([configuration reference](../../../CONFIGURATION.md#issue_tracker)).
 
 
+
+## The forge's spent rate limit
+
+The outbound layer classifies a forge call the credential's spent rate limit
+refused as `rate-limited`, with the reset it named, whether the forge refused
+it or the shared budget held it back before sending. Nothing is sent for that
+credential before the reset, so a read that met the limit is not a failure
+to read, and a retry before the reset can only be refused again.
+
+- `drive-status.ts` stops as soon as a read of its own met the limit and the
+  reset is still ahead: [`FORGE_RATE_LIMITED`](../../../protocol/drive-exits.md)
+  with the reset in its report, in place of the bounded retry that ends
+  `INDETERMINATE`. A later call that succeeds clears what it met.
+- `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds
+  (default 30 minutes, at most a day) and goes on: between rounds it keeps
+  its ledger's lease and reads its mailbox while it waits; at the attach,
+  before its first round, it waits and reads the pull request again. Either
+  way it waits for at most three resets in a row; a limit spent again after
+  each stops it.
+- A reset further off stops the drive with the same exit. Its `stop` event
+  records the reset (`until`), its closing report names it with cause
+  `environment` and the line as owner, and `jig dispatch` re-drives the stop
+  once the reset has passed, on any account, once per stop, an hour after
+  the stop when it recorded no reset. A stop at the attach writes no ledger
+  (the ledger lives on the forge the limit refuses): that launch spends no
+  arm and no re-drive, and the dispatcher launches the drive again an hour
+  after it ended, never handing it to a person for it.
 
 ## Repair rounds
 
