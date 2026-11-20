@@ -228,6 +228,9 @@ describe("telling a host fault from a question about the work", () => {
       "Should the code retry on ENOSPC: if we delete /cache/schema.sql?",
       "Should the code retry on ENOSPC: if we delete /tmp/App.vue?",
       "Should the code retry on ENOSPC: if we delete /tmp/.cache.ts?",
+      "Should the code retry on ENOSPC: if we delete /tmp/schema.sql.gz?",
+      "Should the code retry on ENOSPC: if we delete /worktrees/app/source.tar.gz?",
+      "Should the code retry on ENOSPC: if we delete /tmp/specification.zip?",
       "Should the code retry on ENOSPC: if we delete the column, keeping cache behavior unchanged?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
@@ -244,8 +247,7 @@ describe("telling a host fault from a question about the work", () => {
       "Could we first delete the leaked test files and retry the build after ENOSPC:?",
       "Could we delete the cache and retry the build after ENOSPC:?",
       "Can I delete /tmp/build-cache.log and retry the build after ENOSPC:?",
-      "Can I delete /tmp/leaked-fixtures.tar.gz and retry the build after ENOSPC:?",
-      "Can I delete /tmp/build-cache.zip and retry the build after ENOSPC:?",
+      "Can I delete /tmp/build.log.gz and retry the build after ENOSPC:?",
       "Can I remove .cache and retry the build after ENOSPC:?",
       "Can I delete `/tmp/cache` and retry the build after ENOSPC:?",
       "Can I remove the stale lock, or can we prune the cache and retry the build after ENOSPC:?",

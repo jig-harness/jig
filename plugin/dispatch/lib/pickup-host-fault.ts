@@ -55,7 +55,17 @@ const HOST_RESOURCE = new Set(
 );
 /** Extensions of files a host produces and a person clears; any other extension marks a work file. */
 const HOST_ARTIFACT_EXTENSION =
-  /\.(?:log|logs|tmp|temp|cache|bak|lock|pid|out|core|swp|old|trace|dump|gz|tgz|zip|tar|bz2|xz|zst|7z|rar|iso)$/i;
+  /\.(?:log|logs|tmp|temp|cache|bak|lock|pid|out|core|swp|old|trace|dump)$/i;
+/** A compression suffix: it keeps a host artifact one (`app.log.gz`) and never makes a work file one (`schema.sql.gz`, `source.tar.gz`). */
+const COMPRESSION_EXTENSION = /\.(?:gz|bz2|xz|zst)$/i;
+
+function isWorkFileName(last: string): boolean {
+  if (COMPRESSION_EXTENSION.test(last))
+    return !HOST_ARTIFACT_EXTENSION.test(
+      last.replace(COMPRESSION_EXTENSION, ""),
+    );
+  return /\.\w+$/.test(last) && !HOST_ARTIFACT_EXTENSION.test(last);
+}
 
 /** The first words of one cleanup object (the pattern already cut it at its clause or sentence end). */
 function objectClause(rest: string): string[] {
@@ -66,8 +76,7 @@ function namesHostResource(raw: string): boolean {
   const token = raw.replace(/^[`'"([]+|[`'")\].]+$/g, "");
   if (/^[~/][\w~./-]*$/.test(token)) {
     const last = (token.split("/").at(-1) ?? "").replace(/^\.+/, "");
-    if (/\.\w+$/.test(last) && !HOST_ARTIFACT_EXTENSION.test(last))
-      return false;
+    if (isWorkFileName(last)) return false;
     return token
       .toLowerCase()
       .split(/[/~]/)
