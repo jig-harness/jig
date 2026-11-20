@@ -18,6 +18,7 @@ import { accountsReading, loadState, type LoadState } from "./load.ts";
 import { readLoad } from "./load-read.ts";
 import { type LoadSample, readSamples, recordSamples } from "./load-samples.ts";
 import type { MachineConfig } from "./machine-config.ts";
+import { readValidationLoad } from "./validation-load.ts";
 import type { TickBudget } from "./tick-reads.ts";
 
 /** The kind of launch a record is: a re-arm or takeover is a drive pass. */
@@ -111,6 +112,12 @@ export function readTickLoad(input: {
       reading,
       accountsReading(table, refused),
       readSamples(),
+    );
+    load.validation = readValidationLoad(
+      records,
+      reading.lock,
+      nowMs,
+      passTimeoutSeconds() * 1000,
     );
     load.spentBytes = outstandingReservations(records, reading, load);
     return load;

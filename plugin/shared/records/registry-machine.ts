@@ -529,6 +529,14 @@ export const MACHINE: RecordKind[] = [
   ),
   plain(
     "machine",
+    "resource-lock-sample",
+    "shared/resource-lock-samples.ts",
+    "~/.local/state/jig/resource-lock-samples/<release ms>-<uuid>.json",
+    1,
+    "One completed run's lock name, working directory, request time, wait and hold durations. The dispatcher's validation gauge reads the last seven days to estimate the host's capacity.",
+  ),
+  plain(
+    "machine",
     "turn-budget-state",
     "hooks/turn-budget-guard.ts",
     "<tmp>/jig-turn-budget/<session>/state.json",

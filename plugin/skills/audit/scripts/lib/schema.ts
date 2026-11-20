@@ -84,6 +84,7 @@ export interface Schema {
   /** Sections no skill reads, with what that means for a file that keeps one. */
   retired: Record<string, string>;
   fields: Field[];
+  machineFields?: Field[];
 }
 
 export type Severity = "error" | "warning" | "suggestion" | "info";
@@ -328,6 +329,11 @@ export function parseSchema(raw: unknown): Schema {
   const retired = sectionMessages(raw.retired ?? {}, "retired");
   if (!isRecord(raw.fields))
     throw new Error("config schema: fields must be a mapping");
+  const machineFields = raw.machine_fields ?? {};
+  if (!isRecord(machineFields))
+    throw new SchemaMachineFieldsError(
+      "config schema: machine_fields must be a mapping",
+    );
   const nullRefused = raw.null_refused ?? [];
   if (!stringList(nullRefused))
     throw new SchemaNullRefusedError(
@@ -338,6 +344,9 @@ export function parseSchema(raw: unknown): Schema {
     null_refused: nullRefused,
     refused,
     retired,
+    machineFields: Object.entries(machineFields).map(([path, entry]) =>
+      parseField(path, entry),
+    ),
     fields: Object.entries(raw.fields).map(([path, entry]) =>
       parseField(path, entry),
     ),
@@ -356,6 +365,10 @@ export function parseSchema(raw: unknown): Schema {
       );
   }
   return schema;
+}
+
+class SchemaMachineFieldsError extends Error {
+  override readonly name = "SchemaMachineFieldsError";
 }
 
 /** A `null_refused` list that does not name the schema's own refusable paths. */
