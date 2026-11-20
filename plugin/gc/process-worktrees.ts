@@ -39,7 +39,10 @@ function readableExit(value: unknown): boolean {
 }
 
 /** An ended wrapper cannot stand in for its unacknowledged child handoff. */
-function claimedProcesses(row: LaunchRow): Outcome<ProcessIdentity[]> {
+function claimedProcesses(
+  row: LaunchRow,
+  beforeStage: boolean,
+): Outcome<ProcessIdentity[]> {
   if (row.claim === null)
     return failed("launch-unreadable", `launch ${row.id} has no process claim`);
   const claim = asClaim(JSON.parse(row.claim));
@@ -50,6 +53,10 @@ function claimedProcesses(row: LaunchRow): Outcome<ProcessIdentity[]> {
     );
   const handoff = claim.supervision;
   if (handoff === undefined) return ok([claim]);
+  if (beforeStage && !handoff.uncertain && handoff.child === null)
+    return ok(
+      handoff.supervisor === null ? [claim] : [claim, handoff.supervisor],
+    );
   if (
     handoff.uncertain ||
     handoff.supervisor === null ||
@@ -79,12 +86,18 @@ function launchProcesses(
     );
   if (row.exit === null)
     return failed("launch-live", `launch ${row.id} has not recorded its exit`);
-  if (!readableExit(JSON.parse(row.exit)))
+  const exit: unknown = JSON.parse(row.exit);
+  if (!readableExit(exit))
     return failed(
       "launch-unreadable",
       `launch ${row.id} has an unreadable exit`,
     );
-  return claimedProcesses(row);
+  return claimedProcesses(
+    row,
+    record.runtime === "process" &&
+      isMapping(exit) &&
+      exit.beforeStage === true,
+  );
 }
 
 async function deadProcesses(
@@ -163,7 +176,8 @@ export async function processWorktreeIdle(
       .query(
         `SELECT id, record, claim, exit FROM launches
          UNION ALL
-         SELECT id, record, claim, exit FROM process_worktree_completions`,
+         SELECT id, record, claim, exit FROM process_worktree_completions AS c
+         WHERE NOT EXISTS (SELECT 1 FROM launches AS l WHERE l.id = c.id)`,
       )
       .all() as LaunchRow[];
     const launches = indexedLaunches(rows);

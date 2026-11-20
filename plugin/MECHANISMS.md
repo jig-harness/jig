@@ -61,7 +61,8 @@ These are the reasoned parts Jig has:
   (a *drive*, run by [drive-pr](skills/drive-pr/README.md)). `drive.ts`
   starts each pass as a fresh agent process that gets one prompt and has no
   person at its terminal, for example
-  `claude -p "/jig:drive-pr --bots-only <PR>"`. It triages, fixes,
+  `claude -p "/jig:drive-pr --bots-only <PR> <pass role>"`, the role
+  saying it is one round of the running drive, not an arm. It triages, fixes,
   validates, commits and pushes (through
   `skills/drive-pr/scripts/finish-round.ts`), then ends.
 - **An implementer**: the agent `do-item` hands the change to, chosen by its

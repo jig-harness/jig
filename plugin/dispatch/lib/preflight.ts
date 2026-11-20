@@ -42,7 +42,11 @@ import type { LineNeed } from "./dashboard-contract.ts";
 import type { LaunchAction } from "./launches.ts";
 import type { OpenedRepo } from "./tick-observe.ts";
 import type { Tracked } from "./tick-tracker.ts";
-import type { MachineAccount } from "./machine-config.ts";
+import type { MachineAccount, MachineConfig } from "./machine-config.ts";
+import {
+  processEnvironment,
+  type ProcessSettings,
+} from "./runtime/process-environment.ts";
 import { type PreflightProbe, preflightOf } from "./preflight-config.ts";
 import { failureText, probeFailure } from "./text.ts";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -120,14 +124,24 @@ export interface Preflight {
 
 /** A tick's preflight under the machine file's checks. */
 export function newPreflight(
-  machine: { preflight?: readonly PreflightProbe[] },
-  probe: TrackerProbe = spawnTrackerProbe,
+  machine: Pick<MachineConfig, "preflight" | "runtime" | "process">,
+  probe?: TrackerProbe,
 ): Preflight {
   return {
     probes: preflightOf(machine),
     targets: new Map(),
     answers: new Map(),
-    probe,
+    probe:
+      probe ??
+      ((account, target, timeoutSec) =>
+        spawnTrackerProbe(
+          account,
+          target,
+          timeoutSec,
+          machine.runtime === "process"
+            ? (machine.process ?? { envKeep: [] })
+            : undefined,
+        )),
   };
 }
 
@@ -278,6 +292,7 @@ async function spawnTrackerProbe(
   account: MachineAccount,
   target: TrackerTarget,
   timeoutSec: number,
+  processSettings?: ProcessSettings,
 ): Promise<TrackerAnswer> {
   const service = issueService(target.tracker.split(":")[0]);
   // The child's own deadline ends the tracker's request first, so its answer names the cause.
@@ -291,10 +306,14 @@ async function spawnTrackerProbe(
     target.slug,
     String(deadlineMs),
   ];
-  const env = passEnvironment(process.env, {
+  const selected = {
     vendor: admittedVendor(account),
     configDir: account.configDir,
-  });
+  };
+  const env =
+    processSettings === undefined
+      ? passEnvironment(process.env, selected)
+      : processEnvironment(process.env, processSettings, selected);
   // AsyncLocalStorage does not cross the process boundary. This child opens
   // the tracker on behalf of the tick, so retain that tick's attribution.
   env.JIG_OUTBOUND_CALLER = callerForChild();
