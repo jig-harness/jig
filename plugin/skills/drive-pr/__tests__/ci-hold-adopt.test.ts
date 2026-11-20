@@ -431,7 +431,10 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
         "ensure",
         "999",
         "--expect-head",
-        r.head,
+        // The commit about to be pushed can differ from the remote head
+        // recorded by the interrupted release. Recovery must reconcile the
+        // latter, rather than clearing the record and losing its hold.
+        "b".repeat(40),
       ),
       {
         cwd: r.cwd,

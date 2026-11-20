@@ -209,7 +209,6 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   if (persisted?.phase === "releasing") {
     const raceRecovery = await reconcileRacedRelease(
       pr,
-      head,
       persisted,
       holdLabel(),
       (failure) => unreadDuringReleasingState(failure, persisted),
@@ -920,7 +919,6 @@ function isReleasing(recorded: CiHoldState | null): boolean {
 
 async function reconcileRacedRelease(
   pr: string,
-  head: string,
   recorded: CiHoldState | null,
   label: string,
   onUnread: (failure: HoldReadFailure) => number,
@@ -929,7 +927,10 @@ async function reconcileRacedRelease(
     return null;
   return refuseRace(
     pr,
-    head,
+    // This record names the remote head the interrupted release observed.
+    // A command can name a local, not-yet-pushed head, which is not the head
+    // on which a replacement label must be restored.
+    recorded.head,
     recorded.actor,
     label,
     () => transitions(pr),
@@ -960,15 +961,14 @@ async function runMutationCommand(
     if (unreadable !== null) return unreadable;
     const raceRecovery = await reconcileRacedRelease(
       pr,
-      head,
       recorded,
       holdLabel() ?? LEGACY_CI_HOLD_LABEL,
       (failure) => unreadDuringReleasingState(failure, recorded),
     );
     if (raceRecovery !== null) return raceRecovery;
-    if (command === "ensure") return ensure(pr, head);
-    if (command === "rollback") return rollback(pr, head);
-    return release(pr, head, expectedTransition);
+    if (command === "ensure") return await ensure(pr, head);
+    if (command === "rollback") return await rollback(pr, head);
+    return await release(pr, head, expectedTransition);
   } finally {
     if (heartbeat !== null) clearInterval(heartbeat);
     remoteLock?.release();
