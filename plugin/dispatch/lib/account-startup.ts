@@ -1,8 +1,9 @@
 /** Host-wide startup episodes, shared by the tick and the pass wrappers. */
+import { isMapping } from "../../shared/config-layers.ts";
 import { stateRoot } from "../receipts.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
 import type { MachineConfig } from "./machine-config.ts";
-import { existingStateDb, stateDb } from "./state.ts";
+import { existingStateDb, inTransaction, stateDb } from "./state.ts";
 
 type Account = { vendor: string; configDir: string };
 type Problem = "sign-in" | "breaker";
@@ -41,7 +42,19 @@ export function recordAccountSignInSuccess(
     .run(at, account.vendor, account.configDir, at);
 }
 
-/** A pass that actually ran clears a consecutive count and any older incident. */
+const DEATH_KINDS = ["died", "unstarted", "quota", "sign-in"] as const;
+type DeathKind = (typeof DEATH_KINDS)[number];
+type Death = { at: string; kind: DeathKind };
+
+function isDeath(value: unknown): value is Death {
+  return (
+    isMapping(value) &&
+    typeof value.at === "string" &&
+    DEATH_KINDS.some((kind) => kind === value.kind)
+  );
+}
+
+/** A pass that actually ran discards deaths from older launches and clears any older incident. */
 export function recordWorkingStartup(
   account: Account,
   startedAt: string,
@@ -53,8 +66,10 @@ export function recordWorkingStartup(
        VALUES (?, ?, ?)
        ON CONFLICT (vendor, config_dir) DO UPDATE SET
          working_at = excluded.working_at,
-         death_class = CASE WHEN death_at <= excluded.working_at THEN NULL ELSE death_class END,
-         deaths = CASE WHEN death_at <= excluded.working_at THEN 0 ELSE deaths END,
+         death_history = (
+           SELECT json_group_array(json(value)) FROM json_each(death_history)
+           WHERE json_extract(value, '$.at') > excluded.working_at
+         ),
          problem = CASE WHEN seen_at <= excluded.working_at THEN NULL ELSE problem END,
          since = CASE WHEN seen_at <= excluded.working_at THEN NULL ELSE since END
        WHERE working_at IS NULL OR working_at < excluded.working_at`,
@@ -62,28 +77,44 @@ export function recordWorkingStartup(
     .run(account.vendor, account.configDir, startedAt);
 }
 
-/** A different kind of startup failure breaks a run of equal deaths. */
+/** Keep a bounded suffix in launch order, independent of which wrapper publishes first. */
 export function recordStartupDeath(
   account: Account,
-  kind: "died" | "unstarted" | "quota" | "sign-in",
+  kind: DeathKind,
   startedAt: string,
+  threshold: number,
   root = stateRoot(),
 ): number {
-  const read = stateDb(root)
-    .query(
-      `INSERT INTO account_startup (vendor, config_dir, death_class, deaths, death_at)
-       VALUES (?, ?, ?, 1, ?)
-       ON CONFLICT (vendor, config_dir) DO UPDATE SET
-         deaths = CASE WHEN death_class = excluded.death_class THEN deaths + 1 ELSE 1 END,
-         death_class = excluded.death_class,
-         death_at = max(COALESCE(death_at, excluded.death_at), excluded.death_at)
-       WHERE working_at IS NULL OR working_at < excluded.death_at
-       RETURNING deaths`,
-    )
-    .get(account.vendor, account.configDir, kind, startedAt) as {
-    deaths: number;
-  } | null;
-  return read?.deaths ?? 0;
+  const db = stateDb(root);
+  return inTransaction(db, () => {
+    const prior = db
+      .query(
+        `SELECT working_at, death_history FROM account_startup
+         WHERE vendor = ? AND config_dir = ?`,
+      )
+      .get(account.vendor, account.configDir) as {
+      working_at: string | null;
+      death_history: string;
+    } | null;
+    if (prior?.working_at != null && prior.working_at >= startedAt) return 0;
+    const parsed: unknown = JSON.parse(prior?.death_history ?? "[]");
+    const history = Array.isArray(parsed) ? parsed.filter(isDeath) : [];
+    const keep = Math.max(threshold, history.length);
+    history.push({ at: startedAt, kind });
+    history.sort((a, b) => a.at.localeCompare(b.at));
+    const recent = history.slice(-keep);
+    db.query(
+      `INSERT INTO account_startup (vendor, config_dir, death_history)
+       VALUES (?, ?, ?)
+       ON CONFLICT (vendor, config_dir) DO UPDATE SET death_history = excluded.death_history`,
+    ).run(account.vendor, account.configDir, JSON.stringify(recent));
+    let count = 0;
+    for (const death of recent.reverse()) {
+      if (death.kind !== kind) break;
+      count += 1;
+    }
+    return count;
+  });
 }
 
 /** A host-wide incident is presented once, independent of how many repositories it affected. */

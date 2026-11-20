@@ -576,10 +576,8 @@ export const MIGRATIONS: readonly Migration[] = [
       problem TEXT CHECK (problem IN ('sign-in', 'breaker')),
       since TEXT,
       seen_at TEXT,
-      death_class TEXT,
-      death_at TEXT,
       working_at TEXT,
-      deaths INTEGER NOT NULL DEFAULT 0,
+      death_history TEXT NOT NULL DEFAULT '[]',
       PRIMARY KEY (vendor, config_dir)
     );`,
   },
@@ -655,10 +653,8 @@ const AFTER_STAGE_COLUMNS: KnownColumns = {
     "problem",
     "since",
     "seen_at",
-    "death_class",
-    "death_at",
     "working_at",
-    "deaths",
+    "death_history",
   ],
   launches: [
     "id",

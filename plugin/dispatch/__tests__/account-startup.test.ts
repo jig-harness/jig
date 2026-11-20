@@ -221,10 +221,24 @@ test("a success from an older concurrent launch preserves newer deaths", () => {
   };
   const root = dispatchState(w);
   const start = (n: number) => `2026-11-20T09:00:0${n}.000Z`;
-  expect(recordStartupDeath(a, "died", start(2), root)).toBe(1);
+  expect(recordStartupDeath(a, "died", start(2), 3, root)).toBe(1);
   recordWorkingStartup(a, start(1), root);
-  expect(recordStartupDeath(a, "died", start(3), root)).toBe(2);
+  expect(recordStartupDeath(a, "died", start(3), 3, root)).toBe(2);
   recordWorkingStartup(a, start(4), root);
-  expect(recordStartupDeath(a, "died", start(3), root)).toBe(0);
-  expect(recordStartupDeath(a, "died", start(5), root)).toBe(1);
+  expect(recordStartupDeath(a, "died", start(3), 3, root)).toBe(0);
+  expect(recordStartupDeath(a, "died", start(5), 3, root)).toBe(1);
+});
+
+test("a late success divides the chronological run of startup deaths", () => {
+  const w = fixture();
+  const a = {
+    vendor: "claude",
+    configDir: account(w, "a", "a@example.com").dir,
+  };
+  const root = dispatchState(w);
+  const start = (n: number) => `2026-11-20T09:00:0${n}.000Z`;
+  expect(recordStartupDeath(a, "died", start(1), 3, root)).toBe(1);
+  expect(recordStartupDeath(a, "died", start(3), 3, root)).toBe(2);
+  recordWorkingStartup(a, start(2), root);
+  expect(recordStartupDeath(a, "died", start(4), 3, root)).toBe(2);
 });

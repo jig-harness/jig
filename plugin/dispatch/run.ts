@@ -627,20 +627,19 @@ function startupOf(
       phrase = found;
     },
   );
+  const threshold = record.startupFailureThreshold ?? DEFAULT_STARTUP_THRESHOLD;
   const deaths = recordStartupDeath(
     record,
     startup ?? "died",
     isoFromMs(started),
+    threshold,
   );
   const at = isoFromMs(exited);
   if (startup === "sign-in") {
     recordAccountStartupProblem(record, "sign-in", at);
     return phrase === undefined ? { startup } : { startup, phrase };
   }
-  if (
-    startup !== "quota" &&
-    deaths >= (record.startupFailureThreshold ?? DEFAULT_STARTUP_THRESHOLD)
-  ) {
+  if (startup !== "quota" && deaths >= threshold) {
     recordAccountStartupProblem(record, "breaker", at);
     return { startup: "breaker" };
   }
