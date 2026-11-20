@@ -63,8 +63,9 @@ const ARCHIVE_EXTENSION = /\.(?:gz|bz2|xz|zst|tgz|tar|zip|7z|rar|iso)$/i;
  * Whether a file name marks a work file. An archive is neutral: `app.log.gz`
  * is a host artifact over a host-artifact extension, `schema.sql.gz` a work
  * file over a work extension, and an archive with no extension beneath it
- * (`leaked-fixtures.tar.gz`, `source.tar.gz`) is a host artifact only when its
- * own name carries a host-resource word.
+ * (`cache.tgz` against `source-files.tar.gz`) is a host artifact only when every
+ * part of its own name is a host-resource word: a work word beside one keeps
+ * the question a person's.
  */
 function isWorkFileName(last: string): boolean {
   let stem = last;
@@ -78,7 +79,8 @@ function isWorkFileName(last: string): boolean {
   return !stem
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .some((part) => HOST_RESOURCE.has(part));
+    .filter(Boolean)
+    .every((part) => HOST_RESOURCE.has(part));
 }
 
 /** The first words of one cleanup object (the pattern already cut it at its clause or sentence end). */
