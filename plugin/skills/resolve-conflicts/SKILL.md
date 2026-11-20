@@ -538,7 +538,7 @@ hook-running command again: stop there as for a hung hook, below.
   has moved on, take what it shows as you would after a continue that
   exited `0`: a further stop, or the rebase done. When it is still in
   progress with commands remaining and no conflicted path (killed in a hook
-  after a commit it made), continue it with the longer deadline. When
+  while it made a pick's commit or after), continue it with the longer deadline. When
   `git status` still reports a rebase in progress but with no commands
   remaining and the branch checked out again, the rebase finished and only
   its last hook was killed; a further continue fails on the moved branch,
@@ -547,7 +547,8 @@ hook-running command again: stop there as for a hung hook, below.
   and go on as after a rebase done.
 
 A command killed at the longer deadline too is treated as a hung hook: stop
-with the operation open (or the merge reset), the message and section files
+with the operation open (or the merge reset, or the conversion still
+staged), the message and section files
 and the snapshot in place, and report the command, its deadline and what
 `git status` shows.
 Inside a drive, the round ends there and its report says so.
