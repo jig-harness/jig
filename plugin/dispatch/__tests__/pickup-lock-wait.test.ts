@@ -20,7 +20,12 @@ import {
 } from "../lib/launches.ts";
 import { LOAD_DEFAULTS } from "../lib/load-config.ts";
 import type { LoadReading } from "../lib/load-read.ts";
-import { judge, loadState, VALIDATION_GAUGES } from "../lib/load.ts";
+import {
+  holdsReplay,
+  judge,
+  loadState,
+  VALIDATION_GAUGES,
+} from "../lib/load.ts";
 import { LOCK_WAIT_BOUND } from "../lib/pickup-lock-wait.ts";
 import type { PickupTree } from "../lib/pickup-tree.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
@@ -322,7 +327,7 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
   const withDemand = (atLock: number) => {
     const load = loadState(
       LOAD_DEFAULTS,
-      reading,
+      { ...reading, host: { ...reading.host } },
       { held: 0, capacity: 8 },
       new Map(),
     );
@@ -360,6 +365,25 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
     ).toBeNull();
     expect(load.holds.length).toBeGreaterThan(0);
     expect(load.validation!.admittedRuns).toBeGreaterThan(before);
+  });
+
+  it("counts the validation runs of any launch an advisory gauge lets start", () => {
+    const load = withDemand(0);
+    load.reading.host.availableBytes = 0;
+    expect(judge(load, "pickup", SLUG, "#12", 3 * HOUR)).toBeNull();
+    expect(load.holds.length).toBeGreaterThan(0);
+    expect(load.validation!.admittedRuns).toBeGreaterThan(0);
+  });
+
+  it("judges a pending replay without charging its own reserved runs again", () => {
+    const load = withDemand(0);
+    const own = load.validation!.measured.kinds.pickup.runsPerPass;
+    load.validation!.demand = { atLock: 0, toArrive: own };
+    expect(
+      holdsReplay(load, "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
+    ).toBeNull();
+    expect(load.validation!.admittedRuns).toBe(0);
+    expect(load.holds).toEqual([]);
   });
 
   it("admits it when the validation capacity has room, or when the gauge does not read", () => {

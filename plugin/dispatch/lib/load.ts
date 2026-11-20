@@ -481,10 +481,9 @@ export function judge(
     detail: refused.detail,
     held,
   });
-  // A pinned launch an advisory gauge lets start still runs validation, so it counts against the forecast.
+  // A launch an advisory gauge lets start still runs validation, so it counts against the forecast.
   if (
     !held &&
-    pinned.includes("validation") &&
     state.validation !== undefined &&
     (kind === "pickup" || kind === "drive")
   )
@@ -494,6 +493,49 @@ export function judge(
       repo,
     );
   return held ? `the host's load holds it: ${refused.detail}` : null;
+}
+
+/**
+ * Whether the mandatory gauges hold the replay of a pending launch whose
+ * reservations the tick's readings already carry: the reason it waits,
+ * recorded as a hold, or `null`. The replay's own validation runs are taken
+ * out of the forecast it is judged against, and nothing is reserved, so
+ * the replay is not charged twice.
+ */
+export function holdsReplay(
+  state: LoadState,
+  kind: LoadKind,
+  repo: string,
+  target: string,
+  pickupDeadlineMs: number,
+  pinned: readonly LoadGauge[],
+): string | null {
+  const { validation } = state;
+  const own =
+    validation !== undefined && !("unread" in validation.demand)
+      ? runsPerPassFor(
+          validation.measured,
+          kind === "pickup" ? kind : "drive",
+          repo,
+        )
+      : 0;
+  const view =
+    validation === undefined || "unread" in validation.demand
+      ? state
+      : {
+          ...state,
+          validation: {
+            ...validation,
+            demand: {
+              ...validation.demand,
+              toArrive: Math.max(0, validation.demand.toArrive - own),
+            },
+          },
+        };
+  const held = pinnedRefusal(view, kind, repo, pickupDeadlineMs, pinned);
+  if (held === null) return null;
+  state.holds.push({ repo, target, kind, ...held, held: true });
+  return `the host's validation capacity holds it: ${held.detail}`;
 }
 
 /**

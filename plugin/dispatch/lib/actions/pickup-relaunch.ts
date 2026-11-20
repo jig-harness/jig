@@ -47,7 +47,7 @@ import {
   timeLeftMs,
   waits,
 } from "./launch.ts";
-import { judge, VALIDATION_GAUGES } from "../load.ts";
+import { holdsReplay, VALIDATION_GAUGES } from "../load.ts";
 import { holdingRecords } from "./pickup-hold.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 
@@ -275,7 +275,7 @@ function lockWaitHold(
   record: LaunchRecord,
 ): string | null {
   if (state.load === undefined) return null;
-  return judge(
+  return holdsReplay(
     state.load,
     loadKindOf(action),
     repo,
