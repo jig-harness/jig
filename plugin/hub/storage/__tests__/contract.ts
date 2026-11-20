@@ -44,7 +44,7 @@ export interface StorageHarness {
    * The worker entry that opens its own connection to this store and
    * races (`racer.ts`), and the data it needs to open it.
    */
-  readonly racer: { readonly script: string; readonly data: object };
+  readonly racer: { readonly script: URL; readonly data: object };
   close(): void;
 }
 

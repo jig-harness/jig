@@ -34,7 +34,7 @@ storageContract("bun:sqlite", (): StorageHarness => {
   return {
     storage: createStorage(first.db),
     racer: {
-      script: join(import.meta.dir, "bun-sqlite-racer.ts"),
+      script: new URL("./bun-sqlite-racer.ts", import.meta.url),
       data: { path },
     },
     close: () => first.close(),
