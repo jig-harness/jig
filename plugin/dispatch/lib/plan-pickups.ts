@@ -235,7 +235,7 @@ export function planPickups(input: PickupInput): PickupPlan {
       launches,
       item.updatedAt,
       input.nowMs,
-      item.pooled === true ? undefined : item.assignee,
+      assigneeOf(item),
     );
     if (hold.kind === "held") {
       plan.running.push({
@@ -281,6 +281,11 @@ export function planPickups(input: PickupInput): PickupPlan {
       input.root,
     );
   return plan;
+}
+
+/** Who an item is assigned to, or nothing for one taken unassigned from the ready pool. */
+function assigneeOf(item: WantedItem): string | undefined {
+  return item.pooled === true ? undefined : item.assignee;
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait. */
