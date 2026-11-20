@@ -1,4 +1,4 @@
-/** Account for forge commands at their shared runner, without keeping command arguments or query variables. */
+/** Account for forge commands at their shared runner, keeping no command argument or query variable but the repository a command addresses. */
 import {
   type GhAttribution,
   PAGINATED_RESERVE,
@@ -15,6 +15,10 @@ import {
   graphQLErrorsClass,
 } from "./github.ts";
 import { operationName } from "./ledger.ts";
+import { restOperation } from "./operations.ts";
+import { apiRepo, repoFlag, repoOfName } from "./github-scope.ts";
+
+export { restOperation } from "./operations.ts";
 import { recordAttempt, type Attempt } from "./record-attempt.ts";
 import { currentMs } from "../time.ts";
 
@@ -63,64 +67,6 @@ function commandQuery(
   return null;
 }
 
-/** A REST route's shape, without repository names, entity ids, queries or arbitrary path segments. */
-export function restOperation(method: string, path: string): string {
-  const safe = new Set([
-    "repos",
-    "repositories",
-    "issues",
-    "pulls",
-    "comments",
-    "comment",
-    "reviews",
-    "labels",
-    "assignees",
-    "commits",
-    "checks",
-    "check-runs",
-    "statuses",
-    "actions",
-    "runs",
-    "jobs",
-    "rate_limit",
-    "user",
-    "users",
-    "orgs",
-    "teams",
-    "members",
-    "projects",
-    "contents",
-    "branches",
-    "protection",
-    "rulesets",
-    "reactions",
-    "timeline",
-    "events",
-    "artifacts",
-    "attachments",
-    "issue",
-    "search",
-    "jql",
-    "field",
-    "project",
-    "myself",
-    "status",
-    "transitions",
-    "priority",
-    "issuetype",
-    "resolution",
-    "serverInfo",
-  ]);
-  const route =
-    path
-      .split("?")[0]
-      ?.split("/")
-      .filter(Boolean)
-      .map((part) => (safe.has(part) ? part : "{}"))
-      .join("/") ?? "";
-  return `${method.toUpperCase()} /${route}`;
-}
-
 function operation(args: string[], stdin: string | undefined): string {
   const query = commandQuery(args, stdin);
   if (query !== null) return operationName(query);
@@ -141,6 +87,62 @@ function operation(args: string[], stdin: string | undefined): string {
     [args[0], args[1]]
       .filter((part) => part !== undefined && /^[a-z-]+$/.test(part))
       .join(" ") || "gh command"
+  );
+}
+
+/** The value of the GraphQL variable `name` a command line sets with a field flag (`-f name=…`, `-F name=…`, `-fname=…`). */
+function fieldValue(args: string[], name: string): string | null {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    const field = ["-f", "--raw-field", "-F", "--field"].includes(arg)
+      ? (args[i + 1] ?? "")
+      : arg.startsWith("-f") || arg.startsWith("-F")
+        ? arg.slice(2)
+        : arg.startsWith("--field=") || arg.startsWith("--raw-field=")
+          ? arg.slice(arg.indexOf("=") + 1)
+          : "";
+    if (field.startsWith(`${name}=`)) return field.slice(name.length + 1);
+  }
+  return null;
+}
+
+/** The repository a GraphQL request names by its `owner` and `name` (or `repo`) variables, from field flags or the request body; `null` when it names none. */
+function graphqlRepository(
+  args: string[],
+  stdin: string | undefined,
+): string | null {
+  if (args[0] !== "api" || apiRoute(args) !== "graphql") return null;
+  const body = stdin === undefined ? null : parsed(stdin);
+  const variables =
+    isRecord(body) && isRecord(body.variables) ? body.variables : {};
+  const text = (name: string): string | null => {
+    const value = variables[name] ?? fieldValue(args, name);
+    return typeof value === "string" && value !== "" ? value : null;
+  };
+  const owner = text("owner");
+  const name = text("name") ?? text("repo");
+  return owner === null || name === null
+    ? null
+    : repoOfName(`${owner}/${name}`);
+}
+
+/**
+ * The repository a run addresses, as cheaply as its command line says it:
+ * its `-R`/`--repo` (or a repository URL argument), a `gh api` route under
+ * `repos/<owner>/<repo>`, a GraphQL request's `owner` and `name` variables,
+ * else `GH_REPO`; `null` when none names one. The working directory's remote
+ * is not read for it.
+ */
+function repositoryOf(
+  args: string[],
+  stdin: string | undefined,
+  env: Record<string, string | undefined>,
+): string | null {
+  return (
+    repoFlag(args) ??
+    apiRepo(args) ??
+    graphqlRepository(args, stdin) ??
+    repoOfName(env.GH_REPO)
   );
 }
 
@@ -340,6 +342,7 @@ export function recordGhAttempt<T extends GhRun, O>(
     system: "github",
     credential,
     operation: operation(args, opts.stdin),
+    repository: repositoryOf(args, opts.stdin, opts.env ?? process.env),
     requests: 0,
     cost: null,
     unit:

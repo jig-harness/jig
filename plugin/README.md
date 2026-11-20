@@ -126,6 +126,8 @@ install, remove, report on and run each of them; `jig upgrade` and
 `jig doctor` keep the plugin itself current and check it,
 [`jig ask`](#asking-a-station-where-it-stands) says where a piece of work
 stands, and [`jig send`](#telling-a-station-what-to-do) tells it what to do.
+`jig hub` belongs to the hub, an optional control plane many hosts'
+dispatchers can share; it has no commands yet and prints its help.
 The first install runs
 from the installed plugin copy, with trusted Bun startup, and puts `jig` on
 `PATH`:
@@ -528,7 +530,7 @@ The [cost ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) reco
 system, hashed credential, operation and caller in the same budget database.
 The tick report shows each system's known balance, this tick's spending and
 its costliest operations. `jig budget` shows the last 24 hours grouped by
-operation and caller; use `--hours 1` through `--hours 168` to choose the
+operation, caller and repository; use `--hours 1` through `--hours 168` to choose the
 window, or `--json` for its rows and balances. Linear complexity comes from
 `x-complexity`; GitHub query points are recorded where the answer includes
 them. Unknown costs and estimates are marked rather than presented as measured

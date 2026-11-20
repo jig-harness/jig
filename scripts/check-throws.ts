@@ -1,6 +1,7 @@
 // Failures are values, and a throw is a defect (ADR-0012,
 // `docs/adr/ADR-0012-failures-as-values.md`). In the dispatcher
-// (`plugin/dispatch/`) and resource collection (`plugin/gc/`), code that can
+// (`plugin/dispatch/`), resource collection (`plugin/gc/`) and the hub
+// (`plugin/hub/`), code that can
 // fail in a way its caller handles returns an `Outcome`
 // (`plugin/shared/outcome.ts`), so the only throws left are these three:
 //
@@ -18,10 +19,10 @@
 // other value is, and a call that throws on the code's behalf (`fail` in
 // `plugin/shared/cli.ts`) is not seen.
 //
-// Scope: every TypeScript file under `plugin/dispatch/` and `plugin/gc/`,
-// outside `__tests__/` and `vendor/`.
+// Scope: every TypeScript file under `plugin/dispatch/`, `plugin/gc/` and
+// `plugin/hub/`, outside `__tests__/` and `vendor/`.
 //
-// Exit 1 on a finding, 2 when it cannot check: neither directory there, or
+// Exit 1 on a finding, 2 when it cannot check: none of the directories there, or
 // a file in scope unreadable or not TypeScript that parses.
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -39,7 +40,7 @@ const REMEDY =
   "return an Outcome (plugin/shared/outcome.ts) for a failure the caller handles, throw a Defect for a bug, or throw new ExitError(USAGE_EXIT, …) for a refused command line (docs/adr/ADR-0012-failures-as-values.md)";
 
 /** The directories under the rule. */
-export const SCOPE = ["plugin/dispatch/", "plugin/gc/"];
+export const SCOPE = ["plugin/dispatch/", "plugin/gc/", "plugin/hub/"];
 
 /** Whether the check reads a repository path. */
 export function inScope(path: string): boolean {
@@ -138,7 +139,7 @@ function reason(error: unknown): string {
 
 export function checkThrows(root = "."): number {
   if (!SCOPE.some((dir) => existsSync(join(root, dir))))
-    return couldNotCheck(RULE, `no ${SCOPE.join(" or ")} under ${root}`);
+    return couldNotCheck(RULE, `none of ${SCOPE.join(", ")} under ${root}`);
   const paths = repoFiles(root).filter(
     (path) =>
       inScope(path) &&
@@ -167,7 +168,7 @@ export function checkThrows(root = "."): number {
     return 1;
   }
   console.log(
-    `${RULE}: OK — ${paths.length} files under ${SCOPE.join(" and ")}; every throw is a defect, the usage exit or a rethrow`,
+    `${RULE}: OK — ${paths.length} files under ${SCOPE.join(", ")}; every throw is a defect, the usage exit or a rethrow`,
   );
   return 0;
 }

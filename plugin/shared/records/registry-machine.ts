@@ -284,6 +284,16 @@ export const DISPATCHER: RecordKind[] = [
     meaning:
       "For each hourly cost-ledger row, how many of its requests a conditional request had answered 304 Not Modified. The reports read it to show a route's unchanged re-reads apart from its other requests; a row without one counts none.",
   },
+  {
+    name: "outbound-cost-repository",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "outbound_cost_repository",
+    version: 1,
+    meaning:
+      "For each hourly cost-ledger row, the part of its requests, cost, unknown costs and 304 answers each repository took, where the transport knew the repository. The budget answer reads it to group spending by repository; what a row holds beyond its repositories' parts, and a row without any, counts as spent on no known repository.",
+  },
   plain(
     "machine",
     "dispatch-receipt",

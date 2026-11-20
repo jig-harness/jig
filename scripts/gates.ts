@@ -50,6 +50,7 @@ import { checkSkillShellNeutrality } from "./check-skill-shell-neutrality.ts";
 import { checkSkillFallbacks } from "./check-skill-fallbacks.ts";
 import { checkVoice } from "./check-voice.ts";
 import { checkThrows } from "./check-throws.ts";
+import { checkPortability } from "./check-portability.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -226,6 +227,7 @@ export const CHECKS: Stage[] = [
   check("check-tracker-boundary.ts", checkTrackerBoundary),
   check("check-records-registry.ts", checkRecordsRegistry),
   check("check-throws.ts", checkThrows),
+  check("check-portability.ts", checkPortability),
   check("check-licences.ts", checkLicences),
   check("check-workflow-safety.ts", checkWorkflowSafety),
   check("check-workflow-conventions.ts", checkWorkflowConventions),
