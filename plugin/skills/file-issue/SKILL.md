@@ -462,8 +462,9 @@ by hand right after it. On a tracker whose history leaves out changes made
 just after an issue's creation (Linear: its first three minutes), the
 dispatcher never sees who made such an assignment and never starts the
 item. Hand the issue (with sub-issues, the one to start, usually the
-parent) over with the command for its taker, in the foreground: each
-waits until that window has passed, then writes.
+parent) over with the command for its taker, in the foreground and with
+the command tool's timeout above four minutes: each waits until that window
+has passed (up to about three minutes after the filing), then writes.
 
 - **The factory identity**: `jig send pickup@<owner>/<name>#<KEY> assign`
   (`<owner>/<name>` is this repository). It also moves the item into a

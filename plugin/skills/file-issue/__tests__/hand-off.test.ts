@@ -113,6 +113,48 @@ describe("handOff on Linear", () => {
     expect(linear.writes).toEqual([]);
   });
 
+  it("writes nothing when someone assigns the issue while it waits", async () => {
+    const clock = fakeClock(T0 + 58_000);
+    const linear = fakeLinear(clock);
+    const sleep = clock.sleep;
+    clock.sleep = async (ms: number) => {
+      await sleep(ms);
+      linear.setAssignee("dana@example.com");
+    };
+    const result = await handOff(linear.tracker, "ENG-1", FACTORY, {
+      wait: true,
+      clock,
+    });
+    expect(result.handedOver).toBe(false);
+    expect(!result.handedOver && result.reason).toContain(
+      "was assigned to dana@example.com while the hand-off waited",
+    );
+    expect(linear.writes).toEqual([]);
+  });
+
+  it("does not count an assignment by someone who may not start work as handed over", async () => {
+    const clock = fakeClock(T0 + 10 * 60_000);
+    const linear = fakeLinear(clock, {
+      assignee: FACTORY,
+      history: [
+        {
+          createdAt: iso(T0 + 5 * 60_000),
+          toAssignee: FACTORY,
+          byGuest: true,
+        },
+      ],
+    });
+    const result = await handOff(linear.tracker, "ENG-1", FACTORY, {
+      wait: true,
+      clock,
+    });
+    expect(result.handedOver).toBe(false);
+    expect(!result.handedOver && result.reason).toContain(
+      "who may not start work",
+    );
+    expect(linear.writes).toEqual([]);
+  });
+
   it("refuses to take an issue from someone else", async () => {
     const clock = fakeClock(T0 + 10 * 60_000);
     const linear = fakeLinear(clock, { assignee: "dana@example.com" });

@@ -9,9 +9,11 @@
  * never changed: assigned to the identity with its history showing it, it
  * is already handed over; otherwise the result says what a person does.
  *
- * Cost: one read of the issue, the identity's lookup, one assignment write
- * and the read that confirms it; an issue already assigned costs one
- * history read instead of the write. Waiting costs no request.
+ * Cost: one read of the issue (a second after a wait, so an assignment or a
+ * start made meanwhile is never overwritten), the identity's lookup, one
+ * assignment write and the read that confirms it; an issue already
+ * assigned costs one history read instead of the write. Waiting costs no
+ * request.
  */
 import { type Clock, systemClock } from "../../../../shared/clock.ts";
 import { failureOf } from "../../../../shared/outbound/failure.ts";
@@ -22,7 +24,10 @@ import {
   waitBeforeAssigning,
   windowWords,
 } from "../../../do-item/scripts/lib/tracker/assignment-window.ts";
-import type { Tracker } from "../../../do-item/scripts/lib/tracker/port.ts";
+import type {
+  PoolIssue,
+  Tracker,
+} from "../../../do-item/scripts/lib/tracker/port.ts";
 
 /** What a hand-off reads and writes through. */
 export type HandOffTracker = Pick<
@@ -83,9 +88,8 @@ export async function handOff(
     remedy,
   });
   const again = "run the hand-off again";
-  let step = "read the issue";
-  try {
-    const issue = await tracker.poolIssue(key);
+  /** Why an issue as read cannot be handed over whatever its assignee; `null` when it can. */
+  const unfit = (issue: PoolIssue | null): HandOff | null => {
     if (issue === null)
       return notYet(`the tracker has no issue ${key}`, "check the key");
     if (CLOSED.includes(issue.state.type))
@@ -97,6 +101,16 @@ export async function handOff(
       return notYet(
         `${key} is ${issue.state.name}, a state of work in progress`,
         "a started item is someone's work: leave it to them",
+      );
+    return null;
+  };
+  let step = "read the issue";
+  try {
+    const issue = await tracker.poolIssue(key);
+    const refused = unfit(issue);
+    if (refused !== null || issue === null)
+      return (
+        refused ?? notYet(`the tracker has no issue ${key}`, "check the key")
       );
     step = `look up ${identity}`;
     const user = await tracker.user(identity);
@@ -119,7 +133,12 @@ export async function handOff(
         };
       step = `read who assigned ${key}`;
       try {
-        const by = await tracker.assignedBy(key, user.id);
+        const by = await tracker.assignedBy(key, identity);
+        if (!by.trusted)
+          return notYet(
+            `${key} was assigned to ${identity} by ${by.name}, who may not start work in this repository`,
+            `a hand-off does not change an existing assignment: someone who can write to the repository unassigns ${key} on the tracker and assigns it to ${identity} again`,
+          );
         return {
           handedOver: true,
           issue: key,
@@ -134,7 +153,7 @@ export async function handOff(
             ? isoFromMs(from.value)
             : null;
         return notYet(
-          `${key} is assigned to ${identity}, but its history holds no assignment of ${identity}: ${window}`,
+          `${key} is assigned to ${identity}, but who made that assignment cannot be read: ${error.message}`,
           `a hand-off does not change an existing assignment: unassign ${key} on the tracker, then assign it to ${identity} again${earliest === null ? "" : ` at or after ${earliest}`} (or ${again})`,
           earliest,
         );
@@ -147,7 +166,18 @@ export async function handOff(
         `${again} at or after ${until}`,
         until,
       );
-    if (waitMs > 0) await clock.sleep(waitMs);
+    if (waitMs > 0) {
+      await clock.sleep(waitMs);
+      step = `read ${key} again after the wait`;
+      const fresh = await tracker.poolIssue(key);
+      const changed = unfit(fresh);
+      if (changed !== null) return changed;
+      if (fresh?.assignee != null)
+        return notYet(
+          `${key} was assigned to ${fresh.assignee.name} while the hand-off waited; nothing written`,
+          `a hand-off does not take an issue from its assignee: unassign ${key} first if that is meant, then ${again}`,
+        );
+    }
     step = `assign ${key} to ${identity}`;
     const writtenAt = isoFromMs(clock.now());
     await tracker.assign(key, user);

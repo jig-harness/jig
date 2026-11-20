@@ -262,7 +262,8 @@ are not proof that full CI passed.
 a tracker whose history leaves out changes made just after an issue's
 creation (Linear: its first three minutes), the dispatcher never sees an
 assignment made then, so the send waits until that window has passed and
-then writes; its `note` row names the time. An item already assigned to the
+then writes; its `note` row names the time. Run such a send with the
+command tool's timeout above four minutes. An item already assigned to the
 factory identity whose history holds no assignment of it is refused with the
 remedy: the person unassigns it on the tracker and sends again. The send
 never changes an existing assignment.

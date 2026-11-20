@@ -38,6 +38,8 @@ export function fakeClock(start: number) {
 export interface Entry {
   createdAt: string;
   toAssignee: string;
+  /** Made by a guest of the team, who may not start work; by the lead when absent. */
+  byGuest?: boolean;
 }
 
 /** The fake workspace, read and written through the Linear adapter. */
@@ -112,7 +114,7 @@ export function fakeLinear(
                 id: `h${i}`,
                 createdAt: h.createdAt,
                 toAssignee: person(h.toAssignee),
-                actor: LEAD,
+                actor: h.byGuest === true ? { ...LEAD, guest: true } : LEAD,
               })),
             },
           },
@@ -131,6 +133,10 @@ export function fakeLinear(
     writes,
     failAssign: () => {
       failAssign = true;
+    },
+    /** Assign the issue as a person would, outside the code under test. */
+    setAssignee: (who: string | null) => {
+      issue.assignee = who;
     },
   };
 }

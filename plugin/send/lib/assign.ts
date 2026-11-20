@@ -114,8 +114,8 @@ export async function unseenAssignment(
     return null;
   } catch (error) {
     if (!(error instanceof AssignerUnknown)) return null;
+    return `${key} is assigned to ${identity}, but who made that assignment cannot be read (${error.message}), so the dispatcher will not start it; ${window}. The send does not change an existing assignment: unassign ${key} on the tracker, then send this again, and it writes the assignment once the issue is past that window`;
   }
-  return `${key} is assigned to ${identity}, but its history holds no assignment of ${identity}: ${window}. The send does not change an existing assignment: unassign ${key} on the tracker, then send this again, and it writes the assignment once the issue is past that window`;
 }
 
 /**

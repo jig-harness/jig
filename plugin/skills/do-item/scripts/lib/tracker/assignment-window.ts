@@ -4,7 +4,8 @@
  * inside the window is never read by `Tracker.assignedBy`, so the dispatcher
  * cannot tell who made it and never starts the item. Linear leaves out
  * property changes made in an issue's first three minutes; GitHub Issues
- * and Jira record an assignment however soon it follows the creation.
+ * records an assignment however soon it follows the creation, and Jira's
+ * changelog is not known to leave one out.
  *
  * Every route that hands an issue to the line asks the tracker for its
  * window and writes the assignment only after it has passed.
