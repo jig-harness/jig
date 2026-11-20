@@ -534,7 +534,7 @@ checkout. Check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- <each file this repair changed or regenerated>
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F ci-fix-message.txt
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git commit -F ci-fix-message.txt
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- ci-fix-message.txt
 bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/commit-prefix.ts" [--branch <head branch>]
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push
@@ -542,6 +542,17 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git 
 
 Remove the message file only after the commit succeeds, so a refused commit
 can be retried with it; left behind, it makes the worktree dirty.
+
+The commit runs the repository's commit hooks, whose length Jig does not
+know, so like the push it gets an hour where the command wrapper would give
+120 seconds; give your shell tool's call a timeout to match. A commit that
+exits `124` was killed at that deadline with its hooks. Read
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status`, settle any
+change the killed hook left (a formatter's edit, a stash it never restored),
+and commit again with `--timeout-seconds 7200`; never skip the hooks
+(`--no-verify`). Killed at that deadline too, the hook is hung: stop with
+the fixes staged and uncommitted, and report the command, its deadline and
+what `git status` shows.
 
 `commit-prefix.ts` puts the issue key in every unpushed commit where the
 repository sets `pull_requests.commit_prefix`, and does nothing where it
