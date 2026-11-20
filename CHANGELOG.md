@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.291.1] - 2026-11-20
+
+### Fixed
+
+- A pickup the host would hold no longer spends tracker reads. Before it reads the item from the tracker again, the dispatcher now checks whether any account has a free slot for it and, under `load.enforce`, whether the host's load holds it. A pickup that either check holds sends no request. A line held for many ticks no longer uses up the dispatcher's share of a Linear credential's request window. A pickup that passes both checks still reads the item, its relations and its assignment just before it starts. The Linear adapter now looks up the served person's user once for each repository's tracker in a tick, instead of once per candidate. **Consumer action:** none.
+
 ## [0.291.0] - 2026-11-20
 
 ### Added
@@ -10299,7 +10305,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.1...HEAD
+[0.291.1]: https://github.com/jig-harness/jig/compare/v0.291.0...v0.291.1
 [0.291.0]: https://github.com/jig-harness/jig/compare/v0.290.0...v0.291.0
 [0.290.0]: https://github.com/jig-harness/jig/compare/v0.289.0...v0.290.0
 [0.289.0]: https://github.com/jig-harness/jig/compare/v0.288.2...v0.289.0
