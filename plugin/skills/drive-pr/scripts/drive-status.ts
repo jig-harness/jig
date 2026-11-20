@@ -1537,10 +1537,11 @@ async function main(): Promise<number> {
     // right shape for the exhausted case: it re-arms the probe, charges
     // `queryErrors`, and reports the retry class rather than a verdict.
     //
-    // `code !== 1` stays, and is semantic rather than a bound: the premise is
-    // that the evaluation DISAGREES, and an unreadable evaluation does not
-    // disagree — it says nothing. Falling through hands it to `case 1`, which
-    // is bounded and is the right answer for an unreadable read.
+    // `code !== 1` and `code !== 25` stay, and are semantic rather than a
+    // bound: the premise is that the evaluation DISAGREES, and an unreadable
+    // evaluation does not disagree — it says nothing. Falling through hands
+    // each to its named stop, which preserves the diagnostic and avoids
+    // spending more check-runs listings after their bound has been reached.
     //
     // Under `--once` it does not retract at all, it degrades on the first
     // disagreement. Retracting means re-running `evaluate()`, and `--once` is a
@@ -1548,7 +1549,7 @@ async function main(): Promise<number> {
     // since it is the only path that loops without sleeping. Deferring is the
     // same answer this gate gives everywhere else for `--once`: the caller
     // comes back, and its next pass entry sweeps.
-    if (skippedAsFinished && code !== 5 && code !== 1) {
+    if (skippedAsFinished && code !== 5 && code !== 1 && code !== 25) {
       skippedAsFinished = false;
       if (once || skipRetractions >= MAX_QUERY_ERRORS) {
         const stop = await degrade(

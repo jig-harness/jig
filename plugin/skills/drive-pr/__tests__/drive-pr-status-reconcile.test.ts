@@ -591,6 +591,23 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     expect(resolvedIn(dir)).toEqual([]);
   });
 
+  it("keeps a check-runs listing stop when the finished-skip snapshot disagrees", async () => {
+    // A listing cut short is an unreadable evaluation, not evidence that the
+    // PR reopened. Retraction would re-run the listing even though its page
+    // bound is already known to be exhausted, losing the named diagnostic.
+    const { dir, stateDir } = writeFixture({
+      checkRunsHang: true,
+      liveProbeSaysClosedOnce: true,
+    });
+    const r = await probeIn(dir, stateDir, HEAD, [], {
+      env: { GH_CALL_TIMEOUT: "1" },
+    });
+
+    expect(r.state).toBe("CHECK_RUNS_UNREADABLE");
+    expect(r.exitCode).toBe(25);
+    expect(r.stderr).not.toContain("retracting the skip");
+  });
+
   it("degrade() stops at the poll DEADLINE, not only at the retry count", async () => {
     // `degrade()` bounded retries by count alone, and it is reached from paths
     // that did not exist when the loop's only deadline check was placed down
