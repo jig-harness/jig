@@ -54,7 +54,6 @@ import type {
   Action,
   LaneWait,
   BusyHolder,
-  DetachedCheckout,
   LaunchOutcome,
   RepoTarget,
   Stage,
@@ -226,12 +225,13 @@ export function rotated<T>(
   return [...items.slice(start), ...items.slice(0, start)];
 }
 
+/** An open that gave a launch its workspace, with the idle checkout it detached on the way. */
+type OpenedWorkspace = Pick<RuntimeReceipt, "cleanupFailure" | "detached"> & {
+  workspace: NonNullable<LaunchRecord["workspace"]>;
+};
+
 export type Opened =
-  | {
-      workspace: NonNullable<LaunchRecord["workspace"]>;
-      cleanupFailure?: string;
-      detached?: DetachedCheckout;
-    }
+  | OpenedWorkspace
   | { waits: string; waitsOn?: LaneWait }
   | { refused: string; holder?: BusyHolder };
 
@@ -514,12 +514,7 @@ function workspaceOr(
   action: Action,
   opened: Opened,
   account: string,
-):
-  | {
-      workspace: NonNullable<LaunchRecord["workspace"]>;
-      detached?: DetachedCheckout;
-    }
-  | { outcome: LaunchOutcome } {
+): OpenedWorkspace | { outcome: LaunchOutcome } {
   if ("waits" in opened)
     return {
       outcome: {
@@ -550,13 +545,7 @@ export async function openedFor(
   action: Action,
   slots: Slots,
   opening: Promise<Opened>,
-): Promise<
-  | {
-      workspace: NonNullable<LaunchRecord["workspace"]>;
-      detached?: DetachedCheckout;
-    }
-  | { outcome: LaunchOutcome }
-> {
+): Promise<OpenedWorkspace | { outcome: LaunchOutcome }> {
   const opened = workspaceOr(action, await opening, slots.account.name);
   if ("outcome" in opened) return opened;
   const stale = await changedWhileOpening(state, action, slots);
