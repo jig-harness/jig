@@ -215,6 +215,8 @@ describe("telling a host fault from a question about the work", () => {
       "Should tests retry when the disk is full?",
       "Should the code retry on ENOSPC: or restart the worker?",
       "Should the code retry on ENOSPC: or delete the cache?",
+      "Should tests retry on ENOSPC: or delete the fixture?",
+      "Should the implementation retry on ENOSPC: or clear the fixture?",
       "should the documentation explain how to free inodes?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
@@ -223,6 +225,8 @@ describe("telling a host fault from a question about the work", () => {
       "Can I remove leaked test fixtures to free inodes?",
       "Can I remove leaked fixtures to free inodes and retry validation?",
       "Can I remove leaked test fixtures to free inodes and retry the build?",
+      "Can I prune the cache and retry the build after ENOSPC:?",
+      "Could we delete the cache and retry the build after ENOSPC:?",
       "ENOSPC: no space left on device while writing the lockfile; retry later?",
       "the disk is full: may the build cache be pruned?",
       "the state directory is not writable: may I fix its permissions?",
@@ -353,6 +357,7 @@ describe("a pickup whose result the host could not write", () => {
       }),
     ]);
     expect(record.framed).toBeDefined();
+    expect(needs(p)[0]).toHaveProperty("framed");
   });
 });
 

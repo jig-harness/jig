@@ -61,8 +61,13 @@ function isHostFaultQuestion(question: string): boolean {
     )
   )
     return false;
+  const asksPermissionToClean =
+    /^(?:can|may|could|should|would) (?:i|we)\b.{0,160}\b(?:remove|delete|free|clean|purge|prune|clear|wipe)\b/i.test(
+      text,
+    );
   if (
-    /^(?:should|would|could|can|do|does|did)\b(?=.{0,160}\b(?:test|tests|build|code|implementation|workflow)\b)(?=.{0,160}\b(?:retry|fail|failing)\b)(?!(?:can|may|could|should|would) (?:i|we)\b.{0,160}\b(?:remove|delete|free|clean|purge|prune|clear|wipe)\b)(?!.{0,160}\b(?:remove|delete|free|clean|purge|prune|clear|wipe)\b[^?]{0,60}\b(?:inodes?|disk|space|file ?system|volume|fixtures?|tmp)\b)/i.test(
+    !asksPermissionToClean &&
+    /^(?:should|would|could|can|do|does|did)\b(?=.{0,160}\b(?:test|tests|build|code|implementation|workflow)\b)(?=.{0,160}\b(?:retry|fail|failing)\b)(?!.{0,160}\b(?:remove|delete|free|clean|purge|prune|clear|wipe)\b[^?]{0,60}\b(?:inodes?|disk|space|file ?system|volume|fixtures|tmp)\b)/i.test(
       text,
     )
   )
