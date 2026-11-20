@@ -184,6 +184,47 @@ describe("jig dispatch --apply re-drives a stall and a spent CI-repair budget", 
     expect(notified(r)).toEqual([["PR #7", "needs-person", "sent"]]);
   }, 90_000);
 
+  // A pass that stops on an unreadable check-runs listing measures what it
+  // left in the tree, as a stall does, so its re-drive is bound the same way.
+  it("re-drives an in-pass check-runs listing stop that left work in its tree there, once for its head", async () => {
+    const exit = DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
+    const ledger = (generation: number) => (ws: string) =>
+      stop(exit, generation, {
+        events: [
+          {
+            at: new Date().toISOString(),
+            round: generation,
+            kind: "stop",
+            cause: String(exit),
+            leftWork: true,
+            listingPages: 3,
+          },
+        ],
+        driver: {
+          ...stoppedLedger(7, exit).driver,
+          actor: `wt-${worktreePathKey(ws)}`,
+          clone: `clone-a@${hostLabel()}`,
+        },
+      });
+    const { w, ws } = fixture({ mergeable: "MERGEABLE" }, ledger(3));
+    const record = await redrive(w, exit);
+    const kept = readRecord(record, dispatchState(w));
+    expect(kept?.workspace?.path).toBe(ws);
+    expect(kept?.redrive).toEqual({
+      cause: `stopped ${exit}, its head's check-runs listing could not be read whole after 3 page(s)`,
+      change: `head ${HEAD_SHA}, stopped ${exit}`,
+      mechanicalStop: "check-runs",
+      tree: { actor: `wt-${worktreePathKey(ws)}`, here: true },
+    });
+
+    // The re-drive ended the same way on the same head: a person's now.
+    w.setComments(7, [ledgerComment(701, ledger(4)(ws))]);
+    const second = await tick(w);
+    expect(launches(second)).toEqual([]);
+    expect(notified(second)).toEqual([["PR #7", "needs-person", "sent"]]);
+    expect(driveRuns(w)).toHaveLength(1);
+  }, 180_000);
+
   it("re-drives a stall that left work only in the tree it stalled in", async () => {
     const leftWork = (actor: (ws: string) => string) => (ws: string) =>
       stop(14, 3, {

@@ -74,9 +74,19 @@ export async function runReviewPassPhase(
     const mailboxAfterListingStop = await context.mailboxCheckpoint();
     if (typeof mailboxAfterListingStop === "number")
       return mailboxAfterListingStop;
-    driverRuntime.stopListingPages = finish.listingPagesRead ?? null;
+    // The record is read from a file: a count that is not a whole number is
+    // unknown, as an absent one is.
+    const pages = finish.listingPagesRead;
+    driverRuntime.stopListingPages =
+      typeof pages === "number" && Number.isSafeInteger(pages) && pages >= 0
+        ? pages
+        : null;
+    const read =
+      driverRuntime.stopListingPages === null
+        ? ""
+        : ` after ${driverRuntime.stopListingPages} page(s)`;
     console.error(
-      `pass reported CHECK_RUNS_UNREADABLE on round ${round}; stopping`,
+      `pass reported CHECK_RUNS_UNREADABLE${read} on round ${round}; stopping`,
     );
     await reportPassLeftovers("What the pass left in the tree:");
     driverRuntime.stopLeftWork = await measureStop();
