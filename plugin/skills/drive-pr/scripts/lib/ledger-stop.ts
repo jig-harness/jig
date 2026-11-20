@@ -246,9 +246,12 @@ export async function recoverFromDriverRecord(
   stateDir: string,
   pr: string,
   lock: { diag: { started: string } | null },
+  acquired?: string,
 ): Promise<Settlement> {
   const record = readDriverRecord(stateDir, pr);
   if (record === null) return "settled";
+  // A successor replaced the acquisition the caller marked: settling it would leave the marked acquisition's stop unpublished.
+  if (acquired !== undefined && record.started !== acquired) return "unsettled";
   if (record.released !== true) {
     let outcome: Settlement = "unsettled";
     if (
@@ -641,8 +644,9 @@ export async function recoverIdleStop(
   stateDir: string,
   pr: string,
   row: { diag: { started: string } | null },
+  acquired?: string,
 ): Promise<Settlement> {
-  return recoverFromDriverRecord(stateDir, pr, row);
+  return recoverFromDriverRecord(stateDir, pr, row, acquired);
 }
 
 /** `--doctor`'s recovery: every driver record a released driver left. */

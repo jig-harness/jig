@@ -403,6 +403,12 @@ async function stopTarget(
     // Captured before the first step: a process the stop reparents is still known.
     const captured =
       live.alive.length > 0 ? await deps.tree(live.identities) : null;
+    if (live.alive.length > 0 && captured === null) {
+      deps.err(
+        `jig dispatch attach: ${id}'s descendant processes could not be captured (the process table was unreadable); nothing was stopped, and running the command again retries`,
+      );
+      return TAKE_OVER_EXIT.FAILED;
+    }
     const target: StopTarget = {
       id,
       drivePr,

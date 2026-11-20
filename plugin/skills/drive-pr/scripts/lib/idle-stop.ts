@@ -63,11 +63,12 @@ export async function settleIdleStop(
   expectStarted: string,
   reason: string,
 ): Promise<number> {
+  const acquired = readDriverRecord(stateDir, pr)?.started;
   const refused = markIdleStop(stateDir, pr, expectStarted, reason);
   if (refused !== null) return refused;
   // A record may stay as a retained CI-hold witness after the ledger is settled; only the outcome says which.
   console.log(
-    (await recoverIdleStop(stateDir, pr, row)) === "settled"
+    (await recoverIdleStop(stateDir, pr, row, acquired)) === "settled"
       ? `PR #${pr}'s idle ledger is settled.`
       : `PR #${pr}'s idle ledger is not settled: a ledger write is still owed.`,
   );
