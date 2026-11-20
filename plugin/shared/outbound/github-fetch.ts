@@ -450,13 +450,21 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       AbortSignal.timeout(Math.max(1, call.deadlineAt - now())),
     ]);
     if (signal.aborted) return null;
-    const asked = Promise.resolve(options.token(signal));
-    // A provider that settles after the race ended has nobody to tell.
-    asked.catch(() => undefined);
+    // Listening starts before the provider runs, so an abort it causes
+    // itself is seen; the listener is removed once the race is decided.
+    let onAbort: () => void = () => undefined;
     const ended = new Promise<null>((resolve) => {
-      signal.addEventListener("abort", () => resolve(null), { once: true });
+      onAbort = () => resolve(null);
+      signal.addEventListener("abort", onAbort, { once: true });
     });
-    return Promise.race([asked, ended]);
+    try {
+      const asked = Promise.resolve(options.token(signal));
+      // A provider that settles after the race ended has nobody to tell.
+      asked.catch(() => undefined);
+      return await Promise.race([asked, ended]);
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 
   /** One attempt: admitted, sent, observed into the budget and recorded. */

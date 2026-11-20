@@ -185,6 +185,25 @@ describe("stopping", () => {
     expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
   });
 
+  test("work queued before a stop is never started", async () => {
+    const ports = fakePorts();
+    const stop = new AbortController();
+    let started = false;
+    const running = runUnit(
+      ports,
+      { name: "test:queued", timeoutMs: 5_000, stop: stop.signal },
+      async () => {
+        started = true;
+        return ok("ran");
+      },
+    );
+    stop.abort();
+    const outcome = await running;
+    await Promise.resolve();
+    expect(started).toBe(false);
+    expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
+  });
+
   test("work is never started for a unit already stopped", async () => {
     const ports = fakePorts();
     let started = false;

@@ -162,7 +162,11 @@ export async function runUnit<T, Code extends string>(
       }, spec.timeoutMs);
     });
     const running = Promise.resolve()
-      .then(() => work(unit))
+      .then((): Promise<UnitOutcome<T, Code>> | UnitOutcome<T, Code> => {
+        // A unit stopped or timed out before this runs never starts its work.
+        if (unit.signal.aborted) return stoppedFailure(spec);
+        return work(unit);
+      })
       .catch((thrown: unknown) => defectFailure(ports, unit, thrown));
     return await Promise.race([running, late, stopped]);
   } catch (thrown) {

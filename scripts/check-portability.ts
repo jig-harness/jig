@@ -174,10 +174,16 @@ const TS_RUNTIME_CONTAINERS = new Set([
   "TSEnumMember",
   "TSModuleDeclaration",
   "TSModuleBlock",
+  "TSParameterProperty",
 ]);
 
 /** The keys of a runtime-bearing TypeScript declaration whose children run (never its name or its types). */
-const TS_RUNTIME_KEYS = new Set(["body", "members", "initializer"]);
+const TS_RUNTIME_KEYS = new Set([
+  "body",
+  "members",
+  "initializer",
+  "parameter",
+]);
 
 /** The children whose code runs: none of a type, a declaration's `declare` form or a wrapper's type. */
 function runtimeChildren(node: AstNode): Array<[string, AstNode]> {
@@ -198,6 +204,8 @@ function patternNames(pattern: unknown, into: Set<string>): void {
   if (!isNode(pattern)) return;
   const name = nameOf(pattern);
   if (name !== null) into.add(name);
+  else if (pattern.type === "TSParameterProperty")
+    patternNames(pattern.parameter, into);
   else if (pattern.type === "ObjectPattern")
     for (const property of pattern.properties as AstNode[])
       patternNames(
@@ -234,6 +242,9 @@ function declaredNames(program: AstNode): Set<string> {
       case "CatchClause":
         patternNames(node.param, names);
         break;
+      case "TSImportEqualsDeclaration":
+        if (node.importKind !== "type") patternNames(node.id, names);
+        return;
       case "ImportDeclaration":
         if (node.importKind === "type") return;
         for (const specifier of node.specifiers as AstNode[])
@@ -413,17 +424,22 @@ function readModule(
           });
         return;
       case "TSImportEqualsDeclaration": {
+        if (node.importKind === "type") return;
         const reference = node.moduleReference;
-        if (
-          node.importKind !== "type" &&
-          isNode(reference) &&
-          reference.type === "TSExternalModuleReference"
-        )
+        if (!isNode(reference)) return;
+        if (reference.type === "TSExternalModuleReference") {
           edges.push({
             specifier: literalOf(reference.expression),
             at: node.start,
             dynamic: false,
           });
+          return;
+        }
+        // A qualified alias (`import file = Bun.file`) reads its root name.
+        let root: AstNode = reference;
+        while (root.type === "TSQualifiedName" && isNode(root.left))
+          root = root.left;
+        visit(root, node, "moduleReference");
         return;
       }
       case "Identifier": {

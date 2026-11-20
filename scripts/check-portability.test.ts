@@ -139,6 +139,26 @@ export const c = import.meta.url;`),
     ]);
   });
 
+  test("parameter properties and qualified import aliases run code", () => {
+    expect(
+      core(`export class C { constructor(public home = process.env.HOME) {} }
+import file = Bun.file;
+export const read = () => file("x");`),
+    ).toEqual([
+      "plugin/hub/core/unit.ts:1 portability:runtime-global",
+      "plugin/hub/core/unit.ts:2 portability:runtime-global",
+    ]);
+  });
+
+  test("an import equals binding named like a runtime global is a declared name", () => {
+    expect(
+      core(
+        `import process = require("../../shared/portable.ts");\nexport const v = process.value;`,
+        { "plugin/shared/portable.ts": "export const value = 1;\n" },
+      ),
+    ).toEqual([]);
+  });
+
   test("a require-form import equals declaration is an import", () => {
     expect(core(`import fs = require("fs");\nexport const x = fs;`)).toEqual([
       "plugin/hub/core/unit.ts:1 portability:runtime-module",

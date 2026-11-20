@@ -382,6 +382,25 @@ describe("the fetch transport, beyond the shared contract", () => {
     expect(records[0]).toMatchObject({ requests: 0 });
   });
 
+  test("a provider that aborts the call itself and never settles does not hang the call", async () => {
+    const asked: RequestInit[] = [];
+    const controller = new AbortController();
+    const { transport } = build(() => ({ status: 200 }), {
+      fetch: fakeFetch(() => ({ status: 200, body: "{}" }), asked),
+      token: () => {
+        controller.abort();
+        return new Promise<never>(() => undefined);
+      },
+    });
+    const got = await transport.rest({
+      signal: controller.signal,
+      deadlineAt: currentMs() + 10_000,
+      path: "repos/o/r",
+    });
+    expect(got.ok ? null : got.failure.code).toBe("unreachable");
+    expect(asked).toHaveLength(0);
+  });
+
   test("a call that ends while its token is acquired sends nothing", async () => {
     const asked: RequestInit[] = [];
     const controller = new AbortController();
