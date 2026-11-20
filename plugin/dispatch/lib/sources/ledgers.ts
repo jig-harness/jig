@@ -122,9 +122,10 @@ import {
 } from "../reviewer-failure.ts";
 import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
-import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
+import { type Adoption, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
-import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
+import type { PickupArms } from "../pickup-arms.ts";
+import { unarmed } from "./ledger-arming.ts";
 import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
 export type { Admit } from "./base-heads.ts";
 import { ended, passedBefore, type TickBound } from "./bounded.ts";
@@ -688,57 +689,6 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
   return canonical.parsed.kind === "unknown-version"
     ? `its drive ledger is version ${String(canonical.parsed.version)}, which this reader does not know`
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
-}
-
-/**
- * A pull request with no ledger whose `drive` label asks for one, or which
- * the repository's adoption rule adopts: the plan arms it once per head
- * commit.
- */
-function unarmed(
-  pr: OpenPr,
-  base: Omit<DrivenPr, "class" | "why" | "evidence">,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
-): DrivenPr | null {
-  const asked = askedToArm(pr, r);
-  if (asked === null) return null;
-  // The once-per-head rule needs the commit it arms: without one nothing starts.
-  if (typeof pr.headRefOid !== "string" || pr.headRefOid === "")
-    return {
-      ...base,
-      class: "unplaced",
-      why: `no drive ledger, and ${asked.asks}, but the pull request's head commit does not read, so the once-per-head rule cannot be kept; nothing is armed`,
-      evidence: {},
-    };
-  return {
-    ...base,
-    class: "unarmed",
-    why: `no drive ledger, and ${asked.asks}: arm a drive on any account`,
-    evidence: { ledger: "none", headSha: pr.headRefOid, ...asked.evidence },
-  };
-}
-
-/** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
-function askedToArm(
-  pr: OpenPr,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
-): { asks: string; evidence: { adopted?: string; pickupArm?: true } } | null {
-  const { labels, adoption } = r;
-  if (labels !== null && hasCommand(labels, pr.labels, "drive"))
-    return { asks: "a person's drive label asks for one", evidence: {} };
-  if (pickupAsked(r.pickupArms, pr))
-    return {
-      asks: "its completed process pickup handed off the first drive",
-      evidence: { pickupArm: true },
-    };
-  const adopted =
-    adoption === null ? null : adopts(pr, adoption, labels, r.nowMs);
-  return adopted === null
-    ? null
-    : {
-        asks: "the repository's adoption rule (dispatch.adopt) adopts it",
-        evidence: { adopted },
-      };
 }
 
 /** What every drive of a pull request carries: the pull request, and its labels where they are read. */

@@ -607,7 +607,7 @@ describe("drive-status.ts terminal states", () => {
     // deadline margin for the closing evaluation, so it can be under its wait.
     const slackMs = 50;
     gaps.slice(0, Math.min(3, gaps.length - 1)).forEach((gap, i) => {
-      expect(gap).toBeGreaterThanOrEqual([1000, 2000, 3000][i]! - slackMs);
+      expect(gap).toBeGreaterThanOrEqual((i + 1) * 1000 - slackMs);
     });
   }, 20_000);
 });

@@ -46,7 +46,7 @@ export async function commitPages(
   const r = await slurpPages(
     `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
     read,
-    { stderr: "ignore" },
+    { stderr: "pipe" },
   );
   return r.code === 0 ? parsePages(r.stdout) : null;
 }

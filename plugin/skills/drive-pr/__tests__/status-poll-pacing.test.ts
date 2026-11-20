@@ -123,7 +123,7 @@ describe("waiting status poll pacing", () => {
         now += ms + 100;
       },
       balance: () => ({ windows: [] }),
-      record() {},
+      record: () => undefined,
     });
 
     expect(

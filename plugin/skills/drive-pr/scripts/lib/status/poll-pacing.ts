@@ -247,6 +247,39 @@ export class StatusPollPacing {
       : Math.min(this.baseMs, maximumMs);
   }
 
+  /** Whether the previous wait reserved this deadline's final evaluation and the clock is inside its margin. */
+  private finalWaitDue(started: number, deadline: number): boolean {
+    return (
+      this.finalEvaluationDeadline === deadline &&
+      started >= deadline - FINAL_EVALUATION_MARGIN_MS
+    );
+  }
+
+  /** When to wake, and whether that wake reserves the final evaluation. */
+  private wakeTime(
+    pollAt: number,
+    cadencePollAt: number,
+    deadline: number,
+    now: number,
+  ): { wakeAt: number; reserves: boolean } {
+    // Reserve a practical margin before the deadline for a final evaluation.
+    // Otherwise timer lateness and the wait's own telemetry can leave the
+    // consuming loop with no time to observe evidence from its last interval.
+    // An ordinary cadence wake inside the final margin is itself the final
+    // evaluation. Reserving another wake at the same time would return a
+    // zero-delay poll on the next call. A budget-limited wake at that same
+    // boundary is also an evaluation, so retain that reservation even when
+    // the budget, rather than cadence, chose the wake time.
+    const margin = deadline - FINAL_EVALUATION_MARGIN_MS;
+    const reserves =
+      pollAt >= margin && (pollAt === cadencePollAt || pollAt === margin);
+    const wakeAt = Math.min(
+      pollAt,
+      reserves ? Math.max(now, margin) : deadline,
+    );
+    return { wakeAt, reserves };
+  }
+
   async wait(
     signal: string,
     deadline: number,
@@ -258,10 +291,7 @@ export class StatusPollPacing {
     // cannot turn `--interval` into a faster forge-read cadence.
     const effectiveMaximumMs = Math.max(this.baseMs, maximumMs);
     const started = this.deps.now();
-    if (
-      this.finalEvaluationDeadline === deadline &&
-      started >= deadline - FINAL_EVALUATION_MARGIN_MS
-    ) {
+    if (this.finalWaitDue(started, deadline)) {
       this.finalEvaluationDeadline = undefined;
       if (started < deadline) await this.deps.sleep(deadline - started, abort);
       return false;
@@ -272,37 +302,50 @@ export class StatusPollPacing {
     let sample = this.deps.balance();
     for (;;) {
       const now = this.deps.now();
-      this.adoptCredential(sample);
-      this.lower = [...this.lower, ...sample.windows];
-      this.compactLower(now);
-      this.completeLimits();
+      this.absorb(sample, now);
       const cadencePollAt = pollAt;
-      for (const low of this.lower)
-        pollAt = this.pollAfter(low, started, pollAt, effectiveMaximumMs);
-      // Reserve a practical margin before the deadline for a final evaluation.
-      // Otherwise timer lateness and the wait's own telemetry can leave the
-      // consuming loop with no time to observe evidence from its last interval.
-      // An ordinary cadence wake inside the final margin is itself the final
-      // evaluation. Reserving another wake at the same time would return a
-      // zero-delay poll on the next call. A budget-limited wake at that same
-      // boundary is also an evaluation, so retain that reservation even when
-      // the budget, rather than cadence, chose the wake time.
-      const reservesFinalEvaluation =
-        pollAt >= deadline - FINAL_EVALUATION_MARGIN_MS &&
-        (pollAt === cadencePollAt ||
-          pollAt === deadline - FINAL_EVALUATION_MARGIN_MS);
-      const wakeAt = Math.min(
+      pollAt = this.budgetPollAt(started, pollAt, effectiveMaximumMs);
+      const { wakeAt, reserves } = this.wakeTime(
         pollAt,
-        reservesFinalEvaluation
-          ? Math.max(now, deadline - FINAL_EVALUATION_MARGIN_MS)
-          : deadline,
+        cadencePollAt,
+        deadline,
+        now,
       );
-      if (reservesFinalEvaluation) this.finalEvaluationDeadline = deadline;
+      if (reserves) this.finalEvaluationDeadline = deadline;
       if (wakeAt <= now || abort?.aborted) break;
       await this.deps.sleep(wakeAt - now, abort);
       if (abort?.aborted) break;
       sample = this.deps.balance();
     }
+    return this.finish(started, deadline, abort);
+  }
+
+  /** Fold one balance reading into the lowest windows held. */
+  private absorb(sample: BalanceSample, now: number): void {
+    this.adoptCredential(sample);
+    this.lower = [...this.lower, ...sample.windows];
+    this.compactLower(now);
+    this.completeLimits();
+  }
+
+  /** The poll time after every held window has had its say. */
+  private budgetPollAt(
+    started: number,
+    pollAt: number,
+    maximumMs: number,
+  ): number {
+    let at = pollAt;
+    for (const low of this.lower)
+      at = this.pollAfter(low, started, at, maximumMs);
+    return at;
+  }
+
+  /** Record the wait and say whether the caller polls now. */
+  private finish(
+    started: number,
+    deadline: number,
+    abort: AbortSignal | undefined,
+  ): boolean {
     const ended = this.deps.now();
     const willPoll = !abort?.aborted && ended < deadline;
     // A wake that lands inside the final margin without a reservation (the
