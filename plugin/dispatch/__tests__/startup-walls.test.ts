@@ -198,6 +198,20 @@ describe("which stages recognise a startup", () => {
     ).toBeUndefined();
   });
 
+  it("recognises Claude Code's not-logged-in separator form", () => {
+    const record = recordOf({ action: "followup" });
+    const project = join(record.configDir, "projects", "repo");
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(project, `${record.sessionId}.jsonl`),
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"Not logged in · Please run /login"}]}}\n',
+    );
+    const started = Date.now() - 10_000;
+    expect(failedStartup(record, 1, started, "", started + 5_000)).toBe(
+      "sign-in",
+    );
+  });
+
   it.each([{ action: "pickup" }, { action: "rearm" }])(
     "leaves a %o session to the stage that runs it",
     (fields) => {

@@ -72,15 +72,15 @@ function reportedErrors(result: Record<string, unknown>, child: Probe): string {
 function vendorFailure(detail: string, at: number): Omit<ProbeResult, "cost"> {
   if (
     signInPhrase(detail) !== undefined ||
-    /^\s*API Error: 401\b/im.test(detail)
+    /^[ \t]*API Error: 401\b/im.test(detail)
   )
     return { failure: "unauthorized" };
   const quota = startupReset(detail, at);
-  if (quota !== null || /^\s*API Error: 429\b/im.test(detail))
+  if (quota !== null || /^[ \t]*API Error: 429\b/im.test(detail))
     return quota?.resetAt == null
       ? { failure: "rate-limited" }
       : { failure: "rate-limited", resetAt: parseMs(quota.resetAt) };
-  if (/^\s*API Error: 5\d\d\b/im.test(detail))
+  if (/^[ \t]*API Error: 5\d\d\b/im.test(detail))
     return { failure: "server-fault" };
   return { failure: "invalid" };
 }

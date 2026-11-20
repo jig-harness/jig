@@ -158,6 +158,7 @@ const SIGN_IN_PHRASES = [
   "OAuth session expired",
   "Please run /login",
   "Not logged in",
+  "Not logged in · Please run /login",
   "Authentication required · Sign in again to continue",
 ] as const;
 export type SignInPhrase = (typeof SIGN_IN_PHRASES)[number];
@@ -175,6 +176,8 @@ export function signInPhrase(text: string): SignInPhrase | undefined {
       const remainder = message.slice(expected.length);
       if (candidate === "API Error: 401")
         return remainder === "" || /^[\s.:]/.test(remainder);
+      if (candidate === "Not logged in · Please run /login")
+        return remainder === "" || /^[.:]/.test(remainder);
       return remainder === "" || /^[.:]/.test(remainder);
     });
     if (phrase !== undefined) return phrase;
