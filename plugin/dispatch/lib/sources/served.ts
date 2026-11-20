@@ -36,7 +36,11 @@ import {
   isRateLimited,
   type TrackerRateLimited,
 } from "../../../shared/outbound/budget.ts";
-import { parentHoldUnread, servedParentHold } from "./served-parents.ts";
+import {
+  parentHoldUnread,
+  servedParentHold,
+  servedParentSteps,
+} from "./served-parents.ts";
 import { blocksWithin } from "../../../skills/do-item/scripts/lib/blocker-chain.ts";
 import {
   closed,
@@ -360,6 +364,8 @@ export async function freshServedPickup(
 interface Pending {
   issue: PoolIssue;
   ancestor: string | undefined;
+  /** Every epic the walk passed through to reach the item, outermost to nearest. */
+  ancestors?: string[] | undefined;
   by: string | undefined;
   epicOrder: number | undefined;
   planHold: string | undefined;
@@ -494,6 +500,7 @@ async function enqueueChildren(
   ctx: WalkContext,
   issue: PoolIssue,
   ancestor: string | undefined,
+  ancestors: readonly string[],
   meta: Metadata,
   candidate: Candidate,
   found: Found,
@@ -536,6 +543,7 @@ async function enqueueChildren(
     found.pending.push({
       issue: child,
       ancestor: ancestor ?? issue.identifier,
+      ancestors: [...ancestors, issue.identifier],
       by: candidate.by,
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
@@ -658,7 +666,15 @@ async function placeNode(
   const held = await heldReason(ctx, node, candidate, open, found);
   if (held !== null) return void unplace(held);
   if (meta.children.length > 0)
-    return enqueueChildren(ctx, issue, ancestor, meta, candidate, found);
+    return enqueueChildren(
+      ctx,
+      issue,
+      ancestor,
+      node.ancestors ?? [],
+      meta,
+      candidate,
+      found,
+    );
   if (issue.isEpic && issue.hasOpenChildren) {
     itemFailed(found);
     return void unplace(
@@ -720,6 +736,13 @@ async function placeLeaf(
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return void unplace(parentHold);
+  const steps = await servedParentSteps(tracker, candidate.issue, cache, view);
+  if (steps === null) {
+    itemFailed(found);
+    return void unplace("the epic ancestry cannot be read");
+  }
+  const chain = chainOf(steps, candidate.ancestors);
+  if (chain.length > 0) candidate.ancestors = chain;
   found.candidates.push(candidate);
 }
 
@@ -840,6 +863,7 @@ function candidateOf(
     identity,
     by: meta.by?.name ?? node.by ?? "",
     ancestor: node.ancestor,
+    ...(node.ancestors === undefined ? {} : { ancestors: node.ancestors }),
     blockers: open.map((b) => b.key),
     ...(node.pull === undefined ? {} : { blockingFor: node.pull.root }),
     ...(node.epicOrder === undefined ? {} : { epicOrder: node.epicOrder }),
@@ -871,14 +895,39 @@ async function heldReason(
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return parentHold;
-  const pull = pullBlockers(node.issue, node.pull, node.ancestor, open, {
-    hitl: options.hitl,
-    manualOps: options.manualOps,
-    repoScope: options.repoScope,
-    canAssign: tracker.assignUnassigned !== undefined,
-    blockedState: (item) =>
-      tracker.stateName("blocked", item.nativeType ?? null),
-  });
+  // The blocked node's own tracker epics reach every blocker pulled for it, whether or not the walk passed through them.
+  const steps = await servedParentSteps(tracker, node.issue, cache, view);
+  if (steps === null) {
+    itemFailed(found);
+    return "the epic ancestry cannot be read";
+  }
+  const chain = chainOf(steps, node.ancestors);
+  const origin =
+    node.pull === undefined
+      ? undefined
+      : {
+          ...node.pull,
+          rootAncestors: [
+            ...(node.pull.rootAncestors ?? []),
+            ...chain.filter(
+              (k) => !(node.pull?.rootAncestors ?? []).includes(k),
+            ),
+          ],
+        };
+  const pull = pullBlockers(
+    node.issue,
+    origin,
+    { ancestor: node.ancestor, ancestors: chain },
+    open,
+    {
+      hitl: options.hitl,
+      manualOps: options.manualOps,
+      repoScope: options.repoScope,
+      canAssign: tracker.assignUnassigned !== undefined,
+      blockedState: (item) =>
+        tracker.stateName("blocked", item.nativeType ?? null),
+    },
+  );
   // A tracker that cannot assign without replacing a concurrent assignee refuses the claim, so no launch is spent on it; each blocker is still explained.
   if (pull.pulled.length > 0 && tracker.assignUnassigned === undefined)
     return `${pull.reason}; this issue service cannot assign a blocker on its own, so a person assigns it`;
@@ -927,4 +976,17 @@ async function freshPulledAuthority(
   return (await blocksWithin(tracker, blockingFor, issue.identifier, through))
     ? null
     : `it no longer blocks ${blockingFor}`;
+}
+
+/**
+ * The item's own epics, outermost to nearest (`steps` runs nearest first),
+ * then each further epic the walk reached it through: a pulled blocker's
+ * walk carries the epics of the item it is pulled forward for.
+ */
+function chainOf(
+  steps: ReadonlyArray<{ parent: { identifier: string } }>,
+  walked: readonly string[] | undefined,
+): string[] {
+  const own = steps.map((s) => s.parent.identifier).reverse();
+  return [...own, ...(walked ?? []).filter((key) => !own.includes(key))];
 }
