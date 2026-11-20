@@ -196,6 +196,23 @@ describe("holderVerdict", () => {
     expect(verdict(holder).idle).toBe(true);
   });
 
+  test("with the branch gone from origin, a squash merge of several commits after the base moved on makes it idle", () => {
+    const { clone, holder } = heldTree();
+    writeFileSync(join(holder, "file.txt"), "two\n");
+    git(holder, "commit", "-q", "-am", "more work");
+    git(holder, "push", "-q", "origin", BRANCH);
+    git(clone, "pull", "-q", "--ff-only", "origin", "main");
+    writeFileSync(join(clone, "other.txt"), "base work\n");
+    git(clone, "add", "other.txt");
+    git(clone, "commit", "-q", "-m", "base work");
+    git(clone, "fetch", "-q", "origin");
+    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+    git(clone, "commit", "-q", "-m", "squash");
+    git(clone, "push", "-q", "origin", "HEAD:main");
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    expect(verdict(holder).idle).toBe(true);
+  });
+
   test("with the branch gone from origin, a local commit beyond the squash merge keeps it busy and is named", () => {
     const { holder } = squashMerged();
     writeFileSync(join(holder, "extra.txt"), "not merged\n");

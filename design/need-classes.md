@@ -328,8 +328,8 @@ branch.
   (#880).
 - A holder whose branch the remote no longer has counts as unpushed only
   the commits whose change the remote's default branch lacks: neither the
-  commit nor a later one has the tree of a commit on that branch, and its
-  patch is not there. A squash-merged pull request's leftover checkout is
+  commit nor a later one has the tree of a commit on that branch, its patch
+  is not there, and merging the checkout into that branch would change it. A squash-merged pull request's leftover checkout is
   therefore idle, so a follow-up detaches it, keeps its branch and lists
   both in its launch outcome rather than asking a person. A busy holder's
   reason names the commits that keep it busy.

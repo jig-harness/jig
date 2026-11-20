@@ -374,7 +374,11 @@ async function launchOne(
   );
   if ("outcome" in opened) return opened.outcome;
   const after = await changed(repo, ctx, pr.number);
-  if (after !== null) return waits(action, after, slots.account.name);
+  if (after !== null)
+    return leftBehind(
+      waits(action, after, slots.account.name),
+      opened.detached,
+    );
   const record = newFollowupRecord(
     state,
     repo,
@@ -392,10 +396,11 @@ async function launchOne(
 }
 
 /**
- * A follow-up's outcome that lists the idle checkout its open detached: a
- * leftover tree never blocks a follow-up, and nothing of it is deleted, so
- * the follow-up says where it is and which branch it kept for whoever
- * clears it.
+ * A follow-up's outcome that lists the idle checkout its open detached,
+ * launched or waiting: a leftover tree never blocks a follow-up, and nothing
+ * of it is deleted, so the follow-up says where it is and which branch it
+ * kept for whoever clears it. A later tick finds the branch free and would
+ * not see the checkout again.
  */
 function leftBehind(
   outcome: LaunchOutcome,

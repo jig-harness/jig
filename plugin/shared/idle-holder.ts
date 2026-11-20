@@ -6,7 +6,8 @@
  * holds it is a leftover (an agent's isolation worktree from the session that
  * built the pull request, say), opening the branch somewhere else waits on
  * that tree forever. Detaching an idle holder loses nothing: its commit stays
- * where it is, and the branch it gives up is on the remote. A holder is idle
+ * where it is, the branch it gives up keeps every commit, and their change
+ * is on the remote. A holder is idle
  * only when every one of these holds, each read again on every call:
  *
  * | Check | Busy when |
@@ -15,7 +16,7 @@
  * | `git status` | it reports a change, an untracked file or a submodule change |
  * | the index flags | an assume-unchanged or skip-worktree flag hides a change from `git status` |
  * | the git directory | a merge, cherry-pick, revert, bisect, rebase or sequencer is unfinished |
- * | the remote | `HEAD` has a commit `<remote>/<branch>` lacks, or, with no such branch, one no `<remote>` branch has whose change the remote's default branch lacks too: neither it nor a later commit has the tree of a commit there, and its patch is not there |
+ * | the remote | `HEAD` has a commit `<remote>/<branch>` lacks, or, with no such branch, one no `<remote>` branch has whose change the remote's default branch lacks too: neither it nor a later commit has the tree of a commit there, its patch is not there, and merging `HEAD` into that branch would change it |
  * | drives and sessions | the caller's `drivers` reader names a live driver or session lease on the tree |
  * | processes | a process of this user has its working directory in the tree |
  *
@@ -40,6 +41,9 @@
  *   container), whose working directories it cannot read or compare.
  * - Anything on a host whose git is older than 2.31, which cannot print
  *   absolute paths as the check asks; there the tree reads as busy.
+ * - A change the base branch holds only in another form: patch-id matching
+ *   ignores whitespace, and an empty commit changes nothing, so either counts
+ *   as merged. The branch keeps such a commit after the detach.
  *
  * Whoever detaches a holder does so right after the check, and only while
  * `HEAD` is still at the commit the check read (`git update-ref` with that
@@ -131,9 +135,26 @@ function defaultBranch(
       };
 }
 
-/** Lines of a git answer, or `null` when git failed. */
-function lines(answer: RunResult): string[] | null {
-  return answer.status === 0 ? answer.stdout.split("\n").filter(Boolean) : null;
+/** Lines of a git answer, or why git gave none. */
+function lines(answer: RunResult): string[] | { unreadable: string } {
+  return answer.status === 0
+    ? answer.stdout.split("\n").filter(Boolean)
+    : { unreadable: output(answer) || `exit ${answer.status}` };
+}
+
+/**
+ * Whether merging `HEAD` into `ref` changes nothing: the base branch already
+ * holds the branch's whole change, as after a squash merge of several
+ * commits once the base had moved on. `git merge-tree --write-tree` needs git
+ * 2.38; an older git, or a merge that conflicts, answers no.
+ */
+function mergesToNothing(git: (args: string[]) => RunResult, ref: string) {
+  const merged = git(["merge-tree", "--write-tree", ref, "HEAD"]);
+  const tree = git(["rev-parse", `${ref}^{tree}`]);
+  const [result] = merged.stdout.split("\n");
+  return (
+    merged.status === 0 && tree.status === 0 && result === tree.stdout.trim()
+  );
 }
 
 /**
@@ -142,31 +163,37 @@ function lines(answer: RunResult): string[] | null {
  * why that cannot be told. A squash merge holds a branch's change under a
  * new commit, so a commit is merged when it, or a commit after it, has the
  * tree of a commit on the base branch, or when its own patch is on the base
- * branch (`git cherry`'s patch-id equivalence).
+ * branch (`git cherry`'s patch-id equivalence); and every commit is merged
+ * when merging `HEAD` into the base branch changes nothing.
  */
 function unmerged(
   git: (args: string[]) => RunResult,
   remote: string,
 ): { base: string; commits: string[] } | { unreadable: string } {
-  const base = defaultBranch(git, remote);
-  if ("unreadable" in base) return base;
-  const ref = `refs/remotes/${remote}/${base.branch}`;
-  const ours = lines(
+  const found = defaultBranch(git, remote);
+  if ("unreadable" in found) return found;
+  const base = `${remote}/${found.branch}`;
+  const ref = `refs/remotes/${base}`;
+  const reads = [
     git(["log", "--format=%H %T", "HEAD", "--not", `--remotes=${remote}`]),
-  );
-  const theirs = lines(git(["log", "--format=%T", ref, "--not", "HEAD"]));
-  const cherry = lines(git(["cherry", ref, "HEAD"]));
-  if (ours === null || theirs === null || cherry === null)
+    git(["log", "--format=%T", ref, "--not", "HEAD"]),
+    git(["cherry", ref, "HEAD"]),
+  ].map(lines);
+  const failed = reads.find((read) => !Array.isArray(read));
+  if (failed !== undefined && !Array.isArray(failed))
     return {
-      unreadable: `its commits cannot be compared with ${remote}/${base.branch}`,
+      unreadable: `its commits cannot be compared with ${base}: ${failed.unreadable}`,
     };
+  const [ours, theirs, cherry] = reads as string[][];
   const trees = new Set(theirs);
-  const merged = ours
+  const merged = (ours ?? [])
     .map((line) => line.split(" "))
     .filter(([, tree]) => tree !== undefined && trees.has(tree))
     .map(([commit]) => commit as string);
   const patched = new Set(
-    cherry.filter((line) => line.startsWith("- ")).map((line) => line.slice(2)),
+    (cherry ?? [])
+      .filter((line) => line.startsWith("- "))
+      .map((line) => line.slice(2)),
   );
   const left = lines(
     git([
@@ -179,15 +206,16 @@ function unmerged(
       ...merged,
     ]),
   );
-  if (left === null)
+  if (!Array.isArray(left))
     return {
-      unreadable: `its commits cannot be compared with ${remote}/${base.branch}`,
+      unreadable: `its commits cannot be compared with ${base}: ${left.unreadable}`,
     };
+  const commits = left
+    .filter((line) => !patched.has(line.slice(0, line.indexOf(" "))))
+    .map((line) => line.slice(line.indexOf(" ") + 1));
   return {
-    base: `${remote}/${base.branch}`,
-    commits: left
-      .filter((line) => !patched.has(line.slice(0, line.indexOf(" "))))
-      .map((line) => line.slice(line.indexOf(" ") + 1)),
+    base,
+    commits: commits.length > 0 && mergesToNothing(git, ref) ? [] : commits,
   };
 }
 
