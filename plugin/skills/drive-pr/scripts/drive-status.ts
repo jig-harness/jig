@@ -428,9 +428,19 @@ async function main(): Promise<number> {
   }
   const helperTimeoutSec = helperRead.seconds;
 
-  if (pr === "") {
-    const r = await ghCall(["pr", "view", "--json", "number", "-q", ".number"]);
-    if (r.code !== 0 || r.stdout.trim() === "") {
+  // The evaluation reads the pull request over REST, which names it by
+  // number, so a URL or branch argument is resolved to one here, once.
+  if (!isDigits(pr)) {
+    const r = await ghCall([
+      "pr",
+      "view",
+      ...(pr === "" ? [] : [pr]),
+      "--json",
+      "number",
+      "-q",
+      ".number",
+    ]);
+    if (r.code !== 0 || !isDigits(r.stdout.trim())) {
       if (r.stderr) process.stderr.write(r.stderr);
       fail(2, "could not resolve a PR number");
     }

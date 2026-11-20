@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "bun:test";
 
+import { readFileSync } from "node:fs";
 import { join, delimiter } from "node:path";
 
 import { roundFingerprint } from "../scripts/drive";
@@ -221,34 +222,29 @@ describe("drive-status.ts merge conflicts", () => {
     expect((r.json.merge as Record<string, unknown>).mergeable).toBe("UNKNOWN");
   });
 
-  it("a gh missing a required field is a PREREQUISITE error, not a degraded mode", async () => {
-    // An earlier version built a three-tier CLI-version fallback ladder plus a
-    // second REST parser here, and every tier then needed its own binding and
-    // validation guards — each of which produced the next round's findings.
-    // A backward-compatibility ladder of that shape is exactly what to avoid,
-    // and the premise was thin anyway: the fields have all been in `gh`
-    // for years. Requiring them deletes the whole surface. Exit 2 is the usage
-    // /configuration code, and the message has to name the fix.
-    const r = await probe({
+  it("an unreadable pull document is INDETERMINATE after one full read, never a verdict", async () => {
+    // The conditional read failed, so the evaluation reads the document once
+    // more in full (no validator sent) before giving up: a failure is never
+    // taken for an unchanged pull request, and a second failure is a retry,
+    // not a verdict drawn from no reading.
+    const { dir, stateDir } = writeFixture({
       threads: [],
       reviewedSha: HEAD,
-      mergeabilityUnreadable: true,
+      mergeable: "CONFLICTING",
+      snapshotUnreadable: true,
     });
-    expect(r.exitCode).toBe(2);
-    expect(r.stderr).toContain("upgrade the GitHub CLI");
-    expect(r.stderr).toContain("mergeable");
-    // Never a terminal verdict, and never a quiet degrade.
-    expect(r.state).not.toBe("CONVERGED");
+    const r = await probeIn(dir, stateDir, HEAD);
+    expect(r.state).toBe("INDETERMINATE");
+    expect(r.exitCode).toBe(1);
     expect(r.state).not.toBe("PR_CONFLICTING");
-    // ...and it goes through the REPORTER. The first cut called `exit 2` from
-    // inside evaluate(), which skips report() entirely: `--json` emitted stderr
-    // and no object at all, so a caller parsing the documented contract got an
-    // empty string and could not tell this from a crash. `probe` parses stdout,
-    // so an empty state here IS that bug.
-    expect(r.state).toBe("UNSUPPORTED_CLI");
-    expect(r.json.exit).toBe(2);
+    // It goes through the REPORTER, so a `--json` caller still gets the object.
+    expect(r.json.exit).toBe(1);
     expect(r.json.pr).toBe(999);
-    expect(String(r.json.reason)).toContain("upgrade the GitHub CLI");
+    const reads = readFileSync(join(dir, "snapshot-reads"), "utf8")
+      .trim()
+      .split("\n");
+    expect(reads).toHaveLength(2);
+    expect(reads.every((a) => !a.includes("If-None-Match"))).toBe(true);
   });
 
   it("an unreadable check-runs API does not block PR_CONFLICTING", async () => {
@@ -272,22 +268,6 @@ describe("drive-status.ts merge conflicts", () => {
     const r = await probe({ threads: [], checkRunsUnreadable: true });
     expect(r.state).toBe("INDETERMINATE");
     expect(r.exitCode).toBe(1);
-  });
-
-  it("liveness is still checked FIRST, even on an unsupported gh", async () => {
-    // Folding liveness into the combined required-field read broke the
-    // "a merged or closed PR stops the loop before anything else" contract:
-    // on an old `gh` a finished PR reported a configuration error, so a caller
-    // could not tell a PR that is simply done from a CLI it cannot use. The
-    // `state` field alone is supported by every `gh` that has the subcommand.
-    const r = await probe({
-      prState: "MERGED",
-      threads: [],
-      mergeabilityUnreadable: true,
-    });
-    expect(r.state).toBe("PR_NOT_OPEN");
-    expect(r.exitCode).toBe(5);
-    expect(r.exitCode).not.toBe(2);
   });
 
   it("a malformed snapshot is INDETERMINATE, not silently mergeable", async () => {

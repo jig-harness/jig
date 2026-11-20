@@ -33,10 +33,11 @@ import { validatorCache } from "./outbound/cache.ts";
  *                        (`withObservedEvaluation`). See
  *                        `outbound/observed-pages.ts`.
  *
- * Not a replacement for the field-rich reads (`mergeStateStatus`,
- * `baseRefOid`, review threads). REST and GraphQL disagree on mergeability and
- * on `baseRefOid`, and drive-pr's guards compare reads against each other, so
- * those stay GraphQL.
+ * A field-rich read can ride `ghConditionalGet` too, provided every value a
+ * guard compares comes from the same source: drive-pr's status snapshot reads
+ * state, draft, head, base and mergeability from one REST pull document, and
+ * its terminal recheck reads that same document again, so no comparison spans
+ * REST and GraphQL. Review threads have no REST form and stay GraphQL.
  *
  * `{owner}/{repo}` in a path is expanded by `gh` itself from the local remotes,
  * `$GH_REPO` and `gh repo set-default` — the same resolution `gh repo view`
@@ -117,6 +118,13 @@ export interface CallContext {
    * any checkout still revalidates what it read.
    */
   repository?: string;
+  /**
+   * A full read: no validator is sent, so the answer is a whole document
+   * (`changed: true`), never a `304`, and it replaces the kept reading. For a
+   * caller whose conditional read failed or came back unusable, which must
+   * not take a kept reading for the resource's current state.
+   */
+  unconditional?: boolean;
 }
 
 export type ConditionalGet =
@@ -346,7 +354,10 @@ export function createConditionalCache({
       dir !== null && scope !== null ? entryFile(dir, scope, request) : null;
 
     let cached: { etag: string; body: string } | null = null;
-    if (file !== null && !keepBody) {
+    if (ctx.unconditional === true) {
+      // No validator: a 304 cannot be asked for, and one that comes back
+      // anyway finds nothing cached and fails closed below.
+    } else if (file !== null && !keepBody) {
       const etag = probeBaselines.get(file);
       if (etag !== undefined) cached = { etag, body: "" };
     } else if (file !== null) {

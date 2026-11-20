@@ -364,13 +364,6 @@ export interface Fixture {
    * together with `state`, `headRefOid` and `baseRefOid` in one call.
    */
   isDraftMovesTo?: boolean;
-  /**
-   * `gh pr view --json` rejects one of the fields the script requests, as a
-   * `gh` too old to know it does. That is an unmet PREREQUISITE, not a
-   * supported configuration — the script reports UNSUPPORTED_CLI and exits 2
-   * rather than degrading.
-   */
-  mergeabilityUnreadable?: boolean;
   /** The PR's base branch tip SHA. Defaults to `BASE`. */
   base?: string;
   /**
@@ -420,12 +413,20 @@ export interface Fixture {
    */
   liveProbeSaysClosedOnce?: boolean;
   /**
-   * `evaluate()`'s own fuller snapshot (the comma-joined `--json` field list)
-   * fails, while the sweep's single-field `state` probe still answers. Pairs
+   * `evaluate()`'s own fuller snapshot (its REST read of the pull document,
+   * and any comma-joined `--json` field list) fails with a 502, every time,
+   * while the sweep's single-field `state` probe still answers. Each snapshot
+   * request is logged to `snapshot-reads`. Pairs
    * with `liveProbeSaysClosedOnce` to model the two reads disagreeing in the
    * one way that has to terminate rather than loop.
    */
   snapshotUnreadable?: boolean;
+  /**
+   * The pull document the evaluation reads carries this ETag, and a read that
+   * sends it back is answered `304 Not Modified`. Each of those reads is
+   * logged to `pull-reads` as `<status> <caller>`.
+   */
+  pullEtag?: string;
   /**
    * The sweep's liveness probe answers `CLOSED` on EVERY call while
    * `evaluate()`'s snapshot keeps reporting the PR open — a persistent
@@ -1130,6 +1131,19 @@ if [ "\${1:-}" = "pr" ]; then
   done
 fi
 
+# A \`gh pr view\` in either field list the status evaluation used to read the
+# pull request with, made by the code under test rather than by this stub's
+# own REST answer below (which marks its inner call), is logged, so a probe can
+# assert the evaluation no longer makes one.
+if [ "\${1:-} \${2:-}" = "pr view" ] && [ -z "\${DRIVE_PR_STUB_INNER:-}" ]; then
+  for a in "$@"; do
+    case "$a" in
+      state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid|state,headRefOid,baseRefOid)
+        printf '%s\\n' "$*" >> "$F/graphql-pull-reads" ;;
+    esac
+  done
+fi
+
 # A REST pull read — \`gh api -i repos/{owner}/{repo}/pulls/<N>\`, which
 # lib/gh-conditional.ts's readPrLiveness issues in place of \`gh pr view --json
 # state\` for the state-ONLY liveness reads. Answered BY the
@@ -1148,6 +1162,15 @@ fi
 # before closedSinceOpen leaves nothing to say which read comes next. A read
 # with no label is answered as the sweep's, the narrower form.
 #
+# The status evaluation's own reads of the pull document ride the same
+# endpoint: the opening snapshot (\`snapshot\`) is answered from the field list
+# \`gh pr view\` was asked for before, and the terminal recheck
+# (\`still-on-head\`) from \`state,headRefOid,baseRefOid\`, each rewritten into
+# the REST pull document's shape: \`draft\`, \`head\`/\`base\` \`sha\` and \`ref\`,
+# \`mergeable\` as true, false or null (MERGEABLE, CONFLICTING, UNKNOWN), and
+# \`mergeable_state\` lower-cased. A field the view leaves out, or answers null
+# where REST would not, is left out of the document.
+#
 # No ETag header is emitted: nothing is cached, so a probe cannot be answered
 # from an entry a neighbour wrote.
 rest_pr=""
@@ -1162,14 +1185,82 @@ if [ "\${1:-}" = "api" ]; then
 fi
 if [ -n "$rest_pr" ]; then
   rest_read=(--json state -q .state)
+  rest_doc=0
   for a in "$@"; do
-    if [ "$a" = "X-Drive-Pr-Caller: recheck" ]; then rest_read=(--json state); fi
+    case "$a" in
+      "X-Drive-Pr-Caller: recheck") rest_read=(--json state) ;;
+      "X-Drive-Pr-Caller: snapshot")
+        rest_read=(--json state,isDraft,headRefOid,mergeable,mergeStateStatus,baseRefName,headRefName,baseRefOid)
+        rest_doc=1 ;;
+      "X-Drive-Pr-Caller: still-on-head")
+        rest_read=(--json state,headRefOid,baseRefOid)
+        rest_doc=1 ;;
+    esac
   done
+  for a in "$@"; do
+    if [ "$a" = "X-Drive-Pr-Caller: snapshot" ] && [ -f "$F/snapshot-unreadable" ]; then
+      printf '%s\\n' "$*" >> "$F/snapshot-reads"
+      printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
+      exit 1
+    fi
+  done
+  # With a \`pull-etag\` fixture the pull document carries that ETag, and a
+  # read of it that sends the same one is answered \`304\`. Each such read is
+  # logged to \`pull-reads\` as its status and caller.
+  rest_etag=""
+  rest_caller=""
+  if [ "$rest_doc" -eq 1 ] && [ -f "$F/pull-etag" ]; then
+    rest_etag=$(< "$F/pull-etag")
+    for a in "$@"; do
+      case "$a" in "X-Drive-Pr-Caller: "*) rest_caller="\${a#X-Drive-Pr-Caller: }" ;; esac
+    done
+    for a in "$@"; do
+      if [ "$a" = "If-None-Match: $rest_etag" ]; then
+        printf '304 %s\\n' "$rest_caller" >> "$F/pull-reads"
+        printf 'HTTP/2.0 304 Not Modified\\r\\nEtag: %s\\r\\n\\r\\n' "$rest_etag"
+        echo 'gh: HTTP 304' >&2
+        exit 1
+      fi
+    done
+  fi
   rest_rc=0
-  rest_out=$("$0" pr view "$rest_pr" "\${rest_read[@]}") || rest_rc=$?
+  rest_out=$(DRIVE_PR_STUB_INNER=1 "$0" pr view "$rest_pr" "\${rest_read[@]}") || rest_rc=$?
   if [ "$rest_rc" -ne 0 ]; then
     printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
     exit 1
+  fi
+  if [ "$rest_doc" -eq 1 ]; then
+    rest_body=$(printf '%s' "$rest_out" | jq -c '
+      def present($k): has($k) and .[$k] != null;
+      . as $v
+      | {}
+      | if ($v | present("state")) then
+          .state = (if $v.state == "OPEN" then "open"
+                    elif ($v.state == "CLOSED" or $v.state == "MERGED") then "closed"
+                    else ($v.state | tostring | ascii_downcase) end)
+          | .merged = ($v.state == "MERGED")
+        else . end
+      | if ($v | has("isDraft")) then .draft = $v.isDraft else . end
+      | if ($v | present("headRefOid")) then .head.sha = $v.headRefOid else . end
+      | if ($v | present("headRefName")) then .head.ref = $v.headRefName else . end
+      | if ($v | present("baseRefOid")) then .base.sha = $v.baseRefOid else . end
+      | if ($v | present("baseRefName")) then .base.ref = $v.baseRefName else . end
+      | if ($v | present("mergeable")) then
+          .mergeable = (($v.mergeable | tostring | ascii_upcase) as $m
+            | if $m == "MERGEABLE" then true elif $m == "CONFLICTING" then false
+              elif $m == "UNKNOWN" then null else $v.mergeable end)
+        else . end
+      | if ($v | present("mergeStateStatus")) then .mergeable_state = ($v.mergeStateStatus | tostring | ascii_downcase) else . end') || {
+      printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
+      exit 1
+    }
+    if [ -n "$rest_etag" ]; then
+      printf '200 %s\\n' "$rest_caller" >> "$F/pull-reads"
+      printf 'HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\nEtag: %s\\r\\n\\r\\n%s' "$rest_etag" "$rest_body"
+      exit 0
+    fi
+    printf 'HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n%s' "$rest_body"
+    exit 0
   fi
   rest_view=$(< "$F/pr-view.json") 2>/dev/null || rest_view=''
   rest_body=$(jq -nc --arg st "$rest_out" --arg view "$rest_view" \\
@@ -1395,15 +1486,6 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
   exit 0
 fi
 
-if [ -f "$F/no-mergeability" ]; then
-  for a in "$@"; do
-    case "$a" in
-      *mergeable*)
-        echo 'Unknown JSON field: "mergeable"' >&2
-        exit 1 ;;
-    esac
-  done
-fi
 
 # A TRANSIENT failure — a network blip, a rate limit, a timeout — as opposed
 # to the two fixtures above, which model a permanently unsupported field. The
@@ -2185,7 +2267,6 @@ export function writeFixture(
   if (f.dirtyOnFinalVerify) {
     writeFileSync(join(dir, "dirty-on-final-verify"), "");
   }
-  if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }
@@ -2225,6 +2306,8 @@ export function writeFixture(
     writeFileSync(join(dir, "live-probe-closed-once"), "");
   }
   if (f.snapshotUnreadable) writeFileSync(join(dir, "snapshot-unreadable"), "");
+  if (f.pullEtag !== undefined)
+    writeFileSync(join(dir, "pull-etag"), f.pullEtag);
   if (f.liveProbeSaysClosedAlways) {
     writeFileSync(join(dir, "live-probe-closed-always"), "");
   }

@@ -66,11 +66,11 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     expect(resolvedIn(dir)).toEqual(["PRRT_conflicting"]);
   });
 
-  it("reconciles ahead of the EARLIEST return — UNSUPPORTED_CLI is decided before anything is enumerated", async () => {
+  it("reconciles ahead of the EARLIEST return — an unreadable snapshot is decided before anything is enumerated", async () => {
     // The strongest available witness that the sweep runs ahead of the
-    // evaluation rather than somewhere inside it: `UNSUPPORTED_CLI` is raised
-    // off the very first `gh pr view`, on the missing-field path, before
-    // `evaluate()` has read liveness or the head — let alone enumerated any
+    // evaluation rather than somewhere inside it: the evaluation's very first
+    // read, the pull document, fails, so `evaluate()` returns INDETERMINATE
+    // before it has read liveness or the head — let alone enumerated any
     // work. If the sweep still resolved the thread here, it cannot be running
     // anywhere inside the evaluation.
     //
@@ -82,12 +82,12 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     const { dir, stateDir } = writeFixture({
       threads: [repliedThread("PRRT_earliest", "**wont-fix**")],
       checkRuns: [DORMANT_ARM],
-      mergeabilityUnreadable: true,
+      snapshotUnreadable: true,
     });
     const r = await probeIn(dir, stateDir, HEAD, [], { reconcile: true });
 
-    expect(r.state).toBe("UNSUPPORTED_CLI");
-    expect(r.exitCode).toBe(2);
+    expect(r.state).toBe("INDETERMINATE");
+    expect(r.exitCode).toBe(1);
     expect(resolvedIn(dir)).toEqual(["PRRT_earliest"]);
   });
 
