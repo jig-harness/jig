@@ -30,7 +30,9 @@
  * ledger row or a hold. A reason names the destination by `destination`, a
  * label the caller chooses that holds no secret. Only `https:` addresses are
  * sent, and `http:` to the loopback host (`localhost`, `127.0.0.1`,
- * `[::1]`), which a test or a relay on the same machine listens on.
+ * `[::1]`), which a test or a relay on the same machine listens on. An
+ * `https:` address on a private, loopback or internal host is refused, so an
+ * address from the environment cannot aim a post at the machine's network.
  */
 import { failed, ok, type Outcome } from "../outcome.ts";
 import { currentMs, isoFromMs } from "../time.ts";
@@ -108,12 +110,46 @@ function machineGovernor(): BudgetGovernor {
   return governor;
 }
 
+/** Whether `hostname` names the machine or its network: a private, loopback or link-local IP literal, `localhost`, or a name with no public suffix. */
+function internalHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host.includes(":"))
+    return (
+      host === "::" ||
+      host === "::1" ||
+      /^(fc|fd|fe[89ab])/.test(host) ||
+      /^::ffff:/.test(host)
+    );
+  const parts = host.split(".");
+  if (parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p))) {
+    const [a = 0, b = 0] = parts.map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  return (
+    parts.length < 2 ||
+    host === "localhost" ||
+    /\.(localhost|local|internal|lan|home|corp|intranet)$/.test(host)
+  );
+}
+
 /** The address `raw` names when it is one this transport sends to; why not, without the address, when it is not. */
 export function httpAddress(raw: string): Outcome<URL, "invalid"> {
   if (!URL.canParse(raw))
     return failed("invalid", "it is not an absolute address");
   const url = new URL(raw);
-  if (url.protocol === "https:") return ok(url);
+  if (url.protocol === "https:") {
+    return internalHost(url.hostname)
+      ? failed("invalid", "its host is on the machine or an internal network")
+      : ok(url);
+  }
   if (url.protocol === "http:" && LOOPBACK.has(url.hostname)) return ok(url);
   return failed(
     "invalid",
@@ -218,7 +254,7 @@ function admitted(
   }
 }
 
-/** Record what the destination's answer says of its hold: a 429 holds it, any other answer ends the refusals in a row. */
+/** Record what the destination's answer says of its hold: a 429 holds it, any other answer, a failure included, ends the refusals in a row. */
 function observeHold(
   governor: BudgetGovernor,
   key: string,
@@ -226,7 +262,7 @@ function observeHold(
   failure: OutboundFailure | null,
 ): OutboundFailure | null {
   if (failure?.code !== "rate-limited") {
-    if (failure === null) governor.observe(key, {}, at, null);
+    governor.observe(key, {}, at, null);
     return failure;
   }
   governor.observe(
@@ -242,7 +278,12 @@ function observeHold(
 }
 
 /** Send once, never throwing: the answer, or the failure's class. */
-async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
+async function sendOnce(
+  request: HttpRequest,
+  deadline: AbortSignal,
+  signal: AbortSignal,
+  timeoutMs: number,
+): Promise<HttpOutcome> {
   const refused = notSendable(request);
   if (refused !== null) return unsent(refused);
   const governor = request.governor ?? machineGovernor();
@@ -252,11 +293,6 @@ async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
     record(request, 0, 0, admission.held);
     return unsent(admission.held);
   }
-  const timeoutMs = Math.max(1, request.timeoutMs);
-  const deadline = AbortSignal.timeout(timeoutMs);
-  const signal = AbortSignal.any(
-    request.signal === undefined ? [deadline] : [deadline, request.signal],
-  );
   const began = currentMs();
   let failure: OutboundFailure | null = null;
   try {
@@ -311,13 +347,20 @@ function record(
  * closed classes, its reason naming `destination` and never the address.
  */
 export async function sendHttp(request: HttpRequest): Promise<HttpOutcome> {
+  // The deadline starts before the hold's wait, so it bounds the whole call.
+  const timeoutMs = Math.max(1, request.timeoutMs);
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = AbortSignal.any(
+    request.signal === undefined ? [deadline] : [deadline, request.signal],
+  );
   try {
     return await guarded<HttpOutcome>(
-      `${request.system} ${request.destination}`,
-      () => sendOnce(request),
+      // The hold is the destination's, whatever name a caller gives it.
+      credentialKey(request.system, request.url),
+      () => sendOnce(request, deadline, signal, timeoutMs),
       (answer) => (answer.ok ? null : answer.failure),
       (held) => unsent(held),
-      request.signal,
+      signal,
       (answer) => !answer.ok && answer.unsent === true,
     );
   } catch {

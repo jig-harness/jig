@@ -305,4 +305,19 @@ describe("a request that never leaves", () => {
     expect(httpAddress("http://localhost:8080/topic").ok).toBe(true);
     expect(httpAddress("http://[::1]:8080/topic").ok).toBe(true);
   });
+
+  it("refuses an https address on a private, loopback or internal host", () => {
+    for (const raw of [
+      "https://127.0.0.1/x",
+      "https://10.1.2.3/x",
+      "https://192.168.0.5/x",
+      "https://169.254.169.254/x",
+      "https://[::1]/x",
+      "https://localhost/x",
+      "https://intranet/x",
+      "https://db.internal/x",
+    ])
+      expect(httpAddress(raw).ok).toBe(false);
+    expect(httpAddress("https://8.8.8.8/x").ok).toBe(true);
+  });
 });

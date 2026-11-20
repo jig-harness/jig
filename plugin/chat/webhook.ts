@@ -10,8 +10,9 @@
  *   plain-text body reads the body.
  * - `slack`: a Slack incoming webhook's JSON, `{"text": …}`, links not
  *   unfurled and Slack's control characters escaped.
- * - `discord`: a Discord webhook's JSON, `{"content": …}`, with every mention
- *   turned off, so no notice pings a role or everyone.
+ * - `discord`: a Discord webhook's JSON, `{"content": …}`, posted with
+ *   `wait=true` so a 2xx means it was saved, with every mention turned off,
+ *   Markdown escaped and link previews suppressed.
  *
  * The channel only delivers: which causes are due, the repeat cadence, the
  * back-off and the records are the tick's. It renders the structured notice
@@ -104,10 +105,37 @@ export interface Rendered {
   headers: Record<string, string>;
 }
 
+/** The address a post goes to: Discord's gets `wait=true`, so a 2xx means the message was saved; other query parameters stay. */
+export function postAddress(raw: string, format: WebhookFormat): string {
+  if (format !== "discord" || !URL.canParse(raw)) return raw;
+  const url = new URL(raw);
+  if (url.searchParams.get("wait") === "true") return raw;
+  url.searchParams.set("wait", "true");
+  return url.toString();
+}
+
 /** The first paragraph of a notice's text: its key line and what follows up to the first blank line. */
 function headline(text: string): string {
   const end = text.indexOf("\n\n");
   return end < 0 ? text : text.slice(0, end);
+}
+
+/** The paragraphs of the text after the first that the structured fields do not repeat: the decisions, the acts and the address they render are left out. */
+function context(notice: ChannelNotice): string[] {
+  const end = notice.text.indexOf("\n\n");
+  if (end < 0) return [];
+  const repeated = [
+    ...(notice.decisions ?? []).flatMap((d) => [d.key, d.question ?? ""]),
+    ...(notice.acts ?? []),
+    notice.address ?? "",
+    notice.links?.pullRequest ?? "",
+  ].filter((v) => v !== "");
+  return notice.text
+    .slice(end + 2)
+    .split("\n\n")
+    .map((p) => p.trim())
+    .filter((p) => p !== "" && !repeated.some((r) => p.includes(r)))
+    .flatMap((p) => ["", p]);
 }
 
 /** Whether a notice carries anything beside its key and text. */
@@ -122,15 +150,16 @@ function structured(notice: ChannelNotice): boolean {
 
 /** One framed decision's lines: its question, the recommendation, the options. */
 function decisionLines(d: NoticeDecision): string[] {
-  const options = d.options.map((o) =>
-    o.recommended ? `${o.name} (recommended)` : o.name,
-  );
   return [
     `- ${d.key}: ${d.question ?? "framed on the pull request"}`,
     ...(d.recommendation === null
       ? []
       : [`  Recommended: ${d.recommendation}`]),
-    ...(options.length === 0 ? [] : [`  Options: ${options.join(", ")}`]),
+    ...d.options.flatMap((o) => [
+      `  Option: ${o.name}${o.recommended ? " (recommended)" : ""}`,
+      ...(o.changes === null ? [] : [`    Changes: ${o.changes}`]),
+      ...(o.costs === null ? [] : [`    Costs: ${o.costs}`]),
+    ]),
   ];
 }
 
@@ -146,6 +175,7 @@ export function noticeMessage(notice: ChannelNotice): string {
   const link = notice.links?.pullRequest;
   return [
     headline(notice.text),
+    ...context(notice),
     ...block("Decisions:", (notice.decisions ?? []).flatMap(decisionLines)),
     ...block(
       "To settle it:",
@@ -192,21 +222,39 @@ function headerValue(value: string, max = 200): string {
   return value.replace(/[^\x20-\x7e]/g, "?").slice(0, max);
 }
 
-/** Slack's control characters escaped, so text is never read as a link or a mention. */
+/** Slack's control characters escaped, and mrkdwn's markers and link-forming URLs defused, so text is never read as a link, a mention or formatting. */
 function slackText(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return defuseLinks(
+    text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+  ).replace(/[*_~`]/g, (c) => `\u200b${c}`);
+}
+
+/** A raw URL written so neither service links it: the scheme's colon is followed by a zero-width space. */
+function defuseLinks(text: string): string {
+  return text.replace(/\b(https?):\/\//gi, "$1:\u200b//");
+}
+
+/** Discord's Markdown escaped, and raw URLs defused, so a decision's words are never a link or formatting. */
+function discordText(text: string): string {
+  return defuseLinks(text.replace(/[\\*_~`|>[\]()#-]/g, (c) => `\\${c}`));
 }
 
 /** The request that posts `due` in `format`. */
 export function render(due: DueNotice, format: WebhookFormat): Rendered {
-  const message = fitted(noticeMessage(due.notice), format);
+  const plain = noticeMessage(due.notice);
+  // Escaping grows the text, so it comes before the cut to the limit.
+  const message = fitted(
+    format === "slack"
+      ? slackText(plain)
+      : format === "discord"
+        ? discordText(plain)
+        : plain,
+    format,
+  );
   if (format === "slack")
     return {
       body: JSON.stringify({
-        text: slackText(message),
+        text: message,
         unfurl_links: false,
         unfurl_media: false,
       }),
@@ -216,6 +264,7 @@ export function render(due: DueNotice, format: WebhookFormat): Rendered {
     return {
       body: JSON.stringify({
         content: message,
+        flags: 4,
         allowed_mentions: { parse: [] },
       }),
       headers: { "Content-Type": "application/json" },
@@ -258,6 +307,7 @@ function stopsTheTick(failure: OutboundFailure): boolean {
   return (
     failure.code === "unreachable" ||
     failure.code === "server-fault" ||
+    failure.code === "too-costly" ||
     failure.code === "rate-limited"
   );
 }
@@ -303,7 +353,7 @@ async function postOne(
   const sent = await sendHttp({
     system: "webhook",
     operation: `WebhookPost ${settings.format}`,
-    url: post.url,
+    url: postAddress(post.url, settings.format),
     destination: `the ${settings.name} webhook at ${post.host}`,
     body: request.body,
     headers: request.headers,

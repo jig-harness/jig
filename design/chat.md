@@ -619,8 +619,9 @@ One pull request per step, each shippable alone:
 - **A request URL.** It needs an address the chat tool can reach from the
   internet, which Socket Mode avoids. A team that cannot open an outbound
   WebSocket has messages without buttons.
-- **Incoming webhooks.** They post but cannot edit, and editing is how a
-  message stays true.
+- **Incoming webhooks as the chat surface.** They post but cannot edit, and
+  editing is how a message stays true, so they carry notifications only
+  (the receive-only channel above), never the thread-maintaining chat.
 - **Thread replies as answers.** People talk in a thread; an answer the
   re-arm has read cannot be taken back, so only a button or the form
   answers.

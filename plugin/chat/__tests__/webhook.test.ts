@@ -15,6 +15,7 @@ import {
   budgetGovernor,
   memoryBudgetStore,
 } from "../../shared/outbound/budget.ts";
+import { postAddress } from "../webhook.ts";
 import { holdUnanswered, stopHolding } from "../../shared/outbound/hold.ts";
 import {
   type CallRecord,
@@ -162,7 +163,9 @@ describe("rendering", () => {
     expect(message).toContain("PR #7 (Budget) is parked");
     expect(message).toContain("- F1: Which budget applies?");
     expect(message).toContain("Recommended: Keep, since nothing else changes");
-    expect(message).toContain("Options: Keep (recommended), Raise");
+    expect(message).toContain("Option: Keep (recommended)");
+    expect(message).toContain("Changes: more");
+    expect(message).toContain("Costs: money");
     expect(message).toContain(
       "jig send answer drive@example-org/example-repo#7 F1 Keep",
     );
@@ -428,5 +431,30 @@ describe("a channel name that looks like an address", () => {
     const fault = channelNameFault(`https://hooks.example.test/${SECRET}`, []);
     expect(fault).toContain("withheld");
     expect(fault).not.toContain(SECRET);
+  });
+});
+
+describe("discord delivery", () => {
+  it("asks Discord to wait for the save, keeping other parameters", () => {
+    expect(
+      postAddress(
+        "https://discord.test/api/webhooks/1/a?thread_id=9",
+        "discord",
+      ),
+    ).toBe("https://discord.test/api/webhooks/1/a?thread_id=9&wait=true");
+    expect(postAddress("https://x.test/a", "slack")).toBe("https://x.test/a");
+  });
+
+  it("defuses Markdown links in a decision's words", () => {
+    const body = JSON.parse(render(parked(), "discord").body) as {
+      content: string;
+      flags: number;
+    };
+    expect(body.flags).toBe(4);
+    const hostile = parked();
+    hostile.notice.text += "\n\nsee [x](https://attacker.example)";
+    const content = JSON.parse(render(hostile, "discord").body)
+      .content as string;
+    expect(content).not.toContain("](https://");
   });
 });
