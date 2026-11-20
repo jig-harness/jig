@@ -54,7 +54,7 @@ const started = (key: string): PoolIssue => ({
 });
 
 /**
- * Alex's queue: #8 in progress, and #5 to start under the epic #1, which
+ * Alex's queue: #8 in progress, and the epic #1, which
  * reports open children whose listing comes back empty.
  */
 function queue() {
@@ -65,15 +65,14 @@ function queue() {
       store.set(k, v);
     },
   };
-  const epic = issue("#1", ["epic"], null);
-  const task = issue("#5");
+  const epic = issue("#1", ["epic"]);
   const tracker = {
     adapter: "github",
     team: "example/repo",
     stateName: (s: string) => (s === "pr_open" ? null : s),
     assignUnassigned: async () => ({ assigned: true }),
     assignedIssues: async (_: string, states: string[]) =>
-      states.includes("in_progress") ? [started("#8")] : [task],
+      states.includes("in_progress") ? [started("#8")] : [epic],
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
     openChildren: async () => [],
     listRelations: async () => [],
@@ -166,9 +165,9 @@ describe("a served queue with an epic whose children cannot be read", () => {
     expect(reading.read.ok).toBe(true);
     expect(reading.unplaced).toContainEqual(
       expect.objectContaining({
-        target: "#5",
+        target: "#1",
         reason:
-          "the parent reports open children but its children cannot be read",
+          "the epic reports open children but its children cannot be read",
       }),
     );
     expect(reading.partial).toBe(true);

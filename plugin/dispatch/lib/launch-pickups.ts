@@ -9,13 +9,20 @@ export function holdsItem(
   return !record.released && !(record.releasedItems?.includes(item) ?? false);
 }
 
+/** Every item a pickup record names, preserving a legacy single-item record. */
+export function pickupItems(
+  record: Pick<LaunchRecord, "batchItems" | "item">,
+): readonly (string | null)[] {
+  return record.batchItems?.map(({ key }) => key) ?? [record.item];
+}
+
 /** The latest unreleased pickup record for every item it owns. */
 export function latestPickups(records: ReadRecord[]): Set<string> {
   const latest = new Map<string, ReadRecord>();
   for (const read of records) {
     const { record } = read;
     if (record.action !== "pickup" || record.released) continue;
-    const members = record.batchItems?.map((item) => item.key) ?? [record.item];
+    const members = pickupItems(record);
     for (const member of members) {
       if (member === null || !holdsItem(record, member)) continue;
       const key = `${record.repo}\0${member}`;

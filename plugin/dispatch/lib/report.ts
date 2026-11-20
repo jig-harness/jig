@@ -126,6 +126,8 @@ function repoLines(
 ): string[] {
   const verb = apply ? "wants" : "would";
   const lines = [`${r.slug ?? "(unknown repository)"} (${r.path})`];
+  if (r.section?.retiredEpicWidth !== undefined)
+    lines.push(`  configuration  ${r.section.retiredEpicWidth}`);
   const took = phaseLine("  took     ", r.phasesMs);
   if (r.refused !== null && r.defect === undefined)
     return [...lines, `  refused: ${r.refused}`, ...took];
