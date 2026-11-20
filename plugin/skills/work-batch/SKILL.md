@@ -114,8 +114,10 @@ JSON form), and no verdict prompt appears:
   every one left out lost its priority, claim none and start no item: end
   the pass with the launch's result command as `failed`, naming each member
   and that its priority is missing, and pass `--refused <that member's
-  updatedAt> --key <that member>` once for each, so the dispatcher holds
-  each only until the member changes: setting a priority moves its
+  updatedAt> --key <that member>` once for each, with one `--reason "priority
+  is missing"` (or one `--reason` per member) in the same invocation, since
+  the result is refused without it, so the dispatcher holds each only until
+  the member changes: setting a priority moves its
   `updatedAt` and makes the next tick pick it up again.
 - The workspace opened under the first named key, on that key's branch. When
   that member is left out, work on the branch named for the member you claim

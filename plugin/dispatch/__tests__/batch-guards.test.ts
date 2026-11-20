@@ -130,11 +130,11 @@ it("holds a pending batch whose secondary member lost its priority", async () =>
   const poolIssue = tracker.poolIssue;
   tracker.poolIssue = async (key: string) => ({
     ...(await poolIssue(key)),
-    priority: 0,
+    ...(key === "#2" ? { priority: 0 } : {}),
   });
-  expect(await pendingBatchBlock(state, repo, ctx, record)).toContain(
-    "no priority",
-  );
+  const block = await pendingBatchBlock(state, repo, ctx, record);
+  expect(block).toContain("no priority");
+  expect(block).toContain("#2");
 });
 it("releases an ended batch when its returned member is ready to retry", () => {
   const w = world();
