@@ -106,12 +106,19 @@ export interface WaitStreak {
 /** Characters that end a word in an arm's text: a release tag holds none. */
 const WORD_END = /[\s,;:()[\]{}<>"'`]+/;
 
+/** A word without the full stops and ellipses a sentence ends it with. */
+function trimTrailingDots(word: string): string {
+  let end = word.length;
+  while (end > 0 && (word[end - 1] === "." || word[end - 1] === "…")) end--;
+  return word.slice(0, end);
+}
+
 /** The release tags an arm's words name, as a release tag is spelled (`releaseTag`), in order of first mention. */
 export function armTags(arm: string | undefined): string[] {
   if (arm === undefined) return [];
   const words = arm
     .split(WORD_END)
-    .map((w) => w.replace(/[.…]+$/, ""))
+    .map(trimTrailingDots)
     .filter((w) => releaseTag(w));
   return [...new Set(words)];
 }
@@ -119,7 +126,9 @@ export function armTags(arm: string | undefined): string[] {
 /** What an arm is, to tell a newer one from the one a window started on: the release tags it names; `null` when it names none. */
 function armKey(wait: WaitFor): string | null {
   const tags = armTags(wait.arm);
-  return tags.length > 0 ? [...tags].sort().join(" ") : null;
+  return tags.length > 0
+    ? [...tags].sort((a, b) => a.localeCompare(b)).join(" ")
+    : null;
 }
 
 /** How long a pass that stopped on a rate-limit question waits after it ended: the reset its prompt names when the forge names none. */

@@ -201,7 +201,11 @@ function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
   });
   const facts = readFacts(forge);
   if ("unread" in facts)
-    return { ...unplaced(facts.unread), forgeUndecided: true };
+    return verified === ""
+      ? unplaced(
+          `${facts.unread}, and its ledger names no head the drive verified`,
+        )
+      : { ...unplaced(facts.unread), forgeUndecided: true };
   const { head, conflicting } = facts;
   if (verified === "" && !conflicting)
     return unplaced("its ledger names no head the drive verified");
