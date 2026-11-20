@@ -191,6 +191,26 @@ it("raises one failed follow-up naming the arm when its release tag is still mis
   );
 }, 480_000);
 
+const BOTH_TAGS: WaitFor = { reason: "pending", arm: "v1.0.0 v1.0.1" };
+const ONE_TAG: WaitFor = { reason: "pending", arm: "v1.0.1" };
+
+/** A time on 2026-10-31 at hour `h`, minute `m`, UTC. */
+const atTime = (h: number, m: number) =>
+  `2026-10-31T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+
+/** The earlier follow-up record of PR #9 that every wait of a streak is built on. */
+function streakBase(): ReadRecord["record"] {
+  const w = world();
+  current = w;
+  return earlierRecord(w, {
+    id: "20261031T100000Z-aaaaaaaa",
+    account: "a",
+    action: "followup",
+    pr: 9,
+    repo: SLUG,
+  });
+}
+
 /** An ended follow-up of PR #9 on `base`'s fields, launched at `at`, that recorded `waits` for `wait`. */
 function waited(
   base: ReadRecord["record"],
@@ -257,17 +277,9 @@ it("counts pending waits apart from rate-limit waits", () => {
 });
 
 it("keeps the window when a later arm only drops release tags", () => {
-  const w = world();
-  current = w;
-  const base = earlierRecord(w, {
-    id: "20261031T100000Z-aaaaaaaa",
-    account: "a",
-    action: "followup",
-    pr: 9,
-    repo: SLUG,
-  });
-  const both: WaitFor = { reason: "pending", arm: "v1.0.0 v1.0.1" };
-  const rest: WaitFor = { reason: "pending", arm: "v1.0.1" };
+  const base = streakBase();
+  const both = BOTH_TAGS;
+  const rest = ONE_TAG;
   const streak = waitStreak(
     [
       waited(base, "2026-10-31T06:55:00.000Z", both),
@@ -283,19 +295,10 @@ it("keeps the window when a later arm only drops release tags", () => {
 });
 
 it("reads a shrunken arm once, and never reads it again in a later run", () => {
-  const w = world();
-  current = w;
-  const base = earlierRecord(w, {
-    id: "20261031T100000Z-aaaaaaaa",
-    account: "a",
-    action: "followup",
-    pr: 9,
-    repo: SLUG,
-  });
-  const both: WaitFor = { reason: "pending", arm: "v1.0.0 v1.0.1" };
-  const rest: WaitFor = { reason: "pending", arm: "v1.0.1" };
-  const at = (h: number, m: number) =>
-    `2026-10-31T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  const base = streakBase();
+  const both = BOTH_TAGS;
+  const rest = ONE_TAG;
+  const at = atTime;
   const first = [waited(base, at(6, 0), both), waited(base, at(7, 10), rest)];
   expect(waitStreak(first, SLUG, 9)).toMatchObject({
     spent: true,
@@ -314,19 +317,10 @@ it("reads a shrunken arm once, and never reads it again in a later run", () => {
 });
 
 it("never reads an arm a run went past its window on, though that run's re-read was suppressed", () => {
-  const w = world();
-  current = w;
-  const base = earlierRecord(w, {
-    id: "20261031T100000Z-aaaaaaaa",
-    account: "a",
-    action: "followup",
-    pr: 9,
-    repo: SLUG,
-  });
-  const both: WaitFor = { reason: "pending", arm: "v1.0.0 v1.0.1" };
-  const rest: WaitFor = { reason: "pending", arm: "v1.0.1" };
-  const at = (h: number, m: number) =>
-    `2026-10-31T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  const base = streakBase();
+  const both = BOTH_TAGS;
+  const rest = ONE_TAG;
+  const at = atTime;
   // The first run reads the combined arm; the second goes past its window on the shrunken arm with no re-read allowed.
   const runs = [
     waited(base, at(6, 0), both),
@@ -348,21 +342,12 @@ it("never reads an arm a run went past its window on, though that run's re-read 
 });
 
 it("starts a pending window again on a newer arm, re-reads an arm past its window once, and bounds the run", () => {
-  const w = world();
-  current = w;
-  const base = earlierRecord(w, {
-    id: "20261031T100000Z-aaaaaaaa",
-    account: "a",
-    action: "followup",
-    pr: 9,
-    repo: SLUG,
-  });
+  const base = streakBase();
   const on = (tag: string): WaitFor => ({
     reason: "pending",
     arm: `release: tag ${tag} waits for the release run`,
   });
-  const at = (h: number, m: number) =>
-    `2026-10-31T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  const at = atTime;
   // A newer release replaced the one the first pass waited for: a fresh window.
   const newer = [
     waited(base, at(6, 55), on("v1.0.0")),
