@@ -228,7 +228,10 @@ development and shipped as a version.
   whatever the upgrade came to, the job runs, and gets the upgrade's line
   for its receipt in `JIG_SCHEDULED_UPGRADE`. The `jig` command's script and
   a woken tick mark their launches (`JIG_LAUNCHER_ROLE`) and do not upgrade,
-  and the dispatcher's change probe, run every minute, does not either.
+  and the dispatcher's change probe, run every minute, does not either. The
+  launcher tells a `dispatch` job what started it in `JIG_STARTED_BY`
+  (`timer`, `command` or `wake`, or the name its caller already set), and
+  a tick's receipt records it as `startedBy` (`dispatch/lib/tick-starter.ts`).
   `jig upgrade --scheduled` (`runtime/scheduled-upgrade.ts`) reads the user
   file's `upgrade` setting, withholds the upgrade on a machine that opted
   out, takes the interval under a file lock (`shared/file-lock.ts`) by
@@ -240,7 +243,9 @@ development and shipped as a version.
   alone. `jig doctor` (`runtime/doctor.ts`) checks Bun, the
   agent tools, the plugin in each tool, each launcher copy, the latest
   scheduled upgrade, the programs
-  each job names, each component's own needs (`Component.doctor`), the
+  each job names, each component's own needs (`Component.doctor`; the
+  dispatcher's include the ticks of the last day that ran with no tracker
+  credential, `dispatch/lib/keyless-doctor.ts`), the
   last receipts and the repository's configuration fit, and names a fix for
   each failure; it changes nothing. `jig ask` (`ask/cli.ts`), registered
   beside the components with no job of its own (`CommandComponent`), reads
@@ -740,11 +745,24 @@ development and shipped as a version.
   `shared/outbound/github.ts`); a tracker read the system did not answer is
   sent once more within its deadline (`shared/outbound/retry.ts`), and in a
   tick a system that did not answer is asked nothing more until the next
-  tick's probe (`shared/outbound/hold.ts`).
+  tick's probe (`shared/outbound/hold.ts`). A process with no Linear key
+  whose `linear` client says it holds no credential (or is not installed)
+  learns it at that first call and sends Linear nothing more: every later
+  call fails as `unauthorized` with "no Linear key configured" before it
+  leaves, and the cost ledger keeps such calls under no credential, with no
+  requests (`shared/outbound/missing-credential.ts`).
 - **If it fails.** The calling session sees exit 1 or 2, or `tracker.ts`'s
   exit for the failure class (5 to 11), and stops; the tick reports a record
   it could not read with the call's class, and does not fail for a class
-  that clears by waiting until the failure ledger's count. A person fixes
+  that clears by waiting until the failure ledger's count. A tick with no
+  credential for a tracker names it once on its receipt (`noCredential`)
+  and its log, probes and holds no account for it in the issue preflight,
+  fails no repository's turn for it, keeps each such repository's tracker
+  part of the line from the last reading that had one, and, when nothing
+  else failed, exits 9, the `unauthorized` class's status, with its own
+  row in the failure ledger told at once (`dispatch/lib/no-credential.ts`,
+  `dispatch/lib/line-keyless.ts`); `jig budget` and `jig doctor` name the
+  missing key with its callers. A person fixes
   credentials or configuration; a missing adapter is a Jig change.
 
 ### Pickup: claim, routing, pull-request plan, intent chain
