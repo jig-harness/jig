@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.288.0] - 2026-11-20
+
+### Added
+
+- Dispatch receipts show when work already in flight would exhaust the host's test-lock capacity. The validation gauge learns from lock releases, reserves room for a drive pass, and follows the host's existing load enforcement setting.
+
 ## [0.287.2] - 2026-11-20
 
 ### Fixed
@@ -10209,7 +10215,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.287.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.288.0...HEAD
+[0.288.0]: https://github.com/jig-harness/jig/compare/v0.287.2...v0.288.0
 [0.287.2]: https://github.com/jig-harness/jig/compare/v0.287.1...v0.287.2
 [0.287.1]: https://github.com/jig-harness/jig/compare/v0.287.0...v0.287.1
 [0.287.0]: https://github.com/jig-harness/jig/compare/v0.286.4...v0.287.0

@@ -66,7 +66,7 @@ machine_fields:
     max: 1
     default: 1
     read_by: [dispatch]
-    since: next
+    since: 0.288.0
 
 strict:
   - gc
