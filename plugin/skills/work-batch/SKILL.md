@@ -91,12 +91,13 @@ eligibility checks permit. This flag does not claim an item: the live claim
 below still checks its state, assignment, holds and assignment provenance.
 Read the full issues and assess their independence as for any batch.
 
-The dispatcher keeps the most expensive batchable size out of the batches it
-forms, but a size can change after the tick. **A member's size is never a
-question here.** The proposal lists each member of that size, and each whose
-size no longer fits a batch (too large, cleared, or two at once), under
-**Left for their own pickups** (`leftOut` in the JSON form), and no verdict
-prompt appears:
+The dispatcher keeps the most expensive batchable size, and every item with
+no priority, out of the batches it forms, but a size or a priority can change
+after the tick. **A member's size or missing priority is never a question
+here.** The proposal lists each member of that size, each whose size no
+longer fits a batch (too large, cleared, or two at once), and each whose
+priority was cleared, under **Left for their own pickups** (`leftOut` in the
+JSON form), and no verdict prompt appears:
 
 - Claim no member left out, except as the third bullet says when fewer than
   two members are kept. Name each one and the reason in the pull

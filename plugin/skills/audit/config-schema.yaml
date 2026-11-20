@@ -202,6 +202,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.280.0
+  dispatch.missing_priority:
+    type: enum
+    values: [hold, start]
+    read_by: [dispatch]
+    repository_only: true
+    since: next
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"

@@ -3,6 +3,8 @@
  * `--fixed`. Nobody is there to rule on a member's size, so the size rules
  * itself: a member of a verdict size, or one whose size no longer fits a
  * batch (too large, cleared, or two at once), is left for its own pickup.
+ * So is a member whose priority was cleared, which the dispatcher holds
+ * until it has one, rather than a question about the priority.
  */
 import type {
   PoolIssue,
@@ -20,9 +22,9 @@ import { type BatchPolicy, verdictSizes } from "./policy.ts";
 export interface LeftOut {
   identifier: string;
   title: string;
-  /** `null` when the member has no one size. */
+  /** `null` when the member has no one size, or is left out for its missing priority. */
   size: string | null;
-  /** Why the size keeps it out of the batch, as a person reads it. */
+  /** Why its size or missing priority keeps it out of the batch, as a person reads it. */
   why: string;
 }
 
@@ -31,11 +33,12 @@ interface Parts {
   excluded: Excluded[];
 }
 
-/** Whether `reason` is about the size, which takes a fixed batch's member out of it. */
-export function sizeLeavesBatch(reason: ExclusionReason): boolean {
+/** Whether `reason` is about the size or the missing priority, which take a fixed batch's member out of it. */
+export function leavesFixedBatch(reason: ExclusionReason): boolean {
   return (
     reason.kind === "not-batchable-size" ||
-    reason.kind === "conflicting-size-labels"
+    reason.kind === "conflicting-size-labels" ||
+    reason.kind === "no-priority"
   );
 }
 
@@ -58,7 +61,7 @@ export async function readFixedMembers(
   return members;
 }
 
-/** `parts` narrowed to the named members, with those their size takes out set apart, in the named order. */
+/** `parts` narrowed to the named members, with those their size or missing priority takes out set apart, in the named order. */
 export function splitFixed(
   parts: Parts,
   policy: BatchPolicy,
@@ -82,7 +85,7 @@ export function splitFixed(
   });
   const excluded = parts.excluded.filter((e) => {
     if (!fixed.has(e.identifier)) return false;
-    if (!sizeLeavesBatch(e.reason)) return true;
+    if (!leavesFixedBatch(e.reason)) return true;
     leftOut.push({
       identifier: e.identifier,
       title: e.title,

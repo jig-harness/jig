@@ -21,6 +21,7 @@ import { parseOverlap, unknownKeys } from "./overlap-config.ts";
 import type {
   AdoptRule,
   DispatchSection,
+  MissingPriority,
   StalledRelaunch,
   StalledScope,
 } from "./types.ts";
@@ -50,6 +51,7 @@ const KEYS = [
   "stalled_after",
   "stalled_scope",
   "stalled_relaunch",
+  "missing_priority",
   "blocked_after",
   "drive_rounds_flat",
   "pickup_within",
@@ -354,6 +356,14 @@ function stalledRelaunch(value: unknown): Checked<StalledRelaunch> {
     : invalid("dispatch.stalled_relaunch must be finish-once or never");
 }
 
+/** `missing_priority`: `hold` unless the section says `start`. */
+function missingPriority(value: unknown): Checked<MissingPriority> {
+  if (value === undefined || value === null) return ok("hold");
+  return value === "hold" || value === "start"
+    ? ok(value)
+    : invalid("dispatch.missing_priority must be hold or start");
+}
+
 /** The section's waits and expectations, and where and how often notices go. */
 function timings(section: Record<string, unknown>): Checked<Timings> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
@@ -449,11 +459,14 @@ export function dispatchSection(
   if (!ready.ok) return ready;
   const overlap = parseOverlap(section.overlap);
   if (!overlap.ok) return overlap;
+  const unranked = missingPriority(section.missing_priority);
+  if (!unranked.ok) return unranked;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
+    missingPriority: unranked.value,
     ...(Object.hasOwn(section, "epic_width")
       ? {
           retiredEpicWidth:
