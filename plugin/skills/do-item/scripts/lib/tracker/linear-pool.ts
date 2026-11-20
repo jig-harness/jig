@@ -10,6 +10,9 @@
  *
  * A Linear user is named by email or display name, compared without regard
  * to case. An assigner is trusted when it is a non-guest member of the team.
+ * Linear writes no history entry for an assignee given at an issue's
+ * creation, so an issue whose assignee no entry ever changed was created
+ * assigned, and its creator made the assignment.
  */
 
 import { isRecord } from "../../../../../shared/guards.ts";
@@ -182,10 +185,12 @@ const HISTORY_QUERY = `
 query TrackerAssignmentHistory($id: String!, $team: String!, $after: String) {
   issue(id: $id) {
     assignee { ${USER} }
+    creator { ${ACTOR} }
     history(first: 100, after: $after) {
       pageInfo { hasNextPage endCursor }
       nodes {
         id createdAt
+        fromAssignee { id }
         toAssignee { ${USER} }
         actor { ${ACTOR} }
       }
@@ -226,6 +231,32 @@ function assigner(actor: unknown, key: string, team: string): Assigner {
     throw new AssignmentError(`issue ${key}: its assigner cannot be read`);
   field(actor.teams, `issue ${key} assigner.teams`);
   return teamMember(actor as Record<string, unknown> & { id: string }, team);
+}
+
+/**
+ * Who made the assignment of an issue whose history changes no assignee: its
+ * creator, put through the test any assigner passes.
+ */
+function creatorAssigner(
+  creator: unknown,
+  key: string,
+  who: string,
+  team: string,
+): Assigner {
+  if (creator === null)
+    throw new AssignerUnknown(
+      `issue ${key}: it was created assigned to ${who} by no user (an integration or an automation)`,
+    );
+  if (
+    !isRecord(creator) ||
+    typeof creator.id !== "string" ||
+    !isRecord(creator.teams)
+  )
+    throw new AssignmentError(`issue ${key}: its creator cannot be read`);
+  return {
+    ...teamMember(creator as Record<string, unknown> & { id: string }, team),
+    atCreation: true,
+  };
 }
 
 export function assignedOperations(
@@ -320,19 +351,19 @@ export function assignedOperations(
       ),
 
     async assignedBy(key, assignee, signal) {
-      let current: unknown = null;
+      let read: Record<string, unknown> = {};
       const nodes = await pageAll(
         transport,
         HISTORY_QUERY,
         { id: key, team },
         (d) => {
-          const issue = field(d.issue, `issue ${key}`);
-          current = issue.assignee;
-          return issue.history;
+          read = field(d.issue, `issue ${key}`);
+          return read.history;
         },
         `history of ${key}`,
         signal,
       );
+      const current = read.assignee;
       const who = assignee ?? (isRecord(current) ? current.id : undefined);
       if (typeof who !== "string")
         throw new AssignmentError(`issue ${key} is assigned to nobody`);
@@ -340,22 +371,31 @@ export function assignedOperations(
         throw new AssignmentError(
           `issue ${key} is no longer assigned to ${who}`,
         );
-      const latest = nodes
-        .map((n, i) => {
-          const node = field(n, `history of ${key}[${i}]`);
-          if (node.toAssignee !== null && !hasIdentity(node.toAssignee))
-            throw new AssignmentError(
-              `history of ${key}[${i}]: its assignment target cannot be read`,
-            );
-          return node;
-        })
+      const entries = nodes.map((n, i) => {
+        const node = field(n, `history of ${key}[${i}]`);
+        if (node.toAssignee !== null && !hasIdentity(node.toAssignee))
+          throw new AssignmentError(
+            `history of ${key}[${i}]: its assignment target cannot be read`,
+          );
+        return node;
+      });
+      const latest = entries
         .filter((n) => names(n.toAssignee, who))
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
         .at(-1);
-      if (latest === undefined)
+      if (latest === undefined) {
+        const changed = entries.some((node, i) => {
+          if (node.fromAssignee !== null && !hasIdentity(node.fromAssignee))
+            throw new AssignmentError(
+              `history of ${key}[${i}]: its previous assignee cannot be read`,
+            );
+          return node.fromAssignee !== null || node.toAssignee !== null;
+        });
+        if (!changed) return creatorAssigner(read.creator, key, who, team);
         throw new AssignerUnknown(
           `issue ${key}: its history holds no assignment of ${who}`,
         );
+      }
       return assigner(latest.actor, key, team);
     },
   };

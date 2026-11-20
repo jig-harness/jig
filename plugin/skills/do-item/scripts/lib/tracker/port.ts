@@ -371,6 +371,8 @@ export interface Assigner {
   id: string;
   name: string;
   trusted: boolean;
+  /** Set when the issue was created assigned, so `name` is its creator's. */
+  atCreation?: true;
 }
 
 /** Which open issues a pool holds, by label and by facet. */
@@ -842,8 +844,12 @@ export interface Tracker
    * assignment of `assignee`, or one made by an integration or an automation)
    * throws `AssignerUnknown` for it, which a caller may keep until the issue
    * changes; any other throw is a read to try again. An issue that is no
-   * longer assigned to that account is a definite absent answer too. An
-   * aborted `signal` ends the read.
+   * longer assigned to that account is a definite absent answer too. On a
+   * tracker whose history records no assignee given at an issue's creation
+   * (Linear), the creator of an issue whose assignee no history entry ever
+   * changed made its assignment, answered with `atCreation` and put through
+   * the same test; one the history shows changing to others only holds no
+   * assignment. An aborted `signal` ends the read.
    */
   assignedBy(
     key: string,
