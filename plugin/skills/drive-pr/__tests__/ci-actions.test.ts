@@ -128,6 +128,7 @@ describe("additive CI telemetry", () => {
   });
 });
 import {
+  boundedCiActions,
   retainedDiagnosis,
   type CiAction,
 } from "../scripts/lib/state/ci-actions.ts";
@@ -154,5 +155,15 @@ describe("CI diagnosis receipts", () => {
       `diagnose-skipped: head ${headA}: moved head`,
       `diagnosis: head ${headB}: issue #2. second outcome`,
     ]);
+  });
+
+  it("drops telemetry when diagnosis receipts use the complete action allowance", () => {
+    const diagnoses = Array.from({ length: 10 }, (_, n) =>
+      action(`diagnosis: head ${n.toString().padStart(40, "0")}: issue #${n}`),
+    );
+
+    expect(
+      boundedCiActions([...diagnoses, action("ordinary repair telemetry")]),
+    ).toEqual(diagnoses);
   });
 });

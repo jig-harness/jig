@@ -71,12 +71,16 @@ function isCiAction(v: unknown): v is CiAction {
 }
 
 /** Preserve per-head diagnosis control receipts ahead of disposable telemetry. */
-function boundedCiActions(actions: readonly CiAction[]): CiAction[] {
+export function boundedCiActions(actions: readonly CiAction[]): CiAction[] {
   const diagnoses = retainedDiagnosis(actions).slice(-ACTION_LIMIT);
   const telemetry = actions.filter(
     (action) => diagnosisHead(action) === undefined,
   );
-  return [...diagnoses, ...telemetry.slice(-(ACTION_LIMIT - diagnoses.length))];
+  const telemetryAllowance = ACTION_LIMIT - diagnoses.length;
+  return [
+    ...diagnoses,
+    ...(telemetryAllowance === 0 ? [] : telemetry.slice(-telemetryAllowance)),
+  ];
 }
 
 export function isOptionalCiActions(v: unknown): boolean {
