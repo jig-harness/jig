@@ -32,7 +32,7 @@ import type {
 import { LOAD_KINDS, type LoadSettings } from "./load-config.ts";
 import type { LoadReading } from "./load-read.ts";
 import { MEASURED_AFTER, percentile90 } from "./load-samples.ts";
-
+import { runsPerPassFor } from "./validation-capacity.ts";
 import {
   type ValidationLoad,
   validationGauge,
@@ -366,6 +366,7 @@ function gaugeRefusal(
 function refusal(
   state: LoadState,
   kind: LoadKind,
+  repo: string,
   pickupDeadlineMs: number,
 ): Refusal | null {
   const mem = memoryRefusal(state, kind);
@@ -379,6 +380,7 @@ function refusal(
       state.settings.validation,
       kind,
       pickupDeadlineMs,
+      repo,
     );
     if (detail !== null) return { gauge: "validation", detail };
   }
@@ -403,7 +405,7 @@ export function judge(
   target: string,
   pickupDeadlineMs = 0,
 ): string | null {
-  const refused = refusal(state, kind, pickupDeadlineMs);
+  const refused = refusal(state, kind, repo, pickupDeadlineMs);
   if (refused === null) {
     state.spentBytes += reservation(state, kind);
     state.spentSlots += 1;
@@ -411,8 +413,11 @@ export function judge(
       state.validation !== undefined &&
       (kind === "pickup" || kind === "drive")
     )
-      state.validation.admittedRuns +=
-        state.validation.measured.kinds[kind].runsPerPass;
+      state.validation.admittedRuns += runsPerPassFor(
+        state.validation.measured,
+        kind,
+        repo,
+      );
     return null;
   }
   const held = state.settings.enforce;
@@ -442,7 +447,7 @@ export function holdsBefore(
   pickupDeadlineMs = 0,
 ): string | null {
   if (!state.settings.enforce) return null;
-  const refused = refusal(state, kind, pickupDeadlineMs);
+  const refused = refusal(state, kind, repo, pickupDeadlineMs);
   if (refused === null) return null;
   state.holds.push({
     repo,
