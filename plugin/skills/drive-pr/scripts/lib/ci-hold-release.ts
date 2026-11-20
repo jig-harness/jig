@@ -99,10 +99,13 @@ export async function refuseRace(
   unread: (failure: HoldReadFailure) => number,
   persisted?: ReleasingState,
 ): Promise<number> {
+  // Persist the race before the remote read: an interruption while that read
+  // is in flight must recover conservatively rather than settle the absent
+  // label as an external release.
+  if (persisted !== undefined)
+    await writeCiState(pr, { ...persisted, raceDetected: true });
   const live = await readPrSnapshot(pr, label);
   if (!live.ok) {
-    if (persisted !== undefined)
-      await writeCiState(pr, { ...persisted, raceDetected: true });
     return unread(live.failure);
   }
   if (
