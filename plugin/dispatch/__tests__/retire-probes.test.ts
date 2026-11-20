@@ -22,7 +22,10 @@ const now = Temporal.Now.instant();
 if (budget === "bounded") Temporal.Now.instant = () => now;
 const report = { records: [{ ok: true }] };
 await retireNotices({
-  machine: { runtimeTimeoutMs: 100 },
+  // The unbounded selector test exercises environment sanitisation, not a
+  // near-zero process deadline. Give a contended CI runner enough time to
+  // start Git; the bounded case below still verifies deadline handling.
+  machine: { runtimeTimeoutMs: budget === "bounded" ? 100 : 10_000 },
   startedAt: budget === "bounded" ? now.epochMilliseconds - 750 : undefined,
   runtime: { retire: async () => ({ ok: true, detail: "removed" }) },
 }, report, {
@@ -53,7 +56,7 @@ test("inherited Git selectors cannot make a dirty retirement target appear clean
     [process.execPath, "-e", CHILD, w.repo, join(w.root, "state"), "unbounded"],
     {
       env: { ...w.env, GIT_DIR: join(clean, ".git"), GIT_WORK_TREE: clean },
-      timeoutSec: 5,
+      timeoutSec: 15,
     },
   );
   expectSpawnExit(

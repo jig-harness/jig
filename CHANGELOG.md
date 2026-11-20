@@ -401,6 +401,61 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.286.4] - 2026-11-20
+
+### Fixed
+
+- `jig dispatch` no longer raises a stalled-pickup need for a claimed item
+  whose open pull request's drive is parked on a person's question, stopped
+  for a re-arm or a re-drive, or undecided for a tick while the forge
+  computes its mergeability: the item is reported as carried by the pull
+  request, with the drive's state, and the drive's own need is the only one a
+  person sees. An item a pull request merged within the last day links is
+  not raised as stalled either; its follow-up settles it.
+- The dispatch retirement checks tolerate a busy CI runner while continuing to
+  reject a worktree with uncommitted local content.
+- A dispatched follow-up whose release arm stays pending past
+  `dispatch.followup_within` no longer goes to a person while the release it
+  waits for is minutes away. The window starts again when a pass names a
+  newer release tag than the one it started on (up to three windows after
+  the first pending pass), and before the follow-up is raised the tick reads
+  the release tags its arm names once more, within 15 minutes of the pass's
+  end: when they all exist, it runs the follow-up again instead. An arm
+  still pending at that read is raised once, naming it, as before, and an
+  arm a run already went past its window on is not read again.
+- drive-pr: a required check whose workflow never runs on the pull request's
+  head (an event or path filter excludes it, or the workflow failed to start)
+  no longer keeps the drive waiting on `CI_HOLD_WAIT` until it stalls. Once no
+  workflow run on the head is still to finish, 15 minutes have passed since
+  the head's push and 5 since its last workflow run finished, `ci-hold.ts
+  ensure` parks `missing-required-run` for a
+  person, naming each such check and the workflow whose job reports it
+  (`unknown` when the head's workflow files name none, or several), and the
+  drive stops `HITL_PARKED`. A check whose run is queued or in progress still
+  waits. A round whose own commits change `.github/workflows/` pushes without
+  the hold, so a repair it carries can start the check.
+- drive-pr: a stall whose passes all ended `finish-round.ts` on the same state
+  names that state and its reason in the stop and its closing report, and
+  takes its cause from it (`environment` for `CI_HOLD_WAIT`) instead of
+  `unknown`.
+- A launch record of this machine whose process nobody can show running,
+  and that holds a drive past 30 minutes, is now raised to a person
+  whatever the drive's class. Before, the hold of a finished, silent,
+  refused or parked drive, or of a merged pull request, stayed silent
+  while it kept a launch slot of its account taken. The need says the
+  hold keeps the account's slot and that `jig dispatch clear` frees it,
+  and `jig ask` names the hold instead of answering `waitsOn: none`. A
+  merged pull request's hold counts from its merge, and a running drive's
+  from the launch. A drive whose driver may still run (a running, silent
+  or unread ledger) is raised only once every process of the record is
+  proved gone (for every record that holds the drive, not only the
+  newest), so a failed process read never raises a working drive; the
+  hold is raised whether or not a launch is planned for the drive, and
+  `jig ask` names a stranded launch ahead of a CI-hold diagnosis and
+  never reads a ledger that did not read as an unarmed drive. The
+  tick sees a merged pull request through the follow-up stage's listing,
+  so it raises that hold where follow-ups are configured.
+
 ## [0.286.3] - 2026-11-20
 
 ### Fixed
@@ -10128,7 +10183,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.4...HEAD
+[0.286.4]: https://github.com/jig-harness/jig/compare/v0.286.3...v0.286.4
 [0.286.3]: https://github.com/jig-harness/jig/compare/v0.286.2...v0.286.3
 [0.286.2]: https://github.com/jig-harness/jig/compare/v0.286.1...v0.286.2
 [0.286.1]: https://github.com/jig-harness/jig/compare/v0.286.0...v0.286.1
