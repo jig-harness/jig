@@ -176,9 +176,12 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** GitHub runs at most this many jobs from one matrix; a larger one is never expanded. */
+const MAX_MATRIX_COMBINATIONS = 256;
+
 /**
  * The check-name suffixes a job's matrix reports, one per complete ordered
- * combination: the cross product of its plain axes in key order, or, with no
+ * combination (at most `MAX_MATRIX_COMBINATIONS`, checked before any is built): the cross product of its plain axes in key order, or, with no
  * axes, each `include` entry's values in key order. `null` when the matrix
  * mixes axes with `include`, excludes combinations, or lists a non-plain
  * value: a suffix that cannot be derived from one complete tuple is left
@@ -191,11 +194,17 @@ function matrixCombinations(job: unknown): Set<string> | null {
   let tuples: unknown[][];
   if (include !== undefined) {
     if (Object.keys(axes).length > 0 || !Array.isArray(include)) return null;
+    if (include.length > MAX_MATRIX_COMBINATIONS) return null;
     if (!include.every(isRecord)) return null;
     tuples = include.map((entry) => Object.values(entry));
   } else {
     const lists = Object.values(axes);
     if (lists.length === 0 || !lists.every(Array.isArray)) return null;
+    let size = 1;
+    for (const list of lists) {
+      size *= list.length;
+      if (size > MAX_MATRIX_COMBINATIONS) return null;
+    }
     tuples = lists.reduce<unknown[][]>(
       (acc, list) => acc.flatMap((t) => list.map((v: unknown) => [...t, v])),
       [[]],

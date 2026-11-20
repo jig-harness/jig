@@ -267,6 +267,20 @@ describe("workflowForCheck", () => {
     expect(workflowForCheck("Build (windows, 2)", [paired])).toBeNull();
   });
 
+  it("leaves a matrix larger than GitHub runs unattributed, without expanding it", () => {
+    const axes = Array.from(
+      { length: 30 },
+      (_, i) => `        a${i}: [x, y]\n`,
+    ).join("");
+    const huge = {
+      path: ".github/workflows/huge.yml",
+      text: `on: push\njobs:\n  b:\n    name: Build\n    strategy:\n      matrix:\n${axes}    runs-on: x\n`,
+    };
+    expect(workflowForCheck("Build (x, x)", [huge])).toBeNull();
+    expect(workflowForCheck("Build", [huge])).toBe(huge.path);
+    expect(workflowForCheck("unrelated", [huge])).toBeNull();
+  });
+
   it("says unknown when no workflow, or several, report it", () => {
     expect(workflowForCheck("deploy", [ci, matrix])).toBeNull();
     expect(
