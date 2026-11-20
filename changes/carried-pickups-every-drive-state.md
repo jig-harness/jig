@@ -11,3 +11,5 @@ release: patch
   request, with the drive's state, and the drive's own need is the only one a
   person sees. An item a pull request merged within the last day links is
   not raised as stalled either; its follow-up settles it.
+- The dispatch retirement checks tolerate a busy CI runner while continuing to
+  reject a worktree with uncommitted local content.
