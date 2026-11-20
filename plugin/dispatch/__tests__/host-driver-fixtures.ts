@@ -14,8 +14,9 @@ export function holdLock(
   worktree: string,
   identity: string | null,
   holder: ProcessIdentity = lockIdentity(),
+  cloneDir: string = join(root, "clone-a"),
 ): void {
-  const drive = driveDb(join(root, "clone-a"));
+  const drive = driveDb(cloneDir);
   const taken = takeLockRow(drive, prLockName(String(pr)), null, {
     token: randomUUID(),
     label: "drive.ts",
