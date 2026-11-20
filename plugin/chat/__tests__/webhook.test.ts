@@ -242,6 +242,26 @@ describe("rendering", () => {
     ).toBeLessThanOrEqual(2000);
   });
 
+  it("keeps a payload within the limit when the pull-request link is very long", () => {
+    const due = parked();
+    const long: DueNotice = {
+      ...due,
+      notice: {
+        ...due.notice,
+        text: `[jig dispatch: ${"k".repeat(100)}]`,
+        links: { pullRequest: `https://example.test/pull/${"7".repeat(1900)}` },
+      },
+    };
+    expect(
+      JSON.parse(render(long, "discord").body).content.length,
+    ).toBeLessThanOrEqual(2000);
+    expect(
+      JSON.parse(render(long, "slack").body).text.length,
+    ).toBeLessThanOrEqual(3900);
+    const short = render(parked(), "discord").body;
+    expect(JSON.parse(short).content).toContain("https://example.test/pull/7");
+  });
+
   it("never splits a character written as two UTF-16 units", () => {
     const key = "k";
     for (let pad = 0; pad < 4; pad++) {

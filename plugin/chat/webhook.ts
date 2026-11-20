@@ -93,6 +93,9 @@ export interface WebhookOptions {
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
 /** The longest message each format sends: ntfy's message limit in bytes, Slack's practical limit for a message's text, Discord's content limit in characters. */
+/** The longest pull-request tail kept whole; a longer one is left out. */
+const MAX_LINK_TAIL = 500;
+
 const LIMITS: Readonly<Record<WebhookFormat, number>> = {
   text: 4000,
   slack: 3900,
@@ -220,9 +223,10 @@ export function fitted(
     "\n… (cut short: the dispatch dashboard and the pull request hold the rest)";
   const first = text.indexOf("\n");
   const head = first < 0 ? text : text.slice(0, first);
-  let low = head.length;
+  // The key line stays whole when it fits with the note; one that cannot is cut like the rest.
+  let low = sizeOf(head + cut, format) <= limit ? head.length : 0;
   let high = text.length;
-  // The longest prefix that fits with the note, never shorter than the key line.
+  // The longest prefix that fits with the note, never shorter than a key line that fits.
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
     if (sizeOf(text.slice(0, mid) + cut, format) <= limit) low = mid;
@@ -269,7 +273,11 @@ export function render(due: DueNotice, format: WebhookFormat): Rendered {
   const apart =
     format !== "text" && link !== undefined && structured(due.notice);
   const plain = noticeMessage(due.notice, !apart);
-  const tail = apart ? `\n\nPull request: ${link}` : "";
+  // A link too long to leave room for the words is left out rather than cut, since a cut address leads nowhere.
+  const tail =
+    apart && `\n\nPull request: ${link}`.length <= MAX_LINK_TAIL
+      ? `\n\nPull request: ${link}`
+      : "";
   const escaped =
     format === "slack"
       ? slackText(plain)
