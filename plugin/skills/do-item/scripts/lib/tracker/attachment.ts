@@ -10,7 +10,6 @@
  * tracker can hold the file in none of those ways, `attachFile` throws
  * `AttachmentRefused` and writes nothing.
  */
-import type { TrackerAssignmentWindow } from "./assignment-window.ts";
 import { isRateLimited } from "../../../../../shared/outbound/budget.ts";
 
 /** A file to attach to an issue. */
@@ -59,7 +58,7 @@ export interface IssueAttachment {
 export class AttachmentRefused extends Error {}
 
 /** The tracker port's attachment operations, part of `Tracker`. */
-export interface TrackerAttachments extends TrackerAssignmentWindow {
+export interface TrackerAttachments {
   /** Every file attached to an issue, in the form each adapter holds it. */
   listAttachments(
     key: string,

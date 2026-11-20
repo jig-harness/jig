@@ -120,14 +120,22 @@ export function fakeLinear(
               pageInfo: { hasNextPage: false, endCursor: null },
               // Like the adapter's other history read, leaves out what was
               // written inside the creation window.
-              nodes: writes
-                .filter((w) => w.at >= T0 + WINDOW_MS)
-                .map((w, i) => ({
-                  id: `w${i}`,
-                  createdAt: iso(w.at),
-                  fromAssignee: w.from === null ? null : { id: w.from },
-                  toAssignee: w.to === null ? null : { id: w.to },
+              nodes: [
+                ...(start.history ?? []).map((h, i) => ({
+                  id: `s${i}`,
+                  createdAt: h.createdAt,
+                  fromAssignee: null,
+                  toAssignee: { id: h.toAssignee },
                 })),
+                ...writes
+                  .filter((w) => w.at >= T0 + WINDOW_MS)
+                  .map((w, i) => ({
+                    id: `w${i}`,
+                    createdAt: iso(w.at),
+                    fromAssignee: w.from === null ? null : { id: w.from },
+                    toAssignee: w.to === null ? null : { id: w.to },
+                  })),
+              ],
             },
           },
         };
