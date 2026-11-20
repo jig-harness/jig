@@ -562,6 +562,7 @@ async function release(
     checkRunWatermark: watermark,
   };
   await writeCiState(pr, releasing);
+  persisted = releasing;
   return releaseHeldLabel(
     pr,
     head,

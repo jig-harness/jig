@@ -1417,6 +1417,17 @@ if [ -f "$F/transient-failure" ]; then
   esac
 fi
 
+# The removal mutation and its timeline proof succeeded, but the confirmation
+# snapshot immediately after them timed out. This is distinct from a timeline
+# failure: recovery must retain the release-proof-pending signal.
+if [ -f "$F/recovery-snapshot-timeout" ] && [ "\${1:-}" = "pr" ] &&
+  [ "\${2:-}" = "view" ] &&
+  jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+  rm "$F/recovery-snapshot-timeout"
+  echo "gh-stub: simulated recovery snapshot timeout" >&2
+  exit 124
+fi
+
 # A transient failure of the sweep's liveness probe ALONE. Matched on an
 # argument that is EXACTLY \`state\` — the sweep's probe asks for that one field
 # and nothing else, while evaluate()'s opening snapshot and still_on_head()
@@ -1824,6 +1835,10 @@ if [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "edit" ]; then
     [ "$a" = "--remove-label" ] && action="unlabeled"
   done
   [ -n "$action" ] || { echo "gh-stub: unsupported pr edit" >&2; exit 1; }
+  remove_failed=0
+  if [ "$action" = "unlabeled" ] && [ -f "$F/remove-label-fails" ]; then
+    remove_failed=1
+  fi
   if [ "$action" = "labeled" ]; then
     jq '.labels = ((.labels + [{name:"ci:hold"}]) | unique_by(.name))' "$F/pr-view.json" > "$F/pr-view.json.tmp"
   else
@@ -1838,6 +1853,10 @@ if [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "edit" ]; then
     '. + [{node_id:$node,event:$event,label:{name:"ci:hold"},actor:{login:"drive-user"},created_at:"2026-09-10T10:00:00Z"}]' \
     "$F/timeline.json" > "$F/timeline.json.tmp"
   mv "$F/timeline.json.tmp" "$F/timeline.json"
+  if [ "$remove_failed" -eq 1 ]; then
+    echo "gh-stub: simulated remove-label failure" >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -2017,6 +2036,11 @@ for a in "$@"; do
       if [ -f "$F/timeline-timeout-after-unlabel" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
         rm "$F/timeline-timeout-after-unlabel"
         echo "gh-stub: simulated proof timeline timeout" >&2; exit 124
+      fi
+      if [ -f "$F/timeline-malformed-after-unlabel" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+        rm "$F/timeline-malformed-after-unlabel"
+        printf '%s' '{'
+        exit 0
       fi
       if [ -f "$F/timeline-unreachable" ]; then
         echo "gh-stub: simulated timeline timeout" >&2; exit 1

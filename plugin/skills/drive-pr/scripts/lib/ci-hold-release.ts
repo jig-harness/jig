@@ -129,7 +129,7 @@ export async function releaseHeldLabel(
     process.stdout.write("release-proof-pending\n");
     return unread(proof.failure);
   }
-  if (!proof.ok) return 4;
+  if (!proof.ok) return unread(proof.failure);
   const mutation = valueOrNull(proof);
   const confirmed = await readPrSnapshot(pr, label);
   if (!confirmed.ok) return unread(confirmed.failure);

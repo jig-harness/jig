@@ -371,6 +371,19 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     });
   });
 
+  it("keeps the retry signal when the confirmation snapshot times out", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "recovery-snapshot-timeout"), ""),
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stdout.trim()).toBe("release-proof-pending");
+    expect(r.stderr).toContain("simulated recovery snapshot timeout");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+    });
+  });
+
   it("stops when the readable timeline cannot prove the removal", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) =>
       writeFileSync(join(dir, "omit-unlabel-event"), ""),
@@ -378,6 +391,19 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expectSpawnExit(r, 1);
     expect(r.stderr).toContain("the unlabeled transition could not be proven");
   }, 15_000);
+
+  it("fails closed when removal reports failure and its proof is malformed", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "remove-label-fails"), "");
+      writeFileSync(join(dir, "timeline-malformed-after-unlabel"), "");
+    });
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("timeline JSON could not be decoded");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+    });
+  });
 
   it("release retries later, saying why, when the forge cannot be reached for the PR state", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) =>
