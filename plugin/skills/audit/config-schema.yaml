@@ -216,7 +216,7 @@ fields:
   dispatch.missing_priority:
     type: enum
     values: [hold, start]
-    read_by: [dispatch]
+    read_by: [dispatch, work-batch]
     repository_only: true
     since: next
   dispatch.blocked_after:
