@@ -108,7 +108,9 @@ the callers of an adapter do not change.
   an unchanged answer does not count against the hourly limit.
 - **Ask what changed first.** A reader that keeps a reading asks the system
   for what changed since, and reads everything only on a schedule or when
-  the probe cannot tell.
+  the probe cannot tell. The dispatcher's change probes ask each service on
+  a cadence of its own, inside the budget
+  ([Probes in the budget](#probes-in-the-budget)).
 - **One request for one question.** Two callers in one run that ask the
   same read share one request. Two repository configurations that read the
   same tracker team with the same credential share one queue reading.
@@ -255,6 +257,81 @@ floor; it keeps them and is charged them as an estimate.
 The dispatcher's reads may use a share of each limit and leave the rest to
 passes and people. One setting covers every system; `tracker_share` stays
 readable as its older name.
+
+### Probes in the budget
+
+The dispatcher's [change probes](dark-factory-dispatch.md#refresh-cadences)
+(one per service: the forge, Linear, Jira) are callers of the budget like
+the tick. Each request goes through its service's transport, is admitted
+before it is sent, is recorded in the ledger under the caller `probe` and
+the operation's name, and fails as one of the classes below. A probe that is
+refused or gets no answer wakes nothing, says why and leaves the next sweep
+to find the change.
+
+**What one run costs.** Each probe's cost is stated in its service's own
+unit, from the service's published limits where they state it and from the
+host's measure where they do not. A figure marked *derived* is checked
+against the first live answer's own report (`rateLimit.cost`, `X-Complexity`,
+a points header) when its step lands, and a difference replaces the figure
+here.
+
+| Probe request | Unit | One run | An hour at the default interval | Against the limit | Basis |
+| --- | --- | --- | --- | --- | --- |
+| Forge: pull requests updated, and open ones' checks (one GraphQL search) | GraphQL points | 1 | 60 | 1.2% of 5,000 | Measured: eleven repositories, sixty-odd open pull requests |
+| Forge: issues updated, one listing per repository (`since`, 100 to a page) | Core requests | 1 per repository | 60 per repository | 1.2% of 5,000 for each repository | Derived: a listing whose `since` moves each run is not a repeat of the last request, so no validator answers it for free |
+| Linear: items and comments updated since a time, for the scope's served people and the items its reading names (one request, `first: 1` for each) | Requests; complexity points | 1; about 5 | 60; about 300 | 2.4% of 2,500; 0.01% of 3,000,000 | Derived from Linear's formula (0.1 a property, 1 an object, a connection multiplies by its page size): about 60 at the `first: 50` the in-tick read asks for today |
+| Jira: issues updated since a time, for the scope's served people and named items (one search, one result) | Requests; points | 1; about 2 | 12 at 5 minutes; about 24 | About 0.04% of the 65,000 points an hour Atlassian publishes for apps on the global pool | Derived from Atlassian's formula (1 point a request, one more for each object returned); the search's own cost is not in Atlassian's table, and the quota of a person's token is not stated as an hourly figure, so the first live answer's headers decide |
+
+Both a service's units can bind; the floor below is taken from the one that
+does.
+
+**How a probe is admitted.** In this order:
+
+1. The service's hold. A credential the service is refusing, or a request
+   that would pass the dispatcher's floor (`1 - outbound_share` of a window,
+   as for the tick), is refused with the time it clears.
+2. The **probe share**: probes together may spend at most `probe_share` of a
+   limit's hourly allowance (default `0.1`), counted from the ledger's
+   `probe` rows of the current clock hour on the quota owner's record. A
+   request that would pass it is refused until the next clock hour. The
+   ledger keeps hourly totals, not the time of each request, so the window is
+   the clock hour, for the count, the reset and the share alike, and the floor under each interval keeps spending even
+   through it; a finer window needs finer ledger rows, which step 15 may add.
+   Keeping probes inside a share of their own is what keeps a probe, which
+   runs whether or not anything changed, from using the room the woken ticks
+   and the passes need.
+
+Each probe's interval has a **floor**, the smallest interval at which its
+requests stay inside the probe share: its cost per run times 3,600 seconds,
+over the share of the limit it binds against, summed over every probe that
+spends against the same quota owner (several Linear teams on one person's
+allowance count together, and a Jira scope joins them once its window is
+known). A run's cost is its observed one: each page a run reads is charged,
+and a run that grows past its estimate raises the floor from the next run
+rather than spending past the share unseen. With the figures above: the
+forge's search 8 seconds, each repository's issue listing 8 seconds for each
+repository (about 80 seconds for eleven, so the listing runs every second
+minute there while the search runs every minute), Linear's 15 seconds for one scope (a multiple of that for several scopes on one allowance), and
+Jira's 5 minutes, a fixed floor until its transport reads Jira's limit
+headers into a window. Each service's probe runs as its own job on its own timer, so an interval
+is whole minutes and the floor rounds up to one; where the scheduler is cron,
+the floor rounds further up to an interval a crontab line expresses (one that
+divides an hour, or a whole number of hours that divides a day). A configured interval under its
+floor is raised to the floor, and install, the tick's report and the
+dashboard's quota view say so; it is never refused, so a host that sets 1
+minute everywhere gets the fastest the budget allows. The floor protects the
+probe's spend, not the woken ticks': a repository's tick is started at most
+once a minute whatever the probes see, and what a woken tick reads is what a
+sweep would have read for the same change, so the probe's own spending stays inside the
+share. A tick woken earlier reads for the change that woke it, and changes
+that a sweep would have read together may wake several ticks, each at most a
+minute apart, so the woken ticks' reads can grow; the dispatcher's report
+counts them so the sweep interval grows on the evidence.
+
+**On an enrolled host** the probes are replaced by the hub's change feed while
+the hub answers, so they spend none of the host's budget; when the hub does
+not answer they run again and spend the host's share of any budget the hosts
+share, pausing while it is spent, the ticks reading at their interval ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)).
 
 ### The cost ledger and what is reported
 
@@ -481,6 +558,11 @@ refused.
 One pull request per remaining step.
 
 - **The gates and the lens.**
+- **Probes in the budget**, steps 15 to 18 of the
+  [dispatcher's build order](dark-factory-dispatch.md#build-order): the
+  `probe` caller, the probe share and the floor under each interval, then
+  the Linear and Jira probes and the forge's issue changes in its search.
+  They wait for a person's review of that plan.
 
 ## Left out
 
