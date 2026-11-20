@@ -161,14 +161,22 @@ function measurablePasses(
     (first, { requestedAtMs }) => Math.min(first, requestedAtMs),
     Infinity,
   );
-  const recorded = new Set([...attributed.keys()].map(({ repo }) => repo));
-  return passes.filter(
-    ({ workspace, repo, endedAtMs }) =>
-      workspace !== null &&
-      endedAtMs !== undefined &&
-      endedAtMs >= earliest &&
-      (repo === undefined || repo === null || recorded.has(repo)),
-  );
+  // A repository's runs are observable from its own first attributed sample:
+  // passes before its lock wrapper recorded anything are not zero-run passes.
+  const firstRecorded = new Map<string, number>();
+  for (const [{ repo }, { firstRequest }] of attributed) {
+    if (typeof repo === "string")
+      firstRecorded.set(
+        repo,
+        Math.min(firstRecorded.get(repo) ?? Infinity, firstRequest),
+      );
+  }
+  return passes.filter(({ workspace, repo, endedAtMs }) => {
+    if (workspace === null || endedAtMs === undefined) return false;
+    if (typeof repo !== "string") return endedAtMs >= earliest;
+    const from = firstRecorded.get(repo);
+    return from !== undefined && endedAtMs >= Math.max(earliest, from);
+  });
 }
 
 /** Derive each estimate from observed runs and name every estimate using its default. */
@@ -201,7 +209,9 @@ export function measureValidation(
       if (pass.kind !== kind) continue;
       const repo = pass.repo ?? null;
       const count = attributed.get(pass)?.count ?? 0;
-      counts.set(repo, [...(counts.get(repo) ?? []), count]);
+      const repoCounts = counts.get(repo);
+      if (repoCounts) repoCounts.push(count);
+      else counts.set(repo, [count]);
     }
     const runsPerRepository = new Map<string, number>();
     for (const [repo, repoCounts] of counts) {

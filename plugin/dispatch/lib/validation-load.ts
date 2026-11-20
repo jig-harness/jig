@@ -63,6 +63,13 @@ function workspaceOf(
   }
 }
 
+/** The launch records as the validation passes the measurements read. */
+export function validationPassesOf(
+  records: readonly ReadRecord[],
+): ValidationPass[] {
+  return records.flatMap((record) => passOf(record) ?? []);
+}
+
 export function readValidationLoad(
   records: readonly ReadRecord[],
   lock: LoadReading["lock"],
@@ -70,7 +77,7 @@ export function readValidationLoad(
   driveDeadlineMs: number,
 ): ValidationLoad {
   const { name } = lockPlace(process.env);
-  const passes = records.flatMap((record) => passOf(record) ?? []);
+  const passes = validationPassesOf(records);
   const workspaces = new Set(
     passes.flatMap(({ workspace }) => workspace ?? []),
   );

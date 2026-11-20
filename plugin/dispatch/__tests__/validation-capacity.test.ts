@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { ReadRecord } from "../lib/launches.ts";
 import {
   forecastValidation,
   measureValidation,
@@ -10,6 +11,7 @@ import {
 import {
   validationGauge,
   validationHold,
+  validationPassesOf,
   type ValidationLoad,
 } from "../lib/validation-load.ts";
 
@@ -652,5 +654,79 @@ describe("validation forecast", () => {
     expect(gauge.fill).not.toBeNull();
     expect(gauge.fill ?? Infinity).toBeLessThan(1);
     expect(validationHold(state, 1, "pickup", 3 * HOUR, repo)).toBeNull();
+  });
+});
+
+describe("validation passes read from launch records", () => {
+  const record = (repo: string, path: string): ReadRecord =>
+    ({
+      record: {
+        action: "pickup",
+        repo,
+        createdAt: "2026-11-20T08:00:00.000Z",
+        workspace: { id: path, path: `/work/${path}` },
+      },
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-20T09:00:00.000Z" },
+      },
+    }) as unknown as ReadRecord;
+
+  test("carry the repository, so its own measure and admission follow", () => {
+    const records = ["a", "b", "c"].map((n) => record("example/repo", n));
+    const passes = validationPassesOf(records);
+    expect(passes.map(({ repo }) => repo)).toEqual(
+      Array(3).fill("example/repo"),
+    );
+    const samples: ValidationSample[] = ["a", "b", "c"].flatMap((n) =>
+      Array.from({ length: 5 }, (_, i) =>
+        sample(
+          Date.parse("2026-11-20T08:10:00Z") + i * MINUTE,
+          0,
+          MINUTE,
+          `/work/${n}`,
+        ),
+      ),
+    );
+    const measured = measureValidation(samples, passes);
+    expect(runsPerPassFor(measured, "pickup", "example/repo")).toBe(5);
+  });
+
+  test("a repository's observable window starts at its own first sample", () => {
+    const old = Date.parse("2026-11-13T08:00:00Z");
+    const records = ["a", "b", "c"].map((n) => record("example/new", n));
+    const passes: ValidationPass[] = [
+      ...validationPassesOf(records),
+      {
+        workspace: "/work/other",
+        kind: "pickup",
+        repo: "example/old",
+        launchedAtMs: old,
+        endedAtMs: old + HOUR,
+      },
+    ];
+    const samples = [
+      sample(old + 5 * MINUTE, 0, MINUTE, "/work/other"),
+      ...["a", "b", "c"].flatMap((n) =>
+        Array.from({ length: 5 }, (_, i) =>
+          sample(
+            Date.parse("2026-11-20T08:10:00Z") + i * MINUTE,
+            0,
+            MINUTE,
+            `/work/${n}`,
+          ),
+        ),
+      ),
+    ];
+    // Earlier passes of example/new, from before it recorded, are not zero-run.
+    const early: ValidationPass[] = Array.from({ length: 6 }, (_, i) => ({
+      workspace: `/work/early-${i}`,
+      kind: "pickup",
+      repo: "example/new",
+      launchedAtMs: old + 2 * HOUR,
+      endedAtMs: old + 3 * HOUR,
+    }));
+    const measured = measureValidation(samples, [...passes, ...early]);
+    expect(runsPerPassFor(measured, "pickup", "example/new")).toBe(5);
   });
 });
