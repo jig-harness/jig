@@ -582,10 +582,10 @@ describe("drive-status.ts terminal states", () => {
     expect(r.state).toBe("AWAITING_REVIEWER");
     expect(r.stderr).toContain("; waiting");
     const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
-    expect(polls.length).toBeGreaterThan(0);
-    // The 1s → 2s → 3s capped cadence, plus the final evaluation reserved
-    // before the deadline, is distinct from fixed one-second polling.
-    expect(polls.length).toBeLessThanOrEqual(12);
+    // This fixture performs two top-level PR reads for every evaluation. The
+    // 1s → 2s → 3s capped cadence and its final evaluation make exactly six
+    // evaluations; fixed one-second polling would make more.
+    expect(polls).toHaveLength(12);
   }, 20_000);
 });
 

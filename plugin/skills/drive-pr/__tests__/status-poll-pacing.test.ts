@@ -140,6 +140,20 @@ describe("waiting status poll pacing", () => {
     expect(now).toBe(12_100);
   });
 
+  test("does not add a zero-delay poll when a budget delay reaches the final margin", async () => {
+    const probe = fixture(() => window(100, 9), second);
+    const deadline = 10 * second;
+
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(9 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      false,
+    );
+    expect(probe.clock.now()).toBe(deadline);
+  });
+
   test("fewer polls over half an hour and an observed change resets the cadence", async () => {
     const probe = fixture(() => window(4500, 3600));
     const report = emptyReport();

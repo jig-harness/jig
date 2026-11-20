@@ -284,10 +284,13 @@ export class StatusPollPacing {
       // consuming loop with no time to observe evidence from its last interval.
       // An ordinary cadence wake inside the final margin is itself the final
       // evaluation. Reserving another wake at the same time would return a
-      // zero-delay poll on the next call.
+      // zero-delay poll on the next call. A budget-limited wake at that same
+      // boundary is also an evaluation, so retain that reservation even when
+      // the budget, rather than cadence, chose the wake time.
       const reservesFinalEvaluation =
         pollAt >= deadline - FINAL_EVALUATION_MARGIN_MS &&
-        pollAt === cadencePollAt;
+        (pollAt === cadencePollAt ||
+          pollAt === deadline - FINAL_EVALUATION_MARGIN_MS);
       const wakeAt = Math.min(
         pollAt,
         reservesFinalEvaluation
