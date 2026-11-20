@@ -91,12 +91,12 @@ claim marker is.
 
 **What it holds**, beside the envelope:
 
-| Field | Meaning |
-| --- | --- |
-| `paths` | Files, and directories ending in `/`, inside the repository |
-| `areas` | Areas of the [change-area catalog](../GLOSSARY.md) the item reaches |
-| `source` | Who predicted it: `pickup`, `scout`, `planner` or `filing` |
-| `base` | The commit of the default branch the prediction read |
+| Field    | Meaning                                                             |
+| -------- | ------------------------------------------------------------------- |
+| `paths`  | Files, and directories ending in `/`, inside the repository         |
+| `areas`  | Areas of the [change-area catalog](../GLOSSARY.md) the item reaches |
+| `source` | Who predicted it: `pickup`, `scout`, `planner` or `filing`          |
+| `base`   | The commit of the default branch the prediction read                |
 
 A path is the precise form, an area the coarse one: an area expands to its
 own globs (its seeds, never the `impliedBy` closure, as serialized areas
@@ -110,7 +110,7 @@ read them).
   good: the work already in flight is what every later admission compares
   against.
 - **A `do-item` scout** (`scout`). The scout form (`/jig:do-item scout
-  <KEY>`) gains a footprint scout that reads the code and writes the
+<KEY>`) gains a footprint scout that reads the code and writes the
   record beside its findings comment, without claiming the item.
 - **The planner** (`planner`). When it decomposes an epic, the planner
   that #1180 moves into Jig writes a footprint for each child it files, from
@@ -412,13 +412,15 @@ there; unset, it is the test stage's own hour (3600 seconds in
 default stands in. A pass makes its runs one after another, each asking for
 the lock when the one before it has released, so its own earlier runs are
 never a wait for its later ones: every run ahead is in the queue before its
-first run, which therefore waits longest. So the host can take a new pass
+first run, which therefore waits longest. The pass deadline still bounds the
+last of its sequential runs, so a pass whose later runs would ask for the lock
+after the deadline waits. So the host can take a new pass
 while
 
 ```text
 runs ahead = runs still to arrive + max(0, runs at the lock now − runs at once × T ÷ run time)
 validation capacity = runs at once × W ÷ run time
-runs ahead + the new pass's first run ≤ validation capacity
+the new pass's first acquisition, after the runs ahead, falls within W
 ```
 
 For example, with one run at a time, runs of 12 minutes and an hour to
@@ -470,13 +472,13 @@ the tick's report, as a structured reason the overview renders: a relation
 word, the item, the work it waits on (each with its kind, pull request or
 pickup, its link and its state) and a count. The texts:
 
-| Waits on | Reason |
-| --- | --- |
-| Overlap | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; first when a slot is free after work that does not overlap, or from 16:40` |
-| The overlap bound | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790); starts when no other work can take a slot` |
-| Validation capacity | `waits on validation capacity: 9 runs are ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5 in a 60 min wait window (LOCK_TIMEOUT)` |
-| A serialized area | `held: serialized behind #123 in dispatch` |
-| A conflict edge | `waits on conflict edge #12 → #14: #12's pull request #20 has not merged` |
+| Waits on            | Reason                                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Overlap             | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; first when a slot is free after work that does not overlap, or from 16:40` |
+| The overlap bound   | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790); starts when no other work can take a slot`                                               |
+| Validation capacity | `waits on validation capacity: 9 runs are ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5 in a 60 min wait window (LOCK_TIMEOUT)`                                               |
+| A serialized area   | `held: serialized behind #123 in dispatch`                                                                                                                                                             |
+| A conflict edge     | `waits on conflict edge #12 → #14: #12's pull request #20 has not merged`                                                                                                                              |
 
 An item whose footprint is unknown, or only derived from labels, says so
 beside its rank (`footprint unknown: no footprint record and no area

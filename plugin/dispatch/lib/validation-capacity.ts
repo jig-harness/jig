@@ -320,13 +320,23 @@ export function forecastValidation(
     const firstAcquisition = waitingRuns > 0 ? acquire() : 0;
     required = (concurrency * firstAcquisition) / runMs;
   }
+  // The lock timeout bounds each acquisition separately, but the pass's runs
+  // are sequential and the pass deadline bounds the last one: it asks for the
+  // lock a run apart from the one before it, after the first acquisition.
+  // An idle lock never queues the pass, so only a pass that waits is held
+  // back by its later runs.
+  const lastRequestMs =
+    timeToValidationMs +
+    (required * runMs) / concurrency +
+    Math.max(0, ownRuns - 1) * runMs;
   return {
     ahead,
     capacity,
     ownRuns,
     required,
     fill:
-      passLimitMs <= timeToValidationMs
+      passLimitMs <= timeToValidationMs ||
+      (required > 0 && lastRequestMs > passLimitMs)
         ? null
         : required === 0
           ? 0

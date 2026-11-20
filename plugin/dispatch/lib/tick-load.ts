@@ -19,6 +19,7 @@ import { accountsReading, loadState, type LoadState } from "./load.ts";
 import { readLoad } from "./load-read.ts";
 import { type LoadSample, readSamples, recordSamples } from "./load-samples.ts";
 import type { MachineConfig } from "./machine-config.ts";
+import { processEnvironment } from "./runtime/process-environment.ts";
 import { readValidationLoad } from "./validation-load.ts";
 import type { TickBudget } from "./tick-reads.ts";
 
@@ -127,6 +128,11 @@ export function readTickLoad(input: {
       reading.lock,
       nowMs,
       passTimeoutSeconds() * 1000,
+      // The environment a pass is launched with, not the dispatcher's own.
+      processEnvironment(process.env, machine.process ?? { envKeep: [] }, {
+        vendor: "claude",
+        configDir: "",
+      }),
     );
     load.spentBytes = outstandingReservations(records, reading, load);
     return load;

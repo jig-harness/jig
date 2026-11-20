@@ -26,6 +26,8 @@ export interface ValidationLoad {
   waitLimitMs: number;
   /** Where `waitLimitMs` came from, for the reason a person reads. */
   waitSource: string;
+  /** Set when the launch's `LOCK_TIMEOUT` is one the lock refuses: validation fails at once. */
+  waitInvalid?: string;
   driveDeadlineMs: number;
   admittedRuns: number;
 }
@@ -40,19 +42,26 @@ export interface ValidationLoad {
 export const PASS_LOCK_WAIT_SECONDS = 3600;
 
 /**
- * The wait a launched pass's validation has. A pass inherits the
- * dispatcher's environment, so its test stage waits the `LOCK_TIMEOUT` set
- * there; unset, empty or unusable, its test stage waits its own hour, and the
- * source says which default stands in.
+ * The wait a launched pass's validation has. `env` is the
+ * environment a pass is launched with, so it holds `LOCK_TIMEOUT` only where
+ * `process.env_keep` retains it. Its test stage waits that value; unset or
+ * empty, it waits its own hour, and the source says which default stands in.
+ * A value the lock refuses is reported, never replaced by the hour.
  */
 export function passLockWait(
   env: Record<string, string | undefined>,
-): Pick<ValidationLoad, "waitLimitMs" | "waitSource"> {
+): Pick<ValidationLoad, "waitLimitMs" | "waitSource" | "waitInvalid"> {
   const timeout = env.LOCK_TIMEOUT ?? "";
   const seconds = Number(timeout);
   if (/^[0-9]+$/.test(timeout) && seconds <= MAX_TIMEOUT_SECONDS)
     return { waitLimitMs: seconds * 1000, waitSource: "LOCK_TIMEOUT" };
-  const why = timeout === "" ? "LOCK_TIMEOUT unset" : "LOCK_TIMEOUT not usable";
+  if (timeout !== "")
+    return {
+      waitLimitMs: 0,
+      waitSource: "LOCK_TIMEOUT not usable",
+      waitInvalid: `LOCK_TIMEOUT=${timeout} is not a whole number of seconds from 0 to ${MAX_TIMEOUT_SECONDS}, so a launched pass's validation is refused by the lock`,
+    };
+  const why = "LOCK_TIMEOUT unset";
   return {
     waitLimitMs: PASS_LOCK_WAIT_SECONDS * 1000,
     waitSource: `default: the test stage's hour, ${why}`,
@@ -102,7 +111,7 @@ export function readValidationLoad(
   const workspaces = new Set(
     passes.flatMap(({ workspace }) => workspace ?? []),
   );
-  const samples = readResourceLockSamples(name, nowMs).map(
+  const samples = readResourceLockSamples(name, nowMs, env).map(
     ({ workspace, requestedAt, waitMs, holdMs }) => ({
       workspace: workspaceOf(workspace, workspaces),
       requestedAtMs: parseMs(requestedAt),
@@ -187,6 +196,8 @@ export function validationHold(
 ): string | null {
   if ("unread" in state.demand) return null;
   const deadline = kind === "pickup" ? pickupDeadlineMs : state.driveDeadlineMs;
+  if (state.waitInvalid !== undefined)
+    return `waits on validation capacity: ${state.waitInvalid}`;
   const own = forecast(state, kind, deadline, state.admittedRuns);
   if (own === null) return null;
   if (own.fill === null || own.fill > line)
@@ -255,11 +266,13 @@ export function validationGauge(
   const line = `${Math.round(share * 100)}% of validation capacity`;
   const result = forecast(state, "pickup", DEFAULT_PICKUP_DEADLINE_MS, 0);
   const reads =
-    result === null
-      ? "unread" in state.demand
-        ? state.demand.unread
-        : "test lock unread"
-      : describe(state, result);
+    state.waitInvalid !== undefined
+      ? state.waitInvalid
+      : result === null
+        ? "unread" in state.demand
+          ? state.demand.unread
+          : "test lock unread"
+        : describe(state, result);
   return {
     gauge: "validation",
     fill:
