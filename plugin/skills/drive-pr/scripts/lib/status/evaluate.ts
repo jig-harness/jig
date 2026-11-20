@@ -788,7 +788,9 @@ async function evaluateFresh(
   }
 
   report.checkProgress = JSON.stringify(
-    runs.map((r) => `${r.id}:${r.status}:${r.conclusion}`).sort(),
+    runs
+      .map((r) => `${r.id}:${r.status}:${r.conclusion}`)
+      .sort((a, b) => a.localeCompare(b)),
   );
   // The newest check matching both the reviewer app and check name is its witness.
   const reviewer = reviewerRun(runs);
