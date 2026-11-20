@@ -599,11 +599,11 @@ describe("drive-status.ts terminal states", () => {
       .split("\n")
       .map((l) => Number(BigInt(l) / 1_000_000n));
     const starts = stamps.filter((_, i) => i % 2 === 0);
-    const gaps = starts.slice(1).map((t, i) => t - starts[i]);
+    const gaps = starts.slice(1).map((t, i) => t - starts[i]!);
     expect(gaps.length).toBeGreaterThanOrEqual(3);
     // Each gap is the wait plus one evaluation's own duration, so compare the
     // gaps with each other: a fixed cadence keeps them level.
-    expect(gaps[2] - gaps[0]).toBeGreaterThanOrEqual(1000);
+    expect(gaps[2]! - gaps[0]!).toBeGreaterThanOrEqual(1000);
   }, 20_000);
 });
 
