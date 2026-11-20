@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
+import { releaseHeldLabel } from "./lib/ci-hold-release.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -112,33 +113,6 @@ const latestOf = (values: readonly LabelTransition[]): LabelTransition | null =>
   values.at(-1) ?? null;
 
 type ReleasingState = Extract<CiHoldState, { phase: "releasing" }>;
-
-function snapshotHasOpenHead(
-  snapshot: { state: string; head: string; held: boolean } | null,
-  head: string,
-): boolean {
-  return snapshot?.state === "OPEN" && snapshot.head === head;
-}
-
-function snapshotHasHeld(
-  snapshot: { state: string; head: string; held: boolean } | null,
-  held: boolean,
-): boolean {
-  return snapshot?.held === held;
-}
-
-function provenAtHead(
-  mutation: LabelTransition | null,
-  head: string,
-  snapshot: { state: string; head: string; held: boolean } | null,
-  held: boolean,
-): boolean {
-  return (
-    snapshotHasOpenHead(snapshot, head) &&
-    snapshotHasHeld(snapshot, held) &&
-    mutation !== null
-  );
-}
 
 /** Where the transitions after `previousId` begin, or null when it is not in the timeline. */
 function firstIndexAfter(
@@ -456,203 +430,6 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   return 0;
 }
 
-async function restoreHeldLabelAfterReleaseRace(
-  pr: string,
-  head: string,
-  login: string,
-): Promise<void> {
-  const restoreBefore = await transitions(pr);
-  const restoreBeforeId = transitionId(restoreBefore);
-  const restore = await ghCall(["pr", "edit", pr, "--add-label", holdLabel()]);
-  const mutation = await observedTransition(
-    pr,
-    restoreBefore,
-    restoreBeforeId,
-    "labeled",
-    login,
-  );
-  const restored = await snapshot(pr);
-  const proven = restorationProven(restore.code, mutation, head, restored);
-  await writeCiState(pr, null);
-  if (!proven)
-    fail(
-      1,
-      `ci-hold: ownership changed during removal; add-label exited ${restore.code} and restoration could not be proven from the timeline and live label, so reconcile '${holdLabel()}' manually`,
-    );
-}
-
-function transitionId(values: readonly LabelTransition[] | null): string {
-  return latestOf(values ?? [])?.id ?? "";
-}
-
-async function observedTransition(
-  pr: string,
-  before: readonly LabelTransition[] | null,
-  beforeId: string,
-  event: "labeled" | "unlabeled",
-  login: string,
-): Promise<{ event: LabelTransition; intervening: boolean } | null> {
-  if (before === null) return null;
-  return valueOrNull(
-    await transitionAfter(pr, holdLabel(), beforeId, event, login),
-  );
-}
-
-function restorationProven(
-  code: number,
-  mutation: { event: LabelTransition; intervening: boolean } | null,
-  head: string,
-  snapshot: { state: string; head: string; held: boolean } | null,
-): boolean {
-  const event = mutationEvent(mutation);
-  return mutationProven(
-    code,
-    event,
-    provenAtHead(event, head, snapshot, true) &&
-      mutationIsUnintervened(mutation),
-  );
-}
-
-function mutationEvent(
-  mutation: { event: LabelTransition; intervening: boolean } | null,
-): LabelTransition | null {
-  return mutation === null ? null : mutation.event;
-}
-
-function mutationIsUnintervened(
-  mutation: { event: LabelTransition; intervening: boolean } | null,
-): boolean {
-  return mutation !== null && mutation.intervening === false;
-}
-
-function removalProven(
-  removeCode: number,
-  mutation: { event: LabelTransition; intervening: boolean } | null,
-  head: string,
-  confirmed: { state: string; head: string; held: boolean },
-): boolean {
-  const event = mutationEvent(mutation);
-  return mutationProven(
-    removeCode,
-    event,
-    provenAtHead(event, head, confirmed, false) &&
-      mutationIsUnintervened(mutation),
-  );
-}
-
-async function refuseReleaseRace(
-  pr: string,
-  head: string,
-  login: string,
-  live: Awaited<ReturnType<typeof readPrSnapshot>>,
-): Promise<number> {
-  if (restorationNeeded(live, head))
-    await restoreHeldLabelAfterReleaseRace(pr, head, login);
-  else await writeCiState(pr, null);
-  console.error(
-    `ci-hold: ownership changed during removal; preserved the live label state and refused the release`,
-  );
-  return 4;
-}
-
-function restorationNeeded(
-  live: Awaited<ReturnType<typeof readPrSnapshot>>,
-  head: string,
-): boolean {
-  if (!live.ok) return false;
-  return (
-    snapshotHasOpenHead(live.value, head) && snapshotHasHeld(live.value, false)
-  );
-}
-
-async function releaseHeldLabel(
-  pr: string,
-  head: string,
-  persisted: ReleasingState,
-  login: string,
-  unreadDuringReleaseRecovery: (failure: HoldReadFailure) => number,
-): Promise<number> {
-  const remove = await ghCall([
-    "pr",
-    "edit",
-    pr,
-    "--remove-label",
-    holdLabel(),
-  ]);
-  const proof = await transitionAfter(
-    pr,
-    holdLabel(),
-    persisted.heldEventId,
-    "unlabeled",
-    login,
-  );
-  if (proofPending(remove.code, proof)) {
-    const code = proofFailureCode(proof);
-    process.stdout.write("release-proof-pending\n");
-    return code;
-  }
-  const mutation = valueOrNull(proof);
-  const confirmed = await readPrSnapshot(pr, policy.holdLabel);
-  if (!confirmed.ok) return unreadDuringReleaseRecovery(confirmed.failure);
-  if (hasInterveningMutation(mutation))
-    return refuseReleaseRace(pr, head, login, confirmed);
-  await recordReleased(
-    pr,
-    mutation,
-    head,
-    persisted.checkRunWatermark,
-    remove.code,
-    confirmed.value,
-  );
-  process.stdout.write("removed\n");
-  return 0;
-}
-
-function proofPending(
-  removeCode: number,
-  proof: Awaited<ReturnType<typeof transitionAfter>>,
-): boolean {
-  return removeCode === 0 && !proof.ok;
-}
-
-function proofFailureCode(
-  proof: Awaited<ReturnType<typeof transitionAfter>>,
-): number {
-  if (!proof.ok) return unread(proof.failure);
-  return 4;
-}
-
-function hasInterveningMutation(
-  mutation: { event: LabelTransition; intervening: boolean } | null,
-): boolean {
-  return mutation?.intervening === true;
-}
-
-async function recordReleased(
-  pr: string,
-  mutation: { event: LabelTransition; intervening: boolean } | null,
-  head: string,
-  watermark: number,
-  removeCode: number,
-  confirmed: { state: string; head: string; held: boolean },
-): Promise<void> {
-  if (!removalProven(removeCode, mutation, head, confirmed))
-    fail(
-      1,
-      `ci-hold: remove-label exited ${removeCode}, and the unlabeled transition could not be proven on the unchanged open head`,
-    );
-  if (mutation === null) fail(1, "ci-hold: unlabeled transition disappeared");
-  await writeCiState(pr, {
-    phase: "released",
-    eventId: mutation.event.id,
-    head,
-    actor: mutation.event.actor,
-    createdAt: mutation.event.createdAt,
-    checkRunWatermark: watermark,
-    source: "drive",
-  });
-}
-
 async function release(
   pr: string,
   head: string,
@@ -790,6 +567,9 @@ async function release(
     head,
     releasing,
     login,
+    holdLabel(),
+    () => transitions(pr),
+    ghCall,
     unreadDuringReleaseRecovery,
   );
 }
