@@ -205,6 +205,8 @@ interface Run {
   /** The run was spent by a pending wait, past its window or the run's bound. */
   pendingSpent: boolean;
   reread: string[];
+  /** The arm the run's re-read pass actually read, which may name fewer tags than the window's. */
+  rereadArm: string | null;
   /** The arms earlier runs of the pull request went past their window on, which are never read again. */
   spentArms: ReadonlySet<string>;
 }
@@ -217,15 +219,17 @@ const EMPTY: Run = {
   spent: false,
   pendingSpent: false,
   reread: [],
+  rereadArm: null,
   spentArms: new Set(),
 };
 
 /** A new run after `run`, keeping the arms runs went past their window on. */
 function restart(run: Run): Run {
-  const spentArms =
-    run.pendingSpent && run.arm !== null
-      ? new Set([...run.spentArms, run.arm])
-      : run.spentArms;
+  const spentArms = new Set(run.spentArms);
+  if (run.pendingSpent) {
+    if (run.arm !== null) spentArms.add(run.arm);
+    if (run.rereadArm !== null) spentArms.add(run.rereadArm);
+  }
   return { ...EMPTY, spentArms };
 }
 
@@ -254,7 +258,8 @@ function nextPending(from: Run, a: Attempt): Run {
     pastWindow &&
     !pastRun &&
     windowArm !== null &&
-    !from.spentArms.has(windowArm);
+    !from.spentArms.has(windowArm) &&
+    (arm === null || !from.spentArms.has(arm));
   return {
     ...from,
     pendingSince,
@@ -263,6 +268,7 @@ function nextPending(from: Run, a: Attempt): Run {
     spent: pastWindow || pastRun,
     pendingSpent: pastWindow || pastRun,
     reread: readable ? armTags(a.wait.arm) : [],
+    rereadArm: readable ? arm : from.rereadArm,
   };
 }
 
@@ -279,6 +285,7 @@ function nextRun(run: Run, a: Attempt): Run {
     spent: count >= WAITS_FOR_PERSON,
     pendingSpent: false,
     reread: [],
+    rereadArm: null,
   };
 }
 

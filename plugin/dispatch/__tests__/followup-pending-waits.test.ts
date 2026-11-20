@@ -282,6 +282,37 @@ it("keeps the window when a later arm only drops release tags", () => {
   });
 });
 
+it("reads a shrunken arm once, and never reads it again in a later run", () => {
+  const w = world();
+  current = w;
+  const base = earlierRecord(w, {
+    id: "20261031T100000Z-aaaaaaaa",
+    account: "a",
+    action: "followup",
+    pr: 9,
+    repo: SLUG,
+  });
+  const both: WaitFor = { reason: "pending", arm: "v1.0.0 v1.0.1" };
+  const rest: WaitFor = { reason: "pending", arm: "v1.0.1" };
+  const at = (h: number, m: number) =>
+    `2026-10-31T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  const first = [waited(base, at(6, 0), both), waited(base, at(7, 10), rest)];
+  expect(waitStreak(first, SLUG, 9)).toMatchObject({
+    spent: true,
+    reread: ["v1.0.1"],
+  });
+  // The retry's window, then a pass past it on the arm already read: a person's.
+  const later = [
+    ...first,
+    waited(base, at(7, 20), rest),
+    waited(base, at(8, 30), rest),
+  ];
+  expect(waitStreak(later, SLUG, 9)).toMatchObject({
+    spent: true,
+    reread: [],
+  });
+});
+
 it("starts a pending window again on a newer arm, re-reads an arm past its window once, and bounds the run", () => {
   const w = world();
   current = w;
