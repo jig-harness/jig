@@ -401,6 +401,38 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.288.0] - 2026-11-20
+
+### Added
+
+- Dispatch receipts show when work already in flight would exhaust the host's test-lock capacity. The validation gauge learns from lock releases, reserves room for a drive pass, and follows the host's existing load enforcement setting.
+
+## [0.287.2] - 2026-11-20
+
+### Fixed
+
+- Drives keep their cross-clone lease during the CI watch after writing the converged label. If the final ledger write fails, recovery can publish the same exit once the drive has released its lock.
+- Drives retain a stopped-driver recovery record when the state-label configuration cannot be read, and retry the projection once it is available.
+
+## [0.287.1] - 2026-11-20
+
+### Changed
+
+- The dispatch dashboard shows parked decisions on the face of Needs you cards. Open a card for the remaining options and use the check panel to confirm a guarded copy.
+
+## [0.287.0] - 2026-11-20
+
+### Added
+
+- Select `runtime: process` in the machine dispatch file to run headless
+  passes in Git worktrees without Orca on Linux and macOS. Jig launches each run through the
+  host's service manager with an allowlisted environment and starts the
+  pickup's first drive through the dispatcher.
+
+### Fixed
+
+- The plugin's instructions for adding a skill now say where a suite is listed: a POSIX-only suite in `POSIX_ONLY_SUITES`, a long-running one with `validation.separateSuite` in the change-area catalog.
+
 ## [0.286.4] - 2026-11-20
 
 ### Fixed
@@ -10183,7 +10215,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.288.0...HEAD
+[0.288.0]: https://github.com/jig-harness/jig/compare/v0.287.2...v0.288.0
+[0.287.2]: https://github.com/jig-harness/jig/compare/v0.287.1...v0.287.2
+[0.287.1]: https://github.com/jig-harness/jig/compare/v0.287.0...v0.287.1
+[0.287.0]: https://github.com/jig-harness/jig/compare/v0.286.4...v0.287.0
 [0.286.4]: https://github.com/jig-harness/jig/compare/v0.286.3...v0.286.4
 [0.286.3]: https://github.com/jig-harness/jig/compare/v0.286.2...v0.286.3
 [0.286.2]: https://github.com/jig-harness/jig/compare/v0.286.1...v0.286.2

@@ -1,6 +1,7 @@
 /** Runs a stage with bounded output, process cleanup and parent-death supervision. */
 import { spawn, type ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
+import type { Outcome } from "../../shared/outcome.ts";
 import { swallow } from "../../shared/errors.ts";
 import {
   captureIdentity,
@@ -58,6 +59,7 @@ export interface RunOptions {
     token: string;
     wrapper: ProcessIdentity;
     supervisor: ProcessIdentity;
+    remember?: (identity: ProcessIdentity) => Promise<Outcome<void>>;
   };
 }
 
@@ -316,23 +318,30 @@ function registerChild(
   stop: (signal: NodeJS.Signals) => void,
 ): void {
   if (owner === undefined || child.pid === undefined) return;
-  void captureIdentity(child.pid).then((identity) => {
-    if (ended() || child.exitCode !== null || child.signalCode !== null) return;
-    const registered = identity.ok
-      ? registerStageProcess(
-          owner.id,
-          owner.token,
-          "child",
-          identity.value,
-          owner.supervisor,
-        )
-      : identity;
-    if (!registered.ok) {
-      swallow(registered.failure.cause, registered.failure.reason);
-      console.error(
-        `jig dispatch run: ${registered.failure.reason}; stopping the stage`,
-      );
-      stop("SIGTERM");
-    }
-  });
+  void captureIdentity(child.pid, owner.remember !== undefined).then(
+    async (identity) => {
+      if (ended() || child.exitCode !== null || child.signalCode !== null)
+        return;
+      const registered = identity.ok
+        ? registerStageProcess(
+            owner.id,
+            owner.token,
+            "child",
+            identity.value,
+            owner.supervisor,
+          )
+        : identity;
+      const witnessed =
+        registered.ok && identity.ok && owner.remember !== undefined
+          ? await owner.remember(identity.value)
+          : registered;
+      if (!witnessed.ok) {
+        swallow(witnessed.failure.cause, witnessed.failure.reason);
+        console.error(
+          `jig dispatch run: ${witnessed.failure.reason}; stopping the stage`,
+        );
+        stop("SIGTERM");
+      }
+    },
+  );
 }

@@ -46,6 +46,7 @@ import {
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
+import { pickupArms, pickupAsked, type PickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
 import type {
   JoinTargets,
@@ -210,6 +211,7 @@ export async function actObserved(
   const inputs: ApplyInputs = {
     repo,
     runtime: context.runtime,
+    pickupArms: pickupArms(allRecords(context), repo),
     section,
     tracked: observation.tracked,
     login: forge.login,
@@ -290,6 +292,7 @@ export function withheldFromReplay(
 
 /** What `--apply` acts on for one repository, as its tick read it. */
 interface ApplyInputs {
+  pickupArms: PickupArms;
   repo: RepoTarget;
   runtime: SessionRuntime;
   section: DispatchSection;
@@ -340,8 +343,13 @@ async function withThreads(
   return ok({ ...pr, unresolvedThreads: threads.value });
 }
 
-/** Whether a person's `drive` or `rearm` label is on the pull request. */
-function asksForDrive(labels: LabelConfig | null, pr: ListedPr): boolean {
+/** Whether the pickup or a person's label asks for a drive. */
+function asksForDrive(
+  pickupArms: PickupArms,
+  labels: LabelConfig | null,
+  pr: ListedPr,
+): boolean {
+  if (pickupAsked(pickupArms, pr)) return true;
   return (
     labels !== null &&
     (hasCommand(labels, pr.labels, "drive") ||
@@ -493,6 +501,7 @@ async function freshDriveReading(
   const { repo, login, section } = inputs;
   const view = await openPullRequest(repo.slug, pr, {
     labels: labels !== null || steward,
+    headRepository: inputs.pickupArms.has(pr),
   });
   if (!view.ok) return view;
   const listed = view.value;
@@ -503,7 +512,7 @@ async function freshDriveReading(
     repo.slug,
     listed,
     ownAuthors(adoption, login),
-    asksForDrive(labels, listed),
+    asksForDrive(inputs.pickupArms, labels, listed),
   );
   if (!counted.ok) return counted;
   const [again] = await readDrives(
@@ -513,6 +522,7 @@ async function freshDriveReading(
     currentMs(),
     labels,
     adoption,
+    { pickupArms: inputs.pickupArms },
   );
   if (again === undefined) return ok(null);
   if (steward) return ok({ ...again, labels: listed.labels ?? [] });

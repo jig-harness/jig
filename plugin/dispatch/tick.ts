@@ -108,6 +108,7 @@ import type { MachineConfig } from "./lib/machine-config.ts";
 import { PhaseTimer } from "./lib/phase-timer.ts";
 import { dropRepeatedLabelNeeds } from "./lib/sources/served-repo.ts";
 import { dropRepeatedScopeFailures } from "./lib/sources/scope-failures.ts";
+import { processRuntime } from "./lib/runtime/process.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { applyState } from "./lib/tick-apply.ts";
@@ -202,6 +203,7 @@ const ACT_LOCK_POLL_MS = 250;
 export const SWEEP_OBSERVE_WAIT_MS = 120_000;
 
 function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
+  if (machine?.runtime === "process") return processRuntime(machine);
   return machine === null
     ? orcaRuntime()
     : orcaRuntime({

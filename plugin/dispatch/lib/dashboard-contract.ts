@@ -475,6 +475,7 @@ export type LoadGauge =
   | "memory"
   | "processors"
   | "test-lock"
+  | "validation"
   | "disk"
   | "forge"
   | "accounts";

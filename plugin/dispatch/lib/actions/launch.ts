@@ -1,19 +1,12 @@
-/**
- * What every `--apply` launch shares, a headless pass (a drive's, a
- * follow-up's, a pickup's):
- * the state carried across a tick's repositories, the account admitted
- * afresh against its walls and the identity check, the launch record
- * written before the runtime's `launch` and the slot it holds, and the
- * outcome each launch reports.
- */
+/** Account admission, launch records and outcomes shared by the apply stages. */
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
-  accountWeightBlock,
   checkIdentity,
   type CodexOptIn,
   type IdentityCheck,
   notAdmitted,
   refreshWalls,
+  replaySlotBlock,
   holdingRecords,
   sharesSlot as takeoverShares,
   type Slots,
@@ -238,7 +231,10 @@ export function rotated<T>(
 }
 
 export type Opened =
-  | { workspace: { id: string; path: string }; cleanupFailure?: string }
+  | {
+      workspace: NonNullable<LaunchRecord["workspace"]>;
+      cleanupFailure?: string;
+    }
   | { waits: string; waitsOn?: LaneWait }
   | { refused: string; holder?: BusyHolder };
 
@@ -521,7 +517,9 @@ function workspaceOr(
   action: Action,
   opened: Opened,
   account: string,
-): { workspace: { id: string; path: string } } | { outcome: LaunchOutcome } {
+):
+  | { workspace: NonNullable<LaunchRecord["workspace"]> }
+  | { outcome: LaunchOutcome } {
   if ("waits" in opened)
     return {
       outcome: {
@@ -553,7 +551,8 @@ export async function openedFor(
   slots: Slots,
   opening: Promise<Opened>,
 ): Promise<
-  { workspace: { id: string; path: string } } | { outcome: LaunchOutcome }
+  | { workspace: NonNullable<LaunchRecord["workspace"]> }
+  | { outcome: LaunchOutcome }
 > {
   const opened = workspaceOr(action, await opening, slots.account.name);
   if ("outcome" in opened) return opened;
@@ -633,7 +632,13 @@ async function identityOf(
       waitsOn: "tick-deadline",
     };
   // Read afresh each time: a login file can change between two launches.
-  return checkIdentity(slots.account, timeoutSec);
+  return checkIdentity(
+    slots.account,
+    timeoutSec,
+    state.runtime.name === "process"
+      ? (state.machine.process ?? { envKeep: [] })
+      : undefined,
+  );
 }
 
 /** Why the account a pending record names cannot take its replayed launch now; `null` when it can. */
@@ -645,30 +650,19 @@ export async function accountBlock(
     detail,
     waitsOn,
   });
+  const runtime = state.runtime.name === "process" ? "process" : "orca";
+  const recordedRuntime = record.runtime ?? "orca";
+  if (runtime !== recordedRuntime)
+    return blocked(
+      `the launch was reserved on the ${recordedRuntime} runtime and the machine now uses ${runtime}`,
+      "admission",
+    );
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const slots = slotsOf(state.table, record);
   if (slots === undefined)
     return blocked(`${record.account} is no longer in the machine file`);
-  if (
-    slots.account.vendor !== record.vendor ||
-    slots.account.configDir !== record.configDir
-  )
-    return blocked(
-      `${slots.account.name} no longer has the vendor and directory the launch was recorded with`,
-    );
-  const weightBlock = accountWeightBlock(slots);
-  if (weightBlock !== null)
-    return blocked(`${slots.account.name}: ${weightBlock}`);
-  if (record.vendor === "codex" && !state.codexOptIn.on)
-    return blocked(`${slots.account.name}: ${state.codexOptIn.why}`);
-  if (slots.wallUnrecorded)
-    return blocked(
-      `${slots.account.name} ended on a wall that was not recorded`,
-    );
-  if (slots.wall !== null)
-    return blocked(
-      `${slots.account.name} is walled until ${slots.wall.resetAt}`,
-    );
+  const unavailable = replaySlotBlock(slots, record, state.codexOptIn);
+  if (unavailable !== null) return blocked(unavailable);
   const identity = await identityOf(state, slots);
   if ("waits" in identity) return blocked(identity.waits, identity.waitsOn);
   if (!identity.ok)
@@ -761,9 +755,16 @@ function byLoad(
   repo: string,
   action: Action,
   slots: Slots,
+  pickupDeadlineSec: number,
 ): { slots: Slots } | { outcome: LaunchOutcome } {
   if (state.load === undefined) return { slots };
-  const held = judge(state.load, loadKindOf(action), repo, action.target);
+  const held = judge(
+    state.load,
+    loadKindOf(action),
+    repo,
+    action.target,
+    pickupDeadlineSec * 1000,
+  );
   return held === null
     ? { slots }
     : { outcome: waits(action, held, slots.account.name) };
@@ -816,7 +817,8 @@ export async function admitAccount(
           identity.waitsOn,
         ),
       };
-    if (identity.ok) return byLoad(state, repo, action, slots);
+    if (identity.ok)
+      return byLoad(state, repo, action, slots, pickupDeadlineSec);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
     const holder = takeoverHostDriver(
@@ -891,6 +893,8 @@ export function holdRecord(
   slots: Slots,
 ): void {
   record.accountLaunchOrdinal = accountLaunchOrdinal(state.records, record) + 1;
+  if (state.runtime.name === "process") record.runtime = "process";
+  else delete record.runtime;
   writeRecord(record, state.root);
   if (!sharesSlot(state, record)) slots.held += 1;
   state.records.push({ record, state: { kind: "pending" }, result: null });

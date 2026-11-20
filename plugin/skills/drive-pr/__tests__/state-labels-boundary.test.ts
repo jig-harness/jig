@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { labelDrive } from "../scripts/lib/driver/state-labels.ts";
-import { ok } from "../../../shared/outcome.ts";
+import { failed, ok } from "../../../shared/outcome.ts";
 
 const restore: Array<() => void> = [];
 afterEach(() => {
@@ -15,6 +15,29 @@ afterEach(() => {
 });
 
 describe("labelDrive's boundary", () => {
+  it("retains a converged stop's intent when state-label configuration is unreadable", async () => {
+    const write = await labelDrive(
+      "999",
+      {
+        stopped: 0,
+        byPerson: false,
+        verifiedSha: "a".repeat(40),
+      },
+      {
+        settings: async () =>
+          failed("unreadable", "the default branch configuration did not read"),
+        forge: () => {
+          throw new Error("no forge call is made");
+        },
+      },
+    );
+
+    expect(write).toMatchObject({
+      converged: true,
+      write: { outcome: "refused" },
+    });
+  });
+
   it("reports a throw while reading the stop's facts as a defect, and returns", async () => {
     const said: string[] = [];
     const spy = spyOn(console, "error").mockImplementation((line: unknown) => {

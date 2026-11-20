@@ -20,7 +20,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 44;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 9;
+const DRIVE_DB = 10;
 const REFLECT = "skills/reflect/scripts/";
 
 /** A file in a drive's per-clone state directory, of one state family. */
@@ -310,6 +310,14 @@ export const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-process-output",
+    "dispatch/lib/runtime/process-spool.ts",
+    `${DISPATCH_DIR}runs/<record>/output.log`,
+    0,
+    "The last 4 MiB of a process run's output. The wrapper keeps it when the run leaves no closing report and removes it when the report is recorded.",
+  ),
+  plain(
+    "machine",
     "dispatch-wall",
     "dispatch/lib/walls.ts",
     `${DISPATCH_DIR}walls/<account>/<ms>-<8 hex>.json`,
@@ -518,6 +526,14 @@ export const MACHINE: RecordKind[] = [
     "<tmp>/jig-lock.<name>, its slots <tmp>/jig-lock.<name>-slot-<n>, and <tmp>/jig-lock.<name>.admission and .exclusive",
     0,
     "A machine-wide lock with slots that bounds how many heavy commands (a build, a test run) run at once across worktrees: a holder runs, the others wait, and a dead holder's slot is reclaimed.",
+  ),
+  plain(
+    "machine",
+    "resource-lock-sample",
+    "shared/resource-lock-samples.ts",
+    "~/.local/state/jig/resource-lock-samples/<release ms>-<uuid>.json",
+    1,
+    "One completed run's lock name, working directory, request time, wait and hold durations. The dispatcher's validation gauge reads the last seven days to estimate the host's capacity.",
   ),
   plain(
     "machine",

@@ -5,6 +5,7 @@
  * A driver whose process is gone holds nothing. The drivers are lock rows
  * of a drive database under a state root of the test's own.
  */
+import { orcaRuntime } from "../lib/runtime/orca.ts";
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -321,6 +322,7 @@ describe("a live driver no holding launch record accounts for", () => {
       table,
       last: null,
       drivers: { ok: true, value: found },
+      runtime: orcaRuntime(),
     } as unknown as ApplyState;
     const record = takeover(found[0] as HostDriver, tree);
 
