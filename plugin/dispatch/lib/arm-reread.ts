@@ -102,14 +102,19 @@ export async function rereadPendingArms(
     runs.length === 0
       ? ok(new Set<string>())
       : await readRuns(repo, runs, bound);
-  if (!finished.ok) return finished;
+  // A run that could not be read leaves only the arms that name a run
+  // unsettled; the arms that wait on tags alone keep their answer.
+  const done = finished.ok ? finished.value : new Set<string>();
+  if (!finished.ok && runs.length > 0 && wanted.every((w) => w.runs.length > 0))
+    return finished;
   return ok(
     new Set(
       wanted
         .filter(
           (w) =>
             w.tags.every((t) => found.value.has(t)) &&
-            w.runs.every((r) => finished.value.has(runWord(r))),
+            (finished.ok || w.runs.length === 0) &&
+            w.runs.every((r) => done.has(runWord(r))),
         )
         .map((w) => w.record),
     ),

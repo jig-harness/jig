@@ -726,11 +726,13 @@ async function deployRunCommand(args: string[]): Promise<number> {
   });
   const takes = "deploy-run takes one run id";
   const id = numberArg(exactly(positionals, 1, takes)[0], takes);
+  if (!Number.isSafeInteger(id)) usage(`${takes} that fits a safe integer`);
   const after = values["stuck-after"];
   if (after !== undefined && prNumber(after) === null)
     usage("--stuck-after takes a whole number of minutes");
   const stuckAfterMs =
     after === undefined ? STUCK_AFTER_MS : Number(after) * 60_000;
+  if (!Number.isSafeInteger(stuckAfterMs)) usage("--stuck-after is too large");
   const read = await readDeployRun(
     id,
     forgeRead(root()),

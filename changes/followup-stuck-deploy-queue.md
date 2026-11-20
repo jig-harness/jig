@@ -6,9 +6,10 @@ release: minor
 
 - `followup.ts deploy-run <run-id>` reads a workflow run a deploy arm waits
   for and says whether it will settle by itself: `finished`, `moving`, or
-  `stuck` when it has had no jobs past a bound (30 minutes, `--stuck-after`)
-  and the finished runs of its workflow before it all ended cancelled, the
-  sign of a held concurrency group. The follow-up records a stuck deploy as
+  `stuck` when the queue has waited on that holder past a bound (30 minutes, `--stuck-after`)
+  and an older run of its workflow is still running while every run since
+  ended cancelled, the sign of a held concurrency group; the reading names
+  that holder. The follow-up records a stuck deploy as
   a step owed by a person and finishes its other arms, instead of waiting
   until the dispatcher hands the whole follow-up to a person.
 

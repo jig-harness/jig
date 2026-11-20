@@ -271,7 +271,12 @@ export async function finishedRuns(
       return reply;
     }
     const [status, conclusion] = reply.value.trim().split(" ");
-    if (status === "completed" && conclusion !== "cancelled")
+    if (
+      status === "completed" &&
+      conclusion !== undefined &&
+      conclusion !== "" &&
+      conclusion !== "cancelled"
+    )
       finished.add(runWord(run));
   }
   return ok(finished);

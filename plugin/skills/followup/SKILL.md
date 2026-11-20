@@ -118,17 +118,25 @@ bun "${CLAUDE_SKILL_DIR}/scripts/followup.ts" deploy-run <run-id> [--stuck-after
 ```
 
 It prints `state` with the `reason`: `finished` (the run completed: read
-its conclusion), `moving` (it has jobs, is younger than the bound, 30
-minutes by default, or the runs before it did not all end cancelled) or
-`stuck` (no jobs past the bound, and the finished runs of its workflow
-before it all ended cancelled: its concurrency group is held). Exit `1`
-is a forge it could not read (record the arm `unread`), `5` a rate limit.
+its conclusion), `moving` (it has jobs, no running run of its workflow
+holds its queue among the newest runs read, the blockage is younger than
+the bound, 30 minutes by default, or a run since the holder started ended
+other than cancelled) or `stuck` (no jobs, an older run of its workflow
+still running, every run since cancelled, and the first run that waited on
+that holder created at least the bound ago: the concurrency group is held
+by the run the reading names, which may be slow rather than hung, so name
+it for the person). Exit `1` is a forge it could not read (record the arm
+`unread`), `5` a rate limit.
 Record a `moving` run `pending`, its link in the evidence (in a dispatched
 pass, in `--arm` too, so the dispatcher reads that run again before it
 tells a person). Record a `stuck` run `owed`, as a step owed by a person,
-with the run's link and the item that tracks the held queue (file one
-when none is open), and finish the other arms: the queue does not clear
-by itself, so waiting on it only hands the follow-up to a person later.
+with the run's link, the holder's link and the item that tracks the held
+queue (file one when none is open), and finish the other arms: the queue
+does not clear by itself, so waiting on it only hands the follow-up to a
+person later. A change with a runtime surface that the stuck deploy kept
+from its environment leaves `live-verification` waiting on the same
+deploy: record that arm `owed` too, citing the same run and item, since
+it cannot be checked until a person clears the queue.
 
 ### tracker: the item and its epic
 
@@ -456,7 +464,7 @@ Then end as `settle` says:
 | Ending | When | Run by hand | Started by the dispatcher |
 |---|---|---|---|
 | done | every arm settled | `jig dispatch marker done <PR> --comment <marker>` | record done with the `jig dispatch result` command your prompt names |
-| wait | an arm is `pending` | report each pending arm and leave the marker open (it keeps the claim); once the arm can settle, run the follow-up again with the same marker instead of claiming a new one | report each pending arm, then record `waits --until <when to look again> --reason pending --arm "<arm>"` with the `jig dispatch result` command your prompt names (the time at most a day ahead; the arm as `settle` prints it, naming the release tag or the deploy run's link it waits for); the dispatcher starts the follow-up again after that time, and tells a person if the arm is still pending past `dispatch.followup_within` unless the tag now exists or the run has finished |
+| wait | an arm is `pending` | report each pending arm and leave the marker open (it keeps the claim); once the arm can settle, run the follow-up again with the same marker instead of claiming a new one | report each pending arm, then record `waits --until <when to look again> --reason pending --arm "<arm>"` with the `jig dispatch result` command your prompt names (the time at most a day ahead; the arm as `settle` prints it, naming the release tag or the deploy run's link it waits for); the dispatcher starts the follow-up again after that time, and tells a person if the arm is still pending past `dispatch.followup_within` unless every release tag it names exists and every deploy run it links to has finished without being cancelled |
 | failed | an arm is `unread` | `jig dispatch marker failed <PR> --comment <marker>` | record failed |
 | preview | an open pull request | nothing to mark | nothing to record |
 

@@ -60,7 +60,7 @@ export function armRuns(arm: string | undefined): WorkflowRun[] {
   if (arm === undefined) return [];
   const seen = new Map<string, WorkflowRun>();
   for (const [, slug, id] of arm.matchAll(RUN_LINK)) {
-    const run = { slug: slug as string, id: Number(id) };
+    const run = { slug: (slug as string).toLowerCase(), id: Number(id) };
     const dots = run.slug.split("/").some((part) => /^\.+$/.test(part));
     if (!dots && Number.isSafeInteger(run.id)) seen.set(runWord(run), run);
   }

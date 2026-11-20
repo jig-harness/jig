@@ -65,9 +65,9 @@ follow-up again after the time the run names, and tells a person when the
 arm is still pending past `dispatch.followup_within`. A run started by hand
 reports the pending arm, and a person runs it again once the arm can
 settle. A deploy whose run cannot start is not pending: the script's
-`deploy-run` command reads a run with no jobs past a bound, behind runs
-that all ended cancelled, as `stuck` (its workflow's concurrency group is
-held), and the arm records it as a step owed by a person instead of
+`deploy-run` command reads a run with no jobs, behind a still-running run of its
+workflow whose queue has held cancelled runs past a bound, as `stuck` (its
+workflow's concurrency group is held), and the arm records it as a step owed by a person instead of
 waiting on it.
 
 ### The repository's own arms

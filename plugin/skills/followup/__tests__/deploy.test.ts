@@ -30,75 +30,67 @@ const waiting = (ageMs: number) =>
     createdAt: isoFromMs(NOW - ageMs),
   });
 
+// The holder started first; the cancelled runs since waited on it.
+const holder = () => run(96, { status: "in_progress", conclusion: null });
 const cancelledBefore = [run(97), run(98), run(99)];
+const queue = [holder(), ...cancelledBefore];
 
-test("a run with no jobs past the bound, every run before it cancelled, is stuck", () => {
-  const read = classifyRun(
-    waiting(STUCK_AFTER_MS + 60_000),
-    0,
-    [waiting(STUCK_AFTER_MS + 60_000), ...cancelledBefore],
-    NOW,
-  );
+test("a run with no jobs, a running holder and only cancelled runs since, past the bound, is stuck", () => {
+  const read = classifyRun(waiting(STUCK_AFTER_MS + 60_000), 0, queue, NOW);
   expect(read.state).toBe("stuck");
+  expect(read.holder?.id).toBe(96);
   expect(read.before).toEqual(["cancelled", "cancelled", "cancelled"]);
   expect(read.reason).toContain("concurrency group is held");
 });
 
-test("a run with no jobs younger than the bound is still moving", () => {
-  const read = classifyRun(
-    waiting(STUCK_AFTER_MS - 60_000),
-    0,
-    cancelledBefore,
-    NOW,
-  );
+test("the age is the blockage's, so a young pending run replacing old ones is still stuck", () => {
+  const old = run(97, { createdAt: isoFromMs(NOW - 3 * STUCK_AFTER_MS) });
+  const read = classifyRun(waiting(60_000), 0, [holder(), old], NOW);
+  expect(read.state).toBe("stuck");
+});
+
+test("a blockage younger than the bound is still moving", () => {
+  const young = [holder(), run(99, { createdAt: isoFromMs(NOW - 60_000) })];
+  const read = classifyRun(waiting(30_000), 0, young, NOW);
   expect(read.state).toBe("moving");
   expect(read.reason).toContain("under the 30m bound");
 });
 
 test("a run that has jobs is moving, however old", () => {
-  expect(
-    classifyRun(waiting(5 * STUCK_AFTER_MS), 2, cancelledBefore, NOW).state,
-  ).toBe("moving");
-});
-
-test("a run whose predecessors did not all end cancelled is moving", () => {
-  const before = [run(97), run(98, { conclusion: "success" }), run(99)];
-  expect(classifyRun(waiting(5 * STUCK_AFTER_MS), 0, before, NOW).state).toBe(
+  expect(classifyRun(waiting(5 * STUCK_AFTER_MS), 2, queue, NOW).state).toBe(
     "moving",
   );
+});
+
+test("a run with no running holder among the runs read is moving", () => {
+  expect(
+    classifyRun(waiting(5 * STUCK_AFTER_MS), 0, cancelledBefore, NOW).state,
+  ).toBe("moving");
   expect(classifyRun(waiting(5 * STUCK_AFTER_MS), 0, [], NOW).state).toBe(
     "moving",
   );
 });
 
-test("only finished runs older than the waited-for one count as its predecessors", () => {
-  const newer = run(101, { conclusion: "success" });
-  const queued = run(96, { status: "queued", conclusion: null });
-  const read = classifyRun(
-    waiting(5 * STUCK_AFTER_MS),
-    0,
-    [newer, queued, ...cancelledBefore, run(95, { conclusion: "success" })],
-    NOW,
+test("a run that finished otherwise since the holder started keeps it moving, one from before the holder does not", () => {
+  const since = [holder(), run(97), run(98, { conclusion: "success" })];
+  expect(classifyRun(waiting(5 * STUCK_AFTER_MS), 0, since, NOW).state).toBe(
+    "moving",
   );
-  expect(read.before).toEqual(["cancelled", "cancelled", "cancelled"]);
+  const earlier = [run(90, { conclusion: "success" }), ...queue];
+  const read = classifyRun(waiting(5 * STUCK_AFTER_MS), 0, earlier, NOW);
   expect(read.state).toBe("stuck");
+  expect(read.before).toEqual(["cancelled", "cancelled", "cancelled"]);
 });
 
 test("a completed run is finished with its conclusion", () => {
-  const read = classifyRun(
-    run(100, { conclusion: "success" }),
-    3,
-    cancelledBefore,
-    NOW,
-  );
+  const read = classifyRun(run(100, { conclusion: "success" }), 3, queue, NOW);
   expect(read.state).toBe("finished");
   expect(read.reason).toBe("the run completed: success");
 });
 
 test("the bound is the caller's", () => {
   expect(
-    classifyRun(waiting(10 * 60_000), 0, cancelledBefore, NOW, 5 * 60_000)
-      .state,
+    classifyRun(waiting(10 * 60_000), 0, queue, NOW, 5 * 60_000).state,
   ).toBe("stuck");
 });
 
@@ -132,7 +124,7 @@ test("readDeployRun reads the run, its job count and its workflow's runs", async
         [`${base}/runs/100`]: rest(stuck),
         [`${base}/runs/100/jobs?per_page=1`]: { total_count: 0, jobs: [] },
         [`${base}/workflows/9/runs?per_page=20`]: {
-          workflow_runs: [stuck, ...cancelledBefore].map(rest),
+          workflow_runs: [stuck, ...queue].map(rest),
         },
       },
       asked,
