@@ -337,19 +337,18 @@ async function labelPublishedStop(
         }
       : undefined,
   );
-  return projectionOutcome(label, pending, byPerson, ownershipReadFailed);
+  return projectionOutcome(label, pending, ownershipReadFailed);
 }
 
 function projectionOutcome(
   label: Awaited<ReturnType<typeof labelDrive>>,
   pending: boolean,
-  byPerson: boolean,
   ownershipReadFailed: boolean,
 ): "done" | "retry" {
   if (!pending) return "done";
   if (ownershipReadFailed) return "retry";
   if (label?.write.outcome === "refused") return "retry";
-  return byPerson && label === null ? "retry" : "done";
+  return label === null ? "retry" : "done";
 }
 
 function recoveryEnvironment(
