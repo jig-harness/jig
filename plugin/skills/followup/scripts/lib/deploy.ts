@@ -25,8 +25,12 @@
  * holder that is only slow looks the same as one that hangs, so the reading
  * names it for the person to judge.
  *
+ * A run counts as holding the queue only when it is running and was made for
+ * the same branch: the forge does not name a run's concurrency group.
+ *
  * It reads from the forge, one request each: the run, its jobs (one per
- * page, for the count) and its workflow's newest runs.
+ * page, for the count) and its workflow's newest runs; a finished run needs
+ * only the first.
  */
 import { isRecord } from "../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
@@ -46,6 +50,8 @@ export interface RunFacts {
   conclusion: string | null;
   createdAt: string;
   workflowId: number;
+  /** The branch the run was made for; `null` when the forge names none. */
+  branch: string | null;
 }
 
 export type DeployState = "finished" | "moving" | "stuck";
@@ -66,7 +72,15 @@ export interface DeployReading {
 /** A run object of the forge's REST answer; `null` when it is not one. */
 export function runOf(value: unknown): RunFacts | null {
   if (!isRecord(value)) return null;
-  const { id, html_url, status, conclusion, created_at, workflow_id } = value;
+  const {
+    id,
+    html_url,
+    status,
+    conclusion,
+    created_at,
+    workflow_id,
+    head_branch,
+  } = value;
   if (
     typeof id !== "number" ||
     typeof html_url !== "string" ||
@@ -82,6 +96,7 @@ export function runOf(value: unknown): RunFacts | null {
     conclusion: typeof conclusion === "string" ? conclusion : null,
     createdAt: created_at,
     workflowId: workflow_id,
+    branch: typeof head_branch === "string" ? head_branch : null,
   };
 }
 
@@ -90,12 +105,16 @@ function minutes(ms: number): string {
   return `${Math.floor(ms / 60_000)}m`;
 }
 
-/** The oldest run before `run` that has started and not finished: what holds the group. */
+/**
+ * The oldest run before `run` that is running: what holds the group. The
+ * forge does not name a run's concurrency group, so only a run for the same
+ * branch counts as sharing it; a run of another branch is not evidence.
+ */
 function holderOf(run: RunFacts, runs: readonly RunFacts[]): RunFacts | null {
   const running = runs
     .filter(
       (r) =>
-        r.id < run.id && r.status !== "completed" && r.status !== "pending",
+        r.id < run.id && r.status === "in_progress" && r.branch === run.branch,
     )
     .sort((a, b) => a.id - b.id);
   return running[0] ?? null;
@@ -110,7 +129,10 @@ export function classifyRun(
   stuckAfterMs: number = STUCK_AFTER_MS,
 ): DeployReading {
   const holder = holderOf(run, runs);
-  const since = holder === null ? [] : runs.filter((r) => r.id > holder.id);
+  const since =
+    holder === null
+      ? []
+      : runs.filter((r) => r.id > holder.id && r.branch === run.branch);
   const before = since
     .filter((r) => r.id < run.id && r.status === "completed")
     .sort((a, b) => b.id - a.id)
@@ -174,6 +196,9 @@ export async function readDeployRun(
       "unreadable",
       `the forge's answer for run ${id} is not a run`,
     );
+  // A finished run's verdict is already known; the queue reads cannot change it.
+  if (run.status === "completed")
+    return ok(classifyRun(run, 0, [], nowMs, stuckAfterMs));
   const jobsRead = await read(`${base}/runs/${id}/jobs?per_page=1`);
   if (!jobsRead.ok) return jobsRead;
   const jobs = isRecord(jobsRead.value) ? jobsRead.value.total_count : null;

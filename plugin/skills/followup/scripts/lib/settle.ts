@@ -156,13 +156,31 @@ export function renderSettled(s: Settled): string {
 /** The longest arm text `jig dispatch result … --arm` takes. */
 const ARM_MAX = 200;
 
+/** A workflow run's link on the forge, as a deploy arm carries it. */
+const RUN_LINK_TEXT =
+  /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d{1,19}(?!\d)/g;
+
 /** The pending arms and what each waits for, in one line short enough for `--arm`. */
 export function pendingArm(s: Settled): string {
   const text = s.rows
     .filter((r) => r.verdict === "pending")
     .map((r) => `${r.arm}: ${r.evidence.replace(/\s+/g, " ").trim()}`)
     .join("; ");
-  return text.length <= ARM_MAX ? text : `${text.slice(0, ARM_MAX - 1)}…`;
+  if (text.length <= ARM_MAX) return text;
+  // A run link is kept whole or not at all: a cut link would name another run.
+  const links = [...new Set(text.match(RUN_LINK_TEXT) ?? [])];
+  let kept = "";
+  for (const l of links) {
+    const next = kept === "" ? l : `${kept} ${l}`;
+    if (next.length > ARM_MAX - 20) break;
+    kept = next;
+  }
+  const room = ARM_MAX - 1 - (kept === "" ? 0 : kept.length + 1);
+  let head = text.slice(0, room);
+  // A word the cut ran through is dropped whole.
+  if (text[room] !== " ") head = head.replace(/\S*$/, "");
+  head = head.trimEnd();
+  return `${head}…${kept === "" ? "" : ` ${kept}`}`;
 }
 
 /** How the session ends the run, for each way it was started. */

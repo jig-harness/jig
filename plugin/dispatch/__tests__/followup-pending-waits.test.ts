@@ -549,12 +549,19 @@ it("re-reads the runs of a spent pending arm, settling it only once every run it
       },
     );
   const id = records[1]?.record.id ?? "";
-  expect(await settle([`run:${SLUG}/7`], ["v3.0.0"])).toEqual(
-    ok(new Set([id])),
-  );
+  expect(await settle([`run:${SLUG}/7`], ["v3.0.0"])).toEqual({
+    settled: new Set([id]),
+    failure: null,
+  });
   expect(asked).toEqual([[{ slug: SLUG, id: 7 }]]);
-  expect(await settle([], ["v3.0.0"])).toEqual(ok(new Set()));
-  expect(await settle([`run:${SLUG}/7`], [])).toEqual(ok(new Set()));
+  expect(await settle([], ["v3.0.0"])).toEqual({
+    settled: new Set(),
+    failure: null,
+  });
+  expect(await settle([`run:${SLUG}/7`], [])).toEqual({
+    settled: new Set(),
+    failure: null,
+  });
   const refused = await rereadPendingArms(
     repo,
     [{ number: 9 }],
@@ -564,7 +571,22 @@ it("re-reads the runs of a spent pending arm, settling it only once every run it
     async () => ok(new Set(["v3.0.0"])),
     async () => failed("refused", "the forge did not answer"),
   );
-  expect(refused.ok).toBe(false);
+  expect(refused.failure).not.toBeNull();
+  // The arm names a tag and a run: the failed run read leaves it unsettled
+  // and still reports the failure.
+  expect(refused.settled).toEqual(new Set());
+  // A failed tag read still reports itself, and a failed read of one kind
+  // does not discard what the other answered.
+  const tagRefused = await rereadPendingArms(
+    repo,
+    [{ number: 9 }],
+    records,
+    nowMs,
+    undefined,
+    async () => failed("refused", "no tags"),
+    async () => ok(new Set([`run:${SLUG}/7`])),
+  );
+  expect(tagRefused.failure?.reason).toContain("no tags");
 });
 
 it("reads the release tags an arm names", () => {
@@ -620,7 +642,10 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     },
   );
   expect(asked).toEqual([["v2.0.0", "v2.0.1"]]);
-  expect(settled).toEqual(ok(new Set([records[1]?.record.id ?? ""])));
+  expect(settled).toEqual({
+    settled: new Set([records[1]?.record.id ?? ""]),
+    failure: null,
+  });
   const noRead = () => {
     throw new Error("no read is owed");
   };
@@ -632,7 +657,7 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     undefined,
     noRead,
   );
-  expect(none).toEqual(ok(new Set()));
+  expect(none).toEqual({ settled: new Set(), failure: null });
   // A spent pass that ended longer ago than a few ticks is not read again.
   const later = await rereadPendingArms(
     repo,
@@ -642,7 +667,7 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     undefined,
     noRead,
   );
-  expect(later).toEqual(ok(new Set()));
+  expect(later).toEqual({ settled: new Set(), failure: null });
   const refused = await rereadPendingArms(
     repo,
     [{ number: 9 }],
@@ -651,7 +676,7 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     undefined,
     async () => failed("refused", "the forge did not answer"),
   );
-  expect(refused.ok).toBe(false);
+  expect(refused.failure).not.toBeNull();
 });
 
 it("reads a waits result with no --reason as a rate limit's, and refuses a pending wait on a pickup", () => {

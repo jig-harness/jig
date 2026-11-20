@@ -283,3 +283,14 @@ describe("the authority table", () => {
     expect(parseFollowupSettings({ followup: { steps: [] } }).ok).toBe(false);
   });
 });
+
+test("pendingArm never cuts a run link", () => {
+  const link = "https://github.com/o/r/actions/runs/123456";
+  const row = (evidence: string) =>
+    ({ rows: [{ arm: "deploy", verdict: "pending", evidence }] }) as never;
+  const long = pendingArm(row(`${"x ".repeat(120)}${link}`));
+  expect(long.length).toBeLessThanOrEqual(200);
+  expect(long).toContain(link);
+  const cut = pendingArm(row(`${"y".repeat(190)} ${link}`));
+  expect(cut).not.toMatch(/runs\/\d*…/);
+});

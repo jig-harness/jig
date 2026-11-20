@@ -19,6 +19,7 @@ function run(id: number, over: Partial<RunFacts> = {}): RunFacts {
     conclusion: "cancelled",
     createdAt: isoFromMs(NOW - (100 - id) * 60_000),
     workflowId: 9,
+    branch: "main",
     ...over,
   };
 }
@@ -111,6 +112,7 @@ const rest = (r: RunFacts) => ({
   conclusion: r.conclusion,
   created_at: r.createdAt,
   workflow_id: r.workflowId,
+  head_branch: r.branch,
 });
 
 test("readDeployRun reads the run, its job count and its workflow's runs", async () => {
@@ -163,4 +165,30 @@ test("readDeployRun refuses to judge a queue from a run list it could not read w
     NOW,
   );
   expect(!read.ok && read.failure.reason).toContain("cannot be judged");
+});
+
+test("a running run of another branch, or a queued one, does not hold the queue", () => {
+  const age = waiting(STUCK_AFTER_MS + 60_000);
+  const other = [
+    run(96, { status: "in_progress", conclusion: null, branch: "other" }),
+    ...cancelledBefore,
+  ];
+  expect(classifyRun(age, 0, other, NOW).state).toBe("moving");
+  const queued = [
+    run(96, { status: "queued", conclusion: null }),
+    ...cancelledBefore,
+  ];
+  expect(classifyRun(age, 0, queued, NOW).state).toBe("moving");
+});
+
+test("a finished run is read from the run alone", async () => {
+  const done = run(100, { conclusion: "success" });
+  const asked: string[] = [];
+  const read: ForgeRead = async (path) => {
+    asked.push(path);
+    return ok(rest(done));
+  };
+  const reading = await readDeployRun(100, read, NOW);
+  expect(reading.ok && reading.value.state).toBe("finished");
+  expect(asked).toHaveLength(1);
 });

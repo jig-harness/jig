@@ -16,11 +16,11 @@
  *
  * A wait whose arm names neither a tag nor a run, one on an arm an earlier
  * run already went past its window on, one that ended longer ago, and a
- * read that fails all leave the follow-up to a person, as its last pass
+ * read that fails, which leaves only the arms that need it, all leave the follow-up to a person, as its last pass
  * read it: a person's answer to the need it raised is not overtaken by a
  * later read.
  */
-import { ok, type Outcome } from "../../shared/outcome.ts";
+import { ok, type Failure, type Outcome } from "../../shared/outcome.ts";
 import { parseMs } from "../../shared/time.ts";
 import { waitStreak } from "./followup-waits.ts";
 import { runWord, type WorkflowRun } from "./wait-for.ts";
@@ -52,6 +52,12 @@ export type RunReader = (
   bound?: TickBound,
 ) => Promise<Outcome<Set<string>, "refused">>;
 
+/** What a re-read answered: the settled records, and a read that failed beside them. */
+export interface ArmReread {
+  settled: Set<string>;
+  failure: Failure<"refused"> | null;
+}
+
 /** When a launch record's pass ended; `null` for one that has not, or whose end does not read. */
 function endedAt(r: ReadRecord | undefined): number | null {
   if (r?.state.kind !== "ended") return null;
@@ -72,7 +78,7 @@ export async function rereadPendingArms(
   bound?: TickBound,
   read: TagReader = taggedReleases,
   readRuns: RunReader = finishedRuns,
-): Promise<Outcome<Set<string>, "refused">> {
+): Promise<ArmReread> {
   const wanted = merged.flatMap((pr) => {
     const streak = waitStreak(records, repo.slug, pr.number);
     if (!streak?.spent) return [];
@@ -94,29 +100,34 @@ export async function rereadPendingArms(
   ]
     .slice(0, MAX_RUNS)
     .map(([, r]) => r);
-  if (tags.length === 0 && runs.length === 0) return ok(new Set());
+  if (tags.length === 0 && runs.length === 0)
+    return { settled: new Set(), failure: null };
   const found =
     tags.length === 0 ? ok(new Set<string>()) : await read(repo, tags, bound);
-  if (!found.ok) return found;
   const finished =
     runs.length === 0
       ? ok(new Set<string>())
       : await readRuns(repo, runs, bound);
-  // A run that could not be read leaves only the arms that name a run
-  // unsettled; the arms that wait on tags alone keep their answer.
-  const done = finished.ok ? finished.value : new Set<string>();
-  if (!finished.ok && runs.length > 0 && wanted.every((w) => w.runs.length > 0))
-    return finished;
-  return ok(
-    new Set(
-      wanted
-        .filter(
-          (w) =>
-            w.tags.every((t) => found.value.has(t)) &&
-            (finished.ok || w.runs.length === 0) &&
-            w.runs.every((r) => done.has(runWord(r))),
-        )
-        .map((w) => w.record),
-    ),
+  // A read that failed leaves only the arms that need it unsettled; the arms
+  // that wait on the other read keep their answer, and the failure travels
+  // with them.
+  const tagSet = found.ok ? found.value : new Set<string>();
+  const runSet = finished.ok ? finished.value : new Set<string>();
+  const settled = new Set(
+    wanted
+      .filter(
+        (w) =>
+          (found.ok || w.tags.length === 0) &&
+          (finished.ok || w.runs.length === 0) &&
+          w.tags.every((t) => tagSet.has(t)) &&
+          w.runs.every((r) => runSet.has(runWord(r))),
+      )
+      .map((w) => w.record),
   );
+  const failure = !found.ok
+    ? found.failure
+    : !finished.ok
+      ? finished.failure
+      : null;
+  return { settled, failure };
 }
