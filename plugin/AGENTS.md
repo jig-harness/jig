@@ -80,8 +80,11 @@ here reaches every repository at once.
   short `failed` line; it skips the upgrade when `JIG_LAUNCHER_ROLE` is
   set, which the `jig` command's script and a woken tick set, and
   `jig upgrade --jobs-only` reads `JIG_UPGRADE_SCHEDULED=1` as a timer's
-  refresh. Those command lines, that line and those variables keep their
-  meaning across releases as well.
+  refresh. A `dispatch` job is told what started it in `JIG_STARTED_BY`
+  (`timer`, or the launcher's role, unless a caller set it already: the
+  wake waiter sets `wake`), which the tick records on its receipt. Those
+  command lines, that line and those variables keep their meaning across
+  releases as well.
 - **Failures are values; a throw is a defect**
   ([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)). Domain code
   returns an `Outcome` (`shared/outcome.ts`) for a failure its caller

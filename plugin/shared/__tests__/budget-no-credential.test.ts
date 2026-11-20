@@ -13,9 +13,12 @@ import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { cliTransport } from "../../skills/do-item/scripts/lib/tracker/linear-transport.ts";
 import { credentialKey } from "../outbound/budget.ts";
 import { recordCall, withCaller, withLedgerPath } from "../outbound/ledger.ts";
+import { forgetMissingCredentials } from "../outbound/missing-credential.ts";
 
 const roots: string[] = [];
 afterEach(() => {
+  // What a test's transport noted would refuse the next test's calls.
+  forgetMissingCredentials();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });

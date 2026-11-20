@@ -632,6 +632,8 @@ export interface ReadFailure {
   account?: string;
   until?: string;
   quota?: QuotaHold;
+  /** The process had no credential for the system at all: the tick names it once (`no-credential.ts`) rather than as this read's failure. */
+  noCredential?: true;
 }
 
 /** Where opening a repository for its tick stopped: looking up which repository the path is, reading its dispatch section, or the tick's time ran out first. */

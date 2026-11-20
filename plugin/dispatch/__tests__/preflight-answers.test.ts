@@ -16,7 +16,7 @@ import { parseMachineConfigText } from "../lib/machine-config.ts";
 import {
   forgetMissingCredentials,
   noteMissingCredential,
-} from "../../shared/outbound/credential-latch.ts";
+} from "../../shared/outbound/missing-credential.ts";
 import {
   HOST_NEED_REPO,
   heldAccounts,

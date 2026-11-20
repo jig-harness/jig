@@ -9,7 +9,7 @@ import {
 import {
   credentialLabel,
   NO_CREDENTIAL,
-} from "../shared/outbound/credential-latch.ts";
+} from "../shared/outbound/missing-credential.ts";
 import { currentMs, isoFromMs } from "../shared/time.ts";
 import {
   command,

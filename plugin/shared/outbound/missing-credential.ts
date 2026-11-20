@@ -5,9 +5,11 @@
  * A transport whose first answer says no credential is configured (no key
  * in the environment, and a command-line client that is not logged in or
  * not installed) notes it here under the identity it would have sent with
- * (`noteMissingCredential`); from then, every call through that identity is
- * refused before it leaves, as an `unauthorized` failure that names what was
- * looked for. A dispatch tick forgets what an earlier run noted as it starts
+ * (`noteMissingCredential`); from then, for `NOTE_HOLDS_MS`, every call
+ * through that identity is refused before it leaves, as an `unauthorized`
+ * failure that names what was looked for. Until the process knows whether
+ * it has a credential there, its calls go out one at a time
+ * (`throughCredential`), so concurrent reads ask the client once. A dispatch tick forgets what an earlier run noted as it starts
  * (`forgetMissingCredentials`) and lists what this run noted on its receipt
  * (`missingCredentials`).
  *
@@ -18,6 +20,7 @@
  * identities that are not a hashed key: that one, and a logged-in client's
  * own login.
  */
+import { currentMs } from "../time.ts";
 import { credentialKey } from "./budget.ts";
 
 /** The ledger's credential of a call that had no credential to send with. No hashed credential takes this form. */
@@ -81,27 +84,81 @@ export function missingCredentialMessage(missing: MissingCredential): string {
   return `${missing.reason}: ${missing.remedy}${answered}`;
 }
 
-const noted = new Map<string, MissingCredential>();
+/**
+ * How long a note holds: past it, the next call is sent, so a long-lived
+ * process (a drive's driver, a person's session) finds a key set or a
+ * login made since. A tick still lists every note it made (`missingCredentials`).
+ */
+export const NOTE_HOLDS_MS = 5 * 60_000;
+
+/** Each identity's state: noted as lacking a credential, or answered by a call that had one, with when. */
+const noted = new Map<string, { missing: MissingCredential; atMs: number }>();
+const answered = new Map<string, number>();
+/** The first call through an identity whose credential is not known yet, which the calls that come meanwhile wait for. */
+const first = new Map<string, Promise<void>>();
+
+/** Whether a mark made at `atMs` still holds. */
+const holds = (atMs: number): boolean => currentMs() - atMs < NOTE_HOLDS_MS;
 
 /** Note that the process has no credential behind `identity`: later calls through it are refused before they leave. */
 export function noteMissingCredential(
   identity: string,
   missing: MissingCredential,
 ): void {
-  if (!noted.has(identity)) noted.set(identity, missing);
+  const known = noted.get(identity);
+  noted.set(identity, {
+    missing: known?.missing ?? missing,
+    atMs: currentMs(),
+  });
+  answered.delete(identity);
 }
 
-/** What the process noted it lacks behind `identity`, if anything. */
+/** What the process noted it lacks behind `identity`, while the note holds. */
 export function missingCredentialOf(
   identity: string,
 ): MissingCredential | undefined {
-  return noted.get(identity);
+  const note = noted.get(identity);
+  return note !== undefined && holds(note.atMs) ? note.missing : undefined;
 }
 
-/** What the process noted it lacks, one entry per system, in the order noted. */
+/**
+ * One call through `identity`. While the process does not know whether it
+ * has a credential there, one call goes out at a time: the first, which
+ * the others wait for; then each is sent, or refused with `refuse` once a
+ * call noted the credential missing. A call whose caller cancelled it
+ * (`cancelled`) says nothing of the credential.
+ */
+export async function throughCredential<T>(
+  identity: string,
+  send: () => Promise<T>,
+  refuse: (missing: MissingCredential) => Promise<T>,
+  cancelled: () => boolean = () => false,
+): Promise<T> {
+  for (;;) {
+    const missing = missingCredentialOf(identity);
+    if (missing !== undefined) return refuse(missing);
+    const at = answered.get(identity);
+    if (at !== undefined && holds(at)) return send();
+    const out = first.get(identity);
+    if (out === undefined) break;
+    await out.catch(() => undefined);
+  }
+  const done = Promise.withResolvers<void>();
+  first.set(identity, done.promise);
+  try {
+    return await send();
+  } finally {
+    if (missingCredentialOf(identity) === undefined && !cancelled())
+      answered.set(identity, currentMs());
+    first.delete(identity);
+    done.resolve();
+  }
+}
+
+/** What the process noted it lacks since it last forgot, one entry per system, in the order noted, held or not. */
 export function missingCredentials(): MissingCredential[] {
   const bySystem = new Map<string, MissingCredential>();
-  for (const missing of noted.values())
+  for (const { missing } of noted.values())
     if (!bySystem.has(missing.system)) bySystem.set(missing.system, missing);
   return [...bySystem.values()];
 }
@@ -109,4 +166,5 @@ export function missingCredentials(): MissingCredential[] {
 /** Forget what was noted: a new run asks again. */
 export function forgetMissingCredentials(): void {
   noted.clear();
+  answered.clear();
 }

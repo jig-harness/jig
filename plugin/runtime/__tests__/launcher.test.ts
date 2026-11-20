@@ -709,7 +709,10 @@ else require("node:fs").appendFileSync(${JSON.stringify(log)}, (process.env.JIG_
       claude,
       `#!/usr/bin/env bun\nconsole.log(JSON.stringify([{ id: "jig@jig", scope: "user", installPath: ${JSON.stringify(realpathSync(directory))} }]));\n`,
     );
-    const start = (env: Record<string, string | undefined>) =>
+    const start = (
+      env: Record<string, string | undefined>,
+      job: string[] = ["dispatch", "--apply"],
+    ) =>
       expectSpawnExit(
         Bun.spawnSync(
           [
@@ -719,8 +722,7 @@ else require("node:fs").appendFileSync(${JSON.stringify(log)}, (process.env.JIG_
             launcher,
             `--claude=${claude}`,
             "--",
-            "dispatch",
-            "--apply",
+            ...job,
           ],
           {
             env: {
@@ -740,11 +742,16 @@ else require("node:fs").appendFileSync(${JSON.stringify(log)}, (process.env.JIG_
     start({ JIG_LAUNCHER_ROLE: "command" });
     start({ JIG_LAUNCHER_ROLE: "wake" });
     start({ JIG_LAUNCHER_ROLE: "command", JIG_STARTED_BY: "orca-plugin" });
+    // No other job reads it, so none carries it.
+    start({}, ["gc", "--scheduled"]);
+    start({ JIG_LAUNCHER_ROLE: "command" }, ["gc"]);
     expect(readFileSync(log, "utf8").split("\n").filter(Boolean)).toEqual([
       "timer",
       "command",
       "wake",
       "orca-plugin",
+      "-",
+      "-",
     ]);
   },
 );

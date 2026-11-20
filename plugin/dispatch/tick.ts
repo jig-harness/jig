@@ -140,7 +140,7 @@ import {
 import { noteBudget, routeReflection } from "./lib/tick-close.ts";
 import { noCredentialExit, settleNoCredential } from "./lib/no-credential.ts";
 import { takeTickStarter } from "./lib/tick-starter.ts";
-import { forgetMissingCredentials } from "../shared/outbound/credential-latch.ts";
+import { forgetMissingCredentials } from "../shared/outbound/missing-credential.ts";
 import {
   finalizeTickFailure,
   settleFailures,
@@ -650,9 +650,11 @@ async function closeTick(
   await fillBudgets(context.reads);
   await noteBudget(receipt, context);
   await routeReflection(receipt, context);
+  // Anything else that failed keeps its exit; with nothing else, a missing tracker credential has its class's.
   receipt.exitStatus =
-    noCredentialExit(receipt) ??
-    (failed || !copied || settleFailed || withheld !== undefined ? 1 : 0);
+    failed || !copied || settleFailed || withheld !== undefined
+      ? 1
+      : (noCredentialExit(receipt) ?? 0);
   const held = [...heldSystems()].map(([system, f]) => ({
     system,
     class: f.code,

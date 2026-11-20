@@ -307,9 +307,11 @@ was sent: the caller reads the item again before it writes again.
 - A process with no credential for a system at all (no Linear key, and a
   `linear` client that is not logged in or not installed) learns it at its
   first call, and every later call through that client fails
-  `unauthorized` before it leaves (`credential-latch`). A tick names the
-  missing credential once on its receipt and exits with the class's
-  status, `9`; each repository that system tracks keeps its tracker part
+  `unauthorized` before it leaves (`shared/outbound/missing-credential.ts`);
+  until it knows, its calls through the client go out one at a time, and
+  the knowledge holds for a few minutes. A tick names the missing
+  credential once on its receipt and, when nothing else failed, exits with
+  the class's status, `9`, its failure ledger row told at once; each repository that system tracks keeps its tracker part
   of the line from the last reading that had a credential, and no account
   is probed or held for it.
 

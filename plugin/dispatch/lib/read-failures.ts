@@ -45,6 +45,7 @@ function readFailure(outbound: OutboundFailure): ReadFailure {
       ? {}
       : { until: isoFromMs(outbound.until) }),
     ...(outbound.quota === undefined ? {} : { quota: outbound.quota }),
+    ...(outbound.noCredential === true ? { noCredential: true } : {}),
   };
 }
 

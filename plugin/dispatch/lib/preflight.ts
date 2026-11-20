@@ -29,7 +29,7 @@
  * passes is no longer held and raises no need.
  *
  * A tracker the tick found it has no credential for
- * (`shared/outbound/credential-latch.ts`, `no-credential.ts`) is not
+ * (`shared/outbound/missing-credential.ts`, `no-credential.ts`) is not
  * probed: no account is asked or held for it, and a launch of a stage
  * that touches it waits, saying once that the tick has no credential for
  * that tracker.
@@ -42,7 +42,7 @@ import { resolve } from "node:path";
 import { actOfNeed } from "../../shared/acts.ts";
 import { swallow } from "../../shared/errors.ts";
 import { callerForChild } from "../../shared/outbound/ledger.ts";
-import { missingCredentials } from "../../shared/outbound/credential-latch.ts";
+import { missingCredentials } from "../../shared/outbound/missing-credential.ts";
 import { run } from "../../shared/proc.ts";
 import { admittedVendor, passEnvironment } from "./accounts.ts";
 import type { LineNeed } from "./dashboard-contract.ts";

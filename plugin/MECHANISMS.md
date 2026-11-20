@@ -229,9 +229,9 @@ development and shipped as a version.
   for its receipt in `JIG_SCHEDULED_UPGRADE`. The `jig` command's script and
   a woken tick mark their launches (`JIG_LAUNCHER_ROLE`) and do not upgrade,
   and the dispatcher's change probe, run every minute, does not either. The
-  launcher tells the job what started it in `JIG_STARTED_BY` (`timer`,
-  `command` or `wake`, or the name its caller already set), and a tick's
-  receipt records it as `startedBy` (`dispatch/lib/tick-starter.ts`).
+  launcher tells a `dispatch` job what started it in `JIG_STARTED_BY`
+  (`timer`, `command` or `wake`, or the name its caller already set), and
+  a tick's receipt records it as `startedBy` (`dispatch/lib/tick-starter.ts`).
   `jig upgrade --scheduled` (`runtime/scheduled-upgrade.ts`) reads the user
   file's `upgrade` setting, withholds the upgrade on a machine that opted
   out, takes the interval under a file lock (`shared/file-lock.ts`) by
@@ -745,7 +745,7 @@ development and shipped as a version.
   learns it at that first call and sends Linear nothing more: every later
   call fails as `unauthorized` with "no Linear key configured" before it
   leaves, and the cost ledger keeps such calls under no credential, with no
-  requests (`shared/outbound/credential-latch.ts`).
+  requests (`shared/outbound/missing-credential.ts`).
 - **If it fails.** The calling session sees exit 1 or 2, or `tracker.ts`'s
   exit for the failure class (5 to 11), and stops; the tick reports a record
   it could not read with the call's class, and does not fail for a class
@@ -753,8 +753,9 @@ development and shipped as a version.
   credential for a tracker names it once on its receipt (`noCredential`)
   and its log, probes and holds no account for it in the issue preflight,
   fails no repository's turn for it, keeps each such repository's tracker
-  part of the line from the last reading that had one, and exits 9, the
-  `unauthorized` class's status (`dispatch/lib/no-credential.ts`,
+  part of the line from the last reading that had one, and, when nothing
+  else failed, exits 9, the `unauthorized` class's status, with its own
+  row in the failure ledger told at once (`dispatch/lib/no-credential.ts`,
   `dispatch/lib/line-keyless.ts`); `jig budget` and `jig doctor` name the
   missing key with its callers. A person fixes
   credentials or configuration; a missing adapter is a Jig change.

@@ -1,15 +1,19 @@
 /**
  * A tick that has no credential for a tracker fails closed for it. The
  * tracker's transport learns it at the tick's first call to that tracker
- * and sends it nothing more (`shared/outbound/credential-latch.ts`); this
+ * and sends it nothing more (`shared/outbound/missing-credential.ts`); this
  * module says so once, on the tick's log and receipt (`noCredential`),
  * rather than on every read, card and account it touched.
  *
- * Each repository's report keeps no failure the missing credential caused:
+ * Each repository's report keeps no failure the missing credential caused
+ * (a read whose failure carries the no-credential mark):
  * its tracker record says it was not asked, and the rows a refused read
  * left go, so no repository's turn fails for it and the issue preflight
  * holds no account for it (`preflight.ts`). The tick as a whole exits with
- * the `unauthorized` class's status (`EXIT_OF_CLASS`), and the line keeps
+ * the `unauthorized` class's status (`EXIT_OF_CLASS`) when nothing else
+ * failed, and 1 when something did; at that status the failure ledger
+ * counts the tick's own row as a failure told at once, naming the missing
+ * credential (`tick-settle.ts`), so a person hears of it. The line keeps
  * each such repository's tracker part from the last reading that had a
  * credential (`line-keyless.ts`).
  */
@@ -21,7 +25,7 @@ import {
   type MissingCredential,
   missingCredentialMessage,
   missingCredentials,
-} from "../../shared/outbound/credential-latch.ts";
+} from "../../shared/outbound/missing-credential.ts";
 import { issueService } from "../../shared/tracker-product.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { RepoReport } from "./types.ts";
@@ -45,20 +49,24 @@ function notAsked(system: string): string {
   return `not asked: the tick has no ${issueService(system)} credential (its receipt's noCredential says what is missing), so the line keeps the last reading that had one`;
 }
 
-/** Take out of `report` what the missing credential caused; whether its tracker is the system's. */
+/**
+ * Take out of `report` what the missing credential caused: the reads whose
+ * failure carries the no-credential mark (`ReadFailure.noCredential`), never
+ * one any other failure cut. Whether its tracker is the system's.
+ */
 function settleReport(report: RepoReport, missing: MissingCredential): boolean {
   let tracked = false;
   report.records = report.records.map((record) => {
     if (record.record !== "tracker") return record;
     if (record.source.startsWith(`${missing.system} `)) tracked = true;
-    if (record.ok || !record.detail.includes(missing.reason)) return record;
+    if (record.ok || record.failure?.noCredential !== true) return record;
     tracked = true;
     const { failure: _failure, ...kept } = record;
     return { ...kept, ok: true, detail: notAsked(missing.system) };
   });
   const before = report.unplaced.length;
   report.unplaced = report.unplaced.filter(
-    (row) => !row.reason.includes(missing.reason),
+    (row) => row.failure?.noCredential !== true,
   );
   return tracked || report.unplaced.length < before;
 }

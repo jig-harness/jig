@@ -23,11 +23,10 @@
  * never sent twice. In a run that holds the systems that do not answer
  * (`shared/outbound/hold.ts`), Linear is held after such a failure.
  *
- * With no key, a client that answers it has no API key configured, is not
- * logged in or is not installed leaves the process with no Linear
- * credential: that answer, and every later call through the client in the
+ * With no key, a client that answers it has no API key configured, or is
+ * not installed, leaves the process with no Linear credential: that answer, and every later call through the client in the
  * same process, fails as `unauthorized` with "no Linear key configured" and
- * what gives one (`shared/outbound/credential-latch.ts`), and the later
+ * what gives one (`shared/outbound/missing-credential.ts`), and the later
  * calls are not sent. None of them spends under the client's identity.
  */
 
@@ -54,11 +53,11 @@ import {
   clientCredential,
   type MissingCredential,
   missingCredentialMessage,
-  missingCredentialOf,
   NO_CREDENTIAL,
   noCredentialReason,
   noteMissingCredential,
-} from "../../../../../shared/outbound/credential-latch.ts";
+  throughCredential,
+} from "../../../../../shared/outbound/missing-credential.ts";
 import {
   recordAttempt,
   type Attempt,
@@ -131,6 +130,7 @@ export class LinearApiError extends OutboundError {
       until?: number | null;
       sent?: boolean;
       retryAfterMs?: number | null;
+      noCredential?: boolean;
     } = {},
   ) {
     super(code, message, extra);
@@ -526,10 +526,15 @@ function runCli(
 const LINEAR_REMEDY =
   "set LINEAR_API_KEY (or LINEAR_API_TOKEN), or log in to the `linear` command-line client";
 
-/** The client's words that say it holds no credential at all, as against one it was refused. */
-const NO_CLIENT_CREDENTIAL = /no api key configured|not logged in/i;
+/** The client's own words when it holds no credential at all, as against one Linear refused. */
+const NO_CLIENT_CREDENTIAL = /\bno api key configured\b/i;
 
-/** What a client run says the process lacks: the client is not installed, or holds no credential; `null` when it says neither. */
+/**
+ * What a failed client run says the process lacks: the client is not
+ * installed, or holds no credential; `null` when it says neither. Only the
+ * client's own words count: its standard error, or its standard output
+ * when it wrote no error and no JSON, so data an answer carries never does.
+ */
 function keylessRun(r: RunResult): MissingCredential | null {
   const missing = (answer: string): MissingCredential => ({
     system: LINEAR,
@@ -541,13 +546,22 @@ function keylessRun(r: RunResult): MissingCredential | null {
     return r.stderr.includes("ENOENT")
       ? missing("the client is not installed")
       : null;
-  const said = (r.stderr || r.stdout).replace(/\s+/g, " ").trim().slice(0, 200);
-  return r.code !== 0 && NO_CLIENT_CREDENTIAL.test(said) ? missing(said) : null;
+  if (r.code === 0) return null;
+  const own =
+    r.stderr.trim() !== ""
+      ? r.stderr
+      : jsonOrNull(r.stdout) === null
+        ? r.stdout
+        : "";
+  const said = own.replace(/\s+/g, " ").trim().slice(0, 200);
+  return NO_CLIENT_CREDENTIAL.test(said) ? missing(said) : null;
 }
 
 /** The failure of a call the process has no Linear credential for. */
 const keylessError = (missing: MissingCredential): LinearApiError =>
-  new LinearApiError(missingCredentialMessage(missing), null, "unauthorized");
+  new LinearApiError(missingCredentialMessage(missing), null, "unauthorized", {
+    noCredential: true,
+  });
 
 /**
  * A call refused before it left: the process has no Linear credential. The
@@ -680,8 +694,9 @@ const CLI_DISPATCH_SESSION = randomUUID();
  * `governor` only a refusal is recorded, for `FALLBACK_LIMIT_MS`. The record
  * is the executable's (`bin`), not an authenticated profile's: every profile
  * the client holds shares it, and it is not shared with a token's HTTP record.
- * Once the client said it holds no credential, the process sends it nothing
- * more (`refusedKeyless`).
+ * Until the process knows whether the client holds a credential, its calls
+ * go out one at a time; once the client said it holds none, the process
+ * sends it nothing more for a while (`throughCredential`, `refusedKeyless`).
  */
 export function cliTransport(
   bin = "linear",
@@ -691,30 +706,34 @@ export function cliTransport(
   const governed: Governed | null =
     governor === undefined ? null : { governor, key: identity };
   return dispatchTagged(
-    (query, variables, signal) => {
-      const keyless = missingCredentialOf(identity);
-      if (keyless !== undefined) return refusedKeyless(keyless, query);
-      return call(
-        (bound) => {
-          const observation: Attempt = {
-            system: LINEAR,
-            credential: identity,
-            operation: operationName(query),
-            requests: 0,
-            cost: null,
-            unit: "points",
-            estimated: false,
-          };
-          return recordAttempt(
-            observation,
-            () => cliOnce(bin, governed, query, variables, bound, observation),
-            (answer) => failureOfAnswer(answer)?.code ?? null,
-          );
-        },
-        query,
-        signal,
-      );
-    },
+    (query, variables, signal) =>
+      throughCredential(
+        identity,
+        () =>
+          call(
+            (bound) => {
+              const observation: Attempt = {
+                system: LINEAR,
+                credential: identity,
+                operation: operationName(query),
+                requests: 0,
+                cost: null,
+                unit: "points",
+                estimated: false,
+              };
+              return recordAttempt(
+                observation,
+                () =>
+                  cliOnce(bin, governed, query, variables, bound, observation),
+                (answer) => failureOfAnswer(answer)?.code ?? null,
+              );
+            },
+            query,
+            signal,
+          ),
+        (keyless) => refusedKeyless(keyless, query),
+        () => signal?.aborted === true,
+      ),
     credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
     false,
   );

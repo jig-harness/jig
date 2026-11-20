@@ -58,6 +58,8 @@ export interface OutboundFailure extends Failure<FailureClass> {
   sent?: boolean;
   /** How long the system asked the caller to wait (`Retry-After`), milliseconds. */
   retryAfterMs?: number;
+  /** `unauthorized` because the process has no credential for the system at all (`missing-credential.ts`), as against one the system refused. */
+  noCredential?: true;
 }
 
 /** What a class's policy says. */
@@ -142,6 +144,7 @@ export function outboundFailure(
     sent?: boolean;
     retryAfterMs?: number | null;
     cause?: unknown;
+    noCredential?: boolean;
   } = {},
 ): OutboundFailure {
   const failure: OutboundFailure = { code, reason };
@@ -153,6 +156,7 @@ export function outboundFailure(
   if (extra.retryAfterMs !== undefined && extra.retryAfterMs !== null)
     failure.retryAfterMs = extra.retryAfterMs;
   if (extra.cause !== undefined) failure.cause = extra.cause;
+  if (extra.noCredential === true) failure.noCredential = true;
   return failure;
 }
 
@@ -194,6 +198,8 @@ export class OutboundError extends JigError<FailureClass> {
   readonly sent: boolean;
   readonly retryAfterMs: number | null;
   readonly account: string | undefined;
+  /** The process has no credential for the system at all. */
+  readonly noCredential: boolean;
   constructor(
     code: FailureClass,
     reason: string,
@@ -203,6 +209,7 @@ export class OutboundError extends JigError<FailureClass> {
       sent?: boolean;
       retryAfterMs?: number | null;
       cause?: unknown;
+      noCredential?: boolean;
     } = {},
   ) {
     super(
@@ -214,6 +221,7 @@ export class OutboundError extends JigError<FailureClass> {
     this.sent = extra.sent ?? false;
     this.retryAfterMs = extra.retryAfterMs ?? null;
     this.account = extra.account;
+    this.noCredential = extra.noCredential ?? false;
   }
   /** The failure as an `Outcome`'s. */
   get failure(): OutboundFailure {
@@ -222,6 +230,7 @@ export class OutboundError extends JigError<FailureClass> {
       until: this.until,
       sent: this.sent,
       retryAfterMs: this.retryAfterMs,
+      noCredential: this.noCredential,
     });
   }
   /** Whether waiting clears it. */

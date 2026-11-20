@@ -12,7 +12,8 @@ import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { EXIT_OF_CLASS } from "../../shared/outbound/failure.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { type World, world } from "./fixtures.ts";
-import { account, machineFile } from "./launch-fixtures.ts";
+import { FAILURE_DEFAULTS, readFailures } from "../lib/failures.ts";
+import { account, dispatchState, machineFile } from "./launch-fixtures.ts";
 
 const DISPATCH = resolve(import.meta.dir, "..");
 let current: World | null = null;
@@ -29,6 +30,7 @@ process.stderr.write("✗ API request failed: No API key configured\\n");
 process.exit(1);
 `;
 
+/** A Linear-tracked repository with a factory identity and a served person, on two accounts, with no key and a logged-out client. */
 function keylessWorld(): World {
   const w = world();
   current = w;
@@ -41,8 +43,23 @@ function keylessWorld(): World {
 dispatch:
   identity: factory-bot
 `);
-  machineFile(w, [account(w, "a", "a@example.com")], {}, ["pickup"]);
+  machineFile(
+    w,
+    [account(w, "a", "a@example.com"), account(w, "b", "b@example.com")],
+    {
+      serve: [{ name: "Alex", forge: ["alex"], tracker: { linear: "alex" } }],
+    },
+    ["pickup", "followup"],
+  );
   return w;
+}
+
+/** The client calls the fake logged. */
+function clientCalls(w: World): string[] {
+  const log = join(w.dir, "linear-calls.log");
+  return existsSync(log)
+    ? readFileSync(log, "utf8").split("\n").filter(Boolean)
+    : [];
 }
 
 function entry(w: World): string {
@@ -67,27 +84,34 @@ it("asks a logged-out client once, names the missing key once and exits as unaut
   const r = await w.dispatch([], entry(w));
   expectSpawnExit(r, EXIT_OF_CLASS.unauthorized);
   const receipt = JSON.parse(r.stdout) as TickReceipt;
-  const log = join(w.dir, "linear-calls.log");
-  const calls = existsSync(log)
-    ? readFileSync(log, "utf8").split("\n").filter(Boolean)
-    : [];
-  expect(calls.length).toBeLessThanOrEqual(1);
-  const text = JSON.stringify(receipt);
-  expect(text.split("no Linear key configured")).toHaveLength(2);
+  // The factory's and the served person's queue reads, the claims and each account's preflight: one client call.
+  expect(clientCalls(w)).toHaveLength(1);
   expect(receipt.noCredential).toEqual([
     expect.objectContaining({
       system: "linear",
       class: "unauthorized",
       reason: "no Linear key configured",
+      answer: expect.stringContaining("No API key configured"),
       repos: ["example-org/example-repo"],
     }),
   ]);
   const remedy = receipt.noCredential?.[0]?.remedy ?? "";
   for (const named of ["LINEAR_API_KEY", "LINEAR_API_TOKEN", "`linear`"])
     expect(remedy).toContain(named);
-  // No repository's turn fails for it, and the tick's own log says it once.
-  expect(receipt.repos[0]?.records.every((r) => r.ok)).toBe(true);
+  // Not per card, identity or account: the repositories' reports never name it.
+  const reports = JSON.stringify(receipt.repos);
+  expect(reports).not.toContain("no Linear key configured");
+  expect(reports).not.toContain("No API key configured");
+  expect(receipt.repos[0]?.records.every((x) => x.ok)).toBe(true);
+  expect(receipt.repos[0]?.preflight ?? []).toEqual([]);
+  // The tick's own log says it once.
   expect(r.stderr.split("no Linear key configured")).toHaveLength(2);
+  // A person is told at once, through the tick's own row of the failure ledger.
+  const rows = readFailures(undefined, dispatchState(w));
+  const tick = rows.find((row) => row.kind === "tick");
+  expect(tick?.reason).toContain("no Linear key configured");
+  expect(tick?.count).toBeGreaterThanOrEqual(FAILURE_DEFAULTS.notifyAfter);
+  expect(rows.filter((row) => row.kind === "repository")).toEqual([]);
   // The line marks the repository's tracker part as kept: no tick read it with a credential yet.
   const line = await w.dispatch(["line", "--json"]);
   expectSpawnExit(line, 0);
@@ -96,4 +120,15 @@ it("asks a logged-out client once, names the missing key once and exits as unaut
     readAt: null,
     reason: "no Linear key configured",
   });
+}, 60_000);
+
+it("keeps exit 1 when something else failed beside the missing key", async () => {
+  const w = keylessWorld();
+  // The forge's listing of open pull requests answers in a form that does not read, by its query and on its own.
+  w.failCall("query DispatchRepository", "gh: HTTP 422");
+  writeFileSync(join(w.dir, "prs-open-fail"), "");
+  const r = await w.dispatch([], entry(w));
+  expectSpawnExit(r, 1);
+  const receipt = JSON.parse(r.stdout) as TickReceipt;
+  expect(receipt.noCredential?.map((n) => n.system)).toEqual(["linear"]);
 }, 60_000);

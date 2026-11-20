@@ -4,10 +4,10 @@
  * reported with the count of those ticks and the callers that had no key.
  */
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { NO_CREDENTIAL } from "../../shared/outbound/credential-latch.ts";
+import { NO_CREDENTIAL } from "../../shared/outbound/missing-credential.ts";
 import { recordCall } from "../../shared/outbound/ledger.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import { keylessCheck } from "../lib/keyless-doctor.ts";
@@ -22,7 +22,12 @@ afterEach(() => {
 const NOW = Date.parse("2026-11-20T12:00:00.000Z");
 const HOUR = 3_600_000;
 
-function receipt(runId: string, atMs: number, keyless: boolean): TickReceipt {
+function receipt(
+  runId: string,
+  atMs: number,
+  keyless: boolean,
+  repos: string[] = [],
+): TickReceipt {
   return {
     version: 1,
     runId,
@@ -45,7 +50,18 @@ function receipt(runId: string, atMs: number, keyless: boolean): TickReceipt {
           ],
         }
       : {}),
-    repos: [],
+    // Each repository the tick read, as far as the receipt's reader checks one.
+    repos: repos.map(
+      (slug) =>
+        ({
+          path: `/w/${slug}`,
+          slug,
+          actions: [],
+          records: [],
+          unplaced: [],
+          followupSince: null,
+        }) as never,
+    ),
   };
 }
 
@@ -103,4 +119,50 @@ test("passes when no tick in the window ran without a tracker credential", () =>
   writeReceipt(receipt(id(NOW - HOUR, "eeeeeeee"), NOW - HOUR, false), root);
   const check = keylessCheck({ root, ledgerPath: ledger, nowMs: NOW });
   expect(check.status).toBe("pass");
+});
+
+/** A Linear call of tick `runId` the ledger kept, under no credential or under a key. */
+function call(ledger: string, runId: string, credential = NO_CREDENTIAL): void {
+  recordCall({
+    path: ledger,
+    system: "linear",
+    credential,
+    operation: "TrackerNativeQueue",
+    caller: `tick:${runId}`,
+    unit: "points",
+    requests: credential === NO_CREDENTIAL ? 0 : 1,
+    cost: null,
+    durationMs: 0,
+    ...(credential === NO_CREDENTIAL
+      ? { failure: "unauthorized" as const }
+      : {}),
+    at: NOW - HOUR,
+  });
+}
+
+test("names the error when the keyless ticks' receipts cannot be read", () => {
+  const { root, ledger } = fixture();
+  call(ledger, id(NOW - HOUR, "ffffffff"));
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "receipts"), "not a directory");
+  const check = keylessCheck({ root, ledgerPath: ledger, nowMs: NOW });
+  expect(check.status).toBe("fail");
+  expect(check.detail).toContain("could not be read");
+});
+
+test("warns rather than fails once the newest tick since read the repository with a credential", () => {
+  const { root, ledger } = fixture();
+  const keyless = id(NOW - 2 * HOUR, "aaaaaaaa");
+  const keyed = id(NOW - HOUR, "bbbbbbbb");
+  writeReceipt(receipt(keyless, NOW - 2 * HOUR, true), root);
+  writeReceipt(
+    receipt(keyed, NOW - HOUR, false, ["example-org/tracked"]),
+    root,
+  );
+  call(ledger, keyless);
+  call(ledger, keyed, "linear:0123456789abcdef");
+  const check = keylessCheck({ root, ledgerPath: ledger, nowMs: NOW });
+  expect(check.status).toBe("warn");
+  expect(check.detail).toContain("no Linear key configured");
+  expect(check.detail).toContain(`tick:${keyless}`);
 });
