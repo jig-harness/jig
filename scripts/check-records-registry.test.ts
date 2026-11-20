@@ -138,6 +138,17 @@ describe("what the code names", () => {
         ].join("\n"),
       ),
     ).toEqual(["table 1 in_flight_reads", "table 2 job_leases"]);
+    // Text in a string, a template or a trailing comment declares nothing.
+    expect(
+      texts(
+        "plugin/hub/storage/schema.ts",
+        [
+          "const example = 'sqliteTable(\"job_leases\", {})';",
+          'const note = `sqliteTable("in_flight_reads", {})`; // sqliteTable("x", {})',
+          'export const t = d.sqliteTable("real_rows", {});',
+        ].join("\n"),
+      ),
+    ).toEqual(["table 3 real_rows"]);
     const unread = namedIn(
       "plugin/hub/storage/schema.ts",
       "export const t = sqliteTable(NAME, {});",

@@ -113,6 +113,33 @@ describe("a job's run", () => {
     });
   });
 
+  test("progress that JSON would change is refused, not saved as null", async () => {
+    const ports = portsWithStore();
+    const outcome = await runJob(
+      ports,
+      { ...JOB, timeoutMs: 5_000, leaseMs: 5_000 },
+      async () =>
+        ok({ progress: { next: Number.NaN } as Progress, done: false }),
+    );
+    expect(outcome.ok ? null : outcome.failure.code).toBe("refused");
+  });
+
+  test("steps that settle at once still stop at the unit's deadline", async () => {
+    const ports = portsWithStore();
+    let steps = 0;
+    const outcome = await runJob(
+      ports,
+      { ...JOB, timeoutMs: 1_000, leaseMs: 1_000 },
+      async () => {
+        steps++;
+        ports.advance(400);
+        return ok({ progress: { next: steps }, done: false });
+      },
+    );
+    expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
+    expect(steps).toBe(3);
+  });
+
   test("a spec whose lease is shorter than its timeout is refused before it runs", async () => {
     const ports = portsWithStore();
     let stepped = false;
@@ -340,6 +367,23 @@ describe("the trimming job", () => {
       job: TRIM_JOB,
     });
     expect(job.ok ? job.value?.finishedAt : null).toBe(ports.clock.now());
+  });
+
+  test("a retention rule keeping a negative time is refused before any row is deleted", async () => {
+    const ports = portsWithStore();
+    const handler = trimmingHandler(ports, {
+      partitions: async () => ok([]),
+      rules: [
+        {
+          table: "in_flight_reads",
+          column: "deadline_at",
+          keepMs: -1,
+        },
+      ],
+    });
+    await expect(handler(unit(), { job: TRIM_JOB, dueAt: 0 })).rejects.toThrow(
+      "nonnegative",
+    );
   });
 
   test("a stopped trimming run resumes at the partition it was on", async () => {

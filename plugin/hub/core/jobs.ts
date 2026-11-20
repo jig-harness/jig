@@ -124,7 +124,11 @@ export function runJob<Progress extends JsonValue, Code extends string>(
         });
       let progress = lease.value.progress as Progress | null;
       for (let steps = 1; ; steps++) {
-        if (context.signal.aborted)
+        // Steps that settle at once chain microtasks, so the unit's timer
+        // never gets to run: the deadline is read from the clock, and a
+        // macrotask turn lets the timer and a stop signal be delivered.
+        await new Promise<void>((resume) => setTimeout(resume, 0));
+        if (context.signal.aborted || ports.clock.now() >= context.deadlineAt)
           return failed("aborted", `the run of ${job} was stopped`);
         const stepped = await step(context, progress);
         if (!stepped.ok) return stepped;

@@ -253,6 +253,30 @@ export const blob = Buffer.alloc(1);
     ]);
   });
 
+  test("an allowed vendored bundle's other runtime globals are still found", () => {
+    const dir = scratch({
+      "plugin/hub/storage/ops.ts": `import { sql } from "../../shared/vendor/orm.mjs";
+export const q = sql;
+`,
+      "plugin/shared/vendor/orm.mjs": `export const sql = () => Buffer.from("a");
+export const cwd = () => process.cwd();
+export const run = () => Bun.spawn(["x"]);
+export const dir = () => import.meta.dir;
+`,
+    });
+    expect(
+      found(dir, {
+        ...CORE,
+        roots: ["plugin/hub/storage/"],
+        vendored: ["plugin/shared/vendor/orm.mjs"],
+      }),
+    ).toEqual([
+      "plugin/shared/vendor/orm.mjs:2 portability:runtime-global",
+      "plugin/shared/vendor/orm.mjs:3 portability:runtime-global",
+      "plugin/shared/vendor/orm.mjs:4 portability:runtime-global",
+    ]);
+  });
+
   test("a dynamic import of a literal is followed; of a computed name, found", () => {
     expect(
       core(

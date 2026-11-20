@@ -37,7 +37,9 @@
  * migration from the schema into an empty folder, applies it and the
  * checked-in migrations each to a fresh in-memory database, and compares
  * the tables and indexes the two build, which finds an SQL file edited by
- * hand. Both modes format the JSON drizzle-kit writes with the
+ * hand. Each migration file also holds only schema statements, never one
+ * that inserts or changes rows, and `--check` finds a migration `origin/main`
+ * holds that the branch changed. Both modes format the JSON drizzle-kit writes with the
  * repository's pinned formatter, as a commit would.
  */
 import {
@@ -172,6 +174,60 @@ function schemaBuiltBy(folder: string): string[] {
   }
 }
 
+/** The statements a generated migration holds: schema changes, and the copy into a rebuilt table drizzle-kit writes. */
+const SCHEMA_STATEMENT =
+  /^(?:CREATE|ALTER|DROP|PRAGMA)\b|^INSERT INTO `__new_/i;
+
+/** Each statement of `folder`'s SQL files that changes data or runs anything but a schema change, named `shown/<file>: <start>`. */
+function dataStatements(folder: string, shown: string): string[] {
+  return files(folder)
+    .filter((path) => path.endsWith(".sql"))
+    .flatMap((path) =>
+      readFileSync(join(folder, path), "utf8")
+        .split("--> statement-breakpoint")
+        .map((statement) => statement.replace(/^(?:\s|--[^\n]*\n)+/, ""))
+        .filter(
+          (statement) => statement !== "" && !SCHEMA_STATEMENT.test(statement),
+        )
+        .map(
+          (statement) =>
+            `${shown}/${path} holds a statement that is not a schema change: ${statement.slice(0, 40).replace(/\s+/g, " ")}`,
+        ),
+    );
+}
+
+/**
+ * Each migration file `base` (a git revision) already holds that `folder`
+ * changes or removes: a migration a hub installed is never replayed, so an
+ * edit to one reaches only fresh databases. Empty when `base` cannot be read.
+ */
+export function editedHistory(
+  base: string,
+  folder = join(ROOT, MIGRATIONS),
+  shown = MIGRATIONS,
+): string[] {
+  const git = (args: string[]) =>
+    Bun.spawnSync(["git", ...args], { cwd: ROOT, stderr: "ignore" });
+  if (git(["rev-parse", "--verify", `${base}^{commit}`]).exitCode !== 0)
+    return [];
+  const listed = git(["ls-tree", "-r", "--name-only", base, "--", shown]);
+  if (listed.exitCode !== 0) return [];
+  return listed.stdout
+    .toString()
+    .split("\n")
+    .filter((path) => path.startsWith(`${shown}/`) && !path.includes("/meta/"))
+    .filter((path) => {
+      const old = git(["show", `${base}:${path}`]);
+      const now = join(folder, path.slice(shown.length + 1));
+      return (
+        old.exitCode === 0 &&
+        (!existsSync(now) ||
+          readFileSync(now, "utf8") !== old.stdout.toString())
+      );
+    })
+    .map((path) => `${path} changes a migration ${base} already holds`);
+}
+
 /**
  * What is wrong with the migrations in `folder` (the checked-in ones when
  * absent): each file a fresh generation adds or changes, named as
@@ -211,6 +267,7 @@ export function migrationProblems(
     } catch (error) {
       return [
         ...stale,
+        ...dataStatements(folder, shown),
         `${shown} cannot be applied to an empty database: ${error instanceof Error ? error.message : String(error)}`,
       ];
     }
@@ -228,7 +285,7 @@ export function migrationProblems(
             `${shown} does not build what the schema declares: ${entry}`,
         ),
     ];
-    return [...stale, ...drift];
+    return [...stale, ...dataStatements(folder, shown), ...drift];
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -247,7 +304,7 @@ function main(args: string[]): number {
       console.error(USAGE);
       return 2;
     }
-    const problems = migrationProblems();
+    const problems = [...migrationProblems(), ...editedHistory("origin/main")];
     for (const problem of problems) console.error(`${problem}; run ${COMMAND}`);
     return problems.length === 0 ? 0 : 1;
   }

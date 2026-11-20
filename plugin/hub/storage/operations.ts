@@ -188,9 +188,11 @@ function isJsonValue(value: unknown): value is JsonValue {
   if (value === null) return true;
   switch (typeof value) {
     case "boolean":
-    case "number":
     case "string":
       return true;
+    case "number":
+      // JSON text has no NaN or Infinity: they would be stored as null.
+      return Number.isFinite(value);
     case "object":
       return Array.isArray(value)
         ? value.every(isJsonValue)
@@ -288,6 +290,11 @@ const saveJobProgressImpl = implement(
       return refuse(
         saveJobProgress.name,
         "now and leaseMs must be whole milliseconds, leaseMs above 0",
+      );
+    if (!isJsonValue(progress))
+      return refuse(
+        saveJobProgress.name,
+        "progress must survive JSON unchanged: no NaN, Infinity or undefined",
       );
     const save = db
       .update(jobLeases)

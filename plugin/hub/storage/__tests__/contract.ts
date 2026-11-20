@@ -330,13 +330,20 @@ export function storageContract(
 
       test("an operation's own throw is a defect for the unit's boundary, not an unavailable store", async () => {
         const { storage } = store();
-        // JSON cannot hold a BigInt, so preparing the save throws a TypeError.
+        // A getter that throws, as a programming error would, while the
+        // progress is checked and serialized.
+        const progress = Object.defineProperty({}, "next", {
+          enumerable: true,
+          get() {
+            throw new TypeError("a bug");
+          },
+        });
         const input = {
           job: "sweep",
           holder: "a",
           now: T0,
           leaseMs: 1_000,
-          progress: 1n as unknown as number,
+          progress: progress as unknown as number,
         };
         await expect(
           storage.run(context(), DIRECTORY_PARTITION, saveJobProgress, input),

@@ -29,7 +29,8 @@
 //
 // A vendored bundle `ALLOWED_VENDORED` names is read like any other file,
 // its imports followed and held to the rules, except that its references to
-// a runtime's globals are not reported: a bundle of a library's portable
+// `Buffer` are not reported (any other runtime global, `Bun`, `process`,
+// `require` or an `import.meta` member, still is): a bundle of a library's portable
 // parts, checked to run on every platform first, whose code for features
 // the hub does not use refers to them. Any other vendored file it reaches
 // is held to every rule.
@@ -691,6 +692,14 @@ function findingsOf(
     }));
 }
 
+/** A vendored bundle's `Buffer` reference (also as `globalThis.Buffer`): the one global the allowance covers. */
+function isAllowedVendoredUse(use: Use): boolean {
+  return (
+    use.kind === "runtime-global" &&
+    /^`(?:[A-Za-z]+\.)?Buffer` is a runtime's own global/.test(use.problem)
+  );
+}
+
 export function portabilityFindings(
   root: string,
   scope: PortabilityScope,
@@ -722,7 +731,7 @@ export function portabilityFindings(
     if (typeof followed === "string") return { ok: false, reason: followed };
     for (const target of followed.targets) queue.push([...chain, target]);
     const uses = scope.vendored?.includes(file)
-      ? read.uses.filter((use) => use.kind !== "runtime-global")
+      ? read.uses.filter((use) => !isAllowedVendoredUse(use))
       : read.uses;
     findings.push(
       ...findingsOf(file, source, chain, [...uses, ...followed.uses]),

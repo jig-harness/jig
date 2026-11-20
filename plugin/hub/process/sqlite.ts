@@ -45,11 +45,29 @@ export interface HubSqlite {
 /** How many causes deep a classifier looks: Drizzle wraps a driver's error once. */
 const CAUSE_DEPTH = 4;
 
+/** The codes of a store that cannot answer now; any other code is a statement the code got wrong. */
+const UNAVAILABLE_CODES = [
+  "SQLITE_BUSY",
+  "SQLITE_LOCKED",
+  "SQLITE_IOERR",
+  "SQLITE_CANTOPEN",
+  "SQLITE_FULL",
+  "SQLITE_READONLY",
+  "SQLITE_CORRUPT",
+  "SQLITE_NOTADB",
+  "SQLITE_NOMEM",
+  "SQLITE_PROTOCOL",
+  "SQLITE_INTERRUPT",
+  "SQLITE_NOLFS",
+  "SQLITE_AUTH",
+] as const;
+
 /**
  * Classifies what `bun:sqlite`, or Drizzle wrapping it, threw, walking the
  * chain of causes by type and code, never by message: a `SQLiteError`
- * whose code is a constraint's (`SQLITE_CONSTRAINT…`) is `refused`, and any
- * other `SQLiteError` (busy, locked, unreadable) `unavailable`; the
+ * whose code is a constraint's (`SQLITE_CONSTRAINT…`) is `refused`, and one of the operational
+ * codes (busy, locked, unreadable, full) `unavailable`, and any other
+ * (invalid SQL, a missing table) a `defect`; the
  * `RangeError` `bun:sqlite` throws for a closed connection is
  * `unavailable` when `closed()` says this connection was closed. Anything
  * else is a `defect`.
@@ -64,11 +82,13 @@ export function classifyBunSqlite(
       depth <= CAUSE_DEPTH && link instanceof Error;
       depth++
     ) {
-      if (link instanceof SQLiteError)
-        return typeof link.code === "string" &&
-          link.code.startsWith("SQLITE_CONSTRAINT")
-          ? "refused"
-          : "unavailable";
+      if (link instanceof SQLiteError) {
+        const code = typeof link.code === "string" ? link.code : "";
+        if (code.startsWith("SQLITE_CONSTRAINT")) return "refused";
+        return UNAVAILABLE_CODES.some((prefix) => code.startsWith(prefix))
+          ? "unavailable"
+          : "defect";
+      }
       if (link instanceof RangeError && closed()) return "unavailable";
       link = link.cause;
     }

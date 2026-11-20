@@ -25,5 +25,5 @@ release: minor
 - The plugin vendors Drizzle (`drizzle-orm` 0.45.4, Apache License 2.0) under
   `plugin/shared/vendor/`, built from the pinned package and listed in
   `NOTICE`.
-- The records registry has a fifth medium, the hub, whose kinds are its
+- The records registry gains the hub medium, whose kinds are its
   tables ([RECORDS.md](../plugin/RECORDS.md#in-the-hub)).

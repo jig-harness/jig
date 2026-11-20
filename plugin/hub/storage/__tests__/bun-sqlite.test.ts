@@ -117,7 +117,23 @@ test("the bun:sqlite classifier reads errors by type and code", () => {
   const closed = classifyBunSqlite(() => true);
   expect(open(constraint)).toBe("refused");
   expect(open(new Error("wrapped", { cause: constraint }))).toBe("refused");
-  expect(open(new Error("wrapped", { cause: other }))).toBe("unavailable");
+  expect(open(other)).toBe("defect");
+  expect(open(new Error("wrapped", { cause: other }))).toBe("defect");
+  const holder = new Database(join(scratch, "busy.sqlite"), { create: true });
+  const waiter = new Database(join(scratch, "busy.sqlite"));
+  holder.run("CREATE TABLE b (x)");
+  holder.run("BEGIN EXCLUSIVE");
+  let busy: unknown;
+  try {
+    waiter.run("INSERT INTO b VALUES (1)");
+  } catch (error) {
+    busy = error;
+  } finally {
+    holder.close();
+    waiter.close();
+  }
+  expect((busy as SQLiteError).code).toBe("SQLITE_BUSY");
+  expect(open(new Error("wrapped", { cause: busy }))).toBe("unavailable");
   expect(open(new RangeError("Cannot use a closed database"))).toBe("defect");
   expect(closed(new RangeError("Cannot use a closed database"))).toBe(
     "unavailable",

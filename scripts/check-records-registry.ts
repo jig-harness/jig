@@ -43,6 +43,8 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { readRegularFile, repoFiles } from "../lib/files.ts";
+import { parseSync } from "oxc-parser";
+import { type AstNode, isNode } from "./check-throws.ts";
 import { sqlTables } from "./records-sql.ts";
 import {
   couldNotCheck,
@@ -132,18 +134,80 @@ function captures(source: string, pattern: RegExp): string[] {
   return [...source.matchAll(pattern)].map((m) => m[1] as string);
 }
 
-/** The tables a file declares through Drizzle's `sqliteTable`, each by its name or as unclassified. */
+/** Every node under `node`, with its parents' children visited in source order. */
+function visit(node: unknown, each: (node: AstNode) => void): void {
+  if (Array.isArray(node)) {
+    for (const child of node) visit(child, each);
+    return;
+  }
+  if (!isNode(node)) return;
+  each(node);
+  for (const value of Object.values(node)) visit(value, each);
+}
+
+/** The callee's name when it is `sqliteTable` or `<object>.sqliteTable`. */
+function isSqliteTableCall(callee: unknown): boolean {
+  if (!isNode(callee)) return false;
+  if (callee.type === "Identifier") return callee.name === "sqliteTable";
+  return (
+    callee.type === "MemberExpression" &&
+    callee.computed !== true &&
+    isNode(callee.property) &&
+    callee.property.name === "sqliteTable"
+  );
+}
+
+/**
+ * The tables a file declares through Drizzle's `sqliteTable`, each by its
+ * name or as unclassified: calls found in the parsed file, so text inside a
+ * string or a comment declares nothing. A file that does not parse is read
+ * by pattern instead, which can only over-claim a table, never miss one.
+ */
 function drizzleTables(
+  path: string,
   text: string,
 ): Array<{ name: string | null; line: number }> {
-  const lines = text.split("\n");
-  return [...text.matchAll(DRIZZLE_TABLE)].flatMap((m) => {
-    const at = m.index ?? 0;
-    const line = text.slice(0, at).split("\n").length;
-    if (COMMENT_LINE.test(lines[line - 1] ?? "")) return [];
-    const literal = TABLE_LITERAL.exec(text.slice(at + m[0].length));
-    return [{ name: literal?.[2] ?? null, line }];
+  if (!text.includes("sqliteTable")) return [];
+  const lineAt = (offset: number) => text.slice(0, offset).split("\n").length;
+  const parsed = /\.[cm]?[jt]sx?$/.test(path)
+    ? parseSync(path, text, { sourceType: "module" })
+    : null;
+  if (parsed === null || parsed.errors.length > 0) {
+    const lines = text.split("\n");
+    return [...text.matchAll(DRIZZLE_TABLE)].flatMap((m) => {
+      const at = m.index ?? 0;
+      const line = lineAt(at);
+      if (COMMENT_LINE.test(lines[line - 1] ?? "")) return [];
+      const literal = TABLE_LITERAL.exec(text.slice(at + m[0].length));
+      return [{ name: literal?.[2] ?? null, line }];
+    });
+  }
+  const found: Array<{ name: string | null; line: number }> = [];
+  visit(parsed.program, (node) => {
+    if (node.type !== "CallExpression" || !isSqliteTableCall(node.callee))
+      return;
+    const first = Array.isArray(node.arguments) ? node.arguments[0] : undefined;
+    const quasi =
+      isNode(first) &&
+      first.type === "TemplateLiteral" &&
+      Array.isArray(first.expressions) &&
+      first.expressions.length === 0 &&
+      Array.isArray(first.quasis) &&
+      isNode(first.quasis[0]) &&
+      isNode(first.quasis[0].value)
+        ? first.quasis[0].value.cooked
+        : null;
+    const name =
+      isNode(first) &&
+      first.type === "Literal" &&
+      typeof first.value === "string"
+        ? first.value
+        : typeof quasi === "string"
+          ? quasi
+          : null;
+    found.push({ name, line: lineAt(node.start) });
   });
+  return found;
 }
 
 /** The markers, families and tables one file names. */
@@ -167,7 +231,10 @@ export function namedIn(path: string, text: string): Named[] {
       })),
     ];
   });
-  for (const { name, line } of [...sqlTables(text), ...drizzleTables(text)]) {
+  for (const { name, line } of [
+    ...sqlTables(text),
+    ...drizzleTables(path, text),
+  ]) {
     named.push({
       what: "table",
       text: name ?? "unclassified table declaration",

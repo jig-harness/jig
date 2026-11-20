@@ -16,7 +16,7 @@
  * The periods the design sets are named here for the tables that keep
  * those things; a table's rule is declared when the table arrives.
  */
-import { ok, type Outcome } from "../../shared/outcome.ts";
+import { Defect, ok, type Outcome } from "../../shared/outcome.ts";
 import { type JobFailureCode, runJob } from "./jobs.ts";
 import { trimExpired } from "./operations.ts";
 import { DIRECTORY_PARTITION, parsePartition } from "./partitions.ts";
@@ -149,6 +149,13 @@ export function trimmingHandler(
   const rules = options.rules ?? RETENTION_RULES;
   const chunk = options.chunk ?? TRIM_CHUNK;
   return async (context, run) => {
+    // A negative or fractional retention makes a cutoff in the future, which
+    // deletes rows still held (an in-flight read's deadline among them).
+    for (const rule of rules)
+      if (!Number.isSafeInteger(rule.keepMs) || rule.keepMs < 0)
+        throw new Defect(
+          `the retention rule for ${rule.table}.${rule.column} keeps ${rule.keepMs} ms; it must be a whole, nonnegative number of milliseconds`,
+        );
     const listed = await options.partitions(context);
     if (!listed.ok) return listed;
     const partitions = [...listed.value].sort();
