@@ -97,6 +97,7 @@ import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
+import { standDownOnNewerClaim } from "./takeover-check.ts";
 import { currentIso, currentMs, parseMs } from "../../../../../shared/time.ts";
 import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 
@@ -491,35 +492,6 @@ function publish(
 ): void {
   const env: LedgerDriverEnv = { ...id, floor, claim };
   process.env[LEDGER_DRIVER_ENV] = JSON.stringify(env);
-}
-
-/**
- * At a round boundary and again just before a pass is dispatched:
- * `TAKEN_OVER_EXIT` when another clone's claim beats this driver's position.
- */
-export async function standDownOnNewerClaim(
-  pr: string,
-): Promise<number | null> {
-  const driver = ledgerDriverFromEnv();
-  if (driver === null || driver.floor === null) return null;
-  const snapshot = await readLedgerSnapshot(pr, driver.login);
-  // Unread, the claims are read again at the next check. This driver's
-  // ownership was established by a read at arm; a lapse here delays seeing a
-  // claim, and every ledger write re-checks the claims before it lands.
-  if (typeof snapshot === "string") return null;
-  const claim = newerClaim(
-    snapshot.claims,
-    driver.floor,
-    driver.clone,
-    driver.claim,
-  );
-  if (claim === null) return null;
-  console.error(
-    `drive.ts: taken over. Another clone (${claim.claim.actor}) claimed PR #${pr}'s drive in comment ${claim.id}, which beats this driver's own position (${driver.claim === null ? driver.floor : `its claim ${driver.claim.id}`}); stopping at this round boundary without another pass. That clone drives now.`,
-  );
-  // This driver no longer writes the ledger: it is the successor's.
-  delete process.env[LEDGER_DRIVER_ENV];
-  return TAKEN_OVER_EXIT;
 }
 
 /**

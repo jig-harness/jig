@@ -8,8 +8,9 @@
  * beside its code, and the lifecycle verbs (`runtime/verbs.ts`: install,
  * uninstall, upgrade, doctor, status, receipts, run) act on them through one
  * interface. Beside them it registers the commands that run and exit with
- * nothing to install, `jig ask` (`ask/component.ts`) and `jig send`
- * (`send/component.ts`). All of
+ * nothing to install, `jig ask` (`ask/component.ts`), `jig send`
+ * (`send/component.ts`), `jig budget` (`budget/component.ts`) and
+ * `jig hub` (`hub/component.ts`). All of
  * it is one Optique parser, so `jig --help`, `jig help <command>`,
  * `<command> --help` and `jig completion <shell>` come from the same
  * definitions that parse.
@@ -19,6 +20,7 @@ import { gcComponent } from "./gc/component.ts";
 import { dispatchComponent } from "./dispatch/component.ts";
 import { askComponent } from "./ask/component.ts";
 import { budgetComponent } from "./budget/component.ts";
+import { hubComponent } from "./hub/component.ts";
 import { sendComponent } from "./send/component.ts";
 import { runMain as dispatchRun } from "./dispatch/run.ts";
 import type { CommandComponent, Component } from "./runtime/component.ts";
@@ -37,6 +39,7 @@ const COMMANDS: readonly CommandComponent[] = [
   askComponent,
   sendComponent,
   budgetComponent,
+  hubComponent,
 ];
 
 const verbs = verbCommands(COMPONENTS.map((component) => component.name));

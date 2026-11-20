@@ -1,5 +1,5 @@
 import { definedFields } from "./defined-fields.ts";
-import { validatorCache } from "./outbound/cache.ts";
+import { revalidated, validatorCache } from "./outbound/cache.ts";
 /**
  * Cheap reads for polling loops.
  *
@@ -413,26 +413,29 @@ export function createConditionalCache({
       };
     }
     // `gh api` exits 1 on a 304 ("gh: HTTP 304"), so the status line — not the
-    // exit code — is what decides. Order matters: this must precede the 2xx
-    // check's `code === 0` requirement.
-    if (parsed.status === 304) {
-      if (cached === null)
-        return { ok: false, reason: `gh api ${path}: 304 with nothing cached` };
+    // exit code — is what decides; any other answer reads only on exit 0.
+    const read =
+      parsed.status === 304 || r.code === 0
+        ? revalidated(parsed.status, parsed.etag, parsed.body, cached)
+        : null;
+    if (read !== null && !read.ok)
+      return { ok: false, reason: `gh api ${path}: 304 with nothing cached` };
+    if (read?.ok === true && !read.value.changed) {
       // A reused entry is a used one: pruning removes the oldest first.
       if (file !== null && keepBody) touchFile(file);
-      return { ok: true, changed: false, body: cached.body };
+      return { ok: true, changed: false, body: read.value.body };
     }
-    if (parsed.status >= 200 && parsed.status < 300 && r.code === 0) {
+    if (read?.ok === true) {
       if (file !== null && !keepBody) {
         if (parsed.etag !== "") probeBaselines.set(file, parsed.etag);
         else probeBaselines.delete(file);
-      } else if (file !== null && dir !== null && parsed.etag !== "") {
+      } else if (file !== null && dir !== null && read.value.keep !== null) {
         validatorCache({
           get: readJsonFile,
           set: (key, value) => writeJsonFile(dir, key, value, limit),
-        }).set(file, request, parsed.etag, parsed.body);
+        }).set(file, request, read.value.keep.etag, read.value.keep.body);
       }
-      return { ok: true, changed: true, body: parsed.body };
+      return { ok: true, changed: true, body: read.value.body };
     }
     return {
       ok: false,
