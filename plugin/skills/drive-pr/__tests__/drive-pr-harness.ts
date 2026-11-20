@@ -998,6 +998,9 @@ export DRIVE_PR_STUB_GH_NESTED=1
   if [[ "\${is_api:-0}" -eq 0 ]]; then
     case "$command:$json_fields" in
       'pr view:number')
+        # The selector each resolution was asked for, so a test can tell a
+        # resolution of the named pull request from one of the current branch.
+        [[ -z "\${DRIVE_PR_FIXTURES:-}" ]] || printf '%s\\n' "\${selector:-}" >> "$DRIVE_PR_FIXTURES/number-selectors"
         # A selector is a pull request URL or a branch, which gh resolves to
         # the number; only the fixture's pull request (999) resolves.
         [[ "$has_positional" -eq 0 || "$selector" == 'feature-branch' || "$selector" =~ /pull/999$ ]] || { echo "gh: no pull request found for: $selector" >&2; exit 1; } ;;

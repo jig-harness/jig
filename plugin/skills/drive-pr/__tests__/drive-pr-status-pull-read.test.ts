@@ -89,6 +89,8 @@ describe("drive-status.ts reads the pull request conditionally", () => {
         pr,
       });
 
+      expect(lines(dir, "number-selectors")).toEqual([pr]);
+
       expectSpawnExit(
         { ...r, stdout: JSON.stringify(r.json) },
         4,
@@ -103,7 +105,10 @@ describe("drive-status.ts reads the pull request conditionally", () => {
       "https://github.com/other-org/example-repo/pull/999",
       "https://github.example.com/example-org/example-repo/pull/999",
     ]) {
-      const { dir, stateDir } = writeFixture({ threads: [] });
+      const { dir, stateDir } = writeFixture({
+        threads: [],
+        pullEtag: '"pull-1"',
+      });
       const r = await probeIn(dir, stateDir, HEAD, [], {
         reconcile: false,
         pr,
