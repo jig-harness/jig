@@ -148,7 +148,21 @@ export async function writeCiState(
 export async function readCheckRuns(
   head: string,
 ): Promise<Outcome<CheckRunLite[], ForgeReadCode>> {
-  return (await checkRunsRead(head)).runs;
+  const decoded = await ghReadJson(
+    [
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
+    ],
+    "gh api check-runs",
+    "the check-runs answer is not JSON",
+  );
+  if (!decoded.ok) return decoded;
+  const runs = parseCheckRuns(decoded.value);
+  if (runs === null)
+    return failed("malformed", "the check-runs answer has an invalid shape");
+  return ok(runs);
 }
 
 /** `readCheckRuns`' answer, and how the listing was cut short when it was. */
