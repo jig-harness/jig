@@ -161,3 +161,22 @@ test("a tick with a credential leaves the line as it read it", () => {
     keepTrackerPart(fresh, before, { runId: "next", systems: new Map() }),
   ).toBe(fresh);
 });
+
+test("a repository the system's incident does not name keeps its fresh tracker part", () => {
+  const before = line("read", READ, {
+    needs: [need("lin", "ENG-1", null)],
+    queue: [card("lin", "ENG-2", null)],
+  });
+  const fresh = line("keyless", KEYLESS, {
+    needs: [need("lin", "ENG-7", null)],
+    queue: [card("lin", "ENG-8", null)],
+  });
+  const kept = keepTrackerPart(fresh, before, {
+    runId: "keyless",
+    systems: new Map([["linear", "no Linear key configured"]]),
+    only: new Map([["linear", new Set(["other"])]]),
+  });
+  expect(kept.needs.map((n) => n.target)).toEqual(["ENG-7"]);
+  expect(kept.queue.map((q) => q.target)).toEqual(["ENG-8"]);
+  expect(kept.repos.find((r) => r.slug === "lin")?.trackerKept).toBeUndefined();
+});

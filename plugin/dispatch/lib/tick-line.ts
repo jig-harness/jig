@@ -48,7 +48,7 @@ import {
 } from "./line-merge.ts";
 import { hostTimeZone } from "./host-time.ts";
 import { keepTrackerPart } from "./line-keyless.ts";
-import { keylessSystems } from "./no-credential.ts";
+import { keylessRepos, keylessSystems } from "./no-credential.ts";
 import { exportLog } from "./log-export.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { SessionsReport } from "./runtime/port.ts";
@@ -474,7 +474,11 @@ function writeKept(
           before,
         ),
         before,
-        { runId: receipt.runId, systems: keylessSystems(receipt) },
+        {
+          runId: receipt.runId,
+          systems: keylessSystems(receipt),
+          only: keylessRepos(receipt),
+        },
       );
       if (receiptText === null && storage !== undefined) {
         const remaining = line.needs.filter(

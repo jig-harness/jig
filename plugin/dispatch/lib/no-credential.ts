@@ -91,12 +91,17 @@ export function settleNoCredential(receipt: TickReceipt): void {
   const active = new Set(missingCredentials().map((m) => m.system));
   receipt.noCredential = missing.map((m) => {
     // A later call's success recovers the system only when no repository's reading was cut by the missing credential: a cut reading was never retried.
-    let cutAny = false;
-    const repos = receipt.repos.flatMap((report) => {
+    const tracked: string[] = [];
+    const cut: string[] = [];
+    for (const report of receipt.repos) {
       const settled = settleReport(report, m);
-      if (settled.cut) cutAny = true;
-      return settled.tracked ? [report.slug ?? report.path] : [];
-    });
+      const name = report.slug ?? report.path;
+      if (settled.tracked) tracked.push(name);
+      if (settled.cut) cut.push(name);
+    }
+    const cutAny = cut.length > 0;
+    // A later credentialed call reads the repositories it reached: the incident belongs to the readings it cut, and only those keep their previous part.
+    const repos = active.has(m.system) || !cutAny ? tracked : cut;
     console.error(
       `jig dispatch: ${missingCredentialMessage(m)}; the tick asked ${issueService(m.system)} nothing more, and the line keeps the last reading that had a credential`,
     );
@@ -125,5 +130,16 @@ export function keylessSystems(receipt: TickReceipt): Map<string, string> {
     (receipt.noCredential ?? [])
       .filter((n) => n.recovered !== true)
       .map((n) => [n.system, n.reason]),
+  );
+}
+
+/** The repositories whose tracker part the line keeps for each keyless system, by slug (by path when the forge did not name one). */
+export function keylessRepos(
+  receipt: TickReceipt,
+): Map<string, ReadonlySet<string>> {
+  return new Map(
+    (receipt.noCredential ?? [])
+      .filter((n) => n.recovered !== true)
+      .map((n) => [n.system, new Set(n.repos)]),
   );
 }

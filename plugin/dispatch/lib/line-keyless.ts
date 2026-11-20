@@ -39,7 +39,12 @@ function lastReading(
 export function keepTrackerPart(
   line: LineSnapshot,
   before: LineSnapshot | null,
-  tick: { runId: string; systems: ReadonlyMap<string, string> },
+  tick: {
+    runId: string;
+    systems: ReadonlyMap<string, string>;
+    /** Per system, the only repositories (by slug) that keep their part; a system it omits keeps every one. */
+    only?: ReadonlyMap<string, ReadonlySet<string>>;
+  },
 ): LineSnapshot {
   if (tick.systems.size === 0) return line;
   const keyless = new Map<string, string>();
@@ -50,6 +55,8 @@ export function keepTrackerPart(
       r.tracker == null ? undefined : tick.systems.get(r.tracker.adapter);
     if (reason === undefined || r.slug === null || r.runId !== tick.runId)
       continue;
+    const only = tick.only?.get(r.tracker?.adapter ?? "");
+    if (only !== undefined && !only.has(r.slug)) continue;
     keyless.set(r.slug, reason);
     const was = before?.repos.find(
       (b) => b.path === r.path && retainedSlug(b) === r.slug,
