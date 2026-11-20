@@ -988,11 +988,13 @@ async function main(): Promise<number> {
       `${reflectionDue ? "[REFLECT DUE] " : ""}${report.state}: ${report.reason}`,
     );
     if (!json) {
-      const fh = fleetHealthLine(
-        Number.parseInt(pr, 10),
-        readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs()),
-      );
-      if (fh !== null) console.error(fh);
+      if (readAdvisories) {
+        const fh = fleetHealthLine(
+          Number.parseInt(pr, 10),
+          readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs()),
+        );
+        if (fh !== null) console.error(fh);
+      }
     }
     // On stderr with the rest of the round's narration, so the non-`--json`
     // caller — whose stdout is the state name and nothing else — sees it too.

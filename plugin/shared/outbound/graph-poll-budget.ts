@@ -1,7 +1,7 @@
 import type { BudgetWindow } from "./budget.ts";
 
 /** Kept apart from the transport's authoritative GraphQL window. */
-export const GRAPHQL_POLL_FLOOR = "graphql-poll-floor";
+const GRAPHQL_POLL_FLOOR = "graphql-poll-floor";
 const FLOOR_PREFIX = `${GRAPHQL_POLL_FLOOR}:`;
 
 function live(
