@@ -255,6 +255,57 @@ export function validationDemand(
   return { atLock: lockRuns.length, toArrive };
 }
 
+interface SlotQueue {
+  concurrency: number;
+  runMs: number;
+  activeRuns: number;
+  residualMs: number;
+  toArrive: number;
+  waitingRuns: number;
+}
+
+// Preserve each slot's release time. In particular, a predecessor can take
+// an idle slot while another waits for an occupied slot; treating both as
+// one residual wave would let the candidate acquire too early.
+// A measured concurrency may be fractional (the midpoint of two observed
+// contention levels); the caller keeps the aggregate estimate for it, since
+// a slot simulation requires physical, whole slots.
+function slotRequired(queue: SlotQueue): number {
+  const { concurrency, runMs, activeRuns, residualMs } = queue;
+  // `atLock` contains both holders and queued runs. Model the queued runs
+  // too: when it exceeds the number of slots, omitting them lets a later
+  // candidate take a holder's release before the runs already waiting do.
+  const holdingRuns = Math.min(activeRuns, concurrency);
+  const queuedAtLock = activeRuns - holdingRuns;
+  const releases = Array.from({ length: concurrency }, (_, index) =>
+    index < holdingRuns ? residualMs : 0,
+  );
+  const acquire = () => {
+    releases.sort((left, right) => left - right);
+    const at = releases[0] ?? 0;
+    releases[0] = at + runMs;
+    return at;
+  };
+  for (let index = 0; index < queuedAtLock; index++) acquire();
+  for (let index = 0; index < queue.toArrive; index++) acquire();
+  const firstAcquisition = queue.waitingRuns > 0 ? acquire() : 0;
+  return (concurrency * firstAcquisition) / runMs;
+}
+
+function fillOf(input: {
+  required: number;
+  capacity: number;
+  lastRequestMs: number;
+  passLimitMs: number;
+  timeToValidationMs: number;
+}): number | null {
+  const { required, capacity, lastRequestMs, passLimitMs } = input;
+  if (passLimitMs <= input.timeToValidationMs) return null;
+  if (required > 0 && lastRequestMs > passLimitMs) return null;
+  if (required === 0) return 0;
+  return capacity > 0 ? required / capacity : null;
+}
+
 export function forecastValidation(
   measured: ValidationMeasurements,
   kind: ValidationKind,
@@ -293,33 +344,16 @@ export function forecastValidation(
   const requiredWithoutActiveRuns =
     concurrency *
     Math.ceil(Math.max(0, queuedRuns - concurrency) / concurrency);
-  let required = requiredWithoutActiveRuns;
-  // Preserve each slot's release time. In particular, a predecessor can take
-  // an idle slot while another waits for an occupied slot; treating both as
-  // one residual wave would let the candidate acquire too early.
-  // A measured concurrency may be fractional (the midpoint of two observed
-  // contention levels). The aggregate calculation above preserves that
-  // estimate; a slot simulation requires physical, whole slots.
-  if (Number.isInteger(concurrency)) {
-    // `atLock` contains both holders and queued runs. Model the queued runs
-    // too: when it exceeds the number of slots, omitting them lets a later
-    // candidate take a holder's release before the runs already waiting do.
-    const holdingRuns = Math.min(activeRuns, concurrency);
-    const queuedAtLock = activeRuns - holdingRuns;
-    const releases = Array.from({ length: concurrency }, (_, index) =>
-      index < holdingRuns ? residualMs : 0,
-    );
-    const acquire = () => {
-      releases.sort((left, right) => left - right);
-      const at = releases[0] ?? 0;
-      releases[0] = at + runMs;
-      return at;
-    };
-    for (let index = 0; index < queuedAtLock; index++) acquire();
-    for (let index = 0; index < toArrive; index++) acquire();
-    const firstAcquisition = waitingRuns > 0 ? acquire() : 0;
-    required = (concurrency * firstAcquisition) / runMs;
-  }
+  const required = Number.isInteger(concurrency)
+    ? slotRequired({
+        concurrency,
+        runMs,
+        activeRuns,
+        residualMs,
+        toArrive,
+        waitingRuns,
+      })
+    : requiredWithoutActiveRuns;
   // The lock timeout bounds each acquisition separately, but the pass's runs
   // are sequential and the pass deadline bounds the last one: it asks for the
   // lock a run apart from the one before it, after the first acquisition.
@@ -334,15 +368,13 @@ export function forecastValidation(
     capacity,
     ownRuns,
     required,
-    fill:
-      passLimitMs <= timeToValidationMs ||
-      (required > 0 && lastRequestMs > passLimitMs)
-        ? null
-        : required === 0
-          ? 0
-          : capacity > 0
-            ? required / capacity
-            : null,
+    fill: fillOf({
+      required,
+      capacity,
+      lastRequestMs,
+      passLimitMs,
+      timeToValidationMs,
+    }),
     atLock,
     toArrive,
     waitWindowMs,
