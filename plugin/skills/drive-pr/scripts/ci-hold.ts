@@ -35,6 +35,7 @@ import {
   type LabelTransition,
   mutationProven,
   ownsHeldTransition,
+  type PrSnapshot,
   reportsConflict,
   requiredCiStartedAt,
   requirementsWithoutRun,
@@ -111,6 +112,29 @@ function unread(failure: HoldReadFailure): number {
 
 const latestOf = (values: readonly LabelTransition[]): LabelTransition | null =>
   values.at(-1) ?? null;
+
+/** A label mutation may proceed only while the open pull request still has this head. */
+const isOpenOnHead = (live: PrSnapshot, head: string): boolean =>
+  live.state === "OPEN" && live.head === head;
+
+/** The live hold must match the transition a pending label mutation expects. */
+const mayMutateHold = (
+  live: PrSnapshot,
+  head: string,
+  held: boolean,
+): boolean => isOpenOnHead(live, head) && live.held === held;
+
+type BeforeMutation = {
+  login: string;
+  live: PrSnapshot;
+  timeline: LabelTransition[];
+};
+
+/** Read the shared mutation fence, reporting a retryable failed read once. */
+async function beforeMutation(pr: string): Promise<BeforeMutation | null> {
+  const before = await readBeforeMutation(pr, policy.holdLabel);
+  return before.ok ? before.value : (unread(before.failure), null);
+}
 
 /** Where the transitions after `previousId` begin, or null when it is not in the timeline. */
 function firstIndexAfter(
@@ -472,13 +496,11 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   // Refresh immediately before the mutation while the PR-wide mutation fence
   // is held. A same-login human action through another client remains an API
   // limitation; any observable intervening transition is refused below.
-  const before = await readBeforeMutation(pr, policy.holdLabel);
-  if (!before.ok) return unread(before.failure);
-  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
+  const before = await beforeMutation(pr);
+  if (before === null) return 4;
+  const { login, live: beforeLive, timeline: beforeTimeline } = before;
   if (
-    beforeLive.state !== "OPEN" ||
-    beforeLive.head !== head ||
-    beforeLive.held ||
+    !mayMutateHold(beforeLive, head, false) ||
     latestOf(beforeTimeline)?.id !== latest?.id
   )
     return 4;
@@ -628,13 +650,11 @@ async function release(
   }
   if (persisted === null || persisted.phase !== "held") return 4;
 
-  const before = await readBeforeMutation(pr, policy.holdLabel);
-  if (!before.ok) return unread(before.failure);
-  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
+  const before = await beforeMutation(pr);
+  if (before === null) return 4;
+  const { login, live: beforeLive, timeline: beforeTimeline } = before;
   if (
-    beforeLive.state !== "OPEN" ||
-    beforeLive.head !== head ||
-    !beforeLive.held ||
+    !mayMutateHold(beforeLive, head, true) ||
     (expectedTransition !== undefined &&
       latestOf(beforeTimeline)?.id !== expectedTransition) ||
     !ownsHeldTransition(persisted, latestOf(beforeTimeline))
