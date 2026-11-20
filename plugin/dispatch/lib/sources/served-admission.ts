@@ -18,7 +18,7 @@ export interface Candidate extends QueueItem {
   factory?: boolean;
   by: string;
   ancestor?: string | undefined;
-  /** Every epic above the item, outermost to nearest. */
+  /** The epics the late hold check reads (`WantedItem.ancestors`). */
   ancestors?: string[] | undefined;
   /** The relations and parent the queue read carried for the issue; absent where it carried no parent. */
   queueRead?: Pick<QueueIssue, "relations" | "parent">;

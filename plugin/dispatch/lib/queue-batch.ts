@@ -27,7 +27,7 @@ export interface BatchItem {
   key: string;
   person: string;
   ancestor?: string;
-  /** Every epic above the member, outermost to nearest. */
+  /** The epics the late hold check reads for the member (`WantedItem.ancestors`). */
   ancestors?: string[];
 }
 

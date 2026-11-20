@@ -49,7 +49,11 @@ function scratch(): string {
 }
 
 /** Root epic #1 → nested epic #2 → the leaves under it; `direct` are assigned leaves outside the epic. */
-function nested(leaves: PoolIssue[], direct: PoolIssue[] = []) {
+function nested(
+  leaves: PoolIssue[],
+  direct: PoolIssue[] = [],
+  readsParents = true,
+) {
   const roots = [issue("#1", ["epic"]), ...direct];
   const children: Record<string, PoolIssue[]> = {
     "#1": [issue("#2", ["epic"], null)],
@@ -81,7 +85,10 @@ function nested(leaves: PoolIssue[], direct: PoolIssue[] = []) {
     getIssue: async (k: string) => ({
       identifier: k,
       description: "",
-      parent: parents[k] === undefined ? null : { identifier: parents[k] },
+      parent:
+        !readsParents || parents[k] === undefined
+          ? null
+          : { identifier: parents[k] },
     }),
   } as unknown as Tracker;
   return { tracker, cache };
@@ -168,6 +175,17 @@ describe("the late pickup-hold check", () => {
     expect(record.ancestors).toEqual(["#1", "#2"]);
     const root = scratch();
     expect(personPickupBlock(record, root)).toBeNull();
+    hold("#2", root);
+    expect(personPickupBlock(record, root)).toStartWith(
+      "#2 is held by operator",
+    );
+  });
+
+  it("carries the chain the walk passed through when the tracker reads no parent", async () => {
+    const actions = await tick(nested([issue("#3", [], null)], [], false));
+    const record = recordOf(actions.find((a) => a.target === "#3") as Action);
+    expect(record.ancestors).toEqual(["#1", "#2"]);
+    const root = scratch();
     hold("#2", root);
     expect(personPickupBlock(record, root)).toStartWith(
       "#2 is held by operator",
