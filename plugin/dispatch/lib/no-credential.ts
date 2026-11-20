@@ -24,7 +24,7 @@ import {
 import {
   type MissingCredential,
   missingCredentialMessage,
-  missingCredentials,
+  notedMissingCredentials,
 } from "../../shared/outbound/missing-credential.ts";
 import { issueService } from "../../shared/tracker-product.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -77,7 +77,7 @@ function settleReport(report: RepoReport, missing: MissingCredential): boolean {
  * repository's report, and say it once on the tick's log.
  */
 export function settleNoCredential(receipt: TickReceipt): void {
-  const missing = missingCredentials();
+  const missing = notedMissingCredentials();
   if (missing.length === 0) return;
   receipt.noCredential = missing.map((m) => {
     const repos = receipt.repos.flatMap((report) =>

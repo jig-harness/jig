@@ -43,11 +43,19 @@ export function keepTrackerPart(
 ): LineSnapshot {
   if (tick.systems.size === 0) return line;
   const keyless = new Map<string, string>();
+  // Absent: the tracker the repository has now is not the one the line before read, so nothing carries over.
+  const absent = new Set<string>();
   for (const r of line.repos) {
     const reason =
       r.tracker == null ? undefined : tick.systems.get(r.tracker.adapter);
-    if (reason !== undefined && r.slug !== null && r.runId === tick.runId)
-      keyless.set(r.slug, reason);
+    if (reason === undefined || r.slug === null || r.runId !== tick.runId)
+      continue;
+    keyless.set(r.slug, reason);
+    const was = before?.repos.find(
+      (b) => b.path === r.path && retainedSlug(b) === r.slug,
+    );
+    if (was?.tracker != null && was.tracker.adapter !== r.tracker?.adapter)
+      absent.add(r.slug);
   }
   if (keyless.size === 0) return line;
   const swap = <T extends { repo: string }>(
@@ -56,7 +64,9 @@ export function keepTrackerPart(
     tracked: (x: T) => boolean,
   ): T[] => [
     ...now.filter((x) => !(keyless.has(x.repo) && tracked(x))),
-    ...kept.filter((x) => keyless.has(x.repo) && tracked(x)),
+    ...kept.filter(
+      (x) => keyless.has(x.repo) && !absent.has(x.repo) && tracked(x),
+    ),
   ];
   const prior = before ?? { ...line, needs: [], queue: [], carried: [] };
   return {
@@ -71,7 +81,9 @@ export function keepTrackerPart(
         (b) => b.path === r.path && retainedSlug(b) === r.slug,
       );
       const from =
-        before === null ? { readAt: null } : lastReading(before, entry);
+        before === null || absent.has(r.slug as string)
+          ? { readAt: null }
+          : lastReading(before, entry);
       return { ...r, trackerKept: { ...from, reason } };
     }),
   };

@@ -94,6 +94,8 @@ export const NOTE_HOLDS_MS = 5 * 60_000;
 /** Each identity's state: noted as lacking a credential, or answered by a call that had one, with when. */
 const noted = new Map<string, { missing: MissingCredential; atMs: number }>();
 const answered = new Map<string, number>();
+/** What was noted and then recovered from, kept for the receipt but never refusing a call. */
+const history = new Map<string, MissingCredential>();
 /** The first call through an identity whose credential is not known yet, which the calls that come meanwhile wait for. */
 const first = new Map<string, Promise<void>>();
 
@@ -126,13 +128,15 @@ export function missingCredentialOf(
  * has a credential there, one call goes out at a time: the first, which
  * the others wait for; then each is sent, or refused with `refuse` once a
  * call noted the credential missing. A call whose caller cancelled it
- * (`cancelled`) says nothing of the credential.
+ * (`cancelled`) says nothing of the credential, and a caller whose `signal`
+ * aborts stops waiting for the first call.
  */
 export async function throughCredential<T>(
   identity: string,
   send: () => Promise<T>,
   refuse: (missing: MissingCredential) => Promise<T>,
   cancelled: () => boolean = () => false,
+  signal?: AbortSignal,
 ): Promise<T> {
   for (;;) {
     const missing = missingCredentialOf(identity);
@@ -141,30 +145,62 @@ export async function throughCredential<T>(
     if (at !== undefined && holds(at)) return send();
     const out = first.get(identity);
     if (out === undefined) break;
-    await out.catch(() => undefined);
+    // A caller that cancels stops waiting and sends on its own, so its call fails at once by its own signal.
+    if (signal?.aborted === true) return send();
+    await Promise.race([out.catch(() => undefined), aborted(signal)]);
   }
   const done = Promise.withResolvers<void>();
   first.set(identity, done.promise);
   try {
-    return await send();
-  } finally {
+    const result = await send();
     if (missingCredentialOf(identity) === undefined && !cancelled())
-      answered.set(identity, currentMs());
+      recovered(identity);
+    return result;
+  } finally {
     first.delete(identity);
     done.resolve();
   }
 }
 
-/** What the process noted it lacks since it last forgot, one entry per system, in the order noted, held or not. */
+/** Resolves when `signal` aborts; never when there is none. */
+function aborted(signal: AbortSignal | undefined): Promise<void> {
+  if (signal === undefined) return new Promise(() => undefined);
+  return new Promise((resolve) =>
+    signal.addEventListener("abort", () => resolve(), { once: true }),
+  );
+}
+
+/** A call went out and was answered with a credential: the identity is known to have one, and an expired note no longer counts as active. */
+function recovered(identity: string): void {
+  answered.set(identity, currentMs());
+  const note = noted.get(identity);
+  if (note === undefined) return;
+  history.set(identity, note.missing);
+  noted.delete(identity);
+}
+
+/** What the process lacks now, one entry per system: the notes no later call recovered from, held or expired. A preflight refuses on these. */
 export function missingCredentials(): MissingCredential[] {
-  const bySystem = new Map<string, MissingCredential>();
-  for (const { missing } of noted.values())
-    if (!bySystem.has(missing.system)) bySystem.set(missing.system, missing);
-  return [...bySystem.values()];
+  return bySystem([...noted.values()].map((n) => n.missing));
+}
+
+/** What the process noted it lacked since it last forgot, one entry per system, recovered from or not: what a tick's receipt lists. */
+export function notedMissingCredentials(): MissingCredential[] {
+  return bySystem([
+    ...history.values(),
+    ...[...noted.values()].map((n) => n.missing),
+  ]);
+}
+
+function bySystem(all: readonly MissingCredential[]): MissingCredential[] {
+  const out = new Map<string, MissingCredential>();
+  for (const m of all) if (!out.has(m.system)) out.set(m.system, m);
+  return [...out.values()];
 }
 
 /** Forget what was noted: a new run asks again. */
 export function forgetMissingCredentials(): void {
   noted.clear();
   answered.clear();
+  history.clear();
 }

@@ -701,8 +701,8 @@ function readRepos(receipt: TickReceipt, context: TickContext): string[] {
  */
 function heldReceipt(started: StartedTick, heldBy: string): void {
   const { options } = started.context;
-  const { upgrade } = started.receipt;
-  if (upgrade === undefined) return;
+  const { upgrade, startedBy } = started.receipt;
+  if (upgrade === undefined && startedBy === undefined) return;
   const now = options.now ?? Temporal.Now.instant();
   writeReceipt({
     version: 1,
@@ -714,7 +714,8 @@ function heldReceipt(started: StartedTick, heldBy: string): void {
     exitStatus: 3,
     lockHeldBy: heldBy,
     repos: [],
-    upgrade,
+    ...(startedBy === undefined ? {} : { startedBy }),
+    ...(upgrade === undefined ? {} : { upgrade }),
   });
 }
 

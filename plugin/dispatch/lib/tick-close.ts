@@ -1,4 +1,4 @@
-/** Two of the tick's closing notes on its receipt: the reflection route's work, and the optional reads a low forge budget skipped. */
+/** The tick's closing notes on its receipt: the reflection route's work, and the optional reads a low forge budget skipped. */
 import { currentMs } from "../../shared/time.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { timeLeftMs } from "./actions/launch.ts";

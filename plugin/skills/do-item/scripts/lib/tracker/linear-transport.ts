@@ -733,6 +733,7 @@ export function cliTransport(
           ),
         (keyless) => refusedKeyless(keyless, query),
         () => signal?.aborted === true,
+        signal,
       ),
     credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
     false,

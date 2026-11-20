@@ -149,6 +149,10 @@ export function mergeLine(
           ...(before?.readyOmitted === undefined
             ? {}
             : { readyOmitted: before.readyOmitted }),
+          // The tracker part it retains is the one `trackerKept` dates.
+          ...(before?.trackerKept === undefined
+            ? {}
+            : { trackerKept: before.trackerKept }),
           triedAt: now.triedAt ?? fresh.startedAt,
         },
       ];

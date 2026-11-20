@@ -12,8 +12,16 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { cliTransport } from "../../skills/do-item/scripts/lib/tracker/linear-transport.ts";
 import { credentialKey } from "../outbound/budget.ts";
-import { recordCall, withCaller, withLedgerPath } from "../outbound/ledger.ts";
-import { forgetMissingCredentials } from "../outbound/missing-credential.ts";
+import {
+  ledgerReport,
+  recordCall,
+  withCaller,
+  withLedgerPath,
+} from "../outbound/ledger.ts";
+import {
+  forgetMissingCredentials,
+  NO_CREDENTIAL,
+} from "../outbound/missing-credential.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -75,6 +83,15 @@ process.exit(1);
   const client = credentialKey("linear", `cli:${bin}`);
   for (const row of [...answer.operations, ...answer.callers]) {
     expect(row.credential).not.toBe(client);
+    expect(row.requests).toBe(0);
+    expect(row.cost).toBe(0);
+    expect(row.unknownCost).toBe(0);
+  }
+  // The raw rows keep what the report's groups leave out: the keyless rows spent nothing.
+  const raw = ledgerReport({ path, since: 0, until: Date.now() + 3_600_000 });
+  const keyless = raw.rows.filter((r) => r.credential === NO_CREDENTIAL);
+  expect(keyless.length).toBeGreaterThan(0);
+  for (const row of keyless) {
     expect(row.requests).toBe(0);
     expect(row.cost).toBe(0);
     expect(row.unknownCost).toBe(0);

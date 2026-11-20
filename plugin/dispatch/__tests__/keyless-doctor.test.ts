@@ -57,7 +57,7 @@ function receipt(
           path: `/w/${slug}`,
           slug,
           actions: [],
-          records: [],
+          records: [{ record: "tracker", source: "linear team", ok: true }],
           unplaced: [],
           followupSince: null,
         }) as never,
@@ -165,4 +165,35 @@ test("warns rather than fails once the newest tick since read the repository wit
   expect(check.status).toBe("warn");
   expect(check.detail).toContain("no Linear key configured");
   expect(check.detail).toContain(`tick:${keyless}`);
+});
+
+test("fails when one keyless tick's receipt is unreadable beside a recovered repository", () => {
+  const { root, ledger } = fixture();
+  const lost = id(NOW - 3 * HOUR, "cccccccc");
+  const keyless = id(NOW - 2 * HOUR, "aaaaaaaa");
+  const keyed = id(NOW - HOUR, "bbbbbbbb");
+  writeReceipt(receipt(keyless, NOW - 2 * HOUR, true), root);
+  writeReceipt(
+    receipt(keyed, NOW - HOUR, false, ["example-org/tracked"]),
+    root,
+  );
+  call(ledger, lost);
+  call(ledger, keyless);
+  call(ledger, keyed, "linear:0123456789abcdef");
+  const check = keylessCheck({ root, ledgerPath: ledger, nowMs: NOW });
+  expect(check.status).toBe("fail");
+  expect(check.detail).toContain(`tick:${lost}`);
+});
+
+test("fails on a receipt whose noCredential is not a list", () => {
+  const { root, ledger } = fixture();
+  const bad = id(NOW - HOUR, "dddddddd");
+  writeReceipt(
+    { ...receipt(bad, NOW - HOUR, false), noCredential: {} } as never,
+    root,
+  );
+  call(ledger, bad);
+  const check = keylessCheck({ root, ledgerPath: ledger, nowMs: NOW });
+  expect(check.status).toBe("fail");
+  expect(check.detail).toContain("not a list");
 });

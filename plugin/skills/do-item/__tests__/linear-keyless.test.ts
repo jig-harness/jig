@@ -5,7 +5,14 @@
  * client's own words, never an answer's data, say so.
  */
 import { afterEach, expect, setSystemTime, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
@@ -76,19 +83,48 @@ test("concurrent calls ask a logged-out client once, and every one fails as no c
 });
 
 test("a logged-in client is asked concurrently once its first answer came", async () => {
-  const fake = client(`console.log(JSON.stringify({ data: { ok: true } }));`);
-  const transport = cliTransport(fake.bin);
+  // Each call holds the client open until every call has started: serialized calls never all start, so the wait times out.
+  const root = mkdtempSync(join(tmpdir(), "linear-keyless-"));
+  roots.push(root);
+  const bin = join(root, "linear");
+  const dir = join(root, "running");
+  mkdirSync(dir);
+  writeFakeProgram(
+    bin,
+    `#!/usr/bin/env bun
+const fs = require("node:fs");
+const dir = ${JSON.stringify(dir)};
+fs.writeFileSync(dir + "/" + process.pid, "");
+const want = Number(fs.readFileSync(dir + "/../want", "utf8"));
+const until = Date.now() + 5000;
+let peak = fs.readdirSync(dir).length;
+while (peak < want && Date.now() < until) {
+  await Bun.sleep(20);
+  peak = fs.readdirSync(dir).length;
+}
+fs.appendFileSync(dir + "/../peak.log", peak + "\\n");
+console.log(JSON.stringify({ data: { ok: true } }));
+`,
+  );
+  const transport = cliTransport(bin);
   await withLedgerWriter(
     () => undefined,
     async () => {
+      writeFileSync(join(root, "want"), "1");
       await transport("query A { a }", {});
+      for (const f of readdirSync(dir)) rmSync(join(dir, f));
+      writeFileSync(join(root, "want"), "2");
       await Promise.all([
         transport("query B { b }", {}),
         transport("query C { c }", {}),
       ]);
     },
   );
-  expect(fake.calls()).toBe(3);
+  const peaks = readFileSync(join(root, "peak.log"), "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map(Number);
+  expect(Math.max(...peaks.slice(1))).toBeGreaterThan(1);
 });
 
 test("an answer's data that reads like the client's words does not mark the process keyless", async () => {

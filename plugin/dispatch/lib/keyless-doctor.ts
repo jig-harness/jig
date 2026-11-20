@@ -17,6 +17,7 @@ import type { DoctorCheck } from "../../runtime/component.ts";
 import { NO_CREDENTIAL } from "../../shared/outbound/missing-credential.ts";
 import { type LedgerRow, ledgerReport } from "../../shared/outbound/ledger.ts";
 import { readReceipt, stateRoot, type TickReceipt } from "../receipts.ts";
+import type { NoCredential } from "./no-credential.ts";
 
 const ID = "dispatch:tracker-credential";
 const WINDOW_MS = 24 * 3_600_000;
@@ -71,9 +72,59 @@ function receiptOf(root: string, runId: string): TickReceipt | null {
   );
 }
 
-/** Whether `receipt` read the repository `repo` (a slug, or a path where the forge named none). */
-const readRepo = (receipt: TickReceipt | null, repo: string): boolean =>
-  receipt?.repos.some((r) => (r.slug ?? r.path) === repo) === true;
+/** The `noCredential` entries `receipt` carries, or why they cannot be trusted: a field that is not a list, or an entry that is not a system's missing credential with its repositories. */
+function keylessEntries(
+  receipt: TickReceipt | null,
+): { entries: NoCredential[] } | { why: string } {
+  if (receipt === null) return { why: "its receipt is missing or unreadable" };
+  const field: unknown = receipt.noCredential;
+  if (field === undefined) return { entries: [] };
+  if (!Array.isArray(field)) return { why: "its noCredential is not a list" };
+  for (const e of field as unknown[]) {
+    const m = e as Partial<NoCredential> | null;
+    if (
+      m === null ||
+      typeof m !== "object" ||
+      typeof m.system !== "string" ||
+      typeof m.reason !== "string" ||
+      typeof m.remedy !== "string" ||
+      !Array.isArray(m.repos) ||
+      !m.repos.every((r) => typeof r === "string")
+    )
+      return { why: "an entry of its noCredential is malformed" };
+  }
+  return { entries: field as NoCredential[] };
+}
+
+/**
+ * Whether `receipt` read the tracker of `system` for the repository `repo`
+ * (a slug, or a path where the forge named none): its tracker record is
+ * there and answered, and the tick had a credential for it.
+ */
+function readTracker(
+  receipt: TickReceipt | null,
+  system: string,
+  repo: string,
+): boolean {
+  if (receipt === null) return false;
+  if (
+    "why" in keylessEntries(receipt) ||
+    (receipt.noCredential ?? []).some(
+      (n) => n.system === system && n.repos.includes(repo),
+    )
+  )
+    return false;
+  return receipt.repos.some(
+    (r) =>
+      (r.slug ?? r.path) === repo &&
+      r.records.some(
+        (rec) =>
+          rec.record === "tracker" &&
+          rec.ok &&
+          rec.source.startsWith(`${system} `),
+      ),
+  );
+}
 
 /** The check over the day before `nowMs`, from the receipts under `root` and the ledger at `ledgerPath`. */
 export function keylessCheck(opts: {
@@ -123,9 +174,16 @@ export function keylessCheck(opts: {
       fix: `make ${join(root, "receipts")} readable, then run jig doctor again`,
     };
   const groups = new Map<string, Keyless>();
-  for (const runId of keylessRuns.slice(0, RECEIPTS_READ))
-    for (const missing of receiptOf(root, runId)?.noCredential ?? [])
-      for (const repo of Array.isArray(missing.repos) ? missing.repos : []) {
+  // Ticks whose receipt could not be read stay unresolved failures, named with what was wrong.
+  const unresolved: string[] = [];
+  for (const runId of keylessRuns.slice(0, RECEIPTS_READ)) {
+    const found = keylessEntries(receiptOf(root, runId));
+    if ("why" in found) {
+      unresolved.push(`tick:${runId} (${found.why})`);
+      continue;
+    }
+    for (const missing of found.entries)
+      for (const repo of missing.repos) {
         const key = `${missing.reason}\u0000${repo}`;
         const group = groups.get(key) ?? {
           system: missing.system,
@@ -137,11 +195,13 @@ export function keylessCheck(opts: {
         group.ticks.push(`tick:${runId}`);
         groups.set(key, group);
       }
+  }
+  const unexamined = Math.max(0, keylessRuns.length - RECEIPTS_READ);
   const read =
     keylessRuns.length > RECEIPTS_READ
       ? ` (the newest ${RECEIPTS_READ} of ${keylessRuns.length} keyless ticks read)`
       : "";
-  // A tick since the newest keyless one that read the repository's tracker with a credential.
+  // The newest tick since the newest keyless one that read this repository's tracker with a credential.
   const credentialed = (system: string) =>
     tickRuns(
       ledger.rows.filter(
@@ -150,8 +210,10 @@ export function keylessCheck(opts: {
     );
   const recovered = (g: Keyless): boolean => {
     const newest = g.ticks[0]?.slice("tick:".length) ?? "";
-    const since = credentialed(g.system).find((run) => run > newest);
-    return since !== undefined && readRepo(receiptOf(root, since), g.repo);
+    return credentialed(g.system)
+      .filter((run) => run > newest)
+      .slice(0, RECEIPTS_READ)
+      .some((run) => readTracker(receiptOf(root, run), g.system, g.repo));
   };
   const all = [...groups.values()];
   const since = new Map(all.map((g) => [g, recovered(g)]));
@@ -160,11 +222,18 @@ export function keylessCheck(opts: {
       `${g.reason} for ${g.repo}: ${g.ticks.length} tick${g.ticks.length === 1 ? "" : "s"} in the last 24 hours ran without it (${named(g.ticks)})${since.get(g) === true ? "; the newest tick since read it with one" : ""}`,
   );
   const remedies = [...new Set(all.map((g) => g.remedy))];
-  const detail = `${lines.length === 0 ? `${keylessRuns.length} ticks in the last 24 hours ran without a tracker credential` : lines.join("; ")}${read}${others.length === 0 ? "" : `; other callers with no key: ${named(others)}`}`;
+  const unreadRuns =
+    unresolved.length === 0
+      ? ""
+      : `; ticks whose receipts could not be read: ${named(unresolved)}`;
+  const detail = `${lines.length === 0 ? `${keylessRuns.length} ticks in the last 24 hours ran without a tracker credential` : lines.join("; ")}${read}${unreadRuns}${others.length === 0 ? "" : `; other callers with no key: ${named(others)}`}`;
   return {
     id: ID,
     status:
-      all.length > 0 && all.every((g) => since.get(g) === true)
+      all.length > 0 &&
+      unresolved.length === 0 &&
+      unexamined === 0 &&
+      all.every((g) => since.get(g) === true)
         ? "warn"
         : "fail",
     detail,
