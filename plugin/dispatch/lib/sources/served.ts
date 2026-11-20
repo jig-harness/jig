@@ -760,9 +760,7 @@ function nodeHold(
     node.pull === undefined &&
     meta.by?.trusted !== true
   )
-    return meta.by?.atCreation === true
-      ? `assignment to ${identity} was not made by a repository writer: ${meta.by.name} created it assigned`
-      : `assignment to ${identity} was not made by a repository writer`;
+    return `assignment to ${identity} was not made by a repository writer`;
   return meta.description === null
     ? "the epic description cannot be read"
     : null;

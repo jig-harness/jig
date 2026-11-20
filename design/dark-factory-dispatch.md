@@ -655,13 +655,7 @@ through `assignedBy` and requires a member of the team (Linear), an
 owner, member or collaborator of the repository (GitHub), or a person's
 Atlassian account, not a guest, that can be assigned issues in the project
 (Jira; an app's account, Jira Automation's included, never), as the drive
-requires of a ledger or an answer. On a tracker whose history records no
-assignee given at an issue's creation (Linear), an issue whose assignee no
-history entry ever changed was created assigned, so its creator made the
-assignment and passes the same test: an integration, an automation or a
-guest that creates an issue already assigned starts nothing, and an issue
-whose history changes its assignee only to others holds no assignment. The
-check gates pickups only. A claimed
+requires of a ledger or an answer. The check gates pickups only. A claimed
 item's current assignment is the claim's own, made by the factory
 identity, so the stalled and double-claim reports below read claimed items
 without it; they start nothing, so an unauthorized assignment gains

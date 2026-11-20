@@ -157,7 +157,7 @@ async function readAssigner(
         title: issue.title,
         url: issue.url,
         record: "tracker",
-        reason: `${by.atCreation === true ? "created assigned" : "assigned"} to ${identity} by ${by.name}, who cannot write to ${tracker.team}; only a person with write access starts a pickup`,
+        reason: `assigned to ${identity} by ${by.name}, who cannot write to ${tracker.team}; only a person with write access starts a pickup`,
         cause: "assigner-cannot-write",
       },
     };

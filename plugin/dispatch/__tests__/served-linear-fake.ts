@@ -23,9 +23,7 @@ export interface FakeIssue {
   blockedBy: string[];
   /**
    * What its assignment history answers: the assignment by a team member
-   * (`assigned`, the default), an assignment to someone else and none of
-   * the assignee (`none`), no assignee change at all, the issue created
-   * assigned by its `creator` (`created`), an
+   * (`assigned`, the default), no assignment of the assignee (`none`), an
    * assignment made by no user (`no-user`), malformed nodes (`no-actor`
    * omits the actor, `bad-target` has an unreadable target), or a failed
    * read (`fail`).
@@ -33,22 +31,11 @@ export interface FakeIssue {
   history?:
     | "assigned"
     | "none"
-    | "created"
     | "no-user"
     | "no-actor"
     | "bad-target"
     | "fail";
-  /** Who created it, as the history read takes it: a team member by default, `null` for no user. */
-  creator?: Record<string, unknown> | null;
 }
-
-/** A non-guest member of the fake's team. */
-export const LEAD = {
-  id: "lead",
-  name: "lead",
-  guest: false,
-  teams: { nodes: [{ key: "ENG" }] },
-};
 
 const STATE_IDS: Record<string, string> = {};
 /** The state names an assigned-issues filter asks for: its third clause. */
@@ -389,31 +376,34 @@ export class FakeLinear {
           displayName: i?.assignee,
           name: i?.assignee,
         };
-        const entry = (to: unknown, actor: unknown) => ({
-          id: "h1",
-          createdAt: "2026-10-02T00:00:00.000Z",
-          fromAssignee: null,
-          toAssignee: to,
-          ...(i?.history === "no-actor" ? {} : { actor }),
-        });
-        const nodes =
-          i?.history === "created"
-            ? []
-            : i?.history === "none"
-              ? [entry({ id: "someone-else" }, LEAD)]
-              : [
-                  entry(
-                    i?.history === "bad-target" ? "broken" : user,
-                    i?.history === "no-user" || i?.history === "bad-target"
-                      ? null
-                      : LEAD,
-                  ),
-                ];
         return {
           issue: {
             assignee: user,
-            creator: i?.creator === undefined ? LEAD : i.creator,
-            history: page(nodes),
+            history: page(
+              i?.history === "none"
+                ? []
+                : [
+                    {
+                      id: "h1",
+                      createdAt: "2026-10-02T00:00:00.000Z",
+                      toAssignee: i?.history === "bad-target" ? "broken" : user,
+                      ...(i?.history === "no-actor"
+                        ? {}
+                        : {
+                            actor:
+                              i?.history === "no-user" ||
+                              i?.history === "bad-target"
+                                ? null
+                                : {
+                                    id: "lead",
+                                    name: "lead",
+                                    guest: false,
+                                    teams: { nodes: [{ key: "ENG" }] },
+                                  },
+                          }),
+                    },
+                  ],
+            ),
           },
         };
       }

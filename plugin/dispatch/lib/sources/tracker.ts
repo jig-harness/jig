@@ -618,7 +618,7 @@ export async function freshPickup(
   try {
     const by = await tracker.assignedBy(key, section.identity);
     if (!by.trusted)
-      return `it ${by.atCreation === true ? "was created" : "is"} assigned to ${section.identity} by ${by.name}, who cannot write to ${tracker.team}`;
+      return `it is assigned to ${section.identity} by ${by.name}, who cannot write to ${tracker.team}`;
   } catch (error) {
     return `who assigned it cannot be read again: ${failureText(error)}`;
   }
