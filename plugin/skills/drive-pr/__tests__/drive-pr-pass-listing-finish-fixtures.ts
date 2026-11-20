@@ -19,7 +19,7 @@ if (import.meta.main) {
     state: "CHECK_RUNS_UNREADABLE",
     reason:
       "the head's check-runs listing could not be read whole — nothing was pushed",
-    pushed: true,
+    pushed: false,
     stamped: false,
     headSynced: false,
     items: [],

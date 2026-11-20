@@ -40,8 +40,9 @@ export function pagesRead(finish: Report): number | null {
     : null;
 }
 
-/** The probe reason for a pass's listing stop: finish-round's own reason,
- * then the validated page count, which the record carries apart from it. */
+/** The probe reason for a pass's listing stop: the validated page count the
+ * record carries apart from finish-round's reason comes first, so the probe's
+ * length bound can only cut the unrestricted reason. */
 function passListingReason(finish: Report, read: string): string {
   const own =
     typeof finish.reason === "string" && finish.reason.trim() !== ""
@@ -49,7 +50,7 @@ function passListingReason(finish: Report, read: string): string {
       : null;
   const base =
     "the review pass could not read the head's check-runs listing whole";
-  return own === null ? `${base}${read}` : `${base}: ${own}${read}`;
+  return own === null ? `${base}${read}` : `${base}${read}: ${own}`;
 }
 
 /** Stop the drive on the listing stop a pass's finish record reports. */
