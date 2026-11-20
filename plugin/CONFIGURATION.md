@@ -1351,6 +1351,26 @@ test registrations permit collection only where they prove the scope's
 holders gone. Unresolved child launches and legacy scratch remain retained.
 See [test scratch](gc/README.md#test-scratch) for the ownership checks.
 
+The machine's test fixture registry admits at most 100,000 registrations by
+default. Set `JIG_TEST_FIXTURE_REGISTRY_LIMIT` to a positive safe integer to
+override the limit. Other values use the default. Installing the scheduled
+collector and dispatcher records the value from the installing shell, so set
+it there as well as for test runners and `jig doctor`, and every participant
+uses the same limit. `jig upgrade` keeps the value an installed job already
+recorded, so after changing the limit run `jig install gc --yes` and
+`jig install dispatch --yes` again from the shell that sets it. Every fixture
+writer on that host must
+use the admission check for the limit to apply across test runs.
+
+`jig doctor gc` reports the registry count and the free inode share of the
+filesystem containing Jig's state directory. An
+[inode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a
+filesystem record needed for each file or directory. An over-limit registry or
+less than 10% free inodes fails the check and raises a host need in the dispatch
+dashboard. The inode check is skipped when the filesystem does not report an
+inode count. A scheduled collector that can only report an over-limit registry
+exits with a failure receipt.
+
 The `worktrees` kind bounds each pull request lookup with
 [`GH_CALL_TIMEOUT`](#gh-call-timeout), including lookups by branch, recorded
 pull request number and detached commit. A lookup that exceeds its deadline is
@@ -1774,7 +1794,7 @@ rejects any other form.
 | `accounts[].stages` | Every launching stage; the stages whose sessions the account takes, a list of distinct names from `pickup`, `rearm`, `followup` and `steward`. A re-arm, a takeover and a re-drive (a conflict re-drive among them) are the `rearm` stage's. Admission passes over an account that does not serve an action's stage before it weighs anything else, as it does an account the preflight holds back, and the account is not probed for that action; weights, turns, walls and slots then decide among the accounts that remain. A takeover runs in the slot of the launch record it replaces only while that record's account serves `rearm`; otherwise it is admitted as a new re-arm would be, on a free slot of an account that serves `rearm`, where it holds a slot of its own beside the replaced record's until that record ends, and it waits with the usual reasons when none has one. A launch already recorded and retried after a lost answer stays on its own account. The load factor's accounts gauge (`load.enforce`) still counts the slots of every listed account, whatever stages each serves, so the free slot it keeps for a drive or a follow-up may be on an account that serves neither. When no listed account serves a stage, its launches wait with a reason that names the stage and says no account serves it, not that no account has a free slot. The receipt, the terminal report and the dashboard's account view show an account's stages when this narrows them, and a run without `--apply` names, under each planned launch, the accounts that serve its stage. The file is refused, naming the account and the value, for an unknown stage, a stage written twice, an empty list, or `notify` or `steer`, which launch no session |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up, pickup or steward startup that writes no transcript, result or question within its first minute. A startup whose output holds a recognized usage-limit notice is walled until the reset the notice states instead, read in the zone it names (the host's when it names none) and at most eight days out; the backoff applies when that reset cannot be read, and to a startup with no such notice |
-| `runtime` | `orca`; on Linux and macOS, set `process` to dispatch headless runs through the host's service manager and open plain git worktrees. The machine file is the only runtime selector. The process runtime refuses the `notify` stage and starts the first drive for a finished pickup through the usual drive admission checks, including `dispatch.labels.only_labeled` |
+| `runtime` | `orca`; on Linux and macOS, set `process` to dispatch headless runs through the host's service manager and open plain git worktrees. The machine file is the only runtime selector. The process runtime refuses the `notify` stage and starts the first drive for a finished pickup through the usual drive admission checks, including `dispatch.labels.only_labeled`. A person follows a process run, or takes it over, with `jig dispatch attach <record> [--take-over]` ([README.md](README.md)) |
 | `process.path` | The scheduled tick's `PATH`, recorded by `jig install`. Overrides the path supplied to the run and its account identity check |
 | `process.env_keep` | `[]`. Names of additional environment variables to pass through. The run keeps the home, user, locale and temporary-directory settings, `JIG_HOME` when set, and the selected account's configuration directory. The allowlist refuses vendor credentials, account directory overrides, `CODEX_*` harness variables, `ENV`, `BASH_ENV`, and loader variables beginning with `LD_` or `DYLD_`. List a forge token variable here to pass it through |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
