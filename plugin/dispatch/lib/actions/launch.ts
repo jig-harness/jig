@@ -19,6 +19,7 @@ import {
   type Slots,
   slotsOf,
 } from "../accounts.ts";
+import { unrecordedDrivers } from "../host-drivers.ts";
 import { serves } from "../account-stages.ts";
 import { admission, takeoverMoves } from "./admission.ts";
 import type { HostDrivers } from "../host-drivers.ts";
@@ -808,9 +809,21 @@ export async function admitAccount(
     if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
+    const holder =
+      action.takeoverHolder === undefined || !state.drivers?.ok
+        ? undefined
+        : unrecordedDrivers(
+            state.table.map((entry) => entry.account),
+            state.records,
+            state.drivers.value,
+          ).find(
+            (entry) =>
+              entry.driver.clone === clone &&
+              entry.driver.pr === Number(action.target.replace("PR #", "")),
+          );
     if (
       (action.takeover !== undefined && !takeoverMoves(state, action)) ||
-      action.takeoverHolder !== undefined
+      holder?.account === name
     )
       return { outcome: refusal };
     failed.add(name);

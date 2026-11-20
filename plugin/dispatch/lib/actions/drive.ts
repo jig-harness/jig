@@ -37,7 +37,7 @@ import { git, gitIdentityEnv } from "../../../shared/proc.ts";
 import { idleBlocksStart } from "../automation.ts";
 import { cloneId } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { peekCloneKey } from "../../../skills/drive-pr/scripts/lib/state/clone-key.ts";
-import { unrecordedDrivers } from "../host-drivers.ts";
+import { readCloneKey, unrecordedDrivers } from "../host-drivers.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
 import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
@@ -699,7 +699,7 @@ function driveRecord(
   heads: string | null,
 ): LaunchRecord {
   const kind = isTakeover(action) ? "takeover" : "rearm";
-  const clone = peekCloneKey(repo.path);
+  const clone = readCloneKey(repo.path);
   const holder =
     action.takeoverHolder === undefined || !state.drivers?.ok || clone === null
       ? undefined
@@ -782,7 +782,7 @@ async function launchOne(
     repo.slug,
     action,
     0,
-    peekCloneKey(repo.path),
+    readCloneKey(repo.path),
   );
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;

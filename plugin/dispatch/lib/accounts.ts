@@ -306,6 +306,7 @@ function heldByAccount(
     if (
       [...holding.values()].some(
         (record) =>
+          accountOf(accounts, record) === account &&
           record.replacesHostDriver?.clone === driver.clone &&
           record.replacesHostDriver.pr === driver.pr &&
           record.replacesHostDriver.since === driver.since,
