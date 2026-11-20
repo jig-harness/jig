@@ -18,6 +18,7 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   markDriverRecordReleased,
+  recordPendingExit,
   removeDriverRecord,
   writeDriverRecord,
 } from "../scripts/lib/ledger-stop.ts";
@@ -506,6 +507,100 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
     },
     60_000,
   );
+});
+
+async function plantReleasedRecord(s: Stage): Promise<void> {
+  const child = Bun.spawn(["sh", "-c", ":"], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await child.exited;
+  writeDriverRecord(s.leaf, "999", {
+    worktree: s.forge.repo,
+    started: s.started,
+    pid: child.pid,
+    host: hostname(),
+    released: true,
+  });
+}
+
+describe("recovering a stopped ledger's pending state-label projection", () => {
+  async function labelsFor(s: Stage) {
+    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
+    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
+    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
+    const env = { PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}` };
+    await plantReleasedRecord(s);
+    recordPendingExit(s.leaf, "999", s.started, 8);
+    return { labels, env };
+  }
+
+  async function expectRecoveryToRemainPending(
+    s: Stage,
+    prepare: (labels: ReturnType<typeof labelForge>) => void,
+  ) {
+    const { labels, env } = await labelsFor(s);
+    prepare(labels);
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+    expect(labels.labels()).toEqual(["jig:converged"]);
+    return { labels, env };
+  }
+
+  it("retries the recorded CI exit against the same acquired stopped ledger", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    const { env } = await expectRecoveryToRemainPending(s, () =>
+      writeFileSync(join(s.forge.dir, "fail-patch"), ""),
+    );
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 0 });
+    rmSync(join(s.forge.dir, "fail-patch"));
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
+    expect(driverRecordRow(s.leaf, "999")).toBeNull();
+  });
+
+  it("keeps a pending ordinary stop for a refused state-label projection", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    const { labels, env } = await expectRecoveryToRemainPending(
+      s,
+      (labelState) => writeFileSync(join(labelState.bin, "edit-refused"), ""),
+    );
+    rmSync(join(labels.bin, "edit-refused"));
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
+    expect(labels.labels()).toEqual(["jig:parked"]);
+  });
+
+  it("keeps a pending ordinary stop when its state-label configuration is unreadable", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    const { labels, env } = await expectRecoveryToRemainPending(
+      s,
+      (labelState) =>
+        writeFileSync(join(labelState.bin, "jig.yaml"), ": invalid"),
+    );
+    writeFileSync(
+      join(labels.bin, "jig.yaml"),
+      "dispatch:\n  labels:\n    enabled: true\n",
+    );
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
+    expect(labels.labels()).toEqual(["jig:parked"]);
+  });
+
+  for (const [name, marker] of [
+    [
+      "when the label ownership recheck is unreadable",
+      "fail-ownership-recheck",
+    ],
+    ["when its label projection is unavailable", "malformed-label-read"],
+  ] as const) {
+    it(`keeps a pending ordinary stop ${name}`, async () => {
+      const s = stage({ state: "stopped", exit: 0 });
+      await expectRecoveryToRemainPending(s, (labels) =>
+        writeFileSync(join(labels.bin, marker), ""),
+      );
+    });
+  }
 });
 
 /** The driver record `s`'s driver leaves, `released` as it releases its locks. */
