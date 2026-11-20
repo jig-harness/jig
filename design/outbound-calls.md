@@ -210,6 +210,11 @@ directory, so the client picks the account it picks for the call; it costs
 one `GET /user` a day for each repository the stored login addresses. A
 call that addresses no repository keeps the credential's own mapping, and a
 token's mapping has no repository, since a token names its own user. A
+call made outside the repository's checkout that is about a repository but
+names none in its route (a node-id GraphQL query, such as a parked drive's
+review thread) therefore runs as the default login, which cannot see another
+owner's private repository and is answered `not-found`: its caller passes
+the repository as `GH_REPO` (`ghRepoEnvFor`). A
 rate-limit refusal whose text names another user than the owner the call
 was admitted against ("rate limit exceeded for user ID N") is held on that
 user's record, the call's reservation given back to the other, and the
@@ -518,12 +523,30 @@ refused.
   the next tick). The next tick sends one probe request, and reads on only
   when it is answered.
 - A tick exits 0 when every failed read is of a class that clears by
-  waiting and under its threshold. The failure ledger counts in a row per
-  cause, and a `rate-limited` read does not count before its reset. A
-  read a turn makes for one item (a pull request's comments, a parked
-  drive's thread, a base branch's head, a claim marker) carries its call's
-  class on the item's row and counts the same way; one that answered but
-  does not parse carries none and fails the turn.
+  waiting and under its threshold, or is a parked drive's review thread
+  answered `not-found`. The failure ledger counts in a row per cause, and a
+  `rate-limited` read does not count before its reset. A read a turn makes
+  for one item (a pull request's comments, a parked drive's thread, a base
+  branch's head, a claim marker) carries its call's class on the item's row
+  and counts the same way; one that answered but does not parse carries
+  none and fails the turn.
+- **An absence is an answer, for a parked drive's thread.** A thread read
+  that the system answers `not-found` (the credential the tick reads with
+  cannot see it) is not waited out, since waiting does not change it, and is
+  not a failure of the turn either. Its row keeps the class on the
+  repository's report, and the park stays unanswered: nothing it would have
+  decided is decided. The repository's other items are planned as usual,
+  the tick's exit is not changed by it, it adds no row to the failure ledger
+  and nobody is told; a turn it leaves otherwise successful settles as any
+  successful turn does, retiring the repository's and the sweep's earlier
+  failure rows. A read of another class beside it decides the failure's class
+  and its waiting policy; the absence never outranks it. So one thread that a
+  credential cannot see does not mark every tick of a host failed or grow
+  into a host-wide need. Any other `not-found` stays a failed read: an item
+  that should exist and does not (a base branch's head, a repository's own
+  record) says the repository is not as the tick needs it, and fails the
+  turn. Every other class that does not clear by waiting (`unauthorized`,
+  `invalid`) fails the turn as before.
 - A pass that meets `rate-limited` before it changed anything records that
   it waits until the reset, and the dispatcher starts it again then.
 - A process with no credential for a system at all (no Linear key, and a

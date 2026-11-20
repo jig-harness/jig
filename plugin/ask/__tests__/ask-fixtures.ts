@@ -52,6 +52,11 @@ if (args[0] === "api" && args[1] === "-i") {
 // The Ready predicate's board query: board.json's answer, failing when no test wrote one.
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.startsWith("id="))) {
   const key = args.find((a) => a.startsWith("id=")).slice(3);
+  // A node-id query names no repository: while thread-needs-gh-repo holds one, it is NOT_FOUND unless GH_REPO names it, as for the default login of a host with several accounts.
+  if (fs.existsSync(F + "/thread-needs-gh-repo") && process.env.GH_REPO !== fs.readFileSync(F + "/thread-needs-gh-repo", "utf8").trim()) {
+    process.stderr.write("gh: Could not resolve to a node with the global id '" + key + "' (HTTP 404)\\n");
+    process.exit(1);
+  }
   const file = F + "/thread-" + key + ".json";
   const body = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { data: { node: { comments: { pageInfo: { hasNextPage: false }, nodes: [] } } } };
   process.stdout.write(JSON.stringify(body));

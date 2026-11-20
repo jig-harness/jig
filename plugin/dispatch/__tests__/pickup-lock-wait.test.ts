@@ -335,6 +335,7 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
       measured: measureValidation([], []),
       demand: { atLock, toArrive: 0 },
       waitLimitMs: HOUR,
+      waitSource: "LOCK_TIMEOUT",
       driveDeadlineMs: 3 * HOUR,
       admittedRuns: 0,
     };

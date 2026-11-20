@@ -191,12 +191,14 @@ function claimedAlone(record: LaunchRecord, item: string): boolean {
   return record.batchItems === undefined && wasClaimed(record, item);
 }
 
-/** Whether a pass stopped at startup on its account's usage notice, and the wrapper walled that account. */
+/** Whether a pass stopped at startup, and the wrapper walled its account and released its work. */
 function stoppedOnWall(r: ReadRecord): boolean {
   return (
     r.result === null &&
     r.state.kind === "ended" &&
-    r.state.exit.startup === "quota" &&
+    (r.state.exit.startup === "quota" ||
+      r.state.exit.startup === "sign-in" ||
+      r.state.exit.startup === "breaker") &&
     r.state.exit.wallUnrecorded !== true
   );
 }

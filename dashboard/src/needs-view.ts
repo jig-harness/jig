@@ -109,6 +109,8 @@ function recordedWord(n: LineNeed, tracker: Tracker): string {
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
   if (n.cause === "tracker-unreachable")
     return `${itemWords(tracker).name ?? "issues"} unreachable`;
+  if (n.cause === "account-sign-in") return "sign-in refused";
+  if (n.cause === "account-startup") return "repeated startup failures";
   return n.cause;
 }
 
@@ -116,6 +118,7 @@ function recordedWord(n: LineNeed, tracker: Tracker): string {
 function noLinkOf(n: LineNeed, tracker: Tracker): string | null {
   if (
     n.url !== null ||
+    n.repo === "host" ||
     n.cause === "state-storage" ||
     n.cause === "tracker-unreachable"
   )

@@ -144,7 +144,7 @@ export { lockPlace };
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
 /** The lock waits one minute when `LOCK_TIMEOUT` is absent. */
-export const DEFAULT_TIMEOUT_SECONDS = 60;
+const DEFAULT_TIMEOUT_SECONDS = 60;
 /** The most slots a lock has, and so the slots an exclusive holder takes. */
 const MAX_SLOTS = 64;
 /** The slot ceiling when the count is static rather than decided by load. */

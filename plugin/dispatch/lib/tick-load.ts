@@ -19,6 +19,7 @@ import { accountsReading, loadState, type LoadState } from "./load.ts";
 import { readLoad } from "./load-read.ts";
 import { type LoadSample, readSamples, recordSamples } from "./load-samples.ts";
 import type { MachineConfig } from "./machine-config.ts";
+import { processEnvironment } from "./runtime/process-environment.ts";
 import { readValidationLoad } from "./validation-load.ts";
 import type { TickBudget } from "./tick-reads.ts";
 
@@ -69,6 +70,20 @@ export function outstandingReservations(
 }
 
 /**
+ * The launch environment with the dispatcher's own host-reading override,
+ * a testing control no launch should carry, so the host reader still finds it.
+ */
+export function withHostOverride(
+  env: NodeJS.ProcessEnv,
+  own: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const reading = own.JIG_DISPATCH_LOAD_READING;
+  return reading === undefined
+    ? env
+    : { ...env, JIG_DISPATCH_LOAD_READING: reading };
+}
+
+/**
  * Read the host's gauges for this tick and build the load state; with
  * `sample`, the `--apply` tick's, first record each running session's
  * memory, so this tick's samples count toward the reservations.
@@ -87,10 +102,23 @@ export function readTickLoad(input: {
   return attempt("load-unread", "the host's load was not read", () => {
     const { machine, records, nowMs } = input;
     const sessions = running(records);
+    // The environment a launch's pass runs the test stage in. A process
+    // launch filters the dispatcher's own to the allowlist; an Orca launch's
+    // terminal is not filtered by it, so the dispatcher's own environment
+    // stands in for it. One environment places the lock occupancy and the
+    // forecast, so both name the same lock.
+    const launchEnv: NodeJS.ProcessEnv =
+      machine.runtime === "process"
+        ? processEnvironment(process.env, machine.process ?? { envKeep: [] }, {
+            vendor: "claude",
+            configDir: "",
+          })
+        : process.env;
     const reading = readLoad(
       sessions.map((s) => s.path),
       machine.repositories.map((r) => r.path),
       input.budget,
+      withHostOverride(launchEnv),
     );
     if (input.sample && reading.sessions !== null) {
       const samples: LoadSample[] = sessions.flatMap(({ record, path }) => {
@@ -127,6 +155,7 @@ export function readTickLoad(input: {
       reading.lock,
       nowMs,
       passTimeoutSeconds() * 1000,
+      launchEnv,
     );
     load.spentBytes = outstandingReservations(records, reading, load);
     return load;

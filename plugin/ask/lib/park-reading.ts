@@ -53,7 +53,9 @@ export async function readParkThread(
     return null;
   }
   ctx.reading.forgeCall();
-  const got = await within(sec, () => threadComments(key, sec));
+  const got = await within(sec, () =>
+    threadComments(key, sec, undefined, ctx.address.repo),
+  );
   const comments = got?.value ?? null;
   ctx.reading.note({
     record,

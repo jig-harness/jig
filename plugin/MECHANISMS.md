@@ -754,7 +754,8 @@ development and shipped as a version.
 - **If it fails.** The calling session sees exit 1 or 2, or `tracker.ts`'s
   exit for the failure class (5 to 11), and stops; the tick reports a record
   it could not read with the call's class, and does not fail for a class
-  that clears by waiting until the failure ledger's count. A tick with no
+  that clears by waiting until the failure ledger's count, nor for a
+  parked drive's thread answered `not-found`. A tick with no
   credential for a tracker names it once on its receipt (`noCredential`)
   and its log, probes and holds no account for it in the issue preflight,
   fails no repository's turn for it, keeps each such repository's tracker

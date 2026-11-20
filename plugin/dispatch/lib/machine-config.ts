@@ -66,6 +66,7 @@ import { DEFAULT_DISPATCHER_SHARE } from "../../shared/outbound/budget.ts";
 import { load } from "../../shared/yaml.ts";
 import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
 import {
+  DEFAULT_STARTUP_THRESHOLD,
   FAILURE_DEFAULTS,
   type FailureGrouping,
   type FailureSettings,
@@ -244,6 +245,7 @@ const FAILURES_KEYS = [
   "backoff_max",
   "notify_after",
   "rerun_died",
+  "startup_threshold",
   "group",
 ];
 const RECORDS_KEYS = ["shared"];
@@ -809,6 +811,12 @@ function failures(value: unknown): Checked<FailureSettings> {
     FAILURE_DEFAULTS.notifyAfter,
   );
   if (!notifyAfter.ok) return notifyAfter;
+  const startupThreshold = count(
+    value.startup_threshold,
+    "failures.startup_threshold",
+    DEFAULT_STARTUP_THRESHOLD,
+  );
+  if (!startupThreshold.ok) return startupThreshold;
   const rerunDied = value.rerun_died ?? FAILURE_DEFAULTS.rerunDied;
   // A run again never earns another, so the bound is one or none.
   if (rerunDied !== 0 && rerunDied !== 1)
@@ -822,6 +830,7 @@ function failures(value: unknown): Checked<FailureSettings> {
     backoffMaxMs: backoffMaxMs.value,
     notifyAfter: notifyAfter.value,
     rerunDied,
+    startupThreshold: startupThreshold.value,
     group: group.value,
   });
 }
