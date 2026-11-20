@@ -4023,8 +4023,9 @@ vouches for a head such a reviewer has not looked at since.
 
 **exact** — Retain the documented deadline guarantees; tune a knob only for an evidenced slow operation.
 
-`--timeout` bounds the waiting **between** `drive-status.ts` polls and nothing
-else. A connection that is accepted but never completes is only ever noticed
+`--timeout` bounds the waiting **between** `drive-status.ts` polls and, from a
+poll's second evaluation on, its opening pull-request requests (the first
+evaluation keeps each call's own deadline); nothing else. A connection that is accepted but never completes is only ever noticed
 *between* calls, so it outlives every deadline the driver advertises — and an
 unattended loop has nobody to notice it has stopped (mode 13 in
 `references/terminal-states.md`). Every outbound call therefore carries its own:

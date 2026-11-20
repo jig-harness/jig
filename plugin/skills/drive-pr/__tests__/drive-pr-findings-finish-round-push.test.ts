@@ -446,10 +446,14 @@ describe("finish-round.ts", () => {
     expect(state.ciHold).toMatchObject({ phase: "released", eventId: "LE_2" });
   });
 
-  it("still waits for the unlabel CI on a released head GitHub can run it on, or whose mergeability is not yet known", async () => {
-    for (const mergeable of ["MERGEABLE", "UNKNOWN"]) {
-      const r = await releasedWithoutUnlabelCi(mergeable);
-      expectSpawnExit(r, 4, mergeable);
+  it("still waits for the unlabel CI on a released head GitHub can run it on, or whose mergeability is not yet known or cannot be read", async () => {
+    for (const [mergeable, sentinels] of [
+      ["MERGEABLE", []],
+      ["UNKNOWN", []],
+      ["CONFLICTING", ["no-mergeability"]],
+    ] as const) {
+      const r = await releasedWithoutUnlabelCi(mergeable, [...sentinels]);
+      expectSpawnExit(r, 4, `${mergeable} ${sentinels.join(" ")}`);
       expect(r.report.state).toBe("CI_HOLD_WAIT");
       expect(r.pushed).toBe("");
       expect(r.stderr).toContain("triggered by the latest unlabel");

@@ -2352,8 +2352,8 @@ is exactly what a conflict does not do. `drive.ts` propagated it verbatim, so th
 operator was told a reviewer was slow about a PR that needed a `git merge`.
 
 **Guard**: `drive-status.ts` reads `mergeable`, `mergeStateStatus`,
-`baseRefName` and `baseRefOid` from the same `gh pr view` snapshot as `state`
-and `headRefOid`. A conflict makes it **skip every reviewer gate** — each of
+`baseRefName` and `baseRefOid` from the same pull-request snapshot (one REST
+pull document, `readPrSnapshot`) as `state` and `headRefOid`. A conflict makes it **skip every reviewer gate** — each of
 those returns `AWAITING_REVIEWER`, which is the wait being eliminated — but it
 still enumerates the work, and reports [`PR_CONFLICTING`](../../../protocol/drive-exits.md) only when
 that enumeration is empty. `drive.ts` stops on it with a message naming the fix

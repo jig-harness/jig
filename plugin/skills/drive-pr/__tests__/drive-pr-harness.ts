@@ -370,6 +370,12 @@ export interface Fixture {
    * together with `state`, `headRefOid` and `baseRefOid` in one call.
    */
   isDraftMovesTo?: boolean;
+  /**
+   * `gh pr view --json` rejects the `mergeable` field, so a read that still
+   * goes through it (the CI hold's mergeability read) fails; the push must wait
+   * rather than proceed unheld.
+   */
+  mergeabilityUnreadable?: boolean;
   /** The PR's base branch tip SHA. Defaults to `BASE`. */
   base?: string;
   /**
@@ -1491,6 +1497,16 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
   exit 0
 fi
 
+if [ -f "$F/no-mergeability" ]; then
+  for a in "$@"; do
+    case "$a" in
+      *mergeable*)
+        echo 'Unknown JSON field: "mergeable"' >&2
+        exit 1 ;;
+    esac
+  done
+fi
+
 # A TRANSIENT failure — a network blip, a rate limit, a timeout. The property
 # under test: this must NOT degrade the merge-conflict guard, only report
 # INDETERMINATE (exit 1) for the caller to retry. Fails
@@ -2295,6 +2311,7 @@ export function writeFixture(
       join(dir, "check-runs-hang-after"),
       String(f.checkRunsHangAfter),
     );
+  if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }
