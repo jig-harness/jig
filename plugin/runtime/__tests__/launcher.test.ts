@@ -690,6 +690,78 @@ test.skipIf(
     "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
   ),
 )(
+  "the job is told what started it: the timer, the jig command, a woken tick, or what a caller named itself",
+  () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const log = join(root, "started.log");
+    const directory = join(root, "copy");
+    mkdirSync(join(directory, "gc"), { recursive: true });
+    writeFileSync(join(directory, "gc", "bunfig.toml"), "");
+    writeFileSync(
+      join(directory, "jig.ts"),
+      `if (process.argv[2] === "upgrade") console.log(JSON.stringify({ outcome: "unchanged", detail: "current", at: "x" }));
+else require("node:fs").appendFileSync(${JSON.stringify(log)}, (process.env.JIG_STARTED_BY ?? "-") + "\\n");
+`,
+    );
+    const { launcher, config } = installedLauncher(root);
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nconsole.log(JSON.stringify([{ id: "jig@jig", scope: "user", installPath: ${JSON.stringify(realpathSync(directory))} }]));\n`,
+    );
+    const start = (
+      env: Record<string, string | undefined>,
+      job: string[] = ["dispatch", "--apply"],
+    ) =>
+      expectSpawnExit(
+        Bun.spawnSync(
+          [
+            process.execPath,
+            "--no-env-file",
+            `--config=${config}`,
+            launcher,
+            `--claude=${claude}`,
+            "--",
+            ...job,
+          ],
+          {
+            env: {
+              ...process.env,
+              JIG_LAUNCHER_ROLE: undefined,
+              JIG_STARTED_BY: undefined,
+              ...env,
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: 30000,
+          },
+        ),
+        0,
+      );
+    start({});
+    start({ JIG_LAUNCHER_ROLE: "command" });
+    start({ JIG_LAUNCHER_ROLE: "wake" });
+    start({ JIG_LAUNCHER_ROLE: "command", JIG_STARTED_BY: "orca-plugin" });
+    // No other job reads it, so none carries it.
+    start({}, ["gc", "--scheduled"]);
+    start({ JIG_LAUNCHER_ROLE: "command" }, ["gc"]);
+    expect(readFileSync(log, "utf8").split("\n").filter(Boolean)).toEqual([
+      "timer",
+      "command",
+      "wake",
+      "orca-plugin",
+      "-",
+      "-",
+    ]);
+  },
+);
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)(
   "a result line too long to pass on, or one that is not a result, reaches the job as a short failed line",
   () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
