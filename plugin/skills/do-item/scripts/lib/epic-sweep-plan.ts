@@ -215,7 +215,7 @@ function scanHeading(scan: ChecklistScan, line: MarkdownLine) {
 /** A line that opens a list item; false when the checklist cannot carry it. */
 function scanItem(scan: ChecklistScan, line: MarkdownLine): boolean {
   const step = uncheckedListItem(line.line);
-  if ((line.depth ?? 0) > 0 && (scan.open || step)) return false;
+  if ((line.depth ?? 0) > 0 && (scan.open || step !== undefined)) return false;
   if (nestsOnItsOwnLine(line.line)) return false;
   if (step !== undefined) scan.steps.push(step);
   scan.open = step !== undefined;

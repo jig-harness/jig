@@ -168,6 +168,9 @@ describe("epic sweep assessments", () => {
       "needs-operator-checklist",
     );
     expect(
+      (await row(`${head}- [x] Deploy\n  - [ ]\n    Verify rollout`)).outcome,
+    ).toBe("needs-operator-checklist");
+    expect(
       (
         await row(
           `${head}- [ ] Deploy\n> Background information\n\n- [ ] Verify`,
