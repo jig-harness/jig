@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { settleIdleStop } from "./lib/idle-stop.ts";
 import { cancelledRecoveryRecord } from "./lib/state/park-frame.ts";
 import {
   prepareOperatorStop,
@@ -711,8 +712,7 @@ async function stop(
         ? `no drive holds PR #${pr}'s lock — nothing to stop.`
         : `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
-    await ledgerStop.recoverIdleStop(stateDir, pr, row);
-    return 1;
+    return settleIdleStop(stateDir, pr, row, expectStarted, reason);
   }
   if (row.state !== "live") {
     console.log(

@@ -129,7 +129,8 @@ export type NeedCause =
   | "tracker-unreachable"
   | "account-sign-in"
   | "account-startup"
-  | "low-quota";
+  | "low-quota"
+  | "state-storage";
 
 /** One thing the line waits on a person for. */
 export interface LineNeed {

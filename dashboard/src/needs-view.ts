@@ -114,9 +114,14 @@ function recordedWord(n: LineNeed, tracker: Tracker): string {
   return n.cause;
 }
 
-/** What a card with no link says; a need of the host's names an account, which no item links. */
+/** What a work item's card with no link says. */
 function noLinkOf(n: LineNeed, tracker: Tracker): string | null {
-  if (n.url !== null || n.repo === "host" || n.cause === "tracker-unreachable")
+  if (
+    n.url !== null ||
+    n.repo === "host" ||
+    n.cause === "state-storage" ||
+    n.cause === "tracker-unreachable"
+  )
     return null;
   return noLinkText(n.repo, n.target, tracker);
 }

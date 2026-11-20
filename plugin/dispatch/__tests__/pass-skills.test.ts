@@ -53,11 +53,23 @@ describe("a fixed served batch's prompt", () => {
         servedPerson: "someone",
         batchItems: [
           { key: "#1", person: "someone" },
-          { key: "#2", person: "someone" },
+          {
+            key: "#2",
+            person: "someone",
+            ancestor: "#8",
+            ancestors: ["#8", "#9"],
+          },
         ],
       },
       [],
     ).at(-1) ?? "";
+
+  it("names each member's claim ancestor and leaves the hold chain out", () => {
+    expect(prompt).toContain(
+      '[{"key":"#1","person":"someone"},{"key":"#2","person":"someone","ancestor":"#8"}]',
+    );
+    expect(prompt).not.toContain("#9");
+  });
 
   it("reads the members through the proposal's fixed mode", () => {
     expect(prompt).toContain("--fixed '#1,#2'");

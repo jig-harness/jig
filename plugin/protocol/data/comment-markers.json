@@ -512,6 +512,32 @@
     },
     {
       "kind": "active",
+      "name": "epic-sweep",
+      "part": "marker",
+      "marker": "jig:epic-sweep",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "Identifies the rows in an epic closure proposal by their digest. The reply applies to that proposal."
+    },
+    {
+      "kind": "active",
+      "name": "epic-waiver",
+      "part": "marker",
+      "marker": "jig:epic-waiver",
+      "fieldType": null,
+      "fieldRequired": null,
+      "medium": "tracker",
+      "version": 0,
+      "key": null,
+      "writtenBy": "Jig",
+      "meaning": "Records a person's acceptance of an epic closure proposal. An epic may close with this waiver when its newest trusted acceptance verdict is absent or accepting."
+    },
+    {
+      "kind": "active",
       "name": null,
       "part": "not-record",
       "marker": "deferral-ok",

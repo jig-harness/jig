@@ -43,6 +43,7 @@ const ACTS: Record<NeedCause, PersonAct> = {
   "account-sign-in": "sign in to the account again",
   "account-startup": "investigate the account's startup failures",
   "low-quota": "inspect the quota spending",
+  "state-storage": "inspect Jig state storage",
 };
 
 export function personAct(cause: NeedCause): PersonAct {

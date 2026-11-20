@@ -258,6 +258,7 @@ export const CAUSE_ICONS = {
   "low-quota": is(Gauge, "low-quota"),
   "account-sign-in": is(KeyRound, "sign-in refused"),
   "account-startup": is(TriangleAlert, "repeated startup failures"),
+  "state-storage": is(HardDrive, "Jig state storage"),
 } satisfies Record<NeedCause, IconWord>;
 
 export const EVERYONE_ICONS = {

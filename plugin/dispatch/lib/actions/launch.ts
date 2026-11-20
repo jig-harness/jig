@@ -742,7 +742,7 @@ async function preflightHolds(
 }
 
 /** The kind of launch whose reservation an action counts. */
-function loadKindOf(action: Action): LoadKind {
+export function loadKindOf(action: Action): LoadKind {
   if (action.stage === "steward") return "steward";
   if (action.stage === "pickup" || action.stage === "followup")
     return action.stage;

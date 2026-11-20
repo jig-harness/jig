@@ -166,6 +166,7 @@ export interface LaunchRecord {
   ancestorEpic?: string;
   /** Factory-assigned epic whose authority an unassigned child inherits. */
   factoryAncestor?: string;
+  ancestors?: string[];
   /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
   blockingFor?: string;
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */

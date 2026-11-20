@@ -612,6 +612,20 @@ fields:
     type: path
     exists: expected
     read_by: [drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, resolve-review-comments, dispatch]
+  drive.status_poll.waiting_share:
+    type: number
+    min: 0
+    max: 1
+    default: 0.25
+    since: 0.291.2
+    read_by: [drive-pr]
+  drive.status_poll.max_interval_seconds:
+    type: integer
+    min: 5
+    max: 3600
+    default: 300
+    since: 0.291.2
+    read_by: [drive-pr]
   drive.reviews_drafts:
     type: boolean
     read_by: [drive-pr, do-item]
@@ -880,6 +894,11 @@ fields:
     items: string
     distinct: true
     read_by: [do-item, work-batch]
+  issue_tracker.person_checks:
+    type: string
+    pattern: "^\\S+$"
+    read_by: [do-item]
+    since: 0.290.0
   issue_tracker.labels.extractable_tails:
     type: list
     items: string

@@ -62,6 +62,7 @@ import {
 } from "./park-events.ts";
 import { failureText } from "./text.ts";
 import { tickHealthOf, withTick } from "./tick-health.ts";
+import { readStateStorage, stateStorageNeeds } from "./state-storage-need.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import type { TickReceipt } from "../receipts.ts";
 import type { ClaimedItem, DrivenPr, WantedItem } from "./types.ts";
@@ -379,15 +380,17 @@ export function writeTickLine(
   const listed = new Set(machine.repositories.map((r) => r.path));
   const reports = receipt.repos.filter((r) => listed.has(r.path));
   const whole = readsTheMachine(machine, tick.repos);
+  const writesMachine = whole || readsTheMachine(machine, tick.asked);
   // A timer tick that found every repository held still writes the machine's part: it is the timer's heartbeat.
-  if (!whole && reports.length === 0 && !readsTheMachine(machine, tick.asked)) {
+  if (!writesMachine && reports.length === 0) {
     recordTickHealth(receipt, machine);
     return;
   }
+  const storage = writesMachine ? readStateStorage() : undefined;
   const locked = attempt(
     "line-unwritten",
     "the dashboard's line was not written, so it keeps showing the tick before",
-    () => withLineLocked(() => writeKept(receipt, tick, whole)),
+    () => withLineLocked(() => writeKept(receipt, tick, whole, storage)),
   );
   if (locked.ok) return;
   receipt.lineFailed = locked.failure.reason;
@@ -399,6 +402,7 @@ function writeKept(
   receipt: TickReceipt,
   tick: Parameters<typeof writeTickLine>[1],
   whole: boolean,
+  storage: ReturnType<typeof readStateStorage> | undefined,
 ): void {
   const { machine, records } = tick;
   if (machine === null) return;
@@ -467,6 +471,19 @@ function writeKept(
             ),
         before,
       );
+      if (receiptText === null && storage !== undefined) {
+        const remaining = line.needs.filter(
+          (need) => need.cause !== "state-storage",
+        );
+        line.needs = [
+          ...remaining,
+          ...stateStorageNeeds(
+            storage,
+            before?.needs ?? [],
+            receipt.finishedAt,
+          ),
+        ];
+      }
       const ticks = withTick(before?.ticks, tickHealthOf(receipt, whole));
       const listedSlugs = identifiedSlugs(line, before, machine.repositories);
       const slugsOf = (current: boolean): Set<string> =>

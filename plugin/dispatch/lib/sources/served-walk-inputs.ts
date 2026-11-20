@@ -52,6 +52,7 @@ export function pulledNodes(
     .map((issue) => ({
       issue,
       ancestor: pull.origin.rootAncestor,
+      ancestors: pull.origin.rootAncestors,
       by,
       epicOrder: undefined,
       planHold: undefined,

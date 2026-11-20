@@ -27,6 +27,8 @@ export interface BatchItem {
   key: string;
   person: string;
   ancestor?: string;
+  /** The epics the late hold check reads for the member (`WantedItem.ancestors`). */
+  ancestors?: string[];
 }
 
 /** Only launchable actions join: held, running and unreadable items never enter a batch. */
@@ -113,6 +115,7 @@ function groupedActions(
               ...(i.ancestorEpic === undefined
                 ? {}
                 : { ancestor: i.ancestorEpic }),
+              ...(i.ancestors === undefined ? {} : { ancestors: i.ancestors }),
             },
           ];
     });
@@ -121,6 +124,29 @@ function groupedActions(
     for (const action of members.slice(1)) removed.add(action);
   }
   return actions.filter((a) => !removed.has(a));
+}
+
+/** Whether a value is a list of item keys, such as an ancestor chain. */
+function isKeyList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === "string");
+}
+
+/** An ancestor chain carried as JSON evidence; `undefined` when absent. */
+export function ancestorsOf(
+  value: unknown,
+): Outcome<string[] | undefined, "invalid"> {
+  if (value === undefined) return ok(undefined);
+  if (typeof value !== "string")
+    return failed("invalid", "ancestor evidence is not text");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    return failed("invalid", "ancestor evidence is not JSON", error);
+  }
+  return isKeyList(parsed)
+    ? ok(parsed)
+    : failed("invalid", "ancestor evidence is not a list of keys");
 }
 
 /** Evidence is parsed as data before it reaches a launch or shell command. */
@@ -144,13 +170,15 @@ export function batchItemsOf(
       !isRecord(i) ||
       typeof i.key !== "string" ||
       typeof i.person !== "string" ||
-      (i.ancestor !== undefined && typeof i.ancestor !== "string")
+      (i.ancestor !== undefined && typeof i.ancestor !== "string") ||
+      (i.ancestors !== undefined && !isKeyList(i.ancestors))
     )
       return failed("invalid", "batch member is malformed");
     items.push({
       key: i.key,
       person: i.person,
       ...(typeof i.ancestor === "string" ? { ancestor: i.ancestor } : {}),
+      ...(isKeyList(i.ancestors) ? { ancestors: i.ancestors } : {}),
     });
   }
   return ok(items);
