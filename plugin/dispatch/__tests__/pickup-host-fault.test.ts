@@ -233,6 +233,10 @@ describe("telling a host fault from a question about the work", () => {
       "Should the code retry on ENOSPC: if we delete /tmp/specification.zip?",
       "Should the code retry on ENOSPC: if we delete /tmp/source-files.tar.gz?",
       "Should the code retry on ENOSPC: if we delete /tmp/test-fixtures.zip?",
+      "Should the code retry on ENOSPC: if we delete /tmp/config-files.tar.gz?",
+      "Can I delete /tmp/leaked-fixtures.tar.gz and retry the build after ENOSPC:?",
+      "Should the code retry on ENOSPC: if we delete /tmp/asset-files.zip?",
+      "Should the code retry on ENOSPC: if we delete /tmp/implementation-artifacts.zip?",
       "Should the code retry on ENOSPC: if we delete the column, keeping cache behavior unchanged?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
@@ -250,8 +254,6 @@ describe("telling a host fault from a question about the work", () => {
       "Could we delete the cache and retry the build after ENOSPC:?",
       "Can I delete /tmp/build-cache.log and retry the build after ENOSPC:?",
       "Can I delete /tmp/build.log.gz and retry the build after ENOSPC:?",
-      "Can I delete /tmp/leaked-fixtures.tar.gz and retry the build after ENOSPC:?",
-      "Can I delete /tmp/build-cache.zip and retry the build after ENOSPC:?",
       "Can I delete /tmp/cache-2026.gz and retry the build after ENOSPC:?",
       "Can I delete /tmp/cache.zip and retry the build after ENOSPC:?",
       "Can I delete /tmp/cache.gz and retry the build after ENOSPC:?",

@@ -69,10 +69,10 @@ const ARCHIVE_EXTENSION = /\.(?:gz|bz2|xz|zst|tgz|tar|zip|7z|rar|iso)$/i;
  * Whether a file name marks a work file. An archive is neutral: `app.log.gz`
  * is a host artifact over a host-artifact extension, `schema.sql.gz` a work
  * file over a work extension, and an archive with no extension beneath it
- * (`cache.tgz` against `source-files.tar.gz`) is a host artifact when a part of
- * its own name is a host-resource word and none is a work word: descriptive
- * or dated debris (`leaked-fixtures.tar.gz`, `cache-2026.gz`) stays one, and a
- * work word (`test-fixtures.zip`) keeps the question a person's.
+ * (`cache.tgz` against `config-files.tar.gz`) is a host artifact only when every
+ * part of its own name is a host-resource word or a number (`cache.tgz`,
+ * `build-cache.zip`, `cache-2026.gz`); any other word (`leaked-fixtures.tar.gz`,
+ * `config-files.zip`, `test-fixtures.zip`) keeps the question a person's.
  */
 function isWorkFileName(last: string): boolean {
   let stem = last;
@@ -87,9 +87,12 @@ function isWorkFileName(last: string): boolean {
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
+  // Uncertainty stays a person's question: only a name made wholly of
+  // host-resource words and numbers (dates, counters) is host debris.
   return (
     parts.some((part) => WORK_WORD.has(part)) ||
-    !parts.some((part) => HOST_RESOURCE.has(part))
+    !parts.some((part) => HOST_RESOURCE.has(part)) ||
+    !parts.every((part) => HOST_RESOURCE.has(part) || /^\d+$/.test(part))
   );
 }
 
