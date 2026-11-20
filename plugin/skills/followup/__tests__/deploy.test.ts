@@ -193,7 +193,7 @@ test("a finished run is read from the run alone", async () => {
   expect(asked).toHaveLength(1);
 });
 
-test("a running run of another branch holds the queue when the workflow shares one group", () => {
+test("a running run of another branch is named but never makes a run stuck", () => {
   const other = run(96, {
     status: "in_progress",
     conclusion: null,
@@ -206,6 +206,7 @@ test("a running run of another branch holds the queue when the workflow shares o
     [other, ...cancelledBefore],
     NOW,
   );
-  expect(read.state).toBe("stuck");
-  expect(read.holder?.id).toBe(96);
+  expect(read.state).toBe("moving");
+  expect(read.reason).toContain(other.url);
+  expect(read.reason).toContain("not judged stuck");
 });

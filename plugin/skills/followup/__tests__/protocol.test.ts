@@ -243,6 +243,13 @@ describe("settling a run", () => {
     expect(many.length).toBeLessThanOrEqual(200);
     expect(many).not.toContain("/actions/runs/");
     expect(many).not.toContain("v1.2.3");
+    const wrapped = pendingArm(
+      withEvidence(
+        `${[1, 2, 3, 4, 5, 6, 7].map((n) => `[run](${link(n)})`).join(" ")} v1.2.3`,
+      ),
+    );
+    expect(wrapped.length).toBeLessThanOrEqual(200);
+    expect(wrapped).not.toContain("/actions/runs/");
   });
 
   test("a preview carries out nothing: no marker, no result to record", () => {

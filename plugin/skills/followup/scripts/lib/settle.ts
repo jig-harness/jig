@@ -161,9 +161,6 @@ const ARM_MAX = 200;
 const RUN_LINK_TEXT =
   /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d{1,19}(?!\d)/g;
 
-/** A word that is, or starts as, a run link: a prose cut never keeps part of one. */
-const RUN_LINK_WORD = /^https:\/\/github\.com\/\S*\/actions\/runs\//;
-
 /** The pending arms and what each waits for, in one line short enough for `--arm`. */
 export function pendingArm(s: Settled): string {
   const text = s.rows
@@ -177,12 +174,11 @@ export function pendingArm(s: Settled): string {
   const deps = [...armTags(text), ...new Set(text.match(RUN_LINK_TEXT) ?? [])];
   const depText = deps.join(" ");
   const fits = depText.length <= ARM_MAX - 2;
-  const names = new Set(deps);
+  // Run links come out as spans, whatever wraps them, before the prose is cut.
   const prose = text
+    .replace(RUN_LINK_TEXT, "")
     .split(" ")
-    .filter(
-      (w) => !names.has(w) && !RUN_LINK_WORD.test(w) && !armTags(w).length,
-    )
+    .filter((w) => w !== "" && armTags(w).length === 0)
     .join(" ");
   const room = fits ? ARM_MAX - 2 - depText.length : ARM_MAX - 1;
   let head = prose.slice(0, room);
