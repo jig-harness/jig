@@ -100,8 +100,8 @@ export function settleNoCredential(receipt: TickReceipt): void {
       if (settled.cut) cut.push(name);
     }
     const cutAny = cut.length > 0;
-    // A later credentialed call reads the repositories it reached: the incident belongs to the readings it cut, and only those keep their previous part.
-    const repos = active.has(m.system) || !cutAny ? tracked : cut;
+    // The incident belongs to the readings it cut, and only those keep their previous part: a repository read before the credential was lost keeps its fresh reading. With no reading cut (nothing was asked yet) every tracked repository is named.
+    const repos = cutAny ? cut : tracked;
     console.error(
       `jig dispatch: ${missingCredentialMessage(m)}; the tick asked ${issueService(m.system)} nothing more, and the line keeps the last reading that had a credential`,
     );
