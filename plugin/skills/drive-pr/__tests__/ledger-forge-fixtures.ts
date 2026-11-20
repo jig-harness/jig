@@ -22,6 +22,7 @@
  * - `write-on-list`: `{ "n": n, "path": p, "text": t }` writes `t` to `p` on
  *   the n-th listing, as another writer updating a local file would.
  * - `fail-list-after`: every listing after that number fails.
+ * - `list-override`: a listing substitutes the file's `stdout` and exit `code`.
  * - `fail-search`: the search fails.
  * - `fail-patch`: every comment update fails; a comment the file holds is
  *   added as it fails, as another clone's claim landing meanwhile would be.
@@ -123,6 +124,11 @@ if (list) {
   let n = has("list-count") ? Number(text("list-count")) : 0;
   n += 1;
   fs.writeFileSync(F + "/list-count", String(n));
+  if (has("list-override")) {
+    const { stdout, code } = JSON.parse(text("list-override"));
+    process.stdout.write(stdout);
+    process.exit(code);
+  }
   if (has("fail-list-after") && n > Number(text("fail-list-after"))) {
     process.stderr.write("listing failed\\n");
     process.exit(1);

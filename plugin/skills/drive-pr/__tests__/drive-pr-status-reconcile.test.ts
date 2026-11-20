@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -589,6 +590,23 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     expect(r.state).toBe("INDETERMINATE");
     expect(r.exitCode).toBe(1);
     expect(resolvedIn(dir)).toEqual([]);
+  });
+
+  it("keeps a check-runs listing stop when the finished-skip snapshot disagrees", async () => {
+    // A listing cut short is an unreadable evaluation, not evidence that the
+    // PR reopened. Retraction would re-run the listing even though its page
+    // bound is already known to be exhausted, losing the named diagnostic.
+    const { dir, stateDir } = writeFixture({
+      checkRunsHang: true,
+      liveProbeSaysClosedOnce: true,
+    });
+    const r = await probeIn(dir, stateDir, HEAD, [], {
+      env: { GH_CALL_TIMEOUT: "1" },
+    });
+
+    expect(r.state).toBe("CHECK_RUNS_UNREADABLE");
+    expectSpawnExit({ ...r, stdout: "" }, 25);
+    expect(r.stderr).not.toContain("retracting the skip");
   });
 
   it("degrade() stops at the poll DEADLINE, not only at the retry count", async () => {

@@ -248,7 +248,10 @@ describe("final CI keep-waiting gate", () => {
     );
     const convergence = driver("convergence-ci");
     expect(convergence).toMatch(
-      /const finalCiSignals = await context\.finalCiWait\.prime\(\);\n(?: {2}\/\/[^\n]*\n)* {2}const release = await run\(/,
+      /const finalCiSignals = await context\.finalCiWait\.prime\(\);\n {2}const released = await releaseCiHold\(context, reviewedHead\);/,
+    );
+    expect(convergence).toMatch(
+      /async function releaseCiHold\([^)]*\)[^{]*\{\n(?: {2}\/\/[^\n]*\n)* {2}const release = await run\(/,
     );
     expect(convergence).toContain(
       'context.finalCiWait.remember(reviewedHead, finalCiSignals, false);\n    await sleep(FINAL_CI_POLL_SECONDS);\n    return "continue";',

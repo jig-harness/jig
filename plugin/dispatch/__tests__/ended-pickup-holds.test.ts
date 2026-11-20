@@ -245,6 +245,31 @@ describe("a batch pickup that ended after claiming one member", () => {
     expect(questionTargets(["#923", "#924", "#925"], [read])).toEqual(["#924"]);
   });
 
+  it("keeps an unwritten preserved decision on its named batch member", () => {
+    const read = questionedBatch("Should #923 change its scope?");
+    read.result = null;
+    expect(read.result).toBeNull();
+    read.unwritten = "2026-11-12T17:22:00.000Z";
+    read.report = {
+      at: "2026-11-12T17:23:00.000Z",
+      by: "agent",
+      report: {
+        schema: "closing-report/v1",
+        concluded: "A scope decision remains.",
+        question: "Should #924 change its scope?",
+        decision: {
+          call: { question: "Should #924 change its scope?" },
+        } as never,
+        suggested_next: {
+          step: "Decide the scope.",
+          owner: "person",
+          act: "Decide",
+        },
+      },
+    };
+    expect(questionTargets(["#923", "#924", "#925"], [read])).toEqual(["#924"]);
+  });
+
   it("shows an unnamed batch question once on its anchor", () => {
     const read = questionedBatch(
       "Should the batch follow the shared approach?",

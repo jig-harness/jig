@@ -221,6 +221,12 @@ export interface Fixture {
    * every consumer of it is skipped, so it must not block `PR_CONFLICTING`.
    */
   checkRunsUnreadable?: boolean;
+  /** The check-runs read never answers, so its deadline cuts it short. */
+  checkRunsHang?: boolean;
+  /** The check-runs read answers this many times, then never again. */
+  checkRunsHangAfter?: number;
+  /** The check-runs listing's first page links a second that never answers. */
+  checkRunsSecondPageHangs?: boolean;
   /**
    * The mergeability GitHub reports changes between the first `gh pr view`
    * read and later ones — the window `announce-merge-ready.ts` closes with its
@@ -2010,7 +2016,24 @@ for a in "$@"; do
         echo "gh-stub: simulated timeline timeout" >&2; exit 1
       fi
       emit "$F/timeline.json"; exit 0 ;;
-    *check-runs*)        emit "$F/check-runs.json"; exit 0 ;;
+    *check-runs*)
+      if [ -f "$F/check-runs-hang" ]; then sleep 60; fi
+      # A listing whose first page names a second one that never answers: the
+      # paged read is cut short after exactly one page.
+      if [ -f "$F/check-runs-second-page-hangs" ]; then
+        case "$*" in
+          *page=2*) sleep 60 ;;
+          *--include*)
+            printf 'HTTP/2.0 200 OK\r\nLink: <https://api.github.com/repos/o/r/commits/c/check-runs?page=2>; rel="next"\r\n\r\n'
+            emit "$F/check-runs.json"; exit 0 ;;
+        esac
+      fi
+      if [ -f "$F/check-runs-hang-after" ]; then
+        left=$(cat "$F/check-runs-hang-after")
+        if [ "$left" -le 0 ]; then sleep 60; fi
+        echo $((left - 1)) > "$F/check-runs-hang-after"
+      fi
+      emit "$F/check-runs.json"; exit 0 ;;
     *actions/runs*)
       [ -f "$F/hold-read-seen" ] && fail_counted "$F/runs-read-fails"
       emit "$F/workflow-runs.json"; exit 0 ;;
@@ -2186,6 +2209,14 @@ export function writeFixture(
     writeFileSync(join(dir, "dirty-on-final-verify"), "");
   }
   if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
+  if (f.checkRunsHang) writeFileSync(join(dir, "check-runs-hang"), "");
+  if (f.checkRunsSecondPageHangs)
+    writeFileSync(join(dir, "check-runs-second-page-hangs"), "");
+  if (f.checkRunsHangAfter !== undefined)
+    writeFileSync(
+      join(dir, "check-runs-hang-after"),
+      String(f.checkRunsHangAfter),
+    );
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }
@@ -2547,7 +2578,7 @@ export async function probeIn(
     ),
     {
       env: {
-        ...process.env,
+        ...gitCleanEnv(),
         PATH: `${binDir}${delimiter}${process.env.PATH}`,
         DRIVE_PR_FIXTURES: dir,
         DRIVE_PR_STATE_DIR: stateDir,

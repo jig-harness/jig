@@ -117,6 +117,13 @@ describe("stopPickup", () => {
     expect(clean.inheritsEdits).toBe(false);
   });
 
+  it("hands a check-runs listing stop's work in this tree to the next drive", async () => {
+    const r = await pickupAfter([stop("25", true)]);
+    expect(r.notice).toStartWith("RE-ARMED AFTER A CHECK-RUNS LISTING STOP");
+    expect(r.notice).toContain("It left work in this tree");
+    expect(r.inheritsEdits).toBe(true);
+  });
+
   it("names a spent CI-repair budget", async () => {
     const r = await pickupAfter([stop("21")]);
     expect(r.notice).toStartWith(

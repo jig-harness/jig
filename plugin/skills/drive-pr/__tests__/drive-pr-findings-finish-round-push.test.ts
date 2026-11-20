@@ -461,6 +461,38 @@ describe("finish-round.ts", () => {
     }
   });
 
+  it("stops with the named listing stop and its page count when the hold's check-runs listing is cut short", async () => {
+    const r = await finishRound({
+      fixture: { threads: [], checkRunsHang: true },
+      env: { GH_CALL_TIMEOUT: "1" },
+    });
+    expectSpawnExit(r, 25);
+    expect(r.report.state).toBe("CHECK_RUNS_UNREADABLE");
+    expect(r.report).toHaveProperty("listingPagesRead");
+    expect(r.pushed).toBe("");
+  });
+
+  it("carries the page count the hold's listing read before it was cut short into the report", async () => {
+    // The page-by-page walk, which counts the pages it read, runs only with the forge budget and a read cache.
+    const cacheDir = mkdtempSync(join(tmpdir(), "finish-round-gh-cache-"));
+    try {
+      const r = await finishRound({
+        fixture: { threads: [], checkRunsSecondPageHangs: true },
+        env: {
+          GH_CALL_TIMEOUT: "1",
+          JIG_FORGE_BUDGET: "on",
+          JIG_GH_CACHE_DIR: cacheDir,
+        },
+      });
+      expectSpawnExit(r, 25);
+      expect(r.report.state).toBe("CHECK_RUNS_UNREADABLE");
+      expect(r.report.listingPagesRead).toBe(1);
+      expect(r.pushed).toBe("");
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
+    }
+  });
+
   it("pushes a PR that has conflicted since it opened, before any CI ran on it, without taking the hold", async () => {
     const r = await finishRound({
       fixture: { threads: [], mergeable: "CONFLICTING" },
