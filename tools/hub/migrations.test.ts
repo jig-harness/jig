@@ -79,13 +79,25 @@ test("a journal timestamp the base already holds, changed, is found", () => {
     `${MIGRATIONS}/meta/_journal.json changes a migration HEAD already holds`,
   ]);
   journal.entries[0].when -= 1;
-  journal.entries.push({
+  const last = journal.entries[journal.entries.length - 1].when;
+  const appended = (when: number) => ({
     idx: 99,
     version: "6",
-    when: 1,
+    when,
     tag: "x",
     breakpoints: true,
   });
+  journal.entries.push(appended(last));
+  writeFileSync(file, JSON.stringify(journal));
+  expect(editedHistory("HEAD", copy)).toEqual([
+    `${MIGRATIONS}/meta/_journal.json changes a migration HEAD already holds`,
+  ]);
+  journal.entries[journal.entries.length - 1] = appended(1);
+  writeFileSync(file, JSON.stringify(journal));
+  expect(editedHistory("HEAD", copy)).toEqual([
+    `${MIGRATIONS}/meta/_journal.json changes a migration HEAD already holds`,
+  ]);
+  journal.entries[journal.entries.length - 1] = appended(last + 1);
   writeFileSync(file, JSON.stringify(journal));
   expect(editedHistory("HEAD", copy)).toEqual([]);
 });

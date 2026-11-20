@@ -162,6 +162,19 @@ describe("a job's run", () => {
     }
   });
 
+  test("a step that fails past the deadline reports the stop, not its own failure", async () => {
+    const ports = portsWithStore();
+    const outcome = await runJob(
+      ports,
+      { ...JOB, timeoutMs: 1_000, leaseMs: 1_000 },
+      async () => {
+        ports.advance(1_500);
+        return failed("unavailable", "the store is away");
+      },
+    );
+    expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
+  });
+
   test("progress with array holes or a toJSON is refused", async () => {
     const hooked = { next: 1 };
     Object.defineProperty(hooked, "toJSON", { value: () => null });

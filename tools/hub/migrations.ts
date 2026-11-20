@@ -212,6 +212,31 @@ function journalEntries(text: string): unknown[] | null {
   }
 }
 
+/** The timestamp of a journal entry, or `null` when it has no safe integer one. */
+function whenOf(entry: unknown): number | null {
+  const when =
+    typeof entry === "object" && entry !== null
+      ? (entry as { when?: unknown }).when
+      : undefined;
+  return typeof when === "number" && Number.isSafeInteger(when) ? when : null;
+}
+
+/**
+ * Whether every entry `kept` appends to the `held` ones carries a safe-integer
+ * timestamp above the one before it: the migrator runs a migration only when
+ * its timestamp exceeds the latest one a database installed, so an appended
+ * entry at or below it is skipped on every upgrade.
+ */
+function appendedAfter(held: unknown[], kept: unknown[]): boolean {
+  let last = held.length === 0 ? -Infinity : whenOf(held[held.length - 1]);
+  for (const entry of kept.slice(held.length)) {
+    const when = whenOf(entry);
+    if (last === null || when === null || when <= last) return false;
+    last = when;
+  }
+  return true;
+}
+
 /**
  * Each migration file `base` (a git revision) already holds that `folder`
  * changes or removes, and each journal entry it holds that `folder` alters
@@ -259,7 +284,8 @@ export function editedHistory(
         kept === null ||
         held.some(
           (entry, at) => JSON.stringify(entry) !== JSON.stringify(kept[at]),
-        )
+        ) ||
+        !appendedAfter(held, kept)
       );
     })
     .map((path) => `${path} changes a migration ${base} already holds`);

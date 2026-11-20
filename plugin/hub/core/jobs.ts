@@ -131,11 +131,12 @@ export function runJob<Progress extends JsonValue, Code extends string>(
         if (context.signal.aborted || ports.clock.now() >= context.deadlineAt)
           return failed("aborted", `the run of ${job} was stopped`);
         const stepped = await step(context, progress);
-        if (!stepped.ok) return stepped;
         // A step can work synchronously past the deadline and settle at
-        // once, before the timer runs: what it did is not stored.
+        // once, before the timer runs: what it did is not stored, and a
+        // failed result is no different from a successful one.
         if (context.signal.aborted || ports.clock.now() >= context.deadlineAt)
           return failed("aborted", `the run of ${job} was stopped`);
+        if (!stepped.ok) return stepped;
         progress = stepped.value.progress;
         const now = ports.clock.now();
         if (stepped.value.done) {

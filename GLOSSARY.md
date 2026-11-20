@@ -2722,7 +2722,8 @@ make, use the entry's term instead.
   implementation and every shared module declared portable, it follows each
   import and fails on a `bun:` or `node:` module, a package not on its
   allowlist, or a reference to a runtime's own global (`Bun`, `process`,
-  `Deno`) outside the vendored bundles it accepts them in, naming the chain of
+  `Deno`), which the vendored bundles may not make either: only their
+  `Buffer` references are accepted. It names the chain of
   imports that brought a shared module's use in. A type-only import is not
   followed, since it never runs.
 - **World view** — what the *dispatcher* knows of the forge and the
