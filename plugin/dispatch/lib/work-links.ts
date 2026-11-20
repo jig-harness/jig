@@ -306,7 +306,7 @@ function assertedText(body: string): string {
   );
 }
 
-export function sameRepository(a: string, b: string): boolean {
+function sameRepository(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 

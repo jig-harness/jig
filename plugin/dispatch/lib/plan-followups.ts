@@ -364,8 +364,7 @@ function planTickMarker(
       assertNever(ended);
       return;
   }
-  if (plannedWait(input, marker, found, ended, plan, target)) return;
-  if (settledArm(input, marker, found, ended, plan, target)) return;
+  if (waitedOn(input, marker, found, ended, plan, target)) return;
   const released = releaseWhy(input, pr.number, marker, found, ended);
   if (released !== null) {
     const held = released.fault ? input.rerunsHeld : null;
@@ -482,6 +481,21 @@ function plannedWait(
     evidence: { record: id, marker: marker.id, until: wait.until },
   });
   return true;
+}
+
+/** A follow-up held for a wait it recorded, or for an arm it spent and the tick read as settled. */
+function waitedOn(
+  input: FollowupInput,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  found: ReadRecord | undefined,
+  ended: TickOutcome | null,
+  plan: Plan,
+  target: string,
+): boolean {
+  return (
+    plannedWait(input, marker, found, ended, plan, target) ||
+    settledArm(input, marker, found, ended, plan, target)
+  );
 }
 
 /**

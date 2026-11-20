@@ -240,6 +240,19 @@ function newerArm(window: string | null, arm: string | null): boolean {
   return arm.split(" ").some((t) => !known.has(t));
 }
 
+/** Whether the window's arm, and the pass's own when it names one, went past no earlier window. */
+function unspentArm(
+  spent: ReadonlySet<string>,
+  windowArm: string | null,
+  arm: string | null,
+): boolean {
+  return (
+    windowArm !== null &&
+    !spent.has(windowArm) &&
+    (arm === null || !spent.has(arm))
+  );
+}
+
 /** The pending run after `a`, a pending wait, from `from`. */
 function nextPending(from: Run, a: Attempt): Run {
   const arm = armKey(a.wait);
@@ -255,11 +268,7 @@ function nextPending(from: Run, a: Attempt): Run {
   // A window that began on an untagged pass takes the first tag a later pass names.
   const windowArm = fresh ? arm : (from.arm ?? arm);
   const readable =
-    pastWindow &&
-    !pastRun &&
-    windowArm !== null &&
-    !from.spentArms.has(windowArm) &&
-    (arm === null || !from.spentArms.has(arm));
+    pastWindow && !pastRun && unspentArm(from.spentArms, windowArm, arm);
   return {
     ...from,
     pendingSince,

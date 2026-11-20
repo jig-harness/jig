@@ -143,6 +143,7 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
+import { undecided } from "./ledger-undecided.ts";
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
@@ -194,13 +195,13 @@ function readFacts({
  */
 function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
   const verified = ledger.verifiedSha;
-  const unplaced = (why: string, forgeUndecided = false): Classified => ({
+  const unplaced = (why: string): Classified => ({
     class: "unplaced",
-    ...(forgeUndecided ? { forgeUndecided: true as const } : {}),
     why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), and ${why}, so whether it is stale cannot be told`,
   });
   const facts = readFacts(forge);
-  if ("unread" in facts) return unplaced(facts.unread, true);
+  if ("unread" in facts)
+    return { ...unplaced(facts.unread), forgeUndecided: true };
   const { head, conflicting } = facts;
   if (verified === "" && !conflicting)
     return unplaced("its ledger names no head the drive verified");
@@ -250,11 +251,9 @@ function conflictRedrive(
 function conflictStopClass(forge: PrFacts): Classified {
   const pair = conflictPair(forge);
   if ("unread" in pair)
-    return {
-      class: "unplaced",
-      why: `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${pair.unread}, so the change a re-drive would act on cannot be told`,
-      forgeUndecided: true,
-    };
+    return undecided(
+      `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${pair.unread}, so the change a re-drive would act on cannot be told`,
+    );
   return conflictRedrive(
     pair.facts.conflicting
       ? "stopped on a conflict with its base, and still conflicting"
@@ -296,11 +295,9 @@ function failedConflictClass(forge: PrFacts): Classified | null {
     return null;
   const pair = conflictPair(forge);
   if ("unread" in pair)
-    return {
-      class: "unplaced",
-      why: `stopped ${FAILED}, and ${pair.unread}, so whether its conflict-resolve round settles it cannot be told`,
-      forgeUndecided: true,
-    };
+    return undecided(
+      `stopped ${FAILED}, and ${pair.unread}, so whether its conflict-resolve round settles it cannot be told`,
+    );
   const { facts, base } = pair;
   return {
     class: "stale",
@@ -513,11 +510,9 @@ function parkConflictClass(waiting: string, forge: PrFacts): Classified | null {
   if (forge.mergeable !== "CONFLICTING") return null;
   const pair = conflictPair(forge);
   if ("unread" in pair)
-    return {
-      class: "unplaced",
-      why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), ${waiting}, and conflicting with its base, but ${pair.unread}, so the change a re-drive would act on cannot be told`,
-      forgeUndecided: true,
-    };
+    return undecided(
+      `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), ${waiting}, and conflicting with its base, but ${pair.unread}, so the change a re-drive would act on cannot be told`,
+    );
   return conflictRedrive(
     `parked ${waiting}, and conflicting with its base`,
     pair,

@@ -128,6 +128,37 @@ export async function openTurn(
   return { turn, opened };
 }
 
+/** Read the pending follow-up arms again where a follow-up command runs, and note a read that failed. */
+async function observeArmsSettled(
+  { turn, opened }: { turn: RepoTurn; opened: OpenedRepo },
+  observation: RepoObservation,
+  context: TickContext,
+): Promise<void> {
+  const { forge } = observation;
+  if (!forge.ok || opened.section.followupCommand === null) return;
+  const settled = await turn.timer.time("forge", () =>
+    rereadPendingArms(
+      opened.repo,
+      forge.merged,
+      allRecords(context),
+      context.nowMs,
+      tickBound(context),
+    ),
+  );
+  if (settled.ok) {
+    observation.armsSettled = settled.value;
+    return;
+  }
+  const failure = readFailureOf(settled.failure);
+  opened.report.records.push({
+    record: "forge",
+    source: `gh ${opened.repo.slug} release tags`,
+    ok: false,
+    detail: `The pending follow-up arms past dispatch.followup_within were not read again, so they go to a person as their passes read them: ${settled.failure.reason}`,
+    ...(failure === undefined ? {} : { failure }),
+  });
+}
+
 /** Derive one repository's work after the tick has gathered its tracker scopes. */
 export async function observeOpenedTurn(
   prepared: { turn: RepoTurn; opened: OpenedRepo },
@@ -164,28 +195,7 @@ export async function observeOpenedTurn(
         )
       : [];
 
-  if (forge.ok && opened.section.followupCommand !== null) {
-    const settled = await timer.time("forge", () =>
-      rereadPendingArms(
-        opened.repo,
-        forge.merged,
-        allRecords(context),
-        context.nowMs,
-        bound,
-      ),
-    );
-    if (settled.ok) observation.armsSettled = settled.value;
-    else {
-      const failure = readFailureOf(settled.failure);
-      opened.report.records.push({
-        record: "forge",
-        source: `gh ${opened.repo.slug} release tags`,
-        ok: false,
-        detail: `The pending follow-up arms past dispatch.followup_within were not read again, so they go to a person as their passes read them: ${settled.failure.reason}`,
-        ...(failure === undefined ? {} : { failure }),
-      });
-    }
-  }
+  await observeArmsSettled(prepared, observation, context);
   if (releaseStationOn(opened)) {
     const tags = await timer.time("forge", () =>
       observeReleaseTags(opened.repo, context.nowMs, bound),

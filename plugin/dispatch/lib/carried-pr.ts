@@ -76,7 +76,7 @@ export type CarryingDrive =
   | "unplaced";
 
 /** How long after its merge a pull request that links an item settles it for the stall watch: its follow-up's time, waits included. */
-export const MERGED_SETTLES_MS = 24 * 3_600_000;
+const MERGED_SETTLES_MS = 24 * 3_600_000;
 
 /** The ledger classes of a drive parked on a person's question, which its own need frames. */
 const ASKS_PERSON: ReadonlySet<DrivenPr["class"]> = new Set([
