@@ -197,6 +197,9 @@ const ENTRY_FIELDS = {
   },
   queue: { repo: isString, target: isString, why: isString },
   repos: {
+    trackerKept: (v) =>
+      v === undefined ||
+      hasFields(v, { readAt: nullOr(isTime), reason: isString }),
     readyOmitted: (v) =>
       v === undefined || (Number.isSafeInteger(v) && Number(v) >= 0),
     boardUnread: (v) => v === undefined || v === null || isString(v),

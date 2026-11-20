@@ -1026,6 +1026,24 @@ make, use the entry's term instead.
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
   workspace is what a *workspace provider* opens around a worktree.
+- **Local loop** — planned: the dispatcher's fastest refresh, which reads
+  only the host it runs on (the load and memory, whether a recorded run's
+  processes are still alive, whether a session ended), calls nothing outside
+  it and so spends no *budget*. It would show what it read on the dashboard
+  and wake a repository's tick when a run ended or memory freed, and never
+  start a stage, since a launch is admitted only under the tick's own lock
+  ([the dispatcher's refresh cadences](design/dark-factory-dispatch.md#refresh-cadences)).
+- **Local view** — planned: the one record the *local loop* writes in the
+  dispatcher's state database: each gauge's fill, whether each recorded run's
+  processes are alive, and each session's state, every value stamped with the
+  time it was read. The dashboard shows it beside the last tick's record; it
+  is for showing and waking, never an input to admitting a launch
+  ([the dispatcher's refresh cadences](design/dark-factory-dispatch.md#refresh-cadences)).
+- **Probe share** — planned: the part of a limit's hourly allowance (default
+  a tenth) that the dispatcher's change probes together may spend, counted
+  from the cost ledger, so probes that run whether or not anything changed
+  leave room for the woken ticks and the passes. It puts a floor under each
+  probe's interval ([outbound calls](design/outbound-calls.md#probes-in-the-budget)).
 - **Load admission** — letting one more heavy run start on a machine only
   while it has room for it: the predicted load (the recent load average plus
   the cost of runs started too recently to show in it) stays under a share
@@ -1748,6 +1766,29 @@ make, use the entry's term instead.
 - **Reviewer evidence mode** — which record of the forge the drive reads to
   learn that the AI reviewer reviewed the head commit: the reviewer's summary
   comment marker, or its latest *review object* together with its check run.
+- **Reviewer-evidence contract** — what the drive reads to learn that an AI
+  reviewer reviewed the head commit: a check run whose name matches
+  `review.reviewer_check_pattern` (from the configured reviewer app, when one
+  is named), and either a *sticky comment* that the reviewer's own bot account
+  posts, that carries `review.sticky_marker` and that stamps the reviewed
+  commit as an HTML comment, `<!-- <review.reviewed_sha_marker>: <commit SHA> -->`
+  (and may carry a *skip notice*), or, in the `review_object` *reviewer
+  evidence mode*, the commit that the newest *review object* names, or a
+  successful or neutral check run on the head when the reviewer posts nothing
+  for a push with no new findings. This is completion evidence only: the
+  drive reads findings from unresolved review threads, and from summary or
+  review bodies only in a format it has a profile for. Any reviewer that
+  produces the evidence and posts its findings as review threads works with
+  the drive, whoever wrote it
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md),
+  [drive-pr](plugin/skills/drive-pr/README.md)).
+- **Reference reviewer** — the reviewer Jig ships to implement the
+  *reviewer-evidence contract*, so a team with no AI reviewer of its own has
+  one to drive against. It is ai-review, planned as `jig-harness/ai-review`
+  and not yet published, and it lives in its own repository, never in the
+  plugin. It is one implementation of the contract beside the reviewers
+  [M7's mappings](modules/M7-pr-lifecycle-review/mappings.md) name
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)).
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
   equals that head, and no unresolved thread or *summary-only finding* remains.

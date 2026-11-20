@@ -28,6 +28,12 @@
  * between ticks: the next tick asks again, and an account whose answer
  * passes is no longer held and raises no need.
  *
+ * A tracker the tick found it has no credential for
+ * (`shared/outbound/missing-credential.ts`, `no-credential.ts`) is not
+ * probed: no account is asked or held for it, and a launch of a stage
+ * that touches it waits, saying once that the tick has no credential for
+ * that tracker.
+ *
  * `preflight` in the machine file names the checks (`preflight-config.ts`);
  * `[]` turns them off.
  */
@@ -36,6 +42,7 @@ import { resolve } from "node:path";
 import { actOfNeed } from "../../shared/acts.ts";
 import { swallow } from "../../shared/errors.ts";
 import { callerForChild } from "../../shared/outbound/ledger.ts";
+import { missingCredentials } from "../../shared/outbound/missing-credential.ts";
 import { run } from "../../shared/proc.ts";
 import { admittedVendor, passEnvironment } from "./accounts.ts";
 import type { LineNeed } from "./dashboard-contract.ts";
@@ -171,6 +178,11 @@ export async function heldAccounts(
   const held = new Map<string, string>();
   const target = preflight.targets.get(slug);
   if (target === undefined || !checksStage(preflight, stage)) return held;
+  const keyless = noCredentialFor(target);
+  if (keyless !== null) {
+    for (const account of accounts) held.set(account.name, keyless);
+    return held;
+  }
   // Results are stored by input index so the report and the host needs keep
   // the accounts' order however the probes finish.
   const answers: Array<TrackerAnswer | undefined> = [];
@@ -266,8 +278,22 @@ export function trackerTargetOf(
   };
 }
 
-/** What a launch held on every account it could bill waits on. */
+/** How the reason begins when no account was asked: the tick has no credential for the tracker. */
+const NOT_STARTED = "not started: ";
+
+/** Why no account is asked for `target`'s tracker: the tick has no credential for it; `null` when it has. */
+function noCredentialFor(target: TrackerTarget): string | null {
+  const adapter = target.tracker.split(":")[0] ?? "";
+  return missingCredentials().some((m) => m.system === adapter)
+    ? `${NOT_STARTED}the tick has no ${issueService(adapter)} credential (its receipt's noCredential says what is missing)`
+    : null;
+}
+
+/** What a launch held on every account it could bill waits on: one reason said once, when every account was held for it. */
 export function heldDetail(held: ReadonlyMap<string, string>): string {
+  const reasons = new Set(held.values());
+  const [only] = reasons;
+  if (reasons.size === 1 && only?.startsWith(NOT_STARTED)) return only;
   return `the issue preflight holds it on ${[...held]
     .map(([account, reason]) => `${account} (${reason})`)
     .join(", ")}`;

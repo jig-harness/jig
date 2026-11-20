@@ -801,8 +801,9 @@ hub serves the copies the hosts reported.
   one organization (a tracker user's keys) is read by all of them at once.
   So a host reading for itself spends at most its share of such a budget,
   the remaining balance divided by the number of hosts `hello` last said
-  share it, and its change probe pauses for that budget; its ticks still
-  read at their interval. The App's budget is the hub's alone, so no host
+  share it, and its change probes run again within that share and pause
+  while it is spent; its ticks still read at their interval, from the same
+  share. The App's budget is the hub's alone, so no host
   falls back onto it.
 
 ### How fresh each fact is
@@ -1335,7 +1336,8 @@ for a team without a private network, is left out until a team needs it.
 | --- | --- | --- |
 | `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub, except an enrolled host's drive pass making the optional watch call below |
 | The dispatcher's tick | Reads the forge and the tracker itself | Reads only the hub's world view, bar a fence's read-back; asks it before each claim; reports its records; falls back to reading itself |
-| The change probe | Asks the forge and the tracker once a minute | Waits on the hub's change feed, which the events move |
+| The change probes (one per service, each on its own interval) | Ask the forge, Linear and Jira ([refresh cadences](dark-factory-dispatch.md#refresh-cadences)) | Replaced by the hub's change feed while it answers, which the events move; run again when it does not |
+| The dispatcher's local loop | Reads the host's gauges, processes and sessions, and calls nothing outside | Unchanged: the hub cannot see this host's processes |
 | A drive pass waiting for checks | Polls its pull request every 30 seconds | Polls as without a hub, or, where the measurement showed drive polling matters, waits on the change feed and reads only the kinds that moved |
 | `jig ask`, `jig send`, `/jig:operator` | Read this machine's records and the forge | `ask` may read another host's records from the hub; `send` still writes as the person, never through the hub |
 | The dispatch dashboard | Shows its own machine | May read the hub's feed and show every host, and the hub's health |

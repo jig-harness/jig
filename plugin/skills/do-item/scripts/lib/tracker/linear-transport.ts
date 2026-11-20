@@ -22,6 +22,12 @@
  * once more inside its deadline (`shared/outbound/retry.ts`); a mutation is
  * never sent twice. In a run that holds the systems that do not answer
  * (`shared/outbound/hold.ts`), Linear is held after such a failure.
+ *
+ * With no key, a client that answers it has no API key configured, or is
+ * not installed, leaves the process with no Linear credential: that answer, and every later call through the client in the
+ * same process, fails as `unauthorized` with "no Linear key configured" and
+ * what gives one (`shared/outbound/missing-credential.ts`), and the later
+ * calls are not sent. None of them spends under the client's identity.
  */
 
 import { randomUUID } from "node:crypto";
@@ -39,7 +45,19 @@ import {
 } from "../../../../../shared/outbound/failure.ts";
 import { guarded } from "../../../../../shared/outbound/hold.ts";
 import { retryRead } from "../../../../../shared/outbound/retry.ts";
-import { operationName } from "../../../../../shared/outbound/ledger.ts";
+import {
+  operationName,
+  recordCall,
+} from "../../../../../shared/outbound/ledger.ts";
+import {
+  clientCredential,
+  type MissingCredential,
+  missingCredentialMessage,
+  NO_CREDENTIAL,
+  noCredentialReason,
+  noteMissingCredential,
+  throughCredential,
+} from "../../../../../shared/outbound/missing-credential.ts";
 import {
   recordAttempt,
   type Attempt,
@@ -112,6 +130,7 @@ export class LinearApiError extends OutboundError {
       until?: number | null;
       sent?: boolean;
       retryAfterMs?: number | null;
+      noCredential?: boolean;
     } = {},
   ) {
     super(code, message, extra);
@@ -391,6 +410,24 @@ function limited(err: LinearApiError, answer: BudgetAnswer): LinearApiError {
 }
 
 /**
+ * A failure met by a call a cancellation may have cut: the caller's own
+ * cancellation throws, the deadline's is returned as the answer. A
+ * cancellation that met no request keeps nothing sent; one a dispatched
+ * request met, or that an attempt already marked, keeps that fact.
+ */
+function cutShort(
+  err: unknown,
+  dispatched: boolean,
+  signal: AbortSignal | undefined,
+  bound: AbortSignal,
+): LinearApiError {
+  const sent = dispatched || (err instanceof LinearApiError && err.sent);
+  if (cancelled(signal)) throw abortedError(signal, sent);
+  if (cancelled(bound)) return abortedError(bound, sent);
+  throw err;
+}
+
+/**
  * One call: a query sent once more after a failure that may clear (`retryRead`),
  * a mutation once, both inside one `LINEAR_TIMEOUT_MS` deadline, through the
  * run's hold on Linear (`guarded`). Its data, or the failure thrown.
@@ -422,23 +459,11 @@ async function call(
           deadlineAt,
           failureOf: failureOfAnswer,
         },
-      ).catch((err: unknown) => {
-        const sent = dispatched || (err instanceof LinearApiError && err.sent);
-        if (cancelled(signal)) throw abortedError(signal, sent);
-        if (cancelled(bound)) return abortedError(bound, sent);
-        throw err;
-      }),
+      ).catch((err: unknown) => cutShort(err, dispatched, signal, bound)),
     failureOfAnswer,
     heldAnswer,
     bound,
-  ).catch((err: unknown): Answer => {
-    // A cancellation that met no request keeps nothing sent; one a dispatched
-    // request met, or that an attempt already marked, keeps that fact.
-    const sent = dispatched || (err instanceof LinearApiError && err.sent);
-    if (cancelled(signal)) throw abortedError(signal, sent);
-    if (cancelled(bound)) return abortedError(bound, sent);
-    throw err;
-  });
+  ).catch((err: unknown): Answer => cutShort(err, dispatched, signal, bound));
   if (answer instanceof LinearApiError) throw answer;
   return answer.data;
 }
@@ -503,16 +528,77 @@ function runCli(
   return runClient(run, argv, { timeoutMs: LINEAR_TIMEOUT_MS, signal });
 }
 
+/** What gives a process a Linear credential. */
+const LINEAR_REMEDY =
+  "set LINEAR_API_KEY (or LINEAR_API_TOKEN), or log in to the `linear` command-line client";
+
+/** The client's own words when it holds no credential at all, as against one Linear refused. */
+const NO_CLIENT_CREDENTIAL = /\bno api key configured\b/i;
+
+/**
+ * What a failed client run says the process lacks: the client is not
+ * installed, or holds no credential; `null` when it says neither. Only the
+ * client's own words count: its standard error, or its standard output
+ * when it wrote no error and no JSON, so data an answer carries never does.
+ */
+function keylessRun(r: RunResult): MissingCredential | null {
+  const missing = (answer: string): MissingCredential => ({
+    system: LINEAR,
+    reason: noCredentialReason(LINEAR),
+    remedy: LINEAR_REMEDY,
+    answer,
+  });
+  if (r.spawnFailed)
+    return r.stderr.includes("ENOENT")
+      ? missing("the client is not installed")
+      : null;
+  if (r.code === 0) return null;
+  const own =
+    r.stderr.trim() !== ""
+      ? r.stderr
+      : jsonOrNull(r.stdout) === null
+        ? r.stdout
+        : "";
+  const said = own.replace(/\s+/g, " ").trim().slice(0, 200);
+  return NO_CLIENT_CREDENTIAL.test(said) ? missing(said) : null;
+}
+
+/** The failure of a call the process has no Linear credential for. */
+const keylessError = (missing: MissingCredential): LinearApiError =>
+  new LinearApiError(missingCredentialMessage(missing), null, "unauthorized", {
+    noCredential: true,
+  });
+
+/**
+ * A call refused before it left: the process has no Linear credential. The
+ * ledger keeps it under no credential, with no request.
+ */
+function refusedKeyless(
+  missing: MissingCredential,
+  query: string,
+): Promise<never> {
+  recordCall({
+    system: LINEAR,
+    credential: NO_CREDENTIAL,
+    operation: operationName(query),
+    requests: 0,
+    cost: null,
+    unit: "points",
+    estimated: false,
+    durationMs: 0,
+    failure: "unauthorized",
+  });
+  return Promise.reject(keylessError(missing));
+}
+
 /** Why a finished client run cannot be read as a response, if it cannot. */
 function cliFailure(r: RunResult): LinearApiError | null {
   if (r.spawnFailed)
-    return r.stderr.includes("ENOENT")
-      ? new LinearApiError(
-          "no Linear credential: set LINEAR_API_KEY (or LINEAR_API_TOKEN), or install and log in to the `linear` command-line client",
-          null,
-          "unauthorized",
-        )
-      : new LinearApiError(`linear api failed: ${r.stderr}`, null, "invalid");
+    return new LinearApiError(
+      `linear api failed: ${r.stderr}`,
+      null,
+      "invalid",
+    );
   if (r.timedOut)
     return new LinearApiError("linear api timed out", null, "unreachable", {
       sent: true,
@@ -556,6 +642,14 @@ async function cliOnce(
     signal,
   );
   if (cancelled(signal)) return abortedError(signal, true);
+  const keyless = keylessRun(r);
+  if (keyless !== null) {
+    // The client reached nothing: no credential spent, and none is named.
+    noteMissingCredential(clientCredential(LINEAR, bin), keyless);
+    observation.credential = NO_CREDENTIAL;
+    observation.requests = 0;
+    return keylessError(keyless);
+  }
   return cliFailure(r) ?? cliAnswer(r, governed);
 }
 
@@ -599,6 +693,12 @@ function dispatchTagged(
 /** The CLI hides its credential, so its dispatch snapshots live for this process only. */
 const CLI_DISPATCH_SESSION = randomUUID();
 
+/** The signal a credential wait observes: the caller's, and one call's deadline from now. */
+function waitSignal(signal: AbortSignal | undefined): AbortSignal {
+  const deadline = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
+  return signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
+}
+
 /**
  * Transport through the `linear` command-line client (`linear api`), which
  * keeps its own credential. Variables travel as JSON so a string that looks
@@ -606,37 +706,51 @@ const CLI_DISPATCH_SESSION = randomUUID();
  * `governor` only a refusal is recorded, for `FALLBACK_LIMIT_MS`. The record
  * is the executable's (`bin`), not an authenticated profile's: every profile
  * the client holds shares it, and it is not shared with a token's HTTP record.
+ * Until the process knows whether the client holds a credential, its calls
+ * go out one at a time; once the client said it holds none, the process
+ * sends it nothing more for a while (`throughCredential`, `refusedKeyless`).
  */
 export function cliTransport(
   bin = "linear",
   governor?: BudgetGovernor,
 ): LinearTransport {
+  const identity = clientCredential(LINEAR, bin);
   const governed: Governed | null =
-    governor === undefined
-      ? null
-      : { governor, key: credentialKey("linear", `cli:${bin}`) };
+    governor === undefined ? null : { governor, key: identity };
   return dispatchTagged(
-    (query, variables, signal) =>
-      call(
-        (bound) => {
-          const observation: Attempt = {
-            system: LINEAR,
-            credential: credentialKey(LINEAR, `cli:${bin}`),
-            operation: operationName(query),
-            requests: 0,
-            cost: null,
-            unit: "points",
-            estimated: false,
-          };
-          return recordAttempt(
-            observation,
-            () => cliOnce(bin, governed, query, variables, bound, observation),
-            (answer) => failureOfAnswer(answer)?.code ?? null,
-          );
-        },
-        query,
-        signal,
-      ),
+    (query, variables, signal) => {
+      // One deadline covers the wait for admission and the call it admits.
+      const deadline = waitSignal(signal);
+      return throughCredential(
+        identity,
+        () =>
+          call(
+            (bound) => {
+              const observation: Attempt = {
+                system: LINEAR,
+                credential: identity,
+                operation: operationName(query),
+                requests: 0,
+                cost: null,
+                unit: "points",
+                estimated: false,
+              };
+              return recordAttempt(
+                observation,
+                () =>
+                  cliOnce(bin, governed, query, variables, bound, observation),
+                (answer) => failureOfAnswer(answer)?.code ?? null,
+              );
+            },
+            query,
+            deadline,
+          ),
+        (keyless) => refusedKeyless(keyless, query),
+        () => signal?.aborted === true,
+        // A caller waiting for the first call stops at one call's deadline.
+        deadline,
+      );
+    },
     credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
     false,
   );
