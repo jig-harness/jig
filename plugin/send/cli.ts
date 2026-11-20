@@ -58,6 +58,11 @@ import { planAnswerRequest } from "./lib/answer.ts";
 import { openTrackerHere, planTrackerAnswer } from "./lib/answer-tracker.ts";
 import { planAssign } from "./lib/assign.ts";
 import { planPickupHold } from "./lib/pickup-hold.ts";
+import {
+  type PickupCondition,
+  parsePickupPr,
+  readPickupCondition,
+} from "../dispatch/lib/pickup-condition.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
 import {
@@ -113,6 +118,16 @@ export const sendCommand = command(
     decisionSet: optional(
       option("--decision-set", string({ metavar: "TOKEN" }), {
         description: message`answer --all: the set token the dry run printed; the send refuses when the eligible items or their digests changed.`,
+      }),
+    ),
+    untilMerged: optional(
+      option("--until-merged", string({ metavar: "PR" }), {
+        description: message`pickup hold: release the hold when this repository's pull request merges.`,
+      }),
+    ),
+    untilClosed: optional(
+      option("--until-closed", string({ metavar: "ITEM" }), {
+        description: message`pickup hold: release the hold when another item on the configured tracker closes.`,
       }),
     ),
     dryRun: option("--dry-run", {
@@ -194,11 +209,12 @@ function planPickupHoldHere(
   resolved: ResolvedAddress,
   request: Request,
   as: string | undefined,
+  condition: PickupCondition | undefined,
 ): Promise<Planned> | null {
   if (!isPickupHold(resolved.address.station, request.verb)) return null;
   const verb = request.verb === "hold" ? "hold" : "release";
   const ctx = contextFor(resolved, reading(), null);
-  return planPickupHold(ctx, resolved.checkout, verb, as);
+  return planPickupHold(ctx, resolved.checkout, verb, as, condition);
 }
 
 /** The plan of an assignment: the checkout it is written through, else why it cannot be. */
@@ -219,10 +235,11 @@ async function planFor(
   request: Request,
   as: string | undefined,
   dryRun: boolean,
+  condition?: PickupCondition,
 ): Promise<Planned> {
   const r = reading();
   if (request.verb === "assign") return planAssignHere(resolved, as);
-  const held = planPickupHoldHere(resolved, request, as);
+  const held = planPickupHoldHere(resolved, request, as, condition);
   if (held !== null) return held;
   if (request.verb === "answer" && !request.all) {
     const first = await planPickupAnswer(resolved, strict, request, as, dryRun);
@@ -319,6 +336,22 @@ export async function sendMain(args: SendArguments): Promise<number> {
     decision: args.decision,
     decisionSet: args.decisionSet,
   });
+  let condition: PickupCondition | undefined;
+  if (args.untilMerged !== undefined || args.untilClosed !== undefined) {
+    if (written.value.station !== "pickup" || request.verb !== "hold")
+      usage("only pickup hold takes --until-merged or --until-closed");
+    if (args.untilMerged !== undefined) {
+      if (args.untilClosed !== undefined) usage("name one pickup condition");
+      const pr =
+        parsePickupPr(args.untilMerged) ??
+        usage("--until-merged needs a positive pull request number");
+      condition = { kind: "pr-merged", pr };
+    } else {
+      condition =
+        readPickupCondition({ kind: "item-closed", item: args.untilClosed }) ??
+        usage("--until-closed needs an item key");
+    }
+  }
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
   const strict = () =>
@@ -340,6 +373,7 @@ export async function sendMain(args: SendArguments): Promise<number> {
     request,
     args.as,
     args.dryRun,
+    condition,
   );
   if (!planned.ok) return refusal(planned.failure.reason);
   const plan = planned.value;

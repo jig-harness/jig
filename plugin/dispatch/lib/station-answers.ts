@@ -54,6 +54,8 @@ import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-fr
 import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { type StationContext, stationDecision } from "./line-station.ts";
+import { setPersonPickupHold } from "./person-pickup-holds.ts";
+import { parsePickupPr } from "./pickup-condition.ts";
 import { isTakenNeed, owedTags, takenDecision } from "./release-groups.ts";
 import type { TrackerConversation } from "./tracker-answers.ts";
 import {
@@ -395,6 +397,52 @@ function sessionStep(
     : Promise.resolve(refused("only an item's pickup is started again"));
 }
 
+function pickupWaitPr(
+  decision: LineDecision,
+  answer: PendingAnswer,
+): string | undefined {
+  if (
+    decision.answer?.station !== "pickup" ||
+    decision.answer.framedBy !== "session"
+  )
+    return undefined;
+  return /^wait for (?:pr )?(#[1-9]\d*) to merge$/i.exec(
+    answer.choice?.option ?? "",
+  )?.[1];
+}
+
+function holdPickupFromAnswer(
+  row: AnswerRow,
+  action: Action,
+  answer: PendingAnswer,
+  pr: string,
+  root: string | undefined,
+): Outcome<string, "refused"> {
+  const number = parsePickupPr(pr);
+  const resumeRecord = evidenceText(action, "record");
+  if (number === null || resumeRecord === null)
+    return refused(
+      "the conditional hold needs a valid pull request and a pickup record",
+    );
+  if (answer.choice?.note !== undefined)
+    return refused("answer without a note to place this conditional hold");
+  const held = setPersonPickupHold(
+    row.repo,
+    action.target,
+    {
+      by: answer.author,
+      title: evidenceText(action, "title") ?? action.target,
+      url: evidenceText(action, "url"),
+      condition: { kind: "pr-merged", pr: number },
+      resumeRecord,
+    },
+    root,
+  );
+  return held.ok
+    ? ok(`held ${action.target} until PR #${number} merges`)
+    : held;
+}
+
 /** What the next session is handed for a counted answer, for a step that starts one. */
 function carriedOf(
   decision: LineDecision,
@@ -434,11 +482,13 @@ function stepOf(
 
 /** What the session a step starts is handed; `null` for a step that starts none. */
 function carryOf(
-  step: StationOptionId | "session" | undefined,
+  step: ReturnType<typeof stepOf>,
   decision: LineDecision,
   counted: PendingAnswer,
 ): CarriedAnswer | null {
-  return step !== undefined && STARTS_SESSION.has(step)
+  return step !== undefined &&
+    STARTS_SESSION.has(step) &&
+    pickupWaitPr(decision, counted) === undefined
     ? carriedOf(decision, counted)
     : null;
 }
@@ -454,13 +504,20 @@ async function act(
 ): Promise<ActedAnswer> {
   const choice = counted.choice?.option ?? "";
   const step = stepOf(decision, counted);
+  const waitPr = pickupWaitPr(decision, counted);
   const outcome =
-    step === undefined
-      ? refused(`${choice} is not an option the dispatcher carries out`)
-      : step === "session"
-        ? await sessionStep(action, ports)
-        : await dispatcherStep(step, action, ports);
-  const handedOff = step === "hold" || step === "inspect" || step === "tag";
+    waitPr !== undefined
+      ? holdPickupFromAnswer(row, action, counted, waitPr, root)
+      : step === undefined
+        ? refused(`${choice} is not an option the dispatcher carries out`)
+        : step === "session"
+          ? await sessionStep(action, ports)
+          : await dispatcherStep(step, action, ports);
+  const handedOff =
+    waitPr !== undefined ||
+    step === "hold" ||
+    step === "inspect" ||
+    step === "tag";
   const ended = !outcome.ok ? "refused" : handedOff ? "held" : "done";
   const detail = outcome.ok ? outcome.value : outcome.failure.reason;
   const carry = outcome.ok ? carryOf(step, decision, counted) : null;

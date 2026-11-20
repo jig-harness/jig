@@ -21,6 +21,7 @@ import {
 import type { CommentLike } from "../../skills/drive-pr/scripts/lib/answer-forms.ts";
 import { parkAnswers } from "../../skills/drive-pr/scripts/lib/driver/park-answers.ts";
 import { stationContextOf, stationDecision } from "../lib/line-station.ts";
+import { personPickupHolds } from "../lib/person-pickup-holds.ts";
 import { closeStateDb } from "../lib/state.ts";
 import {
   claimAnswer,
@@ -566,6 +567,57 @@ describe("settleStationAnswers on an item of another tracker", () => {
 
   const settleOn = (report: RepoReport, p: StationPorts, dir: string) =>
     settleStationAnswers(SLUG, report, LINEAR, p, dir);
+
+  it("places a conditional hold when the person chooses to wait for a merge", async () => {
+    const dir = root();
+    const decision: ParkedDecision = {
+      schema: "parked-decision/v1",
+      class: "scope",
+      call: {
+        id: "a",
+        question: "When should the pickup resume?",
+        options: [
+          {
+            id: "wait",
+            name: "Wait for #23 to merge",
+            summary: "Resume when the dependency merges.",
+            pay: ["The pickup waits."],
+          },
+          {
+            id: "now",
+            name: "Resume now",
+            summary: "Continue while the dependency is open.",
+            pay: ["The work may need rework."],
+          },
+        ],
+        recommended: "wait",
+        why: "The dependency changes the code this pickup needs.",
+      },
+      steps: [],
+      alreadyDone: "The pickup checked the dependency.",
+    };
+    const digest = decisionDigest(decision);
+    const action: Action = {
+      ...stalled(),
+      cause: "pickup-question",
+      evidence: { record: "pickup-1", question: decision.call.question },
+      framed: { decision, digest, at: "2026-11-12T10:00:00.000Z" },
+    };
+    const p = onTracker(ok([onItem(`answer pickup: approve [${digest}]`)]));
+    await settleOn(reportOf({ actions: [action] }), p, dir);
+    expect(p.steps).toEqual([]);
+    expect(personPickupHolds(SLUG, dir)).toMatchObject({
+      ok: true,
+      value: [
+        {
+          item: "ENG-12",
+          condition: { kind: "pr-merged", pr: 23 },
+          resumeRecord: "pickup-1",
+        },
+      ],
+    });
+    expect(takeCarried(SLUG, "ENG-12", "r-1", dir)).toBeNull();
+  });
 
   it("reads the item's comments on the tracker and acts on each person's latest answer", async () => {
     const dir = root();

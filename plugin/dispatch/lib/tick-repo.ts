@@ -16,6 +16,8 @@
  * `--apply`, each stage is a boundary of its own (`stageDefect`): a defect
  * in one stops that stage only, and the turn's other stages still run.
  */
+import { linkPickupConditions } from "./tick-pickup-conditions.ts";
+import { stateRoot } from "../receipts.ts";
 import { defectOf, logDefect, logStageDefect } from "./defect.ts";
 import { PhaseTimer } from "./phase-timer.ts";
 import { actObserved } from "./tick-apply.ts";
@@ -248,6 +250,27 @@ export async function actTurn(
     logRepo(context, opened.repo.slug, report, observation.drives),
   );
   // The labels are projected before the notices go out, so a failure alert is judged against the rows the projection leaves.
+  const { tracker, conditionalBlockers } = observation.tracked;
+  if (
+    context.apply !== null &&
+    opened.owner &&
+    opened.stages.has("pickup") &&
+    tracker !== null &&
+    conditionalBlockers !== undefined &&
+    conditionalBlockers.length > 0
+  )
+    await timer.time("apply", () =>
+      linkPickupConditions(
+        conditionalBlockers,
+        {
+          tracker,
+          slug: opened.repo.slug,
+          root: stateRoot(),
+          bound: tickBound(context),
+        },
+        report,
+      ),
+    );
   const project = () =>
     timer.time("labels", () => projectObserved(context, observation));
   const close = async () => {

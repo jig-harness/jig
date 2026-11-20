@@ -12,6 +12,8 @@
  * on these reads would otherwise report a partial read as an improvement.
  */
 
+import type { DependencyState, RelationMigration } from "./relation-port.ts";
+export type { DependencyState, RelationMigration } from "./relation-port.ts";
 import type { StoreHealth } from "./unavailable.ts";
 import type { TrackerAttachments } from "./attachment.ts";
 import type { TrackerBlockedFields } from "./blocked-port.ts";
@@ -960,6 +962,11 @@ export interface Tracker
     text: string,
     opts?: { includeClosed?: boolean },
   ): Promise<IssueSummary[]>;
+  /** A dependency's state without issue details, extra tracker discovery, or child reads. */
+  dependencyState?(
+    key: string,
+    signal?: AbortSignal,
+  ): Promise<DependencyState | null>;
   /** Every relation of an issue, in both directions. */
   listRelations(key: string): Promise<IssueRelation[]>;
   /**
@@ -967,7 +974,12 @@ export interface Tracker
    * it; for `duplicate`, `key` is the duplicate and `target` the issue that
    * stays, and the tracker may close `key`.
    */
-  relate(key: string, type: RelationType, target: string): Promise<void>;
+  relate(
+    key: string,
+    type: RelationType,
+    target: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
   /**
    * Convert the relations this adapter once kept as text (GitHub's `related`
    * comments) into the tracker's own, and mark each text superseded. Only an
@@ -977,24 +989,4 @@ export interface Tracker
     opts?: { dryRun?: boolean },
     signal?: AbortSignal,
   ): Promise<RelationMigration>;
-}
-
-/** What `migrateRelations` found and did; with `dryRun`, what it would do. */
-export interface RelationMigration {
-  dryRun: boolean;
-  /** Issues whose comments were read. */
-  scanned: number;
-  /** Native links written, one per pair of issues. */
-  links: Array<{ issue: string; related: string }>;
-  /** Comments whose link is native and which are now marked superseded. */
-  converted: Array<{ issue: string; related: string; comment: string }>;
-  /** Comments whose link could not be written, and why; they are read as before and met again. */
-  unresolved: Array<{ issue: string; related: string; why: string }>;
-  /** Comments that could not be edited: their link is native, they still read as one. */
-  unmarked: Array<{
-    issue: string;
-    related: string;
-    comment: string;
-    reason: string;
-  }>;
 }

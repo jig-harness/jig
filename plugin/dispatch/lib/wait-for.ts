@@ -5,6 +5,10 @@
  * in `result_wait` as JSON; a wait written before it was kept, or whose
  * value does not read, is a rate limit's, the one wait there was then.
  */
+import {
+  readPickupCondition,
+  type PickupCondition,
+} from "./pickup-condition.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 
 /** What a `waits` result waits for. */
@@ -18,8 +22,9 @@ export const ARM_MAX = 200;
 
 /** What a `waits` result waits for, and, for a pending arm, the pass's words for it when it named one. */
 export interface WaitFor {
-  reason: WaitReason;
+  reason: WaitReason | "pickup-condition";
   arm?: string;
+  condition?: PickupCondition;
 }
 
 /** A rate limit's reset. */
@@ -34,7 +39,11 @@ export function readWaitFor(text: string | null | undefined): WaitFor {
   } catch {
     return RATE_LIMIT_WAIT;
   }
-  if (!isMapping(value) || value.reason !== "pending") return RATE_LIMIT_WAIT;
+  if (!isMapping(value)) return RATE_LIMIT_WAIT;
+  const condition = readPickupCondition(value.condition);
+  if (value.reason === "pickup-condition" && condition !== null)
+    return { reason: value.reason, condition };
+  if (value.reason !== "pending") return RATE_LIMIT_WAIT;
   return typeof value.arm === "string" && value.arm !== ""
     ? { reason: "pending", arm: value.arm }
     : { reason: "pending" };

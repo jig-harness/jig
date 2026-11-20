@@ -16,6 +16,16 @@ base snapshot of its own: each lens the diff triggers runs with fresh
 context, the gate's summary says why it skipped the others, and the lenses'
 warnings go into the pull request body under Review Notes.
 
+## Waiting for a dependency
+
+A dispatched single-item pickup can record a hold while a pull request in
+the same repository is open or another item on the configured tracker is
+still active. The dispatcher keeps the pickup's claim and resumes it in
+its worktree after the pull request merges or the item closes. If the
+pull request closes unmerged, the dispatcher asks a person to resolve
+the dependency. A person can place a conditional hold from the line.
+See [pickup holds](../../README.md#telling-a-station-what-to-do).
+
 ## The epic closure sweep
 
 A coordinator can propose closure for open epics on demand. The sweep reads

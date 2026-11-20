@@ -1,4 +1,5 @@
 /** Classification shared by the tick and a session reporting after its tick. */
+import { pickupConditionWords } from "./pickup-condition.ts";
 import { armWords, type WaitFor } from "./wait-for.ts";
 import type { FramedResult } from "./framed-result.ts";
 import type { SessionResult } from "./session-result-types.ts";
@@ -19,6 +20,11 @@ export function sessionResultClass(
   framed?: FramedResult,
 ): { class: OutcomeClass; reason: string } | null {
   if (result === "done") return { class: "converged", reason: "result done" };
+  if (result === "waits" && wait?.condition !== undefined)
+    return {
+      class: "arm pending",
+      reason: `result waits for ${pickupConditionWords(wait.condition)}`,
+    };
   if (result === "waits" && wait?.reason === "pending")
     return {
       class: "arm pending",

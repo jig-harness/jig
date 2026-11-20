@@ -249,6 +249,16 @@ const result = command(
         description: message`With waits: when the rate limit resets, or when to look at the pending arm again (ISO 8601, at most a day ahead); the item or the follow-up starts again after it.`,
       }),
     ),
+    untilMerged: optional(
+      option("--until-merged", string({ metavar: "PR" }), {
+        description: message`With waits: resume the single-item pickup after the pull request merges.`,
+      }),
+    ),
+    untilClosed: optional(
+      option("--until-closed", string({ metavar: "ITEM" }), {
+        description: message`With waits: resume the single-item pickup after the tracker item closes.`,
+      }),
+    ),
     arm: optional(
       option("--arm", string({ metavar: "NAME" }), {
         description: message`With waits --reason pending: the arm still pending and what it waits for, in one line, which a person is told if it stays pending past dispatch.followup_within.`,
@@ -670,6 +680,12 @@ function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
     ...(args.until === undefined ? [] : ["--until", args.until]),
     ...(reason === undefined ? [] : ["--reason", reason]),
     ...(args.arm === undefined ? [] : ["--arm", args.arm]),
+    ...(args.untilMerged === undefined
+      ? []
+      : ["--until-merged", args.untilMerged]),
+    ...(args.untilClosed === undefined
+      ? []
+      : ["--until-closed", args.untilClosed]),
   ]);
 }
 
@@ -678,8 +694,15 @@ function waitsRoute(
   args: Extract<Subcommand, { action: "result" }>,
 ): number | null {
   if (args.outcome === "waits") return waitsResult(args);
-  if (args.arm === undefined) return null;
-  console.error("jig dispatch result: --arm goes only with waits");
+  if (
+    [args.arm, args.untilMerged, args.untilClosed].every(
+      (value) => value === undefined,
+    )
+  )
+    return null;
+  console.error(
+    "jig dispatch result: --arm, --until-merged and --until-closed go only with waits",
+  );
   return 2;
 }
 

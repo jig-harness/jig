@@ -84,7 +84,10 @@ function recordsChanged(
   read: { item: string; relaunch: PickupRelaunch; own: string | undefined },
 ): string | null {
   const { item, relaunch, own } = read;
-  if (ctx.section.stalledRelaunch === "never")
+  if (
+    relaunch.dependency === undefined &&
+    ctx.section.stalledRelaunch === "never"
+  )
     return "dispatch.stalled_relaunch is now never";
   if (ctx.rerunsHeld !== null)
     return `the host health gate is failing: ${ctx.rerunsHeld}`;
@@ -99,8 +102,10 @@ function recordsChanged(
     (r) =>
       r.record.id !== own &&
       r.record.item === item &&
-      r.record.relaunchOf !== undefined &&
-      r.record.relaunchHead === relaunch.head,
+      (relaunch.dependency === undefined
+        ? r.record.relaunchOf !== undefined &&
+          r.record.relaunchHead === relaunch.head
+        : r.record.relaunchOf === relaunch.record),
   );
   if (again !== undefined)
     return `launch record ${again.record.id} already relaunched it at ${relaunch.head}`;
@@ -188,12 +193,15 @@ function relaunchRecord(
     "stewardDecision",
     "answered",
     "relaunchFault",
+    "relaunchDependency",
     "testLockWait",
     "releasedItems",
     "codexPassArgs",
   ] as const)
     delete record[field];
   if (relaunch.fault !== undefined) record.relaunchFault = relaunch.fault;
+  if (relaunch.dependency !== undefined)
+    record.relaunchDependency = relaunch.dependency;
   // Admission judged the account by this tick's Codex opt-in, not the source's.
   return { ...record, ...codexLaunchFields(state.codexOptIn) };
 }
@@ -263,6 +271,9 @@ async function retryPending(
       record: record.relaunchOf,
       workspace: record.workspace,
       head: record.relaunchHead,
+      ...(record.relaunchDependency === undefined
+        ? {}
+        : { dependency: record.relaunchDependency }),
       ...(record.relaunchFault === undefined
         ? {}
         : { fault: record.relaunchFault }),

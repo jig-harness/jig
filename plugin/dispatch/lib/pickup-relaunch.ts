@@ -43,6 +43,7 @@ export interface RelaunchInput {
   rerunsHeld?: string | null;
   /** The host fault the pickup stopped on, when it did: relaunched to resume it, whatever its tree holds. */
   fault?: HostFault | null;
+  dependency?: string;
 }
 
 /** What the rule makes of a stalled pickup. */
@@ -96,7 +97,8 @@ export function relaunchStep(
   input: RelaunchInput,
 ): RelaunchStep {
   if (
-    input.section.stalledRelaunch === "never" ||
+    (input.dependency === undefined &&
+      input.section.stalledRelaunch === "never") ||
     input.trees === undefined ||
     latest === undefined ||
     !relaunchable(latest) ||
@@ -114,14 +116,23 @@ export function relaunchStep(
     };
   const noResult = latest.result === null;
   const fault = input.fault ?? null;
-  if (!unshipped(tree) && !noResult && fault === null) return NONE;
+  if (
+    !unshipped(tree) &&
+    !noResult &&
+    fault === null &&
+    input.dependency === undefined
+  )
+    return NONE;
   const holds = `launch record ${record.id}'s tree ${path} holds ${treeText(tree)}${noResult ? ", and the pickup recorded no result" : ""}`;
   if (open === undefined)
     return {
       kind: "stall",
       note: `${holds}, but no open workspace on this host holds that tree: a fresh tree would not carry the work, so a person recovers it`,
     };
-  const earlier = relaunchedAt(item.key, tree.head, input.launches);
+  const earlier =
+    input.dependency === undefined
+      ? relaunchedAt(item.key, tree.head, input.launches)
+      : input.launches.find((row) => row.record.relaunchOf === record.id);
   if (earlier !== undefined)
     return {
       kind: "stall",
@@ -140,9 +151,11 @@ export function relaunchStep(
       target: item.key,
       record: "runtime",
       reason:
-        fault === null
-          ? `stalled pickup: ${holds}; relaunched once in that tree to push and record it (dispatch.stalled_relaunch finish-once)`
-          : `pickup stopped on a fault of this host (${fault.why}), whose health check passes again: ${holds}; relaunched once in that tree to resume it (dispatch.stalled_relaunch finish-once)`,
+        input.dependency !== undefined
+          ? `pickup resumed in its original tree after waiting for ${input.dependency}`
+          : fault === null
+            ? `stalled pickup: ${holds}; relaunched once in that tree to push and record it (dispatch.stalled_relaunch finish-once)`
+            : `pickup stopped on a fault of this host (${fault.why}), whose health check passes again: ${holds}; relaunched once in that tree to resume it (dispatch.stalled_relaunch finish-once)`,
       evidence: {
         title: item.title,
         state: item.state,
@@ -157,6 +170,9 @@ export function relaunchStep(
         workspace: { id: open.id, path: open.path },
         head: tree.head,
         ...(fault === null ? {} : { fault: fault.why }),
+        ...(input.dependency === undefined
+          ? {}
+          : { dependency: input.dependency }),
       },
     },
   };

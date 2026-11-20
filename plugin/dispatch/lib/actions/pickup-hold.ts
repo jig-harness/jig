@@ -161,6 +161,9 @@ export function pickupHold(
   const latest = mine.at(-1);
   if (latest === undefined || !holdsItem(latest.record, item))
     return { kind: "none" };
+  // Conditional waits are governed by their durable pickup hold, including when it clears.
+  if (latest.result === "waits" && latest.waitsFor?.condition !== undefined)
+    return { kind: "none" };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
     return waitsHold(latest, latest.waitsUntil, nowMs);

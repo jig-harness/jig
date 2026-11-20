@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { pullDoc } from "../../ask/__tests__/ask-fixtures.ts";
 import {
   issueNode,
   oneIssue,
@@ -104,6 +105,26 @@ function world(
 
 const writes = (ops: Array<{ op: string }>) =>
   ops.filter((o) => o.op === "TrackerAssign").map((o) => o.op);
+
+function observePickupConditions(w: SendWorld) {
+  return Bun.spawnSync(
+    [
+      process.execPath,
+      "--no-env-file",
+      join(import.meta.dir, "observe-pickup-conditions.ts"),
+      REPO,
+      w.state,
+      w.repo,
+    ],
+    {
+      cwd: w.repo,
+      env: w.env,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 15_000,
+    },
+  );
+}
 
 describe("jig send assign", () => {
   it("prints the tracker's user and the assignment on --dry-run, and writes nothing", async () => {
@@ -207,6 +228,43 @@ describe("jig send assign", () => {
 });
 
 describe("jig send pickup hold", () => {
+  it("stores a person's pull request condition until the tick sees its merge", async () => {
+    const { w, ops } = world();
+    mkdirSync(join(w.home, ".jig"), { recursive: true });
+    writeFileSync(
+      join(w.home, ".jig", "dispatch.yaml"),
+      `repositories:\n  - path: ${w.repo}\n    stages: [pickup]\n`,
+    );
+    const address = `pickup@${REPO}#15`;
+    const held = await w.send([address, "hold", "--until-merged", "#23"]);
+    expectSpawnExit(held, 0);
+    const queried = await w.ask([address, "--json"]);
+    expectSpawnExit(queried, 0);
+    expect(JSON.parse(queried.stdout)).toMatchObject({
+      state: "held",
+      waitsOn: { waiting: "PR #23 to merge" },
+    });
+    const conflictingHold = await w.send([address, "hold"]);
+    expectSpawnExit(conflictingHold, 1);
+    expect(conflictingHold.stderr).toContain("different pickup hold");
+    const invalid = await w.send([address, "release", "--until-merged", "23"]);
+    expectSpawnExit(invalid, 2);
+    w.api(
+      "repos/{owner}/{repo}/pulls/23",
+      pullDoc(23, { state: "closed", merged: true }),
+    );
+    expectSpawnExit(observePickupConditions(w), 0);
+    const released = await w.ask([address, "--json"]);
+    expectSpawnExit(released, 0);
+    expect(JSON.parse(released.stdout).state).not.toBe("held");
+    const sameItem = await w.send([address, "hold", "--until-closed", "#15"]);
+    expectSpawnExit(sameItem, 1);
+    const itemHold = await w.send([address, "hold", "--until-closed", "#14"]);
+    expectSpawnExit(itemHold, 0);
+    expect(itemHold.stdout).toContain("waiting for #14 to close");
+    expect(writes(ops)).toEqual([]);
+  });
+
   it("holds an assigned item locally, shows who held it, and releases it without a tracker write", async () => {
     const { w, ops } = world();
     mkdirSync(join(w.home, ".jig"), { recursive: true });

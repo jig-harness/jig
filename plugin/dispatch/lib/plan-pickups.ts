@@ -52,6 +52,12 @@ import {
   reportFramed,
   reportQuestion,
 } from "./report-needs.ts";
+import {
+  conditionalRecords,
+  planConditionalClaim,
+  planConditionNeeds,
+  type ConditionalPickups,
+} from "./plan-pickup-conditions.ts";
 import { batchPickups } from "./queue-batch.ts";
 import {
   agentOf,
@@ -71,7 +77,6 @@ import {
   targetOf,
 } from "./launches.ts";
 import { type Carriage, readCarriage } from "./carried-pr.ts";
-import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
@@ -79,6 +84,7 @@ import {
   faultedAgain,
   type HostFault,
   hostFault,
+  latestPickupFor,
 } from "./pickup-host-fault.ts";
 import { ANY_KEY_SOURCE } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { relaunchStep, type RelaunchStep } from "./pickup-relaunch.ts";
@@ -106,7 +112,7 @@ import type {
 } from "./types.ts";
 import { isoFromMs } from "../../shared/time.ts";
 
-export interface PickupInput {
+export interface PickupInput extends ConditionalPickups {
   /** The repository's `owner/name`, which every notification names. */
   slug: string;
   section: DispatchSection;
@@ -215,6 +221,8 @@ export function planPickups(input: PickupInput): PickupPlan {
     moves: [],
   };
   const { sessions, launches } = input;
+  planConditionNeeds(input, plan);
+
   const joined = (key: string) => {
     const left = leftBehindWorkspaces(key, launches);
     return (w: Workspace) => w.items.includes(key) && !left.has(w.path);
@@ -227,7 +235,9 @@ export function planPickups(input: PickupInput): PickupPlan {
       plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
-    const hold = pickupHold(item.key, launches, item.updatedAt, input.nowMs);
+    const eligible = conditionalRecords(input, item.key);
+    if (eligible === null) continue;
+    const hold = pickupHold(item.key, eligible, item.updatedAt, input.nowMs);
     if (hold.kind === "held") {
       plan.running.push({
         target: item.key,
@@ -573,6 +583,12 @@ function planClaimed(
     });
     return;
   }
+  if (
+    planConditionalClaim(item, input, plan, held, (pr) =>
+      quietByPr(item, input, pr, plan, false),
+    )
+  )
+    return;
   const pickup = pickupHold(item.key, input.launches, undefined, input.nowMs);
   // A rate-limit wait holds an ended pickup, which claims nothing by waiting.
   const endedUnclaimed =
@@ -894,23 +910,6 @@ function questionAsked(
     // The pass's ended row in the outcome log already holds how it ended.
     launched: true,
   };
-}
-
-/** The latest unreleased pickup for this item, shared by its question and host-health hold. */
-function latestPickupFor(
-  item: string,
-  launches: readonly ReadRecord[],
-): ReadRecord | undefined {
-  return launches
-    .filter(
-      (r) =>
-        r.record.action === "pickup" &&
-        (r.record.item === item ||
-          r.record.batchItems?.some((entry) => entry.key === item) === true) &&
-        holdsItem(r.record, item),
-    )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
-    .at(-1);
 }
 
 /** What the tick read as a waiting session's cause: the usage-limit wall still its last record, if any. */

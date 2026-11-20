@@ -42,6 +42,8 @@ import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
 import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
+import { personPickupHolds, pickupHoldReason } from "../person-pickup-holds.ts";
+import { conditionalRecords } from "../plan-pickup-conditions.ts";
 import { pickupRoute } from "../route.ts";
 import {
   type Dispatched,
@@ -179,11 +181,18 @@ export async function changed(
         );
   if (typeof issue === "string") return { why: issue };
   // Item keys repeat across repositories: only this repository's records hold it.
-  const hold = pickupHold(
+  const local = personPickupHolds(repo.slug, state.root);
+  if (!local.ok) return { why: local.failure.reason };
+  const conditional = local.value.find((row) => row.item === key);
+  if (conditional !== undefined && conditional.settled !== "cleared")
+    return { why: pickupHoldReason(conditional) };
+  const launches = state.records.filter((r) => r.record.repo === repo.slug);
+  const eligible = conditionalRecords(
+    { launches, conditionalHolds: local.value },
     key,
-    state.records.filter((r) => r.record.repo === repo.slug),
-    issue.updatedAt,
   );
+  if (eligible === null) return { why: "a pickup hold still applies" };
+  const hold = pickupHold(key, eligible, issue.updatedAt);
   if (hold.kind !== "none") return { why: hold.why };
   let sessions: SessionsReport;
   try {

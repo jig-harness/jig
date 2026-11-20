@@ -581,6 +581,13 @@ export const MIGRATIONS: readonly Migration[] = [
       PRIMARY KEY (vendor, config_dir)
     );`,
   },
+  {
+    additive: true,
+    sql: `ALTER TABLE pickup_holds ADD COLUMN wait_condition TEXT;
+      ALTER TABLE pickup_holds ADD COLUMN resume_record TEXT;
+      ALTER TABLE pickup_holds ADD COLUMN wait_cleared INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE pickup_holds ADD COLUMN wait_linked INTEGER NOT NULL DEFAULT 0;`,
+  },
 ];
 
 /** The schema version this plugin writes. */

@@ -91,6 +91,9 @@ export function planObserved(
     section,
     pickups: tracked.pickups,
     claimed: tracked.claimed,
+    ...(tracked.conditionalHolds === undefined
+      ? {}
+      : { conditionalHolds: tracked.conditionalHolds }),
     ...(tracked.partial === true ? { partial: true as const } : {}),
     drives: observation.drives,
     merged: forge.merged,

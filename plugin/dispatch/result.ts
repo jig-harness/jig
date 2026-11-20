@@ -47,6 +47,7 @@ import { derivedNext, type NextOwner, parkedNext } from "./lib/next-owner.ts";
 import { stateDbFailure } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
+import { recordConditionalResult } from "./lib/launch-result.ts";
 import { framedResultOf } from "./lib/framed-result.ts";
 import { timingSafeEqual } from "node:crypto";
 import {
@@ -68,8 +69,15 @@ import {
   type WaitReason,
 } from "./lib/wait-for.ts";
 
+import {
+  parsePickupPr,
+  pickupConditionWords,
+  readPickupCondition,
+  type PickupCondition,
+} from "./lib/pickup-condition.ts";
+
 const USAGE =
-  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>]";
+  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>] | waits --until-merged <pr> | waits --until-closed <item>";
 /** The host could not write the result: the evidence is kept, and the dispatcher settles the stage. */
 const UNWRITTEN = 4;
 /** The longest a pass may wait on a rate limit: a tracker's or the forge's window is an hour or less. */
@@ -320,11 +328,81 @@ function waitFor(reason = "rate-limit", raw?: string): WaitFor | null {
   return { reason: "pending", arm };
 }
 
+function conditionArgs(rest: readonly string[]): PickupCondition | null {
+  const [flag, value] = rest;
+  if (rest.length !== 2 || value === undefined) return null;
+  if (flag === "--until-closed")
+    return readPickupCondition({ kind: "item-closed", item: value });
+  if (flag !== "--until-merged") return null;
+  const pr = parsePickupPr(value);
+  return pr === null ? null : { kind: "pr-merged", pr };
+}
+
+function recordConditionalWait(
+  record: LaunchRecord,
+  condition: PickupCondition,
+  root?: string,
+): number {
+  const item = record.item;
+  if (
+    record.action !== "pickup" ||
+    record.batchItems !== undefined ||
+    item === null ||
+    (condition.kind === "item-closed" && condition.item === item.toUpperCase())
+  ) {
+    console.error(
+      "jig dispatch result: a single-item pickup can wait on another item or on a pull request",
+    );
+    return 2;
+  }
+  if (
+    condition.kind === "item-closed" &&
+    item.startsWith("#") !== condition.item.startsWith("#")
+  ) {
+    console.error(
+      "jig dispatch result: the dependency must use the pickup's tracker key format",
+    );
+    return 2;
+  }
+  const next = { none: `waiting for ${pickupConditionWords(condition)}` };
+  const written = recordConditionalResult(
+    record,
+    item,
+    {
+      by: "pickup",
+      title: item,
+      url: null,
+      condition,
+      resumeRecord: record.id,
+    },
+    next,
+    root,
+  );
+  if (!written.ok) {
+    console.error(`jig dispatch result: ${written.failure.reason}`);
+    return 2;
+  }
+  if (!written.value) return already(record.id, root);
+  console.log(
+    JSON.stringify({
+      record: record.id,
+      item,
+      result: "waits",
+      condition,
+      next,
+    }),
+  );
+  return 0;
+}
+
 /** A command line this command takes: `done|failed` with their options, or `waits` with its own. */
 function wellFormed(argv: string[]): boolean {
   const [id, token, result] = argv;
   if (id === undefined || token === undefined) return false;
-  if (result === "waits") return waitsArgs(argv.slice(3)) !== null;
+  if (result === "waits")
+    return (
+      waitsArgs(argv.slice(3)) !== null || conditionArgs(argv.slice(3)) !== null
+    );
   if (argv.length !== 3 && argv.length !== 5) return false;
   return result === "done" || result === "failed";
 }
@@ -369,6 +447,8 @@ export function resultMain(argv: string[], root?: string): number {
     console.error(`jig dispatch result: ${record}`);
     return 2;
   }
+  const condition = result === "waits" ? conditionArgs(argv.slice(3)) : null;
+  if (condition !== null) return recordConditionalWait(record, condition, root);
   const waited = result === "waits" ? waitsArgs(argv.slice(3)) : null;
   if (waited?.wait.reason === "pending" && record.action !== "followup") {
     console.error(
