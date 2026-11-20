@@ -420,7 +420,11 @@ const ROLE = "JIG_LAUNCHER_ROLE";
 const UPGRADE_RESULT = "JIG_SCHEDULED_UPGRADE";
 /** What started the job, passed to it (`dispatch/lib/tick-starter.ts` reads it). */
 const STARTED_BY = "JIG_STARTED_BY";
-/** Tells a dispatch job what started it; no other job carries it, and a value its caller set stays. */
+/**
+ * Tells a dispatch job what started it. Only a dispatch job is given a value
+ * here, and a value its caller set stays; any other job keeps whatever its
+ * environment already carries.
+ */
 function nameStarter(
   env: Record<string, string | undefined>,
   rest: string[],
