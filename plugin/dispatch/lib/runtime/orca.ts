@@ -46,9 +46,9 @@ import {
   orcaFailure,
   orcaResult,
 } from "../../../shared/orca.ts";
+import { branchTargets } from "./branch-targets.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
-import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
 import { orcaLaunch } from "./orca-launch.ts";
 import { orcaNotify } from "./orca-notify.ts";
@@ -184,28 +184,13 @@ function linked(row: Record<string, unknown>, join: JoinTargets) {
   return { prs, items };
 }
 
-/** What a branch names: the pull request whose head it is, the item whose key it carries. */
-function byBranch(branch: string, join: JoinTargets) {
-  if (branch === "") return { prs: [], items: [] };
-  const key =
-    join.keys === null
-      ? null
-      : keyFromBranch(branch, join.keys, join.branchPattern);
-  return {
-    prs: join.pullRequests
-      .filter((pr) => pr.head === branch)
-      .map((pr) => pr.number),
-    items: key === null ? [] : [key],
-  };
-}
-
 function joins(
   row: Record<string, unknown>,
   branch: string,
   join: JoinTargets,
 ) {
   const links = linked(row, join);
-  const named = byBranch(branch, join);
+  const named = branchTargets(branch, join);
   return {
     prs: [...new Set([...links.prs, ...named.prs])].sort((a, b) => a - b),
     items: [...new Set([...links.items, ...named.items])].sort((a, b) =>

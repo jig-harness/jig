@@ -30,9 +30,21 @@ function DecisionImage({ alt }: MarkdownComponentProps<"img">) {
 const COMPONENTS = { a: DecisionLink, img: DecisionImage };
 
 /** A recommendation within a paragraph, with the decision's link and image restrictions. */
-export function InlineDecisionText({ source }: { source: string }) {
+export function InlineDecisionText({
+  source,
+  links = true,
+}: {
+  source: string;
+  links?: boolean;
+}) {
+  const components = links
+    ? COMPONENTS
+    : {
+        ...COMPONENTS,
+        a: ({ children }: MarkdownComponentProps<"a">) => <>{children}</>,
+      };
   return parseInline(source).map((node, i) =>
-    renderInlineReact(node, { components: COMPONENTS }, `recommendation:${i}`),
+    renderInlineReact(node, { components }, `recommendation:${i}`),
   );
 }
 

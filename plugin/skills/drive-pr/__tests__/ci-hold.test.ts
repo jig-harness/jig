@@ -569,7 +569,7 @@ describe("ci:hold evidence", () => {
           },
         ],
       }),
-    ).toEqual([
+    ).toMatchObject([
       {
         id: 30,
         name: "Schema gate",

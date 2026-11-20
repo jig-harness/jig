@@ -65,7 +65,7 @@ describe("the queue", () => {
   it("is ordered by what will happen, with a heading for each", () => {
     expect(queueGroups(lineOf("queue"), CLOCK).map((g) => g.title)).toEqual([
       "Starts next",
-      "Held behind a serialized leader",
+      "Held",
       "Reported, not started",
       "Will not start",
     ]);

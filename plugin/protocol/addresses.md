@@ -43,10 +43,10 @@ repository or two, an address that leaves its repository out outside a
 checkout, a key not in its station's form, and a `pickup` key with no
 checkout on the machine to name its tracker are each refused as a usage
 error (exit `2`), with a reason; the reason for a malformed address or an
-unknown station lists the valid stations. The one exception is `assign`: it
-resolves its address without checking the key against the tracker, and
-refuses a key the tracker does not know afterwards, as an operational
-refusal (exit `1`), not a usage error.
+unknown station lists the valid stations. The exceptions are `assign` and
+the `hold` and `release` of a `pickup`: each resolves its address without
+checking the key against the tracker, and refuses a key the tracker does not
+know afterwards, as an operational refusal (exit `1`), not a usage error.
 
 ## Stations
 
@@ -81,8 +81,8 @@ them. `--dry-run` shows what a verb would write without writing it.
 | `drive` | — | `drive` | yes | Ask for a drive on a pull request that has none: the drive command label, which the dispatcher's next tick arms a drive for |
 | `rearm` | — | `drive` | yes | Ask for a stopped drive to be re-armed in its existing working tree: a request bound to that stop and the rearm command label that the dispatcher reads |
 | `withdraw-rearm` | — | `drive` | yes | Withdraw a pending re-arm request and remove its rearm command label |
-| `hold` | — | `drive`, `followup` | yes | Keep the line off a pull request: add the hold command label, which every stage of the dispatcher respects |
-| `release` | — | `drive`, `followup` | yes | Withdraw a hold: remove the hold command label, so the dispatcher's next tick takes the pull request up again |
+| `hold` | — | `drive`, `followup`, `pickup` | yes | Keep the line off a pull request with the hold command label, or keep a tracker item out of pickups and batches with a hold on its dispatcher host |
+| `release` | — | `drive`, `followup`, `pickup` | yes | Withdraw the pull request's hold label or the tracker item's hold on its dispatcher host |
 | `answer` | `<key> <text> \| <key> --approve\|--choose <option> [--note <text>] [--decision <digest>] \| --all --approve [--decision-set <token>]` | `drive`, `followup`, `pickup` | yes | Answer a parked question or a need's decision by approving or choosing one of its options, at any of these stations; a drive also takes the person's own words, and --all to approve every parked question it may at once, which the other stations refuse. The bracketed --decision and --decision-set can be left out only on a dry run and, for an individual answer, on a park framed without a digest: a real structured answer to a framed decision needs its digest, and a real --all approval needs the set token the dry run printed. One answer comment per item, read by the re-arm or the dispatcher's next tick |
 | `pause` | — | `drive` | no | Pause a running drive at its next round boundary: a directive in the mailbox of the working tree that holds the drive on this machine |
 | `resume` | `<hold-push\|pause\|stop>` | `drive` | no | Withdraw the mailbox directive it names, so the drive goes on past it |

@@ -4,6 +4,7 @@ import type {
   Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { readServedPickups } from "../lib/sources/served.ts";
+import { parkedOnPerson } from "../lib/sources/served-epics.ts";
 import { readPickups } from "../lib/sources/tracker.ts";
 import type { DispatchSection } from "../lib/types.ts";
 import { renderExecutionPlan } from "../../skills/do-item/scripts/lib/execution-plan.ts";
@@ -322,6 +323,53 @@ describe("served pickups", () => {
         }),
       ]),
     );
+  });
+  it.each(["#1", "#2", "#3"])(
+    "does not start the epic leaf when %s is held locally",
+    async (key) => {
+      const f = fake();
+      const read = await readServedPickups(f.tracker, people, {
+        cache: f.cache,
+        nowMs: 1,
+        headroom: true,
+        personHold: (item) => (item === key ? "held by a person" : null),
+      });
+      expect(read.wanted.map((i) => i.key)).not.toContain("#3");
+    },
+  );
+  it("keeps a held child's slot once it is started, and frees it before", () => {
+    const tracker = { stateName: (s: string) => s } as Pick<
+      Tracker,
+      "stateName"
+    >;
+    const policy = { personHold: () => "held by a person" };
+    const waiting = issue("#3", [], null);
+    const running = {
+      ...waiting,
+      state: { id: "s", name: "in_progress", type: "started" },
+    };
+    expect(parkedOnPerson(waiting, tracker, policy)).toBe(true);
+    expect(parkedOnPerson(running, tracker, policy)).toBe(false);
+  });
+  it("keeps a held epic's running descendants visible and a label hold parked beside a local one", () => {
+    const tracker = { stateName: (s: string) => s } as Pick<
+      Tracker,
+      "stateName"
+    >;
+    const policy = { personHold: () => "held by a person" };
+    const nested = {
+      ...issue("#3", [], null),
+      isEpic: true,
+      hasOpenChildren: true,
+    };
+    expect(parkedOnPerson(nested, tracker, policy)).toBe(false);
+    expect(parkedOnPerson(nested, tracker, policy, true)).toBe(true);
+    const both = { ...issue("#4", ["hitl"], null), isEpic: false };
+    const running = {
+      ...both,
+      state: { id: "s", name: "in_progress", type: "started" },
+    };
+    expect(parkedOnPerson(running, tracker, policy)).toBe(true);
   });
   it("keeps the title and link the listing returned on an item it cannot place and on a claimed item", async () => {
     const f = fake();

@@ -15,6 +15,7 @@ import {
   type ReadRecord,
   recordExit,
 } from "../lib/launches.ts";
+import { rowsFor } from "../lib/log.ts";
 import { logEnded } from "../lib/log-ended.ts";
 import { orcaEndRun } from "../lib/runtime/orca-end-run.ts";
 import type { EndedRun, RuntimeReceipt } from "../lib/runtime/port.ts";
@@ -88,6 +89,29 @@ function fakeEndRun(
 }
 
 describe("ending what an ended run left", () => {
+  it("records one event when a process survives its launch's end", async () => {
+    const { w, root } = fixture();
+    const r = died(w, root);
+    const fake = fakeEndRun({
+      ok: false,
+      outlived: true,
+      detail: "a recorded process is still alive",
+    });
+    expect(await endRuns([r], fake.endRun, NOW, root)).toMatchObject([
+      { outcome: "left" },
+    ]);
+    expect(await endRuns([r], fake.endRun, NOW, root)).toEqual([]);
+    const rows = rowsFor(r.record.repo, "PR #7", root);
+    if (!rows.ok) throw new Error(rows.failure.reason);
+    expect(rows.value).toMatchObject([
+      {
+        kind: "event",
+        event: "outlived",
+        reason: "a recorded process is still alive",
+      },
+    ]);
+  });
+
   it("asks the runtime once for a run whose wrapper died, and records that it asked", async () => {
     const { w, root } = fixture();
     const r = died(w, root);

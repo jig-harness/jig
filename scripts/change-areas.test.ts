@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { expect, spyOn, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -37,7 +37,6 @@ test("a change seeds its own areas and every area that implies-by closure adds",
   expect(resolveAreas(["core/index.ts"], catalog)).toMatchObject({
     seedAreas: ["core"],
     areas: ["app", "core"],
-    code: true,
   });
   // Two hops: build implies core, core implies app.
   expect(resolveAreas(["package.json"], catalog).areas).toEqual([
@@ -48,19 +47,18 @@ test("a change seeds its own areas and every area that implies-by closure adds",
   expect(resolveAreas(["app/main.ts"], catalog).areas).toEqual(["app"]);
 });
 
-test("a documentation-only change is not code, and an unmatched file is", () => {
+test("a documentation change seeds its area, and an unmatched file is reported", () => {
   expect(resolveAreas(["README.md", "docs/a/b.md"], catalog)).toMatchObject({
     areas: ["docs"],
-    code: false,
+    unmatched: [],
   });
   // `*.md` matches the root only.
   expect(resolveAreas(["other/README.md"], catalog).areas).toEqual(["other"]);
   expect(resolveAreas(["stray.txt"], catalog)).toMatchObject({
     areas: [],
     unmatched: ["stray.txt"],
-    code: true,
   });
-  expect(resolveAreas([], catalog)).toMatchObject({ areas: [], code: false });
+  expect(resolveAreas([], catalog)).toMatchObject({ areas: [], unmatched: [] });
 });
 
 test("files no area matches are reported", () => {
@@ -181,18 +179,45 @@ test("Jig's catalog runs the drive-pr suite for what it depends on, and not for 
     "scripts/check-md-links.ts",
   ])
     expect(areas(file)).not.toContain("drive-pr");
-  expect(
-    resolveAreas(
-      ["README.md", "modules/M1-gates-enforcement-ladder/mappings.md"],
-      jig,
-    ).code,
-  ).toBe(false);
-  expect(
-    resolveAreas(
-      ["modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts"],
-      jig,
-    ).code,
-  ).toBe(true);
+});
+
+test("the check reports an own-test directory that holds no test file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-areas-"));
+  const errors = spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    mkdirSync(join(dir, ".config"));
+    mkdirSync(join(dir, "app"));
+    writeFileSync(join(dir, "app/a.test.ts"), "");
+    const write = (ownTests: string) =>
+      writeFileSync(
+        join(dir, CATALOG),
+        `vocabularies:
+  category: [skill]
+  deployTier: [none]
+areas:
+  app:
+    title: App
+    category: skill
+    paths: ['**']
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    validation:
+      ownTests: "${ownTests}"
+`,
+      );
+    write("bun run test ./app/");
+    expect(checkChangeAreas(dir)).toBe(0);
+    expect(errors).not.toHaveBeenCalled();
+    write("bun run test ./app/ ./apps/");
+    expect(checkChangeAreas(dir)).toBe(1);
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "app: validation.ownTests names ./apps/, which holds no test file",
+    );
+  } finally {
+    errors.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a catalog that repeats an area is refused, not read as its last copy", () => {

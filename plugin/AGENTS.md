@@ -43,8 +43,10 @@ here reaches every repository at once.
   a place in [Jig's lifecycle map](../docs/LIFECYCLE.md) (the gates fail a
   skill no stage names), its name in both manifests' descriptions, its configuration in
   [CONFIGURATION.md](CONFIGURATION.md), and its tests in
-  `skills/<name>/__tests__/`. A suite that needs POSIX or runs long is listed in
-  [scripts/gates.ts](../scripts/gates.ts) with the reason.
+  `skills/<name>/__tests__/`. A suite that needs POSIX is listed in
+  `POSIX_ONLY_SUITES` in [scripts/gates.ts](../scripts/gates.ts) with the
+  reason; one that runs long is marked `validation.separateSuite: true` on its
+  area in [.config/change-areas.yaml](../.config/change-areas.yaml).
 - **Code more than one skill uses lives in `shared/`**, beside `skills/`:
   skills import it by relative path, and nothing in `shared/` imports from a
   skill. A module moves

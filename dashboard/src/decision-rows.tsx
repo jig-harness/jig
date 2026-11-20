@@ -7,9 +7,9 @@
  * Copy and, where a token is kept, Send (`send.tsx`), each taking a second
  * step for a guarded pick, and Undo.
  */
-import { useId, useState } from "react";
 import { CopyButton } from "./copy.tsx";
 import { InlineDecisionText } from "./decision-text.tsx";
+import { answerCommentUrl } from "./keys.ts";
 import { ActPill, BareWord, Glyph } from "./icon-word.tsx";
 import { CARD_ICONS, HERE_ICONS } from "./icons.ts";
 import type { NeedView } from "./needs-view.ts";
@@ -22,13 +22,15 @@ function OptionPick({
   option,
   picked,
   onPick,
+  expandedOnly,
 }: {
   option: RowOption;
   picked: boolean;
   onPick: () => void;
+  expandedOnly: boolean;
 }) {
   return (
-    <li>
+    <li className={expandedOnly ? "decExpanded" : undefined}>
       <button
         type="button"
         className={`opt${option.recommended ? " rec" : ""}${picked ? " on" : ""}`}
@@ -56,33 +58,45 @@ function OptionPick({
   );
 }
 
-/** What a row's answer is now, in words: what counts, what is only a draft, and what was dropped or cannot be sent. */
+/** The state of the answer kept in this browser. */
+function answerState(
+  answer: RowAnswer,
+): { kind: keyof typeof HERE_ICONS; text: string } | null {
+  if (answer.fault !== null)
+    return { kind: "held back", text: `Not copied: ${answer.fault}` };
+  if (answer.dropped !== null)
+    return {
+      kind: "dropped",
+      text:
+        answer.active === "free"
+          ? `${answer.dropped} Your own words still count.`
+          : answer.dropped,
+    };
+  if (answer.active === "free")
+    return answer.pick === null
+      ? { kind: "own words", text: "Your own words count." }
+      : {
+          kind: "draft",
+          text: "Your own words count; the pick is kept as a draft.",
+        };
+  if (answer.pick === null) return null;
+  if (answer.free.trim())
+    return {
+      kind: "draft",
+      text: "Your pick counts; your own words are kept as a draft.",
+    };
+  if (answer.pick.guarded)
+    return { kind: "guarded", text: "Picked · confirm before copying" };
+  if (answer.note.trim()) return { kind: "note", text: "Picked · with a note" };
+  return { kind: "picked", text: "Picked" };
+}
+
 function AnswerState({ answer }: { answer: RowAnswer }) {
-  // A row whose answer cannot be sent says only why, never that it counts.
-  const draft =
-    answer.fault !== null
-      ? null
-      : answer.active === "pick" && answer.free.trim() !== ""
-        ? "Your pick counts; your own words are kept as a draft."
-        : answer.active === "free" && answer.pick !== null
-          ? "Your own words count; the pick is kept as a draft."
-          : null;
-  return (
-    <>
-      {answer.dropped === null ? null : (
-        <p className="sm decNote">
-          <BareWord of={HERE_ICONS.dropped}>{answer.dropped}</BareWord>
-        </p>
-      )}
-      {draft === null ? null : <p className="sm mut">{draft}</p>}
-      {answer.fault === null ? null : (
-        <p className="sm decFault">
-          <BareWord of={HERE_ICONS["held back"]}>
-            Not copied: {answer.fault}
-          </BareWord>
-        </p>
-      )}
-    </>
+  const state = answerState(answer);
+  return state === null ? null : (
+    <p className={`sm ${answer.fault === null ? "decNote" : "decFault"}`}>
+      <BareWord of={HERE_ICONS[state.kind]}>{state.text}</BareWord>
+    </p>
   );
 }
 
@@ -145,7 +159,13 @@ interface RowProps {
 function DecisionHead({ need, row }: { need: NeedView; row: DecisionRow }) {
   const several = need.rows.length > 1;
   const ownAct = row.act !== need.act;
-  if (!several && !ownAct) return null;
+  if (
+    !several &&
+    !ownAct &&
+    row.decisionClass === null &&
+    row.interplay.length === 0
+  )
+    return null;
   return (
     <div className="decHead sm">
       {several ? (
@@ -157,6 +177,13 @@ function DecisionHead({ need, row }: { need: NeedView; row: DecisionRow }) {
       {row.decisionClass === null ? null : (
         <span className="mut">{row.decisionClass}</span>
       )}
+      {row.interplay.map((text) => (
+        <span className="interplay" key={text}>
+          <BareWord of={CARD_ICONS.interplay}>
+            With another decision: {text}
+          </BareWord>
+        </span>
+      ))}
     </div>
   );
 }
@@ -167,14 +194,17 @@ function UnpickableOptions({ row }: { row: DecisionRow }) {
     <>
       <ul className="opts">
         {row.options.map((o) => (
-          <li key={o.name}>
+          <li
+            key={o.name}
+            className={o.recommended ? undefined : "decExpanded"}
+          >
             <span className="optText">
               <OptionText option={o} />
             </span>
           </li>
         ))}
       </ul>
-      <p className="sm mut">
+      <p className="sm mut decExpanded">
         The drive reads every answer to this decision as your own words, so
         these options cannot be picked; write the answer.
       </p>
@@ -182,45 +212,23 @@ function UnpickableOptions({ row }: { row: DecisionRow }) {
   );
 }
 
-/** The recommended option and the pick in sight, the other options behind a fold. */
+/** The recommended option and the pick in sight, the other options on the open card. */
 function RowOptions({ row, index, picking }: Omit<RowProps, "need">) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
   const picked = picking.answers[index]?.pick?.name ?? null;
-  const [first, ...rest] = row.options;
-  const shown = row.options.filter((o) => o === first || o.name === picked);
-  const folded = rest.filter((o) => o.name !== picked);
   if (!row.structured) return <UnpickableOptions row={row} />;
-  const list = (options: RowOption[]) =>
-    options.map((o) => (
-      <OptionPick
-        key={o.name}
-        option={o}
-        picked={o.name === picked}
-        onPick={() => picking.pick(index, o)}
-      />
-    ));
-  const more = `${folded.length} other option${folded.length === 1 ? "" : "s"}`;
+  if (row.options.length === 0) return null;
   return (
-    <>
-      {shown.length === 0 ? null : <ul className="opts">{list(shown)}</ul>}
-      {folded.length === 0 ? null : (
-        <button
-          type="button"
-          className="foldBtn optsMore"
-          aria-expanded={open}
-          aria-controls={id}
-          onClick={() => setOpen(!open)}
-        >
-          {open ? "Hide the other options" : more}
-        </button>
-      )}
-      {open && folded.length > 0 ? (
-        <ul className="opts options" id={id}>
-          {list(folded)}
-        </ul>
-      ) : null}
-    </>
+    <ul className="opts">
+      {row.options.map((option) => (
+        <OptionPick
+          key={option.name}
+          option={option}
+          picked={option.name === picked}
+          expandedOnly={!option.recommended && option.name !== picked}
+          onPick={() => picking.pick(index, option)}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -302,14 +310,11 @@ function DecisionRowView({ need, row, index, picking }: RowProps) {
       aria-current={current ? "true" : undefined}
     >
       <DecisionHead need={need} row={row} />
-      {question === null ? null : <p className="q">{question}</p>}
-      {row.interplay.map((text) => (
-        <p className="sm mut interplay" key={text}>
-          <BareWord of={CARD_ICONS.interplay}>
-            With another decision: {text}
-          </BareWord>
+      {question === null ? null : (
+        <p className="q">
+          <InlineDecisionText source={question} links={false} />
         </p>
-      ))}
+      )}
       {row.recommendation === null ? null : (
         <p className="sm mut">
           <InlineDecisionText source={`Recommended: ${row.recommendation}`} />
@@ -317,7 +322,9 @@ function DecisionRowView({ need, row, index, picking }: RowProps) {
       )}
       <RowOptions row={row} index={index} picking={picking} />
       <AnswerState answer={answer} />
-      <RowWords row={row} index={index} picking={picking} />
+      <div className="decExpanded decFields">
+        <RowWords row={row} index={index} picking={picking} />
+      </div>
     </div>
   );
 }
@@ -330,15 +337,8 @@ export function DecisionRows({
   need: NeedView;
   picking: Picking;
 }) {
-  const { commit } = picking;
-  const total = need.rows.length;
-  const words = commit.free === 0 ? "" : ` · ${commit.free} in your own words`;
   return (
     <div className="decs">
-      <p className="sm mut decCount">
-        {total} decision{total === 1 ? "" : "s"} · {commit.picked} picked
-        {words}
-      </p>
       {need.rows.map((row, i) => (
         <DecisionRowView
           key={row.key}
@@ -388,12 +388,25 @@ function GuardPanel({
         <pre className="sm sendPreview">{commit.text}</pre>
       )}
       <ul className="sm">
-        {commit.guarded.map((g) => (
-          <li key={g.key}>
-            {need.rows.length > 1 ? `${g.place} of ${need.rows.length}: ` : ""}
-            <OptionText option={g.option} />
-          </li>
-        ))}
+        {commit.guarded.map((g) => {
+          const row = need.rows[g.place - 1];
+          const question = row?.question ?? g.key;
+          const reason =
+            g.option.reversible === false
+              ? "This option cannot be undone."
+              : row?.act === "Authorize"
+                ? "This decision asks for authorization."
+                : "This decision class requires confirmation.";
+          return (
+            <li key={g.key}>
+              <p>
+                <InlineDecisionText source={question} links={false} />
+              </p>
+              <OptionText option={g.option} />
+              <p>{reason}</p>
+            </li>
+          );
+        })}
       </ul>
       <div className="copyRow">
         {send === null ? (
@@ -427,8 +440,13 @@ export function CommitControls({
   const what = COPY_WORDS[commit.label];
   const anyPick = picking.answers.some((a) => a.pick !== null);
   const sending = useSend(need, picking);
+  const commentUrl = answerCommentUrl(need.url);
   return (
     <>
+      <span className="sm mut decCount">
+        {need.rows.length} decision{need.rows.length === 1 ? "" : "s"} ·{" "}
+        {commit.picked} picked here
+      </span>
       <CopyButton
         text={commit.text}
         idle={`Copy ${what}`}
@@ -442,6 +460,16 @@ export function CommitControls({
           <Glyph of={CARD_ICONS.undo} />
           Undo last pick
         </button>
+      ) : null}
+      {commentUrl !== null ? (
+        <a
+          className="fbtn"
+          href={commentUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          Paste in a pull request comment
+        </a>
       ) : null}
       {picking.confirming === null ? null : (
         <GuardPanel need={need} picking={picking} sending={sending} />

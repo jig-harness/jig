@@ -163,8 +163,10 @@ export type PickupClass =
   | "claimed"
   | "claimed-by-person"
   | "claimed-pr-open"
-  /** A claimed item with no running session that an open pull request whose drive is live or converged carries (`carried-pr.ts`). */
+  /** A claimed item with no running session that an open pull request's drive carries, in whatever state it is (`carried-pr.ts`). */
   | "claimed-carried"
+  /** A claimed item with no running session that a merged pull request links: its follow-up settles it (`carried-pr.ts`). */
+  | "claimed-merged"
   /** Under the host's `priorities.enforce`: a pickup whose priority lane is out of rotation (`priorities-order.ts`). */
   | "lane-paused";
 
@@ -260,6 +262,8 @@ export interface DrivenPr {
   class: LedgerClass;
   /** Why the ledger reads as its class, in one sentence. */
   why: string;
+  /** Set when the ledger records its driver running, whatever class it reads as (a silent ledger and a person's stop awaiting its end included): the driver may still run, and the drive has not stopped. */
+  running?: true;
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
@@ -271,6 +275,8 @@ export interface DrivenPr {
   labels?: string[];
   /** For an `unplaced` ledger: its comments or its ledger did not read, as against a state the forge leaves undecided. */
   readFailed?: true;
+  /** For an `unplaced` ledger: the forge leaves its pull request's mergeability, head or base undecided, which a later tick reads again. */
+  forgeUndecided?: true;
   /** For a `readFailed` ledger a failed call caused: that call's failure class, which decides whether the read is waited out. */
   failure?: ReadFailure;
   /** The pull request's head commit and its branch's head on the forge, read only where a failed re-arm is weighed (`failed-rearms.ts`). */
@@ -349,6 +355,8 @@ export interface Unplaced {
    * write, or placed in no repository by its labels and no default.
    */
   cause?: "assigner-cannot-write" | "needs-repository-label";
+  /** A person held this pickup on the dispatcher host. */
+  pickupHold?: { by: string; at: string };
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
   readFailed?: true;
   /** For a `readFailed` entry a failed call caused: that call's failure class, which decides whether the read is waited out. */
@@ -810,7 +818,7 @@ export interface RepoReport {
     carried?: {
       pr: number;
       url: string;
-      drive: "driving" | "converged";
+      drive: import("./carried-pr.ts").CarryingDrive;
     };
   }>;
 }
