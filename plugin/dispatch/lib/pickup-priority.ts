@@ -1,12 +1,15 @@
 /**
- * An assigned item with no priority is unranked, not the least urgent: the
+ * A wanted item with no priority, assigned or from the ready pool, is
+ * unranked, not the least urgent: the
  * queue would place it after every low-priority item, an order nobody chose.
  * Under `dispatch.missing_priority: hold`, the default, it is not started:
  * the line lists it with what it lacks until a person sets its priority, or
  * the steward's `facet` record fills it (the steward's queue still holds the
- * item), and the next tick ranks it. A blocker pulled forward starts for the
- * item it blocks, which carries the rank, and an item whose priority was not
- * read is not held for it.
+ * item, where it is assigned), and the next tick ranks it. A blocker pulled
+ * forward starts for the item it blocks, which carries the rank. An item
+ * whose priority was not read, or whose tracker holds a priority the
+ * configuration maps to none of Jig's (`unmappedFacets`), is not held for it:
+ * someone did rank it.
  */
 import type { DispatchSection, Unplaced, WantedItem } from "./types.ts";
 
@@ -20,7 +23,12 @@ export function unrankedHold(
   section: Pick<DispatchSection, "missingPriority">,
 ): Unplaced | null {
   if ((section.missingPriority ?? "hold") !== "hold") return null;
-  if (item.blockingFor !== undefined || item.queueIssue?.priority !== 0)
+  const issue = item.queueIssue;
+  if (
+    item.blockingFor !== undefined ||
+    issue?.priority !== 0 ||
+    issue.unmappedFacets?.includes("priority")
+  )
     return null;
   return {
     target: item.key,

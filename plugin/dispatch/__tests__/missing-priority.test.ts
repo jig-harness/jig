@@ -136,6 +136,13 @@ describe("an assigned item with no priority", () => {
     expect(result.actions.map((a) => a.target)).toEqual(["#2"]);
   });
 
+  it("starts when the tracker holds a priority the configuration does not map", () => {
+    const item = served("#2", 0);
+    if (item.queueIssue) item.queueIssue.unmappedFacets = ["priority"];
+    const result = plan([item]);
+    expect(result.actions.map((a) => a.target)).toEqual(["#2"]);
+  });
+
   it("starts when its priority was not read", () => {
     const { queueIssue: _, ...unread } = served("#2", 0);
     const result = plan([unread]);
