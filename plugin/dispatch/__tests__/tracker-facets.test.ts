@@ -245,7 +245,7 @@ describe("the tick's tracker record and the issue facets", () => {
       w.setConfig(
         `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\ndispatch:\n  identity: factory-bot\n`,
       );
-      w.setIssues([assignedIssue(12, "factory-bot", [])]);
+      w.setIssues([assignedIssue(12, "factory-bot", [], false)]);
       w.setAssigner(12, "maintainer", "WRITE");
       machineFile(w, [account(w, "a", "a@example.com")], {}, ["pickup"]);
       const r = await w.dispatch(["--json"]);
@@ -263,6 +263,17 @@ describe("the tick's tracker record and the issue facets", () => {
       expect(read?.facets?.gaps).toEqual([
         { key: "#12", missing: ["type", "priority"] },
       ]);
+      // With no priority it is held, listed with what it lacks, not started.
+      expect(
+        receipt.repos[0]?.actions.filter((a) => a.stage === "pickup"),
+      ).toEqual([]);
+      expect(receipt.repos[0]?.unplaced).toContainEqual(
+        expect.objectContaining({
+          target: "#12",
+          record: "tracker",
+          reason: expect.stringContaining("no priority"),
+        }),
+      );
     } finally {
       w.close();
     }
