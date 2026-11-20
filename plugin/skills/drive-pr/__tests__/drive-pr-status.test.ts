@@ -563,6 +563,7 @@ describe("drive-status.ts terminal states", () => {
       checkRuns: [{ ...REVIEWER_RUN, status: "in_progress", conclusion: null }],
     });
     const calls = join(dir, "polls.log");
+    const times = join(dir, "poll-times.log");
     const r = await probeIn(
       dir,
       stateDir,
@@ -573,6 +574,7 @@ describe("drive-status.ts terminal states", () => {
         env: {
           JIG_GH_CACHE: "off",
           DRIVE_PR_STUB_GH_LOG: calls,
+          DRIVE_PR_STUB_GH_TIMES: times,
           DRIVE_PR_STATUS_MIN_INTERVAL: "1",
           JIG__REVIEW__REVIEWER_POLL_MAX_SECONDS: "3",
         },
@@ -589,6 +591,19 @@ describe("drive-status.ts terminal states", () => {
     expect(polls.length % 2).toBe(0);
     expect(polls.length).toBeGreaterThanOrEqual(6);
     expect(polls.length).toBeLessThanOrEqual(12);
+    // The count alone cannot tell the backed-off cadence from fixed two-second
+    // polling, so read the gaps between evaluations (two reads each): the
+    // consuming loop must widen them toward the 3s cap.
+    const stamps = readFileSync(times, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => Number(BigInt(l) / 1_000_000n));
+    const starts = stamps.filter((_, i) => i % 2 === 0);
+    const gaps = starts.slice(1).map((t, i) => t - starts[i]);
+    expect(gaps.length).toBeGreaterThanOrEqual(3);
+    // Each gap is the wait plus one evaluation's own duration, so compare the
+    // gaps with each other: a fixed cadence keeps them level.
+    expect(gaps[2] - gaps[0]).toBeGreaterThanOrEqual(1000);
   }, 20_000);
 });
 
