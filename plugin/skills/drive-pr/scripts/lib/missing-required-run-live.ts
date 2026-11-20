@@ -15,6 +15,7 @@ import type { CheckRunLite } from "./ci-hold.ts";
 import { readCheckRuns } from "./ci-hold-state.ts";
 import {
   describeMissing,
+  type MissingRunVerdict,
   MISSING_RUN_GRACE_MS,
   MISSING_RUN_SETTLE_MS,
   MISSING_RUN_PARK_KEY,
@@ -146,6 +147,51 @@ export function missingRunDecision(
   };
 }
 
+type ReadOutcome =
+  | { ok: true }
+  | { ok: false; failure: { code: string; reason: string } };
+
+/** Which of the head's reads failed, for the line that says the drive waits; `null` when all read. */
+function unreadReason(
+  statuses: unknown,
+  workflowRuns: ReadOutcome,
+  checkRuns: ReadOutcome,
+): string | null {
+  if (statuses === null)
+    return "its commit statuses cannot be read (the status read keeps no cause)";
+  if (!workflowRuns.ok)
+    return `its workflow runs cannot be read (${workflowRuns.failure.code}: ${workflowRuns.failure.reason})`;
+  if (!checkRuns.ok)
+    return `its check runs cannot be read again (${checkRuns.failure.code}: ${checkRuns.failure.reason})`;
+  return null;
+}
+
+/** What to answer while the missing checks are not yet a park: wait, or push unheld to let a workflow change start them; `null` to park. */
+async function answerBeforeParking(
+  verdict: Exclude<MissingRunVerdict, { kind: "none" }>,
+  head: string,
+): Promise<MissingRunAnswer | null> {
+  const changes = await changesWorkflows(head);
+  const named = verdict.checks.map((c) => `'${c}'`).join(", ");
+  if (verdict.kind === "wait" && changes !== true) {
+    console.error(
+      `ci-hold: required check(s) ${named} have no run on this head yet; ${verdict.reason}`,
+    );
+    return "wait";
+  }
+  if (changes === null) {
+    console.error(
+      `ci-hold: required check(s) ${named} never ran on this head, and whether the commits about to be pushed change ${WORKFLOWS_DIR} cannot be read; waiting`,
+    );
+    return "wait";
+  }
+  if (!changes) return null;
+  console.error(
+    `ci-hold: required check(s) ${named} never ran on this head, and the commits about to be pushed change ${WORKFLOWS_DIR}; pushing unheld so the change can start them`,
+  );
+  return "workflow-change";
+}
+
 /**
  * Whether a required check has no run on `head` past the grace, and the
  * drive is parked for it. `runs` are the head's check runs, already read.
@@ -166,18 +212,14 @@ export async function stopOnMissingRequiredRun(
     readWorkflowRuns("{owner}", "{repo}", head),
   ]);
   const checkRuns = await readCheckRuns(head);
-  if (statuses === null || !workflowRuns.ok || !checkRuns.ok) {
-    const unread =
-      statuses === null
-        ? "its commit statuses cannot be read (the status read keeps no cause)"
-        : !workflowRuns.ok
-          ? `its workflow runs cannot be read (${workflowRuns.failure.code}: ${workflowRuns.failure.reason})`
-          : `its check runs cannot be read again (${checkRuns.ok ? "" : `${checkRuns.failure.code}: ${checkRuns.failure.reason}`})`;
+  const unread = unreadReason(statuses, workflowRuns, checkRuns);
+  if (unread !== null) {
     console.error(
       `ci-hold: a required check has no run on this head, and ${unread}; waiting`,
     );
     return "wait";
   }
+  if (statuses === null || !workflowRuns.ok || !checkRuns.ok) return "wait";
   const graceMs = testPacing(
     "DRIVE_PR_MISSING_RUN_GRACE_MS",
     MISSING_RUN_GRACE_MS,
@@ -201,25 +243,8 @@ export async function stopOnMissingRequiredRun(
     await clearParkedFinding(pr, MISSING_RUN_PARK_KEY);
     return "none";
   }
-  const changes = await changesWorkflows(head);
-  if (verdict.kind === "wait" && changes !== true) {
-    console.error(
-      `ci-hold: required check(s) ${verdict.checks.map((c) => `'${c}'`).join(", ")} have no run on this head yet; ${verdict.reason}`,
-    );
-    return "wait";
-  }
-  if (changes === null) {
-    console.error(
-      `ci-hold: required check(s) ${verdict.checks.map((c) => `'${c}'`).join(", ")} never ran on this head, and whether the commits about to be pushed change ${WORKFLOWS_DIR} cannot be read; waiting`,
-    );
-    return "wait";
-  }
-  if (changes) {
-    console.error(
-      `ci-hold: required check(s) ${verdict.checks.map((c) => `'${c}'`).join(", ")} never ran on this head, and the commits about to be pushed change ${WORKFLOWS_DIR}; pushing unheld so the change can start them`,
-    );
-    return "workflow-change";
-  }
+  const early = await answerBeforeParking(verdict, head);
+  if (early !== null) return early;
   const { files, complete } = await workflowFiles(head);
   const named = verdict.checks.map((check) =>
     describeMissing(check, complete ? workflowForCheck(check, files) : null),

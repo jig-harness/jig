@@ -13,6 +13,7 @@
  */
 
 import { swallow } from "../../../../shared/errors.ts";
+import { isRecord } from "../../../../shared/guards.ts";
 import { load } from "../../../../shared/yaml.ts";
 import { parseMs } from "../../../../shared/time.ts";
 import type { CheckRunLite, StatusLite } from "./ci-hold.ts";
@@ -146,31 +147,29 @@ export interface WorkflowFile {
   text: string;
 }
 
+const isPlain = (v: unknown): v is string | number | boolean =>
+  typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+
+/** The job's matrix when it lists plain values without excluding combinations. */
+function matrixGrid(job: unknown): Record<string, unknown> | null {
+  const strategy = isRecord(job) ? job.strategy : undefined;
+  const matrix = isRecord(strategy) ? strategy.matrix : undefined;
+  return isRecord(matrix) && !("exclude" in matrix) ? matrix : null;
+}
+
 /** The values a job's matrix gives `key`, when they are plain listed values; `null` when they cannot be told. */
 function matrixValues(job: unknown, key: string): string[] | null {
-  const strategy = (job as Record<string, unknown> | null)?.strategy;
-  const matrix =
-    typeof strategy === "object" && strategy !== null
-      ? (strategy as Record<string, unknown>).matrix
-      : undefined;
-  if (typeof matrix !== "object" || matrix === null || Array.isArray(matrix))
-    return null;
-  const grid = matrix as Record<string, unknown>;
-  if ("exclude" in grid) return null;
-  const values: unknown[] = [];
-  if (Array.isArray(grid[key])) values.push(...(grid[key] as unknown[]));
-  else if (key in grid) return null;
-  if (Array.isArray(grid.include))
-    for (const entry of grid.include as unknown[])
-      if (typeof entry === "object" && entry !== null && key in entry)
-        values.push((entry as Record<string, unknown>)[key]);
-  const plain = values.filter(
-    (v) =>
-      typeof v === "string" || typeof v === "number" || typeof v === "boolean",
-  );
-  return plain.length === values.length && plain.length > 0
-    ? plain.map(String)
-    : null;
+  const grid = matrixGrid(job);
+  if (grid === null) return null;
+  const listed = grid[key];
+  if (key in grid && !Array.isArray(listed)) return null;
+  const included = Array.isArray(grid.include)
+    ? grid.include.flatMap((e: unknown) =>
+        isRecord(e) && key in e ? [e[key]] : [],
+      )
+    : [];
+  const values = [...(Array.isArray(listed) ? listed : []), ...included];
+  return values.length > 0 && values.every(isPlain) ? values.map(String) : null;
 }
 
 function escapeRegExp(text: string): string {
@@ -187,28 +186,28 @@ function jobNames(
   id: string,
   job: unknown,
 ): { exact: string[]; pattern: RegExp[] } {
-  const name =
-    typeof job === "object" && job !== null && !Array.isArray(job)
-      ? (job as Record<string, unknown>).name
-      : undefined;
+  const name = isRecord(job) ? job.name : undefined;
   if (typeof name !== "string") return { exact: [id], pattern: [] };
   if (!name.includes("${{")) return { exact: [name], pattern: [] };
+  const pattern = templatedPattern(name, job);
+  return { exact: [], pattern: pattern === null ? [] : [pattern] };
+}
+
+/** The pattern a templated job name matches, or `null` when it is not one plain matrix reference. */
+function templatedPattern(name: string, job: unknown): RegExp | null {
+  const expressions = [...name.matchAll(/\$\{\{([\s\S]*?)\}\}/g)];
+  if (expressions.length > 1) return null;
   let source = "";
   let last = 0;
-  let expressions = 0;
-  for (const m of name.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+  for (const m of expressions) {
     const key = /^\s*matrix\.([A-Za-z_][\w-]*)\s*$/.exec(m[1] ?? "")?.[1];
     const values = key === undefined ? null : matrixValues(job, key);
-    if (key === undefined || values === null) return { exact: [], pattern: [] };
-    if (++expressions > 1) return { exact: [], pattern: [] };
+    if (values === null) return null;
     source += `${escapeRegExp(name.slice(last, m.index))}(?:${values.map(escapeRegExp).join("|")})`;
     last = m.index + m[0].length;
   }
   source += escapeRegExp(name.slice(last));
-  return {
-    exact: [],
-    pattern: [new RegExp(`^${source}(?: \\([\\s\\S]*| / [\\s\\S]*)?$`)],
-  };
+  return new RegExp(`^${source}(?: \\([\\s\\S]*| / [\\s\\S]*)?$`);
 }
 
 /**
@@ -231,31 +230,30 @@ export function workflowForCheck(
   check: string,
   files: readonly WorkflowFile[],
 ): string | null {
-  const matches = new Set<string>();
-  for (const file of files) {
-    let doc: unknown;
-    try {
-      doc = load(file.text);
-    } catch (err) {
-      swallow(err, `the workflow file ${file.path} does not read as YAML`);
-      continue;
-    }
-    const jobs =
-      typeof doc === "object" && doc !== null && !Array.isArray(doc)
-        ? (doc as Record<string, unknown>).jobs
-        : undefined;
-    if (typeof jobs !== "object" || jobs === null || Array.isArray(jobs))
-      continue;
-    for (const [id, job] of Object.entries(jobs)) {
-      const { exact, pattern } = jobNames(id, job);
-      if (
-        exact.some((name) => reports(check, name)) ||
-        pattern.some((re) => re.test(check))
-      )
-        matches.add(file.path);
-    }
+  const matches = files
+    .filter((file) => fileReports(check, file))
+    .map((file) => file.path);
+  return new Set(matches).size === 1 ? (matches[0] ?? null) : null;
+}
+
+/** Whether any job of the workflow file reports `check`; a file that does not read as YAML reports nothing. */
+function fileReports(check: string, file: WorkflowFile): boolean {
+  let doc: unknown;
+  try {
+    doc = load(file.text);
+  } catch (err) {
+    swallow(err, `the workflow file ${file.path} does not read as YAML`);
+    return false;
   }
-  return matches.size === 1 ? ([...matches][0] ?? null) : null;
+  const jobs = isRecord(doc) ? doc.jobs : undefined;
+  if (!isRecord(jobs)) return false;
+  return Object.entries(jobs).some(([id, job]) => {
+    const { exact, pattern } = jobNames(id, job);
+    return (
+      exact.some((name) => reports(check, name)) ||
+      pattern.some((re) => re.test(check))
+    );
+  });
 }
 
 /** One missing check as the stop names it, its workflow `unknown` when no file identifies it. */

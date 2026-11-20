@@ -20,13 +20,7 @@ import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
  *
  * `--require-success` requires completed checks to succeed, for final-ready only.
  *
- * `ensure` prints the hold's outcome on stdout: `added`, `owned`, `adopted`,
- * or one of the outcomes that push unheld: `disabled`, `conflicting`, and
- * `workflow-change` (a required check never ran on the head and the push
- * changes the workflows), and `timed-out` (a required check's job stopped at
- * its time limit, a failure for the push's repair). At exit 8 it prints `missing-required-run` when it
- * parked a required check with no run on the head past the grace, and
- * nothing when the cancelled-run recovery parked `cancelled-ci`.
+ * `ensure`'s stdout outcomes are listed in `lib/ci-hold-unobserved.ts`.
  */
 
 import {
@@ -34,9 +28,9 @@ import {
   completedHoldPrecondition,
   completedRequiredCi,
   type LabelTransition,
+  mayMutateHold,
   mutationProven,
   ownsHeldTransition,
-  type PrSnapshot,
   reportsConflict,
   requiredCiStartedAt,
   requirementsWithoutRun,
@@ -113,31 +107,6 @@ function unread(failure: HoldReadFailure): number {
 
 const latestOf = (values: readonly LabelTransition[]): LabelTransition | null =>
   values.at(-1) ?? null;
-
-/** A label mutation may proceed only while the open pull request still has this head. */
-const isOpenOnHead = (live: PrSnapshot, head: string): boolean =>
-  live.state === "OPEN" && live.head === head;
-
-/** The live hold must match the transition a pending label mutation expects. */
-const mayMutateHold = (
-  live: PrSnapshot,
-  head: string,
-  held: boolean,
-): boolean => isOpenOnHead(live, head) && live.held === held;
-
-type BeforeMutation = {
-  login: string;
-  live: PrSnapshot;
-  timeline: LabelTransition[];
-};
-
-/** Read the shared mutation fence, reporting a retryable failed read once. */
-async function beforeMutation(pr: string): Promise<BeforeMutation | null> {
-  const before = await readBeforeMutation(pr, policy.holdLabel);
-  if (before.ok) return before.value;
-  unread(before.failure);
-  return null;
-}
 
 /** Where the transitions after `previousId` begin, or null when it is not in the timeline. */
 function firstIndexAfter(
@@ -499,9 +468,9 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   // Refresh immediately before the mutation while the PR-wide mutation fence
   // is held. A same-login human action through another client remains an API
   // limitation; any observable intervening transition is refused below.
-  const before = await beforeMutation(pr);
-  if (before === null) return 4;
-  const { login, live: beforeLive, timeline: beforeTimeline } = before;
+  const before = await readBeforeMutation(pr, policy.holdLabel);
+  if (!before.ok) return unread(before.failure);
+  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
   if (
     !mayMutateHold(beforeLive, head, false) ||
     latestOf(beforeTimeline)?.id !== latest?.id
@@ -653,9 +622,9 @@ async function release(
   }
   if (persisted === null || persisted.phase !== "held") return 4;
 
-  const before = await beforeMutation(pr);
-  if (before === null) return 4;
-  const { login, live: beforeLive, timeline: beforeTimeline } = before;
+  const before = await readBeforeMutation(pr, policy.holdLabel);
+  if (!before.ok) return unread(before.failure);
+  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
   if (
     !mayMutateHold(beforeLive, head, true) ||
     (expectedTransition !== undefined &&

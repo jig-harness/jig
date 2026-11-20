@@ -2,6 +2,15 @@
  * What `ci-hold.ts ensure` does while the checks the hold waits for have not
  * completed on the head: recover a cancelled run, park a required check no
  * workflow run ever reported, or tell the caller to wait.
+ *
+ * `ensure` prints the hold's outcome on stdout: `added`, `owned`, `adopted`,
+ * or one of the outcomes that push unheld: `disabled`, `conflicting`,
+ * `workflow-change` (a required check never ran on the head and the push
+ * changes the workflows) and `timed-out` (a required check's job stopped at
+ * its time limit, a failure for the push's repair). At exit 8 it prints
+ * `missing-required-run` when it parked a required check with no run on the
+ * head past the grace, and nothing when the cancelled-run recovery parked
+ * `cancelled-ci`.
  */
 import { recoverCancelledOnHead } from "./cancelled-recovery-live.ts";
 import { isTimedOut, recoveryExit } from "./cancelled-recovery-reads.ts";
