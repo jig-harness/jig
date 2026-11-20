@@ -51,6 +51,7 @@ import {
 } from "../runtime/port.ts";
 import { freshServedPickup } from "../sources/served.ts";
 import { freshPickup } from "../sources/tracker.ts";
+import { unrankedHold } from "../pickup-priority.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -58,6 +59,7 @@ import type {
   LaunchOutcome,
   RepoReport,
   RepoTarget,
+  WantedItem,
 } from "../types.ts";
 import {
   accountBlock,
@@ -145,6 +147,27 @@ export async function leftBehindBusy(
     : null;
 }
 
+/** The missing-priority hold, read again from the issue as the tracker holds it now; `null` when the item may start. */
+function heldForPriority(
+  ctx: PickupContext,
+  issue: PoolIssue,
+  key: string,
+  blockingFor: string | undefined,
+): string | null {
+  return (
+    unrankedHold(
+      {
+        key,
+        title: issue.title,
+        url: issue.url ?? null,
+        blockingFor,
+        queueIssue: issue,
+      } as WantedItem,
+      ctx.section,
+    )?.reason ?? null
+  );
+}
+
 /** Why the item must not be started now; `null` when nothing changed. */
 export async function changed(
   state: ApplyState,
@@ -178,6 +201,8 @@ export async function changed(
           served.blockingFor,
         );
   if (typeof issue === "string") return { why: issue };
+  const unranked = heldForPriority(ctx, issue, key, served?.blockingFor);
+  if (unranked !== null) return { why: unranked };
   // Item keys repeat across repositories: only this repository's records hold it.
   const hold = pickupHold(
     key,
@@ -479,7 +504,8 @@ async function retryPending(
       batchBlock ??
       (typeof fresh === "string"
         ? fresh
-        : ((await competing(state, repo, ctx, record)) ??
+        : (heldForPriority(ctx, fresh, item, record.blockingFor) ??
+          (await competing(state, repo, ctx, record)) ??
           (await accountBlock(state, record))));
     const action = { target: item, stage: "pickup" } as Action;
     report.launches.push(

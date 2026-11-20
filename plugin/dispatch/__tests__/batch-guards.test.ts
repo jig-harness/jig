@@ -38,6 +38,7 @@ function guards() {
       user: async () => ({ id: "alex", name: "alex" }),
       assignedBy: async () => ({ trusted: true }),
     },
+    section: {},
     sessions: async () => ({
       ok: true,
       workspaces: [

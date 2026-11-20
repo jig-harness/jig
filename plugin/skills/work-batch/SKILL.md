@@ -108,9 +108,13 @@ JSON form), and no verdict prompt appears:
 - With two or more members kept, go on with them as the batch.
 - With fewer than two kept, the pass still has to claim one, or its launch
   record keeps holding every member. Run `/jig:do-item` for the member kept,
-  or, when none is, for the first member left out, passing that item's
-  `--for` and `--ancestor` to its claim. Every other member stays unclaimed
-  for its own pickup.
+  or, when none is, for the first member left out whose priority is set,
+  passing that item's `--for` and `--ancestor` to its claim. Every other
+  member stays unclaimed for its own pickup. When no member is kept and
+  every one left out lost its priority, claim none and start no item: end
+  the pass with the launch's result command as `failed`, naming each member
+  and that its priority is missing, so the dispatcher holds them until a
+  person sets one.
 - The workspace opened under the first named key, on that key's branch. When
   that member is left out, work on the branch named for the member you claim
   (step 4, or `/jig:do-item`'s), so the member's own pickup can use its branch.
