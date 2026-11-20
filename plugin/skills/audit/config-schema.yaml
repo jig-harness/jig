@@ -83,7 +83,7 @@ machine_fields:
         format: { type: enum, values: [text, slack, discord] }
       optional: [format]
     read_by: [dispatch]
-    since: next
+    since: 0.296.0
 
 strict:
   - gc
