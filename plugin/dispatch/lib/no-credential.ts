@@ -41,7 +41,7 @@ export interface NoCredential {
   remedy: string;
   /** What the client answered, when one was asked. */
   answer?: string;
-  /** Set when a later call of the tick had a credential: the incident is history, and neither the exit nor the line's kept part follow it. */
+  /** Set when a later call of the tick had a credential and no repository's reading was cut by the missing one: the incident is history, and neither the exit nor the line's kept part follow it. */
   recovered?: true;
   /** The repositories whose tracker it is, by slug (by path when the forge did not name one). */
   repos: string[];
@@ -57,13 +57,18 @@ function notAsked(system: string): string {
  * failure carries the no-credential mark (`ReadFailure.noCredential`), never
  * one any other failure cut. Whether its tracker is the system's.
  */
-function settleReport(report: RepoReport, missing: MissingCredential): boolean {
+function settleReport(
+  report: RepoReport,
+  missing: MissingCredential,
+): { tracked: boolean; cut: boolean } {
   let tracked = false;
+  let cut = false;
   report.records = report.records.map((record) => {
     if (record.record !== "tracker") return record;
     if (record.source.startsWith(`${missing.system} `)) tracked = true;
     if (record.ok || record.failure?.noCredential !== true) return record;
     tracked = true;
+    cut = true;
     const { failure: _failure, ...kept } = record;
     return { ...kept, ok: true, detail: notAsked(missing.system) };
   });
@@ -71,7 +76,8 @@ function settleReport(report: RepoReport, missing: MissingCredential): boolean {
   report.unplaced = report.unplaced.filter(
     (row) => row.failure?.noCredential !== true,
   );
-  return tracked || report.unplaced.length < before;
+  const unplacedCut = report.unplaced.length < before;
+  return { tracked: tracked || unplacedCut, cut: cut || unplacedCut };
 }
 
 /**
@@ -84,9 +90,13 @@ export function settleNoCredential(receipt: TickReceipt): void {
   if (missing.length === 0) return;
   const active = new Set(missingCredentials().map((m) => m.system));
   receipt.noCredential = missing.map((m) => {
-    const repos = receipt.repos.flatMap((report) =>
-      settleReport(report, m) ? [report.slug ?? report.path] : [],
-    );
+    // A later call's success recovers the system only when no repository's reading was cut by the missing credential: a cut reading was never retried.
+    let cutAny = false;
+    const repos = receipt.repos.flatMap((report) => {
+      const settled = settleReport(report, m);
+      if (settled.cut) cutAny = true;
+      return settled.tracked ? [report.slug ?? report.path] : [];
+    });
     console.error(
       `jig dispatch: ${missingCredentialMessage(m)}; the tick asked ${issueService(m.system)} nothing more, and the line keeps the last reading that had a credential`,
     );
@@ -96,7 +106,7 @@ export function settleNoCredential(receipt: TickReceipt): void {
       reason: m.reason,
       remedy: m.remedy,
       ...(m.answer === undefined ? {} : { answer: m.answer }),
-      ...(active.has(m.system) ? {} : { recovered: true as const }),
+      ...(active.has(m.system) || cutAny ? {} : { recovered: true as const }),
       repos,
     };
   });

@@ -137,7 +137,8 @@ function readTracker(
   if (
     "why" in keylessEntries(receipt, false) ||
     (receipt.noCredential ?? []).some(
-      (n) => n.system === system && n.repos.includes(repo),
+      (n) =>
+        n.recovered !== true && n.system === system && n.repos.includes(repo),
     )
   )
     return false;
@@ -219,7 +220,8 @@ export function keylessCheck(opts: {
       unresolved.push(`tick:${runId} (${found.why})`);
       continue;
     }
-    for (const missing of found.entries)
+    // An incident the tick recovered from within itself (every cut reading completed) is history, not an unresolved failure.
+    for (const missing of found.entries.filter((e) => e.recovered !== true))
       for (const repo of missing.repos) {
         const key = `${missing.reason}\u0000${repo}`;
         const group = groups.get(key) ?? {
@@ -270,7 +272,6 @@ export function keylessCheck(opts: {
   return {
     id: ID,
     status:
-      all.length > 0 &&
       unresolved.length === 0 &&
       unexamined === 0 &&
       all.every((g) => since.get(g) === true)

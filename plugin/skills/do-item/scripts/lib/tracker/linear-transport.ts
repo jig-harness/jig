@@ -712,8 +712,10 @@ export function cliTransport(
   const governed: Governed | null =
     governor === undefined ? null : { governor, key: identity };
   return dispatchTagged(
-    (query, variables, signal) =>
-      throughCredential(
+    (query, variables, signal) => {
+      // One deadline covers the wait for admission and the call it admits.
+      const deadline = waitSignal(signal);
+      return throughCredential(
         identity,
         () =>
           call(
@@ -735,13 +737,14 @@ export function cliTransport(
               );
             },
             query,
-            signal,
+            deadline,
           ),
         (keyless) => refusedKeyless(keyless, query),
         () => signal?.aborted === true,
         // A caller waiting for the first call stops at one call's deadline.
-        waitSignal(signal),
-      ),
+        deadline,
+      );
+    },
     credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
     false,
   );
