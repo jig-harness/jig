@@ -23,6 +23,7 @@ import type {
   PoolIssue,
   TrackerUser,
 } from "../../do-item/scripts/lib/tracker/port.ts";
+import { parse as parseHandOffArgs } from "../scripts/hand-off.ts";
 import { type HandOffTracker, handOff } from "../scripts/lib/hand-off.ts";
 
 describe("handOff on Linear", () => {
@@ -249,5 +250,18 @@ describe("handOff on a tracker whose history records every change", () => {
     });
     expect(assigned).toEqual(["#7"]);
     expect(clock.waits).toEqual([]);
+  });
+});
+
+describe("hand-off command line", () => {
+  it("reads the key, the identity and whether to wait", () => {
+    expect(parseHandOffArgs(["ENG-1", "--to", " ada "])).toEqual({
+      key: "ENG-1",
+      to: "ada",
+      wait: true,
+    });
+    expect(parseHandOffArgs(["--no-wait", "--to", "ada", "ENG-1"]).wait).toBe(
+      false,
+    );
   });
 });

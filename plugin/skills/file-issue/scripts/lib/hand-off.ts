@@ -32,6 +32,7 @@ import {
 import {
   CLOSED_STATE_TYPES,
   type PoolIssue,
+  type TrackerUser,
   type Tracker,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
 
@@ -68,6 +69,201 @@ export type HandOff =
       remedy: string;
     };
 
+/** What every step of one hand-off shares. */
+type Run = {
+  tracker: HandOffTracker;
+  key: string;
+  identity: string;
+  clock: Pick<Clock, "now" | "sleep">;
+  signal: AbortSignal | undefined;
+  /** The step in flight, named in a failure's reason. */
+  step: string;
+};
+
+const AGAIN = "run the hand-off again";
+
+function notYet(
+  run: Run,
+  reason: string,
+  remedy: string,
+  earliest: string | null = null,
+): HandOff {
+  return {
+    handedOver: false,
+    issue: run.key,
+    to: run.identity,
+    reason,
+    earliest,
+    remedy,
+  };
+}
+
+const rerunWords = (run: Run): string =>
+  `${AGAIN}: an issue already assigned to ${run.identity} is only confirmed, never rewritten`;
+
+function interrupted(run: Run, step: string): HandOff | null {
+  return run.signal?.aborted === true
+    ? notYet(
+        run,
+        `the hand-off was interrupted before it could ${step}`,
+        `read ${run.key} on the tracker, then ${rerunWords(run)}`,
+      )
+    : null;
+}
+
+/** Why an issue as read cannot be handed over whatever its assignee; `null` when it can. */
+function unfit(run: Run, issue: PoolIssue | null): HandOff | null {
+  const { key } = run;
+  if (issue === null)
+    return notYet(run, `the tracker has no issue ${key}`, "check the key");
+  if ((CLOSED_STATE_TYPES as readonly string[]).includes(issue.state.type))
+    return notYet(
+      run,
+      `${key} is ${issue.state.name}, a closed state`,
+      "reopen it first if the work is still wanted",
+    );
+  if (issue.state.type === "started")
+    return notYet(
+      run,
+      `${key} is ${issue.state.name}, a state of work in progress`,
+      "a started item is someone's work: leave it to them",
+    );
+  return null;
+}
+
+/** An issue already assigned to the identity: confirmed from its history, never rewritten. */
+async function confirmExisting(
+  run: Run,
+  assignee: { id: string; name: string },
+  userId: string,
+  from: number | null,
+): Promise<HandOff> {
+  const { key, identity } = run;
+  if (assignee.id !== userId)
+    return notYet(
+      run,
+      `${key} is assigned to ${assignee.name}`,
+      `a hand-off does not take an issue from its assignee: unassign ${key} first if that is meant, then ${AGAIN}`,
+    );
+  run.step = `read who assigned ${key}`;
+  try {
+    const by = await run.tracker.assignedBy(key, identity, run.signal);
+    if (!by.trusted)
+      return notYet(
+        run,
+        `${key} was assigned to ${identity} by ${by.name}, who may not start work in this repository`,
+        `a hand-off does not change an existing assignment: someone who can write to the repository unassigns ${key} on the tracker and assigns it to ${identity} again`,
+      );
+    return {
+      handedOver: true,
+      issue: key,
+      to: identity,
+      confirmedAt: null,
+      detail: `${key} was already assigned to ${identity} by ${by.name}, and its history shows it; nothing written`,
+    };
+  } catch (error) {
+    if (!(error instanceof AssignerUnknown)) throw error;
+    const earliest =
+      from !== null && from > run.clock.now() ? isoFromMs(from) : null;
+    return notYet(
+      run,
+      `${key} is assigned to ${identity}, but who made that assignment cannot be read: ${error.message}`,
+      `a hand-off does not change an existing assignment: unassign ${key} on the tracker, then assign it to ${identity} again${earliest === null ? "" : ` at or after ${earliest}`} (or ${AGAIN})`,
+      earliest,
+    );
+  }
+}
+
+/** The write and its read-back; a result when the assignment did not take. */
+async function assignAndConfirm(
+  run: Run,
+  user: TrackerUser,
+): Promise<HandOff | null> {
+  const { tracker, key, identity } = run;
+  run.step = `assign ${key} to ${identity}`;
+  if (tracker.assignUnassigned !== undefined) {
+    const wrote = await tracker.assignUnassigned(key, user);
+    if (!wrote.assigned)
+      return notYet(
+        run,
+        `${key} was not assigned to ${identity} (${wrote.reason}): someone else may hold it now`,
+        `read ${key} on the tracker; if it is unassigned, ${AGAIN}`,
+      );
+  } else await tracker.assign(key, user);
+  run.step = `confirm ${key}'s assignment`;
+  const now = await tracker.assignees(key);
+  if (!now.some((u) => u.id === user.id))
+    return notYet(
+      run,
+      `${key} did not read back as assigned to ${identity}`,
+      `read ${key} on the tracker, then ${rerunWords(run)}`,
+    );
+  return null;
+}
+
+/** The assigner read after a write; a result when the assigner may not start work. */
+async function checkAssigner(run: Run): Promise<HandOff | null> {
+  const { key, identity } = run;
+  run.step = `read who assigned ${key}`;
+  try {
+    const by = await run.tracker.assignedBy(key, identity, run.signal);
+    if (by.trusted) return null;
+    return notYet(
+      run,
+      `${key} was assigned to ${identity}, but the tracker's history names ${by.name} as the assigner, who may not start work in this repository`,
+      `someone who can write to the repository unassigns ${key} on the tracker and assigns it to ${identity} again`,
+    );
+  } catch (error) {
+    if (!(error instanceof AssignerUnknown)) throw error;
+    return notYet(
+      run,
+      `${key} is assigned to ${identity}, but who made that assignment cannot be read: ${error.message}`,
+      `unassign ${key} on the tracker, then assign it to ${identity} again (or ${AGAIN})`,
+    );
+  }
+}
+
+/** The second read, after the lookup and any wait, so no start or assignment made meanwhile is overwritten. */
+async function rereadBeforeWrite(
+  run: Run,
+  waited: boolean,
+): Promise<HandOff | null> {
+  const { key } = run;
+  run.step = `read ${key} again before assigning`;
+  const fresh = await run.tracker.poolIssue(key, run.signal);
+  const changed = unfit(run, fresh);
+  if (changed !== null) return changed;
+  if (fresh?.assignee != null)
+    return notYet(
+      run,
+      `${key} was assigned to ${fresh.assignee.name} while the hand-off ${waited ? "waited" : "looked up the identity"}; nothing written`,
+      `a hand-off does not take an issue from its assignee: unassign ${key} first if that is meant, then ${AGAIN}`,
+    );
+  return interrupted(run, `assign ${key}`);
+}
+
+/** Waits out the creation window when asked; a result when it may not or could not. */
+async function waitForWindow(
+  run: Run,
+  from: number | null,
+  wait: boolean,
+): Promise<{ waited: boolean } | { result: HandOff }> {
+  const { waitMs, until } = waitBeforeAssigning(from, run.clock.now());
+  if (waitMs <= 0) return { waited: false };
+  if (!wait)
+    return {
+      result: notYet(
+        run,
+        `${run.key} is inside its creation window: ${windowWords(run.tracker)}`,
+        `${AGAIN} at or after ${until}`,
+        until,
+      ),
+    };
+  await run.clock.sleep(waitMs, run.signal);
+  const stopped = interrupted(run, `read ${run.key} again after the wait`);
+  return stopped === null ? { waited: true } : { result: stopped };
+}
+
 /**
  * Hand `key` to `identity`. With `wait`, an issue younger than the
  * tracker's creation window is waited for; without it, the result names
@@ -85,150 +281,36 @@ export async function handOff(
     signal?: AbortSignal;
   },
 ): Promise<HandOff> {
-  const clock = opts.clock ?? systemClock;
-  const notYet = (
-    reason: string,
-    remedy: string,
-    earliest: string | null = null,
-  ): HandOff => ({
-    handedOver: false,
-    issue: key,
-    to: identity,
-    reason,
-    earliest,
-    remedy,
-  });
-  const again = "run the hand-off again";
-  const rerun = `${again}: an issue already assigned to ${identity} is only confirmed, never rewritten`;
-  const { signal } = opts;
-  const interrupted = (step: string): HandOff | null =>
-    signal?.aborted === true
-      ? notYet(
-          `the hand-off was interrupted before it could ${step}`,
-          `read ${key} on the tracker, then ${rerun}`,
-        )
-      : null;
-  /** Why an issue as read cannot be handed over whatever its assignee; `null` when it can. */
-  const unfit = (issue: PoolIssue | null): HandOff | null => {
-    if (issue === null)
-      return notYet(`the tracker has no issue ${key}`, "check the key");
-    if ((CLOSED_STATE_TYPES as readonly string[]).includes(issue.state.type))
-      return notYet(
-        `${key} is ${issue.state.name}, a closed state`,
-        "reopen it first if the work is still wanted",
-      );
-    if (issue.state.type === "started")
-      return notYet(
-        `${key} is ${issue.state.name}, a state of work in progress`,
-        "a started item is someone's work: leave it to them",
-      );
-    return null;
+  const run: Run = {
+    tracker,
+    key,
+    identity,
+    clock: opts.clock ?? systemClock,
+    signal: opts.signal,
+    step: "read the issue",
   };
-  let step = "read the issue";
   try {
-    const issue = await tracker.poolIssue(key, signal);
-    const refused = unfit(issue);
+    const issue = await tracker.poolIssue(key, run.signal);
+    const refused = unfit(run, issue);
     if (refused !== null || issue === null)
       return (
-        refused ?? notYet(`the tracker has no issue ${key}`, "check the key")
+        refused ??
+        notYet(run, `the tracker has no issue ${key}`, "check the key")
       );
-    step = `look up ${identity}`;
-    const user = await tracker.user(identity, signal);
-    const window = windowWords(tracker);
+    run.step = `look up ${identity}`;
+    const user = await tracker.user(identity, run.signal);
     const from = assignableFromMs(tracker, issue.createdAt);
-    if (!from.ok) return notYet(from.failure.reason, again);
-    if (issue.assignee !== null) {
-      if (issue.assignee.id !== user.id)
-        return notYet(
-          `${key} is assigned to ${issue.assignee.name}`,
-          `a hand-off does not take an issue from its assignee: unassign ${key} first if that is meant, then ${again}`,
-        );
-      step = `read who assigned ${key}`;
-      try {
-        const by = await tracker.assignedBy(key, identity, signal);
-        if (!by.trusted)
-          return notYet(
-            `${key} was assigned to ${identity} by ${by.name}, who may not start work in this repository`,
-            `a hand-off does not change an existing assignment: someone who can write to the repository unassigns ${key} on the tracker and assigns it to ${identity} again`,
-          );
-        return {
-          handedOver: true,
-          issue: key,
-          to: identity,
-          confirmedAt: null,
-          detail: `${key} was already assigned to ${identity} by ${by.name}, and its history shows it; nothing written`,
-        };
-      } catch (error) {
-        if (!(error instanceof AssignerUnknown)) throw error;
-        const earliest =
-          from.value !== null && from.value > clock.now()
-            ? isoFromMs(from.value)
-            : null;
-        return notYet(
-          `${key} is assigned to ${identity}, but who made that assignment cannot be read: ${error.message}`,
-          `a hand-off does not change an existing assignment: unassign ${key} on the tracker, then assign it to ${identity} again${earliest === null ? "" : ` at or after ${earliest}`} (or ${again})`,
-          earliest,
-        );
-      }
-    }
-    const { waitMs, until } = waitBeforeAssigning(from.value, clock.now());
-    if (waitMs > 0 && !opts.wait)
-      return notYet(
-        `${key} is inside its creation window: ${window}`,
-        `${again} at or after ${until}`,
-        until,
-      );
-    if (waitMs > 0) {
-      await clock.sleep(waitMs, signal);
-      const stopped = interrupted(`read ${key} again after the wait`);
-      if (stopped !== null) return stopped;
-    }
-    // The state and assignee are read once more after the identity's lookup
-    // and any wait, so neither a start nor an assignment made meanwhile is
-    // overwritten.
-    step = `read ${key} again before assigning`;
-    const fresh = await tracker.poolIssue(key, signal);
-    const changed = unfit(fresh);
-    if (changed !== null) return changed;
-    if (fresh?.assignee != null)
-      return notYet(
-        `${key} was assigned to ${fresh.assignee.name} while the hand-off ${waitMs > 0 ? "waited" : "looked up the identity"}; nothing written`,
-        `a hand-off does not take an issue from its assignee: unassign ${key} first if that is meant, then ${again}`,
-      );
-    const stopped = interrupted(`assign ${key}`);
-    if (stopped !== null) return stopped;
-    step = `assign ${key} to ${identity}`;
-    if (tracker.assignUnassigned !== undefined) {
-      const wrote = await tracker.assignUnassigned(key, user);
-      if (!wrote.assigned)
-        return notYet(
-          `${key} was not assigned to ${identity} (${wrote.reason}): someone else may hold it now`,
-          `read ${key} on the tracker; if it is unassigned, ${again}`,
-        );
-    } else await tracker.assign(key, user);
-    step = `confirm ${key}'s assignment`;
-    const now = await tracker.assignees(key);
-    if (!now.some((u) => u.id === user.id))
-      return notYet(
-        `${key} did not read back as assigned to ${identity}`,
-        `read ${key} on the tracker, then ${rerun}`,
-      );
-    step = `read who assigned ${key}`;
-    try {
-      const by = await tracker.assignedBy(key, identity, signal);
-      if (!by.trusted)
-        return notYet(
-          `${key} was assigned to ${identity}, but the tracker's history names ${by.name} as the assigner, who may not start work in this repository`,
-          `someone who can write to the repository unassigns ${key} on the tracker and assigns it to ${identity} again`,
-        );
-    } catch (error) {
-      if (!(error instanceof AssignerUnknown)) throw error;
-      return notYet(
-        `${key} is assigned to ${identity}, but who made that assignment cannot be read: ${error.message}`,
-        `unassign ${key} on the tracker, then assign it to ${identity} again (or ${again})`,
-      );
-    }
-    const confirmedAt = isoFromMs(clock.now());
+    if (!from.ok) return notYet(run, from.failure.reason, AGAIN);
+    if (issue.assignee !== null)
+      return await confirmExisting(run, issue.assignee, user.id, from.value);
+    const waited = await waitForWindow(run, from.value, opts.wait);
+    if ("result" in waited) return waited.result;
+    const blocked =
+      (await rereadBeforeWrite(run, waited.waited)) ??
+      (await assignAndConfirm(run, user)) ??
+      (await checkAssigner(run));
+    if (blocked !== null) return blocked;
+    const confirmedAt = isoFromMs(run.clock.now());
     return {
       handedOver: true,
       issue: key,
@@ -239,8 +321,9 @@ export async function handOff(
   } catch (error) {
     const failure = failureOf(error);
     return notYet(
-      `could not ${step}: ${failure.code}: ${failure.reason}${failure.sent === true ? " (the request may have been applied)" : ""}`,
-      `read ${key} on the tracker, then ${rerun}`,
+      run,
+      `could not ${run.step}: ${failure.code}: ${failure.reason}${failure.sent === true ? " (the request may have been applied)" : ""}`,
+      `read ${key} on the tracker, then ${rerunWords(run)}`,
     );
   }
 }

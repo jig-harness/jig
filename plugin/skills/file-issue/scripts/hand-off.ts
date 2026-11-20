@@ -69,4 +69,4 @@ function parse(argv: string[]): { key: string; to: string; wait: boolean } {
 
 if (import.meta.main) runMain("hand-off", () => main(process.argv.slice(2)));
 
-export { main };
+export { main, parse };
