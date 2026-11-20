@@ -31,6 +31,9 @@
  * counts each run from its current attempt, and never from before the
  * holder's.
  *
+ * A run whose creation or start time is not a readable instant is not a run:
+ * the queue cannot be placed in time, so the reading is unreadable.
+ *
  * It reads from the forge, one request each: the run, its jobs (one per
  * page, for the count) and its workflow's newest runs; a finished run needs
  * only the first.
@@ -93,6 +96,16 @@ export function runOf(value: unknown): RunFacts | null {
     typeof status !== "string" ||
     typeof created_at !== "string" ||
     typeof workflow_id !== "number"
+  )
+    return null;
+  // A run whose position in time cannot be read cannot be placed in the
+  // queue, so it is not a run: the queue is then unreadable, never judged.
+  if (
+    !Number.isFinite(parseMs(created_at)) ||
+    (run_started_at !== undefined &&
+      run_started_at !== null &&
+      (typeof run_started_at !== "string" ||
+        !Number.isFinite(parseMs(run_started_at))))
   )
     return null;
   return {
