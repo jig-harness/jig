@@ -21,7 +21,10 @@ import { LISTING_PAGES as PAGES } from "./drive-pr-pass-listing-finish-fixtures.
 import { lastStopEvent } from "../scripts/lib/state/events.ts";
 import { narrativeOf } from "../scripts/lib/state/handoff.ts";
 import type { DriveState } from "../scripts/lib/state/schema.ts";
-import { readProbeStop } from "../scripts/lib/status/probe-stop.ts";
+import {
+  probeStopOf,
+  readProbeStop,
+} from "../scripts/lib/status/probe-stop.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 
 useDrivePrSuite();
@@ -92,12 +95,13 @@ describe("a pass that stops on an unreadable check-runs listing", () => {
       cause: String(DRIVE_EXIT.CHECK_RUNS_UNREADABLE),
       listingPages: PAGES,
     });
-    expect(r.stop?.probe).toMatchObject({
+    const probe = probeStopOf(r.stop?.probe);
+    expect(probe).toMatchObject({
       code: DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
       state: "CHECK_RUNS_UNREADABLE",
     });
-    expect(r.stop?.probe?.reason).toContain(`after ${PAGES} page(s)`);
-    expect(readProbeStop(r.stderr)).toEqual(r.stop?.probe ?? null);
+    expect(probe?.reason).toContain(`after ${PAGES} page(s)`);
+    expect(readProbeStop(r.stderr)).toEqual(probe);
     expect(r.narrative).toContain("CHECK_RUNS_UNREADABLE");
     expect(r.narrative).toContain(`after ${PAGES} page(s)`);
   }, 120_000);

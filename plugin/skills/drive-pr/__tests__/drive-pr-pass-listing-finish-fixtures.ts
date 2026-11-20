@@ -14,6 +14,8 @@ export const LISTING_PAGES = 3;
 if (import.meta.main) {
   const env = process.env;
   const report: Report = {
+    pr: Number(env.DRIVE_PR_TARGET),
+    head: "",
     state: "CHECK_RUNS_UNREADABLE",
     reason: "the check-runs listing was cut short",
     pushed: true,
