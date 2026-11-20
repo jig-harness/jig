@@ -1853,6 +1853,13 @@ if [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "edit" ]; then
     '. + [{node_id:$node,event:$event,label:{name:"ci:hold"},actor:{login:"drive-user"},created_at:"2026-09-10T10:00:00Z"}]' \
     "$F/timeline.json" > "$F/timeline.json.tmp"
   mv "$F/timeline.json.tmp" "$F/timeline.json"
+  if [ "$action" = "unlabeled" ] && [ -f "$F/intervening-release-race" ]; then
+    jq '. + [
+      {node_id:"LE_human_readd",event:"labeled",label:{name:"ci:hold"},actor:{login:"human-user"},created_at:"2026-09-10T10:00:01Z"},
+      {node_id:"LE_drive_remove",event:"unlabeled",label:{name:"ci:hold"},actor:{login:"drive-user"},created_at:"2026-09-10T10:00:02Z"}
+    ]' "$F/timeline.json" > "$F/timeline.json.tmp"
+    mv "$F/timeline.json.tmp" "$F/timeline.json"
+  fi
   if [ "$remove_failed" -eq 1 ]; then
     echo "gh-stub: simulated remove-label failure" >&2
     exit 1

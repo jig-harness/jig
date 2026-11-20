@@ -89,16 +89,11 @@ async function refuseRace(
   head: string,
   login: string,
   label: string,
-  live: Awaited<ReturnType<typeof readPrSnapshot>>,
+  live: Snapshot | null,
   transitions: () => Promise<readonly LabelTransition[] | null>,
   mutate: (args: string[]) => Promise<{ code: number }>,
 ): Promise<number> {
-  if (
-    live.ok &&
-    live.value.state === "OPEN" &&
-    live.value.head === head &&
-    !live.value.held
-  )
+  if (live?.state === "OPEN" && live.head === head && !live.held)
     await restoreAfterRace(pr, head, login, label, transitions, mutate);
   else await writeCiState(pr, null);
   console.error(
@@ -126,15 +121,14 @@ export async function releaseHeldLabel(
     login,
   );
   if (remove.code === 0 && !proof.ok) {
-    process.stdout.write("release-proof-pending\n");
     return unread(proof.failure);
   }
   if (!proof.ok) return unread(proof.failure);
   const mutation = valueOrNull(proof);
+  if (mutation?.intervening === true)
+    return refuseRace(pr, head, login, label, null, transitions, mutate);
   const confirmed = await readPrSnapshot(pr, label);
   if (!confirmed.ok) return unread(confirmed.failure);
-  if (mutation?.intervening === true)
-    return refuseRace(pr, head, login, label, confirmed, transitions, mutate);
   const event = eventOf(mutation);
   if (
     !mutationProven(

@@ -384,6 +384,17 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     });
   });
 
+  it("refuses an intervening release race before a failed confirmation can make it retryable", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "intervening-release-race"), "");
+      writeFileSync(join(dir, "recovery-snapshot-timeout"), "");
+    });
+    expectSpawnExit(r, 4);
+    expect(r.stdout).not.toContain("release-proof-pending");
+    expect(r.stderr).toContain("ownership changed during removal");
+    expect(ciHoldOf(r.stateDir)).toBeNull();
+  });
+
   it("stops when the readable timeline cannot prove the removal", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) =>
       writeFileSync(join(dir, "omit-unlabel-event"), ""),
