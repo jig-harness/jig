@@ -27,6 +27,8 @@ export interface DriveRoundContext {
   witnessWaits: number;
   /** Consecutive release-proof reads still awaiting the timeline witness. */
   releaseProofWaits: number;
+  /** The releasing transition that `releaseProofWaits` counts, if any. */
+  releaseProofKey: string;
   /** `DRIVE_PR_RELEASE_PROOF_ATTEMPTS`, read once when the drive starts. */
   releaseProofWaitLimit: number;
   /** Total dispatched repairs for diagnostics; allowances use `ciAttempts`. */

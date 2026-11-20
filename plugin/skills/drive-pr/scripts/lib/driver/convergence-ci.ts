@@ -15,6 +15,7 @@ import {
 } from "./../proc.ts";
 
 import { ciHold, driveStatus } from "./paths.ts";
+import { readCiState } from "./../ci-hold-state.ts";
 import {
   finalReadAgrees,
   finalReadArgs,
@@ -102,6 +103,18 @@ export async function releaseAndReadFinalCi(
   if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
   if (release.code === 4 && release.stdout.trim() === "release-proof-pending") {
+    const releasing = await readCiState(context.pr);
+    if (releasing?.phase !== "releasing") {
+      console.error(
+        "CI hold removal reported an unproven release without its durable releasing record; stopping rather than carrying a retry count across an unknown transition.",
+      );
+      return 1;
+    }
+    const key = `${reviewedHead}:${releasing.heldEventId}`;
+    if (context.releaseProofKey !== key) {
+      context.releaseProofKey = key;
+      context.releaseProofWaits = 0;
+    }
     context.releaseProofWaits += 1;
     if (context.releaseProofWaits > context.releaseProofWaitLimit) {
       console.error(
@@ -114,6 +127,7 @@ export async function releaseAndReadFinalCi(
     return "continue";
   }
   context.releaseProofWaits = 0;
+  context.releaseProofKey = "";
   if (release.code === 4) {
     console.error(
       "review converged, but the CI hold's release could not settle (the head moved, the label changed, or the forge could not be read); not reporting merge-ready",

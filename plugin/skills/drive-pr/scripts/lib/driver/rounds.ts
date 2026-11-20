@@ -148,6 +148,7 @@ export async function runDriverRounds({
   // A successful unlabel whose timeline witness stays unreadable otherwise
   // re-enters convergence forever without charging a round or witness poll.
   const releaseProofWaits = 0;
+  const releaseProofKey = "";
   const releaseProofWaitLimit = releaseProofAttempts();
   const finalCiWait = new FinalCiWait(
     pr,
@@ -186,6 +187,7 @@ export async function runDriverRounds({
     finalCiWait,
     witnessWaits,
     releaseProofWaits,
+    releaseProofKey,
     releaseProofWaitLimit,
     ciRepairs,
     ciRepairBudget,
