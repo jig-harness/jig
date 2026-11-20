@@ -12,6 +12,8 @@ import { join, relative } from "node:path";
  */
 
 const PLUGIN = join(import.meta.dir, "..", "..");
+/** The skill-directory variable as a `SKILL.md` writes it. */
+const SKILL_DIR = "$" + "{CLAUDE_SKILL_DIR}";
 
 const WRAPPED_GIT = /command\.ts"?(.*?)\s--\s+git\s+(.*)$/;
 const HOOK_RUNNING =
@@ -50,7 +52,7 @@ describe("hook-running commands carry a deadline", () => {
   test("the scanner finds a wrapped commit without one", () => {
     expect(
       undeadlinedHookCommands(
-        'bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F m.txt',
+        `bun "${SKILL_DIR}/../../shared/command.ts" -- git commit -F m.txt`,
       ),
     ).toHaveLength(1);
     expect(
@@ -67,7 +69,7 @@ describe("hook-running commands carry a deadline", () => {
 
   test("the scanner passes a deadline and commands that run no hook", () => {
     for (const line of [
-      'bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git commit -F m.txt',
+      `bun "${SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git commit -F m.txt`,
       'bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 --env GIT_EDITOR true -- git rebase --continue',
       'bun "<skill-dir>/../../shared/command.ts" -- git merge --abort',
       'bun "<skill-dir>/../../shared/command.ts" -- git merge-tree --write-tree a b',
