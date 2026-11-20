@@ -71,11 +71,11 @@ test("a change to one skill runs that skill's own tests beside the quick gates",
   // The quick gates hold the typecheck and every generated-file check.
   expect(plan.localChecks).toEqual([
     "bun run gates --fast",
-    "bun run test ./plugin/skills/explain/",
+    "bun run test ./plugin/skills/explain/ ./plugin/shared/__tests__/",
   ]);
   expect(plan.verificationChecks).not.toContain("bun run gates");
   expect(plan.verificationChecks).toContain(
-    "bun run test ./plugin/skills/explain/",
+    "bun run test ./plugin/skills/explain/ ./plugin/shared/__tests__/",
   );
   // A generator whose source the change touches is owed a run.
   const dashboard = jigPlan("dashboard/src/main.tsx");
