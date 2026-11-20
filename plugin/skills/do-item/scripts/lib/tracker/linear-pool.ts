@@ -250,7 +250,10 @@ function creatorAssigner(
   if (
     !isRecord(creator) ||
     typeof creator.id !== "string" ||
-    !isRecord(creator.teams)
+    typeof creator.guest !== "boolean" ||
+    !isRecord(creator.teams) ||
+    !Array.isArray(creator.teams.nodes) ||
+    !creator.teams.nodes.every((t) => isRecord(t) && typeof t.key === "string")
   )
     throw new AssignmentError(`issue ${key}: its creator cannot be read`);
   return {

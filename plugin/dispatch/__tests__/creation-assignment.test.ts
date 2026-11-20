@@ -70,6 +70,21 @@ describe("an item created assigned to the factory identity", () => {
     }
   });
 
+  it("reads a creator with no guest flag or a malformed team list as unreadable, not as an outsider", async () => {
+    const { guest: _guest, ...noGuest } = LEAD as Record<string, unknown>;
+    for (const creator of [
+      noGuest,
+      { ...LEAD, teams: {} },
+      { ...LEAD, teams: { nodes: [null] } },
+      { ...LEAD, teams: { nodes: [{}] } },
+    ]) {
+      const got = await pickup({ history: "created", creator });
+      expect(got.wanted).toEqual([]);
+      expect(got.reason).toContain("its creator cannot be read");
+      expect(got.fresh).toContain("its creator cannot be read");
+    }
+  });
+
   it("still holds no assignment when its assignee changed only to someone else", async () => {
     const got = await pickup({ history: "none" });
     expect(got.wanted).toEqual([]);
