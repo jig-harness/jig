@@ -158,17 +158,17 @@ function changedSince(updatedAt: string | undefined, seen: string): boolean {
 }
 
 /**
- * What holds `item` from a new pickup. `assignee`, when the caller read
- * one, is who the item is assigned to; an item read as unassigned (from
- * the ready pool, or released) passes none, so the hold's reason never
- * says it is still assigned.
+ * What holds `item` from a new pickup. `assignee` is who the tracker's read
+ * says the item is assigned to, `true` for an item assigned to someone the
+ * read does not name; a caller that read no assignee passes none, so the
+ * hold's reason never says the item is still assigned.
  */
 export function pickupHold(
   item: string,
   records: ReadRecord[],
   updatedAt?: string,
   nowMs = currentMs(),
-  assignee?: string,
+  assignee?: string | true,
 ): PickupHold {
   const mine = recordsOf(item, records);
   const holding = mine.find((r) => holds(r.state));
@@ -249,7 +249,7 @@ function stoppedHold(
   latest: ReadRecord,
   item: string,
   updatedAt: string | undefined,
-  assignee: string | undefined,
+  assignee: string | true | undefined,
 ): PickupHold {
   const recorded = latest.refusal ?? null;
   const refusal = recorded === null ? null : refusalOf(recorded, item);
@@ -272,11 +272,15 @@ function stoppedHold(
 }
 
 /** Why an ended record holds its item: the record, never released, and the assignment only when there is one. */
-function endedWhy(latest: ReadRecord, assignee: string | undefined): string {
+function endedWhy(
+  latest: ReadRecord,
+  assignee: string | true | undefined,
+): string {
   const ended = `launch record ${latest.record.id} ended (${endedHow(latest)}) and has not been released, so it holds the item`;
-  return assignee === undefined
-    ? `${ended}; it is not picked up again until that record is released, as when the item leaves the dispatch states and comes back`
-    : `${ended}, which is still assigned to ${assignee} in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`;
+  if (assignee === undefined)
+    return `${ended}; it is not picked up again until that record is released, as when the item leaves the dispatch states and comes back`;
+  const to = assignee === true ? "" : ` to ${assignee}`;
+  return `${ended}, which is still assigned${to} in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`;
 }
 
 /**
@@ -327,10 +331,20 @@ export function endedPassOver(
   records: readonly ReadRecord[],
   repo: string,
   nowMs: number,
-): (issue: { identifier: string; updatedAt?: string }) => string | null {
+): (issue: {
+  identifier: string;
+  updatedAt?: string;
+  assignee?: { name: string } | null;
+}) => string | null {
   const mine = records.filter((r) => r.record.repo === repo);
   return (issue) => {
-    const hold = pickupHold(issue.identifier, mine, issue.updatedAt, nowMs);
+    const hold = pickupHold(
+      issue.identifier,
+      mine,
+      issue.updatedAt,
+      nowMs,
+      issue.assignee?.name,
+    );
     return hold.kind === "ended" || hold.kind === "refused" ? hold.why : null;
   };
 }

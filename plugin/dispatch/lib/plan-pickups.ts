@@ -283,9 +283,20 @@ export function planPickups(input: PickupInput): PickupPlan {
   return plan;
 }
 
-/** Who an item is assigned to, or nothing for one taken unassigned from the ready pool. */
+/**
+ * Who the tracker says an item is assigned to, or nothing for an unassigned
+ * one. `assignee` names who its claim assigns it to, which for an item from
+ * the ready pool, an epic's inherited child or a pulled blocker is not yet
+ * anyone, so the tracker's read decides where the plan has one.
+ */
 function assigneeOf(item: WantedItem): string | undefined {
-  return item.pooled === true ? undefined : item.assignee;
+  if (item.queueIssue !== undefined) return item.queueIssue.assignee?.name;
+  const unassigned =
+    item.pooled === true ||
+    item.factoryAncestor !== undefined ||
+    item.ancestorEpic !== undefined ||
+    item.blockingFor !== undefined;
+  return unassigned ? undefined : item.assignee;
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait. */
@@ -587,7 +598,14 @@ function planClaimed(
     });
     return;
   }
-  const pickup = pickupHold(item.key, input.launches, undefined, input.nowMs);
+  // A claimed item is assigned, to its claimant.
+  const pickup = pickupHold(
+    item.key,
+    input.launches,
+    undefined,
+    input.nowMs,
+    true,
+  );
   // A rate-limit wait holds an ended pickup, which claims nothing by waiting.
   const endedUnclaimed =
     (pickup.kind === "ended" ||

@@ -899,8 +899,11 @@ a person answers again to try again. For a session-framed decision the
 step starts the stage again (the follow-up's marker deleted, or the item
 released), and the next launch of that target takes the answer, once, into
 its prompt: the option chosen as the decision states it, narrowed by the
-note and never wider, quoted as data. A dispatcher-framed Run it again or
-Release the claim hands on the person's note the same way.
+note and never wider, quoted as data. A dispatcher-framed Run it again
+hands on the person's note the same way. A dispatcher-framed Release the
+claim hands on nothing: the tick has released the item, and its next launch
+is an ordinary fresh pickup, which an option to carry out would only send
+back to confirm the release.
 
 This is the one place the dispatcher writes to the tracker or deletes a
 follow-up's marker of its own accord, and it does so only on a person's

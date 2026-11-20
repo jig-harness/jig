@@ -418,3 +418,48 @@ describe("why an ended pickup record holds its item", () => {
     expect(reason).toContain("still assigned to alex");
   });
 });
+
+describe("why an ended pickup record holds an item its claim would assign", () => {
+  const reasonFor = (item: WantedItem) => {
+    const records = [endedBatch([item.key], "done", [])];
+    const result = planPickups({
+      slug: SLUG,
+      section: { stalledAfterMs: 3_600_000 } as DispatchSection,
+      pickups: [item],
+      claimed: [],
+      sessions: { ok: true, source: "test", workspaces: [] },
+      launches: records,
+      idleSince: new Map(),
+      nowMs: NOW,
+    });
+    return result.actions.find((a) => a.cause === "pickup-ended")?.reason ?? "";
+  };
+
+  it("never says an epic's inherited child or a pulled blocker stayed assigned", () => {
+    for (const extra of [
+      { factoryAncestor: "#1" },
+      { ancestorEpic: "#1", servedPerson: "alex" },
+      { blockingFor: "#2" },
+    ]) {
+      const reason = reasonFor({ ...wanted("#7"), ...extra });
+      expect(reason).toContain("has not been released");
+      expect(reason).not.toContain("assigned");
+    }
+  });
+
+  it("takes the assignment from the tracker's read where the plan has one", () => {
+    const queueIssue = (assignee: { id: string; name: string } | null) =>
+      ({ identifier: "#7", assignee }) as unknown as NonNullable<
+        WantedItem["queueIssue"]
+      >;
+    expect(
+      reasonFor({ ...wanted("#7"), queueIssue: queueIssue(null) }),
+    ).not.toContain("assigned");
+    expect(
+      reasonFor({
+        ...wanted("#7"),
+        queueIssue: queueIssue({ id: "u1", name: "Dana Lee" }),
+      }),
+    ).toContain("still assigned to Dana Lee");
+  });
+});
