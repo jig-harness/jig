@@ -2087,6 +2087,7 @@ dispatch:
   stalled_after: 30m
   stalled_scope: claimed
   stalled_relaunch: finish-once
+  missing_priority: hold
   blocked_after: 30m
   drive_rounds_flat: 3
   pickup_within: 2h
