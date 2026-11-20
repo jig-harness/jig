@@ -1777,7 +1777,11 @@ Then:
      each attempt assumed and why the failure survived it.
   2. Track the recurring cause as one tracker issue through
      [`/jig:file-issue`](../file-issue/SKILL.md) (search for an existing one
-     first); its key goes in the receipt.
+     first); its key goes in the receipt. Nobody is there to answer
+     file-issue's questions, so answer them yourself: the priority is 2 (a
+     recurring CI failure blocks the merge), and a matching open issue is
+     updated with a comment on the new evidence rather than filed again, as
+     the unattended levels' issue-filing row allows (§ Autonomy).
   3. Repair the cause as `ci-repair` does: when `$DRIVE_PR_ROUND_REPAIR_SKILL` is
      set load it, else follow [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and
      § 6, pushing through `finish-round.ts`.
