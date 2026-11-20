@@ -44,6 +44,8 @@ function budget(remaining: number, share: number | null = null) {
   const store = memoryBudgetStore();
   setForgeGovernor(
     budgetGovernor(store, { clock: () => 1_000_000, share: () => share }),
+    null,
+    false,
   );
   const record: BudgetRecord = {
     requests: { limit: 5000, remaining, resetAt: RESET },

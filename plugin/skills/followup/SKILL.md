@@ -141,11 +141,11 @@ and its epic's reconciliation.
 4. **The epic** (the item's parent, or an `epics` entry): `do-item`'s
    parent-status rule decides its status
    (`${CLAUDE_SKILL_DIR}/../do-item/scripts/reconcile_parent_status.ts`, as
-   `../do-item/SKILL.md` Step 5a feeds it). An epic closes only on an
-   accepted verdict or a waiver (its closing authorization in Step 5a),
-   never because its children are closed; when this merge was its last
-   piece and no verdict exists, the next step is that review, not a close.
-   Before closing one, read the instructions file of each of the
+   `../do-item/SKILL.md` Step 5a feeds it). Epic closure requires verified
+   scope and an accepting verdict or waiver. When reconciliation finds the
+   epic eligible for closure, direct the coordinator to assess the scope
+   and run the on-demand sweep in Step 5a.
+   Before recommending closure, read the instructions file of each of the
    repository's own arms (`followup.arms`) that this run applies and that
    has one (the `instructions` command, § The repository's own arms)
    for a rule about epics: a repository may reserve some epics' close to

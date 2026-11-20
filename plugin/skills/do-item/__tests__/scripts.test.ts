@@ -1164,6 +1164,7 @@ describe("tracker.ts", () => {
       hitl: "hitl",
       manual_ops: "manual-ops",
       extractable_tails: [
+        "hitl",
         "hitl:legal",
         "hitl:tactical",
         "manual-ops",

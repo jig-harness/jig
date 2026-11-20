@@ -25,6 +25,7 @@ import {
   skillPrompt,
 } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 import type { LaunchRecord, LaunchState } from "./launches.ts";
+import type { BatchItem } from "./queue-batch.ts";
 import type { RecordedResult } from "./session-result-types.ts";
 import { ROUTINE_QUESTIONS, routineQuestion } from "./routine-questions.ts";
 import { STEWARD_RESUME } from "./steward.ts";
@@ -233,6 +234,11 @@ function pickupResultLines(
 }
 
 /** What a pickup's prompt says about a fixed batch's scope. */
+/** What a batch's claims read: the chain each member carries is the dispatcher's hold check's, never a claim's `--ancestor`. */
+function claimScope(items: readonly BatchItem[]) {
+  return items.map(({ ancestors: _chain, ...member }) => member);
+}
+
 function batchScopeLines(
   record: Pick<LaunchRecord, "batchItems" | "stewardResume">,
 ): string[] {
@@ -240,7 +246,7 @@ function batchScopeLines(
     ...(record.batchItems === undefined
       ? []
       : [
-          `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(record.batchItems)}. No member may be replaced or added.`,
+          `This is a fixed served batch; its maximum scope is this JSON list of keys, tracker identities and ancestor epics: ${JSON.stringify(claimScope(record.batchItems))}. No member may be replaced or added.`,
           ...(record.stewardResume === undefined
             ? [
                 `Use the first named key as the proposal anchor and pass --fixed ${shellQuote(record.batchItems.map((i) => i.key).join(","))}. Ask no question about a member's size: claim no member the proposal leaves for its own pickup, except that when fewer than two members stay you claim and work one alone as the skill says (the first member left out when none stays). Pass each identity and ancestor as separately quoted arguments to --for and --ancestor on each tracker.ts claim. A refusal stops the batch.`,
