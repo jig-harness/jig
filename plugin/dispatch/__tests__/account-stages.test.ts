@@ -359,6 +359,7 @@ describe("a moved takeover whose first account fails its identity check", () => 
     const s = {
       ...state(accounts, [replaced]),
       root: ROOT,
+      runtime: { name: "orca" },
       machine: { runtimeTimeoutMs: 30_000 },
     } as unknown as ApplyState;
     const answer = await admitAccount(

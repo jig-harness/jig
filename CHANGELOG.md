@@ -401,6 +401,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.287.0] - 2026-11-20
+
+### Added
+
+- Select `runtime: process` in the machine dispatch file to run headless
+  passes in Git worktrees without Orca on Linux and macOS. Jig launches each run through the
+  host's service manager with an allowlisted environment and starts the
+  pickup's first drive through the dispatcher.
+
+### Fixed
+
+- The plugin's instructions for adding a skill now say where a suite is listed: a POSIX-only suite in `POSIX_ONLY_SUITES`, a long-running one with `validation.separateSuite` in the change-area catalog.
+
 ## [0.286.4] - 2026-11-20
 
 ### Fixed
@@ -10183,7 +10196,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.287.0...HEAD
+[0.287.0]: https://github.com/jig-harness/jig/compare/v0.286.4...v0.287.0
 [0.286.4]: https://github.com/jig-harness/jig/compare/v0.286.3...v0.286.4
 [0.286.3]: https://github.com/jig-harness/jig/compare/v0.286.2...v0.286.3
 [0.286.2]: https://github.com/jig-harness/jig/compare/v0.286.1...v0.286.2

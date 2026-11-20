@@ -98,7 +98,7 @@ export interface RuntimeReceipt {
   /** The agent's id, for a launch that started one. */
   agentId?: string;
   /** For `openWorkspace`: the workspace opened or reused. */
-  workspace?: { id: string; path: string };
+  workspace?: { id: string; path: string; branch?: string };
   /** The call ran past its deadline: its answer is lost, not a refusal. */
   lost?: boolean;
   /** For `retire`: a safety check found work or identity it cannot authorize removing. */
@@ -113,6 +113,8 @@ export interface RuntimeReceipt {
   ownedComment?: boolean;
   /** For `endRun`: the run left nothing the runtime ends (its wrapper closed its tab, or none was recorded). */
   nothingLeft?: true;
+  /** A recorded process is still alive after the runtime recorded its end. */
+  outlived?: true;
 }
 
 /** Notification identity and the comment policy rechecked under the write lock. */
@@ -197,6 +199,7 @@ export interface NoticesTarget {
 
 /** A launch record's run that ended without its wrapper recording an exit, as `endRun` is given it. */
 export interface EndedRun {
+  runtime?: "process";
   /** The launch record's id. */
   id: string;
   /** The workspace the record names; `null` when it names none. */

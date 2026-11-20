@@ -366,6 +366,15 @@ function inputs(
 }
 
 describe("the arm's answer", () => {
+  it("hands a process pickup's drive to the dispatcher without opening a tab", async () => {
+    const { report, exit } = await arm(
+      { ...inputs("auto", IN_ORCA), processPickup: true },
+      deps(fakeOrca(REFUSED).runner, [null]),
+    );
+    expect(exit).toBe(0);
+    expect(report).toMatchObject({ status: "owed", way: null, tab: null });
+  });
+
   it("falls back to the background under auto when Orca refuses the tab, and says so", async () => {
     const { report, exit } = await arm(
       inputs("auto", IN_ORCA),

@@ -20,9 +20,8 @@
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
- * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
- * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`) | re-armable |
  * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
@@ -119,6 +118,7 @@ import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
+import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
 import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
 export type { Admit } from "./base-heads.ts";
 import { ended, passedBefore, type TickBound } from "./bounded.ts";
@@ -648,6 +648,7 @@ function exitClass(
 }
 
 export interface OpenPr {
+  isCrossRepository?: boolean;
   number: number;
   url: string;
   title: string;
@@ -690,7 +691,7 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
 function unarmed(
   pr: OpenPr,
   base: Omit<DrivenPr, "class" | "why" | "evidence">,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
 ): DrivenPr | null {
   const asked = askedToArm(pr, r);
   if (asked === null) return null;
@@ -713,11 +714,16 @@ function unarmed(
 /** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
 function askedToArm(
   pr: OpenPr,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
-): { asks: string; evidence: { adopted?: string } } | null {
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
+): { asks: string; evidence: { adopted?: string; pickupArm?: true } } | null {
   const { labels, adoption } = r;
   if (labels !== null && hasCommand(labels, pr.labels, "drive"))
     return { asks: "a person's drive label asks for one", evidence: {} };
+  if (pickupAsked(r.pickupArms, pr))
+    return {
+      asks: "its completed process pickup handed off the first drive",
+      evidence: { pickupArm: true },
+    };
   const adopted =
     adoption === null ? null : adopts(pr, adoption, labels, r.nowMs);
   return adopted === null
@@ -744,6 +750,7 @@ function baseOf(
 
 /** What every drive of one reading shares. */
 interface Reading {
+  pickupArms?: PickupArms;
   slug: string;
   login: string | null;
   nowMs: number;
@@ -969,10 +976,14 @@ export async function readDrives(
   nowMs: number,
   labels: LabelConfig | null = null,
   adoption: Adoption | null = null,
-  comments?: (pr: number) => Promise<Listing>,
-  admit: Admit = (read) => read(),
-  bound?: TickBound,
+  options: {
+    comments?: (pr: number) => Promise<Listing>;
+    admit?: Admit;
+    bound?: TickBound | undefined;
+    pickupArms?: PickupArms | undefined;
+  } = {},
 ): Promise<DrivenPr[]> {
+  const { comments, admit = (read) => read(), bound, pickupArms } = options;
   const reading: Reading = {
     slug,
     login,
@@ -980,6 +991,7 @@ export async function readDrives(
     windowMs: stallThresholdMs(),
     labels,
     adoption,
+    ...(pickupArms === undefined ? {} : { pickupArms }),
     baseHead: baseHeads(slug, admit, bound),
     presence: (pr, ledger) =>
       ended(bound)
