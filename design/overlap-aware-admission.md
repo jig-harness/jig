@@ -403,15 +403,22 @@ that is a default.
 **The measure.** A new pass reaches the lock after its kind's time to
 validation, `T`. Until then the lock can work only on the runs at the lock
 now, and clears at most `runs at once × T ÷ run time` of them; the passes
-still implementing give it nothing to do. Once there, the new pass can wait
-at most the **wait window** `W`: the shorter of the lock's wait
-(`LOCK_TIMEOUT`) and the pass deadline less `T` and one run time. So the
-host can take a new pass while
+still implementing give it nothing to do. Once there, each of the new pass's
+runs can wait at most the **wait window** `W`: the shorter of the wait the
+pass's test stage gives the lock and the pass deadline less `T`. A pass
+inherits the dispatcher's environment, so that wait is the `LOCK_TIMEOUT` set
+there; unset, it is the test stage's own hour (3600 seconds in
+`scripts/test.ts`), not the bare lock's minute, and the reason says that
+default stands in. A pass makes its runs one after another, each asking for
+the lock when the one before it has released, so its own earlier runs are
+never a wait for its later ones: every run ahead is in the queue before its
+first run, which therefore waits longest. So the host can take a new pass
+while
 
 ```text
 runs ahead = runs still to arrive + max(0, runs at the lock now − runs at once × T ÷ run time)
 validation capacity = runs at once × W ÷ run time
-runs ahead + the new pass's own runs ≤ validation capacity
+runs ahead + the new pass's first run ≤ validation capacity
 ```
 
 For example, with one run at a time, runs of 12 minutes and an hour to
@@ -420,7 +427,11 @@ and 5 wait for a later tick, where on 2026-11-14 all of them would have
 started and half would have run out their wait. The measure is
 conservative: it assumes every pass ahead reaches the lock no later than
 the new one, and credits the lock with no run of a pass that has not
-arrived yet.
+arrived yet. A pass admitted this tick counts all of its runs ahead of the
+next candidate. On a lock with nothing ahead the new pass always fits,
+whatever its runs per pass; a wait window shorter than one run admits no
+pass behind another run, and the reason says so with the window, its
+source, the run time and the runs per pass.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
 `validation`, whose fill is the runs ahead, with the launch's own runs
@@ -462,7 +473,7 @@ pickup, its link and its state) and a count. The texts:
 | --- | --- |
 | Overlap | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; first when a slot is free after work that does not overlap, or from 16:40` |
 | The overlap bound | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790); starts when no other work can take a slot` |
-| Validation capacity | `waits on validation capacity: 9 runs are ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5` |
+| Validation capacity | `waits on validation capacity: 9 runs are ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5 in a 60 min wait window (LOCK_TIMEOUT)` |
 | A serialized area | `held: serialized behind #123 in dispatch` |
 | A conflict edge | `waits on conflict edge #12 → #14: #12's pull request #20 has not merged` |
 

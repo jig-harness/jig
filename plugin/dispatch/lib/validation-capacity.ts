@@ -270,20 +270,22 @@ export function forecastValidation(
     Math.min(waitLimitMs, passLimitMs - timeToValidationMs),
   );
   const capacity = (concurrency * waitWindowMs) / runMs;
-  // A lock timeout bounds how long a pass may wait to acquire a slot, not how
-  // long its own run may occupy that slot after immediate admission.
-  // One candidate run can use each currently idle slot immediately. Its
-  // remaining runs must queue behind the work already at the lock, so they
-  // consume the same waiting capacity as work from earlier passes.
-  // Capacity measures service before the candidate's last acquisition. Once
-  // that run acquires a slot, its execution is not lock-wait time. A partial
-  // service wave does not make a slot free, but it does shorten the wait
-  // until the next release.
+  // A lock timeout bounds how long each of a pass's runs may wait to acquire
+  // a slot, not how long a run may occupy that slot once it holds it.
+  // A pass makes its runs one after another: each asks for the lock when the
+  // one before it has released, so its earlier runs are never lock waits for
+  // its later ones. Every run counted ahead is in the queue before the
+  // candidate's first run, so that run waits longest; each later run asks
+  // when its predecessor releases a slot, with nothing left ahead of it.
+  // Capacity therefore measures the service before the candidate's first
+  // acquisition. A partial service wave does not make a slot free, but it
+  // does shorten the wait until the next release.
+  const waitingRuns = ownRuns > 0 ? 1 : 0;
   const completedWaves = Math.floor(timeToValidationMs / runMs);
   const activeRuns = Math.max(0, atLock - concurrency * completedWaves);
   const residualMs =
     activeRuns === 0 ? 0 : runMs - (timeToValidationMs % runMs);
-  const queuedRuns = Math.ceil(ahead) + ownRuns;
+  const queuedRuns = Math.ceil(ahead) + waitingRuns;
   const requiredWithoutActiveRuns =
     concurrency *
     Math.ceil(Math.max(0, queuedRuns - concurrency) / concurrency);
@@ -311,9 +313,8 @@ export function forecastValidation(
     };
     for (let index = 0; index < queuedAtLock; index++) acquire();
     for (let index = 0; index < toArrive; index++) acquire();
-    let lastAcquisition = 0;
-    for (let index = 0; index < ownRuns; index++) lastAcquisition = acquire();
-    required = (concurrency * lastAcquisition) / runMs;
+    const firstAcquisition = waitingRuns > 0 ? acquire() : 0;
+    required = (concurrency * firstAcquisition) / runMs;
   }
   return {
     ahead,

@@ -1,10 +1,7 @@
 /** Adapt the host's lock and launch records to the validation forecast. */
 import { dirname, resolve } from "node:path";
 import { lockPlace } from "../../shared/resource-lock-waits.ts";
-import {
-  DEFAULT_TIMEOUT_SECONDS,
-  MAX_TIMEOUT_SECONDS,
-} from "../../shared/resource-lock.ts";
+import { MAX_TIMEOUT_SECONDS } from "../../shared/resource-lock.ts";
 import { readResourceLockSamples } from "../../shared/resource-lock-samples.ts";
 import { parseMs } from "../../shared/time.ts";
 import type { LineLoadGauge } from "./dashboard-contract.ts";
@@ -25,9 +22,41 @@ import {
 export interface ValidationLoad {
   measured: ValidationMeasurements;
   demand: ValidationDemand | { unread: string };
+  /** How long a launched pass's test stage waits for the lock. */
   waitLimitMs: number;
+  /** Where `waitLimitMs` came from, for the reason a person reads. */
+  waitSource: string;
   driveDeadlineMs: number;
   admittedRuns: number;
+}
+
+/**
+ * How long a pass's test stage waits for the lock when `LOCK_TIMEOUT` is
+ * unset: an hour, the wait the test stage gives a heavy run (Jig's own
+ * `scripts/test.ts`, the launcher's and gc's heavy runs). The lock's own
+ * minute (`DEFAULT_TIMEOUT_SECONDS`) is the wait of a bare lock call, which
+ * no pass's validation uses.
+ */
+export const PASS_LOCK_WAIT_SECONDS = 3600;
+
+/**
+ * The wait a launched pass's validation has. A pass inherits the
+ * dispatcher's environment, so its test stage waits the `LOCK_TIMEOUT` set
+ * there; unset, empty or unusable, its test stage waits its own hour, and the
+ * source says which default stands in.
+ */
+export function passLockWait(
+  env: Record<string, string | undefined>,
+): Pick<ValidationLoad, "waitLimitMs" | "waitSource"> {
+  const timeout = env.LOCK_TIMEOUT ?? "";
+  const seconds = Number(timeout);
+  if (/^[0-9]+$/.test(timeout) && seconds <= MAX_TIMEOUT_SECONDS)
+    return { waitLimitMs: seconds * 1000, waitSource: "LOCK_TIMEOUT" };
+  const why = timeout === "" ? "LOCK_TIMEOUT unset" : "LOCK_TIMEOUT not usable";
+  return {
+    waitLimitMs: PASS_LOCK_WAIT_SECONDS * 1000,
+    waitSource: `default: the test stage's hour, ${why}`,
+  };
 }
 
 function passOf({ record, state }: ReadRecord): ValidationPass | null {
@@ -66,8 +95,9 @@ export function readValidationLoad(
   lock: LoadReading["lock"],
   nowMs: number,
   driveDeadlineMs: number,
+  env: Record<string, string | undefined> = process.env,
 ): ValidationLoad {
-  const { name } = lockPlace(process.env);
+  const { name } = lockPlace(env);
   const passes = records.flatMap((record) => passOf(record) ?? []);
   const workspaces = new Set(
     passes.flatMap(({ workspace }) => workspace ?? []),
@@ -81,8 +111,6 @@ export function readValidationLoad(
     }),
   );
   const measured = measureValidation(samples, passes);
-  const timeout = process.env.LOCK_TIMEOUT ?? String(DEFAULT_TIMEOUT_SECONDS);
-  const waitSeconds = Number(timeout || Number.NaN);
   return {
     measured,
     demand:
@@ -99,10 +127,7 @@ export function readValidationLoad(
             passes.filter(({ endedAtMs }) => endedAtMs === undefined),
             samples,
           ),
-    waitLimitMs:
-      /^[0-9]+$/.test(timeout) && waitSeconds <= MAX_TIMEOUT_SECONDS
-        ? waitSeconds * 1000
-        : DEFAULT_TIMEOUT_SECONDS * 1000,
+    ...passLockWait(env),
     driveDeadlineMs,
     admittedRuns: 0,
   };
@@ -134,7 +159,20 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
   const waited = minutes((result.ahead * runMs) / concurrency);
   const defaults = state.measured.defaults;
   const note = defaults.length > 0 ? ` (defaults: ${defaults.join(", ")})` : "";
-  return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))}${note}`;
+  const span =
+    result.waitWindowMs < 60_000
+      ? `${Math.round(result.waitWindowMs / 1000)} s`
+      : `${minutes(result.waitWindowMs)} min`;
+  const window = `${span} wait window (${state.waitSource})`;
+  // A window shorter than one run cannot hold a wait for a slot's release:
+  // the gauge then admits a pass only while a slot is free for its first
+  // run. Say so with its figures, so a misconfigured window reads as one
+  // rather than as a busy host.
+  const short =
+    result.waitWindowMs < runMs
+      ? `; the wait window is shorter than one run, so no pass can wait behind another run (${Number(result.ownRuns.toFixed(2))} runs per pass)`
+      : "";
+  return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
 export function validationHold(
