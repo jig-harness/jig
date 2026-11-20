@@ -8,7 +8,7 @@ import {
 import { isRecord, isString, isStringArray } from "../../shared/guards.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
-import { failedBy } from "../../shared/outbound/failure.ts";
+import { failedBy, outboundOf } from "../../shared/outbound/failure.ts";
 import { failedGateRuns } from "./release-gate-reads.ts";
 import {
   claimReleaseRerun,
@@ -240,10 +240,13 @@ export async function taggedReleases(
 
 /**
  * Which of `runs`, the workflow runs a pending follow-up arm links to, have
- * finished (`status: completed`), by `runWord`: one REST request per run,
- * its own core-rate point. A run of a repository other than `repo` is read
- * where its link points; a run the forge no longer has (`404`) is left
- * unfinished, for a person.
+ * finished (`status: completed`) in a conclusion other than `cancelled`, by
+ * `runWord`: one REST request per run, its own core-rate point. A cancelled
+ * run was superseded, not settled: in a held queue each new run cancels the
+ * one before it, so counting it would start the follow-up again on every
+ * cancellation and a person would never be told. A run of a repository
+ * other than `repo` is read where its link points; a run the forge no
+ * longer has (`not-found`) is left unfinished, for a person.
  */
 export async function finishedRuns(
   repo: RepoTarget,
@@ -255,14 +258,21 @@ export async function finishedRuns(
     if (ended(bound)) return refused("the tick ran out of time");
     const reply = await forge(
       repo,
-      ["api", `repos/${run.slug}/actions/runs/${run.id}`, "--jq", ".status"],
+      [
+        "api",
+        `repos/${run.slug}/actions/runs/${run.id}`,
+        "--jq",
+        '.status + " " + (.conclusion // "")',
+      ],
       bound,
     );
     if (!reply.ok) {
-      if (/\bHTTP 404\b/.test(reply.failure.reason)) continue;
+      if (outboundOf(reply.failure)?.code === "not-found") continue;
       return reply;
     }
-    if (reply.value.trim() === "completed") finished.add(runWord(run));
+    const [status, conclusion] = reply.value.trim().split(" ");
+    if (status === "completed" && conclusion !== "cancelled")
+      finished.add(runWord(run));
   }
   return ok(finished);
 }

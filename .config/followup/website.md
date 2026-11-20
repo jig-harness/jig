@@ -18,9 +18,9 @@ deploy or a build could not be read.
 gh run list --workflow website.yml --commit <range.head> --json databaseId,status,conclusion,url
 ```
 
-- Not started or still running: read the run first, as the skill says for
-  a deploy that has not finished
-  (`bun <followup skill>/scripts/followup.ts deploy-run <id>`).
+- Not started or still running: read the newest such run first, as the
+  skill says for a deploy that has not finished
+  (`bun <followup skill>/scripts/followup.ts deploy-run <databaseId>`).
   - `moving`: `pending`, with the run's link (in a dispatched pass, in
     `--arm` as well), until it ends.
   - `stuck`: the deploy queue is held and the run cannot start. Record the

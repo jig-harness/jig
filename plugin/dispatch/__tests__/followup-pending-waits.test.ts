@@ -186,7 +186,7 @@ it("runs a follow-up past followup_within again, raising no need, once the deplo
   const second = await pastWindow(w, RUN_ARM);
   writeFileSync(
     join(w.dir, "run-status.json"),
-    JSON.stringify({ [`${SLUG}/4242`]: "completed" }),
+    JSON.stringify({ [`${SLUG}/4242`]: "completed success" }),
   );
 
   const after = await applyTick(w, false);
@@ -204,12 +204,13 @@ it("runs a follow-up past followup_within again, raising no need, once the deplo
   expect(markers(w)).toEqual([]);
 }, 480_000);
 
-it("raises the follow-up for a person when the deploy run its arm links to is still pending at the re-read", async () => {
+it("raises the follow-up for a person when the deploy run its arm links to is still pending, or was cancelled, at the re-read", async () => {
   const w = fixture();
   const second = await pastWindow(w, RUN_ARM);
+  // A cancelled run was superseded, not settled; a pending one has not settled yet.
   writeFileSync(
     join(w.dir, "run-status.json"),
-    JSON.stringify({ [`${SLUG}/4242`]: "pending" }),
+    JSON.stringify({ [`${SLUG}/4242`]: "completed cancelled" }),
   );
 
   const after = await applyTick(w, false);

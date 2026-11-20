@@ -942,7 +942,7 @@ merge), up to three windows after the first pending pass; an arm that names
 neither keeps its window. Before a pass past its window goes to a person,
 the tick reads the release tags and the deploy runs its arm names once
 more, within 15 minutes of the pass's end: when every tag exists and every
-run has finished, it releases the marker instead and the follow-up runs
+run has finished (a cancelled run has not), it releases the marker instead and the follow-up runs
 again as a new run. An arm a run of the pull
 request already went past its window on is not read again, so a follow-up
 that keeps finding it pending reaches a person. `--reason` absent is

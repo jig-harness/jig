@@ -19,6 +19,6 @@ release: minor
   had since finished, because only release tags were read again. A pending
   arm that links to its deploy run
   (`https://github.com/<owner>/<repo>/actions/runs/<id>`) now has that run
-  read again before a person is told: a finished run runs the follow-up once
-  more, and a pass naming a newer run starts a fresh window, as a newer
-  release tag does.
+  read again before a person is told: a run that finished, other than
+  cancelled, runs the follow-up once more, and a pass naming a newer run
+  starts a fresh window, as a newer release tag does.

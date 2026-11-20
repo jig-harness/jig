@@ -10,8 +10,9 @@
  * per run (`finishedRuns`, at most `MAX_RUNS`). A launch record whose every
  * named tag exists and every named run finished has an arm that settled:
  * the plan runs the follow-up once more instead of raising it, and the
- * apply releases its marker. A run that finished in any conclusion
- * settles the wait: the next pass reads what it concluded.
+ * apply releases its marker. A run that finished in any conclusion but
+ * `cancelled` settles the wait, and the next pass reads what it concluded;
+ * a cancelled run was superseded, and leaves the follow-up to a person.
  *
  * A wait whose arm names neither a tag nor a run, one on an arm an earlier
  * run already went past its window on, one that ended longer ago, and a

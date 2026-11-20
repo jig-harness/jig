@@ -64,6 +64,7 @@ import { valueAt } from "../../../shared/config-layers.ts";
 import { attempt, failed, type Outcome } from "../../../shared/outcome.ts";
 import { currentMs, isoFromMs } from "../../../shared/time.ts";
 import { ghRunFailure } from "../../../shared/outbound/github.ts";
+import { failedBy } from "../../../shared/outbound/failure.ts";
 import {
   ghCall,
   git,
@@ -697,12 +698,17 @@ function forgeRead(dir: string): ForgeRead {
     const r = await ghCall(["api", path], { cwd: dir });
     const failure = ghRunFailure(r);
     if (failure?.code === "rate-limited")
-      return failed(
+      return failedBy(
         "rate-limited",
+        failure,
         `RATE-LIMITED until ${isoFromMs(failure.until ?? 0)}: ${failure.reason}`,
       );
     if (failure !== null)
-      return failed("unreadable", `gh api ${path}: ${failure.reason}`);
+      return failedBy(
+        "unreadable",
+        failure,
+        `gh api ${path}: ${failure.reason}`,
+      );
     return attempt(
       "unreadable",
       `gh api ${path} answered in a form that does not read`,

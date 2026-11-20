@@ -153,3 +153,22 @@ test("readDeployRun passes a forge failure on and refuses an answer that is not 
   );
   expect(!odd.ok && odd.failure.reason).toContain("is not a run");
 });
+
+test("readDeployRun refuses to judge a queue from a run list it could not read whole", async () => {
+  const base = "repos/{owner}/{repo}/actions";
+  const read = await readDeployRun(
+    100,
+    forge(
+      {
+        [`${base}/runs/100`]: rest(waiting(STUCK_AFTER_MS * 2)),
+        [`${base}/runs/100/jobs?per_page=1`]: { total_count: 0 },
+        [`${base}/workflows/9/runs?per_page=20`]: {
+          workflow_runs: [...cancelledBefore.map(rest), { id: 1 }],
+        },
+      },
+      [],
+    ),
+    NOW,
+  );
+  expect(!read.ok && read.failure.reason).toContain("cannot be judged");
+});

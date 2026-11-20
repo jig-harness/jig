@@ -167,6 +167,12 @@ export async function readDeployRun(
       "unreadable",
       `the forge's answer for workflow ${run.workflowId}'s runs is not a list`,
     );
-  const runs = listed.map(runOf).filter((r) => r !== null);
-  return ok(classifyRun(run, jobs, runs, nowMs, stuckAfterMs));
+  const runs = listed.map(runOf);
+  const parsed = runs.filter((r) => r !== null);
+  if (parsed.length !== runs.length)
+    return failed(
+      "unreadable",
+      `${runs.length - parsed.length} of workflow ${run.workflowId}'s runs are not runs, so its queue cannot be judged`,
+    );
+  return ok(classifyRun(run, jobs, parsed, nowMs, stuckAfterMs));
 }

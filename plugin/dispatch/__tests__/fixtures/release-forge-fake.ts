@@ -27,10 +27,10 @@ export function releaseForgeAnswer(dir: string, args: string[]): unknown {
       },
     };
   }
-  // A workflow run's status, as `run-status.json` maps `<owner>/<repo>/<id>` to it.
+  // A workflow run's status and conclusion, as `run-status.json` maps `<owner>/<repo>/<id>` to them.
   const statuses = join(dir, "run-status.json");
   const run = /^repos\/([^/]+\/[^/]+)\/actions\/runs\/(\d+)$/.exec(args[1] ?? "");
-  if (run !== null && args.includes(".status") && existsSync(statuses)) {
+  if (run !== null && args.includes("--jq") && existsSync(statuses)) {
     const status = JSON.parse(readFileSync(statuses, "utf8"))[`${run[1]}/${run[2]}`];
     return typeof status === "string" ? `${status}\n` : undefined;
   }
