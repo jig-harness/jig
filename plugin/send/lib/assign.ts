@@ -14,15 +14,31 @@
  * Checked before the write: the repository names a factory identity, and
  * the item is open, assigned to nobody (the identity included) and not in a
  * state of work in progress.
+ *
+ * On a tracker whose history leaves out changes made just after an issue's
+ * creation (`assignment-window.ts`), an assignment written then is one the
+ * dispatcher never sees: the send waits until the window has passed and
+ * then writes. An item already assigned to the identity whose history
+ * holds no assignment of it is refused with the remedy, unassign it and
+ * send again: the send never changes an existing assignment.
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { ok, type Outcome } from "../../shared/outcome.ts";
+import { systemClock } from "../../shared/clock.ts";
+import { within } from "../../ask/lib/reading.ts";
 import { assignPickup } from "../../dispatch/lib/requests.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
 import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
+import { AssignerUnknown } from "../../skills/do-item/scripts/lib/tracker/assigner-unknown.ts";
+import {
+  assignableFromMs,
+  waitBeforeAssigning,
+  windowWords,
+} from "../../skills/do-item/scripts/lib/tracker/assignment-window.ts";
 import type {
   CanonicalState,
   Issue,
+  Tracker,
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { type RepoTracker, readPickup } from "../../ask/lib/pickup.ts";
 import { readTrackerConfig } from "./answer-tracker.ts";
@@ -78,6 +94,53 @@ async function tickSettings(
   });
 }
 
+/**
+ * Why an item assigned to `identity` cannot be started although it is
+ * assigned: its history, which leaves out changes made just after the
+ * issue's creation, holds no assignment of the identity. `null` when the
+ * tracker has no such window, the history shows the assignment, or the
+ * item is not assigned to the identity; the refusals that follow say why.
+ */
+export async function unseenAssignment(
+  tracker: Tracker,
+  key: string,
+  identity: string,
+  sec: number,
+): Promise<string | null> {
+  const window = windowWords(tracker);
+  if (window === null) return null;
+  try {
+    await within(sec, (signal) => tracker.assignedBy(key, identity, signal));
+    return null;
+  } catch (error) {
+    if (!(error instanceof AssignerUnknown)) return null;
+  }
+  return `${key} is assigned to ${identity}, but its history holds no assignment of ${identity}: ${window}. The send does not change an existing assignment: unassign ${key} on the tracker, then send this again, and it writes the assignment once the issue is past that window`;
+}
+
+/**
+ * When the assignment may be written: the time the tracker's creation
+ * window passes for the item, or `null` when the tracker has none.
+ */
+export async function assignableFrom(
+  tracker: Tracker,
+  key: string,
+  sec: number,
+): Promise<Outcome<number | null, "refused">> {
+  if (windowWords(tracker) === null) return ok(null);
+  let createdAt: string | undefined;
+  try {
+    const read = await within(sec, (signal) => tracker.poolIssue(key, signal));
+    createdAt = read?.value?.createdAt;
+  } catch (error) {
+    return refused(
+      `${key}'s creation time did not read (${error instanceof Error ? error.message : String(error)}), so when its history starts recording an assignment is not known; send again`,
+    );
+  }
+  const from = assignableFromMs(tracker, createdAt);
+  return from.ok ? from : refused(`${key}: ${from.failure.reason}; send again`);
+}
+
 /** The plan of an assignment, or why the item cannot take it. */
 export async function planAssign(
   written: AskContext,
@@ -96,6 +159,11 @@ export async function planAssign(
   const login = writer.value.login;
   const { answer, issue } = await readPickup(ctx, tracked);
   if (!answer.found || issue === null) return refused(answer.stateDetail);
+  const sec = ctx.reading.sourceSec();
+  if (issue.assignee !== null) {
+    const unseen = await unseenAssignment(tracker, key, identity, sec);
+    if (unseen !== null) return refused(unseen);
+  }
   if (answer.state !== "not assigned")
     return refused(
       `${key} is ${answer.state} (${answer.stateDetail}): assign writes an item nobody holds yet`,
@@ -123,6 +191,9 @@ export async function planAssign(
       `${key} is ${issue.state.name}, a state of work in progress; assign does not move it back to a dispatch state`,
     );
   const move = moveFor(issue.state.name);
+  const from = await assignableFrom(tracker, key, sec);
+  if (!from.ok) return from;
+  const { until } = waitBeforeAssigning(from.value, systemClock.now());
   return ok({
     address: ctx.name,
     repo,
@@ -137,8 +208,13 @@ export async function planAssign(
     reader: TICK.reader(NEXT_TICK),
     tick: TICK,
     undo: `assign ${key} to nobody on the tracker before the tick starts the pick-up`,
-    notice: null,
+    notice:
+      until === null
+        ? null
+        : `${windowWords(tracker)}: the send waits until ${until}, then writes the assignment`,
     write: async () => {
+      const { waitMs } = waitBeforeAssigning(from.value, systemClock.now());
+      if (waitMs > 0) await systemClock.sleep(waitMs);
       const wrote = await assignPickup(tracker, key, identity, move, moveFor);
       return wrote.ok ? ok(issue.url ?? key) : wrote;
     },

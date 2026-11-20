@@ -1,0 +1,136 @@
+/**
+ * A fake Linear workspace holding one issue, ENG-1, created at `T0`, whose
+ * history, like Linear's, records an assignment only when it is written
+ * three minutes or more after the issue's creation; and a clock a test
+ * moves, whose `sleep` moves it on.
+ */
+import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
+import { LINEAR_CREATION_QUIET_MS } from "../scripts/lib/tracker/assignment-window.ts";
+import {
+  type LinearTransport,
+  linearTracker,
+} from "../scripts/lib/tracker/linear.ts";
+
+export const T0 = Date.parse("2026-11-20T12:00:00.000Z");
+export const iso = (ms: number) => new Date(ms).toISOString();
+export const FACTORY = "factory@example.com";
+const LEAD = {
+  id: "lead",
+  name: "lead",
+  guest: false,
+  teams: { nodes: [{ key: "ENG" }] },
+};
+
+/** A clock the test moves: `sleep` moves it on and records the wait. */
+export function fakeClock(start: number) {
+  const clock = {
+    ms: start,
+    waits: [] as number[],
+    now: () => clock.ms,
+    sleep: async (ms: number) => {
+      clock.waits.push(ms);
+      clock.ms += ms;
+    },
+  };
+  return clock;
+}
+
+export interface Entry {
+  createdAt: string;
+  toAssignee: string;
+}
+
+/** The fake workspace, read and written through the Linear adapter. */
+export function fakeLinear(
+  clock: { now(): number },
+  start: { assignee?: string | null; history?: Entry[] } = {},
+) {
+  const issue = {
+    assignee: start.assignee ?? null,
+    history: [...(start.history ?? [])],
+  };
+  const writes: Array<{ at: number; to: string | null }> = [];
+  let failAssign = false;
+  const person = (who: string) => ({
+    id: who,
+    email: who,
+    displayName: who,
+    name: who,
+  });
+  const transport: LinearTransport = async (query, variables) => {
+    const op = /(?:query|mutation) (\w+)/.exec(query)?.[1] ?? "anonymous";
+    switch (op) {
+      case "TrackerPoolIssue":
+        return {
+          issue: {
+            identifier: "ENG-1",
+            title: "filed",
+            url: null,
+            priority: 2,
+            createdAt: iso(T0),
+            updatedAt: iso(T0),
+            state: { id: "s-todo", name: "Todo", type: "unstarted" },
+            assignee:
+              issue.assignee === null
+                ? null
+                : { id: issue.assignee, name: issue.assignee },
+            labels: { pageInfo: { hasNextPage: false }, nodes: [] },
+            children: { pageInfo: { hasNextPage: false }, nodes: [] },
+          },
+        };
+      case "TrackerUsers":
+        return {
+          users: { nodes: [{ id: variables.who, name: variables.who }] },
+        };
+      case "TrackerAssignee":
+        return {
+          issue: {
+            id: "uuid-1",
+            assignee:
+              issue.assignee === null
+                ? null
+                : { id: issue.assignee, name: issue.assignee },
+          },
+        };
+      case "TrackerAssign": {
+        if (failAssign) throw new Error("Linear refused the update");
+        const to = (variables.input as { assigneeId: string | null })
+          .assigneeId;
+        writes.push({ at: clock.now(), to });
+        issue.assignee = to;
+        if (to !== null && clock.now() >= T0 + LINEAR_CREATION_QUIET_MS)
+          issue.history.push({ createdAt: iso(clock.now()), toAssignee: to });
+        return { issueUpdate: { success: true } };
+      }
+      case "TrackerAssignmentHistory":
+        return {
+          issue: {
+            assignee: issue.assignee === null ? null : person(issue.assignee),
+            history: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: issue.history.map((h, i) => ({
+                id: `h${i}`,
+                createdAt: h.createdAt,
+                toAssignee: person(h.toAssignee),
+                actor: LEAD,
+              })),
+            },
+          },
+        };
+      default:
+        throw new Error(`the fake Linear does not answer ${op}`);
+    }
+  };
+  const tracker = linearTracker({
+    team: "ENG",
+    states: parseTrackerConfig({}).states,
+    transport,
+  });
+  return {
+    tracker,
+    writes,
+    failAssign: () => {
+      failAssign = true;
+    },
+  };
+}

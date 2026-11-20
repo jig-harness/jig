@@ -45,6 +45,7 @@ import {
 import * as lf from "./linear-facets.ts";
 import { queueOperations } from "./linear-queue.ts";
 import { namedState } from "./config-error.ts";
+import { LINEAR_CREATION_QUIET_MS } from "./assignment-window.ts";
 import {
   type FoundComment,
   type IssueComment,
@@ -779,6 +780,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     adapter: "linear",
     team,
     commentAuthors: true,
+    creationQuietMs: LINEAR_CREATION_QUIET_MS,
     stateName: stateNameIn(states),
 
     async reach(signal) {
