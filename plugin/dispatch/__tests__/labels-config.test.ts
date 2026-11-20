@@ -4,6 +4,7 @@
  * projection changes on one pull request.
  */
 import { describe, expect, it } from "bun:test";
+import { CONVERGED_CI_PHASE } from "../../skills/drive-pr/scripts/lib/state/ledger-values.ts";
 import {
   labelChange,
   labelSet,
@@ -139,6 +140,15 @@ describe("the label set", () => {
 });
 
 describe("the state a ledger maps to", () => {
+  it("preserves the drive's provisional label during its CI watch", () => {
+    const watching = drive("driven");
+    watching.evidence.phase = CONVERGED_CI_PHASE;
+    expect(stateOf(watching)).toBe("unknown");
+    expect(stateOf({ ...watching, class: "stale" })).toEqual({
+      state: "stale",
+    });
+  });
+
   it("follows the ledger's class, and leaves a ledger it cannot read as it is", () => {
     expect(stateOf(drive("driven"))).toEqual({ state: "driving" });
     expect(stateOf(drive("re-armable"))).toEqual({ state: "driving" });

@@ -1,11 +1,4 @@
 import { poll } from "../../../shared/retry.ts";
-/**
- * Marking a stopped driver's ledger from outside it (`lib/ledger-stop.ts`):
- * `drives.ts --stop` once the driver is witnessed gone, `--stop` and
- * `--doctor` against the driver record a driver marks released with its
- * locks, never against a lock left behind, each guarded so a successor's
- * ledger is left as it is. And a seed the state store refuses keeps its exit.
- */
 import { describe, expect, it } from "bun:test";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -18,6 +11,7 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   markDriverRecordReleased,
+  recordPendingExit,
   removeDriverRecord,
   writeDriverRecord,
 } from "../scripts/lib/ledger-stop.ts";
@@ -67,7 +61,6 @@ interface Stage {
   started: string;
 }
 
-/** A forge whose PR 999 carries a running ledger for `driver`. */
 function stage(
   driver: Partial<Ledger["driver"]> = {},
   extra: unknown[] = [],
@@ -101,7 +94,6 @@ function stage(
   return { forge, leaf, actor, started };
 }
 
-/** PR 999's lock, held by `pid` driving from the forge's repository. */
 function plantLock(s: Stage, pid: number, diagnosticPr = "999"): void {
   putLock(s.leaf, "pr-drive-999", {
     token: "feedc0de",
@@ -151,7 +143,6 @@ function driverOf(s: Stage): Ledger["driver"] | null {
   return parsed?.kind === "ledger" ? parsed.ledger.driver : null;
 }
 
-/** A pid that is really dead: a child that ran and exited. */
 async function deadPid(): Promise<number> {
   const child = Bun.spawn(["sh", "-c", ":"], {
     stdout: "ignore",
@@ -499,7 +490,6 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
       expect(driverOf(s)?.state).toBe("running");
       expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
       rmSync(join(s.forge.dir, "fail-list-after"));
-      // The stopped driver's abandoned lock is still in place.
       expectSpawnExit(await drives(s, ["--doctor"]), 0);
       expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
       expect(driverRecordRow(s.leaf, "999")).toBeNull();
@@ -508,7 +498,100 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
   );
 });
 
-/** The driver record `s`'s driver leaves, `released` as it releases its locks. */
+async function plantReleasedRecord(s: Stage): Promise<void> {
+  const child = Bun.spawn(["sh", "-c", ":"], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  await child.exited;
+  writeDriverRecord(s.leaf, "999", {
+    worktree: s.forge.repo,
+    started: s.started,
+    pid: child.pid,
+    host: hostname(),
+    released: true,
+  });
+}
+
+describe("recovering a stopped ledger's pending state-label projection", () => {
+  async function labelsFor(s: Stage) {
+    const forgeGh = Bun.which("gh", { PATH: s.forge.env.PATH ?? "" });
+    if (forgeGh === null) throw new Error("the fake forge's gh is not on PATH");
+    const labels = labelForge(s.forge.dir, forgeGh, ["jig:converged"], "");
+    const env = { PATH: `${labels.bin}${delimiter}${s.forge.env.PATH ?? ""}` };
+    await plantReleasedRecord(s);
+    recordPendingExit(s.leaf, "999", s.started, 8);
+    return { labels, env };
+  }
+
+  async function expectRecoveryToRemainPending(
+    s: Stage,
+    prepare: (labels: ReturnType<typeof labelForge>) => void,
+  ) {
+    const { labels, env } = await labelsFor(s);
+    prepare(labels);
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
+    expect(labels.labels()).toEqual(["jig:converged"]);
+    return { labels, env };
+  }
+
+  it("retries the recorded CI exit against the same acquired stopped ledger", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    const { env } = await expectRecoveryToRemainPending(s, () =>
+      writeFileSync(join(s.forge.dir, "fail-patch"), ""),
+    );
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 0 });
+    rmSync(join(s.forge.dir, "fail-patch"));
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
+    expect(driverRecordRow(s.leaf, "999")).toBeNull();
+  });
+
+  it("keeps a pending ordinary stop for a refused state-label projection", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    const { labels, env } = await expectRecoveryToRemainPending(
+      s,
+      (labelState) => writeFileSync(join(labelState.bin, "edit-refused"), ""),
+    );
+    rmSync(join(labels.bin, "edit-refused"));
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
+    expect(labels.labels()).toEqual(["jig:parked"]);
+  });
+
+  it("keeps a pending ordinary stop when its state-label configuration is unreadable", async () => {
+    const s = stage({ state: "stopped", exit: 0 });
+    const { labels, env } = await expectRecoveryToRemainPending(
+      s,
+      (labelState) =>
+        writeFileSync(join(labelState.bin, "jig.yaml"), ": invalid"),
+    );
+    writeFileSync(
+      join(labels.bin, "jig.yaml"),
+      "dispatch:\n  labels:\n    enabled: true\n",
+    );
+    expectSpawnExit(await drives(s, ["--doctor"], env), 0);
+    expect(driverOf(s)).toMatchObject({ state: "stopped", exit: 8 });
+    expect(labels.labels()).toEqual(["jig:parked"]);
+  });
+
+  for (const [name, marker] of [
+    [
+      "when the label ownership recheck is unreadable",
+      "fail-ownership-recheck",
+    ],
+    ["when its label projection is unavailable", "malformed-label-read"],
+  ] as const) {
+    it(`keeps a pending ordinary stop ${name}`, async () => {
+      const s = stage({ state: "stopped", exit: 0 });
+      await expectRecoveryToRemainPending(s, (labels) =>
+        writeFileSync(join(labels.bin, marker), ""),
+      );
+    });
+  }
+});
+
 async function plantRecord(s: Stage, released: boolean): Promise<void> {
   writeDriverRecord(s.leaf, "999", {
     worktree: s.forge.repo,
@@ -682,7 +765,6 @@ describe("recovering the ledger of a driver that could not write it", () => {
       generation: 4,
       at,
     });
-    // A lagging read hid the rival from the driver, which wrote by its own claim.
     writeFileSync(
       join(s.forge.dir, "comments.json"),
       JSON.stringify([
@@ -821,7 +903,6 @@ describe("recovering the ledger of a driver that could not write it", () => {
 
   it("records the recovered stop locally, so an earlier run's exit never speaks for it", async () => {
     const s = stage();
-    // The drive converged once, then was re-armed and stopped by a signal.
     expectSpawnExit(
       await driveState(
         s,
@@ -860,8 +941,6 @@ async function driveState(s: Stage, args: string[], stdin = "") {
 describe("a seed the state store refuses", () => {
   it("keeps exit 13 when another working tree holds the pull request", async () => {
     const s = stage({ clone: "clone-elsewhere", state: "stopped" });
-    // Another tree's live session lease on PR 999: a lease whose pid (this
-    // test's own) is alive and whose lastSeen is fresh.
     const foreign = "wt-0000000000000dea";
     putLease(leaseRef(s.leaf, "999", foreign), {
       worktree: "/some/other/tree",
