@@ -107,6 +107,51 @@ function forgeComment(c: unknown): ForgeComment | null {
   };
 }
 
+function isCompleteComment(c: unknown): boolean {
+  if (!isRecord(c) || !isPositiveId(c.id)) return false;
+  if (!hasCommentText(c)) return false;
+  return c.user === null || hasLogin(c.user);
+}
+
+function isPositiveId(value: unknown): boolean {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function hasCommentText(comment: Record<string, unknown>): boolean {
+  return (
+    typeof comment.body === "string" &&
+    typeof comment.updated_at === "string" &&
+    typeof comment.author_association === "string"
+  );
+}
+
+function hasLogin(value: unknown): boolean {
+  return isRecord(value) && typeof value.login === "string";
+}
+
+function commentPages(pages: unknown): unknown[][] | string {
+  const out = Array.isArray(pages) ? pages : [pages];
+  if (out.some((page) => !Array.isArray(page)))
+    return "the comment listing is not a list";
+  return out;
+}
+
+function completePages(pages: readonly unknown[][]): string | null {
+  if (pages.length === 0) return "the comment listing has no pages";
+  for (const page of pages)
+    if (page.some((comment) => !isCompleteComment(comment)))
+      return "the comment listing has an incomplete comment";
+  return null;
+}
+
+function forgeComments(pages: readonly unknown[][]): ForgeComment[] {
+  return pages.flatMap((page) =>
+    page
+      .map(forgeComment)
+      .filter((comment): comment is ForgeComment => comment !== null),
+  );
+}
+
 /**
  * Every comment on the pull request, or why they could not be read. `repo`
  * (`owner/name`) names the repository; without it, the current directory's.
@@ -130,16 +175,8 @@ async function listComments(
     signal,
   );
   if (!r.ok) return r.why;
-  const pages = json(r.stdout, "the comment listing");
-  const out: ForgeComment[] = [];
-  for (const page of Array.isArray(pages) ? pages : [pages]) {
-    if (!Array.isArray(page)) return "the comment listing is not a list";
-    for (const c of page) {
-      const comment = forgeComment(c);
-      if (comment !== null) out.push(comment);
-    }
-  }
-  return out;
+  const pages = commentPages(json(r.stdout, "the comment listing"));
+  return typeof pages === "string" ? pages : forgeComments(pages);
 }
 
 /**
@@ -167,6 +204,32 @@ export async function readLedgerSnapshot(
   const aborted = abortReason(signal);
   if (aborted !== null) return aborted;
   const comments = await listComments(pr, repo, signal);
+  return snapshotFromComments(comments, selfLogin);
+}
+
+/** A listing complete enough to defer the next round-boundary takeover check. */
+export async function readCompleteLedgerSnapshot(
+  pr: string,
+  selfLogin: string | null,
+): Promise<LedgerSnapshot | string> {
+  const r = await forge([
+    "api",
+    "--paginate",
+    "--slurp",
+    `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`,
+  ]);
+  if (!r.ok) return snapshotFromComments(r.why, selfLogin);
+  const pages = commentPages(json(r.stdout, "the comment listing"));
+  if (typeof pages === "string") return snapshotFromComments(pages, selfLogin);
+  const complete = completePages(pages);
+  const comments = complete === null ? forgeComments(pages) : complete;
+  return snapshotFromComments(comments, selfLogin);
+}
+
+function snapshotFromComments(
+  comments: ForgeComment[] | string,
+  selfLogin: string | null,
+): LedgerSnapshot | string {
   return typeof comments === "string"
     ? `the comments could not be read (${comments})`
     : snapshotFrom(comments, selfLogin);

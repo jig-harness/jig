@@ -10,6 +10,7 @@ import type { LoadReading } from "./load-read.ts";
 import { DEFAULT_PICKUP_DEADLINE_MS } from "./section.ts";
 import {
   forecastValidation,
+  measurementsFor,
   measureValidation,
   validationDemand,
   type ValidationDemand,
@@ -79,6 +80,7 @@ function passOf({ record, state }: ReadRecord): ValidationPass | null {
   return {
     kind: action === "pickup" ? action : "drive",
     workspace: record.workspace ? resolve(record.workspace.path) : null,
+    repo: record.repo,
     launchedAtMs: parseMs(launchedAt),
     ...(state.kind === "ended" ? { endedAtMs: parseMs(state.exit.at) } : {}),
   };
@@ -99,6 +101,13 @@ function workspaceOf(
   }
 }
 
+/** The launch records as the validation passes the measurements read. */
+export function validationPassesOf(
+  records: readonly ReadRecord[],
+): ValidationPass[] {
+  return records.flatMap((record) => passOf(record) ?? []);
+}
+
 export function readValidationLoad(
   records: readonly ReadRecord[],
   lock: LoadReading["lock"],
@@ -107,7 +116,7 @@ export function readValidationLoad(
   env: Record<string, string | undefined> = process.env,
 ): ValidationLoad {
   const { name } = lockPlace(env);
-  const passes = records.flatMap((record) => passOf(record) ?? []);
+  const passes = validationPassesOf(records);
   const workspaces = new Set(
     passes.flatMap(({ workspace }) => workspace ?? []),
   );
@@ -188,17 +197,25 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
   return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
+/** Why a pass of `kind` in `repo` waits on validation capacity; `null` when it fits. */
 export function validationHold(
-  state: ValidationLoad,
+  load: ValidationLoad,
   line: number,
   kind: ValidationKind,
   pickupDeadlineMs: number,
+  repo?: string,
 ): string | null {
   // A launch setting the lock refuses fails validation whatever the lock's
   // occupancy, so it is judged before the occupancy reading.
-  if (state.waitInvalid !== undefined)
-    return `waits on validation capacity: ${state.waitInvalid}`;
-  if ("unread" in state.demand) return null;
+  if (load.waitInvalid !== undefined)
+    return `waits on validation capacity: ${load.waitInvalid}`;
+  const { demand } = load;
+  if ("unread" in demand) return null;
+  const state = {
+    ...load,
+    demand,
+    measured: measurementsFor(load.measured, repo),
+  };
   const deadline = kind === "pickup" ? pickupDeadlineMs : state.driveDeadlineMs;
   const own = forecast(state, kind, deadline, state.admittedRuns);
   if (own === null) return null;

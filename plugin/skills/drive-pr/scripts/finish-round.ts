@@ -150,6 +150,12 @@ import { retryAttempts } from "../../../shared/retry.ts";
  *      configuration, the repository or the PR could not be read). A pushed
  *      commit without the prefix does not refuse: it is reported on stderr
  *      and the push goes ahead
+ *  25  refused BEFORE pushing (CHECK_RUNS_UNREADABLE): the head's check-runs
+ *      listing, read for the CI hold, ran into a deadline or its page bound,
+ *      so nothing about the hold could be judged. The report's
+ *      `listingPagesRead` is the number of pages read before it stopped
+ *      (`null` when none was reported). Re-run once; a second such stop on
+ *      the same head is a systematic read failure for a person
  *  11  another live SESSION in this working tree holds the drive lease
  *  13  another live WORKING TREE is driving this PR
  *
@@ -193,6 +199,10 @@ import {
   SESSION_LEASE_HELD_EXIT,
 } from "./lib/state/lease.ts";
 import { ignoreDriveContext } from "./lib/context-ignore.ts";
+import { listingPagesReadFrom } from "./lib/ci-proof.ts";
+import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
+import { writePassFinish } from "./lib/state/pass-finish.ts";
+import { resolveStateDir } from "./lib/state/store.ts";
 import { holdParkReason, isUnheldOutcome } from "./lib/missing-required-run.ts";
 import { roundFinishRecorder } from "./lib/state/round-finish.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
@@ -1170,6 +1180,16 @@ async function main(): Promise<number> {
     headSynced: false,
     items: [],
   };
+  const passStamp =
+    isDigits(process.env.DRIVE_PR_TARGET ?? "") &&
+    isDigits(process.env.DRIVE_PR_ROUND ?? "") &&
+    (process.env.JIG_LAUNCH ?? "") !== ""
+      ? {
+          launch: process.env.JIG_LAUNCH as string,
+          round: Number(process.env.DRIVE_PR_ROUND),
+          stateDir: process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir()),
+        }
+      : null;
   const recordFinish = await roundFinishRecorder(pr);
   const done = (
     code: number,
@@ -1178,6 +1198,14 @@ async function main(): Promise<number> {
   ): number => {
     report.state = state;
     report.reason = reason;
+    if (passStamp !== null)
+      writePassFinish(
+        passStamp.stateDir,
+        prNum,
+        passStamp.launch,
+        passStamp.round,
+        report,
+      );
     emit(report, asJson);
     recordFinish({ state, reason, head: report.head });
     return code;
@@ -1295,6 +1323,14 @@ async function main(): Promise<number> {
       4,
       "CI_HOLD_WAIT",
       `the CI hold is not ready on the current PR head; wait for what the ci-hold or cancelled CI recovery line names, then re-run`,
+    );
+  }
+  if (holdRes.code === DRIVE_EXIT.CHECK_RUNS_UNREADABLE) {
+    report.listingPagesRead = listingPagesReadFrom(holdRes.stdout);
+    return done(
+      DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+      "CHECK_RUNS_UNREADABLE",
+      "the head's check-runs listing could not be read whole — nothing was pushed",
     );
   }
   if (holdRes.code !== 0) {

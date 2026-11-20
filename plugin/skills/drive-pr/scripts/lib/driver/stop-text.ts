@@ -3,14 +3,17 @@
  * at a stop that needs a person (`orca-card.ts`), and the first part of the
  * closing report's `concluded` (`closing-report.ts`). A park names the first
  * parked item's question and how many more wait; a usage-limit stop names the
- * wall and when it resets, a stop on the forge's rate limit when that resets;
- * a stall whose passes all ended `finish-round.ts` on the same state names
- * that state and its reason; every other exit says what the terminal-state
- * registry's `report.stop` says for it.
+ * wall and when it resets; a check-runs listing cut short names the pages it
+ * read; every other exit says what the terminal-state registry's
+ * `report.stop` says for it.
  */
 import type { DriveState } from "../state/schema.ts";
 import { lastStopEvent, stopInstant } from "../state/events.ts";
-import { driveExitReport, TERMINAL_STATES } from "../status/terminal-states.ts";
+import {
+  DRIVE_EXIT,
+  driveExitReport,
+  TERMINAL_STATES,
+} from "../status/terminal-states.ts";
 import { driverRuntime } from "./runtime.ts";
 
 /** The exit `drive.ts` ends with for `state`, as the registry gives it. */
@@ -94,7 +97,12 @@ export function stopText(
   if (probe?.code === code)
     return `PR #${pr} stopped at ${probe.state} (exit ${code}): ${probe.reason}`;
   const named = driveExitReport(code);
-  return named === null
-    ? `PR #${pr}'s drive ended with exit ${code}, which names no state the drive ends with`
-    : `PR #${pr}'s drive ${named.report.stop} (exit ${code})`;
+  if (named === null)
+    return `PR #${pr}'s drive ended with exit ${code}, which names no state the drive ends with`;
+  const pages = driverRuntime.stopListingPages;
+  const read =
+    code === DRIVE_EXIT.CHECK_RUNS_UNREADABLE && pages !== null
+      ? ` after ${pages} page(s)`
+      : "";
+  return `PR #${pr}'s drive ${named.report.stop}${read} (exit ${code})`;
 }

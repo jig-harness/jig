@@ -376,6 +376,9 @@ changes are marked **Breaking** and say what a consumer changes.
   tactical and peripheral goals), set in a host-local weights file read on
   every tick. Defined the priority lane, peripheral floor and weights file
   terms.
+- [M7](modules/M7-pr-lifecycle-review/README.md) no longer lists a reviewer runtime as left out by design. It now names the reviewer-evidence contract that the drive reads and a reference reviewer that implements it, planned as `jig-harness/ai-review` in its own repository. The Standard level says the automated reviewer can be any reviewer that meets the contract. Decision record: [ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md).
+- M7's [mappings](modules/M7-pr-lifecycle-review/mappings.md) gain a table of the reviewers a team can add today, most with its own model key: PR-Agent, openai/codex-action, anthropics/claude-code-action, the opencode GitHub Action, CodeRabbit for public repositories and the reference reviewer. Each row says what the reviewer posts of the evidence the drive reads and whether drive-pr has a built-in profile for it.
+- The [glossary](GLOSSARY.md) defines *reviewer-evidence contract* and *reference reviewer*.
 
 ### Fixed
 
@@ -400,6 +403,71 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.293.0] - 2026-11-20
+
+### Added
+
+- A drive end state, `CHECK_RUNS_UNREADABLE` (exit `25`), for a listing that still runs into a deadline or the page bound. Its reason, the drive's closing report and the stop recorded in the drive ledger name the pages read. `jig dispatch` re-drives it once per head commit and reports a second such stop on the same head to a person as a systematic read failure. A program that reads `drive-status.ts` or `drive.ts` exits sees the new code where it saw `1` for this failure.
+
+### Changed
+
+- With `JIG_FORGE_BUDGET=off`, a fresh check-runs listing or a fallback whole read is paged by `gh` itself, under the whole-read bound (four times `GH_CALL_TIMEOUT`) and no page bound, while a listing read through the cache still goes a page at a time; the configuration reference and the drive-pr README now say so. A listing past the page bound is read once, not asked again.
+
+### Fixed
+
+- Preserve check-run listing recovery when a review-pass wrapper does not return the finisher's exit status. **Consumer action:** none.
+- A drive no longer stops on a pull request whose head has many check runs. Each page of the head's check-runs listing now has its own `GH_CALL_TIMEOUT`, and the whole listing has four times that, at most 100 pages. Before, every page shared one deadline, so a long listing read as unreadable and the drive exited `1`.
+
+## [0.292.0] - 2026-11-20
+
+### Added
+
+- The hub's portable core (`plugin/hub/core/`): the ports through which
+  the hub reaches its platform (storage, serving, scheduling, outbound calls
+  and observability), each method returning an `Outcome`, and `runUnit`, the
+  one defect boundary around a unit of work, which hands every port call the
+  unit's deadline and its single `AbortSignal`. Nothing serves yet: the
+  storage and scheduling implementations and the process adapter follow.
+- `jig hub` is a command; for now it prints its help.
+- A GitHub transport over `fetch` (`plugin/shared/outbound/github-fetch.ts`),
+  beside the `gh` transport the dispatcher and the skills keep using. It
+  follows the outbound calls' obligations: it asks the shared budget, bounds
+  each call by its deadline, records what it cost, fails as one of the closed
+  failure classes, and charges nothing for a conditional request answered
+  "not modified". Nothing calls it yet.
+- The cost ledger records which repository a call was for, in a table beside
+  the hourly rows, so rows written before this release read unchanged.
+  `jig budget` shows the spend by repository (`--json` adds a `repositories`
+  array); spend that names no repository is grouped as `(no repository)`.
+
+### Changed
+
+- The outbound library's portable parts (the failure classes, retry,
+  paging, the conditional request and the budget's arithmetic) are split from
+  the parts that open the machine's budget database or run `gh`. The
+  library's callers are unchanged and behave as before.
+- `jig dispatch` now says why it refuses a Linear issue whose history holds no
+  assignment: Linear omits property changes made in an issue's first three
+  minutes, so the refusal names that window and says to wait until the issue is
+  older than that, then unassign it and assign it again to start a pickup.
+
+### Fixed
+
+- The dispatcher's validation forecast (`load.validation`) no longer holds every pickup on an idle host. Runs at once is now the most runs that held the test lock together, which is what its admission allowed, instead of the holders counted only while a run waited. Runs per pass is now the median over finished passes, those that made no run included and never under one, measured per repository once it has three finished passes; a repository with no measure of its own, such as one whose lock records no samples, is charged every repository's median. **Consumer action:** none.
+- A dispatched pickup stopped by a fault of its host rather than of its
+  work (its result could not be written, the question it stopped on
+  reports space or inodes run out or a file system or state directory that
+  cannot be written, or its closing report gives the cause `environment`
+  and it asked nothing else) no longer waits on a person. While the host's
+  health check fails, the item is held with the fault named; once it
+  passes, the tick relaunches the pickup in its own tree to resume the
+  work, or picks the item up afresh when the pass never claimed it. A restart that stops on a host fault again raises
+  one need for the steward or a person to diagnose, never a second restart.
+- Waiting drives list pull request comments for takeover checks once a
+  minute after a complete round-boundary read, reducing GitHub quota use.
+  An unread listing is retried at the next checkpoint. Claim checks before
+  dispatching a pass and writing the ledger still read fresh.
 
 ## [0.291.2] - 2026-11-20
 
@@ -10314,7 +10382,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.293.0...HEAD
+[0.293.0]: https://github.com/jig-harness/jig/compare/v0.292.0...v0.293.0
+[0.292.0]: https://github.com/jig-harness/jig/compare/v0.291.2...v0.292.0
 [0.291.2]: https://github.com/jig-harness/jig/compare/v0.291.1...v0.291.2
 [0.291.1]: https://github.com/jig-harness/jig/compare/v0.291.0...v0.291.1
 [0.291.0]: https://github.com/jig-harness/jig/compare/v0.290.0...v0.291.0

@@ -33,7 +33,11 @@ export interface RecoveryReadFailure {
 }
 
 /**
- * Workflow jobs the runner stopped at their time limit (the required ones
+ * The recovery's answer on a live head. `listing-cut-short` is a check-runs
+ * listing a deadline or its page bound ended: nothing was established, and the
+ * drive stops as `CHECK_RUNS_UNREADABLE`.
+ */
+/** Workflow jobs the runner stopped at their time limit (the required ones
  * alone where the caller asks only for those): a failure for the CI-repair
  * path, never re-run or parked by the recovery. `recovery` is what the
  * recovery answered for the head's other cancellations: `wait` while a
@@ -45,7 +49,11 @@ export interface TimedOutRecovery {
 }
 
 /** The recovery's answer on a live head. */
-export type LiveRecovery = Recovery | RecoveryReadFailure | TimedOutRecovery;
+export type LiveRecovery =
+  | Recovery
+  | "listing-cut-short"
+  | RecoveryReadFailure
+  | TimedOutRecovery;
 
 /** Whether the recovery asks its caller to poll again before going on. */
 export function recoveryWaits(recovery: LiveRecovery): boolean {
@@ -89,8 +97,13 @@ function failedAnswer(
 export async function recoveryRead<T>(
   read: string,
   ask: () => Promise<Outcome<T, ForgeReadCode>>,
+  /** True when the failure just seen cannot clear by asking again, such as a listing past its page bound. */
+  settled: () => boolean = () => false,
+  /** Milliseconds between attempts, in place of the environment's pacing (for a test). */
+  retryMs?: number,
 ): Promise<RecoveryRead<T>> {
-  const wait = testPacing("DRIVE_PR_RECOVERY_READ_RETRY_MS", READ_RETRY_MS, 10);
+  const wait =
+    retryMs ?? testPacing("DRIVE_PR_RECOVERY_READ_RETRY_MS", READ_RETRY_MS, 10);
   let last: Failure<ForgeReadCode> | null = null;
   for await (const attempt of retryAttempts({
     attempts: READ_ATTEMPTS,
@@ -103,7 +116,7 @@ export async function recoveryRead<T>(
     console.error(
       `cancelled CI recovery: the ${read} read failed (attempt ${attempt} of ${READ_ATTEMPTS}, ${last.code}): ${last.reason}`,
     );
-    if (!asksAgain(last.code)) break;
+    if (settled() || !asksAgain(last.code)) break;
   }
   return {
     ok: false,
@@ -129,6 +142,7 @@ export function recoveryLabel(recovery: LiveRecovery): string {
 export function recoveryExit(recovery: LiveRecovery): number | null {
   if (recovery === "parked") return DRIVE_EXIT.HITL_PARKED;
   if (recovery === "unknown") return DRIVE_EXIT.INDETERMINATE;
+  if (recovery === "listing-cut-short") return DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
   if (typeof recovery === "string") return null;
   if (isTimedOut(recovery)) {
     console.error(

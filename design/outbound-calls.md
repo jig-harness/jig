@@ -68,6 +68,25 @@ module leaves its old path in the same pull request.
 | `paging` | Page caps, and a page that shrinks when the system runs out of time | `shared/outbound/paging.ts` |
 | `hold` | A system that did not answer is not asked again in the run; the next run probes it once first | `shared/outbound/hold.ts`; the hold moves into `budget` once GitHub joins it |
 
+The library's portable parts run on any platform, the hub's included: the
+failure classes, retry, paging, the conditional request (`cache.ts`), the
+budget's arithmetic (`budget-governor.ts`, with its record's shape and
+snapshots), how GitHub's answers report its limits (`github-answer.ts`)
+and the operation names (`operations.ts`). They import no runtime module,
+read no file and run no program; an error one drops on purpose goes to the
+reporter the platform installs (`shared/dropped.ts`). The machine's stores
+are apart from them: the budget database and the ledger's tables
+(`budget.ts`, `ledger.ts`), the `gh` runs and the `gh` client's
+configuration. `scripts/check-portability.ts` holds the split.
+
+GitHub has two transports. The `gh` command-line client carries the
+dispatcher's and the skills' calls. A transport over `fetch`
+(`github-fetch.ts`) carries the calls of code that runs no program: it is
+given the platform's `fetch`, a token, the budget's governor, the held
+bodies and the ledger's recorder, and keeps each obligation through them.
+Both pass the same contract tests
+(`shared/__tests__/outbound-transport-contract.ts`).
+
 A transport supplies its profile, how to send one request
 (an HTTPS request or a run of a command-line client) and how to read a
 call's cost and the limits from an answer. It names every operation it
@@ -87,7 +106,9 @@ the callers of an adapter do not change.
   an unchanged answer does not count against the hourly limit.
 - **Ask what changed first.** A reader that keeps a reading asks the system
   for what changed since, and reads everything only on a schedule or when
-  the probe cannot tell.
+  the probe cannot tell. The dispatcher's change probes ask each service on
+  a cadence of its own, inside the budget
+  ([Probes in the budget](#probes-in-the-budget)).
 - **One request for one question.** Two callers in one run that ask the
   same read share one request. Two repository configurations that read the
   same tracker team with the same credential share one queue reading.
@@ -222,7 +243,9 @@ the answer's `Link` header (REST) or the first `pageInfo` cursor (GraphQL),
 and the output assembled as the client prints it. A page the record
 refuses ends the read as `rate-limited`, the pages already sent staying
 charged, so a long read cannot pass the dispatcher's floor; a failing page
-ends it with that page's failure; the pages share the call's one deadline;
+ends it with that page's failure; the pages share the call's one deadline,
+unless the caller names a longer bound for the whole read (`pagedWholeSec`,
+which a head's check-runs listing does), when each page keeps that deadline;
 past 100 pages the read fails as `too-costly`. A form the wrapper does not
 reproduce (streamed output, GraphQL with `--jq` or `--template`, the
 caller's own `--include`, `--input`, or REST fields without `GET`) is left
@@ -233,6 +256,81 @@ The dispatcher's reads may use a share of each limit and leave the rest to
 passes and people. One setting covers every system; `tracker_share` stays
 readable as its older name.
 
+### Probes in the budget
+
+The dispatcher's [change probes](dark-factory-dispatch.md#refresh-cadences)
+(one per service: the forge, Linear, Jira) are callers of the budget like
+the tick. Each request goes through its service's transport, is admitted
+before it is sent, is recorded in the ledger under the caller `probe` and
+the operation's name, and fails as one of the classes below. A probe that is
+refused or gets no answer wakes nothing, says why and leaves the next sweep
+to find the change.
+
+**What one run costs.** Each probe's cost is stated in its service's own
+unit, from the service's published limits where they state it and from the
+host's measure where they do not. A figure marked *derived* is checked
+against the first live answer's own report (`rateLimit.cost`, `X-Complexity`,
+a points header) when its step lands, and a difference replaces the figure
+here.
+
+| Probe request | Unit | One run | An hour at the default interval | Against the limit | Basis |
+| --- | --- | --- | --- | --- | --- |
+| Forge: pull requests updated, and open ones' checks (one GraphQL search) | GraphQL points | 1 | 60 | 1.2% of 5,000 | Measured: eleven repositories, sixty-odd open pull requests |
+| Forge: issues updated, one listing per repository (`since`, 100 to a page) | Core requests | 1 per repository | 60 per repository | 1.2% of 5,000 for each repository | Derived: a listing whose `since` moves each run is not a repeat of the last request, so no validator answers it for free |
+| Linear: items and comments updated since a time, for the scope's served people and the items its reading names (one request, `first: 1` for each) | Requests; complexity points | 1; about 5 | 60; about 300 | 2.4% of 2,500; 0.01% of 3,000,000 | Derived from Linear's formula (0.1 a property, 1 an object, a connection multiplies by its page size): about 60 at the `first: 50` the in-tick read asks for today |
+| Jira: issues updated since a time, for the scope's served people and named items (one search, one result) | Requests; points | 1; about 2 | 12 at 5 minutes; about 24 | About 0.04% of the 65,000 points an hour Atlassian publishes for apps on the global pool | Derived from Atlassian's formula (1 point a request, one more for each object returned); the search's own cost is not in Atlassian's table, and the quota of a person's token is not stated as an hourly figure, so the first live answer's headers decide |
+
+Both a service's units can bind; the floor below is taken from the one that
+does.
+
+**How a probe is admitted.** In this order:
+
+1. The service's hold. A credential the service is refusing, or a request
+   that would pass the dispatcher's floor (`1 - outbound_share` of a window,
+   as for the tick), is refused with the time it clears.
+2. The **probe share**: probes together may spend at most `probe_share` of a
+   limit's hourly allowance (default `0.1`), counted from the ledger's
+   `probe` rows of the current clock hour on the quota owner's record. A
+   request that would pass it is refused until the next clock hour. The
+   ledger keeps hourly totals, not the time of each request, so the window is
+   the clock hour, for the count, the reset and the share alike, and the floor under each interval keeps spending even
+   through it; a finer window needs finer ledger rows, which step 15 may add.
+   Keeping probes inside a share of their own is what keeps a probe, which
+   runs whether or not anything changed, from using the room the woken ticks
+   and the passes need.
+
+Each probe's interval has a **floor**, the smallest interval at which its
+requests stay inside the probe share: its cost per run times 3,600 seconds,
+over the share of the limit it binds against, summed over every probe that
+spends against the same quota owner (several Linear teams on one person's
+allowance count together, and a Jira scope joins them once its window is
+known). A run's cost is its observed one: each page a run reads is charged,
+and a run that grows past its estimate raises the floor from the next run
+rather than spending past the share unseen. With the figures above: the
+forge's search 8 seconds, each repository's issue listing 8 seconds for each
+repository (about 80 seconds for eleven, so the listing runs every second
+minute there while the search runs every minute), Linear's 15 seconds for one scope (a multiple of that for several scopes on one allowance), and
+Jira's 5 minutes, a fixed floor until its transport reads Jira's limit
+headers into a window. Each service's probe runs as its own job on its own timer, so an interval
+is whole minutes and the floor rounds up to one; where the scheduler is cron,
+the floor rounds further up to an interval a crontab line expresses (one that
+divides an hour, or a whole number of hours that divides a day). A configured interval under its
+floor is raised to the floor, and install, the tick's report and the
+dashboard's quota view say so; it is never refused, so a host that sets 1
+minute everywhere gets the fastest the budget allows. The floor protects the
+probe's spend, not the woken ticks': a repository's tick is started at most
+once a minute whatever the probes see, and what a woken tick reads is what a
+sweep would have read for the same change, so the probe's own spending stays inside the
+share. A tick woken earlier reads for the change that woke it, and changes
+that a sweep would have read together may wake several ticks, each at most a
+minute apart, so the woken ticks' reads can grow; the dispatcher's report
+counts them so the sweep interval grows on the evidence.
+
+**On an enrolled host** the probes are replaced by the hub's change feed while
+the hub answers, so they spend none of the host's budget; when the hub does
+not answer they run again and spend the host's share of any budget the hosts
+share, pausing while it is spent, the ticks reading at their interval ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)).
+
 ### The cost ledger and what is reported
 
 Every call adds to a ledger row: the hour, the system, the credential's
@@ -240,6 +338,16 @@ key, the operation, the caller (a tick, a pass and its stage, a person's
 skill), and for that row the requests, the cost in the system's own unit,
 the time and the count of each failure class. Rows are totals for an hour,
 kept 7 days, in the budget database.
+
+Where a transport knows the repository a call addressed, the row's part
+that repository took (its requests, cost, unknown costs and
+`304 Not Modified` answers) is kept in a table beside the row,
+`outbound_cost_repository`, for the same reason as the quota table. The
+`gh` path reads the repository from the command line alone: its
+`-R`/`--repo`, a `repos/<owner>/<repo>` route, a GraphQL request's
+`owner` and `name` variables, else `GH_REPO`; the `fetch` transport takes
+it from the call or its route. What a row holds beyond its repositories'
+parts, and a row without any, is spending on no known repository.
 
 A GitHub row also names the quota owner's key and the window of the
 owner's record it spent (core, GraphQL, search, none, or unknown), in a
@@ -256,8 +364,8 @@ window is inferred from its unit and operation and marked as such.
 
 - The tick report has one line per system: the balance, what the tick
   spent, and its costliest operations.
-- `jig budget` prints the same over the last hours, per operation and per
-  caller, with `--json`.
+- `jig budget` prints the same over the last hours, per operation, per
+  caller and per repository, with `--json`.
 - A quota the last hour's spending would empty before it refills raises one
   [need](../GLOSSARY.md), a class of its own in the needs registry, naming
   the operations that spend it.
@@ -336,6 +444,11 @@ was sent: the caller reads the item again before it writes again.
 One pull request per remaining step.
 
 - **The gates and the lens.**
+- **Probes in the budget**, steps 15 to 18 of the
+  [dispatcher's build order](dark-factory-dispatch.md#build-order): the
+  `probe` caller, the probe share and the floor under each interval, then
+  the Linear and Jira probes and the forge's issue changes in its search.
+  They wait for a person's review of that plan.
 
 ## Left out
 
