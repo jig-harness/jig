@@ -275,6 +275,14 @@ Some AI reviewers, CodeRabbit for one, write findings in the text of their
 review rather than as comments on lines. The drive reads those findings too,
 so it never finishes with them unanswered.
 
+### 60. A reference reviewer for pull requests
+
+Jig drives a pull request through review, but it writes no review itself. A team with no AI reviewer of its own has nothing for the drive to wait on. With this item, Jig gets a reference reviewer. It posts one summary comment that it updates, inline comments and a check run, which is the evidence the drive reads. Any reviewer that posts the same evidence works as well, and the [decision](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md) says why Jig depends on that evidence and not on one reviewer.
+
+The reviewer lives in its own repository, planned as jig-harness/ai-review under Apache-2.0, so it releases on its own schedule. It first runs as a GitHub Action in the team's own CI. The team keeps the model key as a repository secret and chooses an OpenAI-compatible or Anthropic endpoint. A service form that watches many repositories follows. Until the reviewer is published, the [module's mappings](modules/M7-pr-lifecycle-review/mappings.md) list the reviewers a team can add today, which of them need a model key, and what each posts.
+
+Done when a repository that uses Jig and has no reviewer of its own adds the published Action with its own key, and a drive converges on its reviews. The cost per pull request and the rates of accepted and rejected findings are published against the reviewer's Codex engine.
+
 ### 49. The hub: one control plane for many dispatchers
 
 A team or a person who runs the dispatcher on several machines can add one

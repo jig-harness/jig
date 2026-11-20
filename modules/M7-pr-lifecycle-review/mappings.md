@@ -458,6 +458,45 @@ reads the target base branch's copy.
 | Agent-runtime reviewer (Claude Code / Codex / Cursor `/review`) | on-demand local tiered review before pushing | advisory / author-side |
 | Humans | judgment + sign-off; selected per change-area | authoritative (a "request changes" blocks) |
 
+### What each automated reviewer meets of the reviewer-evidence contract
+
+The drive reads a reviewer through its [evidence](../../plugin/skills/drive-pr/README.md):
+a check run, and either a summary comment that names the commit it reviewed
+or a review object that names it. That is completion evidence only: the
+drive reads findings from unresolved review threads, and from summary or
+review bodies only for a reviewer it has a body format for (today CodeRabbit).
+A reviewer that posts its findings as inline review comments and produces that
+evidence works, and [ADR-0027](../../docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)
+records why Jig depends on the contract and not on one reviewer. A GitHub
+Actions job is itself a check run named by the workflow job, so
+`review.reviewer_check_pattern` can match it. The gap in most rows is the
+commit stamp: the table says what each reviewer does by default, read from its
+documentation, and a team checks it against the version it installs.
+
+drive-pr has a built-in profile for CodeRabbit and for no other reviewer in
+the table. For the others, a repository sets the check pattern, the comment
+marker and the commit stamp in its own configuration
+([AI reviewers](../../plugin/EXTENDING.md#ai-reviewers)). Those settings only
+name evidence that exists; they post nothing. A reviewer that emits no commit
+stamp, or no summary comment, also needs a workflow step or a reviewer
+customization that posts and updates the marked, stamped comment, or the drive
+waits for evidence that never arrives. A profile waits until a consumer has
+validated one.
+
+| Reviewer | Takes | Check run | Summary comment naming the reviewed commit | Review objects | drive-pr profile |
+|----------|-------|-----------|--------------------------------------------|----------------|------------------|
+| [PR-Agent](https://github.com/the-pr-agent/pr-agent) as a GitHub Action | A model key as a secret | The workflow job | Posts one review comment as `github-actions[bot]` and updates it in place; it does not stamp the reviewed commit | No | None |
+| [openai/codex-action](https://github.com/openai/codex-action) | An OpenAI-compatible key as a secret | The workflow job | None of its own: the workflow posts the action's final message, and adds the stamp if it wants one | No | None |
+| [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) with an API key | An Anthropic key as a secret | The workflow job | One sticky comment with `use_sticky_comment`, plus inline comments; no commit stamp by default | No | None |
+| [opencode GitHub Action](https://opencode.ai/docs/github/) | A model key as a secret, any provider | The workflow job | Replies and comments only as its prompt directs; no commit stamp by default | No | None |
+| [CodeRabbit](https://www.coderabbit.ai/) for public repositories | None: a hosted service, free for open-source repositories on its own terms | Its own check run, `CodeRabbit` | None | Yes: each review names its commit | Built in: `review.reviewer_app: coderabbitai` |
+| Reference reviewer, `jig-harness/ai-review` (planned, not yet published) | A model key as a secret, an OpenAI-compatible or Anthropic endpoint the team chooses | Yes | One summary comment updated in place, naming the reviewed commit and any skip, plus inline comments | No | None until published and validated |
+
+A row names a reviewer a team can add; it does not rank them. An adopter
+chooses on what each posts, what it costs per pull request and who holds the
+key, and measures the choice the way [M8](../M8-learning-loop/) measures any
+reviewer before it is allowed to block.
+
 ## CI providers
 
 Any provider works — the gates use Bun and TypeScript. The only provider-specific
