@@ -19,7 +19,7 @@ settle. It never merges: that stays a person's
 This is the design of [plan.md](plan.md) item 33. Every step of its
 [build order](#build-order) through step 12 is built, and the documents that
 describe it are the current truth; steps 13 to 20, which split the refresh
-into [three cadences](#three-refresh-cadences), are a plan waiting for a
+into [cadences](#refresh-cadences), are a plan waiting for a
 person's review; the item stays open on the roadmap until its "Done when"
 checks run on a host running Orca, each named at its own build step. It
 builds on driving any pull request from anywhere: the
@@ -2723,7 +2723,7 @@ host that runs the sessions (with Orca, the Orca server's host). An event
 from the tracker or the forge could only start a tick early; the timer
 stays the reconcile, so a missed event would cost one interval, and no
 route into the host is opened for events (see Left out). The tick's timer is
-the sweep, one of the [three refresh cadences](#three-refresh-cadences).
+the sweep, one of the [refresh cadences](#refresh-cadences).
 
 Things on the host wake one repository's tick early, both by running
 `jig dispatch --apply --repo <path>`, the invocation the timer makes, so
@@ -2775,10 +2775,10 @@ file's `change_probe: false` turns it off. A change the line makes itself
 a minute for the repository; that tick finds the records as the sweep
 would.
 
-### Three refresh cadences
+### Refresh cadences
 
-The dispatcher reads two kinds of thing, and they cost differently. **The
-local machine** (the host's load and memory, whether the processes of a
+The dispatcher reads what is local and what is outside, and they cost
+differently. **The local machine** (the host's load and memory, whether the processes of a
 recorded run are alive, whether a session ended) costs nothing outside the
 host: no credential's allowance is spent by reading it. **Outside systems**
 (the forge, the tracker) cost a share of a credential's budget that every
@@ -2786,7 +2786,7 @@ process on the machine shares
 ([outbound-calls.md](outbound-calls.md), [ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)).
 One cadence for both forces a choice between a dashboard that shows a run
 that ended only at the next sweep and a sweep fast enough to spend budget on
-repositories where nothing changed. So the dispatcher refreshes on three
+repositories where nothing changed. So the dispatcher refreshes on separate
 cadences, each reading only what it may and each starting only what it may:
 
 | | Reads | May call | Triggers | Default interval | How a host changes it |
@@ -2843,21 +2843,25 @@ same shape:
   reading names, and of their children were updated after a time, plus the
   comments updated after it, as a second selection in the same request. A
   comment, an assignment, a state change or a label on an item the
-  dispatcher serves wakes the repositories of that scope whose kept reading
-  names the item, and every repository of the scope when the item is new to
-  the reading (an assignment). The request asks for one record, since the
-  probe only needs to know whether anything changed, and a tick that follows
-  takes the probe's time as its own changed-since mark rather than asking
-  again.
+  dispatcher serves is a positive answer. The request asks for one record,
+  since the probe only needs to know whether anything changed, so the
+  answer cannot name every changed item: a positive answer wakes every
+  repository of the scope, and the tick that follows finds which items
+  changed. A probe's time is never a changed-since mark: the tick keeps its
+  own mark, which advances only from a complete change read or a full
+  refresh, as the tracker's change answer already requires, so changes the
+  one record did not show are not skipped.
 - **Jira.** One search per scope (instance, credential and project) for the
   served people's and the named items' issues updated since the last probe,
   maximum one result. Comments move an issue's update time in Jira, so the
-  one question covers comments, assignments and states.
+  one question covers comments, assignments and states. As for Linear, a
+  positive answer wakes every repository of the scope and never moves a
+  tick's changed-since mark.
 
 Both probes keep their last answer in the probe's state directory beside the
 forge's, wake under the same rule, and say nothing and wake nothing when the
 service does not answer: a failed probe is logged, the sweep still runs.
-All three probes run from the one probe job, which starts every minute;
+All the probes run from the one probe job, which starts every minute;
 each service is asked only when its own interval has passed, so a service
 with a longer interval adds no timer.
 
@@ -2869,9 +2873,11 @@ the floor under its interval are in
 interval is for. While nothing else started ticks, the interval had to be
 short enough to react; with the probes and the local loop reacting, it only
 bounds how long a change they missed stays unseen. It grows only on
-evidence: each tick's receipt and outcome-log row names what started it
-(`sweep`, a probe's service, `local`, a wake's requester), and a sweep
-counts the actions it started that no earlier wake or probe had already
+evidence: each tick's receipt names what started it (`sweep`, a probe's
+service, `local`, a wake's requester), so a tick that ends no launch is
+counted too, and each outcome-log row, one for each ended launch, names
+what started the launch, which is not the tick that later observed its end;
+a sweep counts the actions it started that no earlier wake or probe had already
 brought. A host lengthens its interval, to 15 minutes at first, after a
 week in which that count is low enough that a quarter-hour of delay would
 have mattered to nobody, and shortens it again when the count rises. The
@@ -2887,7 +2893,7 @@ from duplicating each other is by what each reads:
 | --- | --- | --- | --- |
 | Local loop | Runs | Runs: the hub cannot see this host's processes | Runs |
 | Per-service probes | Run, each on its interval | **Replaced**: the probe job waits on the hub's change feed and wakes the repositories it names; it asks no service. Where the hub itself reads a tracker it cannot verify deliveries from (Jira, for now), that question is the hub's | Run again, each within this host's share of any budget the hosts share, and pausing for it ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)) |
-| Timer sweep | Runs | Runs on the hub's world view: its reads cost no forge or tracker budget, and its facts are as fresh as the hub's freshness classes | Runs, reading for itself |
+| Timer sweep | Runs | Runs on the hub's world view: ordinary reads of it cost no forge or tracker budget, and its facts are as fresh as the hub's freshness classes; a fact that gates a write is still confirmed on the forge or tracker at use, and that confirmation is budgeted | Runs, reading for itself |
 
 A probe never asks a service for a scope the hub's feed covers while the
 hub answers, so nothing is read twice; and a hub that stops costs a host
@@ -3048,13 +3054,14 @@ One pull request each, in this order; each is usable on its own.
     nothing. Waits on steps 7 and 10. Usable alone: a night of pull
     requests that all touch the migrations no longer re-drives each of them
     after every merge.
-The steps below are the plan for the three refresh cadences. They are
+The steps below are the plan for the refresh cadences. They are
 listed in the order they are built; none is filed for pickup until a person
 has reviewed the plan.
 
-13. **Name what started a tick.** Each tick's receipt and outcome-log row
-    carry its cause (`sweep`, a probe's service, `local`, or a wake's
-    requester), and a sweep counts the actions it started that no earlier
+13. **Name what started a tick.** Each tick's receipt carries its cause
+    (`sweep`, a probe's service, `local`, or a wake's requester), and each
+    outcome-log row the cause of the tick that started its launch, kept
+    apart from the tick that observed the launch end; a sweep counts the actions it started that no earlier
     wake or probe had brought, reported with the interval the count
     supports. Tests: a wake's tick, a probe's tick and a timer's tick each
     record their cause; a sweep that starts a pickup no wake saw counts one,
@@ -3065,7 +3072,7 @@ has reviewed the plan.
     `local_loop` in the machine file and `--local-interval` on install; the
     scheduler takes an interval in seconds (cron keeps a minute); the local
     view and its record; the dashboard's line showing it with its age; the
-    three wakes. Tests: a run whose processes are killed shows as gone
+    wakes. Tests: a run whose processes are killed shows as gone
     within one local interval and wakes its repository once; a gauge back
     under its line wakes only a repository with a launch waiting on it; the
     loop makes no outbound call and writes no launch record, receipt or
@@ -3082,11 +3089,13 @@ has reviewed the plan.
     read as before. Usable alone: the forge's probe is bounded by its
     share, and a host can set its interval without a timer override.
 16. **A Linear change probe.** The scope-level probe described above, its
-    state, its wake mapping, and the tick taking the probe's time as its
-    changed-since mark. Checks `X-Complexity` against the derived cost on
+    state, and its wake of every repository of the scope, the tick keeping
+    its own changed-since mark. Checks `X-Complexity` against the derived cost on
     the first live answer. Tests: a comment, an assignment and a state
-    change on a served item each wake the scope's repositories that name it;
-    an unrelated team's change wakes nothing; a rate-limited answer wakes
+    change on a served item each wake the scope's repositories; several
+    changes between two probes, in different repositories, are all found by
+    the tick that follows and none is skipped by the mark; an unrelated
+    team's change wakes nothing; a rate-limited answer wakes
     nothing and holds the probe until the reset. Waits on step 15. Usable
     alone: a Linear item's comment reaches the tick in a minute, not a
     sweep.
@@ -3109,8 +3118,11 @@ has reviewed the plan.
 19. **The hub's feed replaces the probes.** For an enrolled host, the probe
     job waits on the change feed and wakes what it names, asks no service
     while the hub answers, and runs the per-service probes again when it
-    does not. Tests: with a fake hub answering, no forge or tracker request
-    is sent by the probe job; with the hub stopped, the next run probes;
+    does not, each within the host's share of any budget the hosts share
+    and pausing while that share is spent, the ticks reading at their
+    interval. Tests: with a fake hub answering, no forge or tracker request
+    is sent by the probe job; with the hub stopped, the next run probes
+    within the share and pauses when it is spent;
     the local loop is the same either way. Waits on step 15 and on the
     hub's change feed (epic #865). Usable alone: an enrolled host's
     probes spend no budget.
@@ -3132,7 +3144,7 @@ has reviewed the plan.
   A Herdr implementation of the session runtime interface comes when Herdr
   can supply one.
 - **Webhooks to the host.** The tick polls, and each service's change
-  probe asks for what changed (Three refresh cadences). An enrolled host's
+  probe asks for what changed (Refresh cadences). An enrolled host's
   probes are replaced by the hub's change feed, the outbound wake-up channel
   the host holds a connection to ([control-plane.md](control-plane.md#the-change-feed));
   the sources stay behind interfaces such a channel can replace, and no

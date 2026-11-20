@@ -1335,7 +1335,7 @@ for a team without a private network, is left out until a team needs it.
 | --- | --- | --- |
 | `do-item`, `drive-pr`, `work-batch` and the review skills | Their own fences | Unchanged: they never call the hub, except an enrolled host's drive pass making the optional watch call below |
 | The dispatcher's tick | Reads the forge and the tracker itself | Reads only the hub's world view, bar a fence's read-back; asks it before each claim; reports its records; falls back to reading itself |
-| The change probes (one per service, each on its own interval) | Ask the forge, Linear and Jira ([three refresh cadences](dark-factory-dispatch.md#three-refresh-cadences)) | Replaced by the hub's change feed while it answers, which the events move; run again when it does not |
+| The change probes (one per service, each on its own interval) | Ask the forge, Linear and Jira ([refresh cadences](dark-factory-dispatch.md#refresh-cadences)) | Replaced by the hub's change feed while it answers, which the events move; run again when it does not |
 | The dispatcher's local loop | Reads the host's gauges, processes and sessions, and calls nothing outside | Unchanged: the hub cannot see this host's processes |
 | A drive pass waiting for checks | Polls its pull request every 30 seconds | Polls as without a hub, or, where the measurement showed drive polling matters, waits on the change feed and reads only the kinds that moved |
 | `jig ask`, `jig send`, `/jig:operator` | Read this machine's records and the forge | `ask` may read another host's records from the hub; `send` still writes as the person, never through the hub |

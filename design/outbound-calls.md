@@ -258,7 +258,7 @@ readable as its older name.
 
 ### Probes in the budget
 
-The dispatcher's [change probes](dark-factory-dispatch.md#three-refresh-cadences)
+The dispatcher's [change probes](dark-factory-dispatch.md#refresh-cadences)
 (one per service: the forge, Linear, Jira) are callers of the budget like
 the tick. Each request goes through its service's transport, is admitted
 before it is sent, is recorded in the ledger under the caller `probe` and
@@ -291,17 +291,25 @@ does.
 2. The **probe share**: probes together may spend at most `probe_share` of a
    limit's hourly allowance (default `0.1`), counted from the ledger's
    `probe` rows of the last hour on the quota owner's record. A request that
-   would pass it is refused with the time the oldest row leaves the hour.
+   would pass it is refused until the next clock hour. The ledger keeps
+   hourly totals, not the time of each request, so the window is the current
+   clock hour, and the floor under each interval keeps spending even
+   through it; a finer window needs finer ledger rows, which step 15 may add.
    Keeping probes inside a share of their own is what keeps a probe, which
    runs whether or not anything changed, from using the room the woken ticks
    and the passes need.
 
 Each probe's interval has a **floor**, the smallest interval at which its
 requests stay inside the probe share: its cost per run times 3,600 seconds,
-over the share of the limit it binds against. With the figures above: the
+over the share of the limit it binds against, summed over every probe that
+spends against the same quota owner (several Linear teams on one person's
+allowance count together, and a Jira scope joins them once its window is
+known). A run's cost is its observed one: each page a run reads is charged,
+and a run that grows past its estimate raises the floor from the next run
+rather than spending past the share unseen. With the figures above: the
 forge's search 8 seconds, each repository's issue listing 8 seconds for each
 repository (about 80 seconds for eleven, so the listing runs every second
-minute there while the search runs every minute), Linear's 15 seconds, and
+minute there while the search runs every minute), Linear's 15 seconds for one scope (a multiple of that for several scopes on one allowance), and
 Jira's 5 minutes, a fixed floor until its transport reads Jira's limit
 headers into a window. The probe job runs once a minute, so an interval is
 whole minutes and the floor rounds up to one. A configured interval under its
@@ -310,13 +318,16 @@ dashboard's quota view say so; it is never refused, so a host that sets 1
 minute everywhere gets the fastest the budget allows. The floor protects the
 probe's spend, not the woken ticks': a repository's tick is started at most
 once a minute whatever the probes see, and what a woken tick reads is what a
-sweep would have read for the same change, so a probe does not add reads, it
-moves them earlier.
+sweep would have read for the same change, so the probe's own spending stays inside the
+share. A tick woken earlier reads for the change that woke it, and changes
+that a sweep would have read together may wake several ticks, each at most a
+minute apart, so the woken ticks' reads can grow; the dispatcher's report
+counts them so the sweep interval grows on the evidence.
 
 **On an enrolled host** the probes are replaced by the hub's change feed while
 the hub answers, so they spend none of the host's budget; when the hub does
 not answer they run again and spend the host's share of any budget the hosts
-share ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)).
+share, pausing while it is spent while ticks read at their interval ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)).
 
 ### The cost ledger and what is reported
 
