@@ -2677,9 +2677,10 @@ make, use the entry's term instead.
   Unrelated to a *tracker adapter*.
 - **Portability gate** — the check `bun run gates` runs
   (`scripts/check-portability.ts`) that keeps the *hub*'s *portable core*
-  portable: starting from every file of the core and every shared module
-  declared portable, it follows each import and fails on a `bun:` or
-  `node:` module, a package not on its allowlist, or a reference to a
+  portable: starting from every file of the core and of its storage
+  implementation and every shared module declared portable, it follows each
+  import and fails on a `bun:` or `node:` module, a package or vendored
+  bundle not on its allowlists, or a reference to a
   runtime's own global (`Bun`, `process`, `Deno`), naming the chain of
   imports that brought a shared module's use in. A type-only import is not
   followed, since it never runs.
@@ -2741,6 +2742,22 @@ make, use the entry's term instead.
   against them, with drivers for SQLite, PostgreSQL and serverless
   databases, and `drizzle-kit`, its tool that writes migrations. The *hub*
   keeps its tables through it.
+- **Partition (hub)** — the unit the *hub*'s storage keeps apart and
+  changes atomically: one per repository, one per host, and one directory
+  of what the hub knows. Every row sits in exactly one, every key starts
+  with it, and no change spans two, so an adapter may keep each partition
+  in a store of its own.
+- **In-flight read** — the row that lets one unit of the *hub*'s work at a
+  time read a target (a pull request, an issue) through from its source: a
+  unit takes it before reading, with a deadline 30 seconds away, and
+  another unit that finds it held waits for the result in storage instead
+  of reading again; once the deadline has passed, it is taken over.
+- **Job lease** — the row that keeps two runs of one of the *hub*'s
+  scheduled jobs from overlapping: a run takes it before its first step,
+  renews it as it stores its progress after each step, and gives it up
+  when the job is done. A run that finds it held does not run; one that
+  stopped leaves it to lapse, and the next run resumes from the progress
+  it stored.
 - **OpenTelemetry and OTLP** — OpenTelemetry is an open standard for a
   program's telemetry (logs, metrics and spans); OTLP, the OpenTelemetry
   Protocol, is the protocol that sends it to any collector that speaks it. The *hub*'s process adapter exports its
