@@ -383,6 +383,32 @@ function stopFailure(
   return null;
 }
 
+/** The stop's target with its process tree captured, or the exit code when the tree could not be read. */
+async function captureTarget(
+  row: InspectedRow & { record: LaunchRecord },
+  live: { alive: unknown[]; identities: ProcessIdentity[] },
+  kept: ProcessIdentity[],
+  drivePr: number | null,
+  deps: TakeOverDeps,
+): Promise<StopTarget | number> {
+  const { record } = row;
+  // Captured before the first step: a process the stop reparents is still known.
+  const captured =
+    live.alive.length > 0 ? await deps.tree(live.identities) : null;
+  if (live.alive.length > 0 && captured === null) {
+    deps.err(
+      `jig dispatch attach: ${record.id}'s descendant processes could not be captured (the process table was unreadable); nothing was stopped, and running the command again retries`,
+    );
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  return {
+    id: record.id,
+    drivePr,
+    repoPath: record.repoPath,
+    members: withMembers(captured ?? live.identities, kept),
+  };
+}
+
 /** Stop the run's processes and the drive it runs for: the exit code that ends the take-over, else null. */
 async function stopTarget(
   row: InspectedRow & { record: LaunchRecord },
@@ -400,21 +426,8 @@ async function stopTarget(
   const owed = existsSync(owedMark);
   const keptAlive = kept.length > 0 && (await deps.anyAlive(kept));
   if (live.alive.length > 0 || keptAlive || owed) {
-    // Captured before the first step: a process the stop reparents is still known.
-    const captured =
-      live.alive.length > 0 ? await deps.tree(live.identities) : null;
-    if (live.alive.length > 0 && captured === null) {
-      deps.err(
-        `jig dispatch attach: ${id}'s descendant processes could not be captured (the process table was unreadable); nothing was stopped, and running the command again retries`,
-      );
-      return TAKE_OVER_EXIT.FAILED;
-    }
-    const target: StopTarget = {
-      id,
-      drivePr,
-      repoPath: record.repoPath,
-      members: withMembers(captured ?? live.identities, kept),
-    };
+    const target = await captureTarget(row, live, kept, drivePr, deps);
+    if (typeof target === "number") return target;
     // Kept before the first step: a descendant the stop reparents is still known after an interruption.
     keepMembers(deps.root, id, target.members);
     // Owed before the first destructive step, cleared only once the drive's stop is verified: a take-over that dies mid-stop retries it.

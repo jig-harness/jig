@@ -251,6 +251,28 @@ async function readProcessRun(
   return { row, record };
 }
 
+/** Take the run over, then print the line that resumes its work. */
+async function takeOverRun(
+  id: string,
+  read: InspectedRow & { record: LaunchRecord },
+  deps: AttachDeps,
+): Promise<number> {
+  const before = runColumns(id, deps.root);
+  const taken = readKeptReport(before.report)?.by === "person";
+  const code = await takeOver(read, taken && read.state.kind === "ended", deps);
+  if (code !== 0) return code;
+  const after = await deps.inspect(id);
+  const columns = runColumns(id, deps.root);
+  deps.out(
+    `resume: ${resumeLine({
+      record: after?.record ?? read.record,
+      sessions: readRoundSessions(columns.sessions),
+      exit: after === null ? null : exitOf(after),
+    })}`,
+  );
+  return 0;
+}
+
 async function attachRun(
   id: string,
   options: { takeOver: boolean },
@@ -258,22 +280,8 @@ async function attachRun(
 ): Promise<number> {
   const found = await readProcessRun(id, deps);
   if (typeof found === "number") return found;
-  const { row, record } = found;
-  const read = { ...row, record };
+  const read = { ...found.row, record: found.record };
   for (const line of headerLines(read, currentMs())) deps.out(line);
   if (!options.takeOver) return followRun(id, deps);
-  const before = runColumns(id, deps.root);
-  const taken = readKeptReport(before.report)?.by === "person";
-  const code = await takeOver(read, taken && row.state.kind === "ended", deps);
-  if (code !== 0) return code;
-  const after = await deps.inspect(id);
-  const columns = runColumns(id, deps.root);
-  deps.out(
-    `resume: ${resumeLine({
-      record: after?.record ?? record,
-      sessions: readRoundSessions(columns.sessions),
-      exit: after === null ? null : exitOf(after),
-    })}`,
-  );
-  return 0;
+  return takeOverRun(id, read, deps);
 }
