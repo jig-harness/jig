@@ -78,6 +78,7 @@ export function reviewerFailurePolicy(
     currentReviewerConfigured:
       app !== undefined ||
       configuredCheckPattern !== undefined ||
+      botLogins.length > 0 ||
       malformedReviewerSetting,
     malformedReviewerSetting,
     ...(review.reviewer_evidence === "sticky" ||

@@ -200,6 +200,28 @@ it("uses configured bot evidence when the current reviewer has no app", async ()
   await rearmed(w);
 }, 120_000);
 
+it("keeps reviewer evidence configured through its bot list", async () => {
+  const w = fixture([FIRST, SECOND]);
+  w.setConfig(
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\nreview:\n  bots: ["replacement-review[bot]"]\ndispatch:\n  reviewer_failures_before_escalation: 2\n  renotify_after: 1s\n`,
+  );
+  stopped(
+    w,
+    [FIRST, SECOND],
+    [
+      {
+        id: 702,
+        body: `<!-- ai-code-review -->\n<!-- ai-reviewed-sha: ${HEAD_SHA} -->`,
+        user: { login: "replacement-review[bot]" },
+        author_association: "NONE",
+        created_at: SECOND.at,
+        updated_at: SECOND.at,
+      },
+    ],
+  );
+  await rearmed(w);
+}, 120_000);
+
 it("releases an old reviewer-failure hold when reviewer evidence is no longer configured", async () => {
   const w = fixture([FIRST, SECOND]);
   w.setConfig(
