@@ -29,15 +29,18 @@ import {
 const DRIVER = JSON.stringify(join(SCRIPTS, "lib", "driver", "ledger.ts"));
 const LEDGER = JSON.stringify(join(SCRIPTS, "lib", "state", "ledger.ts"));
 const FORGE = JSON.stringify(join(SCRIPTS, "lib", "state", "ledger-forge.ts"));
+const TAKEOVER = JSON.stringify(
+  join(SCRIPTS, "lib", "driver", "takeover-check.ts"),
+);
 const ID = `{ actor: "wt-bbbbbbbbbbbbbbbb", clone: "clone-b", login: "drive-bot" }`;
 
-/** Run `body` (an async function body with `d`, `l`, `f` and `fs` in scope) in a subprocess. */
+/** Run `body` (with driver, ledger, forge, takeover and filesystem modules in scope) in a subprocess. */
 async function probe(
   forge: FakeForge,
   body: string,
   env: Record<string, string> = {},
 ) {
-  const code = `const d = await import(${DRIVER}); const l = await import(${LEDGER}); const f = await import(${FORGE}); const fs = await import("node:fs");
+  const code = `const d = await import(${DRIVER}); const l = await import(${LEDGER}); const f = await import(${FORGE}); const t = await import(${TAKEOVER}); const fs = await import("node:fs");
 try { ${body} } catch (e) { if (e && typeof e.code === "number") { console.log("EXIT " + e.code); } else { throw e; } }`;
   const proc = Bun.spawn([process.execPath, "-e", code], {
     cwd: forge.repo,
@@ -170,11 +173,11 @@ console.log("ARMED");`,
       `await d.armLedger("999", ${ID}, null, null, "take-over");
 const env = JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER);
 console.log("OWN " + env.claim?.id + " FLOOR " + env.floor);
-console.log("FIRST " + (await d.standDownOnNewerClaim("999")));
+console.log("FIRST " + (await t.standDownOnNewerClaim("999")));
 const all = JSON.parse(fs.readFileSync(process.env.LEDGER_FAKE_DIR + "/comments.json", "utf8"));
 all.push({ id: 900, body: ${JSON.stringify(claim("clone-c", 2))}, user: { login: "other" }, author_association: "MEMBER", updated_at: "2026-10-01T12:00:00Z" });
 fs.writeFileSync(process.env.LEDGER_FAKE_DIR + "/comments.json", JSON.stringify(all));
-console.log("SECOND " + (await d.standDownOnNewerClaim("999")));`,
+console.log("SECOND " + (await t.standDownOnNewerClaim("999")));`,
     );
     expectSpawnExit(r, 0);
     // An earlier claim does not end the drive; a claim after its own does.
@@ -182,6 +185,68 @@ console.log("SECOND " + (await d.standDownOnNewerClaim("999")));`,
     expect(r.stdout).toContain("FIRST null");
     expect(r.stdout).toContain("SECOND 20");
   });
+
+  for (const beforePass of [false, true]) {
+    it(`stands down at ${beforePass ? "a fresh pre-pass check" : "the next scheduled round check"}`, async () => {
+      const forge = fakeForge([], { login: "drive-bot" });
+      const rival = forgeComment(900, claim("clone-c", 2), "other");
+      const r = await probe(
+        forge,
+        `let now = 0;
+const check = t.roundBoundaryTakeoverCheck("999", () => now);
+const count = () => fs.readFileSync(process.env.LEDGER_FAKE_DIR + "/list-count", "utf8");
+console.log("FIRST " + (await check()));
+for (now = 10_000; now < 60_000; now += 10_000) await check();
+console.log("WAITING LISTS " + count());
+fs.writeFileSync(process.env.LEDGER_FAKE_DIR + "/comments.json", ${JSON.stringify(JSON.stringify([rival]))});
+now = ${beforePass ? 50_000 : 60_000};
+console.log("STOP " + (await ${beforePass ? 't.standDownOnNewerClaim("999")' : "check()"}));
+console.log("FINAL LISTS " + count());
+console.log("DRIVER " + process.env.DRIVE_PR_LEDGER_DRIVER);`,
+        { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b") },
+      );
+      expectSpawnExit(r, 0);
+      expect(r.stdout).toContain("FIRST null");
+      expect(r.stdout).toContain("WAITING LISTS 1");
+      expect(r.stdout).toContain("STOP 20");
+      expect(r.stdout).toContain("FINAL LISTS 2");
+      expect(r.stdout).toContain("DRIVER undefined");
+    });
+  }
+
+  for (const [failure, stdout, code] of [
+    ["transport failure", "", 1],
+    ["truncated page set", "[[]]", 1],
+    ["unreadable page", "[[],null]", 0],
+    ["304 without a cached listing", "HTTP/2 304 Not Modified\r\n\r\n", 1],
+  ] as const) {
+    it(`retries at the next round checkpoint after ${failure}`, async () => {
+      const rival = forgeComment(900, claim("clone-c", 2), "other");
+      const forge = fakeForge([], { login: "drive-bot" });
+      const r = await probe(
+        forge,
+        `let now = 0;
+const check = t.roundBoundaryTakeoverCheck("999", () => now);
+console.log("FIRST " + (await check()));
+const override = process.env.LEDGER_FAKE_DIR + "/list-override";
+fs.writeFileSync(override, ${JSON.stringify(JSON.stringify({ stdout, code }))});
+now = 60_000;
+console.log("UNREAD " + (await check()));
+fs.unlinkSync(override);
+fs.writeFileSync(process.env.LEDGER_FAKE_DIR + "/comments.json", ${JSON.stringify(JSON.stringify([rival]))});
+now = 70_000;
+console.log("STOP " + (await check()));`,
+        { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b") },
+      );
+      expectSpawnExit(r, 0);
+      expect(r.stdout).toContain("FIRST null");
+      expect(r.stdout).toContain("UNREAD null");
+      expect(r.stdout).toContain("STOP 20");
+      expect(
+        forge.calls().filter((call) => call.includes("/999/comments")),
+      ).toHaveLength(3);
+    });
+  }
 
   it("refuses to start beside a ledger comment it cannot read", async () => {
     const damaged = ownLedger().replace(
