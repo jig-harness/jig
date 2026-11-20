@@ -112,6 +112,7 @@ import { snapshotFromListing } from "../../../skills/drive-pr/scripts/lib/state/
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   diagnosisPrefix,
+  diagnosisSkippedPrefix,
   diagnosisStartedPrefix,
 } from "../../../skills/drive-pr/scripts/lib/state/ci-actions.ts";
 import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
@@ -410,9 +411,14 @@ function mechanicalStopClass(
     const diagnosis = ledger.ciActions?.findLast(
       (action) =>
         action.action === "repair" &&
-        (action.detail.startsWith(prefix) || action.detail.startsWith(started)),
+        (action.detail.startsWith(prefix) ||
+          action.detail.startsWith(started) ||
+          action.detail.startsWith(diagnosisSkippedPrefix(head))),
     );
-    if (diagnosis !== undefined) {
+    if (
+      diagnosis !== undefined &&
+      !diagnosis.detail.startsWith(diagnosisSkippedPrefix(head))
+    ) {
       const detail = diagnosis.detail.startsWith(prefix)
         ? diagnosis.detail.slice(prefix.length)
         : "the diagnosing session recorded no outcome";

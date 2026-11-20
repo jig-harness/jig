@@ -120,6 +120,9 @@ describe("classifyLedger", () => {
     action.detail = `diagnose: head ${head}: CI-repair budget spent for gates`;
     expect(classify(head).class).toBe("needs-person");
     expect(classify(head).why).toContain("recorded no outcome");
+
+    action.detail = `diagnose-skipped: head ${head}: the pass was not dispatched`;
+    expect(classify(head).class).toBe("stale");
   });
 
   it("binds a stall that left work to the tree it stalled in", () => {

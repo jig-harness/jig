@@ -11,6 +11,7 @@ import { isGitSha } from "../cli.ts";
 import { readPrSnapshot } from "../ci-hold-state.ts";
 import {
   diagnosisPrefix,
+  diagnosisSkippedPrefix,
   diagnosisStartedPrefix,
   type CiAction,
 } from "../state/ci-actions.ts";
@@ -24,7 +25,6 @@ import { CI_REPAIR_SPENT_EXIT } from "./settings.ts";
 
 const REPORT_BYTES = 4096;
 const DIAGNOSIS_CHARS = 400;
-const skippedPrefix = (head: string) => `diagnose-skipped: head ${head}: `;
 type DiagnosisReport =
   | { staleHead: true }
   | { diagnosis: string; pushedHead: string | undefined };
@@ -76,7 +76,7 @@ function previousDiagnosis(
       a.action === "repair" &&
       (a.detail.startsWith(diagnosisPrefix(head)) ||
         a.detail.startsWith(diagnosisStartedPrefix(head)) ||
-        a.detail.startsWith(skippedPrefix(head))),
+        a.detail.startsWith(diagnosisSkippedPrefix(head))),
   );
 }
 
@@ -108,7 +108,10 @@ export async function diagnosedHeadStop(
   const prior = await readDriveState(context.pr, true);
   if (prior === null) return 1;
   const previous = previousDiagnosis(prior.ciActions ?? [], head);
-  if (previous === undefined || previous.detail.startsWith(skippedPrefix(head)))
+  if (
+    previous === undefined ||
+    previous.detail.startsWith(diagnosisSkippedPrefix(head))
+  )
     return null;
   if (previous.detail.startsWith(diagnosisStartedPrefix(head)))
     return await stopWithDiagnosis(
@@ -147,7 +150,7 @@ export async function diagnoseCi(
       await recordCiAttempt(
         context.pr,
         "repair",
-        `${skippedPrefix(head)}the reservation could not be published before dispatch`,
+        `${diagnosisSkippedPrefix(head)}the reservation could not be published before dispatch`,
       );
       return 1;
     }
@@ -174,13 +177,21 @@ export async function diagnoseCi(
       await recordCiAttempt(
         context.pr,
         "repair",
-        `${skippedPrefix(head)}the pass was not dispatched`,
+        `${diagnosisSkippedPrefix(head)}the pass was not dispatched`,
       );
       return result.resumed ? "continue" : result.code;
     }
-    if (result.postPassMailboxExit !== null) return result.postPassMailboxExit;
-    if (result.code === 5) return 5;
     const answer = readDiagnosis(report);
+    if (result.postPassMailboxExit !== null) {
+      if (answer !== null && !("staleHead" in answer))
+        await reportOutcome(
+          context.pr,
+          head,
+          `${answer.diagnosis} The diagnosing pass completed before the mailbox stopped the drive.`,
+        );
+      return result.postPassMailboxExit;
+    }
+    if (result.code === 5) return 5;
     if (answer !== null && "staleHead" in answer && result.code === 0) {
       const current = await readPrSnapshot(context.pr, null);
       if (current.ok && current.value.state !== "OPEN") return 5;
@@ -188,7 +199,7 @@ export async function diagnoseCi(
         await recordCiAttempt(
           context.pr,
           "repair",
-          `${skippedPrefix(head)}the pull request moved to ${current.value.head}`,
+          `${diagnosisSkippedPrefix(head)}the pull request moved to ${current.value.head}`,
         );
         return "continue";
       }

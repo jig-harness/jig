@@ -14,6 +14,16 @@ export interface CiAction {
 export const diagnosisPrefix = (head: string) => `diagnosis: head ${head}: `;
 export const diagnosisStartedPrefix = (head: string) =>
   `diagnose: head ${head}: `;
+export const diagnosisSkippedPrefix = (head: string) =>
+  `diagnose-skipped: head ${head}: `;
+
+function diagnosisHead(action: CiAction): string | undefined {
+  if (action.action !== "repair") return undefined;
+  const match = /^diagnos(?:is|e(?:-skipped)?): head (\S+): /.exec(
+    action.detail,
+  );
+  return match?.[1];
+}
 
 export function diagnosisDetail(
   actions: readonly CiAction[],
@@ -25,14 +35,17 @@ export function diagnosisDetail(
     ?.detail.replace(/^diagnosis: head \S+: /, "");
 }
 
-/** Keep the current diagnosis receipt even when the ledger trims its regular CI telemetry. */
+/** Keep the latest diagnosis receipt for every head when telemetry is trimmed. */
 export function retainedDiagnosis(actions: readonly CiAction[]): CiAction[] {
-  const latest = actions.findLast(
-    (a) =>
-      a.action === "repair" &&
-      /^diagnos(?:is|e(?:-skipped)?): head /.test(a.detail),
-  );
-  return latest === undefined ? [] : [latest];
+  const latest = new Map<string, CiAction>();
+  for (const action of actions) {
+    const head = diagnosisHead(action);
+    if (head !== undefined) {
+      latest.delete(head);
+      latest.set(head, action);
+    }
+  }
+  return [...latest.values()];
 }
 
 const ACTION_LIMIT = 10;
@@ -55,6 +68,15 @@ function isCiAction(v: unknown): v is CiAction {
     v.detail.length > 0 &&
     v.detail.length <= DETAIL_LIMIT
   );
+}
+
+/** Preserve per-head diagnosis control receipts ahead of disposable telemetry. */
+function boundedCiActions(actions: readonly CiAction[]): CiAction[] {
+  const diagnoses = retainedDiagnosis(actions).slice(-ACTION_LIMIT);
+  const telemetry = actions.filter(
+    (action) => diagnosisHead(action) === undefined,
+  );
+  return [...diagnoses, ...telemetry.slice(-(ACTION_LIMIT - diagnoses.length))];
 }
 
 export function isOptionalCiActions(v: unknown): boolean {
@@ -83,7 +105,7 @@ export async function recordCiAction(
     if (!isCiAction(action)) fail(2, "CI action needs a nonempty detail");
     return {
       ...s,
-      ciActions: [...(s.ciActions ?? []), action].slice(-ACTION_LIMIT),
+      ciActions: boundedCiActions([...(s.ciActions ?? []), action]),
     };
   });
   return 0;

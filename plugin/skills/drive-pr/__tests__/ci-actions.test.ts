@@ -127,3 +127,32 @@ describe("additive CI telemetry", () => {
     expect(state.ciActions?.[0]?.detail.length).toBe(1024);
   });
 });
+import {
+  retainedDiagnosis,
+  type CiAction,
+} from "../scripts/lib/state/ci-actions.ts";
+
+const action = (detail: string): CiAction => ({
+  at: "2026-11-20T00:00:00.000Z",
+  round: 1,
+  action: "repair",
+  detail,
+});
+
+describe("CI diagnosis receipts", () => {
+  it("retains the latest receipt for each head while dropping older telemetry", () => {
+    const headA = "a".repeat(40);
+    const headB = "b".repeat(40);
+    const retained = retainedDiagnosis([
+      action(`diagnosis: head ${headA}: issue #1. first outcome`),
+      action("ordinary repair telemetry"),
+      action(`diagnose-skipped: head ${headA}: moved head`),
+      action(`diagnosis: head ${headB}: issue #2. second outcome`),
+    ]);
+
+    expect(retained.map(({ detail }) => detail)).toEqual([
+      `diagnose-skipped: head ${headA}: moved head`,
+      `diagnosis: head ${headB}: issue #2. second outcome`,
+    ]);
+  });
+});

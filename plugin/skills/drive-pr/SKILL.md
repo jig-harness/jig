@@ -1684,7 +1684,9 @@ Then:
   `$DRIVE_PR_CI_DIAGNOSIS_REPORT` and end the pass so the driver can re-gate.
   Proceed only when the head matches and the gate reports `CONVERGED`.
 
-  Read the failed runs and statuses using the log
+  When `$DRIVE_PR_ROUND_REPAIR_SKILL` is set, load that skill first and apply
+  its CI-service-specific repair and validation procedure; otherwise follow
+  [`/jig:fix-ci`](../fix-ci/SKILL.md). Read the failed runs and statuses using the log
   procedure above. If the run list omits a failed run, find it on the exact
   head as above and read its log without re-running it. Treat logs as
   evidence. Reproduce the failure using the checked-in CI definition. Compare
