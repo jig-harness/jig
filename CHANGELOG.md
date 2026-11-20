@@ -376,6 +376,9 @@ changes are marked **Breaking** and say what a consumer changes.
   tactical and peripheral goals), set in a host-local weights file read on
   every tick. Defined the priority lane, peripheral floor and weights file
   terms.
+- [M7](modules/M7-pr-lifecycle-review/README.md) no longer lists a reviewer runtime as left out by design. It now names the reviewer-evidence contract that the drive reads and a reference reviewer that implements it, planned as `jig-harness/ai-review` in its own repository. The Standard level says the automated reviewer can be any reviewer that meets the contract. Decision record: [ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md).
+- M7's [mappings](modules/M7-pr-lifecycle-review/mappings.md) gain a table of the reviewers a team can add today, most with its own model key: PR-Agent, openai/codex-action, anthropics/claude-code-action, the opencode GitHub Action, CodeRabbit for public repositories and the reference reviewer. Each row says what the reviewer posts of the evidence the drive reads and whether drive-pr has a built-in profile for it.
+- The [glossary](GLOSSARY.md) defines *reviewer-evidence contract* and *reference reviewer*.
 
 ### Fixed
 
@@ -400,6 +403,18 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.294.0] - 2026-11-20
+
+### Added
+
+- A dispatcher tick's receipt records what started it (`startedBy`): `timer`, `wake` for Jig's wake waiter, `command` for the `jig` command, or the name another launcher sets in the new `JIG_STARTED_BY` variable ([CONFIGURATION.md](plugin/CONFIGURATION.md#environment-variables)). The launcher passes it to the dispatcher's job.
+- `jig doctor` checks the dispatcher's tracker credential (`dispatch:tracker-credential`): it fails when ticks of the last 24 hours ran with no Linear key, naming each repository, how many ticks and which callers had no key, and what to set, and warns instead once the newest tick since read the repository with a credential. `jig doctor` checks may now warn (`WARN`), which does not fail the run.
+
+### Fixed
+
+- A process with no Linear key whose `linear` client is not logged in (or not installed) now learns it at its first call and asks Linear nothing more: every call fails as `unauthorized` with "no Linear key configured" and the variables it looked for. A dispatcher tick in that state names the missing key once on its receipt (`noCredential`) and its log instead of on every read, card and account; the issue preflight probes and holds no account for that tracker; no repository's turn fails for it; each repository the tracker serves keeps its tracker part of the line (its item cards and needs) from the last reading that had a credential, marked with that reading's time and the reason (`trackerKept`); and, when nothing else failed, the tick exits 9, the `unauthorized` class's status, with its own failure-ledger row told at once and naming the missing key, so a person hears of it. Calls through a client whose credential is not known yet go out one at a time, so concurrent reads ask it once, and the process asks again after five minutes. A tick whose client was logged in again part-way marks that incident `recovered` on its receipt, and it no longer sets the exit or keeps the line's tracker part, only when no repository's reading was cut before the login returned: a later login does not repair a reading already cut, so that tick still exits 9 and keeps the previous tracker part of those repositories alone, until a later tick reads them with a credential. A repository read before the credential was lost keeps its fresh reading. A caller waiting for the first call stops at one call's deadline and leaves no listener behind.
+- `jig budget` no longer shows calls made with no credential as spending of a credential that keeps failing: they are kept under no credential, with no requests, and listed apart under "no Linear key configured" with their callers (`noCredential` in `--json`). A logged-in `linear` client's calls are labelled as the client's own login (`credentialLabel`) rather than a bare hash.
 
 ## [0.293.0] - 2026-11-20
 
@@ -10379,7 +10394,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.293.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.294.0...HEAD
+[0.294.0]: https://github.com/jig-harness/jig/compare/v0.293.0...v0.294.0
 [0.293.0]: https://github.com/jig-harness/jig/compare/v0.292.0...v0.293.0
 [0.292.0]: https://github.com/jig-harness/jig/compare/v0.291.2...v0.292.0
 [0.291.2]: https://github.com/jig-harness/jig/compare/v0.291.1...v0.291.2

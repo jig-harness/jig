@@ -8,7 +8,7 @@ import {
 import { isoFromMs } from "../../../shared/time.ts";
 import { failureText } from "../text.ts";
 import type { Unplaced } from "../types.ts";
-import { scopeFailureRow } from "./scope-failures.ts";
+import { noCredentialFailure, scopeFailureRow } from "./scope-failures.ts";
 import type { ServedView } from "./served-reads.ts";
 
 /** How the row a rate-limited tracker leaves begins, which tells it from every other row. */
@@ -42,8 +42,13 @@ export function readFailureRow(
 ): Unplaced {
   const reason = `the served assignments could not be read: ${failureText(error)}`;
   return view?.scope !== undefined && isUnavailable(error)
-    ? scopeFailureRow(tracker, view, reason)
-    : { target: identity, record: "tracker", reason };
+    ? scopeFailureRow(tracker, view, reason, error)
+    : {
+        target: identity,
+        record: "tracker",
+        reason,
+        ...noCredentialFailure(error),
+      };
 }
 
 /**
@@ -79,11 +84,16 @@ export function noteFailure(
  * goes unchecked while its claims are unknown. The failure that stopped the
  * read is the queue's own row or the record's, so this row fails nothing.
  */
-export function claimsUnreadRow(identity: string, why: string): Unplaced {
+export function claimsUnreadRow(
+  identity: string,
+  why: string,
+  cut: Pick<Unplaced, "failure"> = {},
+): Unplaced {
   return {
     target: `the items ${identity} claimed`,
     record: "tracker",
     reason: `the items ${identity} claimed could not be read, so stalls, double claims and the questions of started pickups are not checked: ${why}`,
+    ...cut,
   };
 }
 

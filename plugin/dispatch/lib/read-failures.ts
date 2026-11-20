@@ -45,6 +45,7 @@ function readFailure(outbound: OutboundFailure): ReadFailure {
       ? {}
       : { until: isoFromMs(outbound.until) }),
     ...(outbound.quota === undefined ? {} : { quota: outbound.quota }),
+    ...(outbound.noCredential === true ? { noCredential: true } : {}),
   };
 }
 
@@ -74,6 +75,18 @@ export function readFailureOf(failure: Failure): ReadFailure | undefined {
  * that counts in the failure ledger over a rate limit, else the later reset.
  */
 export function combinedFailure(
+  failures: readonly (ReadFailure | undefined)[],
+): ReadFailure | undefined {
+  const chosen = chooseFailure(failures);
+  if (chosen?.noCredential !== true) return chosen;
+  // The no-credential mark discharges a record only when every failed read carries it.
+  if (failures.every((f) => f?.noCredential === true)) return chosen;
+  const { noCredential: _mark, ...unmarked } = chosen;
+  return unmarked;
+}
+
+/** The failure `combinedFailure` selects, before the no-credential mark is judged over every read. */
+function chooseFailure(
   failures: readonly (ReadFailure | undefined)[],
 ): ReadFailure | undefined {
   const known = failures.filter((f): f is ReadFailure => f !== undefined);

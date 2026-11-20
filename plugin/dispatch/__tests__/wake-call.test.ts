@@ -174,6 +174,8 @@ it("runs the command a drop-in puts in place of the timer's, with the tick's arg
       EXTRA: "1",
       JIG_LAUNCHER_DEADLINE_SEC: "600",
       JIG_LAUNCHER_ROLE: "wake",
+      // A command the drop-in names may set its own role: the tick still learns the wake waiter started it.
+      JIG_STARTED_BY: "wake",
     });
     expect(result.value.timeoutSec).toBe(660);
   }
