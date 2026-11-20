@@ -26,7 +26,7 @@ import type { ReadRecord } from "../lib/launches.ts";
 import { loadState } from "../lib/load.ts";
 import { LOAD_DEFAULTS } from "../lib/load-config.ts";
 import type { LoadReading } from "../lib/load-read.ts";
-import { outstandingReservations } from "../lib/tick-load.ts";
+import { outstandingReservations, withHostOverride } from "../lib/tick-load.ts";
 import { readValidationLoad } from "../lib/validation-load.ts";
 
 const CONFIG = `issue_tracker:
@@ -125,6 +125,16 @@ function windowsReading(): LoadReading {
 }
 
 describe("jig dispatch reads the host's load each tick", () => {
+  it("keeps the dispatcher's host-reading override beside a filtered launch environment", () => {
+    const own = { JIG_DISPATCH_LOAD_READING: "/fixture.json", LOCK_ROOT: "/a" };
+    expect(withHostOverride({ LOCK_TIMEOUT: "7" }, own)).toEqual({
+      LOCK_TIMEOUT: "7",
+      JIG_DISPATCH_LOAD_READING: "/fixture.json",
+    });
+    const bare = { LOCK_TIMEOUT: "7" };
+    expect(withHostOverride(bare, {})).toBe(bare);
+  });
+
   it("retains a pending Windows launch reservation until a process can represent it", () => {
     const reading = windowsReading();
     const load = loadState(

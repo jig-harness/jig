@@ -46,6 +46,18 @@ const RUN_TS = resolve(import.meta.dir, "../../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
 
 /**
+ * The test lock's settings the dispatcher holds, as `KEY=value` words: the
+ * tab's login shell does not inherit them, and the validation forecast and
+ * the lock occupancy read them from the dispatcher's own environment.
+ */
+function lockEnv(env: NodeJS.ProcessEnv): string[] {
+  return ["LOCK_TIMEOUT", "LOCK_ROOT", "LOCK_NAME"].flatMap((key) => {
+    const value = env[key];
+    return typeof value === "string" && value !== "" ? [`${key}=${value}`] : [];
+  });
+}
+
+/**
  * The command line a launched terminal runs: the wrapper under its record,
  * told by when the launch (`until`, epoch ms) will have recorded its tab.
  */
@@ -53,6 +65,7 @@ function wrapperCommand(record: string, token: string, until: number): string {
   return [
     ...sessionOverrides(process.env),
     ...runTabEnv(process.env, until),
+    ...lockEnv(process.env),
     process.execPath,
     "--no-env-file",
     `--config=${BUNFIG}`,

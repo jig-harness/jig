@@ -70,6 +70,20 @@ export function outstandingReservations(
 }
 
 /**
+ * The launch environment with the dispatcher's own host-reading override,
+ * a testing control no launch should carry, so the host reader still finds it.
+ */
+export function withHostOverride(
+  env: NodeJS.ProcessEnv,
+  own: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const reading = own.JIG_DISPATCH_LOAD_READING;
+  return reading === undefined
+    ? env
+    : { ...env, JIG_DISPATCH_LOAD_READING: reading };
+}
+
+/**
  * Read the host's gauges for this tick and build the load state; with
  * `sample`, the `--apply` tick's, first record each running session's
  * memory, so this tick's samples count toward the reservations.
@@ -104,7 +118,7 @@ export function readTickLoad(input: {
       sessions.map((s) => s.path),
       machine.repositories.map((r) => r.path),
       input.budget,
-      launchEnv,
+      withHostOverride(launchEnv),
     );
     if (input.sample && reading.sessions !== null) {
       const samples: LoadSample[] = sessions.flatMap(({ record, path }) => {

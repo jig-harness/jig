@@ -423,10 +423,14 @@ validation capacity = runs at once × W ÷ run time
 the new pass's first acquisition, after the runs ahead, falls within W
 ```
 
-For example, with one run at a time, runs of 12 minutes and an hour to
-wait, the capacity is 5 runs: of 10 passes started together, 5 are taken
-and 5 wait for a later tick, where on 2026-11-14 all of them would have
-started and half would have run out their wait. The measure is
+For example, with one run at a time, runs of 12 minutes, an hour to
+wait and one run per pass, the capacity is 5 runs. Successive passes have
+their first acquisitions at minutes 0, 12, 24, 36, 48 and 60, and a pass fits
+while its first acquisition falls within the window: of 10 passes started
+together, 6 are taken and 4 wait for a later tick, where on 2026-11-14 all of
+them would have started and half would have run out their wait. With more runs
+per pass the result differs, since each admitted pass reserves all its runs
+ahead of the next candidate. The measure is
 conservative: it assumes every pass ahead reaches the lock no later than
 the new one, and credits the lock with no run of a pass that has not
 arrived yet. A pass admitted this tick counts all of its runs ahead of the
@@ -437,8 +441,11 @@ be, for its first run, and the reason says so with the window, its source,
 the run time and the runs per pass.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
-`validation`, whose fill is the runs ahead, with the launch's own runs
-counted, against the capacity. It is set in the machine file's `load:` section
+`validation`, whose fill is the candidate's wait before its first
+acquisition, in runs of service, against the capacity. The launch's own runs
+add nothing to the numerator: they follow one another, so only the runs
+reserved ahead of later candidates (those of passes admitted this tick and
+those still to arrive) make the first acquisition wait. It is set in the machine file's `load:` section
 beside the other gauges, since the lock is the host's. It holds only
 pickups and drive passes, as the lock gauge does, and a new pickup keeps
 room for one drive pass after it, as it keeps memory and an account slot
