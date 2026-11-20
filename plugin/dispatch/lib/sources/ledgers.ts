@@ -1,4 +1,3 @@
-import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
 /**
  * The drives the forge wants re-armed, and the merges that want a
  * follow-up. Each open pull request's comments are read for its drive
@@ -20,9 +19,8 @@ import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
- * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
- * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`) | re-armable |
  * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
@@ -119,6 +117,7 @@ import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
+import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
 import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
 export type { Admit } from "./base-heads.ts";
 import { ended, passedBefore, type TickBound } from "./bounded.ts";
