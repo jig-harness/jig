@@ -257,7 +257,14 @@ describe("workflowForCheck", () => {
     expect(workflowForCheck("End to end (firefox)", [ci, matrix])).toBeNull();
     expect(
       workflowForCheck("End to end (chromium, chromium)", [ci, matrix]),
-    ).toBe(matrix.path);
+    ).toBeNull();
+    const paired = {
+      path: ".github/workflows/paired.yml",
+      text: "on: push\njobs:\n  b:\n    name: Build\n    strategy:\n      matrix:\n        include:\n          - {n: 1, os: linux}\n          - {n: 2, os: windows}\n    runs-on: x\n",
+    };
+    expect(workflowForCheck("Build (2, windows)", [paired])).toBe(paired.path);
+    expect(workflowForCheck("Build (1, windows)", [paired])).toBeNull();
+    expect(workflowForCheck("Build (windows, 2)", [paired])).toBeNull();
   });
 
   it("says unknown when no workflow, or several, report it", () => {

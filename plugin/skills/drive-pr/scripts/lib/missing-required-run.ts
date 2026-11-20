@@ -176,22 +176,37 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Every value the job's matrix lists, when all are plain and no combination is excluded; `null` otherwise. */
-function matrixAllValues(job: unknown): string[] | null {
+/**
+ * The check-name suffixes a job's matrix reports, one per complete ordered
+ * combination: the cross product of its plain axes in key order, or, with no
+ * axes, each `include` entry's values in key order. `null` when the matrix
+ * mixes axes with `include`, excludes combinations, or lists a non-plain
+ * value: a suffix that cannot be derived from one complete tuple is left
+ * unattributed.
+ */
+function matrixCombinations(job: unknown): Set<string> | null {
   const grid = matrixGrid(job);
   if (grid === null) return null;
-  const values: unknown[] = [];
-  for (const [key, listed] of Object.entries(grid)) {
-    if (key === "include") {
-      if (!Array.isArray(listed)) return null;
-      for (const entry of listed) {
-        if (!isRecord(entry)) return null;
-        values.push(...Object.values(entry));
-      }
-    } else if (Array.isArray(listed)) values.push(...listed);
-    else return null;
+  const { include, ...axes } = grid;
+  let tuples: unknown[][];
+  if (include !== undefined) {
+    if (Object.keys(axes).length > 0 || !Array.isArray(include)) return null;
+    if (!include.every(isRecord)) return null;
+    tuples = include.map((entry) => Object.values(entry));
+  } else {
+    const lists = Object.values(axes);
+    if (lists.length === 0 || !lists.every(Array.isArray)) return null;
+    tuples = lists.reduce<unknown[][]>(
+      (acc, list) => acc.flatMap((t) => list.map((v: unknown) => [...t, v])),
+      [[]],
+    );
   }
-  return values.length > 0 && values.every(isPlain) ? values.map(String) : null;
+  if (
+    tuples.length === 0 ||
+    !tuples.every((t) => t.length > 0 && t.every(isPlain))
+  )
+    return null;
+  return new Set(tuples.map((t) => t.map(String).join(", ")));
 }
 
 /**
@@ -248,7 +263,7 @@ const MAX_CALL_DEPTH = 3;
 
 /**
  * Whether the job reports `check`: by a name it can take; as a matrix job's
- * `name (values)` only where every value is one its plain matrix lists; or as
+ * `name (values)` only where the values are one complete combination its plain matrix gives; or as
  * a reusable workflow's `name / job` only where the called workflow is one of
  * the files and one of its jobs reports `job`. A suffix that cannot be shown
  * is not attributed.
@@ -261,17 +276,13 @@ function reports(
   depth: number,
 ): boolean {
   const { sources, templated } = jobBases(id, job);
-  const matrixValuesAll =
-    !templated && matrixSuffix(job) ? matrixAllValues(job) : null;
+  const combinations =
+    !templated && matrixSuffix(job) ? matrixCombinations(job) : null;
   const callee = depth < MAX_CALL_DEPTH ? localCallee(job, files) : null;
   return sources.some((source) => {
     if (new RegExp(`^${source}$`).test(check)) return true;
     const parts = new RegExp(`^${source} \\((.+)\\)$`).exec(check)?.[1];
-    if (
-      parts !== undefined &&
-      matrixValuesAll !== null &&
-      parts.split(", ").every((v) => matrixValuesAll.includes(v))
-    )
+    if (parts !== undefined && combinations !== null && combinations.has(parts))
       return true;
     const rest = new RegExp(`^${source} / ([\\s\\S]+)$`).exec(check)?.[1];
     return (
