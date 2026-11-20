@@ -67,7 +67,7 @@ function parked(
   digest: string,
   parkedAt: number,
 ): LineDecision {
-  return decisionOf({
+  const parked = decisionOf({
     key,
     kind: "thread",
     lines: [],
@@ -76,6 +76,34 @@ function parked(
     parkedAt: iso(parkedAt),
     person: "maintainer-a",
   });
+  const answer = {
+    author: "maintainer-a",
+    at: iso(parkedAt),
+    url: "https://example.com/comment",
+  };
+  if (key === "PRRT_one")
+    return {
+      ...parked,
+      answerState: "stale",
+      answers: [{ ...answer, stale: { digest: "000000000000" } }],
+    };
+  if (key === "PRRT_table")
+    return {
+      ...parked,
+      answerState: "disputed",
+      answers: [
+        {
+          ...answer,
+          choice: { option: "Later", recommended: true, form: "approve" },
+        },
+        {
+          ...answer,
+          author: "maintainer-b",
+          choice: { option: "Now", recommended: false, form: "choose" },
+        },
+      ],
+    };
+  return parked;
 }
 
 export function picksNeeds(): LineNeed[] {

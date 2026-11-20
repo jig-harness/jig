@@ -426,12 +426,12 @@ describe("the converged CI watch", () => {
     ).toBe("stands");
     expect([...moved.asked, ...closed.asked]).toEqual([]);
   });
-  it("lets the label stand when the head's CI never read in the window: nothing was seen to fail", async () => {
+  it("leaves the stop unverified when the head's CI never reads in the window", async () => {
     const f = fake({ ci: [null] });
     const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
-    expect(verdict.kind).toBe("stands");
-    expect(verdict.kind === "stands" && verdict.why).toContain(
-      "nothing was seen to fail",
+    expect(verdict.kind).toBe("unverified");
+    expect(verdict.kind === "unverified" && verdict.why).toContain(
+      "was not verified",
     );
   });
 

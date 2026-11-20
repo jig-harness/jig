@@ -288,6 +288,7 @@ export type ConvergedRecheck = (
   verified: string,
   writtenAt: number,
   owned?: () => Promise<Ownership>,
+  renew?: () => Promise<number | null>,
 ) => Promise<ConvergedCiVerdict>;
 
 /** The live watch, over the window `DRIVE_PR_CONVERGED_CI_MINUTES` sets; `0` watches nothing. */
@@ -296,6 +297,7 @@ export const liveRecheck: ConvergedRecheck = async (
   verified,
   writtenAt,
   owned,
+  renew,
 ) => {
   const minutes = convergedCiMinutes();
   if (minutes === 0)
@@ -306,6 +308,7 @@ export const liveRecheck: ConvergedRecheck = async (
   return watchConvergedCi(pr, verified, writtenAt, {
     ...liveConvergedCi(minutes, owned),
     ...(owned === undefined ? {} : { owned }),
+    ...(renew === undefined ? {} : { renew }),
   });
 };
 
@@ -330,6 +333,7 @@ export async function convergedStopExit(
   writtenAt: number,
   recheck: ConvergedRecheck,
   owned?: () => Promise<Ownership>,
+  renew?: () => Promise<number | null>,
 ): Promise<number | null> {
   if (
     labelled === null ||
@@ -344,6 +348,7 @@ export async function convergedStopExit(
       labelled.moment.verifiedSha,
       writtenAt,
       owned,
+      renew,
     );
     if (verdict.kind === "stands") {
       console.error(`converged CI: the converged label stands: ${verdict.why}`);

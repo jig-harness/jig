@@ -71,6 +71,7 @@ import {
   Stamp,
   StickyNote,
   Tag,
+  Timer,
   TimerOff,
   TriangleAlert,
   Undo2,
@@ -147,7 +148,7 @@ export type HereAnswerState =
   | "draft";
 
 /** A state of the line's answers to a decision, the same for every viewer. */
-export type EveryoneAnswerState = AnswerState | "waiting";
+export type EveryoneAnswerState = AnswerState | "waiting" | "from the line";
 
 const is = (icon: LucideIcon | null, word: string): IconWord => ({
   icon,
@@ -226,6 +227,7 @@ export const GAUGE_ICONS = {
   memory: is(MemoryStick, "memory"),
   processors: is(Cpu, "processors"),
   "test-lock": is(Lock, "test lock"),
+  validation: is(Timer, "validation capacity"),
   disk: is(HardDrive, "disk"),
   forge: is(Gauge, "forge budget"),
   accounts: is(Users, "accounts"),
@@ -260,6 +262,7 @@ export const EVERYONE_ICONS = {
   stale: is(History, "stale"),
   disputed: is(MessagesSquare, "disputed"),
   waiting: is(null, "waiting"),
+  "from the line": is(null, "from the line"),
 } satisfies Record<EveryoneAnswerState, IconWord>;
 
 export const HERE_ICONS = {
