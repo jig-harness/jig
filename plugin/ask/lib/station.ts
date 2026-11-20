@@ -82,6 +82,11 @@ export function holdingRecord(
   );
 }
 
+/** Every one of this machine's records that holds its stage. */
+export function holdingRecordsOf(records: readonly ReadRecord[]): ReadRecord[] {
+  return records.filter((r) => holds(r.state));
+}
+
 /** A launch record of this machine that holds its stage, as the holder. */
 export function recordHolder(r: ReadRecord, generation: number | null): Holder {
   const s = r.state;

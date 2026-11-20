@@ -193,6 +193,13 @@ export const DRIVE_STATE: RecordKind[] = [
     "round-report",
   ),
   driveFile(
+    "drive-round-finish",
+    `${STATE}round-finish.ts`,
+    "drive-pr-<PR>.round-finish.json",
+    "How each pass's `finish-round.ts` ended (its state, reason, head and time), the newest few kept for the driver's stall stop, which names the state that held the rounds when every stalled pass ended on the same one.",
+    "round-finish",
+  ),
+  driveFile(
     "drive-report-memory",
     `${DRIVE}lib/morning-report.ts`,
     "drives-report.json",

@@ -22,7 +22,8 @@
  * | this host's, its pass died with no result and no question, or could not record its result or exit on this host (whatever it said), not itself a run again, launched while `failures.rerun_died` was not `0`, while the host's health check fails | running: held as it stands, whatever its age, with no notice and no release; the host's own need is the one a person sees |
  * | the same, while the host's health check passes: a death within the session lease, or an unwritten result at any age | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
  * | this host's, its outcome failed on a question tagged with a routine class, or failed before passes tagged their questions, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once with the class's standing answer (every class's, for one that failed before), within the same recovery budget (`routine-reruns.ts`) |
- * | this host's, its pass recorded `waits` for a rate limit, or stopped on an untagged question that names a rate limit, fewer than 3 such waits in a row since a person last started it; or recorded `waits --reason pending` before `dispatch.followup_within` passed since the run's first pending wait | running: held until the time it named (an hour after a question), whatever answer other than done its marker carries; then the tick releases the marker, and a later tick starts the follow-up again as a first run (`followup-waits.ts`) |
+ * | this host's, its pass recorded `waits` for a rate limit, or stopped on an untagged question that names a rate limit, fewer than 3 such waits in a row since a person last started it; or recorded `waits --reason pending` before `dispatch.followup_within` passed since its window's first pending wait | running: held until the time it named (an hour after a question), whatever answer other than done its marker carries; then the tick releases the marker, and a later tick starts the follow-up again as a first run (`followup-waits.ts`) |
+ * | this host's, its pass recorded `waits --reason pending` past its window on an arm no earlier run went past its window on, and the release tags that arm names all exist when the tick reads them again within 15 minutes of the pass's end (`arm-reread.ts`) | running: the tick releases the marker, and a later tick runs the follow-up again as a new run |
  * | this host's, its pass waited on a rate limit so 3 times in a row, or found its arm still pending once `dispatch.followup_within` had passed since the run's first pending wait | a failed follow-up: notified, the rate limit or the pending arm named, with the question it stopped on, never started again until a person deletes its marker or chooses to run it again, which starts a new run |
  * | this host's, its outcome failed on an untagged question or none, its run again failed, died or could not record its result, a death older than the session lease, one launched under `failures.rerun_died: 0`, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one (never one from a pass whose result could not be written: that question is the host's fault), never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
@@ -95,6 +96,7 @@ import {
   waitWords,
 } from "./followup-waits.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
+import { armWords } from "./wait-for.ts";
 import { parseMs } from "../../shared/time.ts";
 import type { TickOutcome } from "../../shared/records/followup-values.ts";
 import { Defect } from "../../shared/errors.ts";
@@ -119,6 +121,8 @@ export interface FollowupInput {
   retried: ReadonlySet<string>;
   /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`); `null` while the host's health check passes. */
   rerunsHeld: string | null;
+  /** The launch records of follow-ups whose spent pending arm the tick read again as settled (`arm-reread.ts`). */
+  armsSettled?: ReadonlySet<string>;
   nowMs: number;
 }
 
@@ -360,7 +364,7 @@ function planTickMarker(
       assertNever(ended);
       return;
   }
-  if (plannedWait(input, marker, found, ended, plan, target)) return;
+  if (waitedOn(input, marker, found, ended, plan, target)) return;
   const released = releaseWhy(input, pr.number, marker, found, ended);
   if (released !== null) {
     const held = released.fault ? input.rerunsHeld : null;
@@ -475,6 +479,48 @@ function plannedWait(
     stage: "followup",
     reason: `launch record ${id}'s pass ${waitWords(wait)}${after} (comment ${marker.id}), and a later tick runs the follow-up again`,
     evidence: { record: id, marker: marker.id, until: wait.until },
+  });
+  return true;
+}
+
+/** A follow-up held for a wait it recorded, or for an arm it spent and the tick read as settled. */
+function waitedOn(
+  input: FollowupInput,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  found: ReadRecord | undefined,
+  ended: TickOutcome | null,
+  plan: Plan,
+  target: string,
+): boolean {
+  return (
+    plannedWait(input, marker, found, ended, plan, target) ||
+    settledArm(input, marker, found, ended, plan, target)
+  );
+}
+
+/**
+ * A follow-up whose wait went past `dispatch.followup_within` on an arm the
+ * tick read again as settled, its named release tags all existing now: as
+ * running until the tick releases its marker, so it runs once more; whether
+ * it was one.
+ */
+function settledArm(
+  input: FollowupInput,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  found: ReadRecord | undefined,
+  ended: TickOutcome | null,
+  plan: Plan,
+  target: string,
+): boolean {
+  const spent = ended === "failed" ? waitsSpent(found, input.launches) : null;
+  if (spent === null || input.armsSettled?.has(spent.record) !== true)
+    return false;
+  const id = marker.run.record;
+  plan.running.push({
+    target,
+    stage: "followup",
+    reason: `launch record ${id}'s pass found ${armWords(spent.wait)} still pending past dispatch.followup_within, and read again this tick, ${spent.reread.join(", ")} now exist: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
+    evidence: { record: id, marker: marker.id },
   });
   return true;
 }
