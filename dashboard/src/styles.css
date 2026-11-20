@@ -612,6 +612,8 @@ svg.unread { stroke-dasharray: 2.5 2.5; color: var(--muted); }
   color: var(--muted);
   font: 500 12px/1.3 var(--sans);
 }
+/* The totals count every card; a filter hides cards, so it hides them too. */
+.main.filtering .needGroupTitle [data-group-decisions], .main.filtering .pNeeds > .decCounts { display: none; }
 .needGroup:not(.all) .need.groupRest { display: none; }
 .main.filtering .needGroup .need.groupRest:not([hidden]) { display: grid; }
 .main.filtering [data-group-more] { display: none; }

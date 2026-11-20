@@ -24,7 +24,12 @@ export function DecisionCounts({ rows }: { rows: NeedRow[] }) {
   const counts = [
     ["picked", answers.filter((answer) => answer.active === "pick").length],
     ["own words", answers.filter((answer) => answer.active === "free").length],
-    ["with a note", answers.filter((answer) => answer.note.trim()).length],
+    [
+      "with a note",
+      answers.filter(
+        (answer) => answer.active === "pick" && answer.note.trim() !== "",
+      ).length,
+    ],
     [
       "draft",
       answers.filter(
@@ -44,7 +49,7 @@ export function DecisionCounts({ rows }: { rows: NeedRow[] }) {
     row.type === "need" ? row.need.answerNotes : [],
   );
   return (
-    <span className="sm mut">
+    <span className="sm mut decCounts">
       {decisions.length} decision{decisions.length === 1 ? "" : "s"}
       {(["stale", "disputed", "from the line"] as const).map((state) => {
         const count = notes.filter((note) => note.state === state).length;

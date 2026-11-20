@@ -254,9 +254,10 @@ the expanded desktop card.
 The copy controls gather the active answers into one comment. Guarded picks
 first show a check panel with the option's effects and costs and the reason
 for confirmation. Changing an answer, updating its framing or moving focus
-away clears confirmation. The pull request link and the `p` key open the
-same place to paste the comment. The For everyone filter uses the line's
-answer state. Counts marked “here” reflect answers kept by this browser.
+away clears confirmation. The “Paste in a pull request comment” link and the `p` key open the
+same place to paste the comment; the card’s pull-request identity link
+opens the pull request itself. The For everyone filter uses the line's
+answer state. Counts marked “here” reflect answers kept by this browser, and the decision totals count every card, so they are hidden while a filter is on.
 
 **Where the facts come from.** Merge, Needs you, Running, Queue and
 Hosts are drawn from the line each tick writes, with the forge facts its

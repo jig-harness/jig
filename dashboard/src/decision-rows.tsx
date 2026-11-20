@@ -64,7 +64,14 @@ function answerState(
 ): { kind: keyof typeof HERE_ICONS; text: string } | null {
   if (answer.fault !== null)
     return { kind: "held back", text: `Not copied: ${answer.fault}` };
-  if (answer.dropped !== null) return { kind: "dropped", text: answer.dropped };
+  if (answer.dropped !== null)
+    return {
+      kind: "dropped",
+      text:
+        answer.active === "free"
+          ? `${answer.dropped} Your own words still count.`
+          : answer.dropped,
+    };
   if (answer.active === "free")
     return answer.pick === null
       ? { kind: "own words", text: "Your own words count." }
