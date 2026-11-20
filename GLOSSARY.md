@@ -64,6 +64,9 @@ make, use the entry's term instead.
 - **Module** — Jig's unit of adoption: one practice area (e.g.,
   "generated-artifact freshness") packaged with its invariant, maturity
   levels, templates, and reference code. Modules adopt independently.
+- **Inode** — a filesystem record that identifies a file or directory and
+  holds its metadata. A filesystem has a finite number of inodes, so it can
+  run out of them even when disk space remains.
 - **Maturity level** — how deeply a module is adopted: **Lite** (minimum
   useful), **Standard** (production teams), **Strict** (regulated/compliance
   posture). Brownfield projects climb one level at a time. *Avoid*: tier
@@ -363,7 +366,9 @@ make, use the entry's term instead.
   flow.
 - **Defect boundary** — the one place a *defect* is caught, around the work
   it stops: one stage of a dispatcher tick, one repository's turn, the tick
-  itself. It records the defect where a person reads it, with its stack on
+  itself; on the *hub*, one unit of work (a request, a webhook delivery, a
+  scheduled job's run), which also carries the unit's deadline and the one
+  cancellation signal every *port* call it makes receives. It records the defect where a person reads it, with its stack on
   the error output only, and lets the work beside it go on. In Jig's plugin
   an expected failure travels as an `Outcome`, the plugin's *result type*,
   so a throw that reaches a defect boundary is a bug
@@ -444,6 +449,21 @@ make, use the entry's term instead.
   ships, and `deep`, which runs them all). An area may name its profile; one
   that names none gets the deepest — the same fail-closed default as a file
   matching no area at all.
+- **Own tests** — the test directories a *change-area catalog* area declares
+  as its own (`validation.ownTests`): what a change to that area runs at the
+  least. Each directory must hold a test file, so a mistyped one cannot drop
+  an area's tests unnoticed.
+- **Separate suite** — an area's *own tests* that CI runs in a job of their
+  own, because they are long or need their own dependencies
+  (`validation.separateSuite`). The gate set leaves them out, and the job runs
+  when the area is affected, when a *dependent test* lies in it and whenever
+  the whole suite runs.
+- **Dependent test** — a test file a change can affect wherever it lives,
+  found by walking back from the changed files through what imports them and
+  through test code that names them (a script, or a YAML, JSON or TOML file).
+  CI runs these beside the *own tests* of the areas the change touches. What
+  the walk cannot see, such as a Markdown file a test reads or a path built at
+  run time, is left to the full runs on the main branch.
 - **Self-check paradox** — the situation where a *check* validates the same
   data its own trigger condition is computed from (e.g. a catalog's structural
   check, triggered by resolving changed paths *through* that catalog). The
@@ -917,7 +937,7 @@ make, use the entry's term instead.
   request, while the epic itself tracks the whole. A `do-item` session takes
   one sub-issue at a time; the dispatcher starts an epic's ready sub-issues
   in parallel, in the order and parallelism its execution plan sets, or
-  without one up to a per-epic width. Jig's `do-item` skill picks up the
+  without one alongside the other ready work. Jig's `do-item` skill picks up the
   next sub-issue and follows the epic's order when a machine-readable
   execution plan is present
   ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
@@ -2332,8 +2352,9 @@ make, use the entry's term instead.
 - **Cost ledger** — the record of what Jig's calls to outside systems
   cost: for each hour, system, credential, named operation and caller, the
   requests sent, the cost in the system's own unit (a tracker's complexity
-  points, a forge's query points) and the time taken. It answers "what
-  spent this quota" without probing the system. Hourly totals stay 7 days
+  points, a forge's query points) and the time taken, with each known
+  repository's part of it. It answers "what spent this quota" without
+  probing the system. Hourly totals stay 7 days
   in the budget database; `jig budget` and each tick report read them, and
   a low-quota need names the operations projected to empty a quota.
   [Plugin README](plugin/README.md#the-dispatcher).
@@ -2654,6 +2675,14 @@ make, use the entry's term instead.
   platform and runs the core there: a Bun process with SQLite (also a
   container image), or Cloudflare Workers with Durable Objects.
   Unrelated to a *tracker adapter*.
+- **Portability gate** — the check `bun run gates` runs
+  (`scripts/check-portability.ts`) that keeps the *hub*'s *portable core*
+  portable: starting from every file of the core and every shared module
+  declared portable, it follows each import and fails on a `bun:` or
+  `node:` module, a package not on its allowlist, or a reference to a
+  runtime's own global (`Bun`, `process`, `Deno`), naming the chain of
+  imports that brought a shared module's use in. A type-only import is not
+  followed, since it never runs.
 - **World view** — what the *dispatcher* knows of the forge and the
   tracker (pull requests, checks, threads, queues, items), as opposed to
   what it knows of its own machine (its *machine view*). A tick reads it
@@ -2981,7 +3010,7 @@ make, use the entry's term instead.
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-cost)).
 - **Overlap bound** — how many pieces of work in flight may change one file
   before the *dispatcher* puts more work on that file behind everything
-  else that is ready. It replaces the width per epic, applies across all
+  else that is ready. It applies across all
   work, and like the *overlap cost* only orders: work over the bound still
   starts when nothing else can take a free slot
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-bound)).

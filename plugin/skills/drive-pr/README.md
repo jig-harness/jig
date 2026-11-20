@@ -374,9 +374,13 @@ window it closes.
 While final CI stays unchanged, its conditional signal observations back off
 from ten seconds through twenty and forty to sixty seconds between starts.
 A changed head, check, review or pull signal restores responsive probing.
-Local mailbox stop, hold and resume and remote takeover/provisional checks
-retain a ten-second idle cadence, independent of bulk CI observation. The
-mailbox runs before remote reads. In-flight work adds its helper deadline;
+Local mailbox stop, hold and resume and the provisional-decision sweep
+retain a ten-second idle cadence, independent of bulk CI observation.
+After a complete round-boundary takeover read, the drive waits at least
+sixty seconds between read starts. If the listing cannot be read, the next
+round checkpoint retries it. The drive still reads claims fresh before
+dispatching a pass and before writing the ledger. The mailbox runs before
+remote reads. In-flight work adds its helper deadline;
 GitHub's Retry-After and primary reset holds still take precedence. These
 bounds describe scheduling while requests can be admitted, not a guarantee
 that an unavailable forge will answer. Terminal verdicts, launches and pushes
@@ -417,7 +421,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_PAUSE_MAX_SEC` | How long a mailbox `pause` may last before [`MAILBOX_PAUSE_TIMEOUT`](../../protocol/drive-exits.md) | `1800` (30 minutes) |
 | `DRIVE_PR_PUSH_TIMEOUT` | One `git push`, pre-push hooks included, in seconds | `3600` |
 | `DRIVE_PR_HELPER_TIMEOUT` | One helper script the drive spawns, in seconds | `120` |
-| `GH_CALL_TIMEOUT` | One `gh` call, in seconds | `30` |
+| `GH_CALL_TIMEOUT` | One `gh` call, in seconds; one page of a head's check-runs listing, whose whole read may take four times this before the drive stops with [`CHECK_RUNS_UNREADABLE`](../../protocol/drive-exits.md); with `JIG_FORGE_BUDGET=off`, a fresh listing or a fallback whole read is paged by `gh` itself, under that same whole-read bound and with no page bound; a listing read through the cache still goes a page at a time | `30` |
 | `DRIVE_PR_STALL_MIN` | Minutes without progress before `bun "<skill-dir>/scripts/drives.ts" --doctor` calls a live drive wedged (never below the default) | `240` |
 
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
@@ -511,6 +515,7 @@ For a drive started by the dispatcher, the launch record keeps the session
 ids of its review and repair passes by round. The driver records a Claude
 Code pass's id at spawn and reads a Codex pass's id from its startup output,
 so the pass's transcript can be found after an interrupted drive.
+When the status probe stops a drive, its state and reason are recorded in the driver log, handoff, and ledger. The dispatcher's outcome log and `jig ask` show that reason.
 
 **The pass arguments.** A pass started without a terminal has no one to answer Claude Code's permission prompts, so whatever would ask is denied, every write under a protected path such as `.claude/skills/**` among them in a prompting mode (`auto` lets a classifier approve some). `drive.pass_args`, a list of words such as `[--permission-mode, bypassPermissions]`, adds extra arguments to the pass command before `-p`. It is the host's to set, in its [user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass) or one run's environment, and empty unless it does. `bypassPermissions` means a pass can do anything the host's account can (explicit ask rules, tools that need a person and checks before removing critical paths still apply), with only the instructions the drive gives it (`guarded-push.ts`, the bots-only rule) to steer it, which nothing stops it from ignoring unless that account's own settings add Claude Code `permissions.deny` rules or hooks; so a host opts in after checking what the account reaches. A repository's file that sets the field, an empty list included, stops the drive with an error naming it, since a drive reads that file from the pull request's own checkout. A list that ends in an option left without its value, such as `--permission-mode`, stops the drive too. `--pass-args "<words>"` overrides it for one run (one value, split on spaces; empty for none). `drive.ts` adds the setting only to a pass command with no arguments of its own, so a re-arm or takeover command a stopped drive printed runs the arguments it shows. The driver log's `pass args:` and `permission mode:` lines and `drives.ts` name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in. A Codex pass takes `drive.codex_pass_args` instead, such as `[--dangerously-bypass-hook-trust]`, by the same rules: the host's alone, written after the bypass and before the prompt by an arm and by the dispatcher, added by `drive.ts` only to a Codex command with no arguments of its own, and named on the log's `pass args:` line. It has no flag for one run (`--pass-args`'s words are Claude Code's; its empty value means none for either), and it refuses the words Codex would read as the model (`-m`, `--model`, `-c model=…`), as the prompt or a subcommand, or as the bypass, which is `drive.codex_bypass`'s. A pass command of any other tool ignores both settings and the log says so.
 
@@ -530,6 +535,10 @@ It builds the command above for that tree and prints it with what to do next, as
 | `tab` | In a terminal tab, or the arm reports why it could not open one or did not see its drive |
 | `background` | With the session's background execution, as below |
 | `print` | Nowhere: the command is printed for a person to run |
+
+Unless arming is set to `print`, a pickup running under the process runtime gets `status: owed`. It hands
+the pull request to the dispatcher, which admits its first drive after
+the pickup ends.
 
 A tab outlives the session and shows the passes as they run, and the session that armed it ends without a drive running beside it. Once the drive ends with nothing for a person (converged, merged or closed, taken over, re-armable, stopped or paused by a person, or refused because another driver holds the pull request) the tab closes itself; a park or a failure keeps it open for you, and arming the pull request again closes that earlier tab if nothing is running in it. What the tab showed stays in the driver log, the ledger and the pass's session transcript. It is a fresh login shell of yours: `bun`, the agent's command (`claude` or `codex`) and the account or profile the drive uses come from that shell, not from the session. Since that shell does not inherit the session's `JIG_LAUNCH`, a dispatched session's tab carries its launch as `JIG_DISPATCHED_FROM`, which the driver hands to every pass, so a gate command that runs less in dispatched sessions (Jig's own `gates.dispatch_fast`) treats those passes as dispatched; a drive armed outside any dispatched session carries no launch record and keeps the full gates. The script waits for `drives.ts` to list the new drive (`DRIVE_PR_ARM_CONFIRM_SEC`, 45 seconds by default), and opens no tab while a drive already holds the pull request; under `auto`, a drive it does not see in time is started in the background instead, and one the tab did start meets the second on its lock ([the lock or lease refusal](../../protocol/drive-exits.md)). A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the command is quoted for a POSIX shell. `--mode` overrides the setting for one arm, `--pass-model` the pass model and `--pass-args` the extra pass arguments (both forwarded to `drive.ts`, so the driver log names them), and `--max-rounds`, `--keep-draft` and `--handoff-at` pass through to `drive.ts`. A failure answers with the same JSON, `status: failed` and its `reason`. The command is the pass command of the agent tool the session runs in: a Codex session arms Codex's, in a tab where it can open one and otherwise through its managed command tool (`exec_command`, then `write_stdin` with the returned session handle). If the host exposes no managed background tool, print the command and report the limitation. Keep the session alive while the driver runs if the host terminates children on session exit; use a terminal tab for a drive that must outlive it. `--pass-model` works for either vendor; `--pass-args` remains Claude Code's and is refused for Codex. A session of any other tool, or a human checkpoint the run has no clearance for, gets the command only.
 

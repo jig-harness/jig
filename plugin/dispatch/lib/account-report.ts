@@ -8,6 +8,7 @@ import {
   type CodexOptIn,
 } from "./accounts.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
+import { driversOf, type HostDrivers } from "./host-drivers.ts";
 import type { AccountWeights } from "./local-weights.ts";
 import type { MachineConfig } from "./machine-config.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -54,6 +55,7 @@ export function accountsReport(
     records: ReadRecord[];
     nowMs: number;
     weights?: AccountWeights | undefined;
+    drivers?: HostDrivers | undefined;
     table?: Slots[];
     passDeadlineSec?: number;
     codexOptIn?: CodexOptIn;
@@ -76,6 +78,7 @@ export function accountsReport(
         input.nowMs,
         undefined,
         input.weights,
+        driversOf(input.drivers),
       )
     ).map((slots) =>
       weightReport(

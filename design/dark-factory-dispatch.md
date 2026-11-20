@@ -743,16 +743,12 @@ links from the assigned item and ends at a cycle. A blocker that is assigned
 to someone else, in progress, an epic, held, another repository's or unreadable
 is never started on the strength of the relation, since anyone with write
 access to the tracker can add one: the blocked item waits, and its reason
-names the blocker and why it was left. An epic's ready children are started
-in parallel
-([ADR-0024](../docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)):
-without an execution plan, its best-ranked ready children are wanted until
-`dispatch.epic_width` of them (4 by default) are under way, counting a
-started child that still needs an agent and a child that cannot be read, and
-a child that waits on the width names the epic and the width; a plan that
-lists several eligible steps sets its own order and parallelism. An epic
-none of whose open children can start reports one reason of its own, so the
-queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
+names the blocker and why it was left. An epic's ready children are eligible
+in parallel. Execution plan dependencies and serialized areas may hold
+them. Overlap with work in flight orders pickups across the repository's
+queues, and the host's available slots and validation capacity limit how
+many can start. An epic none of whose open children can start reports one
+reason of its own, so the queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the
@@ -910,6 +906,15 @@ consecutive `23` the ledger's stop events record (15 minutes, at most 4
 hours); a tick inside the backoff reports it quiet. A person is told once 7
 such stops stand in a row, or when a re-drive leaves the same stop standing.
 
+A drive that stopped `25` (its head's check-runs listing ran into a deadline
+or its page bound) is re-driven once per head commit. A listing that timed out
+can read whole on the next attempt. When it left work or was never measured,
+its re-drive is bound to the original tree; another host leaves that tree to
+its own dispatcher, and a missing local workspace needs a person. Only an
+explicitly clean measurement permits any admitted account to run it. The stop's
+event records the pages read, and the re-drive's cause names them. A re-drive that leaves the same stop standing on that head goes to a
+person as a systematic read failure, not a third attempt.
+
 A drive that stopped `15` (a pass reached its deadline again after the
 driver spent its restarts, `drive.pass_deadline_retries`) is re-driven the
 same way, once per head commit on any admitted account: the tree keeps what
@@ -1028,6 +1033,8 @@ ordinary budget.
 | stopped `21` with a diagnosis record on the current head | needs a person | notifies with the diagnosing session’s outcome and tracker issue when available |
 | stopped `23` (CI still failing on the infrastructure through its re-runs and head moves), its backoff from the stop passed, no re-drive of that stop held or made, fewer than 7 such stops in a row                                                                                    | stale                                                    | re-arms on any admitted account; inside the backoff (15 minutes after the first such stop, doubling with each consecutive one, at most 4 hours) it is reported quiet and nothing is launched                                                                                                                                                                                                                         |
 | stopped `23`, that stop already re-driven however that launch ended, or 7 such stops in a row                                                                                                                                                                                          | needs a person                                           | notifies per stop, with the exit and the drive's handoff, or that the infrastructure has not recovered                                                                                                                                                                                                                                                                                                               |
+| stopped `25` (its head's check-runs listing could not be read whole), neither this machine's records nor another host's launch claims holding a re-drive of that head with that exit | stale | re-arms once per head commit; a stop that left work or was never measured re-arms only in its original tree, and only an explicitly clean measurement permits any admitted account to run it; the cause names the pages read |
+| stopped `25`, that head already re-driven with that exit, however that launch ended | needs a person | notifies per head as a systematic read failure, with the exit and the drive's handoff |
 | stopped `15` (a pass reached its deadline with its restarts spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit, budget available                                                                     | stale                                                    | re-arms on any admitted account; a stop that measured work left in its tree re-arms only in that tree, and with no open workspace holding it here, a person is told. A tree on another host is left to that host: with no dispatcher there, nothing re-drives it and no host notifies; this host reports it quiet, and `jig ask` names the re-drive it waits on, or, where no dispatcher is known, a person's re-arm |
 | stopped `1`, the pull request conflicting with its base, neither this machine's records nor another host's launch claims holding a re-drive of its head and its base branch's head, budget available                                                                                   | stale                                                    | re-arms on any admitted account, so the drive's conflict-resolve round runs                                                                                                                                                                                                                                                                                                                                          |
 | stopped `15`, or `1` on a conflicting pull request, already re-driven at that change however that launch ended, or the budget spent                                                                                                                                                    | needs a person                                           | notifies per stop, with the exit and the drive's handoff, or that the recovery budget is spent                                                                                                                                                                                                                                                                                                                       |
@@ -1626,9 +1633,15 @@ the name it carries now.
 The machine file lists the subscription accounts the dispatcher may bill
 and a cap for each (`max_per_account`, 2 by default): the number of
 sessions the dispatcher started on that account that are still running,
-waiting ones and pending launch records (see Launch records) included. Sessions a person started are not counted: the
-runtime does not report their account, and a person who shares an account
-with the dispatcher lowers its cap. A headless pass is admitted on an
+waiting ones and pending launch records (see Launch records) included, and
+every live driver on the host that no such record accounts for: a drive a
+pickup armed, which keeps the pickup's slot when the pickup ends, and one a
+person or a repair session started or took over by hand. Each driver's
+lock names the account identity its passes bill, which picks the listed
+account whose slot it holds; a driver whose process is gone holds none.
+Other sessions a person started are not counted: the runtime does not
+report their account, and a person who shares an account with the
+dispatcher lowers its cap. A headless pass is admitted on an
 account with a free slot and no wall in effect, the accounts taken in turn
 starting after the account of the most recent launch record, so the turn
 survives between ticks without state of its own.
@@ -2399,7 +2412,7 @@ replaced by a takeover is stalled, not refused.
 | stalled             | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over`                                                         |
 | died                | a process gone without an exit; an interactive session that ended with no result                                                                                                      |
 | refused             | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
-| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`; the launch result `failed`                                                             |
+| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`, `25`; the launch result `failed`                                                             |
 | double claim        | used by event rows only                                                                                                                                                               |
 | unknown             | anything not placed above, with its last state                                                                                                                                        |
 

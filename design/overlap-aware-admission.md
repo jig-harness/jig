@@ -25,14 +25,11 @@ record, its adapter interface, the pickup, scout and filing writers, the
 merge evidence for conflict edges, the changed-files read of every open pull
 request, the conflict rates with the tick's daily refresh and their reader,
 overlap reported (each planned pickup's cost, tier, bound and reason, and
-`overlap_waits`, in the receipt, the dashboard and `jig ask`), and serialized
-areas holding pickups are built;
-admission, the planner's writer and the remaining build steps are open.
-It builds on the change that lets a plan-less epic's ready children start
-in parallel up to a width per epic (#1178), and on that change's decision
-record: admission is parallel by default, and overlap is a cost weighed
-against waiting, never an absolute. The width is the bound this design
-replaces.
+`overlap_waits`, in the receipt, the dashboard and `jig ask`), serialized
+areas holding pickups, and admission are built. The planner's writer and the
+remaining build steps are open. Admission is parallel by default, and overlap
+is a cost weighed against waiting, never an absolute. The overlap bound now
+replaces the retired per-epic width.
 
 ## How it works
 
@@ -277,8 +274,7 @@ The cost orders by expected rounds; the **overlap bound** guards against a
 pile-up. Branches that all edit one file conflict with each other at every
 merge, so the rounds grow with the square of their number. A candidate
 goes to tier 3 when starting it would put more than
-`dispatch.overlap.max_per_file` pieces of work in flight (4 by default, the
-per-epic width's default) that change one of its files. Only file matches
+`dispatch.overlap.max_per_file` pieces of work in flight (4 by default) that change one of its files. Only file matches
 count: an area or a directory names no file. Patience does not move a
 tier 3 candidate forward; a slot reaches it only when no candidate of tiers
 1 and 2 can take it. So that it cannot wait forever behind a stream of
@@ -294,17 +290,10 @@ being wanted. A value of `0` turns the bound off.
 The bound replaces the per-epic width: it applies across all work, inside
 an epic, across epics, across served people, the ready pool and the
 factory identity's own queue, and it weighs only work that shares a file.
-Unlike the width, it holds nothing while a slot is free. When it is built,
-the width key that #1178 adds is no longer read. The `dispatch` section
-refuses a key it does not know, and that refusal stops the repository's
-dispatch, so the retired key is the one exception: a file that still sets
-it is read without it, and every receipt and `jig dispatch` report names
-it with what replaced it, `dispatch.overlap`, and says that one child at a
-time is now said with an execution plan's dependency edges or a serialized
-area. The step's change note says the same. The key is not kept as an
-alias: a width counts an epic's children, the bound counts the work on one
-file, and an alias would change what a repository's value means without
-telling it.
+When a slot is free, overlapping work can take it. The dispatcher ignores
+the retired `dispatch.epic_width` key. Each receipt and report that reads
+the key names its replacement, `dispatch.overlap`, and points to execution
+plan dependency edges or a serialized area for one child at a time.
 
 ### Hard holds stay declared
 
@@ -387,13 +376,23 @@ kept for 7 days. From them the tick reads:
 
 - **Run time**: the 90th percentile of how long one run held the lock; 15
   minutes until there are samples.
-- **Runs at once**: the median number of runs that held the lock together
-  while another waited. Before any run has waited, the most runs that held
-  it together; with no samples at all, 1. The lock admits by load, so the
-  number is measured, not configured.
-- **Runs per pass**: for each kind of pass, the mean number of runs a pass
-  made, from the samples whose worktree is a pass's workspace; 1 until a
-  kind has samples.
+- **Runs at once**: the most runs that held the lock together, which is
+  what its admission allowed; with no samples at all, 1. The lock admits by
+  load, so the number is measured, not configured. Runs that waited do not
+  lower it: a wait behind one holder on a day with few runs says when runs
+  arrived, not how many the lock admits. It errs toward admitting: one
+  moment of high overlap sets it for the samples' seven days, while the
+  lock's own load check still decides each run.
+- **Runs per pass**: for each kind of pass, the median number of runs a
+  finished pass made, from the samples whose worktree is a pass's
+  workspace, never under 1. A pass that made no run counts, so one pass of
+  many short targeted runs does not set the figure for every pass. It is
+  measured per repository once it has three finished passes, and charged
+  to that repository's passes; a repository with no measure of its own (a
+  new one, or one whose lock wrapper records no samples) is charged every
+  repository's median. Passes of a repository whose runs the lock never
+  recorded are left out of that median, as are passes that ended before
+  the oldest kept sample. 1 until a kind has samples.
 - **Time to validation**: for each kind, the median time from a pass's
   launch to its first run's request; one hour until a kind has samples.
 
@@ -542,9 +541,6 @@ One pull request each, in this order.
 8. **Validation capacity.** The lock's samples (`resource-lock-sample`), the
    `validation` gauge in the load factor and its `load.validation` line,
    and the replay of 2026-11-14 as its test.
-9. **Overlap admission.** The tiers order the walk and the per-epic width
-   goes, its key retired as above; every document that names the width says
-   what is true after it.
 
 ## Left out
 

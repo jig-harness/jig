@@ -112,9 +112,14 @@ function recordedWord(n: LineNeed, tracker: Tracker): string {
   return n.cause;
 }
 
-/** What a card with no link says; a need of the host's names an account, which no item links. */
+/** What a work item's card with no link says. */
 function noLinkOf(n: LineNeed, tracker: Tracker): string | null {
-  if (n.url !== null || n.cause === "tracker-unreachable") return null;
+  if (
+    n.url !== null ||
+    n.cause === "state-storage" ||
+    n.cause === "tracker-unreachable"
+  )
+    return null;
   return noLinkText(n.repo, n.target, tracker);
 }
 
@@ -126,7 +131,7 @@ function answerNotes(decisions: LineDecision[]): NeedView["answerNotes"] {
     const said = answerStateWords(d.answerState, d.answers ?? []);
     if (said !== null)
       notes.push({
-        state: d.answerState ?? "waiting",
+        state: d.answerState ?? "from the line",
         text: `${prefix}${said}`,
       });
     if (d.unread !== undefined)

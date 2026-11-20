@@ -62,9 +62,11 @@ export function settleWaits(
     "DELETE FROM overlap_waits WHERE repo = ? AND item = ?",
   );
   inTransaction(db, () => {
-    for (const [item, wait] of waits)
-      if (wait !== null)
+    for (const [item, wait] of waits) {
+      if (wait === null) drop.run(repo, item);
+      else
         put.run(repo, item, wait.sinceMs, wait.tier3SinceMs, wait.promotedMs);
+    }
     if (wanted === null) return;
     for (const item of readWaits(repo, root).keys())
       if (!wanted.has(item)) drop.run(repo, item);

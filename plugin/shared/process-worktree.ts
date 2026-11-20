@@ -26,6 +26,7 @@ export interface ProcessWorktreeOptions extends WorkspaceOpenOptions {
   repository: string;
   launch: string;
   home?: string;
+  reserve?: (worktree: WorkspaceCheckout) => Outcome<void>;
 }
 
 /** Publication is part of admission, so a stalled publisher must cooperate. */
@@ -115,6 +116,11 @@ export async function openProcessWorktree(
               launches: [],
               processes: [],
             };
+            const reserved = options.reserve?.(worktree);
+            if (reserved !== undefined && !reserved.ok)
+              throw new OrcaError(reserved.failure.reason, {
+                cause: reserved.failure.cause,
+              });
             const written = writeWorktreeOwner(admin, {
               ...owner,
               launches: [...new Set([...owner.launches, options.launch])],

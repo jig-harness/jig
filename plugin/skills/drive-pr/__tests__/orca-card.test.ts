@@ -9,6 +9,7 @@ import {
 } from "../scripts/lib/driver/orca-card.ts";
 import {
   CI_REPAIR_SPENT_EXIT,
+  CHECK_RUNS_UNREADABLE_EXIT,
   MAX_ROUNDS_EXIT,
   MAILBOX_STOPPED_EXIT,
   PASS_DEADLINE_EXIT,
@@ -139,6 +140,10 @@ describe("the stop's comment", () => {
       ],
       [STALLED_EXIT, "stalled: its passes changed nothing"],
       [PASS_DEADLINE_EXIT, "stopped: its passes kept running out of time"],
+      [
+        CHECK_RUNS_UNREADABLE_EXIT,
+        "stopped: its head's check-runs listing could not be read whole",
+      ],
     ];
     for (const [code, cause] of causes)
       expect(stopComment("42", code, null)).toBe(

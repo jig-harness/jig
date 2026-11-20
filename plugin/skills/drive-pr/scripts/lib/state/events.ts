@@ -15,15 +15,18 @@
  *   - `stop`: the driver exited, its cause the exit code (`0` converged,
  *     `8` HITL-parked, …) or `unknown` (a thrown refusal or a crash), so a
  *     report reads how the drive last ended from the state as well as from
- *     the ledger. A dry run records none. `leftWork` records, on a stall
- *     and on a pass deadline the driver did not restart from, whether the stop
+ *     the ledger. A dry run records none. `leftWork` records, on a stall,
+ *     check-runs listing stop and pass deadline the driver did not restart
+ *     from, whether the stop
  *     measured work in its tree that no push carries (uncommitted edits, an
  *     open git operation, unpushed commits), and `tree` names that tree
  *     (`<actor>@<host>`): the dispatcher re-drives such a stop that left
  *     work only in that tree, and a re-arm in that tree inherits the edits as
- *     its own. A stall's stop without `leftWork` was never measured, so it
- *     is read as possibly holding work; a deadline's, written by a driver
- *     that did not record it, is read as holding none. `until` records, on
+ *     its own. A stall or listing stop without `leftWork` was never measured,
+ *     so it is read as possibly holding work; a deadline's, written by a
+ *     driver that did not record it, is read as holding none. `listingPages`
+ *     records, on a `CHECK_RUNS_UNREADABLE` stop, how many pages of the
+ *     head's check-runs listing were read. `until` records, on
  *     a stop on the forge's spent rate limit, when the limit resets: the
  *     dispatcher re-drives it from then.
  *
@@ -34,6 +37,7 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
+import { probeStopOf } from "../status/probe-stop.ts";
 import { recordCiAction } from "./ci-actions.ts";
 
 import { EVENT_CAUSES } from "./ledger-values.ts";
@@ -49,8 +53,12 @@ export interface DriveEvent {
   leftWork?: boolean;
   /** On a `stop` that measured: the tree it ran in, `<actor>@<host>`. */
   tree?: string;
+  /** On a `stop` for a check-runs listing cut short: the pages it read. */
+  listingPages?: number;
   /** On a `stop` on the forge's spent rate limit: when the limit resets, an instant. The ledger's shape leaves the field open, so a reader takes it only when it is an instant (`stopInstant`) and a malformed value never makes the ledger unreadable. */
   until?: unknown;
+  /** A status probe report on a stop whose exit was passed through. */
+  probe?: unknown;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -75,6 +83,11 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     Number.isFinite(parseMs(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
+    stopOnly(
+      v.kind,
+      v.listingPages,
+      Number.isSafeInteger(v.listingPages) && (v.listingPages as number) >= 0,
+    ) &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
     stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
   );
@@ -122,7 +135,7 @@ export function lastStopEvent(
   return events.findLast((e) => e.kind === "stop");
 }
 
-/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, `"leftWork"` with `"tree"` on a stop that measured its tree, and `"until"` on a stop on the forge's rate limit). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, optional `"leftWork"` with `"tree"` on a measured stop, `"listingPages"` on a listing stop, and `"until"` on a forge-rate-limit stop). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -144,14 +157,37 @@ export async function recordEvent(
       cause: input.cause,
       ...(input.leftWork === undefined ? {} : { leftWork: input.leftWork }),
       ...(input.tree === undefined ? {} : { tree: input.tree }),
+      ...(input.listingPages === undefined
+        ? {}
+        : { listingPages: input.listingPages }),
       ...(input.until === undefined ? {} : { until: input.until }),
+      ...(input.probe === undefined ? {} : { probe: input.probe }),
     };
-    if (!isDriveEvent(event))
+    if (
+      !isDriveEvent(event) ||
+      !stopOnly(
+        event.kind,
+        event.probe,
+        probeStopOf(event.probe)?.code === Number(event.cause),
+      )
+    )
       fail(
         2,
         `record-event: kind restart (${EVENT_CAUSES.restart.join(", ")}), rearm (${EVENT_CAUSES.rearm.join(", ")}), ci (rerun: or repair: detail) or stop (the exit code)`,
       );
-    return { ...s, events: [...(s.events ?? []), event] };
+    return { ...s, events: [...(s.events ?? []), cleanStopEvent(event)] };
   });
   return 0;
+}
+
+/** Keep a probe report's reason safe when the event comes from another writer. */
+export function cleanStopEvent(event: DriveEvent): DriveEvent {
+  if (event.probe === undefined) return event;
+  const { probe, ...rest } = event;
+  const clean = probeStopOf(probe);
+  return clean === null ||
+    event.kind !== "stop" ||
+    String(clean.code) !== event.cause
+    ? rest
+    : { ...rest, probe: clean };
 }

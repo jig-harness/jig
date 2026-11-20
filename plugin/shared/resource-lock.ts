@@ -123,23 +123,28 @@ import {
   type HostLoad,
 } from "./host-load.ts";
 import {
-  decodeIdentity,
   describeIdentity,
-  encodeIdentity,
   isAliveSync,
   legacyIdentity,
   ownIdentity,
   type ProcessIdentity,
 } from "./liveness.ts";
-import { currentMs } from "./time.ts";
+import { currentIso, currentMs } from "./time.ts";
+import {
+  recordResourceLockSample,
+  type ResourceLockSample,
+} from "./resource-lock-samples.ts";
 import {
   encodeLockWait,
   lockPlace,
+  readLockMetadata,
   resourceLockPath,
 } from "./resource-lock-waits.ts";
 export { lockPlace };
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
+/** The lock waits one minute when `LOCK_TIMEOUT` is absent. */
+export const DEFAULT_TIMEOUT_SECONDS = 60;
 /** The most slots a lock has, and so the slots an exclusive holder takes. */
 const MAX_SLOTS = 64;
 /** The slot ceiling when the count is static rather than decided by load. */
@@ -173,21 +178,25 @@ function holder(path: string, fileOwners = false): string | undefined {
   }
 }
 const holderFile = (path: string) => `${path}.holder`;
+
 // The identity recorded beside `path` when it names `pid` and is no older than
 // `path` itself; otherwise the pid alone, as an earlier holder wrote it.
-function recordedHolder(path: string, pid: string): ProcessIdentity {
+function recordedHolder(
+  path: string,
+  pid: string,
+): ProcessIdentity & { workspace: string | null } {
   try {
-    const recorded = decodeIdentity(readFileSync(holderFile(path), "utf8"));
+    const data = readLockMetadata(holderFile(path));
     if (
-      recorded !== null &&
-      String(recorded.pid) === pid &&
+      data !== null &&
+      String(data.identity.pid) === pid &&
       statSync(holderFile(path)).mtimeMs >= lstatSync(path).mtimeMs
     )
-      return recorded;
+      return { ...data.identity, workspace: data.workspace };
   } catch (error) {
     swallow(error, "no holder recorded beside the lock; its pid decides");
   }
-  return legacyIdentity(Number(pid));
+  return { ...legacyIdentity(Number(pid)), workspace: null };
 }
 // Whether the owner `seen` at `path` keeps it, and who that owner is: only an
 // owner judged dead, or an entry naming no owner, gives it up.
@@ -219,7 +228,13 @@ function heldBy(lock: string, fileOwners: boolean): string {
 function recordHolder(lock: string): void {
   const staged = `${lock}.holder.${process.pid}.${crypto.randomUUID()}`;
   try {
-    writeFileSync(staged, encodeIdentity(ownIdentity()), { flag: "wx" });
+    writeFileSync(
+      staged,
+      JSON.stringify({ ...ownIdentity(), workspace: process.cwd() }),
+      {
+        flag: "wx",
+      },
+    );
     renameSync(staged, holderFile(lock));
   } catch (error) {
     swallow(error, "the holder's identity is not recorded; its pid decides");
@@ -231,8 +246,8 @@ function recordHolder(lock: string): void {
 // stale. Never unlink an unreadable entry or one that names a live process.
 function reclaimWaitingAnnouncement(path: string): boolean {
   try {
-    const announced = decodeIdentity(readFileSync(path, "utf8"));
-    const verdict = announced === null ? null : isAliveSync(announced);
+    const announced = readLockMetadata(path);
+    const verdict = announced === null ? null : isAliveSync(announced.identity);
     if (
       announced === null ||
       verdict === null ||
@@ -342,7 +357,7 @@ function lockArguments(args: string[], env: NodeJS.ProcessEnv) {
     name,
     exclusive,
   } = commandArguments(args, env.LOCK_NAME || "heavy");
-  const timeout = env.LOCK_TIMEOUT || "60",
+  const timeout = env.LOCK_TIMEOUT || String(DEFAULT_TIMEOUT_SECONDS),
     poll = env.LOCK_POLL || "0.2",
     root = lockPlace(env).root;
   const timeoutSeconds = waitSeconds(timeout),
@@ -409,6 +424,46 @@ export function lockOccupancy(
   name: string,
   windows = process.platform === "win32",
 ): { holders: number; waiters: number } {
+  const { holders, waiters } = lockUsers(root, name, windows);
+  return { holders: holders.length, waiters: waiters.length };
+}
+
+export interface ResourceLockRun {
+  workspace: string | null;
+}
+
+/** One entry per live process holding or waiting on the lock, including older owners without workspace metadata. */
+export function resourceLockRuns(
+  root: string,
+  name: string,
+  windows = process.platform === "win32",
+): { holders: number; waiters: number; runs: ResourceLockRun[] } {
+  const { holders, waiters } = lockUsers(root, name, windows);
+  const runs = new Map(
+    waiters.map(({ pid, workspace }) => [pid, { workspace }]),
+  );
+  const readHolders = new Set<number>();
+  for (const { path, pid } of holders) {
+    if (readHolders.has(pid)) continue;
+    readHolders.add(pid);
+    const { workspace } = recordedHolder(path, String(pid));
+    runs.set(pid, { workspace: workspace ?? runs.get(pid)?.workspace ?? null });
+  }
+  return {
+    holders: holders.length,
+    waiters: waiters.length,
+    runs: [...runs.values()],
+  };
+}
+
+function lockUsers(
+  root: string,
+  name: string,
+  windows: boolean,
+): {
+  holders: SlotHolder[];
+  waiters: Array<ResourceLockRun & { pid: number }>;
+} {
   const slots = Array.from({ length: MAX_SLOTS }, (_, n) =>
     resourceLockSlotPath(root, name, n),
   );
@@ -417,26 +472,34 @@ export function lockOccupancy(
   try {
     entries = readdirSync(root);
   } catch (error) {
-    if (errorCode(error) === "ENOENT") return { holders: 0, waiters: 0 };
+    if (errorCode(error) === "ENOENT") return { holders: [], waiters: [] };
     throw error;
   }
-  const waiters = entries.filter((entry) => {
-    if (!entry.startsWith(prefix)) return false;
-    const pid = entry.slice(prefix.length);
-    if (!/^[1-9][0-9]*$/.test(pid)) return false;
+  const waiters = entries.flatMap((entry) => {
+    if (!entry.startsWith(prefix)) return [];
+    const pidText = entry.slice(prefix.length);
+    if (!/^[1-9][0-9]*$/.test(pidText)) return [];
+    const pid = Number(pidText);
     try {
-      const announced = decodeIdentity(readFileSync(join(root, entry), "utf8"));
-      if (announced !== null) {
-        const verdict = isAliveSync(announced);
-        return verdict.ok && verdict.value.state === "alive";
+      const announced = readLockMetadata(join(root, entry));
+      if (announced?.identity.pid === pid) {
+        const verdict = isAliveSync(announced.identity);
+        if (verdict.ok)
+          return verdict.value.state === "alive"
+            ? [{ pid, workspace: announced.workspace }]
+            : [];
+        swallow(
+          verdict.failure,
+          "the waiter's pid decides when its identity is uncertain",
+        );
       }
     } catch (error) {
-      if (errorCode(error) === "ENOENT") return false;
-      throw error;
+      if (errorCode(error) === "ENOENT") return [];
+      swallow(error, "the waiter's metadata is unreadable; its pid decides");
     }
-    return answers(Number(pid));
-  }).length;
-  return { holders: slotHolders(slots, windows).length, waiters };
+    return answers(pid) ? [{ pid, workspace: null }] : [];
+  });
+  return { holders: slotHolders(slots, windows), waiters };
 }
 /** Whether a process with this pid answers a signal probe (one owned by another user does). */
 function answers(pid: number): boolean {
@@ -791,6 +854,7 @@ export async function main(
     refuse(`LOCK_ROOT is not a writable directory: ${root}`);
   }
   const fileOwners = platform === "win32";
+  const requestedAt = currentIso();
   const started = performance.now();
   const deadline = started + timeoutSeconds * 1000;
   const lock = resourceLockPath(root, name);
@@ -848,9 +912,22 @@ export async function main(
     for (const path of a.taken.splice(0).reverse()) locks.release(path);
   };
   // Registered before the wait, so a signal releases a partial hold too.
+  let sample:
+    | (Omit<ResourceLockSample, "holdMs"> & { acquiredAt: number })
+    | undefined;
   using release = registerCleanup(() => {
     unannounce();
+    const releasedAt = currentMs();
+    const released = performance.now();
     releaseAll();
+    if (sample !== undefined) {
+      const { acquiredAt, ...request } = sample;
+      recordResourceLockSample(
+        { ...request, holdMs: released - acquiredAt },
+        releasedAt,
+        env,
+      );
+    }
   });
   void release;
   if (exclusive) await takeEvery(a);
@@ -861,6 +938,16 @@ export async function main(
     releaseAll();
     console.error(refusal(a, timeout, fileOwners, exclusive));
     return 3;
+  }
+  if (!exclusive) {
+    const acquiredAt = performance.now();
+    sample = {
+      name,
+      workspace: process.cwd(),
+      requestedAt,
+      acquiredAt,
+      waitMs: said === undefined ? 0 : acquiredAt - started,
+    };
   }
   if (said !== undefined) reportTaken(a, exclusive, started);
   return await run();

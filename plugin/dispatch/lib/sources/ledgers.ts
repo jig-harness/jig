@@ -15,14 +15,14 @@
  * | stopped `CI_REPAIR_SPENT` (`21`) with diagnosis on the current head | needs-person, with the diagnosis |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` without a diagnosis on the current head, `PASS_DEADLINE` (`15`) | stale, once per head commit |
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
+ * | stopped `CHECK_RUNS_UNREADABLE` (`25`) | stale, once per head commit, naming the pages read; a second such stop on the head is a person's, as a systematic read failure |
  * | stopped `FORGE_RATE_LIMITED` (`24`) | stale, once per stop from the forge limit's reset (`forge-limit-redrive.ts`) |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
- * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
- * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`) | re-armable |
  * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
@@ -56,7 +56,8 @@
  * could not resolve, such as two requirements that contradict each other, is
  * that person's decision too.
  *
- * A stall, or a CI stop without a diagnosis on the current head, is
+ * A stall, an unreadable check-runs listing (`CHECK_RUNS_UNREADABLE`), or a
+ * CI stop without a diagnosis on the current head, is
  * eligible for recovery. Its change is its head commit and
  * its exit, so it is re-driven once for each; once this machine or another
  * host re-drove that change and the ledger still stopped the same way, it is
@@ -123,6 +124,7 @@ import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
+import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
 import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
 export type { Admit } from "./base-heads.ts";
 import { ended, passedBefore, type TickBound } from "./bounded.ts";
@@ -150,6 +152,12 @@ import type {
 import { parseMs } from "../../../shared/time.ts";
 import { readFacts } from "./ledger-facts.ts";
 import { undecided } from "./ledger-undecided.ts";
+import {
+  conflictNote,
+  probeEvidence,
+  rearmTree,
+  withProbeReason,
+} from "./ledger-probe.ts";
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
@@ -353,6 +361,13 @@ const MECHANICAL_STOPS: ReadonlyMap<
     },
   ],
   [
+    DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+    {
+      kind: "check-runs",
+      words: "its head's check-runs listing could not be read whole",
+    },
+  ],
+  [
     DRIVE_EXIT.FORGE_RATE_LIMITED,
     {
       kind: "forge-limit",
@@ -360,19 +375,6 @@ const MECHANICAL_STOPS: ReadonlyMap<
     },
   ],
 ]);
-
-/** What a needs-person reason adds when the pull request conflicts with its base. */
-export function conflictNote(mergeable: unknown): string {
-  return mergeable === "CONFLICTING"
-    ? "; its pull request also conflicts with its base"
-    : "";
-}
-
-function stopTreeWhy(leftWork: boolean | undefined): string {
-  return leftWork === true
-    ? "in the tree it stopped in, which holds work it left"
-    : "in the tree it stopped in, whose work was never measured";
-}
 
 /**
  * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE`,
@@ -421,11 +423,15 @@ function mechanicalStopClass(
     return forgeLimitStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
+  const words =
+    stop.kind === "check-runs" && Number.isSafeInteger(last?.listingPages)
+      ? `${stop.words} after ${last?.listingPages} page(s)`
+      : stop.words;
   return {
     class: "stale",
-    why: `stopped ${exit} (${stop.words}): re-drive ${tree === null ? "on any account" : stopTreeWhy(last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${words}): re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
     stale: {
-      cause: `stopped ${exit}, ${stop.words}`,
+      cause: `stopped ${exit}, ${words}`,
       change: `head ${head}, stopped ${exit}`,
       mechanicalStop: stop.kind,
       ...(stop.recovery === true ? { recovery: true as const } : {}),
@@ -436,8 +442,8 @@ function mechanicalStopClass(
 
 /**
  * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
- * stall that left work there or never measured it, and a pass deadline whose
- * stop measured work left. A deadline stop that never measured comes from a
+ * stall or listing stop that left work there or never measured it, and a pass
+ * deadline whose stop measured work left. A deadline stop that never measured comes from a
  * driver that did not record it, so it re-drives on any account.
  */
 function boundToTree(
@@ -446,7 +452,8 @@ function boundToTree(
   last: ReturnType<typeof lastStopEvent>,
 ): boolean {
   const own = last === undefined || last.cause === String(exit);
-  if (kind === "stall") return own && last?.leftWork !== false;
+  if (kind === "stall" || kind === "check-runs")
+    return own && last?.leftWork !== false;
   return kind === "deadline" && own && last?.leftWork === true;
 }
 
@@ -570,6 +577,7 @@ function ledgerEvidence(
     phase: ledger.phase,
     driver: ledger.driver.state,
     exit: ledger.driver.exit ?? null,
+    ...probeEvidence(ledger.driver),
     heartbeat: ledger.driver.heartbeat,
     started: ledger.driver.started ?? null,
     ...(ledger.driver.state === "stopped" &&
@@ -637,7 +645,13 @@ export function classifyLedger(
       class: "re-armable",
       why: "stopped with no recorded cause: re-arming within the per-pull-request recovery budget",
     };
-  return exitClass(ledger, exit, park, forge);
+  const placed = exitClass(ledger, exit, park, forge);
+  return withProbeReason(
+    placed,
+    ledger.driver,
+    exit,
+    conflictNote(forge.mergeable),
+  );
 }
 
 /** A stopped ledger's class by its exit, first match wins. */
@@ -664,6 +678,7 @@ function exitClass(
 }
 
 export interface OpenPr {
+  isCrossRepository?: boolean;
   number: number;
   url: string;
   title: string;
@@ -706,7 +721,7 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
 function unarmed(
   pr: OpenPr,
   base: Omit<DrivenPr, "class" | "why" | "evidence">,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
 ): DrivenPr | null {
   const asked = askedToArm(pr, r);
   if (asked === null) return null;
@@ -729,11 +744,16 @@ function unarmed(
 /** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
 function askedToArm(
   pr: OpenPr,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
-): { asks: string; evidence: { adopted?: string } } | null {
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
+): { asks: string; evidence: { adopted?: string; pickupArm?: true } } | null {
   const { labels, adoption } = r;
   if (labels !== null && hasCommand(labels, pr.labels, "drive"))
     return { asks: "a person's drive label asks for one", evidence: {} };
+  if (pickupAsked(r.pickupArms, pr))
+    return {
+      asks: "its completed process pickup handed off the first drive",
+      evidence: { pickupArm: true },
+    };
   const adopted =
     adoption === null ? null : adopts(pr, adoption, labels, r.nowMs);
   return adopted === null
@@ -760,6 +780,7 @@ function baseOf(
 
 /** What every drive of one reading shares. */
 interface Reading {
+  pickupArms?: PickupArms;
   slug: string;
   login: string | null;
   nowMs: number;
@@ -985,10 +1006,14 @@ export async function readDrives(
   nowMs: number,
   labels: LabelConfig | null = null,
   adoption: Adoption | null = null,
-  comments?: (pr: number) => Promise<Listing>,
-  admit: Admit = (read) => read(),
-  bound?: TickBound,
+  options: {
+    comments?: (pr: number) => Promise<Listing>;
+    admit?: Admit;
+    bound?: TickBound | undefined;
+    pickupArms?: PickupArms | undefined;
+  } = {},
 ): Promise<DrivenPr[]> {
+  const { comments, admit = (read) => read(), bound, pickupArms } = options;
   const reading: Reading = {
     slug,
     login,
@@ -996,6 +1021,7 @@ export async function readDrives(
     windowMs: stallThresholdMs(),
     labels,
     adoption,
+    ...(pickupArms === undefined ? {} : { pickupArms }),
     baseHead: baseHeads(slug, admit, bound),
     presence: (pr, ledger) =>
       ended(bound)

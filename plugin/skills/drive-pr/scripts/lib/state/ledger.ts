@@ -66,7 +66,13 @@ import {
   decisionsSection,
   isUnattendedDecision,
 } from "./decisions.ts";
-import { type DriveEvent, isOptionalEvents } from "./events.ts";
+import {
+  cleanStopEvent,
+  type DriveEvent,
+  isOptionalEvents,
+  lastStopEvent,
+} from "./events.ts";
+import { probeStopOf } from "../status/probe-stop.ts";
 import {
   type CiAction,
   boundedCiDetail,
@@ -112,6 +118,7 @@ import {
   type LedgerDriver,
   type LedgerClaimRef,
 } from "./ledger-shapes.ts";
+import { CONVERGED_CI_PHASE } from "./ledger-values.ts";
 import { matches } from "../../../../../shared/shapes.ts";
 import {
   TAKEOVER_GENERATION_SHAPE,
@@ -220,17 +227,29 @@ export function ledgerFromState(
       record: redact(d.record),
       reverse: redact(d.reverse),
     })),
-    events: s.events ?? [],
+    events: (s.events ?? []).map(cleanStopEvent),
     ciActions: (s.ciActions ?? []).map((action) => ({
       ...action,
       detail: boundedCiDetail(redact(action.detail)),
     })),
     rulings: s.rulings ?? [],
     resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
-    driver: opts.driver,
+    driver: ledgerDriverWithProbe(s, opts.driver),
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],
   };
+}
+
+function ledgerDriverWithProbe(
+  s: DriveState,
+  driver: LedgerDriver,
+): LedgerDriver {
+  const probe = probeStopOf(lastStopEvent(s.events ?? [])?.probe);
+  return driver.state === "stopped" &&
+    probe !== null &&
+    probe.code === driver.exit
+    ? { ...driver, probe }
+    : driver;
 }
 
 function withoutAccount(
@@ -302,25 +321,24 @@ function ciEventLines(actions: readonly CiAction[] | undefined): string[] {
     .flatMap((e) => ["", `CI ${e.action}: ${summaryText(e.detail)}`]);
 }
 
-function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
+function driverSummary(l: Ledger): string {
   const d = l.driver;
-  const lines = [
-    LEDGER_MARKER,
-    `**Drive ledger** · \`drive-pr-ledger\` v${l.ledgerVersion} · generation ${l.generation}. Written by the drive at each round boundary, park and takeover; an edit here is overwritten.`,
-    "",
-    `Round ${l.round}, phase \`${l.phase === "" ? "unset" : l.phase}\` · driver \`${d.actor}\` ${d.state === "running" ? "running" : `stopped${d.exit === undefined ? "" : ` (exit ${d.exit})`}`}, last heartbeat ${d.heartbeat} · ${l.parked.length} parked, ${l.held.length} held, ${l.takeovers.length} takeover(s)`,
-  ];
-  if (d.personStop !== undefined)
-    lines.push("", stopSummary(d.personStop, d.state));
-  lines.push(...ciEventLines(l.ciActions));
-  if (parkedList && l.parked.length > 0) {
-    lines.push("", "Parked, awaiting a person:");
-    for (const p of l.parked)
-      lines.push(
-        `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}${p.digest === undefined ? "" : `, framing ${p.digest}`}): ${summaryText(p.reason)}`,
-        ...decisionAnswerLines(p).map((line) => `  ${line}`),
-      );
-  }
+  const state =
+    d.state === "running"
+      ? "running"
+      : `stopped${d.exit === undefined ? "" : ` (exit ${d.exit})`}`;
+  return `Round ${l.round}, phase \`${l.phase === "" ? "unset" : l.phase}\` · driver \`${d.actor}\` ${state}, last heartbeat ${d.heartbeat} · ${l.parked.length} parked, ${l.held.length} held, ${l.takeovers.length} takeover(s)`;
+}
+
+function parkedLines(parked: Ledger["parked"]): string[] {
+  return parked.flatMap((p) => [
+    `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}${p.digest === undefined ? "" : `, framing ${p.digest}`}): ${summaryText(p.reason)}`,
+    ...decisionAnswerLines(p).map((line) => `  ${line}`),
+  ]);
+}
+
+function closingLines(l: Ledger, writer: Writer): string[] {
+  const lines: string[] = [];
   if (l.decisions.length > 0)
     lines.push("", ...decisionsSection(l.decisions).map(summaryLine));
   if (l.cut.length > 0)
@@ -329,6 +347,25 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
       `Cut to the forge's size limit: ${l.cut.join(", ")} dropped.`,
     );
   lines.push("", `<!-- ${LEDGER_DATA}`, ledgerData(l, writer), "-->");
+  return lines;
+}
+
+function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
+  const d = l.driver;
+  const lines = [
+    LEDGER_MARKER,
+    `**Drive ledger** · \`drive-pr-ledger\` v${l.ledgerVersion} · generation ${l.generation}. Written by the drive at each round boundary, park and takeover; an edit here is overwritten.`,
+    "",
+    driverSummary(l),
+  ];
+  if (d.personStop !== undefined)
+    lines.push("", stopSummary(d.personStop, d.state));
+  lines.push(...ciEventLines(l.ciActions));
+  if (parkedList && l.parked.length > 0) {
+    lines.push("", "Parked, awaiting a person:");
+    lines.push(...parkedLines(l.parked));
+  }
+  lines.push(...closingLines(l, writer));
   return `${lines.join("\n")}\n`;
 }
 
@@ -527,7 +564,16 @@ export function parseLedger(body: string): ParsedLedger | null {
   const fault = ledgerFault(read.fields);
   if (fault !== "")
     return { kind: "malformed", reason: `ill-formed field(s): ${fault}` };
-  return { kind: "ledger", ledger: read.fields as unknown as Ledger };
+  const ledger = read.fields as unknown as Ledger;
+  const { probe, ...driver } = ledger.driver;
+  const clean = probeStopOf(probe);
+  ledger.driver =
+    driver.state === "stopped" && clean !== null && clean.code === driver.exit
+      ? { ...driver, probe: clean }
+      : driver;
+  if (ledger.events !== undefined)
+    ledger.events = ledger.events.map(cleanStopEvent);
+  return { kind: "ledger", ledger };
 }
 
 /** The takeover claim's key: the ledger generation its claimant read. */
@@ -915,7 +961,7 @@ export function seedFromLedger(
     attempts: l.attempts,
     attemptsHead: l.attemptsHead,
     deadlineRetries: l.deadlineRetries,
-    phase: l.phase,
+    phase: l.phase === CONVERGED_CI_PHASE ? local.phase : l.phase,
     lastCountedHead: l.lastCountedHead,
     verifiedSha: l.verifiedSha,
     readyMarkedRound: l.readyMarkedRound,

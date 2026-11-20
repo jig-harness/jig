@@ -31,7 +31,8 @@
  * `--choose`, `--note`, `--all`, `--decision`, `--decision-set`) are the
  * `answer` verb's alone (`lib/answer-request.ts`).
  */
-import { ExitError } from "../shared/cli.ts";
+import { ExitError, shellQuote } from "../shared/cli.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { formatAddress, parseAddress } from "../shared/address.ts";
 import { launchOf, LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import {
@@ -248,6 +249,56 @@ async function planFor(
       });
     default:
       return planMailbox(ctx, request, login.value, writesAs);
+  }
+}
+
+/**
+ * Hold the target at `address` as `jig send <address> hold` does, under the
+ * same checks, without printing its plan or waking the tick: `held` once
+ * the hold is written, `already` when a pull request already carries its
+ * hold label (a pickup's local hold keeps its first holder on a repeat).
+ * `jig dispatch attach --take-over` holds a run's target through it.
+ */
+export async function holdTarget(
+  address: string,
+): Promise<Outcome<"held" | "already", "refused">> {
+  // A refusal keeps its reason: the command line's usage error would carry only its words wrapped for a terminal.
+  let refusedWith: string | null = null;
+  const usage = (reason: string): never => {
+    refusedWith = reason;
+    throw new ExitError(SEND_EXIT.USAGE, reason);
+  };
+  try {
+    const written = parseAddress(address);
+    if (!written.ok) return failed("refused", written.failure.reason);
+    const { station } = written.value;
+    const pickup = station === "pickup";
+    const request = parseRequest(station, ["hold"], usage);
+    const refusedHere = standing(request);
+    if (refusedHere !== null) return failed("refused", refusedHere);
+    const strict = () => resolveAddress(address, undefined, usage, pickup);
+    const resolved = strict();
+    const planned = await planFor(resolved, strict, request, undefined, false);
+    if (!planned.ok) {
+      // A release that would be taken is a hold that stands.
+      const release = parseRequest(station, ["release"], usage);
+      if (
+        !pickup &&
+        (await planFor(resolved, strict, release, undefined, true)).ok
+      )
+        return ok("already");
+      return planned;
+    }
+    const wrote = await planned.value.write();
+    return wrote.ok ? ok("held") : failed("refused", wrote.failure.reason);
+  } catch (error) {
+    if (!(error instanceof ExitError)) throw error;
+    // A deeper `fail()` printed its reason above and carries only its code.
+    return failed(
+      "refused",
+      refusedWith ??
+        `jig send stopped (exit ${error.code}) before writing the hold, for the reason printed above; jig send ${shellQuote(address)} hold --dry-run shows it again`,
+    );
   }
 }
 

@@ -20,7 +20,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 44;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 9;
+const DRIVE_DB = 10;
 const REFLECT = "skills/reflect/scripts/";
 
 /** A file in a drive's per-clone state directory, of one state family. */
@@ -284,6 +284,16 @@ export const DISPATCHER: RecordKind[] = [
     meaning:
       "For each hourly cost-ledger row, how many of its requests a conditional request had answered 304 Not Modified. The reports read it to show a route's unchanged re-reads apart from its other requests; a row without one counts none.",
   },
+  {
+    name: "outbound-cost-repository",
+    medium: "machine",
+    owner: "shared/outbound/schema.ts",
+    at: "~/.local/state/jig/tracker/budget.sqlite",
+    table: "outbound_cost_repository",
+    version: 1,
+    meaning:
+      "For each hourly cost-ledger row, the part of its requests, cost, unknown costs and 304 answers each repository took, where the transport knew the repository. The budget answer reads it to group spending by repository; what a row holds beyond its repositories' parts, and a row without any, counts as spent on no known repository.",
+  },
   plain(
     "machine",
     "dispatch-receipt",
@@ -307,6 +317,14 @@ export const DISPATCHER: RecordKind[] = [
     `${DISPATCH_DIR}runs/<record>/drive-report.json`,
     0,
     "The closing report a dispatched drive's driver wrote at its stop, stamped with its launch record, for the wrapper to check and record under that record once the drive ended; the wrapper removes it then.",
+  ),
+  plain(
+    "machine",
+    "dispatch-process-output",
+    "dispatch/lib/runtime/process-spool.ts",
+    `${DISPATCH_DIR}runs/<record>/output.log`,
+    0,
+    "The last 4 MiB of a process run's output. The wrapper keeps it when the run leaves no closing report and removes it when the report is recorded.",
   ),
   plain(
     "machine",
@@ -375,6 +393,26 @@ export const DISPATCHER: RecordKind[] = [
 ];
 
 export const MACHINE: RecordKind[] = [
+  {
+    name: "test-fixture-registry-names",
+    medium: "machine",
+    owner: "shared/fixture-registry-index.ts",
+    at: "~/.local/state/jig/test-fixtures-v1.index.sqlite",
+    table: "fixture_registry_names",
+    version: 1,
+    meaning:
+      "The names of the fixture registration directory entries, ordered for bounded collection pages and rebuilt from the directory when it changes outside the index.",
+  },
+  {
+    name: "test-fixture-registry-index",
+    medium: "machine",
+    owner: "shared/fixture-registry-index.ts",
+    at: "~/.local/state/jig/test-fixtures-v1.index.sqlite",
+    table: "fixture_registry_index",
+    version: 1,
+    meaning:
+      "The fixture registry directory identity and modification times, entry count, and resume positions for collection and write-time retirement.",
+  },
   {
     name: "db-migration",
     medium: "machine",
@@ -518,6 +556,14 @@ export const MACHINE: RecordKind[] = [
     "<tmp>/jig-lock.<name>, its slots <tmp>/jig-lock.<name>-slot-<n>, and <tmp>/jig-lock.<name>.admission and .exclusive",
     0,
     "A machine-wide lock with slots that bounds how many heavy commands (a build, a test run) run at once across worktrees: a holder runs, the others wait, and a dead holder's slot is reclaimed.",
+  ),
+  plain(
+    "machine",
+    "resource-lock-sample",
+    "shared/resource-lock-samples.ts",
+    "~/.local/state/jig/resource-lock-samples/<release ms>-<uuid>.json",
+    1,
+    "One completed run's lock name, working directory, request time, wait and hold durations. The dispatcher's validation gauge reads the last seven days to estimate the host's capacity.",
   ),
   plain(
     "machine",

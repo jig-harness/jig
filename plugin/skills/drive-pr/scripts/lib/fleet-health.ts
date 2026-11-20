@@ -23,13 +23,13 @@
  * as zero, and a ratio is therefore a lower bound on ceremony.
  */
 
-import {
-  CLOSED_STATE_TYPES,
-  type CommentFact,
-  type IssueFact,
-  type StartedIssueActivity,
-  type WindowSpec,
+import type {
+  CommentFact,
+  IssueFact,
+  StartedIssueActivity,
+  WindowSpec,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
+import { epicChildCensus } from "../../../../shared/epic-closure.ts";
 import {
   ANY_KEY_SOURCE,
   type IssueKeys,
@@ -840,22 +840,17 @@ export function stuckEpicSignal(
 // answer and post nothing. They feed the closure step, and every one that
 // points at closing an epic repeats that closing needs an accepting verdict.
 
-const isClosed = (stateType: string): boolean =>
-  (CLOSED_STATE_TYPES as readonly string[]).includes(stateType);
-
-/** Abandoned work is not delivery: it leaves the denominator, as in the closure step. */
-const isAbandoned = (stateType: string): boolean =>
-  stateType === "canceled" || stateType === "duplicate";
-
 const ACCEPTANCE_REMINDER =
   "Closing an epic requires an accepting acceptance verdict (or a recorded waiver): every child closed is not itself the authorization.";
 
 /** Every child closed, the epic still open. */
 export function finishedButOpenSignal(fact: EpicActivityFact): Signal | null {
-  if (!fact.children.length) return null;
-  if (!fact.children.every((c) => isClosed(c.stateType))) return null;
+  const { abandoned, finishedButOpen } = epicChildCensus(
+    fact.children,
+    (child) => child.stateType,
+  );
+  if (!finishedButOpen) return null;
   const scope: SignalScope = { type: "epic", epic: fact.epic };
-  const abandoned = fact.children.filter((c) => isAbandoned(c.stateType));
   return {
     kind: "finished-but-open",
     scope,
@@ -878,10 +873,13 @@ export function tailBlockedSignal(
   fact: EpicActivityFact,
   cfg: FleetHealthConfig,
 ): Signal | null {
-  const counted = fact.children.filter((c) => !isAbandoned(c.stateType));
-  const open = counted.filter((c) => !isClosed(c.stateType));
-  if (counted.length === 0 || open.length === 0) return null;
-  const share = (counted.length - open.length) / counted.length;
+  const { completed, open } = epicChildCensus(
+    fact.children,
+    (child) => child.stateType,
+  );
+  if (open.length === 0) return null;
+  const counted = completed.length + open.length;
+  const share = completed.length / counted;
   const { minDoneShare, maxOpen } = cfg.signals.tailBlocked;
   if (share < minDoneShare || open.length > maxOpen) return null;
   const scope: SignalScope = { type: "epic", epic: fact.epic };
@@ -891,7 +889,7 @@ export function tailBlockedSignal(
     severity: "elevated",
     headline: `${Math.round(share * 100)}% done; ${open.length} child${open.length === 1 ? "" : "ren"} still open: ${open.map((c) => c.issue).join(", ")}`,
     evidence: [
-      `${counted.length - open.length} of ${counted.length} children delivered (abandoned children excluded); thresholds: at least ${Math.round(minDoneShare * 100)}% done, at most ${maxOpen} open`,
+      `${completed.length} of ${counted} children delivered (abandoned children excluded); thresholds: at least ${Math.round(minDoneShare * 100)}% done, at most ${maxOpen} open`,
       "A tail child may be finished, handed off to its own owner, or dropped with a reason. " +
         ACCEPTANCE_REMINDER,
     ],

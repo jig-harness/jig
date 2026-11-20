@@ -1,7 +1,9 @@
-import { swallow } from "../errors.ts";
-import type { BudgetRecord, BudgetWindow } from "./budget.ts";
-
-// Whether a value read back from the store has the shape of a window.
+/**
+ * Whether a value read back from a budget store has the shape of a record:
+ * a damaged record reads as none, whichever store kept it.
+ */
+import { failed, ok, type Outcome } from "../outcome.ts";
+import type { BudgetRecord, BudgetWindow } from "./budget-governor.ts";
 
 const orNull = (v: unknown, ok: (n: number) => boolean): boolean =>
   v === null || (typeof v === "number" && Number.isFinite(v) && ok(v));
@@ -73,12 +75,17 @@ function validRecord(value: unknown): value is BudgetRecord {
   );
 }
 
-export function parseRecord(text: string): BudgetRecord | null {
+/** A record from the text a store kept: `not-json` when it does not parse, `damaged` when a field does not have its shape. */
+export function recordFromText(
+  text: string,
+): Outcome<BudgetRecord, "not-json" | "damaged"> {
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(text);
-    return validRecord(value) ? value : null;
+    value = JSON.parse(text);
   } catch (error) {
-    swallow(error, "a tracker budget record does not read");
-    return null;
+    return failed("not-json", "a tracker budget record does not read", error);
   }
+  return validRecord(value)
+    ? ok(value)
+    : failed("damaged", "a tracker budget record has a field out of shape");
 }

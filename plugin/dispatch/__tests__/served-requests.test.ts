@@ -209,6 +209,8 @@ describe("a served queue's cost in tracker requests", () => {
           ? "its history holds no assignment of"
           : "its assignment was made by no user",
       );
+      if (history === "none")
+        expect(row?.reason).toContain("first three minutes");
       const mark = fake.count();
       const second = await tick(tracker, cache, 2);
       expect(fake.requests.slice(mark)).toEqual(["TrackerChanges"]);
@@ -696,13 +698,9 @@ describe("an epic's children read together with their relations", () => {
     expect(ops.filter((r) => r === "TrackerInverseRelations")).toHaveLength(0);
     // 60 children in three pages, then the blocker they share.
     expect(ops.filter((r) => r === "TrackerQueueByKey")).toHaveLength(4);
-    // The epic has no plan, so its default width of 4 starts the first four.
-    expect(read.wanted.map((w) => w.key)).toEqual([
-      "ENG-101",
-      "ENG-102",
-      "ENG-103",
-      "ENG-104",
-    ]);
+    expect(read.wanted.map((w) => w.key)).toEqual(
+      Array.from({ length: 60 }, (_, index) => `ENG-${101 + index}`),
+    );
     // The next tick, with nothing changed, reads no child again.
     const before = fake.count();
     await tick(fake.tracker(), cache, 2);
@@ -800,8 +798,7 @@ describe("a nested epic's parents on the tick after a cold one", () => {
     const tracker = fake.tracker();
     const cache = memoryCache();
     const first = await tick(tracker, cache, 0);
-    // The sub-epic has no plan: its default width of 4.
-    expect(first.wanted).toHaveLength(4);
+    expect(first.wanted).toHaveLength(30);
     const before = fake.count();
     const second = await tick(tracker, cache, 2);
     expect(fake.requests.slice(before)).toEqual(["TrackerChanges"]);

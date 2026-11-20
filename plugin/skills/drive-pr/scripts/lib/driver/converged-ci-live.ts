@@ -12,7 +12,7 @@ import { sleep, testPacing } from "../cli.ts";
 import { LABEL_SETTLE_MS, labelWriteTimes } from "../label-cancelled-runs.ts";
 import { readTimeline } from "../pr-timeline.ts";
 import { ghCall } from "../proc.ts";
-import { checkRunsFor, ciReportFor } from "../status/evidence.ts";
+import { checkRunListing, ciReportFor } from "../status/evidence.ts";
 import { workflowRunsFor } from "../status/workflow-runs.ts";
 import {
   parkAdmissionContext,
@@ -29,6 +29,7 @@ import {
 } from "./converged-ci.ts";
 import type { DriveLabelWrite } from "./state-labels.ts";
 import { rerunnableRuns } from "./failed-runs.ts";
+import { driverRuntime } from "./runtime.ts";
 import { DRIVE_EXIT } from "../status/terminal-states.ts";
 
 /** The park key a converged head's unsettled CI parks under. */
@@ -84,7 +85,12 @@ async function pullRequest(pr: string) {
 }
 
 async function ci(pr: string, head: string) {
-  const runs = await checkRunsFor("{owner}", "{repo}", head);
+  const { runs, cutShort } = await checkRunListing("{owner}", "{repo}", head);
+  if (cutShort !== null) {
+    console.error(`converged CI: ${cutShort.reason}`);
+    driverRuntime.stopListingPages = cutShort.pagesRead;
+    return "listing-cut-short" as const;
+  }
   if (runs === null) return null;
   const report = await ciReportFor("{owner}", "{repo}", head, runs, false, pr);
   return {
@@ -282,6 +288,7 @@ export type ConvergedRecheck = (
   verified: string,
   writtenAt: number,
   owned?: () => Promise<Ownership>,
+  renew?: () => Promise<number | null>,
 ) => Promise<ConvergedCiVerdict>;
 
 /** The live watch, over the window `DRIVE_PR_CONVERGED_CI_MINUTES` sets; `0` watches nothing. */
@@ -290,6 +297,7 @@ export const liveRecheck: ConvergedRecheck = async (
   verified,
   writtenAt,
   owned,
+  renew,
 ) => {
   const minutes = convergedCiMinutes();
   if (minutes === 0)
@@ -300,6 +308,7 @@ export const liveRecheck: ConvergedRecheck = async (
   return watchConvergedCi(pr, verified, writtenAt, {
     ...liveConvergedCi(minutes, owned),
     ...(owned === undefined ? {} : { owned }),
+    ...(renew === undefined ? {} : { renew }),
   });
 };
 
@@ -324,6 +333,7 @@ export async function convergedStopExit(
   writtenAt: number,
   recheck: ConvergedRecheck,
   owned?: () => Promise<Ownership>,
+  renew?: () => Promise<number | null>,
 ): Promise<number | null> {
   if (
     labelled === null ||
@@ -338,6 +348,7 @@ export async function convergedStopExit(
       labelled.moment.verifiedSha,
       writtenAt,
       owned,
+      renew,
     );
     if (verdict.kind === "stands") {
       console.error(`converged CI: the converged label stands: ${verdict.why}`);
@@ -348,6 +359,12 @@ export async function convergedStopExit(
         `converged CI: ${verdict.why}, so the stop is settled as INDETERMINATE for the next drive to judge the head again`,
       );
       return DRIVE_EXIT.INDETERMINATE;
+    }
+    if (verdict.kind === "listing-cut-short") {
+      console.error(
+        "converged CI: the head's check-runs listing was cut short, so the stop is the named listing stop",
+      );
+      return DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
     }
     if (verdict.kind === "parked") {
       console.error(

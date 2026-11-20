@@ -30,6 +30,7 @@
  *     the drive posts with the operator's own credentials, so a comment that
  *     merely mentions a parked key must not unpark it.
  */
+import type { ProbeStop } from "../status/probe-stop.ts";
 import { fail, shellQuote } from "./../cli.ts";
 
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
@@ -454,14 +455,18 @@ export async function recordDriveEvent(
   kind: "restart" | "rearm" | "stop",
   cause: string,
   measured: { leftWork: boolean; tree: string } | null = null,
+  listingPages: number | null = null,
   until: string | null = null,
+  probe: ProbeStop | null = null,
 ): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
     stdin: JSON.stringify({
       kind,
       cause,
       ...measured,
+      ...(listingPages === null ? {} : { listingPages }),
       ...(until === null ? {} : { until }),
+      ...(probe === null ? {} : { probe }),
     }),
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),

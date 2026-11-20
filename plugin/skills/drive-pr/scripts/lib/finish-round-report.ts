@@ -29,6 +29,7 @@ export interface Report {
     | "PUSH_FAILED"
     | "CI_HOLD_WAIT"
     | "CI_HOLD_FAILED"
+    | "CHECK_RUNS_UNREADABLE"
     | "HITL_PARKED"
     | "STAMP_FAILED"
     | "HEAD_NOT_SYNCED"
@@ -40,6 +41,8 @@ export interface Report {
   stamped: boolean;
   headSynced: boolean;
   items: ItemResult[];
+  /** Pages a cut-short check-runs listing read; set only with `CHECK_RUNS_UNREADABLE`, null when unknown. */
+  listingPagesRead?: number | null;
 }
 
 export function emit(report: Report, asJson: boolean): void {

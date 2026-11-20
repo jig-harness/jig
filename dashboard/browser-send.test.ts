@@ -347,10 +347,7 @@ describe("Send", () => {
         );
         expect(opened.calls).toEqual([]);
 
-        await two
-          .getByRole("button", { name: "1 other option" })
-          .first()
-          .click();
+        await two.locator("[data-card-toggle]").click();
         await two.locator(".opt", { hasText: "Remove" }).click();
         await two.locator(".opt", { hasText: "Later" }).click();
         await page.evaluate((t) => navigator.clipboard.writeText(t), BEFORE);
@@ -498,7 +495,7 @@ describe("Send", () => {
       });
       try {
         await showAll(page);
-        await guarded.getByRole("button", { name: "1 other option" }).click();
+        await guarded.locator("[data-card-toggle]").click();
         await guarded.locator(".opt", { hasText: "Drop" }).last().click();
         await send.click();
         await shows(page, ".pNeeds .guard");
@@ -657,10 +654,7 @@ describe("Send", () => {
           await page.getByRole("button", { name: "Close" }).tap();
 
           const two = card(page, "PR #502");
-          await two
-            .getByRole("button", { name: "1 other option" })
-            .first()
-            .tap();
+          await two.locator("[data-card-toggle]").tap();
           await two.locator(".opt", { hasText: "Remove" }).tap();
           await two.locator(".opt", { hasText: "Later" }).tap();
           await two
@@ -836,6 +830,7 @@ browserIt(
       });
       await item.locator(".opt").first().click();
       await send.click();
+      await item.locator("[data-card-toggle][aria-expanded=false]").click();
       await item.getByRole("button", { name: "Add a note" }).click();
       await item.locator(".reply input").fill("Only after checking the branch");
       expect(await item.locator(".guard").count()).toBe(0);

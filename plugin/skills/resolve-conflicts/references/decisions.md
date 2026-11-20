@@ -66,9 +66,9 @@ integration side, resolve `package.json` first (keep both dependencies), then
 rebuild and stage the lockfile:
 
 ```bash
-bun "<skill-dir>/../../shared/command.ts" -- git checkout --theirs -- bun.lock
+bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git checkout --theirs -- bun.lock
 bun install
-bun "<skill-dir>/../../shared/command.ts" -- git add package.json bun.lock
+bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git add package.json bun.lock
 bun "<skill-dir>/scripts/record.ts" package.json combined --reason "kept both new dependencies"
 bun "<skill-dir>/scripts/record.ts" bun.lock regenerated
 ```
@@ -80,7 +80,7 @@ bug in the old file. The map shows `renamedTo: src/parse/index.ts` on the
 `theirs` side. Apply the fix to the new file, then remove the old path:
 
 ```bash
-bun "<skill-dir>/../../shared/command.ts" -- git rm src/legacy/parse.ts
+bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git rm src/legacy/parse.ts
 bun "<skill-dir>/scripts/record.ts" src/legacy/parse.ts deleted --reason "main moved the parser to src/parse/index.ts; this branch's fix for empty input is applied there"
 ```
 

@@ -140,10 +140,16 @@ finished.
   push-and-record relaunch, once, in its own tree (#950).
 - A question a pass asks about the dispatcher's own database or host goes
   to the host need of its cause, never to a person as a pickup's or a
-  follow-up's question (#944). A pickup whose result could not be
-  written takes that relaunch once the health check passes; a person is
-  asked to settle or release its item only where its tree cannot be
-  relaunched.
+  follow-up's question (#944). A pickup stopped by a fault of its host
+  (its result could not be written, its closing report gives the cause
+  `environment` without a question or decision, or every recorded question
+  reports the host's space, inodes or an unwritable directory as a failure)
+  is held with the fault named while the health
+  check fails, then relaunched once in its tree to resume the work, or
+  picked up afresh when it never claimed the item (#1623). A restart that
+  stops on a host fault again is one need for a diagnosing session, never
+  a second restart; a person is asked to settle or release the item only
+  where the relaunch rule does not take it.
 - These re-runs are the tick's rule, beside the routine re-runs
   (`routine-reruns.ts`, `session-startup.ts`), never a steward record: the
   tick decides them from its own records.
@@ -472,8 +478,9 @@ narrow once this is built:
   moves an item to `pr_open` when an open pull request on the branch of
   this host's launch names it, and applies a steward `settle` record under
   its guard. It never writes an item's done state.
-- **It relaunches a stalled pickup** once, in the same tree, only to push
-  and record work the tree already holds, where the repository allows it.
+- **It relaunches a stalled pickup** once, in the same tree, to push and
+  record work the tree already holds; where that pickup stopped on a host
+  fault, the relaunch may also finish the item's work once the host is healthy.
 
 And one rule of its launch records widens: a follow-up's run again also
 covers a result write that failed, and waits for the host's health check.

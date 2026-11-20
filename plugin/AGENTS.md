@@ -43,8 +43,10 @@ here reaches every repository at once.
   a place in [Jig's lifecycle map](../docs/LIFECYCLE.md) (the gates fail a
   skill no stage names), its name in both manifests' descriptions, its configuration in
   [CONFIGURATION.md](CONFIGURATION.md), and its tests in
-  `skills/<name>/__tests__/`. A suite that needs POSIX or runs long is listed in
-  [scripts/gates.ts](../scripts/gates.ts) with the reason.
+  `skills/<name>/__tests__/`. A suite that needs POSIX is listed in
+  `POSIX_ONLY_SUITES` in [scripts/gates.ts](../scripts/gates.ts) with the
+  reason; one that runs long is marked `validation.separateSuite: true` on its
+  area in [.config/change-areas.yaml](../.config/change-areas.yaml).
 - **Code more than one skill uses lives in `shared/`**, beside `skills/`:
   skills import it by relative path, and nothing in `shared/` imports from a
   skill. A module moves
@@ -58,7 +60,8 @@ here reaches every repository at once.
   NOTICE (copied here as [NOTICE](NOTICE): `cp NOTICE plugin/`).
 - **The `jig` command's components** (`gc/`, `dispatch/`) each implement
   `runtime/component.ts` and are registered in `jig.ts`, beside the
-  commands with no job to install (`ask/`, a `CommandComponent`); the lifecycle
+  commands with no job to install (`ask/`, `send/`, `budget/`, `hub/`, each a
+  `CommandComponent`); the lifecycle
   verbs (`runtime/verbs.ts`) reach them only through that interface, and
   the scheduler and launcher code the components share lives in
   `runtime/`. Installed jobs and the `jig` command run copies of
@@ -89,9 +92,19 @@ here reaches every repository at once.
   the boundary around the work it stops; a refused command line is
   `ExitError(USAGE_EXIT, …)`; a failure that still has to travel as a
   throw, to a catch in a skill script, is a class built on `JigError`. In
-  `dispatch/` and `gc/`,
+  `dispatch/`, `gc/` and `hub/`,
   `bun run gates` fails any other throw (`scripts/check-throws.ts`); the
   skill scripts keep their own error handling.
+- **The hub's core is portable** ([ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md)).
+  `hub/core/` reaches its platform only through its ports
+  (`hub/core/ports.ts`), and every port call takes the calling unit's
+  context, one `AbortSignal` and one deadline, from `hub/core/unit.ts`'s
+  `runUnit`, the unit's defect boundary. Nothing it imports, directly or
+  through a shared module, may use a `bun:` or `node:` module, a package
+  or a runtime global such as `Bun` or `process`: `bun run gates` fails it
+  (`scripts/check-portability.ts`), and a shared module declared portable
+  there is held to the same rules. The `jig hub` command lives outside
+  `core/`.
 - **Time is Temporal** ([ADR-0018](../docs/adr/ADR-0018-time-is-temporal.md)).
   Read the clock, parse and write moments through `shared/time.ts`
   (`currentMs`, `currentIso`, `isoFromMs`, `parseMs`) and hold a moment as a

@@ -20,6 +20,7 @@ import {
   canonical,
   UNKNOWN_FOOTPRINT,
   type Wait,
+  overlapTurns,
   walkOverlap,
 } from "../lib/overlap.ts";
 import {
@@ -172,6 +173,21 @@ describe("shared units", () => {
         model({}, {}, { dispatch: ["src/dispatch/**"], ui: ["src/ui/**"] }),
       ),
     ).toEqual([]);
+  });
+
+  it("charges area overlap only when two seed globs can match the same file", () => {
+    const m = model(
+      {},
+      {},
+      {
+        source: ["src/**/*.ts"],
+        docs: ["src/**/*.md"],
+        configs: ["**/{config,settings}.ts"],
+      },
+    );
+    const work = [pr(1, areas("source"))];
+    expect(cost(areas("docs"), work, m)).toBe(0);
+    expect(cost(areas("configs"), work, m)).toBeCloseTo(0.2);
   });
 
   it("leaves out a generated or ignored file", () => {
@@ -441,6 +457,56 @@ describe("tiers, patience and promotion", () => {
 });
 
 describe("the walk", () => {
+  it("does not charge a later pickup for a failed launch", () => {
+    const turns = overlapTurns(
+      [
+        candidate("A", files("src/a.ts")),
+        candidate("B", files("src/a.ts")),
+        candidate("C", files("src/c.ts")),
+      ],
+      [],
+      new Map(),
+      model({ maxPerFile: 1 }),
+      NOW,
+    );
+    expect(turns.next().value).toMatchObject({
+      candidate: { item: "A" },
+      tier: 1,
+    });
+    expect(turns.next(null).value).toMatchObject({
+      candidate: { item: "B" },
+      tier: 1,
+    });
+  });
+
+  it("charges a later pickup for a launch whose answer was lost", () => {
+    const turns = overlapTurns(
+      [candidate("A", files("src/a.ts")), candidate("B", files("src/a.ts"))],
+      [],
+      new Map(),
+      model({ maxPerFile: 1 }),
+      NOW,
+    );
+    expect(turns.next().value).toMatchObject({
+      candidate: { item: "A" },
+      tier: 1,
+    });
+    expect(turns.next("launch pending").value).toMatchObject({
+      candidate: { item: "B" },
+      tier: 3,
+      evaluation: {
+        shares: [
+          expect.objectContaining({
+            work: expect.objectContaining({
+              ref: "A",
+              state: "launch pending",
+            }),
+          }),
+        ],
+      },
+    });
+  });
+
   it("weighs each pickup after the ones would be admitted ahead of it, so two overlapping pickups are not both free", () => {
     const placed = walkOverlap(
       [candidate("A", files("src/a.ts")), candidate("B", files("src/a.ts"))],

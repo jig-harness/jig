@@ -36,6 +36,11 @@
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
+import {
+  type ProbeStop,
+  readProbeStop,
+  probeFailure,
+} from "../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
 import { endedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
@@ -73,6 +78,7 @@ export const OUTCOME_CLASSES = [
   "died",
   "refused",
   "gates failed",
+  "read failed",
   "double claim",
   "unknown",
 ] as const;
@@ -363,6 +369,10 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
     DRIVE_EXIT.CI_INFRA_PERSISTED,
     ["gates failed", "CI failing on the infrastructure"],
   ],
+  [
+    DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+    ["gates failed", "check-runs listing unreadable"],
+  ],
   [DRIVE_EXIT.FORGE_RATE_LIMITED, ["quota wall", "forge rate limit"]],
 ]);
 
@@ -375,6 +385,25 @@ export interface EndFacts {
 
 /** The class of a drive's exit, as the closed list places it (`PR_NOT_OPEN` reads as closed when `merged` is false). */
 export function driveClass(
+  code: number,
+  merged: boolean | null,
+  probe?: ProbeStop | null,
+): { class: OutcomeClass; reason: string } {
+  const placed = driveExitClass(code, merged);
+  if (probe?.code !== code) return placed;
+  const failure = probeFailure(probe);
+  return {
+    class:
+      failure === "quota"
+        ? "quota wall"
+        : failure === "read"
+          ? "read failed"
+          : placed.class,
+    reason: `exit ${code}, ${probe.state}: ${probe.reason}`,
+  };
+}
+
+function driveExitClass(
   code: number,
   merged: boolean | null,
 ): { class: OutcomeClass; reason: string } {
@@ -470,22 +499,32 @@ export function classifyEnded(
   r: ReadRecord,
   endedAt: string,
   facts: EndFacts,
-): { class: OutcomeClass; reason: string } {
+): { class: OutcomeClass; reason: string; probeStopped?: true } {
+  return isDrive(r.record)
+    ? driveEndedClass(r, facts)
+    : sessionClass(r, endedAt);
+}
+
+function driveEndedClass(
+  r: ReadRecord,
+  facts: EndFacts,
+): { class: OutcomeClass; reason: string; probeStopped?: true } {
   const s = r.state;
-  if (isDrive(r.record)) {
-    const answer =
-      s.kind === "ended"
-        ? s.exit.code === null
-          ? `signal ${s.exit.signal ?? "unknown"}`
-          : `exit ${s.exit.code}`
-        : goneWithoutExit(s);
-    if (facts.takenOver)
-      return { class: "stalled", reason: `taken over (${answer})` };
-    if (s.kind === "ended" && s.exit.code !== null)
-      return driveClass(s.exit.code, facts.merged);
+  const answer =
+    s.kind === "ended"
+      ? s.exit.code === null
+        ? `signal ${s.exit.signal ?? "unknown"}`
+        : `exit ${s.exit.code}`
+      : goneWithoutExit(s);
+  if (facts.takenOver)
+    return { class: "stalled", reason: `taken over (${answer})` };
+  if (s.kind !== "ended" || s.exit.code === null)
     return { class: "died", reason: answer };
-  }
-  return sessionClass(r, endedAt);
+  const probe = readProbeStop(s.exit.context ?? "");
+  const placed = driveClass(s.exit.code, facts.merged, probe);
+  return probe?.code === s.exit.code
+    ? { ...placed, probeStopped: true }
+    : placed;
 }
 
 /** Whether a record has ended, as the log counts an end: an exit, or a process gone without one. */
@@ -504,6 +543,7 @@ const REDRIVEN: ReadonlyMap<string, string> = new Map([
   ["ci-repair", "a drive whose CI-repair passes were spent"],
   ["deadline", "a drive whose pass deadline recurred"],
   ["ci-infra", "a drive whose checks kept failing on the infrastructure"],
+  ["check-runs", "a drive whose check-runs listing could not be read"],
   ["forge-limit", "a drive that stopped on the forge's rate limit"],
 ]);
 
@@ -557,6 +597,7 @@ export function endedRow(
       framed: r.framed,
       class: placed.class,
       reason,
+      ...(placed.probeStopped ? { probeStopped: true } : {}),
     }),
     ...aboutFields(about),
     ...reportFields(r.report),

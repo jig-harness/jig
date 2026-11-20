@@ -50,7 +50,7 @@ import { parkNotice, stopNotice } from "./notices.ts";
 import { goneUnlaunched } from "./recovery-facts.ts";
 import { idleBlocksStart } from "./automation.ts";
 import { backingOff } from "./infra-backoff.ts";
-import { conflictNote } from "./sources/ledgers.ts";
+import { conflictNote } from "./sources/ledger-probe.ts";
 import { requestedTree, workspaceOfTree } from "./stall-tree.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
@@ -450,7 +450,9 @@ function wantReason(
       ? "drive ledger"
       : typeof pr.evidence.adopted === "string"
         ? "adoption rule"
-        : "drive label";
+        : pr.evidence.pickupArm === true
+          ? "pickup handoff"
+          : "drive label";
   return `${source} ${pr.class}: ${pr.why}`;
 }
 

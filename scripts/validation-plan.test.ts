@@ -17,7 +17,21 @@ function run(cwd: string, input: string) {
   });
 }
 
-test("the configured review command accepts Jig's catalog and keeps full gates", () => {
+/** Jig's plan for `files`, as drive-pr, review and fix-ci read it. */
+function jigPlan(...files: string[]) {
+  const result = run(root, `${files.join("\n")}\n`);
+  expectSpawnExit(result, 0);
+  return JSON.parse(result.stdout.toString()).validation as {
+    profiles: string[];
+    localChecks: string[];
+    verificationChecks: string[];
+  };
+}
+
+const runsTests = (checks: string[]) =>
+  checks.some((c) => c === "bun run gates" || c.startsWith("bun run test"));
+
+test("the configured review command accepts Jig's catalog and runs the full gates for configuration", () => {
   const config = readCatalog(join(root, ".config/jig.yaml")) as {
     drive: { validation_plan_command?: string };
   };
@@ -33,8 +47,51 @@ test("the configured review command accepts Jig's catalog and keeps full gates",
   expect(plan.areas).toContain("drive-pr");
   expect(plan.reviewSkills).toEqual([]);
   expect(plan.postDeploy).toEqual([]);
-  expect(plan.validation.verificationChecks).toEqual(["bun run gates"]);
+  expect(plan.validation.profiles).toContain("deep");
+  expect(plan.validation.localChecks).toContain("bun run gates");
+  expect(plan.validation.verificationChecks[0]).toBe("bun run gates");
   expect(plan.validation.testbox.required).toBe(false);
+});
+
+test("a documentation-only change's plan names no test run", () => {
+  const plan = jigPlan(
+    "changes/a-note.md",
+    "docs/LIFECYCLE.md",
+    "design/plan.md",
+  );
+  expect(plan.profiles).toEqual(["docs"]);
+  expect(plan.localChecks).toEqual(["bun run gates --fast"]);
+  expect(runsTests(plan.localChecks)).toBe(false);
+  expect(runsTests(plan.verificationChecks)).toBe(false);
+});
+
+test("a change to one skill runs that skill's own tests beside the quick gates", () => {
+  const plan = jigPlan("plugin/skills/explain/scripts/sheet.ts");
+  expect(plan.profiles).toEqual(["area"]);
+  // The quick gates hold the typecheck and every generated-file check.
+  expect(plan.localChecks).toEqual([
+    "bun run gates --fast",
+    "bun run test ./plugin/skills/explain/ ./plugin/shared/__tests__/",
+  ]);
+  expect(plan.verificationChecks).not.toContain("bun run gates");
+  expect(plan.verificationChecks).toContain(
+    "bun run test ./plugin/skills/explain/ ./plugin/shared/__tests__/",
+  );
+  // A generator whose source the change touches is owed a run.
+  const dashboard = jigPlan("dashboard/src/main.tsx");
+  expect(dashboard.localChecks[0]).toBe("bun dashboard/build.ts");
+  expect(dashboard.verificationChecks).toContain(
+    "bun dashboard/build.ts --check",
+  );
+});
+
+test("a file no area matches, or code no area's own tests cover, runs the full gates", () => {
+  for (const file of ["stray-file.xyz", "plugin/jig.ts"]) {
+    const plan = jigPlan("plugin/skills/explain/scripts/sheet.ts", file);
+    expect(plan.profiles).toContain("deep");
+    expect(plan.localChecks).toEqual(["bun run gates"]);
+    expect(plan.verificationChecks).toEqual(["bun run gates"]);
+  }
 });
 
 test("review routing preserves closure, deduplication, deleted paths and strict schema", () => {
@@ -42,7 +99,9 @@ test("review routing preserves closure, deduplication, deleted paths and strict 
   try {
     mkdirSync(join(dir, ".config"));
     const path = join(dir, ".config/change-areas.yaml");
-    const catalog = `areas:
+    const catalog = `profiles:
+  full: {localChecks: [make check], verificationChecks: [make check]}
+areas:
   core:
     title: Core
     category: library

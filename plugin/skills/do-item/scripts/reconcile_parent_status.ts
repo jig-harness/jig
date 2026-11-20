@@ -64,6 +64,8 @@ export interface ReconcileChildInput {
 
 export interface ReconcileInput {
   parentNativeType?: string | null;
+  /** False for parents the tracker identified as ordinary issues. */
+  parentIsEpic?: boolean;
   /**
    * False when the child listing/fetch itself failed — e.g. `get_issue.ts`
    * returned `found: false`. Defaults to true. A failed fetch is not "no
@@ -122,16 +124,6 @@ export const DEFAULT_VOCABULARY: ReconcileVocabulary = {
   labels: DEFAULT_TRACKER_LABELS,
   states: defaultStateNames(),
 };
-
-/**
- * A tail an epic was never scoped to finish — its presence on every
- * remaining incomplete child is what makes the epic extract-and-close
- * eligible instead of stuck "In Progress" forever. The labels come from
- * `issue_tracker.labels.extractable_tails` (default: the `legal` and
- * `tactical` facets of the human-in-the-loop label, the manual-operations
- * label and the review follow-up label); this is the one place the list is
- * evaluated.
- */
 
 /**
  * The "started"-type sub-issue states that still count as "merged and
@@ -204,14 +196,73 @@ function labelName(l: LabelLike | undefined): string {
   return typeof l === "string" ? l : (l.name ?? "");
 }
 
+/** How an epic accounts for a child before proposing closure. */
+export function epicChildDisposition(
+  child: ReconcileChildInput,
+  vocabulary: ReconcileVocabulary = DEFAULT_VOCABULARY,
+): ChildDisposition {
+  return childDisposition(
+    child,
+    vocabulary.labels,
+    statesForType(
+      vocabulary.states,
+      { statesByType: vocabulary.statesByType ?? {} },
+      child.nativeType ?? null,
+    ),
+  );
+}
+
+type ChildDisposition =
+  | "completed"
+  | "abandoned"
+  | "person-check"
+  | "extractable-tail"
+  | "incomplete";
+
+function childDisposition(
+  child: ReconcileChildInput,
+  labels: TrackerLabels,
+  states: StateMap,
+  parentIsEpic = true,
+): ChildDisposition {
+  const bucket = classifyChildState(child.state, states);
+  if (bucket !== "incomplete") return bucket;
+
+  const tails = (child.labels ?? [])
+    .map(labelName)
+    .filter(
+      (label) =>
+        labels.extractableTails.includes(label) &&
+        (parentIsEpic ||
+          label !== labels.hitl ||
+          labels.declared.has("extractable_tails")),
+    );
+  // Some workflows use their review state for operator checks. Only a
+  // distinct Ops Pending state can establish that a check is owed by name.
+  if (
+    parentIsEpic &&
+    (tails.some(
+      (label) =>
+        label === labels.hitl ||
+        label.startsWith(`${labels.hitl}:`) ||
+        label === labels.manualOps,
+    ) ||
+      (nameTrustworthyForParkedCheck(child.state) &&
+        stateNameEquals(child.state?.name, states.ops_pending) &&
+        !stateNameEquals(child.state?.name, states.in_review) &&
+        !readsAsPrOpen(child, states)))
+  )
+    return "person-check";
+  return tails.length > 0 ? "extractable-tail" : "incomplete";
+}
+
 function extractTailReason(
-  tails: string,
   labels: TrackerLabels,
   states: StateMap,
   postMergeState: PostMergeState,
   parentHasManualOps: boolean,
 ): string {
-  const lead = `Every remaining incomplete sub-issue carries an extractable tail label (${tails}) — `;
+  const lead = "Every remaining incomplete sub-issue is an extractable tail — ";
   const extract =
     "verify an ACCEPT/ACCEPT-WITH-FOLLOWUPS verdict from /epic-acceptance-review, or a recorded human waiver; then extract each tail, link and comment it back to this epic, and move it to its standing destination";
   if (parentHasManualOps)
@@ -269,7 +320,6 @@ export function reconcileParentStatus(
       };
     return { verdict, parentState, parentStateName: name, reason };
   };
-  const tails = labels.extractableTails.join(" / ");
   const found = input.found ?? true;
   if (!found) {
     return decide(
@@ -287,117 +337,23 @@ export function reconcileParentStatus(
     );
   }
 
-  const children = input.children;
   const parentHasManualOps = input.parentLabels
     .map(labelName)
     .includes(labels.manualOps);
-
-  // An empty `children` array (no sub-issues) needs no special case — every
-  // predicate below is vacuously true over `[]`, so a childless parent reads
-  // as "all done".
-  const buckets = children.map((c) =>
-    classifyChildState(c.state, childStates(c)),
-  );
-  const allDone = buckets.every((b) => b !== "incomplete");
-
-  const incompleteChildren = children.filter(
-    (_, i) => buckets[i] === "incomplete",
-  );
-
-  // A missing `labels` field on a still-open child used to fail the whole
-  // listing closed here, on the premise that both transports always request
-  // labels and return a real array on success. That premise is false for
-  // the CLI transport: the client's `issue view --json` output has its own
-  // `children` connection, which carries only `identifier`/`title`/`state`
-  // for every child, never `labels` — measured against real linear-cli 2.6.0
-  // output (a live multi-child epic; also pinned by
-  // `scripts.test.ts`'s "reads linear-cli 2.6.0 connection envelopes"
-  // fixture, whose children never carry a `labels` key at all). So the gate
-  // that used to sit here made every still-open child fetched via CLI read
-  // as an unreadable listing, unconditionally — not the rare partial fetch
-  // it was written to catch.
-  //
-  // Defaulting an unreadable-or-missing child's labels to "no tail" instead
-  // is the safe direction: it is consumed ONLY by `allIncompleteAreExtractable`
-  // below, so the one thing it can do wrong is fail to recognize a
-  // genuinely tail-labeled child as extractable — which just keeps the
-  // parent "In Progress" (Step 4b, same as any other still-open child). It
-  // can never promote the parent to `Done` or wrongly extract-and-close:
-  // every OTHER verdict (`set_status`, the least-advanced-state cap) is
-  // decided from child STATE alone, never from labels. `(c.labels ?? [])`
-  // below already carries that default.
-  const allIncompleteAreExtractable =
-    incompleteChildren.length > 0 &&
-    incompleteChildren.every((c) =>
-      (c.labels ?? []).some((l) =>
-        labels.extractableTails.includes(labelName(l)),
-      ),
+  const remaining = input.children.flatMap((child) => {
+    const own = childStates(child);
+    const disposition = childDisposition(
+      child,
+      labels,
+      own,
+      input.parentIsEpic,
     );
+    return disposition === "completed" || disposition === "abandoned"
+      ? []
+      : [{ child, states: own, disposition }];
+  });
 
-  // Checked BEFORE the merged-or-parked guard below: every incomplete child
-  // being a tail means `allMergedOrParked` is false (a tail's own state is
-  // never in MERGED_OR_PARKED), so falling through would route straight back
-  // to "keep_in_progress" — the very Step 4b loop this rule exists to break.
-  if (allIncompleteAreExtractable) {
-    return decide(
-      "extract_and_close_eligible",
-      null,
-      extractTailReason(
-        tails,
-        labels,
-        states,
-        postMergeState,
-        parentHasManualOps,
-      ),
-    );
-  }
-
-  // A child already bucketed completed/abandoned by `classifyChildState` is
-  // trivially merged-or-parked — this is what lets Canceled/Duplicate (and
-  // any unrecognized-but-Done-like name via the fallback matcher) count here
-  // without a raw-name list, and it must be checked FIRST: checking the name
-  // list on its own (the prior bug) let a type-contradicting name like
-  // `{ name: 'Done', type: 'started' }` read as parked even though its own
-  // `type` says the work is still active, which then starved the ladder
-  // lookup below of any valid entry. Only a child still bucketed
-  // "incomplete" falls back to the name check, gated by
-  // `nameTrustworthyForParkedCheck` so a recognized non-"started" type (e.g.
-  // `{ name: 'In Review', type: 'unstarted' }`, or an "Ops Pending" name
-  // with a `backlog`/`triage` type) can't have its name override a type that
-  // explicitly says the work hasn't started — that is the one case
-  // `classifyChildState`'s `type`-based bucket cannot resolve on its own
-  // (see `PARKED_ACTIVE_STATES`).
-  const allMergedOrParked = children.every(
-    (c, i) =>
-      buckets[i] !== "incomplete" ||
-      (nameTrustworthyForParkedCheck(c.state) &&
-        !readsAsPrOpen(c, childStates(c)) &&
-        PARKED_ACTIVE_STATES.some((key) =>
-          stateNameEquals(c.state?.name, childStates(c)[key]),
-        )),
-  );
-
-  if (!allMergedOrParked) {
-    const openPrChild = children.find((c) => {
-      const own = childStates(c);
-      return (
-        own.pr_open !== null &&
-        stateNameEquals(own.pr_open, own.in_review) &&
-        readsAsPrOpen(c, own)
-      );
-    });
-    const unmerged =
-      openPrChild !== undefined
-        ? ` A sub-issue under "${childStates(openPrChild).pr_open}", the name pr_open shares with in_review, reads as pr_open unless its linked pull request merged (its pullRequest fact is not "merged").`
-        : "";
-    return decide(
-      "keep_in_progress",
-      null,
-      `At least one sub-issue is still in progress/todo/blocked — keep the parent "${states.in_progress}" and continue with Step 4b.${unmerged}`,
-    );
-  }
-
-  if (allDone) {
+  if (remaining.length === 0) {
     const [parentState, reason] = allDoneOutcome(
       labels,
       states,
@@ -407,30 +363,50 @@ export function reconcileParentStatus(
     return decide("set_status", parentState, reason);
   }
 
-  // Reached only when every child is merged-or-parked AND not all are
-  // Done/Canceled/Duplicate — so at least one child has bucket "incomplete"
-  // (else `allDone` above would have returned), and `allMergedOrParked`
-  // above only accepts an "incomplete"-bucket child whose name is "In
-  // Review" or "Ops Pending" — both members of STATE_LADDER. The filtered
-  // array below can therefore never be empty here.
-  //
-  // Filtered to bucket-"incomplete" children BEFORE the name lookup, not
-  // just after — a completed-but-name-contradicting child (e.g.
-  // `{ name: 'In Progress', type: 'completed' }`) or an abandoned one (e.g.
-  // `{ name: 'In Review', type: 'canceled' }`) still has a name that matches
-  // a STATE_LADDER rung, and mapping over every child let it inject a bogus
-  // ladder entry for a child that isn't actually still active. Its own
-  // `type` already says it's done/abandoned — its name must not out-vote
-  // that in a computation meant to reflect only the sub-issues genuinely
-  // still open.
-  const ladderIndexes = children
-    .filter((_, i) => buckets[i] === "incomplete")
-    .map((c) =>
-      STATE_LADDER.findIndex((key) =>
-        stateNameEquals(c.state?.name, childStates(c)[key]),
+  // Every remaining child may move out even when some tails are still active.
+  if (remaining.every(({ disposition }) => disposition !== "incomplete")) {
+    return decide(
+      "extract_and_close_eligible",
+      null,
+      extractTailReason(labels, states, postMergeState, parentHasManualOps),
+    );
+  }
+
+  // A recognized category wins over a conflicting name, and a shared review
+  // name requires a merged pull request before it can represent parked work.
+  const allMergedOrParked = remaining.every(
+    ({ child, states: own }) =>
+      nameTrustworthyForParkedCheck(child.state) &&
+      !readsAsPrOpen(child, own) &&
+      PARKED_ACTIVE_STATES.some((key) =>
+        stateNameEquals(child.state?.name, own[key]),
       ),
-    )
-    .filter((i) => i >= 0);
+  );
+
+  if (!allMergedOrParked) {
+    const openPrChild = remaining.find(
+      ({ child, states: own }) =>
+        own.pr_open !== null &&
+        stateNameEquals(own.pr_open, own.in_review) &&
+        readsAsPrOpen(child, own),
+    );
+    const unmerged =
+      openPrChild !== undefined
+        ? ` A sub-issue under "${openPrChild.states.pr_open}", the name pr_open shares with in_review, reads as pr_open unless its linked pull request merged (its pullRequest fact is not "merged").`
+        : "";
+    return decide(
+      "keep_in_progress",
+      null,
+      `At least one sub-issue is still in progress/todo/blocked — keep the parent "${states.in_progress}" and continue with Step 4b.${unmerged}`,
+    );
+  }
+
+  // Each remaining child is parked, so at least one ladder entry is present.
+  const ladderIndexes = remaining.map(({ child, states: own }) =>
+    STATE_LADDER.findIndex((key) =>
+      stateNameEquals(child.state?.name, own[key]),
+    ),
+  );
   const parentState = STATE_LADDER[Math.min(...ladderIndexes)] as ParentState;
 
   return decide(
@@ -526,6 +502,8 @@ export function isReconcileInputShape(value: unknown): value is ReconcileInput {
       ));
 
   if (v.parentNativeType != null && typeof v.parentNativeType !== "string")
+    return false;
+  if (v.parentIsEpic !== undefined && typeof v.parentIsEpic !== "boolean")
     return false;
   if (v.found !== undefined && typeof v.found !== "boolean") return false;
   if (v.truncated !== undefined && typeof v.truncated !== "boolean")

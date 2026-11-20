@@ -4,7 +4,9 @@
  *
  * An account's slots held are its launch records that hold their stage
  * (pending, alive, unknown), a takeover and the record it replaces counted
- * as one while both hold. A new launch needs a free slot, a positive readable
+ * as one while both hold, and the live drivers on the host that no such
+ * record accounts for (`host-drivers.ts`): one a pickup armed, or one
+ * started by hand, which bills the account all the same. A new launch needs a free slot, a positive readable
  * weight and no wall. Equal-weight eligible accounts take turns after the
  * most recent launch's account; unequal weights divide launches using the
  * sequence in weighted-turn.ts. Launch records carry both forms of progress
@@ -64,6 +66,12 @@ import {
   type ReadRecord,
   unrecordedWalls,
 } from "./launches.ts";
+import { accountOf } from "./account-of.ts";
+import { type HostDriver, unrecordedDrivers } from "./host-drivers.ts";
+import {
+  processEnvironment,
+  type ProcessSettings,
+} from "./runtime/process-environment.ts";
 import type { MachineAccount } from "./machine-config.ts";
 import { serves, type ServedStage } from "./account-stages.ts";
 import { accountWall, type Wall } from "./walls.ts";
@@ -241,24 +249,6 @@ export interface Slots {
   wallUnrecorded: boolean;
 }
 
-/**
- * The listed account a record bills. An account is its vendor and
- * configuration directory; its name is a label a person may change. So the
- * account at the record's vendor and directory is the one, whatever it is
- * called now, and the name decides only when no listed account has them.
- */
-function accountOf(
-  accounts: MachineAccount[],
-  record: { account: string; vendor: string; configDir: string },
-): string | null {
-  const same = accounts.filter(
-    (a) => a.vendor === record.vendor && a.configDir === record.configDir,
-  );
-  if (same.length === 1) return (same[0] as MachineAccount).name;
-  if (same.length > 1) return null;
-  return accounts.find((a) => a.name === record.account)?.name ?? null;
-}
-
 /** The slots of the account a record bills; `undefined` when the machine file lists none. */
 export function slotsOf(
   table: Slots[],
@@ -298,10 +288,11 @@ export function holdingRecords(
   );
 }
 
-/** The slots a set of records holds, per listed account name. */
+/** The slots a set of records and the live drivers none of them accounts for hold, per listed account name. */
 function heldByAccount(
   accounts: MachineAccount[],
   records: ReadRecord[],
+  drivers: readonly HostDriver[],
 ): Map<string, number> {
   const holding = holdingRecords(records);
   const held = new Map<string, number>();
@@ -311,6 +302,22 @@ function heldByAccount(
     if (name === null) continue;
     held.set(name, (held.get(name) ?? 0) + 1);
   }
+  for (const { account, driver } of unrecordedDrivers(
+    accounts,
+    records,
+    drivers,
+  ))
+    if (
+      [...holding.values()].some(
+        (record) =>
+          accountOf(accounts, record) === account &&
+          record.replacesHostDriver?.clone === driver.clone &&
+          record.replacesHostDriver.pr === driver.pr &&
+          record.replacesHostDriver.since === driver.since,
+      )
+    )
+      continue;
+    else if (account !== null) held.set(account, (held.get(account) ?? 0) + 1);
   return held;
 }
 
@@ -343,8 +350,9 @@ export function slotTable(
   nowMs: number,
   root?: string,
   weights?: AccountWeights,
+  drivers: readonly HostDriver[] = [],
 ): Slots[] {
-  const held = heldByAccount(accounts, records);
+  const held = heldByAccount(accounts, records, drivers);
   const unrecorded = unrecordedAccounts(accounts, records, root);
   return accounts.map((account) => ({
     account,
@@ -412,10 +420,32 @@ function describeSlots(table: Slots[], launch: LaunchKind): string {
 }
 
 /** Why the account's launch weight closes admission; shared by new launches and pending replays. */
-export function accountWeightBlock(slots: Slots): string | null {
+function accountWeightBlock(slots: Slots): string | null {
   return slots.weight.configured === null || slots.weight.configured === 0
     ? `weight ${slots.weight.configured ?? "unreadable"}: ${slots.weight.reason}`
     : null;
+}
+
+/** Whether an account still satisfies the local conditions on its reserved launch. */
+export function replaySlotBlock(
+  slots: Slots,
+  record: Pick<LaunchRecord, "vendor" | "configDir">,
+  codex: CodexOptIn,
+): string | null {
+  if (
+    slots.account.vendor !== record.vendor ||
+    slots.account.configDir !== record.configDir
+  )
+    return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
+  const weightBlock = accountWeightBlock(slots);
+  if (weightBlock !== null) return `${slots.account.name}: ${weightBlock}`;
+  if (record.vendor === "codex" && !codex.on)
+    return `${slots.account.name}: ${codex.why}`;
+  if (slots.wallUnrecorded)
+    return `${slots.account.name} ended on a wall that was not recorded`;
+  if (slots.wall !== null)
+    return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
+  return null;
 }
 
 /** Why an account cannot take `launch` now; `null` when it can. */
@@ -508,6 +538,36 @@ export function admitTakeover(
   return { admitted: slots };
 }
 
+/** Admit a takeover into the slot of the live, unrecorded driver it replaces. */
+export function admitHostDriverTakeover(
+  table: Slots[],
+  account: string,
+  deadlineSec: number,
+  codex: CodexOptIn,
+  stage: ServedStage,
+): Admission {
+  const slots = table.find((entry) => entry.account.name === account);
+  if (slots === undefined)
+    return {
+      waits: `the live driver's account ${account} is no longer in the machine file`,
+    };
+  const launch: LaunchKind = { kind: "pass", deadlineSec, codex, stage };
+  const refusal =
+    stageRefusal(slots.account, launch) ??
+    vendorRefusal(slots.account.vendor, launch) ??
+    accountWeightBlock(slots);
+  if (refusal !== null) return { waits: `${slots.account.name}: ${refusal}` };
+  if (slots.wallUnrecorded)
+    return {
+      waits: `${slots.account.name}, whose slot it takes, ended on a wall that was not recorded`,
+    };
+  if (slots.wall !== null)
+    return {
+      waits: `${slots.account.name}, whose slot it takes, is walled until ${slots.wall.resetAt}`,
+    };
+  return { admitted: slots };
+}
+
 /** The most recent launch's account, where an equal-weight turn resumes. */
 export function lastAccount(records: ReadRecord[]): string | null {
   let latest: ReadRecord | null = null;
@@ -531,6 +591,7 @@ export type IdentityCheck = { ok: true } | { ok: false; reason: string };
 export async function checkIdentity(
   account: MachineAccount,
   timeoutSec: number,
+  settings?: ProcessSettings,
 ): Promise<IdentityCheck> {
   const vendor = account.vendor;
   if (!isPassVendor(vendor))
@@ -538,6 +599,7 @@ export async function checkIdentity(
       ok: false,
       reason: `the drive documents no pass command for the vendor ${vendor}`,
     };
+  const selected = { vendor, configDir: account.configDir };
   const done = await run(
     [
       process.execPath,
@@ -549,10 +611,10 @@ export async function checkIdentity(
     ],
     {
       timeoutSec,
-      env: passEnvironment(process.env, {
-        vendor,
-        configDir: account.configDir,
-      }),
+      env:
+        settings === undefined
+          ? passEnvironment(process.env, selected)
+          : processEnvironment(process.env, settings, selected),
     },
   );
   if (done.code !== 0)

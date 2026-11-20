@@ -10,6 +10,7 @@ import {
   type ClosingReport,
 } from "../../../shared/closing-report.ts";
 import type { ParkedDecision } from "../../../shared/decisions/park.ts";
+import { driverRuntime } from "../scripts/lib/driver/runtime.ts";
 import {
   composeConcluded,
   composeDriverReport,
@@ -94,6 +95,24 @@ describe("the closing report's concluded", () => {
 });
 
 describe("the driver's closing report", () => {
+  test("names the pages a check-runs listing read before it was cut short", () => {
+    driverRuntime.stopListingPages = 14;
+    try {
+      const report = composeDriverReport({
+        pr: "42",
+        code: DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+        state: null,
+        round: null,
+      });
+      expect(checkClosingReport(report)).toEqual([]);
+      expect(report.concluded).toContain("after 14 page(s)");
+      expect(report.cause).toBe("tool-failed");
+      expect(report.suggested_next?.owner).toBe("line");
+    } finally {
+      driverRuntime.stopListingPages = null;
+    }
+  });
+
   test("takes the cause and the next step from the registry's entry for the exit", () => {
     const report = composeDriverReport({
       pr: "42",
@@ -174,6 +193,29 @@ describe("the driver's closing report", () => {
     expect(report.concluded).toBe(
       "PR #42 parked: Keep the old field name? (and 2 more decisions)",
     );
+  });
+
+  test("at a park, retains the status probe before a long parked-decision summary", () => {
+    driverRuntime.stopProbe = {
+      code: DRIVE_EXIT.HITL_PARKED,
+      state: "HITL_PARKED",
+      reason: "the public API choice needs a person",
+    };
+    try {
+      const report = composeDriverReport({
+        pr: "42",
+        code: DRIVE_EXIT.HITL_PARKED,
+        state: parked({ reason: "x".repeat(3000) }),
+        round: null,
+      });
+      expect(checkClosingReport(report)).toEqual([]);
+      expect(report.concluded).toContain("HITL_PARKED");
+      expect(report.concluded).toContain(
+        "the public API choice needs a person",
+      );
+    } finally {
+      driverRuntime.stopProbe = null;
+    }
   });
 
   test("at a park without a framed decision, asks the parked item's reason as a question", () => {

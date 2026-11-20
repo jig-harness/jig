@@ -14,6 +14,10 @@ import type { Component, DoctorCheck, LastRun } from "../runtime/component.ts";
 import { scheduledStatus } from "../runtime/job-status.ts";
 import { type GcArguments, gcCommand, gcMain, showReceipts } from "./cli.ts";
 import { gcConfiguration } from "./config.ts";
+import {
+  fixtureRegistryCheck,
+  stateInodeCheck,
+} from "../shared/fixture-health.ts";
 import { install } from "./install.ts";
 import { gcJobSpec } from "./job-spec.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
@@ -84,6 +88,10 @@ export const gcComponent: Component<GcArguments> = {
       machine: request.machine,
     }),
   status: () => scheduledStatus("gc", job(), lastRun()),
-  doctor: async () => [machineFileCheck()],
+  doctor: async () => [
+    machineFileCheck(),
+    fixtureRegistryCheck(),
+    stateInodeCheck(),
+  ],
   receipts: showReceipts,
 };

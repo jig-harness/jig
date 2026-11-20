@@ -67,8 +67,8 @@ export interface DispatchSection {
   labels: LabelConfig;
   /** The adoption rule (`dispatch.adopt`): off by default. */
   adopt: AdoptRule;
-  /** How many children of an epic with no execution plan are under way at once (`epic_width`). */
-  epicWidth: number;
+  /** Migration notice when the repository still declares the retired width. */
+  retiredEpicWidth?: string;
   /** How the tick weighs a pickup's overlap with the work in flight (`dispatch.overlap`, `overlap-config.ts`); absent reads as the defaults (`overlapOf`). */
   overlap?: import("./overlap-config.ts").OverlapSettings;
   /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
@@ -122,6 +122,8 @@ export interface PickupRelaunch {
   record: string;
   workspace: { id: string; path: string };
   head: string;
+  /** The host fault the pickup stopped on, when it did (`pickup-host-fault.ts`): the relaunch resumes it rather than only pushing it. */
+  fault?: string;
 }
 
 /** `dispatch.stalled_relaunch`'s values. */
@@ -142,6 +144,8 @@ export interface WantedItem {
   ancestorEpic?: string;
   /** Factory-assigned epic whose authority an unassigned child inherits. */
   factoryAncestor?: string;
+  /** Every epic above the item, outermost to nearest, then for a pulled blocker those of the item it is pulled forward for; the late hold check reads each. */
+  ancestors?: string[];
   /** For a blocker pulled forward: the served item it blocks, which carries the authority. */
   blockingFor?: string;
   batchAllowed?: boolean;
@@ -213,18 +217,20 @@ export interface StaleCause {
   /**
    * The drive stopped on a cause its own next step settles: a stall (`14`),
    * a spent CI-repair budget (`21`), a pass deadline with its restarts
-   * spent (`15`), or checks still failing on the infrastructure through
-   * their re-runs (`23`, `ci-infra`), or the forge's rate limit for the
-   * drive's credential spent past what it waits (`24`, `forge-limit`).
-   * Re-driven once per head commit, a `ci-infra` stop once per stop after
-   * its backoff, a `forge-limit` stop once per stop after its reset; a
-   * re-drive that leaves the same stop standing is a person's.
+   * spent (`15`), checks still failing on the infrastructure through their
+   * re-runs (`23`, `ci-infra`), or a check-runs listing cut short (`25`,
+   * `check-runs`). Re-driven once per head commit, a `ci-infra` stop once per
+   * stop after its backoff; a re-drive that leaves the same stop standing is
+   * a person's. The forge's rate limit for the drive's credential spent past
+   * what it waits (`24`, `forge-limit`) is re-driven from that reset.
+   *
    */
   mechanicalStop?:
     | "stall"
     | "ci-repair"
     | "deadline"
     | "ci-infra"
+    | "check-runs"
     | "forge-limit";
   /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`), a `forge-limit` stop's reset (`forge-limit-redrive.ts`). */
   notBefore?: string;
@@ -235,7 +241,8 @@ export interface StaleCause {
    */
   recovery?: true;
   /**
-   * For a stall or a pass deadline that left work in its tree: that tree, as the ledger names it
+   * For a stall, check-runs listing stop or pass deadline that left work in
+   * its tree: that tree, as the ledger names it
    * (`wt-<key>`), and whether it is on this host. The re-drive runs there,
    * never in a fresh tree, which would not carry the work.
    */
@@ -796,7 +803,7 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
-  /** The planned pickups weighed against the work in flight (`overlap-plan.ts`): reported only, nothing the tick starts changes; absent when it plans no pickup. */
+  /** The planned pickups weighed against the work in flight (`overlap-plan.ts`): absent when it plans no pickup. */
   overlap?: import("./overlap-reasons.ts").OverlapReport;
   /** Changed-file evidence for every open pull request, including aged or unread comparisons. */
   prFiles?: import("./sources/pr-files.ts").PrFileSummary[];
