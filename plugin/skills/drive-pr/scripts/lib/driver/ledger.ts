@@ -716,7 +716,15 @@ async function afterStopWrite(
       unreadable ||= owner === "unreadable";
       return owner === "ours";
     });
-    if (pending && (unreadable || label?.write.outcome === "refused"))
+    // A missing projection can mean either a confirmed successor owns the
+    // ledger, or that the label operation itself was unavailable. Keep the
+    // pending exit for the latter so recovery can retry the publication.
+    if (
+      pending &&
+      (unreadable ||
+        label?.write.outcome === "refused" ||
+        (label === null && (await ledgerOwnership(pr)) !== "lost"))
+    )
       return false;
   }
   await dropRecord();

@@ -25,7 +25,7 @@ import { labelForge } from "./state-labels-forge.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import { CONVERGED_CI_PHASE } from "../scripts/lib/state/ledger-values.ts";
 import { parseLedger } from "../scripts/lib/state/ledger.ts";
-import { readState } from "./state-rows.ts";
+import { driverRecordRow, readState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
@@ -188,6 +188,7 @@ describe("a drive writes its own state label", () => {
       "retrying the converged label requires a new drive to watch its CI",
     );
     expect(run.labels()).not.toContain("jig:converged");
+    expect(driverRecordRow(run.stateDir, "999")?.released).toBe(1);
   });
 
   for (const stand of ["jig:hold", "jig:held"])
