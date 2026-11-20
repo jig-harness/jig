@@ -1708,6 +1708,7 @@ carries the specifics.
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
 | `ci-repair` | the failing check names, as CI reported them, then `; timed out: ` and each job the runner stopped at its time limit, with its limit and run time; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-diagnose` | the failing check names, as `ci-repair` gives them; `$DRIVE_PR_ROUND_FAILED_RUNS`, `$DRIVE_PR_ROUND_FAILED_STATUSES` and `$DRIVE_PR_ROUND_REPAIR_SKILL` as there; `$DRIVE_PR_CI_DIAGNOSIS_HEAD` the failing head this session is bound to; `$DRIVE_PR_CI_DIAGNOSIS_REPORT` the path of the receipt it writes | The repair budget for this head and these checks is spent and CI is still red. Find why the earlier repairs failed, track the cause, and repair once more. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer [`CONVERGED`](../../protocol/drive-exits.md) on a `ci-repair` round, and
@@ -1716,7 +1717,7 @@ to stop — on a repair round it is the expected reading, because it is exactly
 what the driver saw before dispatching you. Run the gate anyway (it reconciles
 replied threads and refuses on a merged PR, both of which still matter), then
 proceed to the repair **only when the gate's answer matches the dispatched
-task** — a `ci-repair` round proceeds on `CONVERGED`, a `conflict-resolve`
+task** — a `ci-repair` or `ci-diagnose` round proceeds on `CONVERGED`, a `conflict-resolve`
 round proceeds on `PR_CONFLICTING`, and the two are not interchangeable. The
 state can genuinely have moved between dispatch and this fresh read — the
 base merged out from under a conflict, or a competing push turned a converged
@@ -1767,6 +1768,32 @@ Then:
   the hold again; the variable omits those, and is empty or unset when no run
   could be named safely. Then re-run nothing, and read the failing checks' runs
   from `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --commit <head>`.
+- **`ci-diagnose`** — a `ci-repair` whose earlier passes on this head did not
+  fix CI. Work in this order:
+  1. Compare the earlier attempts with the failure: read the driver log and the
+     commits the previous repair passes pushed or left (`git log`,
+     `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" get`), then the logs of the
+     runs and statuses the variables name, as `ci-repair` reads them. Say what
+     each attempt assumed and why the failure survived it.
+  2. Track the recurring cause as one tracker issue through
+     [`/jig:file-issue`](../file-issue/SKILL.md) (search for an existing one
+     first); its key goes in the receipt.
+  3. Repair the cause as `ci-repair` does: when `$DRIVE_PR_ROUND_REPAIR_SKILL` is
+     set load it, else follow [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and
+     § 6, pushing through `finish-round.ts`.
+  4. Write the receipt to the path in `$DRIVE_PR_CI_DIAGNOSIS_REPORT`, at most
+     4096 bytes of JSON, with the file editor:
+     `{"diagnosis": "<why the earlier attempts failed and what this one changes>", "issue": "<tracker key>", "pushedHead": "<sha of the head you pushed>"}`.
+     `diagnosis` is prose (400 characters are kept, secrets and addresses
+     redacted); `issue` is a tracker key of at most 80 characters;
+     `pushedHead` is the full commit id, omitted when nothing was pushed. When
+     the pull request's head is no longer `$DRIVE_PR_CI_DIAGNOSIS_HEAD` when
+     you start, write only `{"staleHead": true}` and stop without a push.
+
+  A pass that ends without a valid receipt stops the drive with the diagnosis
+  missing, so write it even when the repair needs a person: say so in
+  `diagnosis` and push nothing.
+
 - **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
