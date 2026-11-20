@@ -136,7 +136,7 @@ another file is thrown away:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base>
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -A
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git add -A
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git commit -m "chore(changelog): move the branch's changelog edits into a change note"
 ```
 
@@ -197,7 +197,7 @@ Markers without a base section hide what each side changed. While a path is
 still unmerged and before you edit it, re-create its markers with one:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git checkout --conflict=zdiff3 -- <path>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git checkout --conflict=zdiff3 -- <path>
 ```
 
 `--json` prints the full map, including each region's ours, base and theirs
@@ -208,7 +208,7 @@ text.
 Decide from the intents, never from which side "looks newer".
 
 - **Lockfile or generated file.** Take the integration side
-  with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git checkout <side-option> -- "<path>"`,
+  with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git checkout <side-option> -- "<path>"`,
   substituting `--ours` or `--theirs` for `<side-option>` as the map requires. Resolve the
   sources it is built from first, then run the regeneration command the map
   printed (in the directory it names) and stage the result. Never edit a
@@ -231,7 +231,7 @@ Then look beyond the markers. A clean textual merge can still break a caller
 on the other side: search for uses of anything either side renamed, removed
 or changed the signature of, and fix them as part of the resolution.
 
-Stage every resolved path with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- "<path>"`,
+Stage every resolved path with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git add -- "<path>"`,
 or record its removal with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rm -- "<path>"`.
 
 ## Step 4: Record each decision

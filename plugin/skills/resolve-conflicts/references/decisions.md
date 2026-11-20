@@ -66,9 +66,9 @@ integration side, resolve `package.json` first (keep both dependencies), then
 rebuild and stage the lockfile:
 
 ```bash
-bun "<skill-dir>/../../shared/command.ts" -- git checkout --theirs -- bun.lock
+bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git checkout --theirs -- bun.lock
 bun install
-bun "<skill-dir>/../../shared/command.ts" -- git add package.json bun.lock
+bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git add package.json bun.lock
 bun "<skill-dir>/scripts/record.ts" package.json combined --reason "kept both new dependencies"
 bun "<skill-dir>/scripts/record.ts" bun.lock regenerated
 ```

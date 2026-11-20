@@ -49,6 +49,9 @@ const HOOK_SUBCOMMANDS = new Set([
   "am",
   "rebase",
   "reset",
+  "add",
+  "checkout",
+  "switch",
 ]);
 /** Subcommands whose leading `--abort` or `--quit` runs no hook. */
 const ENDING_SUBCOMMANDS = new Set([
@@ -67,7 +70,14 @@ function words(text: string, start: number): string[] {
   let quote = "";
   for (let i = start; i < text.length; i++) {
     const c = text.charAt(i);
-    if (quote) {
+    if (c === "\\" && quote !== "'" && i + 1 < text.length) {
+      const next = text.charAt(i + 1);
+      i++;
+      if (next === "\n") continue;
+      if (quote === '"' && next !== '"' && next !== "\\") word += c;
+      word += next;
+      inWord = true;
+    } else if (quote) {
       if (c === quote) quote = "";
       else word += c;
     } else if (c === '"' || c === "'") {
@@ -114,7 +124,11 @@ function lacksDeadline(args: string[]): boolean {
     (rest[0] === "--abort" || rest[0] === "--quit")
   )
     return false;
-  if (subcommand === "rebase" && rest[0] !== "--continue") return false;
+  if (
+    subcommand === "rebase" &&
+    !rest.some((word) => word === "--continue" || word === "--skip")
+  )
+    return false;
   return !deadline;
 }
 
@@ -168,6 +182,11 @@ describe("hook-running commands carry a deadline", () => {
       'bun "x/shared/command.ts" -- git merge -m "--abort" main',
       'bun "x/shared/command.ts" -- git merge -m "--quit" main',
       'bun "x/shared/command.ts" \\\n  -- git commit -F m.txt',
+      'bun "x/shared/command.ts" --env NOTE "a\\" b" -- git commit -m x',
+      'bun "x/shared/command.ts" -- git rebase -q --continue',
+      'bun "x/shared/command.ts" -- git rebase --skip',
+      'bun "x/shared/command.ts" -- git add -A',
+      'bun "x/shared/command.ts" -- git checkout -- file.txt',
     ])
       expect(undeadlinedHookCommands(line)).toHaveLength(1);
   });

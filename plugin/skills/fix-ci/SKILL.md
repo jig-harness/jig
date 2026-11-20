@@ -533,7 +533,7 @@ would also commit unrelated work in the
 checkout. Check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` afterwards for anything left out.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- <each file this repair changed or regenerated>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git add -- <each file this repair changed or regenerated>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git commit -F ci-fix-message.txt
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- ci-fix-message.txt
 bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/commit-prefix.ts" [--branch <head branch>]
