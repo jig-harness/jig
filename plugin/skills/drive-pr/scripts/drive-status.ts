@@ -430,6 +430,8 @@ async function main(): Promise<number> {
 
   // The evaluation reads the pull request over REST, which names it by
   // number, so a URL or branch argument is resolved to one here, once.
+  // A URL names its repository too; it must be the one this checkout drives.
+  const urlRepo = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/\d+/i.exec(pr)?.[1];
   if (!isDigits(pr)) {
     const r = await ghCall([
       "pr",
@@ -583,6 +585,15 @@ async function main(): Promise<number> {
   if (!owner || !repo) {
     fail(2, "could not resolve the repository (gh returned no owner/name)");
   }
+  if (
+    urlRepo !== undefined &&
+    urlRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()
+  ) {
+    fail(
+      2,
+      `${urlRepo}#${pr} is not in this checkout's repository ${owner}/${repo}; run the gate from a checkout of ${urlRepo}`,
+    );
+  }
 
   let waitingCache: WaitingEvaluationCache | undefined;
   let pollPacing: StatusPollPacing | undefined;
@@ -602,8 +613,11 @@ async function main(): Promise<number> {
       );
     }
   }
+  const startedMs = currentMs();
   const ctx = {
     ...definedFields({ waitingCache }),
+    budgetLeftSec: (): number =>
+      Math.ceil((startedMs + timeout * 1000 - currentMs()) / 1000),
     pr,
     owner,
     repo,
@@ -1327,8 +1341,6 @@ async function main(): Promise<number> {
       // A conditional REST read, not `gh pr view`: the state alone
       // is all this probe asks for, so an unchanged PR answers `304` and spends
       // nothing from the GraphQL bucket a handful of parallel drives exhaust.
-      // The evaluation's own snapshot below stays GraphQL — it compares fields
-      // against each other, and REST and GraphQL disagree on some of them.
       const live = await readPrState(pr, {
         timeoutSec: Math.max(1, Math.ceil(budgetLeftMs() / 1000)),
         caller: "sweep",

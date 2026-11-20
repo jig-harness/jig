@@ -240,4 +240,18 @@ describe("readPrSnapshot", () => {
     expect(r.ok).toBe(false);
     expect(wire.sent).toEqual([]);
   });
+
+  it("sends no full read once the caller's budget is spent", async () => {
+    wire.answer = "502";
+    const r = await readPrSnapshot(
+      "acme",
+      "widgets",
+      "7",
+      "snapshot",
+      get,
+      () => 0,
+    );
+    expect(r.ok).toBe(false);
+    expect(wire.sent.length).toBeLessThanOrEqual(1);
+  });
 });

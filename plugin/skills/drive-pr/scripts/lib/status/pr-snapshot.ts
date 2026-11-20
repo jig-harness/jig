@@ -125,7 +125,8 @@ function final(r: ConditionalGet): boolean {
 /**
  * Read pull request `pr` of `owner/repo`. `caller` labels the request in the
  * cost ledger and for the test double (`CallContext.caller`); `get` is the
- * conditional read, replaced by a test that counts its requests.
+ * conditional read, replaced by a test that counts its requests. `budgetSec`
+ * answers the whole seconds the caller has left, asked as each request starts.
  */
 export async function readPrSnapshot(
   owner: string,
@@ -133,11 +134,20 @@ export async function readPrSnapshot(
   pr: string,
   caller: string,
   get: typeof ghConditionalGet = ghConditionalGet,
+  budgetSec?: () => number | undefined,
 ): Promise<PrSnapshotRead> {
   if (!/^\d+$/.test(pr))
     return { ok: false, reason: `'${pr}' is not a pull request number` };
   const path = `repos/${owner}/${repo}/pulls/${pr}`;
-  const first = await get(path, { caller });
+  // One caller budget covers both requests: each reads what is left of it as
+  // it starts, so a stalled first read leaves the fallback only the remainder.
+  const options = (extra: { unconditional?: boolean } = {}) => {
+    const left = budgetSec?.();
+    return left === undefined
+      ? { caller, ...extra }
+      : { caller, ...extra, timeoutSec: Math.max(1, left) };
+  };
+  const first = await get(path, options());
   if (first.ok) {
     const doc = parseDocument(first.body);
     // A full answer is the full read: what it lacks, the evaluation refuses.
@@ -152,7 +162,9 @@ export async function readPrSnapshot(
   } else if (final(first)) {
     return { ok: false, reason: first.reason };
   }
-  const full = await get(path, { caller, unconditional: true });
+  if (budgetSec !== undefined && (budgetSec() ?? 1) <= 0)
+    return { ok: false, reason: `${path}: the caller's time budget is spent` };
+  const full = await get(path, options({ unconditional: true }));
   if (!full.ok)
     return {
       ok: false,

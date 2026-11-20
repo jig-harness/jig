@@ -2431,7 +2431,9 @@ draft, head and base commit and branch, `mergeable` and the merge state), and
 value with a GraphQL one. An unchanged pull request answers `304` and the kept
 reading is reused; the `304` is GitHub's word, at that instant, that nothing in
 it changed. A failed conditional read, or a kept reading that is not a whole
-pull document, is followed by one full read, and a read that still fails is
+pull document, is followed by one full read (a rate limit, an auth failure or
+a missing pull request is not: a second request cannot clear it, so it is
+reported at once), both requests share the invocation's `--timeout`, and a read that still fails is
 `INDETERMINATE` (a timeout, a 5xx, a rate limit or an auth blip clear, so the
 existing `MAX_QUERY_ERRORS` retry handles them). It is never taken for an
 unchanged pull request, so the evaluation that runs blind cannot be the one

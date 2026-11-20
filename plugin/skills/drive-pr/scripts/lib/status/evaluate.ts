@@ -195,6 +195,8 @@ export interface EvaluateContext {
   listThreadsScript: string;
   summaryScript: string;
   helperTimeoutSec: number;
+  /** Whole seconds left of the invocation's `--timeout`; omitted: unbounded. */
+  budgetLeftSec?: () => number;
   /** Only polling invocations opt in; --once gathers all evidence directly. */
   waitingCache?: WaitingEvaluationCache;
 }
@@ -399,6 +401,8 @@ async function evaluateFresh(
       ctx.repo,
       ctx.pr,
       "still-on-head",
+      undefined,
+      ctx.budgetLeftSec,
     );
     if (!now.ok) {
       return readFailure(
@@ -525,6 +529,8 @@ async function evaluateFresh(
     ctx.repo,
     ctx.pr,
     "snapshot",
+    undefined,
+    ctx.budgetLeftSec,
   );
   if (!snapshot.ok) {
     return readFailure(
