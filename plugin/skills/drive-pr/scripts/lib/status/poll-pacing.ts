@@ -305,6 +305,11 @@ export class StatusPollPacing {
     }
     const ended = this.deps.now();
     const willPoll = !abort?.aborted && ended < deadline;
+    // A wake that lands inside the final margin without a reservation (the
+    // cadence wake was just before it, or a timer ran late) is itself the final
+    // evaluation; reserve it so the next call does not poll again at once.
+    if (willPoll && ended >= deadline - FINAL_EVALUATION_MARGIN_MS)
+      this.finalEvaluationDeadline = deadline;
     this.deps.record(
       this.credential,
       ended - started,

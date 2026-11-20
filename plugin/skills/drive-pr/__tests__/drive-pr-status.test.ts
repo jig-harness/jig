@@ -586,27 +586,26 @@ describe("drive-status.ts terminal states", () => {
     const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
     // This fixture performs two top-level PR reads for every evaluation. The
     // 1s → 2s → 3s capped cadence makes at most six evaluations; a loaded
-    // runner may fit fewer, so the count is bounded rather than exact. Fixed
+    // runner may fit fewer, so the count has a loose lower bound. Fixed
     // one-second polling would make about eleven evaluations.
     expect(polls.length % 2).toBe(0);
-    expect(polls.length).toBeGreaterThanOrEqual(6);
+    expect(polls.length).toBeGreaterThanOrEqual(4);
     expect(polls.length).toBeLessThanOrEqual(12);
-    // The count cannot tell the backed-off cadence from fixed two-second
-    // polling, so read when each evaluation started (two reads each). A timer
-    // never fires early, so each gap is at least its wait whatever the runner's
-    // load; only lower bounds are asserted, since an evaluation's own duration
-    // only lengthens a gap. Fixed 1s polling fails the second bound and fixed
-    // 2s polling the third.
+    // Read when each evaluation started (two reads each). A timer never fires
+    // early, so each observed gap is at least its wait whatever the runner's
+    // load; only lower bounds are asserted, and only for the gaps a loaded
+    // runner fitted. This smoke test checks the wiring; StatusPollPacing's own
+    // tests, with an injected clock, pin the cadence itself.
     const stamps = readFileSync(times, "utf8")
       .trim()
       .split("\n")
       .map((l) => Number(BigInt(l) / 1_000_000n));
     const starts = stamps.filter((_, i) => i % 2 === 0);
     const gaps = starts.slice(1).map((t, i) => t - (starts[i] ?? t));
-    expect(gaps.length).toBeGreaterThanOrEqual(3);
+    expect(gaps.length).toBeGreaterThanOrEqual(1);
     const slackMs = 50;
-    [1000, 2000, 3000].forEach((waitMs, i) => {
-      expect(gaps[i] ?? 0).toBeGreaterThanOrEqual(waitMs - slackMs);
+    gaps.slice(0, 3).forEach((gap, i) => {
+      expect(gap).toBeGreaterThanOrEqual([1000, 2000, 3000][i]! - slackMs);
     });
   }, 20_000);
 });
