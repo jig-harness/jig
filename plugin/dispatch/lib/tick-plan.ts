@@ -15,7 +15,7 @@
  * tick to rank once every repository is planned (`tick-priorities.ts`); the
  * plan never reads it, and only the host's `priorities.enforce` lets the
  * ranking reorder the planned pickups. The planned pickups are then weighed
- * against the work in flight (`overlap-plan.ts`), for the report only.
+ * against the work in flight (`overlap-plan.ts`), to order their launch attempts.
  */
 import { slotTable } from "./accounts.ts";
 import { driversOf } from "./host-drivers.ts";
@@ -113,7 +113,7 @@ export function planObserved(
     ...withTrees(context, opened.stages.has("pickup")),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
-  // Reported only, and weighed after the priorities ranking so it sees the pickup order that starts.
+  // Weigh overlap after the priorities ranking so its tiers preserve that rank.
   context.overlaps ??= [];
   context.overlaps.push({ observation });
   if (opened.owner) {

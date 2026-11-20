@@ -28,6 +28,7 @@ import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { attempt } from "../../shared/outcome.ts";
 import { isoFromMs } from "../../shared/time.ts";
 import { holds, type ReadRecord } from "./launches.ts";
+import { holdsItem, pickupItems } from "./launch-pickups.ts";
 import type { TickBound } from "./sources/bounded.ts";
 import { failureText } from "./text.ts";
 import type { ClaimedItem, WantedItem } from "./types.ts";
@@ -90,12 +91,15 @@ function labelsOf(item: { queueIssue?: { labels: string[] } }): string[] {
 /** The session of this host's launch record that holds `key` with a session, when there is one. */
 function activeSession(
   key: string,
+  repo: string,
   records: readonly ReadRecord[],
 ): string | undefined {
   const holding = records.find(
     (r) =>
       r.record.action === "pickup" &&
-      r.record.item === key &&
+      r.record.repo === repo &&
+      pickupItems(r.record).includes(key) &&
+      holdsItem(r.record, key) &&
       r.state.kind === "alive" &&
       typeof r.record.sessionId === "string" &&
       r.record.sessionId !== "",
@@ -104,6 +108,8 @@ function activeSession(
 }
 
 export interface OverlapObserveInput {
+  /** Repository whose pickup records may supply an active session. */
+  repo: string;
   tracker: Tracker | null;
   wanted: readonly WantedItem[];
   claimed: readonly ClaimedItem[] | null;
@@ -127,7 +133,7 @@ export function footprintItems(input: OverlapObserveInput): FootprintItem[] {
   }) => {
     if (seen.has(item.key)) return;
     seen.add(item.key);
-    const active = activeSession(item.key, input.records);
+    const active = activeSession(item.key, input.repo, input.records);
     out.push({
       key: item.key,
       labels: labelsOf(item),
@@ -139,13 +145,16 @@ export function footprintItems(input: OverlapObserveInput): FootprintItem[] {
   for (const c of input.claimed ?? [])
     add(c as ClaimedItem & { queueIssue?: { labels: string[] } });
   // A pickup this host started and no tracker list carries yet still holds files.
-  for (const r of input.records)
+  for (const { record, state } of input.records) {
     if (
-      r.record.action === "pickup" &&
-      r.record.item !== null &&
-      holds(r.state)
+      record.repo !== input.repo ||
+      record.action !== "pickup" ||
+      !holds(state)
     )
-      add({ key: r.record.item });
+      continue;
+    for (const key of pickupItems(record))
+      if (key !== null && holdsItem(record, key)) add({ key });
+  }
   return out;
 }
 
