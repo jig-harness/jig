@@ -97,7 +97,36 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
   });
 
-  it("rejects a diagnosing repair report without a tracker issue", async () => {
+  it("rejects a diagnosing repair report with a malformed tracker issue", async () => {
+    // The pass exits 0 but changes nothing, so the drive re-gates onto the
+    // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
+    const r = await runDrive(
+      {
+        threads: [],
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        checkRuns: [REVIEWER_RUN, DORMANT_ARM, FAILING_RUN],
+      },
+      [
+        "--keep-draft",
+        "--no-head-sync",
+        "--",
+        "sh",
+        "-c",
+        ': pass for 999; if [ "$DRIVE_PR_ROUND_TASK" = ci-diagnose ]; then echo "diagnosing now" >&2; printf \'%s\\n\' \'{"diagnosis":"the local gate ran no tests","issue":"not a key"}\' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; fi',
+      ],
+      undefined,
+      { env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" } },
+    );
+    expect(r.stderr).toContain("Running CI-repair pass 1/1");
+    expect(r.stderr).toContain("diagnosing now");
+    expect(r.stderr).toContain(
+      "a diagnosis and, unless filing was parked, a tracker issue key",
+    );
+    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+  }, 20_000);
+
+  it("keeps the diagnosis of a report that parked the issue filing", async () => {
     // The pass exits 0 but changes nothing, so the drive re-gates onto the
     // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
     const r = await runDrive(
@@ -120,7 +149,9 @@ describe("drive.ts loop control", () => {
     );
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
     expect(r.stderr).toContain("diagnosing now");
-    expect(r.stderr).toContain("a diagnosis and a tracker issue key");
+    expect(r.stderr).toContain(
+      "no issue filed (parked for a person). the local gate ran no tests",
+    );
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
   }, 20_000);
 

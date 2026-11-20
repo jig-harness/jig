@@ -1791,8 +1791,11 @@ Then:
   4. Write the receipt to the path in `$DRIVE_PR_CI_DIAGNOSIS_REPORT`, at most
      4096 bytes of JSON, with the file editor:
      `{"diagnosis": "<why the earlier attempts failed and what this one changes>", "issue": "<tracker key>", "pushedHead": "<sha of the head you pushed>"}`.
+     Leave `issue` out when you parked the filing (attended, or policy
+     unreadable): the driver records "no issue filed" and still verifies the
+     push.
      `diagnosis` is prose (400 characters are kept, secrets and addresses
-     redacted); `issue` is a tracker key of at most 80 characters;
+     redacted); `issue`, when present, is a tracker key of at most 80 characters;
      `pushedHead` is the full commit id, omitted when nothing was pushed. When
      the pull request's head is no longer `$DRIVE_PR_CI_DIAGNOSIS_HEAD` when
      you start, write only `{"staleHead": true}` and stop without a push.

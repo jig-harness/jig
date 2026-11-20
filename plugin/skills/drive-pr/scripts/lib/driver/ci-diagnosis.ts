@@ -43,9 +43,10 @@ function readDiagnosis(path: string): DiagnosisReport | null {
     if (
       !isRecord(value) ||
       typeof value.diagnosis !== "string" ||
-      typeof value.issue !== "string" ||
-      value.issue.length > 80 ||
-      shapeOfKey(value.issue) === null ||
+      (value.issue !== undefined &&
+        (typeof value.issue !== "string" ||
+          value.issue.length > 80 ||
+          shapeOfKey(value.issue) === null)) ||
       (value.pushedHead !== undefined &&
         (typeof value.pushedHead !== "string" || !isGitSha(value.pushedHead)))
     )
@@ -57,7 +58,10 @@ function readDiagnosis(path: string): DiagnosisReport | null {
     return diagnosis === ""
       ? null
       : {
-          diagnosis: `issue ${value.issue}. ${diagnosis}`,
+          diagnosis:
+            value.issue === undefined
+              ? `no issue filed (parked for a person). ${diagnosis}`
+              : `issue ${value.issue}. ${diagnosis}`,
           pushedHead: value.pushedHead,
         };
   } catch (error) {
@@ -215,7 +219,7 @@ export async function diagnoseCi(
       return await stopWithDiagnosis(
         context.pr,
         head,
-        "The diagnosing repair report must contain a diagnosis and a tracker issue key.",
+        "The diagnosing repair report must contain a diagnosis and, unless filing was parked, a tracker issue key.",
       );
     }
     const { diagnosis, pushedHead } = answer;
