@@ -7,9 +7,9 @@ export {
 } from "./process-output.ts";
 import {
   accountingStderr,
-  captureProcessOutput,
+  captureRun,
+  clearProcessTimers,
   lastBytes,
-  type ProcessTimers,
 } from "./process-output.ts";
 import { windowsProcessLifecycle } from "./windows-process.ts";
 import { stopWindowsTree } from "./process-tree.ts";
@@ -524,6 +524,36 @@ export function heldRun(failure: OutboundFailure): RunResult {
   };
 }
 
+/**
+ * Spawn `argv`, or the result a spawn that threw before any child existed
+ * answers. The lifecycle's resources are released on a throw.
+ */
+export function spawnOrFailure(
+  argv: string[],
+  spawnOpts: SpawnOptions,
+  windows: ReturnType<typeof windowsProcessLifecycle>,
+): { child: ReturnType<typeof spawnCommand> } | { failure: RunResult } {
+  try {
+    return { child: spawnCommand(argv, spawnOpts) };
+  } catch (e) {
+    windows.dispose();
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      failure: {
+        code: 127,
+        stdout: "",
+        stderr: message,
+        timedOut: false,
+        bufferExceeded: false,
+        // `spawn` threw before any child existed: the synchronous half of the
+        // same fact `child.on('error')` reports asynchronously.
+        spawnFailed: true,
+        stderrTail: lastBytes(message),
+      },
+    };
+  }
+}
+
 function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
     if (shutdownRequested()) return;
@@ -572,25 +602,12 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
         accountingStderr(opts.stderr),
       ],
     };
-    let child: ReturnType<typeof spawnCommand>;
-    try {
-      child = spawnCommand(argv, spawnOpts);
-    } catch (e) {
-      windows.dispose();
-      const message = e instanceof Error ? e.message : String(e);
-      resolve({
-        code: 127,
-        stdout: "",
-        stderr: message,
-        timedOut: false,
-        bufferExceeded: false,
-        // `spawn` threw before any child existed — the synchronous half of
-        // the same fact `child.on('error')` reports asynchronously below.
-        spawnFailed: true,
-        stderrTail: lastBytes(message),
-      });
+    const spawned = spawnOrFailure(argv, spawnOpts, windows);
+    if ("failure" in spawned) {
+      resolve(spawned.failure);
       return;
     }
+    const child = spawned.child;
 
     windows.bind(child);
 
@@ -605,18 +622,15 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     let groupSurvived = false;
     let terminationSignal: NodeJS.Signals | undefined;
 
-    const timers: ProcessTimers = {};
-    const output = captureProcessOutput(child, opts, {
+    const { timers, output } = captureRun(child, opts, {
       timedOut: () => timedOut,
-      timers,
       signalTree: (signal) => signalTree(signal),
       settle: (code) => settle(code),
     });
 
     const settle = (code: number, extraErr?: string) =>
       windows.finish(() => {
-        if (timers.kill) clearTimeout(timers.kill);
-        if (timers.escalate) clearTimeout(timers.escalate);
+        clearProcessTimers(timers);
         // Untracked here rather than on 'close', because `settle` is also the
         // deadline's own exit path — which fires while the group may still be
         // dying. A stale pgid in the set would have a later cancellation signal

@@ -1,11 +1,10 @@
 import { inspectGitOperation } from "./git-operation.ts";
 import { armProcessDeadline } from "../../../../shared/process-deadline.ts";
-import { spawnCommand } from "../../../../shared/windows-command.ts";
 import { shutdownRequested } from "../../../../shared/cleanup.ts";
 import {
-  captureProcessOutput,
+  captureRun,
+  clearProcessTimers,
   observedStdio,
-  type ProcessTimers,
 } from "../../../../shared/process-output.ts";
 import { windowsProcessLifecycle } from "../../../../shared/windows-process.ts";
 import { processTable } from "../../../../shared/process-table.ts";
@@ -52,6 +51,7 @@ import {
   gitIdentityEnv,
   heldRun,
   lastBytes,
+  spawnOrFailure,
   readTimeoutEnv,
   registerRunCancellation,
   writeChildInput,
@@ -710,25 +710,12 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       windowsHide: true,
       stdio: observedStdio(opts),
     };
-    let child: ReturnType<typeof spawnCommand>;
-    try {
-      child = spawnCommand(argv, spawnOpts);
-    } catch (e) {
-      windows.dispose();
-      const message = e instanceof Error ? e.message : String(e);
-      resolve({
-        code: 127,
-        stdout: "",
-        stderr: message,
-        timedOut: false,
-        bufferExceeded: false,
-        // `spawn` threw before any child existed — the synchronous half of
-        // the same fact `child.on('error')` reports asynchronously below.
-        spawnFailed: true,
-        stderrTail: lastBytes(message),
-      });
+    const spawned = spawnOrFailure(argv, spawnOpts, windows);
+    if ("failure" in spawned) {
+      resolve(spawned.failure);
       return;
     }
+    const child = spawned.child;
 
     windows.bind(child);
 
@@ -751,6 +738,12 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // handler below has to read it — a stop's escalation cannot be allowed to
     // die with the leader any more than the deadline's can.
     let stopped = false;
+    const { timers, output } = captureRun(child, opts, {
+      timedOut: () => timedOut,
+      signalTree: (sig) => signalTree(sig),
+      settle: (code) => settle(code),
+    });
+
     // Definite-assignment rather than a placeholder: the executor below runs
     // SYNCHRONOUSLY, so the resolver exists before anything can reach this.
     let exitedResolve!: () => void;
@@ -758,19 +751,9 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       exitedResolve = r;
     });
 
-    const timers: ProcessTimers = {};
-    const output = captureProcessOutput(child, opts, {
-      timedOut: () => timedOut,
-      timers,
-      signalTree: (signal) => signalTree(signal),
-      settle: (code) => settle(code),
-    });
-
     const settle = (code: number, extraErr?: string) =>
       windows.finish(() => {
-        if (timers.kill) clearTimeout(timers.kill);
-        if (timers.escalate) clearTimeout(timers.escalate);
-        if (timers.stop) clearTimeout(timers.stop);
+        clearProcessTimers(timers);
         // Untracked here rather than on 'close', because `settle` is also the
         // deadline's own exit path — which fires while the group may still be
         // dying. A stale pgid in the set would have a later cancellation signal

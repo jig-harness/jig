@@ -315,6 +315,24 @@ const MAX_QUERY_ERRORS = 3;
  */
 const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
 
+/** The verdict's optional fields: present only when the read produced them. */
+function optionalVerdictFields(
+  report: StatusReport,
+  rateLimit: { until: string; reason: string } | null,
+) {
+  return {
+    ...(report.failure === undefined ? {} : { failure: report.failure }),
+    ...(rateLimit === null ? {} : { rateLimit }),
+  };
+}
+
+/** On `CHECK_RUNS_UNREADABLE`: what the driver records on its stop. */
+function optionalListingFields(report: StatusReport) {
+  return report.listingPagesRead === undefined
+    ? {}
+    : { listingPagesRead: report.listingPagesRead };
+}
+
 async function main(): Promise<number> {
   let pr = "";
   let json = false;
@@ -866,8 +884,7 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
-          ...(report.failure === undefined ? {} : { failure: report.failure }),
-          ...(rateLimit === null ? {} : { rateLimit }),
+          ...optionalVerdictFields(report, rateLimit),
           reflectDue: reflectionDue,
           structuralEscalationDue: escalation.due,
           // The claim the last acknowledgment recorded via
@@ -949,10 +966,7 @@ async function main(): Promise<number> {
           failingStatusNames: report.failingStatusNames,
           failingRuns: report.failingRuns,
           failingStatuses: report.failingStatuses ?? null,
-          // On `CHECK_RUNS_UNREADABLE`: what the driver records on its stop.
-          ...(report.listingPagesRead === undefined
-            ? {}
-            : { listingPagesRead: report.listingPagesRead }),
+          ...optionalListingFields(report),
         })}\n`,
       );
     } else {
