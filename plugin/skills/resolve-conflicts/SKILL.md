@@ -216,7 +216,7 @@ Decide from the intents, never from which side "looks newer".
 - **Deleted on one side, changed on the other.** Find where the code went:
   `renamedTo`, or a search for the changed symbol. Carry the change there, or
   record why it no longer applies, then remove the old path with
-  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rm -- "<path>"` (decision
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git rm -- "<path>"` (decision
   `deleted`) or keep it (decision `ours`, `theirs` or `combined`).
 - **Text.** Combine both changes where both intents still hold (`combined`).
   Keep one side only when the other change is superseded by it or already
@@ -232,7 +232,7 @@ on the other side: search for uses of anything either side renamed, removed
 or changed the signature of, and fix them as part of the resolution.
 
 Stage every resolved path with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git add -- "<path>"`,
-or record its removal with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rm -- "<path>"`.
+or record its removal with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git rm -- "<path>"`.
 
 ## Step 4: Record each decision
 
@@ -520,21 +520,30 @@ killed there, is a hung hook too.
   the merge. Otherwise the converted files are still staged: commit them
   with the longer deadline, then merge.
 - **The merge (Step 1).** A merge that stops on conflicts runs no hook, so
-  this one was merging cleanly, and where it was killed decides the state:
-  - `MERGE_HEAD` in place (killed while the commit message was prepared or
-    checked): conclude it with
-    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 7200 -- git commit --no-edit`,
-    which keeps git's prepared merge message.
+  this one was merging cleanly, and where it was killed decides the state.
+  Read the ancestry first, because git moves the branch before its last hook
+  and removes `MERGE_HEAD` after it:
   - The base already in the branch
     (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge-base --is-ancestor <remote>/<base> HEAD`
-    exits `0`): the merge landed and only a later hook was killed. Nothing
-    is left to do.
-  - Otherwise the base's changes are staged with no `MERGE_HEAD` (killed in
-    the hook that runs before a merge commit). Committing them would make a
+    exits `0`): the merge landed and only a later hook was killed, with
+    `MERGE_HEAD` possibly still in place. Commit nothing, which would add a
+    second, empty commit; clear the leftover state with
+    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge --quit`
+    (a quit runs no hook, so it takes none in a drive pass either).
+    Nothing else is left to do.
+  - Otherwise, with `MERGE_HEAD` in place and no unmerged path (killed while
+    the commit message was prepared or checked): conclude it with
+    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 7200 -- git commit --no-edit`,
+    which keeps git's prepared merge message.
+  - Otherwise the index holds the base's changes, staged or as unmerged
+    paths, with no `MERGE_HEAD` (killed in the hook that runs before a merge
+    commit, or in the one that follows the index write of a merge that
+    conflicted, before git recorded the merge). Committing would make a
     single-parent commit that hides the merge, so return the index and the
     working tree to the branch's commit with
     `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git reset --merge`
-    and run the merge again with the longer deadline.
+    and run the merge again with the longer deadline; the conflicts, if
+    there are any, show again and are resolved from Step 2.
 - **The continued rebase.** When the rebase still stands at the same stop
   with its resolution staged, continue it with the longer deadline. When it
   has moved on, take what it shows as you would after a continue that
@@ -572,7 +581,7 @@ each question.
   you see (keep ours, keep theirs, a combination you describe), then record
   their answer as the decision and continue from Step 5.
 - **Unattended (a drive's repair round):** abort with
-  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git <operation> --abort`, substituting the stopped operation
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git <operation> --abort`, substituting the stopped operation
   (`merge`, `rebase`, `cherry-pick` or `revert`). Then verify the tree is clean:
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --porcelain --untracked-files=no` must print nothing,
   and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse -q --verify MERGE_HEAD` must exit non-zero.

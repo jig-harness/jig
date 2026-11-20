@@ -289,7 +289,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/work-batch/"
+      ownTests: "bun run test ./plugin/skills/work-batch/ ./plugin/shared/__tests__/"
 
   modules:
     title: "The practice modules: reference, templates and module pages"

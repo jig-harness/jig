@@ -39,27 +39,45 @@ const GIT_VALUE_OPTIONS = new Set([
   "--super-prefix",
   "--config-env",
 ]);
-const HOOK_SUBCOMMANDS = new Set([
-  "commit",
-  "merge",
-  "cherry-pick",
-  "revert",
-  "push",
-  "pull",
-  "am",
-  "rebase",
-  "reset",
-  "add",
-  "checkout",
-  "switch",
-]);
-/** Subcommands whose leading `--abort` or `--quit` runs no hook. */
-const ENDING_SUBCOMMANDS = new Set([
-  "merge",
-  "rebase",
-  "cherry-pick",
-  "revert",
-  "am",
+/**
+ * Git subcommands that read or write objects and refs without touching the
+ * index or the work tree, so no hook runs. Any other subcommand is taken to
+ * run one (the index writes invoke `post-index-change`, checkouts
+ * `post-checkout`), which keeps a subcommand nobody listed on the safe side.
+ */
+const HOOK_FREE_SUBCOMMANDS = new Set([
+  "log",
+  "show",
+  "status",
+  "diff",
+  "rev-parse",
+  "rev-list",
+  "merge-base",
+  "merge-tree",
+  "commit-tree",
+  "ls-files",
+  "ls-tree",
+  "cat-file",
+  "show-ref",
+  "for-each-ref",
+  "symbolic-ref",
+  "branch",
+  "config",
+  "remote",
+  "fetch",
+  "clean",
+  "describe",
+  "blame",
+  "grep",
+  "var",
+  "worktree",
+  "hash-object",
+  "check-ignore",
+  "diff-tree",
+  "diff-index",
+  "name-rev",
+  "shortlog",
+  "version",
 ]);
 
 /** The words of a command from `start`, quotes removed, up to where it ends. */
@@ -117,18 +135,10 @@ function lacksDeadline(args: string[]): boolean {
     if (GIT_VALUE_OPTIONS.has(option)) i++;
   }
   const subcommand = args[i] ?? "";
-  if (!HOOK_SUBCOMMANDS.has(subcommand)) return false;
-  const rest = args.slice(i + 1);
-  if (
-    ENDING_SUBCOMMANDS.has(subcommand) &&
-    (rest[0] === "--abort" || rest[0] === "--quit")
-  )
-    return false;
-  if (
-    subcommand === "rebase" &&
-    !rest.some((word) => word === "--continue" || word === "--skip")
-  )
-    return false;
+  if (!subcommand || HOOK_FREE_SUBCOMMANDS.has(subcommand)) return false;
+  // `--quit` forgets an operation's state and touches neither index nor tree;
+  // `--abort` resets them, which runs hooks.
+  if (args[i + 1] === "--quit") return false;
   return !deadline;
 }
 
@@ -172,6 +182,11 @@ describe("hook-running commands carry a deadline", () => {
       'bun "<skill-dir>/../../shared/command.ts" -- git -C sub commit -m x',
       'bun "<skill-dir>/../../shared/command.ts" -- git --no-pager pull',
       'merge with `bun "<skill-dir>/../../shared/command.ts" -- git merge main`, or `git merge --abort` it',
+      'bun "x/shared/command.ts" -- git merge --abort',
+      'bun "x/shared/command.ts" -- git rebase --abort',
+      'bun "x/shared/command.ts" -- git rm -f -- file.txt',
+      'bun "x/shared/command.ts" -- git stash push',
+      'bun "x/shared/command.ts" -- git restore -- file.txt',
       'bun "x/shared/command.ts" git commit -m x',
       'bun "x/shared/command.ts" -- git --git-dir .git commit -m x',
       'bun "x/shared/command.ts" --env NOTE "--timeout-seconds 3600" -- git commit -m x',
@@ -195,7 +210,7 @@ describe("hook-running commands carry a deadline", () => {
     for (const line of [
       `bun "${SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git commit -F m.txt`,
       'bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 --env GIT_EDITOR true -- git rebase --continue',
-      'bun "<skill-dir>/../../shared/command.ts" -- git merge --abort',
+      'bun "<skill-dir>/../../shared/command.ts" --timeout-seconds 3600 -- git merge --abort',
       'bun "<skill-dir>/../../shared/command.ts" -- git merge-tree --write-tree a b',
       'bun "<skill-dir>/../../shared/command.ts" -- git commit-tree x',
       'bun "<skill-dir>/../../shared/command.ts" -- git log -1',
