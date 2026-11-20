@@ -25,6 +25,10 @@ export interface DriveRoundContext {
   readyFlippedToDraftBeforeRecord: boolean;
   finalCiWait: FinalCiWait;
   witnessWaits: number;
+  /** Consecutive release-proof reads still awaiting the timeline witness. */
+  releaseProofWaits: number;
+  /** `DRIVE_PR_RELEASE_PROOF_ATTEMPTS`, read once when the drive starts. */
+  releaseProofWaitLimit: number;
   /** Total dispatched repairs for diagnostics; allowances use `ciAttempts`. */
   ciRepairs: number;
   ciRepairBudget: number;

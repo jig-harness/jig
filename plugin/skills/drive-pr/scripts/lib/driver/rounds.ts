@@ -10,6 +10,7 @@ import {
   finalCiWitnessPolls,
   FINAL_CI_POLL_SECONDS,
   finalRegateLimit,
+  releaseProofAttempts,
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
@@ -144,6 +145,10 @@ export async function runDriverRounds({
   // The head `witnessWaits` is counting against — see the reset at its own
   // branch for why the count is per-head rather than per-drive.
   const witnessWaitHead = "";
+  // A successful unlabel whose timeline witness stays unreadable otherwise
+  // re-enters convergence forever without charging a round or witness poll.
+  const releaseProofWaits = 0;
+  const releaseProofWaitLimit = releaseProofAttempts();
   const finalCiWait = new FinalCiWait(
     pr,
     undefined,
@@ -180,6 +185,8 @@ export async function runDriverRounds({
     readyFlippedToDraftBeforeRecord,
     finalCiWait,
     witnessWaits,
+    releaseProofWaits,
+    releaseProofWaitLimit,
     ciRepairs,
     ciRepairBudget,
     ciInfra,

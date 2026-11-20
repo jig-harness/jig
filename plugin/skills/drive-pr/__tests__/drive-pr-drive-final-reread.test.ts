@@ -289,6 +289,50 @@ describe.skipIf(
   );
 
   it(
+    "stops after the configured consecutive timeouts verifying CI hold removal",
+    async () => {
+      const { dir, stateDir } = writeFixture({
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        threads: [],
+        ciHeld: true,
+      });
+      writeFileSync(
+        join(dir, "timeline.json"),
+        JSON.stringify([
+          {
+            node_id: "LE_1",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: { login: "drive-user" },
+            created_at: "2026-09-10T09:59:00Z",
+          },
+        ]),
+      );
+      writeFileSync(join(dir, "timeline-timeout-after-unlabel-count"), "2");
+      const r = await driveUntilEnd(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--keep-draft", "--", ...PASS_NOOP],
+        { DRIVE_PR_RELEASE_PROOF_ATTEMPTS: "1" },
+      );
+      expectEnded(r);
+      expectSpawnExit(
+        { exitCode: r.exitCode, stderr: r.stderr, stdout: null },
+        1,
+      );
+      expect(
+        r.stderr.match(/Waiting to verify the CI hold label removal/g),
+      ).toHaveLength(1);
+      expect(r.stderr).toContain(
+        "CI hold removal is still unproven after 2 consecutive read(s)",
+      );
+      expect(r.stderr).toContain("DRIVE_PR_RELEASE_PROOF_ATTEMPTS=1");
+    },
+    DRIVE_DEADLINE_MS * 2,
+  );
+
+  it(
     "continues convergence when a recovery snapshot fails after its entry check succeeds",
     async () => {
       const { dir, stateDir } = writeFixture({

@@ -4,4 +4,4 @@ release: patch
 
 ### Fixed
 
-- A converged drive retries when GitHub times out while verifying removal of the CI hold label. It keeps the removal record so the next read can verify the event and wait for full CI.
+- A converged drive retries when GitHub times out while verifying removal of the CI hold label. It keeps the removal record so the next read can verify the event and wait for full CI, then stops after the configured consecutive proof-read limit instead of retrying forever.

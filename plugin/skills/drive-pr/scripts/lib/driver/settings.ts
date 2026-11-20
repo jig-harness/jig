@@ -396,6 +396,21 @@ const FINAL_CI_WITNESS_POLLS_DEFAULT = 180;
 export const UNLABEL_SETTLE_SECONDS =
   testPacing("DRIVE_PR_UNLABEL_SETTLE_MS", 5_000, 10) / 1000;
 
+const RELEASE_PROOF_ATTEMPTS_DEFAULT = 3;
+
+/**
+ * Consecutive reads allowed while a successful CI-hold removal still lacks
+ * its timeline proof. The releasing record remains durable when this is
+ * spent, so a later drive can reconcile the transition without guessing.
+ * `0` stops on the first unproven release.
+ */
+export function releaseProofAttempts(): number {
+  return wholeEnv(
+    process.env.DRIVE_PR_RELEASE_PROOF_ATTEMPTS,
+    RELEASE_PROOF_ATTEMPTS_DEFAULT,
+  );
+}
+
 /**
  * How often a paused drive, and a drive waiting out a usage wall, re-reads
  * its mailbox for a resume or stop.
