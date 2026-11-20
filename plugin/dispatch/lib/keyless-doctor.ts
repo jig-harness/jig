@@ -93,6 +93,20 @@ function receiptOf(
   return receipt;
 }
 
+/** Whether `e` is a system's missing credential with its repositories. */
+function wellFormed(e: unknown): boolean {
+  const m = e as Partial<NoCredential> | null;
+  return (
+    m !== null &&
+    typeof m === "object" &&
+    typeof m.system === "string" &&
+    typeof m.reason === "string" &&
+    typeof m.remedy === "string" &&
+    Array.isArray(m.repos) &&
+    m.repos.every((r) => typeof r === "string")
+  );
+}
+
 /** The `noCredential` entries `receipt` carries, or why they cannot be trusted: a field that is not a list, or an entry that is not a system's missing credential with its repositories. */
 function keylessEntries(
   receipt: TickReceipt | null,
@@ -106,19 +120,8 @@ function keylessEntries(
       ? { why: "its receipt names no noCredential" }
       : { entries: [] };
   if (!Array.isArray(field)) return { why: "its noCredential is not a list" };
-  for (const e of field as unknown[]) {
-    const m = e as Partial<NoCredential> | null;
-    if (
-      m === null ||
-      typeof m !== "object" ||
-      typeof m.system !== "string" ||
-      typeof m.reason !== "string" ||
-      typeof m.remedy !== "string" ||
-      !Array.isArray(m.repos) ||
-      !m.repos.every((r) => typeof r === "string")
-    )
-      return { why: "an entry of its noCredential is malformed" };
-  }
+  if (!(field as unknown[]).every(wellFormed))
+    return { why: "an entry of its noCredential is malformed" };
   if (
     field.length === 0 ||
     (field as NoCredential[]).every((e) => e.repos.length === 0)
@@ -159,60 +162,12 @@ function readTracker(
   );
 }
 
-/** The check over the day before `nowMs`, from the receipts under `root` and the ledger at `ledgerPath`. */
-export function keylessCheck(opts: {
-  root?: string;
-  ledgerPath?: string;
-  nowMs: number;
-}): DoctorCheck {
-  const root = opts.root ?? stateRoot();
-  const ledger = ledgerReport({
-    since: opts.nowMs - WINDOW_MS,
-    until: opts.nowMs,
-    ...(opts.ledgerPath === undefined ? {} : { path: opts.ledgerPath }),
-  });
-  if (ledger.unavailable === true)
-    return {
-      id: ID,
-      status: "warn",
-      detail:
-        "the cost ledger could not be read, so whether ticks ran without a tracker credential is unknown",
-    };
-  const keylessRows = ledger.rows.filter((r) => r.credential === NO_CREDENTIAL);
-  const keylessRuns = tickRuns(keylessRows);
-  const others = [
-    ...new Set(
-      keylessRows.filter((r) => !TICK.test(r.caller)).map((r) => r.caller),
-    ),
-  ].sort(byCodeUnit);
-  if (keylessRuns.length === 0)
-    return others.length === 0
-      ? {
-          id: ID,
-          status: "pass",
-          detail:
-            "no tick in the last 24 hours ran without a tracker credential",
-        }
-      : {
-          id: ID,
-          status: "warn",
-          detail: `no tick in the last 24 hours ran without a tracker credential, but these callers had none: ${named(others)}`,
-        };
-  const unreadable = receiptsUnreadable(root);
-  if (unreadable !== null)
-    return {
-      id: ID,
-      status: "fail",
-      detail: `${keylessRuns.length} tick${keylessRuns.length === 1 ? "" : "s"} in the last 24 hours ran without a tracker credential, and their receipts could not be read: ${unreadable}`,
-      fix: `make ${join(root, "receipts")} readable, then run jig doctor again`,
-    };
-  const receipts: Receipts = {
-    root,
-    cache: new Map(),
-    budget: RECEIPTS_BUDGET,
-  };
+/** The keyless runs' unrecovered incidents grouped by reason and repository, and the ticks whose receipt could not be read, named with what was wrong. */
+function groupKeyless(
+  receipts: Receipts,
+  keylessRuns: string[],
+): { groups: Map<string, Keyless>; unresolved: string[] } {
   const groups = new Map<string, Keyless>();
-  // Ticks whose receipt could not be read stay unresolved failures, named with what was wrong.
   const unresolved: string[] = [];
   for (const runId of keylessRuns.slice(0, RECEIPTS_READ)) {
     const receipt = receiptOf(receipts, runId);
@@ -239,6 +194,65 @@ export function keylessCheck(opts: {
         groups.set(key, group);
       }
   }
+  return { groups, unresolved };
+}
+
+/** The check when no tick ran keyless: it passes, or warns of the other callers that had no key. */
+function noKeylessTick(others: string[]): DoctorCheck {
+  return others.length === 0
+    ? {
+        id: ID,
+        status: "pass",
+        detail: "no tick in the last 24 hours ran without a tracker credential",
+      }
+    : {
+        id: ID,
+        status: "warn",
+        detail: `no tick in the last 24 hours ran without a tracker credential, but these callers had none: ${named(others)}`,
+      };
+}
+
+/** The check over the day before `nowMs`, from the receipts under `root` and the ledger at `ledgerPath`. */
+export function keylessCheck(opts: {
+  root?: string;
+  ledgerPath?: string;
+  nowMs: number;
+}): DoctorCheck {
+  const root = opts.root ?? stateRoot();
+  const ledger = ledgerReport({
+    since: opts.nowMs - WINDOW_MS,
+    until: opts.nowMs,
+    ...(opts.ledgerPath === undefined ? {} : { path: opts.ledgerPath }),
+  });
+  if (ledger.unavailable === true)
+    return {
+      id: ID,
+      status: "warn",
+      detail:
+        "the cost ledger could not be read, so whether ticks ran without a tracker credential is unknown",
+    };
+  const keylessRows = ledger.rows.filter((r) => r.credential === NO_CREDENTIAL);
+  const keylessRuns = tickRuns(keylessRows);
+  const others = [
+    ...new Set(
+      keylessRows.filter((r) => !TICK.test(r.caller)).map((r) => r.caller),
+    ),
+  ].sort(byCodeUnit);
+  if (keylessRuns.length === 0) return noKeylessTick(others);
+  const unreadable = receiptsUnreadable(root);
+  if (unreadable !== null)
+    return {
+      id: ID,
+      status: "fail",
+      detail: `${keylessRuns.length} tick${keylessRuns.length === 1 ? "" : "s"} in the last 24 hours ran without a tracker credential, and their receipts could not be read: ${unreadable}`,
+      fix: `make ${join(root, "receipts")} readable, then run jig doctor again`,
+    };
+  const receipts: Receipts = {
+    root,
+    cache: new Map(),
+    budget: RECEIPTS_BUDGET,
+  };
+  const { groups, unresolved } = groupKeyless(receipts, keylessRuns);
   const unexamined = Math.max(0, keylessRuns.length - RECEIPTS_READ);
   const read =
     keylessRuns.length > RECEIPTS_READ

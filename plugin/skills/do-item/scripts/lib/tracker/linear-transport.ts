@@ -410,6 +410,24 @@ function limited(err: LinearApiError, answer: BudgetAnswer): LinearApiError {
 }
 
 /**
+ * A failure met by a call a cancellation may have cut: the caller's own
+ * cancellation throws, the deadline's is returned as the answer. A
+ * cancellation that met no request keeps nothing sent; one a dispatched
+ * request met, or that an attempt already marked, keeps that fact.
+ */
+function cutShort(
+  err: unknown,
+  dispatched: boolean,
+  signal: AbortSignal | undefined,
+  bound: AbortSignal,
+): LinearApiError {
+  const sent = dispatched || (err instanceof LinearApiError && err.sent);
+  if (cancelled(signal)) throw abortedError(signal, sent);
+  if (cancelled(bound)) return abortedError(bound, sent);
+  throw err;
+}
+
+/**
  * One call: a query sent once more after a failure that may clear (`retryRead`),
  * a mutation once, both inside one `LINEAR_TIMEOUT_MS` deadline, through the
  * run's hold on Linear (`guarded`). Its data, or the failure thrown.
@@ -441,23 +459,11 @@ async function call(
           deadlineAt,
           failureOf: failureOfAnswer,
         },
-      ).catch((err: unknown) => {
-        const sent = dispatched || (err instanceof LinearApiError && err.sent);
-        if (cancelled(signal)) throw abortedError(signal, sent);
-        if (cancelled(bound)) return abortedError(bound, sent);
-        throw err;
-      }),
+      ).catch((err: unknown) => cutShort(err, dispatched, signal, bound)),
     failureOfAnswer,
     heldAnswer,
     bound,
-  ).catch((err: unknown): Answer => {
-    // A cancellation that met no request keeps nothing sent; one a dispatched
-    // request met, or that an attempt already marked, keeps that fact.
-    const sent = dispatched || (err instanceof LinearApiError && err.sent);
-    if (cancelled(signal)) throw abortedError(signal, sent);
-    if (cancelled(bound)) return abortedError(bound, sent);
-    throw err;
-  });
+  ).catch((err: unknown): Answer => cutShort(err, dispatched, signal, bound));
   if (answer instanceof LinearApiError) throw answer;
   return answer.data;
 }

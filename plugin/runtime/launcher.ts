@@ -420,6 +420,17 @@ const ROLE = "JIG_LAUNCHER_ROLE";
 const UPGRADE_RESULT = "JIG_SCHEDULED_UPGRADE";
 /** What started the job, passed to it (`dispatch/lib/tick-starter.ts` reads it). */
 const STARTED_BY = "JIG_STARTED_BY";
+/** Tells a dispatch job what started it; no other job carries it, and a value its caller set stays. */
+function nameStarter(
+  env: Record<string, string | undefined>,
+  rest: string[],
+  role: string | undefined,
+): void {
+  const starter = role || (upgradesFirst(rest) ? "timer" : "");
+  if (rest[0] === "dispatch" && starter !== "" && !env[STARTED_BY])
+    env[STARTED_BY] = starter;
+}
+
 /** How long the scheduled upgrade may run before the job goes on without it. */
 const UPGRADE_DEADLINE_MS = 30 * 60_000;
 
@@ -648,10 +659,7 @@ async function main(argv: string[]): Promise<number> {
     const role = env[ROLE];
     delete env[ROLE];
     delete env[UPGRADE_RESULT];
-    // Only the dispatcher's tick reads what started it; no other job carries it.
-    const starter = role || (upgradesFirst(rest) ? "timer" : "");
-    if (rest[0] === "dispatch" && starter !== "" && !env[STARTED_BY])
-      env[STARTED_BY] = starter;
+    nameStarter(env, rest, role);
     let entry = await installedEntry(programs, async (program) => {
       try {
         return await listPlugins(

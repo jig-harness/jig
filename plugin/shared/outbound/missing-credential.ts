@@ -116,9 +116,7 @@ export function noteMissingCredential(
 }
 
 /** What the process noted it lacks behind `identity`, while the note holds. */
-export function missingCredentialOf(
-  identity: string,
-): MissingCredential | undefined {
+function missingCredentialOf(identity: string): MissingCredential | undefined {
   const note = noted.get(identity);
   return note !== undefined && holds(note.atMs) ? note.missing : undefined;
 }

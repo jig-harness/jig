@@ -13,7 +13,7 @@
 import { SCHEDULED_UPGRADE_ENV } from "../../runtime/upgrade-record.ts";
 
 /** The variable a launcher names what started the tick in. */
-export const STARTED_BY_ENV = "JIG_STARTED_BY";
+const STARTED_BY_ENV = "JIG_STARTED_BY";
 
 /** The longest name the receipt keeps. */
 const NAME_LIMIT = 100;

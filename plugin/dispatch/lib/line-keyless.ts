@@ -32,6 +32,47 @@ function lastReading(
   };
 }
 
+/** Why the tick read `r` keyless, or undefined when it did not or the repository is not one that keeps its part. */
+function keylessReason(
+  r: LineSnapshot["repos"][number],
+  tick: {
+    runId: string;
+    systems: ReadonlyMap<string, string>;
+    only?: ReadonlyMap<string, ReadonlySet<string>>;
+  },
+): string | undefined {
+  if (r.tracker == null || r.slug === null || r.runId !== tick.runId)
+    return undefined;
+  const only = tick.only?.get(r.tracker.adapter);
+  if (only !== undefined && !only.has(r.slug)) return undefined;
+  return tick.systems.get(r.tracker.adapter);
+}
+
+/** The slugs the tick read keyless, with their reasons, and those among them whose tracker is not the one the line before read, so nothing carries over. */
+function keylessRepos(
+  line: LineSnapshot,
+  before: LineSnapshot | null,
+  tick: {
+    runId: string;
+    systems: ReadonlyMap<string, string>;
+    only?: ReadonlyMap<string, ReadonlySet<string>>;
+  },
+): { keyless: Map<string, string>; absent: Set<string> } {
+  const keyless = new Map<string, string>();
+  const absent = new Set<string>();
+  for (const r of line.repos) {
+    const reason = keylessReason(r, tick);
+    if (reason === undefined || r.slug === null) continue;
+    keyless.set(r.slug, reason);
+    const was = before?.repos.find(
+      (b) => b.path === r.path && retainedSlug(b) === r.slug,
+    );
+    if (was?.tracker != null && was.tracker.adapter !== r.tracker?.adapter)
+      absent.add(r.slug);
+  }
+  return { keyless, absent };
+}
+
 /**
  * `line`, with each repository the tick `runId` read whose tracker is one of
  * `systems` (adapter to reason) keeping its tracker part from `before`.
@@ -47,23 +88,7 @@ export function keepTrackerPart(
   },
 ): LineSnapshot {
   if (tick.systems.size === 0) return line;
-  const keyless = new Map<string, string>();
-  // Absent: the tracker the repository has now is not the one the line before read, so nothing carries over.
-  const absent = new Set<string>();
-  for (const r of line.repos) {
-    const reason =
-      r.tracker == null ? undefined : tick.systems.get(r.tracker.adapter);
-    if (reason === undefined || r.slug === null || r.runId !== tick.runId)
-      continue;
-    const only = tick.only?.get(r.tracker?.adapter ?? "");
-    if (only !== undefined && !only.has(r.slug)) continue;
-    keyless.set(r.slug, reason);
-    const was = before?.repos.find(
-      (b) => b.path === r.path && retainedSlug(b) === r.slug,
-    );
-    if (was?.tracker != null && was.tracker.adapter !== r.tracker?.adapter)
-      absent.add(r.slug);
-  }
+  const { keyless, absent } = keylessRepos(line, before, tick);
   if (keyless.size === 0) return line;
   const swap = <T extends { repo: string }>(
     now: readonly T[],
