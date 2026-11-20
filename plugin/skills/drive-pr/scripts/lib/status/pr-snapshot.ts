@@ -122,6 +122,13 @@ function final(r: ConditionalGet): boolean {
   return !r.ok && r.failure !== undefined && FINAL.has(r.failure.code);
 }
 
+const NOT_A_DOCUMENT = "the answer is not a pull document";
+
+/** The failure of a full read that follows a first one that did not settle. */
+function afterFirst(first: ConditionalGet, reason: string): string {
+  return first.ok ? reason : `${first.reason}; then the full read: ${reason}`;
+}
+
 /**
  * Read pull request `pr` of `owner/repo`. `caller` labels the request in the
  * cost ledger and for the test double (`CallContext.caller`); `get` is the
@@ -141,49 +148,45 @@ export async function readPrSnapshot(
   const path = `repos/${owner}/${repo}/pulls/${pr}`;
   // One caller budget covers both requests: each reads what is left of it as
   // it starts, so a stalled first read leaves the fallback only the remainder.
+  // An exhausted budget sends nothing: the transport's deadline is a whole
+  // positive number of seconds, so a request is only made with time to spend.
   const spent = `${path}: the caller's time budget is spent`;
+  const exhausted = (): boolean => (budgetSec?.() ?? 1) <= 0;
   const options = (extra: { unconditional?: boolean } = {}) => {
     const left = budgetSec?.();
     return left === undefined
       ? { caller, ...extra }
       : { caller, ...extra, timeoutSec: left };
   };
-  // An exhausted budget sends nothing: the transport's deadline is a whole
-  // positive number of seconds, so a request is only made with time to spend.
-  if ((budgetSec?.() ?? 1) <= 0) return { ok: false, reason: spent };
+  if (exhausted()) return { ok: false, reason: spent };
   const first = await get(path, options());
-  if (first.ok) {
-    const doc = parseDocument(first.body);
-    // A full answer is the full read: what it lacks, the evaluation refuses.
-    if (first.changed)
-      return doc === null
-        ? { ok: false, reason: `${path}: the answer is not a pull document` }
-        : { ok: true, snapshot: snapshotOf(doc) };
-    if (doc !== null) {
-      const kept = snapshotOf(doc);
-      if (whole(kept)) return { ok: true, snapshot: kept };
-    }
-  } else if (final(first)) {
-    return { ok: false, reason: first.reason };
-  }
-  if ((budgetSec?.() ?? 1) <= 0) return { ok: false, reason: spent };
+  const settled = settleFirst(first, path);
+  if (settled !== null) return settled;
+  if (exhausted()) return { ok: false, reason: spent };
   const full = await get(path, options({ unconditional: true }));
-  if (!full.ok)
-    return {
-      ok: false,
-      reason: first.ok
-        ? full.reason
-        : `${first.reason}; then the full read: ${full.reason}`,
-    };
+  if (!full.ok) return { ok: false, reason: afterFirst(first, full.reason) };
   const doc = parseDocument(full.body);
-  if (doc === null) {
-    const unusable = `${path}: the answer is not a pull document`;
+  if (doc === null)
     return {
       ok: false,
-      reason: first.ok
-        ? unusable
-        : `${first.reason}; then the full read: ${unusable}`,
+      reason: afterFirst(first, `${path}: ${NOT_A_DOCUMENT}`),
     };
-  }
   return { ok: true, snapshot: snapshotOf(doc) };
+}
+
+/** What the first, conditional read settles on its own, or null when a full read must follow. */
+function settleFirst(
+  first: ConditionalGet,
+  path: string,
+): PrSnapshotRead | null {
+  if (!first.ok)
+    return final(first) ? { ok: false, reason: first.reason } : null;
+  const doc = parseDocument(first.body);
+  // A full answer is the full read: what it lacks, the evaluation refuses.
+  if (first.changed)
+    return doc === null
+      ? { ok: false, reason: `${path}: ${NOT_A_DOCUMENT}` }
+      : { ok: true, snapshot: snapshotOf(doc) };
+  const kept = doc === null ? null : snapshotOf(doc);
+  return kept !== null && whole(kept) ? { ok: true, snapshot: kept } : null;
 }

@@ -1131,9 +1131,8 @@ if [ "\${1:-}" = "pr" ]; then
   done
 fi
 
-# A \`gh pr view\` in either field list the stub's REST answer below asks for,
-# made by the code under test rather than by that answer (which marks its
-# inner call), is logged, so a probe can assert the evaluation makes none.
+# A \`gh pr view\` in either field list the REST answer below asks for, made by
+# the code under test (not that answer's inner call), is logged.
 if [ "\${1:-} \${2:-}" = "pr view" ] && [ -z "\${DRIVE_PR_STUB_INNER:-}" ]; then
   for a in "$@"; do
     case "$a" in
@@ -1162,13 +1161,8 @@ fi
 # with no label is answered as the sweep's, the narrower form.
 #
 # The status evaluation's own reads of the pull document ride the same
-# endpoint: the opening snapshot (\`snapshot\`) is answered from the field list
-# \`gh pr view\` was asked for before, and the terminal recheck
-# (\`still-on-head\`) from \`state,headRefOid,baseRefOid\`, each rewritten into
-# the REST pull document's shape: \`draft\`, \`head\`/\`base\` \`sha\` and \`ref\`,
-# \`mergeable\` as true, false or null (MERGEABLE, CONFLICTING, UNKNOWN), and
-# \`mergeable_state\` lower-cased. A field the view leaves out, or answers null
-# where REST would not, is left out of the document.
+# endpoint (callers \`snapshot\` and \`still-on-head\`): the \`gh pr view\` field
+# list each asks for is rewritten into the REST document's shape.
 #
 # No ETag header is emitted: nothing is cached, so a probe cannot be answered
 # from an entry a neighbour wrote.
@@ -1203,9 +1197,8 @@ if [ -n "$rest_pr" ]; then
       exit 1
     fi
   done
-  # With a \`pull-etag\` fixture the pull document carries that ETag, and a
-  # read of it that sends the same one is answered \`304\`. Each such read is
-  # logged to \`pull-reads\` as its status and caller.
+  # A \`pull-etag\` fixture: a read sending that ETag is answered \`304\`; each
+  # is logged to \`pull-reads\` as its status and caller.
   rest_etag=""
   rest_caller=""
   if [ "$rest_doc" -eq 1 ] && [ -f "$F/pull-etag" ]; then
@@ -1484,7 +1477,6 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
   emit "$F/raced-comments.json"
   exit 0
 fi
-
 
 # A TRANSIENT failure — a network blip, a rate limit, a timeout. The property
 # under test: this must NOT degrade the merge-conflict guard, only report

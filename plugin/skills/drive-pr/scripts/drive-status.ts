@@ -5,6 +5,7 @@ import {
   readRemoteName,
 } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
+import { pullUrlMismatch, pullUrlParts } from "./lib/status/pr-url.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
  * refuse to say "converged" on any evidence weaker than "the finding-posting
@@ -431,9 +432,7 @@ async function main(): Promise<number> {
   // The evaluation reads the pull request over REST, which names it by
   // number, so a URL or branch argument is resolved to one here, once.
   // A URL names its repository too; it must be the one this checkout drives.
-  const urlMatch = /^https?:\/\/([^/]+)\/([^/]+\/[^/]+)\/pull\/\d+/i.exec(pr);
-  const urlHost = urlMatch?.[1];
-  const urlRepo = urlMatch?.[2];
+  const urlParts = pullUrlParts(pr);
   if (!isDigits(pr)) {
     const r = await ghCall([
       "pr",
@@ -587,30 +586,11 @@ async function main(): Promise<number> {
   if (!owner || !repo) {
     fail(2, "could not resolve the repository (gh returned no owner/name)");
   }
-  if (
-    urlRepo !== undefined &&
-    urlRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()
-  ) {
-    fail(
-      2,
-      `${urlRepo}#${pr} is not in this checkout's repository ${owner}/${repo}; run the gate from a checkout of ${urlRepo}`,
-    );
-  }
-
-  if (urlHost !== undefined) {
-    let repoHost = "";
-    try {
-      repoHost = new URL(repoUrl ?? "").host;
-    } catch {
-      // An unreadable repository URL cannot confirm the host: refuse below.
-    }
-    if (repoHost.toLowerCase() !== urlHost.toLowerCase()) {
-      fail(
-        2,
-        `${urlHost}/${urlRepo} is on another forge host than this checkout's repository ${repoHost || "(unknown)"}/${owner}/${repo}; run the gate from a checkout of it`,
-      );
-    }
-  }
+  const mismatch =
+    urlParts === undefined
+      ? null
+      : pullUrlMismatch(urlParts, pr, { owner, repo, url: repoUrl });
+  if (mismatch !== null) fail(2, mismatch);
 
   let waitingCache: WaitingEvaluationCache | undefined;
   let pollPacing: StatusPollPacing | undefined;
@@ -631,7 +611,7 @@ async function main(): Promise<number> {
     }
   }
   const startedMs = currentMs();
-  /** The promised first evaluation keeps its per-call deadlines: `--timeout` bounds only later ones. */
+  // The first evaluation keeps its per-call deadlines; `--timeout` bounds later ones.
   let firstEvaluationDone = false;
   const ctx = {
     ...definedFields({ waitingCache }),
