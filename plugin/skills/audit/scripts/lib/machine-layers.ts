@@ -3,6 +3,7 @@
  * audit judges the repository's file alone, but the skills on this machine,
  * and `trackerCheck`, also read the user file and the environment.
  */
+import { readMachineConfig } from "../../../../dispatch/lib/machine-config.ts";
 import {
   ENV_PREFIX,
   isMapping as isRecord,
@@ -83,6 +84,13 @@ export function machineLayers(config: Config, schema: Schema): Finding[] {
       id: "fact:user-layer-invalid",
       severity: "warning",
       message: `this machine's ${path}: ${problem}, and a drive here stops on it`,
+    });
+  const dispatch = readMachineConfig();
+  if (!dispatch.ok)
+    findings.push({
+      id: "fact:dispatch-machine-config-invalid",
+      severity: "warning",
+      message: dispatch.failure.reason,
     });
   const repository = new Set(leafFields(config));
   const filled = user ? leafFields(user).filter((f) => !repository.has(f)) : [];
