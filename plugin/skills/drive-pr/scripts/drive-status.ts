@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
-import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
+import {
+  consumerRoot,
+  readConfig,
+  readRemoteName,
+} from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
@@ -240,7 +244,14 @@ import {
   verifyCheckoutIsPrHead,
   verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
-import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
+import {
+  fail,
+  failFrom,
+  isDigits,
+  runMain,
+  sleep,
+  testPacing,
+} from "./lib/cli.ts";
 import {
   fleetHealthLine,
   readFleetHealthAdvisory,
@@ -290,7 +301,14 @@ import {
   waitingChecksMaxAgeMs,
 } from "./lib/status/waiting-cache.ts";
 import { currentMs } from "../../../shared/time.ts";
+import { systemClock } from "../../../shared/clock.ts";
 import { forgeLimitHeld, limitLine, reportLimit } from "./lib/forge-limit.ts";
+import {
+  pollDependencies,
+  pollFingerprint,
+  readStatusPolling,
+  StatusPollPacing,
+} from "./lib/status/poll-pacing.ts";
 import { boundedRealpath, limitedAtStart } from "./lib/status/pre-report.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -544,11 +562,21 @@ async function main(): Promise<number> {
   }
 
   let waitingCache: WaitingEvaluationCache | undefined;
+  let pollPacing: StatusPollPacing | undefined;
   if (!once) {
     try {
       waitingCache = new WaitingEvaluationCache(waitingChecksMaxAgeMs());
+      pollPacing = new StatusPollPacing(
+        interval * 1000,
+        readStatusPolling(readConfig()),
+        pollDependencies(systemClock),
+      );
     } catch (error) {
-      fail(2, error instanceof Error ? error.message : String(error));
+      failFrom(
+        error,
+        2,
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
   const ctx = {
@@ -839,8 +867,8 @@ async function main(): Promise<number> {
     return driftMemo;
   }
 
-  async function emit(code: number): Promise<void> {
-    const drift = await baseDrift();
+  async function emit(code: number, checkBaseDrift = true): Promise<void> {
+    const drift = checkBaseDrift ? await baseDrift() : (driftMemo ?? null);
     const reflectionDue = await reflectDue();
     if (json) {
       // Computed only here — never used outside
@@ -1070,22 +1098,7 @@ async function main(): Promise<number> {
   // matter: it will not clear, and `evaluate()` is about to return PR_NOT_OPEN
   // for it anyway.
   const deadline = currentMs() + timeout * 1000;
-  /**
-   * What is LEFT of the caller's `--timeout`. Non-positive means spent.
-   *
-   * ONE function, read by every site in this loop that is about to spend time,
-   * because the deadline used to be consulted at `case 4` alone and every
-   * other path overran it by construction: `case 1` slept a full interval
-   * without looking, the spawn block floored an already-expired budget to one
-   * second, and the loop top let `evaluate()` begin on a spent budget. The
-   * invariant is what to preserve — no site spends time it has not checked for
-   * — rather than a tally of which sites currently do, since that number is
-   * derivable from the control flow below and goes stale the moment another
-   * wait or spawn is added.
-   *
-   * Worth recording because it is why this is one bug rather than several:
-   * every such site is a different instance of the same omission.
-   */
+  /** Remaining wall-clock time for work or waits after the first evaluation. */
   const budgetLeftMs = (): number => deadline - currentMs();
   /**
    * Whether a further `--interval` sleep still fits inside `--timeout`.
@@ -1690,15 +1703,8 @@ async function main(): Promise<number> {
       case 1: {
         const limited = await stopOnForgeLimit(report.reason);
         if (limited !== null) return limited;
-        // Never let an unreadable state decay into a settled one. Retry a
-        // bounded number of times, then say so — guessing here is how a round
-        // gets abandoned on an auth blip.
-        //
-        // Bounded by the CLOCK as well as by the error count, through the same
-        // `intervalFits()` every other waiting site uses. This branch consulted
-        // neither `deadline` nor anything derived from it, so it slept a full
-        // interval past the advertised timeout and handed the next iteration a
-        // spent budget to spawn a reconciliation sweep with.
+        // Retry an unreadable state within both the query-error limit and
+        // the wall-clock deadline.
         queryErrors += 1;
         if (once || queryErrors >= MAX_QUERY_ERRORS || !intervalFits()) {
           await emit(1);
@@ -1711,31 +1717,25 @@ async function main(): Promise<number> {
         continue;
       }
       case 4: {
-        // Not settled yet. These are the states that BECOME something else
-        // with time — head lag resolves, the reviewer finishes, the marker
-        // catches up.
         queryErrors = 0;
-        if (once) {
+        if (pollPacing === undefined) {
           await emit(4);
           return 4;
         }
-        // The budget is spent when the NEXT sleep no longer fits, not when the
-        // clock has already passed the deadline. `currentMs() >= deadline` let
-        // a full `--interval` be slept on top of whatever the iteration had
-        // already spent, so `--timeout 30 --interval 30` returned at ~50s when
-        // a sweep took the first 20 — and
-        // then handed the following iteration a spent budget. `intervalFits()`
-        // is the shared predicate — `degrade()` and `case 1` stop on it too —
-        // so no waiting site can answer this differently from another.
-        if (!intervalFits()) {
+        const fits = intervalFits();
+        if (fits)
+          console.error(
+            `${report.state}: ${report.reason}; waiting for the next status poll`,
+          );
+        if (
+          !fits ||
+          !(await pollPacing.wait(pollFingerprint(report), deadline))
+        ) {
           report.reason = `${report.reason} (gave up after ${timeout}s)`;
-          await emit(4);
+          // An exhausted wait cannot start a base-drift fetch.
+          await emit(4, false);
           return 4;
         }
-        console.error(
-          `${report.state}: ${report.reason}; waiting ${interval}s`,
-        );
-        await sleep(interval);
         continue;
       }
       case 0: {

@@ -87,6 +87,7 @@ import { apiRoute } from "./gh-route.ts";
 
 export { refusedUser } from "./github-refusal.ts";
 import { swallow } from "../errors.ts";
+import { definedFields } from "../defined-fields.ts";
 import { isRecord } from "../guards.ts";
 import {
   type OutboundFailure,
@@ -523,7 +524,7 @@ function machine(): Machine {
   let found = machines.get(path);
   if (found === undefined) {
     const store = sqliteBudgetStore(path);
-    const governor = budgetGovernor(store);
+    const governor = budgetGovernor(store, { keepGraphqlPollFloor: true });
     found = {
       governor,
       store,
@@ -958,12 +959,7 @@ export function httpsGovernance(
   };
 }
 
-/**
- * GitHub's balances in the record of the credential's quota owner, as the
- * machine knows it without asking (the credential's own record or its
- * earlier one when no owner is known yet): core and GraphQL as their
- * windows hold them now, with when the record was last read.
- */
+/** Read the local balance under the same repository scope as a default `gh` call. */
 export function githubBalances(
   env: Record<string, string | undefined> = process.env,
   read: (key: string) => BudgetRecord | null = (key) =>
@@ -975,16 +971,29 @@ export function githubBalances(
         ghRunScope(["api", "rate_limit"], e, process.cwd()),
       ) ?? machine().owners.known(e)
     )?.owner ?? null,
-): { core: BudgetWindow; graphql: BudgetWindow; observedAt: number } | null {
+): {
+  core: BudgetWindow;
+  graphql: BudgetWindow;
+  observedAt: number;
+  credential?: string;
+  windows?: Record<string, BudgetWindow>;
+} | null {
   const known = owner(env);
-  const record =
-    (known === null ? null : read(known)) ??
-    read(githubCredential(env)) ??
-    read(legacyGithubCredential(env));
-  if (record === null) return null;
-  return {
-    core: record.requests,
-    graphql: record.complexity,
-    observedAt: record.observedAt,
-  };
+  for (const credential of [
+    known,
+    githubCredential(env),
+    legacyGithubCredential(env),
+  ]) {
+    if (credential === null) continue;
+    const record = read(credential);
+    if (record !== null)
+      return {
+        core: record.requests,
+        graphql: record.complexity,
+        observedAt: record.observedAt,
+        credential,
+        ...definedFields({ windows: record.windows }),
+      };
+  }
+  return null;
 }

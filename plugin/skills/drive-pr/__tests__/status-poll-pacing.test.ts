@@ -1,0 +1,196 @@
+import { describe, expect, test } from "bun:test";
+import {
+  budgetGovernor,
+  type BudgetWindow,
+  memoryBudgetStore,
+} from "../../../shared/outbound/budget.ts";
+import {
+  GRAPHQL_POLL_FLOOR,
+  lowerGraphqlBalance,
+} from "../../../shared/outbound/graph-poll-budget.ts";
+import {
+  type CallRecord,
+  withLedgerWriter,
+} from "../../../shared/outbound/ledger.ts";
+import { emptyReport } from "../scripts/lib/status/evaluate.ts";
+import {
+  pollDependencies,
+  pollFingerprint,
+  readStatusPolling,
+  StatusPollPacing,
+} from "../scripts/lib/status/poll-pacing.ts";
+
+const second = 1000;
+const base = 30 * second;
+const defaultPolicy = readStatusPolling({});
+const window = (remaining: number, resetIn: number): BudgetWindow => ({
+  remaining,
+  resetAt: resetIn * second,
+  limit: 5000,
+});
+
+function fixture(balance: (now: number) => BudgetWindow | undefined) {
+  let now = 0;
+  const clock = {
+    now: () => now,
+    async sleep(ms: number) {
+      now += ms;
+    },
+  };
+  const ledger: CallRecord[] = [];
+  const pacing = new StatusPollPacing(base, defaultPolicy, {
+    ...pollDependencies(clock),
+    balance: () => {
+      const observed = balance(now);
+      return observed === undefined
+        ? { window: undefined }
+        : { window: observed, credential: "test-account" };
+    },
+  });
+  return {
+    clock,
+    ledger,
+    wait: (report: string, deadline: number) =>
+      withLedgerWriter(
+        (entry) => ledger.push(entry),
+        () => pacing.wait(report, deadline),
+      ),
+  };
+}
+
+describe("waiting status poll pacing", () => {
+  test("fewer polls over half an hour and an observed change resets the cadence", async () => {
+    const probe = fixture(() => window(4500, 3600));
+    const report = emptyReport();
+    report.apiHead = "first";
+    const fingerprint = pollFingerprint(report);
+    const deadline = 1800 * second;
+    const polled: number[] = [];
+    while (await probe.wait(fingerprint, deadline))
+      polled.push(probe.clock.now());
+    expect(polled.slice(0, 4)).toEqual(
+      [30, 90, 210, 450].map((s) => s * second),
+    );
+    expect(polled.length).toBeLessThan(deadline / base);
+    expect(probe.clock.now()).toBe(deadline);
+
+    report.apiHead = "second";
+    expect(await probe.wait(pollFingerprint(report), deadline + base * 2)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(deadline + base);
+    expect(
+      probe.ledger.some(
+        (entry) => entry.operation === "drive-status poll skipped",
+      ),
+    ).toBe(true);
+    expect(
+      probe.ledger.every(
+        (entry) =>
+          entry.requests === 0 &&
+          entry.unit === "polls" &&
+          entry.window === "none",
+      ),
+    ).toBe(true);
+  });
+
+  test("a low balance discovered after sleeping defers the next poll", async () => {
+    const probe = fixture((now) =>
+      now === 0 ? window(4500, 600) : window(500, 600),
+    );
+    expect(await probe.wait("same", 200 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(75 * second);
+  });
+
+  test("near exhaustion suppresses all polls until reset or wall-clock deadline", async () => {
+    const ended = fixture(() => window(100, 200));
+    expect(await ended.wait("same", 100 * second)).toBe(false);
+    expect(ended.clock.now()).toBe(100 * second);
+    expect(
+      ended.ledger.map(({ operation, cost, durationMs }) => ({
+        operation,
+        cost,
+        durationMs,
+      })),
+    ).toEqual([
+      {
+        operation: "drive-status poll wait",
+        cost: 1,
+        durationMs: 100 * second,
+      },
+      { operation: "drive-status poll skipped", cost: 3, durationMs: 0 },
+    ]);
+
+    const resumed = fixture((now) =>
+      now < 200 * second ? window(100, 200) : window(4500, 600),
+    );
+    expect(await resumed.wait("same", 250 * second)).toBe(true);
+    expect(resumed.clock.now()).toBe(200 * second);
+  });
+
+  test("an alternate higher reading cannot override a live lower reading", async () => {
+    const probe = fixture((now) =>
+      now === 0 ? window(500, 400) : window(4500, 600),
+    );
+    expect(await probe.wait("same", 100 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(75 * second);
+    expect(await probe.wait("changed", 250 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(150 * second);
+  });
+
+  test("an exhausted balance without a limit holds despite a healthy alternate", async () => {
+    const probe = fixture((now) =>
+      now === 0 ? { ...window(0, 200), limit: null } : window(4500, 600),
+    );
+    expect(await probe.wait("same", 250 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(200 * second);
+  });
+
+  test("a partial lower balance can use the known capacity of the same account", async () => {
+    const probe = fixture((now) =>
+      now === 0 ? window(4500, 600) : { ...window(1, 200), limit: null },
+    );
+    expect(await probe.wait("same", 150 * second)).toBe(false);
+    expect(probe.clock.now()).toBe(150 * second);
+  });
+
+  test("an equal balance with a later reset retains the known capacity", () => {
+    expect(
+      lowerGraphqlBalance(
+        [window(100, 200), { ...window(100, 300), limit: null }],
+        0,
+      ),
+    ).toEqual(window(100, 300));
+  });
+
+  test("an unreadable balance does not discard the owner's last live lower reading", async () => {
+    const probe = fixture((now) => (now === 0 ? window(500, 400) : undefined));
+    expect(await probe.wait("same", 100 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(75 * second);
+    expect(await probe.wait("changed", 250 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(150 * second);
+  });
+
+  test("the budget store keeps an alternate lower window across probes", () => {
+    const store = memoryBudgetStore();
+    const governor = budgetGovernor(store, {
+      clock: () => 0,
+      keepGraphqlPollFloor: true,
+    });
+    const owner = "test-account";
+    governor.observe(
+      owner,
+      { snapshot: true, complexity: window(4500, 600) },
+      0,
+    );
+    governor.observe(
+      owner,
+      { snapshot: true, complexity: window(100, 200) },
+      0,
+    );
+    expect(store.read(owner)?.complexity.remaining).toBe(4500);
+    expect(store.read(owner)?.windows?.[GRAPHQL_POLL_FLOOR]?.remaining).toBe(
+      100,
+    );
+  });
+});

@@ -58,6 +58,7 @@ import {
   codexPassArgsProblem,
   DEFAULT_CODEX_PASS_ARGS,
 } from "../../drive-pr/scripts/lib/codex-pass-args.ts";
+import { readStatusPolling } from "../../drive-pr/scripts/lib/status/poll-pacing.ts";
 import { CI_REPAIR_ROUNDS_DEFAULT } from "../../drive-pr/scripts/lib/driver/settings.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
@@ -254,6 +255,7 @@ describe("CONFIGURATION.md", () => {
     expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
+    expect(() => readStatusPolling(example)).not.toThrow();
     expect(() => parseWorkTypes(example)).not.toThrow();
     expect(() => parseRouting(example, parseWorkTypes(example))).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
@@ -438,6 +440,7 @@ describe("the reading skills", () => {
 
   test("use the defaults the schema lists", () => {
     const policy = parsePrPolicy({});
+    const statusPolling = readStatusPolling({});
     const dispatch = dispatchSection({});
     if (!dispatch.ok) throw new Error(dispatch.failure.reason);
     const defaults = Object.fromEntries(
@@ -451,6 +454,9 @@ describe("the reading skills", () => {
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
+      "drive.status_poll.waiting_share": statusPolling.waitingShare,
+      "drive.status_poll.max_interval_seconds":
+        statusPolling.maxIntervalSeconds,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
       "drive.ci_repair_rounds": CI_REPAIR_ROUNDS_DEFAULT,
       "drive.pass_model": DEFAULT_PASS_MODEL,

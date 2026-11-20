@@ -106,6 +106,8 @@ export interface StatusReport extends CiReport {
    * without having asked. */
   isDraft: boolean | null;
   reviewerPresent: boolean;
+  /** Check-run changes observed even while the aggregate CI state stays the same. */
+  checkProgress?: string;
   reviewerStatus: string;
   reviewerConclusion: string;
   reviewedSha: string;
@@ -208,6 +210,7 @@ export function emptyReport(): StatusReport {
     baseHead: "",
     isDraft: null,
     reviewerPresent: false,
+    checkProgress: "",
     reviewerStatus: "",
     reviewerConclusion: "",
     reviewedSha: "",
@@ -358,12 +361,7 @@ async function evaluateFresh(
   ctx: EvaluateContext,
   report: StatusReport,
 ): Promise<number> {
-  // Reset every reported field first. The wait loop calls this repeatedly, and
-  // a field left over from an earlier iteration would be published in the JSON
-  // contract as though it described THIS one — e.g. `reviewer.present: true`
-  // from the pass before the reviewer's check-run vanished from a re-query.
-  // The report is what callers act on, so a stale field in it is a correctness
-  // bug, not a cosmetic one.
+  // Each poll's report describes only evidence gathered on this iteration.
   Object.assign(report, emptyReport(), { localHead: ctx.localHead });
 
   // Every witness below is measured against `apiHead`, read at the TOP.
@@ -785,10 +783,14 @@ async function evaluateFresh(
     runsUnreadable = true;
   }
 
-  // Bound to the app slug AND a check name, not the app alone: an app may
-  // publish several checks on one SHA, and picking "the newest run from this
-  // app" would let an unrelated sibling check attest that the review completed.
-  // Newest wins within that pair (a re-run, or a cancelled first attempt).
+  report.checkProgress = JSON.stringify(
+    runs
+      .map(({ id, status, conclusion }) =>
+        JSON.stringify([id, status, conclusion]),
+      )
+      .sort(),
+  );
+  // The newest check matching both the reviewer app and check name is its witness.
   const reviewer = reviewerRun(runs);
 
   const awaitReviewer = reviewerGatesApply(conflicting);
@@ -805,11 +807,7 @@ async function evaluateFresh(
     ),
   );
 
-  // A conflicting head SKIPS every reviewer gate below. Each of them returns
-  // AWAITING_REVIEWER (exit 4, "becomes something else with time"), and on a
-  // conflicting PR that state polls until `--timeout`. The work enumeration
-  // further down still runs, so findings the poller DID post are picked up
-  // rather than discarded.
+  // Conflicting heads still enumerate review findings without waiting for a reviewer.
   const byObject = reviewerEvidence() === "review_object";
   if (awaitReviewer && reviewer === null) {
     const verdict = await missingReviewerVerdict(
