@@ -57,14 +57,14 @@ export interface ThrowSite {
 }
 
 /** What the oxc tree holds that the walk reads. */
-interface AstNode {
+export interface AstNode {
   type: string;
   start: number;
   end: number;
   [key: string]: unknown;
 }
 
-function isNode(value: unknown): value is AstNode {
+export function isNode(value: unknown): value is AstNode {
   return (
     typeof value === "object" &&
     value !== null &&

@@ -213,6 +213,29 @@ function nextOn(headers: Headers | null, origin: string): string | null {
   return url !== null && onOrigin(url, origin) ? url : null;
 }
 
+/** Where a block string starting at `i` ends. */
+function afterBlockString(document: string, start: number): number {
+  let i = start + 3;
+  while (i < document.length && !document.startsWith('"""', i))
+    i += document.startsWith('\\"""', i) ? 4 : 1;
+  return i + 3;
+}
+
+/** Where a string starting at `i` ends. */
+function afterString(document: string, start: number): number {
+  let i = start + 1;
+  while (i < document.length && document[i] !== '"' && document[i] !== "\n")
+    i += document[i] === "\\" ? 2 : 1;
+  return i + 1;
+}
+
+/** Where a comment starting at `i` ends. */
+function afterComment(document: string, start: number): number {
+  let i = start;
+  while (i < document.length && document[i] !== "\n") i += 1;
+  return i;
+}
+
 /** Whether a GraphQL document holds a mutation or a subscription, which are never sent again: a lexical scan that skips strings, block strings and comments, so none hides or fakes a keyword. */
 function writesOrStreams(document: string): boolean {
   let code = "";
@@ -220,19 +243,13 @@ function writesOrStreams(document: string): boolean {
   while (i < document.length) {
     const c = document[i];
     if (document.startsWith('"""', i)) {
-      i += 3;
-      while (i < document.length && !document.startsWith('"""', i))
-        i += document.startsWith('\\"""', i) ? 4 : 1;
-      i += 3;
+      i = afterBlockString(document, i);
       code += " ";
     } else if (c === '"') {
-      i += 1;
-      while (i < document.length && document[i] !== '"' && document[i] !== "\n")
-        i += document[i] === "\\" ? 2 : 1;
-      i += 1;
+      i = afterString(document, i);
       code += " ";
     } else if (c === "#") {
-      while (i < document.length && document[i] !== "\n") i += 1;
+      i = afterComment(document, i);
     } else {
       code += c;
       i += 1;
@@ -467,72 +484,50 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
     }
   }
 
-  /** One attempt: admitted, sent, observed into the budget and recorded. */
-  async function attempt(sending: Sending): Promise<Called<GitHubAnswer>> {
-    const began = now();
-    const local = (failure: OutboundFailure): Called<GitHubAnswer> => {
-      recordAttempt(sending, began, {
-        requests: 0,
-        cost: 0,
-        estimated: false,
-        notModified: false,
-        window: windowOf(sending, null),
-        failure: failure.code,
-      });
-      return { ok: false, failure };
-    };
-    /** The refusal when the call was cancelled or its time is up: nothing was sent. */
-    const spent = (): OutboundFailure | null => {
-      if (sending.call.signal.aborted)
-        return outboundFailure(
-          "unreachable",
-          "the call was cancelled; nothing was sent",
-        );
-      if (now() >= sending.call.deadlineAt)
-        return outboundFailure(
-          "unreachable",
-          "the call's deadline was spent before it was sent; nothing was sent",
-        );
-      return null;
-    };
-    const before = spent();
-    if (before !== null) return local(before);
+  /** The refusal when the call was cancelled or its time is up: nothing was sent. */
+  function spent(sending: Sending): OutboundFailure | null {
+    if (sending.call.signal.aborted)
+      return outboundFailure(
+        "unreachable",
+        "the call was cancelled; nothing was sent",
+      );
+    if (now() >= sending.call.deadlineAt)
+      return outboundFailure(
+        "unreachable",
+        "the call's deadline was spent before it was sent; nothing was sent",
+      );
+    return null;
+  }
+
+  /** The token the call may send with, or the failure that stops it before anything is sent. */
+  async function readyToSend(
+    sending: Sending,
+  ): Promise<{ token: string } | { failure: OutboundFailure }> {
+    const before = spent(sending);
+    if (before !== null) return { failure: before };
     const acquired = await acquireToken(sending.call);
     // Acquisition takes time of its own: the call may have ended meanwhile.
-    const after = spent();
-    if (after !== null) return local(after);
+    const after = spent(sending);
+    if (after !== null) return { failure: after };
     const token = acquired?.trim() ?? "";
     if (token === "")
-      return local(
-        outboundFailure(
+      return {
+        failure: outboundFailure(
           "unauthorized",
           "no GitHub token is configured for this transport; nothing was sent",
         ),
-      );
-    const admitted = admit(sending);
-    if ("refused" in admitted) return local(admitted.refused);
-    const { governed, sentAt } = admitted;
-    const sent = await send(sending, token);
-    if (!sent.ok) {
-      const failure = sent.failure;
-      governed?.observe(
-        ["api", sending.route],
-        sent.headers,
-        "",
-        failure,
-        sentAt,
-      );
-      recordAttempt(sending, began, {
-        requests: 1,
-        cost: null,
-        estimated: false,
-        notModified: false,
-        window: windowOf(sending, sent.headers),
-        failure: failure.code,
-      });
-      return { ok: false, failure };
-    }
-    const received = sent.value;
+      };
+    return { token };
+  }
+
+  /** What an answer GitHub gave comes to: observed into the budget, recorded, and kept for revalidation. */
+  function settle(
+    sending: Sending,
+    began: number,
+    received: Received,
+    governed: Governed | null,
+    sentAt: number,
+  ): Called<GitHubAnswer> {
     let failure = answerFailure(sending, received);
     const until = governed?.observe(
       ["api", sending.route],
@@ -582,6 +577,46 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       body: read.value.body,
       notModified,
     });
+  }
+
+  /** One attempt: admitted, sent, observed into the budget and recorded. */
+  async function attempt(sending: Sending): Promise<Called<GitHubAnswer>> {
+    const began = now();
+    const local = (failure: OutboundFailure): Called<GitHubAnswer> => {
+      recordAttempt(sending, began, {
+        requests: 0,
+        cost: 0,
+        estimated: false,
+        notModified: false,
+        window: windowOf(sending, null),
+        failure: failure.code,
+      });
+      return { ok: false, failure };
+    };
+    const ready = await readyToSend(sending);
+    if ("failure" in ready) return local(ready.failure);
+    const admitted = admit(sending);
+    if ("refused" in admitted) return local(admitted.refused);
+    const { governed, sentAt } = admitted;
+    const sent = await send(sending, ready.token);
+    if (sent.ok) return settle(sending, began, sent.value, governed, sentAt);
+    const failure = sent.failure;
+    governed?.observe(
+      ["api", sending.route],
+      sent.headers,
+      "",
+      failure,
+      sentAt,
+    );
+    recordAttempt(sending, began, {
+      requests: 1,
+      cost: null,
+      estimated: false,
+      notModified: false,
+      window: windowOf(sending, sent.headers),
+      failure: failure.code,
+    });
+    return { ok: false, failure };
   }
 
   /** Send `sending`, once more for a read whose first answer the retry policy names. */

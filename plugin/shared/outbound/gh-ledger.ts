@@ -90,17 +90,21 @@ function operation(args: string[], stdin: string | undefined): string {
   );
 }
 
+/** The `name=value` field a command line sets at `args[i]` (`-f x=…`, `-F x=…`, `-fx=…`, `--field=x=…`), or "". */
+function fieldAt(args: string[], i: number): string {
+  const arg = args[i] ?? "";
+  if (["-f", "--raw-field", "-F", "--field"].includes(arg))
+    return args[i + 1] ?? "";
+  if (arg.startsWith("-f") || arg.startsWith("-F")) return arg.slice(2);
+  if (arg.startsWith("--field=") || arg.startsWith("--raw-field="))
+    return arg.slice(arg.indexOf("=") + 1);
+  return "";
+}
+
 /** The value of the GraphQL variable `name` a command line sets with a field flag (`-f name=…`, `-F name=…`, `-fname=…`). */
 function fieldValue(args: string[], name: string): string | null {
   for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i] ?? "";
-    const field = ["-f", "--raw-field", "-F", "--field"].includes(arg)
-      ? (args[i + 1] ?? "")
-      : arg.startsWith("-f") || arg.startsWith("-F")
-        ? arg.slice(2)
-        : arg.startsWith("--field=") || arg.startsWith("--raw-field=")
-          ? arg.slice(arg.indexOf("=") + 1)
-          : "";
+    const field = fieldAt(args, i);
     if (field.startsWith(`${name}=`)) return field.slice(name.length + 1);
   }
   return null;

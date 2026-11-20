@@ -50,6 +50,7 @@ import {
   type Finding,
   reportFindings,
 } from "../lib/findings.ts";
+import { type AstNode, isNode } from "./check-throws.ts";
 
 const RULE = "portability";
 
@@ -112,22 +113,6 @@ export interface PortabilityFinding extends Finding {
 type Read =
   | { ok: true; files: string[]; findings: PortabilityFinding[] }
   | { ok: false; reason: string };
-
-/** What the oxc tree holds that the walk reads. */
-interface AstNode {
-  type: string;
-  start: number;
-  end: number;
-  [key: string]: unknown;
-}
-
-function isNode(value: unknown): value is AstNode {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { type?: unknown }).type === "string"
-  );
-}
 
 function nameOf(node: unknown): string | null {
   return isNode(node) && node.type === "Identifier" ? String(node.name) : null;
@@ -354,6 +339,156 @@ function memberUse(node: AstNode, declared: Set<string>): Use | null {
   return null;
 }
 
+/** What one node adds to the walk, and whether the walk goes on into it. */
+interface Step {
+  edges: Edge[];
+  uses: Use[];
+  descend: boolean;
+  /** A node the walk visits in place of this one's children. */
+  alias?: AstNode;
+}
+
+const STOP: Step = { edges: [], uses: [], descend: false };
+
+function importEdge(node: AstNode, specifier: unknown, dynamic: boolean): Edge {
+  return { specifier: literalOf(specifier), at: node.start, dynamic };
+}
+
+function unfixedRead(node: AstNode, problem: string): Use {
+  return { kind: "runtime-global", at: node.start, problem };
+}
+
+function importStep(node: AstNode): Step {
+  if (node.importKind === "type") return STOP;
+  return { ...STOP, edges: [importEdge(node, node.source, false)] };
+}
+
+function exportStep(node: AstNode): Step {
+  const edges =
+    node.source && node.exportKind !== "type"
+      ? [importEdge(node, node.source, false)]
+      : [];
+  return { edges, uses: [], descend: true };
+}
+
+function memberStep(
+  node: AstNode,
+  parent: AstNode | null,
+  key: string,
+  declared: Set<string>,
+): Step {
+  const use = memberUse(node, declared);
+  if (use !== null) return { edges: [], uses: [use], descend: true };
+  const aliased =
+    fixedProperty(node) !== null &&
+    globalObject(node, declared) !== null &&
+    !readForFixedProperty(parent, key);
+  return {
+    edges: [],
+    uses: aliased
+      ? [
+          unfixedRead(
+            node,
+            "a global-object alias is read other than for a fixed property, so the runtime globals it can reach are unchecked",
+          ),
+        ]
+      : [],
+    descend: true,
+  };
+}
+
+function metaStep(node: AstNode, parent: AstNode | null, key: string): Step {
+  const unchecked =
+    nameOf(node.meta) === "import" && !readForFixedProperty(parent, key);
+  return {
+    ...STOP,
+    uses: unchecked
+      ? [
+          unfixedRead(
+            node,
+            "`import.meta` is read other than for a fixed property, so the properties it can reach are unchecked",
+          ),
+        ]
+      : [],
+  };
+}
+
+function importEqualsStep(node: AstNode): Step {
+  const reference = node.moduleReference;
+  if (node.importKind === "type" || !isNode(reference)) return STOP;
+  if (reference.type === "TSExternalModuleReference")
+    return { ...STOP, edges: [importEdge(node, reference.expression, false)] };
+  // A qualified alias (`import file = Bun.file`) reads its root name.
+  let root: AstNode = reference;
+  while (root.type === "TSQualifiedName" && isNode(root.left)) root = root.left;
+  return { ...STOP, alias: root };
+}
+
+function identifierStep(
+  node: AstNode,
+  parent: AstNode | null,
+  key: string,
+  declared: Set<string>,
+): Step {
+  const name = String(node.name);
+  if (declared.has(name) || namePosition(parent, key)) return STOP;
+  // The global object read for a fixed property is checked as that
+  // property; read any other way (aliased, indexed by a value, handed
+  // to a function) it could reach a runtime global by any name.
+  if (GLOBAL_OBJECTS.has(name) && !readForFixedProperty(parent, key))
+    return {
+      ...STOP,
+      uses: [
+        unfixedRead(
+          node,
+          `\`${name}\` is read other than for a fixed property, so the runtime globals it can reach are unchecked`,
+        ),
+      ],
+    };
+  if (RUNTIME_GLOBALS.has(name))
+    return {
+      ...STOP,
+      uses: [
+        unfixedRead(
+          node,
+          `\`${name}\` is a runtime's own global, used without an import`,
+        ),
+      ],
+    };
+  return STOP;
+}
+
+function stepOf(
+  node: AstNode,
+  parent: AstNode | null,
+  key: string,
+  declared: Set<string>,
+): Step {
+  switch (node.type) {
+    case "ImportDeclaration":
+      return importStep(node);
+    case "ExportNamedDeclaration":
+    case "ExportAllDeclaration":
+      return exportStep(node);
+    case "ImportExpression":
+      return {
+        edges: [importEdge(node, node.source, true)],
+        uses: [],
+        descend: true,
+      };
+    case "MemberExpression":
+      return memberStep(node, parent, key, declared);
+    case "MetaProperty":
+      return metaStep(node, parent, key);
+    case "TSImportEqualsDeclaration":
+      return importEqualsStep(node);
+    case "Identifier":
+      return identifierStep(node, parent, key, declared);
+    default:
+      return { edges: [], uses: [], descend: true };
+  }
+}
+
 /**
  * The runtime imports a file makes and the runtime globals it uses, or why
  * it does not parse: a tree recovered from errors could hide either.
@@ -370,109 +505,11 @@ function readModule(
   const edges: Edge[] = [];
   const uses: Use[] = [];
   const visit = (node: AstNode, parent: AstNode | null, key: string) => {
-    switch (node.type) {
-      case "ImportDeclaration":
-        if (node.importKind !== "type")
-          edges.push({
-            specifier: literalOf(node.source),
-            at: node.start,
-            dynamic: false,
-          });
-        return;
-      case "ExportNamedDeclaration":
-      case "ExportAllDeclaration":
-        if (node.source && node.exportKind !== "type")
-          edges.push({
-            specifier: literalOf(node.source),
-            at: node.start,
-            dynamic: false,
-          });
-        break;
-      case "ImportExpression":
-        edges.push({
-          specifier: literalOf(node.source),
-          at: node.start,
-          dynamic: true,
-        });
-        break;
-      case "MemberExpression": {
-        const use = memberUse(node, declared);
-        if (use !== null) uses.push(use);
-        else if (
-          fixedProperty(node) !== null &&
-          globalObject(node, declared) !== null &&
-          !readForFixedProperty(parent, key)
-        )
-          uses.push({
-            kind: "runtime-global",
-            at: node.start,
-            problem:
-              "a global-object alias is read other than for a fixed property, so the runtime globals it can reach are unchecked",
-          });
-        break;
-      }
-      case "MetaProperty":
-        if (
-          nameOf(node.meta) === "import" &&
-          !readForFixedProperty(parent, key)
-        )
-          uses.push({
-            kind: "runtime-global",
-            at: node.start,
-            problem:
-              "`import.meta` is read other than for a fixed property, so the properties it can reach are unchecked",
-          });
-        return;
-      case "TSImportEqualsDeclaration": {
-        if (node.importKind === "type") return;
-        const reference = node.moduleReference;
-        if (!isNode(reference)) return;
-        if (reference.type === "TSExternalModuleReference") {
-          edges.push({
-            specifier: literalOf(reference.expression),
-            at: node.start,
-            dynamic: false,
-          });
-          return;
-        }
-        // A qualified alias (`import file = Bun.file`) reads its root name.
-        let root: AstNode = reference;
-        while (root.type === "TSQualifiedName" && isNode(root.left))
-          root = root.left;
-        visit(root, node, "moduleReference");
-        return;
-      }
-      case "Identifier": {
-        const name = String(node.name);
-        // The global object read for a fixed property is checked as that
-        // property; read any other way (aliased, indexed by a value, handed
-        // to a function) it could reach a runtime global by any name.
-        if (
-          GLOBAL_OBJECTS.has(name) &&
-          !declared.has(name) &&
-          !namePosition(parent, key) &&
-          !readForFixedProperty(parent, key)
-        ) {
-          uses.push({
-            kind: "runtime-global",
-            at: node.start,
-            problem: `\`${name}\` is read other than for a fixed property, so the runtime globals it can reach are unchecked`,
-          });
-          return;
-        }
-        if (
-          RUNTIME_GLOBALS.has(name) &&
-          !declared.has(name) &&
-          !namePosition(parent, key)
-        )
-          uses.push({
-            kind: "runtime-global",
-            at: node.start,
-            problem: `\`${name}\` is a runtime's own global, used without an import`,
-          });
-        return;
-      }
-    }
+    const step = stepOf(node, parent, key, declared);
+    edges.push(...step.edges);
+    uses.push(...step.uses);
+    if (step.alias) visit(step.alias, node, "moduleReference");
+    if (!step.descend) return;
     for (const [childKey, child] of runtimeChildren(node))
       visit(child, node, childKey);
   };
@@ -566,19 +603,73 @@ const REMEDY: Record<string, string> = {
  * what is not portable, with the import chain that reached it; or why it
  * could not check.
  */
+function missingScope(root: string, scope: PortabilityScope): string | null {
+  for (const dir of scope.roots)
+    if (!existsSync(join(root, dir))) return `no ${dir} under ${root}`;
+  for (const file of scope.shared)
+    if (!existsSync(join(root, file)))
+      return `${file}, which PORTABLE_SHARED declares portable, is not under ${root}`;
+  return null;
+}
+
+/** What one file's imports add: uses to report and files to follow, or why it cannot be read. */
+function followEdges(
+  root: string,
+  file: string,
+  source: string,
+  edges: Edge[],
+  allowed: readonly string[],
+): { uses: Use[]; targets: string[] } | string {
+  const uses: Use[] = [];
+  const targets: string[] = [];
+  for (const edge of edges) {
+    const use = moduleUse(edge, allowed);
+    if (use !== null) {
+      uses.push(use);
+      continue;
+    }
+    const specifier = edge.specifier as string;
+    if (!specifier.startsWith(".")) continue;
+    const target = resolveImport(root, file, specifier);
+    if (target === null)
+      return `${file}:${lineAt(source, edge.at)}: "${specifier}" resolves to no file`;
+    if (SCRIPT.test(target) || target.endsWith(".json")) targets.push(target);
+    else
+      uses.push({
+        kind: "unfollowed-import",
+        at: edge.at,
+        problem: `imports "${specifier}", which is no script: only a runtime's loader reads it`,
+      });
+  }
+  return { uses, targets };
+}
+
+function findingsOf(
+  file: string,
+  source: string,
+  chain: string[],
+  uses: Use[],
+): PortabilityFinding[] {
+  const via =
+    chain.length > 1 ? `; reached from ${chain.slice(0, -1).join(" → ")}` : "";
+  return uses
+    .sort((a, b) => a.at - b.at)
+    .map((use) => ({
+      rule: `${RULE}:${use.kind}`,
+      file,
+      line: lineAt(source, use.at),
+      problem: `${use.problem}${via}`,
+      remedy: REMEDY[use.kind] as string,
+      chain,
+    }));
+}
+
 export function portabilityFindings(
   root: string,
   scope: PortabilityScope,
 ): Read {
-  for (const dir of scope.roots)
-    if (!existsSync(join(root, dir)))
-      return { ok: false, reason: `no ${dir} under ${root}` };
-  for (const file of scope.shared)
-    if (!existsSync(join(root, file)))
-      return {
-        ok: false,
-        reason: `${file}, which PORTABLE_SHARED declares portable, is not under ${root}`,
-      };
+  const missing = missingScope(root, scope);
+  if (missing !== null) return { ok: false, reason: missing };
   const queue: string[][] = [
     ...rootFiles(root, scope.roots),
     ...scope.shared,
@@ -600,45 +691,12 @@ export function portabilityFindings(
     const read = readModule(source, file);
     if ("unparsed" in read)
       return { ok: false, reason: `${file}: ${read.unparsed}` };
-    const uses = [...read.uses];
-    for (const edge of read.edges) {
-      const use = moduleUse(edge, scope.allowed);
-      if (use !== null) {
-        uses.push(use);
-        continue;
-      }
-      const specifier = edge.specifier as string;
-      if (!specifier.startsWith(".")) continue;
-      const target = resolveImport(root, file, specifier);
-      if (target === null)
-        return {
-          ok: false,
-          reason: `${file}:${lineAt(source, edge.at)}: "${specifier}" resolves to no file`,
-        };
-      if (!SCRIPT.test(target) && !target.endsWith(".json")) {
-        uses.push({
-          kind: "unfollowed-import",
-          at: edge.at,
-          problem: `imports "${specifier}", which is no script: only a runtime's loader reads it`,
-        });
-        continue;
-      }
-      queue.push([...chain, target]);
-    }
-    for (const use of uses.sort((a, b) => a.at - b.at)) {
-      const via =
-        chain.length > 1
-          ? `; reached from ${chain.slice(0, -1).join(" → ")}`
-          : "";
-      findings.push({
-        rule: `${RULE}:${use.kind}`,
-        file,
-        line: lineAt(source, use.at),
-        problem: `${use.problem}${via}`,
-        remedy: REMEDY[use.kind] as string,
-        chain,
-      });
-    }
+    const followed = followEdges(root, file, source, read.edges, scope.allowed);
+    if (typeof followed === "string") return { ok: false, reason: followed };
+    for (const target of followed.targets) queue.push([...chain, target]);
+    findings.push(
+      ...findingsOf(file, source, chain, [...read.uses, ...followed.uses]),
+    );
   }
   return {
     ok: true,
