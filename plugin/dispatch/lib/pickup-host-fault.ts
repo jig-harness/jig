@@ -63,8 +63,11 @@ function isHostFaultQuestion(question: string): boolean {
     return false;
   // Host recovery is cleanup the asker performs ("I"/"we" is the actor of the
   // verb); cleanup the code, tests or build would perform is implementation.
+  // The actor ("I"/"we", optionally with a modal and adverbs between) does a
+  // cleanup verb to a host resource (cache, files, fixtures, logs, space...);
+  // deleting a column or other work product is not host recovery.
   const cleansItself =
-    /\b(?:i|we)\s+(?:(?:can|could|should|may|will|would)\s+)?(?:remove|delete|free|clean|purge|prune|clear|wipe)\b/i.test(
+    /\b(?:i|we)\s+(?:(?:can|could|should|may|will|would|first|safely|now|also|then|just|simply)\s+){0,3}(?:remove|delete|free(?: up)?|clean(?: up)?|purge|prune|clear|wipe)\s+(?:\w+\s+){0,3}(?:cache|caches|files?|fixtures?|logs?|tmp|temp|artifacts?|outputs?|space|disk|inodes?|directory|directories|images?|checkouts?|worktrees?)\b/i.test(
       text,
     );
   if (
