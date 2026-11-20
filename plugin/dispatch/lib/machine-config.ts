@@ -77,6 +77,16 @@ import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import { duration } from "./duration.ts";
 import {
+  type Checked,
+  count,
+  each,
+  flag,
+  invalid,
+  list,
+  only,
+  text,
+} from "./machine-values.ts";
+import {
   accountStages,
   type MachineStage,
   machineStages,
@@ -86,6 +96,11 @@ import {
   type PrioritiesSettings,
   prioritiesSettings,
 } from "./priorities-config.ts";
+
+import {
+  processSettings,
+  type ProcessSettings,
+} from "./runtime/process-environment.ts";
 
 export { duration };
 
@@ -129,6 +144,8 @@ const SHARED_MEDIA = ["forge"] as const;
 export type SharedMedium = (typeof SHARED_MEDIA)[number];
 
 export interface MachineConfig {
+  runtime?: "orca" | "process";
+  process?: ProcessSettings;
   steward?: { enabled: boolean };
   path: string;
   /** People authorized by this host, never by a repository overlay. */
@@ -194,6 +211,8 @@ const DEFAULTS = {
 } as const;
 
 const TOP_KEYS = [
+  "runtime",
+  "process",
   "steward",
   "serve",
   "serve_defaults",
@@ -245,36 +264,10 @@ const ACCOUNT_KEYS = [
  */
 export type MachineConfigCode = "unreadable" | "invalid";
 
-/** A value read from the machine file, or why it does not validate. */
-type Checked<T> = Outcome<T, "invalid">;
-
-function invalid(reason: string): Checked<never> {
-  return failed("invalid", reason);
-}
-
 export function machineConfigPath(
   env: Record<string, string | undefined> = process.env,
 ): string {
   return join(jigHome(env), "dispatch.yaml");
-}
-
-function only(
-  value: Record<string, unknown>,
-  allowed: string[],
-  where: string,
-): Checked<true> {
-  const unknown = Object.keys(value).filter((k) => !allowed.includes(k));
-  return unknown.length > 0
-    ? invalid(
-        `${where} has unknown key(s): ${unknown.join(", ")} (known: ${allowed.join(", ")})`,
-      )
-    : ok(true);
-}
-
-function text(value: unknown, where: string): Checked<string> {
-  if (typeof value !== "string" || value.trim() === "")
-    return invalid(`${where} must be a nonempty string`);
-  return ok(value.trim());
 }
 
 /** A path, `~/` expanded; relative paths are refused, since a timer has no working directory to read them against. */
@@ -299,17 +292,6 @@ function optionalDuration(
     : duration(value, where);
 }
 
-function count(
-  value: unknown,
-  where: string,
-  fallback: number,
-): Checked<number> {
-  if (value === undefined || value === null) return ok(fallback);
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
-    return invalid(`${where} must be a positive whole number`);
-  return ok(value);
-}
-
 /** A share of a budget: more than 0, at most 1. */
 function share(value: unknown, where: string): Checked<number> {
   if (value === undefined || value === null)
@@ -317,26 +299,6 @@ function share(value: unknown, where: string): Checked<number> {
   if (typeof value !== "number" || !(value > 0 && value <= 1))
     return invalid(`${where} must be a number above 0 and at most 1`);
   return ok(value);
-}
-
-function list(value: unknown, where: string): Checked<unknown[]> {
-  if (value === undefined || value === null) return ok([]);
-  if (!Array.isArray(value)) return invalid(`${where} must be a list`);
-  return ok(value);
-}
-
-/** Each item read in turn; the first that does not validate. */
-function each<T>(
-  items: unknown[],
-  read: (item: unknown, i: number) => Checked<T>,
-): Checked<T[]> {
-  const out: T[] = [];
-  for (const [i, item] of items.entries()) {
-    const one = read(item, i);
-    if (!one.ok) return one;
-    out.push(one.value);
-  }
-  return ok(out);
 }
 
 function since(value: unknown, where: string): Checked<string | null> {
@@ -366,17 +328,6 @@ function repository(value: unknown, i: number): Checked<MachineRepository> {
     followupSince: followupSince.value,
     owner: owner.value,
   });
-}
-
-function flag(
-  value: unknown,
-  where: string,
-  fallback: boolean,
-): Checked<boolean> {
-  if (value === undefined || value === null) return ok(fallback);
-  if (typeof value !== "boolean")
-    return invalid(`${where} must be true or false`);
-  return ok(value);
 }
 
 function account(value: unknown, i: number): Checked<MachineAccount> {
@@ -585,6 +536,36 @@ function accounts(value: unknown): Checked<MachineAccount[]> {
   );
 }
 
+/** Read repository stages together with the machine's session runtime. */
+function machineRepositories(
+  top: Record<string, unknown>,
+  where: string,
+): Checked<{
+  runtime: "orca" | "process";
+  process: ProcessSettings;
+  repositories: MachineRepository[];
+}> {
+  const repos = repositories(top.repositories);
+  if (!repos.ok) return repos;
+  const runtime = top.runtime ?? "orca";
+  if (runtime !== "orca" && runtime !== "process")
+    return invalid(`${where}: runtime must be orca or process`);
+  if (runtime === "process" && !["linux", "darwin"].includes(process.platform))
+    return invalid(
+      `${where}: runtime: process is supported on Linux and macOS only`,
+    );
+  const settings = processSettings(top.process);
+  if (!settings.ok) return settings;
+  if (
+    runtime === "process" &&
+    repos.value.some((repo) => repo.stages.includes("notify"))
+  )
+    return invalid(
+      `${where}: repositories[].stages cannot include notify on runtime: process`,
+    );
+  return ok({ runtime, process: settings.value, repositories: repos.value });
+}
+
 function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   const top = values ?? {};
   if (!isMapping(top)) return invalid(`${where} must be a mapping`);
@@ -592,9 +573,9 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!known.ok) return known;
   const serve = servedPeople(top.serve);
   if (!serve.ok) return serve;
-  const repos = repositories(top.repositories);
+  const repos = machineRepositories(top, where);
   if (!repos.ok) return repos;
-  const defaults = serveDefaults(top.serve_defaults, repos.value);
+  const defaults = serveDefaults(top.serve_defaults, repos.value.repositories);
   if (!defaults.ok) return defaults;
   const accountList = accounts(top.accounts);
   if (!accountList.ok) return accountList;
@@ -612,10 +593,10 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!tracker.ok) return tracker;
   return ok({
     ...tracker.value,
+    ...repos.value,
     path: where,
     serve: serve.value,
     serveDefaults: defaults.value,
-    repositories: repos.value,
     accounts: accountList.value,
     ...timing.value,
     ...shared.value,

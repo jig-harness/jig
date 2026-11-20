@@ -310,6 +310,14 @@ export const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-process-output",
+    "dispatch/lib/runtime/process-spool.ts",
+    `${DISPATCH_DIR}runs/<record>/output.log`,
+    0,
+    "The last 4 MiB of a process run's output. The wrapper keeps it when the run leaves no closing report and removes it when the report is recorded.",
+  ),
+  plain(
+    "machine",
     "dispatch-wall",
     "dispatch/lib/walls.ts",
     `${DISPATCH_DIR}walls/<account>/<ms>-<8 hex>.json`,
