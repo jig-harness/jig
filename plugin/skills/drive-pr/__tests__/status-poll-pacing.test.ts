@@ -64,14 +64,14 @@ function fixture(balance: (now: number) => BudgetWindow | undefined) {
 }
 
 describe("waiting status poll pacing", () => {
-  test("a reviewer wait can use a narrower ceiling without changing general pacing", async () => {
+  test("a reviewer ceiling never shortens the requested base interval", async () => {
     const probe = fixture(() => window(4500, 3600));
     expect(
       await probe.wait("reviewer", 100 * second, undefined, 3 * second),
     ).toBe(true);
-    expect(probe.clock.now()).toBe(3 * second);
+    expect(probe.clock.now()).toBe(30 * second);
     expect(await probe.wait("other", 200 * second)).toBe(true);
-    expect(probe.clock.now()).toBe(33 * second);
+    expect(probe.clock.now()).toBe(60 * second);
   });
 
   test("fewer polls over half an hour and an observed change resets the cadence", async () => {

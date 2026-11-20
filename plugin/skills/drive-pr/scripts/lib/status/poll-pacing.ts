@@ -248,7 +248,11 @@ export class StatusPollPacing {
     abort?: AbortSignal,
     maximumMs = this.maximumMs,
   ): Promise<boolean> {
-    this.cadence = this.nextCadence(signal, maximumMs);
+    // A reviewer-specific ceiling limits backoff, not the caller's requested
+    // polling interval. Keep the base interval as the floor so a low ceiling
+    // cannot turn `--interval` into a faster forge-read cadence.
+    const effectiveMaximumMs = Math.max(this.baseMs, maximumMs);
+    this.cadence = this.nextCadence(signal, effectiveMaximumMs);
     this.previous = signal;
     const started = this.deps.now();
     let pollAt = started + this.cadence;
@@ -260,7 +264,7 @@ export class StatusPollPacing {
       this.compactLower(now);
       this.completeLimits();
       for (const low of this.lower)
-        pollAt = this.pollAfter(low, started, pollAt, maximumMs);
+        pollAt = this.pollAfter(low, started, pollAt, effectiveMaximumMs);
       const wakeAt = Math.min(pollAt, deadline);
       if (wakeAt <= now || abort?.aborted) break;
       await this.deps.sleep(wakeAt - now, abort);
