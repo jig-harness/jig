@@ -1,9 +1,10 @@
-/** Read-only operation and caller totals from the machine's cost ledger. */
+/** Read-only operation, caller and repository totals from the machine's cost ledger. */
 import type { CommandComponent } from "../runtime/component.ts";
 import { ExitError } from "../shared/cli.ts";
 import {
   ledgerReport,
   type LedgerRow,
+  type RepositoryPart,
   UNATTRIBUTED,
 } from "../shared/outbound/ledger.ts";
 import { currentMs, isoFromMs } from "../shared/time.ts";
@@ -26,10 +27,12 @@ const budgetCommand = command(
       }),
     ),
     json: option("--json", {
-      description: message`Print balances and operation/caller totals as JSON.`,
+      description: message`Print balances and operation, caller and repository totals as JSON.`,
     }),
   }),
-  { brief: message`Show what outside calls spent, by operation and caller.` },
+  {
+    brief: message`Show what outside calls spent, by operation, caller and repository.`,
+  },
 );
 
 type BudgetArguments = InferValue<typeof budgetCommand>;
@@ -85,7 +88,78 @@ type BudgetTotals = ReturnType<typeof budgetGroups>;
 type BudgetAnswer = ReturnType<typeof ledgerReport> & {
   operations: BudgetTotals;
   callers: BudgetTotals;
+  repositories: RepositoryTotals;
 };
+
+/** The bucket of the spending no known repository took: rows written without one, and what a row holds beyond its repositories' parts. */
+const NO_REPOSITORY = "(no repository)";
+
+/** A row's spending split by repository: each known repository's part, and the rest under `NO_REPOSITORY`. */
+function repositoryShares(row: LedgerRow): RepositoryPart[] {
+  const parts = row.repositories ?? [];
+  const sum = (field: keyof Omit<RepositoryPart, "repository">) =>
+    parts.reduce((total, part) => total + part[field], 0);
+  const rest = {
+    repository: NO_REPOSITORY,
+    requests: Math.max(0, row.requests - sum("requests")),
+    cost: Math.max(0, row.cost - sum("cost")),
+    unknownCost: Math.max(0, row.unknownCost - sum("unknownCost")),
+    notModified: Math.max(0, (row.notModified ?? 0) - sum("notModified")),
+  };
+  const empty =
+    rest.requests === 0 &&
+    rest.cost === 0 &&
+    rest.unknownCost === 0 &&
+    rest.notModified === 0;
+  return empty && parts.length > 0 ? parts : [...parts, rest];
+}
+
+/** The rows by repository, keeping system, credential and cost unit separate; spending on no known repository under `NO_REPOSITORY`. */
+function repositoryGroups(rows: readonly LedgerRow[]) {
+  const totals = new Map<
+    string,
+    RepositoryPart & { system: string; credential: string; unit: string }
+  >();
+  for (const row of rows)
+    for (const share of repositoryShares(row)) {
+      const key = JSON.stringify([
+        row.system,
+        row.credential,
+        row.unit,
+        share.repository,
+      ]);
+      const known = totals.get(key);
+      if (known === undefined) {
+        totals.set(key, {
+          system: row.system,
+          credential: row.credential,
+          unit: row.unit,
+          ...share,
+        });
+        continue;
+      }
+      known.requests += share.requests;
+      known.cost += share.cost;
+      known.unknownCost += share.unknownCost;
+      known.notModified += share.notModified;
+    }
+  return [...totals.values()].sort(
+    (a, b) =>
+      a.system.localeCompare(b.system) ||
+      b.cost - a.cost ||
+      a.repository.localeCompare(b.repository),
+  );
+}
+
+type RepositoryTotals = ReturnType<typeof repositoryGroups>;
+
+function repositoryLine(row: RepositoryTotals[number]): string {
+  const unknown = row.unknownCost ? `, ${row.unknownCost} unknown cost` : "";
+  const notModified = row.notModified
+    ? ` (${row.notModified} answered 304 Not Modified)`
+    : "";
+  return `  ${row.system} ${row.credential} ${row.repository}: ${row.requests} requests${notModified}, ${row.cost} ${row.unit}${unknown}`;
+}
 
 function costLine(
   row: BudgetTotals[number],
@@ -127,6 +201,9 @@ function printBudget(answer: BudgetAnswer, hours: number): void {
     console.log("The cost ledger could not be read; no spending is inferred.");
   printGroup("operations", answer.operations, "operation");
   printGroup("callers", answer.callers, "caller");
+  console.log("By repository:");
+  for (const row of answer.repositories) console.log(repositoryLine(row));
+  if (answer.repositories.length === 0) console.log("  No calls recorded.");
   printBalances(answer);
 }
 
@@ -146,6 +223,7 @@ function budgetMain(args: BudgetArguments): number {
     ...report,
     operations: budgetGroups(report.rows, "operation"),
     callers: budgetGroups(report.rows, "caller"),
+    repositories: repositoryGroups(report.rows),
   };
   if (args.json) console.log(JSON.stringify(answer, null, 2));
   else printBudget(answer, hours);
