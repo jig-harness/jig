@@ -17,7 +17,12 @@ import {
   takeoverHostDriver,
 } from "../host-drivers.ts";
 import { serves } from "../account-stages.ts";
-import { admission, keepsTakeoverAccount } from "./admission.ts";
+import {
+  admission,
+  type AccountAdmission,
+  keepsTakeoverAccount,
+  waitsForRearmSlot,
+} from "./admission.ts";
 import type { HostDrivers } from "../host-drivers.ts";
 import {
   isInteractive,
@@ -756,7 +761,7 @@ function byLoad(
   action: Action,
   slots: Slots,
   pickupDeadlineSec: number,
-): { slots: Slots } | { outcome: LaunchOutcome } {
+): AccountAdmission {
   if (state.load === undefined) return { slots };
   const held = judge(
     state.load,
@@ -767,18 +772,12 @@ function byLoad(
   );
   return held === null
     ? { slots }
-    : { outcome: waits(action, held, slots.account.name) };
+    : { outcome: waits(action, held, slots.account.name), capacity: "load" };
 }
 
 /**
- * The account a launch bills, admitted afresh against the walls and the
- * identity check, then against the host's load (`load.ts`): under
- * `load.enforce` a launch a gauge refuses waits, and otherwise it starts and
- * is reported as one the load factor would hold. A re-arm or a pickup tries the next account when one
- * fails its identity check, so a stale login cannot starve the others; a
- * takeover has only its own account, unless that account does not serve its
- * stage and it is admitted as a new launch (`admission.ts`). A pickup is admitted as a headless
- * pass under `pickupDeadlineSec`, the repository's `dispatch.pickup_deadline`.
+ * Check account identity and load after admission. A failed identity can pass
+ * to the next account, except for a takeover tied to its recorded slot.
  */
 export async function admitAccount(
   state: ApplyState,
@@ -786,7 +785,7 @@ export async function admitAccount(
   action: Action,
   pickupDeadlineSec = 0,
   clone: string | null = null,
-): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
+): Promise<AccountAdmission> {
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
   if ("outcome" in checked) return checked;
@@ -798,6 +797,9 @@ export async function admitAccount(
     const admitted = admission(state, action, failed, pickupDeadlineSec, clone);
     if ("waits" in admitted)
       return {
+        ...(refusal === null && waitsForRearmSlot(state, action, failed)
+          ? { capacity: "accounts" as const }
+          : {}),
         outcome: refusal ?? {
           ...waits(action, withHeld(state, held, admitted.waits)),
           // A follow-up says what it waits on: here, the accounts.

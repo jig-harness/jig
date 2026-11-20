@@ -663,7 +663,7 @@ function planDrive(
   const { slug, launches } = input;
   const target = `PR #${read.number}`;
   const pr = plannable(input, read, plan, want);
-  if (pr === null) return;
+  if (pr === null || pr.evidence.rearmMoved === true) return;
   const hold = driveHold(pr, launches);
   if (heldByRecord(target, pr, hold, plan)) {
     raiseStrandedDrive(input, pr, want);

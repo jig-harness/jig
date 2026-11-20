@@ -76,7 +76,9 @@
         },
         "requestId": true,
         "reason": true,
-        "needsPerson": true
+        "needsPerson": true,
+        "failureStop": true,
+        "failureGeneration": true
       },
       "required": ["label", "stopComment"],
       "additionalProperties": true

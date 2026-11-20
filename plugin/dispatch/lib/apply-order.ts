@@ -2,6 +2,7 @@
 export type LaunchGroup = "drives" | "background";
 
 export interface PendingRepository {
+  applyRearmRequests?(): Promise<void>;
   apply(group: LaunchGroup): Promise<void>;
   finish(): Promise<void>;
 }
@@ -29,8 +30,11 @@ export async function applyInTurns(
     ...repositories.slice(start),
     ...repositories.slice(0, start),
   ];
-  for (const group of groups)
+  for (const group of groups) {
+    if (group === "drives")
+      for (const repository of ordered) await repository.applyRearmRequests?.();
     for (const repository of ordered) await repository.apply(group);
+  }
   for (const repository of ordered) await repository.finish();
 }
 

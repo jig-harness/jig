@@ -1,34 +1,8 @@
 /**
- * `--apply` for drives: start each re-arm and takeover the plan wants, in
- * order, as a headless pass in the pull request's workspace, on an
- * admitted account. For each one:
- *
- * 1. read the pull request and its ledger again, and go on only when its
- *    facts are the ones the plan acted on (for a re-drive, the change it acts
- *    on too; for an arm its `drive` label asked for, still no ledger at the
- *    same head) and no `hold` label has appeared on it;
- * 2. admit an account (accounts.ts), and check that the wrapper's
- *    environment resolves to that account's identity;
- * 3. use the workspace that holds the pull request once the runtime proves
- *    it is still the pull request's checkout (`verifyWorkspace`), or open
- *    one named for the stage and the pull request (`dispatched` in
- *    `runtime/port.ts`), whose open proves it, under the launch record's id
- *    minted here;
- * 4. write the launch record, which holds the slot from here on;
- * 5. claim the launch where another host dispatching the repository reads
- *    it (`shared-launches.ts`): a current claim of another host's with no
- *    end holds the launch, and a claim that loses its attempt is withdrawn;
- *    either gives the record back and starts nothing;
- * 6. call the runtime's `launch` under the record's token (launch.ts).
- *
- * A takeover of a driver another host started is admitted on a free slot,
- * as a re-arm is, since this host has no record of that driver's to take
- * the slot of.
- *
- * Before any of that, a pending record of the repository whose launch got
- * no answer is retried once, under its own record and token, never as a
- * fresh launch, and only once its recorded workspace is proven again.
- * Everything else in the plan is reported, as without `--apply`.
+ * Apply re-arms and takeovers after re-reading ledger and hold state. Prove
+ * the original checkout before running recovery, bill an admitted account,
+ * and claim the launch before calling the runtime. Pending launches replay
+ * under their own record and token once their checkout is proven again.
  */
 import { worktreePathKey } from "../../../skills/drive-pr/scripts/lib/state/actor.ts";
 import { realpathSync } from "node:fs";
@@ -98,7 +72,12 @@ import {
   ghCallTimeoutSeconds,
   KILL_ESCALATE_MS,
 } from "../../../skills/drive-pr/scripts/lib/proc.ts";
-import { failedRearmRequest, rearmTimedOut } from "./retire-rearm.ts";
+import {
+  failedRearmRequest,
+  rearmBlockExpired,
+  reportRearmCapacity,
+} from "./retire-rearm.ts";
+import { clearRearmRequest, clearRearmWait } from "../rearm-waits.ts";
 import { currentIso } from "../../../shared/time.ts";
 
 export type { ApplyState } from "./launch.ts";
@@ -121,6 +100,13 @@ async function consumeRequest(
   result: LaunchOutcome,
   fresh: FreshDrive,
 ): Promise<void> {
+  if (record.pr !== null && record.rearmRequestId !== undefined)
+    clearRearmRequest(
+      record.repo,
+      record.pr,
+      record.rearmRequestId,
+      state.root,
+    );
   if (fresh.labelWrites === false) {
     result.detail +=
       "; rearm request was carried out but dispatch.labels is disabled, so its label stays until labels are enabled again; this launch record prevents another launch until its removal is acknowledged";
@@ -300,15 +286,19 @@ async function unclaimed(
   return { blocked, claim: null };
 }
 
+const EARLIER_REARM = "a rearm request for an earlier stop is pending";
 const IDLE =
   "it is an automation pull request that needs no work now (no failing check, no conflict, no unresolved thread)";
 
-/** Whether a pull request no longer carries the rearm request `id`: another one, none, or one past its lifetime. */
 function requestMoved(pr: DrivenPr, id: unknown): boolean {
+  return pr.evidence.rearm !== true || pr.evidence.rearmRequestId !== id;
+}
+
+function unstartedRearm(record: LaunchRecord): boolean {
   return (
-    pr.evidence.rearm !== true ||
-    pr.evidence.rearmRequestId !== id ||
-    rearmTimedOut(pr)
+    record.rearmRequestId !== undefined &&
+    record.launchCalled !== true &&
+    record.attempts.length === 0
   );
 }
 
@@ -317,12 +307,7 @@ function unstartedRequestEnded(
   record: LaunchRecord,
   again: Outcome<DrivenPr | null>,
 ): boolean {
-  if (
-    record.rearmRequestId === undefined ||
-    record.launchCalled === true ||
-    record.attempts.length > 0
-  )
-    return false;
+  if (!unstartedRearm(record)) return false;
   if (!again.ok) return again.failure.code === "not-open";
   const live = again.value;
   return (
@@ -359,6 +344,7 @@ async function retryBlocked(
   );
   if (!verified.ok) return verified.failure.reason;
   const read = verified.value;
+  if (read.evidence.rearmMoved === true) return EARLIER_REARM;
   if (!sameFacts(record.facts, factsOf(read)))
     return `its ledger changed since the launch (now ${factsOf(read)})`;
   if (record.rearmLabel != null && requestMoved(read, record.rearmRequestId))
@@ -374,8 +360,17 @@ async function retryBlocked(
       ? replayedChange(state, record, read)
       : changedStale(record.redrive, read);
   if (blocked !== null) return blocked;
+  const original = await replayOriginalTree(record, read);
+  if (original !== null) {
+    if (
+      original.proven &&
+      unstartedRearm(record) &&
+      dropPendingRecord(state, record)
+    )
+      return `${original.why}; its unstarted launch record was released`;
+    return original.why;
+  }
   const stopped =
-    (await replayOriginalTree(record, read)) ??
     (await replayWorkspace(state, repo, record, read)) ??
     (await accountBlock(state, record));
   if (stopped === null) await refreshHeads(state, record, read);
@@ -386,20 +381,22 @@ async function retryBlocked(
 async function replayOriginalTree(
   record: LaunchRecord,
   read: DrivenPr,
-): Promise<string | null> {
+): ReturnType<typeof originalTree> {
   if (
     record.redrive?.uncleanTree === true ||
     record.rearmLabel != null ||
     record.stewardDecision !== undefined
   ) {
     if (record.workspace === null)
-      return "the original workspace is no longer recorded";
-    const different = await originalTree(
+      return {
+        why: "the original workspace is no longer recorded",
+        proven: true,
+      };
+    return originalTree(
       record.workspace.path,
       String(read.evidence.driverActor),
       String(read.evidence.driverClone),
     );
-    if (different !== null) return different.why;
   }
   return null;
 }
@@ -420,12 +417,7 @@ async function replayWorkspace(
   return unproven(state, repo, record.workspace, read.number, read.head);
 }
 
-/**
- * Why a workspace this launch did not open is not proven to be the pull
- * request's checkout (`SessionRuntime.verifyWorkspace`); `null` once it is.
- * The proof changes nothing in the workspace, so a tree a stop left work in
- * keeps that work whatever it answers.
- */
+/** Proof of a pull request's checkout leaves the worktree intact. */
 async function unproven(
   state: ApplyState,
   repo: RepoTarget,
@@ -554,6 +546,7 @@ function stillWanted(
 ): string | null {
   if (fresh === null) return "its ledger cannot be read again";
   if (held(fresh)) return HELD;
+  if (fresh.evidence.rearmMoved === true) return EARLIER_REARM;
   if (!sameFacts(factsOf(fresh), action.facts))
     return `its ledger changed since the plan read it (now ${factsOf(fresh)})`;
   const want = wantedClass(isTakeover(action), action.redrive, action.facts);
@@ -573,10 +566,7 @@ function stillWanted(
   return changedStale(action.redrive, fresh);
 }
 
-/**
- * Why a listed workspace is not the stopped driver's tree; null only after both identities match.
- * `proven` is true when the identities were read and differ, false when they could not be read.
- */
+/** A proven mismatch requires readable identities. */
 async function originalTree(
   path: string,
   actor: string,
@@ -608,7 +598,9 @@ async function originalTree(
   } catch (error) {
     return {
       why: `${path}: its original-tree identity cannot be read: ${failureText(error)}`,
-      proven: false,
+      proven:
+        error instanceof Error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT",
     };
   }
 }
@@ -629,6 +621,7 @@ async function workspaceFor(
   tree: string | undefined,
   originalActor: string | null,
   originalClone: string,
+  verify = true,
 ): Promise<Opened & { missingOriginal?: true }> {
   // A stall or a deadline that left work runs where the work is, or not at all: a fresh
   // tree would not carry it.
@@ -659,7 +652,9 @@ async function workspaceFor(
   const mismatched = verified.filter((v) => v !== null);
   const held = matched[0];
   if (matched.length === 1 && held !== undefined)
-    return provenWorkspace(state, repo, pr, head, held);
+    return verify
+      ? provenWorkspace(state, repo, pr, head, held)
+      : { workspace: held };
   if (originalActor !== null)
     return {
       ...(sessions.ok && originalGone(candidates.length, mismatched)
@@ -782,6 +777,47 @@ async function launchOne(
   if (late !== null) return waits(action, late);
   const changed = stillWanted(action, fresh, drive.held);
   if (changed !== null) return waits(action, changed);
+  const pr = fresh as DrivenPr;
+  const id = newRecordId();
+  const kind = isTakeover(action) ? "takeover" : "rearm";
+  const named = dispatched(kind, `#${pr.number}`, id);
+  const open = (verify: boolean) =>
+    workspaceFor(
+      state,
+      repo,
+      pr.number,
+      pr.head,
+      sessions,
+      named,
+      action.redrive?.tree?.actor,
+      action.redrive?.uncleanTree === true || pr.evidence.rearm === true
+        ? String(pr.evidence.driverActor)
+        : null,
+      String(pr.evidence.driverClone),
+      verify,
+    );
+  const request = pr.evidence.rearmRequestId;
+  const explicit = pr.evidence.rearm === true && typeof request === "number";
+  const original = explicit ? await open(false) : undefined;
+  if (original?.missingOriginal && "waits" in original) {
+    if (rearmBlockExpired(state, repo.slug, pr, "tree", original.waits))
+      failedRearmRequest(report, repo.slug, pr, original.waits);
+    return waits(action, original.waits);
+  }
+  if (
+    original !== undefined &&
+    "workspace" in original &&
+    typeof request === "number"
+  ) {
+    clearRearmWait(
+      { repo: repo.slug, pr: pr.number, request, kind: "tree" },
+      state.root,
+    );
+    clearRearmWait(
+      { repo: repo.slug, pr: pr.number, request, kind: "stop" },
+      state.root,
+    );
+  }
   const admitted = await admitAccount(
     state,
     repo.slug,
@@ -789,27 +825,27 @@ async function launchOne(
     0,
     readCloneKey(repo.path),
   );
-  if ("outcome" in admitted) return admitted.outcome;
+  if ("outcome" in admitted) {
+    if (explicit && admitted.capacity !== undefined)
+      reportRearmCapacity(
+        state,
+        repo.slug,
+        pr,
+        admitted.outcome,
+        admitted.capacity,
+      );
+    return admitted.outcome;
+  }
+  if (explicit)
+    clearRearmWait(
+      { repo: repo.slug, pr: pr.number, request, kind: "capacity" },
+      state.root,
+    );
   const slots = admitted.slots;
-  const pr = fresh as DrivenPr;
-  const id = newRecordId();
-  const kind = isTakeover(action) ? "takeover" : "rearm";
-  const named = dispatched(kind, `#${pr.number}`, id);
-  const opening = await workspaceFor(
-    state,
-    repo,
-    pr.number,
-    pr.head,
-    sessions,
-    named,
-    action.redrive?.tree?.actor,
-    action.redrive?.uncleanTree === true || pr.evidence.rearm === true
-      ? String(pr.evidence.driverActor)
-      : null,
-    String(pr.evidence.driverClone),
-  );
-  if (opening.missingOriginal && "waits" in opening && pr.evidence.rearm)
-    failedRearmRequest(report, repo.slug, pr, opening.waits);
+  const opening =
+    original && "workspace" in original
+      ? provenWorkspace(state, repo, pr.number, pr.head, original.workspace)
+      : (original ?? open(true));
   const opened = await openedFor(
     state,
     action,
@@ -867,11 +903,25 @@ export async function applyDrives(
   report: RepoReport,
   sessions: SessionsReport,
   fresh: FreshDrive,
+  turn: "requested" | "automatic" | "both" = "both",
 ): Promise<void> {
-  await retryRequests(state, repo, report, fresh);
-  await retryPending(state, repo, report, fresh);
-  const rearms = report.actions.filter((a) => a.stage === "rearm");
-  for (const action of rotated(state, rearms, "targets")) {
+  if (turn !== "automatic") {
+    await retryRequests(state, repo, report, fresh);
+    await retryPending(state, repo, report, fresh);
+  }
+  const rearms = rotated(
+    state,
+    report.actions.filter(
+      (a) =>
+        a.stage === "rearm" &&
+        (turn === "both" ||
+          (a.evidence.rearm === true) === (turn === "requested")),
+    ),
+    "targets",
+  );
+  const requestedAt = (a: Action) =>
+    Number(a.evidence.rearmRequestedAt ?? Infinity);
+  for (const action of rearms.sort((a, b) => requestedAt(a) - requestedAt(b))) {
     const late = outOfTime(state);
     if (late !== null) {
       report.launches.push(waits(action, late));

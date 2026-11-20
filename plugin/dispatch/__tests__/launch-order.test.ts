@@ -24,6 +24,33 @@ it("alternates launch groups globally while retaining repository rotation within
   }
 });
 
+it("gives a request in a later repository the last slot before automatic drives", async () => {
+  const started: string[] = [];
+  let slotFree = true;
+  const start = (name: string) => {
+    if (!slotFree) return;
+    slotFree = false;
+    started.push(name);
+  };
+  await applyInTurns(
+    [
+      {
+        apply: async (group) => {
+          if (group === "drives") start("automatic retry");
+        },
+        finish: async () => {},
+      },
+      {
+        applyRearmRequests: async () => start("queued rearm"),
+        apply: async () => {},
+        finish: async () => {},
+      },
+    ],
+    0,
+  );
+  expect(started).toEqual(["queued rearm"]);
+});
+
 it("lets every target lead on successive opportunities of a background stage", () => {
   for (const repos of [1, 2, 4]) {
     const items = ["a", "b", "c", "d"];

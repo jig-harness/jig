@@ -255,6 +255,15 @@ export async function actObserved(
     },
   };
   context.pending.push({
+    applyRearmRequests: () =>
+      applyStages(
+        apply,
+        opened.stages,
+        report,
+        inputs,
+        "requests",
+        hooks.guard,
+      ),
     apply: (group) =>
       applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
@@ -371,7 +380,7 @@ async function applyStages(
   enabled: ReadonlySet<string>,
   report: RepoReport,
   inputs: ApplyInputs,
-  group: LaunchGroup | "finish",
+  group: LaunchGroup | "requests" | "finish",
   guard: StageGuard,
   project?: () => Promise<void>,
 ): Promise<void> {
@@ -390,7 +399,14 @@ async function applyStages(
       "rearm",
       async () => {
         if (enabled.has("rearm"))
-          await applyDrives(apply, repo, report, inputs.sessions, drive());
+          await applyDrives(
+            apply,
+            repo,
+            report,
+            inputs.sessions,
+            drive(),
+            group === "requests" ? "requested" : "automatic",
+          );
       },
     ],
     [
@@ -445,7 +461,7 @@ async function applyStages(
   ];
   for (const [stage, run] of launchStageOrder(
     stages,
-    group,
+    group === "requests" ? "drives" : group,
     apply.tick ?? 0,
     apply.repos ?? 1,
   ))

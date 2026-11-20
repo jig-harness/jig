@@ -1,18 +1,20 @@
 /** Bounded recovery of a converged drive's uncommitted work in its original tree. */
+import { Database } from "bun:sqlite";
 import { afterEach, expect, it } from "bun:test";
 import { cloneId } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { cloneKey } from "../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.ts";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
-import { claimBody, readClaim } from "../../shared/records/forge-claims.ts";
+import { claimBody } from "../../shared/records/forge-claims.ts";
 import { localWriter } from "../../shared/records/writer.ts";
 import { currentIso, currentMs, isoFromMs } from "../../shared/time.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { REARM_REQUEST } from "../lib/rearm-binding.ts";
+import { statePath } from "../lib/state.ts";
 import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -33,6 +35,8 @@ import {
   machineFile,
   waitFor,
 } from "./launch-fixtures.ts";
+import { endHolder, holdLock } from "./host-driver-fixtures.ts";
+
 let current: World | null = null;
 afterEach(() => {
   current?.close();
@@ -246,11 +250,29 @@ it("recovers an original tree that is detached, found by its pull request link",
   expect(driveRuns(w)[0]?.cwd).toBe(ws);
 }, 90000);
 
+function ageWait(
+  w: World,
+  kind: "tree" | "stop" | "capacity",
+  minutes: number,
+) {
+  using db = new Database(statePath(dispatchState(w)));
+  const result = db
+    .query(
+      "UPDATE rearm_waits SET since_ms = ? WHERE repo = ? AND pr = 7 AND request_id = 702 AND kind = ?",
+    )
+    .run(currentMs() - minutes * 60_000, SLUG, kind);
+  expect(result.changes).toBe(1);
+}
+
 it("retires an explicit request and raises a need when the tree now holds another pull request", async () => {
   const { w, ws, ledger } = fixture();
   ledger.driver.exit = DRIVE_EXIT.CI_INFRA_PERSISTED;
   request(w, ledger);
   w.setWorkspaces([{ branch: "feature/other", linkedPR: 8, path: ws }]);
+  expect(
+    (await tick(w)).repos[0]?.actions.some((a) => a.stage === "notify"),
+  ).toBe(false);
+  ageWait(w, "tree", 31);
   const report = (await tick(w)).repos[0];
   expect(report?.actions).toContainEqual(
     expect.objectContaining({
@@ -301,6 +323,41 @@ it("removes a request from an earlier stop after a later drive converges", async
   expect(driveRuns(w)).toEqual([]);
 }, 90000);
 
+it("raises a bounded rearm failure when the named stop has moved to a newer stop", async () => {
+  const { w, ledger } = fixture();
+  ledger.driver.exit = DRIVE_EXIT.CI_INFRA_PERSISTED;
+  request(w, ledger);
+  const moved = { ...ledger, generation: ledger.generation + 1 };
+  w.setComments(7, [ledgerComment(701, moved), requestFor(ledger)]);
+  const reason =
+    "the drive is no longer at the stop named by the rearm request";
+  const first = (await tick(w)).repos[0];
+  expect(
+    first?.actions.some(
+      (action) => action.stage === "notify" && action.reason.includes(reason),
+    ),
+  ).toBe(false);
+  ageWait(w, "stop", 31);
+  const retired = (await tick(w)).repos[0];
+  expect(retired?.records).toContainEqual(
+    expect.objectContaining({
+      source: "PR #7 rearm request",
+      ok: true,
+      detail: `removed jig:rearm: ${reason}`,
+    }),
+  );
+  for (const report of [retired, (await tick(w)).repos[0]]) {
+    expect(report?.actions).toContainEqual(
+      expect.objectContaining({
+        stage: "notify",
+        cause: "needs-person",
+        reason: expect.stringContaining(reason),
+      }),
+    );
+  }
+  expect(driveRuns(w)).toEqual([]);
+}, 90000);
+
 it("retires requests on closed and merged pull requests", async () => {
   const { w, ledger } = fixture();
   request(w, ledger);
@@ -326,66 +383,73 @@ it("retires requests on closed and merged pull requests", async () => {
   expect(driveRuns(w)).toEqual([]);
 }, 90000);
 
-it("does not launch a timed out request when an account becomes available", async () => {
+it("keeps an aged rearm queued at capacity and gives it the next slot before an automatic retry", async () => {
   const { w, ledger } = fixture();
   ledger.driver.exit = DRIVE_EXIT.CI_INFRA_PERSISTED;
   request(w, ledger);
-  w.setComments(7, [
-    ledgerComment(701, ledger),
-    requestFor(ledger, 702, isoFromMs(currentMs() - 31 * 60_000)),
-  ]);
-  const report = (await tick(w)).repos[0];
-  expect(report?.actions).toContainEqual(
-    expect.objectContaining({
-      stage: "notify",
-      cause: "needs-person",
-      reason: "the request could not launch within 30 minutes",
-    }),
-  );
-  expect(report?.records).toContainEqual(
-    expect.objectContaining({
-      source: "PR #7 rearm request",
-      ok: true,
-      detail: expect.stringContaining("removed jig:rearm"),
-    }),
-  );
-  expect(driveRuns(w)).toEqual([]);
-}, 90000);
+  const age = isoFromMs(currentMs() - 31 * 60_000);
+  w.setComments(7, [ledgerComment(701, ledger), requestFor(ledger, 702, age)]);
+  machineFile(w, [{ ...account(w, "a", "a@example.com"), max: 1 }]);
+  const root = w.env.DRIVE_PR_STATE_DIR as string;
+  holdLock(root, 99, join(w.root, "hand-tree"), "a@example.com");
 
-it("keeps the durable failure of a held request that timed out, without notifying", async () => {
-  const { w, ledger } = fixture();
-  ledger.driver.exit = DRIVE_EXIT.CI_INFRA_PERSISTED;
-  request(w, ledger);
+  const full = (await tick(w)).repos[0];
+  expect(full?.launches).toContainEqual(
+    expect.objectContaining({
+      target: "PR #7",
+      outcome: "waits",
+      detail: expect.stringContaining("no account has a free slot"),
+    }),
+  );
+  expect(full?.actions.filter((action) => action.stage === "notify")).toEqual(
+    [],
+  );
+  expect(
+    full?.records.some((record) =>
+      record.detail?.includes("removed jig:rearm"),
+    ),
+  ).toBe(false);
+
+  ageWait(w, "capacity", 241);
+  const aged = await tick(w);
+  expect(
+    aged.load?.holds.filter(
+      (hold) => hold.target === "PR #7" && hold.detail.includes("4 hours"),
+    ),
+  ).toHaveLength(1);
+  expect(
+    aged.repos[0]?.actions.filter((action) => action.stage === "notify"),
+  ).toEqual([]);
+
+  endHolder(root, 99);
+  const other = "feature/automatic";
+  const otherTree = join(w.root, "automatic-tree");
+  checkoutOn(w.repo, otherTree, other, w.env);
+  const automatic = stoppedLedger(6, DRIVE_EXIT.NOT_SETTLED);
+  w.setComments(6, [ledgerComment(601, automatic)]);
   w.setPrs("open", [
+    openPr(6, other),
+    { ...openPr(7, "feature/unclean"), labels: [{ name: "jig:rearm" }] },
+  ]);
+  w.setWorkspaces([
+    { branch: other, linkedPR: 6, path: otherTree },
     {
-      ...openPr(7, "feature/unclean"),
-      labels: [{ name: "jig:rearm" }, { name: "jig:hold" }],
+      branch: "feature/unclean",
+      linkedPR: 7,
+      path: join(w.root, "original-dirty-tree"),
     },
   ]);
-  w.setComments(7, [
-    ledgerComment(701, ledger),
-    requestFor(ledger, 702, isoFromMs(currentMs() - 31 * 60_000)),
-  ]);
-  const report = (await tick(w)).repos[0];
-  expect(report?.actions.filter((a) => a.stage === "notify")).toEqual([]);
-  expect(report?.records).toContainEqual(
-    expect.objectContaining({
-      source: "PR #7 rearm request",
-      ok: true,
-      detail: expect.stringContaining("removed jig:rearm"),
-    }),
+  const resumed = (await tick(w)).repos[0];
+  const launches = resumed?.launches.filter(
+    (launch) => launch.outcome === "launched",
   );
-  const posted: { body: string }[] = JSON.parse(
-    readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+  expect(launches).toEqual([expect.objectContaining({ target: "PR #7" })]);
+  expect(resumed?.launches).toContainEqual(
+    expect.objectContaining({ target: "PR #6", outcome: "waits" }),
   );
-  const cancellation = posted
-    .map((c) => readClaim(REARM_REQUEST, c.body, { repo: SLUG, number: 7 }))
-    .findLast((r) => r?.ok && r.value.payload.stopComment === null);
-  expect(cancellation?.ok && cancellation.value.payload).toMatchObject({
-    requestId: 702,
-    needsPerson: true,
-    reason: "the request could not launch within 30 minutes",
-  });
+  await waitFor("the queued rearm's exit", () =>
+    exitWritten(w, launches?.[0]?.record ?? ""),
+  );
 }, 90000);
 
 it("leaves a request cancelled if closing label cleanup fails and the pull request reopens", async () => {

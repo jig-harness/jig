@@ -34,6 +34,7 @@ export async function writeRearmBinding(
     requestId?: number;
     reason?: string;
     needsPerson?: true;
+    failureStop?: RearmStop;
     deadline?: Deadline;
   } = {},
 ): Promise<Outcome<string | null, "refused">> {
@@ -51,6 +52,8 @@ export async function writeRearmBinding(
         requestId: options.requestId,
         reason: options.reason,
         needsPerson: options.needsPerson,
+        failureStop: options.failureStop?.comment,
+        failureGeneration: options.failureStop?.generation,
       },
       text:
         stop === null
@@ -114,11 +117,17 @@ export function rearmBinding(
     payload.stopComment === stop.comment &&
     generation === stop.generation;
   if (cancelled?.record.ok) {
-    const { reason, needsPerson } = cancelled.record.value.payload;
+    const { reason, needsPerson, failureStop, failureGeneration } =
+      cancelled.record.value.payload;
     return {
       ...evidence,
       rearmCancelled: true,
-      ...(sameStop && needsPerson === true && typeof reason === "string"
+      ...((sameStop ||
+        (stop !== null &&
+          stop.comment === failureStop &&
+          stop.generation === failureGeneration)) &&
+      needsPerson === true &&
+      typeof reason === "string"
         ? { rearmFailure: reason }
         : {}),
       rearmExpired:
@@ -127,13 +136,20 @@ export function rearmBinding(
           : "the person withdrew the rearm request",
     };
   }
+  const requestedAt = parseMs(newest.createdAt || at);
   if (!sameStop)
     return {
       ...evidence,
       rearmExpired:
         "the drive is no longer at the stop named by the rearm request",
+      ...(stop !== null
+        ? {
+            rearmMoved: true,
+            rearmMovedTo: stop.comment,
+            rearmMovedGeneration: stop.generation,
+          }
+        : {}),
     };
-  const requestedAt = parseMs(newest.createdAt || at);
   if (!Number.isFinite(requestedAt))
     return { ...evidence, rearmExpired: "the rearm request time did not read" };
   return {
