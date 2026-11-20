@@ -239,6 +239,7 @@ const LOAD_GAUGES = [
   "memory",
   "processors",
   "test-lock",
+  "validation",
   "disk",
   "forge",
   "accounts",
@@ -300,10 +301,28 @@ const LINE_FIELDS: Fields = {
       target: isString,
       pr: (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0,
       url: isString,
-      drive: (v) => v === "driving" || v === "converged",
+      drive: (v) =>
+        typeof v === "string" &&
+        ["driving", "converged", "parked", "stopped", "unplaced"].includes(v),
       why: isString,
     })(value),
   sessions: listOf(ENTRY_FIELDS.sessions),
+  drivers: (value) =>
+    value === undefined ||
+    listOf({
+      pr: (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0,
+      worktree: nullOr(isString),
+      account: nullOr(isString),
+      accountReason: nullOr(isString),
+      identity: nullOr(isString),
+      vendor: nullOr(isString),
+      startedBy: oneOf(["pickup", "dispatcher", "unrecorded"]),
+      record: nullOr(isString),
+      pid: isNumber,
+      since: isString,
+      log: nullOr(isString),
+    })(value),
+  driversUnread: (value) => value === undefined || isString(value),
   accounts: listOf(ENTRY_FIELDS.accounts),
   queue: listOf(ENTRY_FIELDS.queue),
   ready: (value) =>

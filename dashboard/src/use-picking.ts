@@ -153,6 +153,10 @@ export function usePicking(
     const row = need.rows[index];
     if (row === undefined) return;
     hold(index);
+    const toggle = card.current?.querySelector<HTMLButtonElement>(
+      '[data-card-toggle][aria-expanded="false"]',
+    );
+    toggle?.click();
     setEditing({ key: row.key, field });
   };
 

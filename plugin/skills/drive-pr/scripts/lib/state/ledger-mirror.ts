@@ -42,6 +42,8 @@ import type { StateStore } from "./store.ts";
 export const LEDGER_DRIVER_ENV = "DRIVE_PR_LEDGER_DRIVER";
 
 /** What a driver publishes about itself for the ledger's writers. */
+import { CONVERGED_CI_PHASE } from "./ledger-values.ts";
+
 export interface LedgerDriverEnv {
   actor: string;
   clone: string;
@@ -64,6 +66,24 @@ export interface LedgerDriverEnv {
    * running (`ledgerOfStoppedDriver`), so it never overwrites a successor.
    */
   recovering?: boolean;
+  /** Recovery carries an exit saved for this acquisition after its CI watch. */
+  pending?: boolean;
+  watchingConvergedCi?: boolean;
+}
+
+function optionalIs<T>(
+  value: unknown,
+  predicate: (candidate: unknown) => candidate is T,
+): boolean {
+  return value === undefined || predicate(value);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || typeof value === "number";
 }
 
 export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
@@ -75,14 +95,26 @@ export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
       isRecord(v) &&
       typeof v.actor === "string" &&
       typeof v.clone === "string" &&
-      (v.login === null || typeof v.login === "string") &&
-      (v.floor === null || typeof v.floor === "number") &&
+      isNullableString(v.login) &&
+      isNullableNumber(v.floor) &&
       (v.claim === null || isRecord(v.claim)) &&
-      (v.stopped === undefined ||
-        v.stopped === null ||
-        typeof v.stopped === "number") &&
-      (v.started === undefined || typeof v.started === "string") &&
-      (v.recovering === undefined || typeof v.recovering === "boolean")
+      optionalIs(v.stopped, isNullableNumber) &&
+      optionalIs(
+        v.started,
+        (value): value is string => typeof value === "string",
+      ) &&
+      optionalIs(
+        v.recovering,
+        (value): value is boolean => typeof value === "boolean",
+      ) &&
+      optionalIs(
+        v.pending,
+        (value): value is boolean => typeof value === "boolean",
+      ) &&
+      optionalIs(
+        v.watchingConvergedCi,
+        (value): value is boolean => typeof value === "boolean",
+      )
     )
       return v as unknown as LedgerDriverEnv;
   } catch {
@@ -115,7 +147,7 @@ function writeRefused(
         clone: driver.clone,
         started: driver.started ?? "",
       },
-      allowStopped,
+      allowStopped || driver.pending === true,
     );
     if ("why" in found)
       return `the ledger is not the stopped driver's: ${found.why}`;
@@ -247,22 +279,27 @@ async function mirrorUnlocked(
     // not an older read.
     const { state } = store.read();
     const narrative = narrativeOf(handoff);
-    return ledgerFromState(state, {
-      generation:
-        Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
-      driver: ledgerDriverRecord(driver, store.stateDir, pr),
-      narrative,
-      claims: effectiveClaims(
-        driver.claim === null ||
-          snapshot.claims.some((c) => c.id === driver.claim?.id)
-          ? snapshot.claims
-          : [...snapshot.claims, driver.claim],
-      ).map((c) => ({
-        id: c.id,
-        clone: c.claim.clone,
-        generation: c.claim.generation,
-      })),
-    });
+    const watching =
+      driver.watchingConvergedCi === true && driver.stopped === undefined;
+    return ledgerFromState(
+      watching ? { ...state, phase: CONVERGED_CI_PHASE } : state,
+      {
+        generation:
+          Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
+        driver: ledgerDriverRecord(driver, store.stateDir, pr),
+        narrative,
+        claims: effectiveClaims(
+          driver.claim === null ||
+            snapshot.claims.some((c) => c.id === driver.claim?.id)
+            ? snapshot.claims
+            : [...snapshot.claims, driver.claim],
+        ).map((c) => ({
+          id: c.id,
+          clone: c.claim.clone,
+          generation: c.claim.generation,
+        })),
+      },
+    );
   });
   if (result.kind !== "written") {
     console.error(`ledger: not written — ${result.reason}.`);

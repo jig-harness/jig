@@ -6,8 +6,20 @@ export function releaseForgeAnswer(dir: string, args: string[]): unknown {
   if (args[0] !== "api") return undefined;
   const query = args.find((arg) => arg.includes("query DispatchReleaseTags"));
   if (args[1] === "graphql" && query !== undefined) {
-    const refs = query.match(/tag\d+(?=: ref)/g) ?? [];
-    const repository = Object.fromEntries(refs.map((key) => [key, null]));
+    // The tags `release-tags.json` lists exist; every other one does not.
+    const listed = join(dir, "release-tags.json");
+    const tags: string[] = existsSync(listed)
+      ? JSON.parse(readFileSync(listed, "utf8"))
+      : [];
+    const refs = [
+      ...query.matchAll(/(tag\d+): ref\(qualifiedName: "refs\/tags\/([^"]+)"\)/g),
+    ];
+    const repository = Object.fromEntries(
+      refs.map(([, key, tag]) => [
+        key,
+        tag !== undefined && tags.includes(tag) ? { name: tag } : null,
+      ]),
+    );
     return {
       data: {
         rateLimit: { cost: 1, remaining: 4999, resetAt: "2026-11-12T00:00:00Z" },

@@ -285,6 +285,15 @@ outcome log) is one SQLite database beside them, `state.sqlite`; a
 database written by a newer plugin is refused, with its version named,
 until the plugin is updated.
 
+The machine file can select [`runtime: process`](CONFIGURATION.md#the-machines-dispatch-file)
+on Linux and macOS to run without Orca. The dispatcher opens plain Git
+worktrees and starts headless runs through the host's service manager. Each run receives an
+allowlisted environment for its account. A pickup hands its first drive
+back to the dispatcher, which admits it when the pickup has ended. With
+`dispatch.labels.only_labeled` enabled, the pull request needs a dispatch
+label before the dispatcher can admit the drive.
+The dashboard shows causes that need attention.
+
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,
@@ -294,14 +303,19 @@ started (or another host did: see several hosts, below), or of a silent
 driver no launch started that ran on this host and whose run this host
 shows ended, or whose holder the clone's drive doctor (`drives.ts --json`)
 reads `DEAD` or `WEDGED`,
-runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
-of the pull request's workspace, opened from the pull request when none
-holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
+runs as `drive.ts <PR> [--take-over] -- <pass>` in the pull request's
+workspace, opened from the pull request when none holds it. A wrapper
+(`dispatch/run.ts`) starts the drive in an Orca tab or a managed process,
+according to the machine file. The wrapper bills
 the pass to an account the machine file lists that serves the `rearm`
 stage ([`accounts[].stages`](CONFIGURATION.md#the-machines-dispatch-file)),
 through that account's
 configuration directory, and only while the account has a free slot and no
-recorded usage-limit wall; before the launch the dispatcher checks that the
+recorded usage-limit wall. A slot is held by each launch record still
+running and by each live driver on the host that no such record accounts
+for, whoever started it (a drive a pickup armed, which keeps its pickup's
+slot when the pickup ends, or one a person or a repair session started
+by hand), on the account whose identity its lock says its passes bill; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
 does not. Every launch begins with a launch record in the state database,
 so a launch whose answer is lost
@@ -889,7 +903,15 @@ are never reported as a rate limit, and they do not count toward the rate
 limit's three. The outcome log classes such a pass `arm pending`, which
 the dashboard shows as held back, not as finishing badly. A pass that still finds the arm pending once
 `dispatch.followup_within` has passed since the first pass that found it so
-is notified as a failed follow-up that names the arm. `--reason` absent is
+is notified as a failed follow-up that names the arm. That window starts
+again when a pass names other release tags than the ones it started on (a
+newer release), up to three windows after the first pending pass; an arm
+that names no tag keeps its window. Before a pass past its window goes to a
+person, the tick reads the release tags its arm names once more, within
+15 minutes of the pass's end: when they all exist, it releases the marker
+instead and the follow-up runs again as a new run. An arm a run of the pull
+request already went past its window on is not read again, so a follow-up
+that keeps finding it pending reaches a person. `--reason` absent is
 `rate-limit`.
 
 A Claude follow-up that exits unsuccessfully within a minute without a
@@ -1177,6 +1199,7 @@ stages' results into these outcome classes:
 | died | a process gone without an exit; a session that ended with no result |
 | refused | a stage's own refusal or a stop it was given |
 | gates failed | a stage that ran to its end without achieving it, or recorded failure |
+| read failed | a stage could not read the state it needs to continue safely |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 
@@ -1484,6 +1507,13 @@ workspaces. It is `null` when none is known or the records are ambiguous.
 It never falls back to the notices workspace: `notified.workspace` still
 names where the notification went. This is an additive version-1 field;
 readers treat its absence in an older snapshot as unknown.
+`line.drivers` lists the live drivers on the host that no running launch
+record accounts for, each with its pull request, its tree, the `account`
+whose slot it holds (`null`, with `accountReason`, when no listed account
+has the identity its passes bill, and then it holds none) and how it was
+started (`startedBy`: `pickup`, `dispatcher` or `unrecorded`); it is absent
+from a line written before they were counted, and when the drive's database
+could not be read, which `line.driversUnread` then says.
 Each entry in `line.repos` carries `tracker`, the adapter its configuration
 names (`{"adapter":"linear"}`), and each row of `needs`, `sessions`, `queue`
 and `ready` carries `links`: for a pull request, the items its branch names,

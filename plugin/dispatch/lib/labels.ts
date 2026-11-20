@@ -13,6 +13,7 @@
  *
  * `actions/labels.ts` writes the changes.
  */
+import { CONVERGED_CI_PHASE } from "../../skills/drive-pr/scripts/lib/state/ledger-values.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   type DoneExits,
@@ -49,6 +50,8 @@ const DONE_EXITS: DoneExits = {
  * on a pull request open again is left as it is.
  */
 export function stateOf(drive: DrivenPr | undefined): Projected {
+  if (drive?.class === "driven" && drive.evidence.phase === CONVERGED_CI_PHASE)
+    return "unknown";
   return ledgerState(
     drive === undefined
       ? undefined

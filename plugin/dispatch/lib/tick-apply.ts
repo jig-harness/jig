@@ -16,6 +16,7 @@ import { serialUndecided } from "./serial-pickups.ts";
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
+import { driversOf, type HostDrivers } from "./host-drivers.ts";
 import {
   type ApplyState,
   applyDrives,
@@ -45,6 +46,7 @@ import {
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
+import { pickupArms, pickupAsked, type PickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
 import type {
   JoinTargets,
@@ -94,6 +96,7 @@ export function applyState(
   unreadable: string[],
   startedAt: number,
   weights?: import("./local-weights.ts").AccountWeights,
+  drivers?: HostDrivers,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -103,6 +106,11 @@ export function applyState(
     return {
       withheld: `${unreadable.length} launch record(s) do not read, so no slot can be told free`,
     };
+  // A driver no record started still holds its account's slot: unread, no slot can be told free either.
+  if (drivers !== undefined && !drivers.ok)
+    return {
+      withheld: `the host's live drivers do not read (${drivers.failure.reason}), so no slot can be told free`,
+    };
   // A rotation cursor that cannot be recorded would repeat: launch nothing.
   const tick = nextTickIndex();
   if (typeof tick !== "number")
@@ -111,11 +119,19 @@ export function applyState(
     machine,
     runtime,
     records,
-    table: slotTable(machine.accounts, records, nowMs, undefined, weights),
+    table: slotTable(
+      machine.accounts,
+      records,
+      nowMs,
+      undefined,
+      weights,
+      driversOf(drivers),
+    ),
     weights,
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),
+    ...(drivers === undefined ? {} : { drivers }),
     startedAt,
     tick,
     repos: options.repos.length,
@@ -174,6 +190,9 @@ export async function actObserved(
     nowMs: context.nowMs,
     book,
     rerunsHeld: context.rerunsHeld ?? null,
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
@@ -192,6 +211,7 @@ export async function actObserved(
   const inputs: ApplyInputs = {
     repo,
     runtime: context.runtime,
+    pickupArms: pickupArms(allRecords(context), repo),
     section,
     tracked: observation.tracked,
     login: forge.login,
@@ -272,6 +292,7 @@ export function withheldFromReplay(
 
 /** What `--apply` acts on for one repository, as its tick read it. */
 interface ApplyInputs {
+  pickupArms: PickupArms;
   repo: RepoTarget;
   runtime: SessionRuntime;
   section: DispatchSection;
@@ -322,8 +343,13 @@ async function withThreads(
   return ok({ ...pr, unresolvedThreads: threads.value });
 }
 
-/** Whether a person's `drive` or `rearm` label is on the pull request. */
-function asksForDrive(labels: LabelConfig | null, pr: ListedPr): boolean {
+/** Whether the pickup or a person's label asks for a drive. */
+function asksForDrive(
+  pickupArms: PickupArms,
+  labels: LabelConfig | null,
+  pr: ListedPr,
+): boolean {
+  if (pickupAsked(pickupArms, pr)) return true;
   return (
     labels !== null &&
     (hasCommand(labels, pr.labels, "drive") ||
@@ -475,6 +501,7 @@ async function freshDriveReading(
   const { repo, login, section } = inputs;
   const view = await openPullRequest(repo.slug, pr, {
     labels: labels !== null || steward,
+    headRepository: inputs.pickupArms.has(pr),
   });
   if (!view.ok) return view;
   const listed = view.value;
@@ -485,7 +512,7 @@ async function freshDriveReading(
     repo.slug,
     listed,
     ownAuthors(adoption, login),
-    asksForDrive(labels, listed),
+    asksForDrive(inputs.pickupArms, labels, listed),
   );
   if (!counted.ok) return counted;
   const [again] = await readDrives(
@@ -495,6 +522,7 @@ async function freshDriveReading(
     currentMs(),
     labels,
     adoption,
+    { pickupArms: inputs.pickupArms },
   );
   if (again === undefined) return ok(null);
   if (steward) return ok({ ...again, labels: listed.labels ?? [] });

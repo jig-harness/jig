@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
 import { holdRecord, type ApplyState } from "../lib/actions/launch.ts";
+import { orcaRuntime } from "../lib/runtime/orca.ts";
 import { driveHold } from "../lib/actions/drive-hold.ts";
 import { consumeRearm, pendingRearm } from "../lib/actions/rearm-request.ts";
 import { failed, ok } from "../../shared/outcome.ts";
@@ -91,7 +92,12 @@ it("records a new launch after the greatest ordinal, even when a resume copied a
     0,
     "2026-01-01T00:00:00.000Z",
   );
-  const state = { root: dir, records: [previous], last: null } as ApplyState;
+  const state = {
+    root: dir,
+    records: [previous],
+    last: null,
+    runtime: orcaRuntime(),
+  } as ApplyState;
   const copied = record("20260201T000000Z-bbbbbbbb", {
     accountLaunchOrdinal: 2,
   });
@@ -123,6 +129,35 @@ it("reads legacy launch records but rejects invalid account launch ordinals", ()
     expect(isLaunchRecord({ ...original, runEndedAt: bad })).toBe(false);
   for (const bad of [null, 0, -1, 1.5, "1", Number.POSITIVE_INFINITY])
     expect(isLaunchRecord({ ...original, accountLaunchOrdinal: bad })).toBe(
+      false,
+    );
+});
+
+it("reads host-driver replacement metadata with an advisory start string", () => {
+  const original = record("host-driver-replacement");
+  const replacement = {
+    clone: "clone@host",
+    pr: 7,
+    since: "2026-11-01T12:00:00.000Z",
+  };
+  expect(isLaunchRecord({ ...original, replacesHostDriver: replacement })).toBe(
+    true,
+  );
+  expect(
+    isLaunchRecord({
+      ...original,
+      replacesHostDriver: { ...replacement, since: "not a time" },
+    }),
+  ).toBe(true);
+  for (const bad of [
+    null,
+    {},
+    { ...replacement, clone: null },
+    { ...replacement, pr: 0 },
+    { ...replacement, pr: 1.5 },
+    { ...replacement, since: null },
+  ])
+    expect(isLaunchRecord({ ...original, replacesHostDriver: bad })).toBe(
       false,
     );
 });
@@ -774,6 +809,18 @@ describe("the timer's job", () => {
     });
     expect(duration("576h", "x")).toEqual({ ok: true, value: 576 * 3_600_000 });
   });
+});
+
+it("refuses a delayed wrapper claim after the launch was cancelled or ended", () => {
+  const dir = root();
+  const cancelled = "20260101T000000Z-aaaaaaaa";
+  const ended = "20260101T000001Z-bbbbbbbb";
+  const at = "2026-01-01T00:01:00.000Z";
+  writeRecord(record(cancelled, { cancelledAt: at }), dir);
+  writeRecord(record(ended), dir);
+  recordExit(ended, { at, code: null, signal: null }, dir);
+  expect(claimRecord(cancelled, WHO, dir)).toBe(false);
+  expect(claimRecord(ended, WHO, dir)).toBe(false);
 });
 
 describe("the marked records a report reads", () => {

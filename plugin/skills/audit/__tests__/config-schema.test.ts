@@ -147,6 +147,11 @@ import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
 const repoRoot = join(plugin, "..");
+import {
+  LOAD_DEFAULTS,
+  loadSettings,
+} from "../../../dispatch/lib/load-config.ts";
+
 const schema = loadSchema();
 const field = (path: string) => schema.fields.find((f) => f.path === path);
 const under = (prefix: string) =>
@@ -204,6 +209,22 @@ function completeExample(): Record<string, unknown> {
   if (!block) throw new Error("CONFIGURATION.md has no complete example");
   return load(block) as Record<string, unknown>;
 }
+
+test("documents the dispatch machine file's validation share in the audit schema", () => {
+  const validation = schema.machineFields?.find(
+    ({ path }) => path === "load.validation",
+  );
+  expect(validation).toMatchObject({
+    type: "number",
+    min: Number.MIN_VALUE,
+    max: 1,
+    default: LOAD_DEFAULTS.validation,
+    read_by: ["dispatch"],
+  });
+  expect(loadSettings({ validation: validation?.min }).ok).toBe(true);
+  expect(loadSettings({ validation: validation?.max }).ok).toBe(true);
+  expect(loadSettings({ validation: 0 }).ok).toBe(false);
+});
 
 describe("CONFIGURATION.md", () => {
   const documented = documentedFields();

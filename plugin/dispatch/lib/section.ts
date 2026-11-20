@@ -36,7 +36,7 @@ const DEFAULT_ROUNDS_FLAT = 3;
 const DEFAULT_PICKUP_WITHIN_MS = 2 * 3_600_000;
 const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
 /** `pickup_deadline`'s default: an implementation outruns a review pass's deadline. */
-const DEFAULT_PICKUP_DEADLINE_MS = 3 * 3_600_000;
+export const DEFAULT_PICKUP_DEADLINE_MS = 3 * 3_600_000;
 /** `notices_linger`'s default. */
 const DEFAULT_NOTICES_LINGER_MS = 3_600_000;
 /** `renotify_after`'s default: a day. */

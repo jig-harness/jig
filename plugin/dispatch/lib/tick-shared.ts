@@ -387,6 +387,8 @@ export async function endOwnClaims(
     book?: ActionBook | null;
     /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`): their markers stay. */
     rerunsHeld?: string | null;
+    /** The launch records of follow-ups whose spent pending arm the tick read again as settled (`arm-reread.ts`). */
+    armsSettled?: ReadonlySet<string>;
   },
 ): Promise<void> {
   const scope = inputs.forge.scoped
@@ -422,6 +424,7 @@ export async function endOwnClaims(
       own,
       inputs.nowMs,
       scope,
+      inputs.armsSettled,
     )),
   ];
   for (const reason of failures)

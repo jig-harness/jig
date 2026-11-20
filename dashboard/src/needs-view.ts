@@ -126,7 +126,7 @@ function answerNotes(decisions: LineDecision[]): NeedView["answerNotes"] {
     const said = answerStateWords(d.answerState, d.answers ?? []);
     if (said !== null)
       notes.push({
-        state: d.answerState ?? "waiting",
+        state: d.answerState ?? "from the line",
         text: `${prefix}${said}`,
       });
     if (d.unread !== undefined)

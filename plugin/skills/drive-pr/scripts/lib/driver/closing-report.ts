@@ -8,7 +8,9 @@
  *
  * - `cause` and `suggested_next` are the terminal-state registry's `report`
  *   for the exit (`status/terminal-states.ts`); an exit the registry does
- *   not name has cause `unknown` and asks a person to investigate.
+ *   not name has cause `unknown` and asks a person to investigate. A stall
+ *   whose passes all ended `finish-round.ts` on the same state takes its
+ *   cause from that state (`state/round-finish.ts`).
  * - `concluded` is the stop's own text (`stop-text.ts`) followed by the
  *   `concluded` of the last round report of this launch, the stop's text
  *   first and the round's cut to the room left in the 600 characters; the
@@ -29,6 +31,7 @@
  */
 import {
   type ClosingReport,
+  type ReportCause,
   CLOSING_REPORT_SCHEMA,
   CONCLUDED_MAX,
   closingReportOf,
@@ -44,10 +47,12 @@ import { launchOf } from "../../../../../shared/launched-session.ts";
 import type { ParkedItem } from "../state/park-frame.ts";
 import { readRoundReport } from "../state/round-report.ts";
 import type { DriveState } from "../state/schema.ts";
+import { probeFailure } from "../status/probe-stop.ts";
 import { driveExitReport } from "../status/terminal-states.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
-import { exitOf, oneLine, stopText } from "./stop-text.ts";
+import { finishCause } from "../state/round-finish.ts";
+import { exitOf, oneLine, type StallFinish, stopText } from "./stop-text.ts";
 
 /** What marks a text cut short. */
 const ELLIPSIS = "…";
@@ -120,16 +125,40 @@ export function composeDriverReport(input: {
   code: number;
   state: DriveState | null;
   round: ClosingReport | null;
+  stall?: StallFinish | null;
 }): ClosingReport {
   const { pr, code, state, round } = input;
+  const stall = code === exitOf("STALLED") ? (input.stall ?? null) : null;
   const named = driveExitReport(code);
-  const stop = redactReportText(stopText(pr, code, state));
-  const base: ClosingReport = {
+  const stop = redactReportText(stopText(pr, code, state, stall));
+  const probe = driverRuntime.stopProbe;
+  const failure = probe?.code === code ? probeFailure(probe) : null;
+  const cause =
+    failure !== null
+      ? "environment"
+      : named === null
+        ? "unknown"
+        : stall !== null
+          ? finishCause(stall.state)
+          : named.report.cause;
+  const concluded = composeConcluded(
+    stop,
+    round === null ? null : redactReportText(round.concluded),
+  );
+  const base = baseDriverReport(pr, concluded, named, cause);
+  const ask = parkAsk(code, state);
+  return checkedDriverReport(base, ask, state, stop);
+}
+
+function baseDriverReport(
+  pr: string,
+  concluded: string,
+  named: ReturnType<typeof driveExitReport>,
+  cause: ReportCause | undefined,
+): ClosingReport {
+  return {
     schema: CLOSING_REPORT_SCHEMA,
-    concluded: composeConcluded(
-      stop,
-      round === null ? null : redactReportText(round.concluded),
-    ),
+    concluded,
     suggested_next:
       named === null
         ? {
@@ -138,14 +167,17 @@ export function composeDriverReport(input: {
             act: "Investigate",
           }
         : { ...named.report.next },
-    ...(named === null
-      ? { cause: "unknown" as const }
-      : named.report.cause === undefined
-        ? {}
-        : { cause: named.report.cause }),
+    ...(cause === undefined ? {} : { cause }),
     evidence: [`pr:#${pr}`],
   };
-  const ask = parkAsk(code, state);
+}
+
+function checkedDriverReport(
+  base: ClosingReport,
+  ask: ReturnType<typeof parkAsk>,
+  state: DriveState | null,
+  stop: string,
+): ClosingReport {
   const tries: ClosingReport[] =
     ask === null
       ? [base]
@@ -207,7 +239,13 @@ export async function writeClosingReport(
     writeDriverReport(
       path,
       launch,
-      composeDriverReport({ pr, code, state, round }),
+      composeDriverReport({
+        pr,
+        code,
+        state,
+        round,
+        stall: driverRuntime.stallFinish,
+      }),
     );
   } catch (error) {
     console.error(
