@@ -59,8 +59,13 @@ const TRUSTED_BUNFIG = fileURLToPath(
 );
 
 function trustedTsArgv(script: string, args: string[]): string[] {
-  const [bun, ...rest] = tsArgv(script, args);
-  return [bun!, "--no-env-file", `--config=${TRUSTED_BUNFIG}`, ...rest];
+  const argv = tsArgv(script, args);
+  return [
+    ...argv.slice(0, 1),
+    "--no-env-file",
+    `--config=${TRUSTED_BUNFIG}`,
+    ...argv.slice(1),
+  ];
 }
 
 /**

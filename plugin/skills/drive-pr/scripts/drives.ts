@@ -1,8 +1,5 @@
 #!/usr/bin/env bun
-import {
-  markIdlePersonStop,
-  restoreIdlePersonStop,
-} from "./lib/state/person-stop.ts";
+import { settleIdleStop } from "./lib/idle-stop.ts";
 import { cancelledRecoveryRecord } from "./lib/state/park-frame.ts";
 import {
   prepareOperatorStop,
@@ -715,48 +712,7 @@ async function stop(
         ? `no drive holds PR #${pr}'s lock — nothing to stop.`
         : `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
-    // The person's stop is recorded on the acquisition before it settles, so a stop whose first attempt was refused still reads as theirs.
-    const idle = ledgerStop.readDriverRecord(stateDir, pr);
-    if (
-      expectStarted !== "" &&
-      idle !== null &&
-      idle.started !== expectStarted
-    ) {
-      console.log(
-        `PR #${pr}'s retained driver record is another acquisition (started ${idle.started}, expected ${expectStarted}) — not stopping it.`,
-      );
-      return 3;
-    }
-    if (idle !== null && idle.personStop === undefined) {
-      const marked = markIdlePersonStop(stateDir, pr, idle.started, reason);
-      const now = ledgerStop.readDriverRecord(stateDir, pr);
-      if (!marked && now === null) {
-        // A concurrent recovery published an ordinary stop and deleted the record first. The acquisition is restored with the person's stop so this recovery republishes the ledger with it, and a retry meets that record, never a settled drive without it.
-        if (!restoreIdlePersonStop(stateDir, pr, idle, reason)) {
-          console.log(
-            `PR #${pr}'s idle driver record was replaced by another acquisition while the stop was recorded — the person's stop (acquisition ${idle.started}) is not on the ledger; not reporting it settled.`,
-          );
-          return 1;
-        }
-      } else if (
-        !marked &&
-        (now === null ||
-          now.started !== idle.started ||
-          now.personStop === undefined)
-      ) {
-        console.log(
-          `PR #${pr}'s retained driver record (started ${idle.started}) changed while the stop was recorded — the person's stop is not on the ledger; not reporting it settled.`,
-        );
-        return 1;
-      }
-    }
-    // A record may stay as a retained CI-hold witness after the ledger is settled; only the outcome says which.
-    console.log(
-      (await ledgerStop.recoverIdleStop(stateDir, pr, row)) === "settled"
-        ? `PR #${pr}'s idle ledger is settled.`
-        : `PR #${pr}'s idle ledger is not settled: a ledger write is still owed.`,
-    );
-    return 1;
+    return settleIdleStop(stateDir, pr, row, expectStarted, reason);
   }
   if (row.state !== "live") {
     console.log(

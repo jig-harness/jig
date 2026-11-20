@@ -59,22 +59,20 @@ function readFd(fd: number, path: string): Buffer | { unreadable: string } {
   }
 }
 
-/**
- * What `next` adds to `prev`, when `next` is `prev` with its start dropped
- * and new bytes appended (the bounded rewrite): the first place a suffix of
- * `prev` is a prefix of `next`. `null` when no suffix is.
- */
-function addedTo(prev: Buffer, next: Buffer): Buffer | null {
-  if (prev.length === 0) return next;
-  if (next.length === 0) return next;
-  // Linear time: the longest prefix of `next` that ends `prev`, by the
-  // failure function of `next` run over `prev`.
-  const fail = new Int32Array(next.length);
-  for (let i = 1, k = 0; i < next.length; i++) {
-    while (k > 0 && next[i] !== next[k]) k = fail[k - 1] as number;
-    if (next[i] === next[k]) k++;
+/** For each prefix of `bytes`, the length of its longest proper prefix that is also its suffix. */
+function failureFunction(bytes: Buffer): Int32Array {
+  const fail = new Int32Array(bytes.length);
+  for (let i = 1, k = 0; i < bytes.length; i++) {
+    while (k > 0 && bytes[i] !== bytes[k]) k = fail[k - 1] as number;
+    if (bytes[i] === bytes[k]) k++;
     fail[i] = k;
   }
+  return fail;
+}
+
+/** The length of the longest prefix of `next` that ends `prev`, in linear time: the failure function of `next` run over `prev`. */
+function overlap(prev: Buffer, next: Buffer): number {
+  const fail = failureFunction(next);
   let matched = 0;
   for (const byte of prev) {
     if (matched === next.length) matched = fail[matched - 1] as number;
@@ -83,6 +81,18 @@ function addedTo(prev: Buffer, next: Buffer): Buffer | null {
     }
     if (byte === next[matched]) matched++;
   }
+  return matched;
+}
+
+/**
+ * What `next` adds to `prev`, when `next` is `prev` with its start dropped
+ * and new bytes appended (the bounded rewrite): the first place a suffix of
+ * `prev` is a prefix of `next`. `null` when no suffix is.
+ */
+function addedTo(prev: Buffer, next: Buffer): Buffer | null {
+  if (prev.length === 0) return next;
+  if (next.length === 0) return next;
+  const matched = overlap(prev, next);
   return matched > 0 ? next.subarray(matched) : null;
 }
 
@@ -127,6 +137,17 @@ export function spoolCursor(path: string): SpoolCursor {
   return Object.assign(cursor, { close: release });
 }
 
+/** Write what the cursor has that is new; why the spool cannot be read, else null. */
+function flush(
+  next: SpoolCursor,
+  write: FollowDeps["write"],
+): { unreadable: string } | null {
+  const got = next();
+  if (typeof got === "object" && !Buffer.isBuffer(got)) return got;
+  if (got.length > 0) write(got);
+  return null;
+}
+
 /** Print the spool as it grows: `ended` once the run is over and its last output printed, `detached` when the person stopped watching, or why the spool cannot be read. */
 export async function followSpool(
   path: string,
@@ -139,15 +160,9 @@ export async function followSpool(
       if (deps.signal.aborted) return "detached";
       // Read before and after the check: the descriptor of the first read
       // outlives a spool the wrapper deletes at the run's end.
-      const before = next();
-      if (typeof before === "object" && !Buffer.isBuffer(before)) return before;
-      if (before.length > 0) deps.write(before);
-      if (await deps.over()) {
-        const last = next();
-        if (typeof last === "object" && !Buffer.isBuffer(last)) return last;
-        if (last.length > 0) deps.write(last);
-        return "ended";
-      }
+      const before = flush(next, deps.write);
+      if (before !== null) return before;
+      if (await deps.over()) return flush(next, deps.write) ?? "ended";
       await deps.sleep(interval);
     }
   } finally {

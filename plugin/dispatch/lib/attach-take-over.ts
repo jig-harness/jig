@@ -252,6 +252,54 @@ async function lockFor(deps: TakeOverDeps): Promise<(() => void) | string> {
   }
 }
 
+/** The writes of a person's end, under the tick lock: the exit code of the first that fails, else null. */
+async function writeEnd(
+  id: string,
+  address: string,
+  deps: TakeOverDeps,
+): Promise<number | null> {
+  const row = await deps.inspect(id);
+  if (row === null) {
+    deps.err(`jig dispatch attach: launch record ${id} is gone`);
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  const live = await deps.members(row);
+  if (live.alive.length > 0 || live.uncertain) {
+    deps.err(
+      `jig dispatch attach: ${id} has processes alive again or unjudged; run the command again`,
+    );
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  recordExit(
+    id,
+    {
+      at: currentIso(),
+      code: null,
+      signal: "SIGTERM",
+      context: "a person took the run over",
+    },
+    deps.root,
+  );
+  if (!recordReport(id, personReport(address), "person", deps.root)) {
+    deps.err(
+      `jig dispatch attach: the person's report could not be kept on ${id}; running the command again records it`,
+    );
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  const ended = await deps.inspect(id);
+  if (ended !== null && holds(ended.state)) {
+    deps.err(
+      `jig dispatch attach: ${id} is stopped and its end recorded, but it still holds its slot (${ended.state.kind}${"reason" in ended.state ? `: ${ended.state.reason}` : ""}); free it with jig dispatch clear ${id}`,
+    );
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  rmSync(takeOverMark(deps.root, id), { force: true });
+  rmSync(takeOverMembers(deps.root, id), { force: true });
+  rmSync(driveStopOwed(deps.root, id), { force: true });
+  deps.out("end: recorded by person; the account's slot is free");
+  return null;
+}
+
 /** Record the run's end as a person's, under the tick lock. */
 async function recordEnd(
   id: string,
@@ -266,45 +314,8 @@ async function recordEnd(
     return TAKE_OVER_EXIT.LOCK_HELD;
   }
   try {
-    const row = await deps.inspect(id);
-    if (row === null) {
-      deps.err(`jig dispatch attach: launch record ${id} is gone`);
-      return TAKE_OVER_EXIT.FAILED;
-    }
-    const live = await deps.members(row);
-    if (live.alive.length > 0 || live.uncertain) {
-      deps.err(
-        `jig dispatch attach: ${id} has processes alive again or unjudged; run the command again`,
-      );
-      return TAKE_OVER_EXIT.FAILED;
-    }
-    recordExit(
-      id,
-      {
-        at: currentIso(),
-        code: null,
-        signal: "SIGTERM",
-        context: "a person took the run over",
-      },
-      deps.root,
-    );
-    if (!recordReport(id, personReport(address), "person", deps.root)) {
-      deps.err(
-        `jig dispatch attach: the person's report could not be kept on ${id}; running the command again records it`,
-      );
-      return TAKE_OVER_EXIT.FAILED;
-    }
-    const ended = await deps.inspect(id);
-    if (ended !== null && holds(ended.state)) {
-      deps.err(
-        `jig dispatch attach: ${id} is stopped and its end recorded, but it still holds its slot (${ended.state.kind}${"reason" in ended.state ? `: ${ended.state.reason}` : ""}); free it with jig dispatch clear ${id}`,
-      );
-      return TAKE_OVER_EXIT.FAILED;
-    }
-    rmSync(takeOverMark(deps.root, id), { force: true });
-    rmSync(takeOverMembers(deps.root, id), { force: true });
-    rmSync(driveStopOwed(deps.root, id), { force: true });
-    deps.out("end: recorded by person; the account's slot is free");
+    const failed = await writeEnd(id, address, deps);
+    if (failed !== null) return failed;
   } finally {
     release();
   }
@@ -315,26 +326,13 @@ async function recordEnd(
   return TAKE_OVER_EXIT.DONE;
 }
 
-/**
- * Take the run over: hold, mark, stop, record the end. `alreadyTaken` is a
- * run whose end a person's take-over already recorded, which only needs its
- * resume line again.
- */
-export async function takeOver(
+/** Mark and hold the run's target: the exit code that ends the take-over, else null. */
+async function holdTarget(
   row: InspectedRow & { record: LaunchRecord },
-  alreadyTaken: boolean,
+  id: string,
+  address: string,
   deps: TakeOverDeps,
-): Promise<number> {
-  const { record } = row;
-  const id = record.id;
-  const address = targetAddress(record);
-  if (address === null) {
-    deps.err(
-      `jig dispatch attach: ${id} is a ${record.action} run with no target to hold, so it cannot be taken over`,
-    );
-    return TAKE_OVER_EXIT.REFUSED;
-  }
-  if (alreadyTaken) return TAKE_OVER_EXIT.DONE;
+): Promise<number | null> {
   const mark = takeOverMark(deps.root, id);
   const markWasThere = existsSync(mark);
   if (row.state.kind === "ended" && !existsSync(mark)) {
@@ -361,20 +359,39 @@ export async function takeOver(
       ? `hold: ${address} is held in your name; release it with ${releaseCommand(address)}`
       : `hold: ${address} was already held`,
   );
-  const live = await deps.members(row);
-  if (live.uncertain) {
+  return null;
+}
+
+/** The exit code when the stop did not finish, else null. */
+function stopFailure(
+  id: string,
+  stopped: { gone: boolean; driveStopFailed: boolean },
+  deps: TakeOverDeps,
+): number | null {
+  if (!stopped.gone) {
     deps.err(
-      `jig dispatch attach: ${id}'s processes cannot be judged from here, so the run was not stopped; the hold stands`,
+      `jig dispatch attach: ${id}'s processes outlived the stop; the hold stands, and running the command again stops it`,
     );
     return TAKE_OVER_EXIT.FAILED;
   }
-  const kept = keptMembers(deps.root, id);
-  if (!Array.isArray(kept)) {
+  if (stopped.driveStopFailed) {
     deps.err(
-      `jig dispatch attach: the processes an earlier attempt captured for ${id} cannot be read (${kept.unreadable}), so the end is not recorded and the hold stands; check them, remove the file, then run the command again`,
+      `jig dispatch attach: the run's processes are gone, but drives.ts --stop did not stop the drive, so its ledger may not read stopped; the end is not recorded and the hold stands. Stop the drive with drives.ts --stop, then run the command again`,
     );
     return TAKE_OVER_EXIT.FAILED;
   }
+  return null;
+}
+
+/** Stop the run's processes and the drive it runs for: the exit code that ends the take-over, else null. */
+async function stopTarget(
+  row: InspectedRow & { record: LaunchRecord },
+  live: { alive: unknown[]; identities: ProcessIdentity[] },
+  kept: ProcessIdentity[],
+  deps: TakeOverDeps,
+): Promise<number | null> {
+  const { record } = row;
+  const id = record.id;
   const drivePr =
     record.action === "rearm" || record.action === "takeover"
       ? record.pr
@@ -398,19 +415,50 @@ export async function takeOver(
     if (drivePr !== null && !owed)
       writeFileSync(owedMark, `${currentIso()}\n`, { mode: 0o600 });
     const stopped = await stopRun(target, deps);
-    if (!stopped.gone) {
-      deps.err(
-        `jig dispatch attach: ${id}'s processes outlived the stop; the hold stands, and running the command again stops it`,
-      );
-      return TAKE_OVER_EXIT.FAILED;
-    }
-    if (stopped.driveStopFailed) {
-      deps.err(
-        `jig dispatch attach: the run's processes are gone, but drives.ts --stop did not stop the drive, so its ledger may not read stopped; the end is not recorded and the hold stands. Stop the drive with drives.ts --stop, then run the command again`,
-      );
-      return TAKE_OVER_EXIT.FAILED;
-    }
+    const failed = stopFailure(id, stopped, deps);
+    if (failed !== null) return failed;
     rmSync(owedMark, { force: true });
   } else deps.out("stop: none of the run's processes is alive");
+  return null;
+}
+
+/**
+ * Take the run over: hold, mark, stop, record the end. `alreadyTaken` is a
+ * run whose end a person's take-over already recorded, which only needs its
+ * resume line again.
+ */
+export async function takeOver(
+  row: InspectedRow & { record: LaunchRecord },
+  alreadyTaken: boolean,
+  deps: TakeOverDeps,
+): Promise<number> {
+  const { record } = row;
+  const id = record.id;
+  const address = targetAddress(record);
+  if (address === null) {
+    deps.err(
+      `jig dispatch attach: ${id} is a ${record.action} run with no target to hold, so it cannot be taken over`,
+    );
+    return TAKE_OVER_EXIT.REFUSED;
+  }
+  if (alreadyTaken) return TAKE_OVER_EXIT.DONE;
+  const refused = await holdTarget(row, id, address, deps);
+  if (refused !== null) return refused;
+  const live = await deps.members(row);
+  if (live.uncertain) {
+    deps.err(
+      `jig dispatch attach: ${id}'s processes cannot be judged from here, so the run was not stopped; the hold stands`,
+    );
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  const kept = keptMembers(deps.root, id);
+  if (!Array.isArray(kept)) {
+    deps.err(
+      `jig dispatch attach: the processes an earlier attempt captured for ${id} cannot be read (${kept.unreadable}), so the end is not recorded and the hold stands; check them, remove the file, then run the command again`,
+    );
+    return TAKE_OVER_EXIT.FAILED;
+  }
+  const failed = await stopTarget(row, live, kept, deps);
+  if (failed !== null) return failed;
   return recordEnd(id, address, deps);
 }

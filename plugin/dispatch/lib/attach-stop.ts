@@ -181,6 +181,24 @@ function signalTarget(
   return -member.pgid;
 }
 
+/** Signal one target; record it as sent, or why it was not. */
+function sendSignal(
+  target: number,
+  signal: "SIGTERM" | "SIGKILL",
+  sent: Set<number>,
+  notes: string[],
+): void {
+  try {
+    process.kill(target, signal);
+    sent.add(target);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH")
+      swallow(error, "a process ended before it was signalled");
+    else notes.push(`could not signal ${target}: ${code ?? String(error)}`);
+  }
+}
+
 /** Signal each process (its group where `signalTarget` allows) while it is still that process; what was sent, skipped and refused. */
 export async function signalMembers(
   members: ProcessIdentity[],
@@ -205,15 +223,7 @@ export async function signalMembers(
       continue;
     }
     if (sent.has(target)) continue;
-    try {
-      process.kill(target, signal);
-      sent.add(target);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ESRCH")
-        swallow(error, "a process ended before it was signalled");
-      else notes.push(`could not signal ${target}: ${code ?? String(error)}`);
-    }
+    sendSignal(target, signal, sent, notes);
   }
   const head =
     sent.size === 0

@@ -779,6 +779,21 @@ function pullRequestAction(
   });
 }
 
+type RunAction = Extract<Subcommand, { action: "line" | "clear" | "attach" }>;
+
+const RUN_ACTIONS: ReadonlySet<string> = new Set(["line", "clear", "attach"]);
+
+function isRunAction(args: Subcommand): args is RunAction {
+  return RUN_ACTIONS.has(args.action);
+}
+
+/** The subcommands that read or settle one process run, or none. */
+function runAction(args: RunAction): number | Promise<number> {
+  if (args.action === "line") return lineMain();
+  if (args.action === "clear") return clearMain(args.record);
+  return attachMain(args.record, { takeOver: args.takeOver });
+}
+
 /** A subcommand's run: everything but the tick. */
 function subcommandMain(
   args: Subcommand,
@@ -799,10 +814,7 @@ function subcommandMain(
       acceptance: args.acceptance,
       ...(args.since === undefined ? {} : { since: args.since }),
     });
-  if (args.action === "line") return lineMain();
-  if (args.action === "clear") return clearMain(args.record);
-  if (args.action === "attach")
-    return attachMain(args.record, { takeOver: args.takeOver });
+  if (isRunAction(args)) return runAction(args);
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
   if (args.action === "dashboard") return dashboardAction(args, script);

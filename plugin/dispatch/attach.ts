@@ -208,11 +208,29 @@ export async function attachMain(
   return await finished;
 }
 
-async function attachRun(
+/** Follow the run's output until it ends or the person detaches. */
+async function followRun(id: string, deps: AttachDeps): Promise<number> {
+  const spool = join(deps.root, "runs", id, "output.log");
+  const how = await followSpool(spool, {
+    over: () => runOver(id, deps),
+    write: deps.write,
+    sleep: deps.sleep,
+    signal: deps.signalAbort,
+    intervalMs: deps.intervalMs,
+  });
+  if (typeof how !== "string") {
+    deps.err(`jig dispatch attach: ${how.unreadable}`);
+    return 1;
+  }
+  deps.out(how === "ended" ? "the run has ended" : "detached; the run goes on");
+  return 0;
+}
+
+/** The launch record of a process run, or the exit code that ends the attach. */
+async function readProcessRun(
   id: string,
-  options: { takeOver: boolean },
   deps: AttachDeps,
-): Promise<number> {
+): Promise<number | { row: InspectedRow; record: LaunchRecord }> {
   const row =
     existingStateDb(deps.root) === null ? null : await deps.inspect(id);
   if (row === null) {
@@ -230,26 +248,20 @@ async function attachRun(
     );
     return 2;
   }
+  return { row, record };
+}
+
+async function attachRun(
+  id: string,
+  options: { takeOver: boolean },
+  deps: AttachDeps,
+): Promise<number> {
+  const found = await readProcessRun(id, deps);
+  if (typeof found === "number") return found;
+  const { row, record } = found;
   const read = { ...row, record };
   for (const line of headerLines(read, currentMs())) deps.out(line);
-  if (!options.takeOver) {
-    const spool = join(deps.root, "runs", id, "output.log");
-    const how = await followSpool(spool, {
-      over: () => runOver(id, deps),
-      write: deps.write,
-      sleep: deps.sleep,
-      signal: deps.signalAbort,
-      intervalMs: deps.intervalMs,
-    });
-    if (typeof how !== "string") {
-      deps.err(`jig dispatch attach: ${how.unreadable}`);
-      return 1;
-    }
-    deps.out(
-      how === "ended" ? "the run has ended" : "detached; the run goes on",
-    );
-    return 0;
-  }
+  if (!options.takeOver) return followRun(id, deps);
   const before = runColumns(id, deps.root);
   const taken = readKeptReport(before.report)?.by === "person";
   const code = await takeOver(read, taken && row.state.kind === "ended", deps);
