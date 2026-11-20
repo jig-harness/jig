@@ -71,7 +71,7 @@ const ARCHIVE_EXTENSION = /\.(?:gz|bz2|xz|zst|tgz|tar|zip|7z|rar|iso)$/i;
  * file over a work extension, and an archive with no extension beneath it
  * (`cache.tgz` against `config-files.tar.gz`) is a host artifact only when every
  * part of its own name is a host-resource word or a number (`cache.tgz`,
- * `build-cache.zip`, `cache-2026.gz`); any other word (`leaked-fixtures.tar.gz`,
+ * `tmp-cache.zip`, `cache-2026.gz`); any other word (`leaked-fixtures.tar.gz`,
  * `config-files.zip`, `test-fixtures.zip`) keeps the question a person's.
  */
 function isWorkFileName(last: string): boolean {
