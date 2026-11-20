@@ -401,6 +401,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.291.2] - 2026-11-20
+
+### Fixed
+
+- A waiting pull request status probe backs off when the pull request stays
+  unchanged or the shared GitHub GraphQL balance is low. It pauses before
+  spending the last of the balance, leaving room for the dispatcher and for
+  review rounds, and still respects its wait deadline.
+
 ## [0.291.1] - 2026-11-20
 
 ### Fixed
@@ -10305,7 +10314,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.2...HEAD
+[0.291.2]: https://github.com/jig-harness/jig/compare/v0.291.1...v0.291.2
 [0.291.1]: https://github.com/jig-harness/jig/compare/v0.291.0...v0.291.1
 [0.291.0]: https://github.com/jig-harness/jig/compare/v0.290.0...v0.291.0
 [0.290.0]: https://github.com/jig-harness/jig/compare/v0.289.0...v0.290.0

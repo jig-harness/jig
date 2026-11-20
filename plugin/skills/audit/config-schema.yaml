@@ -611,14 +611,14 @@ fields:
     min: 0
     max: 1
     default: 0.25
-    since: next
+    since: 0.291.2
     read_by: [drive-pr]
   drive.status_poll.max_interval_seconds:
     type: integer
     min: 5
     max: 3600
     default: 300
-    since: next
+    since: 0.291.2
     read_by: [drive-pr]
   drive.reviews_drafts:
     type: boolean
