@@ -801,20 +801,25 @@ export function jiraFacetStores(client: Client): JiraFacetStores {
     }
   }
 
+  /**
+   * A priority the site names but the configuration maps to none of Jig's
+   * reads as 0 (none), the same as an empty one; only the first was ranked
+   * by someone.
+   */
+  function priorityUnmapped(issue: Parameters<typeof readType>[0]): boolean {
+    return (
+      facets.priority.store === "native" &&
+      issue.priority !== null &&
+      client.model.priorityOf(issue.priority) === 0
+    );
+  }
+
   return {
     own,
     read(issue) {
       const out: ReturnType<JiraFacetStores["read"]> = {};
       const unmapped: Facet[] = [];
-      // A priority the site names but the configuration maps to none of
-      // Jig's reads as 0 (none), the same as an empty one; only the first
-      // was ranked by someone.
-      if (
-        facets.priority.store === "native" &&
-        issue.priority !== null &&
-        client.model.priorityOf(issue.priority) === 0
-      )
-        unmapped.push("priority");
+      if (priorityUnmapped(issue)) unmapped.push("priority");
       if (type !== null) {
         const r = readType(issue, type);
         out.type = r.value;

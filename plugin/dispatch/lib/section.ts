@@ -423,6 +423,24 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
+/** What bounds and gates a launch: its deadline, and what a priority-less item does. */
+function launchPolicy(
+  section: Record<string, unknown>,
+): Checked<Pick<DispatchSection, "pickupDeadlineMs" | "missingPriority">> {
+  const pickupDeadlineMs = wait(
+    section.pickup_deadline,
+    "pickup_deadline",
+    DEFAULT_PICKUP_DEADLINE_MS,
+  );
+  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
+  const unranked = missingPriority(section.missing_priority);
+  if (!unranked.ok) return unranked;
+  return ok({
+    pickupDeadlineMs: pickupDeadlineMs.value,
+    missingPriority: unranked.value,
+  });
+}
+
 /**
  * The `dispatch` section of parsed configuration values, with defaults;
  * `invalid`, its reason naming the setting, for the first value that does
@@ -449,24 +467,17 @@ export function dispatchSection(
   if (!picked.ok) return picked;
   const waits = timings(section);
   if (!waits.ok) return waits;
-  const pickupDeadlineMs = wait(
-    section.pickup_deadline,
-    "pickup_deadline",
-    DEFAULT_PICKUP_DEADLINE_MS,
-  );
-  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
+  const launching = launchPolicy(section);
+  if (!launching.ok) return launching;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
   const overlap = parseOverlap(section.overlap);
   if (!overlap.ok) return overlap;
-  const unranked = missingPriority(section.missing_priority);
-  if (!unranked.ok) return unranked;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
-    pickupDeadlineMs: pickupDeadlineMs.value,
-    missingPriority: unranked.value,
+    ...launching.value,
     ...(Object.hasOwn(section, "epic_width")
       ? {
           retiredEpicWidth:

@@ -69,6 +69,7 @@ import {
   openedFor,
   openWithinBudget,
   outOfTime,
+  type ReplayBlock,
   replay,
   rotated,
   replayable,
@@ -467,6 +468,22 @@ async function competing(
     : `a session started for it elsewhere since: ${rivals.map((w) => w.path).join(", ")}`;
 }
 
+/** What holds a pending pickup whose item was read again: the read's own refusal, its missing priority, a competitor or the account. */
+async function freshBlock(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: PickupContext,
+  record: Parameters<typeof competing>[3],
+  fresh: Awaited<ReturnType<typeof freshPickup>>,
+): Promise<string | ReplayBlock | null> {
+  if (typeof fresh === "string") return fresh;
+  return (
+    heldForPriority(ctx, fresh, record.item as string, record.blockingFor) ??
+    (await competing(state, repo, ctx, record)) ??
+    (await accountBlock(state, record))
+  );
+}
+
 /** Retry, once and under its own key, each pending pickup of `repo` whose launch got no answer. */
 async function retryPending(
   state: ApplyState,
@@ -502,11 +519,7 @@ async function retryPending(
       ctx.serialUndecided ??
       unauthorized ??
       batchBlock ??
-      (typeof fresh === "string"
-        ? fresh
-        : (heldForPriority(ctx, fresh, item, record.blockingFor) ??
-          (await competing(state, repo, ctx, record)) ??
-          (await accountBlock(state, record))));
+      (await freshBlock(state, repo, ctx, record, fresh));
     const action = { target: item, stage: "pickup" } as Action;
     report.launches.push(
       headless(await replay(state, record, action, blocked), record),
