@@ -108,6 +108,16 @@ describe("the footprint read", () => {
       },
       state: { kind: "alive" },
     } as unknown as ReadRecord;
+    const foreign = {
+      record: {
+        action: "pickup",
+        repo: "example-org/another-repo",
+        item: "#32",
+        batchItems: [{ key: "#32" }, { key: "#33" }],
+        sessionId: "foreign-session",
+      },
+      state: { kind: "alive" },
+    } as unknown as ReadRecord;
     const items = footprintItems({
       ...base,
       tracker: null,
@@ -117,7 +127,7 @@ describe("the footprint read", () => {
         { key: "#31", title: "", state: "In progress" },
         { key: "#12", title: "", state: "x" },
       ],
-      records: [running],
+      records: [running, foreign],
     });
     expect(items).toEqual([
       {

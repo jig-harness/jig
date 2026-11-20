@@ -146,7 +146,12 @@ export function footprintItems(input: OverlapObserveInput): FootprintItem[] {
     add(c as ClaimedItem & { queueIssue?: { labels: string[] } });
   // A pickup this host started and no tracker list carries yet still holds files.
   for (const { record, state } of input.records) {
-    if (record.action !== "pickup" || !holds(state)) continue;
+    if (
+      record.repo !== input.repo ||
+      record.action !== "pickup" ||
+      !holds(state)
+    )
+      continue;
     for (const key of pickupItems(record))
       if (key !== null && holdsItem(record, key)) add({ key });
   }
