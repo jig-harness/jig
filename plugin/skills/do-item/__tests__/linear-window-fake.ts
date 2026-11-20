@@ -5,12 +5,13 @@
  * moves, whose `sleep` moves it on.
  */
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
-import { LINEAR_CREATION_QUIET_MS } from "../scripts/lib/tracker/assignment-window.ts";
 import {
   type LinearTransport,
   linearTracker,
 } from "../scripts/lib/tracker/linear.ts";
 
+/** Linear's three minutes, written here on purpose: not the adapter's own constant. */
+export const WINDOW_MS = 3 * 60_000;
 export const T0 = Date.parse("2026-11-20T12:00:00.000Z");
 export const iso = (ms: number) => new Date(ms).toISOString();
 export const FACTORY = "factory@example.com";
@@ -51,7 +52,11 @@ export function fakeLinear(
     assignee: start.assignee ?? null,
     history: [...(start.history ?? [])],
   };
-  const writes: Array<{ at: number; to: string | null }> = [];
+  const writes: Array<{
+    at: number;
+    from: string | null;
+    to: string | null;
+  }> = [];
   let failAssign = false;
   const person = (who: string) => ({
     id: who,
@@ -98,9 +103,9 @@ export function fakeLinear(
         if (failAssign) throw new Error("Linear refused the update");
         const to = (variables.input as { assigneeId: string | null })
           .assigneeId;
-        writes.push({ at: clock.now(), to });
+        writes.push({ at: clock.now(), from: issue.assignee, to });
         issue.assignee = to;
-        if (to !== null && clock.now() >= T0 + LINEAR_CREATION_QUIET_MS)
+        if (to !== null && clock.now() >= T0 + WINDOW_MS)
           issue.history.push({ createdAt: iso(clock.now()), toAssignee: to });
         return { issueUpdate: { success: true } };
       }
@@ -112,7 +117,7 @@ export function fakeLinear(
               nodes: writes.map((w, i) => ({
                 id: `w${i}`,
                 createdAt: iso(w.at),
-                fromAssignee: null,
+                fromAssignee: w.from === null ? null : { id: w.from },
                 toAssignee: w.to === null ? null : { id: w.to },
               })),
             },

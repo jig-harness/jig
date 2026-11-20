@@ -79,7 +79,9 @@ describe("handOff on Linear", () => {
     });
     expect(result.handedOver).toBe(true);
     expect(clock.waits).toEqual([]);
-    expect(linear.writes).toEqual([{ at: T0 + 10 * 60_000, to: FACTORY }]);
+    expect(linear.writes).toEqual([
+      { at: T0 + 10 * 60_000, from: null, to: FACTORY },
+    ]);
   });
 
   it("leaves an assignment its history does not show as it is, and says how to repair it", async () => {

@@ -94,12 +94,13 @@ export async function handOff(
     remedy,
   });
   const again = "run the hand-off again";
+  const rerun = `${again}: an issue already assigned to ${identity} is only confirmed, never rewritten`;
   const { signal } = opts;
   const interrupted = (step: string): HandOff | null =>
     signal?.aborted === true
       ? notYet(
           `the hand-off was interrupted before it could ${step}`,
-          `read ${key} on the tracker; if it is not assigned to ${identity}, ${again}`,
+          `read ${key} on the tracker, then ${rerun}`,
         )
       : null;
   /** Why an issue as read cannot be handed over whatever its assignee; `null` when it can. */
@@ -202,7 +203,7 @@ export async function handOff(
     if (!now.some((u) => u.id === user.id))
       return notYet(
         `${key} did not read back as assigned to ${identity}`,
-        `read ${key} on the tracker; if it is not assigned to ${identity}, ${again}`,
+        `read ${key} on the tracker, then ${rerun}`,
       );
     step = `read who assigned ${key}`;
     try {
@@ -231,7 +232,7 @@ export async function handOff(
     const failure = failureOf(error);
     return notYet(
       `could not ${step}: ${failure.code}: ${failure.reason}${failure.sent === true ? " (the request may have been applied)" : ""}`,
-      `read ${key} on the tracker; if it is not assigned to ${identity}, ${again}`,
+      `read ${key} on the tracker, then ${rerun}`,
     );
   }
 }

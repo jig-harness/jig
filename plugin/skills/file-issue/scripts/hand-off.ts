@@ -36,10 +36,15 @@ async function main(argv: string[]): Promise<number> {
   const stop = new AbortController();
   for (const sig of ["SIGINT", "SIGTERM"] as const)
     process.once(sig, () => stop.abort());
-  const result = await handOff(openTracker(), key, to, {
-    wait,
-    signal: stop.signal,
-  });
+  const result = await handOff(
+    openTracker(undefined, undefined, stop.signal),
+    key,
+    to,
+    {
+      wait,
+      signal: stop.signal,
+    },
+  );
   console.log(JSON.stringify(result, null, 2));
   return result.handedOver ? 0 : 3;
 }

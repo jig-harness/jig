@@ -58,7 +58,7 @@ describe("jig send assign on Linear", () => {
     );
     expect(wrote.ok).toBe(true);
     expect(clock.waits).toEqual([FROM - (T0 + 58_000)]);
-    expect(linear.writes).toEqual([{ at: FROM, to: FACTORY }]);
+    expect(linear.writes).toEqual([{ at: FROM, from: null, to: FACTORY }]);
     expect(waitBeforeAssigning(FROM, FROM + 1)).toEqual({
       waitMs: 0,
       until: null,
