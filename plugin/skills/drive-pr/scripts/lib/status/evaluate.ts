@@ -112,6 +112,8 @@ export interface StatusReport extends CiReport {
   /** On `CHECK_RUNS_UNREADABLE`: the listing has more pages than a read takes. */
   listingAtBound?: boolean;
   reviewerPresent: boolean;
+  /** Check-run changes observed even while the aggregate CI state stays the same. */
+  checkProgress?: string;
   reviewerStatus: string;
   reviewerConclusion: string;
   reviewedSha: string;
@@ -796,10 +798,12 @@ async function evaluateFresh(
     runsUnreadable = true;
   }
 
-  // Bound to the app slug AND a check name, not the app alone: an app may
-  // publish several checks on one SHA, and picking "the newest run from this
-  // app" would let an unrelated sibling check attest that the review completed.
-  // Newest wins within that pair (a re-run, or a cancelled first attempt).
+  report.checkProgress = JSON.stringify(
+    runs
+      .map((r) => `${r.id}:${r.status}:${r.conclusion}`)
+      .sort((a, b) => a.localeCompare(b)),
+  );
+  // The newest check matching both the reviewer app and check name is its witness.
   const reviewer = reviewerRun(runs);
 
   const awaitReviewer = reviewerGatesApply(conflicting);
@@ -816,11 +820,7 @@ async function evaluateFresh(
     ),
   );
 
-  // A conflicting head SKIPS every reviewer gate below. Each of them returns
-  // AWAITING_REVIEWER (exit 4, "becomes something else with time"), and on a
-  // conflicting PR that state polls until `--timeout`. The work enumeration
-  // further down still runs, so findings the poller DID post are picked up
-  // rather than discarded.
+  // Conflicting heads still enumerate review findings without waiting for a reviewer.
   const byObject = reviewerEvidence() === "review_object";
   if (awaitReviewer && reviewer === null) {
     const verdict = await missingReviewerVerdict(

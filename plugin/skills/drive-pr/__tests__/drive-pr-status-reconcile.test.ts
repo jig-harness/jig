@@ -427,8 +427,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
       // This probe needs strictly more than MAX_QUERY_ERRORS attempts, so the
       // window must hold at least three polls even when each iteration's
       // spawns take seconds: 1s polls (the `--interval` floor lowered through
-      // its test pacing seam) in an 8s window.
-      ["--timeout", "8", "--interval", "1"],
+      // its test pacing seam) in a 12s window.
+      ["--timeout", "12", "--interval", "1"],
       {
         reconcile: true,
         once: false,
@@ -454,8 +454,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // Explicit per-test budget, far above the suite's 30s default: this
     // probe is the most expensive one in the file under load.
     //
-    // Its logic is only ~8s (`--timeout 8`, and the run ends with the gate's
-    // own "gave up after 8s"). The rest is subprocess fan-out: >
+    // Its logic is only ~12s (`--timeout 12`, and the run ends with the gate's
+    // own "gave up after 12s"). The rest is subprocess fan-out: >
     // MAX_QUERY_ERRORS poll iterations is the irreducible floor for the
     // assertion below, and EACH iteration spawns a real sweep —
     // `reconcile-replied-threads.ts`, which spawns `list-unresolved-threads.ts`,
