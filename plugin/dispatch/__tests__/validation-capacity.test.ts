@@ -286,14 +286,33 @@ describe("validation forecast", () => {
         },
         defaults: [],
       },
-      demand: { atLock: 0, toArrive: 0 },
+      demand: { atLock: 1, toArrive: 0 },
       waitLimitMs: HOUR,
       driveDeadlineMs: 3 * HOUR,
-      admittedRuns: 0,
+      admittedRuns: 1,
     };
-    expect(validationHold(state, 0.3, "pickup", 90 * MINUTE)).toContain(
+    expect(validationHold(state, 0.5, "pickup", 90 * MINUTE)).toContain(
       "keep room for a drive",
     );
+  });
+
+  test("keeps a fractional concurrency estimate out of the slot simulation", () => {
+    const measured = {
+      ...measureValidation([], []),
+      concurrency: 1.5,
+      kinds: {
+        pickup: { runsPerPass: 1.5, timeToValidationMs: 0 },
+        drive: { runsPerPass: 1, timeToValidationMs: 0 },
+      },
+    };
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 0, toArrive: 0 },
+      MINUTE,
+      HOUR,
+    );
+    expect(forecast.required).toBe(0);
   });
 
   test("bounds a drive reserve by the pickup wait window", () => {

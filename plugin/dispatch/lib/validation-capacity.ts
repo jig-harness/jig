@@ -267,7 +267,10 @@ export function forecastValidation(
   // Preserve each slot's release time. In particular, a predecessor can take
   // an idle slot while another waits for an occupied slot; treating both as
   // one residual wave would let the candidate acquire too early.
-  if (atLock <= concurrency) {
+  // A measured concurrency may be fractional (the midpoint of two observed
+  // contention levels). The aggregate calculation above preserves that
+  // estimate; a slot simulation requires physical, whole slots.
+  if (atLock <= concurrency && Number.isInteger(concurrency)) {
     const releases = Array.from({ length: concurrency }, (_, index) =>
       index < activeRuns ? residualMs : 0,
     );

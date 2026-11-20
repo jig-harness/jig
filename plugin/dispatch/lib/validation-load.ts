@@ -177,13 +177,13 @@ export function validationHold(
     );
     const stillRunning = Math.max(0, own.ownRuns - pickupCompletedBeforeDrive);
     const reservedDemand: ValidationDemand = {
-      atLock: state.demand.atLock + stillRunning,
+      atLock: state.demand.atLock + state.admittedRuns + stillRunning,
       toArrive: state.demand.toArrive,
     };
     const reserved = forecast(
       state,
       "drive",
-      deadline,
+      0,
       0,
       reservedDemand,
       own.waitWindowMs,
