@@ -326,6 +326,32 @@ describe("Linear adapter: assignment reads", () => {
         ]).assignedBy("ENG-4"),
       ).toEqual({ id: "u-d", name: "Dana", trusted: true });
     });
+
+    it("reads the creator and every entry across the history's pages", async () => {
+      const pages = (later: unknown[]) =>
+        tracker((variables) => ({
+          issue: {
+            assignee: FACTORY,
+            creator: member,
+            history:
+              variables.after === null
+                ? {
+                    pageInfo: { hasNextPage: true, endCursor: "c1" },
+                    nodes: [entry("h1", "2026-10-01T00:00:00Z", {})],
+                  }
+                : page(later),
+          },
+        }));
+      const { t, calls } = pages([entry("h2", "2026-10-02T00:00:00Z", {})]);
+      expect((await t.assignedBy("ENG-4")).atCreation).toBe(true);
+      expect(calls.map((c) => c.after)).toEqual([null, "c1"]);
+      const changed = pages([
+        entry("h2", "2026-10-02T00:00:00Z", { toAssignee: { id: "u-o" } }),
+      ]).t.assignedBy("ENG-4", "factory@example.invalid");
+      await expect(changed).rejects.toThrow(
+        "its history holds no assignment of factory@example.invalid",
+      );
+    });
   });
 
   it("reads a history target with no usable identity as an unreadable read, not a negative answer", async () => {

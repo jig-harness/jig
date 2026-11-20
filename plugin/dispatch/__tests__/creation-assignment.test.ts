@@ -90,16 +90,16 @@ describe("an item created assigned to the factory identity", () => {
 });
 
 describe("a served item created assigned to its person", () => {
-  it("is a wanted row, not unreadable queue metadata", async () => {
+  async function served(creator: Record<string, unknown>) {
     const fake = new FakeLinear();
     fake.add({
       identifier: "ENG-2",
       assignee: PERSON,
       history: "created",
-      creator: { ...LEAD, id: "person", name: "Person" },
+      creator,
     });
     const tracker = fake.tracker();
-    const read = await readPickups(() => tracker, SECTION, undefined, {
+    return readPickups(() => tracker, SECTION, undefined, {
       people: [
         { name: "Person", forge: ["person"], tracker: { linear: PERSON } },
       ],
@@ -107,9 +107,21 @@ describe("a served item created assigned to its person", () => {
       nowMs: Date.now(),
       headroom: true,
     });
+  }
+
+  it("is a wanted row, not unreadable queue metadata", async () => {
+    const read = await served({ ...LEAD, id: "person", name: "Person" });
     expect(read.wanted.map((w) => [w.key, w.assignedBy])).toEqual([
       ["ENG-2", "Person"],
     ]);
     expect(read.unplaced).toEqual([]);
+  });
+
+  it("names a creator who cannot write as the reason it waits", async () => {
+    const read = await served({ ...LEAD, name: "Guest", guest: true });
+    expect(read.wanted).toEqual([]);
+    expect(read.unplaced.find((u) => u.target === "ENG-2")?.reason).toContain(
+      `assignment to ${PERSON} was not made by a repository writer: Guest created it assigned`,
+    );
   });
 });

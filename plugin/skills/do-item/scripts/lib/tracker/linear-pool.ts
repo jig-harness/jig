@@ -384,13 +384,14 @@ export function assignedOperations(
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
         .at(-1);
       if (latest === undefined) {
-        const changed = entries.some((node, i) => {
+        let changed = false;
+        for (const [i, node] of entries.entries()) {
           if (node.fromAssignee !== null && !hasIdentity(node.fromAssignee))
             throw new AssignmentError(
               `history of ${key}[${i}]: its previous assignee cannot be read`,
             );
-          return node.fromAssignee !== null || node.toAssignee !== null;
-        });
+          changed ||= node.fromAssignee !== null || node.toAssignee !== null;
+        }
         if (!changed) return creatorAssigner(read.creator, key, who, team);
         throw new AssignerUnknown(
           `issue ${key}: its history holds no assignment of ${who}`,

@@ -360,18 +360,16 @@ export interface PoolIssue {
 }
 
 /**
- * Who made an issue's current assignment, as `assignedBy` reads it from the
- * tracker's history, or its latest move into its current state, as
- * `stateChangedBy` reads it. `trusted` is set when that user may start work
- * on the team's issues: a non-guest member of the team (Linear), someone
- * with write access to the repository (GitHub), or a person's Atlassian
+ * Who made an issue's current assignment (`assignedBy`; `atCreation` when its
+ * creator did) or its latest move into its state (`stateChangedBy`), and
+ * whether they may start work on the team's issues (`trusted`): a non-guest
+ * team member (Linear), a repository writer (GitHub), or a person's Atlassian
  * account that can be assigned issues in the project (Jira).
  */
 export interface Assigner {
   id: string;
   name: string;
   trusted: boolean;
-  /** Set when the issue was created assigned, so `name` is its creator's. */
   atCreation?: true;
 }
 
@@ -836,20 +834,16 @@ export interface Tracker
     options?: FacetReadOptions,
   ): Promise<PoolIssue[]>;
   /**
-   * Who made the assignment of `assignee` (default: the issue's current
-   * assignee) to the issue, from the tracker's history. Throws with the reason
-   * when the history cannot be read in full or holds no such assignment, so an
-   * unknown assigner is never read as a trusted one. An adapter that can tell
-   * the history's definite answer that no user made the assignment (it holds no
-   * assignment of `assignee`, or one made by an integration or an automation)
-   * throws `AssignerUnknown` for it, which a caller may keep until the issue
-   * changes; any other throw is a read to try again. An issue that is no
-   * longer assigned to that account is a definite absent answer too. On a
-   * tracker whose history records no assignee given at an issue's creation
-   * (Linear), the creator of an issue whose assignee no history entry ever
-   * changed made its assignment, answered with `atCreation` and put through
-   * the same test; one the history shows changing to others only holds no
-   * assignment. An aborted `signal` ends the read.
+   * Who made the assignment of `assignee` (default: the current assignee) to
+   * the issue, from the tracker's history; throws with the reason when the
+   * history cannot be read in full or holds no such assignment, so an unknown
+   * assigner is never read as trusted. An adapter that can tell the definite
+   * answer that no user made it (no assignment of `assignee`, one by an
+   * integration or an automation, or an issue no longer assigned to that
+   * account) throws `AssignerUnknown`, which a caller may keep until the issue
+   * changes; any other throw is a read to try again. Where the history keeps
+   * no assignee given at creation (Linear), its creator assigned an issue
+   * whose assignee no entry changed (`atCreation`). An aborted `signal` ends it.
    */
   assignedBy(
     key: string,
