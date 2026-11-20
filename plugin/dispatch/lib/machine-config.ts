@@ -66,6 +66,7 @@ import { DEFAULT_DISPATCHER_SHARE } from "../../shared/outbound/budget.ts";
 import { load } from "../../shared/yaml.ts";
 import { FRONT_RULES, shownFront } from "./dashboard-front.ts";
 import {
+  DEFAULT_STARTUP_THRESHOLD,
   FAILURE_DEFAULTS,
   type FailureGrouping,
   type FailureSettings,
@@ -160,7 +161,6 @@ export interface MachineConfig {
   accounts: MachineAccount[];
   intervalMs: number;
   wallBackoffMs: number;
-  startupFailureThreshold?: number;
   runtimeTimeoutMs: number;
   workspaceTimeoutMs: number;
   /** Workspace opens per tick, including the reserved notices open. */
@@ -221,7 +221,6 @@ const TOP_KEYS = [
   "accounts",
   "interval",
   "wall_backoff",
-  "startup_failure_threshold",
   "runtime_timeout",
   "workspace_timeout",
   "opens_per_tick",
@@ -246,6 +245,7 @@ const FAILURES_KEYS = [
   "backoff_max",
   "notify_after",
   "rerun_died",
+  "startup_threshold",
   "group",
 ];
 const RECORDS_KEYS = ["shared"];
@@ -652,7 +652,6 @@ function limits(
     MachineConfig,
     | "intervalMs"
     | "wallBackoffMs"
-    | "startupFailureThreshold"
     | "runtimeTimeoutMs"
     | "workspaceTimeoutMs"
     | "opensPerTick"
@@ -674,12 +673,6 @@ function limits(
     DEFAULTS.wallBackoffMs,
   );
   if (!wallBackoffMs.ok) return wallBackoffMs;
-  const startupFailureThreshold = count(
-    top.startup_failure_threshold,
-    "startup_failure_threshold",
-    3,
-  );
-  if (!startupFailureThreshold.ok) return startupFailureThreshold;
   const runtimeTimeoutMs = optionalDuration(
     top.runtime_timeout,
     "runtime_timeout",
@@ -725,7 +718,6 @@ function limits(
   return ok({
     intervalMs: intervalMs.value,
     wallBackoffMs: wallBackoffMs.value,
-    startupFailureThreshold: startupFailureThreshold.value,
     runtimeTimeoutMs: runtimeTimeoutMs.value,
     workspaceTimeoutMs: workspaceTimeoutMs.value,
     opensPerTick: opensPerTick.value,
@@ -819,6 +811,12 @@ function failures(value: unknown): Checked<FailureSettings> {
     FAILURE_DEFAULTS.notifyAfter,
   );
   if (!notifyAfter.ok) return notifyAfter;
+  const startupThreshold = count(
+    value.startup_threshold,
+    "failures.startup_threshold",
+    DEFAULT_STARTUP_THRESHOLD,
+  );
+  if (!startupThreshold.ok) return startupThreshold;
   const rerunDied = value.rerun_died ?? FAILURE_DEFAULTS.rerunDied;
   // A run again never earns another, so the bound is one or none.
   if (rerunDied !== 0 && rerunDied !== 1)
@@ -832,6 +830,7 @@ function failures(value: unknown): Checked<FailureSettings> {
     backoffMaxMs: backoffMaxMs.value,
     notifyAfter: notifyAfter.value,
     rerunDied,
+    startupThreshold: startupThreshold.value,
     group: group.value,
   });
 }

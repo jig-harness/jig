@@ -309,7 +309,9 @@ async function launchOne(
     vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
-    startupFailureThreshold: state.machine.startupFailureThreshold ?? 3,
+    ...(state.machine.failures?.startupThreshold === undefined
+      ? {}
+      : { startupFailureThreshold: state.machine.failures.startupThreshold }),
     passTimeoutSec: deadlineSec(ctx),
     ...codexLaunchFields(state.codexOptIn),
     headless: true,

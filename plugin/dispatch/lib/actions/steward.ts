@@ -197,7 +197,9 @@ export async function applySteward(
     vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
-    startupFailureThreshold: state.machine.startupFailureThreshold ?? 3,
+    ...(state.machine.failures?.startupThreshold === undefined
+      ? {}
+      : { startupFailureThreshold: state.machine.failures.startupThreshold }),
     passTimeoutSec: STEWARD_DEADLINE_SEC,
     ...codexLaunchFields(state.codexOptIn),
     replaces: null,

@@ -181,6 +181,7 @@ import {
 } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
+import { DEFAULT_STARTUP_THRESHOLD } from "./lib/failures.ts";
 import { writeWall } from "./lib/walls.ts";
 import {
   failedStartup,
@@ -627,7 +628,10 @@ function startupOf(
     recordAccountStartupProblem(record, "sign-in", at);
     return phrase === undefined ? { startup } : { startup, phrase };
   }
-  if (startup !== "quota" && deaths >= (record.startupFailureThreshold ?? 3)) {
+  if (
+    startup !== "quota" &&
+    deaths >= (record.startupFailureThreshold ?? DEFAULT_STARTUP_THRESHOLD)
+  ) {
     recordAccountStartupProblem(record, "breaker", at);
     return { startup: "breaker" };
   }

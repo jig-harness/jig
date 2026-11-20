@@ -25,7 +25,7 @@ function probeEnvironment(env: Record<string, string>): Record<string, string> {
     DISABLE_NONESSENTIAL_MODEL_CALLS: "1",
   };
   for (const key of Object.keys(isolated))
-    if (/^(ANTHROPIC_|CLAUDE_CODE_(?:OAUTH|USE_))/.test(key))
+    if (/^(ANTHROPIC_|CLAUDE_CODE_(?:OAUTH|USE_))/i.test(key))
       delete isolated[key];
   return isolated;
 }
@@ -69,7 +69,6 @@ export async function checkClaudeSignIn(
   configDir: string,
   env: Record<string, string>,
   root = stateRoot(),
-  execute: typeof run = run,
 ): Promise<SignInCheck> {
   const credential = credentialKey("claude", configDir);
   const dir = join(root, "claude-sign-in");
@@ -93,7 +92,7 @@ export async function checkClaudeSignIn(
   let requests = 0;
   try {
     defaultGovernor().admit("claude", credential);
-    const child = await execute(
+    const child = await run(
       [
         "claude",
         "--print",

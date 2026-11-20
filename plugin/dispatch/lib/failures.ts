@@ -95,9 +95,13 @@ export interface FailureSettings {
   notifyAfter: number;
   /** `failures.rerun_died`: the runs again a follow-up whose pass died or could not record its result is owed, `0` or `1`. */
   rerunDied: number;
+  /** Consecutive same-class startup deaths that back off one account. */
+  startupThreshold?: number;
   /** `failures.group`: this host's own failing rows told one notice per cause (`cause`, also when absent) or one per scope (`scope`). */
   group?: FailureGrouping;
 }
+
+export const DEFAULT_STARTUP_THRESHOLD = 3;
 
 /** How this host's own failing rows are told: one notice per cause, or one per scope. */
 export type FailureGrouping = "cause" | "scope";
@@ -117,6 +121,7 @@ export const FAILURE_DEFAULTS: FailureSettings = {
   backoffMaxMs: 60 * 60_000,
   notifyAfter: 3,
   rerunDied: 1,
+  startupThreshold: DEFAULT_STARTUP_THRESHOLD,
   group: "cause",
 };
 

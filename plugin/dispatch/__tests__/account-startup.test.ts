@@ -149,7 +149,7 @@ test("one sign-in episode releases a pickup, a follow-up and a steward pass", as
 test("a successful pass resets the count of consecutive unrecognised startup deaths", async () => {
   const w = fixture();
   const a = account(w, "a", "a@example.com");
-  machineFile(w, [a], { startup_failure_threshold: 2 }, ["pickup"]);
+  machineFile(w, [a], { failures: { startup_threshold: 2 } }, ["pickup"]);
   const occurred = [1, 0, 1, 1];
   for (const [index, code] of occurred.entries()) {
     readyItem(w, 12 + index);

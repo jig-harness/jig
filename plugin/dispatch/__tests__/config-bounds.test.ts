@@ -45,12 +45,13 @@ const account = (name: string, identity: string, dir = name) =>
 
 describe("the machine file's bounds", () => {
   it("reads a positive startup breaker threshold", () => {
-    expect(machine("").startupFailureThreshold).toBe(3);
+    expect(machine("").failures?.startupThreshold).toBe(3);
     expect(
-      machine("startup_failure_threshold: 5\n").startupFailureThreshold,
+      machine("failures: { startup_threshold: 5 }\n").failures
+        ?.startupThreshold,
     ).toBe(5);
-    expect(config("startup_failure_threshold: 0\n")).toEqual(
-      invalid("startup_failure_threshold must be a positive whole number"),
+    expect(config("failures: { startup_threshold: 0 }\n")).toEqual(
+      invalid("failures.startup_threshold must be a positive whole number"),
     );
   });
 

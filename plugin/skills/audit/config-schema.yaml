@@ -59,7 +59,7 @@ version: 1
 # Fields of the separate dispatcher machine file. These are never read
 # from the repository configuration above.
 machine_fields:
-  startup_failure_threshold:
+  failures.startup_threshold:
     type: integer
     min: 1
     default: 3

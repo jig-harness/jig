@@ -326,6 +326,14 @@ export const DISPATCHER: RecordKind[] = [
   ),
   plain(
     "machine",
+    "dispatch-account-sign-in-cache",
+    "dispatch/lib/claude-sign-in.ts",
+    `${DISPATCH_DIR}claude-sign-in/<16 hex>.json`,
+    0,
+    "The time and outcome class of the last sign-in probe for an account. A later tick reuses a fresh answer before sending another request.",
+  ),
+  plain(
+    "machine",
     "dispatch-wake",
     "shared/wake.ts",
     `${DISPATCH_DIR}wake/<digest>/pending/<request>, waiter, started, last-run.log`,
