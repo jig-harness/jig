@@ -95,7 +95,9 @@ export async function cardOnStop(
 ): Promise<void> {
   if (orcaCommand(deps.env) === null) return;
   const needsState =
-    code === exitOf("HITL_PARKED") || code === exitOf("QUOTA_PARKED");
+    code === exitOf("HITL_PARKED") ||
+    code === exitOf("QUOTA_PARKED") ||
+    code === exitOf("CI_REPAIR_SPENT");
   let state: DriveState | null = null;
   if (needsState) {
     try {
