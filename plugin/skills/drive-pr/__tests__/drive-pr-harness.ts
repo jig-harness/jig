@@ -2007,6 +2007,13 @@ for a in "$@"; do
     graphql)             emit "$F/threads.json"; exit 0 ;;
     *issues/*/timeline*)
       # The forge timing out on the timeline read, while every other read answers.
+      if [ -f "$F/timeline-timeout-after-unlabel-count" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+        remaining=$(< "$F/timeline-timeout-after-unlabel-count")
+        if [ "$remaining" -gt 0 ]; then
+          printf '%s' "$(( remaining - 1 ))" > "$F/timeline-timeout-after-unlabel-count"
+          echo "gh-stub: simulated proof timeline timeout" >&2; exit 124
+        fi
+      fi
       if [ -f "$F/timeline-timeout-after-unlabel" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
         rm "$F/timeline-timeout-after-unlabel"
         echo "gh-stub: simulated proof timeline timeout" >&2; exit 124

@@ -1109,8 +1109,17 @@ async function main(): Promise<number> {
     configError(error);
   }
   if (policy.holdLabel !== null) {
+    // A successful removal can leave the durable record in `releasing` while
+    // the timeline proof is temporarily unreadable. Keep that retry signal
+    // across the recovery check below: otherwise a second transient timeline
+    // failure loses the disposition that lets the convergence loop retry.
+    const releasing = (await readCiState(pr))?.phase === "releasing";
     const unreadable = await assertRecordedHoldMatchesLabel(pr);
-    if (unreadable !== null) return unreadable;
+    if (unreadable !== null) {
+      if (command === "release" && releasing)
+        process.stdout.write("release-proof-pending\n");
+      return unreadable;
+    }
   }
   if (command === "ensure" || command === "release" || command === "rollback") {
     const fence = await resolveFenceContext("ci-hold.ts");

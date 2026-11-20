@@ -249,6 +249,46 @@ describe.skipIf(
   );
 
   it(
+    "continues convergence after consecutive timeouts verifying CI hold removal",
+    async () => {
+      const { dir, stateDir } = writeFixture({
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        threads: [],
+        ciHeld: true,
+      });
+      writeFileSync(
+        join(dir, "timeline.json"),
+        JSON.stringify([
+          {
+            node_id: "LE_1",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: { login: "drive-user" },
+            created_at: "2026-09-10T09:59:00Z",
+          },
+        ]),
+      );
+      writeFileSync(join(dir, "timeline-timeout-after-unlabel-count"), "2");
+      const r = await driveUntilEnd(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--keep-draft", "--", ...PASS_NOOP],
+        {},
+      );
+      expectEnded(r);
+      expectSpawnExit(
+        { exitCode: r.exitCode, stderr: r.stderr, stdout: null },
+        0,
+      );
+      expect(
+        r.stderr.match(/Waiting to verify the CI hold label removal/g),
+      ).toHaveLength(2);
+    },
+    DRIVE_DEADLINE_MS * 3,
+  );
+
+  it(
     "logs why the CI hold's release failed when it exits with nothing on stderr",
     async () => {
       const { dir, stateDir } = writeFixture({
