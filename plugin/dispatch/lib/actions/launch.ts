@@ -765,6 +765,7 @@ function byLoad(
     action.target,
     pickupDeadlineSec * 1000,
     action.relaunch?.lockWait === true ? VALIDATION_GAUGES : [],
+    action.relaunch?.lockWait === true,
   );
   return held === null
     ? { slots }

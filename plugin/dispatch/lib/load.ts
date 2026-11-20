@@ -410,6 +410,7 @@ function pinnedRefusal(
   repo: string,
   pickupDeadlineMs: number,
   pinned: readonly LoadGauge[],
+  immediate = false,
 ): Refusal | null {
   if (
     pinned.includes("validation") &&
@@ -422,6 +423,7 @@ function pinnedRefusal(
       kind,
       pickupDeadlineMs,
       repo,
+      immediate,
     );
     if (detail !== null) return { gauge: "validation", detail };
   }
@@ -449,10 +451,11 @@ export function judge(
   target: string,
   pickupDeadlineMs = 0,
   pinned: readonly LoadGauge[] = [],
+  immediate = false,
 ): string | null {
   const pinnedHold = state.settings.enforce
     ? null
-    : pinnedRefusal(state, kind, repo, pickupDeadlineMs, pinned);
+    : pinnedRefusal(state, kind, repo, pickupDeadlineMs, pinned, immediate);
   if (pinnedHold !== null) {
     state.holds.push({ repo, target, kind, ...pinnedHold, held: true });
     return `the host's validation capacity holds it: ${pinnedHold.detail}`;
@@ -509,6 +512,7 @@ export function holdsReplay(
   target: string,
   pickupDeadlineMs: number,
   pinned: readonly LoadGauge[],
+  immediate = false,
 ): string | null {
   const { validation } = state;
   const own =
@@ -532,7 +536,14 @@ export function holdsReplay(
             },
           },
         };
-  const held = pinnedRefusal(view, kind, repo, pickupDeadlineMs, pinned);
+  const held = pinnedRefusal(
+    view,
+    kind,
+    repo,
+    pickupDeadlineMs,
+    pinned,
+    immediate,
+  );
   if (held === null) return null;
   state.holds.push({ repo, target, kind, ...held, held: true });
   return `the host's validation capacity holds it: ${held.detail}`;

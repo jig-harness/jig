@@ -406,6 +406,50 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
     ]);
   });
 
+  it("forecasts a lock-wait relaunch as reaching the lock at once, without the pickup's delay", () => {
+    const first = Array.from({ length: 80 }, (_, atLock) => atLock).find(
+      (atLock) =>
+        judge(
+          withDemand(atLock),
+          "pickup",
+          SLUG,
+          "#12",
+          3 * HOUR,
+          VALIDATION_GAUGES,
+        ) !== null,
+    );
+    expect(first).toBeDefined();
+    const room = Array.from({ length: first as number }, (_, n) => n).find(
+      (atLock) =>
+        judge(
+          withDemand(atLock),
+          "pickup",
+          SLUG,
+          "#12",
+          3 * HOUR,
+          VALIDATION_GAUGES,
+          true,
+        ) !== null,
+    );
+    // Some occupancy the delayed pickup is admitted at holds the immediate one.
+    expect(room).toBeDefined();
+    const load = withDemand(room as number);
+    expect(
+      holdsReplay(load, "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
+    ).toBeNull();
+    expect(
+      holdsReplay(
+        load,
+        "pickup",
+        SLUG,
+        "#12",
+        3 * HOUR,
+        VALIDATION_GAUGES,
+        true,
+      ),
+    ).toContain("the host's validation capacity holds it");
+  });
+
   it("admits it when the validation capacity has room, or when the gauge does not read", () => {
     expect(
       judge(withDemand(0), "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),

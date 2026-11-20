@@ -282,6 +282,7 @@ function lockWaitHold(
     action.target,
     (record.passTimeoutSec ?? 0) * 1000,
     VALIDATION_GAUGES,
+    true,
   );
 }
 
