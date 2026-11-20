@@ -17,12 +17,7 @@
  * request's review comments as their listing gives them, each naming its
  * `thread`: the conditional listing and a parked thread's query read it.
  */
-import {
-  appendFileSync,
-  existsSync,
-  readdirSync,
-  readFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 
 /** How many comments one page of the query holds. */
 const COMMENTS_PAGE = 100;
@@ -153,11 +148,7 @@ export function replyConditionalCommentPage(dir: string, args: string[]): void {
   const review = listing === "pulls";
   const specific = `${review ? "review-comments" : "comments"}-${pr}.json`;
   const all = (
-    has(specific)
-      ? json(specific)
-      : review
-        ? []
-        : json("comments.json")
+    has(specific) ? json(specific) : review ? [] : json("comments.json")
   ) as unknown[];
   const start = (Number(page) - 1) * COMMENTS_PAGE;
   const body = JSON.stringify(all.slice(start, start + COMMENTS_PAGE));
@@ -234,8 +225,12 @@ export function repositoryQuery(
             ),
       labels: { pageInfo: { hasNextPage: false }, nodes: p.labels },
       ...(query.includes("statusCheckRollup") ? { headRef: headRef(p) } : {}),
-      ...(query.includes("reviewThreads") ? { reviewThreads: threads(p.number) } : {}),
-      ...(query.includes("comments(first:") ? { comments: comments(p.number) } : {}),
+      ...(query.includes("reviewThreads")
+        ? { reviewThreads: threads(p.number) }
+        : {}),
+      ...(query.includes("comments(first:")
+        ? { comments: comments(p.number) }
+        : {}),
     };
   });
   const more = after + first < all.length;
@@ -247,7 +242,7 @@ export function repositoryQuery(
         },
       }
     : null;
-  return {
+  const answer = {
     data: {
       rateLimit: { cost: 1, remaining: 4990 },
       repository: {
@@ -265,4 +260,7 @@ export function repositoryQuery(
       },
     },
   };
+  // Published once the answer is complete: a test changing the files after seeing the marker changes what a later read sees, never this one.
+  appendFileSync(`${dir}/repository-answered.log`, "answered\n");
+  return answer;
 }

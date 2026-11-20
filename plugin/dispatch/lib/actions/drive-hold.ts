@@ -33,6 +33,10 @@
  *   gone is taken over once per ledger facts: once this machine's takeover
  *   on those facts ended without moving the ledger on, it is notified as
  *   silent (`settleSilentTakeovers`);
+ * - a launch of this machine that ended on the forge's spent rate limit
+ *   (`FORGE_RATE_LIMITED`) on the same ledger facts as now spent no arm and
+ *   no re-drive: within an hour of its end the next launch waits, quietly,
+ *   and after it the drive is launched as if that launch had not run;
  * - a re-arm or takeover of this machine that ended on `drive.ts`'s usage
  *   error (`DRIVE_EXIT.UNSUPPORTED_CLI`) on the same ledger facts as now
  *   refused the command line it was given, which the next launch on those
@@ -60,11 +64,17 @@ import {
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { settledWhy, settlesWithPerson } from "../redrive-settle.ts";
 import type { DrivenPr } from "../types.ts";
-import { parseMs } from "../../../shared/time.ts";
+import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
+import {
+  endedOnLimit,
+  FORGE_LIMIT_FALLBACK_MS,
+} from "../forge-limit-redrive.ts";
+import type { LedgerClass } from "../../../shared/pr-labels/projection.ts";
 
 export type DriveHold =
   | { kind: "none" }
   | { kind: "held"; record: ReadRecord; why: string }
+  | { kind: "limited"; record: ReadRecord; why: string; class: LedgerClass }
   | { kind: "refused"; record: ReadRecord; why: string }
   | { kind: "redriven"; record: ReadRecord; why: string }
   | { kind: "armed"; record: ReadRecord; why: string }
@@ -156,8 +166,40 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
   if (pr.evidence.rearm === true) return pendingRequest(mine);
-  if (pr.class === "unarmed") return armed(pr, mine) ?? { kind: "none" };
-  return standingRefusal(pr, mine) ?? redriven(pr, mine) ?? { kind: "none" };
+  const limited = limitedLaunch(pr, mine, currentMs());
+  if (limited !== null) return limited;
+  // A launch the forge's limit stopped spent no arm and no re-drive.
+  const spent = mine.filter((r) => !stoppedOnLimit(r));
+  if (pr.class === "unarmed") return armed(pr, spent) ?? { kind: "none" };
+  return standingRefusal(pr, mine) ?? redriven(pr, spent) ?? { kind: "none" };
+}
+
+function stoppedOnLimit(r: ReadRecord): boolean {
+  return r.state.kind === "ended" && endedOnLimit(r.state.exit.code);
+}
+
+/** The latest launch ended on the forge's spent rate limit, on the ledger facts as they are now, less than an hour ago: the next waits. */
+function limitedLaunch(
+  pr: DrivenPr,
+  mine: ReadRecord[],
+  nowMs: number,
+): DriveHold | null {
+  const latest = mine.at(-1);
+  if (
+    latest === undefined ||
+    latest.state.kind !== "ended" ||
+    !stoppedOnLimit(latest) ||
+    !sameFacts(latest.record.facts, factsOf(pr))
+  )
+    return null;
+  const from = parseMs(latest.state.exit.at) + FORGE_LIMIT_FALLBACK_MS;
+  if (!(from > nowMs)) return null;
+  return {
+    kind: "limited",
+    record: latest,
+    class: pr.class,
+    why: `launch record ${latest.record.id} ${endOf(latest)}, FORGE_RATE_LIMITED: the forge's rate limit for its credential was spent, so it is launched again from ${isoFromMs(from)}`,
+  };
 }
 
 /** A silent driver keeps its in-flight hold, refusal or original owner. */

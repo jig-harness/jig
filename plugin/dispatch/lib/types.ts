@@ -212,12 +212,19 @@ export interface StaleCause {
    * The drive stopped on a cause its own next step settles: a stall (`14`),
    * a spent CI-repair budget (`21`), a pass deadline with its restarts
    * spent (`15`), or checks still failing on the infrastructure through
-   * their re-runs (`23`, `ci-infra`). Re-driven once per head commit, a
-   * `ci-infra` stop once per stop after its backoff; a re-drive that leaves
-   * the same stop standing is a person's.
+   * their re-runs (`23`, `ci-infra`), or the forge's rate limit for the
+   * drive's credential spent past what it waits (`24`, `forge-limit`).
+   * Re-driven once per head commit, a `ci-infra` stop once per stop after
+   * its backoff, a `forge-limit` stop once per stop after its reset; a
+   * re-drive that leaves the same stop standing is a person's.
    */
-  mechanicalStop?: "stall" | "ci-repair" | "deadline" | "ci-infra";
-  /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`). */
+  mechanicalStop?:
+    | "stall"
+    | "ci-repair"
+    | "deadline"
+    | "ci-infra"
+    | "forge-limit";
+  /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`), a `forge-limit` stop's reset (`forge-limit-redrive.ts`). */
   notBefore?: string;
   /**
    * The re-drive draws on the pull request's recovery budget, which the

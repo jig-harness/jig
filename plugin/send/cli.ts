@@ -210,9 +210,10 @@ async function planFor(
   switch (request.verb) {
     case "drive":
     case "rearm":
+    case "withdraw-rearm":
     case "hold":
     case "release":
-      return planLabel(ctx, request.verb, writesAs);
+      return planLabel(ctx, request.verb, writesAs, dryRun);
     case "answer":
       return planAnswerRequest(ctx, request, {
         login: login.value,

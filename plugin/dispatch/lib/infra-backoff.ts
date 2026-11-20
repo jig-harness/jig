@@ -73,11 +73,15 @@ export function infraStopClass(
   };
 }
 
-/** Why a stale drive is not re-driven yet: its backoff has not ended. `null` once it has, or for any other drive. */
+/** Why a stale drive is not re-driven yet: its backoff has not ended, or the forge's rate limit has not reset. `null` once it has, or for any other drive. */
 export function backingOff(pr: DrivenPr, nowMs: number): string | null {
   const notBefore = pr.stale?.notBefore;
   if (pr.class !== "stale" || notBefore === undefined) return null;
   const at = parseMs(notBefore);
   if (!Number.isFinite(at) || at <= nowMs) return null;
-  return `${pr.why}; its backoff ends ${notBefore}, so it is not re-driven yet`;
+  const until =
+    pr.stale?.mechanicalStop === "forge-limit"
+      ? `the forge's rate limit resets ${notBefore}`
+      : `its backoff ends ${notBefore}`;
+  return `${pr.why}; ${until}, so it is not re-driven yet`;
 }

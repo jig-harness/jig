@@ -90,17 +90,21 @@ export class GitHubClient {
   }
 
   /**
-   * The client the environment describes: the tracker's transport, and
+   * The client the environment describes: the tracker's transport, serving
+   * the store's repository `home` (`owner/name`), and
    * `JIG_GITHUB_INTERVAL_MS` for the least time between two writes.
    */
-  static fromEnv(env: NodeJS.ProcessEnv = process.env): GitHubClient {
+  static fromEnv(
+    env: NodeJS.ProcessEnv = process.env,
+    home: string | null = null,
+  ): GitHubClient {
     const interval = env.JIG_GITHUB_INTERVAL_MS?.trim();
     if (interval !== undefined && interval !== "" && !/^\d+$/.test(interval))
       throw new GitHubApiError(
         "JIG_GITHUB_INTERVAL_MS must be a whole number of milliseconds",
       );
     return new GitHubClient({
-      transport: defaultTransport(env),
+      transport: defaultTransport(env, home),
       ...(interval === undefined || interval === ""
         ? {}
         : { intervalMs: Number(interval) }),

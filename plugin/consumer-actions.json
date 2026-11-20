@@ -164,6 +164,25 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.286.0",
+      "actions": [
+        {
+          "id": "0.286.0#28754233",
+          "strength": "required",
+          "levels": ["instructions"],
+          "description": "**Breaking:** A rearm label without a stop-bound request expires.",
+          "instruction": "Replace steps that apply the rearm label directly with the rearm command in Jig Send. Re-send older pending requests that still need to run.",
+          "hints": [
+            {
+              "kind": "text",
+              "value": "jig:rearm"
+            }
+          ]
+        }
+      ],
+      "retracts": []
     }
   ]
 }

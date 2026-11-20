@@ -1608,6 +1608,13 @@ make, use the entry's term instead.
   head is visibly not mergeable from the moment the label lands until the
   release; its message names the label to remove. M13's workflow-convention
   lint accepts it in one shape only.
+- **Timed-out job** — a continuous-integration job the runner stopped because
+  it ran past its time limit (`timeout-minutes` in GitHub Actions). The forge
+  reports it `cancelled`, like a job its concurrency group or a person
+  cancelled, and only the runner's annotation on its check run ("exceeded the
+  maximum execution time") tells it apart. A *PR drive loop* repairs it as a
+  failure instead of re-running it, since a re-run stops at the same limit
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Required checks** — the continuous-integration checks a repository's
   branch protection requires to pass before a pull request may merge. A drive
   derives them from the protection settings unless the repository lists them
@@ -2844,7 +2851,9 @@ make, use the entry's term instead.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
-  *dispatcher* drives them one at a time, the one closest to merge first.
+  *dispatcher* drives them one at a time, the one closest to merge first,
+  and starts no pickup whose *footprint* reaches the area while other work
+  in flight touches it.
   A person adds the mark, usually after the conflict history report
   proposes it for a *conflict hotspot*; the dispatcher never adds one.
 - **Held (pull request)** — a pull request in a *serialized area* waiting
