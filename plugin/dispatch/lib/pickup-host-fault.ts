@@ -53,8 +53,9 @@ const HOST_RESOURCE = new Set(
     " ",
   ),
 );
-const SOURCE_EXTENSION =
-  /\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|cs|php|sh|md|json|ya?ml|toml|html?|css)$/i;
+/** Extensions of files a host produces and a person clears; any other extension marks a work file. */
+const HOST_ARTIFACT_EXTENSION =
+  /\.(?:log|logs|tmp|temp|cache|bak|lock|pid|out|core|swp|old|trace|dump)$/i;
 
 /** The first words of one cleanup object (the pattern already cut it at its clause or sentence end). */
 function objectClause(rest: string): string[] {
@@ -64,13 +65,13 @@ function objectClause(rest: string): string[] {
 function namesHostResource(raw: string): boolean {
   const token = raw.replace(/^[`'"([]+|[`'")\].]+$/g, "");
   if (/^[~/][\w~./-]*$/.test(token)) {
-    return (
-      !SOURCE_EXTENSION.test(token) &&
-      token
-        .toLowerCase()
-        .split(/[/~]/)
-        .some((seg) => HOST_RESOURCE.has(seg.replace(/^\./, "")))
-    );
+    const last = token.split("/").at(-1) ?? "";
+    if (/^[^.].*\.\w+$/.test(last) && !HOST_ARTIFACT_EXTENSION.test(last))
+      return false;
+    return token
+      .toLowerCase()
+      .split(/[/~]/)
+      .some((seg) => HOST_RESOURCE.has(seg.replace(/^\./, "")));
   }
   const plain = token.replace(/^\./, "");
   if (!/^[\w'\u2019-]+$/.test(plain)) return false;
@@ -88,7 +89,7 @@ function namesHostResource(raw: string): boolean {
  * clause of the question is judged on its own: its object is the next few
  * words, cut at clause punctuation or a sentence end, and names a resource
  * as a plain or hyphenated word (a possessive or leading dot allowed) or as
- * a rooted path (`/` or `~`) that is not a source or document file. A
+ * a rooted path (`/` or `~`) whose last segment has no extension or a host-artifact one (a log, a temporary file), so a path to any other file is a work file however its directories are named. A
  * resource word inside a relative source path (`src/cache.ts`), past a comma
  * or in the next sentence is not the object.
  */

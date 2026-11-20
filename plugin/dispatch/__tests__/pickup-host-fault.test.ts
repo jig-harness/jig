@@ -224,6 +224,9 @@ describe("telling a host fault from a question about the work", () => {
       "Should the code retry on ENOSPC: if we delete src/cache.ts?",
       "Should the code retry on ENOSPC: if we delete the column. Cache behavior stays unchanged?",
       "Should the code retry on ENOSPC: if we delete /src/cache.ts?",
+      "Should the code retry on ENOSPC: if we delete /worktrees/app/main.c?",
+      "Should the code retry on ENOSPC: if we delete /cache/schema.sql?",
+      "Should the code retry on ENOSPC: if we delete /tmp/App.vue?",
       "Should the code retry on ENOSPC: if we delete the column, keeping cache behavior unchanged?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
