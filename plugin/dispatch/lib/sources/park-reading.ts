@@ -64,13 +64,17 @@ export async function readPark(
   kept?.save();
   if (!("unreadable" in found) && found.unread.length > 0) {
     // A park with no time is also an unclassified defect beside its thread's failed call, so a class that waiting does not clear still wins over it.
-    const failure = combinedFailure(
-      found.unread.flatMap((p) =>
-        p.at === undefined
-          ? [failures.get(p.key), undefined]
-          : [failures.get(p.key)],
-      ),
+    const reads = found.unread.flatMap((p) =>
+      p.at === undefined
+        ? [failures.get(p.key), undefined]
+        : [failures.get(p.key)],
     );
+    const combined = combinedFailure(reads);
+    // An absence is an answer only when every unread read was one: a read with no class, or of another class, still fails the turn.
+    const failure =
+      combined !== undefined && reads.every((f) => f?.class === "not-found")
+        ? { ...combined, absence: true as const }
+        : combined;
     return {
       unreadable: found.unread.map((p) => `${p.kind} ${p.key}`).join(", "),
       ...(failure === undefined ? {} : { failure }),

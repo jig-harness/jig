@@ -27,13 +27,16 @@ export function failedRead(
     failed.push(forge.base.failure);
   if (failed.length === 0) return {};
   const failure = combinedFailure(failed);
-  // A parked thread the credential cannot see is an absence, and an absence is an answer: unless the base branch's head failed beside it.
+  // The park's reading marks an absence (`park-reading.ts`); a base branch's head that failed beside it is no absence, so the mark does not carry.
+  const { absence: _absence, ...unmarked } = failure ?? {};
   return {
     readFailed: true,
     ...classed(
-      failure?.class === "not-found" && parkFailed && !baseFailed
-        ? { ...failure, absence: true as const }
-        : failure,
+      failure === undefined
+        ? undefined
+        : baseFailed || failure.absence !== true
+          ? (unmarked as ReadFailure)
+          : failure,
     ),
   };
 }
