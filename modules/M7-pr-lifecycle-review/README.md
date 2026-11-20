@@ -245,7 +245,8 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
   issue link, size) is declared where the PR-opening agent reads
   it; mandatory reviews are selected by change-area
   ([M3](../M3-change-area-catalog/)); at least one automated reviewer runs
-  **comment-only** with a written precision bar for ever blocking; the
+  **comment-only** with a written precision bar for ever blocking, and it can
+  be any automated reviewer; the
   comment-resolution loop is a contract (addressed/rejected/deferred/moot,
   every thread terminal, the state declared in an anchored encoding that an
   export adapter decodes rather than inferred from prose) and no PR merges with
@@ -371,6 +372,30 @@ at write time, which needs a reply-posting tool to hang it on, is **Strict**.
 When the encoding question settles, only the skill's token vocabulary would
 change; the practice references above would not.
 
+### The reviewer: a contract and a reference
+
+A review harness is an agent job in whatever language the repository uses, so
+this module specifies the **reviewer-evidence contract** and ships only the
+pieces that are portable gates: the fork-safe wiring lint, the resolution
+gate and its exporter, and the convergence check. The contract is what the
+drive reads to learn that a reviewer reviewed the head commit: a check run,
+and either a summary comment that names the reviewed commit or a review
+object that names it (or a successful check run on the head, for a reviewer
+that posts nothing when a push has no new findings). The glossary and
+[drive-pr's README](../../plugin/skills/drive-pr/README.md) give the complete
+definition. The evidence says the reviewer finished on the head commit; it does
+not make the reviewer's findings readable. The drive reads findings from
+unresolved review threads, and from summary-only bodies only in a format it has
+a profile for. Teams that drive with drive-pr need a reviewer that produces that evidence, and
+[mappings.md](mappings.md#review-bots--harness-the-tool-registry) says what
+each reviewer Jig knows of meets.
+
+Jig's **reference reviewer** implements the contract
+([ADR-0027](../../docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)). It
+is planned, not yet published, as `jig-harness/ai-review` in its own
+repository, because it runs in an adopter's CI or as a service and releases
+on its own cadence. The plugin holds no reviewer runtime.
+
 ### Left out by design
 
 - **A lens catalogue beyond the seed lenses.** Jig ships a few
@@ -385,10 +410,6 @@ change; the practice references above would not.
   repository's own lenses and its model-routing tiers are its tuned
   content, not a portable mechanism: they are grown locally through
   [M8](../M8-learning-loop/), in the same file format.
-- **A reviewer runtime.** A review harness is an agent job in whatever
-  language the repository uses, so the module specifies its config contract
-  and ships only the pieces that are portable gates: the fork-safe wiring
-  lint, the resolution gate and its exporter, and the convergence check.
 - **Precision-bar values and their measurement wiring.** They belong with
   [M8](../M8-learning-loop/) (the measurement) and
   [M11](../M11-process-observability/) (the emission).
