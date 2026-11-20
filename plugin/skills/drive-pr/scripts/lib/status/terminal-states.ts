@@ -356,7 +356,7 @@ export const TERMINAL_STATES: Readonly<
   // The head's check-runs listing ran into a deadline or its page bound
   // (`paged-read.ts`). The reason names the pages read.
   CHECK_RUNS_UNREADABLE: {
-    exitCode: 24,
+    exitCode: 25,
     category: "state",
     terminal: true,
     emittedBy: `${EVALUATE_EMITTER} and drive.ts (CHECK_RUNS_UNREADABLE_EXIT)`,

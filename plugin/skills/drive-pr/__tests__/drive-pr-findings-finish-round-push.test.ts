@@ -484,7 +484,7 @@ describe("finish-round.ts", () => {
           JIG_GH_CACHE_DIR: cacheDir,
         },
       });
-      expectSpawnExit(r, 24);
+      expectSpawnExit(r, 25);
       expect(r.report.state).toBe("CHECK_RUNS_UNREADABLE");
       expect(r.report.listingPagesRead).toBe(1);
       expect(r.pushed).toBe("");
