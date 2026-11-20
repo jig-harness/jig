@@ -503,7 +503,7 @@ describe("findBareLiteralExits — the reporter is identified by structural posi
     // `SESSION_LEASE_HELD` block that reads `bump` rather than `bumpA`.
     const realSource = readFileSync(driveStatusTsSourcePath(), "utf8");
     expect(realSource).toContain(
-      "async function emit(code: number): Promise<void> {",
+      "async function emit(\n    code: number,\n    checkBaseDrift = true,\n    readAdvisories = true,\n  ): Promise<void> {",
     );
     const block = [
       '              "another live session in this working tree holds the drive lease for this PR",',

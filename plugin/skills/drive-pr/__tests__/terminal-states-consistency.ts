@@ -1544,8 +1544,9 @@ function isEmitterZoneVariableDeclaration(
  * fail-CLOSED heuristic, not a proof of reporter identity. "Is this function
  * THE canonical reporter" is a semantic property no structural or type-level
  * predicate can decide without full call-graph/whole-program analysis, so a
- * future same-zone sibling that happens to share this exact contract (one
- * parameter, `number`-typed or unannotated) WILL be misclassified as the
+ * future same-zone sibling that happens to share this exact contract (a first
+ * parameter, `number`-typed or unannotated, with only optional parameters
+ * after it) WILL be misclassified as the
  * reporter — on purpose. That is the same deliberate posture already stated
  * above for the sibling `return`-statement scan's own false-positive
  * residual ("a future helper function that legitimately returns one of these
@@ -1560,12 +1561,19 @@ function isEmitterZoneVariableDeclaration(
 function matchesReporterSignature(
   fn: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
 ): boolean {
-  if (fn.parameters.length !== 1) {
+  if (fn.parameters.length === 0) {
     return false;
   }
   const paramType = fn.parameters[0]?.type;
+  const acceptsCode =
+    paramType === undefined || paramType.kind === ts.SyntaxKind.NumberKeyword;
   return (
-    paramType === undefined || paramType.kind === ts.SyntaxKind.NumberKeyword
+    acceptsCode &&
+    fn.parameters
+      .slice(1)
+      .every((parameter) =>
+        Boolean(parameter.questionToken || parameter.initializer),
+      )
   );
 }
 
