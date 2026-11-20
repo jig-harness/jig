@@ -76,6 +76,26 @@ describe("handOff on Linear", () => {
     expect(linear.writes).toHaveLength(0);
   });
 
+  it("aborts the operation signal its tracker was opened with when the deadline expires", async () => {
+    const clock = fakeClock(T0 + 58_000);
+    const linear = fakeLinear(clock);
+    const operation = new AbortController();
+    const slow: HandOffTracker = {
+      ...linear.tracker,
+      poolIssue: (_key, signal) =>
+        new Promise((_, reject) =>
+          signal?.addEventListener("abort", () => reject(signal.reason)),
+        ),
+    };
+    await handOff(slow, "ENG-1", FACTORY, {
+      wait: true,
+      clock,
+      deadlineMs: 20,
+      operation,
+    });
+    expect(operation.signal.aborted).toBe(true);
+  });
+
   it("without waiting, names the time from which the hand-off may run and writes nothing", async () => {
     const clock = fakeClock(T0 + 58_000);
     const linear = fakeLinear(clock);

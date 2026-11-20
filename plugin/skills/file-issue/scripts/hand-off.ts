@@ -36,14 +36,18 @@ async function main(argv: string[]): Promise<number> {
   const stop = new AbortController();
   for (const sig of ["SIGINT", "SIGTERM"] as const)
     process.once(sig, () => stop.abort());
+  // The tracker's transport stops on the CLI's signal or the hand-off's deadline.
+  const operation = new AbortController();
+  stop.signal.addEventListener(
+    "abort",
+    () => operation.abort(stop.signal.reason),
+    { once: true },
+  );
   const result = await handOff(
-    openTracker(undefined, undefined, stop.signal),
+    openTracker(undefined, undefined, operation.signal),
     key,
     to,
-    {
-      wait,
-      signal: stop.signal,
-    },
+    { wait, signal: stop.signal, operation },
   );
   console.log(JSON.stringify(result, null, 2));
   return result.handedOver ? 0 : 3;

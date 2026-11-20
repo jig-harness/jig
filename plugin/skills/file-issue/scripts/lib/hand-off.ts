@@ -288,6 +288,12 @@ export async function handOff(
     signal?: AbortSignal;
     /** Replaces the operation's deadline (tests). */
     deadlineMs?: number;
+    /**
+     * Aborted when the operation's deadline expires, so a tracker opened
+     * with its signal stops its in-flight assignment requests too, which
+     * take no signal of their own.
+     */
+    operation?: AbortController;
   },
 ): Promise<HandOff> {
   const quiet = tracker.creationQuietMs ?? 0;
@@ -295,6 +301,12 @@ export async function handOff(
     opts.deadlineMs ??
       WORK_BUDGET_MS + (opts.wait && quiet > 0 ? quiet + WINDOW_MARGIN_MS : 0),
   );
+  if (opts.operation !== undefined) {
+    const { operation } = opts;
+    deadline.addEventListener("abort", () => operation.abort(deadline.reason), {
+      once: true,
+    });
+  }
   const run: Run = {
     tracker,
     key,
