@@ -174,6 +174,7 @@ export async function observeOpenedTurn(
       runtime: context.runtime,
       nowMs: context.nowMs,
       records: allRecords(context),
+      ...(context.drivers === undefined ? {} : { drivers: context.drivers }),
       reads: context.reads,
       world: context.world,
       ...(bound === undefined ? {} : { bound }),
