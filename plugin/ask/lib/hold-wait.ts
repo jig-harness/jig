@@ -78,6 +78,22 @@ function settleWords(
     : `${blocked}; then ${clear}`;
 }
 
+/** The hold in words, with how long it has held the drive when its start is known. */
+function heldWords(holder: Holder, since: number, age: number): string {
+  return Number.isFinite(since)
+    ? `${holderWords(holder)}; it has held the drive for ${spanText(age)}, since ${isoFromMs(since)}`
+    : holderWords(holder);
+}
+
+/** The wait while this machine's record of the hold is pending: the dispatcher's, for a drive the hold keeps from going on. */
+function pendingWait(held: string, heldUp: boolean): WaitsOn | null {
+  return heldUp
+    ? {
+        waiting: `${held}; the dispatcher launches it again or reports it stuck`,
+      }
+    : null;
+}
+
 /** The wait on a hold of unknown process; `null` when the holder runs, or the hold is not what the drive waits on yet. `running` is whether its ledger records the driver running, whatever its class; `stoppedAt` is the drive's last heartbeat, or a merged pull request's merge. */
 export function heldStopWait(
   holder: Holder | "none",
@@ -92,15 +108,8 @@ export function heldStopWait(
     return null;
   const since = heldStopSinceMs(holder.since ?? "", stoppedAt, running);
   const age = currentMs() - since;
-  const held = Number.isFinite(since)
-    ? `${holderWords(holder)}; it has held the drive for ${spanText(age)}, since ${isoFromMs(since)}`
-    : holderWords(holder);
-  if (facts.record?.state.kind === "pending")
-    return heldUp
-      ? {
-          waiting: `${held}; the dispatcher launches it again or reports it stuck`,
-        }
-      : null;
+  const held = heldWords(holder, since, age);
+  if (facts.record?.state.kind === "pending") return pendingWait(held, heldUp);
   if (Number.isFinite(since) && age >= STRANDED_HOLD_MS)
     return personWait(
       "settle the launch that holds the drive",
