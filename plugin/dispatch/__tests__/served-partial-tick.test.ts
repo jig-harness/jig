@@ -25,14 +25,18 @@ const started = (key: string): PoolIssue => ({
 });
 
 function tracker(ancestry: boolean): Tracker {
-  const epic = issue("#1", ["epic"], null);
+  const epic = issue("#1", ["epic"]);
   return {
     adapter: "github",
     team: "example/repo",
     stateName: (s: string) => (s === "pr_open" ? null : s),
     assignUnassigned: async () => ({ assigned: true }),
     assignedIssues: async (_: string, states: string[]) =>
-      states.includes("in_progress") ? [started("#8")] : [issue("#5")],
+      states.includes("in_progress")
+        ? [started("#8")]
+        : ancestry
+          ? [epic]
+          : [issue("#5")],
     assignedBy: async () => ({ id: "writer", name: "writer", trusted: true }),
     openChildren: async () => [],
     listRelations: async () => [],

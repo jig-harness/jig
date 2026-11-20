@@ -1,10 +1,5 @@
-/** An epic's children up to its width unless its plan says otherwise, and why an epic is idle. */
-import {
-  PERSON_HOLD,
-  queueHold,
-  type QueueHoldPolicy,
-  type QueueItem,
-} from "../queue-rank.ts";
+/** Epic execution plan holds and idle reasons. */
+import { PERSON_HOLD, queueHold, type QueueHoldPolicy } from "../queue-rank.ts";
 import type { Unplaced } from "../types.ts";
 import type {
   CanonicalState,
@@ -16,8 +11,8 @@ import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unava
 import { isRateLimited } from "../../../shared/outbound/budget.ts";
 import type { ServedPlan } from "./served-plan.ts";
 
-/** One child's unreadable relations take one slot of the epic's width, not the whole epic; a wall still stops the read. */
-export function takeUnreadSlot(
+/** Report an unreadable child's relations. A tracker wall still stops the read. */
+export function noteUnreadChild(
   unread: string[],
   key: string,
   error: unknown,
@@ -31,8 +26,8 @@ export function takeUnreadSlot(
 }
 
 /**
- * A person owns the next step, so this child takes none of a plan-less epic's width; a pickup hold stops only new starts, so a started child keeps its slot.
- * Reading occupancy, an unstarted epic with open children is not parked by a pickup hold alone: its running descendants still count. `forStart` asks whether the child may start.
+ * A pickup hold stops new starts. A started child can keep working.
+ * An unstarted epic with open children can still have running descendants. `forStart` asks whether the child may start.
  */
 export function parkedOnPerson(
   child: PoolIssue,
@@ -83,147 +78,12 @@ export function childPlanHold(
   return undefined;
 }
 
-/** `dispatch.epic_width`'s default: how many children of an epic with no execution plan are under way at once. */
-export const DEFAULT_EPIC_WIDTH = 4;
-
-/** The epic an item is a child of when that epic has no execution plan, and the children that take its width. */
-export interface Serial {
-  epic: string;
-  /** Children under way: started, and not waiting on a person. */
-  busy: string[];
-  /** Open children that could not be read: each may be under way, so each takes a slot. */
-  unread: string[];
-  /** The child whose read failed before the epic's children were known: none of them starts. */
-  unknown?: string | undefined;
-}
-
-/** Why a serial item starts nothing now, or null while its epic has a free slot. */
-function serialHold(
-  serial: Serial,
-  key: string,
-  width: number,
-  starting: ReadonlyMap<string, readonly string[]>,
-): string | null {
-  if (serial.unknown !== undefined)
-    return `${serial.unknown} cannot be read, so whether a sibling of ${key} is in progress is unknown`;
-  if (
-    serial.busy.includes(key) ||
-    (starting.get(serial.epic) ?? []).includes(key)
-  )
-    return null;
-  const busy = serial.busy.filter((k) => k !== key);
-  const unread = serial.unread.filter((k) => k !== key);
-  const next = (starting.get(serial.epic) ?? []).filter((k) => k !== key);
-  if (busy.length + unread.length + next.length < width) return null;
-  return widthHoldReason(serial.epic, width, busy, unread, next);
-}
-
-/** Name the occupied slots when an epic has no remaining width. */
-function widthHoldReason(
-  epic: string,
-  width: number,
-  busy: string[],
-  unread: string[],
-  next: readonly string[],
-): string {
-  const taken = [
-    ...(busy.length > 0 ? [`working ${busy.join(", ")}`] : []),
-    ...(unread.length > 0
-      ? [`${unread.join(", ")} cannot be read and may be under way`]
-      : []),
-    ...(next.length > 0 ? [`starting ${next.join(", ")}`] : []),
-  ];
-  const children = width === 1 ? "child" : "children";
-  return `${epic} works at most ${width} ${children} at once (dispatch.epic_width): ${taken.join("; ")}`;
-}
-
-/**
- * Why the tick will not start an item whatever its epic's width (this
- * machine's ended pickup record holds it), or `null` when it may start.
- */
+/** Why a local pickup record keeps an item from starting. */
 export type PassOver = (issue: PoolIssue) => string | null;
 
-/** A serial epic's child the tick will not start: it keeps its own row and leaves its slot to a sibling. */
 export interface PassedChild {
   epic: string;
   why: string;
-}
-
-/**
- * `ranked` best first: each serial epic keeps its best children while its
- * `width` (`dispatch.epic_width`) has room. A child `passOver` names is kept, so the pickup plan
- * reports it, but takes no slot: it is noted in `passed` and its next
- * sibling may start in its place.
- */
-export interface Admission {
-  serial: Serial;
-  child: string;
-}
-
-/** A legacy serial constraint is the leaf's own admission when no hierarchy was supplied. */
-function admissionsOf(
-  item: QueueItem & { serial?: Serial | undefined; admissions?: Admission[] },
-): Admission[] {
-  if (item.admissions !== undefined) return item.admissions;
-  return item.serial === undefined
-    ? []
-    : [{ serial: item.serial, child: item.issue.identifier }];
-}
-
-/** Multiple descendants of one admitted child consume just that child's existing slot. */
-function reserveAdmission(
-  admission: Admission,
-  starting: Map<string, string[]>,
-): void {
-  const { serial, child } = admission;
-  const next = starting.get(serial.epic) ?? [];
-  if (
-    next.includes(child) ||
-    serial.busy.includes(child) ||
-    serial.unread.includes(child)
-  )
-    return;
-  starting.set(serial.epic, [...next, child]);
-}
-
-export function serializeEpics<
-  T extends QueueItem & {
-    serial?: Serial | undefined;
-    admissions?: Admission[];
-  },
->(
-  ranked: readonly T[],
-  unplaced: Unplaced[],
-  width: number = DEFAULT_EPIC_WIDTH,
-  passOver: PassOver = () => null,
-  passed: Map<string, PassedChild> = new Map(),
-): T[] {
-  const starting = new Map<string, string[]>();
-  const kept: T[] = [];
-  for (const item of ranked) {
-    const admissions = admissionsOf(item);
-    const key = item.issue.identifier;
-    // A child the tick will not start stays planned, so its own need is
-    // raised whichever siblings hold the width, and takes no slot itself.
-    const held = admissions.length === 0 ? null : passOver(item.issue);
-    const first = admissions[0];
-    if (first !== undefined && held !== null) {
-      passed.set(key, { epic: first.serial.epic, why: held });
-      kept.push(item);
-      continue;
-    }
-    const why =
-      admissions
-        .map((a) => serialHold(a.serial, a.child, width, starting))
-        .find((reason) => reason !== null) ?? null;
-    if (why !== null) {
-      unplaced.push({ target: key, record: "tracker", reason: why });
-      continue;
-    }
-    for (const admission of admissions) reserveAdmission(admission, starting);
-    kept.push(item);
-  }
-  return kept;
 }
 
 export interface EpicWalk {
@@ -239,7 +99,7 @@ export interface EpicWalk {
 
 /**
  * An epic none of whose open children can start reports one reason of its
- * own, deepest epics first; one whose child `serializeEpics` passed over
+ * own, deepest epics first; one whose child the tick passed over
  * names that child and why it is held.
  */
 export function summarizeEpics(

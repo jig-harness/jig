@@ -175,9 +175,10 @@ describe("serialized areas hold pickups", () => {
     expect(
       reportOf(receipt).unplaced.filter((u) => u.target.startsWith("#")),
     ).toEqual([]);
+    // Overlap still orders attempts when no serialized area imposes a hold.
     expect(launched(receipt)).toEqual([
-      ["#12", "launched"],
-      ["#13", "waits"],
+      ["#13", "launched"],
+      ["#12", "waits"],
       ["#14", "waits"],
     ]);
   }, 120_000);

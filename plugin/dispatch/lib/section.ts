@@ -18,7 +18,6 @@ import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
-import { DEFAULT_EPIC_WIDTH } from "./sources/served-epics.ts";
 import type {
   AdoptRule,
   DispatchSection,
@@ -169,14 +168,6 @@ function rounds(value: unknown): Checked<number> {
     return invalid(
       "dispatch.drive_rounds_flat must be a positive whole number",
     );
-  return ok(value);
-}
-
-/** `epic_width`: a positive whole number, `DEFAULT_EPIC_WIDTH` when absent. */
-function width(value: unknown): Checked<number> {
-  if (value === undefined || value === null) return ok(DEFAULT_EPIC_WIDTH);
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
-    return invalid("dispatch.epic_width must be a positive whole number");
   return ok(value);
 }
 
@@ -343,7 +334,7 @@ type Timings = Omit<
   | "labels"
   | "adopt"
   | "pickupDeadlineMs"
-  | "epicWidth"
+  | "retiredEpicWidth"
   | "overlap"
 >;
 
@@ -456,8 +447,6 @@ export function dispatchSection(
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
-  const epicWidth = width(section.epic_width);
-  if (!epicWidth.ok) return epicWidth;
   const overlap = parseOverlap(section.overlap);
   if (!overlap.ok) return overlap;
   return ok({
@@ -465,7 +454,12 @@ export function dispatchSection(
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
-    epicWidth: epicWidth.value,
+    ...(Object.hasOwn(section, "epic_width")
+      ? {
+          retiredEpicWidth:
+            "dispatch.epic_width is retired and ignored. Use dispatch.overlap to weigh shared files, or use execution plan dependency edges or a serialized area for one child at a time.",
+        }
+      : {}),
     overlap: overlap.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
