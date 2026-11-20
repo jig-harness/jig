@@ -23,6 +23,7 @@ import {
   ok,
   type Outcome,
 } from "../../../../shared/outcome.ts";
+import { retryAttempts } from "../../../../shared/retry.ts";
 import { isGitSha } from "./cli.ts";
 import { forgeReadClass, type ForgeReadCode } from "./forge-read.ts";
 import { ghCall } from "./proc.ts";
@@ -30,9 +31,73 @@ import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
 
 type HeldState = Extract<CiHoldState, { phase: "held" }>;
+type ReleasingState = Extract<CiHoldState, { phase: "releasing" }>;
+type ReleasedState = Extract<CiHoldState, { phase: "released" }>;
 
 /** A hold read that failed: the forge was not reached, or answered with something unreadable. */
 export type HoldReadFailure = Failure<ForgeReadCode | "unreadable">;
+
+export const releasedBy = (
+  transition: LabelTransition,
+  head: string,
+  checkRunWatermark: number,
+  source: ReleasedState["source"],
+): ReleasedState => ({
+  phase: "released",
+  eventId: transition.id,
+  head,
+  actor: transition.actor,
+  createdAt: transition.createdAt,
+  checkRunWatermark,
+  source,
+});
+
+export const exactReleaseOf = (
+  successor: LabelTransition,
+  head: string,
+  persisted: ReleasingState,
+): ReleasedState =>
+  releasedBy(
+    successor,
+    head,
+    persisted.checkRunWatermark,
+    successor.actor === persisted.actor ? "drive" : "external",
+  );
+
+/** Recover an interrupted release from the live label and newest transition. */
+export async function settleInterruptedRelease(
+  pr: string,
+  persisted: ReleasingState,
+  live: PrSnapshot,
+  latest: LabelTransition | null,
+  head: string,
+  sameHead: boolean,
+): Promise<
+  | { outcome: "held"; persisted: HeldState }
+  | { outcome: "released" | "adopt" | "invisible" }
+> {
+  if (live.held && sameHead && latest?.id === persisted.heldEventId) {
+    const held: HeldState = {
+      phase: "held",
+      adopted: persisted.adopted === true,
+      eventId: persisted.heldEventId,
+      addedAtHead: persisted.addedAtHead,
+      actor: persisted.heldActor,
+      createdAt: persisted.heldCreatedAt,
+      checkRunWatermark: persisted.checkRunWatermark,
+    };
+    await writeCiState(pr, held);
+    return { outcome: "held", persisted: held };
+  }
+  if (!live.held && latest?.event === "unlabeled") {
+    await writeCiState(
+      pr,
+      releasedBy(latest, head, persisted.checkRunWatermark, "external"),
+    );
+    return { outcome: "released" };
+  }
+  return { outcome: live.held ? "adopt" : "invisible" };
+}
 
 /**
  * One `gh` read whose answer is JSON: a failed call is classed from its
@@ -82,6 +147,44 @@ export async function readHoldTransitions(
   return transitions === null
     ? failed("malformed", `a '${holdLabel}' event on the timeline is malformed`)
     : ok(transitions);
+}
+
+/**
+ * Read the label transition caused by a mutation. The timeline can lag, so an
+ * unseen transition remains unproven rather than becoming local ownership.
+ */
+export async function transitionAfter(
+  pr: string,
+  holdLabel: string,
+  beforeId: string,
+  event: "labeled" | "unlabeled",
+  actor: string,
+): Promise<
+  Outcome<
+    { event: LabelTransition; intervening: boolean } | null,
+    HoldReadFailure["code"]
+  >
+> {
+  for await (const attempt of retryAttempts({
+    attempts: 4,
+    baseMs: 2_000,
+    maxMs: 2_000,
+    random: () => 1,
+  })) {
+    void attempt;
+    const read = await readHoldTransitions(pr, holdLabel);
+    if (!read.ok) return read;
+    const beforeIndex =
+      beforeId === ""
+        ? -1
+        : read.value.findIndex((item) => item.id === beforeId);
+    if (beforeId !== "" && beforeIndex < 0) return ok(null);
+    const after = read.value.slice(beforeIndex + 1);
+    const observed = after.at(-1);
+    if (observed?.event === event && observed.actor === actor)
+      return ok({ event: observed, intervening: after.length !== 1 });
+  }
+  return ok(null);
 }
 
 /**

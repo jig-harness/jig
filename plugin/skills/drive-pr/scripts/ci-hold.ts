@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-import { ok, type Outcome } from "../../../shared/outcome.ts";
-import { retryAttempts } from "../../../shared/retry.ts";
 import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
 
 /**
@@ -48,12 +46,16 @@ import {
   adopt,
   confirmLiveHold,
   checkRuns,
+  exactReleaseOf,
   headWatermark,
   readCiState,
   type HoldReadFailure,
   readBeforeMutation,
   readHoldTransitions,
   readPrSnapshot,
+  releasedBy,
+  settleInterruptedRelease,
+  transitionAfter,
   valueOrNull,
   writeCiState,
 } from "./lib/ci-hold-state.ts";
@@ -135,118 +137,6 @@ function transitionsFollowing(
 ): LabelTransition[] | null {
   const start = firstIndexAfter(values, previousId);
   return start === null ? null : values.slice(start);
-}
-
-type HeldState = Extract<CiHoldState, { phase: "held" }>;
-type ReleasingState = Extract<CiHoldState, { phase: "releasing" }>;
-type ReleasedState = Extract<CiHoldState, { phase: "released" }>;
-
-/** The released record a removal transition proves. */
-const releasedBy = (
-  transition: LabelTransition,
-  head: string,
-  checkRunWatermark: number,
-  source: ReleasedState["source"],
-): ReleasedState => ({
-  phase: "released",
-  eventId: transition.id,
-  head,
-  actor: transition.actor,
-  createdAt: transition.createdAt,
-  checkRunWatermark,
-  source,
-});
-
-const exactReleaseOf = (
-  successor: LabelTransition,
-  head: string,
-  persisted: ReleasingState,
-): ReleasedState =>
-  releasedBy(
-    successor,
-    head,
-    persisted.checkRunWatermark,
-    successor.actor === persisted.actor ? "drive" : "external",
-  );
-
-/** The held record an interrupted release leaves standing while the label is still live. */
-const heldAgain = (persisted: ReleasingState): HeldState => ({
-  phase: "held",
-  adopted: persisted.adopted === true,
-  eventId: persisted.heldEventId,
-  addedAtHead: persisted.addedAtHead,
-  actor: persisted.heldActor,
-  createdAt: persisted.heldCreatedAt,
-  checkRunWatermark: persisted.checkRunWatermark,
-});
-
-type SettledRelease =
-  | { outcome: "held"; persisted: HeldState }
-  | { outcome: "released" | "adopt" | "invisible" };
-
-/**
- * What the live label and the newest transition say about an interrupted
- * release that no exact successor explains: the hold still stands, a removal
- * we cannot attribute to this drive proves an external release (persisted so
- * fresh full CI can authorize another hold), another transition followed and
- * the live label is adopted by the caller, or the timeline has not caught up.
- */
-async function settleInterruptedRelease(
-  pr: string,
-  persisted: ReleasingState,
-  live: NonNullable<Awaited<ReturnType<typeof snapshot>>>,
-  latest: LabelTransition | null,
-  head: string,
-  sameHead: boolean,
-): Promise<SettledRelease> {
-  if (live.held && sameHead && latest?.id === persisted.heldEventId) {
-    const held = heldAgain(persisted);
-    await writeCiState(pr, held);
-    return { outcome: "held", persisted: held };
-  }
-  if (!live.held && latest?.event === "unlabeled") {
-    await writeCiState(
-      pr,
-      releasedBy(latest, head, persisted.checkRunWatermark, "external"),
-    );
-    return { outcome: "released" };
-  }
-  return { outcome: live.held ? "adopt" : "invisible" };
-}
-
-async function transitionAfter(
-  pr: string,
-  beforeId: string,
-  event: "labeled" | "unlabeled",
-  actor: string,
-): Promise<
-  Outcome<
-    { event: LabelTransition; intervening: boolean } | null,
-    HoldReadFailure["code"]
-  >
-> {
-  // GitHub's timeline can trail the label mutation briefly. Bound the retry;
-  // an unobserved event is not ownership and must never be persisted as one.
-  for await (const attempt of retryAttempts({
-    attempts: 4,
-    baseMs: 2_000,
-    maxMs: 2_000,
-    random: () => 1,
-  })) {
-    void attempt;
-    const read = await readHoldTransitions(pr, holdLabel());
-    if (!read.ok) return read;
-    const all = read.value;
-    const beforeIndex =
-      beforeId === "" ? -1 : all.findIndex((item) => item.id === beforeId);
-    if (beforeId !== "" && beforeIndex < 0) return ok(null);
-    const after = all.slice(beforeIndex + 1);
-    const observed = after.at(-1);
-    if (observed?.event === event && observed.actor === actor) {
-      return ok({ event: observed, intervening: after.length !== 1 });
-    }
-  }
-  return ok(null);
 }
 
 /** The label transition a recorded hold names, if its phase names one. */
@@ -498,7 +388,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   });
   const add = await ghCall(["pr", "edit", pr, "--add-label", holdLabel()]);
   const mutation = valueOrNull(
-    await transitionAfter(pr, beforeId, "labeled", login),
+    await transitionAfter(pr, holdLabel(), beforeId, "labeled", login),
   );
   const confirmed = await snapshot(pr);
   if (mutation?.intervening === true) {
@@ -678,6 +568,7 @@ async function release(
   ]);
   const proof = await transitionAfter(
     pr,
+    holdLabel(),
     persisted.heldEventId,
     "unlabeled",
     login,
@@ -711,7 +602,13 @@ async function release(
         restoreBefore === null
           ? null
           : valueOrNull(
-              await transitionAfter(pr, restoreBeforeId, "labeled", login),
+              await transitionAfter(
+                pr,
+                holdLabel(),
+                restoreBeforeId,
+                "labeled",
+                login,
+              ),
             );
       const restored = await snapshot(pr);
       const restoreProven = mutationProven(
