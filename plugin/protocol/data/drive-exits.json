@@ -475,6 +475,19 @@
       "cause": "environment",
       "nextOwner": "line",
       "nextStep": "The line drives it again once the forge's rate limit resets."
+    },
+    {
+      "name": "CHECK_RUNS_UNREADABLE",
+      "kind": "state",
+      "exit": 25,
+      "driveStatusExit": 25,
+      "driveExit": 25,
+      "endsDrive": true,
+      "meaning": "The head's check-runs listing could not be read whole: a page or the whole listing ran out of time, or it has more pages than a read may take. The reason names the pages read. Nothing about the pull request was judged; run the drive again, and treat a second such stop on the same head as a systematic read failure.",
+      "stop": "stopped: its head's check-runs listing could not be read whole",
+      "cause": "tool-failed",
+      "nextOwner": "line",
+      "nextStep": "The line re-drives it once for this head; a second such stop on the head is a systematic read failure for a person."
     }
   ]
 }

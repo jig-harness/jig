@@ -177,7 +177,8 @@ export type EvaluateStateName =
   | "REVIEWER_FAILED"
   | "HITL_PARKED"
   | "PR_CONFLICTING"
-  | "REVIEW_SKIPPED";
+  | "REVIEW_SKIPPED"
+  | "CHECK_RUNS_UNREADABLE";
 
 const EVALUATE_EMITTER = "drive-status.ts (lib/status/evaluate.ts)";
 
@@ -349,6 +350,24 @@ export const TERMINAL_STATES: Readonly<
         step: "Have this head reviewed, then re-arm the drive.",
         owner: "person",
         act: "Do",
+      },
+    },
+  },
+  // The head's check-runs listing ran into a deadline or its page bound
+  // (`paged-read.ts`). The reason names the pages read.
+  CHECK_RUNS_UNREADABLE: {
+    exitCode: 25,
+    category: "state",
+    terminal: true,
+    emittedBy: `${EVALUATE_EMITTER} and drive.ts (CHECK_RUNS_UNREADABLE_EXIT)`,
+    meaning:
+      "The head's check-runs listing could not be read whole: a page or the whole listing ran out of time, or it has more pages than a read may take. The reason names the pages read. Nothing about the pull request was judged; run the drive again, and treat a second such stop on the same head as a systematic read failure.",
+    report: {
+      stop: "stopped: its head's check-runs listing could not be read whole",
+      cause: "tool-failed",
+      next: {
+        step: "The line re-drives it once for this head; a second such stop on the head is a systematic read failure for a person.",
+        owner: "line",
       },
     },
   },
@@ -875,6 +894,7 @@ export type DriveExitName =
   | "TAKEN_OVER"
   | "CI_REPAIR_SPENT"
   | "CI_INFRA_PERSISTED"
+  | "CHECK_RUNS_UNREADABLE"
   | "FORGE_RATE_LIMITED";
 
 const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
@@ -899,6 +919,7 @@ const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
   "TAKEN_OVER",
   "CI_REPAIR_SPENT",
   "CI_INFRA_PERSISTED",
+  "CHECK_RUNS_UNREADABLE",
   "FORGE_RATE_LIMITED",
 ];
 

@@ -178,6 +178,10 @@ import { pullUrlMismatch, pullUrlParts } from "./lib/status/pr-url.ts";
  *                       and its review of an earlier head does not cover it
  *                       (the PR's diff changed): no review of this head will
  *                       come
+ *  25  CHECK_RUNS_UNREADABLE  [state] the head's check-runs listing ran into
+ *                       a deadline or its page bound; the reason names the
+ *                       pages read. Retried like INDETERMINATE within this
+ *                       invocation, except at the page bound, then returned
  *  11  SESSION_LEASE_HELD  [state, set outside evaluate]
  *                       another LIVE session in this working tree holds the
  *                       drive lease for this PR. Raised by whichever
@@ -328,6 +332,24 @@ const MAX_QUERY_ERRORS = 3;
  * it is absent.
  */
 const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
+
+/** The verdict's optional fields: present only when the read produced them. */
+function optionalVerdictFields(
+  report: StatusReport,
+  rateLimit: { until: string; reason: string } | null,
+) {
+  return {
+    ...(report.failure === undefined ? {} : { failure: report.failure }),
+    ...(rateLimit === null ? {} : { rateLimit }),
+  };
+}
+
+/** On `CHECK_RUNS_UNREADABLE`: what the driver records on its stop. */
+function optionalListingFields(report: StatusReport) {
+  return report.listingPagesRead === undefined
+    ? {}
+    : { listingPagesRead: report.listingPagesRead };
+}
 
 /** The advisory fields of a report that reads none of them. */
 function unreadAdvisory<Drift>(drift: Drift | null) {
@@ -927,8 +949,7 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
-          ...(report.failure === undefined ? {} : { failure: report.failure }),
-          ...(rateLimit === null ? {} : { rateLimit }),
+          ...optionalVerdictFields(report, rateLimit),
           reflectDue: advisory.reflectionDue,
           structuralEscalationDue: advisory.escalationDue,
           // The claim the last acknowledgment recorded via
@@ -1005,6 +1026,7 @@ async function main(): Promise<number> {
           failingStatusNames: report.failingStatusNames,
           failingRuns: report.failingRuns,
           failingStatuses: report.failingStatuses ?? null,
+          ...optionalListingFields(report),
         })}\n`,
       );
     } else {
@@ -1551,10 +1573,11 @@ async function main(): Promise<number> {
     // right shape for the exhausted case: it re-arms the probe, charges
     // `queryErrors`, and reports the retry class rather than a verdict.
     //
-    // `code !== 1` stays, and is semantic rather than a bound: the premise is
-    // that the evaluation DISAGREES, and an unreadable evaluation does not
-    // disagree — it says nothing. Falling through hands it to `case 1`, which
-    // is bounded and is the right answer for an unreadable read.
+    // `code !== 1` and `code !== 25` stay, and are semantic rather than a
+    // bound: the premise is that the evaluation DISAGREES, and an unreadable
+    // evaluation does not disagree — it says nothing. Falling through hands
+    // each to its named stop, which preserves the diagnostic and avoids
+    // spending more check-runs listings after their bound has been reached.
     //
     // Under `--once` it does not retract at all, it degrades on the first
     // disagreement. Retracting means re-running `evaluate()`, and `--once` is a
@@ -1562,7 +1585,7 @@ async function main(): Promise<number> {
     // since it is the only path that loops without sleeping. Deferring is the
     // same answer this gate gives everywhere else for `--once`: the caller
     // comes back, and its next pass entry sweeps.
-    if (skippedAsFinished && code !== 5 && code !== 1) {
+    if (skippedAsFinished && code !== 5 && code !== 1 && code !== 25) {
       skippedAsFinished = false;
       if (once || skipRetractions >= MAX_QUERY_ERRORS) {
         const stop = await degrade(
@@ -1700,15 +1723,23 @@ async function main(): Promise<number> {
     }
 
     switch (code) {
-      case 1: {
+      case 1:
+      case 25: {
         const limited = await stopOnForgeLimit(report.reason);
         if (limited !== null) return limited;
         // Retry an unreadable state within both the query-error limit and
         // the wall-clock deadline.
         queryErrors += 1;
-        if (once || queryErrors >= MAX_QUERY_ERRORS || !intervalFits()) {
-          await emit(1);
-          return 1;
+        // A listing over its page bound stays over it: another read only
+        // spends the forge's budget.
+        if (
+          once ||
+          report.listingAtBound === true ||
+          queryErrors >= MAX_QUERY_ERRORS ||
+          !intervalFits()
+        ) {
+          await emit(code);
+          return code;
         }
         console.error(
           `${report.reason} (attempt ${queryErrors}/${MAX_QUERY_ERRORS}); retrying`,

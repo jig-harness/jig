@@ -72,6 +72,7 @@ The same values, for a program in any language:
 | `REVIEW_SKIPPED` | state | 22 | 22 | yes | The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms. |
 | `CI_INFRA_PERSISTED` | driver-only | — | 23 | yes | The review converged, but checks kept failing on the CI service's own infrastructure after the drive re-ran them. Nothing in the code needs repair; re-arm once the service recovers. |
 | `FORGE_RATE_LIMITED` | state | 24 | 24 | yes | The forge's rate limit for the drive's credential is spent: nothing more is sent before it resets. The report names the reset (`rateLimit.until`). The driver then waits out a reset within its bound (`DRIVE_PR_RATE_LIMIT_WAIT`) and goes on, or stops on one further off. Re-arm after the reset. |
+| `CHECK_RUNS_UNREADABLE` | state | 25 | 25 | yes | The head's check-runs listing could not be read whole: a page or the whole listing ran out of time, or it has more pages than a read may take. The reason names the pages read. Nothing about the pull request was judged; run the drive again, and treat a second such stop on the same head as a systematic read failure. |
 
 <!-- /protocol:generated -->
 
@@ -131,5 +132,6 @@ fall short of its goal.
 | `REVIEW_SKIPPED` | 22 | stopped: the reviewer skipped its head and will not review it | `environment` | `person` | `Do` | Have this head reviewed, then re-arm the drive. |
 | `CI_INFRA_PERSISTED` | 23 | stopped: checks kept failing on the CI service's own infrastructure | `environment` | `line` | — | The line re-arms the drive once the CI service recovers. |
 | `FORGE_RATE_LIMITED` | 24 | stopped: the forge's rate limit for its credential is spent | `environment` | `line` | — | The line drives it again once the forge's rate limit resets. |
+| `CHECK_RUNS_UNREADABLE` | 25 | stopped: its head's check-runs listing could not be read whole | `tool-failed` | `line` | — | The line re-drives it once for this head; a second such stop on the head is a systematic read failure for a person. |
 
 <!-- /protocol:generated -->

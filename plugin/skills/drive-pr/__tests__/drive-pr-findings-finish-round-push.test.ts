@@ -369,8 +369,7 @@ describe("finish-round.ts", () => {
   // A hold this drive released on a head whose unlabel CI never ran: GitHub
   // runs no `pull_request` workflow while the PR conflicts with its base, and
   // the push waiting here is the conflict resolution. `sentinels` are the
-  // fixture switches to arm (`push-fails`, `push-resolves-conflict`,
-  // `no-mergeability`).
+  // fixture switches to arm (`push-fails`, `push-resolves-conflict`).
   const releasedWithoutUnlabelCi = (
     mergeable: string,
     sentinels: string[] = [],
@@ -447,17 +446,45 @@ describe("finish-round.ts", () => {
     expect(state.ciHold).toMatchObject({ phase: "released", eventId: "LE_2" });
   });
 
-  it("still waits for the unlabel CI on a released head GitHub can run it on, or whose mergeability it cannot read", async () => {
-    for (const [mergeable, sentinels] of [
-      ["MERGEABLE", []],
-      ["UNKNOWN", []],
-      ["CONFLICTING", ["no-mergeability"]],
-    ] as const) {
-      const r = await releasedWithoutUnlabelCi(mergeable, [...sentinels]);
-      expectSpawnExit(r, 4, `${mergeable} ${sentinels.join(" ")}`);
+  it("still waits for the unlabel CI on a released head GitHub can run it on, or whose mergeability is not yet known", async () => {
+    for (const mergeable of ["MERGEABLE", "UNKNOWN"]) {
+      const r = await releasedWithoutUnlabelCi(mergeable);
+      expectSpawnExit(r, 4, mergeable);
       expect(r.report.state).toBe("CI_HOLD_WAIT");
       expect(r.pushed).toBe("");
       expect(r.stderr).toContain("triggered by the latest unlabel");
+    }
+  });
+
+  it("stops with the named listing stop and its page count when the hold's check-runs listing is cut short", async () => {
+    const r = await finishRound({
+      fixture: { threads: [], checkRunsHang: true },
+      env: { GH_CALL_TIMEOUT: "1" },
+    });
+    expectSpawnExit(r, 25);
+    expect(r.report.state).toBe("CHECK_RUNS_UNREADABLE");
+    expect(r.report).toHaveProperty("listingPagesRead");
+    expect(r.pushed).toBe("");
+  });
+
+  it("carries the page count the hold's listing read before it was cut short into the report", async () => {
+    // The page-by-page walk, which counts the pages it read, runs only with the forge budget and a read cache.
+    const cacheDir = mkdtempSync(join(tmpdir(), "finish-round-gh-cache-"));
+    try {
+      const r = await finishRound({
+        fixture: { threads: [], checkRunsSecondPageHangs: true },
+        env: {
+          GH_CALL_TIMEOUT: "1",
+          JIG_FORGE_BUDGET: "on",
+          JIG_GH_CACHE_DIR: cacheDir,
+        },
+      });
+      expectSpawnExit(r, 25);
+      expect(r.report.state).toBe("CHECK_RUNS_UNREADABLE");
+      expect(r.report.listingPagesRead).toBe(1);
+      expect(r.pushed).toBe("");
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
     }
   });
 

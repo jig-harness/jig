@@ -35,8 +35,13 @@
  *   pages before it kept, as gh prints them; a failing first page answers
  *   exactly as a single call does;
  * - the whole read keeps the call's one deadline: each page gets what is
- *   left of it, and once it has passed no page is sent;
+ *   left of it, and once it has passed no page is sent. A caller whose
+ *   listing outgrows one call's deadline names a longer bound for the whole
+ *   read (`pagedWholeSec`): each page then keeps the call's deadline, within
+ *   what is left of that bound;
  * - past `PAGE_CAP` pages it fails as `too-costly` instead of sending more.
+ *
+ * The result says how many pages were read (`pagesRead`), however it ended.
  */
 import { apiRoute, apiRouteAt, splitHeaders } from "./github-budget.ts";
 import { nextLink } from "./github-answer.ts";
@@ -279,16 +284,18 @@ export type SendPage<T> = (argv: string[], timeoutSec: number) => Promise<T>;
 
 /**
  * Send `plan`'s pages through `send`, each admitted, observed and recorded
- * as a request of its own, within one deadline of `deadlineSec` seconds;
- * `refuse` is the result of a read stopped before a page was sent.
+ * as a request of its own: a page within `deadlineSec` seconds, the whole
+ * read within `wholeSec`; `refuse` is the result of a read stopped before a
+ * page was sent.
  */
 export async function drivePages<T extends GhRun & { stdout?: string }>(
   plan: PagePlan,
   send: SendPage<T>,
   deadlineSec: number,
   refuse: (failure: OutboundFailure) => T,
+  wholeSec: number = deadlineSec,
 ): Promise<T> {
-  const endAt = currentMs() + deadlineSec * 1000;
+  const endAt = currentMs() + wholeSec * 1000;
   const outputs: string[] = [];
   let argv = plan.first;
   let last: T | null = null;
@@ -302,8 +309,12 @@ export async function drivePages<T extends GhRun & { stdout?: string }>(
         timedOut: true,
         stdout: plan.assemble(outputs),
         stderr: `the paged read reached its deadline after ${page - 1} pages; sent no more\n`,
+        pagesRead: page - 1,
       };
-    const result = await send(argv, page === 1 ? deadlineSec : leftSec);
+    const result = await send(
+      argv,
+      page === 1 ? deadlineSec : Math.min(deadlineSec, leftSec),
+    );
     const { headers, body } = splitHeaders(
       typeof result.stdout === "string" ? result.stdout : "",
     );
@@ -313,7 +324,8 @@ export async function drivePages<T extends GhRun & { stdout?: string }>(
     outputs.push(body);
     last = answered;
     const next = plan.next(headers, body);
-    if (next === null) return { ...answered, stdout: plan.assemble(outputs) };
+    if (next === null)
+      return { ...answered, stdout: plan.assemble(outputs), pagesRead: page };
     if (page >= PAGE_CAP)
       return {
         ...refuse(
@@ -324,6 +336,7 @@ export async function drivePages<T extends GhRun & { stdout?: string }>(
           ),
         ),
         stdout: plan.assemble(outputs),
+        pagesRead: page,
       };
     argv = next;
   }
@@ -339,6 +352,10 @@ function failedPage<T extends GhRun & { stdout?: string }>(
   plan: PagePlan,
   outputs: readonly string[],
 ): T {
-  if (page === 1) return answered;
-  return { ...answered, stdout: plan.assemble([...outputs]) };
+  if (page === 1) return { ...answered, pagesRead: 0 };
+  return {
+    ...answered,
+    stdout: plan.assemble([...outputs]),
+    pagesRead: page - 1,
+  };
 }

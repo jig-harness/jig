@@ -58,7 +58,7 @@ whatever its exit, so it takes precedence over the mapping below; for the rest
 - parked: the park `8`; a stop only a person settles (`1`, `2`, `6`, `7`,
   `22` and any code the registry does not name); a person's stop (`18`,
   `19`, and a recorded stop through `drives.ts`, which names no exit); and a
-  stop the dispatcher re-drives (`9`, `12`, `14`, `15`, `21`, `23`), which a
+  stop the dispatcher re-drives (`9`, `12`, `14`, `15`, `21`, `23`, `24`), which a
   dispatcher's tick turns into stale where one runs;
 - driving: `4` and `16`, which the dispatcher re-arms, and `11` and `13`, a
   second driver refused while another drives;
