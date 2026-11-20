@@ -272,6 +272,20 @@ describe("readPrSnapshot", () => {
       () => 0,
     );
     expect(r.ok).toBe(false);
-    expect(wire.sent.length).toBeLessThanOrEqual(1);
+    expect(wire.sent).toEqual([]);
+  });
+
+  it("sends no full read after the first read spends the caller's budget", async () => {
+    wire.answer = "502";
+    const r = await readPrSnapshot(
+      "acme",
+      "widgets",
+      "7",
+      "snapshot",
+      get,
+      () => (wire.sent.length === 0 ? 5 : 0),
+    );
+    expect(r.ok).toBe(false);
+    expect(wire.sent.length).toBe(1);
   });
 });

@@ -4060,7 +4060,7 @@ take every compared value from that one document, so no guard compares a
 REST value with a GraphQL one. A failed conditional read, or a kept reading
 that is not a whole pull document, is followed by one full read (not after a
 rate limit, an auth failure or a missing pull request, which a second request
-cannot clear), both within the invocation's `--timeout`; a `null`
+cannot clear), both within the invocation's `--timeout` in a later evaluation (the first evaluation keeps each call's own deadline); a `null`
 `mergeable`, which GitHub sends while it computes mergeability, reads as
 `UNKNOWN`. `drive-status.ts` resolves a URL or branch argument to its number
 once, before the first evaluation. `await-round.ts`

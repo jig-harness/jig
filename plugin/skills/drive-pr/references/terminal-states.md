@@ -2433,7 +2433,7 @@ reading is reused; the `304` is GitHub's word, at that instant, that nothing in
 it changed. A failed conditional read, or a kept reading that is not a whole
 pull document, is followed by one full read (a rate limit, an auth failure or
 a missing pull request is not: a second request cannot clear it, so it is
-reported at once), both requests share the invocation's `--timeout`, and a read that still fails is
+reported at once), both requests share the invocation's `--timeout` in a later evaluation (the first keeps each call's own deadline, and an exhausted budget sends nothing), and a read that still fails is
 `INDETERMINATE` (a timeout, a 5xx, a rate limit or an auth blip clear, so the
 existing `MAX_QUERY_ERRORS` retry handles them). It is never taken for an
 unchanged pull request, so the evaluation that runs blind cannot be the one

@@ -141,12 +141,16 @@ export async function readPrSnapshot(
   const path = `repos/${owner}/${repo}/pulls/${pr}`;
   // One caller budget covers both requests: each reads what is left of it as
   // it starts, so a stalled first read leaves the fallback only the remainder.
+  const spent = `${path}: the caller's time budget is spent`;
   const options = (extra: { unconditional?: boolean } = {}) => {
     const left = budgetSec?.();
     return left === undefined
       ? { caller, ...extra }
-      : { caller, ...extra, timeoutSec: Math.max(1, left) };
+      : { caller, ...extra, timeoutSec: left };
   };
+  // An exhausted budget sends nothing: the transport's deadline is a whole
+  // positive number of seconds, so a request is only made with time to spend.
+  if ((budgetSec?.() ?? 1) <= 0) return { ok: false, reason: spent };
   const first = await get(path, options());
   if (first.ok) {
     const doc = parseDocument(first.body);
@@ -162,8 +166,7 @@ export async function readPrSnapshot(
   } else if (final(first)) {
     return { ok: false, reason: first.reason };
   }
-  if (budgetSec !== undefined && (budgetSec() ?? 1) <= 0)
-    return { ok: false, reason: `${path}: the caller's time budget is spent` };
+  if ((budgetSec?.() ?? 1) <= 0) return { ok: false, reason: spent };
   const full = await get(path, options({ unconditional: true }));
   if (!full.ok)
     return {
