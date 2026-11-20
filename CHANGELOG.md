@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.286.1] - 2026-11-20
+
+### Fixed
+
+- drive-pr no longer re-runs a CI job that ran past its time limit (`timeout-minutes`) and then parks it as cancelled CI, recommending another re-run that stops at the same limit. The forge reports such a job as cancelled, so drive-pr now reads the annotation the runner leaves on its check run. A job the runner stopped at its limit is a timed-out job. drive-pr repairs it as a failing check, from the same CI-repair budget, and tells the repair pass the job, its limit and how long it ran. A cancellation it cannot attribute to a time limit keeps the cancelled-CI recovery. **Consumer action:** none.
+
 ## [0.286.0] - 2026-11-19
 
 ### Added
@@ -10095,7 +10101,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.1...HEAD
+[0.286.1]: https://github.com/jig-harness/jig/compare/v0.286.0...v0.286.1
 [0.286.0]: https://github.com/jig-harness/jig/compare/v0.285.1...v0.286.0
 [0.285.1]: https://github.com/jig-harness/jig/compare/v0.285.0...v0.285.1
 [0.285.0]: https://github.com/jig-harness/jig/compare/v0.284.1...v0.285.0
