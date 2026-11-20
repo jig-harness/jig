@@ -52,6 +52,39 @@ const NOTIFY_KEYS = ["channels"];
 const CHANNEL_KEYS = ["name", "kind", "url_env", "format"];
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** A channel's name: the port's rule, and not the Orca card's. */
+function channelName(
+  value: unknown,
+  where: string,
+  taken: readonly string[],
+): Checked<string> {
+  const name = text(value, `${where}.name`);
+  if (!name.ok) return name;
+  if (name.value === ORCA_CARD)
+    return invalid(
+      `${where}.name: ${ORCA_CARD} names the Orca card the session runtime writes; choose another name`,
+    );
+  const fault = channelNameFault(name.value, taken);
+  return fault === null ? name : invalid(`${where}.name: ${fault}`);
+}
+
+/** The variable holding the address: a variable's name, never the address. */
+function addressVariable(value: unknown, where: string): Checked<string> {
+  const urlEnv = text(value, `${where}.url_env`);
+  if (!urlEnv.ok || ENV_NAME.test(urlEnv.value)) return urlEnv;
+  return invalid(
+    `${where}.url_env must name an environment variable that holds the webhook's address, never the address (its value is withheld, since it may be a credential)`,
+  );
+}
+
+/** The format, `text` when absent. */
+function webhookFormat(value: unknown, where: string): Checked<WebhookFormat> {
+  const format = value ?? "text";
+  return (WEBHOOK_FORMATS as readonly unknown[]).includes(format)
+    ? ok(format as WebhookFormat)
+    : invalid(`${where}.format must be one of ${WEBHOOK_FORMATS.join(", ")}`);
+}
+
 function channel(
   value: unknown,
   i: number,
@@ -61,34 +94,33 @@ function channel(
   if (!isMapping(value)) return invalid(`${where} must be a mapping`);
   const known = only(value, CHANNEL_KEYS, where);
   if (!known.ok) return known;
-  const name = text(value.name, `${where}.name`);
+  const name = channelName(value.name, where, taken);
   if (!name.ok) return name;
-  if (name.value === ORCA_CARD)
-    return invalid(
-      `${where}.name: ${ORCA_CARD} names the Orca card the session runtime writes; choose another name`,
-    );
-  const fault = channelNameFault(name.value, taken);
-  if (fault !== null) return invalid(`${where}.name: ${fault}`);
   if (value.kind !== "webhook")
     return invalid(`${where}.kind must be webhook, the one channel kind`);
-  const urlEnv = text(value.url_env, `${where}.url_env`);
+  const urlEnv = addressVariable(value.url_env, where);
   if (!urlEnv.ok) return urlEnv;
-  if (!ENV_NAME.test(urlEnv.value))
-    return invalid(
-      `${where}.url_env must name an environment variable that holds the webhook's address, never the address (its value is withheld, since it may be a credential)`,
-    );
-  const format = value.format ?? "text";
-  if (!(WEBHOOK_FORMATS as readonly unknown[]).includes(format))
-    return invalid(
-      `${where}.format must be one of ${WEBHOOK_FORMATS.join(", ")}`,
-    );
+  const format = webhookFormat(value.format, where);
+  if (!format.ok) return format;
   taken.push(name.value);
   return ok({
     name: name.value,
     kind: "webhook",
     urlEnv: urlEnv.value,
-    format: format as WebhookFormat,
+    format: format.value,
   });
+}
+
+/** Why a host on `runtime` that enables `notify` for a repository cannot deliver it: the process runtime writes no Orca card, so a channel must carry its notices; `null` when it can. */
+export function notifyStageFault(
+  runtime: "orca" | "process",
+  channels: readonly NotifyChannelConfig[],
+  stages: ReadonlyArray<{ stages: readonly string[] }>,
+): string | null {
+  if (runtime !== "process" || channels.length > 0) return null;
+  return stages.some((repo) => repo.stages.includes("notify"))
+    ? "repositories[].stages includes notify on runtime: process, which writes no Orca card; name a notification channel under notify.channels"
+    : null;
 }
 
 /** `notify`'s channels; none when the key is absent. */

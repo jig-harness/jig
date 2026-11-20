@@ -141,27 +141,52 @@ function answerFailure(
   );
 }
 
-/** Send once, never throwing: the answer, or the failure's class. */
-async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
+/** Why a request that never left was not sent; `null` when it may be sent. */
+function notSendable(request: HttpRequest): OutboundFailure | null {
   const address = httpAddress(request.url);
   if (!address.ok)
-    return unsent(
-      outboundFailure(
-        "invalid",
-        `${request.destination} was not sent: its address ${address.failure.reason}`,
-      ),
+    return outboundFailure(
+      "invalid",
+      `${request.destination} was not sent: its address ${address.failure.reason}`,
     );
-  if (request.signal?.aborted === true) return unsent(stoppedFirst(request));
+  return request.signal?.aborted === true ? stoppedFirst(request) : null;
+}
+
+/** The failure of a request `fetch` threw for: past its deadline or stopped (it may have arrived), or never connected. */
+function thrownFailure(
+  request: HttpRequest,
+  error: unknown,
+  signal: AbortSignal,
+  deadline: AbortSignal,
+  timeoutMs: number,
+): OutboundFailure {
+  if (!signal.aborted)
+    return outboundFailure(
+      "unreachable",
+      `${request.destination} could not be reached (${errorName(error)})`,
+    );
+  return outboundFailure(
+    "unreachable",
+    deadline.aborted
+      ? `${request.destination} gave no answer within ${timeoutMs}ms; it may have arrived`
+      : `${request.destination} was stopped before it answered; it may have arrived`,
+    { sent: true },
+  );
+}
+
+/** Send once, never throwing: the answer, or the failure's class. */
+async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
+  const refused = notSendable(request);
+  if (refused !== null) return unsent(refused);
   const timeoutMs = Math.max(1, request.timeoutMs);
   const deadline = AbortSignal.timeout(timeoutMs);
-  const signal =
-    request.signal === undefined
-      ? deadline
-      : AbortSignal.any([deadline, request.signal]);
+  const signal = AbortSignal.any(
+    request.signal === undefined ? [deadline] : [deadline, request.signal],
+  );
   const began = currentMs();
   let failure: OutboundFailure | null = null;
   try {
-    const response = await (request.fetchImpl ?? fetch)(address.value, {
+    const response = await (request.fetchImpl ?? fetch)(request.url, {
       method: request.method ?? "POST",
       headers: request.headers ?? {},
       body: request.body,
@@ -175,18 +200,7 @@ async function sendOnce(request: HttpRequest): Promise<HttpOutcome> {
       ? { ok: true, value: { status: response.status, tookMs } }
       : { ok: false, failure };
   } catch (error) {
-    failure = signal.aborted
-      ? outboundFailure(
-          "unreachable",
-          deadline.aborted
-            ? `${request.destination} gave no answer within ${timeoutMs}ms; it may have arrived`
-            : `${request.destination} was stopped before it answered; it may have arrived`,
-          { sent: true },
-        )
-      : outboundFailure(
-          "unreachable",
-          `${request.destination} could not be reached (${errorName(error)})`,
-        );
+    failure = thrownFailure(request, error, signal, deadline, timeoutMs);
     return { ok: false, failure };
   } finally {
     recordCall({

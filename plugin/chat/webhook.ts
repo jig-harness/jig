@@ -41,6 +41,7 @@ import { httpAddress, sendHttp } from "../shared/outbound/http.ts";
 import type { OutboundFailure } from "../shared/outbound/failure.ts";
 import type {
   ChannelNotice,
+  NoticeDecision,
   Delivery,
   DeliveryTime,
   DueNotice,
@@ -71,7 +72,7 @@ export interface WebhookOptions {
 }
 
 /** The longest one post may take, within the time the tick has left. */
-export const WEBHOOK_TIMEOUT_MS = 10_000;
+const WEBHOOK_TIMEOUT_MS = 10_000;
 
 /** The longest message each format sends: ntfy's message limit in bytes, Slack's practical limit for a message's text, Discord's content limit in characters. */
 const LIMITS: Readonly<Record<WebhookFormat, number>> = {
@@ -102,32 +103,42 @@ function structured(notice: ChannelNotice): boolean {
   );
 }
 
+/** One framed decision's lines: its question, the recommendation, the options. */
+function decisionLines(d: NoticeDecision): string[] {
+  const options = d.options.map((o) =>
+    o.recommended ? `${o.name} (recommended)` : o.name,
+  );
+  return [
+    `- ${d.key}: ${d.question ?? "framed on the pull request"}`,
+    ...(d.recommendation === null
+      ? []
+      : [`  Recommended: ${d.recommendation}`]),
+    ...(options.length === 0 ? [] : [`  Options: ${options.join(", ")}`]),
+  ];
+}
+
+/** A titled block of lines after a blank line; nothing when it has none. */
+function block(title: string | null, lines: string[]): string[] {
+  if (lines.length === 0) return [];
+  return title === null ? ["", ...lines] : ["", title, ...lines];
+}
+
 /** The notice's message in plain text: the structured fields where it has them, its text where it has none. */
 export function noticeMessage(notice: ChannelNotice): string {
   if (!structured(notice)) return notice.text;
-  const lines = [headline(notice.text)];
-  const decisions = notice.decisions ?? [];
-  if (decisions.length > 0) {
-    lines.push("", "Decisions:");
-    for (const d of decisions) {
-      lines.push(`- ${d.key}: ${d.question ?? "framed on the pull request"}`);
-      if (d.recommendation !== null)
-        lines.push(`  Recommended: ${d.recommendation}`);
-      if (d.options.length > 0)
-        lines.push(
-          `  Options: ${d.options.map((o) => (o.recommended ? `${o.name} (recommended)` : o.name)).join(", ")}`,
-        );
-    }
-  }
-  const acts = notice.acts ?? [];
-  if (acts.length > 0)
-    lines.push("", "To settle it:", ...acts.map((a) => `  ${a}`));
-  const where: string[] = [];
-  if (notice.address !== undefined) where.push(`Address: ${notice.address}`);
-  if (notice.links?.pullRequest !== undefined)
-    where.push(`Pull request: ${notice.links.pullRequest}`);
-  if (where.length > 0) lines.push("", ...where);
-  return lines.join("\n");
+  const link = notice.links?.pullRequest;
+  return [
+    headline(notice.text),
+    ...block("Decisions:", (notice.decisions ?? []).flatMap(decisionLines)),
+    ...block(
+      "To settle it:",
+      (notice.acts ?? []).map((a) => `  ${a}`),
+    ),
+    ...block(null, [
+      ...(notice.address === undefined ? [] : [`Address: ${notice.address}`]),
+      ...(link === undefined ? [] : [`Pull request: ${link}`]),
+    ]),
+  ].join("\n");
 }
 
 const UTF8 = new TextEncoder();
@@ -231,20 +242,87 @@ function stopsTheTick(failure: OutboundFailure): boolean {
   );
 }
 
+/** What one post went to, and how. */
+interface Post {
+  settings: WebhookSettings;
+  url: string;
+  host: string;
+  longest: number;
+  fetchImpl: typeof fetch | undefined;
+}
+
+function answer(
+  due: DueNotice,
+  outcome: Delivery["outcome"],
+  place: string | null,
+  detail: string,
+): Delivery {
+  return { key: due.notice.key, outcome, place, detail };
+}
+
+/** Post one cause, and answer for it; with the reason the channel stops for the tick, when the answer says to. */
+async function postOne(
+  post: Post,
+  c: DueNotice,
+  time: DeliveryTime,
+): Promise<{ delivery: Delivery; stop: string | null }> {
+  const left = time.timeLeftMs();
+  if (time.signal.aborted || (left !== null && left <= 0))
+    return {
+      delivery: answer(
+        c,
+        "waits",
+        null,
+        "the tick's time for delivery was spent",
+      ),
+      stop: null,
+    };
+  const { settings } = post;
+  const request = render(c, settings.format);
+  const sent = await sendHttp({
+    system: "webhook",
+    operation: `WebhookPost ${settings.format}`,
+    url: post.url,
+    destination: `the ${settings.name} webhook at ${post.host}`,
+    body: request.body,
+    headers: request.headers,
+    timeoutMs: Math.min(post.longest, left ?? post.longest),
+    signal: time.signal,
+    ...(post.fetchImpl === undefined ? {} : { fetchImpl: post.fetchImpl }),
+  });
+  if (sent.ok)
+    return {
+      delivery: answer(
+        c,
+        "sent",
+        `${settings.name} (${post.host})`,
+        `posted, HTTP ${sent.value.status}`,
+      ),
+      stop: null,
+    };
+  const { failure } = sent;
+  // Stopped before it left: not tried, so it waits rather than counting as lost.
+  const tried = failure.sent === true || !time.signal.aborted;
+  return {
+    delivery: answer(
+      c,
+      tried ? "lost" : "waits",
+      null,
+      `${failure.code}: ${failure.reason}`,
+    ),
+    stop: stopsTheTick(failure)
+      ? `not sent this tick: ${failure.reason}`
+      : null,
+  };
+}
+
 /** A webhook channel, for one repository's tick. */
 export function webhookChannel<Due extends DueNotice = DueNotice>(
   settings: WebhookSettings,
   options: WebhookOptions = {},
 ): NotificationChannel<Due> {
   const target = destinationOf(settings, options.env ?? process.env);
-  const longest = options.timeoutMs ?? WEBHOOK_TIMEOUT_MS;
   let stopped: string | null = null;
-  const answer = (
-    due: Due,
-    outcome: Delivery["outcome"],
-    place: string | null,
-    detail: string,
-  ): Delivery => ({ key: due.notice.key, outcome, place, detail });
   return {
     name: settings.name,
     unreachable: () => ("unreachable" in target ? target.unreachable : null),
@@ -254,52 +332,21 @@ export function webhookChannel<Due extends DueNotice = DueNotice>(
     ): Promise<Delivery[]> {
       if ("unreachable" in target)
         return due.map((c) => answer(c, "waits", null, target.unreachable));
-      const place = `${settings.name} (${target.host})`;
+      const post: Post = {
+        settings,
+        ...target,
+        longest: options.timeoutMs ?? WEBHOOK_TIMEOUT_MS,
+        fetchImpl: options.fetchImpl,
+      };
       const out: Delivery[] = [];
       for (const c of due) {
-        const left = time.timeLeftMs();
         if (stopped !== null) {
           out.push(answer(c, "waits", null, stopped));
           continue;
         }
-        if (time.signal.aborted || (left !== null && left <= 0)) {
-          out.push(
-            answer(c, "waits", null, "the tick's time for delivery was spent"),
-          );
-          continue;
-        }
-        const request = render(c, settings.format);
-        const sent = await sendHttp({
-          system: "webhook",
-          operation: `WebhookPost ${settings.format}`,
-          url: target.url,
-          destination: `the ${settings.name} webhook at ${target.host}`,
-          body: request.body,
-          headers: request.headers,
-          timeoutMs: Math.min(longest, left ?? longest),
-          signal: time.signal,
-          ...(options.fetchImpl === undefined
-            ? {}
-            : { fetchImpl: options.fetchImpl }),
-        });
-        if (sent.ok) {
-          out.push(
-            answer(c, "sent", place, `posted, HTTP ${sent.value.status}`),
-          );
-          continue;
-        }
-        // Stopped before it left: not tried, so it waits rather than counting as lost.
-        const tried = sent.failure.sent === true || !time.signal.aborted;
-        out.push(
-          answer(
-            c,
-            tried ? "lost" : "waits",
-            null,
-            `${sent.failure.code}: ${sent.failure.reason}`,
-          ),
-        );
-        if (stopsTheTick(sent.failure))
-          stopped = `not sent this tick: ${sent.failure.reason}`;
+        const { delivery, stop } = await postOne(post, c, time);
+        out.push(delivery);
+        stopped = stop;
       }
       return out;
     },

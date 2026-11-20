@@ -74,7 +74,11 @@ import {
 } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
-import { type NotifyChannelConfig, notifyChannels } from "./notify-config.ts";
+import {
+  type NotifyChannelConfig,
+  notifyChannels,
+  notifyStageFault,
+} from "./notify-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
@@ -565,15 +569,8 @@ function machineRepositories(
   if (!settings.ok) return settings;
   const channels = notifyChannels(top.notify);
   if (!channels.ok) return channels;
-  // The process runtime writes no Orca card: a channel must carry its notices.
-  if (
-    runtime === "process" &&
-    channels.value.length === 0 &&
-    repos.value.some((repo) => repo.stages.includes("notify"))
-  )
-    return invalid(
-      `${where}: repositories[].stages includes notify on runtime: process, which writes no Orca card; name a notification channel under notify.channels`,
-    );
+  const fault = notifyStageFault(runtime, channels.value, repos.value);
+  if (fault !== null) return invalid(`${where}: ${fault}`);
   return ok({
     runtime,
     process: settings.value,
