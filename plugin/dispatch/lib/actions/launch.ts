@@ -1,4 +1,6 @@
 /** Account admission, launch records and outcomes shared by the apply stages. */
+import { prelaunchSignIn, type SignInChecks } from "./account-sign-in.ts";
+import { SIGN_IN_TIMEOUT_SEC } from "../claude-sign-in.ts";
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
   checkIdentity,
@@ -106,6 +108,7 @@ export interface ApplyState {
   load?: LoadState;
   /** The checks run on an account before a tracker stage launches on it, and their answers this tick (`preflight.ts`). */
   preflight?: Preflight;
+  signInChecks?: SignInChecks;
 }
 
 /**
@@ -618,12 +621,19 @@ async function identityOf(
       waitsOn: "tick-deadline",
     };
   // Read afresh each time: a login file can change between two launches.
-  return checkIdentity(
-    slots.account,
-    timeoutSec,
+  const settings =
     state.runtime.name === "process"
       ? (state.machine.process ?? { envKeep: [] })
-      : undefined,
+      : undefined;
+  const identity = await checkIdentity(slots.account, timeoutSec, settings);
+  if (!identity.ok || slots.account.vendor !== "claude") return identity;
+  const remaining = timeLeftMs(state);
+  return prelaunchSignIn(
+    state,
+    slots.account,
+    identity,
+    settings,
+    remaining === null || remaining >= settleMs(SIGN_IN_TIMEOUT_SEC * 1000),
   );
 }
 

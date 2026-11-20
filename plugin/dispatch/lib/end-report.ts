@@ -25,7 +25,7 @@ import { stateRoot } from "../receipts.ts";
 import { recordReportIfNone } from "./closing-report-store.ts";
 import { isDrive, type LaunchRecord } from "./launches.ts";
 import { reportsUsageLimit } from "./pass-output.ts";
-import { startupNext } from "./session-startup.ts";
+import { startupNext, type StartupFailure } from "./session-startup.ts";
 import { stateDb } from "./state.ts";
 import { keepTranscriptCopy } from "./transcript-copy.ts";
 
@@ -33,7 +33,7 @@ import { keepTranscriptCopy } from "./transcript-copy.ts";
 export interface SeenEnd {
   code: number | null;
   signal: string | null;
-  startup?: "quota" | "unstarted";
+  startup?: StartupFailure;
   /** The wrapper stopped the pass at its deadline. */
   timedOut?: boolean;
   /** The end of the pass's output the wrapper kept, to recognise a vendor notice. */
@@ -93,6 +93,14 @@ export function wrapperReport(
       "The pass could not start: its account was at its usage limit.",
       startupNext(record.action, "quota"),
       "usage-limit",
+    );
+  if (seen?.startup === "sign-in" || seen?.startup === "breaker")
+    return report(
+      seen.startup === "sign-in"
+        ? "The vendor refused the account's sign-in."
+        : "Repeated startup failures triggered the account's backoff.",
+      startupNext(record.action, seen.startup),
+      "startup",
     );
   if (seen?.startup === "unstarted")
     return report(

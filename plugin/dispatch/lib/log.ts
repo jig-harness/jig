@@ -67,6 +67,8 @@ export const OUTCOME_CLASSES = [
   "converged",
   "merged",
   "quota wall",
+  "sign-in failure",
+  "startup breaker",
   "parked for a person",
   "arm pending",
   "stalled",
@@ -423,6 +425,19 @@ function sessionClass(
       class: "died",
       reason: `no result recorded: this host could not write it (since ${r.unwritten}); the host's health check reports the cause`,
     };
+  if (r.state.kind === "ended" && r.result === null) {
+    const { startup, signInPhrase } = r.state.exit;
+    if (startup === "sign-in")
+      return {
+        class: "sign-in failure",
+        reason: `the vendor refused its account's sign-in${signInPhrase === undefined ? "" : `: ${signInPhrase}`}; the dispatcher can start it again`,
+      };
+    if (startup === "breaker")
+      return {
+        class: "startup breaker",
+        reason: "repeated startup failures triggered the account's backoff",
+      };
+  }
   // A steward that did not submit has no outcome, even if its retained output
   // contains a Question line that the generic classifier can describe.
   if (r.record.action === "steward" && r.result === null)

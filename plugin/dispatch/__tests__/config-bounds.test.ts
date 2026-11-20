@@ -44,6 +44,16 @@ const account = (name: string, identity: string, dir = name) =>
   `  - {name: ${name}, vendor: claude, config_dir: /tmp/${dir}, identity: ${identity}}\n`;
 
 describe("the machine file's bounds", () => {
+  it("reads a positive startup breaker threshold", () => {
+    expect(machine("").startupFailureThreshold).toBe(3);
+    expect(
+      machine("startup_failure_threshold: 5\n").startupFailureThreshold,
+    ).toBe(5);
+    expect(config("startup_failure_threshold: 0\n")).toEqual(
+      invalid("startup_failure_threshold must be a positive whole number"),
+    );
+  });
+
   it("keeps a launch open beside the notices reservation", () => {
     expect(
       config(

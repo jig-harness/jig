@@ -5,6 +5,7 @@
  * receipt and makes the tick's exit `1`; what the tick launched stands, and
  * the next tick writes both again.
  */
+import { accountStartupNeeds } from "./account-startup.ts";
 import { weightReport } from "./account-report.ts";
 import { attempt, ok, type Outcome } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
@@ -395,6 +396,7 @@ function writeKept(
         receipt.runId,
         receipt.startedAt,
       );
+      fresh.needs.push(...accountStartupNeeds(machine.accounts));
       // Even a whole tick merges: another tick may have written a newer part since this one read.
       const line = withLastSlugs(
         before === null

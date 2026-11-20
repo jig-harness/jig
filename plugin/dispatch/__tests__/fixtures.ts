@@ -431,6 +431,18 @@ process.exit(0);
 const FAKE_CLAUDE = `#!/usr/bin/env bun
 const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
+if (process.argv.includes("--max-budget-usd")) {
+  const fixture = F + "/claude-sign-in";
+  const outcome = fs.existsSync(fixture) ? fs.readFileSync(fixture, "utf8") : "success";
+  if (outcome === "timeout") Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000);
+  const rejected = outcome === "unauthorized";
+  console.log(JSON.stringify({
+    is_error: rejected,
+    result: rejected ? "Failed to authenticate: OAuth session expired" : "OK",
+    total_cost_usd: 0,
+  }));
+  process.exit(rejected ? 1 : 0);
+}
 fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
   argv: process.argv.slice(2),
   cwd: process.cwd(),

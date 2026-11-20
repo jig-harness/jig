@@ -65,7 +65,7 @@ import {
 } from "./pickup-refusal.ts";
 export type { PickupRefusal, RefusedMember };
 import type { WaitFor } from "./wait-for.ts";
-import { unsettledStartups } from "./session-startup.ts";
+import * as sessionStartup from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -160,6 +160,7 @@ export interface LaunchRecord {
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
+  startupFailureThreshold?: number;
   /** For a headless pass (a drive's, a follow-up's, a pickup's): the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`, or the wrapper's own deadline on a follow-up's or a pickup's pass, which for a pickup is `dispatch.pickup_deadline`); absent on a record written before it was kept. */
   passTimeoutSec?: number | null;
   /** For a pickup: it runs as a headless pass of `do-item` through the wrapper. Absent on an interactive pickup an earlier release started. */
@@ -280,7 +281,8 @@ export interface LaunchClaim extends ProcessIdentity {
 
 export interface LaunchExit {
   context?: string;
-  startup?: "quota" | "unstarted"; // headless stop before any result or transcript
+  startup?: sessionStartup.StartupFailure;
+  signInPhrase?: sessionStartup.SignInPhrase; // only the recognised phrase
   beforeStage?: true; // process owner publication refused before spawning a stage
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
@@ -856,7 +858,8 @@ export function pruneLaunches(
   for (const id of ordinalAnchors(records)) kept.add(id);
   for (const id of relaunchAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
-  for (const id of unsettledStartups(records, settled)) kept.add(id);
+  for (const id of sessionStartup.unsettledStartups(records, settled))
+    kept.add(id);
   for (const latest of [
     latestPickups,
     latestRedrives,

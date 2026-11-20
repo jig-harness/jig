@@ -272,6 +272,10 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
           `--apply withheld, nothing was started: ${receipt.applyWithheld}`,
           "",
         ]),
+    ...(receipt.signInFallbacks ?? []).map(
+      ({ account, failure }) =>
+        `  ${account}: sign-in probe gave no answer (${failure}); using the account identity and startup breaker`,
+    ),
     ...(receipt.accountWeights ?? []).map(
       (a) =>
         `account ${a.account} weight ${a.configured ?? "unreadable"}, effective ${a.effective}: ${a.reason}${a.stages === undefined ? "" : `; serves only ${a.stages.join(", ")}`}`,

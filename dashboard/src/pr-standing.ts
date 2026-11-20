@@ -59,6 +59,8 @@ const NEED_LABEL: Record<LineNeed["cause"], string> = {
   "assigner-cannot-write": "Assigned by someone who cannot write",
   "tracker-unreachable": "An account cannot reach the repository's issues",
   "low-quota": "Quota projected to run out",
+  "account-sign-in": "An account needs to sign in again",
+  "account-startup": "An account repeatedly failed to start",
 };
 
 const KIND_TONE: Record<StandingKind, StandingTone> = {

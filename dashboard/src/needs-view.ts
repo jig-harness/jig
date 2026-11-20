@@ -109,12 +109,15 @@ function recordedWord(n: LineNeed, tracker: Tracker): string {
   if (n.cause === "assigner-cannot-write") return "assigner cannot write";
   if (n.cause === "tracker-unreachable")
     return `${itemWords(tracker).name ?? "issues"} unreachable`;
+  if (n.cause === "account-sign-in") return "sign-in refused";
+  if (n.cause === "account-startup") return "repeated startup failures";
   return n.cause;
 }
 
 /** What a card with no link says; a need of the host's names an account, which no item links. */
 function noLinkOf(n: LineNeed, tracker: Tracker): string | null {
-  if (n.url !== null || n.cause === "tracker-unreachable") return null;
+  if (n.url !== null || n.repo === "host" || n.cause === "tracker-unreachable")
+    return null;
   return noLinkText(n.repo, n.target, tracker);
 }
 

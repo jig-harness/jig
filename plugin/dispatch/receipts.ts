@@ -79,6 +79,7 @@ export interface TickReceipt {
   applyWithheld?: string;
   /** The machine file's accounts a drive's pass is never admitted on, and why: a vendor with no documented pass command, a Codex account while the pass deadline is `0`. */
   accountsNotAdmitted?: NotAdmitted[];
+  signInFallbacks?: { account: string; failure: string }[];
   accountWeights?: import("./lib/account-report.ts").AccountWeightReport[];
   /** The accounts that serve each launching stage; absent from older receipts and runs without a machine file. */
   stageAccounts?: Record<

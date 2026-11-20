@@ -160,6 +160,7 @@ export interface MachineConfig {
   accounts: MachineAccount[];
   intervalMs: number;
   wallBackoffMs: number;
+  startupFailureThreshold?: number;
   runtimeTimeoutMs: number;
   workspaceTimeoutMs: number;
   /** Workspace opens per tick, including the reserved notices open. */
@@ -220,6 +221,7 @@ const TOP_KEYS = [
   "accounts",
   "interval",
   "wall_backoff",
+  "startup_failure_threshold",
   "runtime_timeout",
   "workspace_timeout",
   "opens_per_tick",
@@ -650,6 +652,7 @@ function limits(
     MachineConfig,
     | "intervalMs"
     | "wallBackoffMs"
+    | "startupFailureThreshold"
     | "runtimeTimeoutMs"
     | "workspaceTimeoutMs"
     | "opensPerTick"
@@ -671,6 +674,12 @@ function limits(
     DEFAULTS.wallBackoffMs,
   );
   if (!wallBackoffMs.ok) return wallBackoffMs;
+  const startupFailureThreshold = count(
+    top.startup_failure_threshold,
+    "startup_failure_threshold",
+    3,
+  );
+  if (!startupFailureThreshold.ok) return startupFailureThreshold;
   const runtimeTimeoutMs = optionalDuration(
     top.runtime_timeout,
     "runtime_timeout",
@@ -716,6 +725,7 @@ function limits(
   return ok({
     intervalMs: intervalMs.value,
     wallBackoffMs: wallBackoffMs.value,
+    startupFailureThreshold: startupFailureThreshold.value,
     runtimeTimeoutMs: runtimeTimeoutMs.value,
     workspaceTimeoutMs: workspaceTimeoutMs.value,
     opensPerTick: opensPerTick.value,

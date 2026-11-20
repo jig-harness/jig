@@ -256,6 +256,8 @@ export const CAUSE_ICONS = {
   "assigner-cannot-write": is(UserRoundX, "assigner-cannot-write"),
   "tracker-unreachable": is(Unplug, "issues unreachable"),
   "low-quota": is(Gauge, "low-quota"),
+  "account-sign-in": is(UserRoundX, "sign-in refused"),
+  "account-startup": is(TriangleAlert, "repeated startup failures"),
 } satisfies Record<NeedCause, IconWord>;
 
 export const EVERYONE_ICONS = {

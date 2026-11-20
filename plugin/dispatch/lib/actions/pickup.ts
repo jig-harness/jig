@@ -309,6 +309,7 @@ async function launchOne(
     vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    startupFailureThreshold: state.machine.startupFailureThreshold ?? 3,
     passTimeoutSec: deadlineSec(ctx),
     ...codexLaunchFields(state.codexOptIn),
     headless: true,

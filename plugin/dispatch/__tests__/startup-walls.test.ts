@@ -149,6 +149,27 @@ describe("which stages recognise a startup", () => {
     },
   );
 
+  it.each([
+    { action: "pickup", headless: true },
+    { action: "steward" },
+    { action: "followup" },
+  ])("recognises the vendor sign-in failure in a %o transcript", (fields) => {
+    const record = recordOf(fields);
+    const project = join(record.configDir, "projects", "repo");
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(project, `${record.sessionId}.jsonl`),
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"Failed to authenticate: OAuth session expired and could not be refreshed"}]}}\n',
+    );
+    const started = Date.now() - 10_000;
+    expect(failedStartup(record, 1, started, "", started + 5_000)).toBe(
+      "sign-in",
+    );
+    expect(
+      failedStartup(record, 1, started, "", started + 60_001),
+    ).toBeUndefined();
+  });
+
   it.each([{ action: "pickup" }, { action: "rearm" }])(
     "leaves a %o session to the stage that runs it",
     (fields) => {

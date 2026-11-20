@@ -59,6 +59,12 @@ version: 1
 # Fields of the separate dispatcher machine file. These are never read
 # from the repository configuration above.
 machine_fields:
+  startup_failure_threshold:
+    type: integer
+    min: 1
+    default: 3
+    read_by: [dispatch]
+    since: next
   load.validation:
     type: number
     # The smallest positive JavaScript number makes zero invalid.

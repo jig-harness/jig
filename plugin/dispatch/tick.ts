@@ -110,6 +110,7 @@ import { dropRepeatedScopeFailures } from "./lib/sources/scope-failures.ts";
 import { processRuntime } from "./lib/runtime/process.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
+import { signInFallbackReport } from "./lib/actions/account-sign-in.ts";
 import { applyState } from "./lib/tick-apply.ts";
 import { loadReport } from "./lib/load.ts";
 import { readTickLoad } from "./lib/tick-load.ts";
@@ -680,6 +681,7 @@ async function closeTick(
   await routeReflection(receipt, context);
   receipt.exitStatus =
     failed || !copied || settleFailed || withheld !== undefined ? 1 : 0;
+  Object.assign(receipt, signInFallbackReport(context.apply?.signInChecks));
   const held = [...heldSystems()].map(([system, f]) => ({
     system,
     class: f.code,

@@ -72,6 +72,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       value.followupWithinMs,
       value.accountLaunchOrdinal,
       value.rearmRequestId,
+      value.startupFailureThreshold,
     ].every(optionalPositiveInteger) &&
     optionalBooleans(value, [
       "rearmConsumed",
