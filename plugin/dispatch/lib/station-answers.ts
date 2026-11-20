@@ -442,9 +442,9 @@ function carryOf(
   decision: LineDecision,
   counted: PendingAnswer,
 ): CarriedAnswer | null {
-  return step !== undefined && STARTS_SESSION.has(step)
-    ? carriedOf(decision, counted)
-    : null;
+  if (step === undefined || !STARTS_SESSION.has(step)) return null;
+  const carried = carriedOf(decision, counted);
+  return carried === null ? null : { ...carried, step };
 }
 
 /** Run the counted answer's step once, and keep how it ended. */

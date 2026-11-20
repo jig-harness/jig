@@ -539,6 +539,36 @@ describe("a release carry an earlier version persisted", () => {
     expect(takeCarried(SLUG, "PR #12", "r-1", dir)?.option).toBe("Other");
     expect(takeCarried(SLUG, "PR #12", "r-2", dir)).toBeNull();
   });
+
+  it("hands on a session-framed option that shares the release option's name", () => {
+    const dir = root();
+    const digest = "d3";
+    claimAnswer(
+      {
+        repo: SLUG,
+        target: "PR #12",
+        key: `pickup-${digest}`,
+        digest,
+        answer: "c 3",
+        author: "maintainer",
+        option: "Release the claim",
+      },
+      {
+        question: "q?",
+        option: "Release the claim",
+        recommended: false,
+        changes: "",
+        costs: "",
+        by: "maintainer",
+        url: `https://github.com/${SLUG}/pull/12#issuecomment-3`,
+        step: "session",
+      },
+      dir,
+    );
+    expect(takeCarried(SLUG, "PR #12", "r-1", dir)?.option).toBe(
+      "Release the claim",
+    );
+  });
 });
 
 describe("settleStationAnswers on an item of another tracker", () => {

@@ -29,6 +29,8 @@ export interface CarriedAnswer {
   note?: string;
   by: string;
   url: string;
+  /** The step that carried it; absent from carries an earlier version kept. */
+  step?: string;
 }
 
 /** One answer the tick acted on, as its row reads. */
@@ -190,7 +192,8 @@ export function isCarriedAnswer(value: unknown): value is CarriedAnswer {
       (k) => typeof value[k] === "string",
     ) &&
     typeof value.recommended === "boolean" &&
-    (value.note === undefined || typeof value.note === "string")
+    (value.note === undefined || typeof value.note === "string") &&
+    (value.step === undefined || typeof value.step === "string")
   );
 }
 
@@ -215,10 +218,15 @@ export function takeCarried(
       )
       .all(repo, target) as { rowid: number; carry: string }[];
     // A release the tick carried out whole is no task for the next session:
-    // carries an earlier version persisted for it are passed over.
-    const found = rows.find(
-      (r) => carriedOf(r.carry)?.option !== STATION_OPTIONS.release.name,
-    );
+    // carries an earlier version persisted for it are passed over. Only a
+    // carry with no recorded step is judged by its option's name; one that
+    // names its step (a session-framed option may share the name) is not.
+    const found = rows.find((r) => {
+      const c = carriedOf(r.carry);
+      return c?.step === undefined
+        ? c?.option !== STATION_OPTIONS.release.name
+        : c.step !== "release";
+    });
     if (found === undefined) return null;
     db.query("UPDATE station_answers SET consumed_by = ? WHERE rowid = ?").run(
       record,
