@@ -131,15 +131,22 @@ export function isKeyList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
-/** An ancestor chain carried as JSON evidence; `undefined` when absent or not a list of keys. */
-export function ancestorsOf(value: unknown): string[] | undefined {
-  if (typeof value !== "string") return undefined;
+/** An ancestor chain carried as JSON evidence; `undefined` when absent. */
+export function ancestorsOf(
+  value: unknown,
+): Outcome<string[] | undefined, "invalid"> {
+  if (value === undefined) return ok(undefined);
+  if (typeof value !== "string")
+    return failed("invalid", "ancestor evidence is not text");
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(value);
-    return isKeyList(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
+    parsed = JSON.parse(value);
+  } catch (error) {
+    return failed("invalid", "ancestor evidence is not JSON", error);
   }
+  return isKeyList(parsed)
+    ? ok(parsed)
+    : failed("invalid", "ancestor evidence is not a list of keys");
 }
 
 /** Evidence is parsed as data before it reaches a launch or shell command. */

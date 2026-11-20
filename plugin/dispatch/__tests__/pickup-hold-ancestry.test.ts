@@ -25,7 +25,7 @@ import {
 } from "../lib/person-pickup-holds.ts";
 import type { PickupReads } from "../lib/pickup-reads.ts";
 import { planPickups } from "../lib/plan-pickups.ts";
-import { batchItemsOf } from "../lib/queue-batch.ts";
+import { ancestorsOf, batchItemsOf } from "../lib/queue-batch.ts";
 import { readServedPickups } from "../lib/sources/served.ts";
 import { closeStateDb } from "../lib/state.ts";
 import type { Action, DispatchSection } from "../lib/types.ts";
@@ -117,6 +117,8 @@ function recordOf(action: Action): LaunchRecord {
   const batch = batchItemsOf(action.evidence.batchItems);
   expect(batch.ok).toBe(true);
   const members = batch.ok ? batch.value : undefined;
+  const chain = ancestorsOf(action.evidence.ancestors);
+  expect(chain.ok).toBe(true);
   return {
     version: 1,
     id: "20261120T090000Z-aaaaaaaa",
@@ -141,7 +143,7 @@ function recordOf(action: Action): LaunchRecord {
     released: false,
     command: null,
     marker: null,
-    ...servedEvidence(action),
+    ...servedEvidence(action, chain.ok ? chain.value : undefined),
     ...(members === undefined ? {} : { batchItems: members }),
   };
 }
@@ -242,6 +244,16 @@ groups:
     expect(personPickupBlock(read as LaunchRecord, root)).toStartWith(
       "#1 is held by operator",
     );
+  });
+
+  it("reads a planned chain as data and refuses one that is not a list of keys", () => {
+    expect(ancestorsOf(undefined)).toEqual({ ok: true, value: undefined });
+    expect(ancestorsOf('["#1","#2"]')).toEqual({
+      ok: true,
+      value: ["#1", "#2"],
+    });
+    for (const bad of ["#1", '"#1"', "[1]", 7])
+      expect(ancestorsOf(bad).ok).toBe(false);
   });
 
   it("refuses to read a record whose ancestor chain is not a list of keys", () => {

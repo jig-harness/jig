@@ -249,7 +249,9 @@ async function launchOne(
   };
   const beforeBatch = await checkBatch();
   if (beforeBatch !== null) return waits(action, beforeBatch);
-  const served = servedEvidence(action);
+  const chain = ancestorsOf(action.evidence.ancestors);
+  if (!chain.ok) return waits(action, chain.failure.reason);
+  const served = servedEvidence(action, chain.value);
   const before = await changed(state, repo, ctx, action.target, served);
   if ("why" in before) return waits(action, before.why);
   const admitted = await admitAccount(
@@ -346,7 +348,10 @@ async function startOrReturn(
 }
 
 /** The optional served-item facts which a pickup preserves in its launch record. */
-export function servedEvidence(action: Action): {
+export function servedEvidence(
+  action: Action,
+  ancestors: string[] | undefined,
+): {
   pooled?: boolean;
   servedPerson?: string;
   ancestorEpic?: string;
@@ -356,7 +361,6 @@ export function servedEvidence(action: Action): {
 } {
   const { ancestorEpic, factoryAncestor, blockingFor, servedPerson, pooled } =
     action.evidence;
-  const ancestors = ancestorsOf(action.evidence.ancestors);
   return {
     ...(pooled === true ? { pooled: true } : {}),
     ...(typeof servedPerson === "string" ? { servedPerson } : {}),
