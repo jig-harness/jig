@@ -1363,11 +1363,12 @@ writer on that host must
 use the admission check for the limit to apply across test runs.
 
 `jig doctor gc` reports the registry count and the free inode share of the
-filesystem containing Jig's state directory. An inode is a filesystem record
-needed for each file or directory. An over-limit registry or less than 10%
-free inodes fails the check and raises a host need in the dispatch dashboard.
-The inode check is skipped when the filesystem does not report an inode
-count. A scheduled collector that can only report an over-limit registry
+filesystem containing Jig's state directory. An
+[inode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#inode) is a
+filesystem record needed for each file or directory. An over-limit registry or
+less than 10% free inodes fails the check and raises a host need in the dispatch
+dashboard. The inode check is skipped when the filesystem does not report an
+inode count. A scheduled collector that can only report an over-limit registry
 exits with a failure receipt.
 
 The `worktrees` kind bounds each pull request lookup with
