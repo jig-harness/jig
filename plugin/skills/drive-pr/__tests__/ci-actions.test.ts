@@ -15,6 +15,21 @@ import {
 import type { StateStore } from "../scripts/lib/state/store.ts";
 
 describe("additive CI telemetry", () => {
+  it("keeps a ledger readable when optional reviewer evidence is malformed", () => {
+    expect(
+      isOptionalEvents([
+        {
+          at: "2026-11-20T00:00:00.000Z",
+          round: 1,
+          kind: "stop",
+          cause: "1",
+          reviewerHead: "not-a-commit",
+          reviewerApp: 42,
+        },
+      ]),
+    ).toBe(true);
+  });
+
   it("records bounded telemetry without changing the control events older readers validate", async () => {
     let state = freshState(999);
     const store = {

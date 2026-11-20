@@ -92,17 +92,6 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
       v.listingPages,
       Number.isSafeInteger(v.listingPages) && (v.listingPages as number) >= 0,
     ) &&
-    stopOnly(
-      v.kind,
-      v.reviewerHead,
-      typeof v.reviewerHead === "string" &&
-        /^[0-9a-f]{40}$/.test(v.reviewerHead),
-    ) &&
-    stopOnly(
-      v.kind,
-      v.reviewerApp,
-      typeof v.reviewerApp === "string" && /^[a-z0-9-]+$/i.test(v.reviewerApp),
-    ) &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
     stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
   );
