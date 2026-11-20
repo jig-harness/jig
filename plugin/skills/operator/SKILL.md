@@ -264,8 +264,8 @@ creation (Linear: its first three minutes), the dispatcher never sees an
 assignment made then, so the send waits until that window has passed and
 then writes; its `note` row names the time. Run such a send with the
 command tool's timeout above four minutes. An item already assigned to the
-factory identity whose history holds no assignment of it is refused with the
-remedy: the person unassigns it on the tracker and sends again. The send
+factory identity whose history does not show who made the assignment (none
+recorded, or one made by an automation) is refused with the remedy: the person unassigns it on the tracker and sends again. The send
 never changes an existing assignment.
 
 `resume` names the directive it withdraws: `resume pause`, `resume
