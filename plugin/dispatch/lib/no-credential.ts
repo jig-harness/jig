@@ -24,6 +24,7 @@ import {
 import {
   type MissingCredential,
   missingCredentialMessage,
+  missingCredentials,
   notedMissingCredentials,
 } from "../../shared/outbound/missing-credential.ts";
 import { issueService } from "../../shared/tracker-product.ts";
@@ -40,6 +41,8 @@ export interface NoCredential {
   remedy: string;
   /** What the client answered, when one was asked. */
   answer?: string;
+  /** Set when a later call of the tick had a credential: the incident is history, and neither the exit nor the line's kept part follow it. */
+  recovered?: true;
   /** The repositories whose tracker it is, by slug (by path when the forge did not name one). */
   repos: string[];
 }
@@ -79,6 +82,7 @@ function settleReport(report: RepoReport, missing: MissingCredential): boolean {
 export function settleNoCredential(receipt: TickReceipt): void {
   const missing = notedMissingCredentials();
   if (missing.length === 0) return;
+  const active = new Set(missingCredentials().map((m) => m.system));
   receipt.noCredential = missing.map((m) => {
     const repos = receipt.repos.flatMap((report) =>
       settleReport(report, m) ? [report.slug ?? report.path] : [],
@@ -92,6 +96,7 @@ export function settleNoCredential(receipt: TickReceipt): void {
       reason: m.reason,
       remedy: m.remedy,
       ...(m.answer === undefined ? {} : { answer: m.answer }),
+      ...(active.has(m.system) ? {} : { recovered: true as const }),
       repos,
     };
   });
@@ -99,10 +104,16 @@ export function settleNoCredential(receipt: TickReceipt): void {
 
 /** The exit of a tick that had no credential for a tracker: the `unauthorized` class's; `null` for a tick that had every one. */
 export function noCredentialExit(receipt: TickReceipt): number | null {
-  return receipt.noCredential === undefined ? null : EXIT_OF_CLASS.unauthorized;
+  return (receipt.noCredential ?? []).some((n) => n.recovered !== true)
+    ? EXIT_OF_CLASS.unauthorized
+    : null;
 }
 
 /** The trackers the tick had no credential for, by adapter, each with its reason: what the line marks a kept part with. */
 export function keylessSystems(receipt: TickReceipt): Map<string, string> {
-  return new Map((receipt.noCredential ?? []).map((n) => [n.system, n.reason]));
+  return new Map(
+    (receipt.noCredential ?? [])
+      .filter((n) => n.recovered !== true)
+      .map((n) => [n.system, n.reason]),
+  );
 }

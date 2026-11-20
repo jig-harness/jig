@@ -147,7 +147,7 @@ export async function throughCredential<T>(
     if (out === undefined) break;
     // A caller that cancels stops waiting and sends on its own, so its call fails at once by its own signal.
     if (signal?.aborted === true) return send();
-    await Promise.race([out.catch(() => undefined), aborted(signal)]);
+    await waitFor(out, signal);
   }
   const done = Promise.withResolvers<void>();
   first.set(identity, done.promise);
@@ -162,12 +162,26 @@ export async function throughCredential<T>(
   }
 }
 
-/** Resolves when `signal` aborts; never when there is none. */
-function aborted(signal: AbortSignal | undefined): Promise<void> {
-  if (signal === undefined) return new Promise(() => undefined);
-  return new Promise((resolve) =>
-    signal.addEventListener("abort", () => resolve(), { once: true }),
-  );
+/** Resolves when `out` settles or `signal` aborts, and leaves no listener on `signal` behind. */
+async function waitFor(
+  out: Promise<void>,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (signal === undefined) return out.catch(() => undefined);
+  const stop = new AbortController();
+  try {
+    await Promise.race([
+      out.catch(() => undefined),
+      new Promise<void>((resolve) =>
+        signal.addEventListener("abort", () => resolve(), {
+          once: true,
+          signal: stop.signal,
+        }),
+      ),
+    ]);
+  } finally {
+    stop.abort();
+  }
 }
 
 /** A call went out and was answered with a credential: the identity is known to have one, and an expired note no longer counts as active. */

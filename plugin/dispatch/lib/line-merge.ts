@@ -153,6 +153,10 @@ export function mergeLine(
           ...(before?.trackerKept === undefined
             ? {}
             : { trackerKept: before.trackerKept }),
+          // The kept cards stay tied to the tracker they were read from, which a keyless tick compares.
+          ...(now.tracker == null && before?.tracker != null
+            ? { tracker: before.tracker }
+            : {}),
           triedAt: now.triedAt ?? fresh.startedAt,
         },
       ];

@@ -137,3 +137,33 @@ test("a logged-in client's calls are labelled as the client's own login, never a
   expect(text).toContain("linear the `linear` client's own login TrackerTeam");
   expect(text).not.toContain(client);
 });
+
+test("a caller that waited for the first call leaves no abort listener on its signal", async () => {
+  const { getEventListeners } = await import("node:events");
+  const { throughCredential } = await import(
+    "../outbound/missing-credential.ts"
+  );
+  const controller = new AbortController();
+  const gate = Promise.withResolvers<void>();
+  const refuse = () => Promise.reject(new Error("refused"));
+  const firstCall = throughCredential(
+    "linear:leak-test",
+    async () => {
+      await gate.promise;
+      return 1;
+    },
+    refuse,
+  );
+  const waiter = throughCredential(
+    "linear:leak-test",
+    async () => 2,
+    refuse,
+    () => false,
+    controller.signal,
+  );
+  await Promise.resolve();
+  expect(getEventListeners(controller.signal, "abort")).toHaveLength(1);
+  gate.resolve();
+  await Promise.all([firstCall, waiter]);
+  expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+});

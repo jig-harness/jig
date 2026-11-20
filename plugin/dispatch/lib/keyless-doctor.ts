@@ -25,6 +25,8 @@ const WINDOW_MS = 24 * 3_600_000;
 const CALLERS_SHOWN = 10;
 /** The most receipts the check opens: the newest keyless ticks, and one credentialed tick per repository. */
 const RECEIPTS_READ = 50;
+/** The most receipt files the whole check opens, keyless ticks and recovery candidates together; evidence past it stays unresolved. */
+const RECEIPTS_BUDGET = 200;
 const TICK = /^tick:(\d{4}-\d{2}-\d{2}T[\d-]+Z-\d+-[a-f\d]{8})$/;
 
 /** One reason and repository's keyless ticks. */
@@ -65,20 +67,40 @@ function receiptsUnreadable(root: string): string | null {
   }
 }
 
-/** The receipt of the tick `runId`, kept under the day it started. */
-function receiptOf(root: string, runId: string): TickReceipt | null {
-  return readReceipt(
-    join(root, "receipts", runId.slice(0, 10), `${runId}.json`),
+/** Receipts read once per check, by run id, with how many files the check may still open. */
+interface Receipts {
+  root: string;
+  cache: Map<string, TickReceipt | null>;
+  budget: number;
+}
+
+/** The receipt of the tick `runId`, kept under the day it started; `undefined` once the budget is spent and it was not read before. */
+function receiptOf(
+  receipts: Receipts,
+  runId: string,
+): TickReceipt | null | undefined {
+  if (receipts.cache.has(runId)) return receipts.cache.get(runId);
+  if (receipts.budget <= 0) return undefined;
+  receipts.budget -= 1;
+  const receipt = readReceipt(
+    join(receipts.root, "receipts", runId.slice(0, 10), `${runId}.json`),
   );
+  receipts.cache.set(runId, receipt);
+  return receipt;
 }
 
 /** The `noCredential` entries `receipt` carries, or why they cannot be trusted: a field that is not a list, or an entry that is not a system's missing credential with its repositories. */
 function keylessEntries(
   receipt: TickReceipt | null,
+  keyless = true,
 ): { entries: NoCredential[] } | { why: string } {
   if (receipt === null) return { why: "its receipt is missing or unreadable" };
   const field: unknown = receipt.noCredential;
-  if (field === undefined) return { entries: [] };
+  // A run the ledger kept under no credential owes the field; a credentialed one does not carry it.
+  if (field === undefined)
+    return keyless
+      ? { why: "its receipt names no noCredential" }
+      : { entries: [] };
   if (!Array.isArray(field)) return { why: "its noCredential is not a list" };
   for (const e of field as unknown[]) {
     const m = e as Partial<NoCredential> | null;
@@ -93,6 +115,11 @@ function keylessEntries(
     )
       return { why: "an entry of its noCredential is malformed" };
   }
+  if (
+    field.length === 0 ||
+    (field as NoCredential[]).every((e) => e.repos.length === 0)
+  )
+    return { why: "its noCredential names no repository" };
   return { entries: field as NoCredential[] };
 }
 
@@ -108,7 +135,7 @@ function readTracker(
 ): boolean {
   if (receipt === null) return false;
   if (
-    "why" in keylessEntries(receipt) ||
+    "why" in keylessEntries(receipt, false) ||
     (receipt.noCredential ?? []).some(
       (n) => n.system === system && n.repos.includes(repo),
     )
@@ -121,6 +148,7 @@ function readTracker(
         (rec) =>
           rec.record === "tracker" &&
           rec.ok &&
+          typeof rec.source === "string" &&
           rec.source.startsWith(`${system} `),
       ),
   );
@@ -173,11 +201,20 @@ export function keylessCheck(opts: {
       detail: `${keylessRuns.length} tick${keylessRuns.length === 1 ? "" : "s"} in the last 24 hours ran without a tracker credential, and their receipts could not be read: ${unreadable}`,
       fix: `make ${join(root, "receipts")} readable, then run jig doctor again`,
     };
+  const receipts: Receipts = {
+    root,
+    cache: new Map(),
+    budget: RECEIPTS_BUDGET,
+  };
   const groups = new Map<string, Keyless>();
   // Ticks whose receipt could not be read stay unresolved failures, named with what was wrong.
   const unresolved: string[] = [];
   for (const runId of keylessRuns.slice(0, RECEIPTS_READ)) {
-    const found = keylessEntries(receiptOf(root, runId));
+    const receipt = receiptOf(receipts, runId);
+    const found =
+      receipt === undefined
+        ? { why: "its receipt was not opened: the read budget was spent" }
+        : keylessEntries(receipt);
     if ("why" in found) {
       unresolved.push(`tick:${runId} (${found.why})`);
       continue;
@@ -213,7 +250,10 @@ export function keylessCheck(opts: {
     return credentialed(g.system)
       .filter((run) => run > newest)
       .slice(0, RECEIPTS_READ)
-      .some((run) => readTracker(receiptOf(root, run), g.system, g.repo));
+      .some((run) => {
+        const receipt = receiptOf(receipts, run);
+        return receipt !== undefined && readTracker(receipt, g.system, g.repo);
+      });
   };
   const all = [...groups.values()];
   const since = new Map(all.map((g) => [g, recovered(g)]));

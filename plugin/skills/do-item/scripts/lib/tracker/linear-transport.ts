@@ -687,6 +687,12 @@ function dispatchTagged(
 /** The CLI hides its credential, so its dispatch snapshots live for this process only. */
 const CLI_DISPATCH_SESSION = randomUUID();
 
+/** The signal a credential wait observes: the caller's, and one call's deadline from now. */
+function waitSignal(signal: AbortSignal | undefined): AbortSignal {
+  const deadline = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
+  return signal === undefined ? deadline : AbortSignal.any([deadline, signal]);
+}
+
 /**
  * Transport through the `linear` command-line client (`linear api`), which
  * keeps its own credential. Variables travel as JSON so a string that looks
@@ -733,7 +739,8 @@ export function cliTransport(
           ),
         (keyless) => refusedKeyless(keyless, query),
         () => signal?.aborted === true,
-        signal,
+        // A caller waiting for the first call stops at one call's deadline.
+        waitSignal(signal),
       ),
     credentialKey("linear", `cli:${bin}:${CLI_DISPATCH_SESSION}`),
     false,
