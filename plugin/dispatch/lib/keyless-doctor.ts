@@ -45,11 +45,11 @@ function named(items: readonly string[]): string {
   return more > 0 ? `${shown} and ${more} more` : shown;
 }
 
-/** The run ids the ledger's rows name as tick callers, newest first. */
 // Code-unit order, so run ids and callers sort the same on every host.
 const byCodeUnit = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
 
+/** The run ids the ledger's rows name as tick callers, newest first. */
 function tickRuns(rows: readonly LedgerRow[]): string[] {
   const runs = new Set(
     rows.flatMap((r) => {
@@ -184,7 +184,7 @@ export function keylessCheck(opts: {
     ...new Set(
       keylessRows.filter((r) => !TICK.test(r.caller)).map((r) => r.caller),
     ),
-  ].sort();
+  ].sort(byCodeUnit);
   if (keylessRuns.length === 0)
     return others.length === 0
       ? {
