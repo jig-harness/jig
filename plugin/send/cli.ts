@@ -32,6 +32,7 @@
  * `answer` verb's alone (`lib/answer-request.ts`).
  */
 import { ExitError } from "../shared/cli.ts";
+import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { formatAddress, parseAddress } from "../shared/address.ts";
 import { launchOf, LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import {
@@ -248,6 +249,45 @@ async function planFor(
       });
     default:
       return planMailbox(ctx, request, login.value, writesAs);
+  }
+}
+
+/**
+ * Hold the target at `address` as `jig send <address> hold` does, under the
+ * same checks, without printing its plan or waking the tick: `held` once
+ * the hold is written, `already` when a pull request already carries its
+ * hold label (a pickup's local hold keeps its first holder on a repeat).
+ * `jig dispatch attach --take-over` holds a run's target through it.
+ */
+export async function holdTarget(
+  address: string,
+): Promise<Outcome<"held" | "already", "refused">> {
+  try {
+    const written = parseAddress(address);
+    if (!written.ok) return failed("refused", written.failure.reason);
+    const { station } = written.value;
+    const pickup = station === "pickup";
+    const request = parseRequest(station, ["hold"], usage);
+    const refusedHere = standing(request);
+    if (refusedHere !== null) return failed("refused", refusedHere);
+    const strict = () => resolveAddress(address, undefined, usage, pickup);
+    const resolved = strict();
+    const planned = await planFor(resolved, strict, request, undefined, false);
+    if (!planned.ok) {
+      // A release that would be taken is a hold that stands.
+      const release = parseRequest(station, ["release"], usage);
+      if (
+        !pickup &&
+        (await planFor(resolved, strict, release, undefined, true)).ok
+      )
+        return ok("already");
+      return planned;
+    }
+    const wrote = await planned.value.write();
+    return wrote.ok ? ok("held") : failed("refused", wrote.failure.reason);
+  } catch (error) {
+    if (error instanceof ExitError) return failed("refused", error.message);
+    throw error;
   }
 }
 

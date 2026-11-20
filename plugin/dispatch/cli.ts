@@ -16,6 +16,7 @@
  * it runs; `jig dispatch log` prints the outcome log as text; `jig dispatch
  * line --json` prints the newest tick's line as the dashboard serves it;
  * `jig dispatch clear` removes a launch record only a person can settle;
+ * `jig dispatch attach` follows a process run's output or takes the run over;
  * `jig dispatch probe` reads the forge for what changed since the last probe
  * and, with `--apply`, wakes those repositories' ticks.
  */
@@ -49,6 +50,7 @@ import {
   dashboardStatus,
   scheduledDashboard,
 } from "./dashboard-install.ts";
+import { attachMain } from "./attach.ts";
 import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
 import { installLabels } from "./install-labels.ts";
@@ -390,6 +392,23 @@ const clear = command(
   },
 );
 
+const attach = command(
+  "attach",
+  object({
+    action: constant("attach"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record of the process run.`,
+    }),
+    takeOver: option("--take-over", {
+      description: message`Hold the run's target in your name, stop the run, record its end as yours and print the command that resumes its session.`,
+    }),
+  }),
+  {
+    brief: message`Watch a process run's output until it ends, or take the run over.`,
+    description: message`Prints the run's worktree, account, stage and how long it has run, then follows its output until it ends; interrupting detaches and leaves the run going. --take-over holds the run's target as jig send hold does, stops the run, records its end by: person, and prints the command that resumes the session; running it again after an interruption finishes the take-over. Process runtime only.`,
+  },
+);
+
 const probe = command(
   "probe",
   object({
@@ -446,7 +465,7 @@ const dashboard = command(
 
 /**
  * `jig dispatch`: one tick by default, with `result`, `report`, `marker`, `labels`, `dashboard`,
- * `log`, `line`, `clear` and `probe` as its subcommands. Its `install` and `receipts`
+ * `log`, `line`, `clear`, `attach` and `probe` as its subcommands. Its `install` and `receipts`
  * subcommands do what the lifecycle verbs `jig install dispatch` and
  * `jig receipts dispatch` do, and stay for the command lines that use them,
  * hidden from help.
@@ -467,6 +486,7 @@ const dispatch = (wholeMinutes: boolean) =>
         log,
         line,
         clear,
+        attach,
         probe,
         tick,
       ),
@@ -781,6 +801,8 @@ function subcommandMain(
     });
   if (args.action === "line") return lineMain();
   if (args.action === "clear") return clearMain(args.record);
+  if (args.action === "attach")
+    return attachMain(args.record, { takeOver: args.takeOver });
   if (args.action === "probe")
     return probeMain({ apply: args.apply, json: args.json }, machineFile());
   if (args.action === "dashboard") return dashboardAction(args, script);

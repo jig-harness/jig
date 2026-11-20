@@ -262,7 +262,8 @@ jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 
 `jig dispatch --help` lists its options, and `jig dispatch dashboard --help`,
 `jig dispatch log --help`, `jig dispatch line --help`,
-`jig dispatch clear --help` and `jig dispatch probe --help` list those of
+`jig dispatch clear --help`, `jig dispatch attach --help` and
+`jig dispatch probe --help` list those of
 each subcommand. For each
 repository (`--repo`, else the machine file's, else the current one) it
 prints every action it would take, each with the record that wants it and
@@ -293,6 +294,26 @@ back to the dispatcher, which admits it when the pickup has ended. With
 `dispatch.labels.only_labeled` enabled, the pull request needs a dispatch
 label before the dispatcher can admit the drive.
 The dashboard shows causes that need attention.
+
+A person follows a process run, or takes it over, from any shell on the
+host:
+
+```sh
+jig dispatch attach <record> [--take-over]
+```
+
+Without `--take-over` it prints the run's worktree, account, stage and how
+long it has run, then the run's output as it is written
+(`~/.local/state/jig/dispatch/runs/<record>/output.log`), until the run
+ends; interrupting it leaves the run going. With `--take-over` it first
+holds the run's pull request or item in the person's name, as
+`jig send <address> hold` does, so no tick starts anything on it; then
+stops the run (a drive through `drives.ts --stop` too, so its ledger reads
+stopped) and records its end `by: person`, which frees the account's slot.
+It prints the command that resumes the Claude Code or Codex session in the
+worktree under the same account's directory; it does not run it. Run again
+after an interruption, it finishes the take-over. A run on Orca is refused,
+since its tab already shows it.
 
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
