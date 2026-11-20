@@ -205,11 +205,9 @@ import { pullUrlMismatch, pullUrlParts } from "./lib/status/pr-url.ts";
  *                       as settled
  *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit;
  *                       the report names its reset (`rateLimit.until`)
- *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite. The status
- *                       evaluation does not report it: its reads of the
- *                       pull request are REST, which every `gh` serves.
- *                       Argument errors, which happen before there is a PR
- *                       to describe, exit 2 without a report
+ *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite (the evaluation's REST
+ *                       reads need none). Argument errors, before there is
+ *                       a PR to describe, exit 2 without a report
  *
  *  12  —  [drive.ts only, no report] converged, but the worktree is not
  *         clean. No named `state` — this exit never reaches `--json` at all
@@ -429,9 +427,8 @@ async function main(): Promise<number> {
   }
   const helperTimeoutSec = helperRead.seconds;
 
-  // The evaluation reads the pull request over REST, which names it by
-  // number, so a URL or branch argument is resolved to one here, once.
-  // A URL names its repository too; it must be the one this checkout drives.
+  // REST names a pull request by number: resolve a URL or branch to one here.
+  // A URL's repository must be the one this checkout drives.
   const urlParts = pullUrlParts(pr);
   if (!isDigits(pr)) {
     const r = await ghCall([
@@ -611,7 +608,6 @@ async function main(): Promise<number> {
     }
   }
   const startedMs = currentMs();
-  // The first evaluation keeps its per-call deadlines; `--timeout` bounds later ones.
   let firstEvaluationDone = false;
   const ctx = {
     ...definedFields({ waitingCache }),
@@ -1355,11 +1351,8 @@ async function main(): Promise<number> {
       // the three.
       if (!live.ok) {
         const stop = await degrade(
-          // Named as the transient failure it is: this probe runs ahead of
-          // `evaluate()`'s own read, so it is what an operator sees first when
-          // `gh` is failing. `reason` says whether the read failed or came
-          // back unrecognised — both are the retry class, since neither is a
-          // confirmed finished PR.
+          // Named as the transient failure it is: a failed or unrecognised
+          // read is the retry class, since neither is a confirmed finished PR.
           `cannot read PR #${pr}'s state (${live.reason}) — a transient failure — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
           "read",
         );
@@ -1607,13 +1600,8 @@ async function main(): Promise<number> {
     //
     // UNSUPPORTED_CLI (2) is IN the set by the same criterion: an unmet
     // prerequisite ends the drive without re-arming, and a sweep can run, and
-    // succeed, before one is found missing. Membership needs no flag: a
-    // successful sweep sets `sweepReconciled`, so exit 2 returns with the one
-    // message naming the actual fix. Only a genuinely unreconciled pass
-    // degrades, which is the criterion above applied without an exception.
-    // The status evaluation itself does not report UNSUPPORTED_CLI (its reads
-    // of the pull request are REST, which every `gh` serves); the membership
-    // keeps any later emitter covered.
+    // succeed, before one is found missing. A successful sweep sets
+    // `sweepReconciled`, so only a genuinely unreconciled pass degrades.
     //
     // CONVERGED (3) STAYS out of this set, and that took a false start to
     // learn: a first cut of this fix reasoned "3 needs zero unresolved
