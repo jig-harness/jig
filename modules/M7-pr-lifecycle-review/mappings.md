@@ -462,8 +462,11 @@ reads the target base branch's copy.
 
 The drive reads a reviewer through its [evidence](../../plugin/skills/drive-pr/README.md):
 a check run, and either a summary comment that names the commit it reviewed
-or a review object that names it. Any reviewer that produces that evidence
-works, and [ADR-0027](../../docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)
+or a review object that names it. That is completion evidence only: the
+drive reads findings from unresolved review threads, and from summary or
+review bodies only for a reviewer it has a body format for (today CodeRabbit).
+A reviewer that posts its findings as inline review comments and produces that
+evidence works, and [ADR-0027](../../docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)
 records why Jig depends on the contract and not on one reviewer. A GitHub
 Actions job is itself a check run named by the workflow job, so
 `review.reviewer_check_pattern` can match it. The gap in most rows is the

@@ -44,9 +44,11 @@ repository converges on CI and threads alone.
 ## Decision
 
 **Jig depends on the contract, not on a reviewer.** The reviewer-evidence
-contract is the interface. Any reviewer that produces its evidence works with
-the drive, and the drive reads no reviewer by name beyond the profiles it
-already holds.
+contract is the interface. Any reviewer that produces its completion
+evidence and posts its findings as review threads works with the drive.
+Findings placed only in a summary or review body are read for a reviewer with
+a built-in body format and no other. The drive reads no reviewer by name
+beyond the profiles it already holds.
 
 **Jig ships a reference reviewer that implements the contract.** It reverses
 M7's "A reviewer runtime" entry under "Left out by design". M7 keeps the

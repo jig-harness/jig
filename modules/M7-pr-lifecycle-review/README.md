@@ -246,7 +246,7 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
   it; mandatory reviews are selected by change-area
   ([M3](../M3-change-area-catalog/)); at least one automated reviewer runs
   **comment-only** with a written precision bar for ever blocking, and it can
-  be any reviewer that meets the reviewer-evidence contract; the
+  be any automated reviewer; the
   comment-resolution loop is a contract (addressed/rejected/deferred/moot,
   every thread terminal, the state declared in an anchored encoding that an
   export adapter decodes rather than inferred from prose) and no PR merges with
@@ -383,7 +383,10 @@ and either a summary comment that names the reviewed commit or a review
 object that names it (or a successful check run on the head, for a reviewer
 that posts nothing when a push has no new findings). The glossary and
 [drive-pr's README](../../plugin/skills/drive-pr/README.md) give the complete
-definition. Any reviewer that produces that evidence works, and
+definition. The evidence says the reviewer finished on the head commit; it does
+not make the reviewer's findings readable. The drive reads findings from
+unresolved review threads, and from summary-only bodies only in a format it has
+a profile for. Teams that drive with drive-pr need a reviewer that produces that evidence, and
 [mappings.md](mappings.md#review-bots--harness-the-tool-registry) says what
 each reviewer Jig knows of meets.
 

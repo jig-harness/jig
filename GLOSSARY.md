@@ -1757,8 +1757,11 @@ make, use the entry's term instead.
   (and may carry a *skip notice*), or, in the `review_object` *reviewer
   evidence mode*, the commit that the newest *review object* names, or a
   successful or neutral check run on the head when the reviewer posts nothing
-  for a push with no new findings. Any reviewer that produces this
-  evidence works with the drive, whoever wrote it
+  for a push with no new findings. This is completion evidence only: the
+  drive reads findings from unresolved review threads, and from summary or
+  review bodies only in a format it has a profile for. Any reviewer that
+  produces the evidence and posts its findings as review threads works with
+  the drive, whoever wrote it
   ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md),
   [drive-pr](plugin/skills/drive-pr/README.md)).
 - **Reference reviewer** — the reviewer Jig ships to implement the
