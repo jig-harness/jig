@@ -91,8 +91,6 @@ import {
 import { ledgerReport, withCaller } from "../shared/outbound/ledger.ts";
 import { quotaRisks, systemSpending } from "./lib/outbound-report.ts";
 import { accountsReport } from "./lib/account-report.ts";
-import { readHostDrivers } from "./lib/host-drivers.ts";
-import { readAccountWeights } from "./lib/local-weights.ts";
 import { hostCodexOptIn } from "./lib/accounts.ts";
 import { defectOf, logDefect } from "./lib/defect.ts";
 import { timeLeftMs } from "./lib/actions/launch.ts";
@@ -117,6 +115,7 @@ import { readTickLoad } from "./lib/tick-load.ts";
 import {
   allRecords,
   hostInputs,
+  readHostInputs,
   deadlineOf,
   type TickContext,
   type TickOptions,
@@ -276,8 +275,7 @@ async function startTick(
     startedMs,
     ...(bound === undefined ? {} : { bound }),
     launches: read.records,
-    weights: readAccountWeights(options.machine?.accounts ?? []),
-    drivers: readHostDrivers(),
+    ...readHostInputs(options),
     apply: null,
     lineInputs: new Map(),
     reflections: [],
@@ -464,7 +462,7 @@ async function startAct(started: StartedTick): Promise<void> {
     receipt.defect = defectOf("start", error);
     logDefect("the follow-up outcomes", receipt.defect, error);
   }
-  context.drivers = readHostDrivers();
+  context.drivers = readHostInputs(options).drivers;
   const attempt = applyState(
     options,
     runtime,
