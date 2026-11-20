@@ -1,4 +1,5 @@
 /** The dispatcher checks the account through Claude Code without reading its credentials. */
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import {
@@ -95,6 +96,16 @@ function resultOf(child: Probe, at: number): ProbeResult {
   if (child.code === 0 && result.is_error === false)
     return { failure: null, cost };
   return { ...vendorFailure(reportedErrors(result, child), at), cost };
+}
+
+/** A refusal a pass met outranks an older successful probe: drop the answer so the next admission asks again. */
+export function forgetClaudeSignIn(
+  configDir: string,
+  root = stateRoot(),
+): void {
+  rmSync(entryFile(join(root, "claude-sign-in"), "claude", configDir), {
+    force: true,
+  });
 }
 
 /** A local auth status may report a stored but expired login. A tool-free,

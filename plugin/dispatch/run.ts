@@ -197,6 +197,7 @@ import {
   recordStartupDeath,
   recordWorkingStartup,
 } from "./lib/account-startup.ts";
+import { forgetClaudeSignIn } from "./lib/claude-sign-in.ts";
 import { codexSessionIn } from "./lib/transcript-copy.ts";
 import {
   currentIso,
@@ -637,6 +638,11 @@ function startupOf(
   const at = isoFromMs(exited);
   if (startup === "sign-in") {
     recordAccountStartupProblem(record, "sign-in", at);
+    try {
+      forgetClaudeSignIn(record.configDir);
+    } catch (error) {
+      swallow(error, "the cached sign-in probe could not be dropped");
+    }
     return phrase === undefined ? { startup } : { startup, phrase };
   }
   if (startup !== "quota" && deaths >= threshold) {
