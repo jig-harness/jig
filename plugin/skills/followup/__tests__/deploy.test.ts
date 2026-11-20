@@ -230,6 +230,30 @@ test("a holder restarted recently makes the blockage young, whatever the waiting
   expect(read.state).toBe("moving");
 });
 
+test("a success from before the holder's restart does not make an aged blocked queue moving", () => {
+  const restarted = run(96, {
+    status: "in_progress",
+    conclusion: null,
+    createdAt: isoFromMs(NOW - 5 * STUCK_AFTER_MS),
+    startedAt: isoFromMs(NOW - 2 * STUCK_AFTER_MS),
+  });
+  const earlier = run(97, {
+    conclusion: "success",
+    createdAt: isoFromMs(NOW - 4 * STUCK_AFTER_MS),
+  });
+  const cancelled = [98, 99].map((id) =>
+    run(id, { createdAt: isoFromMs(NOW - 2 * STUCK_AFTER_MS + id * 1000) }),
+  );
+  const read = classifyRun(
+    waiting(STUCK_AFTER_MS + 60_000),
+    0,
+    [restarted, earlier, ...cancelled],
+    NOW,
+  );
+  expect(read.state).toBe("stuck");
+  expect(read.before).toEqual(["cancelled", "cancelled"]);
+});
+
 test("runs with no branch name share no queue that can be shown", () => {
   const nameless = (r: RunFacts) => ({ ...r, branch: null });
   const read = classifyRun(

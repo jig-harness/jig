@@ -149,7 +149,12 @@ export function classifyRun(
   const since =
     holder === null
       ? []
-      : runs.filter((r) => r.id > holder.id && r.branch === run.branch);
+      : runs.filter(
+          (r) =>
+            r.id > holder.id &&
+            r.branch === run.branch &&
+            parseMs(r.startedAt) >= parseMs(holder.startedAt),
+        );
   const before = since
     .filter((r) => r.id < run.id && r.status === "completed")
     .sort((a, b) => b.id - a.id)
