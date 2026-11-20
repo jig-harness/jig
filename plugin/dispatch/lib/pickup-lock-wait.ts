@@ -42,7 +42,7 @@ import { parseMs } from "../../shared/time.ts";
 export const LOCK_WAIT_BOUND = 3;
 
 /** Whether a pickup's pass recorded that the host's test lock held its push. */
-export function lockWaited(r: ReadRecord): boolean {
+function lockWaited(r: ReadRecord): boolean {
   return (
     r.record.action === "pickup" &&
     r.result === "waits" &&
@@ -51,7 +51,7 @@ export function lockWaited(r: ReadRecord): boolean {
 }
 
 /** The lock-wait results in a row ending at `latest`, newest first, along the records each relaunch names. */
-export function lockWaitChain(
+function lockWaitChain(
   latest: ReadRecord,
   launches: readonly ReadRecord[],
 ): ReadRecord[] {

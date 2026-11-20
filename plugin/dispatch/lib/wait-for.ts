@@ -32,7 +32,7 @@ export interface WaitFor {
 export const RATE_LIMIT_WAIT: WaitFor = { reason: "rate-limit" };
 
 /** The host's test lock, whose wait ran out before a claimed pickup's push got through. */
-export const TEST_LOCK_WAIT: WaitFor = { reason: "test-lock" };
+const TEST_LOCK_WAIT: WaitFor = { reason: "test-lock" };
 
 /** A row's `result_wait` as a wait; a rate limit's for one that is absent or does not read. */
 export function readWaitFor(text: string | null | undefined): WaitFor {
