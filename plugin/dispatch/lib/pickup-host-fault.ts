@@ -53,6 +53,12 @@ const HOST_RESOURCE = new Set(
     " ",
   ),
 );
+/** Words that name a work product; one in an archive's name keeps the archive a work file whatever else it says. */
+const WORK_WORD = new Set(
+  "source sources src code test tests spec specs specification schema schemas migration migrations app lib doc docs".split(
+    " ",
+  ),
+);
 /** Extensions of files a host produces and a person clears; any other extension marks a work file. */
 const HOST_ARTIFACT_EXTENSION =
   /\.(?:log|logs|tmp|temp|cache|bak|lock|pid|out|core|swp|old|trace|dump)$/i;
@@ -63,9 +69,10 @@ const ARCHIVE_EXTENSION = /\.(?:gz|bz2|xz|zst|tgz|tar|zip|7z|rar|iso)$/i;
  * Whether a file name marks a work file. An archive is neutral: `app.log.gz`
  * is a host artifact over a host-artifact extension, `schema.sql.gz` a work
  * file over a work extension, and an archive with no extension beneath it
- * (`cache.tgz` against `source-files.tar.gz`) is a host artifact only when every
- * part of its own name is a host-resource word: a work word beside one keeps
- * the question a person's.
+ * (`cache.tgz` against `source-files.tar.gz`) is a host artifact when a part of
+ * its own name is a host-resource word and none is a work word: descriptive
+ * or dated debris (`leaked-fixtures.tar.gz`, `cache-2026.gz`) stays one, and a
+ * work word (`test-fixtures.zip`) keeps the question a person's.
  */
 function isWorkFileName(last: string): boolean {
   let stem = last;
@@ -76,11 +83,14 @@ function isWorkFileName(last: string): boolean {
   }
   if (/\.\w+$/.test(stem)) return !HOST_ARTIFACT_EXTENSION.test(stem);
   if (!archive) return false;
-  return !stem
+  const parts = stem
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter(Boolean)
-    .every((part) => HOST_RESOURCE.has(part));
+    .filter(Boolean);
+  return (
+    parts.some((part) => WORK_WORD.has(part)) ||
+    !parts.some((part) => HOST_RESOURCE.has(part))
+  );
 }
 
 /** The first words of one cleanup object (the pattern already cut it at its clause or sentence end). */
