@@ -612,10 +612,16 @@ export async function pendingBatchBlock(
       member.ancestor,
       ctx.servedPolicy,
     );
+    const unranked =
+      typeof check === "string"
+        ? null
+        : heldForPriority(ctx, check, member.key, undefined);
     batchBlock =
       typeof check === "string"
         ? `${member.key}: ${check}`
-        : await competing(state, repo, ctx, { ...record, item: member.key });
+        : unranked !== null
+          ? `${member.key}: ${unranked}`
+          : await competing(state, repo, ctx, { ...record, item: member.key });
     if (batchBlock !== null) break;
   }
   return batchBlock;
