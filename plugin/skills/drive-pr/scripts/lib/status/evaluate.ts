@@ -212,7 +212,6 @@ export function emptyReport(): StatusReport {
     baseHead: "",
     isDraft: null,
     reviewerPresent: false,
-    checkProgress: "",
     reviewerStatus: "",
     reviewerConclusion: "",
     reviewedSha: "",

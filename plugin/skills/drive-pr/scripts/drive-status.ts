@@ -1110,22 +1110,10 @@ async function main(): Promise<number> {
   const deadline = currentMs() + timeout * 1000;
   /** Remaining wall-clock time for work or waits after the first evaluation. */
   const budgetLeftMs = (): number => deadline - currentMs();
-  /**
-   * Whether a further `--interval` sleep still fits inside `--timeout`.
-   *
-   * The predicate every waiting site stops on, so the answer cannot differ by
-   * site. Refusing a sleep that would not fit is the same rule as refusing to
-   * act after the deadline has passed, stated one poll earlier: `--timeout 30
-   * --interval 30` must not return at 50s because a sweep spent the first 20.
-   */
+  /** Whether another `--interval` sleep fits inside `--timeout`; every waiting site stops on it. */
   const intervalFits = (): boolean => budgetLeftMs() >= interval * 1000;
   let queryErrors = 0;
-  /**
-   * The caller forbade the sweep on this invocation. `--no-reconcile` says so
-   * outright; `--no-count` says the invocation is a mid-round re-read rather
-   * than a pass entry, and one sweep per pass is the point of running it from
-   * the gate at all.
-   */
+  /** The caller forbade the sweep: `--no-reconcile`, or `--no-count` (a mid-round re-read). */
   const sweepSuppressed = noCount || noReconcile;
   /**
    * Scope for the SWEEP, which is not always the scope for the COUNT.
