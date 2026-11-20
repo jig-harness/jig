@@ -1,5 +1,5 @@
 /** A finish-round result bound to the drive pass that produced it. */
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { readBoundedText } from "../../../../../shared/driver-report.ts";
@@ -45,6 +45,12 @@ export function writePassFinish(
     file(stateDir, String(pr)),
     `${JSON.stringify({ schema: SCHEMA, pr, launch, round, report })}\n`,
   );
+}
+
+/** Retire the previous pass's record, so a retried pass that never reaches
+ * finish-round cannot inherit what its predecessor wrote. */
+export function clearPassFinish(stateDir: string, pr: string): void {
+  rmSync(file(stateDir, pr), { force: true });
 }
 
 export function readPassFinish(

@@ -12,7 +12,7 @@ import { reportPassLeftovers } from "./restart.ts";
 import { clearPendingVerdicts } from "./../state/pass-handoff.ts";
 
 import { resolveStateDir } from "./../state/store.ts";
-import { readPassFinish } from "./../state/pass-finish.ts";
+import { clearPassFinish, readPassFinish } from "./../state/pass-finish.ts";
 import type { Report } from "./../finish-round-report.ts";
 import { launchOf } from "../../../../../shared/launched-session.ts";
 import { CHECK_RUNS_UNREADABLE_EXIT } from "./settings.ts";
@@ -46,6 +46,9 @@ export async function runReviewPassPhase(
     preexistingSessions,
     preexistingSnapshot,
   } = prepareReviewPassResult;
+  // A record from an earlier attempt of this launch and round (a deadline
+  // restart on the same head) must not answer for this one.
+  clearPassFinish(await resolveStateDir(), context.pr);
   const dispatchReviewPassResult = await dispatchReviewPass(
     context,
     apiHead,
