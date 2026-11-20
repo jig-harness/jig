@@ -446,7 +446,8 @@ async function unproven(
   // completed clone or ancestry comparison may age a rearm toward retirement.
   const structural =
     why.includes(" belongs to the clone at ") ||
-    why.includes(" neither the pull request head ");
+    why.includes(" neither the pull request head ") ||
+    why.includes("origin does not point at the head repository ");
   return {
     why: `the workspace ${workspace.path} is not proven to be PR #${pr}'s checkout, so nothing runs in it and its work stays as it is: ${why}`,
     structural,
