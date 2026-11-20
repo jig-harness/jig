@@ -207,17 +207,14 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   const latest = latestOf(timeline);
 
   if (persisted?.phase === "releasing") {
-    if (persisted.raceDetected === true)
-      return refuseRace(
-        pr,
-        head,
-        persisted.actor,
-        holdLabel(),
-        () => transitions(pr),
-        ghCall,
-        (failure) => unreadDuringReleasingState(failure, persisted),
-        persisted,
-      );
+    const raceRecovery = await reconcileRacedRelease(
+      pr,
+      head,
+      persisted,
+      holdLabel(),
+      (failure) => unreadDuringReleasingState(failure, persisted),
+    );
+    if (raceRecovery !== null) return raceRecovery;
     const successor = exactSuccessor(timeline, persisted.heldEventId);
     if (!live.held && successor?.event === "unlabeled") {
       await writeCiState(pr, exactReleaseOf(successor, head, persisted));
@@ -921,6 +918,64 @@ function isReleasing(recorded: CiHoldState | null): boolean {
   return recorded?.phase === "releasing";
 }
 
+async function reconcileRacedRelease(
+  pr: string,
+  head: string,
+  recorded: CiHoldState | null,
+  label: string,
+  onUnread: (failure: HoldReadFailure) => number,
+): Promise<number | null> {
+  if (recorded?.phase !== "releasing" || recorded.raceDetected !== true)
+    return null;
+  return refuseRace(
+    pr,
+    head,
+    recorded.actor,
+    label,
+    () => transitions(pr),
+    ghCall,
+    onUnread,
+    recorded,
+  );
+}
+
+async function runMutationCommand(
+  command: "ensure" | "release" | "rollback",
+  pr: string,
+  head: string,
+  expectedTransition?: string,
+): Promise<number> {
+  const fence = await resolveFenceContext("ci-hold.ts");
+  const remoteLock =
+    fence === null
+      ? null
+      : await assertRemoteMutationAllowed(fence, pr, "ci-hold.ts");
+  const heartbeat =
+    remoteLock === null
+      ? null
+      : setInterval(() => remoteLock.touch(), lockHeartbeatMs());
+  try {
+    const recorded = await readCiState(pr);
+    const unreadable = await checkRecordedHold(pr, command);
+    if (unreadable !== null) return unreadable;
+    const raceRecovery = await reconcileRacedRelease(
+      pr,
+      head,
+      recorded,
+      holdLabel() ?? LEGACY_CI_HOLD_LABEL,
+      (failure) => unreadDuringReleasingState(failure, recorded),
+    );
+    if (raceRecovery !== null) return raceRecovery;
+    if (command === "ensure") return ensure(pr, head);
+    if (command === "rollback") return rollback(pr, head);
+    return release(pr, head, expectedTransition);
+  } finally {
+    if (heartbeat !== null) clearInterval(heartbeat);
+    remoteLock?.release();
+    remoteLock?.dispose();
+  }
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const command = argv.shift() ?? "";
@@ -975,40 +1030,8 @@ async function main(): Promise<number> {
   } catch (error) {
     configError(error);
   }
-  if (command === "ensure" || command === "release" || command === "rollback") {
-    const fence = await resolveFenceContext("ci-hold.ts");
-    const remoteLock =
-      fence === null
-        ? null
-        : await assertRemoteMutationAllowed(fence, pr, "ci-hold.ts");
-    const heartbeat =
-      remoteLock === null
-        ? null
-        : setInterval(() => remoteLock.touch(), lockHeartbeatMs());
-    try {
-      const recorded = await readCiState(pr);
-      const unreadable = await checkRecordedHold(pr, command);
-      if (unreadable !== null) return unreadable;
-      if (recorded?.phase === "releasing" && recorded.raceDetected === true)
-        return refuseRace(
-          pr,
-          head,
-          recorded.actor,
-          holdLabel ?? LEGACY_CI_HOLD_LABEL,
-          () => transitions(pr),
-          ghCall,
-          (failure) => unreadDuringReleasingState(failure, recorded),
-          recorded,
-        );
-      if (command === "ensure") return await ensure(pr, head);
-      if (command === "rollback") return await rollback(pr, head);
-      return await release(pr, head, expectedTransition);
-    } finally {
-      if (heartbeat !== null) clearInterval(heartbeat);
-      remoteLock?.release();
-      remoteLock?.dispose();
-    }
-  }
+  if (command === "ensure" || command === "release" || command === "rollback")
+    return runMutationCommand(command, pr, head, expectedTransition);
   const unreadable = await checkRecordedHold(pr, command);
   if (unreadable !== null) return unreadable;
   return finalReady(pr, head, requireSuccess);
