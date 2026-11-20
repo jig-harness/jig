@@ -290,10 +290,10 @@ does.
    as for the tick), is refused with the time it clears.
 2. The **probe share**: probes together may spend at most `probe_share` of a
    limit's hourly allowance (default `0.1`), counted from the ledger's
-   `probe` rows of the last hour on the quota owner's record. A request that
-   would pass it is refused until the next clock hour. The ledger keeps
-   hourly totals, not the time of each request, so the window is the current
-   clock hour, and the floor under each interval keeps spending even
+   `probe` rows of the current clock hour on the quota owner's record. A
+   request that would pass it is refused until the next clock hour. The
+   ledger keeps hourly totals, not the time of each request, so the window is
+   the clock hour, for the count, the reset and the share alike, and the floor under each interval keeps spending even
    through it; a finer window needs finer ledger rows, which step 15 may add.
    Keeping probes inside a share of their own is what keeps a probe, which
    runs whether or not anything changed, from using the room the woken ticks
@@ -327,7 +327,7 @@ counts them so the sweep interval grows on the evidence.
 **On an enrolled host** the probes are replaced by the hub's change feed while
 the hub answers, so they spend none of the host's budget; when the hub does
 not answer they run again and spend the host's share of any budget the hosts
-share, pausing while it is spent while ticks read at their interval ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)).
+share, pausing while it is spent, the ticks reading at their interval ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)).
 
 ### The cost ledger and what is reported
 

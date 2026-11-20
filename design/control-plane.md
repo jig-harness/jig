@@ -801,8 +801,9 @@ hub serves the copies the hosts reported.
   one organization (a tracker user's keys) is read by all of them at once.
   So a host reading for itself spends at most its share of such a budget,
   the remaining balance divided by the number of hosts `hello` last said
-  share it, and its change probe pauses for that budget; its ticks still
-  read at their interval. The App's budget is the hub's alone, so no host
+  share it, and its change probes run again within that share and pause
+  while it is spent; its ticks still read at their interval, from the same
+  share. The App's budget is the hub's alone, so no host
   falls back onto it.
 
 ### How fresh each fact is

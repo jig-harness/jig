@@ -2861,9 +2861,13 @@ same shape:
 Both probes keep their last answer in the probe's state directory beside the
 forge's, wake under the same rule, and say nothing and wake nothing when the
 service does not answer: a failed probe is logged, the sweep still runs.
-All the probes run from the one probe job, which starts every minute;
-each service is asked only when its own interval has passed, so a service
-with a longer interval adds no timer.
+Each service's probe is its own instance of the probe job, with its own
+timer at that service's interval, and the instance is the waiter of the ticks
+it woke. A tick that runs for minutes therefore delays only the next probe of
+the service that woke it, never another service's, and an interval is the
+least time between two of a service's probes: a probe whose woken ticks
+outlast the interval starts when they end, since the scheduler never overlaps
+two runs of one job.
 
 What each probe costs per run, how it is admitted against the budget and
 the floor under its interval are in
@@ -2892,7 +2896,7 @@ from duplicating each other is by what each reads:
 | Cadence | Host with no hub | Host enrolled, the hub answering | Host enrolled, the hub not answering |
 | --- | --- | --- | --- |
 | Local loop | Runs | Runs: the hub cannot see this host's processes | Runs |
-| Per-service probes | Run, each on its interval | **Replaced**: the probe job waits on the hub's change feed and wakes the repositories it names; it asks no service. Where the hub itself reads a tracker it cannot verify deliveries from (Jira, for now), that question is the hub's | Run again, each within this host's share of any budget the hosts share, and pausing for it ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)) |
+| Per-service probes | Run, each on its interval | **Replaced**: the probe job waits on the hub's change feed and wakes the repositories it names; it asks no service. Where the hub itself reads a tracker it cannot verify deliveries from (Jira, for now), that question is the hub's | Run again, each within this host's share of any budget the hosts share, and pausing while that share is spent, the ticks reading at their interval ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)) |
 | Timer sweep | Runs | Runs on the hub's world view: ordinary reads of it cost no forge or tracker budget, and its facts are as fresh as the hub's freshness classes; a fact that gates a write is still confirmed on the forge or tracker at use, and that confirmation is budgeted | Runs, reading for itself |
 
 A probe never asks a service for a scope the hub's feed covers while the
