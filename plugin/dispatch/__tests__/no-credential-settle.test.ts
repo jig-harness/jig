@@ -8,7 +8,7 @@ import {
   forgetMissingCredentials,
   noteMissingCredential,
 } from "../../shared/outbound/missing-credential.ts";
-import { settleNoCredential } from "../lib/no-credential.ts";
+import { keylessRepos, settleNoCredential } from "../lib/no-credential.ts";
 import type { RepoReport } from "../lib/types.ts";
 import type { TickReceipt } from "../receipts.ts";
 
@@ -42,9 +42,10 @@ test("a credential still missing names only the repositories whose readings it c
   } as unknown as TickReceipt;
   settleNoCredential(receipt);
   expect(receipt.noCredential?.[0]?.repos).toEqual(["org/b"]);
+  expect(receipt.noCredential?.[0]?.kept).toEqual(["org/b"]);
 });
 
-test("a credential missing with no reading cut names every tracked repository", () => {
+test("a credential missing with no reading cut names every tracked repository and keeps none", () => {
   noteMissingCredential("linear:settle-test", {
     system: "linear",
     reason: "no Linear key configured",
@@ -55,4 +56,6 @@ test("a credential missing with no reading cut names every tracked repository", 
   } as unknown as TickReceipt;
   settleNoCredential(receipt);
   expect(receipt.noCredential?.[0]?.repos).toEqual(["org/a", "org/b"]);
+  expect(receipt.noCredential?.[0]?.kept).toEqual([]);
+  expect(keylessRepos(receipt).get("linear")).toEqual(new Set());
 });

@@ -45,6 +45,8 @@ export interface NoCredential {
   recovered?: true;
   /** The repositories whose tracker it is, by slug (by path when the forge did not name one). */
   repos: string[];
+  /** The repositories whose previous tracker part the line keeps: those whose reading the missing credential cut. A tick that found the credential missing after its readings succeeded (a launch-time revalidation) names its repositories in `repos` and keeps none, so a fresh reading is never replaced. Absent in a receipt written before the field: `repos` then. */
+  kept?: string[];
 }
 
 /** What a repository's tracker record says when the tick could not ask the tracker. */
@@ -100,7 +102,7 @@ export function settleNoCredential(receipt: TickReceipt): void {
       if (settled.cut) cut.push(name);
     }
     const cutAny = cut.length > 0;
-    // The incident belongs to the readings it cut, and only those keep their previous part: a repository read before the credential was lost keeps its fresh reading. With no reading cut (nothing was asked yet) every tracked repository is named.
+    // The incident belongs to the readings it cut, and only those keep their previous part: a repository read before the credential was lost keeps its fresh reading. With no reading cut (the credential was found missing after the readings succeeded) every tracked repository is named, and none is kept.
     const repos = cutAny ? cut : tracked;
     console.error(
       `jig dispatch: ${missingCredentialMessage(m)}; the tick asked ${issueService(m.system)} nothing more, and the line keeps the last reading that had a credential`,
@@ -113,6 +115,7 @@ export function settleNoCredential(receipt: TickReceipt): void {
       ...(m.answer === undefined ? {} : { answer: m.answer }),
       ...(active.has(m.system) || cutAny ? {} : { recovered: true as const }),
       repos,
+      kept: cut,
     };
   });
 }
@@ -140,6 +143,6 @@ export function keylessRepos(
   return new Map(
     (receipt.noCredential ?? [])
       .filter((n) => n.recovered !== true)
-      .map((n) => [n.system, new Set(n.repos)]),
+      .map((n) => [n.system, new Set(n.kept ?? n.repos)]),
   );
 }
