@@ -16,6 +16,7 @@ import { stateRoot } from "../receipts.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { inTransaction, stateDb } from "./state.ts";
+import { STATION_OPTIONS } from "../../shared/decisions/station.ts";
 import { currentIso } from "../../shared/time.ts";
 
 /** What a session started on a person's answer is handed: the decision's question, the option chosen and what it states, and the person's note. */
@@ -206,14 +207,19 @@ export function takeCarried(
 ): CarriedAnswer | null {
   const db = stateDb(root);
   return inTransaction(db, () => {
-    const found = db
+    const rows = db
       .query(
         `SELECT rowid, carry FROM station_answers
          WHERE repo = ? AND target = ? AND carry IS NOT NULL AND consumed_by IS NULL
-         ORDER BY claimed_at DESC, rowid DESC LIMIT 1`,
+         ORDER BY claimed_at DESC, rowid DESC`,
       )
-      .get(repo, target) as { rowid: number; carry: string } | null;
-    if (found === null) return null;
+      .all(repo, target) as { rowid: number; carry: string }[];
+    // A release the tick carried out whole is no task for the next session:
+    // carries an earlier version persisted for it are passed over.
+    const found = rows.find(
+      (r) => carriedOf(r.carry)?.option !== STATION_OPTIONS.release.name,
+    );
+    if (found === undefined) return null;
     db.query("UPDATE station_answers SET consumed_by = ? WHERE rowid = ?").run(
       record,
       found.rowid,

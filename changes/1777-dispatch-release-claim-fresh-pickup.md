@@ -9,6 +9,8 @@ release: patch
   ordinary fresh pickup. That launch is no longer handed the answer as an
   option to carry out, which could make it only re-confirm the release, end
   without claiming the item and raise the same card again.
-- The stalled-pickup card now says what holds the item: the named launch
+- The ended-pickup card now says what holds the item: the named launch
   record ended and has not been released. It says the item is still assigned
   only when it is.
+- A release answer an earlier version already kept for the next session is
+  passed over, so that launch is an ordinary fresh pickup too.

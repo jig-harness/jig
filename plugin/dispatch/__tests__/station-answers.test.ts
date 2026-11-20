@@ -509,6 +509,38 @@ describe("settleStationAnswers", () => {
   });
 });
 
+describe("a release carry an earlier version persisted", () => {
+  it("is passed over, and a session-framed carry beside it is still handed on", () => {
+    const dir = root();
+    const carry = (option: string): CarriedAnswer => ({
+      question: "q?",
+      option,
+      recommended: false,
+      changes: "",
+      costs: "",
+      by: "maintainer",
+      url: `https://github.com/${SLUG}/pull/12#issuecomment-1`,
+    });
+    const row = (digest: string, answer: string, option: string) => ({
+      repo: SLUG,
+      target: "PR #12",
+      key: `pickup-${digest}`,
+      digest,
+      answer,
+      author: "maintainer",
+      option,
+    });
+    claimAnswer(row("d1", "a 1", "Other"), carry("Other"), dir);
+    claimAnswer(
+      row("d2", "b 2", "Release the claim"),
+      carry("Release the claim"),
+      dir,
+    );
+    expect(takeCarried(SLUG, "PR #12", "r-1", dir)?.option).toBe("Other");
+    expect(takeCarried(SLUG, "PR #12", "r-2", dir)).toBeNull();
+  });
+});
+
 describe("settleStationAnswers on an item of another tracker", () => {
   const LINEAR = stationContextOf(SLUG, {
     tracker: { adapter: "linear" },
