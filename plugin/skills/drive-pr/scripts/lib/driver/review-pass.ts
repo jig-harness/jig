@@ -13,10 +13,22 @@ import { clearPendingVerdicts } from "./../state/pass-handoff.ts";
 
 import { resolveStateDir } from "./../state/store.ts";
 import { readPassFinish } from "./../state/pass-finish.ts";
+import type { Report } from "./../finish-round-report.ts";
 import { launchOf } from "../../../../../shared/launched-session.ts";
 import { CHECK_RUNS_UNREADABLE_EXIT } from "./settings.ts";
 import { driverRuntime } from "./runtime.ts";
 import { incompletePassExit } from "./incomplete-pass.ts";
+import { measureStop } from "./stop-measure.ts";
+
+/** A launch-bound finish result outranks an arbitrary pass wrapper's exit. */
+export function hasCheckRunsUnreadableFinish(
+  finish: Report | null,
+  timedOut: boolean,
+): finish is Report & { state: "CHECK_RUNS_UNREADABLE" } {
+  // A driver-enforced timeout proves the pass did not complete; a report left
+  // by an earlier finish attempt must not mask that cancellation.
+  return !timedOut && finish?.state === "CHECK_RUNS_UNREADABLE";
+}
 
 export async function runReviewPassPhase(
   context: DriveRoundContext,
@@ -52,11 +64,19 @@ export async function runReviewPassPhase(
     launchOf(process.env) ?? "",
     round,
   );
-  if (
-    passRes.code === CHECK_RUNS_UNREADABLE_EXIT &&
-    finish?.state === "CHECK_RUNS_UNREADABLE"
-  ) {
+  if (hasCheckRunsUnreadableFinish(finish, passRes.timedOut)) {
+    // The pass process can be an agent or an arbitrary wrapper, so its exit
+    // code does not attest to finish-round's result. The report is bound to
+    // this launch and round, and a later successful finish overwrites it.
+    const mailboxAfterListingStop = await context.mailboxCheckpoint();
+    if (typeof mailboxAfterListingStop === "number")
+      return mailboxAfterListingStop;
     driverRuntime.stopListingPages = finish.listingPagesRead ?? null;
+    console.error(
+      `pass reported CHECK_RUNS_UNREADABLE on round ${round}; stopping`,
+    );
+    await reportPassLeftovers("What the pass left in the tree:");
+    driverRuntime.stopLeftWork = await measureStop();
     return CHECK_RUNS_UNREADABLE_EXIT;
   }
   const disposition = passExitDisposition(passRes.code);

@@ -12,6 +12,8 @@ import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { PAGE_CAP } from "../../../shared/outbound/gh-paginate.ts";
 import { finalReadListingStop } from "../scripts/lib/driver/convergence-ci.ts";
 import { driverRuntime } from "../scripts/lib/driver/runtime.ts";
+import { hasCheckRunsUnreadableFinish } from "../scripts/lib/driver/review-pass.ts";
+import type { Report } from "../scripts/lib/finish-round-report.ts";
 import { CHECK_RUNS_UNREADABLE_EXIT } from "../scripts/lib/driver/settings.ts";
 import * as proc from "../scripts/lib/proc.ts";
 import { isDriveEvent } from "../scripts/lib/state/events.ts";
@@ -114,6 +116,25 @@ async function readListing(f: {
 }
 
 describe("a head's check-runs listing", () => {
+  it("keeps a launch-bound finish-round listing stop when its wrapper exits successfully", () => {
+    const finish: Report = {
+      pr: 999,
+      head: SHA,
+      state: "CHECK_RUNS_UNREADABLE",
+      reason: "listing stopped",
+      pushed: false,
+      stamped: false,
+      headSynced: false,
+      items: [],
+      listingPagesRead: 2,
+    };
+    expect(hasCheckRunsUnreadableFinish(finish, false)).toBe(true);
+    expect(
+      hasCheckRunsUnreadableFinish({ ...finish, state: "FINISHED" }, false),
+    ).toBe(false);
+    expect(hasCheckRunsUnreadableFinish(finish, true)).toBe(false);
+  });
+
   it("is read whole when its pages together outlast one call's deadline", async () => {
     // 15 pages of 200ms each: 3 seconds against a 2-second GH_CALL_TIMEOUT.
     const read = await readListing({ pages: 15, delayMs: 200 });
