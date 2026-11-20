@@ -405,9 +405,11 @@ validation, `T`. Until then the lock can work only on the runs at the lock
 now, and clears at most `runs at once × T ÷ run time` of them; the passes
 still implementing give it nothing to do. Once there, each of the new pass's
 runs can wait at most the **wait window** `W`: the shorter of the wait the
-pass's test stage gives the lock and the pass deadline less `T`. A pass
-inherits the dispatcher's environment, so that wait is the `LOCK_TIMEOUT` set
-there; unset, it is the test stage's own hour (3600 seconds in
+pass's test stage gives the lock and the pass deadline less `T`. That wait
+is the `LOCK_TIMEOUT` of the pass's launch environment: a process launch
+keeps only what `process.env_keep` names, and an Orca launch is given the
+dispatcher's own `LOCK_TIMEOUT`, `LOCK_ROOT` and `LOCK_NAME`, resolved. The
+lock occupancy is read from that same environment. Unset, it is the test stage's own hour (3600 seconds in
 `scripts/test.ts`), not the bare lock's minute, and the reason says that
 default stands in. A pass makes its runs one after another, each asking for
 the lock when the one before it has released, so its own earlier runs are
@@ -423,7 +425,8 @@ validation capacity = runs at once × W ÷ run time
 the new pass's first acquisition, after the runs ahead, falls within W
 ```
 
-For example, with one run at a time, runs of 12 minutes, an hour to
+For example, with nothing at the lock now, a negligible time to
+validation, one run at a time, runs of 12 minutes, an hour to
 wait and one run per pass, the capacity is 5 runs. Successive passes have
 their first acquisitions at minutes 0, 12, 24, 36, 48 and 60, and a pass fits
 while its first acquisition falls within the window: of 10 passes started
@@ -442,7 +445,8 @@ the run time and the runs per pass.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
 `validation`, whose fill is the candidate's wait before its first
-acquisition, in runs of service, against the capacity. The launch's own runs
+acquisition, in runs of service, divided by the capacity; the gauge then
+reads that fill as a share of `load.validation`. The launch's own runs
 add nothing to the numerator: they follow one another, so only the runs
 reserved ahead of later candidates (those of passes admitted this tick and
 those still to arrive) make the first acquisition wait. It is set in the machine file's `load:` section

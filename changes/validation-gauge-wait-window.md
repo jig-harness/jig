@@ -8,7 +8,7 @@ release: patch
   holds every pickup and drive on an idle test lock. Its wait window is now
   the wait a pass's test stage gives the lock: `LOCK_TIMEOUT` from the
   environment a pass is launched with (for a process launch, retained only where
-  `process.env_keep` names it; an Orca launch is given the dispatcher's own `LOCK_TIMEOUT`, `LOCK_ROOT` and `LOCK_NAME`), or the test stage's hour
+  `process.env_keep` names it; an Orca launch is given the dispatcher's `LOCK_TIMEOUT`, and its lock root (made absolute) and name, always), or the test stage's hour
   when it is unset, rather than the bare lock's one-minute default. A pass's
   own runs, made one after another, no longer count as waiting behind each
   other, so a pass always fits a lock with nothing ahead of it. The runs

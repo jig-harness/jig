@@ -25,6 +25,7 @@
  * workspace. None holds a launch back: the receipt says what happened.
  */
 import { resolve } from "node:path";
+import { lockPlace } from "../../../shared/resource-lock-waits.ts";
 import { sessionOverrides } from "../../../shared/session-overrides.ts";
 import { shellQuote } from "../../../shared/cli.ts";
 import { orcaCommandOrInstalled, orcaEnvelope } from "../../../shared/orca.ts";
@@ -46,15 +47,20 @@ const RUN_TS = resolve(import.meta.dir, "../../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
 
 /**
- * The test lock's settings the dispatcher holds, as `KEY=value` words: the
- * tab's login shell does not inherit them, and the validation forecast and
- * the lock occupancy read them from the dispatcher's own environment.
+ * The test lock's settings as the dispatcher reads them, as `KEY=value`
+ * words: the tab's login shell does not inherit them, and may export its own,
+ * so each is always given. An unset or empty timeout is given empty, which
+ * the test stage reads as unset; the lock's root and name are the resolved
+ * place (`LOCK_ROOT`, else `TMPDIR`, else the temporary directory, made
+ * absolute: the wrapper runs in the workspace, not where the tick does).
  */
-function lockEnv(env: NodeJS.ProcessEnv): string[] {
-  return ["LOCK_TIMEOUT", "LOCK_ROOT", "LOCK_NAME"].flatMap((key) => {
-    const value = env[key];
-    return typeof value === "string" && value !== "" ? [`${key}=${value}`] : [];
-  });
+export function lockEnv(env: NodeJS.ProcessEnv): string[] {
+  const { root, name } = lockPlace(env);
+  return [
+    `LOCK_TIMEOUT=${env.LOCK_TIMEOUT ?? ""}`,
+    `LOCK_ROOT=${resolve(root)}`,
+    `LOCK_NAME=${name}`,
+  ];
 }
 
 /**
