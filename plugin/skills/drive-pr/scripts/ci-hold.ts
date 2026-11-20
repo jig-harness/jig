@@ -215,7 +215,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
         holdLabel(),
         () => transitions(pr),
         ghCall,
-        unread,
+        (failure) => unreadDuringReleasingState(failure, persisted),
         persisted,
       );
     const successor = exactSuccessor(timeline, persisted.heldEventId);
@@ -441,18 +441,24 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   return 0;
 }
 
+function unreadDuringReleasingState(
+  failure: HoldReadFailure,
+  persisted: CiHoldState | null,
+): number {
+  const code = unread(failure);
+  if (persisted?.phase === "releasing")
+    process.stdout.write("release-proof-pending\n");
+  return code;
+}
+
 async function release(
   pr: string,
   head: string,
   expectedTransition?: string,
 ): Promise<number> {
   let persisted = await readCiState(pr);
-  const unreadDuringReleaseRecovery = (failure: HoldReadFailure): number => {
-    const code = unread(failure);
-    if (persisted?.phase === "releasing")
-      process.stdout.write("release-proof-pending\n");
-    return code;
-  };
+  const unreadDuringReleaseRecovery = (failure: HoldReadFailure): number =>
+    unreadDuringReleasingState(failure, persisted);
   // Nothing has changed yet, so a forge timing out here is retried later.
   const read = await readPrSnapshot(pr, policy.holdLabel);
   if (!read.ok) return unreadDuringReleaseRecovery(read.failure);
@@ -891,7 +897,7 @@ function takeExpectedTransition(
 }
 
 function releaseProofPending(command: string, releasing: boolean): boolean {
-  return command === "release" && releasing;
+  return (command === "ensure" || command === "release") && releasing;
 }
 
 async function checkRecordedHold(
@@ -969,20 +975,6 @@ async function main(): Promise<number> {
   } catch (error) {
     configError(error);
   }
-  const recorded = await readCiState(pr);
-  if (recorded?.phase === "releasing" && recorded.raceDetected === true)
-    return refuseRace(
-      pr,
-      head,
-      recorded.actor,
-      holdLabel ?? LEGACY_CI_HOLD_LABEL,
-      () => transitions(pr),
-      ghCall,
-      unread,
-      recorded,
-    );
-  const unreadable = await checkRecordedHold(pr, command);
-  if (unreadable !== null) return unreadable;
   if (command === "ensure" || command === "release" || command === "rollback") {
     const fence = await resolveFenceContext("ci-hold.ts");
     const remoteLock =
@@ -994,6 +986,20 @@ async function main(): Promise<number> {
         ? null
         : setInterval(() => remoteLock.touch(), lockHeartbeatMs());
     try {
+      const recorded = await readCiState(pr);
+      const unreadable = await checkRecordedHold(pr, command);
+      if (unreadable !== null) return unreadable;
+      if (recorded?.phase === "releasing" && recorded.raceDetected === true)
+        return refuseRace(
+          pr,
+          head,
+          recorded.actor,
+          holdLabel ?? LEGACY_CI_HOLD_LABEL,
+          () => transitions(pr),
+          ghCall,
+          (failure) => unreadDuringReleasingState(failure, recorded),
+          recorded,
+        );
       if (command === "ensure") return await ensure(pr, head);
       if (command === "rollback") return await rollback(pr, head);
       return await release(pr, head, expectedTransition);
@@ -1003,6 +1009,8 @@ async function main(): Promise<number> {
       remoteLock?.dispose();
     }
   }
+  const unreadable = await checkRecordedHold(pr, command);
+  if (unreadable !== null) return unreadable;
   return finalReady(pr, head, requireSuccess);
 }
 
