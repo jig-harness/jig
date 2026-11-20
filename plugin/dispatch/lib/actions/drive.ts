@@ -37,6 +37,7 @@ import { git, gitIdentityEnv } from "../../../shared/proc.ts";
 import { idleBlocksStart } from "../automation.ts";
 import { cloneId } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { peekCloneKey } from "../../../skills/drive-pr/scripts/lib/state/clone-key.ts";
+import { unrecordedDrivers } from "../host-drivers.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
 import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
@@ -698,6 +699,18 @@ function driveRecord(
   heads: string | null,
 ): LaunchRecord {
   const kind = isTakeover(action) ? "takeover" : "rearm";
+  const clone = peekCloneKey(repo.path);
+  const holder =
+    action.takeoverHolder === undefined || !state.drivers?.ok || clone === null
+      ? undefined
+      : unrecordedDrivers(
+          state.table.map((entry) => entry.account),
+          state.records,
+          state.drivers.value,
+        ).find(
+          (entry) =>
+            entry.driver.clone === clone && entry.driver.pr === pr.number,
+        );
   return {
     version: 1,
     ...(action.steward === undefined
@@ -716,6 +729,15 @@ function driveRecord(
     passTimeoutSec: state.passDeadlineSec,
     ...codexLaunchFields(state.codexOptIn),
     replaces: action.takeover ?? null,
+    ...(holder === undefined
+      ? {}
+      : {
+          replacesHostDriver: {
+            clone: holder.driver.clone,
+            pr: holder.driver.pr,
+            since: holder.driver.since,
+          },
+        }),
     facts: action.facts ?? factsOf(pr),
     createdAt: currentIso(),
     workspace,
@@ -755,7 +777,13 @@ async function launchOne(
   if (late !== null) return waits(action, late);
   const changed = stillWanted(action, fresh, drive.held);
   if (changed !== null) return waits(action, changed);
-  const admitted = await admitAccount(state, repo.slug, action);
+  const admitted = await admitAccount(
+    state,
+    repo.slug,
+    action,
+    0,
+    peekCloneKey(repo.path),
+  );
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const pr = fresh as DrivenPr;

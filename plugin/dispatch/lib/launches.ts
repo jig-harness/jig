@@ -181,6 +181,8 @@ export interface LaunchRecord {
   codexPassArgs?: string[];
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
+  /** For a takeover of an unrecorded host driver: that driver's lock identity. */
+  replacesHostDriver?: { clone: string; pr: number; since: string };
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
   facts: string;
   createdAt: string;

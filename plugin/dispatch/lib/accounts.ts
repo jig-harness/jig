@@ -298,8 +298,21 @@ function heldByAccount(
     if (name === null) continue;
     held.set(name, (held.get(name) ?? 0) + 1);
   }
-  for (const { account } of unrecordedDrivers(accounts, records, drivers))
-    if (account !== null) held.set(account, (held.get(account) ?? 0) + 1);
+  for (const { account, driver } of unrecordedDrivers(
+    accounts,
+    records,
+    drivers,
+  ))
+    if (
+      [...holding.values()].some(
+        (record) =>
+          record.replacesHostDriver?.clone === driver.clone &&
+          record.replacesHostDriver.pr === driver.pr &&
+          record.replacesHostDriver.since === driver.since,
+      )
+    )
+      continue;
+    else if (account !== null) held.set(account, (held.get(account) ?? 0) + 1);
   return held;
 }
 

@@ -773,6 +773,7 @@ export async function admitAccount(
   repo: string,
   action: Action,
   pickupDeadlineSec = 0,
+  clone?: string | null,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
@@ -782,7 +783,7 @@ export async function admitAccount(
   const failed = new Set<string>(held.keys());
   let refusal: LaunchOutcome | null = null;
   for (;;) {
-    const admitted = admission(state, action, failed, pickupDeadlineSec);
+    const admitted = admission(state, action, failed, pickupDeadlineSec, clone);
     if ("waits" in admitted)
       return {
         outcome: refusal ?? {
@@ -807,7 +808,10 @@ export async function admitAccount(
     if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    if (action.takeover !== undefined && !takeoverMoves(state, action))
+    if (
+      (action.takeover !== undefined && !takeoverMoves(state, action)) ||
+      action.takeoverHolder !== undefined
+    )
       return { outcome: refusal };
     failed.add(name);
   }

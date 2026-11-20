@@ -49,19 +49,36 @@ export function admission(
   action: Action,
   excluded: ReadonlySet<string>,
   pickupDeadlineSec: number,
+  clone?: string | null,
 ): Admission {
   const codex = state.codexOptIn;
   const stage = action.stage as ServedStage;
-  if (action.takeoverHolder !== undefined && state.drivers?.ok) {
+  if (
+    action.takeoverHolder !== undefined &&
+    state.drivers?.ok &&
+    clone !== null &&
+    clone !== undefined
+  ) {
     const holder = unrecordedDrivers(
       state.table.map((slots) => slots.account),
       state.records,
       state.drivers.value,
     ).find(
       (driver) =>
-        driver.driver.pr === Number(action.target.replace("PR #", "")),
+        driver.driver.pr === Number(action.target.replace("PR #", "")) &&
+        driver.driver.clone === clone,
     );
-    if (holder?.account !== null && holder?.account !== undefined)
+    if (
+      holder?.account !== null &&
+      holder?.account !== undefined &&
+      !excluded.has(holder.account) &&
+      (() => {
+        const account = state.table.find(
+          (slots) => slots.account.name === holder.account,
+        )?.account;
+        return account !== undefined && serves(account, stage);
+      })()
+    )
       return admitHostDriverTakeover(
         state.table,
         holder.account,
