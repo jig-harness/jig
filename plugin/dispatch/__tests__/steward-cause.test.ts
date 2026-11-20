@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CONCLUDED_MAX,
   checkClosingReport,
   type ClosingReport,
 } from "../../shared/closing-report.ts";
@@ -170,6 +171,22 @@ describe("the wrapper's report of an end it explains", () => {
     expect(
       wrapperReport({ action: "rearm", passTimeoutSec: 900 }, null),
     ).toBeNull();
+  });
+
+  it("bounds a drive probe's conclusion to the closing-report contract", () => {
+    const reason = "r".repeat(512);
+    const output = `drive.ts: status probe stopped: ${JSON.stringify({
+      code: 1,
+      state: "S".repeat(64),
+      reason,
+    })}`;
+    const report = valid(
+      wrapperReport(
+        { action: "rearm", passTimeoutSec: 900 },
+        { code: 1, signal: null, output },
+      ),
+    );
+    expect([...report.concluded]).toHaveLength(CONCLUDED_MAX);
   });
 
   it("records every steward pass that left no report, with the cause it saw, else unknown", () => {

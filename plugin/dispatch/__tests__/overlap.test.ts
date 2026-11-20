@@ -175,6 +175,21 @@ describe("shared units", () => {
     ).toEqual([]);
   });
 
+  it("charges area overlap only when two seed globs can match the same file", () => {
+    const m = model(
+      {},
+      {},
+      {
+        source: ["src/**/*.ts"],
+        docs: ["src/**/*.md"],
+        configs: ["**/{config,settings}.ts"],
+      },
+    );
+    const work = [pr(1, areas("source"))];
+    expect(cost(areas("docs"), work, m)).toBe(0);
+    expect(cost(areas("configs"), work, m)).toBeCloseTo(0.2);
+  });
+
   it("leaves out a generated or ignored file", () => {
     const m = model(
       { ignore: ["CHANGELOG.md"] },
