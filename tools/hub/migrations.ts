@@ -56,6 +56,7 @@ import {
 import { join, relative, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import type { Config } from "drizzle-kit";
+import { swallow } from "../../plugin/shared/errors.ts";
 import { cli, strictOptions } from "../../lib/cli.ts";
 import {
   drizzle,
@@ -205,7 +206,8 @@ function journalEntries(text: string): unknown[] | null {
         ? (parsed as { entries?: unknown }).entries
         : undefined;
     return Array.isArray(entries) ? entries : null;
-  } catch {
+  } catch (error) {
+    swallow(error, "a migration journal that is not JSON has no entries");
     return null;
   }
 }
