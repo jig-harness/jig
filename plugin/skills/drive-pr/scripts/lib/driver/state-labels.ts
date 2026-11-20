@@ -331,18 +331,24 @@ export async function labelDrive(
     const moment = typeof momentOf === "function" ? await momentOf() : momentOf;
     const ledger = ledgerAt(moment);
     if (ledger === null) return null;
-    const settings = await source.settings();
-    if (!settings.ok) {
-      console.error(
-        `labels: PR #${pr}'s state label is not written: dispatch.labels does not read (${settings.failure.reason})`,
-      );
-      return null;
-    }
     const projected = ledgerState(ledger, DONE_EXITS);
     const converged =
       "stopped" in moment &&
       projected !== "unknown" &&
       projected.state === "converged";
+    const settings = await source.settings();
+    if (!settings.ok) {
+      console.error(
+        `labels: PR #${pr}'s state label is not written: dispatch.labels does not read (${settings.failure.reason})`,
+      );
+      // Keep an unreadable setting distinct from labels being deliberately off:
+      // recovery must retain its witness and retry this pending projection.
+      return {
+        moment,
+        converged,
+        write: { outcome: "refused", detail: settings.failure.reason },
+      };
+    }
     if (converged && moment.verifiedSha === "") {
       console.error(
         `labels: PR #${pr}'s labels are left as they are: the drive recorded no verified head to label converged`,

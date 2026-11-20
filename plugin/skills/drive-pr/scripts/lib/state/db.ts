@@ -221,6 +221,10 @@ const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: "ALTER TABLE cancelled_ci ADD COLUMN requested_runs TEXT NOT NULL DEFAULT '[]';",
   },
+  {
+    additive: true,
+    sql: "ALTER TABLE driver_records ADD COLUMN pending_exit INTEGER;",
+  },
 ];
 
 /** The schema version this plugin writes. */

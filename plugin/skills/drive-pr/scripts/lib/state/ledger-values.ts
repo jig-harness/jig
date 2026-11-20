@@ -1,5 +1,8 @@
 /** Closed ledger values shared by runtime readers and shape descriptions, without loading a command runner. */
 
+/** A running driver has published the converged label and is settling its CI. */
+export const CONVERGED_CI_PHASE = "converged-ci-watch";
+
 export const TAKEOVER_VERDICTS = ["WEDGED", "DEAD", "STALE"] as const;
 
 export const DECISION_CLASSES = [
