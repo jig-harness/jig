@@ -93,7 +93,8 @@ export interface Claim {
   renewedAt: string;
 }
 
-function claimOf(row: LockRow): Claim {
+/** The claim a lock row records. */
+export function claimOf(row: LockRow): Claim {
   return {
     name: row.name,
     nonce: row.token,

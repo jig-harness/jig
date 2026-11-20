@@ -34,6 +34,7 @@ import { isRecord } from "../../../../../shared/guards.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
+import { probeStopOf } from "../status/probe-stop.ts";
 import { recordCiAction } from "./ci-actions.ts";
 
 import { EVENT_CAUSES } from "./ledger-values.ts";
@@ -51,6 +52,8 @@ export interface DriveEvent {
   tree?: string;
   /** On a `stop` on the forge's spent rate limit: when the limit resets, an instant. The ledger's shape leaves the field open, so a reader takes it only when it is an instant (`stopInstant`) and a malformed value never makes the ledger unreadable. */
   until?: unknown;
+  /** A status probe report on a stop whose exit was passed through. */
+  probe?: unknown;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -145,13 +148,33 @@ export async function recordEvent(
       ...(input.leftWork === undefined ? {} : { leftWork: input.leftWork }),
       ...(input.tree === undefined ? {} : { tree: input.tree }),
       ...(input.until === undefined ? {} : { until: input.until }),
+      ...(input.probe === undefined ? {} : { probe: input.probe }),
     };
-    if (!isDriveEvent(event))
+    if (
+      !isDriveEvent(event) ||
+      !stopOnly(
+        event.kind,
+        event.probe,
+        probeStopOf(event.probe)?.code === Number(event.cause),
+      )
+    )
       fail(
         2,
         `record-event: kind restart (${EVENT_CAUSES.restart.join(", ")}), rearm (${EVENT_CAUSES.rearm.join(", ")}), ci (rerun: or repair: detail) or stop (the exit code)`,
       );
-    return { ...s, events: [...(s.events ?? []), event] };
+    return { ...s, events: [...(s.events ?? []), cleanStopEvent(event)] };
   });
   return 0;
+}
+
+/** Keep a probe report's reason safe when the event comes from another writer. */
+export function cleanStopEvent(event: DriveEvent): DriveEvent {
+  if (event.probe === undefined) return event;
+  const { probe, ...rest } = event;
+  const clean = probeStopOf(probe);
+  return clean === null ||
+    event.kind !== "stop" ||
+    String(clean.code) !== event.cause
+    ? rest
+    : { ...rest, probe: clean };
 }
