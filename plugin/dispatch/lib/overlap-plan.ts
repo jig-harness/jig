@@ -1,32 +1,24 @@
 /**
- * Overlap, reported: the plan phase's part of overlap-aware admission
- * (design/overlap-aware-admission.md, build step 6). Once a repository's
- * plan is made, its planned pickups, in rank order, are weighed against the
- * work in flight (`overlap.ts`): every open pull request by its changed files
- * (`sources/pr-files.ts`), and every pickup in flight with no linked open
- * pull request (this host's running pickups and the identity's claimed
- * items) by its footprint record (`overlap-observe.ts`). Each pickup's cost,
- * tier and reason go on the report (`report.overlap`), the dashboard's queue
- * and `jig ask`; the waits are kept in the state database
- * (`overlap-waits.ts`) by a tick that applies.
- *
- * It changes nothing the tick starts: the plan's actions, their order and
- * the per-epic width stay as they were.
+ * Prepare a repository's overlap walk from its open pull requests, claimed
+ * items and running pickups. Use the launch outcomes to count which of
+ * this tick's attempts add work in flight, then record the waits and
+ * report how the walk weighed each pickup.
  */
 import { matchesGlob } from "../../shared/glob.ts";
 import { isRecord } from "../../shared/guards.ts";
-import { attempt } from "../../shared/outcome.ts";
+import { attempt, Defect } from "../../shared/outcome.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import type { FootprintReading } from "../../skills/do-item/scripts/lib/tracker/footprint-port.ts";
 import type { ChangeAreaCatalog } from "../../skills/drive-pr/scripts/lib/change-areas-catalog.ts";
 import { readConflictRates } from "./conflict-rates.ts";
-import type { ReadRecord } from "./launches.ts";
+import { holds, type ReadRecord } from "./launches.ts";
 import { holdsItem } from "./launch-pickups.ts";
 import {
   type InFlight,
   type Footprint,
   type OverlapModel,
   type Placed,
+  overlapTurns,
   UNKNOWN_FOOTPRINT,
   type Wait,
   walkOverlap,
@@ -50,6 +42,7 @@ import { branchPattern } from "./section.ts";
 import { allRecords, type TickContext } from "./tick-context.ts";
 import type { RepoObservation } from "./tick-observe.ts";
 import { workLinks } from "./work-links.ts";
+import type { Action, LaunchOutcome } from "./types.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -201,10 +194,32 @@ export function pullRequestsInFlight(
 }
 
 /** The state each running or claimed pickup is in, by item key. */
-function pickupStates(observation: RepoObservation): Map<string, string> {
+function pickupStates(
+  observation: RepoObservation,
+  records: readonly ReadRecord[],
+): Map<string, string> {
+  const { repo, report } = observation.opened;
   const states = new Map<string, string>();
-  for (const r of observation.opened.report.running)
-    if (r.stage === "pickup") states.set(r.target, "running");
+  // Session-only rows are independent of the records. For a record-backed
+  // row use the live records, since a recovery attempt may have changed them.
+  for (const r of report.running)
+    if (r.stage === "pickup" && r.evidence.record === undefined)
+      states.set(r.target, "running");
+  for (const { record, state } of records) {
+    if (
+      record.repo !== repo.slug ||
+      record.action !== "pickup" ||
+      !holds(state)
+    )
+      continue;
+    const items = record.batchItems?.map(({ key }) => key) ?? [record.item];
+    for (const key of items)
+      if (key !== null && holdsItem(record, key))
+        states.set(
+          key,
+          state.kind === "pending" ? "launch pending" : "running",
+        );
+  }
   for (const c of observation.tracked.claimed ?? [])
     if (!states.has(c.key)) states.set(c.key, "claimed");
   return states;
@@ -259,7 +274,7 @@ export function pickupsInFlight(
   const urls = new Map<string, string | null>();
   for (const w of tracked.pickups) urls.set(w.key, w.url);
   for (const c of tracked.claimed ?? []) urls.set(c.key, c.url ?? null);
-  const states = pickupStates(observation);
+  const states = pickupStates(observation, records);
   const launchOf = launchesOf(records, opened.repo.slug);
   const groups = new Map<string, string[]>();
   for (const [key] of states) {
@@ -334,14 +349,13 @@ function storeWaits(
   stored: ReadonlyMap<string, Wait>,
   joined: ReadonlyMap<string, Wait>,
   notes: string[],
+  launched: ReadonlySet<string>,
 ): void {
   if (context.apply === null) return;
   const { tracked, opened } = observation;
-  const started = new Set(
-    opened.report.running
-      .filter((r) => r.stage === "pickup")
-      .map((r) => r.target),
-  );
+  const started = new Set(launched);
+  for (const r of opened.report.running)
+    if (r.stage === "pickup") started.add(r.target);
   const wanted =
     tracked.claimed === null || tracked.partial === true
       ? null
@@ -356,12 +370,14 @@ function storeWaits(
           (memberKeys.get(p.candidate.item) ?? [p.candidate.item]).map(
             (key): [string, Wait | null] => [
               key,
-              memberWait(
-                p,
-                stored.get(key),
-                joined.get(p.candidate.item),
-                context.nowMs,
-              ),
+              started.has(key)
+                ? null
+                : memberWait(
+                    p,
+                    stored.get(key),
+                    joined.get(p.candidate.item),
+                    context.nowMs,
+                  ),
             ],
           ),
         ),
@@ -409,14 +425,17 @@ function hotspots(
     }));
 }
 
-/** Weigh one planned repository's pickups against the work in flight, and report it. */
-export function planOverlap(
+/** Weigh and report one repository's pickups, launching each turn when given a launch callback. */
+export async function planOverlap(
   context: TickContext,
   observation: RepoObservation,
-): void {
+  pickups = observation.opened.report.actions.filter(
+    (a) => a.stage === "pickup" && a.relaunch === undefined,
+  ),
+  launch?: (action: Action) => Promise<LaunchOutcome>,
+): Promise<void> {
   const { opened, tracked } = observation;
   const { report, section, repo } = opened;
-  const pickups = report.actions.filter((a) => a.stage === "pickup");
   const facts = observation.overlap;
   const notes = [...(facts?.notes ?? [])];
   if (pickups.length === 0) {
@@ -428,6 +447,7 @@ export function planOverlap(
       new Map(),
       new Map(),
       notes,
+      new Set(),
     );
     return;
   }
@@ -479,8 +499,29 @@ export function planOverlap(
     );
     if (joined !== undefined) waits.set(c.item, joined);
   }
-  const placed = walkOverlap(candidates, inFlight, waits, model, context.nowMs);
-  storeWaits(context, observation, placed, memberKeys, stored, waits, notes);
+  const launched = new Set<string>();
+  const placed =
+    launch === undefined
+      ? walkOverlap(candidates, inFlight, waits, model, context.nowMs)
+      : await applyOverlap(
+          overlapTurns(candidates, inFlight, waits, model, context.nowMs),
+          new Map(pickups.map((action) => [action.target, action])),
+          launch,
+          launched,
+        );
+  const started = new Set(
+    [...launched].flatMap((item) => memberKeys.get(item) ?? [item]),
+  );
+  storeWaits(
+    context,
+    observation,
+    placed,
+    memberKeys,
+    stored,
+    waits,
+    notes,
+    started,
+  );
   // A member shares its batch's placement, with its own footprint reading beside it.
   const members = placed.flatMap((p) =>
     (memberKeys.get(p.candidate.item) ?? [p.candidate.item]).map((item) => ({
@@ -508,8 +549,38 @@ export function planOverlap(
         context.nowMs,
       );
     }),
-    hotspots: hotspots(context, repo.slug, placed, notes),
+    hotspots: hotspots(
+      context,
+      repo.slug,
+      placed.filter((p) => !launched.has(p.candidate.item)),
+      notes,
+    ),
     notes,
   };
   report.overlap = overlap;
+}
+
+/** A pending launch with no answer can still be running and already holds a slot. */
+async function applyOverlap(
+  turns: ReturnType<typeof overlapTurns>,
+  actions: ReadonlyMap<string, Action>,
+  launch: (action: Action) => Promise<LaunchOutcome>,
+  launched: Set<string>,
+): Promise<Placed[]> {
+  const placed: Placed[] = [];
+  let turn = turns.next();
+  while (!turn.done) {
+    const placement = turn.value;
+    const action = actions.get(placement.candidate.item);
+    if (action === undefined)
+      throw new Defect("overlap placement lacks a pickup action");
+    const { outcome } = await launch(action);
+    placed.push(placement);
+    const started = outcome === "launched" || outcome === "retried";
+    if (started) launched.add(action.target);
+    turn = turns.next(
+      started ? "started" : outcome === "lost" ? "launch pending" : null,
+    );
+  }
+  return placed;
 }

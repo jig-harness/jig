@@ -1,11 +1,11 @@
 ---
 title: "ADR-0024: An epic's ready children are admitted in parallel"
 type: adr
-status: draft
-description: "The dispatcher admits an epic's ready children in parallel by default; overlap between pieces of work is a cost weighed against waiting, never an absolute; until overlap-aware admission exists, a per-epic width (dispatch.epic_width, default 4) bounds the children of an epic with no execution plan under way at once"
+status: amended
+description: "The dispatcher admits ready epic children in parallel and orders them with other pickups by shared files and waiting time."
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-11-14
+version: "1.1"
+last_updated: 2026-11-20
 owner: maintainers
 decision_date: 2026-11-14
 supersedes: ~
@@ -15,7 +15,7 @@ tags: [adr, dispatcher, epics, admission, parallelism]
 
 # ADR-0024: An epic's ready children are admitted in parallel
 
-**Status:** Draft · **Date:** 2026-11-14 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Amended · **Date:** 2026-11-14 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
@@ -52,6 +52,8 @@ The forces:
   else guesses at an order nobody declared.
 
 ## Decision
+
+The temporary width below ended when [overlap-aware admission](#2026-11-20--overlap-aware-admission) took effect.
 
 **Admission is parallel by default.** The dispatcher starts every ready
 child of an epic, within the host's capacity, unless a declared hold says
@@ -111,7 +113,7 @@ calls the width a temporary bound until overlap-aware admission replaces it.
 - The width is a bound with no knowledge of the work. It is temporary, and
   its default is a guess to be replaced by overlap-aware admission.
 
-## Implementation
+## Initial implementation
 
 `plugin/dispatch/lib/sources/served-epics.ts` (`serializeEpics`) keeps a
 plan-less epic's children up to its width;
@@ -124,3 +126,15 @@ documented in [CONFIGURATION.md](../../plugin/CONFIGURATION.md#dispatch).
 Not mechanically checkable as a pattern. The dispatcher's tests hold the
 behaviour: a width of 4 starts four of five ready children, a parked child
 leaves its siblings free, and a width of 1 starts one child at a time.
+
+## Amendments
+
+### 2026-11-20 · Overlap-aware admission
+
+Ready children enter the same overlap tiers as other ready pickups. A
+declared execution plan or serialized area can require serial work. The
+dispatcher admits overlapping work when a slot is free and no earlier
+candidate can use it. It ignores `dispatch.epic_width` and reports its
+replacement, `dispatch.overlap`.
+
+The dispatcher's admission and configuration tests hold these rules.

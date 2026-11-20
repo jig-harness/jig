@@ -24,7 +24,8 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { retireRearmRequests } from "./actions/retire-rearm.ts";
-import { applyPickups } from "./actions/pickup.ts";
+import { applyPickups, type PickupContext } from "./actions/pickup.ts";
+import { planOverlap } from "./overlap-plan.ts";
 import { newPreflight, trackerTargetOf } from "./preflight.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
 import { timeLeftMs } from "./actions/launch.ts";
@@ -199,6 +200,8 @@ export async function actObserved(
     pickupArms: pickupArms(allRecords(context), repo),
     section,
     tracked: observation.tracked,
+    admitPickups: (wanted, launch) =>
+      planOverlap(context, observation, wanted, launch),
     login: forge.login,
     merged: forge.merged,
     drives: observation.drives,
@@ -282,6 +285,7 @@ interface ApplyInputs {
   runtime: SessionRuntime;
   section: DispatchSection;
   tracked: Tracked;
+  admitPickups: NonNullable<PickupContext["admit"]>;
   login: string | null;
   merged: MarkedPr[];
   drives: DrivenPr[];
@@ -380,6 +384,7 @@ async function applyStages(
         const { tracker, keys } = tracked;
         if (enabled.has("pickup") && tracker !== null && keys)
           await applyPickups(apply, repo, report, {
+            admit: inputs.admitPickups,
             section,
             tracker,
             keys,

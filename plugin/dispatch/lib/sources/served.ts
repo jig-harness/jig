@@ -1,11 +1,4 @@
 import type { PlanMergeReader } from "./plan-merges.ts";
-import { anyWorking } from "./served-occupancy.ts";
-import {
-  attachAdmissions,
-  withOccupancySetup,
-  occupancySlots,
-  occupancyMetadata,
-} from "./served-occupancy.ts";
 /**
  * Served assignments, inherited through epics, with metadata kept at
  * updatedAt. The tracker is read through the tick's view of the person's
@@ -58,9 +51,8 @@ import {
   childPlanHold,
   type PassOver,
   parkedOnPerson,
-  takeUnreadSlot,
+  noteUnreadChild,
   type EpicWalk,
-  type Serial,
 } from "./served-epics.ts";
 import {
   NEEDS_REPOSITORY_LABEL,
@@ -70,12 +62,7 @@ import {
   unlabeledOutcome,
 } from "./served-repo.ts";
 import { freshAuthority } from "./served-authority.ts";
-import {
-  childMergeEvidence,
-  planKeys,
-  servedPlan,
-  type ServedPlan,
-} from "./served-plan.ts";
+import { childMergeEvidence, planKeys, servedPlan } from "./served-plan.ts";
 import type { ServedView, ServedViews } from "./served-reads.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
@@ -123,9 +110,7 @@ export interface ServedOptions extends ServedPolicy {
   bound?: import("./tracker-facets.ts").FacetBound;
   /** The tick's views, shared by every repository that reads the same tracker, team and person. */
   views?: ServedViews;
-  /** `dispatch.epic_width`: how many children of an epic with no execution plan are under way at once. */
-  epicWidth?: number;
-  /** Why this machine's launch records keep an item from starting, so it takes no epic's slot. */
+  /** Why a local pickup record keeps an item from starting. */
   passOver?: PassOver;
 }
 /** An unplaced row's target, with the title and link the listing returned for it. */
@@ -138,8 +123,6 @@ const itemOf = (i: PoolIssue) => ({
 /** What the walks of every served identity in one reading share about epics. */
 interface EpicState {
   walks: EpicWalk[];
-  /** The width constraint of each child of an epic with no execution plan, whoever reaches the child first. */
-  serials: Map<string, Serial>;
   /** Items whose failed read is already recorded, so a later visit does not report it again. */
   reported: Set<string>;
 }
@@ -240,7 +223,6 @@ export async function readServedPickups(
   const seen = new Set<string>();
   const shared: EpicState = {
     walks: [],
-    serials: new Map(),
     reported: new Set(),
   };
   let limited: PersonReading["limited"] = null;
@@ -383,7 +365,6 @@ interface Pending {
   planHold: string | undefined;
   /** Set for a blocker pulled forward: the item whose authority it is worked on. */
   pull?: PullOrigin | undefined;
-  serial?: Serial | undefined;
 }
 interface WalkContext {
   tracker: Tracker;
@@ -393,7 +374,6 @@ interface WalkContext {
   view: ServedView;
   seen: Set<string>;
   walks: EpicWalk[];
-  serials: Map<string, Serial>;
   reported: Set<string>;
 }
 /** What one node of the walk found, merged in the walk's order. */
@@ -520,88 +500,43 @@ async function enqueueChildren(
 ): Promise<void> {
   const { options } = ctx;
   const { children, unread } = await readChildren(ctx, meta, found);
-  let serial: Serial | undefined;
-  let selection: ServedPlan;
-  try {
-    const planned = servedPlan(
-      meta.description ?? "",
-      issue.identifier,
-      {},
-      options.executionPlanBlock,
-    ).present;
-    const live = await childStates(
-      ctx,
-      children,
-      meta,
-      found,
-      planned ? undefined : unread,
-    );
-    selection = servedPlan(
-      meta.description ?? "",
-      issue.identifier,
-      live,
-      options.executionPlanBlock,
-      await childMergeEvidence(ctx.tracker, meta.description, options),
-    );
-    const parked = selection.present
-      ? []
-      : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
-    const busy = await occupancySlots(
-      children,
-      unread,
-      async (branch) => {
-        const info = await occupancyMetadata(
-          ctx.tracker,
-          branch,
-          ctx.cache,
-          ctx.view,
-        );
-        return readChildren(ctx, info, found);
-      },
-      (branch) => parkedOnPerson(branch, ctx.tracker, options),
-      (child, error) => {
-        unreadable(
-          child,
-          error === undefined
-            ? "the nested occupancy cannot be read completely"
-            : failureText(error),
-          found,
-          error === undefined ? [] : [error],
-        );
-      },
-      {
-        recursive: !selection.present,
-        failed: (error) => itemFailed(found, error),
-      },
-    );
-    ctx.walks.push({
-      key: issue.identifier,
-      children: children.map((c) => c.identifier),
-      unread,
-      working: anyWorking(children, parked, busy),
-      parked: parked.map((c) => c.identifier),
-    });
-    serial = selection.present
-      ? undefined
-      : { epic: issue.identifier, busy, unread };
-  } catch (error) {
-    // Setup failed: no sibling starts on a guess, and a directly assigned child is held too.
-    for (const kept of meta.children)
-      ctx.serials.set(kept.identifier, {
-        epic: issue.identifier,
-        busy: [],
-        unread: [],
-        unknown: meta.children[0]?.identifier ?? issue.identifier,
-      });
-    throw error;
-  }
+  const planned = servedPlan(
+    meta.description ?? "",
+    issue.identifier,
+    {},
+    options.executionPlanBlock,
+  ).present;
+  const live = await childStates(
+    ctx,
+    children,
+    meta,
+    found,
+    planned ? undefined : unread,
+  );
+  const selection = servedPlan(
+    meta.description ?? "",
+    issue.identifier,
+    live,
+    options.executionPlanBlock,
+    await childMergeEvidence(ctx.tracker, meta.description, options),
+  );
+  const parked = selection.present
+    ? []
+    : children.filter((c) => parkedOnPerson(c, ctx.tracker, options));
+  ctx.walks.push({
+    key: issue.identifier,
+    children: children.map((c) => c.identifier),
+    unread,
+    working: children.some(
+      (child) => child.state.type === "started" && !parked.includes(child),
+    ),
+    parked: parked.map((c) => c.identifier),
+  });
   for (const child of children) {
-    if (serial !== undefined) ctx.serials.set(child.identifier, serial);
     found.pending.push({
       issue: child,
       ancestor: ancestor ?? issue.identifier,
       by: candidate.by,
-      serial,
       epicOrder: selection.present
         ? selection.order.indexOf(child.identifier)
         : undefined,
@@ -724,6 +659,12 @@ async function placeNode(
   if (held !== null) return void unplace(held);
   if (meta.children.length > 0)
     return enqueueChildren(ctx, issue, ancestor, meta, candidate, found);
+  if (issue.isEpic && issue.hasOpenChildren) {
+    itemFailed(found);
+    return void unplace(
+      "the epic reports open children but its children cannot be read",
+    );
+  }
   await placeLeaf(ctx, candidate, found, unplace);
 }
 
@@ -779,16 +720,6 @@ async function placeLeaf(
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return void unplace(parentHold);
-  const admissionHold = await attachAdmissions(
-    ctx,
-    candidate,
-    found,
-    (parent, meta) =>
-      withOccupancySetup(found, (setup) =>
-        enqueueChildren(ctx, parent, undefined, meta, candidate, setup),
-      ),
-  );
-  if (admissionHold !== null) return void unplace(admissionHold);
   found.candidates.push(candidate);
 }
 
@@ -848,7 +779,7 @@ async function childStates(
           ).catch((error: unknown) => {
             // An epic with a plan keeps the failure: its consistency needs this read.
             if (unread === undefined) return Promise.reject(error);
-            return takeUnreadSlot(unread, child.identifier, error, (e) => {
+            return noteUnreadChild(unread, child.identifier, error, (e) => {
               // Recorded when observed: a later visit may never happen.
               if (ctx.reported.has(child.identifier)) return;
               ctx.reported.add(child.identifier);
@@ -911,7 +842,6 @@ function candidateOf(
     ancestor: node.ancestor,
     blockers: open.map((b) => b.key),
     ...(node.pull === undefined ? {} : { blockingFor: node.pull.root }),
-    ...(node.serial === undefined ? {} : { serial: node.serial }),
     ...(node.epicOrder === undefined ? {} : { epicOrder: node.epicOrder }),
     unblocks: meta.relations.filter((r) => r.type === "blocks").length,
   };

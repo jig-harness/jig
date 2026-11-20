@@ -20,6 +20,7 @@ import {
   canonical,
   UNKNOWN_FOOTPRINT,
   type Wait,
+  overlapTurns,
   walkOverlap,
 } from "../lib/overlap.ts";
 import {
@@ -441,6 +442,28 @@ describe("tiers, patience and promotion", () => {
 });
 
 describe("the walk", () => {
+  it("does not charge a later pickup for a launch that did not start", () => {
+    const turns = overlapTurns(
+      [
+        candidate("A", files("src/a.ts")),
+        candidate("B", files("src/a.ts")),
+        candidate("C", files("src/c.ts")),
+      ],
+      [],
+      new Map(),
+      model({ maxPerFile: 1 }),
+      NOW,
+    );
+    expect(turns.next().value).toMatchObject({
+      candidate: { item: "A" },
+      tier: 1,
+    });
+    expect(turns.next(null).value).toMatchObject({
+      candidate: { item: "B" },
+      tier: 1,
+    });
+  });
+
   it("weighs each pickup after the ones would be admitted ahead of it, so two overlapping pickups are not both free", () => {
     const placed = walkOverlap(
       [candidate("A", files("src/a.ts")), candidate("B", files("src/a.ts"))],

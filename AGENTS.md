@@ -153,7 +153,9 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
   deciding something it settles. When several approaches are viable and no
   rule decides, lean the way [docs/dispositions.md](docs/dispositions.md) says.
   Deferred findings and epic closure follow
-  [ADR-0025](docs/adr/ADR-0025-deferred-findings-stay-outside-epic-scope.md).
+  [ADR-0025](docs/adr/ADR-0025-deferred-findings-stay-outside-epic-scope.md). Ready epic children
+  share the overlap admission rules of other pickups
+  ([ADR-0024](docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)).
 - **HITL (human-in-the-loop) decisions**: publishing/visibility, license,
   deleting seed material, and anything touching the origin-reference
   boundary — flag, don't act.
