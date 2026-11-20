@@ -401,6 +401,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.290.0] - 2026-11-20
+
+### Added
+
+- The [epic closure sweep](plugin/skills/do-item/README.md#the-epic-closure-sweep)
+  proposes closure for delivered scope, identifies unfinished work for the
+  backlog, and records a person's reply as the waiver. It checks the plan
+  and moves outstanding checks before closing an accepted epic.
+  **Consumer action:** advised at configuration. To transfer person-only
+  checks at epic closure, set `issue_tracker.person_checks` to the key of
+  a standing open issue.
+
+### Fixed
+
+- `jig dispatch`: a person's hold on an epic nested inside another epic now stops the work under it even when the hold arrives after the tick read its holds. Before, the check made just before a pickup launches looked only at the item and its outermost epic, so a leaf under a held nested epic could still start, alone or in a batch. The served queue, its batches and the pickup's launch record now carry every epic above the item, and that last check refuses the launch when any of them is held. Launch records written by an earlier release are still read, and checked against the one epic they name.
+
 ## [0.289.0] - 2026-11-20
 
 ### Changed
@@ -10244,7 +10260,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.289.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.290.0...HEAD
+[0.290.0]: https://github.com/jig-harness/jig/compare/v0.289.0...v0.290.0
 [0.289.0]: https://github.com/jig-harness/jig/compare/v0.288.2...v0.289.0
 [0.288.2]: https://github.com/jig-harness/jig/compare/v0.288.1...v0.288.2
 [0.288.1]: https://github.com/jig-harness/jig/compare/v0.288.0...v0.288.1
