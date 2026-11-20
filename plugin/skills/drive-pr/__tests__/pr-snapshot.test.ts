@@ -180,7 +180,9 @@ describe("readPrSnapshot", () => {
     expect(r.ok).toBe(false);
     expect(wire.sent).toEqual(["200 full", "502 conditional", "502 full"]);
     // Both failures are named, not only the last one.
-    expect(!r.ok && r.reason).toContain("then the full read");
+    expect(!r.ok && r.reason).toMatch(
+      /HTTP 502[\s\S]*then the full read[\s\S]*HTTP 502/,
+    );
   });
 
   it("names the conditional read's own failure beside the full read's", async () => {
