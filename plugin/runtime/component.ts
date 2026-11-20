@@ -76,8 +76,8 @@ export interface ComponentStatus {
 export interface DoctorCheck {
   /** Its stable name: `<component>:<what>` for a component's (`dispatch:orca`). */
   id: string;
-  /** `skip` where the check does not apply on this machine. */
-  status: "pass" | "fail" | "skip";
+  /** `skip` where the check does not apply on this machine; `warn` for what a person should look at that does not fail the machine. */
+  status: "pass" | "fail" | "skip" | "warn";
   detail: string;
   /** For a failure: the command that fixes it, or what to do. */
   fix?: string;
