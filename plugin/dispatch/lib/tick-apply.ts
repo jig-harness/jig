@@ -130,6 +130,7 @@ export function applyState(
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),
+    ...(drivers === undefined ? {} : { drivers }),
     startedAt,
     tick,
     repos: options.repos.length,

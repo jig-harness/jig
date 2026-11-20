@@ -9,11 +9,13 @@
 import {
   type Admission,
   admitRearm,
+  admitHostDriverTakeover,
   admitTakeover,
   type CodexOptIn,
   type Slots,
   slotsOf,
 } from "../accounts.ts";
+import { unrecordedDrivers, type HostDrivers } from "../host-drivers.ts";
 import { serves, type ServedStage } from "../account-stages.ts";
 import type { ReadRecord } from "../launches.ts";
 import type { Action } from "../types.ts";
@@ -25,6 +27,7 @@ export interface AdmissionState {
   records: ReadRecord[];
   codexOptIn: CodexOptIn;
   passDeadlineSec: number;
+  drivers?: HostDrivers;
 }
 
 /**
@@ -49,6 +52,24 @@ export function admission(
 ): Admission {
   const codex = state.codexOptIn;
   const stage = action.stage as ServedStage;
+  if (action.takeoverHolder !== undefined && state.drivers?.ok) {
+    const holder = unrecordedDrivers(
+      state.table.map((slots) => slots.account),
+      state.records,
+      state.drivers.value,
+    ).find(
+      (driver) =>
+        driver.driver.pr === Number(action.target.replace("PR #", "")),
+    );
+    if (holder?.account !== null && holder?.account !== undefined)
+      return admitHostDriverTakeover(
+        state.table,
+        holder.account,
+        state.passDeadlineSec,
+        codex,
+        stage,
+      );
+  }
   // A pickup is a headless pass under its own deadline (`dispatch.pickup_deadline`).
   if (stage === "pickup" || stage === "steward")
     return admitRearm(

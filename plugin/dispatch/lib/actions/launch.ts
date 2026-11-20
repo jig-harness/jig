@@ -21,6 +21,7 @@ import {
 } from "../accounts.ts";
 import { serves } from "../account-stages.ts";
 import { admission, takeoverMoves } from "./admission.ts";
+import type { HostDrivers } from "../host-drivers.ts";
 import {
   isInteractive,
   type LaunchAttempt,
@@ -93,6 +94,8 @@ export interface ApplyState {
    * it, so the pass command does what was judged.
    */
   codexOptIn: CodexOptIn;
+  /** Live driver locks read at the start of this apply phase. */
+  drivers?: HostDrivers;
   /** Each repository's sessions as its observation read them, by slug, for judging another repository's stuck records (`followup-lane.ts`). */
   sessionsOf?: Map<string, SessionsReport>;
   /** The workspaces this tick has opened so far, within `opens_per_tick`. */

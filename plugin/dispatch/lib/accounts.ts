@@ -498,6 +498,36 @@ export function admitTakeover(
   return { admitted: slots };
 }
 
+/** Admit a takeover into the slot of the live, unrecorded driver it replaces. */
+export function admitHostDriverTakeover(
+  table: Slots[],
+  account: string,
+  deadlineSec: number,
+  codex: CodexOptIn,
+  stage: ServedStage,
+): Admission {
+  const slots = table.find((entry) => entry.account.name === account);
+  if (slots === undefined)
+    return {
+      waits: `the live driver's account ${account} is no longer in the machine file`,
+    };
+  const launch: LaunchKind = { kind: "pass", deadlineSec, codex, stage };
+  const refusal =
+    stageRefusal(slots.account, launch) ??
+    vendorRefusal(slots.account.vendor, launch) ??
+    accountWeightBlock(slots);
+  if (refusal !== null) return { waits: `${slots.account.name}: ${refusal}` };
+  if (slots.wallUnrecorded)
+    return {
+      waits: `${slots.account.name}, whose slot it takes, ended on a wall that was not recorded`,
+    };
+  if (slots.wall !== null)
+    return {
+      waits: `${slots.account.name}, whose slot it takes, is walled until ${slots.wall.resetAt}`,
+    };
+  return { admitted: slots };
+}
+
 /** The most recent launch's account, where an equal-weight turn resumes. */
 export function lastAccount(records: ReadRecord[]): string | null {
   let latest: ReadRecord | null = null;

@@ -14,7 +14,11 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { lockIdentity } from "../../shared/liveness.ts";
 import { driveDb } from "../../skills/drive-pr/scripts/lib/state/db.ts";
 import { takeLockRow } from "../../skills/drive-pr/scripts/lib/state/lock.ts";
-import { admitRearm, slotTable } from "../lib/accounts.ts";
+import {
+  admitHostDriverTakeover,
+  admitRearm,
+  slotTable,
+} from "../lib/accounts.ts";
 import { exitedPid, holdLock } from "./host-driver-fixtures.ts";
 import {
   readCloneKey,
@@ -232,6 +236,29 @@ describe("a live driver no holding launch record accounts for", () => {
     });
     expect(drivers(root)).toEqual([]);
     expect(held([], drivers(root))).toEqual({ a: 0, b: 0 });
+  });
+
+  it("transfers a wedged holder's occupied last slot to its takeover", () => {
+    const root = tempDir("host-drivers-");
+    holdLock(root, 49, join(root, "wedged-tree"), "a@example.com");
+    const table = slotTable(
+      [ACCOUNTS[0] as MachineAccount],
+      [],
+      Date.now(),
+      tempDir("walls-"),
+      undefined,
+      drivers(root),
+    );
+    expect(table[0]?.held).toBe(1);
+    expect(
+      admitHostDriverTakeover(
+        table,
+        "a",
+        PASS.deadlineSec,
+        PASS.codex,
+        "rearm",
+      ),
+    ).toMatchObject({ admitted: { account: { name: "a" } } });
   });
 });
 
