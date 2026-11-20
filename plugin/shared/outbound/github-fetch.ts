@@ -318,7 +318,9 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       });
     } catch (error) {
       // A fetch that throws got no answer: the network failed, or the
-      // call's signal or deadline ended it.
+      // call's signal or deadline ended it. A defect in the fetch it was
+      // given is a bug, for the unit's boundary to report.
+      if (error instanceof Defect) throw error;
       const said = failureOf(error);
       return {
         ok: false,
@@ -520,7 +522,9 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       );
     } catch (error) {
       // The caller's signal ended the call: the last attempt's answer
-      // stands, or nothing was sent.
+      // stands, or nothing was sent. Anything else that throws is a
+      // defect, for the unit's boundary to report.
+      if (!sending.call.signal.aborted || error instanceof Defect) throw error;
       return (
         last ?? {
           ok: false,
@@ -574,8 +578,12 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
 
   /** A GraphQL request: the answer's `data`, or the closed-class failure it met. A query is sent again as a read; a mutation never. */
   async function graphql(request: GraphQLRequest): Promise<Called<unknown>> {
-    const mutation = /^\s*mutation\b/.test(
-      request.query.replace(/^\s*#.*$/gm, ""),
+    // A mutation is an operation definition that opens the document or
+    // follows another definition's closing brace (a fragment, say).
+    const mutation = /(?:^|\})\s*mutation\b/.test(
+      request.query
+        .replace(/^\s*#.*$/gm, "")
+        .replace(/"(?:\\.|[^"\\])*"/g, '""'),
     );
     const answered = await governedCall(
       {

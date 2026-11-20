@@ -49,6 +49,7 @@ describe("the negative fixtures each fail", () => {
     ["bare-bun", "plugin/hub/core/files.ts:1 portability:runtime-global"],
     ["bare-process", "plugin/hub/core/env.ts:1 portability:runtime-global"],
     ["bare-deno", "plugin/hub/core/args.ts:1 portability:runtime-global"],
+    ["global-alias", "plugin/hub/core/alias.ts:1 portability:runtime-global"],
   ])("%s", (fixture, finding) => {
     const dir = join(fixtures, fixture);
     expect(found(dir)).toEqual([finding]);

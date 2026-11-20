@@ -26,5 +26,5 @@ release: minor
 
 - The outbound library's portable parts (the failure classes, retry,
   paging, the conditional request and the budget's arithmetic) are split from
-  the parts that open the machine's budget database or run `gh`. Every name
-  the library exported is still exported from where it was.
+  the parts that open the machine's budget database or run `gh`. The
+  library's callers are unchanged and behave as before.

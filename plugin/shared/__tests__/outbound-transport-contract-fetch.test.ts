@@ -9,6 +9,7 @@ import {
   githubFetchTransport,
 } from "../outbound/github-fetch.ts";
 import type { CallRecord } from "../outbound/ledger.ts";
+import { Defect } from "../outcome.ts";
 import { currentMs } from "../time.ts";
 import {
   type Serve,
@@ -154,6 +155,43 @@ describe("the fetch transport, beyond the shared contract", () => {
     expect(got.ok ? null : got.failure.code).toBe("unreachable");
     expect(asked).toHaveLength(0);
     expect(records.every((r) => r.requests === 0)).toBe(true);
+  });
+
+  test("a defect in what records the call reaches the caller, never reported as a cancellation", async () => {
+    const { transport } = build(() => ({ status: 200, body: "{}" }), {
+      record: () => {
+        throw new Defect("ledger bug");
+      },
+    });
+    await expect(
+      transport.rest({ ...call(), path: "repos/o/r" }),
+    ).rejects.toBeInstanceOf(Defect);
+  });
+
+  test("a defect in the injected fetch reaches the caller and is not sent again", async () => {
+    const asked: RequestInit[] = [];
+    const { transport } = build(() => ({ status: 200 }), {
+      fetch: (_url: string, init: RequestInit) => {
+        asked.push(init);
+        return Promise.reject(new Defect("adapter bug"));
+      },
+    });
+    await expect(
+      transport.rest({ ...call(), path: "repos/o/r" }),
+    ).rejects.toBeInstanceOf(Defect);
+    expect(asked).toHaveLength(1);
+  });
+
+  test("a mutation after a fragment definition is a write, never sent again", async () => {
+    const { transport, records } = build(() => ({ status: 502, body: "{}" }));
+    const got = await transport.graphql({
+      ...call(),
+      query:
+        "fragment F on Issue { id }\nmutation Close($id: ID!) { closeIssue(input: {issueId: $id}) { issue { ...F } } }",
+      variables: { id: "I_1" },
+    });
+    expect(got.ok ? null : got.failure.code).toBe("server-fault");
+    expect(records).toHaveLength(1);
   });
 
   test("a credential the budget holds sends nothing and fails as rate-limited", async () => {

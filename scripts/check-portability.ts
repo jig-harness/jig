@@ -20,7 +20,9 @@
 //   `__filename`), bare or through `globalThis`, `self`, `window` or
 //   `global`, or an `import.meta` property other than `url` and `resolve`
 //   (`import.meta.dir` is Bun's). `Bun.spawn` and `Bun.file` are how code
-//   runs a program or reads a file without an import.
+//   runs a program or reads a file without an import. The global object
+//   itself may be read only for a fixed property: aliased, indexed by a
+//   value or passed to a function, it could reach any of these unseen.
 // - unfollowed-import: a dynamic `import()` of anything but a literal, which
 //   the check cannot follow, or a relative import of a file that is neither
 //   a script nor JSON (a text or SQL file only a runtime's loader reads).
@@ -347,6 +349,26 @@ function readModule(
       }
       case "Identifier": {
         const name = String(node.name);
+        // The global object read for a fixed property is checked as that
+        // property; read any other way (aliased, indexed by a value, handed
+        // to a function) it could reach a runtime global by any name.
+        if (
+          GLOBAL_OBJECTS.has(name) &&
+          !declared.has(name) &&
+          !namePosition(parent, key) &&
+          !(
+            parent?.type === "MemberExpression" &&
+            key === "object" &&
+            (parent.computed !== true || literalOf(parent.property) !== null)
+          )
+        ) {
+          uses.push({
+            kind: "runtime-global",
+            at: node.start,
+            problem: `\`${name}\` is read other than for a fixed property, so the runtime globals it can reach are unchecked`,
+          });
+          return;
+        }
         if (
           RUNTIME_GLOBALS.has(name) &&
           !declared.has(name) &&
