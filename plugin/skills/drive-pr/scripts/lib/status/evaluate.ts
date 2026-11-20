@@ -363,7 +363,6 @@ async function evaluateFresh(
   ctx: EvaluateContext,
   report: StatusReport,
 ): Promise<number> {
-  // Each poll's report describes only evidence gathered on this iteration.
   // Reset every reported field first. The wait loop calls this repeatedly, and
   // a field left over from an earlier iteration would be published in the JSON
   // contract as though it described THIS one — e.g. `reviewer.present: true`
@@ -789,11 +788,7 @@ async function evaluateFresh(
   }
 
   report.checkProgress = JSON.stringify(
-    runs
-      .map(({ id, status, conclusion }) =>
-        JSON.stringify([id, status, conclusion]),
-      )
-      .sort((left, right) => left.localeCompare(right)),
+    runs.map((r) => `${r.id}:${r.status}:${r.conclusion}`).sort(),
   );
   // The newest check matching both the reviewer app and check name is its witness.
   const reviewer = reviewerRun(runs);

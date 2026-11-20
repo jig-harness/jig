@@ -199,8 +199,9 @@ export function readFleetHealthAdvisory(
 /** The line a human reading the drive's stderr sees, or `null` when there is nothing to say. */
 export function fleetHealthLine(
   pr: number,
-  a: FleetHealthAdvisory,
+  a: FleetHealthAdvisory | null,
 ): string | null {
+  if (a === null) return null;
   // A readable snapshot that is STALE or PARTIAL is worth a line even with no
   // warning: a quiet report proves less then. No snapshot at all (the ordinary
   // off-dashboard-host case) stays silent.
@@ -213,4 +214,16 @@ export function fleetHealthLine(
       ? ""
       : ` (fleet-health snapshot ${Math.round(a.snapshotAgeSec / 60)}m old${a.stale ? ", STALE" : ""}${a.partial ? ", PARTIAL: the run had gaps or its gap list is unreadable, so absent warnings prove less" : ""})`;
   return `fleet-health: PR #${pr} — ${a.warnings.join(" | ")}${age}. A suspicion, not a finding.`;
+}
+
+/** The `--json` `fleetHealth` field: `null` when no advisory was read. */
+export function fleetHealthPayload(a: FleetHealthAdvisory | null) {
+  return a === null
+    ? null
+    : {
+        warnings: a.warnings,
+        snapshotAgeSec: a.snapshotAgeSec,
+        stale: a.stale,
+        partial: a.partial,
+      };
 }

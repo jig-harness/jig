@@ -88,6 +88,7 @@ import { apiRoute } from "./gh-route.ts";
 export { refusedUser } from "./github-refusal.ts";
 import { swallow } from "../errors.ts";
 import { definedFields } from "../defined-fields.ts";
+import type { GithubBalances } from "./graph-poll-budget.ts";
 import { isRecord } from "../guards.ts";
 import {
   type OutboundFailure,
@@ -979,22 +980,14 @@ export function githubBalances(
         ghRunScope(["api", "rate_limit"], e, process.cwd()),
       ) ?? machine().owners.known(e)
     )?.owner ?? null,
-): {
-  core: BudgetWindow;
-  graphql: BudgetWindow;
-  observedAt: number;
-  credential?: string;
-  windows?: Record<string, BudgetWindow>;
-} | null {
-  const known = owner(env);
+): GithubBalances | null {
   for (const credential of [
-    known,
+    owner(env),
     githubCredential(env),
     legacyGithubCredential(env),
   ]) {
-    if (credential === null) continue;
-    const record = read(credential);
-    if (record !== null)
+    const record = credential === null ? null : read(credential);
+    if (credential !== null && record !== null)
       return {
         core: record.requests,
         graphql: record.complexity,

@@ -254,6 +254,7 @@ import {
 } from "./lib/cli.ts";
 import {
   fleetHealthLine,
+  fleetHealthPayload,
   readFleetHealthAdvisory,
 } from "./lib/fleet-health-advisory.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
@@ -868,27 +869,33 @@ async function main(): Promise<number> {
     return driftMemo;
   }
 
-  async function emit(
-    code: number,
-    checkBaseDrift = true,
-    readAdvisories = true,
-  ): Promise<void> {
-    const drift = checkBaseDrift ? await baseDrift() : (driftMemo ?? null);
-    const reflectionDue = readAdvisories ? await reflectDue() : null;
+  /** The base drift and advisory fields `emit` reports; `enabled` false reads none. */
+  async function readAdvisory(enabled: boolean) {
+    if (!enabled)
+      return {
+        drift: driftMemo ?? null,
+        reflectionDue: null,
+        escalationDue: null,
+        escalationInvariant: null,
+        fleetHealth: null,
+      };
+    const escalation = json ? await structuralEscalationStatus() : null;
+    return {
+      drift: await baseDrift(),
+      reflectionDue: await reflectDue(),
+      escalationDue: escalation?.due ?? null,
+      escalationInvariant: escalation?.invariant ?? null,
+      fleetHealth: readFleetHealthAdvisory(
+        Number.parseInt(pr, 10),
+        currentMs(),
+      ),
+    };
+  }
+
+  async function emit(code: number, full = true): Promise<void> {
+    const advisory = await readAdvisory(full);
+    const { drift } = advisory;
     if (json) {
-      // Computed only here — never used outside
-      // the JSON payload, so hoisting it above this branch (the way `drift`
-      // has to be, since the plain-text path's stderr narration reads it
-      // below) would cost the non-`--json` caller a `drive-state.ts get`
-      // subprocess call for a field it never reports.
-      const escalation = readAdvisories
-        ? await structuralEscalationStatus()
-        : null;
-      // ADVISORY: read from the snapshot the dev-dashboard
-      // collector already published, never sampled here.
-      const fleetHealth = readAdvisories
-        ? readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs())
-        : null;
       process.stdout.write(
         `${JSON.stringify({
           state: report.state,
@@ -897,8 +904,8 @@ async function main(): Promise<number> {
           reason: report.reason,
           ...(report.failure === undefined ? {} : { failure: report.failure }),
           ...(rateLimit === null ? {} : { rateLimit }),
-          reflectDue: reflectionDue,
-          structuralEscalationDue: escalation?.due ?? null,
+          reflectDue: advisory.reflectionDue,
+          structuralEscalationDue: advisory.escalationDue,
           // The claim the last acknowledgment recorded via
           // `set-escalated --invariant`, echoed back ONLY while
           // `structuralEscalationDue` is true — `null` while
@@ -906,21 +913,13 @@ async function main(): Promise<number> {
           // one. See `structuralEscalationInvariant`'s own doc for why the
           // two `null` causes are not distinguished here: either way there is
           // no prior claim to check this round's finding against.
-          structuralEscalationInvariant: escalation?.invariant ?? null,
+          structuralEscalationInvariant: advisory.escalationInvariant,
           // PR-scoped fleet-health suspicions for THIS PR (review carousel,
           // follow-up depth) — a count crossing a threshold, never a finding,
           // and never a change to `state` or the exit code. `[]` when the
           // snapshot is absent, which is the ordinary case off the dashboard
           // host. See SKILL.md § 1.
-          fleetHealth:
-            fleetHealth === null
-              ? null
-              : {
-                  warnings: fleetHealth.warnings,
-                  snapshotAgeSec: fleetHealth.snapshotAgeSec,
-                  stale: fleetHealth.stale,
-                  partial: fleetHealth.partial,
-                },
+          fleetHealth: fleetHealthPayload(advisory.fleetHealth),
           head: {
             api: report.apiHead,
             local: localHead,
@@ -987,17 +986,12 @@ async function main(): Promise<number> {
       process.stdout.write(`${report.state}\n`);
     }
     console.error(
-      `${reflectionDue ? "[REFLECT DUE] " : ""}${report.state}: ${report.reason}`,
+      `${advisory.reflectionDue ? "[REFLECT DUE] " : ""}${report.state}: ${report.reason}`,
     );
-    if (!json) {
-      if (readAdvisories) {
-        const fh = fleetHealthLine(
-          Number.parseInt(pr, 10),
-          readFleetHealthAdvisory(Number.parseInt(pr, 10), currentMs()),
-        );
-        if (fh !== null) console.error(fh);
-      }
-    }
+    const fh = json
+      ? null
+      : fleetHealthLine(Number.parseInt(pr, 10), advisory.fleetHealth);
+    if (fh !== null) console.error(fh);
     // On stderr with the rest of the round's narration, so the non-`--json`
     // caller — whose stdout is the state name and nothing else — sees it too.
     if (drift !== null) {
@@ -1737,17 +1731,13 @@ async function main(): Promise<number> {
           return 4;
         }
         const fits = intervalFits();
-        if (fits)
-          console.error(
-            `${report.state}: ${report.reason}; waiting for the next status poll`,
-          );
+        if (fits) console.error(`${report.state}: ${report.reason}; waiting`);
         if (
           !fits ||
           !(await pollPacing.wait(pollFingerprint(report), deadline))
         ) {
           report.reason = `${report.reason} (gave up after ${timeout}s)`;
-          // An exhausted wait cannot start a base-drift fetch.
-          await emit(4, false, false);
+          await emit(4, false);
           return 4;
         }
         continue;

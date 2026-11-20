@@ -870,7 +870,7 @@ export function budgetGovernor(
         const stillLimited =
           base.limitedUntil !== null && base.limitedUntil > now;
         const hold = holdOf(answer, base, now, sentAt);
-        let windows =
+        const observed =
           answer.snapshot === true && answer.windows !== undefined
             ? {
                 ...base.windows,
@@ -898,13 +898,13 @@ export function budgetGovernor(
           now,
           sentAt,
         );
-        if (opts.keepGraphqlPollFloor && answer.complexity !== undefined) {
-          windows = withGraphqlPollFloors(
-            windows,
-            [base.complexity, answer.complexity],
-            now,
-          );
-        }
+        const windows = opts.keepGraphqlPollFloor
+          ? withGraphqlPollFloors(
+              observed,
+              [base.complexity, answer.complexity],
+              now,
+            )
+          : observed;
         unexplained =
           answer.snapshot === true
             ? unexplainedSpending(base, { requests, complexity })

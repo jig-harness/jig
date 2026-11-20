@@ -60,14 +60,15 @@ export function graphqlPollFloors(
 
 /**
  * Keep each conflicting live reading until its own reset instead of replacing
- * it with the newest low reading. Older installations' single floor is read
+ * it with the newest low reading; without a latest reading, nothing changes. Older installations' single floor is read
  * and migrated on the next observation.
  */
 export function withGraphqlPollFloors(
   windows: Record<string, BudgetWindow> | undefined,
   observed: readonly (BudgetWindow | undefined)[],
   now: number,
-): Record<string, BudgetWindow> {
+): Record<string, BudgetWindow> | undefined {
+  if (observed[1] === undefined) return windows;
   const retained = Object.fromEntries(
     Object.entries(windows ?? {}).filter(
       ([name]) => name !== GRAPHQL_POLL_FLOOR && !name.startsWith(FLOOR_PREFIX),
@@ -95,4 +96,13 @@ export function withGraphqlPollFloors(
       [...floors].map(([key, window]) => [`${FLOOR_PREFIX}${key}`, window]),
     ),
   };
+}
+
+/** The local GitHub balances for one credential, as `githubBalances` reads them. */
+export interface GithubBalances {
+  core: BudgetWindow;
+  graphql: BudgetWindow;
+  observedAt: number;
+  credential?: string;
+  windows?: Record<string, BudgetWindow>;
 }
