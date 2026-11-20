@@ -20,7 +20,10 @@
 //   headers with unsupported names are findings, never omissions;
 // - Drizzle table declarations, `sqliteTable("<name>", …)` on a line that is
 //   not a comment line (the hub's schema): a call whose first argument is
-//   not a string literal is a finding, never an omission.
+//   not a string literal is a finding, never an omission. Only that name is
+//   read: `sqliteTable` imported under another name, or a table declared
+//   through `sqliteTableCreator`, escapes the scanner, so the hub's schema
+//   declares its tables with `sqliteTable` itself.
 //
 // Each must be a registered kind's marker, state family or table, or a
 // marker the registry lists as not a record (a generated file's banner, a
