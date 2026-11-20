@@ -58,9 +58,10 @@ not arming, watching or handing off a drive:
   (§ 8). Unpushed commits in this tree are yours to push now, not a later
   pass's.
 - A round with work to do that ends without a commit, a push, a reply or a
-  park says in its round report which of these it could not do and why: the step, its exit
-  code and the state it printed. The driver's stall stop prints what the
-  round recorded.
+  park says which of these it could not do and why: the step, its exit
+  code and the state it printed, in its round report and in the end of the
+  handoff narrative (§ 8). The driver's stall stop prints the narrative's
+  end; the round report reaches the closing report only.
 
 Then read § Driver pass before § 0. Without `$DRIVE_PR_TARGET`, § Entry mode
 decides what this invocation is.
@@ -285,6 +286,17 @@ answer `ensure` prints `conflicting` and the push goes ahead without the
 label; the push that clears the conflict runs full CI. An `UNKNOWN` or
 unreadable answer keeps the wait (exit `4`), and a label that is live or mid-recovery
 is handled before that read.
+A required check with no run on the head at all (no check run, no commit
+status, and no workflow run on the head still to finish) 15 minutes after
+the head's push (its earliest run) and 5 minutes after its last workflow run
+finished never completes: `ensure`
+parks `missing-required-run` for a person, naming each such check and the
+workflow whose job reports it, or `unknown` when the head's workflow files
+name none or several, prints `missing-required-run` and exits `8`, which
+`finish-round.ts` reports as `HITL_PARKED`. When the commits about to be
+pushed change `.github/workflows/`, it prints `workflow-change` instead and
+the push goes ahead unheld, so the change can start the check. A head
+nothing has run on yet keeps the wait.
 The hold label is a CI cost setting, not a signal to the drive. A live label
 this drive holds no record of (one an earlier run lost track of, a drive that
 died left, or anyone else added) is adopted: `ensure` records its newest
@@ -3187,7 +3199,9 @@ That is the whole of step 6. It performs, in this exact order:
    ownership of the label, adopting a live label it holds no record of
    (`adopted`), which a failed push does not roll back (without one, prints `disabled`; with the label
    absent, those checks incomplete and the PR reading `CONFLICTING`, where
-   they cannot run, prints `conflicting` and holds nothing);
+   they cannot run, prints `conflicting` and holds nothing; with a required
+   check that never ran on the head, parks `missing-required-run`, or prints
+   `workflow-change` and holds nothing when this push changes the workflows);
 3. `bun "${CLAUDE_SKILL_DIR}/scripts/guarded-push.ts"` — the push, with the PR's liveness re-checked at the
    instant of the push and an explicit refspec at its own head branch;
 4. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" stamp-held` — stamps the pushed SHA onto the holds *this*
@@ -3225,6 +3239,7 @@ returned, which is the case this rule covers.
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
 | `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, resolve or abort the reported Git operation, then re-run |
 | `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, the timeline does not yet show a label change, or a read of the cancelled-run recovery kept failing | Read the `ci-hold:` or `cancelled CI recovery:` line, wait for what it names, then re-run |
+| `8` | Refused *before* pushing (`HITL_PARKED`): a decision is parked for a person, `missing-required-run` (a required check has no run on the head past the grace; the reason names it and its workflow) or `cancelled-ci` (the cancelled-run recovery) | Stop: the drive stops parked, and the park's decision says what the person decides |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
 | `6` | Pushed and stamped, but at least one held item was **refused** | Each refusal is named with the refusing script's own exit code and diagnostic. Reconcile it via § 3 — re-hold if the reply still stands, resolve under whatever outcome actually applies if it does not — then re-run |
