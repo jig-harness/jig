@@ -157,11 +157,18 @@ function changedSince(updatedAt: string | undefined, seen: string): boolean {
   return Number.isFinite(now) && now > parseMs(seen);
 }
 
+/**
+ * What holds `item` from a new pickup. `assignee`, when the caller read
+ * one, is who the item is assigned to; an item read as unassigned (from
+ * the ready pool, or released) passes none, so the hold's reason never
+ * says it is still assigned.
+ */
 export function pickupHold(
   item: string,
   records: ReadRecord[],
   updatedAt?: string,
   nowMs = currentMs(),
+  assignee?: string,
 ): PickupHold {
   const mine = recordsOf(item, records);
   const holding = mine.find((r) => holds(r.state));
@@ -183,7 +190,7 @@ export function pickupHold(
     return waitsHold(latest, latest.waitsUntil, nowMs);
   if (stoppedOnWall(latest)) return { kind: "none" };
   if (restartsAfterHostFault(latest, mine, item)) return { kind: "none" };
-  return stoppedHold(latest, item, updatedAt);
+  return stoppedHold(latest, item, updatedAt, assignee);
 }
 
 /** Whether a pickup of `item` alone claimed it: only such a pickup is relaunched in its tree. */
@@ -242,6 +249,7 @@ function stoppedHold(
   latest: ReadRecord,
   item: string,
   updatedAt: string | undefined,
+  assignee: string | undefined,
 ): PickupHold {
   const recorded = latest.refusal ?? null;
   const refusal = recorded === null ? null : refusalOf(recorded, item);
@@ -259,8 +267,16 @@ function stoppedHold(
   return {
     kind: "ended",
     record: latest,
-    why: `launch record ${latest.record.id} ended (${endedHow(latest)}) while the item stayed assigned in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`,
+    why: endedWhy(latest, assignee),
   };
+}
+
+/** Why an ended record holds its item: the record, never released, and the assignment only when there is one. */
+function endedWhy(latest: ReadRecord, assignee: string | undefined): string {
+  const ended = `launch record ${latest.record.id} ended (${endedHow(latest)}) and has not been released, so it holds the item`;
+  return assignee === undefined
+    ? `${ended}; it is not picked up again until that record is released, as when the item leaves the dispatch states and comes back`
+    : `${ended}, which is still assigned to ${assignee} in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`;
 }
 
 /**

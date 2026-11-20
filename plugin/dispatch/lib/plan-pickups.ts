@@ -230,7 +230,13 @@ export function planPickups(input: PickupInput): PickupPlan {
       plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
-    const hold = pickupHold(item.key, launches, item.updatedAt, input.nowMs);
+    const hold = pickupHold(
+      item.key,
+      launches,
+      item.updatedAt,
+      input.nowMs,
+      item.pooled === true ? undefined : item.assignee,
+    );
     if (hold.kind === "held") {
       plan.running.push({
         target: item.key,

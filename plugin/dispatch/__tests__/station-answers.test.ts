@@ -23,11 +23,14 @@ import { parkAnswers } from "../../skills/drive-pr/scripts/lib/driver/park-answe
 import { stationContextOf, stationDecision } from "../lib/line-station.ts";
 import { closeStateDb } from "../lib/state.ts";
 import {
+  carried,
   claimAnswer,
   finishAnswer,
   type CarriedAnswer,
   takeCarried,
 } from "../lib/station-answer-store.ts";
+import type { LaunchRecord } from "../lib/launches.ts";
+import { pickupPassArgv } from "../lib/session.ts";
 import {
   settleStationAnswers,
   stationItem,
@@ -591,6 +594,36 @@ describe("settleStationAnswers on an item of another tracker", () => {
       ],
       acted: { option: "Release the claim", outcome: "done" },
     });
+  });
+
+  it("hands the next pickup no answer once the tick released the claim, so it starts the item afresh", async () => {
+    const dir = root();
+    const p = onTracker(ok([onItem(`answer pickup: approve [${digest}]`)]));
+    const report = reportOf({ actions: [stalled()] });
+    await settleOn(report, p, dir);
+    expect(p.steps).toEqual([expect.stringMatching(/^release ENG-12/)]);
+    expect(report.actions[0]?.answered?.acted).toMatchObject({
+      option: "Release the claim",
+      outcome: "done",
+    });
+    const handed = carried(SLUG, "ENG-12", "r-1", dir);
+    expect(handed).toEqual({});
+    const record = {
+      id: "r-1",
+      token: "0".repeat(32),
+      action: "pickup",
+      repo: SLUG,
+      pr: null,
+      item: "ENG-12",
+      vendor: "claude",
+      model: null,
+      effort: null,
+      sessionId: null,
+      ...handed,
+    } as unknown as LaunchRecord;
+    const prompt = pickupPassArgv(record, []).at(-1) ?? "";
+    expect(prompt).not.toContain("Carry out the option they chose");
+    expect(prompt).not.toContain("Release the claim");
   });
 
   it("acts on no answer from an author the tracker does not vouch for, a stale digest or two people who differ", async () => {

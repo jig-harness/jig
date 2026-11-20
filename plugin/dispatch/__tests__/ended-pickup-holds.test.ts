@@ -383,3 +383,37 @@ describe("an epic's slot", () => {
     ).toBeNull();
   });
 });
+
+describe("why an ended pickup record holds its item", () => {
+  const launch = () => endedBatch(["#7"], "done", []);
+
+  it("names the unreleased record and never says an unassigned item stayed assigned", () => {
+    const records = [launch()];
+    const result = planPickups({
+      slug: SLUG,
+      section: { stalledAfterMs: 3_600_000 } as DispatchSection,
+      pickups: [{ ...wanted("#7"), pooled: true, assignee: "factory" }],
+      sessions: { ok: true, source: "test", workspaces: [] },
+      launches: records,
+      idleSince: new Map(),
+      nowMs: NOW,
+    });
+    const reason =
+      result.actions.find((a) => a.cause === "pickup-ended")?.reason ?? "";
+    expect(reason).toContain(
+      `launch record ${records[0]?.record.id} ended (its session exited, done) and has not been released`,
+    );
+    expect(reason).not.toContain("assigned");
+    const hold = pickupHold("#7", records, undefined, NOW);
+    expect(hold.kind === "ended" ? hold.why : "").not.toContain("assigned");
+  });
+
+  it("names the record and the assignee for an item still assigned", () => {
+    const records = [launch()];
+    const reason =
+      plan(["#7"], records).actions.find((a) => a.cause === "pickup-ended")
+        ?.reason ?? "";
+    expect(reason).toContain("has not been released");
+    expect(reason).toContain("still assigned to alex");
+  });
+});
