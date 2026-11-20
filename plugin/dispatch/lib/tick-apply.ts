@@ -23,6 +23,7 @@ import {
 } from "./actions/drive.ts";
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
+import { retireRearmRequests } from "./actions/retire-rearm.ts";
 import { applyPickups } from "./actions/pickup.ts";
 import { newPreflight, trackerTargetOf } from "./preflight.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
@@ -44,6 +45,7 @@ import {
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
+import { pickupArms, pickupAsked, type PickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
 import type {
   JoinTargets,
@@ -173,6 +175,9 @@ export async function actObserved(
     nowMs: context.nowMs,
     book,
     rerunsHeld: context.rerunsHeld ?? null,
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);
@@ -191,10 +196,12 @@ export async function actObserved(
   const inputs: ApplyInputs = {
     repo,
     runtime: context.runtime,
+    pickupArms: pickupArms(allRecords(context), repo),
     section,
     tracked: observation.tracked,
     login: forge.login,
     merged: forge.merged,
+    drives: observation.drives,
     join: observation.join,
     sessions: observation.sessions,
     rerunsHeld: context.rerunsHeld ?? null,
@@ -270,12 +277,14 @@ export function withheldFromReplay(
 
 /** What `--apply` acts on for one repository, as its tick read it. */
 interface ApplyInputs {
+  pickupArms: PickupArms;
   repo: RepoTarget;
   runtime: SessionRuntime;
   section: DispatchSection;
   tracked: Tracked;
   login: string | null;
   merged: MarkedPr[];
+  drives: DrivenPr[];
   join: JoinTargets;
   sessions: SessionsReport;
   rerunsHeld: string | null;
@@ -319,8 +328,13 @@ async function withThreads(
   return ok({ ...pr, unresolvedThreads: threads.value });
 }
 
-/** Whether a person's `drive` or `rearm` label is on the pull request. */
-function asksForDrive(labels: LabelConfig | null, pr: ListedPr): boolean {
+/** Whether the pickup or a person's label asks for a drive. */
+function asksForDrive(
+  pickupArms: PickupArms,
+  labels: LabelConfig | null,
+  pr: ListedPr,
+): boolean {
+  if (pickupAsked(pickupArms, pr)) return true;
   return (
     labels !== null &&
     (hasCommand(labels, pr.labels, "drive") ||
@@ -433,6 +447,17 @@ async function applyStages(
       await applySteers(apply, repo.slug, report, inputs.book, observed);
     else retireSteers(report, inputs.book, observed);
   });
+  if (labels !== null && inputs.shared.owner && enabled.has("rearm"))
+    await guard("rearm", () =>
+      retireRearmRequests(
+        apply,
+        repo.slug,
+        report,
+        labels,
+        inputs.drives,
+        login,
+      ),
+    );
   if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
@@ -461,6 +486,7 @@ async function freshDriveReading(
   const { repo, login, section } = inputs;
   const view = await openPullRequest(repo.slug, pr, {
     labels: labels !== null || steward,
+    headRepository: inputs.pickupArms.has(pr),
   });
   if (!view.ok) return view;
   const listed = view.value;
@@ -471,7 +497,7 @@ async function freshDriveReading(
     repo.slug,
     listed,
     ownAuthors(adoption, login),
-    asksForDrive(labels, listed),
+    asksForDrive(inputs.pickupArms, labels, listed),
   );
   if (!counted.ok) return counted;
   const [again] = await readDrives(
@@ -481,6 +507,7 @@ async function freshDriveReading(
     currentMs(),
     labels,
     adoption,
+    { pickupArms: inputs.pickupArms },
   );
   if (again === undefined) return ok(null);
   if (steward) return ok({ ...again, labels: listed.labels ?? [] });

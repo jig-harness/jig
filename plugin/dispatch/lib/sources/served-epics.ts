@@ -1,5 +1,10 @@
 /** An epic's children up to its width unless its plan says otherwise, and why an epic is idle. */
-import { PERSON_HOLD, queueHold, type QueueItem } from "../queue-rank.ts";
+import {
+  PERSON_HOLD,
+  queueHold,
+  type QueueHoldPolicy,
+  type QueueItem,
+} from "../queue-rank.ts";
 import type { Unplaced } from "../types.ts";
 import type {
   CanonicalState,
@@ -25,12 +30,17 @@ export function takeUnreadSlot(
   return Promise.resolve(null);
 }
 
-/** A person owns the next step, so this child takes none of a plan-less epic's width. */
+/**
+ * A person owns the next step, so this child takes none of a plan-less epic's width; a pickup hold stops only new starts, so a started child keeps its slot.
+ * Reading occupancy, an unstarted epic with open children is not parked by a pickup hold alone: its running descendants still count. `forStart` asks whether the child may start.
+ */
 export function parkedOnPerson(
   child: PoolIssue,
   tracker: Pick<Tracker, "stateName">,
-  policy: { hitl?: string; manualOps?: string },
+  policy: QueueHoldPolicy,
+  forStart = false,
 ): boolean {
+  const { personHold: _local, ...labelHolds } = policy;
   const context = child.nativeType ?? null;
   const states = canonicalStatesFor(tracker, child.state.name, context);
   return (
@@ -38,7 +48,10 @@ export function parkedOnPerson(
       states.every(
         (state) => state === "ops_pending" || state === "in_review",
       )) ||
-    queueHold({ issue: child, blockers: [], unblocks: 0 }, policy) ===
+    (child.state.type !== "started" &&
+      (forStart || !(child.isEpic && child.hasOpenChildren)) &&
+      policy.personHold?.(child.identifier) != null) ||
+    queueHold({ issue: child, blockers: [], unblocks: 0 }, labelHolds) ===
       PERSON_HOLD
   );
 }

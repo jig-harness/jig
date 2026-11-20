@@ -1,13 +1,21 @@
 # Jig's change-area catalog (module M3): the one place that maps this
 # repository's paths to named change-areas. The CI workflow reads area names
-# from scripts/change-areas.ts, never these globs: the drive-pr suite runs
-# when the `drive-pr` area is affected. The gate set runs on Linux for every
-# change whatever its areas, and the nightly workflow runs it on macOS and
-# Windows without reading this catalog.
+# and its test legs from scripts/change-areas.ts, never these globs: the
+# drive-pr suite runs when the `drive-pr` area is affected or holds a test
+# that depends on the change, and the gate set's test legs run the own tests
+# of the areas a change reaches and the test files that depend on it (every
+# shard, and every separate suite, when its plan is the deepest profile). A
+# push to main runs every suite, and the nightly workflow runs them on macOS
+# and Windows without reading this catalog.
 #
 # Every tracked file belongs to at least one area (`bun run gates` fails
-# otherwise). When unsure whether one area depends on another, add the
-# `impliedBy` edge: a redundant CI job is cheap, a skipped one is not.
+# otherwise). `impliedBy` says that a change to the listed areas also affects
+# this one. CI finds the tests that import a changed file, or name it, by
+# itself (scripts/test-reach.ts), so an edge is not needed for those; it is
+# for what that walk cannot see, such as a script production code starts by
+# path or a file a suite reads, and for what follows from an area beyond its
+# tests (reviews, CI jobs). When unsure whether one area depends on another,
+# add the edge: a redundant CI job is cheap, a skipped one is not.
 #
 # Its schema, resolver and invariants are the plugin's change-areas skill
 # (plugin/skills/change-areas/README.md); scripts/change-areas.ts adds Jig's
@@ -30,6 +38,47 @@ vocabularies:
   category: [skill, library, tooling, infra, docs]
   deployTier: [plugin, none]
 
+# Validation profiles, shallowest first (M3 § Agent gate depth): the checks
+# a change owes before commit (`localChecks`) and to verify the committed
+# tree (`verificationChecks`). Each area names its profile and its own tests
+# (`validation.ownTests`, always `bun run test` and the directories its
+# suites live in); scripts/validation-plan.ts derives the plan from the
+# areas a change touches, and scripts/change-areas.ts builds CI's test legs
+# from the same resolution and the tests that depend on the changed files.
+# An own-tests directory must hold a test file (`--check` fails otherwise).
+# The deepest profile is the fail-closed fallback:
+# a changed file no area matches selects it, and so does a file outside the
+# `docs` profile whose areas declare no own tests (a file only the broad
+# `plugin` area holds), since nothing narrower tests it.
+# `validation.separateSuite: true` (a field Jig's script adds) marks an own
+# suite CI runs in a job of its own: the gate set leaves its directories out
+# (scripts/gates.ts reads them from here), the job runs for the deepest profile
+# and whenever a test in it depends on the change, and gates.test.ts fails while
+# a workflow does not run it.
+profiles:
+  docs:
+    notes: >-
+      Prose and configuration: the repository checks hold it, and CI still runs
+      any test that names a changed YAML, JSON or TOML file.
+    localChecks: ["bun run gates --fast"]
+    verificationChecks: ["bun run gates --fast"]
+  area:
+    notes: >-
+      Code an area's own suites test: the quick gates, then the slower
+      whole-repository checks, beside the touched areas' own tests and
+      generated-file checks.
+    localChecks: ["bun run gates --fast"]
+    verificationChecks:
+      - "bun run gates --fast"
+      - "bun run deadcode"
+      - "bun run audit"
+      - "bun run quality"
+      - "bun run build"
+  deep:
+    notes: The whole gate set, every suite included.
+    localChecks: ["bun run gates"]
+    verificationChecks: ["bun run gates"]
+
 areas:
   drive-pr:
     title: "drive-pr skill"
@@ -44,6 +93,10 @@ areas:
     # the toolchain.
     impliedBy: [resolve-review-comments, do-item, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/drive-pr/"
+      separateSuite: true
 
   resolve-review-comments:
     title: "resolve-review-comments skill"
@@ -52,6 +105,9 @@ areas:
     workspace: []
     impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/resolve-review-comments/"
 
   do-item:
     title: "do-item skill"
@@ -60,13 +116,19 @@ areas:
     workspace: []
     impliedBy: [resolve-review-comments, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/do-item/"
 
   # The areas below name the tracker's other `area:` labels, so
   # `/jig:work-batch` can draw a batch from them (do_item.agents.codearea_areas
-  # in jig.yaml). They sit inside `plugin` and add no CI job: only `website`
-  # and `drive-pr` select one, and no edge below leads to either. Each lists
-  # the areas it imports from; an area the catalog does not name (`adr`,
-  # `docs`, `change-areas`) is reached through `plugin`.
+  # in jig.yaml). They sit inside `plugin` and add no CI job of their own:
+  # only `website` and `drive-pr` select one, and no edge below leads to
+  # either; their own tests join the gate set's test legs. Each lists the
+  # areas whose changes should also run its own tests; a test that imports a
+  # changed file runs whether listed or not. An area the catalog does not name
+  # (`adr`, `docs`, `change-areas`) is reached through `plugin`, whose files no
+  # own tests cover, so a change to them runs the whole gate set.
   dispatch:
     title: "The dispatcher (jig dispatch) and its dashboard server"
     category: skill
@@ -74,6 +136,9 @@ areas:
     workspace: []
     impliedBy: [drive-pr, do-item, reflect, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/dispatch/"
 
   gc:
     title: "Resource garbage collection (jig gc)"
@@ -82,6 +147,9 @@ areas:
     workspace: []
     impliedBy: [reflect, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/gc/"
 
   # The tracker also imports file-issue's helpers; that edge is left out
   # because file-issue imports the tracker back and the catalog allows no
@@ -93,6 +161,9 @@ areas:
     workspace: []
     impliedBy: [drive-pr, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/do-item/"
 
   audit:
     title: "audit skill"
@@ -117,6 +188,9 @@ areas:
       - shared-lib
       - toolchain
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/audit/"
 
   changelog:
     title: "changelog skill and releases"
@@ -125,6 +199,9 @@ areas:
     workspace: []
     impliedBy: [drive-pr, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/changelog/"
 
   code-stats:
     title: "code-stats skill"
@@ -133,6 +210,9 @@ areas:
     workspace: []
     impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/code-stats/"
 
   decide:
     title: "decide skill and its sheet"
@@ -141,6 +221,9 @@ areas:
     workspace: []
     impliedBy: [do-item, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/decide/"
 
   explain:
     title: "explain skill"
@@ -149,6 +232,9 @@ areas:
     workspace: []
     impliedBy: [decide, do-item, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/explain/"
 
   file-issue:
     title: "file-issue skill"
@@ -157,6 +243,9 @@ areas:
     workspace: []
     impliedBy: [do-item, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/file-issue/"
 
   reflect:
     title: "reflect and review-reflections skills"
@@ -165,6 +254,9 @@ areas:
     workspace: []
     impliedBy: [do-item, resolve-conflicts, drive-pr, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/reflect/ ./plugin/skills/review-reflections/"
 
   resolve-conflicts:
     title: "resolve-conflicts skill"
@@ -173,6 +265,9 @@ areas:
     workspace: []
     impliedBy: [drive-pr, do-item, changelog, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/resolve-conflicts/"
 
   review:
     title: "review skill and its lenses"
@@ -181,6 +276,9 @@ areas:
     workspace: []
     impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/review/"
 
   work-batch:
     title: "work-batch skill"
@@ -189,6 +287,9 @@ areas:
     workspace: []
     impliedBy: [do-item, drive-pr, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/work-batch/"
 
   modules:
     title: "The practice modules: reference, templates and module pages"
@@ -197,6 +298,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: docs
 
   plugin:
     title: "The plugin: other skills, agents, manifests and documentation"
@@ -205,6 +308,8 @@ areas:
     workspace: []
     impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
     generated:
       - outputs:
           - "plugin/dispatch/dashboard-page/index.html"
@@ -274,6 +379,8 @@ areas:
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: deep
     generated:
       - outputs:
           - "plugin/shared/vendor/js-yaml.mjs"
@@ -316,6 +423,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: plugin
+    validation:
+      profile: deep
     reviewRisk: high
 
   audit-scoring:
@@ -330,6 +439,9 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./plugin/skills/audit/"
     reviewRisk: high
 
   shared-lib:
@@ -339,6 +451,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: deep
     generated:
       - outputs: ["lib/vendor/js-yaml.mjs", "lib/vendor/js-yaml.LICENSE"]
         source: ["package.json", "bun.lock"]
@@ -356,6 +470,9 @@ areas:
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: none
+    validation:
+      profile: area
+      ownTests: "bun run test ./scripts/"
     reviewRisk: high
 
   repo-skills:
@@ -366,6 +483,8 @@ areas:
     # Their scripts live in scripts/, with the repository's other tooling.
     impliedBy: []
     deployTier: none
+    validation:
+      profile: docs
     reviewRisk: high
 
   tools:
@@ -375,6 +494,9 @@ areas:
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: none
+    validation:
+      profile: area
+      ownTests: "bun run test ./tools/"
 
   protocol:
     title: "The Jig Protocol: its chapters and their generator"
@@ -394,6 +516,9 @@ areas:
     workspace: []
     impliedBy: [drive-pr, changelog, plugin-shared, shared-lib, toolchain]
     deployTier: plugin
+    validation:
+      profile: area
+      ownTests: "bun run test ./tools/protocol/"
     generated:
       - outputs:
           - "plugin/protocol/README.md"
@@ -410,6 +535,7 @@ areas:
           - "plugin/protocol/schemas/record-envelope.json"
           - "plugin/protocol/schemas/drive-ledger.json"
           - "plugin/protocol/schemas/drive-answer.json"
+          - "plugin/protocol/schemas/dispatch-rearm-request.json"
           - "plugin/protocol/schemas/tracker-claim-marker.json"
           - "plugin/protocol/schemas/tracker-claim-outcome.json"
           - "plugin/protocol/schemas/tracker-attachment.json"
@@ -569,6 +695,9 @@ areas:
     workspace: []
     impliedBy: [plugin, shared-lib, toolchain]
     deployTier: none
+    validation:
+      profile: area
+      ownTests: "bun run test ./dashboard/"
 
   module-reference:
     title: "Module reference code"
@@ -577,6 +706,9 @@ areas:
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: none
+    validation:
+      profile: area
+      ownTests: "bun run test ./modules/"
     reviewRisk: high
     generated:
       - outputs: ["modules/M2-generated-artifact-freshness/reference/triad/fixture/docs/index.md"]
@@ -594,6 +726,9 @@ areas:
     workspace: []
     impliedBy: [shared-lib, toolchain]
     deployTier: none
+    validation:
+      profile: area
+      ownTests: "bun run test ./modules/"
 
   toolchain:
     title: "Toolchain, configuration and CI"
@@ -618,6 +753,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: deep
     generated:
       - outputs: ["bun.lock"]
         source: ["package.json"]
@@ -636,6 +773,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: deep
     reviewRisk: high
 
   scanner-policy:
@@ -645,6 +784,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: deep
     reviewRisk: high
 
   review-config:
@@ -654,6 +795,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: deep
     reviewRisk: high
     generated:
       - outputs: [".config/ai-review.yaml"]
@@ -679,6 +822,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: docs
     reviewRisk: high
 
   website:
@@ -692,6 +837,10 @@ areas:
     # library, and builds with the toolchain.
     impliedBy: [site-sources, plugin-manifests, shared-lib, plugin-shared, toolchain]
     deployTier: none
+    validation:
+      profile: area
+      ownTests: "bun run test ./website/"
+      separateSuite: true
     generated:
       - outputs: ["website/bun.lock"]
         source: ["website/package.json"]
@@ -746,6 +895,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: docs
 
   docs:
     title: "Documentation and vendored seed material"
@@ -769,6 +920,8 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    validation:
+      profile: docs
     generated:
       - outputs:
           - "design/prototypes/dispatch-dashboard/generated/dispatch-dashboard-round-2.html"

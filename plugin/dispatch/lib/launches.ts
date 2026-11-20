@@ -1,11 +1,7 @@
 /**
  * Launch records, in the state database's `launches` table (`state.ts`):
- * one per session the dispatcher started, written by the tick before it
- * calls the runtime's `launch`, so a launch whose answer is lost still holds
- * its stage and its account's slot.
- *
- * A record is one row, whose columns each have one writer, so no write
- * ever overwrites another's:
+ * one row per session, written before launch, so a lost launch answer still
+ * holds the stage and account slot. Each column has one writer:
  *
  * - `record`, the tick's: the action, the pull request, the account, the
  *   random token, the workspace, the dispatched mark its workspace carries
@@ -35,10 +31,9 @@
  * | a headless claim with no confirmed cleanup after wrapper death | unknown, holding its slot |
  * | no claim | pending |
  *
- * Pending, alive and unknown records hold their stage and their account's
- * slot; an unknown or a pending record whose launch cannot be retried holds
- * them until a person clears it (`jig dispatch clear`). An interactive
- * session's record also ends with its agent (`actions/pickup-hold.ts`).
+ * Pending, alive and unknown records hold their stage and account slot.
+ * Clear a record that cannot be retried with `jig dispatch clear`.
+ * An interactive record also ends with its agent (`actions/pickup-hold.ts`).
  *
  * What Control adds while the record runs and when it ends: a drive's
  * unresolved-thread count per ledger round (`samples`, the
@@ -51,6 +46,7 @@ import {
   asClaim,
   claimState,
   malformedLiveWrapper,
+  processFacts,
   uncertainCleanupState,
   type StageSupervision,
 } from "./launch-supervision.ts";
@@ -148,6 +144,7 @@ export interface LaunchRecord {
   version: 1;
   id: string;
   token: string;
+  runtime?: "process";
   action: LaunchAction;
   /** The repository's `owner/name` and its local checkout. */
   repo: string;
@@ -186,7 +183,7 @@ export interface LaunchRecord {
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
   facts: string;
   createdAt: string;
-  workspace: { id: string; path: string } | null;
+  workspace: { id: string; path: string; branch?: string } | null;
   attempts: LaunchAttempt[];
   /** An interactive session's agent, by the id the runtime reports it under, from the launch's receipt. */
   agentId: string | null;
@@ -216,6 +213,7 @@ export interface LaunchRecord {
   launchCalled?: boolean;
   /** Explicit re-arm request consumed after a successful launch. */
   rearmLabel?: string | null;
+  rearmRequestId?: number;
   /** The request label was successfully removed after this launch was accepted. */
   rearmConsumed?: boolean;
   /** The vendor session id the tick minted for a Claude Code session or follow-up pass and passed to its agent; `null` when none was. */
@@ -285,6 +283,7 @@ export interface LaunchClaim extends ProcessIdentity {
 export interface LaunchExit {
   context?: string;
   startup?: "quota" | "unstarted"; // headless stop before any result or transcript
+  beforeStage?: true; // process owner publication refused before spawning a stage
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
@@ -402,7 +401,8 @@ function isWorkspace(value: unknown): boolean {
     value === null ||
     (isMapping(value) &&
       typeof value.id === "string" &&
-      typeof value.path === "string")
+      typeof value.path === "string" &&
+      (value.branch === undefined || typeof value.branch === "string"))
   );
 }
 
@@ -440,6 +440,7 @@ export function isLaunchRecord(value: unknown): value is LaunchRecord {
       "createdAt",
     ]) &&
     namesTarget(value) &&
+    (value.runtime === undefined || value.runtime === "process") &&
     (value.vendor === "claude" || value.vendor === "codex") &&
     typeof value.wallBackoffMs === "number" &&
     (value.replaces === null || typeof value.replaces === "string") &&
@@ -626,17 +627,17 @@ export function claimOf(row: LaunchRow): LaunchClaim | null | undefined {
   return asClaim(value);
 }
 
-/**
- * Claim a record for this wrapper: true when this call wrote the claim,
- * false when another wrapper had claimed it first or the record is gone.
- */
+/** Claim a pending launch once, while it is still open and uncancelled. */
 export function claimRecord(
   id: string,
   identity: LaunchClaim,
   root = stateRoot(),
 ): boolean {
   const done = stateDb(root)
-    .query("UPDATE launches SET claim = ? WHERE id = ? AND claim IS NULL")
+    .query(
+      `UPDATE launches SET claim = ? WHERE id = ? AND claim IS NULL
+       AND exit IS NULL AND json_type(record, '$.cancelledAt') IS NULL`,
+    )
     .run(JSON.stringify(identity), id);
   return done.changes === 1;
 }
@@ -685,6 +686,24 @@ const NO_PROCESS: LaunchClaim = {
   claimedAt: "",
 };
 
+/** The state of a launch that ended on its account's wall, which was never written: the account stays held until a person clears the record. */
+function wallUnrecordedState(
+  claim: LaunchClaim | null | undefined,
+  rows: ProcessRow[] | null,
+  here: HostIdentity,
+): LaunchState {
+  return {
+    kind: "unknown",
+    reason: "it ended on its account's wall, which could not be recorded",
+    wallUnrecorded: true,
+    process: claim ?? NO_PROCESS,
+    // Only a judged process table proves the stage's processes gone.
+    ...(claim == null
+      ? { unjudged: true as const }
+      : processFacts(claim, rows, here)),
+  };
+}
+
 /** One record's state, read from its row and `rows` (one process-table read per tick). */
 function stateOf(
   row: LaunchRow,
@@ -696,13 +715,7 @@ function stateOf(
   const uncertain = uncertainCleanupState(claim, rows, here);
   if (uncertain !== null) return uncertain;
   if (exit?.wallUnrecorded === true)
-    // The wall was never written: the account stays held until a person clears the record.
-    return {
-      kind: "unknown",
-      reason: "it ended on its account's wall, which could not be recorded",
-      wallUnrecorded: true,
-      process: claim ?? NO_PROCESS,
-    };
+    return wallUnrecordedState(claim, rows, here);
   if (exit !== null)
     return {
       kind: "ended",
@@ -870,7 +883,7 @@ export function pruneLaunches(
   const removeNudges = db.query("DELETE FROM nudges WHERE record = ?");
   const removeSettled = db.query("DELETE FROM settled_ends WHERE record = ?");
   const preserveProcessCompletion = db.query(
-    "INSERT OR IGNORE INTO process_worktree_completions (id, record, claim, exit) VALUES (?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO process_worktree_completions (id, record, claim, exit) VALUES (?, ?, ?, ?)",
   );
   inTransaction(db, () => {
     for (const { record, state } of removed) {

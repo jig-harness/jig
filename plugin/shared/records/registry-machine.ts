@@ -18,9 +18,9 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 43;
+const DISPATCH_DB = 44;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 9;
+const DRIVE_DB = 10;
 const REFLECT = "skills/reflect/scripts/";
 
 /** A file in a drive's per-clone state directory, of one state family. */
@@ -193,6 +193,13 @@ export const DRIVE_STATE: RecordKind[] = [
     "round-report",
   ),
   driveFile(
+    "drive-round-finish",
+    `${STATE}round-finish.ts`,
+    "drive-pr-<PR>.round-finish.json",
+    "How each pass's `finish-round.ts` ended (its state, reason, head and time), the newest few kept for the driver's stall stop, which names the state that held the rounds when every stalled pass ended on the same one.",
+    "round-finish",
+  ),
+  driveFile(
     "drive-report-memory",
     `${DRIVE}lib/morning-report.ts`,
     "drives-report.json",
@@ -300,6 +307,14 @@ export const DISPATCHER: RecordKind[] = [
     `${DISPATCH_DIR}runs/<record>/drive-report.json`,
     0,
     "The closing report a dispatched drive's driver wrote at its stop, stamped with its launch record, for the wrapper to check and record under that record once the drive ended; the wrapper removes it then.",
+  ),
+  plain(
+    "machine",
+    "dispatch-process-output",
+    "dispatch/lib/runtime/process-spool.ts",
+    `${DISPATCH_DIR}runs/<record>/output.log`,
+    0,
+    "The last 4 MiB of a process run's output. The wrapper keeps it when the run leaves no closing report and removes it when the report is recorded.",
   ),
   plain(
     "machine",
@@ -511,6 +526,14 @@ export const MACHINE: RecordKind[] = [
     "<tmp>/jig-lock.<name>, its slots <tmp>/jig-lock.<name>-slot-<n>, and <tmp>/jig-lock.<name>.admission and .exclusive",
     0,
     "A machine-wide lock with slots that bounds how many heavy commands (a build, a test run) run at once across worktrees: a holder runs, the others wait, and a dead holder's slot is reclaimed.",
+  ),
+  plain(
+    "machine",
+    "resource-lock-sample",
+    "shared/resource-lock-samples.ts",
+    "~/.local/state/jig/resource-lock-samples/<release ms>-<uuid>.json",
+    1,
+    "One completed run's lock name, working directory, request time, wait and hold durations. The dispatcher's validation gauge reads the last seven days to estimate the host's capacity.",
   ),
   plain(
     "machine",

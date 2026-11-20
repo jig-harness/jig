@@ -32,6 +32,8 @@ const scratch = mkdtempSync(join(tmpdir(), "jig-lock-test-")),
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const environment = (extra: Record<string, string> = {}) => ({
   ...process.env,
+  HOME: scratch,
+  USERPROFILE: scratch,
   CI: "",
   RESOURCE_LOCK_BYPASS: "",
   LOCK_ROOT: scratch,

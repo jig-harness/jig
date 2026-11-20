@@ -1,7 +1,10 @@
 /** The converged CI watch's live reads and writes, and the park it ends in; every forge call is bounded. */
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
 import { currentIso, currentMs } from "../../../../../shared/time.ts";
-import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import {
+  recoverCancelledOnHead,
+  timedOutOnHead,
+} from "../cancelled-recovery-live.ts";
 import { claimLabelRerun, labelReruns } from "../cancelled-recovery-state.ts";
 import { parsePrSnapshot } from "../ci-hold.ts";
 import { holdLabelPolicy } from "../ci-policy.ts";
@@ -176,6 +179,7 @@ export function liveConvergedCi(
     },
     recoverCancelled: (pr, head, mayMutate) =>
       recoverCancelledOnHead(pr, head, undefined, false, mayMutate),
+    timedOutJobs: (head) => timedOutOnHead(head),
   };
 }
 
@@ -278,6 +282,7 @@ export type ConvergedRecheck = (
   verified: string,
   writtenAt: number,
   owned?: () => Promise<Ownership>,
+  renew?: () => Promise<number | null>,
 ) => Promise<ConvergedCiVerdict>;
 
 /** The live watch, over the window `DRIVE_PR_CONVERGED_CI_MINUTES` sets; `0` watches nothing. */
@@ -286,6 +291,7 @@ export const liveRecheck: ConvergedRecheck = async (
   verified,
   writtenAt,
   owned,
+  renew,
 ) => {
   const minutes = convergedCiMinutes();
   if (minutes === 0)
@@ -296,6 +302,7 @@ export const liveRecheck: ConvergedRecheck = async (
   return watchConvergedCi(pr, verified, writtenAt, {
     ...liveConvergedCi(minutes, owned),
     ...(owned === undefined ? {} : { owned }),
+    ...(renew === undefined ? {} : { renew }),
   });
 };
 
@@ -320,6 +327,7 @@ export async function convergedStopExit(
   writtenAt: number,
   recheck: ConvergedRecheck,
   owned?: () => Promise<Ownership>,
+  renew?: () => Promise<number | null>,
 ): Promise<number | null> {
   if (
     labelled === null ||
@@ -334,6 +342,7 @@ export async function convergedStopExit(
       labelled.moment.verifiedSha,
       writtenAt,
       owned,
+      renew,
     );
     if (verdict.kind === "stands") {
       console.error(`converged CI: the converged label stands: ${verdict.why}`);

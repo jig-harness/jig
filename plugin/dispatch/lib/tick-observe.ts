@@ -65,6 +65,7 @@ import {
   tickThreadReader,
 } from "./expectations.ts";
 import type { LabelConfig } from "./labels.ts";
+import { pickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
 import { type MachineRepository, machineRepository } from "./machine-config.ts";
 import { previousFollowupSince } from "../receipts.ts";
@@ -138,6 +139,7 @@ import type {
 } from "./types.ts";
 import { currentIso, isoFromMs } from "../../shared/time.ts";
 import { observeTestLockWaits } from "./test-lock-waits.ts";
+import { stateRoot } from "../receipts.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -207,6 +209,8 @@ export interface RepoObservation {
   holders?: HolderReadings;
   /** The board read: the converged pull requests placed in Ready to merge, or why they were not. */
   board?: BoardRead;
+  /** The launch records of follow-ups whose spent pending arm the tick read again as settled (`arm-reread.ts`). */
+  armsSettled?: ReadonlySet<string>;
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
@@ -401,6 +405,7 @@ export async function observeRepo(
                   : [],
                 serveDefaults: context.options.machine?.serveDefaults,
                 nowMs,
+                root: stateRoot(),
                 headroom: pickupHeadroom(context, records),
                 records,
                 preparedTracker: opened.tracker,
@@ -448,6 +453,7 @@ export async function observeRepo(
                 labels,
                 nowMs,
                 shared: shared.records,
+                pickupArms: pickupArms(records, repo),
               }),
             context.bound,
           );

@@ -19,9 +19,8 @@
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
  * | stopped with an explicit person's-stop record, `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit and no person's-stop record | re-armable (stopped-unknown once its recovery budget is spent) |
- * | stopped `QUOTA_PARKED` (`16`) | re-armable |
  * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
- * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `QUOTA_PARKED` (`16`), `NOT_SETTLED` (`4`) | re-armable |
  * | stopped `WORKTREE_UNCLEAN` (`12`), head known and not yet recovered | stale: settle original tree once per head |
  * | stopped `HITL_PARKED`, an item unanswered, the pull request conflicting with its base | stale |
  * | stopped `HITL_PARKED`, an item unanswered | parked |
@@ -118,10 +117,16 @@ import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
 import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
+import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
 import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
 export type { Admit } from "./base-heads.ts";
 import { ended, passedBefore, type TickBound } from "./bounded.ts";
-import { hasCommand, type LabelConfig } from "../labels.ts";
+import { commandLabel, hasCommand, type LabelConfig } from "../labels.ts";
+import {
+  rearmableStop,
+  rearmBinding,
+  type RearmStop,
+} from "../rearm-binding.ts";
 import type { Listing } from "../tick-comments.ts";
 import { minutesBetween } from "../text.ts";
 import { readPark, type ParkReading } from "./park-reading.ts";
@@ -138,6 +143,8 @@ import type {
   WaitingPark,
 } from "../types.ts";
 import { parseMs } from "../../../shared/time.ts";
+import { readFacts } from "./ledger-facts.ts";
+import { undecided } from "./ledger-undecided.ts";
 
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
@@ -152,6 +159,8 @@ export interface PrFacts {
 export interface Classified {
   class: LedgerClass;
   why: string;
+  /** For `unplaced`: the forge leaves the pull request's mergeability, head or base undecided, which a later tick reads again. */
+  forgeUndecided?: true;
   /** For `stale`: what its stop does not fix. */
   stale?: StaleCause;
 }
@@ -160,24 +169,6 @@ const short = (sha: string) => sha.slice(0, 7);
 
 /** What a ledger is read beside when the forge said nothing of its pull request. */
 const NO_FACTS: PrFacts = { head: null, mergeable: null };
-
-/** A pull request's mergeability and head commit as the forge reports them, or why they cannot place its stop yet. */
-function readFacts({
-  head,
-  mergeable,
-}: PrFacts): { head: string; conflicting: boolean } | { unread: string } {
-  if (mergeable === "UNKNOWN")
-    return {
-      unread: "the forge is still computing whether it conflicts with its base",
-    };
-  if (mergeable !== "MERGEABLE" && mergeable !== "CONFLICTING")
-    return {
-      unread: `the forge reports its mergeability as ${String(mergeable)}`,
-    };
-  if (head === null || head === "")
-    return { unread: "the forge reports no head commit for it" };
-  return { head, conflicting: mergeable === "CONFLICTING" };
-}
 
 /**
  * A converged ledger's class, read beside its pull request: `stale` when
@@ -192,7 +183,12 @@ function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
     why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), and ${why}, so whether it is stale cannot be told`,
   });
   const facts = readFacts(forge);
-  if ("unread" in facts) return unplaced(facts.unread);
+  if ("unread" in facts)
+    return verified === ""
+      ? unplaced(
+          `${facts.unread}, and its ledger names no head the drive verified`,
+        )
+      : { ...unplaced(facts.unread), forgeUndecided: true };
   const { head, conflicting } = facts;
   if (verified === "" && !conflicting)
     return unplaced("its ledger names no head the drive verified");
@@ -242,10 +238,9 @@ function conflictRedrive(
 function conflictStopClass(forge: PrFacts): Classified {
   const pair = conflictPair(forge);
   if ("unread" in pair)
-    return {
-      class: "unplaced",
-      why: `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${pair.unread}, so the change a re-drive would act on cannot be told`,
-    };
+    return undecided(
+      `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${pair.unread}, so the change a re-drive would act on cannot be told`,
+    );
   return conflictRedrive(
     pair.facts.conflicting
       ? "stopped on a conflict with its base, and still conflicting"
@@ -287,10 +282,9 @@ function failedConflictClass(forge: PrFacts): Classified | null {
     return null;
   const pair = conflictPair(forge);
   if ("unread" in pair)
-    return {
-      class: "unplaced",
-      why: `stopped ${FAILED}, and ${pair.unread}, so whether its conflict-resolve round settles it cannot be told`,
-    };
+    return undecided(
+      `stopped ${FAILED}, and ${pair.unread}, so whether its conflict-resolve round settles it cannot be told`,
+    );
   const { facts, base } = pair;
   return {
     class: "stale",
@@ -503,10 +497,9 @@ function parkConflictClass(waiting: string, forge: PrFacts): Classified | null {
   if (forge.mergeable !== "CONFLICTING") return null;
   const pair = conflictPair(forge);
   if ("unread" in pair)
-    return {
-      class: "unplaced",
-      why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), ${waiting}, and conflicting with its base, but ${pair.unread}, so the change a re-drive would act on cannot be told`,
-    };
+    return undecided(
+      `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), ${waiting}, and conflicting with its base, but ${pair.unread}, so the change a re-drive would act on cannot be told`,
+    );
   return conflictRedrive(
     `parked ${waiting}, and conflicting with its base`,
     pair,
@@ -643,6 +636,7 @@ function exitClass(
 }
 
 export interface OpenPr {
+  isCrossRepository?: boolean;
   number: number;
   url: string;
   title: string;
@@ -685,7 +679,7 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
 function unarmed(
   pr: OpenPr,
   base: Omit<DrivenPr, "class" | "why" | "evidence">,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
 ): DrivenPr | null {
   const asked = askedToArm(pr, r);
   if (asked === null) return null;
@@ -708,11 +702,16 @@ function unarmed(
 /** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
 function askedToArm(
   pr: OpenPr,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
-): { asks: string; evidence: { adopted?: string } } | null {
+  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
+): { asks: string; evidence: { adopted?: string; pickupArm?: true } } | null {
   const { labels, adoption } = r;
   if (labels !== null && hasCommand(labels, pr.labels, "drive"))
     return { asks: "a person's drive label asks for one", evidence: {} };
+  if (pickupAsked(r.pickupArms, pr))
+    return {
+      asks: "its completed process pickup handed off the first drive",
+      evidence: { pickupArm: true },
+    };
   const adopted =
     adoption === null ? null : adopts(pr, adoption, labels, r.nowMs);
   return adopted === null
@@ -739,6 +738,7 @@ function baseOf(
 
 /** What every drive of one reading shares. */
 interface Reading {
+  pickupArms?: PickupArms;
   slug: string;
   login: string | null;
   nowMs: number;
@@ -771,36 +771,53 @@ async function factsOf(
     : facts;
 }
 
-/** A stopped ledger's explicit request, preserving person stops and unanswered parks. */
+/** Evidence from a person's explicit request, where its label remains. */
 function rearmRequest(
-  ledger: Ledger,
-  labels: LabelConfig | null,
-  carried: string[] | undefined,
-  classified: Classified,
-): { classified: Classified; evidence: Evidence } {
-  const eligible =
-    ledger.driver.state === "stopped" &&
-    ledger.driver.personStop === undefined &&
-    ledger.driver.exit !== DRIVE_EXIT.MAILBOX_STOPPED &&
-    ledger.driver.exit !== DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT;
-  if (!eligible || labels === null || !hasCommand(labels, carried, "rearm"))
-    return { classified, evidence: {} };
-  const next =
-    classified.class === "parked" || classified.class === "unplaced"
-      ? classified
-      : {
-          class: "re-armable" as const,
-          why: "a person's rearm request asks to restart this stopped drive in its existing tree",
-        };
-  return {
-    classified: next,
-    evidence: {
-      rearm: true,
-      rearmLabel: `${labels.prefix}rearm`,
-      noCause: false,
-      legacyNoCause: false,
-    },
-  };
+  pr: OpenPr,
+  r: Reading,
+  comments: readonly unknown[],
+  stop: RearmStop | null,
+): Evidence {
+  if (
+    r.labels === null ||
+    (stop === null && !hasCommand(r.labels, pr.labels, "rearm"))
+  )
+    return {};
+  const request = rearmBinding(
+    { repo: r.slug, number: pr.number },
+    r.login,
+    comments,
+    commandLabel(r.labels, "rearm"),
+    stop,
+  );
+  if (hasCommand(r.labels, pr.labels, "rearm")) return request;
+  return typeof request.rearmFailure === "string"
+    ? {
+        rearmFailure: request.rearmFailure,
+        rearmRequestId: request.rearmRequestId ?? null,
+      }
+    : {};
+}
+
+/** A vanished ledger leaves a lapsed request, which the tick still retires. */
+function noLedger(
+  pr: OpenPr,
+  base: Omit<DrivenPr, "class" | "why" | "evidence">,
+  r: Reading,
+  comments: readonly unknown[],
+): DrivenPr | null {
+  const drive = unarmed(pr, base, r);
+  const request = rearmRequest(pr, r, comments, null);
+  if (drive !== null)
+    return { ...drive, evidence: { ...drive.evidence, ...request } };
+  return typeof request.rearmExpired === "string"
+    ? {
+        ...base,
+        class: "unplaced",
+        why: request.rearmExpired,
+        evidence: request,
+      }
+    : null;
 }
 
 /** What a silent ledger's evidence adds: whether this host shows its driver gone, and what it showed. */
@@ -831,7 +848,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     };
   const snapshot = snapshotFromListing(listing.value, login);
   const why = unreadable(snapshot);
-  if (why === "") return unarmed(pr, base, r);
+  if (why === "") return noLedger(pr, base, r, listing.value);
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
     return {
       ...base,
@@ -851,15 +868,33 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   );
   const forge = await factsOf(pr, ledger, r);
   let classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
-  const request = rearmRequest(ledger, labels, pr.labels, classified);
-  classified = request.classified;
+  const stop = rearmableStop(ledger)
+    ? { comment: snapshot.canonical.comment.id, generation: ledger.generation }
+    : null;
+  const request = rearmRequest(pr, r, listing.value, stop);
+  if (
+    request.rearm === true &&
+    classified.class !== "parked" &&
+    classified.class !== "unplaced"
+  )
+    classified = {
+      class: "re-armable",
+      why: "a person's rearm request asks to restart this stopped drive in its existing tree",
+    };
+  if (
+    typeof request.rearmFailure === "string" &&
+    classified.class !== "parked" &&
+    classified.class !== "unplaced"
+  )
+    classified = { class: "needs-person", why: request.rearmFailure };
   return {
     ...base,
     ...classified,
+    ...(ledger.driver.state === "running" ? { running: true as const } : {}),
     ...(classified.class === "unplaced" ? failedRead(ledger, park, forge) : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
-      ...request.evidence,
+      ...request,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
       ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
     },
@@ -929,10 +964,14 @@ export async function readDrives(
   nowMs: number,
   labels: LabelConfig | null = null,
   adoption: Adoption | null = null,
-  comments?: (pr: number) => Promise<Listing>,
-  admit: Admit = (read) => read(),
-  bound?: TickBound,
+  options: {
+    comments?: (pr: number) => Promise<Listing>;
+    admit?: Admit;
+    bound?: TickBound | undefined;
+    pickupArms?: PickupArms | undefined;
+  } = {},
 ): Promise<DrivenPr[]> {
+  const { comments, admit = (read) => read(), bound, pickupArms } = options;
   const reading: Reading = {
     slug,
     login,
@@ -940,6 +979,7 @@ export async function readDrives(
     windowMs: stallThresholdMs(),
     labels,
     adoption,
+    ...(pickupArms === undefined ? {} : { pickupArms }),
     baseHead: baseHeads(slug, admit, bound),
     presence: (pr, ledger) =>
       ended(bound)

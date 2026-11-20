@@ -26,6 +26,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { TERMINAL_PULL_FIXTURE } from "./terminal-pull-fixture.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import {
   conn,
@@ -118,6 +119,7 @@ if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,def
 if (args[0] === "api" && args[1] === "rate_limit")
   // What is left: 4990 unless rate-remaining says otherwise.
   out({ resources: { core: { limit: 5000, remaining: fs.existsSync(F + "/rate-remaining") ? Number(fs.readFileSync(F + "/rate-remaining", "utf8")) : 4990, reset: 1793000000 } } });
+${TERMINAL_PULL_FIXTURE}
 if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   // A listing that fails while prs-<state>-fail exists.
@@ -129,20 +131,13 @@ if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headR
   // One open pull request read again, as prs-open.json lists it.
   const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
   if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
-  if (args.some((a) => a.includes("isCrossRepository"))) {
+  if (args.some((a) => a.includes("headRepositoryOwner"))) {
     const head = Bun.spawnSync(["git", "rev-parse", "--verify", "refs/heads/" + listed.headRefName]);
     out({ ...listed, state: "OPEN", headRefOid: head.exitCode === 0 ? head.stdout.toString().trim() : listed.headRefOid,
       isCrossRepository: false, headRepositoryOwner: { login: "example-org" }, headRepository: { name: "example-repo" },
       url: "https://github.com/${SLUG}/pull/" + listed.number });
   }
   out({ ...listed, state: "OPEN" });
-}
-if (args[0] === "pr" && args[1] === "view" && args[args.length - 1] === "labels") {
-  // One pull request's labels read again, open or merged, as its listing holds them.
-  const all = ["open", "merged"].flatMap((s) => JSON.parse(fs.readFileSync(F + "/prs-" + s + ".json", "utf8")));
-  const listed = all.find((p) => p.number === Number(args[2]));
-  if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
-  out({ labels: listed.labels ?? [] });
 }
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("reviewThreads"))) {
   // A pull request's unresolved review threads, as many as threads-<pr> says.
@@ -185,7 +180,7 @@ if (args[0] === "pr" && args[1] === "edit") {
     const absent = add.find((l) => !have.includes(l));
     if (absent !== undefined) { process.stderr.write("could not add label: '" + absent + "' not found\\n"); process.exit(1); }
   }
-  for (const state of ["open", "merged"]) {
+  for (const state of ["open", "merged", "closed"]) {
     const file = F + "/prs-" + state + ".json";
     const all = JSON.parse(fs.readFileSync(file, "utf8"));
     for (const p of all.filter((p) => p.number === n)) {
@@ -583,7 +578,7 @@ export interface World {
   trackerOps(): string[];
   /** Who made each issue's assignment, by issue number. */
   setAssigner(number: number, login: string, permission: string): void;
-  setPrs(state: "open" | "merged", prs: unknown[]): void;
+  setPrs(state: "open" | "merged" | "closed", prs: unknown[]): void;
   setComments(pr: number, comments: unknown[]): void;
   /** Refuse every forge call whose arguments hold `match` as `gh` would, printing `stderr`; a pull request's comments it refuses are not read in full by the repository's query either. */
   failCall(match: string, stderr: string): void;
@@ -690,6 +685,7 @@ export function world(): World {
     );
   write("prs-open.json", []);
   write("prs-merged.json", []);
+  write("prs-closed.json", []);
   write("base-head", BASE_SHA);
   write("orca-repos.json", {
     repos: [

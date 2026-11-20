@@ -48,21 +48,28 @@ export const SEND_VERBS = {
     person: true,
     args: "",
     meaning:
-      "Ask for a stopped drive to be re-armed in its existing working tree: the rearm command label, which the dispatcher's next tick reads",
+      "Ask for a stopped drive to be re-armed in its existing working tree: a request bound to that stop and the rearm command label that the dispatcher reads",
+  },
+  "withdraw-rearm": {
+    stations: ["drive"],
+    person: true,
+    args: "",
+    meaning:
+      "Withdraw a pending re-arm request and remove its rearm command label",
   },
   hold: {
-    stations: ["drive", "followup"],
+    stations: ["drive", "followup", "pickup"],
     person: true,
     args: "",
     meaning:
-      "Keep the line off a pull request: add the hold command label, which every stage of the dispatcher respects",
+      "Keep the line off a pull request with the hold command label, or keep a tracker item out of pickups and batches with a hold on its dispatcher host",
   },
   release: {
-    stations: ["drive", "followup"],
+    stations: ["drive", "followup", "pickup"],
     person: true,
     args: "",
     meaning:
-      "Withdraw a hold: remove the hold command label, so the dispatcher's next tick takes the pull request up again",
+      "Withdraw the pull request's hold label or the tracker item's hold on its dispatcher host",
   },
   answer: {
     stations: ["drive", "followup", "pickup"],
