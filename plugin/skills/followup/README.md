@@ -64,7 +64,11 @@ ends a run the dispatcher started as a wait: the dispatcher starts the
 follow-up again after the time the run names, and tells a person when the
 arm is still pending past `dispatch.followup_within`. A run started by hand
 reports the pending arm, and a person runs it again once the arm can
-settle.
+settle. A deploy whose run cannot start is not pending: `followup.ts
+deploy-run <id>` reads a run with no jobs past a bound, behind runs that
+all ended cancelled, as `stuck` (its workflow's concurrency group is
+held), and the arm records it as a step owed by a person instead of
+waiting on it.
 
 ### The repository's own arms
 

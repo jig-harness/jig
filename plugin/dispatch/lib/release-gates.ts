@@ -23,6 +23,7 @@ import {
 } from "./sources/bounded.ts";
 import { currentMs } from "../../shared/time.ts";
 import type { RepoTarget } from "./types.ts";
+import { runWord, type WorkflowRun } from "./wait-for.ts";
 import { resolve } from "node:path";
 
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
@@ -235,6 +236,35 @@ export async function taggedReleases(
     found.add(tag);
   }
   return ok(found);
+}
+
+/**
+ * Which of `runs`, the workflow runs a pending follow-up arm links to, have
+ * finished (`status: completed`), by `runWord`: one REST request per run,
+ * its own core-rate point. A run of a repository other than `repo` is read
+ * where its link points; a run the forge no longer has (`404`) is left
+ * unfinished, for a person.
+ */
+export async function finishedRuns(
+  repo: RepoTarget,
+  runs: readonly WorkflowRun[],
+  bound?: TickBound,
+): Promise<Outcome<Set<string>, "refused">> {
+  const finished = new Set<string>();
+  for (const run of runs) {
+    if (ended(bound)) return refused("the tick ran out of time");
+    const reply = await forge(
+      repo,
+      ["api", `repos/${run.slug}/actions/runs/${run.id}`, "--jq", ".status"],
+      bound,
+    );
+    if (!reply.ok) {
+      if (/\bHTTP 404\b/.test(reply.failure.reason)) continue;
+      return reply;
+    }
+    if (reply.value.trim() === "completed") finished.add(runWord(run));
+  }
+  return ok(finished);
 }
 
 export async function observeReleaseTags(

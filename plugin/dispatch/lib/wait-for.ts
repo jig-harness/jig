@@ -44,3 +44,30 @@ export function readWaitFor(text: string | null | undefined): WaitFor {
 export function armWords(wait: WaitFor): string {
   return wait.arm === undefined ? "an arm" : `the arm ${wait.arm}`;
 }
+
+/** A workflow run an arm names by its link: the repository and the run's id. */
+export interface WorkflowRun {
+  slug: string;
+  id: number;
+}
+
+/** A workflow run's link on the forge, as a pass names the run its deploy arm waits for. */
+const RUN_LINK =
+  /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/actions\/runs\/(\d{1,19})(?!\d)/g;
+
+/** The workflow runs an arm's words link to, in order of first mention. */
+export function armRuns(arm: string | undefined): WorkflowRun[] {
+  if (arm === undefined) return [];
+  const seen = new Map<string, WorkflowRun>();
+  for (const [, slug, id] of arm.matchAll(RUN_LINK)) {
+    const run = { slug: slug as string, id: Number(id) };
+    const dots = run.slug.split("/").some((part) => /^\.+$/.test(part));
+    if (!dots && Number.isSafeInteger(run.id)) seen.set(runWord(run), run);
+  }
+  return [...seen.values()];
+}
+
+/** A workflow run as one word of an arm's key. */
+export function runWord(run: WorkflowRun): string {
+  return `run:${run.slug}/${run.id}`;
+}
