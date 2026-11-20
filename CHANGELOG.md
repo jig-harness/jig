@@ -404,6 +404,91 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.296.0] - 2026-11-20
+
+### Added
+
+- `/jig:file-issue` hands a newly filed issue to the line when the filing
+  names who takes it: `jig send pickup@<owner>/<name>#<KEY> assign` for the
+  repository's factory identity, and the skill's `hand-off.ts` for a served
+  person. Each writes the assignment only once the tracker's history records
+  it, and the filing report says when the history confirmed it (`hand-off.ts`; the
+  `jig send` route confirms the current assignee only and says so), or, when
+  it was not, the command to run and the earliest time to run it. An issue already
+  assigned is never changed. **Consumer action:** none.
+- The dispatcher's `notify` stage works without Orca: a machine file can
+  name notification channels under `notify.channels`, and a `webhook`
+  channel posts each notification to an incoming webhook, an ntfy topic a
+  phone subscribes to (`format: text`), a Slack channel (`slack`) or a
+  Discord channel (`discord`). Each channel is sent once per cause, again
+  after `dispatch.renotify_after`, and backs off in the failure ledger
+  under `notice <channel> <key>` while its deliveries fail. The webhook's
+  address is a credential: the machine file names the environment variable
+  that holds it (`url_env`), and the address appears in no notification,
+  receipt, log row or cost-ledger row
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+  A 429 holds the address in the host's budget record until its
+  `Retry-After`, and every repository's notifications to it wait until
+  then; a channel whose variable is unset is reported in each tick's
+  receipt.
+- A machine file with `runtime: process` now accepts `notify` among a
+  repository's stages once it names a channel under `notify.channels`; the
+  process runtime writes no Orca card. On `runtime: orca` a named channel is
+  sent through beside the card, and with none named nothing changes.
+
+### Fixed
+
+- On Linear, an issue assigned within three minutes of its creation was
+  never started: Linear leaves changes made in an issue's first three
+  minutes out of its history, so the dispatcher found no assignment and
+  refused the item on every tick. `jig send … assign` now waits until that
+  window has passed before writing, and for an item already assigned to the
+  factory identity whose history shows no assignment it refuses with the
+  remedy (unassign it, then send again) instead of the bare "already
+  assigned". The served-queue documentation and the operator skill say the
+  same. **Consumer action:** advised at instructions. A runbook that assigns
+  a Linear item to the factory identity or a served person right after
+  filing it should wait three minutes, or unassign and assign it again
+  after them.
+
+## [0.295.0] - 2026-11-20
+
+### Fixed
+
+- The dispatcher's validation-capacity gauge (`load.validation`) no longer
+  holds every pickup and drive on an idle test lock. Its wait window is now
+  the wait a pass's test stage gives the lock: `LOCK_TIMEOUT` from the
+  environment a pass is launched with (for a process launch, retained only where
+  `process.env_keep` names it; an Orca launch is given the dispatcher's `LOCK_TIMEOUT`, and its lock root (made absolute) and name, always), or the test stage's hour
+  when it is unset, rather than the bare lock's one-minute default. A pass's
+  own runs, made one after another, no longer count as waiting behind each
+  other, so a pass always fits a lock with nothing ahead of it. The runs
+  still to come from passes in flight still count ahead of a new pass. The
+  gauge's reason, in the receipt and on the dashboard, names the wait window
+  and where it came from, and says when a window shorter than one run
+  admits a pass only while a slot is free for its first run. A `LOCK_TIMEOUT` the lock
+  refuses holds the pass, with the reason, rather than counting as an hour. The same environment
+  places the lock's holders and waiters. A refused `LOCK_TIMEOUT` takes
+  precedence over the lock's reading: the pass is held with the reason, and
+  the refusal shows in the gauge's fill.
+- A parked drive's review thread is now read with its pull request's
+  repository named, by the dispatcher's tick and by `jig ask`. On a host
+  where the GitHub account is chosen by the repository a call addresses, the
+  read used to run as the default login and was answered `not-found` for a
+  repository owned by another account, so every timer tick exited 1 for as long
+  as such a drive stayed parked, and a person's answer to its park was never
+  read.
+- A parked drive's review thread that the forge answers `not-found`, such as
+  one the credential cannot see, no longer fails the repository's turn or the
+  tick. The item's row in the report still carries the class, the failure
+  ledger counts nothing and nobody is told. Any other `not-found` read of one
+  item, such as a base branch that is gone, and a `not-found` of a repository's
+  own record, still fail the turn.
+- The dispatcher backs off an account when the vendor refuses its sign-in,
+  shows one sign-in request for the account, and lets another available
+  account retry the work. Repeated startup failures also trigger account
+  backoff so a recurring problem stops consuming new work.
+
 ## [0.294.0] - 2026-11-20
 
 ### Added
@@ -10394,7 +10479,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.294.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.296.0...HEAD
+[0.296.0]: https://github.com/jig-harness/jig/compare/v0.295.0...v0.296.0
+[0.295.0]: https://github.com/jig-harness/jig/compare/v0.294.0...v0.295.0
 [0.294.0]: https://github.com/jig-harness/jig/compare/v0.293.0...v0.294.0
 [0.293.0]: https://github.com/jig-harness/jig/compare/v0.292.0...v0.293.0
 [0.292.0]: https://github.com/jig-harness/jig/compare/v0.291.2...v0.292.0

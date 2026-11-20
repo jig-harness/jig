@@ -48,10 +48,26 @@ what a profile has to model.
 | Linear | Requests an hour and complexity points an hour for a key (2,500 and 3,000,000 measured); 10,000 points for one query; a list with no page size is priced at 50 items | Continuously: the reset an answer names is a full refill away | `x-ratelimit-requests-*` and `x-ratelimit-complexity-*` headers, `x-complexity` for the query | 400 or 429 with the error code `RATELIMITED` |
 | Jira Cloud | Request and cost limits that differ by authentication mode (OAuth or API token) and by endpoint | Not stated | Limit, remaining and reset headers and a reason header, where the system sends them; the profile lists which ones each authentication mode gets | 429 with `Retry-After`; the reason header tells an endpoint's throttle from a wider quota |
 | Notion | A budget per connection over a fixed 60-second window, sized by plan; a limit shared across the workspace; some endpoints with limits of their own | Whole, when the window ends | Not reported | 429 with `Retry-After`; the workspace limit refuses every connection at once |
+| Webhooks: ntfy, Slack, Discord | ntfy: requests and messages per visitor (a burst, then a steady rate, and a daily message count on the public server), a message's size (4,096 bytes before it becomes an attachment). Slack: about one message a second per incoming webhook, short bursts allowed. Discord: requests per webhook over a few seconds, and messages per channel a minute | Continuously (ntfy's and Discord's buckets), not stated (Slack) | Not reported (ntfy, Slack); Discord sends `x-ratelimit-*` headers, which the transport does not read | 429; Slack and Discord with `Retry-After` |
 
 A local tool Jig runs (a workspace application's command, `git` against a
 remote) has no rate limit. It gets a deadline, the failure classes and the
 reader's policy, and no budget.
+
+An incoming webhook (`plugin/shared/outbound/http.ts`, the `webhook`
+notification channel's transport) has a deadline of 10 seconds a post,
+within the tick's remaining time, and the failure classes. Its address is
+the credential, so the ledger and the budget record key it by a hash of
+the address. The record keeps no balance, since none of these systems
+reports one the transport reads: it keeps only the hold a 429 sets, until
+its `Retry-After` or, naming none, for a minute doubled with each 429 in a
+row up to fifteen, and while it holds no process on the machine posts to
+that address. A post costs one request, and a tick sends at most one post
+per notice per channel per send (the first, and one each
+`dispatch.renotify_after` while the cause stands), so its rate is bounded
+by the causes the tick notifies. With no answer, the notice stays due: a
+failed post backs off in the failure ledger, a held one waits, and the
+dispatch dashboard lists the cause either way.
 
 ### The library
 
