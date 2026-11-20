@@ -86,7 +86,8 @@ obligations:
    retries and for when a person is told.
 7. **Say what the reader does without an answer.** A reader shows its last
    reading with its age. A tick does not exit nonzero or ask a person for a
-   class that clears by waiting, until that class's threshold. A system
+   class that clears by waiting, until that class's threshold, nor for a
+   parked drive's thread answered `not-found`: an absence is an answer. A system
    that did not answer is not asked again in the same tick.
 
 The rule covers every system Jig reaches over the network: the forge, the
