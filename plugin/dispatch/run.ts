@@ -119,6 +119,9 @@
  */
 import { runStage, type Ran, type RunOptions } from "./lib/run-stage.ts";
 import { driverCleanupUncertain } from "./lib/stage-cleanup.ts";
+import { runProcessEntry } from "./lib/runtime/process-entry.ts";
+import { rememberProcessOwner } from "./lib/runtime/process-owner.ts";
+import { removeProcessSpool } from "./lib/runtime/process-spool.ts";
 import { spawnSupervisor } from "./lib/spawn-supervisor.ts";
 import {
   readStageClaim,
@@ -128,7 +131,7 @@ import {
 import { resolve } from "node:path";
 import { swallow } from "../shared/errors.ts";
 import { passOutput } from "./lib/pass-output.ts";
-import { captureIdentity } from "../shared/liveness.ts";
+import { captureIdentity, type ProcessIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
@@ -408,6 +411,31 @@ async function closeRefusedTab(): Promise<void> {
   }
 }
 
+/** A wrapper or supervisor must publish ownership before starting its stage. */
+async function publishOwner(record: LaunchRecord, identity: ProcessIdentity) {
+  const written = await rememberProcessOwner(record, identity);
+  if (written.ok) return true;
+  console.error(`jig dispatch run: ${written.failure.reason}`);
+  recordExit(record.id, {
+    at: currentIso(),
+    code: 3,
+    signal: null,
+    beforeStage: true,
+  });
+  await endSharedClaim(record.id);
+  return false;
+}
+
+async function finishWrapper(record: LaunchRecord): Promise<void> {
+  if (record.runtime === "process") {
+    try {
+      if (readEnded(record.id)?.report != null) removeProcessSpool(record.id);
+    } catch (error) {
+      swallow(error, "the run's output spool stays for inspection");
+    }
+  } else await closeTabOnExit(record.id);
+}
+
 async function wrap(id: string, token: string): Promise<number> {
   const record = readRecord(id);
   if (record === null || record.token !== token) {
@@ -420,7 +448,10 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(`jig dispatch run: ${id} names no workspace`);
     return 2;
   }
-  const identity = await captureIdentity();
+  const identity = await captureIdentity(
+    process.pid,
+    record.runtime === "process",
+  );
   if (!identity.ok) {
     console.error(`jig dispatch run: ${identity.failure.reason}; not starting`);
     return 2;
@@ -436,18 +467,19 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(
       `jig dispatch run: ${id} is already claimed; nothing started`,
     );
-    await closeRefusedTab();
+    if (record.runtime !== "process") await closeRefusedTab();
     return CLAIMED;
   }
+  if (!(await publishOwner(record, identity.value))) return 3;
   process.chdir(record.workspace.path);
   let code: number;
   if (isInteractive(record)) {
     code = await executeStage(id, record);
   } else {
-    code = await spawnSupervisor(id, token);
+    code = await spawnSupervisor(id, token, record.runtime === "process");
     enterAfterStage();
   }
-  await closeTabOnExit(id);
+  await finishWrapper(record);
   return code;
 }
 
@@ -511,7 +543,10 @@ async function supervise(id: string, token: string): Promise<number> {
     !wrapper?.supervision
   )
     return 2;
-  const identity = await captureIdentity();
+  const identity = await captureIdentity(
+    process.pid,
+    record.runtime === "process",
+  );
   if (!identity.ok) {
     console.error(identity.failure.reason);
     return 2;
@@ -528,12 +563,16 @@ async function supervise(id: string, token: string): Promise<number> {
     console.error(registered.failure.reason);
     return 3;
   }
+  if (!(await publishOwner(record, identity.value))) return 3;
   process.chdir(record.workspace.path);
   return executeStage(id, record, {
     id,
     token,
     wrapper,
     supervisor: identity.value,
+    ...(record.runtime === "process"
+      ? { remember: (child) => rememberProcessOwner(record, child) }
+      : {}),
   });
 }
 
@@ -872,4 +911,14 @@ export async function runMain(argv: string[]): Promise<number> {
   }
 }
 
-if (import.meta.main) process.exitCode = await runMain(process.argv.slice(2));
+if (import.meta.main) {
+  const args = process.argv.slice(2);
+  process.exitCode =
+    args[0] === "process-entry" && args.length === 4
+      ? await runProcessEntry(
+          args[1] as string,
+          args[2] as string,
+          args[3] as string,
+        )
+      : await runMain(args);
+}

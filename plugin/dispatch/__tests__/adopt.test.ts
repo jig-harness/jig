@@ -13,6 +13,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { adoptionOf, adopts, type Adoption } from "../lib/adopt.ts";
+import { recordResult } from "../lib/launch-result.ts";
 import { dispatchSection } from "../lib/section.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -25,7 +26,10 @@ import {
 } from "./fixtures.ts";
 import {
   account,
+  dispatchState,
   driveRuns,
+  earlierRecord,
+  claimed,
   exitWritten,
   machineFile,
   waitFor,
@@ -175,6 +179,60 @@ describe("jig dispatch adopts a repository's own recent pull requests", () => {
     expect(driveRuns(w)).toHaveLength(2);
   }, 90_000);
 });
+
+it("arms a completed process pickup's first drive without an adoption rule", async () => {
+  const w = fixture(NONE);
+  const candidate = {
+    ...authored(8, "drive-bot", ago(HOUR)),
+    isCrossRepository: false,
+  };
+  const unrelated = authored(9, "drive-bot", ago(HOUR));
+  w.setPrs("open", [candidate, unrelated]);
+  w.setComments(8, []);
+  w.setComments(9, []);
+  const ws = join(w.root, "ws-8");
+  mkdirSync(ws, { recursive: true });
+  w.setWorkspaces([{ branch: "feature/8", linkedPR: 8, path: ws }]);
+  const pickup = earlierRecord(w, {
+    id: "20261030T200000Z-01234567",
+    account: "a",
+    action: "pickup",
+    headless: true,
+    runtime: "process",
+    item: "#12",
+    pr: null,
+    workspace: { id: ws, path: ws, branch: candidate.headRefName },
+  });
+  recordResult(pickup.id, "done", dispatchState(w), {
+    address: `drive@${SLUG}#8`,
+  });
+  expect(rearms(await tick(w))).toEqual([]);
+  claimed(
+    w,
+    pickup.id,
+    {
+      pid: 1,
+      host: "some-host",
+      hostId: "",
+      bootId: "",
+      start: "before",
+      claimedAt: pickup.createdAt,
+    },
+    0,
+  );
+  w.setPrs("open", [{ ...candidate, headRefName: "unrelated" }, unrelated]);
+  expect(rearms(await tick(w))).toEqual([]);
+  w.setPrs("open", [{ ...candidate, isCrossRepository: true }, unrelated]);
+  expect(rearms(await tick(w))).toEqual([]);
+  w.setPrs("open", [candidate, unrelated]);
+  const receipt = await tick(w, ["--apply"]);
+  expect(rearms(receipt).map((arm) => arm.target)).toEqual(["PR #8"]);
+  expect(rearms(receipt)[0]?.reason).toContain("pickup handoff");
+  const [launched] = receipt.repos[0]?.launches ?? [];
+  expect(launched).toMatchObject({ action: "rearm", outcome: "launched" });
+  await waitFor("the exit", () => exitWritten(w, launched?.record ?? ""));
+  expect(driveRuns(w)).toHaveLength(1);
+}, 90_000);
 
 describe("dispatch.adopt", () => {
   /** The section read from `dispatch`, which the test expects to validate. */

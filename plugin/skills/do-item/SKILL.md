@@ -1442,6 +1442,9 @@ implementation. Skip this check for issues about the repository's own code.
         the tab, a Windows host, or a tab whose drive `drives.ts` did not list
         in time, whose `tail` to report too; a drive that tab did start holds
         the PR's lock, so this spawn then meets step 3's exit `11`).
+      - `owed` → the process dispatcher owes the first drive. Start nothing
+        here. Record the dispatched result `done --pr <PR>` immediately and
+        report the handoff to the dispatcher.
       - `print` → emit the command only, with `reason`: for an uncleared
         `hitl` checkpoint, starting review rounds would pre-empt the human
         judgment; for an agent tool with no documented pass command, a guessed command is
@@ -2017,6 +2020,11 @@ report. In such a pass:
   the tree's edits that belong to the item, push the branch, then go on
   from where the work stands (validation, the pre-PR review, the pull
   request and its drive) and record how it ended.
+- **The process dispatcher starts a pickup's first drive.** When the arm
+  script answers `owed`, record `done --pr <number>` and give the line the
+  next step in the closing report. The dispatcher reads that handoff after
+  the pickup ends and admits the first drive through its own account and
+  launch checks.
 - **A drive the pass cannot arm is handed off, not dropped.** When the arm
   script answers `spawn`, the pass cannot start the drive itself and
   first checks `drives.ts` for one on this pull request. With none, it
