@@ -99,6 +99,10 @@
  *
  *   bun drive.ts 123 --bots-only -- claude --model sonnet -p "/jig:drive-pr --bots-only 123"
  *
+ * An arm writes the pass role after that invocation (`passRole` in
+ * `lib/pass-command.ts`); a command typed without it still drives, since
+ * `$DRIVE_PR_TARGET` decides the mode.
+ *
  * Exit codes mirror drive-status.ts, plus 6:
  *   0  converged (SHA-verified)
  *   1  a pass failed, or the state could not be read

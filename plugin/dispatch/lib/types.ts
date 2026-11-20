@@ -349,6 +349,8 @@ export interface Unplaced {
    * write, or placed in no repository by its labels and no default.
    */
   cause?: "assigner-cannot-write" | "needs-repository-label";
+  /** A person held this pickup on the dispatcher host. */
+  pickupHold?: { by: string; at: string };
   /** Set when reading the record failed (a comment listing, an unreadable ledger), as against a state the record legitimately leaves unplaced. */
   readFailed?: true;
   /** For a `readFailed` entry a failed call caused: that call's failure class, which decides whether the read is waited out. */

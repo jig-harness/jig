@@ -9,7 +9,7 @@
  * without starting anything. It then starts
  * `drive.ts <PR> [--take-over] --bots-only --pass-timeout <s> -- <pass>` in
  * the pull request's workspace, the pass being the documented pass command
- * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR>"`, or
+ * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR> <pass role>"`, or
  * Codex's `codex exec …`, with the bypass when the record says the tick
  * admitted it on a host that opted in, and the host's `drive.codex_pass_args`
  * the record keeps before the prompt, or `--pass-args ''` on a record that
