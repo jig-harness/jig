@@ -12,7 +12,9 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 First comes what lets a team's pull requests reach merge-ready with nobody
 watching. An agent working alone cannot get past a person, the dispatcher
 leaves no work stranded, and a person sees and steers the work from one
-place. Every run the dispatcher starts says what it concluded.
+place. Every run the dispatcher starts says what it concluded. Last, a host
+can run the line on its own model-provider accounts and on a choice of agent
+programs.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -238,6 +240,31 @@ once Orca offers it. Once Orca lets a launch name its account, the
 dispatcher will start pickups through Orca on the account it chose. The
 plugin is Orca-bound.
 
+### 59. Provider accounts and an agent-harness interface
+
+A team that holds its own key with a model provider cannot have the
+dispatcher use it. The dispatcher bills each run to a subscription account
+and starts each stage on one of two agent programs. With this item, a host
+lists provider accounts beside its subscriptions. Each account names its
+provider, a reference to its credential and a daily spend cap, and Jig never
+stores the credential itself. The cost of every run goes into a ledger. A
+provider that runs out of credit parks its own account and raises one
+question for a person. The dispatcher retries a provider that asks Jig to slow
+down, and asks nobody.
+
+Each repository names the providers its code may be sent to, and the
+dispatcher starts no run for it on another. A repository that names none
+keeps the subscription accounts it uses now.
+
+Choosing an agent becomes an interface, with Claude Code and Codex as its
+first two implementations. A third joins without a change to its callers.
+The first to try is pi, an agent program, as an opt-in trial on one stage,
+with OpenRouter and the Gemini API among the providers tried. A consumer
+subscription login for Claude or Google never goes through a third-party
+harness. A model Jig does not list runs on configuration alone.
+Jig measures a fast model offline against the steward's recorded decisions,
+and nothing switches until the measurement says it should.
+
 ## Next
 
 Next comes delegated merge, once an agent cannot push or merge by any other
@@ -274,6 +301,14 @@ ready pool to a merged pull request.
 Some AI reviewers, CodeRabbit for one, write findings in the text of their
 review rather than as comments on lines. The drive reads those findings too,
 so it never finishes with them unanswered.
+
+### 60. A reference reviewer for pull requests
+
+Jig drives a pull request through review, but it writes no review itself. A team with no AI reviewer of its own has nothing for the drive to wait on. With this item, Jig gets a reference reviewer. It posts one summary comment that it updates, inline comments and a check run, which is the evidence the drive reads. Any reviewer that posts the same evidence works as well, and the [decision](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md) says why Jig depends on that evidence and not on one reviewer.
+
+The reviewer lives in its own repository, planned as jig-harness/ai-review under Apache-2.0, so it releases on its own schedule. It first runs as a GitHub Action in the team's own CI. The team keeps the model key as a repository secret and chooses an OpenAI-compatible or Anthropic endpoint. A service form that watches many repositories follows. Until the reviewer is published, the [module's mappings](modules/M7-pr-lifecycle-review/mappings.md) list the reviewers a team can add today, which of them need a model key, and what each posts.
+
+Done when a repository that uses Jig and has no reviewer of its own adds the published Action with its own key, and a drive converges on its reviews. The cost per pull request and the rates of accepted and rejected findings are published against the reviewer's Codex engine.
 
 ### 49. The hub: one control plane for many dispatchers
 

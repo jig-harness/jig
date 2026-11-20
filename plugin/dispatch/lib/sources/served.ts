@@ -22,8 +22,9 @@ import type {
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
 import { metadata, type Metadata } from "./served-metadata.ts";
+import { chainOf } from "./served-chain.ts";
 import { isUnavailable } from "../../../skills/do-item/scripts/lib/tracker/unavailable.ts";
-import { scopeFailureRow } from "./scope-failures.ts";
+import { noCredentialFailure, scopeFailureRow } from "./scope-failures.ts";
 import {
   claimsUnread,
   claimsUnreadRow,
@@ -143,6 +144,8 @@ interface PersonReading {
   partial: boolean;
   /** Why the queue's items in progress were not read, so its claims are unknown; `null` when they were. */
   claimsUnread: string | null;
+  /** What failed the read of its claims, when a call did. */
+  claimsCause?: unknown;
 }
 
 /** Read one served identity's queue and walk it; an unreadable one is one unplaced row. */
@@ -174,10 +177,12 @@ async function readPerson(
           tracker,
           view,
           `the served assignments could not be read: ${view.unavailable}`,
+          view.unavailableCause,
         ),
       );
     }
     got.claimsUnread = claimsUnread(view);
+    if (view.unavailable !== undefined) got.claimsCause = view.unavailableCause;
     const progress = view.progress();
     got.claimed = progress.map(servedClaim);
     // Claims are monitored either way; an invalid scope only starts nothing.
@@ -190,7 +195,10 @@ async function readPerson(
       got,
     );
   } catch (error) {
-    if (view === null) got.claimsUnread = claimsUnread(null, error);
+    if (view === null) {
+      got.claimsUnread = claimsUnread(null, error);
+      got.claimsCause = error;
+    }
     if (isRateLimited(error)) got.limited ??= { error, view };
     else {
       got.failures.push(error);
@@ -266,7 +274,13 @@ export async function readServedPickups(
     out.unplaced.push(...got.unplaced);
     if (got.claimsUnread !== null) {
       out.claimsUnknown = true;
-      out.unplaced.push(claimsUnreadRow(identity, got.claimsUnread));
+      out.unplaced.push(
+        claimsUnreadRow(
+          identity,
+          got.claimsUnread,
+          noCredentialFailure(got.claimsCause),
+        ),
+      );
     }
     candidates.push(...got.candidates);
     noteFailure(out, got);
@@ -976,17 +990,4 @@ async function freshPulledAuthority(
   return (await blocksWithin(tracker, blockingFor, issue.identifier, through))
     ? null
     : `it no longer blocks ${blockingFor}`;
-}
-
-/**
- * The item's own epics, outermost to nearest (`steps` runs nearest first),
- * then each further epic the walk reached it through: a pulled blocker's
- * walk carries the epics of the item it is pulled forward for.
- */
-function chainOf(
-  steps: ReadonlyArray<{ parent: { identifier: string } }>,
-  walked: readonly string[] | undefined,
-): string[] {
-  const own = steps.map((s) => s.parent.identifier).reverse();
-  return [...own, ...(walked ?? []).filter((key) => !own.includes(key))];
 }

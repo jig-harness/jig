@@ -22,7 +22,8 @@ driven to merge-ready while a person keeps every decision that is theirs.
 First what keeps an unattended pass from getting past a person, then what
 keeps the line from stranding work, then one place to see and steer it,
 then what a dispatched run leaves behind and where it runs, then Orca, the
-dispatcher's first session runtime.
+dispatcher's first session runtime, then the accounts and agent programs a
+dispatched run may use.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -172,6 +173,11 @@ that setting, and on a
 consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.
+
+Also open: the plan for the refresh's [cadences](dark-factory-dispatch.md#refresh-cadences)
+(a local loop, a change probe for each service, the timer sweep as the
+reconcile), steps 13 to 20 of the design's build order, which waits for a
+person's review before any step is filed.
 
 ### 56. The epic planner: every epic planned, and its plan kept current
 
@@ -703,6 +709,37 @@ panel runs its pinned merge command on a person's click and on nothing
 else, a command that fails the strict forms runs nothing and says why, and
 an entry in another lane shows no button.
 
+### 59. Provider accounts and an agent-harness interface
+
+The dispatcher bills every launch to a subscription account and runs every
+stage on Claude Code or Codex. A host with its own model-provider key
+cannot have the dispatcher use it: launch environments remove the vendors'
+credential variables, a Claude account's identity needs a login email, and
+a provider's refusal is read as a subscription wall (a 429 parked an hour
+as unknown, a 402 as a plain pass failure). Model IDs are a closed list,
+nothing records what model use costs, and the choice of agent is a
+two-value type spread through the code. The new ADR
+([ADR-0026](../docs/adr/ADR-0026-the-agent-harness-is-an-interface.md))
+sets the agent-harness interface, an amendment brings model providers under
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md), and
+[design/provider-accounts.md](provider-accounts.md) has the account schema,
+the credential reference, the spend cap, the open model vocabulary and the
+per-stage profile rule. What it will build, one pull request per step: the
+open model vocabulary; the provider account kind; the spend cap, cost
+ledger and provider failure classes; the harness interface with Claude Code
+and Codex behind it, and harness-neutral skill forms; an offline
+measurement of a fast model against the steward's recorded decisions; then
+pi as an opt-in third harness on one stage, per-stage profiles, and the
+default-harness ruling from the trial.
+
+Done when, on a dispatch host over a week: drive-pr passes run on a
+provider account with the day's spend inside its cap and every pass's cost
+in the ledger; a 429 from the provider is retried without a person and a
+402 parks the account as *too costly* with one need; a model ID outside the
+family list is routed by configuration alone; the two-value agent type
+appears only inside the harness implementations; the steward measurement's
+report states its verdict; and the default-harness ruling is recorded.
+
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
@@ -767,6 +804,14 @@ its own.
 
 Done when a repository whose AI reviewer is CodeRabbit runs a drive to
 merge-ready with no bridge of its own.
+
+### 60. A reference reviewer for pull requests
+
+Jig drives a pull request through review but writes no review itself: `review` checks a change before it is pushed and never posts, the dispatcher has no review stage, and nothing Jig ships produces the reviewer evidence the drive reads (a check run, a summary comment naming the commit it reviewed, or the forge's own reviews). A team with no AI reviewer of its own has nothing to drive against. [ADR-0027](../docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md) decides that Jig ships a reference reviewer that implements that contract, and that any reviewer meeting the contract works as well. The reference reviewer is ai-review, to be published as jig-harness/ai-review under Apache-2.0: a reviewer with its own read-only tool loop that posts one updated summary comment, inline comments and a check run. Its GitHub Action form comes first: it runs in the team's own CI, posts as `github-actions[bot]`, and calls an OpenAI-compatible or Anthropic endpoint the team chooses with a key the repository keeps as a secret. A service form that polls many repositories follows. Until it is published, [M7's mappings](../modules/M7-pr-lifecycle-review/mappings.md) name the reviewers a team can add today (most with its own model key, CodeRabbit as a hosted service) and what each meets of the contract.
+
+What it will build: the reviewer's organisation values separated from its core, with a gate that keeps organisation terms out of it; configurable endpoints for both API transports, engine selection through one interface, and a cost record with a spend cap for each run; a measurement of cost per pull request and review quality against its Codex engine; the published repository as a 0.x pre-release; then the service form, and the dispatcher taking over the reviewer's poller.
+
+Done when a repository that uses Jig and has no reviewer of its own adds the published Action with its own model key and a drive converges on its reviews; the cost per pull request and the accepted and rejected rates against the Codex engine are published; and the source repository's copy is deleted after two weeks of the published build reviewing with no regression.
 
 ### 49. The hub: a shared control plane for many dispatchers
 
