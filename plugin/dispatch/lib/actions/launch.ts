@@ -292,12 +292,11 @@ function takeOpen(
 }
 
 /**
- * Open a workspace through the runtime, within the tick's budget: a tick
- * opens at most `opens_per_tick` (four by default), one of them kept for the notices workspace, and a launch that needs another waits for
- * the next tick rather than run past the deadline the timer gives it. A
- * follow-up's open (`lane`) is counted against `followup_opens_per_tick`
- * instead, and never against the launches' allowance or the notices'
- * reservation.
+ * Open a workspace through the runtime, within the tick's budget: a tick opens
+ * at most `opens_per_tick`, one of them kept for the notices workspace, and a
+ * launch that needs another waits for the next tick rather than run past the
+ * deadline the timer gives it. A follow-up's open (`lane`) is counted against
+ * `followup_opens_per_tick` instead, never against the launches' or notices'.
  */
 export async function openWithinBudget(
   state: ApplyState,
