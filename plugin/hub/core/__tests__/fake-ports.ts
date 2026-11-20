@@ -46,6 +46,14 @@ export function fakePorts(startMs = 1_800_000_000_000): FakePorts {
         if (op.kind === "change") rows.set(key, input);
         return ok(rows.get(key) as never);
       },
+      batch: async (context, partition, steps) => {
+        seen("storage.batch", context);
+        const stopped = aborted(context, "aborted");
+        if (stopped) return stopped;
+        for (const { op, input } of steps)
+          rows.set(`${partition}/${op.name}`, input);
+        return ok(steps.map(({ input }) => input) as never);
+      },
     },
     serving: {
       serve: async (context) => {

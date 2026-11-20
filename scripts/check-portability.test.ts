@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 import {
   checkPortability,
-  PORTABLE_ROOTS,
   type PortabilityScope,
   portabilityFindings,
 } from "./check-portability.ts";
@@ -13,7 +12,7 @@ import {
 const root = join(import.meta.dir, "..");
 const fixtures = join(import.meta.dir, "tests/fixtures/portability");
 const CORE: PortabilityScope = {
-  roots: PORTABLE_ROOTS,
+  roots: ["plugin/hub/core/"],
   shared: [],
   allowed: [],
 };
@@ -197,6 +196,35 @@ export const used = [readFileSync, $, z, sql];`),
       "plugin/hub/core/unit.ts": `import { sql } from "drizzle-orm/sql";\nexport const q = sql;\n`,
     });
     expect(found(dir, { ...CORE, allowed: ["drizzle-orm"] })).toEqual([]);
+  });
+
+  test("an allowed vendored bundle is not read; any other vendored file is", () => {
+    const dir = scratch({
+      "plugin/hub/storage/ops.ts": `import { sql } from "../../shared/vendor/orm.mjs";
+import { other } from "../../shared/vendor/other.mjs";
+export const q = [sql, other];
+`,
+      "plugin/shared/vendor/orm.mjs": `import { blob } from "./orm-chunk.mjs";
+export const sql = () => (typeof Buffer !== "undefined" ? Buffer.from("a") : blob);
+`,
+      "plugin/shared/vendor/orm-chunk.mjs": `export const blob = Buffer.alloc(1);
+`,
+      "plugin/shared/vendor/other.mjs": `export const other = Buffer.from("b");
+`,
+    });
+    const scope = { ...CORE, roots: ["plugin/hub/storage/"] };
+    expect(
+      found(dir, {
+        ...scope,
+        vendored: ["plugin/shared/vendor/orm.mjs"],
+      }),
+    ).toEqual(["plugin/shared/vendor/other.mjs:1 portability:runtime-global"]);
+    expect(found(dir, scope)).toEqual([
+      "plugin/shared/vendor/orm.mjs:2 portability:runtime-global",
+      "plugin/shared/vendor/orm.mjs:2 portability:runtime-global",
+      "plugin/shared/vendor/other.mjs:1 portability:runtime-global",
+      "plugin/shared/vendor/orm-chunk.mjs:1 portability:runtime-global",
+    ]);
   });
 
   test("a dynamic import of a literal is followed; of a computed name, found", () => {

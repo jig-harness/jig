@@ -27,6 +27,12 @@
 //   the check cannot follow, or a relative import of a file that is neither
 //   a script nor JSON (a text or SQL file only a runtime's loader reads).
 //
+// A vendored bundle `ALLOWED_VENDORED` names is accepted without reading it,
+// as an allowed package is: a bundle of a library's portable parts, checked
+// to run on every platform first, whose own guarded references to a
+// runtime's globals the check would report. Any other vendored file it
+// reaches is read like the rest.
+//
 // A type-only import or export (`import type`, `export type … from`) is not
 // followed and not checked: its module never runs. An `import { type A }`
 // of a module is followed, since the import of the module itself remains.
@@ -55,7 +61,10 @@ import { type AstNode, isNode } from "./check-throws.ts";
 const RULE = "portability";
 
 /** The directories every file of which must be portable. */
-export const PORTABLE_ROOTS: readonly string[] = ["plugin/hub/core/"];
+export const PORTABLE_ROOTS: readonly string[] = [
+  "plugin/hub/core/",
+  "plugin/hub/storage/",
+];
 
 /** Shared modules declared portable, checked whether the core imports them yet or not. */
 export const PORTABLE_SHARED: readonly string[] = [
@@ -77,6 +86,20 @@ export const PORTABLE_SHARED: readonly string[] = [
 
 /** Packages a portable module may import: each one checked to run on every platform first. */
 export const ALLOWED_PACKAGES: readonly string[] = [];
+
+/**
+ * Vendored bundles a portable module may import, accepted without being
+ * read: each one checked to run on every platform first. Drizzle's portable
+ * entry and its shared chunk are SQLite's dialect and query builder, which
+ * Drizzle's Durable Object and D1 drivers run in a worker; the chunk's
+ * `Buffer` references sit in blob columns' code, behind a check that
+ * `Buffer` exists. Drizzle's `bun:sqlite` entry is the process adapter's
+ * and is not listed.
+ */
+export const ALLOWED_VENDORED: readonly string[] = [
+  "plugin/shared/vendor/drizzle.mjs",
+  "plugin/shared/vendor/drizzle-shared.mjs",
+];
 
 /** The globals one runtime gives without an import. */
 const RUNTIME_GLOBALS = new Set([
@@ -103,6 +126,8 @@ export interface PortabilityScope {
   roots: readonly string[];
   shared: readonly string[];
   allowed: readonly string[];
+  /** Vendored bundles accepted without being read; none when absent. */
+  vendored?: readonly string[];
 }
 
 export interface PortabilityFinding extends Finding {
@@ -681,7 +706,7 @@ export function portabilityFindings(
     const file = chain.at(-1) as string;
     if (seen.has(file)) continue;
     seen.add(file);
-    if (file.endsWith(".json")) continue;
+    if (file.endsWith(".json") || scope.vendored?.includes(file)) continue;
     let source: string;
     try {
       source = readRegularFile(join(root, file));
@@ -714,6 +739,7 @@ export function checkPortability(
     roots: scope.roots ?? PORTABLE_ROOTS,
     shared: scope.shared ?? PORTABLE_SHARED,
     allowed: scope.allowed ?? ALLOWED_PACKAGES,
+    vendored: scope.vendored ?? ALLOWED_VENDORED,
   });
   if (!read.ok) return couldNotCheck(RULE, read.reason);
   if (read.findings.length > 0) {
