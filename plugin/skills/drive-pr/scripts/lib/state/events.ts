@@ -83,10 +83,11 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     Number.isFinite(parseMs(v.at)) &&
     Number.isSafeInteger(v.round) &&
     (v.round as number) >= 0 &&
-    (v.listingPages === undefined ||
-      (Number.isSafeInteger(v.listingPages) &&
-        (v.listingPages as number) >= 0 &&
-        v.kind === "stop")) &&
+    stopOnly(
+      v.kind,
+      v.listingPages,
+      Number.isSafeInteger(v.listingPages) && (v.listingPages as number) >= 0,
+    ) &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
     stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
   );
