@@ -56,15 +56,29 @@ const HOST_RESOURCE = new Set(
 /** Extensions of files a host produces and a person clears; any other extension marks a work file. */
 const HOST_ARTIFACT_EXTENSION =
   /\.(?:log|logs|tmp|temp|cache|bak|lock|pid|out|core|swp|old|trace|dump)$/i;
-/** A compression suffix: it keeps a host artifact one (`app.log.gz`) and never makes a work file one (`schema.sql.gz`, `source.tar.gz`). */
-const COMPRESSION_EXTENSION = /\.(?:gz|bz2|xz|zst)$/i;
+/** An archive or compression suffix: it carries no verdict of its own, the name beneath it decides. */
+const ARCHIVE_EXTENSION = /\.(?:gz|bz2|xz|zst|tgz|tar|zip|7z|rar|iso)$/i;
 
+/**
+ * Whether a file name marks a work file. An archive is neutral: `app.log.gz`
+ * is a host artifact over a host-artifact extension, `schema.sql.gz` a work
+ * file over a work extension, and an archive with no extension beneath it
+ * (`leaked-fixtures.tar.gz`, `source.tar.gz`) is a host artifact only when its
+ * own name carries a host-resource word.
+ */
 function isWorkFileName(last: string): boolean {
-  if (COMPRESSION_EXTENSION.test(last))
-    return !HOST_ARTIFACT_EXTENSION.test(
-      last.replace(COMPRESSION_EXTENSION, ""),
-    );
-  return /\.\w+$/.test(last) && !HOST_ARTIFACT_EXTENSION.test(last);
+  let stem = last;
+  let archive = false;
+  while (ARCHIVE_EXTENSION.test(stem)) {
+    stem = stem.replace(ARCHIVE_EXTENSION, "");
+    archive = true;
+  }
+  if (/\.\w+$/.test(stem)) return !HOST_ARTIFACT_EXTENSION.test(stem);
+  if (!archive) return false;
+  return !stem
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .some((part) => HOST_RESOURCE.has(part));
 }
 
 /** The first words of one cleanup object (the pattern already cut it at its clause or sentence end). */
