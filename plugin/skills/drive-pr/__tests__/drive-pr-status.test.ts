@@ -603,8 +603,10 @@ describe("drive-status.ts terminal states", () => {
     const starts = stamps.filter((_, i) => i % 2 === 0);
     const gaps = starts.slice(1).map((t, i) => t - (starts[i] ?? t));
     expect(gaps.length).toBeGreaterThanOrEqual(1);
+    // The last gap is exempt: the final wait is shortened to leave the
+    // deadline margin for the closing evaluation, so it can be under its wait.
     const slackMs = 50;
-    gaps.slice(0, 3).forEach((gap, i) => {
+    gaps.slice(0, Math.min(3, gaps.length - 1)).forEach((gap, i) => {
       expect(gap).toBeGreaterThanOrEqual([1000, 2000, 3000][i]! - slackMs);
     });
   }, 20_000);
