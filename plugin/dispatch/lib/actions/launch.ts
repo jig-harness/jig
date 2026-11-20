@@ -241,7 +241,12 @@ export type Opened =
       cleanupFailure?: string;
     }
   | { waits: string; waitsOn?: LaneWait }
-  | { refused: string; holder?: BusyHolder };
+  | {
+      refused: string;
+      /** A proof established that the checkout is structurally the wrong one. */
+      structural?: boolean;
+      holder?: BusyHolder;
+    };
 
 /** Total and launch-specific allowances count notices once. */
 function openAllowance(state: ApplyState) {

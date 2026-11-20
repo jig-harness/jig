@@ -414,7 +414,10 @@ async function replayWorkspace(
   read: DrivenPr,
 ): Promise<string | null> {
   if (record.workspace === null) return "its workspace is no longer recorded";
-  return unproven(state, repo, record.workspace, read.number, read.head);
+  return (
+    (await unproven(state, repo, record.workspace, read.number, read.head))
+      ?.why ?? null
+  );
 }
 
 /** Proof of a pull request's checkout leaves the worktree intact. */
@@ -424,9 +427,9 @@ async function unproven(
   workspace: { id: string; path: string },
   pr: number,
   head: string,
-): Promise<string | null> {
+): Promise<{ why: string; structural: boolean } | null> {
   const late = outOfTime(state);
-  if (late !== null) return late;
+  if (late !== null) return { why: late, structural: false };
   let why: string | null;
   try {
     why = await state.runtime.verifyWorkspace(
@@ -436,11 +439,18 @@ async function unproven(
       timeLeftMs(state) ?? undefined,
     );
   } catch (error) {
-    why = failureText(error);
+    return { why: failureText(error), structural: false };
   }
-  return why === null
-    ? null
-    : `the workspace ${workspace.path} is not proven to be PR #${pr}'s checkout, so nothing runs in it and its work stays as it is: ${why}`;
+  if (why === null) return null;
+  // A failed forge or Git proof establishes no checkout mismatch. Only a
+  // completed clone or ancestry comparison may age a rearm toward retirement.
+  const structural =
+    why.includes(" belongs to the clone at ") ||
+    why.includes(" neither the pull request head ");
+  return {
+    why: `the workspace ${workspace.path} is not proven to be PR #${pr}'s checkout, so nothing runs in it and its work stays as it is: ${why}`,
+    structural,
+  };
 }
 
 /** An existing workspace the launch runs in once it is proven, or its refusal. */
@@ -452,8 +462,10 @@ async function provenWorkspace(
   found: { id: string; path: string },
 ): Promise<Opened> {
   const workspace = { id: found.id, path: found.path };
-  const why = await unproven(state, repo, workspace, pr, head);
-  return why === null ? { workspace } : { refused: why };
+  const proof = await unproven(state, repo, workspace, pr, head);
+  return proof === null
+    ? { workspace }
+    : { refused: proof.why, structural: proof.structural };
 }
 
 /**
@@ -834,10 +846,18 @@ async function launchOne(
       : (original ?? open(true));
   const candidate = await opening;
   if (explicit && "refused" in candidate) {
-    if (rearmBlockExpired(state, repo.slug, pr, "tree", candidate.refused))
+    if (
+      candidate.structural === true &&
+      rearmBlockExpired(state, repo.slug, pr, "tree", candidate.refused)
+    )
       failedRearmRequest(report, repo.slug, pr, candidate.refused);
     return waits(action, candidate.refused, slots.account.name);
   }
+  if (explicit && "workspace" in candidate && typeof request === "number")
+    clearRearmWait(
+      { repo: repo.slug, pr: pr.number, request, kind: "tree" },
+      state.root,
+    );
   const opened = await openedFor(
     state,
     action,
@@ -850,10 +870,6 @@ async function launchOne(
     "workspace" in original &&
     typeof request === "number"
   ) {
-    clearRearmWait(
-      { repo: repo.slug, pr: pr.number, request, kind: "tree" },
-      state.root,
-    );
     clearRearmWait(
       { repo: repo.slug, pr: pr.number, request, kind: "stop" },
       state.root,
