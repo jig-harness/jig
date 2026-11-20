@@ -20,6 +20,7 @@
  * forge is transient, and a hold this module cannot show the cause of would
  * stop a drive no person was told about.
  */
+import { readProbeStop } from "../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
 import {
   DRIVE_EXIT,
   DRIVER_REFUSAL_EXITS,
@@ -165,7 +166,11 @@ export function settleFailedRearms(
     const heads = pr.heads;
     if (failed === null || heads === undefined) return pr;
     if (headsText(heads) !== failed.heads) return pr;
-    const launch = `its re-arm (launch record ${failed.record.record.id}) ended ${failed.exit} without moving its ledger`;
+    const state = failed.record.state;
+    const recorded =
+      state.kind === "ended" ? readProbeStop(state.exit.context ?? "") : null;
+    const probe = recorded?.code === failed.exit ? recorded : null;
+    const launch = `its re-arm (launch record ${failed.record.record.id}) ended ${failed.exit} without moving its ledger${probe === null ? "" : ` (${probe.state}: ${probe.reason})`}`;
     const why =
       heads.pr === heads.branch
         ? `${launch}, at the same pull request head ${heads.pr.slice(0, 12)} and ledger generation as now: it is not re-armed until its head, its branch's head or its ledger generation changes; a person reads why in the re-arm's output and the drive's handoff`
@@ -178,6 +183,13 @@ export function settleFailedRearms(
         ...pr.evidence,
         failedRearm: failed.record.record.id,
         rearmExit: failed.exit,
+        ...(probe === null
+          ? {}
+          : {
+              probeState: probe.state,
+              probeReason: probe.reason,
+              probeFailure: probe.failure ?? null,
+            }),
         prHead: heads.pr,
         branchHead: heads.branch,
       },

@@ -281,6 +281,7 @@ import {
   type StatusReport,
 } from "./lib/status/evaluate.ts";
 import { takeInheritedHead } from "./lib/status/inherited-head.ts";
+import { setProbeFailure } from "./lib/status/probe-stop.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
@@ -861,6 +862,7 @@ async function main(): Promise<number> {
           exit: code,
           pr: Number.parseInt(pr, 10),
           reason: report.reason,
+          ...(report.failure === undefined ? {} : { failure: report.failure }),
           ...(rateLimit === null ? {} : { rateLimit }),
           reflectDue: reflectionDue,
           structuralEscalationDue: escalation.due,
@@ -1180,11 +1182,12 @@ async function main(): Promise<number> {
    * Re-arms the probe, so the retry re-reads liveness and re-attempts the
    * sweep instead of re-deriving the same answer from a stale decision.
    */
-  async function degrade(reason: string): Promise<number | null> {
+  async function degrade(reason: string, f?: "read"): Promise<number | null> {
     const limited = await stopOnForgeLimit(reason);
     if (limited !== null) return limited;
     report.state = "INDETERMINATE";
     report.reason = reason;
+    setProbeFailure(report, f);
     // Not re-armed when a flag suppressed the sweep: the caller has forbidden
     // it, so retrying the probe could only produce the same answer, more
     // slowly. The bounded budget below still ends the invocation honestly.
@@ -1330,6 +1333,7 @@ async function main(): Promise<number> {
           // unrecognised — both are the retry class, since neither is a
           // confirmed finished PR.
           `cannot read PR #${pr}'s state (${live.reason}) — a transient failure, not a missing-field error — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
+          "read",
         );
         if (stop !== null) return stop;
         continue;
