@@ -24,13 +24,20 @@ import type { SuggestedNext } from "../../shared/closing-report.ts";
 import type { LaunchAction, LaunchRecord, ReadRecord } from "./launches.ts";
 import { RECOVERY_FACTS } from "./recovery-facts.ts";
 import { questionOf } from "./session.ts";
+import { attempt } from "../../shared/outcome.ts";
 import { swallow } from "../../shared/errors.ts";
 import { SESSION_LEASE_MIN } from "../../shared/liveness.ts";
 import { currentMs, isoFromMs, parseMs } from "../../shared/time.ts";
 import { noticeReset } from "./notice-reset.ts";
+import { claudeTranscript } from "./transcript-copy.ts";
+import { isMapping } from "../../shared/config-layers.ts";
 
 /** Startup failures are limited to the first minute of the vendor process. */
 const STARTUP_MS = 60_000;
+
+export function passedStartupWindow(started: number, exited: number): boolean {
+  return exited - started > STARTUP_MS;
+}
 
 /**
  * A complete bounded scan must confirm absence. A matching filename proves
@@ -143,23 +150,118 @@ function ownSession(record: LaunchRecord): boolean {
   );
 }
 
+export type StartupFailure = "quota" | "unstarted" | "sign-in" | "breaker";
+
+const SIGN_IN_PHRASES = [
+  "API Error: 401",
+  "Failed to authenticate",
+  "OAuth session expired",
+  "Please run /login",
+  "Not logged in",
+  "Not logged in · Please run /login",
+  "Authentication required · Sign in again to continue",
+] as const;
+export type SignInPhrase = (typeof SIGN_IN_PHRASES)[number];
+
+/** Keep the recognised phrase, never the rest of a vendor error. */
+export function signInPhrase(text: string): SignInPhrase | undefined {
+  for (const line of text.split(/\r?\n/)) {
+    const message = line
+      .trim()
+      .replace(/^error:\s*/i, "")
+      .toLowerCase();
+    const phrase = SIGN_IN_PHRASES.find((candidate) => {
+      const expected = candidate.toLowerCase();
+      if (!message.startsWith(expected)) return false;
+      const remainder = message.slice(expected.length);
+      if (candidate === "API Error: 401")
+        return remainder === "" || /^[\s.:]/.test(remainder);
+      if (candidate === "Not logged in · Please run /login")
+        return remainder === "" || /^[.:]/.test(remainder);
+      return remainder === "" || /^[.:]/.test(remainder);
+    });
+    if (phrase !== undefined) return phrase;
+  }
+  return undefined;
+}
+
+/** Select content outside user entries without keeping any of it. */
+function transcriptEntryParts(entry: unknown): unknown[] {
+  if (!isMapping(entry) || entry.type === "user") return [];
+  const content = isMapping(entry.message)
+    ? entry.message.content
+    : entry.content;
+  return Array.isArray(content)
+    ? content
+    : [content, entry.error, entry.message];
+}
+
+function transcriptLineSignIn(line: string): SignInPhrase | undefined {
+  if (!line.startsWith("{")) return signInPhrase(line);
+  // A failed process can leave a partial entry. Its text is not diagnostic.
+  const entry = attempt(
+    "invalid",
+    "Transcript entry is not JSON",
+    (): unknown => JSON.parse(line),
+  );
+  if (!entry.ok) return undefined;
+  for (const part of transcriptEntryParts(entry.value)) {
+    const text = isMapping(part) ? part.text : part;
+    if (typeof text !== "string") continue;
+    const phrase = signInPhrase(text);
+    if (phrase !== undefined) return phrase;
+  }
+  return undefined;
+}
+
+function transcriptSignIn(record: LaunchRecord): SignInPhrase | undefined {
+  const session = record.sessionId;
+  if (session === null || session === undefined) return undefined;
+  try {
+    const path = claudeTranscript(record.configDir, session);
+    if (path === null) return undefined;
+    const lines = readBoundedTail(path, 16_384).trimEnd().split("\n");
+    for (const line of lines.slice(-8).reverse()) {
+      const phrase = transcriptLineSignIn(line);
+      if (phrase !== undefined) return phrase;
+    }
+  } catch (error) {
+    swallow(error, "the startup transcript could not be read");
+  }
+  return undefined;
+}
+
+export function quickStartupDeath(
+  record: LaunchRecord,
+  code: number | null,
+  started: number,
+  exited: number,
+): boolean {
+  return (
+    ownSession(record) &&
+    record.vendor === "claude" &&
+    typeof record.sessionId === "string" &&
+    code !== null &&
+    code !== 0 &&
+    !passedStartupWindow(started, exited)
+  );
+}
+
 export function failedStartup(
   record: LaunchRecord,
   code: number | null,
   started: number,
   output: string,
   exited: number,
-): "quota" | "unstarted" | undefined {
-  if (
-    !ownSession(record) ||
-    record.vendor !== "claude" ||
-    typeof record.sessionId !== "string" ||
-    code === null ||
-    code === 0 ||
-    exited - started > STARTUP_MS ||
-    !transcriptAbsent(record, started)
-  )
-    return;
+  keepPhrase?: (phrase: SignInPhrase) => void,
+): Exclude<StartupFailure, "breaker"> | undefined {
+  if (!quickStartupDeath(record, code, started, exited)) return;
+  const phrase = signInPhrase(output) ?? transcriptSignIn(record);
+  if (phrase !== undefined) {
+    keepPhrase?.(phrase);
+    return "sign-in";
+  }
+  if (!transcriptAbsent(record, started)) return;
   return quotaNotice(output) === null ? "unstarted" : "quota";
 }
 
@@ -171,8 +273,13 @@ export function failedStartup(
  */
 export function startupNext(
   action: LaunchAction,
-  startup: "quota" | "unstarted",
+  startup: StartupFailure,
 ): SuggestedNext {
+  if (startup === "sign-in" || startup === "breaker")
+    return {
+      step: "The dispatcher starts it again on another free account, or on this one after its backoff.",
+      owner: "line",
+    };
   if (action === "pickup" && startup === "unstarted")
     return {
       step: "A person picks the item up again or releases it: no rule starts a pickup that stopped at startup without a usage notice.",
@@ -196,7 +303,7 @@ export function retryableStartup(r: ReadRecord): boolean {
     r.record.action === "followup" &&
     r.result === null &&
     r.state.kind === "ended" &&
-    (r.state.exit.startup === "quota" || r.state.exit.startup === "unstarted")
+    r.state.exit.startup !== undefined
   );
 }
 
