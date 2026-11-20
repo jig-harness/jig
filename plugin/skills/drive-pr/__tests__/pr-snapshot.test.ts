@@ -201,6 +201,7 @@ describe("readPrSnapshot", () => {
     expect(r.ok).toBe(false);
     expect(!r.ok && r.reason).toContain("then the full read");
     expect(!r.ok && r.reason).toContain("not a pull document");
+    expect(!r.ok && r.reason).toContain("HTTP 502");
   });
 
   it("sends no second request for a pull request that is not there", async () => {
