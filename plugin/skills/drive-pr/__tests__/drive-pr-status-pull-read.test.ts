@@ -8,6 +8,8 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+
 import {
   HEAD,
   DORMANT_ARM,
@@ -87,7 +89,11 @@ describe("drive-status.ts reads the pull request conditionally", () => {
         pr,
       });
 
-      expect(r.exitCode).toBe(4);
+      expectSpawnExit(
+        { ...r, stdout: JSON.stringify(r.json) },
+        4,
+        "drive-status",
+      );
       expect(r.state).toBe("AWAITING_REVIEWER");
     }
   });
@@ -103,7 +109,11 @@ describe("drive-status.ts reads the pull request conditionally", () => {
         pr,
       });
 
-      expect(r.exitCode).toBe(2);
+      expectSpawnExit(
+        { ...r, stdout: JSON.stringify(r.json) },
+        2,
+        "drive-status",
+      );
       expect(r.stderr).toMatch(/not in this checkout|another forge host/);
       expect(lines(dir, "pull-reads")).toEqual([]);
     }
