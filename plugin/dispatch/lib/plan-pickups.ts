@@ -42,7 +42,9 @@
  *   (`pickup-host-fault.ts`) asks nothing: it is held, with the fault named,
  *   while the host's health check fails, then relaunched in its tree when
  *   claimed, or picked up afresh when not. A restart that stops on a host
- *   fault again is one need, never a second restart.
+ *   fault again is one need, never a second restart. A claimed item whose
+ *   pickup's push the host's test lock held past its wait is relaunched in
+ *   its tree the same way (`pickup-lock-wait.ts`).
  *
  * Each report is a notification's cause, with its message and the key
  * that suppresses a repeat (`notices.ts`); `actions/notify.ts` sends it.
@@ -83,7 +85,8 @@ import {
   hostFault,
 } from "./pickup-host-fault.ts";
 import { ANY_KEY_SOURCE } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
-import { relaunchStep, type RelaunchStep } from "./pickup-relaunch.ts";
+import { relaunched, relaunchStep } from "./pickup-relaunch.ts";
+import { lockWaitStop } from "./pickup-lock-wait.ts";
 import type { TreeReader } from "./pickup-tree.ts";
 import {
   type LaunchPrReading,
@@ -616,6 +619,7 @@ function planIdleClaimed(
   const latest = latestPickupFor(item.key, input.launches);
   if (quietByPr(item, input, pr, plan, asksPerson(latest))) return;
   if (hostFaultStop(item, input, plan, latest, pr)) return;
+  if (lockWaitStop(item, input, plan, latest, pr)) return;
   const asked =
     pickup.kind === "ended" ? questionAsked(input, item, pickup.record) : null;
   if (asked !== null) {
@@ -709,23 +713,6 @@ function planIdle(
       step.kind === "stall" ? step.note : null,
     ),
   );
-}
-
-/** Whether the relaunch rule settles the stalled item for this tick: relaunched in its tree, or waiting for the host's health check. */
-function relaunched(
-  step: RelaunchStep,
-  key: string,
-  plan: PickupPlan,
-): boolean {
-  if (step.kind === "relaunch") {
-    plan.actions.push(step.action);
-    return true;
-  }
-  if (step.kind === "held") {
-    plan.quiet.push({ target: key, class: "pickup-ended", why: step.why });
-    return true;
-  }
-  return false;
 }
 
 /** The stall need of a claimed item idle past `dispatch.stalled_after`, naming its launch's pull request where one is open. */

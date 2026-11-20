@@ -404,6 +404,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.297.0] - 2026-11-20
+
+### Fixed
+
+- A dispatched pickup whose push the repository's pre-push hook refused only
+  because its wait for the host's test lock ran out no longer stops on a
+  question for a person. The `do-item` skill tells that lock-wait timeout
+  (the lock's own `could not acquire lock` message, no test having run) from
+  a hook that ran and failed, and pushes again after a short, growing pause
+  while it has time, never bypassing the hook. A dispatched pass that still
+  cannot get through records `jig dispatch result <record> <token> waits --reason test-lock`;
+  the dispatcher relaunches the pickup in its own tree to push and carry on,
+  holding the relaunch while the host's validation capacity has no room,
+  whether or not `load.enforce` is set. After three such waits in a row it
+  raises one need for the steward or a person to find why the lock keeps
+  running out.
+- A converged drive retries when GitHub times out while verifying removal of the CI hold label. It keeps the removal record so the next read can verify the event and wait for full CI, then stops after the configured consecutive proof-read limit instead of retrying forever.
+- CI hold release recovery now emits its retry marker once and refuses a proven ownership race before an unreadable confirmation can hide it.
+
 ## [0.296.0] - 2026-11-20
 
 ### Added
@@ -10479,7 +10498,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.296.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.297.0...HEAD
+[0.297.0]: https://github.com/jig-harness/jig/compare/v0.296.0...v0.297.0
 [0.296.0]: https://github.com/jig-harness/jig/compare/v0.295.0...v0.296.0
 [0.295.0]: https://github.com/jig-harness/jig/compare/v0.294.0...v0.295.0
 [0.294.0]: https://github.com/jig-harness/jig/compare/v0.293.0...v0.294.0
