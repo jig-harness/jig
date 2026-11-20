@@ -4,11 +4,14 @@
  * stopped on what only a person settles, a failed follow-up, a stalled
  * pickup, a double claim, a session waiting) reaches a person through every
  * notification channel the tick sends through (`chat/channel.ts`), and
- * again on a cadence while it stands. The channel today is `orca-card`, the
- * workspace comment and unread mark of the session runtime
- * (`runtime/orca-card.ts`). Every rule below holds for each channel apart,
- * so a cause delivered on one channel and lost on another is tried again
- * on the other alone.
+ * again on a cadence while it stands. On `runtime: orca` the first channel
+ * is `orca-card`, the workspace comment and unread mark of the session
+ * runtime (`runtime/orca-card.ts`); the process runtime has no notices
+ * workspace, so the tick writes no card there. Beside it go the channels the
+ * machine file names under `notify.channels` (`notify-config.ts`), such as a
+ * webhook (`chat/webhook.ts`). Every rule below holds for each channel
+ * apart, so a cause delivered on one channel and lost on another is tried
+ * again on the other alone.
  *
  * - **Once per cause, then on a cadence.** A cause counts as sent, and its
  *   suppression record is written (the state database's `notices` table,
@@ -36,7 +39,8 @@
  * - **The destination's read state, every tick.** Before it delivers, the
  *   stage records one `notices_read` event with the notices workspace's
  *   read state (`notices-read.ts`), which the stage's retirement measure
- *   reads.
+ *   reads. Only the Orca card has a read state: a tick that writes no card
+ *   records none, and no other channel's delivery counts as read.
  *
  * The answer to a park stays a comment on the pull request (`answer <key>:
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
@@ -76,6 +80,7 @@ import { logNoticesRead } from "../notices-read.ts";
 import {
   NO_ROOM,
   openCard,
+  type OrcaCard,
   orcaCard,
   retireCard,
 } from "../runtime/orca-card.ts";
@@ -277,8 +282,10 @@ export interface NoticeSettings {
   book?: ActionBook | null;
   /** A target's title and link as this tick's reads gave them, which a cause's outcome-log row carries. */
   about?: (target: string) => { title: string | null; url: string | null };
-  /** The channels the tick sends through after `orca-card`; the machine file names none yet. */
+  /** The channels the tick sends through after `orca-card` (`notify.channels`). */
   channels?: ReadonlyArray<NotificationChannel<Cause>>;
+  /** Whether the tick writes the `orca-card` channel and observes its notices workspace; `true` unless the session runtime is the process runtime, which has neither. */
+  orcaCard?: boolean;
 }
 
 /** The failure ledger's key and kind of a cause's delivery on `channel`. */
@@ -423,32 +430,14 @@ export async function applyNotices(
   settings: NoticeSettings,
 ): Promise<void> {
   const root = state.root ?? stateRoot();
-  // The destination's read state as this tick found it, before any notice of its own marks it unread.
-  const observed = logNoticesRead(
-    repo.slug,
-    sessions,
-    settings.branch,
-    (sessions.ok ? sessions.observedAt : undefined) ?? currentIso(),
-    root,
-  );
-  if (!observed)
-    report.unplaced.push({
-      target: "the notices workspace read observation",
-      record: "runtime",
-      reason:
-        "the notices_read event was not written and waits for a later tick",
-    });
-  openCard(repo, sessions, root);
-  // `standing` is read when the card writes, after the tick has named its causes.
-  const card = orcaCard(
-    state,
-    repo,
+  const card =
+    settings.orcaCard === false
+      ? null
+      : openOrcaCard(state, repo, report, sessions, settings, () => standing);
+  const channels = namedChannels(
+    [...(card === null ? [] : [card]), ...(settings.channels ?? [])],
     report,
-    sessions,
-    settings.branch,
-    () => standing,
   );
-  const channels = namedChannels([card, ...(settings.channels ?? [])], report);
   const planned = report.actions.filter(isCause);
   wantedDeliveries(
     channels.map((c) => c.name),
@@ -488,11 +477,42 @@ export async function applyNotices(
       ),
       scope,
     );
-  await retireCard(card, state, report, sessions, {
-    repo: repo.slug,
-    causes: planned.map((c) => c.notice.key),
-    lingerMs: settings.lingerMs,
-  });
+  if (card !== null)
+    await retireCard(card, state, report, sessions, {
+      repo: repo.slug,
+      causes: planned.map((c) => c.notice.key),
+      lingerMs: settings.lingerMs,
+    });
+}
+
+/** The `orca-card` channel of this tick, after the notices workspace's read state is recorded and the comments of workspaces gone are forgotten. */
+function openOrcaCard(
+  state: ApplyState,
+  repo: RepoTarget,
+  report: RepoReport,
+  sessions: SessionsReport,
+  settings: NoticeSettings,
+  standing: () => ReadonlySet<string>,
+): OrcaCard {
+  const root = state.root ?? stateRoot();
+  // The destination's read state as this tick found it, before any notice of its own marks it unread.
+  const observed = logNoticesRead(
+    repo.slug,
+    sessions,
+    settings.branch,
+    (sessions.ok ? sessions.observedAt : undefined) ?? currentIso(),
+    root,
+  );
+  if (!observed)
+    report.unplaced.push({
+      target: "the notices workspace read observation",
+      record: "runtime",
+      reason:
+        "the notices_read event was not written and waits for a later tick",
+    });
+  openCard(repo, sessions, root);
+  // `standing` is read when the card writes, after the tick has named its causes.
+  return orcaCard(state, repo, report, sessions, settings.branch, standing);
 }
 
 /** What every channel's sends share in one repository's tick. */

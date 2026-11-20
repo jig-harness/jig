@@ -55,14 +55,35 @@ tick and no route into any machine. Buttons and commands need the bridge
 
 ### Notification channels
 
-Today a notification has one way out: the session runtime's `notify`
-(`plugin/dispatch/lib/runtime/port.ts`), which on Orca sets a workspace's
-comment and marks it unread. Delivery becomes a port of its own, a
-**notification channel**, and the tick sends each cause through every
-channel the machine file enables:
+Delivery is a port of its own, a **notification channel**
+(`plugin/chat/channel.ts`), and the tick sends each cause through every
+channel the host enables:
 
-- **`orca-card`**, the comment and unread mark of today, moved behind the
-  port unchanged, its suppression and its notices workspace included.
+- **`orca-card`**, the session runtime's `notify`
+  (`plugin/dispatch/lib/runtime/port.ts`), which on Orca sets a
+  workspace's comment and marks it unread, behind the port with its
+  suppression and its notices workspace. The tick writes it on
+  `runtime: orca` alone: the process runtime has no notices workspace.
+- **`webhook`**, which posts each cause, one request each, to an
+  [incoming webhook](../GLOSSARY.md) the machine file names under
+  `notify.channels` (`plugin/chat/webhook.ts`): plain text with `Title` and
+  `Click` headers, which ntfy shows as a phone push (`format: text`),
+  Slack's `{"text": …}` (`slack`) or Discord's `{"content": …}` with every
+  mention off (`discord`). It is the channel that works without Orca, and
+  the `notify` stage on the process runtime needs one. The webhook's
+  address is a credential, so the machine file names the environment
+  variable that holds it (`url_env`), never the address; the address
+  appears in no notice, receipt, log row or ledger row, and the place a
+  delivery records is the channel's name and the destination's host. A
+  2xx answer is the receipt. A webhook cannot be read back: the channel
+  never finds a cause already on its destination, so a delivery whose
+  answer was lost is sent again when its back-off allows, and it cannot
+  tell whether a notice was read, so the `notices_read` observation stays
+  the card's. Its requests go through the governed HTTP transport
+  (`plugin/shared/outbound/http.ts`): a deadline, the closed failure
+  classes, the outbound cost ledger and the tick's hold. With no answer,
+  the cause stays due and backs off in the failure ledger, and the
+  dispatch dashboard still lists it.
 - **`slack`**, which posts with the chat's own API.
 
 Each channel keeps its own suppression record: the state database's
@@ -514,7 +535,8 @@ lists it and whether the hub's machine runs passes.
 ### Other chat tools
 
 The seams are the notification channel, which a receive-only tool
-implements alone, and the bridge's interaction source, which turns a
+implements alone (the `webhook` channel already reaches ntfy, and a Slack
+or Discord channel's incoming webhook, for notifications), and the bridge's interaction source, which turns a
 tool's click or command into the request the bridge runs. Microsoft Teams,
 Discord and Mattermost each deliver buttons and commands to a bot over a
 connection or an endpoint, and fit the same bridge; none is designed here
@@ -522,8 +544,8 @@ beyond the seam.
 
 ### Where it lives
 
-`plugin/chat/`: the channel port and the Slack channel
-(`plugin/chat/slack/`), the bridge (`plugin/chat/bridge.ts`) and the
+`plugin/chat/`: the channel port, the `webhook` channel
+(`plugin/chat/webhook.ts`) and the Slack channel (`plugin/chat/slack/`), the bridge (`plugin/chat/bridge.ts`) and the
 commands, registered in `plugin/jig.ts` as `jig chat`. The `orca-card`
 channel stays in `plugin/dispatch/lib/runtime/`. The hub starts the bridge
 from `plugin/hub/` when its settings name a chat.

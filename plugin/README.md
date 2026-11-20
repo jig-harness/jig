@@ -293,7 +293,9 @@ allowlisted environment for its account. A pickup hands its first drive
 back to the dispatcher, which admits it when the pickup has ended. With
 `dispatch.labels.only_labeled` enabled, the pull request needs a dispatch
 label before the dispatcher can admit the drive.
-The dashboard shows causes that need attention.
+The dashboard shows causes that need attention, and the `notify` stage
+sends them through a notification channel the machine file names, such
+as a webhook to a phone.
 
 A person follows a process run, or takes it over, from any shell on the
 host:
@@ -1001,7 +1003,14 @@ visit: the workspace on the branch `dispatch.notices_branch` names, when the
 repository names one (the tick never opens or removes that one, and a
 message waits while it is not open), else the repository's notices
 workspace. With Orca the message becomes that workspace's comment, and the
-workspace is marked unread, which Orca's phone app shows. A message that
+workspace is marked unread, which Orca's phone app shows. It also goes
+through each notification channel the machine file names under
+[`notify.channels`](CONFIGURATION.md#the-machines-dispatch-file), the
+only way out on `runtime: process`, which has no notices workspace: a
+`webhook` channel posts it to an incoming webhook (an ntfy topic a phone
+subscribes to, a Slack or Discord channel), whose address the file names
+by the environment variable that holds it, never by the address. A
+message that
 still stands `dispatch.renotify_after` (a day by default) after it was last
 sent is sent again, saying since when it has waited, until its cause goes;
 `0s` sends each one once. The dispatch dashboard lists the same causes,

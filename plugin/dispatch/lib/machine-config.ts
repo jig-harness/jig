@@ -47,6 +47,8 @@
  * change_probe: true
  * outbound_share: 0.5   # was tracker_share, which still reads
  * preflight: [tracker]   # the checks run on each account before a tracker stage: preflight-config.ts
+ * notify:
+ *   channels: []          # notification channels beside the Orca card: notify-config.ts
  * load:
  *   enforce: false          # the gauges' lines and reservations: load-config.ts
  * priorities:
@@ -72,6 +74,7 @@ import {
 } from "./failures.ts";
 import { isLoopback, type Listen, parseListen } from "./listen.ts";
 import { type LoadSettings, loadSettings } from "./load-config.ts";
+import { type NotifyChannelConfig, notifyChannels } from "./notify-config.ts";
 import { type PreflightProbe, preflightSetting } from "./preflight-config.ts";
 import { type ServedPerson, servedPeople } from "./serve-config.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
@@ -195,6 +198,8 @@ export interface MachineConfig {
   outboundShare?: number;
   /** The checks the tick runs on each account before a stage that needs them (`preflight`); `[tracker]` when absent. */
   preflight?: PreflightProbe[];
+  /** The notification channels the tick sends through beside the Orca card (`notify.channels`); none when absent. */
+  notifyChannels?: NotifyChannelConfig[];
 }
 
 const DEFAULTS = {
@@ -237,6 +242,7 @@ const TOP_KEYS = [
   "outbound_share",
   "tracker_share",
   "preflight",
+  "notify",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
 const FAILURES_KEYS = [
@@ -544,6 +550,7 @@ function machineRepositories(
   runtime: "orca" | "process";
   process: ProcessSettings;
   repositories: MachineRepository[];
+  notifyChannels?: NotifyChannelConfig[];
 }> {
   const repos = repositories(top.repositories);
   if (!repos.ok) return repos;
@@ -556,14 +563,23 @@ function machineRepositories(
     );
   const settings = processSettings(top.process);
   if (!settings.ok) return settings;
+  const channels = notifyChannels(top.notify);
+  if (!channels.ok) return channels;
+  // The process runtime writes no Orca card: a channel must carry its notices.
   if (
     runtime === "process" &&
+    channels.value.length === 0 &&
     repos.value.some((repo) => repo.stages.includes("notify"))
   )
     return invalid(
-      `${where}: repositories[].stages cannot include notify on runtime: process`,
+      `${where}: repositories[].stages includes notify on runtime: process, which writes no Orca card; name a notification channel under notify.channels`,
     );
-  return ok({ runtime, process: settings.value, repositories: repos.value });
+  return ok({
+    runtime,
+    process: settings.value,
+    repositories: repos.value,
+    ...(channels.value.length === 0 ? {} : { notifyChannels: channels.value }),
+  });
 }
 
 function parseValues(values: unknown, where: string): Checked<MachineConfig> {
