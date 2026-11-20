@@ -1364,7 +1364,7 @@ use the admission check for the limit to apply across test runs.
 
 `jig doctor gc` reports the registry count and the free inode share of the
 filesystem containing Jig's state directory. An
-[inode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md#inode) is a
+[inode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a
 filesystem record needed for each file or directory. An over-limit registry or
 less than 10% free inodes fails the check and raises a host need in the dispatch
 dashboard. The inode check is skipped when the filesystem does not report an
