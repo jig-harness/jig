@@ -95,6 +95,13 @@ describe("a round report read back", () => {
       family: "round-report",
     });
   });
+
+  test("a round-finish file is of the round-finish family", () => {
+    expect(cloneFile("drive-pr-999.round-finish.json")).toEqual({
+      pr: "999",
+      family: "round-finish",
+    });
+  });
 });
 
 async function roundReport(
