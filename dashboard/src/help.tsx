@@ -82,12 +82,14 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             every other view says so at its top. <b>Needs you</b> lists what
             only a person can settle. <b>Running</b> shows each account and the
             sessions holding its slots. <b>Queue</b> is what the next ticks will
-            start, hold or report. <b>History</b> shows how the recent ticks
-            ran, one row per tick with its slowest phase, and the outcome log:
-            one row per ended launch with what its closing report concluded,
-            filtered by time, repository, stage, account, class, reason, the
-            report's cause and who wrote it. A row opens to all runs of its
-            work. The filters are the page's address, so a view is a link.
+            start, hold or report, in the dispatcher's order, which a computer
+            can regroup by repository or source. <b>History</b> shows how the
+            recent ticks ran, one row per tick with its slowest phase, and the
+            outcome log: one row per ended launch with what its closing report
+            concluded, filtered by time, repository, stage, account, class,
+            reason, the report's cause and who wrote it. A row opens to all runs
+            of its work. The filters are the page's address, so a view is a
+            link.
           </p>
           <p>
             Words with a dotted underline, chips and the <b>?</b> beside a

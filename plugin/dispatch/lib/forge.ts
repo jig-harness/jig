@@ -35,6 +35,7 @@
  * that will answer after a wait from one that refused the read.
  */
 import { isRecord } from "../../shared/guards.ts";
+import { ghRepoEnvFor } from "../../shared/gh-repo-env.ts";
 import { ghCall, ghRepoEnv } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -64,11 +65,16 @@ function unreadable(reason: string): Outcome<never, "unreadable"> {
   return failed("unreadable", reason);
 }
 
-/** What `gh` printed; or why it did not answer, with the call's failure class. */
+/**
+ * What `gh` printed; or why it did not answer, with the call's failure class.
+ * `repository` (`owner/name`) is named in `GH_REPO` for a call whose
+ * arguments do not name the repository it is about.
+ */
 async function ghAnswer(
   args: string[],
   cwd?: string,
   timeoutSec?: number,
+  repository?: string,
 ): Promise<
   | { ok: true; value: string }
   | { ok: false; reason: string; outbound: OutboundFailure }
@@ -76,7 +82,7 @@ async function ghAnswer(
   const began = currentMs();
   const r = await ghCall(args, {
     stderr: "pipe",
-    env: ghRepoEnv(),
+    env: ghRepoEnvFor(repository ?? null),
     ...(cwd === undefined ? {} : { cwd }),
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
   });
@@ -96,10 +102,11 @@ async function gh<Code extends string>(
   code: Code,
   cwd?: string,
   timeoutSec?: number,
+  repository?: string,
 ): Promise<
   { ok: true; value: string } | { ok: false; failure: CausedFailure<Code> }
 > {
-  const answer = await ghAnswer(args, cwd, timeoutSec);
+  const answer = await ghAnswer(args, cwd, timeoutSec, repository);
   return answer.ok ? answer : failedBy(code, answer.outbound, answer.reason);
 }
 
@@ -117,8 +124,9 @@ async function ghJson(
   what: string,
   cwd?: string,
   timeoutSec?: number,
+  repository?: string,
 ): Promise<Outcome<unknown, "unreadable">> {
-  const text = await gh(args, "unreadable", cwd, timeoutSec);
+  const text = await gh(args, "unreadable", cwd, timeoutSec, repository);
   return text.ok ? parsed(text.value, what) : text;
 }
 
@@ -418,24 +426,29 @@ async function listPrs(
   slug: string,
   extra: string[],
   read: LabelRead,
+  timeoutSec?: number,
 ): Promise<Outcome<ListedPr[], "unreadable">> {
   const fields = [...LISTED];
   if (extra.includes("merged")) fields.push("mergedAt", "updatedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
   if (read.labels) fields.push("labels", "body");
   const ask = (asked: readonly string[]) =>
-    ghAnswer([
-      "pr",
-      "list",
-      "--repo",
-      slug,
-      "--state",
-      ...extra,
-      "--limit",
-      String(PR_LIMIT),
-      "--json",
-      asked.join(","),
-    ]);
+    ghAnswer(
+      [
+        "pr",
+        "list",
+        "--repo",
+        slug,
+        "--state",
+        ...extra,
+        "--limit",
+        String(PR_LIMIT),
+        "--json",
+        asked.join(","),
+      ],
+      undefined,
+      timeoutSec,
+    );
   let answer = await ask(fields);
   if (
     !answer.ok &&
@@ -622,6 +635,45 @@ export async function mergedSince(
   return ok(merged);
 }
 
+/** Closed and merged pull requests carrying a pending rearm command. */
+export function closedWithLabel(
+  slug: string,
+  label: string,
+  timeoutSec?: number,
+): Promise<Outcome<ListedPr[], "unreadable">> {
+  return listPrs(
+    slug,
+    ["all", "--search", "is:closed", "--label", label],
+    NO_LABELS,
+    timeoutSec,
+  );
+}
+
+/** A pull request’s state and labels, checked together before a request is retired. */
+export async function pullStateLabels(
+  slug: string,
+  pr: number,
+  timeoutSec?: number,
+): Promise<
+  Outcome<
+    { state: "OPEN" | "CLOSED" | "MERGED"; labels: string[] },
+    "unreadable"
+  >
+> {
+  const view = await ghJson(
+    ["pr", "view", String(pr), "--repo", slug, "--json", "state,labels"],
+    "the pull request view",
+    undefined,
+    timeoutSec,
+  );
+  if (!view.ok) return view;
+  const state = field(view.value, "state");
+  if (state !== "OPEN" && state !== "CLOSED" && state !== "MERGED")
+    return unreadable(`PR #${pr} has an unknown state`);
+  const labels = labelNames(field(view.value, "labels"), `PR #${pr}`);
+  return labels.ok ? ok({ state, labels: labels.value }) : labels;
+}
+
 /** One page of a pull request's review threads: whether each is resolved. */
 const THREADS_QUERY = `query DispatchThreads($owner: String!, $name: String!, $pr: Int!) {
   repository(owner: $owner, name: $name) {
@@ -659,6 +711,9 @@ export async function unresolvedThreadCount(
       `pr=${pr}`,
     ],
     "the review threads answer",
+    undefined,
+    undefined,
+    slug,
   );
   if (!answer.ok) return answer;
   const threads = field(
@@ -699,6 +754,7 @@ export async function editLabels(
   pr: number,
   add: readonly string[],
   remove: readonly string[],
+  timeoutSec?: number,
 ): Promise<Outcome<void, "refused">> {
   const edited = await gh(
     [
@@ -711,6 +767,8 @@ export async function editLabels(
       ...remove.flatMap((l) => ["--remove-label", l]),
     ],
     "refused",
+    undefined,
+    timeoutSec,
   );
   return edited.ok ? ok(undefined) : edited;
 }

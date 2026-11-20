@@ -67,6 +67,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
+import { heldStopWait } from "./hold-wait.ts";
 import { lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   parkReading,
@@ -84,7 +85,7 @@ import {
   readBranchHead,
   readComments,
 } from "./forge.ts";
-import { driveRow, type DriveRow } from "./local.ts";
+import { localDriveRow, type DriveRow } from "./local.ts";
 import { takeoverSettled } from "./drive-takeover.ts";
 import { convergedWait } from "./merge.ts";
 import {
@@ -255,15 +256,8 @@ function staleWhy(placed: { why: string; stale?: { tree?: unknown } }): string {
     : `${placed.why}; the dispatcher refuses it, and a person recovers the work, where no open workspace on its host holds that tree`;
 }
 
-/** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
-function waitsOnOf(
-  ledger: Ledger,
-  r: DriveReads,
-  ctx: AskContext,
-  held: boolean,
-  base: PrFacts["base"],
-  merge: WaitsOn,
-): WaitsOn {
+/** The class the dispatcher's classifier places a ledger in, with a stop that names no cause settled by its records. */
+function placeLedger(ledger: Ledger, r: DriveReads, base: PrFacts["base"]) {
   const classification = classifyLedger(
     ledger,
     currentMs(),
@@ -275,7 +269,7 @@ function waitsOnOf(
       ...(base === undefined ? {} : { base }),
     },
   );
-  const placed =
+  return (
     settleNoCauseStops(
       [
         {
@@ -299,7 +293,26 @@ function waitsOnOf(
       r.records,
       new Map([[r.pull.number, { ok: true, value: r.claims }]]),
       currentMs(),
-    )[0] ?? classification;
+    )[0] ?? classification
+  );
+}
+
+/** Whether a running launch answers for the drive: it says nothing of a park, a stale ledger or a silent one. */
+function runningLaunchSpeaks(holder: Holder | "none", cls: string): boolean {
+  const alive = holder !== "none" && holder.process === "alive";
+  return alive && !["parked", "stale", "silent"].includes(cls);
+}
+
+/** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
+function waitsOnOf(
+  ledger: Ledger,
+  r: DriveReads,
+  ctx: AskContext,
+  holder: Holder | "none",
+  base: PrFacts["base"],
+  merge: WaitsOn,
+): WaitsOn {
+  const placed = placeLedger(ledger, r, base);
   const settled = conflictSettled(placed, ledger, r, ctx.host);
   if (settled !== null) return personWait("re-arm", settled);
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
@@ -308,14 +321,13 @@ function waitsOnOf(
     dispatched
       ? { waiting: why }
       : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
-  // A launch that holds the drive says nothing of a park nobody answered or of a ledger gone silent.
-  if (
-    held &&
-    placed.class !== "parked" &&
-    placed.class !== "stale" &&
-    placed.class !== "silent"
-  )
-    return "none";
+  const onHold = heldStopWait(holder, placed.class, ledger.driver.heartbeat, {
+    dispatched,
+    record: holdingRecord(r.records),
+  });
+  if (onHold !== null) return onHold;
+  // A running launch says nothing of a park nobody answered or of a ledger gone silent.
+  if (runningLaunchSpeaks(holder, placed.class)) return "none";
   switch (placed.class) {
     case "driven":
       return "none";
@@ -355,6 +367,7 @@ function claimHolder(
     generation,
     process: "unknown",
     why: `launch claim ${claim.id} has no end; whether its process runs is its host's to know`,
+    ...(claim.says.value.at === "" ? {} : { since: claim.says.value.at }),
   };
 }
 
@@ -648,6 +661,7 @@ export interface DriveReading {
   comments: CommentFields[] | null;
   /** The drive ledger, why it does not read, or `null` when there is none. */
   ledger: Ledger | string | null;
+  ledgerCommentId: number | null;
   /** The drive as its own listing in a checkout here reads it. */
   row: DriveRow | null;
   /** This machine's launch records of the drive. */
@@ -660,7 +674,10 @@ export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
 }
 
 /** The `drive` station's answer, and the records it read. */
-export async function readDrive(ctx: AskContext): Promise<DriveReading> {
+export async function readDrive(
+  ctx: AskContext,
+  mode: "diagnose" | "lock-only" = "diagnose",
+): Promise<DriveReading> {
   const pull = await pullFor(ctx);
   if (pull.absent)
     return {
@@ -669,6 +686,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
       pull: null,
       comments: null,
       ledger: null,
+      ledgerCommentId: null,
       row: null,
       records: [],
     };
@@ -697,7 +715,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
           ),
     records: local.records,
     rows: local.rows.filter((r) => r.stage !== "followup"),
-    row: await rowOf(ctx, pr),
+    row: await localDriveRow(ctx.reading, ctx.checkout, pr, mode),
   };
   const ledger = ledgerOf(reads.snapshot);
   const read = typeof ledger === "string" ? null : ledger;
@@ -746,6 +764,7 @@ export async function readDrive(ctx: AskContext): Promise<DriveReading> {
     pull: { doc, read: pull.read },
     comments,
     ledger,
+    ledgerCommentId: reads.snapshot?.canonical?.comment.id ?? null,
     row: reads.row,
     records: reads.records,
   };
@@ -772,37 +791,6 @@ async function baseHeadOf(
     ...(head.ok ? {} : { detail: head.failure.reason }),
   });
   return head.ok ? { oid: head.value } : { unreadable: head.failure.reason };
-}
-
-/** The doctor's verdict on a drive, in words, with the recovery it gives. */
-function doctorDetail(row: DriveRow | null): { detail?: string } {
-  const doctor = row?.doctor;
-  if (doctor == null) return {};
-  const recovery =
-    doctor.recovery === null ? "" : `; recovery: ${doctor.recovery}`;
-  return { detail: `doctor: ${doctor.verdict}: ${doctor.reason}${recovery}` };
-}
-
-/** The drive as its own listing in a checkout of the repository on this machine reads it, noted in the sources. */
-async function rowOf(ctx: AskContext, pr: number): Promise<DriveRow | null> {
-  const { reading } = ctx;
-  if (ctx.checkout === null) {
-    reading.note({
-      record: "drive-lock",
-      read: false,
-      local: true,
-      detail: "no checkout of the repository on this machine",
-    });
-    return null;
-  }
-  const row = await driveRow(reading, ctx.checkout, pr);
-  reading.note({
-    record: "drive-lock",
-    read: row.ok,
-    local: true,
-    ...(row.ok ? doctorDetail(row.value) : { detail: row.failure.reason }),
-  });
-  return row.ok ? row.value : null;
 }
 
 /** What this host shows of a silent ledger's driver that no launch holds, as the dispatcher reads it; `null` for any other ledger. */
@@ -862,9 +850,14 @@ function driveWait(
   }
   const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
   if (diagnosis !== null) return diagnosis;
-  return ledger === null
-    ? "none"
-    : waitsOnOf(ledger, reads, ctx, holder !== "none", facts.base, facts.merge);
+  if (ledger === null)
+    return (
+      heldStopWait(holder, "unarmed", "", {
+        dispatched: ctx.dispatches || current(reads.claims) !== null,
+        record: holdingRecord(reads.records),
+      }) ?? "none"
+    );
+  return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 
 /** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */

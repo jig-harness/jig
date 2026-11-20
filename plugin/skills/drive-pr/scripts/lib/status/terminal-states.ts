@@ -430,7 +430,7 @@ export const TERMINAL_STATES: Readonly<
     emittedBy:
       "never emitted — a class label for HEAD_LAG / AWAITING_REVIEWER / STALE_REVIEW / HEAD_MOVED / MERGEABILITY_UNKNOWN",
     meaning:
-      "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved, the CI hold label changed or the forge could not be read as the hold was released, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm).",
+      "The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved, the CI hold label changed or the forge could not be read as the hold was released, when a read of the cancelled-run recovery kept failing in a way waiting can clear, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm).",
     report: {
       stop: "stopped before the pull request could be judged: it has not settled yet",
       next: {
@@ -602,6 +602,24 @@ export const TERMINAL_STATES: Readonly<
       cause: "environment",
       next: {
         step: "The line re-arms the drive once the CI service recovers.",
+        owner: "line",
+      },
+    },
+  },
+  // A forge read refused for the credential's spent rate limit (`lib/forge-limit.ts`).
+  FORGE_RATE_LIMITED: {
+    exitCode: 24,
+    category: "state",
+    terminal: true,
+    emittedBy:
+      "drive-status.ts (outside evaluate) and drive.ts (lib/forge-limit.ts)",
+    meaning:
+      "The forge's rate limit for the drive's credential is spent: nothing more is sent before it resets. The report names the reset (`rateLimit.until`). The driver then waits out a reset within its bound (`DRIVE_PR_RATE_LIMIT_WAIT`) and goes on, or stops on one further off. Re-arm after the reset.",
+    report: {
+      stop: "stopped: the forge's rate limit for its credential is spent",
+      cause: "environment",
+      next: {
+        step: "The line drives it again once the forge's rate limit resets.",
         owner: "line",
       },
     },
@@ -787,6 +805,22 @@ export function outOfBand(
   return entry.exitCode;
 }
 
+/** Set `report.state` to `FORGE_RATE_LIMITED` and return its exit code from ONE lookup, as `outOfBand` does, wherever a read met the limit. */
+export function forgeRateLimited(
+  report: { state: string; reason: string },
+  reason: string,
+): number {
+  const entry = TERMINAL_STATES.FORGE_RATE_LIMITED;
+  if (entry === undefined) {
+    throw new Defect(
+      "forgeRateLimited(): 'FORGE_RATE_LIMITED' has no TERMINAL_STATES entry — drive-status.ts and terminal-states.ts have drifted",
+    );
+  }
+  report.state = "FORGE_RATE_LIMITED";
+  report.reason = reason;
+  return entry.exitCode;
+}
+
 /**
  * The `category: 'helper'` entries a drive helper script derives its exit
  * constant from: `lib/state/mailbox.ts`'s `PUSH_HELD_EXIT`, which
@@ -840,7 +874,8 @@ export type DriveExitName =
   | "MAILBOX_PAUSE_TIMEOUT"
   | "TAKEN_OVER"
   | "CI_REPAIR_SPENT"
-  | "CI_INFRA_PERSISTED";
+  | "CI_INFRA_PERSISTED"
+  | "FORGE_RATE_LIMITED";
 
 const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
   "CONVERGED",
@@ -864,6 +899,7 @@ const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
   "TAKEN_OVER",
   "CI_REPAIR_SPENT",
   "CI_INFRA_PERSISTED",
+  "FORGE_RATE_LIMITED",
 ];
 
 /**
@@ -939,8 +975,9 @@ export const PERSON_STOP_EXITS: ReadonlySet<number> = new Set([
 /**
  * The exits that leave nothing for a person in the drive's terminal tab:
  * converged, merged or closed, re-armable (a usage-limit wall, a pull request
- * not judgeable yet, an infrastructure failure the dispatcher re-drives), a
- * person's stop, or a refusal of a second driver.
+ * not judgeable yet, an infrastructure failure or a spent forge rate limit
+ * the dispatcher re-drives), a person's stop, or a refusal of a second
+ * driver.
  */
 const TAB_CLOSING_EXITS: ReadonlySet<number> = new Set([
   DRIVE_EXIT.CONVERGED,
@@ -948,6 +985,7 @@ const TAB_CLOSING_EXITS: ReadonlySet<number> = new Set([
   DRIVE_EXIT.QUOTA_PARKED,
   DRIVE_EXIT.NOT_SETTLED,
   DRIVE_EXIT.CI_INFRA_PERSISTED,
+  DRIVE_EXIT.FORGE_RATE_LIMITED,
   ...PERSON_STOP_EXITS,
   ...DRIVER_REFUSAL_EXITS,
 ]);

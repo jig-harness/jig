@@ -12,6 +12,12 @@ import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { exportPolicyBase } from "./policy-base.ts";
 import { failedRunsField } from "./failed-runs.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import {
+  isTimedOut,
+  recoveryExit,
+  type TimedOutRecovery,
+} from "../cancelled-recovery-reads.ts";
+import type { TimedOutJob } from "../job-timeout.ts";
 import { sleep } from "../cli.ts";
 import { FINAL_CI_POLL_SECONDS, UNLABEL_SETTLE_SECONDS } from "./settings.ts";
 
@@ -53,11 +59,76 @@ export function onlyInCancelledRuns(failing: FailingChecks): boolean {
   );
 }
 
+/** Repair `failing`, whose timed-out jobs are named to the pass with their limit and run time. */
+export type RepairTimedOut = (
+  failing: FailingChecks,
+  timedOut: readonly TimedOutJob[],
+) => Promise<number | "continue" | null>;
+
+/**
+ * The failing checks with the timed-out jobs added, each a failing check run
+ * with the workflow run behind it, so the CI-repair path selects, charges and
+ * tells them as it does a failed check.
+ */
+export function withTimedOut(
+  failing: FailingChecks | null,
+  recovery: TimedOutRecovery,
+): FailingChecks {
+  const names = recovery.timedOut.map((job) => job.name);
+  const runs = failedRunsField(failing?.runs);
+  for (const job of recovery.timedOut) {
+    if (job.run === null) continue;
+    const listed = runs.find((run) => run.id === job.run?.id);
+    if (listed === undefined) runs.push({ ...job.run });
+    else
+      runs.splice(runs.indexOf(listed), 1, {
+        ...listed,
+        jobNames: [...new Set([...(listed.jobNames ?? []), job.name])],
+      });
+  }
+  return {
+    checkRunNames: [...new Set([...(failing?.checkRunNames ?? []), ...names])],
+    statusNames: failing?.statusNames ?? [],
+    runs: runs.sort((a, b) => a.id - b.id),
+    ...(failing?.statuses === undefined ? {} : { statuses: failing.statuses }),
+  };
+}
+
+/**
+ * The repair inputs when the reported failures' freshness is unconfirmed: only
+ * the timed-out jobs read from the runner survive, cut from `failing` itself so
+ * the provenance the advisory policy kept (a workflow it dropped stays
+ * dropped) is never rebuilt from the jobs' own runs. A run that cannot be
+ * attributed wholly to those jobs is left out; `null` when no job is left.
+ */
+export function freshTimedOutInputs(
+  failing: FailingChecks,
+  timedOut: readonly TimedOutJob[],
+): { finalVerdict: string; failing: FailingChecks } | null {
+  const fresh = new Set(timedOut.map((job) => job.name));
+  const names = (failing.checkRunNames ?? []).filter((n) => fresh.has(n));
+  if (names.length === 0) return null;
+  const runs = failedRunsField(failing.runs).flatMap((run) => {
+    const jobNames = run.jobNames?.filter((n) => fresh.has(n));
+    return jobNames === undefined ||
+      jobNames.length === 0 ||
+      jobNames.length !== run.jobNames?.length
+      ? []
+      : [{ ...run, jobNames }];
+  });
+  return {
+    finalVerdict: `failing: ${names.join(", ")}`,
+    failing: { checkRunNames: names, statusNames: [], runs },
+  };
+}
+
 /**
  * A failure only cancelled runs carry goes through the cancelled-run recovery
  * (its grace period and one re-run per head) before any retry or repair. A
  * real failure comes back from that re-run in a run that is not cancelled,
- * and is repaired then; `null` when the recovery has nothing to re-run.
+ * and is repaired then; `null` when the recovery has nothing to re-run. A job
+ * the runner stopped at its time limit is repaired at once, beside the
+ * failure, through `repair`: a re-run would stop at the same limit.
  */
 export async function cancelledRunRecovery(
   finalVerdict: string,
@@ -65,9 +136,24 @@ export async function cancelledRunRecovery(
   context: DriveRoundContext,
   head: string,
   failing: FailingChecks,
+  repair: RepairTimedOut,
+  timedOut: readonly TimedOutJob[] = [],
 ): Promise<number | "continue" | null> {
   if (!finalVerdict.startsWith("failing:") || stale) return null;
-  if (!onlyInCancelledRuns(failing)) return null;
+  if (!onlyInCancelledRuns(failing)) {
+    // A job the runner stopped at its time limit beside a failure in a run
+    // that was not cancelled is named to the same repair, when the advisory
+    // policy left it in the set; with none left, ordinary recovery goes on.
+    // `failing` already holds those jobs with the provenance the policy kept,
+    // so it goes on as it is: rebuilding it from the jobs' own runs would
+    // restore a workflow the policy dropped for an advisory job in it.
+    const kept = timedOut.filter((job) =>
+      failing.checkRunNames?.includes(job.name),
+    );
+    return kept.length === 0 || context.dryRun
+      ? null
+      : await repair(failing, kept);
+  }
   if (context.dryRun) {
     console.error(
       `(dry-run) would recover '${finalVerdict}' as a cancellation: it failed only in cancelled runs, so no CI-repair pass`,
@@ -75,13 +161,14 @@ export async function cancelledRunRecovery(
     return 1;
   }
   const recovery = await recoverCancelledOnHead(context.pr, head);
-  if (recovery === "parked") return 8;
-  if (recovery === "unknown") {
+  if (recovery === "unknown")
     console.error(
       `review converged; '${finalVerdict}' failed only in cancelled runs, and their recovery could not establish the head's state; stopping`,
     );
-    return 1;
-  }
+  const stop = recoveryExit(recovery);
+  if (stop !== null) return stop;
+  if (isTimedOut(recovery))
+    return await repair(withTimedOut(failing, recovery), recovery.timedOut);
   if (recovery === "none") return null;
   console.error(
     `review converged; '${finalVerdict}' failed only in cancelled runs, so it is recovered as a cancellation, not repaired`,

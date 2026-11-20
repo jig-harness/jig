@@ -1230,7 +1230,7 @@
       "options": "gates, inspect, tag",
       "option": null,
       "reversible": null,
-      "meaning": "One untagged release, answered on its tracker item."
+      "meaning": "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item."
     },
     {
       "kind": "station-key",
@@ -1294,7 +1294,7 @@
       "options": "clear, hold",
       "option": null,
       "reversible": null,
-      "meaning": "A pending launch record that no tick launches again."
+      "meaning": "A pending launch record that no tick launches again, or one of unknown process that holds a drive."
     },
     {
       "kind": "station-option",

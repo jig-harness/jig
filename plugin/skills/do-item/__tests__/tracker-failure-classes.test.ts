@@ -221,6 +221,24 @@ describe("the GitHub tracker transport through gh", () => {
       );
       takesPolicy(error, code, sent);
     });
+
+  it("keeps the run's account on GraphQL errors answered with a success status", async () => {
+    const transport = ghTransport(async () => ({
+      code: 1,
+      stdout:
+        'HTTP/2.0 200 OK\r\n\r\n{"data":{"repository":null},"errors":[{"type":"NOT_FOUND"}]}',
+      stderr: "",
+      stderrTail: "",
+      timedOut: false,
+      bufferExceeded: false,
+      spawnFailed: false,
+      failureAccount: "acct-one",
+    }));
+    const error = await thrown(
+      transport("query { viewer { login } }", {}, undefined, true),
+    );
+    expect(error).toMatchObject({ account: "acct-one", code: "not-found" });
+  });
 });
 
 describe("the Jira transport", () => {
@@ -255,6 +273,16 @@ const FORGE: Record<
 };
 
 describe("the forge client's gh runs", () => {
+  it("reads gh's own message for a connection it could not make as no answer", () => {
+    const failure = ghRunFailure({
+      code: 1,
+      stderr:
+        "error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com",
+      timedOut: false,
+    });
+    expect(failure?.code).toBe("unreachable");
+  });
+
   for (const code of FAILURE_CLASSES)
     it(`classifies a run that met ${code}`, () => {
       const { stderr, tookMs, timedOut } = FORGE[code];

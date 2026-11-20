@@ -41,6 +41,7 @@ import {
   adoptReleaseHandoffs,
   releaseNeedActions,
   releaseNeeds,
+  tagPrefixOf,
 } from "./release-needs.ts";
 import { readFailureOf } from "./read-failures.ts";
 import { planObserved } from "./tick-plan.ts";
@@ -66,24 +67,59 @@ export type Observed =
   | { report: RepoReport }
   | { busy: string };
 
+/** What `claim` answers when the lock was waited for: another tick may have acted, so the open read is stale. */
+export const REOPEN = Symbol("reopen");
+
+/** How many times one turn opens again after a lock wait: each reopen can name a new slug. */
+const MAX_REOPENS = 3;
+
 /**
  * Open one repository; the report that refuses it when it does
  * not open. `claim` takes the repository's own lock once its slug is known
- * and returns who holds it when another tick does: nothing is read then.
+ * (waiting for it, if it must) and returns who holds it when another tick does: nothing is read then.
+ * It answers `REOPEN` when a wait for the lock came between the open read and
+ * the lock: the repository is then opened again from refreshed facts, its
+ * target and configuration included, never planned from the earlier read.
  */
 export async function openTurn(
   turn: RepoTurn,
   context: TickContext,
-  claim: (slug: string) => string | null = () => null,
+  claim: (
+    slug: string,
+  ) =>
+    | string
+    | null
+    | typeof REOPEN
+    | Promise<string | null | typeof REOPEN> = () => null,
 ): Promise<
   | { turn: RepoTurn; opened: OpenedRepo }
   | { report: RepoReport }
   | { busy: string }
 > {
   const { path, timer } = turn;
-  const opened = await timer.time("open", () => openRepo(path, context));
+  let opened = await timer.time("open", () => openRepo(path, context));
   if (!("repo" in opened)) return { report: timed(opened, timer) };
-  const heldBy = claim(opened.repo.slug);
+  let heldBy = await claim(opened.repo.slug);
+  // A slug already reopened for is fresh under its lock; a new slug the refresh
+  // names waits and reopens in its turn, within the bound.
+  const refreshed = new Set<string>();
+  for (
+    let reopens = 0;
+    heldBy === REOPEN && reopens < MAX_REOPENS;
+    reopens += 1
+  ) {
+    refreshed.add(opened.repo.slug);
+    context.reads.refreshRepository(path);
+    opened = await timer.time("open", () => openRepo(path, context));
+    if (!("repo" in opened)) return { report: timed(opened, timer) };
+    heldBy = await claim(opened.repo.slug);
+    if (heldBy === REOPEN && refreshed.has(opened.repo.slug)) heldBy = null;
+  }
+  // Out of reopens with the last read still stale: the turn waits for the next tick.
+  if (heldBy === REOPEN)
+    return {
+      busy: "its repository lock was waited for again after the last reopen",
+    };
   if (heldBy !== null) return { busy: heldBy };
   turn.report = opened.report;
   const { owner, reflection } = opened;
@@ -168,7 +204,10 @@ export async function actTurn(
     await timer.time("plan", () => {
       adoptReleaseHandoffs(opened.repo.slug, observation.forge.merged);
       report.actions.push(
-        ...releaseNeedActions(releaseNeeds(opened.repo.slug)),
+        ...releaseNeedActions(
+          releaseNeeds(opened.repo.slug),
+          tagPrefixOf(opened.values),
+        ),
       );
     });
   await timer.time("log", () =>

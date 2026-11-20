@@ -37,14 +37,15 @@ function fixture(): World {
 }
 
 /** One tick of the world's repository; its exit and its receipt. */
-async function tick(w: World): Promise<{ exit: number; receipt: TickReceipt }> {
-  const r = await w.dispatch([
-    "--repo",
-    w.repo,
-    "--followup-since",
-    "2026-10-30T00:00:00Z",
-    "--json",
-  ]);
+async function tick(
+  w: World,
+  extra: Record<string, string> = {},
+): Promise<{ exit: number; receipt: TickReceipt }> {
+  const r = await w.dispatch(
+    ["--repo", w.repo, "--followup-since", "2026-10-30T00:00:00Z", "--json"],
+    undefined,
+    extra,
+  );
   expectSpawnExit(r, r.exitCode === 0 ? 0 : 1);
   return { exit: r.exitCode ?? -1, receipt: JSON.parse(r.stdout) };
 }
@@ -74,7 +75,8 @@ function unanswered(w: World): Record<string, unknown> {
 describe("a forge that refuses or does not answer", () => {
   it("lets a tick with a rate-limited repository exit 0, showing the last reading with its age", async () => {
     const w = fixture();
-    const before = await tick(w);
+    const budget = { JIG_FORGE_BUDGET: "on" };
+    const before = await tick(w, budget);
     expect(before.exit).toBe(0);
     const record = before.receipt.repos[0]?.records.find(
       (r) => r.record === "forge",
@@ -82,12 +84,19 @@ describe("a forge that refuses or does not answer", () => {
     expect(record?.ok).toBe(true);
 
     writeFileSync(join(w.dir, "forge-rate-limited"), "");
-    const limited = await tick(w);
+    const limited = await tick(w, budget);
     expect(limited.exit).toBe(0);
     const repo = limited.receipt.repos[0];
     expect(repo?.refusedBy?.class).toBe("rate-limited");
     expect(repo?.refusedBy?.until).toBeString();
+    expect(repo?.refusedBy?.account).toBeString();
     expect(repo?.refused).toContain("rate limit");
+    // A quota pause clears by waiting: it is no sign the repository is unknown.
+    expect(repo?.refusedStep).toBe("lookup");
+    expect(repo?.refused).toStartWith(
+      "the repository lookup waits for the rate limit: ",
+    );
+    expect(repo?.refused).not.toContain("cannot say which repository");
     expect(repo?.refused).toMatch(
       /the last reading, of \d{4}-\d\d-\d\dT[\d:.]+Z \(\d+m old\): 1 open pull request\(s\)/,
     );
@@ -98,7 +107,13 @@ describe("a forge that refuses or does not answer", () => {
     writeFileSync(join(w.dir, "forge-unauthorized"), "");
     const refused = await tick(w);
     expect(refused.exit).toBe(1);
-    expect(refused.receipt.repos[0]?.refusedBy?.class).toBe("unauthorized");
+    const repo = refused.receipt.repos[0];
+    expect(repo?.refusedBy?.class).toBe("unauthorized");
+    // Any lookup failure but a rate limit keeps its own cause, with the forge's reason.
+    expect(repo?.refusedStep).toBe("lookup");
+    expect(repo?.refused).toMatch(
+      /^the forge cannot say which repository this is: gh repo view exited \d+: \S/,
+    );
   });
 
   it("sends no second request to a forge that did not answer in a tick, and one probe in the next", async () => {

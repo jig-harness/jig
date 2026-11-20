@@ -10,7 +10,7 @@ import type {
 import type { NoticeFields } from "../../chat/channel.ts";
 import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { TickOutcome } from "../../shared/records/followup-values.ts";
-import type { FailureClass } from "../../shared/outbound/failure.ts";
+import type { FailureClass, QuotaHold } from "../../shared/outbound/failure.ts";
 import type { BoardRead } from "./board.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
@@ -43,6 +43,8 @@ export interface DispatchSection {
   stalledAfterMs: number;
   /** Which of the identity's claimed items the stall watch reads as pickups: `claimed`, only those a launch record of this host or a claim marker took; `assigned`, every one. */
   stalledScope: StalledScope;
+  /** Whether a stalled pickup whose tree holds its unshipped work is relaunched once in that tree to push and record it (`stalled_relaunch`): `finish-once`, or `never`. */
+  stalledRelaunch: StalledRelaunch;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
@@ -67,6 +69,8 @@ export interface DispatchSection {
   adopt: AdoptRule;
   /** How many children of an epic with no execution plan are under way at once (`epic_width`). */
   epicWidth: number;
+  /** How the tick weighs a pickup's overlap with the work in flight (`dispatch.overlap`, `overlap-config.ts`); absent reads as the defaults (`overlapOf`). */
+  overlap?: import("./overlap-config.ts").OverlapSettings;
   /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
   pool?: {
     states: import("../../skills/do-item/scripts/lib/tracker/port.ts").CanonicalState[];
@@ -112,6 +116,16 @@ export interface ClaimedItem {
 
 /** `dispatch.stalled_scope`'s values. */
 export type StalledScope = "claimed" | "assigned";
+
+/** A stalled pickup's relaunch: the launch record it finishes, the workspace that holds its tree, and the tree's head when the plan read it. */
+export interface PickupRelaunch {
+  record: string;
+  workspace: { id: string; path: string };
+  head: string;
+}
+
+/** `dispatch.stalled_relaunch`'s values. */
+export type StalledRelaunch = "finish-once" | "never";
 
 /** An item the tracker wants picked up, with the evidence for it. */
 export interface WantedItem {
@@ -198,12 +212,19 @@ export interface StaleCause {
    * The drive stopped on a cause its own next step settles: a stall (`14`),
    * a spent CI-repair budget (`21`), a pass deadline with its restarts
    * spent (`15`), or checks still failing on the infrastructure through
-   * their re-runs (`23`, `ci-infra`). Re-driven once per head commit, a
-   * `ci-infra` stop once per stop after its backoff; a re-drive that leaves
-   * the same stop standing is a person's.
+   * their re-runs (`23`, `ci-infra`), or the forge's rate limit for the
+   * drive's credential spent past what it waits (`24`, `forge-limit`).
+   * Re-driven once per head commit, a `ci-infra` stop once per stop after
+   * its backoff, a `forge-limit` stop once per stop after its reset; a
+   * re-drive that leaves the same stop standing is a person's.
    */
-  mechanicalStop?: "stall" | "ci-repair" | "deadline" | "ci-infra";
-  /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`). */
+  mechanicalStop?:
+    | "stall"
+    | "ci-repair"
+    | "deadline"
+    | "ci-infra"
+    | "forge-limit";
+  /** When the re-drive may start: a `ci-infra` stop's backoff end (`infra-backoff.ts`), a `forge-limit` stop's reset (`forge-limit-redrive.ts`). */
   notBefore?: string;
   /**
    * The re-drive draws on the pull request's recovery budget, which the
@@ -412,6 +433,8 @@ export interface Action {
   takeoverGone?: string;
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
+  /** For a pickup: the stalled pickup it relaunches in that pickup's own tree, at the tree's head (`pickup-relaunch.ts`), rather than a fresh pickup. */
+  relaunch?: PickupRelaunch;
   /** For a notification: its cause. */
   cause?: NotifyCause;
   /** For a notification: the message, with the key that suppresses a repeat. */
@@ -589,12 +612,20 @@ export interface Running {
 /**
  * How a read failed when a call to an outside system failed it: the call's
  * failure class (`shared/outbound/failure.ts`) and, for `rate-limited`, when
- * the system lets the credential send again.
+ * the system lets the credential send again and, when a credential's quota
+ * stopped the call (`TrackerRateLimited`), whose quota it is and whether only the
+ * dispatcher's share of it is spent.
  */
 export interface ReadFailure {
   class: FailureClass;
+  /** Opaque quota owner or credential key, when known. */
+  account?: string;
   until?: string;
+  quota?: QuotaHold;
 }
+
+/** Where opening a repository for its tick stopped: looking up which repository the path is, reading its dispatch section, or the tick's time ran out first. */
+export type RefusedStep = "lookup" | "configuration" | "time";
 
 /** How one record read for one repository. */
 export interface RecordRead {
@@ -719,6 +750,8 @@ export interface RepoReport {
   refused: string | null;
   /** A refusal a failed call to the forge caused: that call's failure class. */
   refusedBy?: ReadFailure;
+  /** A refusal that stopped opening the repository: the step it stopped at. */
+  refusedStep?: RefusedStep;
   /** The defect that stopped the repository's turn; what its earlier phases did stays on the report. */
   defect?: Defect;
   /** The defects a stage of `--apply` caught, each of which stopped its own stage only; absent when there were none. */
@@ -755,6 +788,8 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** The planned pickups weighed against the work in flight (`overlap-plan.ts`): reported only, nothing the tick starts changes; absent when it plans no pickup. */
+  overlap?: import("./overlap-reasons.ts").OverlapReport;
   /** Changed-file evidence for every open pull request, including aged or unread comparisons. */
   prFiles?: import("./sources/pr-files.ts").PrFileSummary[];
   /** The board read's part: its converged pull requests placed in Ready to merge or wherever their reason says, or why it did not read; absent when it did not run. */

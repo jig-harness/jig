@@ -11,7 +11,9 @@
  * forge's part (its open pull requests with their ledgers, its merges) are
  * read through the tick's world view (`world-view.ts`), whose facts carry
  * their freshness class. The launch claims (the shared records), Control's
- * reads and the board read the forge directly. The forge's drives as this
+ * reads and the board read the forge directly, and overlap reads the
+ * footprints of the wanted and claimed items through the tracker the tick
+ * opened (`overlap-observe.ts`). The forge's drives as this
  * host's launch records and every host's claims settle them are the
  * machine view, `RepoObservation.drives`, kept apart from the forge's read:
  * nothing of what this host did is written into a fact the view returned.
@@ -90,6 +92,7 @@ import {
   heldElsewhere,
   type SharedContext,
 } from "./shared-launches.ts";
+import { type OverlapFacts, readOverlapFacts } from "./overlap-observe.ts";
 import { observeContention } from "./sources/contention.ts";
 import type { FilesObservation } from "./sources/pr-files.ts";
 import { type HolderReadings, readHolders } from "./sources/doctor.ts";
@@ -128,6 +131,7 @@ import {
 import type {
   DispatchSection,
   DrivenPr,
+  RefusedStep,
   RepoPhase,
   RepoReport,
   RepoTarget,
@@ -195,6 +199,8 @@ export interface RepoObservation {
   serialized: Contention;
   /** Changed-file paths and their freshness, kept in memory for planning. */
   prFiles?: FilesObservation;
+  /** The footprints and the catalog overlap weighs (`overlap-observe.ts`). */
+  overlap?: OverlapFacts;
   /** The pull requests a person's hold label keeps every stage off. */
   held: Set<number>;
   /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
@@ -219,6 +225,7 @@ export async function openRepo(
       `${cut.failure.reason}, so nothing is planned for it this tick`,
       cut.failure,
       nowMs,
+      "time",
     );
   };
   if (ended(context.bound)) return passed();
@@ -236,9 +243,10 @@ export async function openRepo(
   if (!target.ok)
     return refusedBy(
       path,
-      `the forge cannot say which repository this is: ${target.failure.reason}`,
+      `${lookupFailed(target.failure)}: ${target.failure.reason}`,
       target.failure,
       nowMs,
+      "lookup",
     );
   const repo: RepoTarget = target.value.value;
   let config: ConfigurationOutcome;
@@ -249,6 +257,7 @@ export async function openRepo(
       `the dispatch section on the default branch cannot be read, so nothing is planned: ${why}`,
       cause,
       nowMs,
+      "configuration",
     ),
     slug: repo.slug,
   });
@@ -293,15 +302,28 @@ export async function openRepo(
 }
 
 /**
- * The report of a repository a failed read refused: with the call's
- * failure class when a call failed it, and the forge's last reading with
- * its age when that class clears by waiting.
+ * What a failed lookup of which repository a path is says first: a rate
+ * limit held the lookup, which clears by waiting and says nothing of the
+ * repository; any other failure leaves the forge unable to say which
+ * repository it is.
+ */
+export function lookupFailed(failure: Failure): string {
+  return readFailureOf(failure)?.class === "rate-limited"
+    ? "the repository lookup waits for the rate limit"
+    : "the forge cannot say which repository this is";
+}
+
+/**
+ * The report of a repository a failed read refused at `step`: with the
+ * call's failure class when a call failed it, and the forge's last reading
+ * with its age when that class clears by waiting.
  */
 function refusedBy(
   path: string,
   refused: string,
   cause: Failure | undefined,
   nowMs: number,
+  step: RefusedStep,
 ): RepoReport {
   const failure = cause === undefined ? undefined : readFailureOf(cause);
   const waits = failure !== undefined && clearsByWaiting(failure.class);
@@ -311,6 +333,7 @@ function refusedBy(
       `${refused}${waits ? lastForgeReading(path, nowMs) : ""}`,
     ),
     ...(failure === undefined ? {} : { refusedBy: failure }),
+    refusedStep: step,
   };
 }
 
@@ -489,7 +512,7 @@ export async function observeRepo(
   );
 
   const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
-  const { serialized, prFiles } = await timer.time("observe", () =>
+  const { serialized, prFiles, catalogText } = await timer.time("observe", () =>
     pool.run(async () => {
       const skipped = await optionalSkipped(reads, context.bound);
       const threads = boundedThreads(
@@ -530,6 +553,21 @@ export async function observeRepo(
         context.bound,
       );
     }),
+  );
+  // The footprints overlap weighs, through the tracker the tick opened.
+  const overlap = await timer.time("observe", () =>
+    pool.run(() =>
+      readOverlapFacts({
+        tracker: tracked.tracker,
+        wanted: tracked.pickups,
+        claimed: tracked.claimed,
+        records,
+        catalogText,
+        where: `${repo.slug}@${repo.defaultBranch}`,
+        nowMs,
+        bound: context.bound,
+      }),
+    ),
   );
   // The board read, a query of its own whose failure touches nothing planned.
   const board = await timer.time("board", () =>
@@ -582,6 +620,7 @@ export async function observeRepo(
     sessions,
     serialized,
     ...(prFiles === undefined ? {} : { prFiles }),
+    overlap,
     held,
     board,
     ...(holders === undefined ? {} : { holders }),

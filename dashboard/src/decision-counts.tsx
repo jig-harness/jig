@@ -2,7 +2,7 @@ import { answerId, useAnswers } from "./answers.ts";
 import type { NeedRow } from "./needs-view.ts";
 import { rowAnswer } from "./picking.ts";
 
-export function groupMembers(rows: NeedRow[], index: number): NeedRow[] {
+function groupMembers(rows: NeedRow[], index: number): NeedRow[] {
   const next = rows.findIndex((row, at) => at > index && row.type === "head");
   return rows.slice(index + 1, next === -1 ? rows.length : next);
 }

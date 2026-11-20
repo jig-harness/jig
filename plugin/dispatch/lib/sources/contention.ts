@@ -4,7 +4,8 @@
  * read from the default branch as the forge holds it, as the dispatch
  * section is, so a pull request cannot unserialize its own area; each open
  * pull request's changed files and, in a group of two or more, its
- * unresolved review threads. What it decides goes into the report, and
+ * unresolved review threads. The catalog's text, as read, is handed on for
+ * overlap (`overlap-observe.ts`). What it decides goes into the report, and
  * each hold that begins or ends this tick into the state database and the
  * outcome log (`serial-holds.ts`).
  */
@@ -39,7 +40,9 @@ export interface ForgeView {
 }
 
 /** `drive.change_areas_catalog` as configured; `null` when none is, `""` when it is not text. */
-function configuredCatalog(values: Record<string, unknown>): string | null {
+export function configuredCatalog(
+  values: Record<string, unknown>,
+): string | null {
   const drive = values.drive;
   const value = isRecord(drive) ? drive.change_areas_catalog : undefined;
   if (value === undefined || value === null) return null;
@@ -122,7 +125,12 @@ export async function observeContention(
   threads: (pr: number) => Promise<Outcome<number>>,
   skipped: string | null = null,
   bound?: TickBound,
-): Promise<{ serialized: Contention; prFiles?: FilesObservation }> {
+): Promise<{
+  serialized: Contention;
+  prFiles?: FilesObservation;
+  /** The catalog's text on the default branch, where this tick read it; `null` when the branch has none. */
+  catalogText?: string | null;
+}> {
   // A later forge read (for example merged follow-ups) must not hide a
   // complete open listing: changed-file evidence remains useful and its own
   // failed record still prevents action for this tick.
@@ -160,6 +168,7 @@ export async function observeContention(
       prFiles,
     };
   const where = `${repo.slug}@${repo.defaultBranch}:${path ?? ""}`;
+  let catalogText: string | null | undefined;
   const contention = await readContention(
     {
       catalogPath: path,
@@ -174,11 +183,14 @@ export async function observeContention(
     {
       catalog: async (p) => {
         const relative = repositoryPath(p);
-        return relative.ok
-          ? heldRead(bound, "the change-area catalog was read", () =>
-              defaultBranchFile(repo, relative.value),
-            )
-          : relative;
+        if (!relative.ok) return relative;
+        const text = await heldRead(
+          bound,
+          "the change-area catalog was read",
+          () => defaultBranchFile(repo, relative.value),
+        );
+        if (text.ok) catalogText = text.value;
+        return text;
       },
       files: prFiles.files,
       threads,
@@ -186,7 +198,11 @@ export async function observeContention(
   );
   if (path !== null) report.records.push(catalogRecord(where, contention));
   if (contention.report !== null) report.serialized = contention.report;
-  const observed = { serialized: contention, prFiles };
+  const observed = {
+    serialized: contention,
+    prFiles,
+    ...(catalogText === undefined ? {} : { catalogText }),
+  };
   if (forge.owner === false) return observed;
   for (const reason of settleHolds(repo.slug, contention, isoFromMs(nowMs)))
     report.unplaced.push({

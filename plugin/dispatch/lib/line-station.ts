@@ -10,6 +10,7 @@
  */
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { decisionOf } from "./line-decision.ts";
+import { groupTags } from "./release-groups.ts";
 import { dispatcherDecisionDigest } from "../../shared/decisions/station-digest.ts";
 import {
   type AnswerStation,
@@ -158,8 +159,23 @@ const FACTS: Partial<
 > = {
   "followup-failed": followupFailedFacts,
   "release-owed": (action, ctx) => {
+    const tags = groupTags(action.evidence);
+    if (tags.length > 0)
+      return {
+        kind: "release-group",
+        repo: ctx.slug,
+        tags,
+        rerunSpent: action.evidence.rerunSpent === true,
+      };
     const tag = text(action.evidence, "tag");
-    return tag === null ? null : { kind: "release-owed", repo: ctx.slug, tag };
+    return tag === null
+      ? null
+      : {
+          kind: "release-owed",
+          repo: ctx.slug,
+          tag,
+          ...(action.evidence.rerunSpent === true ? { rerunSpent: true } : {}),
+        };
   },
   "followup-stale": followupStaleFacts,
   stalled: stalledFacts,
@@ -173,8 +189,19 @@ const FACTS: Partial<
 function factsOf(action: NeedAction, ctx: StationContext): StationFacts | null {
   const stuck = text(action.evidence, "stuck");
   const record = text(action.evidence, "record");
+  // A session already running for the held drive makes clearing refused, so no clear is offered.
+  if (
+    text(action.evidence, "heldSince") !== null &&
+    text(action.evidence, "runningSessions") !== null
+  )
+    return null;
   if (stuck !== null && record !== null)
-    return { kind: "launch", target: action.target, record };
+    return {
+      kind: "launch",
+      target: action.target,
+      record,
+      ...(text(action.evidence, "heldSince") === null ? {} : { held: stuck }),
+    };
   return FACTS[action.cause]?.(action, ctx) ?? null;
 }
 
@@ -183,11 +210,13 @@ function needsPersonFacts(
   pr: number | null,
 ): StationFacts | null {
   const { evidence, target } = action;
+  if (evidence.rearmLockUnread === true) return null;
   const holder = text(evidence, "holder");
   const branch = text(evidence, "branch");
   if (holder !== null && branch !== null)
     return { kind: "checkout", target, branch, path: holder };
-  if (pr === null) return null;
+  // A held drive moves once its hold is settled: re-arming it would be refused.
+  if (pr === null || text(evidence, "heldSince") !== null) return null;
   const exit = evidence.exit;
   return {
     kind: "drive",

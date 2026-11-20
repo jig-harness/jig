@@ -148,14 +148,21 @@ Every session the dispatcher started leaves one row in the
 [outcome log](GLOSSARY.md) when it ends. The row holds the stage, the
 repository, the account, the model, how long the session ran and how it
 ended. How it ended is one class from a closed list: converged, merged, a
-usage limit, parked for a person, stalled, died, refused, or gates failed.
+usage limit, parked for a person, waiting on a pending step, stalled, died,
+refused, or gates failed. A follow-up waiting on a pending step, or a session
+that stopped on a question for a person, never counts as a failure. A wait on
+a rate limit is logged as a usage limit.
 The log records a stop no class fits as unknown, and never drops it.
 
 One dashboard opens on the pull requests ready to merge, or on what needs a
 person when none are ready. Its other views show which account holds which
 session and what comes next, as the newest tick found them. A last view filters
 the log by time, repository, stage, account and class, and counts each class. A
-phone opens it as well as a desk. It writes nothing and makes no report files. A class that keeps coming back is a finding about
+phone opens it as well as a desk. Its server only reads and makes no report files. Its page can post a parked
+decision's answer as the person. That is Send, with a GitHub token the person keeps in that browser. A confirmation
+shows the target and the answer first. The comment is the one `jig send` writes, and until the line can tell a session's
+comment from a person's, it is trusted as one `jig send` posts from a terminal. Without a token, the person answers on
+the pull request or with `jig send`. A class that keeps coming back is a finding about
 the scaffolding, and [the learning loop](#the-loop-that-sharpens-it) is where
 a person approves the change.
 

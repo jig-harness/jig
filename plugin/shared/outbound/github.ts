@@ -63,6 +63,8 @@ export interface GhRun {
   bufferExceeded?: boolean;
   /** The failure a held run answers: read as it was met, never from its text. */
   held?: OutboundFailure;
+  /** Opaque quota owner or credential key for a failed governed run. */
+  failureAccount?: string;
   /** When a rate limit this run met clears, as the budget record holds it; epoch milliseconds. */
   limitedUntil?: number;
   /** The captured response's status, retained when governance strips its headers. */
@@ -87,7 +89,7 @@ const RATE_LIMITED =
 
 /** No answer came: the request may not have left. */
 const NOT_SENT =
-  /could not resolve host|no such host|connection refused|network is unreachable|dial tcp/i;
+  /could not resolve host|no such host|connection refused|network is unreachable|dial tcp|error connecting to/i;
 
 /** No answer came after the request left. */
 const LOST =
@@ -122,6 +124,7 @@ export function ghRunFailure(
 ): OutboundFailure | null {
   if (r.code === 0) return null;
   if (r.held !== undefined) return r.held;
+  const account = r.failureAccount;
   const said = tail(r.stderr);
   const reason = `gh exited ${r.code}${said === "" ? "" : `: ${said}`}`;
   if (r.spawnFailed === true)
@@ -135,18 +138,20 @@ export function ghRunFailure(
     return outboundFailure(
       "too-costly",
       "gh did not answer within its deadline",
-      { sent: true },
+      { sent: true, account },
     );
   if (r.bufferExceeded === true)
     return outboundFailure(
       "invalid",
       "gh printed more output than can be held; stopped it",
+      { account },
     );
   // A conditional response is a successful exchange; its cache consumer
   // separately checks whether it holds the representation it validated.
   if (r.code === 1 && ghResponseStatus(r) === 304) return null;
   const code = classOfText(r.stderr, tookMs);
   return outboundFailure(code, reason, {
+    account,
     ...(code === "rate-limited"
       ? { until: r.limitedUntil ?? now() + FORGE_FALLBACK_LIMIT_MS }
       : {}),

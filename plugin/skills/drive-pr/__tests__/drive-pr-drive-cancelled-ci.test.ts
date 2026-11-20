@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -16,8 +16,10 @@ import {
   expectSpawnExited,
 } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
 import { REPLACEMENT_WINDOW_MS } from "../scripts/lib/cancelled-recovery.ts";
+import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import {
   binDir,
   type CheckRunFixture,
@@ -123,6 +125,7 @@ async function driveConverged(
   workflowRuns: Array<Record<string, unknown>>,
   env: Record<string, string> = {},
   spentRecovery = false,
+  forgeFails: Record<string, number> = {},
 ) {
   const { dir, stateDir } = writeFixture({
     threads: [],
@@ -132,6 +135,7 @@ async function driveConverged(
     workflowRuns,
   });
   if (spentRecovery) await seedRecovery(dir, stateDir, true);
+  writeForgeFails(dir, forgeFails);
   return runDriveIn(
     dir,
     stateDir,
@@ -140,6 +144,14 @@ async function driveConverged(
     { env: { JIG_OVERLAY: noHoldOverlay(dir), ...env } },
   );
 }
+
+/** Counts for the harness's failing forge reads, by the file that holds each. */
+function writeForgeFails(dir: string, counts: Record<string, number>): void {
+  for (const [file, count] of Object.entries(counts))
+    writeFileSync(join(dir, file), String(count));
+}
+
+const READ_ENV = { DRIVE_PR_RECOVERY_READ_RETRY_MS: "10" };
 
 /** A minute past the cancelled-run recovery's replacement window. */
 const PAST_WINDOW = REPLACEMENT_WINDOW_MS + 60_000;
@@ -174,6 +186,178 @@ function expectNoRepairPass(stderr: string): void {
   expect(stderr).not.toContain("Running CI-repair pass");
   expect(stderr).not.toContain("stopping for /fix-ci");
 }
+
+describe.skipIf(skipLongDriveFixture)(
+  "drive.ts when a cancelled-run recovery read fails",
+  () => {
+    const cancelledTests = [check("tests", "cancelled", 40)];
+    const cancelledRun = [workflowRun(40, "cancelled")];
+
+    it("goes on when the workflow-runs read fails once", async () => {
+      const r = await driveConverged(
+        cancelledTests,
+        cancelledRun,
+        READ_ENV,
+        true,
+        { "runs-read-fails": 1 },
+      );
+      exits(r, 8);
+      expect(r.stderr).toContain(
+        "the workflow runs read failed (attempt 1 of 2, server-fault)",
+      );
+      expect(r.stderr).toContain("once-per-head re-run was already requested");
+      expect(r.stderr).not.toContain("stopping for a re-arm");
+    });
+
+    it("stops to be re-armed, naming the read and its class, when the read keeps failing", async () => {
+      const r = await driveConverged(
+        cancelledTests,
+        cancelledRun,
+        READ_ENV,
+        true,
+        { "runs-read-fails": 99 },
+      );
+      exits(r, 4);
+      expect(r.stderr).toContain(
+        "cancelled CI recovery: the workflow runs read failed (server-fault): gh api actions/runs exited 1",
+      );
+      expect(r.stderr).toContain("HTTP 502");
+      expect(r.stderr).toContain("stopping for a re-arm");
+      expectNoRepairPass(r.stderr);
+    });
+
+    it("stops to be re-armed from the wait for a cancelled check's replacement", async () => {
+      const r = await driveConverged(
+        cancelledTests,
+        cancelledRun,
+        READ_ENV,
+        true,
+        { "hold-read-fails": 99 },
+      );
+      exits(r, 4);
+      expect(r.stderr).toContain(
+        "the pull request and CI hold read failed (server-fault)",
+      );
+      expectNoRepairPass(r.stderr);
+    });
+
+    it("stops to be re-armed from a failure only cancelled runs carry", async () => {
+      // The first hold read is final-ready's; the recovery's comes after it.
+      const r = await driveConverged(
+        [
+          { ...check("gates", "failure", 40), started: LATER },
+          check("tests", "cancelled", 40),
+        ],
+        cancelledRun,
+        { ...READ_ENV, DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+        true,
+        { "hold-read-passes": 1, "hold-read-fails": 99 },
+      );
+      exits(r, 4);
+      expect(r.stderr).toContain(
+        "the pull request and CI hold read failed (server-fault)",
+      );
+      expect(r.stderr).not.toContain("could not establish the head's state");
+      expectNoRepairPass(r.stderr);
+    });
+
+    it("stops to be re-armed before an authoring pass", async () => {
+      const { dir, stateDir } = writeFixture({
+        threads: [
+          { id: "PRRT_cancelled_initial", path: "probe.ts", bot: true },
+        ],
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        checkRuns: [REVIEWER_RUN, DORMANT_ARM, ...cancelledTests],
+        workflowRuns: cancelledRun,
+      });
+      await seedRecovery(dir, stateDir, true);
+      writeForgeFails(dir, { "hold-read-fails": 99 });
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--keep-draft", "--no-head-sync", "--", ...PASS_RUNS],
+        undefined,
+        { env: { JIG_OVERLAY: noHoldOverlay(dir), ...READ_ENV } },
+      );
+      exits(r, 4);
+      expect(r.stderr).toContain(
+        "the pull request and CI hold read failed (server-fault)",
+      );
+      expectNoRepairPass(r.stderr);
+    });
+
+    it("stops to be re-armed when the read before a re-run keeps failing", async () => {
+      const { dir, stateDir } = writeFixture({
+        threads: [],
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        checkRuns: [REVIEWER_RUN, DORMANT_ARM, ...cancelledTests],
+        workflowRuns: cancelledRun,
+      });
+      await seedRecovery(dir, stateDir, false);
+      writeForgeFails(dir, { "hold-read-passes": 1, "hold-read-fails": 99 });
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        ["--keep-draft", "--no-head-sync", "--", ...PASS_RUNS],
+        undefined,
+        { env: { JIG_OVERLAY: noHoldOverlay(dir), ...READ_ENV } },
+      );
+      exits(r, 4);
+      expect(r.stderr).toContain(
+        "the pull request and CI hold read failed (server-fault)",
+      );
+    });
+  },
+);
+
+describe("ci-hold.ts when a cancelled-run recovery read fails", () => {
+  it("retries the hold later, naming the read and its class", async () => {
+    const { dir, stateDir } = writeFixture({
+      threads: [],
+      head: scratchClean.head,
+      reviewedSha: scratchClean.head,
+      checkRuns: [REVIEWER_RUN, DORMANT_ARM, check("tests", "cancelled", 40)],
+      workflowRuns: [workflowRun(40, "cancelled")],
+    });
+    writeForgeFails(dir, { "runs-read-fails": 99 });
+    const overlay = join(dir, "hold.yaml");
+    writeFileSync(
+      overlay,
+      "repository:\n  base_branch: develop\nci:\n  hold_label: ci:hold\n  required_checks: [tests, lint]\n",
+    );
+    const child = Bun.spawn(
+      scriptArgv(
+        join(SCRIPTS, "ci-hold.ts"),
+        "ensure",
+        "999",
+        "--expect-head",
+        scratchClean.head,
+      ),
+      {
+        cwd: scratchClean.dir,
+        env: {
+          ...gitCleanEnv(),
+          ...READ_ENV,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_FIXTURES: dir,
+          DRIVE_PR_STATE_DIR: stateDir,
+          DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
+          JIG_OVERLAY: overlay,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stderr, exitCode] = await Promise.all([
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    exits({ stderr, exitCode }, 4);
+    expect(stderr).toContain("the workflow runs read failed (server-fault)");
+  });
+});
 
 describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
   it("parks when a required cancellation persists after its recovery was spent", async () => {
@@ -329,7 +513,10 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
     // pass is told is the failed one's, so it does not re-run the wrong run.
     const r = await driveConverged(
       [check("tests", "cancelled", 40), check("tests", "failure", 41)],
-      [workflowRun(40, "cancelled"), workflowRun(41, "failure")],
+      [
+        workflowRun(40, "cancelled"),
+        { ...workflowRun(41, "failure"), workflow_id: 8 },
+      ],
       { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
     );
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
@@ -350,6 +537,116 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
     expect(r.stderr).toContain("TASK=ci-repair RUNS=[41 42]");
   });
 });
+
+/** Echoes what a repair pass is told, its detail included. */
+const TOLD_PASS = [
+  "sh",
+  "-c",
+  'echo "pass for 999: RAN_TH""E_PASS TASK=$DRIVE_PR_ROUND_TASK RUNS=[$DRIVE_PR_ROUND_FAILED_RUNS] DETAIL=[$DRIVE_PR_ROUND_TASK_DETAIL]" >&2; exit 0',
+];
+
+const RUNNER_TIMEOUT =
+  "The job running on runner r1 has exceeded the maximum execution time of 30 minutes.";
+
+/**
+ * Drive a converged head whose cancelled checks the runner stopped at their
+ * 30-minute limit, with the head's once-per-head re-run already spent: a
+ * cancellation would park there.
+ */
+async function driveTimedOut(
+  checkRuns: CheckRunFixture[],
+  workflowRuns: Array<Record<string, unknown>>,
+) {
+  const { dir, stateDir } = writeFixture({
+    threads: [],
+    head: scratchClean.head,
+    reviewedSha: scratchClean.head,
+    checkRuns: [REVIEWER_RUN, DORMANT_ARM, ...checkRuns],
+    workflowRuns,
+  });
+  await seedRecovery(dir, stateDir, true);
+  const listed = join(dir, "check-runs.json");
+  const runs = JSON.parse(readFileSync(listed, "utf8")) as {
+    check_runs: Array<Record<string, unknown>>;
+  };
+  for (const run of runs.check_runs)
+    if (run.conclusion === "cancelled")
+      run.output = { ...(run.output as object), annotations_count: 1 };
+  writeFileSync(listed, JSON.stringify(runs));
+  const bin = join(dir, "annotations-bin");
+  mkdirSync(bin);
+  writeFakeProgram(
+    join(bin, "gh"),
+    `#!/bin/sh
+case "$*" in
+  *check-runs/*/annotations*)
+    echo '[{"annotation_level":"failure","message":"${RUNNER_TIMEOUT}"}]'; exit 0 ;;
+esac
+exec "${join(binDir, "gh")}" "$@"
+`,
+  );
+  return runDriveIn(
+    dir,
+    stateDir,
+    ["--keep-draft", "--no-head-sync", "--", ...TOLD_PASS],
+    undefined,
+    {
+      env: { JIG_OVERLAY: noHoldOverlay(dir), DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
+      extraBinDir: bin,
+    },
+  );
+}
+
+const TIMED_OUT = "job `tests` ran 30m 4s and stopped at its 30-minute limit";
+
+describe.skipIf(skipLongDriveFixture)(
+  "drive.ts on a job stopped at its time limit",
+  () => {
+    const timedOutTests = {
+      ...check("tests", "cancelled", 40),
+      completed_at: "2026-09-10T10:30:04Z",
+    };
+
+    it("repairs it as a failure, naming the job, its limit and its run time", async () => {
+      const r = await driveTimedOut(
+        [timedOutTests],
+        [workflowRun(40, "cancelled")],
+      );
+      exits(r, CI_REPAIR_SPENT_EXIT);
+      expect(r.stderr).toContain(TIMED_OUT);
+      expect(r.stderr).toContain(
+        `TASK=ci-repair RUNS=[40] DETAIL=[tests; timed out: ${TIMED_OUT} (timeout-minutes)]`,
+      );
+      expect(r.stderr).not.toContain("once-per-head re-run");
+      expect(r.stderr).not.toContain("requested run 40");
+    });
+
+    it("repairs an aggregator a timed-out job failed, with the job beside it", async () => {
+      const r = await driveTimedOut(
+        [{ ...check("gates", "failure", 40), started: LATER }, timedOutTests],
+        [workflowRun(40, "cancelled")],
+      );
+      exits(r, CI_REPAIR_SPENT_EXIT);
+      expect(r.stderr).toContain(
+        `TASK=ci-repair RUNS=[40] DETAIL=[gates, tests; timed out: ${TIMED_OUT} (timeout-minutes)]`,
+      );
+      expect(r.stderr).not.toContain("once-per-head re-run");
+    });
+
+    it("names it beside a failure in a run that was not cancelled", async () => {
+      const r = await driveTimedOut(
+        [{ ...check("lint", "failure", 41), started: LATER }, timedOutTests],
+        [
+          workflowRun(40, "cancelled"),
+          { ...workflowRun(41, "failure"), workflow_id: 8 },
+        ],
+      );
+      exits(r, CI_REPAIR_SPENT_EXIT);
+      expect(r.stderr).toContain(`timed out: ${TIMED_OUT} (timeout-minutes)`);
+      expect(r.stderr).toMatch(/DETAIL=\[[^\]]*lint[^\]]*tests; timed out/);
+    });
+  },
+);
 
 describe("the proof announce-merge-ready relies on", () => {
   /** `final-ready --require-success` on a head with these checks and runs. */

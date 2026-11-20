@@ -32,12 +32,15 @@ Orca nor a keyboard. [Phone scope and access](#phone-scope-and-access)
 defines that subset and its acceptance checks; a desktop layout that
 merely fits a narrow screen does not satisfy it.
 
-This is the design of [plan.md](plan.md) item 42. Nothing of it is built.
-It serves the setup the dispatcher is built for: a host that dispatches
-while people start and steer work from their own machines. Its first stage
-is of use wherever the dispatcher runs; the later stages matter where work
-runs on more than one machine, and whether they are built is decided once
-the first is in use ([Build order](#build-order)). It grows from today's
+This is the design of [plan.md](plan.md) item 42. The local dashboard's
+initial views, card filters and Send, which posts a parked decision's answer
+from the browser, are implemented. The cross-machine source feed, the hub and
+the browser writes beyond Send described below remain deferred. It serves the setup the
+dispatcher is built for: a host that dispatches while people start and steer
+work from their own machines. Its first stage is of use wherever the dispatcher
+runs; the later stages matter where work runs on more than one machine, and
+whether they are built is decided once the first is in use
+([Build order](#build-order)). It grows from today's
 dispatch dashboard and the line it serves
 ([dark-factory-dispatch.md § Control](dark-factory-dispatch.md#control-observe-record-report-steer),
 item 33), from `jig ask`, `jig send` and `/jig:operator`
@@ -110,7 +113,7 @@ no item is one, and so is an item with no pull request yet.
 | --- | --- | --- |
 | **Merge**, where the dashboard opens while merge now holds a pull request | What can I merge now: merge now, approve first, update next, in order | item 36's [merge-ready predicate](dispatch-board.md#ready-exactly) |
 | **Needs you**, where it opens otherwise | What waits on me: parks with their framed decisions, approve-first pull requests, a follow-up's question, stalled pickups, double claims, a host that stopped answering, each opening with its act | the line's needs, the Ready to merge lanes, each source's state |
-| **Running** | What is being worked on, and where: Driven and Picking up, under the host's load gauge | item 36's board read and placement, with pickup progress |
+| **Running** | What is being worked on, and where: Driven and Picking up, under the host's load, every gauge against its own line | item 36's board read and placement, with pickup progress |
 | **Queue** | What starts next, and why not yet: Coming, the served people's ranked queue and each held item's reason | item 36's placement and item 44's ranking |
 | **Work**, an opened card | In stage 1, one pull request or one item: its rounds with their times, checks, the CI hold, answered parks and the follow-up. From stage 2, one piece of work end to end: its stations, each round with its unresolved threads, and one thread | stage 1: the line and the [drive ledger](../GLOSSARY.md); from stage 2, `jig ask` and the fold by aliases |
 | **History** | What ended and why, filterable, by piece of work too | the outcome log |
@@ -137,12 +140,79 @@ keyboard's card order leaves out, open by their chevron or a tap. A click
 or tap anywhere else on the card opens and closes it too, unless it lands on a link, a button or a field, or
 inside what the card opened; a press that moved on its way (a scroll or a
 drag) or that ends a text selection does not count as one. An open card
-draws a line down its gutter beside what it opened. The load breakdown, the
-accounts list and the list of repositories on Running, and the folds of the
-Help view, are headings on the same gutter, opened by their chevron or a
-tap on the heading; the accounts list starts open. Group headings (the
-Merge lanes, the acts of Needs you, the groups of Queue) start on the same
-gutter and do not fold yet.
+draws a line down its gutter beside what it opened. The load's holds and
+reservations, the accounts list and the list of repositories on Running, and
+the folds of the Help view, are headings on the same gutter, opened by their
+chevron or a tap on the heading. The accounts list starts open. On Needs you,
+each act heading uses the same disclosure. It shows the act icon, matching
+count and oldest wait. It opens on the first ten cards, with a control to show
+the rest. Investigate starts folded when Decide or Authorize cards are
+present. The cards a person's answer hid fold into one muted line above the
+list (`6 cards hidden by answers · show`), a full touch target at every width,
+that opens to one note per hidden card and closes again; with none hidden,
+nothing shows.
+
+**Filters.** On desktop, the text filter comes first. A **dashboard filter
+facet** is one independent card property, such as repository or act, that a
+person can select to narrow a view; it is unrelated to a [label
+facet](../GLOSSARY.md). Filters below it show each value with its icon,
+name and matching count. Selected values within a dashboard filter facet match
+any of those values, and the dashboard filter facets combine with one another.
+A dashboard filter facet with more than six values uses a select. An active filter shows
+“Showing N of M” and a Clear control. Sharing the address preserves the view
+and its filters. Needs you shows the oldest wait alongside its act and
+repository filters, with additional facets for who is waiting, stage and
+age when they have multiple values. Merge and Running offer a repository
+facet when the view contains multiple repositories.
+
+**Running's load.** Running opens with the host's load as the tick read it
+(the line's `load`). The headline gives the [load factor](../GLOSSARY.md)
+and names the gauge that binds ("Load 150%, processors binds"), and one
+fixed sentence under it says what the figure is: "The fullest gauge
+against its own line, not a sum." Below it each gauge has a row of its
+own, always open on every viewport, so every gauge's fill shows without
+opening anything: the gauge's icon and name, a bar, its percent, and what
+it read with its line ("load 21.6 on 16 cores · line: 0.9 per core"). The
+bar runs from 0 to 150%, and the gauge's line is a vertical tick two
+thirds along it, at 100%. A gauge at or past its line draws the part of
+its fill past the tick in the alarm colour with a hatch, and an "over its
+line" tag with its warning icon, so the state does not rest on colour
+alone. The gauge that binds has a bold name and a "binds" tag. A gauge the
+host did not read has an empty dashed bar, "not read" in place of its
+percent, and the reason it read nothing where the reading goes. Each bar
+names itself to a screen reader ("Processors at 150% of its line, over
+it"). On a wide row the name, bar, percent and reading sit on one line, in
+columns the gauge rows share; on a phone the name and percent lead, the
+bar runs the row's width, and what it read moves under the bar. Under
+[forced colours](../GLOSSARY.md) (the operating system's high-contrast
+mode) the bar's edge, the tick and the dashed edge are borders in the
+system's text colour and the fill is drawn in it. The launches the factor
+held or would have held and each kind's memory reservation sit under the
+gauges in one fold titled with its count: "Would have held 2 launches ·
+reservations" while the dispatcher only reports, "Held 2 launches ·
+reservations" once it enforces the load, and "no launch" when none was;
+the fold is left out when nothing was held and no reservation is known. A
+percent under 100% never rounds up to it, so "100%" always means a gauge
+at or past its line (a fill just past it, such as 100.4%, still reads "100%"). A
+stacked bar is not used (it reads as a sum), nor a dial per gauge (a row of
+dials does not fit a phone), and the gauges are not folded away. The gauge row is
+Running's own, not a shared part of the card system.
+
+**What is coming.** Queue lists every target in the dispatcher's order, by
+what will happen to it. "Starts next" always leads and has no fold; held,
+reported and "Will not start" follow, each a folding heading with its count.
+"Will not start" starts folded when it holds more than five cards as the view
+opens, and a later refresh leaves it as it is. Its heading says why in counts, the commonest reasons first ("68 assigned by
+someone who cannot write, 2 who assigned it cannot be read again"), counting
+only the cards a filter leaves. Each card's meta line shows its repository and
+its source. Beside the text filter, Queue offers repository, source, kind
+(pull request or item) and group, each with its counts, in an order that does
+not move when the cards are regrouped. A **Group by** switch lays the same
+cards out by what happens (the default), repository, source or not at all; a
+card outside the default says what will happen to it. Every grouping keeps the
+dispatcher's order within it, so going back to what happens restores that
+order exactly. A grouping other than the default travels in the address as
+`group-by`.
 
 **One identity for a pull request and an issue.** Wherever a card names a
 pull request or an issue it draws its [work identity](../GLOSSARY.md): an
@@ -304,13 +374,13 @@ and a retry control's, which no view draws today.
   mode, which replaces the page's colours with its own). Where the design keeps a
   word alone (an answer still waiting, a draft that does not count), the
   map holds the word with no icon.
-- **A family is told apart by its container.** An act is a filled pill, a
-  stage an outlined chip, a source a dashed chip; a cause, a standing, an
-  account's state and an answer's state are a bare icon beside its word;
-  a coming group, a lane and a gauge lead their heading or row. The shapes
-  carry the difference, so it holds in greyscale, and under forced colours
-  the pill is filled with the system's text colour and the chips keep their
-  solid or dashed borders.
+- **A family is told apart by its container.** An act is a filled pill on
+  a card, a stage an outlined chip, a source a dashed chip; a cause, a
+  standing, an account's state and an answer's state are a bare icon beside
+  its word; an act's group, a coming group, a lane and a gauge lead their
+  heading or row. The shapes carry the difference, so it holds in
+  greyscale, and under forced colours the pill is filled with the system's
+  text colour and the chips keep their solid or dashed borders.
 - **A shared word shares its icon** where the meaning is the same: a
   re-armable source and the rearm stage, a held source and the held group,
   a merged source and the merged standing. The act Merge asks a person to
@@ -441,8 +511,9 @@ browser
   links them, in this browser alone, and the page reads the line every 3
   seconds for up to 90 seconds, stopping sooner once the tick records the
   answer's outcome. The card then shows whether the step was carried out,
-  refused with its reason, or held: an answered hold stays on the card and
-  says the work remains undone, until its facts change. A refusal part-way names the decisions not
+  refused with its reason, or held: an answered hold leaves the list and is
+  noted in the folded line above it, which says the work remains undone until
+  its facts change. A refusal part-way names the decisions not
   posted. A refusal shows GitHub's own message with what it means (401: the
   token is wrong or revoked; 403: it lacks write access to Issues and Pull
   requests on that repository, or an organization has not approved it; 404:
@@ -886,8 +957,13 @@ rules, timestamps and failure states serve desktop and phone.
 | A failed or stale read | Show the last successful read and its age while the page is open; after a reconnect, read again before displaying readiness as current. A failed connection never means the queue is empty. |
 
 The phone excludes operator chat, command palettes and advanced filter
-composition: reading and deciding have priority over composing and
-investigating on a small screen. It excludes session chat and steering,
+composition. On the card views, repository is the editable filter. A link
+with text or other facets still narrows the view and shows those selections
+as read-only, with a Clear control. Queue's groups fold as they do on a
+computer. Each has its own Show all past its first two cards, except a group
+that starts folded, which shows all of its cards once opened; a filter shows
+every match. Queue's grouping stays on the default, whatever a shared link
+names. It excludes session chat and steering,
 which need the workspace and its context. Its one write today is Send, which
 answers a parked decision as the person from the phone's own browser, over the
 HTTPS front, as the comment `jig send` writes, record included ([ADR-0019](../docs/adr/ADR-0019-the-dashboard-page-answers-as-the-person.md)). The

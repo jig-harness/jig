@@ -7,7 +7,7 @@
  */
 import { describe, expect, it, spyOn } from "bun:test";
 import { failed, ok } from "../../shared/outcome.ts";
-import { GROW_AFTER_MS, type KeptSize } from "../../shared/outbound/paging.ts";
+import { FIRST_HOLD_MS, type KeptSize } from "../../shared/outbound/paging.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
 import * as time from "../../shared/time.ts";
 import {
@@ -104,13 +104,13 @@ describe("a repository whose pull requests the forge cannot answer a full page o
     const read = await readRepository(PATH, sizes, again.ask);
     expect(read.ok).toBe(true);
     expect(again.asked).toEqual([6, 6, 6, 6, 6]);
-    // Its pages answered at once, but a page shrank within the hour: nothing new is kept.
+    // Its pages answered at once, but the hold after the shrink still runs: nothing new is kept.
     expect(sets).toHaveLength(1);
   });
 
-  it("tries twice the kept size once an hour has passed since a page shrank", async () => {
+  it("tries twice the kept size once the hold after a shrink has passed", async () => {
     const { ask } = forge(25, 50);
-    const shrankAt = Date.now() - GROW_AFTER_MS;
+    const shrankAt = Date.now() - FIRST_HOLD_MS;
     const { sizes, sets } = kept({
       [`repository:${PATH}`]: { size: 6, shrankAt },
     });
@@ -243,7 +243,7 @@ describe("named pull requests' comments the forge cannot answer a full query of"
     const { sizes, sets } = kept({
       [`comments:${SLUG}`]: {
         size: 6,
-        shrankAt: Date.now() - 2 * GROW_AFTER_MS,
+        shrankAt: Date.now() - 2 * FIRST_HOLD_MS,
       },
     });
     const read = await readComments(SLUG, [1, 2], sizes, ask);
@@ -266,7 +266,7 @@ describe("named pull requests' comments the forge cannot answer a full query of"
     const { sizes, sets } = kept({
       [`comments:${SLUG}`]: {
         size: 6,
-        shrankAt: real() - 2 * GROW_AFTER_MS,
+        shrankAt: real() - 2 * FIRST_HOLD_MS,
       },
     });
     const clock = spyOn(time, "currentMs").mockImplementation(() => fake);

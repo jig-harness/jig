@@ -3,6 +3,9 @@ import { specialCiDisposition } from "./special-ci.ts";
 
 import type { DriveRoundContext } from "./round-context.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import { isTimedOut, recoveryExit } from "../cancelled-recovery-reads.ts";
+import type { TimedOutJob } from "../job-timeout.ts";
+import { joinTimedOut, repairDetail } from "./timed-out-ci.ts";
 
 import {
   run,
@@ -44,6 +47,8 @@ import {
   beforeRepairRecovery,
   cancelledRunRecovery,
   pendingRetryDisposition,
+  freshTimedOutInputs,
+  withTimedOut,
 } from "./ci-recovery.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 
@@ -449,11 +454,50 @@ async function afterTakeover(context: DriveRoundContext): Promise<"continue"> {
   return "continue";
 }
 
+/**
+ * Repair a job the runner stopped at its time limit. It is a failing check
+ * like any other, so the advisory policy applies first: a timed-out check the
+ * repository lists as advisory parks for a person's choice instead of being
+ * repaired unasked, and a mixed set keeps only what a repair may act on.
+ */
+async function repairTimedOutCi(
+  finalVerdict: string,
+  context: DriveRoundContext,
+  failing: FailingChecks,
+  head: string,
+  timedOut: readonly TimedOutJob[],
+): Promise<number | "continue" | null> {
+  const verdict = `failing: ${[...(failing.checkRunNames ?? []), ...(failing.statusNames ?? [])].join(", ")}`;
+  const special = await specialCiDisposition(
+    verdict,
+    false,
+    context,
+    head,
+    failing,
+    (v, ctx, failures) => repairConvergedCi(v, ctx, failures, head, timedOut),
+  );
+  if (typeof special !== "object") return special;
+  // A policy that took every timed-out job out of the set leaves ordinary
+  // recovery of what remains, not a charged repair for them.
+  const kept = timedOut.filter((job) =>
+    special.failing.checkRunNames?.includes(job.name),
+  );
+  if (kept.length === 0) return null;
+  return await repairConvergedCi(
+    finalVerdict,
+    context,
+    special.failing,
+    head,
+    kept,
+  );
+}
+
 async function repairConvergedCi(
   finalVerdict: string,
   context: DriveRoundContext,
   failing: FailingChecks,
   head: string,
+  timedOut: readonly TimedOutJob[] = [],
 ): Promise<number | "continue"> {
   const attempts = attemptsFor(context);
   const selection = repairSelection(
@@ -465,7 +509,7 @@ async function repairConvergedCi(
   failing = selection.failing;
   if (selection.names.length === 0) return selection.exhaustedExit;
   finalVerdict = `failing: ${selection.names.join(", ")}`;
-  const failingNames = finalVerdict.slice("failing:".length).trim();
+  const failingNames = repairDetail(selection.names, timedOut);
   if (context.dryRun || context.agent.length === 0) {
     console.error(
       `(dry-run) would run a CI-repair pass for: ${failingNames || "<unnamed checks>"}`,
@@ -602,9 +646,20 @@ async function waitForReplacement(
 ): Promise<number | "continue"> {
   if (!context.dryRun) {
     const recovery = await recoverCancelledOnHead(context.pr, reviewedHead);
-    if (recovery === "parked") return 8;
-    if (recovery === "unknown") return 1;
-    if (recovery === "wait") {
+    const stop = recoveryExit(recovery);
+    if (stop !== null) return stop;
+    // A job stopped at its time limit is a failure, repaired as one: waiting
+    // for a replacement would wait for a run nothing starts.
+    if (isTimedOut(recovery)) {
+      const repaired = await repairTimedOutCi(
+        finalVerdict,
+        context,
+        withTimedOut(null, recovery),
+        reviewedHead,
+        recovery.timedOut,
+      );
+      if (repaired !== null) return repaired;
+    } else if (recovery === "wait") {
       await sleep(FINAL_CI_POLL_SECONDS);
       return "continue";
     }
@@ -679,7 +734,9 @@ async function waitForCiWitness(
   return "continue";
 }
 
-export async function evaluateFinalCi(
+// What is left once the recoveries declined: the repair, the stop or the
+// witness wait the fresh verdict calls for.
+async function settleFinalCiVerdict(
   finalVerdict: string,
   staleRequiredFailure: boolean,
   context: DriveRoundContext,
@@ -690,52 +747,6 @@ export async function evaluateFinalCi(
   >,
   failing: FailingChecks,
 ): Promise<number | "continue" | null> {
-  const pending = await pendingRetryDisposition(context, reviewedHead);
-  if (pending !== null) return pending;
-  const special = await specialCiDisposition(
-    finalVerdict,
-    staleRequiredFailure,
-    context,
-    reviewedHead,
-    failing,
-    (verdict, ctx, failures) =>
-      repairConvergedCi(verdict, ctx, failures, reviewedHead),
-  );
-  if (typeof special !== "object") return special;
-  ({ finalVerdict, failing } = special);
-  if (finalVerdict.startsWith("cancelled:"))
-    return await waitForReplacement(
-      reviewedHead,
-      context,
-      finalVerdict,
-      finalCiSignals,
-    );
-  // POSITIVELY-NAMED failing checks, not merely "not green".
-  // `unknown:` (commit statuses unreadable) and `''` (the status report
-  // did not parse) are absences of evidence, not evidence of failure,
-  // and a `/fix-ci` pass handed neither a run nor a check name has
-  // nothing to work from. Those keep today's stop verbatim, below.
-  //
-  // A failure only cancelled runs carry is recovered as a cancellation, and
-  // one every one of whose checks failed on the infrastructure is re-run,
-  // first and whatever the repair budget: no code change fixes either, so
-  // neither spends a repair pass (`ci-recovery.ts`, `infra-recovery.ts`).
-  const cancelled = await cancelledRunRecovery(
-    finalVerdict,
-    staleRequiredFailure,
-    context,
-    reviewedHead,
-    failing,
-  );
-  if (cancelled !== null) return cancelled;
-  const recovered = await beforeRepairRecovery(
-    finalVerdict,
-    staleRequiredFailure,
-    context,
-    reviewedHead,
-    failing,
-  );
-  if (recovered !== null) return recovered;
   const selection = repairSelection(
     reviewedHead,
     failing,
@@ -822,4 +833,133 @@ export async function evaluateFinalCi(
   }
 
   return null;
+}
+
+type FinalCiInputs = {
+  finalVerdict: string;
+  failing: FailingChecks;
+  staleRequiredFailure: boolean;
+};
+
+/**
+ * Run the repair policy over the set with the timed-out jobs joined. The
+ * policy judges the whole set; every repair input, its own callback included,
+ * is cut to the fresh timed-out jobs while the reported failures' freshness is
+ * unconfirmed, and with no timed-out job left after the policy the original
+ * unconfirmed verdict stands.
+ */
+async function applyRepairPolicy(
+  unconfirmed: FinalCiInputs,
+  joined: FinalCiInputs & { timedOut: TimedOutJob[] },
+  context: DriveRoundContext,
+  reviewedHead: string,
+): Promise<number | "continue" | FinalCiInputs> {
+  const { timedOut } = joined;
+  let { finalVerdict, failing, staleRequiredFailure } = joined;
+  const freshOnly = unconfirmed.staleRequiredFailure && timedOut.length > 0;
+  const special = await specialCiDisposition(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+    (verdict, ctx, failures) => {
+      const cut = freshOnly ? freshTimedOutInputs(failures, timedOut) : null;
+      return repairConvergedCi(
+        cut?.finalVerdict ?? verdict,
+        ctx,
+        cut?.failing ?? failures,
+        reviewedHead,
+        timedOut,
+      );
+    },
+  );
+  if (typeof special !== "object") return special;
+  ({ finalVerdict, failing } = special);
+  if (freshOnly) {
+    const cut = freshTimedOutInputs(failing, timedOut);
+    if (cut === null) return unconfirmed;
+    ({ finalVerdict, failing } = cut);
+  }
+  return { finalVerdict, failing, staleRequiredFailure };
+}
+
+export async function evaluateFinalCi(
+  finalVerdict: string,
+  staleRequiredFailure: boolean,
+  context: DriveRoundContext,
+  finalCi: Awaited<ReturnType<typeof run>>,
+  reviewedHead: string,
+  finalCiSignals: Awaited<
+    ReturnType<DriveRoundContext["finalCiWait"]["prime"]>
+  >,
+  failing: FailingChecks,
+): Promise<number | "continue" | null> {
+  const pending = await pendingRetryDisposition(context, reviewedHead);
+  if (pending !== null) return pending;
+  const joined = await joinTimedOut(
+    context,
+    reviewedHead,
+    finalVerdict,
+    staleRequiredFailure,
+    failing,
+  );
+  const { timedOut } = joined;
+  const policy = await applyRepairPolicy(
+    {
+      finalVerdict,
+      failing,
+      staleRequiredFailure,
+    },
+    joined,
+    context,
+    reviewedHead,
+  );
+  if (typeof policy !== "object") return policy;
+  ({ finalVerdict, failing, staleRequiredFailure } = policy);
+  if (finalVerdict.startsWith("cancelled:"))
+    return await waitForReplacement(
+      reviewedHead,
+      context,
+      finalVerdict,
+      finalCiSignals,
+    );
+  // POSITIVELY-NAMED failing checks, not merely "not green".
+  // `unknown:` (commit statuses unreadable) and `''` (the status report
+  // did not parse) are absences of evidence, not evidence of failure,
+  // and a `/fix-ci` pass handed neither a run nor a check name has
+  // nothing to work from. Those keep today's stop verbatim, below.
+  //
+  // A failure only cancelled runs carry is recovered as a cancellation, and
+  // one every one of whose checks failed on the infrastructure is re-run,
+  // first and whatever the repair budget: no code change fixes either, so
+  // neither spends a repair pass (`ci-recovery.ts`, `infra-recovery.ts`).
+  const cancelled = await cancelledRunRecovery(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+    (failures, jobs) =>
+      repairTimedOutCi(finalVerdict, context, failures, reviewedHead, jobs),
+    timedOut,
+  );
+  if (cancelled !== null) return cancelled;
+  const recovered = await beforeRepairRecovery(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    reviewedHead,
+    failing,
+  );
+  if (recovered !== null) return recovered;
+  return await settleFinalCiVerdict(
+    finalVerdict,
+    staleRequiredFailure,
+    context,
+    finalCi,
+    reviewedHead,
+    finalCiSignals,
+    failing,
+  );
 }

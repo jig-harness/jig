@@ -54,6 +54,8 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "blockingFor",
       "stewardResume",
       "stewardContext",
+      "relaunchOf",
+      "relaunchHead",
       "heads",
     ].every((k) => optionalText(value[k])) &&
     [value.marker, value.round].every(
@@ -66,8 +68,11 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     optionalStrings(value.releasedItems) &&
     optionalStrings(value.codexPassArgs) &&
     [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&
-    optionalPositiveInteger(value.followupWithinMs) &&
-    optionalPositiveInteger(value.accountLaunchOrdinal) &&
+    [
+      value.followupWithinMs,
+      value.accountLaunchOrdinal,
+      value.rearmRequestId,
+    ].every(optionalPositiveInteger) &&
     optionalBooleans(value, [
       "rearmConsumed",
       "pooled",

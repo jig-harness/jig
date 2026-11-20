@@ -36,7 +36,7 @@
  * `jig dispatch log --jsonl` print, beside the columns the dashboard
  * filters on.
  */
-import { derivedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
+import { endedNext, normalizeNext, type NextOwner } from "./next-owner.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import type { Database } from "bun:sqlite";
 import { join } from "node:path";
@@ -68,6 +68,7 @@ export const OUTCOME_CLASSES = [
   "merged",
   "quota wall",
   "parked for a person",
+  "arm pending",
   "stalled",
   "died",
   "refused",
@@ -362,6 +363,7 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
     DRIVE_EXIT.CI_INFRA_PERSISTED,
     ["gates failed", "CI failing on the infrastructure"],
   ],
+  [DRIVE_EXIT.FORGE_RATE_LIMITED, ["quota wall", "forge rate limit"]],
 ]);
 
 /** What the classifier needs beyond the record: whether a takeover replaced it, and a merged-or-closed drive's pull request state. */
@@ -429,6 +431,7 @@ function sessionClass(
     r.result,
     r.state.kind === "ended" ? r.state.exit.said : undefined,
     r.waitsFor,
+    r.framed,
   );
   if (result !== null) return result;
   const s = r.state;
@@ -501,6 +504,7 @@ const REDRIVEN: ReadonlyMap<string, string> = new Map([
   ["ci-repair", "a drive whose CI-repair passes were spent"],
   ["deadline", "a drive whose pass deadline recurred"],
   ["ci-infra", "a drive whose checks kept failing on the infrastructure"],
+  ["forge-limit", "a drive that stopped on the forge's rate limit"],
 ]);
 
 /** The ended row of a record that ended at `endedAt`. */
@@ -547,11 +551,13 @@ export function endedRow(
         : null,
     class: placed.class,
     reason,
-    next:
-      record.action === "pickup" &&
-      (r.result === "done" || r.result === "waits")
-        ? (r.next ?? null)
-        : derivedNext(record.action, placed.class, reason),
+    next: endedNext(record.action, {
+      result: r.result,
+      next: r.next ?? null,
+      framed: r.framed,
+      class: placed.class,
+      reason,
+    }),
     ...aboutFields(about),
     ...reportFields(r.report),
   };

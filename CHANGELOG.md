@@ -401,6 +401,369 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.286.1] - 2026-11-20
+
+### Fixed
+
+- drive-pr no longer re-runs a CI job that ran past its time limit (`timeout-minutes`) and then parks it as cancelled CI, recommending another re-run that stops at the same limit. The forge reports such a job as cancelled, so drive-pr now reads the annotation the runner leaves on its check run. A job the runner stopped at its limit is a timed-out job. drive-pr repairs it as a failing check, from the same CI-repair budget, and tells the repair pass the job, its limit and how long it ran. A cancellation it cannot attribute to a time limit keeps the cancelled-CI recovery. **Consumer action:** none.
+
+## [0.286.0] - 2026-11-19
+
+### Added
+
+- Use `jig send … withdraw-rearm` to withdraw a pending rearm request.
+
+### Changed
+
+- **Breaking:** A rearm label without a stop-bound request expires. **Consumer action:** required at instructions. Replace steps that apply the rearm label directly with the rearm command in Jig Send. Re-send older pending requests that still need to run. **Detect:** `text:jig:rearm`.
+
+### Fixed
+
+- The dispatcher binds each rearm request to a particular drive stop and retires it when that stop is superseded or the pull request closes. A missing or reused worktree, or a request waiting beyond 30 minutes, raises a need.
+- On a host whose `gh` picks its account by the repository's owner (a
+  wrapper first on `PATH`, for a host that works for two forge accounts),
+  the GitHub tracker read a private repository of the second owner as
+  `NOT_FOUND`, so that repository's tracker record failed on every dispatcher
+  tick. Each `gh api graphql` run of the GitHub tracker and the GitHub
+  reflection store now names the repository its request is about in
+  `GH_REPO`: the one its variables name, else the tracker's or the store's
+  own repository.
+  The dispatcher's merge-facts read and its count of a pull request's
+  unresolved review threads name theirs too. The HTTPS transport
+  (`JIG_GITHUB_GRAPHQL_URL`) is unchanged.
+
+## [0.285.1] - 2026-11-19
+
+### Fixed
+
+- A woken dispatcher tick (from `jig send` or the change probe) now runs with
+  the command and credential the timer's tick runs with. On systemd the wake
+  waiter reads the installed unit as systemd runs it, its drop-ins applied, so
+  a drop-in that replaces `ExecStart=` with a wrapper that resolves a tracker
+  key gives the woken tick the same key. A drop-in the waiter cannot
+  reproduce (an environment file, a credential, a command run first, a
+  variable in the command) starts no tick: the waiter's log says why, and the
+  request waits for the timer's next tick.
+- The timer's sweep (`jig dispatch --apply` over the machine file's
+  repositories) waits up to two minutes for a repository a woken tick holds,
+  and reads it in the same tick, instead of leaving it out of the sweep on
+  every run while wake-ups keep arriving.
+
+## [0.285.0] - 2026-11-19
+
+### Added
+
+- **Serialized areas hold pickups.** The dispatcher no longer starts a
+  pickup whose footprint reaches a serialized area of the change-area
+  catalog while an open pull request, a pickup in flight or a pickup it
+  plans ahead touches the area. The pickup is reported among the serialized
+  holds as `held: serialized behind #N in <area>`, in the run's report and
+  the dashboard's queue, and becomes eligible again when that work ends,
+  subject to its other holds and the available capacity.
+  A footprint that is unknown cannot rule an area out, on either side: such
+  a pickup waits while any serialized area is occupied (`, footprint
+unknown`), and such work occupies every serialized area (`, #N's
+footprint unknown`) until its footprint is recorded or it ends. Every open
+  pull request counts, a draft or a quiet one included, so a stale pull
+  request in a serialized area holds new work there until it is closed.
+- An account in the dispatcher's machine file (`~/.jig/dispatch.yaml`) can serve only some of the stages that launch a session: `stages: [pickup, followup]` under the account keeps re-arms, takeovers, re-drives and steward passes off it, while the other accounts take them by their weights and turns. Left out, an account serves every stage, so existing files behave as before. A takeover of a silent driver whose account no longer serves `rearm` starts on a free slot of an account that does. When no account serves a stage, its launches wait and say so. The receipt and the dashboard's account view show each account's stages when they are narrowed, and `jig dispatch` without `--apply` lists the accounts each planned launch could use. An unknown stage, a stage written twice, an empty list, or `notify` or `steer` is refused when the file loads. See `accounts[].stages` in the configuration reference.
+
+### Changed
+
+- In a run where the configured catalog or the open pull requests do not
+  read, including a run whose budget skips the catalog read, no pickup is
+  started: each is reported as `whether it reaches a serialized area cannot
+be told this tick` and waits for the next run, as the drives already did;
+  no pending pickup launch is replayed either.
+  This holds whether or not the catalog marks an area `serialize: true`,
+  since a run that did not read it cannot tell.
+
+### Fixed
+
+- A drive whose forge reads met the credential's spent rate limit no longer ends `INDETERMINATE` (exit `1`) for a person to read and re-arm. The attach and the status probe read the limit's reset from the outbound layer: a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds (30 minutes by default) is waited for, sending nothing before it, and the drive goes on; one further off stops it with the new state [`FORGE_RATE_LIMITED`](plugin/protocol/drive-exits.md) (exit `24`), whose report and closing report name the reset, cause `environment`, the line as the owner of the next step. `jig dispatch` re-drives that stop after the reset its stop recorded, without a person, and `jig ask` names the state and the reset.
+
+## [0.284.1] - 2026-11-19
+
+### Fixed
+
+- `jig ask` reports the local driver lock even if the CI-hold diagnosis times out. `jig send rearm` checks that lock without running the diagnosis and surfaces an unreadable lock as a dispatcher need. **Consumer action:** none.
+
+## [0.284.0] - 2026-11-19
+
+### Changed
+
+- The Codex `sol` alias (the strategic tier) now names `gpt-6.2-sol` instead of `gpt-6.1-sol`. Routing, the drive-pr pass model and the dispatcher pick it up without configuration; a configuration that pins `gpt-6.1-sol` by its full name keeps that model.
+- The dispatch dashboard's Running view shows every load gauge against its
+  own line, with nothing to open. The headline names the load factor and the
+  gauge that binds ("Load 150%, processors binds"), with one sentence saying
+  the figure is the fullest gauge against its own line, not a sum. Under it
+  each gauge has a row: its icon and name, a bar from 0 to 150% with its line
+  marked at 100%, its percent, and what it read with its line. A gauge past
+  its line turns the fill past the line to the alarm colour and shows an
+  "over its line" warning, the gauge that binds is bold with a "binds" tag,
+  and a gauge the host could not read shows an empty dashed bar and why. The
+  launches the load held or would have held and each kind's memory
+  reservation sit under the gauges in one fold titled with its count ("Would
+  have held 2 launches · reservations"). On a phone what a gauge read moves
+  under its bar.
+
+### Fixed
+
+- A drive that a dispatched session arms in an Orca terminal tab now knows it was dispatched. The tab's command carries the session's launch as `JIG_DISPATCHED_FROM`, and the driver hands it to every pass, so a repository's gate command can treat those passes as dispatched (Jig's own does, under `gates.dispatch_fast`). Before, the tab's login shell lost `JIG_LAUNCH`, and those passes ran the full gates. What a pass reports as its launch in round reports, closing reports and `jig send`'s refusals is still `JIG_LAUNCH`. A drive armed outside any dispatched session carries no launch record and keeps the full gates.
+
+## [0.283.2] - 2026-11-19
+
+### Fixed
+
+- The dispatch dashboard shows one stale-read banner for repositories with the same refusal cause. It lists when each repository was last read, shows the latest known reset, and keeps individual failure details available on demand.
+
+## [0.283.1] - 2026-11-19
+
+### Fixed
+
+- The dispatch dashboard's What needs you no longer pushes its cards out of
+  view with one sentence per card a person's answer hid: those notes
+  fold into one muted line, such as `6 cards hidden by answers · show`, that
+  opens to the notes and closes again. Each act's group heading now reads as
+  a heading with the group's count (`Decide · 3`) instead of repeating the
+  act pill its first card opens with.
+
+## [0.283.0] - 2026-11-19
+
+### Added
+
+- The dispatcher weighs each pickup it plans against the work in flight and
+  says why one waits, without changing what it starts. Every open pull
+  request counts by its changed files, and every pickup with no pull request
+  yet by its footprint record, read through the tracker at most 20 items a
+  tick. Each pickup gets its overlap cost (the conflict resolution rounds it
+  is expected to bring), its tier and the overlap bound. A pickup that waits
+  says so in the tick's receipt and report, on the dashboard's queue and in
+  `jig ask pickup@…`: `waits on overlap: …` or
+  `waits on the overlap bound: …`, with each pull request or pickup it waits
+  on. A pickup whose footprint is unknown, or derived from its area labels
+  alone, carries a `footprint unknown: …` note whether it waits or not. A
+  file that keeps work over the bound in 3 ticks of a day gets a proposal to
+  serialize it with `history.ts --propose-serialize`.
+- `dispatch.overlap` in `.config/jig.yaml`, read from the default branch:
+  `max_per_file`, `patience`, `file_rate`, `area_rate`, `unknown_cost`,
+  `ignore`, `quiet_after` and `bound_patience`. An unknown key under it is
+  refused, as the `dispatch` section refuses one, which stops the
+  repository's dispatch until it is fixed.
+- The state database gains `overlap_waits` and `overlap_hotspots`. They
+  record how long each pickup has waited on overlap and how often a file
+  kept work over the bound.
+- The audit's configuration check validates the `dispatch.overlap` keys; its
+  schema gains a `number` type for the rates, a fraction between bounds.
+
+## [0.282.1] - 2026-11-19
+
+### Added
+
+- The [Jig Protocol](plugin/protocol/README.md) index says what happens to a chapter's earlier version: when a chapter's version is raised, the site withdraws the previous version's data file and schema addresses on its next deploy, without a redirect; the release notes mark the change breaking and say what a reader must change, and a reader that needs the old version keeps its own copy from the plugin release or the release's tag. No chapter has been raised past version 1. **Consumer action:** none.
+
+## [0.282.0] - 2026-11-19
+
+### Fixed
+
+- Untagged releases of one repository that share a remedy now reach a person
+  as one need instead of one card per version. The need lists every version,
+  `jig ask --waiting` counts it once, and one answer on the tracker item it
+  names covers them all. A version leaves the list when it gets its tag, and
+  the need goes with the last one. Releases whose one re-run of the failed
+  gates was requested form their own need, and any such release is offered
+  only **Investigate** and **Tag it by hand**. Each release keeps its own
+  record and tracker item.
+
+## [0.281.0] - 2026-11-19
+
+### Added
+
+- The dispatch dashboard's Queue view can be filtered by repository, source, kind and group, each with its counts, and regrouped by repository or source, with the dispatcher's order one tap away. "Starts next" always leads, and a long "Will not start" group starts folded with its reasons counted in the heading. On a phone the groups fold the same way and repository stays the only filter.
+
+### Changed
+
+- [`followup`](plugin/skills/followup/README.md)'s preview of an open pull
+  request now lists first the provisional decisions a drive took at the
+  `wide` autonomy level, from the drive's report or its ledger, so the
+  person merging reads the calls they may still reverse; a list with an
+  unread part says so rather than passing for complete.
+
+### Fixed
+
+- The dispatcher shows a batch pickup's question on the item it concerns, or
+  once for the batch when no member is named. A question clears when the
+  relevant item moves on. **Consumer action:** none.
+- `drive-pr`: one failed forge read in the cancelled-run recovery (the head's
+  check runs, its workflow runs, or the pull request and its CI hold) no
+  longer ends the drive with exit `1`. A timeout, a server error or a lost
+  connection is read once more, and the recovery goes on when that answers.
+  A read that still fails, or meets a rate limit, stops the drive with
+  `NOT_SETTLED` (exit `4`), which `jig dispatch` re-arms, and the drive's log
+  names the read and its failure class. When that read was the check just
+  before a re-run, the head's one automatic re-run is given back, so the
+  re-armed drive requests it instead of parking on a re-run that never left.
+  A failure waiting cannot clear (a refused credential, an answer that does
+  not read) is not retried and is not re-armed. The same holds when the drive
+  loses the pull request between the claim and a request: the runs never sent
+  go back to the next owner, and a run left unrequested by a partial send is
+  requested while the runs already sent are still pending.
+- GitHub calls: `gh`'s `error connecting to <host>` message now counts as no
+  answer from the forge (`unreachable`), which waiting can clear, instead of a
+  request the forge refused.
+
+## [0.280.0] - 2026-11-19
+
+### Added
+
+- The dispatcher relaunches a stalled pickup once in its own tree to push
+  and record its work. A claimed item idle past `dispatch.stalled_after`
+  whose latest headless pickup left unpushed commits or uncommitted edits in
+  its tree, or recorded no result, is started again in that same workspace,
+  never a fresh one, with a fixed prompt to commit and push the work and
+  record the pickup's result, making no second claim. It happens once per
+  item and head: a second stall at the same head, a tree no open workspace
+  on the host holds, or a batch's pickup is still raised to a person. A pass
+  whose result the host could not write takes the same relaunch once the
+  host's health check passes, instead of asking a person to settle or
+  release the item. `dispatch.stalled_relaunch` in `.config/jig.yaml` is
+  `finish-once` by default; `never` turns it off.
+- Every dispatched pickup's prompt, and `do-item`'s dispatched-pass rules,
+  now tell the pass to push its branch and record its result before it
+  ends, whatever ends it.
+
+### Fixed
+
+- A drive held by a launch whose process nobody can show running no longer reads as waiting on nothing. `jig ask` names the hold, why its process is unknown and how long it has held the drive, and past 30 minutes the dispatcher raises a need for it, where a person can clear this machine's launch record once every process of it has been judged and none runs.
+
+## [0.279.3] - 2026-11-19
+
+### Fixed
+
+- `jig dispatch` no longer reads every parked review thread on every tick.
+  Each tick now asks whether the pull request's review comments changed, a
+  request that costs no rate limit while they have not, and reads a parked
+  thread again when they did, or once its last reading is an hour old. A
+  reading is reused only when it was taken at least 2 minutes after the
+  comments last changed and holds every comment the listing shows for its
+  thread, so the first ticks after a change, and after a pull request is first
+  seen, still read its threads. An answer on a thread is still seen by the
+  next tick.
+- A page size shrunk after the forge ran out of time now recovers after 5
+  minutes rather than an hour. Each further shrink within two hours doubles
+  that wait, up to the hour, so a forge that keeps timing out still gets small
+  pages.
+
+## [0.279.2] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch`: one item a served person's queue could not read (an epic
+  whose children did not read, an item no assigner was found for, a child
+  read that failed) no longer turns off the watch on every claimed item of
+  the repository. The claimed items the queue did read are still watched: a
+  started pickup that stopped on a question raises its need, so it shows in
+  `jig ask --waiting` and `jig send pickup@<repo>#<item> answer …` reaches
+  it; a stall is reported; the idle clock runs. The same holds for a tick
+  whose merge proof did not read. While the queue is read only in part, an
+  ended pickup's record is released only when an item it claimed is back in
+  the dispatch states, and the record of an item it never claimed is kept,
+  since an item the read left out may still be wanted; the one exception is an
+  ended batch that claimed some members and has no question, whose unclaimed
+  siblings are released as before. A ready pool that was not read counts as
+  a partial read too. Where a served queue's items in progress were not read at all (the
+  queue failed, or the tracker's rate limit stopped it), the claimed items
+  stay unknown and the tick says so in a row of its own, naming the person
+  and what goes unchecked: stalls, double claims and the questions of
+  started pickups.
+
+## [0.279.1] - 2026-11-18
+
+### Fixed
+
+- `jig dispatch` read every issue an epic's execution plan names one request
+  at a time when it re-checked a pickup just before launching it, and again
+  when the claim checked it: about 40 requests for each pickup under a long
+  plan, repeated for every pickup that waited on the workspace budget. That
+  check now reads the plan's issues, and each parent's own row, together:
+  on GitHub one `TrackerDispatchIssues` request for up to 20 issues, on
+  Linear the batched pool read. It still reads them fresh, with nothing kept
+  from the tick. A batch that names an issue the credential cannot see is
+  read one issue at a time; a batch refused for the rate limit or left
+  without an answer fails the check with that failure, as a single read did.
+
+## [0.279.0] - 2026-11-18
+
+### Added
+
+- [M12's mappings](modules/M12-parallel-agent-ergonomics/mappings.md) map T3 Code as a workspace runtime: a `t3.json` script with `runOnWorktreeCreate` runs the worktree create hook once it is imported into the project's actions, and a wrapper runs the remove hook, since T3 Code has no point before a worktree is removed. A dated assessment says what T3 Code offers Jig's tooling and when Jig would add a launcher provider or a dispatcher session runtime for it.
+- The audit's `M12/worktree-hooks-wired` criterion recognises T3 Code: a tracked `t3.json` whose worktree-create script runs the create hook, with a documented step that imports it, counts as wired creation, and removal counts as wired only when the repository tracks how the remove hook is reached and documents the project's automatic worktree cleanup as off. **Consumer action:** none.
+
+## [0.278.1] - 2026-11-18
+
+### Fixed
+
+- A dispatched drive or headless pass now records how it ended even when the
+  host upgrades Jig during the stage to a release whose state database
+  refuses older readers. The tick logs the launch by its real exit instead of
+  "its wrapper is gone without an exit". If the wrapper still cannot record
+  the exit, it says the stage ran and exits with the stage's own code instead
+  of reporting that nothing was started.
+- The dispatcher no longer counts a pickup or follow-up that ended normally
+  while waiting (a follow-up whose release or deployment is still pending), or
+  that stopped on a decision for a person, as a failure. The outcome log
+  records these as `arm pending` and `parked for a person`; a parked run names
+  who answers it and what they must do; and the dashboard, the recurring
+  classes and the steward stop counting them as failures.
+- A follow-up outcome now preserves the question from its framed decision,
+  including when that decision is recorded after the outcome row, so retained
+  outcomes still show what needs a person's answer after their launch records
+  expire.
+- The dispatch dashboard says a repository the dispatcher paused for its
+  GitHub quota in one short line: what paused it, when it resumes and how old
+  the data shown is, with the full detail on expanding the card. A repository
+  lookup held by a rate limit no longer reads as the forge not knowing which
+  repository it is.
+
+## [0.278.0] - 2026-11-18
+
+### Added
+
+- The dispatch dashboard offers shareable filters with matching counts and folding act headings on Needs you. On a phone, shared filters still apply and can be cleared.
+
+## [0.277.3] - 2026-11-18
+
+### Fixed
+
+- A dispatched pickup or steward pass whose Claude Code session stops at
+  startup on a usage-limit notice now walls its account, as a follow-up's
+  already did; before, the pickup was logged as died, the account stayed
+  admitted, and the item waited for a person to release it. The wall lifts
+  at the reset the notice states, in both its time-of-day form
+  (`resets 3:20am (Europe/Amsterdam)`) and its dated weekly form
+  (`resets Nov 13, 11am (Europe/Amsterdam)`), and `dispatch.wall_backoff`
+  applies only when that reset cannot be read. A pickup stopped this way is
+  picked up again on another account, or on its own once the wall lifts,
+  with no person asked. A pickup or steward pass that stops at startup with
+  no usage notice now backs its account off for `dispatch.wall_backoff`, as
+  a follow-up's already did. **Consumer action:** none.
+
+## [0.277.2] - 2026-11-18
+
+### Changed
+
+- The sessions Jig's dispatcher starts on Jig itself run fast checks and
+  targeted tests locally, leaving the full suites to required CI. **Consumer action:** none.
+
+### Fixed
+
+- `jig gc` collects finished Orca workspaces on a machine with more than 200
+  of them. It read Orca's workspace registry without asking for more than
+  Orca's default page of 200 rows, took the cut page for an incomplete
+  registry and marked every Orca workspace unverified, so none was ever
+  removed. It now requests up to 5,000 rows and continues to refuse
+  collection when Orca reports that either registry response is truncated.
+
 ## [0.277.1] - 2026-11-18
 
 ### Changed
@@ -9738,7 +10101,28 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.277.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.1...HEAD
+[0.286.1]: https://github.com/jig-harness/jig/compare/v0.286.0...v0.286.1
+[0.286.0]: https://github.com/jig-harness/jig/compare/v0.285.1...v0.286.0
+[0.285.1]: https://github.com/jig-harness/jig/compare/v0.285.0...v0.285.1
+[0.285.0]: https://github.com/jig-harness/jig/compare/v0.284.1...v0.285.0
+[0.284.1]: https://github.com/jig-harness/jig/compare/v0.284.0...v0.284.1
+[0.284.0]: https://github.com/jig-harness/jig/compare/v0.283.2...v0.284.0
+[0.283.2]: https://github.com/jig-harness/jig/compare/v0.283.1...v0.283.2
+[0.283.1]: https://github.com/jig-harness/jig/compare/v0.283.0...v0.283.1
+[0.283.0]: https://github.com/jig-harness/jig/compare/v0.282.1...v0.283.0
+[0.282.1]: https://github.com/jig-harness/jig/compare/v0.282.0...v0.282.1
+[0.282.0]: https://github.com/jig-harness/jig/compare/v0.281.0...v0.282.0
+[0.281.0]: https://github.com/jig-harness/jig/compare/v0.280.0...v0.281.0
+[0.280.0]: https://github.com/jig-harness/jig/compare/v0.279.3...v0.280.0
+[0.279.3]: https://github.com/jig-harness/jig/compare/v0.279.2...v0.279.3
+[0.279.2]: https://github.com/jig-harness/jig/compare/v0.279.1...v0.279.2
+[0.279.1]: https://github.com/jig-harness/jig/compare/v0.279.0...v0.279.1
+[0.279.0]: https://github.com/jig-harness/jig/compare/v0.278.1...v0.279.0
+[0.278.1]: https://github.com/jig-harness/jig/compare/v0.278.0...v0.278.1
+[0.278.0]: https://github.com/jig-harness/jig/compare/v0.277.3...v0.278.0
+[0.277.3]: https://github.com/jig-harness/jig/compare/v0.277.2...v0.277.3
+[0.277.2]: https://github.com/jig-harness/jig/compare/v0.277.1...v0.277.2
 [0.277.1]: https://github.com/jig-harness/jig/compare/v0.277.0...v0.277.1
 [0.277.0]: https://github.com/jig-harness/jig/compare/v0.276.0...v0.277.0
 [0.276.0]: https://github.com/jig-harness/jig/compare/v0.275.1...v0.276.0

@@ -10,7 +10,12 @@ import {
   GIT_OPERATION_MARKERS,
   hidesIndexChanges,
 } from "../../shared/idle-holder.ts";
-import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
+import {
+  ORCA_LIST_LIMIT,
+  orcaFailure,
+  orcaResult,
+  runOrca,
+} from "../../shared/orca.ts";
 import { gcGit as git, type GitOutcome } from "../git.ts";
 import type { Proof } from "../types.ts";
 import { guardLabel } from "./worktree-guard.ts";
@@ -252,7 +257,13 @@ export async function orcaLiveness(
     state: "unverified",
     reason: `Orca's registry (orca worktree ps) ${why}`,
   });
-  const done = await runOrca(command, ["worktree", "ps", "--json"]);
+  const done = await runOrca(command, [
+    "worktree",
+    "ps",
+    "--limit",
+    String(ORCA_LIST_LIMIT),
+    "--json",
+  ]);
   const result = orcaResult(done);
   if (result === null) return unread(`could not be read ${orcaFailure(done)}`);
   if (result.truncated !== false || !Array.isArray(result.worktrees))

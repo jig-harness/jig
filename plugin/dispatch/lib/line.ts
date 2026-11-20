@@ -31,9 +31,11 @@ import {
 } from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
+import { groupItems } from "./release-groups.ts";
 import { boardUnread, readyOf } from "./line-ready.ts";
 import { needWorkspace } from "./line-workspace.ts";
 import type { MachineConfig } from "./machine-config.ts";
@@ -378,13 +380,24 @@ function firstSeen(
   )?.since;
 }
 
+/** A need that carries on keeps its age, a group of releases through any item it held: the item it is answered on moves as versions are tagged. */
 function sightedSince(
   previous: LineNeed[],
   repo: string,
-  action: { target: string; cause: string },
+  action: { target: string; cause: string; evidence: Evidence },
   nowIso: string,
 ): string {
-  return firstSeen(previous, repo, action.target, action.cause) ?? nowIso;
+  const held = new Set([action.target, ...groupItems(action.evidence)]);
+  const seen = previous
+    .filter(
+      (n) =>
+        n.repo === repo &&
+        n.cause === action.cause &&
+        [n.target, ...(n.covers ?? [])].some((target) => held.has(target)),
+    )
+    .map((n) => n.since)
+    .sort((a, b) => a.localeCompare(b));
+  return seen[0] ?? nowIso;
 }
 
 /** The one outcome a need shows when several channels answered for its key: one that delivered, else the failure, else the wait. */
@@ -402,6 +415,43 @@ function aggregateNotification(
 function concludedOf(action: Action): { concluded?: string } {
   const concluded = text(action.evidence, "concluded");
   return concluded === null ? {} : { concluded };
+}
+
+function coveredItems(evidence: Evidence): Pick<LineNeed, "covers"> {
+  const covers = groupItems(evidence);
+  return covers.length === 0 ? {} : { covers };
+}
+
+/** How the need's notice went out; nothing when it has none. */
+function notifiedOf(
+  notification: ReturnType<typeof aggregateNotification>,
+  at: string | undefined,
+): LineNeed["notified"] {
+  if (notification === undefined) return null;
+  return {
+    at: at ?? null,
+    outcome: notification.outcome,
+    workspace: notification.workspace,
+    ...(notification.outcome === "waits" || notification.outcome === "lost"
+      ? { detail: notification.detail }
+      : {}),
+  };
+}
+
+/** The workspaces a need names: every holder of a double claim, else the one a stuck or blocked need runs in. */
+function workspacesOf(view: RepoView, action: Action): string[] {
+  if (action.cause === "double-claim")
+    return view.workspacesHolding(action.target);
+  const stuck =
+    text(action.evidence, "stuck") !== null ||
+    text(action.evidence, "blocked") !== null;
+  return stuck && action.workspace !== undefined ? [action.workspace] : [];
+}
+
+/** When the hold on the need's drive began, where the dispatcher recorded one. */
+function heldSinceOf(action: Action): { heldSince?: string } {
+  const heldSince = text(action.evidence, "heldSince");
+  return heldSince === null ? {} : { heldSince };
 }
 
 function needsOf(
@@ -439,6 +489,7 @@ function needsOf(
         action,
       ),
       since:
+        text(action.evidence, "heldSince") ??
         text(action.evidence, "heartbeat") ??
         text(action.evidence, "idleSince") ??
         at ??
@@ -449,29 +500,14 @@ function needsOf(
         text(action.evidence, "question"),
       ...concludedOf(action),
       decisions,
-      notified:
-        notification === undefined
-          ? null
-          : {
-              at: at ?? null,
-              outcome: notification.outcome,
-              workspace: notification.workspace,
-              ...(notification.outcome === "waits" ||
-              notification.outcome === "lost"
-                ? { detail: notification.detail }
-                : {}),
-            },
-      workspaces:
-        action.cause === "double-claim"
-          ? view.workspacesHolding(action.target)
-          : text(action.evidence, "stuck") !== null &&
-              action.workspace !== undefined
-            ? [action.workspace]
-            : [],
+      notified: notifiedOf(notification, at),
+      workspaces: workspacesOf(view, action),
       stuckRecord:
         text(action.evidence, "stuck") === null
           ? null
           : text(action.evidence, "record"),
+      ...coveredItems(action.evidence),
+      ...heldSinceOf(action),
     };
   });
   const refused = view.report.unplaced
@@ -580,19 +616,29 @@ function plannedStage(view: RepoView, action: Action): LineQueued | null {
       action.evidence,
     );
   }
-  if (action.stage === "pickup")
-    return queued(
-      view,
-      {
-        source: "assigned",
-        group: groupOf(launch, "reported"),
-        target: action.target,
-        why: action.reason,
-        assignedBy: text(action.evidence, "assignedBy"),
-        ...launchFields,
-      },
-      action.evidence,
+  if (action.stage === "pickup") {
+    const overlap = view.report.overlap?.entries.find(
+      (e) => e.item === action.target,
     );
+    return {
+      ...queued(
+        view,
+        {
+          source: "assigned",
+          group: groupOf(launch, "reported"),
+          target: action.target,
+          why: action.reason,
+          assignedBy: text(action.evidence, "assignedBy"),
+          ...launchFields,
+        },
+        action.evidence,
+      ),
+      ...(overlap?.reason === undefined ? {} : { overlap: overlap.reason }),
+      ...(overlap?.footprintNote === undefined
+        ? {}
+        : { footprint: overlap.footprintNote }),
+    };
+  }
   if (action.stage === "followup")
     return queued(
       view,
@@ -640,34 +686,34 @@ function queueOf(view: RepoView): LineQueued[] {
         },
       }),
     );
+  const entry = (
+    source: LineQueued["source"],
+    group: LineQueued["group"],
+    target: string,
+    why: string,
+    hold: LineQueued["hold"] = null,
+  ) => queued(view, { source, group, target, why, hold });
   const serial = (view.report.serialized?.held ?? []).map((h) =>
-    queued(view, {
-      source: "held",
-      group: "held",
-      target: h.target,
-      why: h.reason,
-      hold: view.stored.holds.find((s) => s.pr === prNumber(h.target)) ?? null,
-    }),
+    entry(
+      "held",
+      "held",
+      h.target,
+      h.reason,
+      view.stored.holds.find((s) => s.pr === prNumber(h.target)) ?? null,
+    ),
   );
   const labelled = (view.report.labels?.held ?? []).map((h) =>
-    queued(view, {
-      source: "held",
-      group: "held",
-      target: h.target,
-      why: h.reason,
-    }),
+    entry("held", "held", h.target, h.reason),
   );
-  const refused = view.report.unplaced
-    .filter((u) => u.record === "tracker" && isItemTarget(u.target))
-    .map((u) =>
-      queued(view, {
-        source: "assigned",
-        group: "never",
-        target: u.target,
-        why: u.reason,
-      }),
-    );
-  return [...planned, ...replayed, ...serial, ...labelled, ...refused];
+  const unplaced = view.report.unplaced.filter((u) => isItemTarget(u.target));
+  // A pickup serialization could not place this tick waits on the next tick's reads.
+  const undecided = unplaced
+    .filter((u) => u.reason.startsWith(SERIAL_UNDECIDED))
+    .map((u) => entry("held", "held", u.target, u.reason));
+  const refused = unplaced
+    .filter((u) => u.record === "tracker")
+    .map((u) => entry("assigned", "never", u.target, u.reason));
+  return [planned, replayed, serial, undecided, labelled, refused].flat();
 }
 
 function repoOf(
@@ -682,6 +728,16 @@ function repoOf(
     stages: entry?.stages ?? [],
     ...(input?.tracker === undefined ? {} : { tracker: input.tracker }),
     refused: report.refused,
+    ...(report.refused === null || report.refusedStep === undefined
+      ? {}
+      : {
+          refusal: {
+            step: report.refusedStep,
+            ...(report.refusedBy === undefined
+              ? {}
+              : { failure: report.refusedBy }),
+          },
+        }),
     ...(report.slug !== null &&
     report.refused !== null &&
     report.section === null

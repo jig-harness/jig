@@ -15,6 +15,8 @@ import type {
   LaunchOutcome,
   NotifyCause,
   NotifyOutcome,
+  ReadFailure,
+  RefusedStep,
 } from "./types.ts";
 import type {
   Act,
@@ -160,6 +162,10 @@ export interface LineNeed {
   workspaces: string[];
   /** For a stuck launch record: its id, which `jig dispatch clear` takes. */
   stuckRecord?: string | null;
+  /** For a group of releases: the tracker item of every release it lists. */
+  covers?: string[];
+  /** For a drive a launch nobody can show running holds: when the hold began, later of the launch and the stop. */
+  heldSince?: string | null;
 }
 
 /** An account's wall as the newest tick read it. */
@@ -178,8 +184,10 @@ export interface LineAccount {
   vendor: string;
   /** Sessions the dispatcher may hold on it at once. */
   cap: number;
-  /** Launch records holding one of its slots. A takeover and the record it replaces count once. */
+  /** Launch records holding one of its slots. A takeover and the record it replaces on the same account count once. */
   held: number;
+  /** The launching stages it serves, when the machine file narrows them (`accounts[].stages`); absent, every one. */
+  stages?: string[];
   wall: LineWall | null;
   /** A launch ended on this account's wall and the wall was never recorded: no launch is admitted until a person clears that record. */
   wallUnrecorded: boolean;
@@ -245,6 +253,30 @@ export interface LineSession {
   waiting: string | null;
 }
 
+/** One piece of work in flight a pickup waits on for its overlap (`overlap-reasons.ts`). */
+export interface OverlapRef {
+  kind: "pull request" | "pickup";
+  /** `#123` for a pull request; the item's key for a pickup. */
+  ref: string;
+  /** As the tick found it: `open`, `open, quiet`, `claimed`, `running`, or `would be admitted ahead of it` for a pickup the hypothetical admission plan (not the launch order) takes first. */
+  state: string;
+  url: string | null;
+}
+
+/**
+ * Why a wanted pickup waits on overlap, as a structured reason: the relation
+ * word, the item, the work it waits on and how many, and the text a person
+ * reads (design/overlap-aware-admission.md § The reason a person sees).
+ */
+export interface OverlapReason {
+  relation: "waits on overlap" | "waits on the overlap bound";
+  item: string;
+  on: OverlapRef[];
+  /** For overlap, the pieces of work it shares paths with; for the bound, the pieces of work in flight that change the file. */
+  count: number;
+  text: string;
+}
+
 /** Where a queued target came from: the record that wants it. */
 export type QueueSource =
   | "re-armable"
@@ -285,6 +317,16 @@ export interface LineQueued {
     detail: string;
     waitsOn?: LaunchOutcome["waitsOn"];
   } | null;
+  /** For a pickup: why it waits on the work in flight it overlaps; absent when it does not, and from a line written before overlap was reported. */
+  overlap?: OverlapReason;
+  /** For a pickup whose footprint is unknown or derived from labels alone: the note beside its rank (`footprint unknown: …`), whether or not it waits. */
+  footprint?: string;
+}
+
+/** What stopped the newest tick that tried to open a repository, in parts (`LineRepo.refusal`). */
+export interface LineRefusal {
+  step: RefusedStep;
+  failure?: ReadFailure;
 }
 
 /** One repository the machine file lists. */
@@ -300,6 +342,16 @@ export interface LineRepo {
   tracker?: { adapter: string; repository?: string } | null;
   /** Why nothing could be dispatched for it at the newest tick that tried; `null` when it was read. Beside an earlier tick's `runId` when that tick's part of the line was kept because this one could not identify the repository. */
   refused: string | null;
+  /**
+   * `refused` in parts, so the page can lead with one short line and keep
+   * `refused` for what it shows on expanding: the step opening the
+   * repository stopped at and, when a failed call stopped it, that call's
+   * failure (its class, when a rate limit clears, and whose credential
+   * quota stopped it, and whether only the dispatcher's share). Absent beside a refusal written before it
+   * was kept and beside one no step names, where the page shows `refused`
+   * whole.
+   */
+  refusal?: LineRefusal;
   /** The records that did not read at the newest tick. */
   failedReads: Array<{ record: string; source: string; detail: string }>;
   /** What each record's read said about what this repository has, such as no pickups. */

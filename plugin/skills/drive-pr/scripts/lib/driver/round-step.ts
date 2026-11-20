@@ -1,6 +1,11 @@
 /** Order one round boundary, status gate, pass and Ready transition without bypassing admission checks. */
 import type { DriveRoundContext } from "./round-context.ts";
 import { recoverCancelledOnHead } from "../cancelled-recovery-live.ts";
+import {
+  type LiveRecovery,
+  recoveryExit,
+  recoveryWaits,
+} from "../cancelled-recovery-reads.ts";
 
 import { run, tsArgv } from "./../proc.ts";
 
@@ -26,6 +31,10 @@ import { sleep } from "./../cli.ts";
 import { type MarkReady, markReadyDueAfterRound } from "./../pr-policy.ts";
 
 import { readRoundStatus } from "./round-status.ts";
+
+import { answerForgeLimit } from "./forge-limit-stop.ts";
+
+import { DRIVE_EXIT } from "./../status/terminal-states.ts";
 
 import {
   checkRoundStall,
@@ -54,6 +63,12 @@ async function gateRoundStatus(
   // Keep the resumable trail current even if the pass below dies mid-round:
   // the handoff file, and under a driver the pull request's drive ledger.
   await publishRunning(context.pr);
+
+  // A spent forge rate limit is waited out or stopped on, never reported as
+  // a failure to read (`forge-limit-stop.ts`).
+  if (code === DRIVE_EXIT.FORGE_RATE_LIMITED)
+    return await answerForgeLimit(context, status);
+  driverRuntime.forgeLimitWaits = 0;
 
   switch (code) {
     case 3: {
@@ -322,11 +337,18 @@ export async function runRoundIteration(
   return null;
 }
 
-/** Recover initial cancellation before spending a pass that cannot push; clear resolved parks before convergence. */
-async function recoverBeforePass(
-  context: DriveRoundContext,
+/**
+ * Recover initial cancellation before spending a pass that cannot push; clear
+ * resolved parks before convergence. A timed-out job is left to the final
+ * CI's repair, but a re-run of another cancellation that is still going is
+ * waited for all the same.
+ */
+export async function recoverBeforePass(
+  context: Pick<DriveRoundContext, "dryRun" | "pr">,
   code: number,
   status: Record<string, unknown>,
+  recover: (pr: string, head: string) => Promise<LiveRecovery> = (pr, head) =>
+    recoverCancelledOnHead(pr, head),
 ): Promise<number | "continue" | null> {
   if (
     context.dryRun ||
@@ -336,16 +358,10 @@ async function recoverBeforePass(
     return null;
   const head = String((status.head as { api?: string } | undefined)?.api ?? "");
   if (head === "") return null;
-  const recovery = await recoverCancelledOnHead(context.pr, head);
-  switch (recovery) {
-    case "parked":
-      return 8;
-    case "unknown":
-      return 1;
-    case "wait":
-      await sleep(FINAL_CI_POLL_SECONDS);
-      return "continue";
-    default:
-      return null;
-  }
+  const recovery = await recover(context.pr, head);
+  const stop = recoveryExit(recovery);
+  if (stop !== null) return stop;
+  if (!recoveryWaits(recovery)) return null;
+  await sleep(FINAL_CI_POLL_SECONDS);
+  return "continue";
 }

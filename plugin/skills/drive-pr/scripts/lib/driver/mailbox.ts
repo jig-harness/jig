@@ -5,9 +5,15 @@ import { foldGateState } from "./../state/mailbox.ts";
 
 import { ackDirective, stopFor } from "./../state/mailbox-stop.ts";
 
-import { sleep } from "./../cli.ts";
+import { isDigits, sleep } from "./../cli.ts";
 
-import { MAILBOX_POLL_SECONDS } from "./settings.ts";
+import {
+  MAILBOX_POLL_SECONDS,
+  MAILBOX_PAUSE_TIMEOUT_EXIT,
+  MAILBOX_STOPPED_EXIT,
+  SINGLE_INSTANCE_LOCK_EXIT,
+  TAKEN_OVER_EXIT,
+} from "./settings.ts";
 
 type MailboxCheckpoint =
   | "clear"
@@ -49,6 +55,48 @@ export async function waitAtMailboxCheckpoint(
     pausedAt ??= pauseStarted(watch.pr);
     const ended = await whilePaused(watch.pr, pausedAt, pauseMaxSec, renew);
     if (ended !== null) return ended;
+  }
+}
+
+/** `DRIVE_PR_PAUSE_MAX_SEC`: how long a mailbox pause is waited for, 1800 seconds unless it names 1 to 86400. */
+export function pauseMaxSeconds(): number {
+  const raw = process.env.DRIVE_PR_PAUSE_MAX_SEC ?? "1800";
+  return isDigits(raw) && Number(raw) >= 1 && Number(raw) <= 86400
+    ? Number(raw)
+    : 1800;
+}
+
+/**
+ * The mailbox checkpoint as the exit a driver stops with, or `clear` /
+ * `resumed` when it goes on: the ordinary stop, pause and compromised-lock
+ * semantics every wait of the drive shares, the attach's wait included.
+ */
+export async function mailboxCheckpointOrExit(
+  watch: MailboxWatch,
+  renew: () => Promise<number | null> = async () => null,
+): Promise<"clear" | "resumed" | number> {
+  const outcome = await waitAtMailboxCheckpoint(
+    watch,
+    pauseMaxSeconds(),
+    renew,
+  );
+  switch (outcome) {
+    case "clear":
+    case "resumed":
+      return outcome;
+    case "stopped":
+      return MAILBOX_STOPPED_EXIT;
+    case "pause-timeout":
+      return MAILBOX_PAUSE_TIMEOUT_EXIT;
+    case "compromised":
+      console.error(
+        `drive.ts: the ${driverRuntime.compromised} lock was recovered by another driver at a mailbox checkpoint — stopping.`,
+      );
+      return SINGLE_INSTANCE_LOCK_EXIT;
+    case "unreadable":
+      return 1;
+    case "taken-over":
+      return TAKEN_OVER_EXIT;
   }
 }
 

@@ -392,10 +392,6 @@ describe("picking answers on a card", () => {
         );
 
         // A guarded pick, confirmed by a tap.
-        await page
-          .getByRole("button", { name: /Show all/ })
-          .first()
-          .tap();
         const guarded = card(page, "PR #1300");
         await guarded.locator("[data-card-toggle]").tap();
         await guarded

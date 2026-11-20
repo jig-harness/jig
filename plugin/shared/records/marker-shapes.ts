@@ -32,3 +32,12 @@ export const ANSWER_PAYLOAD_SHAPE = s.object({
   decision: s.optional(s.unknown()),
   choice: s.optional(s.unknown()),
 });
+
+/** The rearm request binds a label to the stop comment it asked to restart; a withdrawal carries no stop. */
+export const REARM_REQUEST_PAYLOAD_SHAPE = s.object({
+  label: s.string(),
+  stopComment: s.nullable(s.integer()),
+  requestId: s.optional(s.unknown()),
+  reason: s.optional(s.unknown()),
+  needsPerson: s.optional(s.unknown()),
+});

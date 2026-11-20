@@ -14,7 +14,8 @@
  * owner host the priorities ranking's inputs are read after the plan, for the
  * tick to rank once every repository is planned (`tick-priorities.ts`); the
  * plan never reads it, and only the host's `priorities.enforce` lets the
- * ranking reorder the planned pickups.
+ * ranking reorder the planned pickups. The planned pickups are then weighed
+ * against the work in flight (`overlap-plan.ts`), for the report only.
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
@@ -42,18 +43,20 @@ import { applyStewardOrder } from "./steward-queue.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { bodyLinker } from "../../skills/do-item/scripts/lib/linked-pr.ts";
 import type { StalledPrInput } from "./stalled-pr.ts";
+import { readPickupTree, type TreeReader } from "./pickup-tree.ts";
 import { type CarrierInput, carrierInput } from "./carried-pr.ts";
 import { branchPattern } from "./section.ts";
 import type { PrLinkText } from "./work-links.ts";
 import { preparePriorities } from "./tick-priorities.ts";
+import { rearmLockNeeds } from "./rearm-lock-needs.ts";
 
-/** Plan one observed repository into its report. */
-export function planObserved(
+/** Put the steward's recorded queue order on the tracked pickups, where this host owns the repository. */
+function orderTracked(
   context: TickContext,
   observation: RepoObservation,
 ): void {
-  const { opened, tracked, forge, ctx, claims, sessions } = observation;
-  const { repo, section, report } = opened;
+  const { opened, tracked } = observation;
+  const { repo } = opened;
   if (
     opened.owner &&
     opened.stages.has("steward") &&
@@ -68,6 +71,16 @@ export function planObserved(
     });
     tracked.pickups = applyStewardOrder(tracked.pickups, orders);
   }
+}
+
+/** Plan one observed repository into its report. */
+export function planObserved(
+  context: TickContext,
+  observation: RepoObservation,
+): void {
+  const { opened, tracked, forge, ctx, claims, sessions } = observation;
+  const { repo, section, report } = opened;
+  orderTracked(context, observation);
   const onlyLabeled = observation.labels?.onlyLabeled === true;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
@@ -77,6 +90,7 @@ export function planObserved(
     section,
     pickups: tracked.pickups,
     claimed: tracked.claimed,
+    ...(tracked.partial === true ? { partial: true as const } : {}),
     drives: observation.drives,
     merged: forge.merged,
     sessions,
@@ -92,8 +106,12 @@ export function planObserved(
       : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
     ...withStalledPr(observation),
+    ...withTrees(context, opened.stages.has("pickup")),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
+  // Reported only, and weighed after the priorities ranking so it sees the pickup order that starts.
+  context.overlaps ??= [];
+  context.overlaps.push({ observation });
   if (opened.owner) {
     const prepared = preparePriorities(report, {
       slug: repo.slug,
@@ -102,7 +120,7 @@ export function planObserved(
       scope: tracked.issueRepository ?? repo.slug,
       pickups: tracked.pickups,
       unplaced: report.unplaced,
-      trackerComplete: tracked.claimed !== null,
+      trackerComplete: tracked.claimed !== null && tracked.partial !== true,
       nowMs: context.nowMs,
       enforce: context.options.machine?.priorities?.enforce === true,
       ...deadlineField(context),
@@ -112,9 +130,30 @@ export function planObserved(
       context.priorities.push(prepared);
     }
   }
-  // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
+  // A failure on a held pull request, or one not known to be labelled, stands down with every other action.
   const failing = {
-    actions: planFailureNotices(context, opened),
+    actions: [
+      ...planFailureNotices(context, opened),
+      ...rearmLockNeeds(
+        repo.slug,
+        observation.drives,
+        context.apply?.root,
+        (reason) =>
+          // A failed read leaves each stopped pull request's need unobserved, so its suppression record stays.
+          report.unplaced.push(
+            ...[
+              "the rearm lock needs",
+              ...observation.drives.map((drive) => `PR #${drive.number}`),
+            ].map((target) => ({
+              target,
+              record: "runtime" as const,
+              reason,
+              readFailed: true as const,
+            })),
+          ),
+        observation.forge.ok,
+      ),
+    ],
     held: [],
     withheld: report.withheld ?? [],
   };
@@ -159,6 +198,20 @@ function withStalledPr(observation: RepoObservation): {
         })(body),
     },
   };
+}
+
+/**
+ * What reads a stalled pickup's tree for the work it left, with local git
+ * bounded by the tick's deadline; none where the pickup stage, which
+ * applies a relaunch, is not enabled for the repository on this host.
+ */
+function withTrees(
+  context: TickContext,
+  pickup: boolean,
+): { trees?: TreeReader } {
+  if (!pickup) return {};
+  const deadlineMs = deadlineOf(context.options.machine, context.startedMs);
+  return { trees: (path) => readPickupTree(path, deadlineMs) };
 }
 
 /** Which open pull requests carry an item, and the drives the tick read for them (`carried-pr.ts`). */
@@ -231,13 +284,16 @@ export function afterWait(
  * Plan one repository's tick into its report, with this machine's launch
  * records read beside the sessions; then keep the idle clock and release
  * the ended pickups whose item left the dispatch states, when the claimed
- * items were read whole.
+ * items were read. With `partial`, an item the read left out may still be
+ * wanted, so only a claimed item back in the dispatch states releases its record.
  */
 function planRepo(
   context: TickContext,
   repo: string,
   report: RepoReport,
-  input: Omit<PlanInput, "launches" | "idleSince" | "nowMs" | "outcomes">,
+  input: Omit<PlanInput, "launches" | "idleSince" | "nowMs" | "outcomes"> & {
+    partial?: true;
+  },
 ): void {
   const { nowMs } = context;
   const records = settleRecords(context, repo, input.sessions, nowMs);
@@ -311,6 +367,7 @@ function planRepo(
     new Set(input.pickups.map((p) => p.key)),
     undefined,
     new Set(input.claimed.filter((c) => c.served === true).map((c) => c.key)),
+    input.partial === true,
   );
 }
 

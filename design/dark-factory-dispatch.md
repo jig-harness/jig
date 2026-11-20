@@ -92,6 +92,11 @@ the tick. The observe phase reads the served people's assigned items
 beside the factory identity's, and makes the board read, a query of its
 own once a repository's ledgers name its converged drives
 ([dispatch-board.md § The board read](dispatch-board.md#the-board-read)).
+While a repository wants pickups, it also reads the footprints of the
+wanted and claimed items through the tracker it opened, and the plan
+weighs each planned pickup against the work in flight and reports its
+overlap, without changing what starts
+([overlap-aware-admission.md § Overlap, reported](overlap-aware-admission.md#build-order)).
 The act phase reads the host's gauges when it builds its apply state, and
 admits each launch within the load factor. And the steward is one more
 stage, launched on the owner host when its judgment backlog holds work no
@@ -103,13 +108,13 @@ flowchart TD
   S0[read this host's launch records as they stand,<br/>start the budget read] --> OBS{{every repository at once, in a pool of six reads}}
   subgraph repo [one repository's observe part, inside its boundary: tick-repo.ts]
     direction TB
-    OL[take its observe lock<br/>held by another tick: leave the repository to it]
+    OL[take its observe lock<br/>held by another tick: the timer's sweep waits up to two minutes,<br/>then leaves the repository to it]
     O1[open: forge target and the dispatch section<br/>from the default branch]
     O2[tracker: wanted pickups, claimed items]
     O3[forge: open PRs, login, a ledger per PR,<br/>merges and their follow-up markers]
     O3b[claims: every host's launch claims]
     O4[runtime: the sessions joined to items and PRs]
-    C[observe: thread samples, session walls,<br/>contention; the samples and contention<br/>skipped while the budget is low]
+    C[observe: thread samples, session walls,<br/>contention; the samples and contention<br/>skipped while the budget is low;<br/>the footprints overlap weighs]
     OL --> O1 --> O2 & O3
     O3 --> O3b
     O2 & O3 --> O4
@@ -122,7 +127,7 @@ flowchart TD
   A --> LOOP{{for each repository read, in rotated order}}
   subgraph act [one repository's act part, inside its boundary]
     direction TB
-    P[plan: wanted minus running, nudges,<br/>hold-back, idle clocks]
+    P[plan: wanted minus running, nudges,<br/>hold-back, idle clocks; the planned pickups'<br/>overlap, reported only]
     G[log: outcome rows for launch records that ended]
     P --> G
   end
@@ -136,7 +141,8 @@ flowchart TD
 
 **The locks, and their order.** A tick takes each repository's observe
 lock (`observe/<digest>.lock` under the state directory) as it starts
-reading that repository, and never waits for one. The lock is taken twice
+reading that repository; only the timer's sweep waits for one, as below.
+The lock is taken twice
 over: for the checkout's path, before anything is read, and for the forge
 repository, once the observation knows which repository the checkout is,
 because the records an observation reads and writes belong to the
@@ -145,14 +151,27 @@ close of a tick takes the same locks before it logs the ended records of
 a repository it did not read, and leaves those of one another tick
 observes to that tick. A lock acquisition that fails is a defect of that
 repository's turn, and the tick awaits every started observation before it
-gives any lock up. A repository another tick holds is left to that tick, named on the
+gives any lock up. The timer's sweep (`--apply` over the machine file's
+repositories) waits for a repository another tick holds, up to two minutes
+within its deadline, looking again every quarter of a second, so a woken
+tick that holds a repository when the sweep starts does not drop it from
+the sweep: with wake-ups arriving every minute or two, a sweep that never
+waited would leave a repository to woken ticks on most of its runs. The
+shared tracker reads start once every repository's lock is settled, so the
+wait delays the sweep's reads of every repository, and while it waits the
+sweep holds the others' observe locks: a wake-up for one of them ends as
+held and its waiter tries again after its minute. Any
+other tick waits for no observe lock. A repository another tick still holds
+after the wait is left to that tick, named on the
 receipt (`busy`), and neither read nor acted on. A tick that finds every
 repository it names held ends as one that found the lock held (exit 3),
 which is what a wake-up's waiter retries after its minute. The act lock is
-taken only after every observe lock the tick holds for its reads, and is the only
-lock a tick waits for: up to two minutes, looking again every quarter of a
+taken only after every observe lock the tick holds for its reads, and
+waited for up to two minutes, looking again every quarter of a
 second, after which the tick ends the same way. A tick holding the act lock
-waits for nothing, so no two ticks wait on each other. Its one exception to
+waits for nothing, and a sweep waiting for an observe lock holds no act
+lock, so a wait ends when the holder's act phase does; two sweeps waiting
+for each other's repositories each stop at their bound. Its one exception to
 taking no observe lock is the close, which tries the observe locks of the
 repositories it did not read, without waiting, to log their ended records,
 and leaves any it cannot take to the tick that holds it. A repository's observe lock is kept until every repository's launches
@@ -207,7 +226,7 @@ when it fails. The phase names are the ones a receipt times.
 | Step                         | Module                                                       | Reads                                                                                                                                                                                                                                               | Writes                                                                                                                                                                                                                                                                                                                  | On failure                                                                                                                                                                                                     |
 | ---------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Launch records (`start`)     | `tick.ts`                                                    | `state.sqlite`                                                                                                                                                                                                                                      | none                                                                                                                                                                                                                                                                                                                    | read again by the act phase                                                                                                                                                                                    |
-| Observe lock                 | `receipts.ts`                                                | the repository's lock file                                                                                                                                                                                                                          | the lock, naming this process                                                                                                                                                                                                                                                                                           | held by a live tick: the repository is left to it and named on the receipt; every one held: the tick exits 3                                                                                                   |
+| Observe lock                 | `receipts.ts`                                                | the repository's lock file                                                                                                                                                                                                                          | the lock, naming this process                                                                                                                                                                                                                                                                                           | held by a live tick: the timer's sweep waits up to two minutes; still held, the repository is left to it and named on the receipt; every one held: the tick exits 3                                          |
 | `open`                       | `tick-observe.ts`, `forge-batch.ts`                          | the repository's query: the repository and its default branch, `.config/jig.yaml` on it, and the open pull requests with their labels, heads, mergeability and comments; where it does not read, `gh repo view` and the file on their own           | none                                                                                                                                                                                                                                                                                                                    | the repository is refused and reported; the others go on                                                                                                                                                       |
 | `tracker`                    | `tick-observe.ts`                                            | the items assigned in a dispatch state                                                                                                                                                                                                              | none                                                                                                                                                                                                                                                                                                                    | a failed record; no pickups planned                                                                                                                                                                            |
 | `forge`                      | `tick-forge.ts`                                              | open pull requests (from the repository's query, else their own listing), the login (once per tick), each one's ledger and park answers from its comments, the merges in the follow-up window and the markers of each merge whose `updatedAt` moved | the merges' kept marker reads                                                                                                                                                                                                                                                                                           | a failed record; drives and follow-ups not planned                                                                                                                                                             |
@@ -656,8 +675,14 @@ it to itself) keeps the item assigned to the factory identity. The tick
 then finds claimed items with the same read over the in-progress state: one
 with no running session and no launch record still running for longer than
 `dispatch.stalled_after` (30 minutes by default) is reported as stalled and
-notified, never relaunched, since a relaunch would start a second
-implementer on a claimed item. A claimed item with no running session whose
+notified, never started afresh, since a fresh session would be a second
+implementer on a claimed item. One whose pickup left its work in its own
+tree (commits not pushed, edits not committed, or no result recorded) is
+relaunched once per head in that tree, with a fixed prompt to push and
+record the work, rather than reported (`dispatch.stalled_relaunch`,
+`finish-once` by default, `never` to turn it off); a second stall at the
+same head, or a tree no open workspace on the host holds, is reported. A
+claimed item with no running session whose
 launch already opened its pull request is finished work, not a stall: when
 an open pull request whose head is the branch the runtime reports in the
 workspace of this host's launch record for the item links it as `do-item`
@@ -1259,7 +1284,8 @@ jig dispatch --apply [--repo <path>]...           # start what the machine file 
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
-jig dispatch result <record> <token> waits --until <time>  # a pickup or follow-up a rate limit stopped
+jig dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]  # a pickup or follow-up a rate limit stopped, or a follow-up whose arm is still pending
+jig dispatch result <record> <token> failed --decision <file>  # a pass that stopped on the decision it framed for a person
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
 jig dispatch report <record> <token> <file>       # a pass's closing report (dispatched-sessions.md)
@@ -1399,6 +1425,23 @@ runtime reports that agent finished or gone. It ends with its result, or
 as failed when none was recorded, since a session that stopped on a
 question or a crash records none; a pickup's record is read beside the
 item's state.
+
+Every reader (the tick, the outcome log, the dashboard, the steward and a
+follow-up's outcome) takes a recorded answer as one of these launch
+results: `done`; `waits`, a pass that recorded a wait (a rate limit's
+reset, or a follow-up's arm still pending) and starts again once its time
+has come; `parked`, a pass that recorded `failed --decision <file>` and so
+stopped on the decision it framed for a person; and `failed`, a pass that
+recorded `failed` with neither, or ended with none. A `waits` on a pending arm and a
+`parked` do not count as a failure; a `waits` on a rate limit is logged
+as a quota wall. The `launches` table keeps only `done` and
+`failed`: `waits` is kept as `failed` with the time in `result_until`, and
+`parked` as `failed` with the decision in `result_decision`, so a host
+that rolls back to a release that knows neither reads a failed pass, which
+it holds for a person rather than starting it again. Reading the result
+from those columns, never from a migration, covers rows written before the
+distinction too. A follow-up's marker and its outcome record keep their
+closed words, `done` and `failed`, for the same reason.
 
 ### The session runtime interface
 
@@ -1641,14 +1684,25 @@ with the reset the drive printed, or, when the reset is unknown,
 `dispatch.wall_backoff` (one hour by default) from the stop. Several
 sessions can write the same account's wall; a write never moves the
 reset earlier, so the record keeps the latest reset any write has
-recorded, and the wall is lifted at that reset; nothing else lifts it. The drive's own quota park
+recorded, and the wall is lifted at that reset; nothing else lifts it.
+A follow-up's, a pickup's or a steward's pass whose Claude Code session
+stops in its first minute, unsuccessfully and with no transcript, result
+or question, could not start, and its wrapper writes the wall as well:
+until the reset a usage-limit notice in its output states (a time of day,
+or a date and a time of day, in the zone the notice names, else the
+host's), else `dispatch.wall_backoff` from the stop. A pickup stopped by
+such a notice is wanted again at once, and the wall keeps it off that
+account. A drive's passes are not read this way: `drive.ts` starts them,
+the wrapper sees only the driver's exit, and the driver reads its passes'
+walls from the vendor's transcripts and exits `16`; a pass stopped before
+it wrote a transcript is the driver's to recognise. The drive's own quota park
 stays where `drive-pr` keeps it and still decides whether `drive.ts` admits
 the re-arm. A wall an interactive session meets is not recorded before the
 control step (see Control): that session shows as waiting, holds its slot, and is
 reported once it has waited past `dispatch.blocked_after` (30 minutes by
-default). A wall a follow-up's pass meets ends the pass short of `done`,
-so it is notified as a failed follow-up; it is not written as the
-account's wall.
+default). A wall a follow-up's pass meets after it started ends the pass short
+of `done`, so it is notified as a failed follow-up; it is not written as
+the account's wall. A wall met at startup is the one written, above.
 
 **Binding a session to its account.** A headless pass is bound to its
 account through the configuration directory of that account's Orca
@@ -1721,7 +1775,10 @@ person settles it.
 A pass that stops for a person also frames what it asks: it records
 `failed` with a `parked-decision/v1` record (`jig dispatch result … failed
 --decision <file>`), checked as a park's decision is and kept with the
-result and its digest, and the need it raises carries that decision. For
+result and its digest, and the need it raises carries that decision. Every
+reader takes that result as `parked` (see the launch results, below), its
+ended row classed parked for a person with a repository maintainer and the
+act the decision's class asks for as its next owner. For
 the needs the tick detects itself (a failed follow-up, a stalled pickup, a
 checkout an unlisted tree holds, a drive the ledger handed to a person, a
 stuck launch record) the tick frames the decision from the facts that
@@ -1845,7 +1902,9 @@ A person's on-demand start of a pass through `jig send` is not built.
   reported, never taken over.
 - **Re-arm a drive a person may have stopped** (an explicit mailbox stop or
   pause), or relaunch a stalled pickup, unless a person's answer to the
-  need's decision chose that step.
+  need's decision chose that step, or the pickup's own tree holds the work
+  it left: then it relaunches it once per head in that tree, only to push
+  and record that work (`dispatch.stalled_relaunch`).
 - **Keep a converged pull request current with its base.** It re-drives a
   converged pull request on mechanical facts only: the forge reports
   it conflicting with its base, or its head moved past the head the drive
@@ -1875,10 +1934,6 @@ A person's on-demand start of a pass through `jig send` is not built.
   request.** What is serialized is the catalog's, changed by a person; the
   tick never infers contention from a conflict it just saw. A hold keeps
   only the dispatcher's own launches off.
-
-Item 50 narrows one more of these rules, once built: the tick relaunches a
-stalled pickup once in its own tree to push and record work that tree holds
-([need-classes.md § What changes in the dispatcher's rules](need-classes.md#what-changes-in-the-dispatchers-rules)).
 
 ### Notifications
 
@@ -2148,7 +2203,27 @@ writes that SQLite's own write lock orders against a tick's. The database runs i
 so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
-version named, by every command that opens it. The dashboard's server
+version named, by every command that opens it, once a step past the
+command's own version was not additive (it raised the minimum reader).
+A wrapper whose stage has ended is the one exception, so that a stage's
+exit crosses such a step when the host upgrades while the stage runs:
+from then on the wrapper uses a newer database as it is, never migrating
+it, as long as it still holds, unchanged, every column the wrapper reads or
+writes after its stage (the wrapper's `AFTER_STAGE_COLUMNS` contract): on
+the launch record, its claim, result, closing report and exit, and the
+thread samples, waiting episodes and claimed items read with it, and in the
+log, the settled ends, the steward runs and the companion tables the
+wrapper's report writes and result reads use. It records the exit, then what follows it (the
+launch's end on its shared claim, a follow-up's label, closing a finished
+run's tab), and the newer tick classes the launch by that exit as it would
+have without the upgrade. The tick, a claim and every other reader that
+decides slots stay refused. A future step that is not additive keeps all of those
+columns readable and writable as they are, or says how an older wrapper's
+exit crosses it; a database that lacks one of them refuses the wrapper,
+which then says that the stage ran and how it ended and exits with the
+stage's own code, and the tick finds the launch's wrapper gone without an
+exit. A wrapper refused before its stage starts starts nothing and exits
+`2`. The dashboard's server
 opens it through the reader that migrates it until the dashboard design's
 first stage (its step 5) makes the server, and every later stage's, open
 it read-only, never migrating it and showing a schema older or newer than
@@ -2310,12 +2385,13 @@ replaced by a takeover is stalled, not refused.
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | converged           | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done`                                                                                         |
 | merged              | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge                                                          |
-| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood                                                  |
-| parked for a person | a park (exit `8`); a follow-up pass that stopped on a question for a person                                                                                                           |
+| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood; a pass that recorded `waits` on a rate limit    |
+| parked for a person | a park (exit `8`); a pickup or follow-up pass that stopped on a question for a person, or recorded the launch result `parked`                                                         |
+| arm pending         | a follow-up pass that recorded the launch result `waits` on an arm still pending                                                                                                      |
 | stalled             | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over`                                                         |
 | died                | a process gone without an exit; an interactive session that ended with no result                                                                                                      |
 | refused             | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
-| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`; a recorded result `failed`                                                             |
+| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`; the launch result `failed`                                                             |
 | double claim        | used by event rows only                                                                                                                                                               |
 | unknown             | anything not placed above, with its last state                                                                                                                                        |
 
@@ -2598,9 +2674,8 @@ session runs. Its values are split as configuration always is:
 - **A repository's**, in a `dispatch` section of its `.config/jig.yaml`,
   documented in [CONFIGURATION.md](../plugin/CONFIGURATION.md): the factory
   identity per tracker (`identity`), the states that mean "ready to pick
-  up" (`states`), the follow-up command (`followup_command`, `/followup` in
-  Jig; elsewhere the plugin's `/jig:followup` unless the repository names
-  its own),
+  up" (`states`), the follow-up command (`followup_command`, the plugin's
+  `/jig:followup` unless the repository names its own),
   `stalled_after`, `blocked_after`, the expectations
   `drive_rounds_flat`, `pickup_within` and `followup_within`, and the
   dispatch labels (`labels`: `enabled`, `prefix`, `only_labeled`).
@@ -2638,8 +2713,12 @@ tick at a time for a repository, no sooner than a minute after the last
 one started, a request made inside that minute taken by one trailing
 tick, and a tick refused for a held lock tried again after the minute. `send` keeps its pending requests on disk
 (`plugin/shared/wake.ts`), since it exits at once; its waiter runs the
-tick with the installed timer's launcher and environment and exits after
-it. Each request records who asked and why, and the waiter's log names
+tick with the installed timer's command and environment and exits after
+it. A systemd timer's are read as systemd runs them, its drop-ins applied
+(`plugin/runtime/systemd-dropins.ts`), so a drop-in that wraps the command
+to give the tick a credential gives the woken tick the same; a drop-in the
+waiter cannot reproduce starts no tick, says why in the waiter's log, and
+leaves the request to the timer's next tick. Each request records who asked and why, and the waiter's log names
 them beside the tick it ran.
 
 A change on the forge (a review, a comment, a label a person adds, a push,
@@ -2713,7 +2792,7 @@ One pull request each, in this order; each is usable on its own.
    outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a
    person runs it by hand and marks that marker done when it succeeds
-   (Jig's `/followup` first); the notifications above
+   (Jig's own first); the notifications above
    through `notify`. The park's
    notification carries its framed decision, or its stored reason
    when it has no decision record, and

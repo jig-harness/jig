@@ -3,39 +3,34 @@ import { runningFollowup } from "./followup-view.ts";
 import { ItemTitle, RepoLink } from "./pr.tsx";
 import { LinkedDetail, WorkLead } from "./work.tsx";
 /**
- * Needs you: the person's list, one group per act. Each card opens with the
- * act, then, for a parked need, one short row per decision (`decision-rows.tsx`)
+ * Needs you: the person's list, one group per act. Each card opens with the act,
+ * then, for a parked need, one short row per decision (`decision-rows.tsx`)
  * to pick an answer on, and who it waits on; for any other need, the ask and
  * the recommended option with what it changes and costs. The steps and the
  * evidence are folded. Two rows show on a phone; the rest wait behind Show all.
  * Where a parked drive's card can send its answers, the head offers Send's
- * settings (`send.tsx`).
+ * settings (`send.tsx`). The cards an answer hid fold into one line above
+ * the list (`AnsweredHolds`).
  */
 import { type ReactNode, useId, useRef, useState } from "react";
 import {
   DecisionCounts,
   filterAnswerStates,
-  groupMembers,
 } from "./decision-counts.tsx";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
+import { facetAttrs } from "./facets.ts";
 import { answerCommentUrl, cardAttrs } from "./keys.ts";
 import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 import { Evidence, PanelHelp, StageHint } from "./fold.tsx";
-import { GutterCard } from "./gutter.tsx";
+import { ago } from "./format.ts";
+import { GutterCard, GutterFold } from "./gutter.tsx";
 import { ActPill, BareWord, Glyph } from "./icon-word.tsx";
 import { ACT_ICONS, CAUSE_ICONS, EVERYONE_ICONS, iconOf } from "./icons.ts";
 import { Mark } from "./marks.tsx";
-import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import type { NeedAct } from "../../plugin/shared/acts.ts";
-import {
-  type NeedRow,
-  type NeedView,
-  needPeopleOf,
-  needRows,
-} from "./needs-view.ts";
+import { type NeedRow, type NeedView, needRows } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
 import { NoSend, SendSettings, SendSettingsToggle } from "./send.tsx";
 import { useKeptToken } from "./forge-token.ts";
@@ -138,20 +133,43 @@ export function ActedAnswers({ need }: { need: Pick<NeedView, "acted"> }) {
   );
 }
 
-/** Answered holds remain visible while their facts stand. */
+/**
+ * The cards a person's answer hid while their facts stand, folded into one
+ * quiet line with their count, so the notes never push the work down; the
+ * line opens to one note per hidden card.
+ */
 export function AnsweredHolds({
   line,
 }: {
   line: Pick<LineSnapshot, "answeredHolds">;
 }) {
+  const holds = line.answeredHolds ?? [];
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  if (holds.length === 0) return null;
+  const hidden =
+    holds.length === 1
+      ? "1 card hidden by an answer"
+      : `${holds.length} cards hidden by answers`;
   return (
-    <>
-      {(line.answeredHolds ?? []).map((h) => (
-        <p className="sm answeredHold" key={`${h.repo} ${h.target}`}>
-          {h.repo} {h.target}: {h.why}
-        </p>
-      ))}
-    </>
+    <div className="answeredHolds">
+      <button
+        className="heldToggle"
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen(!open)}
+      >
+        {hidden} · {open ? "hide" : "show"}
+      </button>
+      <ul id={id} hidden={!open}>
+        {holds.map((h) => (
+          <li className="sm answeredHold" key={`${h.repo} ${h.target}`}>
+            {h.repo} {h.target}: {h.why}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -214,7 +232,40 @@ function NeedDetail({ need }: { need: NeedView }) {
   );
 }
 
-function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
+/** The filter reads these facts even while a group is folded. */
+function needFacetAttrs(
+  row: NeedCardRow,
+  clock: Clock,
+): Record<string, string> {
+  const card = row.type === "need" ? row.need : row.slot;
+  const since = Date.parse(row.since);
+  const hours = (clock.nowMs - since) / 3_600_000;
+  const age =
+    hours < 1 ? "Under 1 hour" : hours < 24 ? "1–24 hours" : "1 day or more";
+  return {
+    ...facetAttrs({
+      act: [row.type === "need" ? row.need.act : "Investigate"],
+      repo: [card.repo],
+      person: row.type === "need" ? row.need.people : [],
+      stage: [card.stage],
+      age: [age],
+    }),
+    "data-facet-since": row.since,
+    "data-facet-age-label":
+      row.type === "need" ? row.need.age : ago(since, clock.nowMs),
+    "data-facet-target": card.target,
+  };
+}
+
+function NeedItem({
+  need,
+  rest,
+  facets,
+}: {
+  need: NeedView;
+  rest: boolean;
+  facets: Record<string, string>;
+}) {
   const card = useRef<HTMLElement | null>(null);
   const picking = usePicking(need, card);
   const picks = need.rows.length > 0;
@@ -223,9 +274,9 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
   if (commentUrl !== null) attrs["data-pr"] = commentUrl;
   return (
     <GutterCard
-      className={rest ? "need rest" : "need"}
+      className={rest ? "need groupRest" : "need"}
       cardRef={card}
-      attrs={attrs}
+      attrs={{ ...attrs, ...facets }}
       label={`${need.foldLabel} for ${need.target}`}
       onBlur={(event) => {
         // Copy's first step lasts while focus stays on the card, or in the palette that copies it.
@@ -300,11 +351,19 @@ function NeedItem({ need, rest }: { need: NeedView; rest: boolean }) {
   );
 }
 
-function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
+function StuckItem({
+  slot,
+  rest,
+  facets,
+}: {
+  slot: SlotView;
+  rest: boolean;
+  facets: Record<string, string>;
+}) {
   return (
     <GutterCard
-      className={rest ? "need rest" : "need"}
-      attrs={cardAttrs(slotCard(slot, "needs"))}
+      className={rest ? "need groupRest" : "need"}
+      attrs={{ ...cardAttrs(slotCard(slot, "needs")), ...facets }}
       label={`Evidence for ${slot.target}`}
       face={
         <>
@@ -351,9 +410,108 @@ function StuckItem({ slot, rest }: { slot: SlotView; rest: boolean }) {
   );
 }
 
-function rowKeyOf(row: NeedRow): string {
-  if (row.type === "head") return row.head;
-  return row.type === "need" ? row.need.rowKey : `stuck ${row.slot.record}`;
+type NeedCardRow = Exclude<NeedRow, { type: "head" }>;
+
+interface NeedGroupView {
+  head: string;
+  cards: NeedCardRow[];
+}
+
+function groupRows(rows: NeedRow[]): NeedGroupView[] {
+  const groups: NeedGroupView[] = [];
+  for (const row of rows) {
+    if (row.type === "head") groups.push({ head: row.head, cards: [] });
+    else groups.at(-1)?.cards.push(row);
+  }
+  return groups;
+}
+
+const INITIAL_GROUP_SIZE = 10;
+
+function NeedGroup({
+  group,
+  clock,
+  defaultOpen,
+  resetKey,
+}: {
+  group: NeedGroupView;
+  clock: Clock;
+  defaultOpen: boolean;
+  resetKey: string;
+}) {
+  const [all, setAll] = useState(false);
+  const { head, cards } = group;
+  const oldest = cards[0];
+  return (
+    <div data-facet-group="">
+      <GutterFold
+        className={all ? "needGroup all" : "needGroup"}
+        label={`${head} group`}
+        defaultOpen={defaultOpen}
+        resetKey={resetKey}
+        keepMounted
+        head={
+          <h3 className="needGroupTitle">
+            <span className="headWord">
+              <Glyph
+                of={iconOf(
+                  ACT_ICONS,
+                  head === "Not moving" ? "Investigate" : head,
+                )}
+                size={16}
+              />
+              {head}
+            </span>{" "}
+            <span className="mut" aria-hidden="true">
+              ·
+            </span>{" "}
+            <span className="m" data-group-count="">
+              {cards.length}
+            </span>{" "}
+            <span className="sm mut" data-group-oldest="">
+              {oldest === undefined
+                ? null
+                : `Oldest ${ago(Date.parse(oldest.since), clock.nowMs)}`}
+            </span>{" "}
+            <span data-group-decisions="">
+              <DecisionCounts rows={cards} />
+            </span>
+          </h3>
+        }
+      >
+        {cards.map((row, i) => {
+          const rest = i >= INITIAL_GROUP_SIZE;
+          const facets = needFacetAttrs(row, clock);
+          return row.type === "need" ? (
+            <NeedItem
+              key={row.need.rowKey}
+              need={row.need}
+              rest={rest}
+              facets={facets}
+            />
+          ) : (
+            <StuckItem
+              key={row.slot.record}
+              slot={row.slot}
+              rest={rest}
+              facets={facets}
+            />
+          );
+        })}
+        {cards.length > INITIAL_GROUP_SIZE ? (
+          <button
+            className="moreBtn deskToo"
+            type="button"
+            data-group-more=""
+            aria-expanded={all}
+            onClick={() => setAll(!all)}
+          >
+            {all ? "Show fewer" : `Show all ${cards.length}`}
+          </button>
+        ) : null}
+      </GutterFold>
+    </div>
+  );
 }
 
 /** The repositories of the cards that can send, for the token's scope. */
@@ -365,12 +523,12 @@ function sendableRepos(rows: NeedRow[]): string[] {
 }
 
 /** Send's settings: the toggle in the panel's head, shown while a card can send or a token is kept, and the panel it opens. */
-function useSendSettings(
-  line: LineSnapshot,
-  clock: Clock,
-): { toggle: ReactNode; panel: ReactNode } {
+function useSendSettings(rows: NeedRow[]): {
+  toggle: ReactNode;
+  panel: ReactNode;
+} {
   // Every card the line holds, whoever it waits on: the token covers them all.
-  const sendable = sendableRepos(needRows(line, clock));
+  const sendable = sendableRepos(rows);
   const { kept } = useKeptToken();
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -392,23 +550,25 @@ function useSendSettings(
 export function NeedsPanel({
   line,
   clock,
+  filterActive = false,
+  filterKey = "",
 }: {
   line: LineSnapshot;
   clock: Clock;
+  filterActive?: boolean;
+  /** Changes whenever the card filter does, reopening matching groups. */
+  filterKey?: string;
 }) {
-  const [all, setAll, panel] = useShowAll();
-  const people = needPeopleOf(line);
-  const [chosen, setPerson] = useState<string | null>(null);
-  // A person the newest line no longer names is no filter.
-  const person = chosen !== null && people.includes(chosen) ? chosen : null;
+  const allRows = needRows(line, clock);
   const [everyone, setEveryone] = useState("any");
-  const allRows = needRows(line, clock, person);
   const rows = filterAnswerStates(allRows, everyone);
-  const count = rows.filter((r) => r.type !== "head").length;
-  const send = useSendSettings(line, clock);
-  let seen = 0;
+  const groups = groupRows(rows);
+  const decisionWaits = groups.some(
+    ({ head }) => head === "Decide" || head === "Authorize",
+  );
+  const send = useSendSettings(allRows);
   return (
-    <section className="panel pNeeds" aria-labelledby="h-needs" ref={panel}>
+    <section className="panel pNeeds" aria-labelledby="h-needs">
       <div className="panelHead">
         <h2 id="h-needs">What needs you</h2>
         <PanelHelp panel="What needs you">
@@ -420,27 +580,11 @@ export function NeedsPanel({
           Send; the next tick re-arms the drive.
         </PanelHelp>
         {send.toggle}
-        {people.length === 0 ? null : (
-          <label className="personFilter sm">
-            <span className="mut">Waits on</span>
-            <select
-              value={person ?? ""}
-              onChange={(event) => setPerson(event.currentTarget.value || null)}
-            >
-              <option value="">anyone</option>
-              {people.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         {everyone !== "any" ||
         allRows.some(
           (row) => row.type === "need" && row.need.answerNotes.length > 0,
         ) ? (
-          <label className="personFilter sm">
+          <label className="answerFilter sm">
             <span className="mut">For everyone</span>
             <select
               value={everyone}
@@ -453,39 +597,22 @@ export function NeedsPanel({
             </select>
           </label>
         ) : null}
-        <MoreToggle count={count} all={all} setAll={setAll} where="head" />
       </div>
       <DecisionCounts rows={rows} />
       {send.panel}
       <AnsweredHolds line={line} />
-      <div className={all ? "needList all" : "needList"}>
-        {rows.map((row, i) => {
-          const rest = !all && seen >= SHOWN_CLOSED;
-          if (row.type === "head")
-            return (
-              <div
-                className={`groupHead groupWord${i === 0 ? " first" : ""}${rest ? " rest" : ""}`}
-                key={rowKeyOf(row)}
-              >
-                {Object.hasOwn(ACT_ICONS, row.head) ? (
-                  <ActPill act={row.head as NeedAct} />
-                ) : (
-                  <span className="headWord">
-                    <Glyph of={iconOf(ACT_ICONS, row.head)} size={16} />
-                    {row.head}
-                  </span>
-                )}
-                <DecisionCounts rows={groupMembers(rows, i)} />
-              </div>
-            );
-          seen++;
-          return row.type === "need" ? (
-            <NeedItem need={row.need} rest={rest} key={rowKeyOf(row)} />
-          ) : (
-            <StuckItem slot={row.slot} rest={rest} key={rowKeyOf(row)} />
-          );
-        })}
-        <MoreToggle count={count} all={all} setAll={setAll} where="foot" />
+      <div className="needList">
+        {groups.map((group) => (
+          <NeedGroup
+            key={group.head}
+            group={group}
+            clock={clock}
+            resetKey={filterKey}
+            defaultOpen={
+              filterActive || group.head !== "Investigate" || !decisionWaits
+            }
+          />
+        ))}
       </div>
     </section>
   );

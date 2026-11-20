@@ -172,6 +172,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes per head and failing check (`drive.ci_repair_rounds`; `DRIVE_PR_CI_REPAIR_ROUNDS` for one run) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
 | `CI_INFRA_PERSISTED` | 23 | The review converged, and every failing check on the head failed on the infrastructure (a lost runner, or a setup step's network failure, with no code diagnostic) through the drive's re-runs and head moves (`DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each). No CI-repair pass was spent and nothing in the code needs repair. Under `jig dispatch` the dispatcher re-drives it after a backoff that doubles with each consecutive such stop, and tells a person once the stops outlast its re-drives |
+| `FORGE_RATE_LIMITED` | 24 | A read of the drive met the forge's spent rate limit for its credential: the report names the reset (`rateLimit.until`), and nothing more is sent before it. Never `INDETERMINATE`. `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds (default 30 minutes) and goes on, the attach as well as the rounds; past that it stops with this exit, the reset recorded on its stop, and under `jig dispatch` the dispatcher re-drives it after the reset, on any account, without a person |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
@@ -368,7 +369,13 @@ the drive observes a 30-second grace period, then requests one re-run per
 head. Its SQLite claim survives re-arms and is recorded before the request.
 The drive keeps polling during the grace period and re-run; unrelated pending
 workflows do not hide a cancellation. It never replays an event created under
-the CI hold. A refused or unconfirmed request parks `cancelled-ci`. After
+the CI hold. A refused or unconfirmed request parks `cancelled-ci`. A read
+of the recovery (the head's check runs, its workflow runs, the pull request
+and its hold) that fails in a way waiting can clear is sent once more, except
+under a rate limit; still failing, the drive stops with `NOT_SETTLED` (exit
+`4`), naming the read and its failure class, for the line to re-arm, and a
+claim whose re-run was not requested is given back. The watch after a
+converged stop keeps polling instead. After
 a request the drive judges the runs it re-ran, not the cancelled runs it finds
 again: it waits while a new attempt of one, or a run of its workflow, is
 going, and parks when one of them has no new attempt or result ten minutes
@@ -402,6 +409,33 @@ A successful replacement clears that operational park. Intentional held-run
 cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
 that cancels itself blocking the merge.
+
+**A job stopped at its time limit is a failure, not a cancellation.** The
+runner stops a job that runs past its `timeout-minutes` and the forge
+reports it `cancelled`, with an annotation on its check run saying it
+"exceeded the maximum execution time". Before recovering a cancelled job
+whose check run carries annotations, the drive reads them (one request per
+page, once per driver process) and classes such a job as a
+[timed-out job](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): its run is never re-run, counted
+against the head's re-run or parked `cancelled-ci`, since a re-run stops at
+the same limit, and the other cancelled jobs of that run (a matrix's
+siblings) go with it. On the final CI the drive starts a CI-repair pass for
+it as for a failing check, from the same budget and stopping with
+`CI_REPAIR_SPENT` once that is spent, and names the job, its limit and its
+run time in its log and in the pass's detail: "job `test` ran 30m 4s and
+stopped at its 30-minute limit (timeout-minutes)". Other cancellations on
+the head still take the recovery above on the same poll; once the drive is
+at the final CI, a re-run they request does not hold up the repair, and a
+park or stop they end in ends the drive first. Before a round's pass the
+drive logs a timed-out job and goes on, but still waits for a re-run of
+another cancellation that is going, and repairs afterwards. A timed-out
+check the repository lists in `ci.advisory_checks` takes the advisory
+decision first, as any failing check does. A timed-out job beside a failure
+in a run that was not cancelled is named to the repair too. A run of the
+timed-out job's workflow still going on the head (a queued re-run of it) is
+waited for, as any replacement is.
+A cancellation the annotations do not attribute to a time limit (none
+carries that message, or they could not be read) is a cancelled check.
 
 **The "still waiting for a witness" poll is bounded**, at
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` × 10s — 30 minutes by default, `0` to wait
@@ -878,8 +912,8 @@ outlives the session that spawned it, so its console is not where you look:
   cancelled-run recovery below, a failure in a first attempt a label write
   started (created within 30 seconds after one) is re-run once, claimed in
   the same SQLite table as a label-caused cancellation, and green lets the
-  label stand. A failure no label write started, a commit status failing,
-  a re-run that fails again or is not accepted, or CI not settled within
+  label stand. A failure no label write started, a job the runner stopped
+  at its time limit, a commit status failing, a re-run that fails again or is not accepted, or CI not settled within
   `DRIVE_PR_CONVERGED_CI_MINUTES` (30 by default, `0` writes the label and
   watches nothing) parks `converged-ci` with a framed decision naming the
   runs, and the stop is settled again as [`HITL_PARKED`](../../protocol/drive-exits.md),
@@ -1613,7 +1647,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them, then `; timed out: ` and each job the runner stopped at its time limit, with its limit and run time; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer [`CONVERGED`](../../protocol/drive-exits.md) on a `ci-repair` round, and
@@ -1654,6 +1688,11 @@ Then:
   run the round's validation plan over the cumulative tree, and **§ 6** to
   commit and push. §§ 2–4 have nothing to enumerate — the review converged
   before you were dispatched.
+
+  When the detail names a timed-out job, find why it ran past its limit (a
+  hang, a step that waits on something that never comes, work that grew
+  slower) and fix that; raise its `timeout-minutes` only when the work
+  legitimately needs longer. Re-running it stops at the same limit.
 
   When the log shows the failure is not in the code (a lost runner, a network
   error), re-run the failed workflow runs instead of committing (a commit
@@ -3145,7 +3184,7 @@ returned, which is the case this rule covers.
 |---|---|---|
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
 | `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, resolve or abort the reported Git operation, then re-run |
-| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, or the timeline does not yet show a label change | Read the `ci-hold:` line, wait for the checks it names, then re-run |
+| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, the timeline does not yet show a label change, or a read of the cancelled-run recovery kept failing | Read the `ci-hold:` or `cancelled CI recovery:` line, wait for what it names, then re-run |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
 | `6` | Pushed and stamped, but at least one held item was **refused** | Each refusal is named with the refusing script's own exit code and diagnostic. Reconcile it via § 3 — re-hold if the reply still stands, resolve under whatever outcome actually applies if it does not — then re-run |

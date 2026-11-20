@@ -5,7 +5,7 @@
  *
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
- * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pass that recorded `waits` has `result` `failed`, the time it waits until in `result_until` and what it waits for (a rate limit, or a follow-up's arm still pending) in `result_wait`; a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
+ * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pass that recorded `waits` has `result` `failed`, the time it waits until in `result_until` and what it waits for (a rate limit, or a follow-up's arm still pending) in `result_wait`; a pass that recorded `failed --decision` has the decision in `result_decision`, and reads as `parked` (`launch-result.ts`); a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -22,6 +22,8 @@
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
  * | `merge_facts` | repository and directly verified merged pull request | immutable merged time, base branch and complete changed files, independent of follow-up activation; associations and edge release are read again each tick |
+ * | `overlap_waits` | repository and wanted pickup waiting on overlap | since when it waited in tier 2 or 3, since when in tier 3, and when it was promoted past the bound; removed once it starts or is no longer wanted |
+ * | `overlap_hotspots` | repository, day and file | in how many ticks of the day the file kept a pickup over the overlap bound |
  * | `allocation_charge` | pickup claim | its claim id: written once, in the claim's transaction; a replay inserts nothing |
  * | `allocation_week` | completed week | the week, written once by the next week's first tick and never rewritten |
  * | `allocation_lane_epoch` | weighted lane's ready or empty transition | an increasing sequence; the newest is the epochs' revision |
@@ -46,15 +48,33 @@
  * transaction. One a newer plugin migrated is used as it is when every step
  * past this plugin's version was additive, and refused, with its version
  * named, when it needs a newer reader (the shared module's minimum reader).
+ *
+ * A wrapper whose stage has ended is the one reader that still uses such a
+ * database: from `enterAfterStage` on, its process opens it through the
+ * shared module's `openKnownColumns`, naming `AFTER_STAGE_COLUMNS`, every
+ * column the wrapper reads or writes once the stage is over (its own launch
+ * row, read whole, and the `exit` it writes; the earlier follow-up launches
+ * of its pull request; the thread samples, waiting episodes and claimed
+ * items read with its record; the claim ends it settles; a steward run's
+ * submitted flag). So an upgrade during a stage, past a step that was not additive,
+ * still gets the stage's exit recorded, and the newer tick classes the
+ * launch by it. Nothing else the dispatcher runs opens the database that way:
+ * the tick, a claim and every reader that decides slots stay refused. A
+ * future step that is not additive keeps those columns as they are, in
+ * name and in meaning, or older wrappers' exits stop crossing it: their
+ * open is refused as before, the wrapper says so with the stage's own exit
+ * code, and the tick finds the launch's wrapper gone without an exit.
  */
 import { type Database, SQLiteError } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   closeDatabase,
+  type KnownColumns,
   type Migration,
   type OpenCode,
   openDatabase,
+  openKnownColumns,
   openReadOnly,
   type ReadOnlyDatabase,
   schemaVersion,
@@ -68,6 +88,15 @@ import type { Outcome } from "../../shared/outcome.ts";
 
 /** The database's file name under the state directory. */
 const STATE_FILE = "state.sqlite";
+
+/** A release a person already took under its own decision stays theirs when it could join a group. */
+export const RELEASES_ALREADY_TAKEN = `UPDATE release_needs
+    SET taken_as = json_object('target', item, 'evidence', json_object('tag', tag))
+    WHERE item IS NOT NULL AND taken_as IS NULL AND EXISTS (
+      SELECT 1 FROM station_answers AS answer
+      WHERE answer.repo = release_needs.repo AND answer.target = release_needs.item
+        AND answer.key = 'release' AND answer.outcome = 'held'
+    );`;
 
 /**
  * Each entry moves the schema from its index to the next version; a new
@@ -501,6 +530,30 @@ export const MIGRATIONS: readonly Migration[] = [
     );
   `,
   },
+  {
+    additive: true,
+    sql: `ALTER TABLE release_needs ADD COLUMN taken_as TEXT;
+    ${RELEASES_ALREADY_TAKEN}`,
+  },
+  {
+    // The overlap walk's waits and the files that kept work over the overlap bound (`overlap-waits.ts`).
+    additive: true,
+    sql: `
+    CREATE TABLE overlap_waits (repo TEXT NOT NULL, item TEXT NOT NULL, since_ms INTEGER NOT NULL, tier3_since_ms INTEGER, promoted_ms INTEGER, PRIMARY KEY (repo, item));
+    CREATE TABLE overlap_hotspots (repo TEXT NOT NULL, day TEXT NOT NULL, path TEXT NOT NULL, ticks INTEGER NOT NULL, PRIMARY KEY (repo, day, path));
+  `,
+  },
+  {
+    additive: true,
+    sql: `CREATE TABLE rearm_lock_needs (
+      repo TEXT NOT NULL,
+      pr INTEGER NOT NULL,
+      generation INTEGER NOT NULL,
+      heartbeat TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      PRIMARY KEY (repo, pr)
+    );`,
+  },
 ];
 
 /** The schema version this plugin writes. */
@@ -558,6 +611,61 @@ export function stateDbFailure(error: unknown): string | null {
     : null;
 }
 
+/**
+ * The columns a wrapper reads and writes once its stage has ended, by table:
+ * its own launch row, which it reads whole, with the `exit` it writes; the
+ * earlier follow-up launches of its pull request it reads a wait from; the
+ * thread samples, waiting episodes and claimed items read with its record;
+ * the claim ends it settles; a steward run's submitted flag; and the log
+ * rows a report it records rewrites (`refreshEnded`).
+ */
+const AFTER_STAGE_COLUMNS: KnownColumns = {
+  launches: [
+    "id",
+    "repo",
+    "action",
+    "pr",
+    "created_at",
+    "record",
+    "claim",
+    "exit",
+    "result",
+    "result_at",
+    "result_until",
+    "result_wait",
+    "result_next",
+    "result_decision",
+    "refusal",
+    "report",
+    "sessions",
+  ],
+  thread_samples: ["launch", "round", "threads", "at"],
+  waiting_episodes: [
+    "launch",
+    "observed_at",
+    "reset_at",
+    "evidence",
+    "last",
+    "read_at",
+  ],
+  pickup_claims: ["launch", "item"],
+  settled_ends: ["record", "at"],
+  steward_runs: ["id", "submitted"],
+  log: ["key", "seq", "cause", "report_by", "row"],
+};
+
+let afterStage = false;
+
+/**
+ * Mark this process as a wrapper whose stage has ended: from here on,
+ * `stateDb` also uses a database whose minimum reader is newer than this
+ * plugin, as long as it keeps `AFTER_STAGE_COLUMNS` (see the header). Only
+ * the wrapper calls it, once its stage is over.
+ */
+export function enterAfterStage(): void {
+  afterStage = true;
+}
+
 /** The database file under a state directory. */
 export function statePath(root = stateRoot()): string {
   return join(root, STATE_FILE);
@@ -567,13 +675,18 @@ export function statePath(root = stateRoot()): string {
  * The state database under `root`, opened once per process: created and
  * migrated to this plugin's schema when it is new or older, refused with
  * the usage exit (its cause a `StateVersionError`, `newerStateRefusal`) when
- * a newer plugin wrote it and it needs a newer reader. A database that cannot
+ * a newer plugin wrote it and it needs a newer reader, unless this process is
+ * a wrapper past its stage and the database keeps the columns it touches
+ * (`enterAfterStage`). A database that cannot
  * be opened at all is a defect here, carrying what the platform threw as its
  * cause and its message.
  */
 export function stateDb(root = stateRoot()): Database {
   const path = statePath(root);
-  const opened = openDatabase({ path, migrations: MIGRATIONS });
+  const spec = { path, migrations: MIGRATIONS };
+  const opened = afterStage
+    ? openKnownColumns(spec, AFTER_STAGE_COLUMNS)
+    : openDatabase(spec);
   if (opened.ok) return opened.value;
   const { code, reason, cause } = opened.failure;
   if (code === "migration-history" || code === "source-state")

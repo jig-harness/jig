@@ -8,6 +8,7 @@ count alone — which measured failure each guard exists to prevent.
 ## Contents
 
 - [Exit codes](#exit-codes)
+- [The forge's spent rate limit](#the-forges-spent-rate-limit)
 - [Repair rounds](#repair-rounds)
 - [What convergence requires](#what-converged-requires)
 - [Reviewer identity](#the-reviewer-is-identified-by-app-slug-not-by-check-name)
@@ -56,7 +57,10 @@ The JSON report (`--json`) carries `state`, `exit`, `reason`, the head pair, the
 `base` block (`refName`, `oid`, `drift`), the `merge` pair (`mergeable`,
 `stateStatus`), the reviewer's identity/status/reviewed-SHA, the work counts,
 and a `ci` verdict (`green`, or `held:`, `failing:`, `pending:`, `cancelled:` or
-`unknown:` with the names) with the failing names and runs behind it.
+`unknown:` with the names) with the failing names and runs behind it. A
+[`FORGE_RATE_LIMITED`](../../../protocol/drive-exits.md) report also carries
+`rateLimit`: `until`, when the forge's spent limit resets, and `reason`, the
+refusal's own words.
 
 A live CI hold's intentional failing check reads `held:`, using M13's job
 shape or `ci.hold_sentinels`; it waits without repair and never counts as
@@ -105,6 +109,33 @@ next arm's driving label moves them back
 
 
 
+## The forge's spent rate limit
+
+The outbound layer classifies a forge call the credential's spent rate limit
+refused as `rate-limited`, with the reset it named, whether the forge refused
+it or the shared budget held it back before sending. Nothing is sent for that
+credential before the reset, so a read that met the limit is not a failure
+to read, and a retry before the reset can only be refused again.
+
+- `drive-status.ts` stops as soon as a read of its own met the limit and the
+  reset is still ahead: [`FORGE_RATE_LIMITED`](../../../protocol/drive-exits.md)
+  with the reset in its report, in place of the bounded retry that ends
+  `INDETERMINATE`. A later call that succeeds clears what it met.
+- `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds
+  (default 30 minutes, at most a day) and goes on: between rounds it keeps
+  its ledger's lease and reads its mailbox while it waits; at the attach,
+  before its first round, it waits and reads the pull request again. Either
+  way it waits for at most three resets in a row; a limit spent again after
+  each stops it.
+- A reset further off stops the drive with the same exit. Its `stop` event
+  records the reset (`until`), its closing report names it with cause
+  `environment` and the line as owner, and `jig dispatch` re-drives the stop
+  once the reset has passed, on any account, once per stop, an hour after
+  the stop when it recorded no reset. A stop at the attach writes no ledger
+  (the ledger lives on the forge the limit refuses): that launch spends no
+  arm and no re-drive, and the dispatcher launches the drive again an hour
+  after it ended, never handing it to a person for it.
+
 ## Repair rounds
 
 These stops name work the loop can do itself, so `drive.ts` spends a bounded
@@ -117,7 +148,8 @@ to a human or to a pass.
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
 | Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md), handing the red CI back for repair; [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
-| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer; a cancellation a label write caused gets one re-run per run attempt outside it | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci` |
+| The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer; a cancellation a label write caused gets one re-run per run attempt outside it | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci`; a read of the recovery that keeps failing in a way waiting can clear ends in [`NOT_SETTLED`](../../../protocol/drive-exits.md), naming the read and its failure class |
+| Converged head, a workflow job the runner stopped at its time limit (concluded `cancelled`, its check run annotated "exceeded the maximum execution time"), alone or beside failing checks | `ci-repair`, its detail naming the job, its limit and its run time | the same `drive.ci_repair_rounds` per head and failing check | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md); [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | [`CI_INFRA_PERSISTED`](../../../protocol/drive-exits.md) |
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | [`PR_CONFLICTING`](../../../protocol/drive-exits.md), with its `Fix:` command |
 
@@ -147,7 +179,9 @@ Properties worth stating because each closes a way this could go wrong:
   base branch — the guess the operator-facing message deliberately does not
   make — one level further away where nobody can see it being made.
 - **Only positively-named failures spend CI budget.** `failing: …` yes;
-  `cancelled:`, `unknown:` and an unparseable report no. A commit status in
+  `cancelled:`, `unknown:` and an unparseable report no, except for a job
+  the runner stopped at its time limit, which is a failure under a
+  `cancelled` conclusion. A commit status in
   state `error` whose description says the build was aborted is `cancelled:`,
   as a cancelled check run is. Those are absences of
   evidence, and a CI-repair pass handed no run and no check name has nothing to
@@ -1642,13 +1676,41 @@ false "green":
   completes; another run's success never discharges that obligation. With the
   workflow runs unreadable nothing is dropped: a cancelled check stays unknown
   and a failed one fails.
+- **A job stopped at its time limit.** The runner stops a job past its
+  `timeout-minutes` and the forge reports it `cancelled`; the annotation the
+  runner leaves on its check run ("has exceeded the maximum execution time
+  of 30 minutes", or "of 5m0s") is what tells it apart (`lib/job-timeout.ts`).
+  The recovery reads the annotations of each unreplaced cancelled job whose
+  check run carries any and whose workflow has no run still going on the
+  head (a queued re-run of it is waited for as any replacement is), page by page, once
+  per job and driver process, and keeps a
+  timed-out job's workflow run out of the once-per-head recovery: not
+  re-run, not counted, not parked `cancelled-ci`. Its answer names the job,
+  its limit and its run time (completion less start). The final CI repairs
+  it through the CI-repair path as a failing check, its run named in
+  `DRIVE_PR_ROUND_FAILED_RUNS`; `recoverBeforePass` logs it and goes on
+  (still polling while a re-run of another cancellation is going),
+  and the CI hold's `ensure`, which waits only for required checks to
+  complete, counts it completed, as any failure (it reads annotations and
+  logs the job only on its cancelled-run recovery, which runs while required
+  checks are still being observed); the converged
+  watch parks `converged-ci` naming it. When other cancellations on the head
+  take the recovery on the same poll, the answer carries their `wait` or
+  `none` beside the timed-out jobs, and the final CI repairs without waiting
+  for their re-run (`recoverBeforePass` does wait for it, then the round
+  repairs); a timed-out check listed in `ci.advisory_checks` takes the
+  advisory decision first; a park, an unknown head or a read that kept failing ends
+  the drive first. The recovery runs over every workflow job, except in the
+  CI hold's `ensure`, which asks only about required checks. Annotations that
+  do not read or are not a list, or carry no such message, leave the job a
+  cancelled check, and the drive's log says which.
 - After a `CONVERGED` stop's `converged` label write, which starts the
   workflows that run on label events, the drive watches the verified head
   while it still holds its locks (`lib/driver/converged-ci.ts`): a
   cancellation goes to the recovery above; a failure in a first attempt a
   label write started has its failed jobs re-run once, claimed
-  in `cancelled_ci_label_rerun`; a failure no label write started, a
-  failing commit status, a second failure, a refused re-run, or CI not
+  in `cancelled_ci_label_rerun`; a failure no label write started, a job
+  the runner stopped at its time limit, a failing commit status, a second failure, a refused re-run, or CI not
   settled within `DRIVE_PR_CONVERGED_CI_MINUTES` (30) parks `converged-ci`,
   and the stop is written again as [`HITL_PARKED`](../../../protocol/drive-exits.md) and labelled
   `parked`; a park that cannot be recorded, or a watch that fails, writes it

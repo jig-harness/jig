@@ -120,16 +120,17 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
   addition to CHANGELOG.md's open sections or a move of the plugin version:
   the release step writes those after the merge. Never split related work into small
   pull requests that touch the same files.
-- **Run `bun run gates` before pushing**, and fix what fails rather than
-  suppressing it. Never add a `Ratchet-Loosen` trailer unless a person asked
+- **Run `bun run gates` before pushing.** In sessions the dispatcher starts,
+  this command uses the fast checks and targeted tests when the repository
+  enables them. Fix any failures before pushing. Never add a `Ratchet-Loosen` trailer unless a person asked
   for that loosening. Source file size follows
   [ADR-0007](docs/adr/ADR-0007-source-file-size-ratchet.md).
 - **Parallel worktrees**: reuse a branch before creating one, never move work
   with `git stash`, install only with `bun install`.
 - **Pull requests** open as drafts and are driven until every thread is
   resolved; a person merges, an agent never does. After the merge,
-  [`/followup`](.claude/skills/followup/SKILL.md) settles what the merge
-  still owes.
+  [`/jig:followup`](plugin/skills/followup/SKILL.md) settles what the merge
+  still owes, with Jig's own arms from `.config/jig.yaml` (`followup.arms`).
 - **Never edit a derived file by hand**; regenerate it.
 - **Tests** are type-checked, change the home directory, working directory
   or environment only in a subprocess they spawn, wait by polling with a

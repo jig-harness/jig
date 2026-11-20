@@ -60,9 +60,26 @@ export interface RecoveryDeps {
     earlier: readonly RequestedRun[],
     requested: readonly RequestedRun[],
   ): Promise<boolean>;
-  confirm(pr: string, head: string): Promise<boolean>;
+  /** Whether the head still stands; `unread` when the forge could not say. */
+  confirm(pr: string, head: string): Promise<boolean | "unread">;
   rerunnable(pr: string, runs: readonly WorkflowRun[]): Promise<number[]>;
-  rerun(run: number): Promise<{ code: number; stderr: string }>;
+  /** `unread`: nothing was requested, because the forge could not confirm the head. */
+  rerun(
+    run: number,
+  ): Promise<{ code: number; stderr: string; unread?: boolean }>;
+  /**
+   * Give back what a claim naming `claimed` holds for re-runs never requested:
+   * it then names `kept`, and with `release` it is no longer spent.
+   */
+  withdrawClaim(
+    pr: string,
+    head: string,
+    claimed: readonly RequestedRun[],
+    kept: readonly RequestedRun[],
+    release: boolean,
+  ): Promise<void>;
+  /** Give back the claim of a label-caused re-run never requested. */
+  withdrawLabelRerun(pr: string, run: WorkflowRun): Promise<void>;
   park(pr: string, reason: string): Promise<void>;
   /**
    * Whether the caller still owns the pull request; asked before every forge
@@ -223,7 +240,7 @@ async function requestOpen(
     ),
   ].filter((run, i, all) => all.findIndex((r) => r.id === run.id) === i);
   if (open.length === 0) return "none";
-  if (!(await deps.confirm(pr, head))) return "unknown";
+  if ((await deps.confirm(pr, head)) !== true) return "unknown";
   return await requestOnce(pr, head, open, record, deps, answered, "claim");
 }
 
@@ -258,6 +275,31 @@ async function judgeRequest(
       `${budget} was already requested and cancellation still has no replacement`,
     );
   }
+  // A request that stopped part way left runs of other workflows cancelled
+  // before it and never requested: they are owed now, whatever the requested
+  // runs are doing, and a pending or missing sibling must not hold them back.
+  // Run times have one-second precision, so a run last updated within the
+  // request's own second cannot be told from one cancelled before it: it is
+  // owed, and at worst requested once more under the extension's claim.
+  // The newest request time bounds what was owed: an extension that stopped
+  // part way keeps only the runs it sent, so a run cancelled after the first
+  // request but before a later one is still owed, which the claim's own
+  // `requestedAt` would not say.
+  const lastRequestedAt = Math.max(
+    record.requestedAt ?? 0,
+    ...requested.map((request) => request.at),
+  );
+  const owed = orphaned.filter(
+    (run) =>
+      !requested.some(
+        (request) =>
+          request.id === run.id || request.workflowId === run.workflowId,
+      ) && cancelledBefore(run, floorSecond(lastRequestedAt) + 1000),
+  );
+  if (owed.length > 0) {
+    if ((await deps.confirm(pr, head)) !== true) return "unknown";
+    return await requestOnce(pr, head, owed, record, deps, requested, "extend");
+  }
   const observed = requested.map((run) => observeRequested(run, runs));
   // A run past its window parks whatever its siblings are doing.
   const missing = observed.filter(
@@ -289,7 +331,7 @@ async function judgeRequest(
     )
   )
     return "wait";
-  if (!(await deps.confirm(pr, head))) return "unknown";
+  if ((await deps.confirm(pr, head)) !== true) return "unknown";
   return await requestOnce(
     pr,
     head,
@@ -490,6 +532,7 @@ async function requestOnce(
         )
       : await deps.extend(pr, head, earlier, requested);
   if (!claimed) return "wait";
+  const sent: WorkflowRun[] = [];
   const refused = await requestRuns(
     pr,
     head,
@@ -500,7 +543,22 @@ async function requestOnce(
       : budgetName(record) === "the once-per-head re-run"
         ? "re-run 1/1"
         : budgetName(record),
+    sent,
   );
+  if (refused === UNREAD) {
+    // The forge could not confirm the head, so the runs not yet requested stay
+    // owed: a re-armed drive requests them instead of judging a request that
+    // never left.
+    const release = mode === "claim" && sent.length === 0;
+    const kept = release
+      ? (record.requestedRuns ?? [])
+      : requested.filter(
+          (run) =>
+            earlier.includes(run) || sent.some((other) => other.id === run.id),
+        );
+    await deps.withdrawClaim(pr, head, requested, kept, release);
+    return "unknown";
+  }
   if (refused === "head-moved") return "unknown";
   if (refused !== null)
     return await parkCancelled(deps, pr, head, orphaned, record, refused);
@@ -582,17 +640,24 @@ async function rerunFreshLabelCaused(
   fresh: readonly WorkflowRun[],
   deps: RecoveryDeps,
 ): Promise<"wait" | "parked" | "unknown" | null> {
-  if (!(await deps.confirm(pr, head))) return "unknown";
+  if ((await deps.confirm(pr, head)) !== true) return "unknown";
   const claimed = await claimSafeRuns(pr, fresh, deps);
   if (claimed === null) return null;
   if (claimed.length === 0) return "wait";
+  const sent: WorkflowRun[] = [];
   const answer = await requestRuns(
     pr,
     head,
     claimed,
     deps,
     "the re-run of a label write's cancellation, outside the head's budget,",
+    sent,
   );
+  if (answer === UNREAD) {
+    for (const run of claimed)
+      if (!sent.includes(run)) await deps.withdrawLabelRerun(pr, run);
+    return "unknown";
+  }
   if (answer === "head-moved") return "unknown";
   if (answer !== null)
     return await parkCancelled(
@@ -606,10 +671,11 @@ async function rerunFreshLabelCaused(
   return "wait";
 }
 
-function unreplacedCancelledJobs(
-  jobs: readonly JobEvidence[],
+/** The completed cancelled jobs no newer attempt or replacing run has answered. */
+export function unreplacedCancelledJobs<T extends JobEvidence>(
+  jobs: readonly T[],
   runs: readonly WorkflowRun[],
-): JobEvidence[] {
+): T[] {
   return withoutSuperseded(jobs, runs).filter(
     (job) =>
       job.status === "completed" &&
@@ -618,20 +684,30 @@ function unreplacedCancelledJobs(
   );
 }
 
+/** A request stopped before it left, because the forge could not confirm the head. */
+const UNREAD = "unread";
+
+/** Request each run, adding those requested to `sent`; why it stopped, or `null`. */
 async function requestRuns(
   pr: string,
   head: string,
   runs: readonly WorkflowRun[],
   deps: RecoveryDeps,
   budget: string,
+  sent: WorkflowRun[],
 ): Promise<string | null> {
   for (const run of runs) {
-    if (!(await deps.confirm(pr, head))) return "head-moved";
+    const confirmed = await deps.confirm(pr, head);
+    if (confirmed === "unread") return UNREAD;
+    if (!confirmed) return "head-moved";
+    // Nothing was sent: the runs not yet requested go back to the next owner.
     if (deps.mayMutate !== undefined && !(await deps.mayMutate()))
-      return "head-moved";
+      return UNREAD;
     const answer = await deps.rerun(run.id);
+    if (answer.unread === true) return UNREAD;
     if (answer.code !== 0)
       return `the forge refused or could not confirm the re-run: ${answer.stderr.trim()}`;
+    sent.push(run);
     console.error(
       `cancelled CI recovery: requested run ${run.id} (${budget} on head ${head}); waiting for its replacement`,
     );

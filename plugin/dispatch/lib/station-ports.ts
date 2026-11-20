@@ -10,7 +10,7 @@
  * | release a pickup's claim | the `pickup` stage is on; the tracker reads; no session holds the item; the line knows of no open pull request that carries it | moves the item to the first state a pickup starts from |
  * | detach a checkout | it is idle: clean, every commit on the remote, no drive or process in it (`shared/idle-holder.ts`) | detaches it at its commit, as an open does an idle holder |
  * | re-arm a drive | the `rearm` stage is on; the dispatch labels are on; no hold label | adds the rearm label, a person's command the tick then carries out |
- * | clear a launch record | it is still pending and its launch cannot be retried, and no process runs it | removes it, as `jig dispatch clear` does |
+ * | clear a launch record | it is pending and its launch cannot be retried, or its state is unknown with every process judged, none running, no session joined to its target and no account wall resting on it | removes it, as `jig dispatch clear` does |
  */
 import {
   CANONICAL_STATES,
@@ -32,7 +32,7 @@ import { listCommentsKept } from "../../shared/records/comment-pages.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { stateRoot } from "../receipts.ts";
 import { readMarkers } from "./followup-marker.ts";
-import { pullRequestLabels } from "./forge.ts";
+import { openPullRequest, pullRequestLabels } from "./forge.ts";
 import { holding } from "./holding.ts";
 import { commandLabel, hasCommand } from "./labels.ts";
 import { holdsItem } from "./launch-pickups.ts";
@@ -44,11 +44,15 @@ import {
 } from "./launches.ts";
 import type { TickBound } from "./sources/bounded.ts";
 import { rerunReleaseGates } from "./release-gates.ts";
+import { recordReleasesTaken } from "./release-needs.ts";
+import { snapshotFromListing } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { rearmableStop, writeRearmBinding } from "./rearm-binding.ts";
 import { writeCommandLabel } from "./requests.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type { SharedContext } from "./shared-launches.ts";
 import type { StationPorts } from "./station-answers.ts";
-import { retryable } from "./stuck-launches.ts";
+import { clearBlock } from "./stranded-holds.ts";
+import { joinedTo, retryable } from "./stuck-launches.ts";
 import { readTrackerAnswers } from "./tracker-answers.ts";
 import { failureText } from "./text.ts";
 import type { DispatchSection, RepoTarget } from "./types.ts";
@@ -74,6 +78,8 @@ export interface StationInputs {
   sessions: () => Promise<SessionsReport>;
   root?: string;
   bound?: TickBound | undefined;
+  /** What every repository's release re-runs spend together; made when the first is asked for, the tick's `bound` when it has a deadline. */
+  rerunBound?: (() => TickBound | undefined) | undefined;
 }
 
 /** Why a stage the step belongs to is off; `null` when it is on. */
@@ -366,13 +372,55 @@ async function rearmDrive(
     return refused(
       `${inputs.repo.slug} has its dispatch labels off, so the rearm label cannot carry the re-arm; re-arm the drive by hand`,
     );
-  const held = await heldBy(inputs, pr);
-  if (held !== null) return refused(held);
+  const slug = inputs.repo.slug;
+  const target = { repo: slug, number: pr };
+  const pull = await openPullRequest(slug, pr, { labels: true });
+  if (!pull.ok) return refused(pull.failure.reason);
+  if (hasCommand(labels, pull.value.labels, "hold"))
+    return refused(`a person's hold label is on PR #${pr}`);
   const label = commandLabel(labels, "rearm");
+  if (hasCommand(labels, pull.value.labels, "rearm"))
+    return refused(`PR #${pr} already carries ${label}`);
+  const comments = await listCommentsKept(target, { timeoutSec: 60 });
+  if (!comments.ok) return refused(comments.failure.reason);
+  const { canonical } = snapshotFromListing(comments.value, inputs.login);
+  if (
+    canonical?.parsed.kind !== "ledger" ||
+    !rearmableStop(canonical.parsed.ledger)
+  )
+    return refused(`PR #${pr} has no eligible stopped drive to re-arm`);
+  const bound = await writeRearmBinding(target, inputs.login, label, {
+    comment: canonical.comment.id,
+    generation: canonical.parsed.ledger.generation,
+  });
+  if (!bound.ok) return bound;
   const written = await writeCommandLabel(inputs.repo.slug, pr, label, true);
   return written.ok
     ? ok(`added ${label} to PR #${pr}; the next tick re-arms its drive`)
     : refused(written.failure.reason);
+}
+
+/** The stage whose switch governs clearing a launch record of this action; none for another action. */
+function clearStageOf(action: string): "rearm" | "pickup" | "followup" | null {
+  // A re-arm or a takeover record is the rearm stage's.
+  if (action === "rearm" || action === "takeover") return "rearm";
+  return action === "pickup" || action === "followup" ? action : null;
+}
+
+/** Why a launch record of unknown process is not cleared: what bars it, or a session that still holds its target. */
+async function unknownClearRefusal(
+  inputs: StationInputs,
+  id: string,
+  state: Parameters<typeof clearBlock>[0],
+  record: Parameters<typeof joinedTo>[0],
+): Promise<string | null> {
+  const blocked = clearBlock(state);
+  if (blocked !== null) return `launch record ${id}: ${blocked}`;
+  return sessionHolds(
+    inputs,
+    joinedTo(record),
+    `the target of launch record ${id}`,
+  );
 }
 
 async function clearRecord(
@@ -382,19 +430,17 @@ async function clearRecord(
   const root = inputs.root ?? stateRoot();
   const row = await inspectRow(id, root);
   if (row === null) return refused(`launch record ${id} is gone`);
-  if (row.state.kind !== "pending" || row.record === null)
-    return refused(`launch record ${id} is ${row.state.kind}, not stuck`);
-  const { action } = row.record;
-  // A re-arm or a takeover record is the rearm stage's.
-  const stage =
-    action === "rearm" || action === "takeover"
-      ? "rearm"
-      : action === "pickup" || action === "followup"
-        ? action
-        : null;
+  const { state, record } = row;
+  if ((state.kind !== "pending" && state.kind !== "unknown") || record === null)
+    return refused(`launch record ${id} is ${state.kind}, not stuck`);
+  if (state.kind === "unknown") {
+    const barred = await unknownClearRefusal(inputs, id, state, record);
+    if (barred !== null) return refused(barred);
+  }
+  const stage = clearStageOf(record.action);
   const off = stage === null ? null : stageOff(inputs, stage);
   if (off !== null) return refused(off);
-  if (retryable(row.record))
+  if (state.kind === "pending" && retryable(record))
     return refused(`launch record ${id}'s launch can still be retried`);
   return removeRecordIf(id, row, root)
     ? ok(`cleared launch record ${id}`)
@@ -431,9 +477,16 @@ export function stationPorts(inputs: StationInputs): StationPorts {
         ? null
         : stageOff(inputs, "followup");
       return off === null
-        ? rerunReleaseGates(inputs.repo, tag, inputs.root, inputs.bound)
+        ? rerunReleaseGates(
+            inputs.repo,
+            tag,
+            inputs.root,
+            inputs.rerunBound?.() ?? inputs.bound,
+          )
         : Promise.resolve(refused(off));
     },
+    takeReleases: (tags, decision) =>
+      recordReleasesTaken(inputs.repo.slug, tags, decision, inputs.root),
     rerunFollowup: (pr, marker) => rerunFollowup(inputs, pr, marker),
     doneFollowup: (pr, marker) => doneFollowup(inputs, pr, marker),
     releasePickup: (item, record = null) => releasePickup(inputs, item, record),

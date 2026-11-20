@@ -75,6 +75,7 @@ import {
   leftBehindWorkspaces,
   pickupHold,
 } from "./pickup-hold.ts";
+import { applyRelaunches } from "./pickup-relaunch.ts";
 import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's pickups need beyond the apply state. */
@@ -87,6 +88,10 @@ export interface PickupContext {
   branchPattern: string;
   /** The runtime's answer read afresh, for the read just before a launch. */
   sessions: () => Promise<SessionsReport>;
+  /** Why the host's recovery gate is closed, if it is. */
+  rerunsHeld?: string | null;
+  /** Why serialization could not be decided this tick: no pending launch is replayed then, as no pickup is placed. */
+  serialUndecided?: string | null;
 }
 
 /** Whether a workspace is `key`'s: joined to it, and not one a batch pickup left it out of. */
@@ -411,7 +416,8 @@ async function retryPending(
   ctx: PickupContext,
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["pickup"])) {
-    if (record.stewardResume !== undefined) continue;
+    if (record.stewardResume !== undefined || record.relaunchOf !== undefined)
+      continue;
     const item = record.item as string;
     const unauthorized = servedAuthorization(state, ctx, record, item);
     const fresh =
@@ -434,6 +440,7 @@ async function retryPending(
           );
     const batchBlock = await pendingBatchBlock(state, repo, ctx, record);
     const blocked =
+      ctx.serialUndecided ??
       unauthorized ??
       batchBlock ??
       (typeof fresh === "string"
@@ -478,8 +485,24 @@ export async function applyPickups(
   report: RepoReport,
   ctx: PickupContext,
 ): Promise<void> {
-  const wanted = report.actions.filter((a) => a.stage === "pickup");
+  const wanted = report.actions.filter(
+    (a) => a.stage === "pickup" && a.relaunch === undefined,
+  );
   await retryPending(state, repo, report, ctx);
+  await applyRelaunches(state, repo, report, {
+    sessions: ctx.sessions,
+    deadlineSec: deadlineSec(ctx),
+    section: ctx.section,
+    rerunsHeld: ctx.rerunsHeld ?? null,
+    serialUndecided: ctx.serialUndecided ?? null,
+    serves:
+      state.machine.serve
+        ?.map(
+          (person) =>
+            person.tracker[ctx.tracker.adapter as "github" | "linear" | "jira"],
+        )
+        .filter((person): person is string => person !== undefined) ?? [],
+  });
   // A pickup that waits passes its start to the next.
   for (const action of pickupSequence(state, report, wanted))
     report.launches.push(await launchOne(state, repo, action, ctx));

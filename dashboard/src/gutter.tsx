@@ -5,8 +5,8 @@
  * too, unless it lands on a link, a button or a field, ends a text selection,
  * or moved on the way (a scroll or a drag). Enter and o reach the same chevron
  * through `data-card-toggle` (`keys.ts`). A heading that folds what follows it,
- * such as the load breakdown or the accounts list, uses the same gutter and
- * chevron (`GutterFold`).
+ * such as the load's holds and reservations or the accounts list, uses the
+ * same gutter and chevron (`GutterFold`).
  */
 import {
   type FocusEvent,
@@ -141,7 +141,20 @@ export function Disc({
       aria-expanded={open}
       aria-controls={controls}
       aria-label={label}
+      aria-keyshortcuts={card ? undefined : "O"}
       onClick={onToggle}
+      onKeyDown={(event) => {
+        if (
+          card ||
+          event.key !== "o" ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey
+        )
+          return;
+        event.preventDefault();
+        if (!event.repeat) onToggle();
+      }}
     >
       <Glyph of={CONTROL_ICONS.disclosure} size={16} />
     </button>
@@ -212,6 +225,8 @@ export function GutterFold({
   head,
   children,
   defaultOpen = false,
+  keepMounted = false,
+  resetKey,
 }: {
   className?: string;
   /** The chevron's name. */
@@ -219,10 +234,20 @@ export function GutterFold({
   head: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
+  /** Keep the folded content in the document, so filters can still read it. */
+  keepMounted?: boolean;
+  /** When it changes, a person's choice is dropped and the default applies again; the content stays mounted. */
+  resetKey?: string;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [chosenOpen, setOpen] = useState<boolean | null>(null);
+  const [seenKey, setSeenKey] = useState(resetKey);
+  if (seenKey !== resetKey) {
+    setSeenKey(resetKey);
+    setOpen(null);
+  }
+  const open = chosenOpen ?? defaultOpen;
   const id = useId();
-  const toggle = () => setOpen((was) => !was);
+  const toggle = () => setOpen((was) => !(was ?? defaultOpen));
   const tap = useTapToggle(toggle);
   return (
     <div
@@ -234,8 +259,8 @@ export function GutterFold({
         </div>
         <div className="gheadBody">{head}</div>
       </div>
-      {open ? (
-        <div className="gpanel" id={id}>
+      {open || keepMounted ? (
+        <div className="gpanel" id={id} hidden={!open}>
           {children}
         </div>
       ) : null}

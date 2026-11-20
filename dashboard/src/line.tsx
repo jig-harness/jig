@@ -111,6 +111,7 @@ export function LinePanel({
           className="acctList"
           label="Accounts and their slots"
           defaultOpen
+          keepMounted
           head={<h3 className="sm">Accounts · {line.accounts.length}</h3>}
         >
           {line.accounts.map((a) => {
@@ -138,6 +139,9 @@ export function LinePanel({
                   )}
                 </div>
                 <div className="m sm">{account.weightText}</div>
+                {account.stagesText === null ? null : (
+                  <div className="m sm">{account.stagesText}</div>
+                )}
                 {account.wall === null ? null : (
                   <div className="wallLine m">{account.wall}</div>
                 )}

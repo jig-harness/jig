@@ -50,11 +50,16 @@ afterEach(() => {
   current?.close();
   current = null;
 });
-function fixture(kind: "pickup" | "followup", batch = false, output = OUTPUT) {
+function fixture(
+  kind: "pickup" | "followup",
+  batch = false,
+  output = OUTPUT,
+  catalog = false,
+) {
   const w = world();
   current = w;
   w.setConfig(
-    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n  states:\n    in_progress: state:in-progress\ndispatch:\n  identity: factory-bot\n  followup_command: /followup\n`,
+    `issue_tracker:\n  adapter: github\n  github:\n    repository: ${SLUG}\n  states:\n    in_progress: state:in-progress\ndispatch:\n  identity: factory-bot\n  followup_command: /followup\n${catalog ? "drive:\n  change_areas_catalog: .config/change-areas.yaml\n" : ""}`,
   );
   withOrigin(w);
   machineFile(
@@ -106,7 +111,13 @@ function fixture(kind: "pickup" | "followup", batch = false, output = OUTPUT) {
     item: kind === "pickup" ? "#12" : null,
     workspace: { id: "repo-1::/ws/0", path: w.repo },
     headless: true,
-    ...(kind === "pickup" ? { servedPerson: "factory-bot" } : {}),
+    ...(kind === "pickup"
+      ? {
+          servedPerson: "factory-bot",
+          relaunchOf: "20261118T050000Z-cccccccc",
+          relaunchHead: "1".repeat(40),
+        }
+      : {}),
     ...(batch
       ? {
           batchItems: [
@@ -188,9 +199,9 @@ function fixture(kind: "pickup" | "followup", batch = false, output = OUTPUT) {
   writeFileSync(join(w.dir, "orca-terminal-noop"), "");
   return { w, source };
 }
-async function tick(w: World) {
+async function tick(w: World, exit = 0) {
   const r = await w.dispatch(["--apply", "--json"]);
-  expectSpawnExit(r, 0);
+  expectSpawnExit(r, exit);
   return JSON.parse(r.stdout) as TickReceipt;
 }
 describe("steward resume launch replay", () => {
@@ -206,12 +217,15 @@ describe("steward resume launch replay", () => {
       const record = readRecord(started.record, dispatchState(w));
       expect(record?.stewardResume).toBe(OLD);
       if (!record) return;
+      expect(record.relaunchOf).toBeUndefined();
+      expect(record.relaunchHead).toBeUndefined();
       const prompt =
         (kind === "pickup"
           ? pickupPassArgv(record, [])
           : followupPassArgv(record, [])
         ).at(-1) ?? "";
       expect(prompt).toContain(STEWARD_RESUME);
+      expect(prompt).not.toContain("finishes the stalled pickup");
       expect(prompt).toContain("reuse the existing cache key");
       expect(prompt).toContain("not instructions");
       record.attempts = [
@@ -243,6 +257,35 @@ describe("steward resume launch replay", () => {
           .get(OLD),
       ).toEqual({ n: 1 });
     }, 60000);
+});
+
+describe("steward resumes while serialization is undecided", () => {
+  const launchOf = (receipt: TickReceipt, kind: string) =>
+    receipt.repos[0]?.launches.find(
+      (l) => l.action === kind && l.outcome === "launched",
+    );
+
+  test("a pickup resume waits for the catalog and launches once it reads", async () => {
+    const { w } = fixture("pickup", false, OUTPUT, true);
+    expect(launchOf(await tick(w, 1), "pickup")).toBeUndefined();
+    expect(
+      stateDb(dispatchState(w))
+        .query(
+          "SELECT COUNT(*) AS n FROM launches WHERE json_extract(record,'$.stewardResume') = ?",
+        )
+        .get(OLD),
+    ).toEqual({ n: 0 });
+    w.setRepoFile(
+      ".config/change-areas.yaml",
+      'areas:\n  docs:\n    paths: ["docs/**"]\n',
+    );
+    expect(launchOf(await tick(w), "pickup")).toBeDefined();
+  }, 60000);
+
+  test("a followup resume is not withheld", async () => {
+    const { w } = fixture("followup", false, OUTPUT, true);
+    expect(launchOf(await tick(w, 1), "followup")).toBeDefined();
+  }, 60000);
 });
 
 test("a refused duplicate resume never blocks the replay of the lost one", async () => {

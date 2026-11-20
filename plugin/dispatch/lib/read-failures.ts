@@ -40,9 +40,11 @@ import { isoFromMs, parseMs } from "../../shared/time.ts";
 function readFailure(outbound: OutboundFailure): ReadFailure {
   return {
     class: outbound.code,
+    ...(outbound.account === undefined ? {} : { account: outbound.account }),
     ...(outbound.until === undefined
       ? {}
       : { until: isoFromMs(outbound.until) }),
+    ...(outbound.quota === undefined ? {} : { quota: outbound.quota }),
   };
 }
 

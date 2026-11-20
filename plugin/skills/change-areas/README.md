@@ -144,7 +144,7 @@ direction only) and `deployTier`. Optional blocks:
 | `tracker` | `{ labels?, flags? }`; `linear` is its older spelling, not both | `linear` |
 | `agent` | text | the agent routing of [do-item](../do-item/SKILL.md) |
 | `labels` | list of text | drive-pr's reader |
-| `serialize` | `true` or `false` | the [dispatcher](../../README.md#the-dispatcher): `true` drives the pull requests that touch the area one at a time; a pull request touches it when one of its files matches the area's own globs (the seeds, not the `impliedBy` closure) |
+| `serialize` | `true` or `false` | the [dispatcher](../../README.md#the-dispatcher): `true` drives the pull requests that touch the area one at a time, and holds a pickup whose footprint reaches the area while other work touches it; a pull request touches it when one of its files matches the area's own globs (the seeds, not the `impliedBy` closure) |
 | `ci`, `deploy`, `scaffolding`, `owner` | any | the repository's own tooling |
 
 An unknown field is an error, so a misspelt one cannot mean nothing in

@@ -145,6 +145,14 @@ and its epic's reconciliation.
    accepted verdict or a waiver (its closing authorization in Step 5a),
    never because its children are closed; when this merge was its last
    piece and no verdict exists, the next step is that review, not a close.
+   Before closing one, read the instructions file of each of the
+   repository's own arms (`followup.arms`) that this run applies and that
+   has one (the `instructions` command, § The repository's own arms)
+   for a rule about epics: a repository may reserve some epics' close to
+   one of its later arms, and the epic stays open here until that arm
+   decides. An arm skipped for this run, or with only a skill or a check,
+   has no file to read and is passed over; an instructions file that
+   cannot be read leaves the epic open, since its rule is unknown.
 
 ### deferred-findings: review findings deferred to later
 
@@ -467,3 +475,16 @@ still to file, the scaffolding to remove, the release notes, the live checks
 the deploy will owe. `settle` ends it as a preview; put what is owed in the
 pull request's description so the post-merge run checks a list instead of
 rebuilding it.
+
+Report first the pull request's **provisional decisions**: the calls a
+drive took at the `wide` autonomy level that a person may still reverse
+before the merge. List them from the drive's report,
+`bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --report --since <when the pull request opened> --json`
+(its `provisional` entries for this pull request), each with its thread or
+record and whether it stands or was reversed. The report lists only the
+pull requests the signed-in account authored or wrote a drive ledger on:
+when this one's entry is absent, read its drive ledger comment and its
+provisional replies directly rather than listing none. An entry whose
+status is `unread`, or errors in the report's top-level `unread`, make the
+list incomplete: say which part is unread, and never present it as
+complete.

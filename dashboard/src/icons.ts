@@ -95,6 +95,7 @@ import type { Stage as TickStage } from "../../plugin/dispatch/lib/types.ts";
 import type { NeedAct } from "../../plugin/shared/acts.ts";
 import type { AnswerState } from "../../plugin/shared/decision-card.ts";
 import type { Lane } from "../../plugin/skills/drive-pr/scripts/lib/merge-ready.ts";
+import type { QueueKind } from "./facets.ts";
 import type { AccountState } from "./view.ts";
 
 export interface IconWord {
@@ -194,6 +195,11 @@ export const SOURCE_ICONS = {
   assigned: is(UserRoundCheck, "assigned"),
   merged: is(GitMerge, "merged"),
 } satisfies Record<QueueSource, IconWord>;
+
+export const QUEUE_KIND_ICONS = {
+  "pull request": is(GitPullRequest, "pull request"),
+  item: is(CircleDot, "item"),
+} satisfies Record<QueueKind, IconWord>;
 
 export const GROUP_ICONS = {
   starts: is(Play, "starts"),
@@ -338,6 +344,12 @@ export const ICON_SETS: readonly IconSet[] = [
     container: "heading",
     where: "On the group's heading.",
     members: GROUP_ICONS,
+  },
+  {
+    title: "What kind of target is coming",
+    container: "bare",
+    where: "On the Kind filter of What is coming.",
+    members: QUEUE_KIND_ICONS,
   },
   {
     title: "Ready to merge",
