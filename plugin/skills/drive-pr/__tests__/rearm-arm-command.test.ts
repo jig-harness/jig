@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { armCommand } from "../scripts/lib/driver/rearm.ts";
+import { passPrompt } from "../scripts/lib/pass-command.ts";
 
 describe("armCommand", () => {
   it("prints the drive's own pass command, quoted word by word", () => {
@@ -35,7 +36,7 @@ describe("armCommand", () => {
 
   it("falls back to the Claude Code pass when no pass command is known", () => {
     expect(armCommand("/s/drive.ts", "7", true)).toBe(
-      'bun /s/drive.ts 7 --bots-only -- claude -p "/jig:drive-pr --bots-only 7"',
+      `bun /s/drive.ts 7 --bots-only -- claude -p "${passPrompt("claude", 7)}"`,
     );
   });
 });
