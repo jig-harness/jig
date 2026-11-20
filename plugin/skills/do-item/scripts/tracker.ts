@@ -130,10 +130,12 @@ import { jiraStateMaps } from "./lib/tracker/jira/state-maps.ts";
 import { readFile } from "node:fs/promises";
 import { isRateLimited } from "../../../shared/outbound/budget.ts";
 import {
-  type FailureClass,
+  EXIT_OF_CLASS,
   failureOf,
   OutboundError,
 } from "../../../shared/outbound/failure.ts";
+
+export { EXIT_OF_CLASS };
 import {
   type ServedClaim,
   claimServedIssue,
@@ -910,17 +912,6 @@ function operationArguments(op: Operation, name: string, rest: string[]) {
     throw new UsageError(`${name} takes ${op.takes}`);
   return { args, flags: new Set(flags) };
 }
-
-/** The exit code of an operation a failed call to the tracker stopped, by its failure class. */
-export const EXIT_OF_CLASS: Readonly<Record<FailureClass, number>> = {
-  "rate-limited": 5,
-  unreachable: 6,
-  "too-costly": 7,
-  "server-fault": 8,
-  unauthorized: 9,
-  "not-found": 10,
-  invalid: 11,
-};
 
 /** The exit code and the error line of a failure: by its class when a call to the tracker failed, else 1. */
 export function failureExit(error: unknown): { code: number; line: string } {

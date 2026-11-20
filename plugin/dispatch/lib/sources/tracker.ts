@@ -378,12 +378,13 @@ function unavailableFactory(
   stores: FacetRecord | undefined,
 ): TrackerReading {
   const source = `${tracker.adapter} ${tracker.team}`;
+  const cause = view.unavailableCause;
   const row = scopeFailureRow(
     tracker,
     view,
     view.unavailable ?? "the scope could not be read",
+    cause,
   );
-  const cause = view.unavailableCause;
   const failed = failedFactory(
     source,
     identity,
@@ -777,6 +778,10 @@ function withClaimsUnread(
           claimsUnreadRow(
             identity,
             "the tracker's scope failed before the queue was read",
+            // The scope's missing credential is the tick's to name once, not this row's.
+            factory.read.failure?.noCredential === true
+              ? { failure: factory.read.failure }
+              : {},
           ),
         ];
   });
