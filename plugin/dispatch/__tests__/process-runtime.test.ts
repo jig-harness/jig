@@ -121,6 +121,20 @@ it("drops relative entries from the schedule's inherited executable path", () =>
   expect(env.PATH).toBe(kept);
 });
 
+it("makes the directory variables absolute where the dispatcher reads them", () => {
+  const env = processEnvironment(
+    { TMPDIR: "tmp", LOCK_ROOT: "locks", LANG: "C" },
+    { envKeep: ["LOCK_ROOT"] },
+    {
+      vendor: "claude",
+      configDir: resolve(import.meta.dir, "fixture-account"),
+    },
+  );
+  expect(env.LOCK_ROOT).toBe(resolve("locks"));
+  expect(env.TMPDIR).toBe(resolve("tmp"));
+  expect(env.LANG).toBe("C");
+});
+
 it.skipIf(process.platform !== "linux")(
   "opens, launches and reads a process-owned worktree without Orca",
   async () => {
