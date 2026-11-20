@@ -1219,7 +1219,8 @@ implementation. Skip this check for issues about the repository's own code.
    test lock waits for that lock first; when the wait runs out, the lock's
    own refusal is in the hook's output,
    `ERROR: could not acquire lock '<name>' within <N>s (held by …)`, and no
-   check ran. Nothing failed, so nothing is related or unrelated to fix:
+   check ran; where the hook's output shows the lock command's exit,
+   `with-resource-lock` exits `3` for it. Nothing failed, so nothing is related or unrelated to fix:
    push again after a bounded backoff (a few minutes, longer each time, a
    few tries at most) while the session has time left, the hook running
    every time. When the retries do not get through and the session cannot
@@ -2001,11 +2002,12 @@ report. In such a pass:
   When the retries do not get through and the pass cannot wait longer,
   with the claim made and the work committed, record
   `waits --reason test-lock` with the command the prompt names, and ask
-  nothing. The
-  dispatcher relaunches the pickup in the same tree once the host's
-  validation capacity has room, to push (the hook runs again) and go on;
-  after a few such waits in a row it hands the pickup to a repair session
-  or a person instead. The hook is never bypassed to get through.
+  nothing. The dispatcher relaunches the pickup in the same tree once the
+  host's validation capacity has room, to push (the hook runs again) and go
+  on; after a few such waits in a row it hands the pickup to a repair
+  session or a person instead. A batch's pass, whose prompt offers no such
+  result, records `failed` as for any other stop. The hook is never bypassed
+  to get through.
 - **Push and record before the pass ends, whatever ends it.** Push the
   branch whenever it holds committed work, and record the pickup's result
   with one of the commands the prompt names. A pass that ends with its

@@ -232,6 +232,11 @@ function pickupPrompt(
 const UNWRITTEN_LINE =
   "If that command exits 4 (this host could not write the result), stop there: ask no question about the dispatcher's database or host; the dispatcher keeps the attempt and settles it itself.";
 
+/** The wait a pickup of one item records when the host's test lock held its push; a batch's pass, which is never relaunched, records failed instead. */
+function testLockLine(record: Pick<LaunchRecord, "id" | "token">): string {
+  return `- after your claim succeeded, with the work committed, the pre-push hook refused the push only because its wait for the host's test lock ran out (the lock's own "could not acquire lock" refusal, no test having run), and the retries do-item's pre-push protocol allows in this pass did not get through: ${resultCommand(record, "waits")} --reason test-lock; ask no question, the dispatcher relaunches the pickup in this tree to push and go on once the host's validation capacity admits it`;
+}
+
 /** How a pickup records its end, once. */
 function pickupResultLines(
   record: Pick<LaunchRecord, "id" | "token" | "batchItems">,
@@ -247,7 +252,7 @@ function pickupResultLines(
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     refused,
     `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
-    `- after your claim succeeded, with the work committed, the pre-push hook refused the push only because its wait for the host's test lock ran out (the lock's own "could not acquire lock" refusal, no test having run), and the retries do-item's pre-push protocol allows in this pass did not get through: ${resultCommand(record, "waits")} --reason test-lock; ask no question, the dispatcher relaunches the pickup in this tree to push and go on once the host's validation capacity admits it`,
+    ...(record.batchItems === undefined ? [testLockLine(record)] : []),
     `- you stopped short of that (another refusal, a question, a failure): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
     UNWRITTEN_LINE,
   ];

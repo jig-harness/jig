@@ -29,7 +29,8 @@
  * tree to push and go on once the host's validation capacity admits it
  * (`lib/pickup-lock-wait.ts`), not before `time` when one is given. Without
  * `--until` the recording time stands in its place, so no time holds it. It
- * is a pickup's only, as `pending` is a follow-up's only.
+ * is a pickup's only, as `pending` is a follow-up's only, and not a batch's,
+ * whose stop stays a person's.
  *
  * `failed --decision <file>` (`-` for standard input) is a pass that stopped
  * for a person and framed what it asks: a `parked-decision/v1` record, the
@@ -397,6 +398,12 @@ export function resultMain(argv: string[], root?: string): number {
   if (waited?.wait.reason === "test-lock" && record.action !== "pickup") {
     console.error(
       "jig dispatch result: --reason test-lock is a claimed pickup's; a follow-up waits on a rate limit or an arm still pending",
+    );
+    return 2;
+  }
+  if (waited?.wait.reason === "test-lock" && record.batchItems !== undefined) {
+    console.error(
+      "jig dispatch result: --reason test-lock is a pickup's of one item; a batch's pass is never relaunched, so it records failed",
     );
     return 2;
   }

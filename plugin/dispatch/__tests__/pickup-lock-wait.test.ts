@@ -26,7 +26,7 @@ import type { PickupTree } from "../lib/pickup-tree.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
 import { pickupPassArgv } from "../lib/session.ts";
-import type { ClaimedItem, DispatchSection } from "../lib/types.ts";
+import type { ClaimedItem, DispatchSection, WantedItem } from "../lib/types.ts";
 import { measureValidation } from "../lib/validation-capacity.ts";
 import { readWaitFor } from "../lib/wait-for.ts";
 import { resultMain } from "../result.ts";
@@ -241,6 +241,70 @@ describe("a pickup the host's test lock refuses again past the bound", () => {
   });
 });
 
+describe("a test-lock wait from a pass that claimed nothing", () => {
+  const BATCH = [
+    { key: "#12", person: "writer" },
+    { key: "#13", person: "writer" },
+  ];
+  const wanted = (key: string): WantedItem => ({
+    key,
+    title: "task",
+    url: null,
+    state: "Todo",
+    assignee: "factory",
+    assignedBy: "writer",
+  });
+
+  /** The tick's plan for `keys`, still in a dispatch state, claimed by nobody. */
+  function unclaimedPlan(launches: ReadRecord[], keys: string[]) {
+    return planPickups({
+      slug: SLUG,
+      section: {
+        stalledAfterMs: HOUR,
+        blockedAfterMs: HOUR,
+        stalledScope: "claimed",
+        stalledRelaunch: "finish-once",
+      } as DispatchSection,
+      pickups: keys.map(wanted),
+      claimed: [],
+      sessions: { ok: true, source: "fake", workspaces: [open] },
+      launches,
+      idleSince: new Map(),
+      nowMs: NOW,
+      trees: unpushed,
+      rerunsHeld: null,
+    });
+  }
+
+  it("holds a lone item as any end does, a need for a person, never as a wait for a relaunch", () => {
+    const record = lockWaited({ claimedItems: [] });
+    expect(pickupHold("#12", [record], undefined, NOW)).toMatchObject({
+      kind: "ended",
+    });
+    const p = unclaimedPlan([record], ["#12"]);
+    expect(p.running).toEqual([]);
+    expect(relaunches(p)).toEqual([]);
+    expect(needs(p)).toEqual([
+      expect.objectContaining({ target: "#12", cause: "pickup-ended" }),
+    ]);
+  });
+
+  it("strands no member of a batch that claimed none", () => {
+    const record = lockWaited({
+      claimedItems: [],
+      batchItems: BATCH,
+    } as Partial<LaunchRecord>);
+    for (const key of ["#12", "#13"])
+      expect(pickupHold(key, [record], undefined, NOW)).toMatchObject({
+        kind: "ended",
+      });
+    const p = unclaimedPlan([record], ["#12", "#13"]);
+    expect(p.running).toEqual([]);
+    expect(relaunches(p)).toEqual([]);
+    expect(needs(p).map((a) => a.target)).toEqual(["#12", "#13"]);
+  });
+});
+
 describe("the validation gauge's hold on a lock-wait relaunch", () => {
   const reading: LoadReading = {
     host: { load1: 1, cores: 8, availableBytes: 12 * 1024 ** 3 },
@@ -315,6 +379,19 @@ describe("the pickup's prompt", () => {
     );
   });
 
+  it("offers no test-lock wait to a batch, which is never relaunched", () => {
+    const batch = {
+      ...record,
+      batchItems: [
+        { key: "#12", person: "writer" },
+        { key: "#13", person: "writer" },
+      ],
+    } as LaunchRecord;
+    const prompt = pickupPassArgv(batch, []).at(-1) ?? "";
+    expect(prompt).toContain("dispatch result");
+    expect(prompt).not.toContain("--reason test-lock");
+  });
+
   it("gives a lock-wait relaunch the push-and-go-on prompt, under the earlier claim", () => {
     const prompt =
       pickupPassArgv(
@@ -357,6 +434,17 @@ describe("jig dispatch result … waits --reason test-lock", () => {
       action: "followup",
       pr: 7,
     });
+    earlierRecord(w, {
+      id: "20261120T080200Z-eeeeeeee",
+      account: "a",
+      action: "pickup",
+      pr: null,
+      item: "#12",
+      batchItems: [
+        { key: "#12", person: "writer" },
+        { key: "#13", person: "writer" },
+      ],
+    } as Parameters<typeof earlierRecord>[1]);
     return dispatchState(w);
   }
 
@@ -382,22 +470,20 @@ describe("jig dispatch result … waits --reason test-lock", () => {
     });
   });
 
-  it("is refused for a follow-up's record, beside --arm, and with a time too far ahead", () => {
+  it("is refused for a follow-up's or a batch's record, beside --arm, and with a time too far ahead", () => {
     const root = records(world());
     const far = isoFromMs(currentMs() + 3 * 24 * HOUR);
     const pickup = "20261120T080000Z-cccccccc";
-    expect(
-      resultMain(
-        [
-          "20261120T080100Z-dddddddd",
-          "earlier-token",
-          "waits",
-          "--reason",
-          "test-lock",
-        ],
-        root,
-      ),
-    ).toBe(2);
+    for (const other of [
+      "20261120T080100Z-dddddddd",
+      "20261120T080200Z-eeeeeeee",
+    ])
+      expect(
+        resultMain(
+          [other, "earlier-token", "waits", "--reason", "test-lock"],
+          root,
+        ),
+      ).toBe(2);
     for (const extra of [
       ["--arm", "release"],
       ["--until", far],
