@@ -64,10 +64,12 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
     batchShape(value.batchItems) &&
     (value.stewardDecision === undefined ||
       Number.isSafeInteger(value.stewardDecision)) &&
-    optionalStrings(value.ancestors) &&
-    optionalStrings(value.claimedItems) &&
-    optionalStrings(value.releasedItems) &&
-    optionalStrings(value.codexPassArgs) &&
+    [
+      value.ancestors,
+      value.claimedItems,
+      value.releasedItems,
+      value.codexPassArgs,
+    ].every(optionalStrings) &&
     optionalHostDriverReplacement(value.replacesHostDriver) &&
     [value.passTimeoutSec, value.rerunDied].every(optionalSeconds) &&
     [

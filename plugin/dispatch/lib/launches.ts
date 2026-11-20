@@ -167,7 +167,6 @@ export interface LaunchRecord {
   ancestorEpic?: string;
   /** Factory-assigned epic whose authority an unassigned child inherits. */
   factoryAncestor?: string;
-  /** The epics the late hold check reads, as the queue item carries them (`WantedItem.ancestors`); absent on a record an earlier release wrote. */
   ancestors?: string[];
   /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
   blockingFor?: string;

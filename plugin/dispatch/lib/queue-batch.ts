@@ -127,7 +127,7 @@ function groupedActions(
 }
 
 /** Whether a value is a list of item keys, such as an ancestor chain. */
-export function isKeyList(value: unknown): value is string[] {
+function isKeyList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === "string");
 }
 
