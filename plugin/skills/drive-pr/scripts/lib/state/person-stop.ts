@@ -58,3 +58,20 @@ export function recordPersonStop(
     ).changes > 0
   );
 }
+
+/** Mark an existing idle acquisition only: never insert, so a record recovery just deleted stays deleted. */
+export function markIdlePersonStop(
+  stateDir: string,
+  pr: string,
+  started: string,
+  reason: string,
+): boolean {
+  const drive = driveDb(stateDir);
+  return (
+    drive.db.run(
+      `UPDATE driver_records SET person_stop = ?
+    WHERE clone = ? AND pr = ? AND started = ? AND person_stop IS NULL`,
+      [JSON.stringify({ at: currentIso(), reason }), drive.clone, pr, started],
+    ).changes > 0
+  );
+}

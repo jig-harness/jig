@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { recordPersonStop } from "./lib/state/person-stop.ts";
+import { markIdlePersonStop } from "./lib/state/person-stop.ts";
 import { cancelledRecoveryRecord } from "./lib/state/park-frame.ts";
 import {
   prepareOperatorStop,
@@ -714,18 +714,18 @@ async function stop(
     );
     // The person's stop is recorded on the acquisition before it settles, so a stop whose first attempt was refused still reads as theirs.
     const idle = ledgerStop.readDriverRecord(stateDir, pr);
-    if (idle !== null && idle.personStop === undefined)
-      recordPersonStop(
-        stateDir,
-        pr,
-        {
-          worktree: idle.worktree,
-          started: idle.started,
-          pid: idle.pid,
-          host: idle.host,
-        },
-        reason,
+    if (
+      expectStarted !== "" &&
+      idle !== null &&
+      idle.started !== expectStarted
+    ) {
+      console.log(
+        `PR #${pr}'s retained driver record is another acquisition (started ${idle.started}, expected ${expectStarted}) — not stopping it.`,
       );
+      return 3;
+    }
+    if (idle !== null && idle.personStop === undefined)
+      markIdlePersonStop(stateDir, pr, idle.started, reason);
     // A record may stay as a retained CI-hold witness after the ledger is settled; only the outcome says which.
     console.log(
       (await ledgerStop.recoverIdleStop(stateDir, pr, row)) === "settled"

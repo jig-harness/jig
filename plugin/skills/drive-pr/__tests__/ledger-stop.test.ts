@@ -16,6 +16,7 @@ import {
   writeDriverRecord,
 } from "../scripts/lib/ledger-stop.ts";
 import {
+  markIdlePersonStop,
   recordPersonStop,
   personStopFor,
 } from "../scripts/lib/state/person-stop.ts";
@@ -622,6 +623,32 @@ describe("a stop recorded during driver startup", () => {
     };
     writeDriverRecord(s.leaf, "999", successor);
     expect(personStopFor(s.leaf, "999", successor.started)).toEqual({});
+  });
+});
+
+describe("an idle stop marks only a retained record", () => {
+  it("never recreates a deleted record and ignores another acquisition", () => {
+    const s = stage();
+    expect(markIdlePersonStop(s.leaf, "999", s.started, "maintenance")).toBe(
+      false,
+    );
+    expect(personStopFor(s.leaf, "999", s.started)).toEqual({});
+    const driver = {
+      worktree: s.forge.repo,
+      started: s.started,
+      pid: 1,
+      host: "h",
+    };
+    writeDriverRecord(s.leaf, "999", driver);
+    expect(
+      markIdlePersonStop(s.leaf, "999", "2001-01-01T00:00:00.000Z", "x"),
+    ).toBe(false);
+    expect(markIdlePersonStop(s.leaf, "999", s.started, "maintenance")).toBe(
+      true,
+    );
+    expect(personStopFor(s.leaf, "999", s.started)).toMatchObject({
+      personStop: { reason: "maintenance" },
+    });
   });
 });
 
