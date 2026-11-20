@@ -54,6 +54,7 @@ import {
   waitFor,
 } from "./launch-fixtures.ts";
 import { applyTick, withOrigin } from "./pickup-fixtures.ts";
+import { passPrompt } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -68,7 +69,7 @@ const CODEX_PASS = [
   "codex",
   "exec",
   "--dangerously-bypass-approvals-and-sandbox",
-  "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 7",
+  passPrompt("codex", 7),
 ];
 
 let current: World | null = null;

@@ -110,7 +110,7 @@ export interface AskWorld {
   writes(): string[][];
   ask(args: string[], cwd?: string): Promise<Spawned>;
   /** `jig <args>`, a child with the world's home and environment. */
-  jig(args: string[], cwd?: string): Promise<Spawned>;
+  jig(args: string[], cwd?: string, preload?: string): Promise<Spawned>;
   close(): void;
 }
 
@@ -170,9 +170,20 @@ export function askWorld(): AskWorld {
     ASK_FAKE_DIR: dir,
     ASK_FAKE_REPO: REPO,
   });
-  const jig = async (args: string[], cwd = repo): Promise<Spawned> => {
+  const jig = async (
+    args: string[],
+    cwd = repo,
+    preload?: string,
+  ): Promise<Spawned> => {
     const child = Bun.spawn(
-      [process.execPath, "--no-env-file", `--config=${BUNFIG}`, JIG, ...args],
+      [
+        process.execPath,
+        "--no-env-file",
+        `--config=${BUNFIG}`,
+        ...(preload === undefined ? [] : ["--preload", preload]),
+        JIG,
+        ...args,
+      ],
       { cwd, env, stdout: "pipe", stderr: "pipe" },
     );
     const deadline = setTimeout(() => child.kill(), 60_000);

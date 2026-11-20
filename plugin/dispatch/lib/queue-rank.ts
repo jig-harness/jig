@@ -34,10 +34,18 @@ export function isPersonHold(reason: string): boolean {
   return reason === PERSON_HOLD || reason.endsWith(`, but ${PERSON_HOLD}`);
 }
 
+export interface QueueHoldPolicy {
+  hitl?: string | undefined;
+  manualOps?: string | undefined;
+  personHold?: (key: string) => string | null;
+}
+
 export function queueHold(
   item: QueueItem,
-  policy: { hitl?: string | undefined; manualOps?: string | undefined } = {},
+  policy: QueueHoldPolicy = {},
 ): string | null {
+  const person = policy.personHold?.(item.issue.identifier);
+  if (person != null) return person;
   if (item.issue.truncated.length > 0) return "the issue read is incomplete";
   if (
     item.issue.labels.some(
@@ -77,4 +85,15 @@ export function compareQueue(a: QueueItem, b: QueueItem): number {
   for (const key of QUEUE_ORDER)
     if (values[key] && Number.isFinite(values[key])) return values[key];
   return 0;
+}
+
+/** Whether a walk met the item already, or a person holds it. */
+export function seenOrHeld(
+  issue: { identifier: string },
+  policy: QueueHoldPolicy,
+  seen: ReadonlySet<string>,
+): boolean {
+  return (
+    seen.has(issue.identifier) || policy.personHold?.(issue.identifier) != null
+  );
 }

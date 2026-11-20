@@ -671,10 +671,11 @@ async function rerunFreshLabelCaused(
   return "wait";
 }
 
-function unreplacedCancelledJobs(
-  jobs: readonly JobEvidence[],
+/** The completed cancelled jobs no newer attempt or replacing run has answered. */
+export function unreplacedCancelledJobs<T extends JobEvidence>(
+  jobs: readonly T[],
   runs: readonly WorkflowRun[],
-): JobEvidence[] {
+): T[] {
   return withoutSuperseded(jobs, runs).filter(
     (job) =>
       job.status === "completed" &&

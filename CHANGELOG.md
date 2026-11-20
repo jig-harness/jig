@@ -401,6 +401,39 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.286.3] - 2026-11-20
+
+### Fixed
+
+- A drive's pass no longer reads its prompt as a request to arm or watch the
+  drive. The pass command of each agent tool (Claude Code's
+  `claude -p "/jig:drive-pr --bots-only <PR> …"` and Codex's
+  `codex exec "Use the jig:drive-pr skill: …"`) now goes on, after the
+  skill's invocation, to say it is one round of the drive already running on
+  that pull request, that a drive the `drives.ts` listing marks `self` is its own driver, and
+  that it must finish the round: commit, merge the base when told, push,
+  reply or park, and name what it could not do. drive-pr's `SKILL.md` states
+  the same role and duties in its first section, before the arm procedure.
+  A Codex pass that settled its role from the opening words used to arm a
+  second drive, stand down for its own driver or leave its edits unpushed,
+  and the drive stopped as stalled (exit 14). Drives already running keep
+  their old pass command until they are next armed.
+  **Consumer action:** none.
+
+## [0.286.2] - 2026-11-20
+
+### Fixed
+
+- Use `jig send` with `hold` or `release` at a pickup address to keep an item
+  out of dispatch without changing its tracker state or assignee. The hold
+  works without a tracker label, and the line shows who placed it and when.
+
+## [0.286.1] - 2026-11-20
+
+### Fixed
+
+- drive-pr no longer re-runs a CI job that ran past its time limit (`timeout-minutes`) and then parks it as cancelled CI, recommending another re-run that stops at the same limit. The forge reports such a job as cancelled, so drive-pr now reads the annotation the runner leaves on its check run. A job the runner stopped at its limit is a timed-out job. drive-pr repairs it as a failing check, from the same CI-repair budget, and tells the repair pass the job, its limit and how long it ran. A cancellation it cannot attribute to a time limit keeps the cancelled-CI recovery. **Consumer action:** none.
+
 ## [0.286.0] - 2026-11-19
 
 ### Added
@@ -10095,7 +10128,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.286.3...HEAD
+[0.286.3]: https://github.com/jig-harness/jig/compare/v0.286.2...v0.286.3
+[0.286.2]: https://github.com/jig-harness/jig/compare/v0.286.1...v0.286.2
+[0.286.1]: https://github.com/jig-harness/jig/compare/v0.286.0...v0.286.1
 [0.286.0]: https://github.com/jig-harness/jig/compare/v0.285.1...v0.286.0
 [0.285.1]: https://github.com/jig-harness/jig/compare/v0.285.0...v0.285.1
 [0.285.0]: https://github.com/jig-harness/jig/compare/v0.284.1...v0.285.0

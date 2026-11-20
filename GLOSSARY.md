@@ -970,6 +970,11 @@ make, use the entry's term instead.
   "waits on"), object references, a count and an optional reason. Each reference carries its
   kind (issue or pull request), state, link and counterpart, so a view can
   show it as a chip with its link ([design](design/epic-planner.md)).
+- **Pickup hold** — a person's hold on one tracker item, written to the
+  dispatching host's own state by `jig send` rather than to the tracker. It
+  keeps the item out of new launches until `release` withdraws it, and leaves
+  work already running alone. Unlike a tracker label hold, it is host-local;
+  unlike a serialized-area hold, it names one item, not a shared area.
 - **Epic census** — the read-only count of how a repository's started *epics*
   stand, kept by the fleet-health sensor: *finished-but-open* (every child is
   closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
@@ -1608,6 +1613,13 @@ make, use the entry's term instead.
   head is visibly not mergeable from the moment the label lands until the
   release; its message names the label to remove. M13's workflow-convention
   lint accepts it in one shape only.
+- **Timed-out job** — a continuous-integration job the runner stopped because
+  it ran past its time limit (`timeout-minutes` in GitHub Actions). The forge
+  reports it `cancelled`, like a job its concurrency group or a person
+  cancelled, and only the runner's annotation on its check run ("exceeded the
+  maximum execution time") tells it apart. A *PR drive loop* repairs it as a
+  failure instead of re-running it, since a re-run stops at the same limit
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Required checks** — the continuous-integration checks a repository's
   branch protection requires to pass before a pull request may merge. A drive
   derives them from the protection settings unless the repository lists them
