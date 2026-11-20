@@ -2424,6 +2424,45 @@ make, use the entry's term instead.
   outside system is then bounded when the query is written, and a gate can
   check it.
   Planned ([ROADMAP.md](ROADMAP.md) item 55).
+- **Provider account** — an account of the *dispatcher* that pays for model
+  use by what the model provider charges, with the host's own key, where a
+  subscription account pays a flat fee. It names a harness, a provider, a
+  base URL, a reference to its credential and a *spend cap*. A launch on a
+  provider account carries that credential and no other, and the account is
+  parked when the provider says its credit is spent. Planned
+  ([design/provider-accounts.md](design/provider-accounts.md), ROADMAP.md
+  item 59).
+- **Agent harness** — the program that runs an AI model as an agent: it
+  reads the prompt, calls the tools, edits files and ends with a result.
+  Claude Code and Codex are the harnesses Jig supports. Jig
+  reaches a harness through one interface, whose operations are what the
+  *dispatcher* and the skills need of it: the command that starts a
+  pass, the name a model has there, what a launch carries, what a run cost
+  and how a stop is classified
+  ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)).
+  Not the *session runtime*, which says where a session runs and not which
+  program runs in it. Planned.
+- **Spend cap** — the amount of money per day against which the
+  *dispatcher* admits a *provider account*'s launches, with an optional
+  ceiling for one run. A launch the day's remaining amount does not cover
+  is refused before it starts, and the cost the harness reports goes into
+  the *cost ledger*. It bounds what is admitted, and a pass that finishes
+  over its reservation is not stopped. Planned
+  ([design/provider-accounts.md](design/provider-accounts.md)).
+- **Harness profile** — the configuration a stage's *agent harness* runs
+  with, kept apart from the host's own configuration of that harness: its
+  instructions, system-prompt text, skills and the extensions it may load.
+  A repository may add instructions, prompt text and skills to a profile,
+  and an extension that runs code loads only from the host's allowlist.
+  Planned ([design/provider-accounts.md](design/provider-accounts.md)).
+- **Provider allow list** — the model providers a repository's code may be
+  sent to, named in the repository's own *dispatch* configuration and read
+  from its default branch. The *dispatcher* starts no pass for the
+  repository on an account of another provider.
+  Planned ([design/provider-accounts.md](design/provider-accounts.md)).
+- **BYOK (bring your own key)** — paying a model provider with a key the
+  team or the host already holds, in place of a subscription the agent
+  program's vendor sells. In Jig that is a *provider account*.
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
