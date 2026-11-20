@@ -883,6 +883,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   return {
     ...base,
     ...classified,
+    ...(ledger.driver.state === "running" ? { running: true as const } : {}),
     ...(classified.class === "unplaced" ? failedRead(ledger, park, forge) : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),

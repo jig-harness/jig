@@ -262,6 +262,8 @@ export interface DrivenPr {
   class: LedgerClass;
   /** Why the ledger reads as its class, in one sentence. */
   why: string;
+  /** Set when the ledger records its driver running, whatever class it reads as (a silent ledger and a person's stop awaiting its end included): the driver may still run, and the drive has not stopped. */
+  running?: true;
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
