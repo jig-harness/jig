@@ -27,11 +27,12 @@
 //   the check cannot follow, or a relative import of a file that is neither
 //   a script nor JSON (a text or SQL file only a runtime's loader reads).
 //
-// A vendored bundle `ALLOWED_VENDORED` names is accepted without reading it,
-// as an allowed package is: a bundle of a library's portable parts, checked
-// to run on every platform first, whose own guarded references to a
-// runtime's globals the check would report. Any other vendored file it
-// reaches is read like the rest.
+// A vendored bundle `ALLOWED_VENDORED` names is read like any other file,
+// its imports followed and held to the rules, except that its references to
+// a runtime's globals are not reported: a bundle of a library's portable
+// parts, checked to run on every platform first, whose code for features
+// the hub does not use refers to them. Any other vendored file it reaches
+// is held to every rule.
 //
 // A type-only import or export (`import type`, `export type … from`) is not
 // followed and not checked: its module never runs. An `import { type A }`
@@ -88,13 +89,14 @@ export const PORTABLE_SHARED: readonly string[] = [
 export const ALLOWED_PACKAGES: readonly string[] = [];
 
 /**
- * Vendored bundles a portable module may import, accepted without being
- * read: each one checked to run on every platform first. Drizzle's portable
- * entry and its shared chunk are SQLite's dialect and query builder, which
- * Drizzle's Durable Object and D1 drivers run in a worker; the chunk's
- * `Buffer` references sit in blob columns' code, behind a check that
- * `Buffer` exists. Drizzle's `bun:sqlite` entry is the process adapter's
- * and is not listed.
+ * Vendored bundles whose references to a runtime's globals the check
+ * accepts; their imports are still followed and checked. Each is checked to
+ * run on every platform first. Drizzle's portable entry and its shared
+ * chunk are SQLite's dialect and query builder, which Drizzle's Durable
+ * Object and D1 drivers run in a worker; the chunk's `Buffer` references
+ * sit in the mapping of blob columns, some behind a check that `Buffer`
+ * exists and some not, and the hub's schema declares no blob column.
+ * Drizzle's `bun:sqlite` entry is the process adapter's and is not listed.
  */
 export const ALLOWED_VENDORED: readonly string[] = [
   "plugin/shared/vendor/drizzle.mjs",
@@ -126,7 +128,7 @@ export interface PortabilityScope {
   roots: readonly string[];
   shared: readonly string[];
   allowed: readonly string[];
-  /** Vendored bundles accepted without being read; none when absent. */
+  /** Vendored bundles whose runtime-global references are accepted; none when absent. */
   vendored?: readonly string[];
 }
 
@@ -706,7 +708,7 @@ export function portabilityFindings(
     const file = chain.at(-1) as string;
     if (seen.has(file)) continue;
     seen.add(file);
-    if (file.endsWith(".json") || scope.vendored?.includes(file)) continue;
+    if (file.endsWith(".json")) continue;
     let source: string;
     try {
       source = readRegularFile(join(root, file));
@@ -719,8 +721,11 @@ export function portabilityFindings(
     const followed = followEdges(root, file, source, read.edges, scope.allowed);
     if (typeof followed === "string") return { ok: false, reason: followed };
     for (const target of followed.targets) queue.push([...chain, target]);
+    const uses = scope.vendored?.includes(file)
+      ? read.uses.filter((use) => use.kind !== "runtime-global")
+      : read.uses;
     findings.push(
-      ...findingsOf(file, source, chain, [...read.uses, ...followed.uses]),
+      ...findingsOf(file, source, chain, [...uses, ...followed.uses]),
     );
   }
   return {

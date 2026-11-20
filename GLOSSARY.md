@@ -2679,9 +2679,9 @@ make, use the entry's term instead.
   (`scripts/check-portability.ts`) that keeps the *hub*'s *portable core*
   portable: starting from every file of the core and of its storage
   implementation and every shared module declared portable, it follows each
-  import and fails on a `bun:` or `node:` module, a package or vendored
-  bundle not on its allowlists, or a reference to a
-  runtime's own global (`Bun`, `process`, `Deno`), naming the chain of
+  import and fails on a `bun:` or `node:` module, a package not on its
+  allowlist, or a reference to a runtime's own global (`Bun`, `process`,
+  `Deno`) outside the vendored bundles it accepts them in, naming the chain of
   imports that brought a shared module's use in. A type-only import is not
   followed, since it never runs.
 - **World view** — what the *dispatcher* knows of the forge and the
