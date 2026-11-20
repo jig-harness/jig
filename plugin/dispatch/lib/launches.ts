@@ -63,7 +63,7 @@ import {
 } from "./pickup-refusal.ts";
 export type { PickupRefusal, RefusedMember };
 import type { WaitFor } from "./wait-for.ts";
-import * as sessionStartup from "./session-startup.ts";
+import * as startups from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -281,8 +281,8 @@ export interface LaunchClaim extends ProcessIdentity {
 
 export interface LaunchExit {
   context?: string;
-  startup?: sessionStartup.StartupFailure;
-  signInPhrase?: sessionStartup.SignInPhrase; // only the recognised phrase
+  startup?: startups.StartupFailure;
+  signInPhrase?: startups.SignInPhrase; // only the recognised phrase
   beforeStage?: true; // process owner publication refused before spawning a stage
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
@@ -858,8 +858,7 @@ export function pruneLaunches(
   for (const id of ordinalAnchors(records)) kept.add(id);
   for (const id of relaunchAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
-  for (const id of sessionStartup.unsettledStartups(records, settled))
-    kept.add(id);
+  for (const id of startups.unsettledStartups(records, settled)) kept.add(id);
   for (const latest of [
     latestPickups,
     latestRedrives,
