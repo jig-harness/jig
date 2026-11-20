@@ -173,7 +173,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       and its review of an earlier head does not cover it
  *                       (the PR's diff changed): no review of this head will
  *                       come
- *  24  CHECK_RUNS_UNREADABLE  [state] the head's check-runs listing ran into
+ *  25  CHECK_RUNS_UNREADABLE  [state] the head's check-runs listing ran into
  *                       a deadline or its page bound; the reason names the
  *                       pages read. Retried like INDETERMINATE within this
  *                       invocation, except at the page bound, then returned

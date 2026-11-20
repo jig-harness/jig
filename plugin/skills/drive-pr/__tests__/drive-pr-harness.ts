@@ -2578,7 +2578,7 @@ export async function probeIn(
     ),
     {
       env: {
-        ...process.env,
+        ...gitCleanEnv(),
         PATH: `${binDir}${delimiter}${process.env.PATH}`,
         DRIVE_PR_FIXTURES: dir,
         DRIVE_PR_STATE_DIR: stateDir,

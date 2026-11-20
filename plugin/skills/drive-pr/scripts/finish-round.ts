@@ -150,7 +150,7 @@ import { retryAttempts } from "../../../shared/retry.ts";
  *      configuration, the repository or the PR could not be read). A pushed
  *      commit without the prefix does not refuse: it is reported on stderr
  *      and the push goes ahead
- *  24  refused BEFORE pushing (CHECK_RUNS_UNREADABLE): the head's check-runs
+ *  25  refused BEFORE pushing (CHECK_RUNS_UNREADABLE): the head's check-runs
  *      listing, read for the CI hold, ran into a deadline or its page bound,
  *      so nothing about the hold could be judged. The report's
  *      `listingPagesRead` is the number of pages read before it stopped
