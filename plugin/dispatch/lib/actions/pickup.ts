@@ -232,6 +232,14 @@ async function workspaceFor(
   });
 }
 
+/** The machine file's startup-failure threshold, carried on the record when set. */
+function startupThresholdField(machine: ApplyState["machine"]): {
+  startupFailureThreshold?: number;
+} {
+  const threshold = machine.failures?.startupThreshold;
+  return threshold === undefined ? {} : { startupFailureThreshold: threshold };
+}
+
 /** One planned pickup, through its fresh reads, admission, workspace and launch. */
 async function launchOne(
   state: ApplyState,
@@ -323,6 +331,7 @@ async function launchOne(
     vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    ...startupThresholdField(state.machine),
     passTimeoutSec: deadlineSec(ctx),
     ...codexLaunchFields(state.codexOptIn),
     headless: true,

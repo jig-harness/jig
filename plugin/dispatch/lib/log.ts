@@ -72,6 +72,8 @@ export const OUTCOME_CLASSES = [
   "converged",
   "merged",
   "quota wall",
+  "sign-in failure",
+  "startup breaker",
   "parked for a person",
   "arm pending",
   "stalled",
@@ -452,24 +454,56 @@ function sessionClass(
       class: "died",
       reason: `no result recorded: this host could not write it (since ${r.unwritten}); the host's health check reports the cause`,
     };
+  const accountFailure = accountStartupClass(r);
+  if (accountFailure !== null) return accountFailure;
   // A steward that did not submit has no outcome, even if its retained output
   // contains a Question line that the generic classifier can describe.
   if (r.record.action === "steward" && r.result === null)
     return sessionEndClass(r, endedAt);
-  const result = sessionResultClass(
-    r.result,
-    r.state.kind === "ended" ? r.state.exit.said : undefined,
-    r.waitsFor,
-    r.framed,
+  return (
+    sessionResultClass(
+      r.result,
+      r.state.kind === "ended" ? r.state.exit.said : undefined,
+      r.waitsFor,
+      r.framed,
+    ) ??
+    ordinaryStartupClass(r.state) ??
+    sessionEndClass(r, endedAt)
   );
-  if (result !== null) return result;
-  const s = r.state;
-  if (s.kind === "ended" && s.exit.startup !== undefined)
+}
+
+/** Sign-in failures and the startup breaker explain an account-wide stop. */
+function accountStartupClass(
+  r: ReadRecord,
+): { class: OutcomeClass; reason: string } | null {
+  if (r.state.kind !== "ended" || r.result !== null) return null;
+  const { startup, signInPhrase } = r.state.exit;
+  if (startup === "sign-in")
     return {
-      class: s.exit.startup === "quota" ? "quota wall" : "refused",
-      reason: `session could not start: ${s.exit.startup === "quota" ? "vendor usage-limit notice" : "quick unsuccessful exit without a transcript"}; exit ${s.exit.code}`,
+      class: "sign-in failure",
+      reason: `the vendor refused its account's sign-in${signInPhrase === undefined ? "" : `: ${signInPhrase}`}; the dispatcher can start it again`,
     };
-  return sessionEndClass(r, endedAt);
+  if (startup === "breaker")
+    return {
+      class: "startup breaker",
+      reason: "repeated startup failures triggered the account's backoff",
+    };
+  return null;
+}
+
+/** Other startup failures are usage refusals or exits before a transcript. */
+function ordinaryStartupClass(
+  state: ReadRecord["state"],
+): { class: OutcomeClass; reason: string } | null {
+  if (state.kind !== "ended" || state.exit.startup === undefined) return null;
+  const quota = state.exit.startup === "quota";
+  const startup = quota
+    ? "vendor usage-limit notice"
+    : "quick unsuccessful exit without a transcript";
+  return {
+    class: quota ? "quota wall" : "refused",
+    reason: `session could not start: ${startup}; exit ${state.exit.code}`,
+  };
 }
 
 /** Classify a session that supplied neither a result nor a startup failure. */

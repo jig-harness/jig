@@ -1,7 +1,6 @@
 /**
- * Launch records, in the state database's `launches` table (`state.ts`):
- * one row per session, written before launch, so a lost launch answer still
- * holds the stage and account slot. Each column has one writer:
+ * The `launches` table (`state.ts`) holds one row per session, written before
+ * launch so a lost answer still holds the stage and slot. Each column has one writer:
  *
  * - `record`, the tick's: the action, the pull request, the account, the
  *   random token, the workspace, the dispatched mark its workspace carries
@@ -16,8 +15,7 @@
  *   wins, and only its bounded output (`context`) is ever taken out again,
  *   with the run's transcript copy (`transcript-copy.ts`);
  * - `result`, a pickup's session's or a follow-up pass's own answer
- *   (`done` or `failed`), written once by `jig dispatch result` under the
- *   record's token.
+ *   (`done` or `failed`), written once by `jig dispatch result` under its token.
  *
  * A record's state is read from those columns and the process table, the
  * claim judged by the shared rules (`shared/liveness.ts`):
@@ -65,7 +63,7 @@ import {
 } from "./pickup-refusal.ts";
 export type { PickupRefusal, RefusedMember };
 import type { WaitFor } from "./wait-for.ts";
-import { unsettledStartups } from "./session-startup.ts";
+import * as startups from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -159,6 +157,7 @@ export interface LaunchRecord {
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
+  startupFailureThreshold?: number;
   /** For a headless pass (a drive's, a follow-up's, a pickup's): the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`, or the wrapper's own deadline on a follow-up's or a pickup's pass, which for a pickup is `dispatch.pickup_deadline`); absent on a record written before it was kept. */
   passTimeoutSec?: number | null;
   /** For a pickup: it runs as a headless pass of `do-item` through the wrapper. Absent on an interactive pickup an earlier release started. */
@@ -282,7 +281,8 @@ export interface LaunchClaim extends ProcessIdentity {
 
 export interface LaunchExit {
   context?: string;
-  startup?: "quota" | "unstarted"; // headless stop before any result or transcript
+  startup?: startups.StartupFailure;
+  signInPhrase?: startups.SignInPhrase; // only the recognised phrase
   beforeStage?: true; // process owner publication refused before spawning a stage
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
@@ -858,7 +858,7 @@ export function pruneLaunches(
   for (const id of ordinalAnchors(records)) kept.add(id);
   for (const id of relaunchAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
-  for (const id of unsettledStartups(records, settled)) kept.add(id);
+  for (const id of startups.unsettledStartups(records, settled)) kept.add(id);
   for (const latest of [
     latestPickups,
     latestRedrives,

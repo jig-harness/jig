@@ -202,6 +202,18 @@ describe("a parked drive's review threads over ticks", () => {
     expect(threadReads(w)).toBe(1);
   }, 60_000);
 
+  it("names the pull request's repository when it reads a thread, and reads the answer", async () => {
+    const w = parked();
+    // As for the default login of a host with several accounts: the node-id query is NOT_FOUND unless it names its repository.
+    writeFileSync(join(w.dir, "thread-needs-gh-repo"), SLUG);
+    setReviewComments(w, [QUESTION, ANSWER]);
+
+    const receipt = await tick(w);
+    expect(threadReads(w)).toBe(1);
+    expect(reasonsOn7(receipt)).toContainEqual(ANSWERED);
+    expect(receipt.repos[0]?.unplaced ?? []).toEqual([]);
+  }, 60_000);
+
   it("keeps nothing of a thread whose read failed", async () => {
     const w = parked();
     w.failCall(`id=${THREAD}`, "gh: HTTP 422");

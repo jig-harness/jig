@@ -295,7 +295,9 @@ allowlisted environment for its account. A pickup hands its first drive
 back to the dispatcher, which admits it when the pickup has ended. With
 `dispatch.labels.only_labeled` enabled, the pull request needs a dispatch
 label before the dispatcher can admit the drive.
-The dashboard shows causes that need attention.
+The dashboard shows causes that need attention, and the `notify` stage
+sends them through a notification channel the machine file names, such
+as a webhook to a phone.
 
 A person follows a process run, or takes it over, from any shell on the
 host:
@@ -458,6 +460,14 @@ people the host's machine file names under `serve:`. A served person's
 open, not-started assignments need no dispatch state. Unassigned items
 under an epic assigned to them inherit that person, including nested
 epics. Only assignments made by a repository writer qualify.
+
+Who made an assignment is read from the tracker's history, and Linear
+leaves changes made in an issue's first three minutes out of it: an item
+assigned then is never started. Assign a Linear item at least three minutes
+after its creation, or unassign it and assign it again after them; the
+dispatcher considers it at its next tick after an assignment the history
+shows, subject to the usual holds and admission checks. `jig send … assign` and `/jig:file-issue`'s hand-off wait for that
+window themselves.
 
 A repository whose lane is a ready pool sets `dispatch.pool.states`: an
 unassigned open item in one of those states is a pickup too, ranked by the
@@ -1015,7 +1025,14 @@ visit: the workspace on the branch `dispatch.notices_branch` names, when the
 repository names one (the tick never opens or removes that one, and a
 message waits while it is not open), else the repository's notices
 workspace. With Orca the message becomes that workspace's comment, and the
-workspace is marked unread, which Orca's phone app shows. A message that
+workspace is marked unread, which Orca's phone app shows. It also goes
+through each notification channel the machine file names under
+[`notify.channels`](CONFIGURATION.md#the-machines-dispatch-file), the
+only way out on `runtime: process`, which has no notices workspace: a
+`webhook` channel posts it to an incoming webhook (an ntfy topic a phone
+subscribes to, a Slack or Discord channel), whose address the file names
+by the environment variable that holds it, never by the address. A
+message that
 still stands `dispatch.renotify_after` (a day by default) after it was last
 sent is sent again, saying since when it has waited, until its cause goes;
 `0s` sends each one once. The dispatch dashboard lists the same causes,
@@ -1719,7 +1736,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, whether its process is alive, dead or unknown, why, and when its launch began (`since`); the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `held` (a person's pickup hold on the dispatching host, shown even when the item already has a holder or an open need, which stay in `holder` and `waitsOn`), `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `inspect the quota spending`, `inspect Jig state storage`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `sign in to the account again`, `investigate the account's startup failures`, `inspect the quota spending`, `inspect Jig state storage`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
 | `overlap`, `footprint` | for a pick-up still assigned, when the newest tick found it so: why it waits on [overlap](https://github.com/jig-harness/jig/blob/main/design/overlap-aware-admission.md#the-reason-a-person-sees) with the work in flight (the relation, `waits on overlap` or `waits on the overlap bound`; each pull request or pickup it waits on with its state and link; how many; and the sentence its `waitsOn` repeats), and the note on a footprint unknown or derived from area labels alone (`footprint unknown: …`). The dispatcher uses these tiers to order its pickup attempts |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |

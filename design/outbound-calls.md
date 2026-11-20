@@ -14,7 +14,9 @@ sends, stays inside a budget the whole machine shares, records what each
 operation cost, and tells a reader exactly how a call failed.
 
 This is the design of [plan.md](plan.md) item 55, decided in
-[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md). Built so
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md), which
+model providers join by its amendment ([§ Model providers](#model-providers),
+built by [plan.md](plan.md) item 59). Built so
 far: the shared budget record for the tracker adapters and the forge
 (`plugin/shared/outbound/budget.ts`, with GitHub's profile and the forge
 client's admission in `github-budget.ts`, documented under `outbound_share`
@@ -46,10 +48,26 @@ what a profile has to model.
 | Linear | Requests an hour and complexity points an hour for a key (2,500 and 3,000,000 measured); 10,000 points for one query; a list with no page size is priced at 50 items | Continuously: the reset an answer names is a full refill away | `x-ratelimit-requests-*` and `x-ratelimit-complexity-*` headers, `x-complexity` for the query | 400 or 429 with the error code `RATELIMITED` |
 | Jira Cloud | Request and cost limits that differ by authentication mode (OAuth or API token) and by endpoint | Not stated | Limit, remaining and reset headers and a reason header, where the system sends them; the profile lists which ones each authentication mode gets | 429 with `Retry-After`; the reason header tells an endpoint's throttle from a wider quota |
 | Notion | A budget per connection over a fixed 60-second window, sized by plan; a limit shared across the workspace; some endpoints with limits of their own | Whole, when the window ends | Not reported | 429 with `Retry-After`; the workspace limit refuses every connection at once |
+| Webhooks: ntfy, Slack, Discord | ntfy: requests and messages per visitor (a burst, then a steady rate, and a daily message count on the public server), a message's size (4,096 bytes before it becomes an attachment). Slack: about one message a second per incoming webhook, short bursts allowed. Discord: requests per webhook over a few seconds, and messages per channel a minute | Continuously (ntfy's and Discord's buckets), not stated (Slack) | Not reported (ntfy, Slack); Discord sends `x-ratelimit-*` headers, which the transport does not read | 429; Slack and Discord with `Retry-After` |
 
 A local tool Jig runs (a workspace application's command, `git` against a
 remote) has no rate limit. It gets a deadline, the failure classes and the
 reader's policy, and no budget.
+
+An incoming webhook (`plugin/shared/outbound/http.ts`, the `webhook`
+notification channel's transport) has a deadline of 10 seconds a post,
+within the tick's remaining time, and the failure classes. Its address is
+the credential, so the ledger and the budget record key it by a hash of
+the address. The record keeps no balance, since none of these systems
+reports one the transport reads: it keeps only the hold a 429 sets, until
+its `Retry-After` or, naming none, for a minute doubled with each 429 in a
+row up to fifteen, and while it holds no process on the machine posts to
+that address. A post costs one request, and a tick sends at most one post
+per notice per channel per send (the first, and one each
+`dispatch.renotify_after` while the cause stands), so its rate is bounded
+by the causes the tick notifies. With no answer, the notice stays due: a
+failed post backs off in the failure ledger, a held one waits, and the
+dispatch dashboard lists the cause either way.
 
 ### The library
 
@@ -208,6 +226,11 @@ directory, so the client picks the account it picks for the call; it costs
 one `GET /user` a day for each repository the stored login addresses. A
 call that addresses no repository keeps the credential's own mapping, and a
 token's mapping has no repository, since a token names its own user. A
+call made outside the repository's checkout that is about a repository but
+names none in its route (a node-id GraphQL query, such as a parked drive's
+review thread) therefore runs as the default login, which cannot see another
+owner's private repository and is answered `not-found`: its caller passes
+the repository as `GH_REPO` (`ghRepoEnvFor`). A
 rate-limit refusal whose text names another user than the owner the call
 was admitted against ("rate limit exceeded for user ID N") is held on that
 user's record, the call's reservation given back to the other, and the
@@ -392,8 +415,120 @@ to tell them apart.
 | `not-found` | What was asked for does not exist or is not visible | No | No: an absence is an answer |
 | `invalid` | The system refused the request as malformed | No | Yes: a defect in the request |
 
+For a model provider, `too-costly` also means the account's credit is
+spent, and its policy differs: see [§ Model providers](#model-providers).
+
 A write whose answer was lost is `unreachable` with a mark that the request
 was sent: the caller reads the item again before it writes again.
+
+### Model providers
+
+A model provider is the fourth kind of system under the rule: it limits its
+callers, charges for use and refuses a caller whose credit is spent. It is
+unlike the forge and the trackers in one way that shapes everything below.
+**Jig does not send the model requests.** A harness
+([ADR-0026](../docs/adr/ADR-0026-the-agent-harness-is-an-interface.md))
+sends them, many to a pass, from inside a session Jig started. What Jig
+governs is the *launch*: whether a pass may start on a provider account, what
+it may spend, and what it cost. The one request Jig sends itself is the
+[offline measurement](provider-accounts.md#measuring-a-fast-decision-model)'s
+call to a provider, and that call goes through a transport built from the
+library like any other.
+
+**What a provider limits.** The limits differ by provider and by the account's
+plan, so a profile models them and holds none of their numbers.
+
+| System | What it limits | How a limit refills | How an answer reports it | How it refuses |
+| --- | --- | --- | --- | --- |
+| A model provider, by API key | Requests and tokens a minute; for a prepaid provider, a credit balance; for a postpaid one, a spending limit the account holder set | A rate limit refills continuously or at a window's end; a balance refills only when a person adds credit | Rate-limit headers where the provider sends them; a usage block in each answer, with the cost where the provider reports it | 429 with `Retry-After` or a reset header for a rate limit; 402 for credit spent |
+
+**The failure classes, for a provider.** A harness implementation maps what
+its program reports of a provider's refusal to the closed classes, so the
+dispatcher never reads a status or a message to tell them apart:
+
+- **402 is `too-costly`: the account's credit is spent.** It is not retried,
+  since waiting does not clear it. The dispatcher parks that provider account,
+  raises one [need](../GLOSSARY.md) that names the account, and starts no pass
+  on it until a person clears the park. A second account of the same provider
+  keeps launching: the park belongs to the account, never to the provider or
+  the host.
+- **429 is `rate-limited`, with the time it clears.** It is retried: a pass
+  that meets it before it changed anything records that it waits until the
+  time, and the dispatcher starts it again then, as for any rate-limited
+  class. It is never an unknown wall, and it raises no need for the wait
+  itself. Where the provider names no time, the wait is the library's, at
+  least a minute and longer with each repeat.
+- **The account's own spend cap is a `rate-limited` refusal too.** The
+  [cap](provider-accounts.md#the-spend-cap) is the caller's share, and a
+  spent share is refused with the time it clears: the next day boundary for
+  the daily cap. The need raised when the cap is reached says which cap.
+- `unauthorized`, `server-fault`, `unreachable` and `invalid` mean what they
+  mean for any system. A stop the harness implementation cannot classify
+  is a pass failure and is never recorded as a wall.
+
+**Admission happens per launch.** A launch on a provider account is admitted
+before it starts, in this order, and the first refusal ends it:
+
+1. The repository's [provider allow list](provider-accounts.md#the-provider-allow-list)
+   names the account's provider. A launch that would send a repository's
+   code to a provider the list lacks is refused, and nothing is reserved.
+2. The account is not parked, and its credential reference resolves.
+3. The day's remaining cap covers the reservation: the per-run ceiling when
+   the account has one, else the account's mean pass cost over its last 20 passes, read from
+   its launch records, else one tenth of the cap. The budget record holds
+   the reservation, as it holds a request's.
+
+A pass that ends gives back its reservation and the budget record takes the
+cost the harness reported. A pass that ends with no report keeps the full
+reservation for the day and is recorded as unknown, never as free.
+
+**A usage report becomes a ledger row.** Each harness implementation reads
+its program's usage output at the end of a pass (and a transcript's usage
+blocks where the program writes no summary) and returns the input and output
+tokens, the cost the program or the provider reported, and the model. One
+ledger row is then added or increased, in the same shape as every other
+system's:
+
+- the system is `model-provider:<provider>`, the credential's key is the hash
+  of the account's identity ([provider-accounts.md](provider-accounts.md#the-identity-of-each-kind-of-account)),
+  and the operation is the stage that ran (`Pickup`, `Rearm`, `Followup`,
+  `Steward`, `Measurement`), the key the cost report groups by;
+- the caller is the dispatcher's tick, or the person's skill that started the
+  pass;
+- the requests are the model requests the program reports, else 1 for the
+  launch; the cost is in micro-dollars (millionths of a US dollar), as whole
+  numbers like every other unit; the time is the pass's own.
+
+**Where the provider reports no cost, the cost comes from a configured
+price.** Each `models` entry's `price` gives dollars per million input tokens and per
+million output tokens for each model it may run, and the row is marked as an
+estimate, as the `gh` wrapper marks its own. For example, Gemini 4 Neon costs
+$3 per million input tokens and $15 per million output tokens on the Gemini
+API (blog.google, read 2026-11-20): a pass that read 400,000 tokens and wrote
+40,000 is $1.20 for the input and $0.60 for the output, $1.80 in all. The
+price is a conservative estimate of the token charges: it does not separate
+cached input, which a provider may bill far lower, so the row says so and the
+real cost replaces it where the provider reports one. It is not an upper bound
+on the total: a charge that is not per token, such as a provider's paid search
+or map grounding, is outside it, so an account's configuration lists a model
+with such a charge only when the pass turns the feature off, and a pass that
+bills one anyway is recorded at the cost the provider reports. A model
+with neither a reported cost nor a price is recorded with an unknown cost and
+the account's day counts it at the reservation; the dispatcher shows the
+account as `cost unknown` so a person adds the price.
+
+**What is reported.** `jig budget` and the tick report add a line per
+provider account: the day's spend against the cap, the passes it paid for and
+the costliest stages. A cap the last hours' spending would pass before the
+day ends raises the same low-quota [need](../GLOSSARY.md) the other systems
+raise, naming the stages that spend it.
+
+**What a reader sees of an account.** A pass whose account is parked or
+over its cap does not start, and the dispatcher's reading shows the account's
+state and the time it clears. A pass is never moved to another provider's
+account on its own: only an account of the same provider and harness, which the
+repository's list already allows, takes a launch an account's park or cap
+refused.
 
 ### What a reader does without an answer
 
@@ -404,12 +539,30 @@ was sent: the caller reads the item again before it writes again.
   the next tick). The next tick sends one probe request, and reads on only
   when it is answered.
 - A tick exits 0 when every failed read is of a class that clears by
-  waiting and under its threshold. The failure ledger counts in a row per
-  cause, and a `rate-limited` read does not count before its reset. A
-  read a turn makes for one item (a pull request's comments, a parked
-  drive's thread, a base branch's head, a claim marker) carries its call's
-  class on the item's row and counts the same way; one that answered but
-  does not parse carries none and fails the turn.
+  waiting and under its threshold, or is a parked drive's review thread
+  answered `not-found`. The failure ledger counts in a row per cause, and a
+  `rate-limited` read does not count before its reset. A read a turn makes
+  for one item (a pull request's comments, a parked drive's thread, a base
+  branch's head, a claim marker) carries its call's class on the item's row
+  and counts the same way; one that answered but does not parse carries
+  none and fails the turn.
+- **An absence is an answer, for a parked drive's thread.** A thread read
+  that the system answers `not-found` (the credential the tick reads with
+  cannot see it) is not waited out, since waiting does not change it, and is
+  not a failure of the turn either. Its row keeps the class on the
+  repository's report, and the park stays unanswered: nothing it would have
+  decided is decided. The repository's other items are planned as usual,
+  the tick's exit is not changed by it, it adds no row to the failure ledger
+  and nobody is told; a turn it leaves otherwise successful settles as any
+  successful turn does, retiring the repository's and the sweep's earlier
+  failure rows. A read of another class beside it decides the failure's class
+  and its waiting policy; the absence never outranks it. So one thread that a
+  credential cannot see does not mark every tick of a host failed or grow
+  into a host-wide need. Any other `not-found` stays a failed read: an item
+  that should exist and does not (a base branch's head, a repository's own
+  record) says the repository is not as the tick needs it, and fails the
+  turn. Every other class that does not clear by waiting (`unauthorized`,
+  `invalid`) fails the turn as before.
 - A pass that meets `rate-limited` before it changed anything records that
   it waits until the reset, and the dispatcher starts it again then.
 - A process with no credential for a system at all (no Linear key, and a

@@ -127,6 +127,8 @@ export type NeedCause =
   | Exclude<NotifyCause, "waiting" | "drifting" | "ready" | FailureCause>
   | "assigner-cannot-write"
   | "tracker-unreachable"
+  | "account-sign-in"
+  | "account-startup"
   | "low-quota"
   | "state-storage";
 

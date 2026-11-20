@@ -2424,6 +2424,45 @@ make, use the entry's term instead.
   outside system is then bounded when the query is written, and a gate can
   check it.
   Planned ([ROADMAP.md](ROADMAP.md) item 55).
+- **Provider account** — an account of the *dispatcher* that pays for model
+  use by what the model provider charges, with the host's own key, where a
+  subscription account pays a flat fee. It names a harness, a provider, a
+  base URL, a reference to its credential and a *spend cap*. A launch on a
+  provider account carries that credential and no other, and the account is
+  parked when the provider says its credit is spent. Planned
+  ([design/provider-accounts.md](design/provider-accounts.md), ROADMAP.md
+  item 59).
+- **Agent harness** — the program that runs an AI model as an agent: it
+  reads the prompt, calls the tools, edits files and ends with a result.
+  Claude Code and Codex are the harnesses Jig supports. Jig
+  reaches a harness through one interface, whose operations are what the
+  *dispatcher* and the skills need of it: the command that starts a
+  pass, the name a model has there, what a launch carries, what a run cost
+  and how a stop is classified
+  ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)).
+  Not the *session runtime*, which says where a session runs and not which
+  program runs in it. Planned.
+- **Spend cap** — the amount of money per day against which the
+  *dispatcher* admits a *provider account*'s launches, with an optional
+  ceiling for one run. A launch the day's remaining amount does not cover
+  is refused before it starts, and the cost the harness reports goes into
+  the *cost ledger*. It bounds what is admitted, and a pass that finishes
+  over its reservation is not stopped. Planned
+  ([design/provider-accounts.md](design/provider-accounts.md)).
+- **Harness profile** — the configuration a stage's *agent harness* runs
+  with, kept apart from the host's own configuration of that harness: its
+  instructions, system-prompt text, skills and the extensions it may load.
+  A repository may add instructions, prompt text and skills to a profile,
+  and an extension that runs code loads only from the host's allowlist.
+  Planned ([design/provider-accounts.md](design/provider-accounts.md)).
+- **Provider allow list** — the model providers a repository's code may be
+  sent to, named in the repository's own *dispatch* configuration and read
+  from its default branch. The *dispatcher* starts no pass for the
+  repository on an account of another provider.
+  Planned ([design/provider-accounts.md](design/provider-accounts.md)).
+- **BYOK (bring your own key)** — paying a model provider with a key the
+  team or the host already holds, in place of a subscription the agent
+  program's vendor sells. In Jig that is a *provider account*.
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
@@ -2787,9 +2826,16 @@ make, use the entry's term instead.
   Protocol, is the protocol that sends it to any collector that speaks it. The *hub*'s process adapter exports its
   signals this way.
 - **Notification channel** — one way the *dispatcher*'s notices reach a
-  person: a workspace card in Orca, a team's chat. The tick sends each
-  notice through every channel a machine enables and keeps a record per
-  channel of what was delivered ([design/chat.md](design/chat.md)).
+  person: a workspace card in Orca, an *incoming webhook*, a team's chat.
+  The tick sends each notice through every channel a machine enables and
+  keeps a record per channel of what was delivered
+  ([design/chat.md](design/chat.md)).
+- **Incoming webhook** — an address a chat tool or a push service (Slack,
+  Discord, ntfy) gives out so that a program can post a message to one
+  channel or topic with a single web request. Whoever holds the address
+  can post, so the address is a credential. The *dispatcher*'s `webhook`
+  *notification channel* posts to one; it is the opposite direction of a
+  *webhook*, which a system sends to a receiver.
 - **Chat bridge** — the one process that turns a person's click or command
   in a team's chat into one `jig send` request. It runs inside the *hub* or
   on a host that is not enrolled, connects out to the chat tool and listens
@@ -3380,6 +3426,14 @@ make, use the entry's term instead.
   immutable. Jig's helpers write a moment as an ISO 8601 string in UTC to
   the millisecond
   ([ADR-0018](docs/adr/ADR-0018-time-is-temporal.md)).
+<a id="creation-window"></a>
+- **Creation window** — how long after an issue's creation a tracker's
+  history leaves out a change made to it. An assignment made inside the
+  window is never read by the dispatcher's assigner check, so the item is
+  never started; Linear's is the issue's first three minutes, and GitHub
+  Issues has none. A hand-off or a send waits until the window has passed
+  before writing an assignment. See
+  [file-issue § Hand it over](plugin/skills/file-issue/SKILL.md).
 
 ## External precondition
 

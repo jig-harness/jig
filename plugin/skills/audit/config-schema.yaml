@@ -59,6 +59,12 @@ version: 1
 # Fields of the separate dispatcher machine file. These are never read
 # from the repository configuration above.
 machine_fields:
+  failures.startup_threshold:
+    type: integer
+    min: 1
+    default: 3
+    read_by: [dispatch]
+    since: 0.295.0
   load.validation:
     type: number
     # The smallest positive JavaScript number makes zero invalid.
@@ -67,6 +73,17 @@ machine_fields:
     default: 1
     read_by: [dispatch]
     since: 0.288.0
+  notify.channels:
+    type: list
+    items:
+      fields:
+        name: string
+        kind: { type: enum, values: [webhook] }
+        url_env: string
+        format: { type: enum, values: [text, slack, discord] }
+      optional: [format]
+    read_by: [dispatch]
+    since: 0.296.0
 
 strict:
   - gc
