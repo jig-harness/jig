@@ -33,6 +33,7 @@ import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./proc.ts";
 import { worktreePathKey } from "./state/actor.ts";
 import { driveDb, inTransaction } from "./state/db.ts";
 import { hostname } from "node:os";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import {
   leaseRef,
@@ -51,6 +52,16 @@ import {
   type LedgerDriverEnv,
   cloneId,
 } from "./state/ledger-mirror.ts";
+
+/** The plugin's trusted Bun configuration: recovery runs in a consumer checkout that must not choose its own startup. */
+const TRUSTED_BUNFIG = fileURLToPath(
+  new URL("../../../../gc/bunfig.toml", import.meta.url),
+);
+
+function trustedTsArgv(script: string, args: string[]): string[] {
+  const [bun, ...rest] = tsArgv(script, args);
+  return [bun!, "--no-env-file", `--config=${TRUSTED_BUNFIG}`, ...rest];
+}
 
 /**
  * A running driver's acquisition, kept beside the state outside its locks:
@@ -192,6 +203,9 @@ export function readDriverRecord(
   return row === null ? null : recordOf(row);
 }
 
+/** `settled`: the ledger is marked stopped (the record may stay as a retained CI-hold witness); `unsettled`: a write is still owed. */
+export type Settlement = "settled" | "unsettled";
+
 /**
  * The recovery from a driver record: when its pass tree was witnessed gone
  * and its driver is gone, mark its ledger stopped, guarded, and drop the
@@ -202,29 +216,36 @@ export async function recoverFromDriverRecord(
   stateDir: string,
   pr: string,
   lock: { diag: { started: string } | null },
-): Promise<void> {
+): Promise<Settlement> {
   const record = readDriverRecord(stateDir, pr);
-  if (record === null) return;
+  if (record === null) return "settled";
   if (record.released !== true) {
+    let outcome: Settlement = "unsettled";
     if (
       await recoverObservedDriver(stateDir, pr, record, async () => {
         markDriverRecordReleased(stateDir, pr, record.started);
-        if ((await markLedgerStopped(stateDir, pr, record, null)) === "done")
+        if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
+          outcome = "settled";
           removeDriverRecord(stateDir, pr, record.started);
+        }
       })
     )
-      return;
-    if (lock.diag?.started === record.started) return;
+      return outcome;
+    if (lock.diag?.started === record.started) return "unsettled";
     console.error(
       `ledger: PR #${pr}'s ledger is left running: its driver (started ${record.started}) did not release its locks, so a pass it could not witness gone may still act.`,
     );
-    return;
+    return "unsettled";
   }
-  if (pidAlive(record.pid, record.host)) return;
+  if (pidAlive(record.pid, record.host)) return "unsettled";
+  let outcome: Settlement = "unsettled";
   await reserveDeadDriver(stateDir, pr, record, async () => {
-    if ((await markLedgerStopped(stateDir, pr, record, null)) === "done")
+    if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
+      outcome = "settled";
       removeDriverRecord(stateDir, pr, record.started);
+    }
   });
+  return outcome;
 }
 
 /** `--doctor`'s sweep of the driver records no lock row covers. */
@@ -371,7 +392,7 @@ async function publishStoppedLedger(
   env: NodeJS.ProcessEnv,
   driver: LedgerDriverEnv,
 ): Promise<number> {
-  const event = await run(tsArgv(driveState, ["record-event", pr]), {
+  const event = await run(trustedTsArgv(driveState, ["record-event", pr]), {
     stdin: JSON.stringify({ kind: "stop", cause: String(exit ?? "unknown") }),
     stdout: "ignore",
     stderr: "inherit",
@@ -380,7 +401,7 @@ async function publishStoppedLedger(
   });
   if (event.code !== 0) return event.code;
   return (
-    await run(tsArgv(driveState, ["handoff", pr]), {
+    await run(trustedTsArgv(driveState, ["handoff", pr]), {
       stdout: "ignore",
       stderr: "inherit",
       timeoutSec: helperTimeoutSeconds(),
@@ -592,8 +613,8 @@ export async function recoverIdleStop(
   stateDir: string,
   pr: string,
   row: { diag: { started: string } | null },
-): Promise<void> {
-  await recoverFromDriverRecord(stateDir, pr, row);
+): Promise<Settlement> {
+  return recoverFromDriverRecord(stateDir, pr, row);
 }
 
 /** `--doctor`'s recovery: every driver record a released driver left. */

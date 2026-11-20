@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { recordPersonStop } from "./lib/state/person-stop.ts";
 import { cancelledRecoveryRecord } from "./lib/state/park-frame.ts";
 import {
   prepareOperatorStop,
@@ -711,12 +712,25 @@ async function stop(
         ? `no drive holds PR #${pr}'s lock — nothing to stop.`
         : `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
-    await ledgerStop.recoverIdleStop(stateDir, pr, row);
-    // A driver record that survives the recovery is a ledger still running or a write deferred.
+    // The person's stop is recorded on the acquisition before it settles, so a stop whose first attempt was refused still reads as theirs.
+    const idle = ledgerStop.readDriverRecord(stateDir, pr);
+    if (idle !== null && idle.personStop === undefined)
+      recordPersonStop(
+        stateDir,
+        pr,
+        {
+          worktree: idle.worktree,
+          started: idle.started,
+          pid: idle.pid,
+          host: idle.host,
+        },
+        reason,
+      );
+    // A record may stay as a retained CI-hold witness after the ledger is settled; only the outcome says which.
     console.log(
-      ledgerStop.readDriverRecord(stateDir, pr) === null
+      (await ledgerStop.recoverIdleStop(stateDir, pr, row)) === "settled"
         ? `PR #${pr}'s idle ledger is settled.`
-        : `PR #${pr}'s idle ledger is not settled: its driver record remains.`,
+        : `PR #${pr}'s idle ledger is not settled: a ledger write is still owed.`,
     );
     return 1;
   }
