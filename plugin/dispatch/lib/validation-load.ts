@@ -163,14 +163,18 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
     result.waitWindowMs < 60_000
       ? `${Math.round(result.waitWindowMs / 1000)} s`
       : `${minutes(result.waitWindowMs)} min`;
-  const window = `${span} wait window (${state.waitSource})`;
+  const cut =
+    result.waitWindowMs < state.waitLimitMs
+      ? ", limited by the pass deadline"
+      : "";
+  const window = `${span} wait window (${state.waitSource}${cut})`;
   // A window shorter than one run cannot hold a wait for a slot's release:
-  // the gauge then admits a pass only while a slot is free for its first
-  // run. Say so with its figures, so a misconfigured window reads as one
+  // the gauge then admits a pass only while a slot is free, or about to
+  // be, for its first run. Say so with its figures, so a misconfigured window reads as one
   // rather than as a busy host.
   const short =
     result.waitWindowMs < runMs
-      ? `; the wait window is shorter than one run, so no pass can wait behind another run (${Number(result.ownRuns.toFixed(2))} runs per pass)`
+      ? `; the wait window is shorter than one run, so a pass is admitted only while a slot is free, or about to be, for its first run (${Number(result.ownRuns.toFixed(2))} runs per pass)`
       : "";
   return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }

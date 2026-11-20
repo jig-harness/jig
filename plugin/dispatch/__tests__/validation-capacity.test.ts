@@ -174,8 +174,9 @@ describe("validation forecast", () => {
             drive: { runsPerPass, timeToValidationMs: 0 },
           },
         };
-        // A window shorter than one run still admits a pass to an idle lock.
-        for (const wait of [MINUTE, HOUR]) {
+        // A window shorter than one run, or none, still admits a pass to an
+        // idle lock.
+        for (const wait of [0, MINUTE, HOUR]) {
           const forecast = forecastValidation(
             measured,
             "pickup",
@@ -570,7 +571,7 @@ describe("the wait window a pass's validation has", () => {
     );
   });
 
-  test("a window shorter than one run says no pass can wait behind another", () => {
+  test("a window shorter than one run says a pass needs a slot free for its first run", () => {
     const state: ValidationLoad = {
       measured: tenRunPasses,
       demand: { atLock: 0, toArrive: 1 },
@@ -579,7 +580,29 @@ describe("the wait window a pass's validation has", () => {
       admittedRuns: 0,
     };
     expect(validationHold(state, 1, "pickup", 3 * HOUR)).toBe(
-      "waits on validation capacity: 1 runs ahead, about 2 min at 1 concurrent runs of 2 min, capacity 0.5 in a 1 min wait window (LOCK_TIMEOUT); the wait window is shorter than one run, so no pass can wait behind another run (10 runs per pass)",
+      "waits on validation capacity: 1 runs ahead, about 2 min at 1 concurrent runs of 2 min, capacity 0.5 in a 1 min wait window (LOCK_TIMEOUT); the wait window is shorter than one run, so a pass is admitted only while a slot is free, or about to be, for its first run (10 runs per pass)",
+    );
+  });
+
+  test("the reason says when the pass deadline cut the window", () => {
+    const state: ValidationLoad = {
+      measured: tenRunPasses,
+      demand: { atLock: 0, toArrive: 0 },
+      ...passLockWait({}),
+      driveDeadlineMs: 90 * MINUTE,
+      admittedRuns: 0,
+    };
+    expect(
+      validationGauge({ ...state, driveDeadlineMs: 0 }, 1).reads,
+    ).toContain("(default: the test stage's hour, LOCK_TIMEOUT unset)");
+    const held = validationHold(
+      { ...state, demand: { atLock: 0, toArrive: 20 } },
+      1,
+      "drive",
+      3 * HOUR,
+    );
+    expect(held).toContain(
+      "30 min wait window (default: the test stage's hour, LOCK_TIMEOUT unset, limited by the pass deadline)",
     );
   });
 });

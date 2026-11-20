@@ -429,9 +429,10 @@ conservative: it assumes every pass ahead reaches the lock no later than
 the new one, and credits the lock with no run of a pass that has not
 arrived yet. A pass admitted this tick counts all of its runs ahead of the
 next candidate. On a lock with nothing ahead the new pass always fits,
-whatever its runs per pass; a wait window shorter than one run admits no
-pass behind another run, and the reason says so with the window, its
-source, the run time and the runs per pass.
+whatever its runs per pass, even with a wait of zero; a wait window
+shorter than one run admits a pass only while a slot is free, or about to
+be, for its first run, and the reason says so with the window, its source,
+the run time and the runs per pass.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
 `validation`, whose fill is the runs ahead, with the launch's own runs

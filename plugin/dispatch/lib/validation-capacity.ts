@@ -217,7 +217,11 @@ export interface ValidationForecast extends ValidationDemand {
   capacity: number;
   ownRuns: number;
   required: number;
-  /** Null when the pass has no time left in which to wait. */
+  /**
+   * Null when the pass has no time left in which to wait, or must wait with
+   * no window to wait in; zero when its first run finds a slot free, even
+   * with a wait of zero.
+   */
   fill: number | null;
   waitWindowMs: number;
 }
@@ -321,7 +325,14 @@ export function forecastValidation(
     capacity,
     ownRuns,
     required,
-    fill: capacity > 0 ? required / capacity : null,
+    fill:
+      passLimitMs <= timeToValidationMs
+        ? null
+        : required === 0
+          ? 0
+          : capacity > 0
+            ? required / capacity
+            : null,
     atLock,
     toArrive,
     waitWindowMs,

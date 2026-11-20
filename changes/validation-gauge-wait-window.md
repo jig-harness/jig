@@ -13,5 +13,5 @@ release: patch
   other, so a pass always fits a lock with nothing ahead of it. The runs
   still to come from passes in flight still count ahead of a new pass. The
   gauge's reason, in the receipt and on the dashboard, names the wait window
-  and where it came from, and says when a window shorter than one run admits
-  no pass behind another run.
+  and where it came from, and says when a window shorter than one run
+  admits a pass only while a slot is free for its first run.
