@@ -12,7 +12,9 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 First comes what lets a team's pull requests reach merge-ready with nobody
 watching. An agent working alone cannot get past a person, the dispatcher
 leaves no work stranded, and a person sees and steers the work from one
-place. Every run the dispatcher starts says what it concluded.
+place. Every run the dispatcher starts says what it concluded. Last, a host
+can run the line on its own model-provider accounts and on a choice of agent
+programs.
 
 ### 40. The pass trust boundary as mechanisms
 
@@ -237,6 +239,31 @@ The dispatcher will read each account's usage from Orca's command line
 once Orca offers it. Once Orca lets a launch name its account, the
 dispatcher will start pickups through Orca on the account it chose. The
 plugin is Orca-bound.
+
+### 59. Provider accounts and an agent-harness interface
+
+A team that holds its own key with a model provider cannot have the
+dispatcher use it. The dispatcher bills each run to a subscription account
+and starts each stage on one of two agent programs. With this item, a host
+lists provider accounts beside its subscriptions. Each account names its
+provider, a reference to its credential and a daily spend cap, and Jig never
+stores the credential itself. The cost of every run goes into a ledger. A
+provider that runs out of credit parks its own account and raises one
+question for a person. The dispatcher retries a provider that asks Jig to slow
+down, and asks nobody.
+
+Each repository names the providers its code may be sent to, and the
+dispatcher starts no run for it on another. A repository that names none
+keeps the subscription accounts it uses now.
+
+Choosing an agent becomes an interface, with Claude Code and Codex as its
+first two implementations. A third joins without a change to its callers.
+The first to try is pi, an agent program, as an opt-in trial on one stage,
+with OpenRouter and the Gemini API among the providers tried. A consumer
+subscription login for Claude or Google never goes through a third-party
+harness. A model Jig does not list runs on configuration alone.
+Jig measures a fast model offline against the steward's recorded decisions,
+and nothing switches until the measurement says it should.
 
 ## Next
 
