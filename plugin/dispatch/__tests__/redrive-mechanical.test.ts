@@ -14,6 +14,7 @@ import { worktreePathKey } from "../../skills/drive-pr/scripts/lib/state/actor.t
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { hostLabel } from "../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { currentIso } from "../../shared/time.ts";
 import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -237,7 +238,7 @@ describe("jig dispatch --apply re-drives an in-pass check-runs listing stop", ()
       stop(exit, generation, {
         events: [
           {
-            at: new Date().toISOString(),
+            at: currentIso(),
             round: generation,
             kind: "stop",
             cause: String(exit),

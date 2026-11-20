@@ -19,6 +19,7 @@ import { CHECK_RUNS_UNREADABLE_EXIT } from "./settings.ts";
 import { driverRuntime } from "./runtime.ts";
 import { incompletePassExit } from "./incomplete-pass.ts";
 import { measureStop } from "./stop-measure.ts";
+import { recordProbeStop } from "./../status/probe-stop.ts";
 
 /** A launch-bound finish result outranks an arbitrary pass wrapper's exit. */
 export function hasCheckRunsUnreadableFinish(
@@ -32,7 +33,7 @@ export function hasCheckRunsUnreadableFinish(
 
 /** The pages a finish record says the listing read; a count that is not a
  * whole number is unknown, as an absent one is, since the record is a file. */
-function pagesRead(finish: Report): number | null {
+export function pagesRead(finish: Report): number | null {
   const pages = finish.listingPagesRead;
   return typeof pages === "number" && Number.isSafeInteger(pages) && pages >= 0
     ? pages
@@ -57,6 +58,16 @@ async function stopOnPassListing(
   console.error(
     `pass reported CHECK_RUNS_UNREADABLE${read} on round ${round}; stopping`,
   );
+  // Recorded as the drive's own listing stop is, so the handoff narrative,
+  // the stop line and the ledger's stop event carry the class and the pages.
+  const why =
+    typeof finish.reason === "string" && finish.reason.trim() !== ""
+      ? finish.reason
+      : "the listing was cut short";
+  driverRuntime.stopProbe = recordProbeStop(CHECK_RUNS_UNREADABLE_EXIT, {
+    state: "CHECK_RUNS_UNREADABLE",
+    reason: `the review pass could not read the head's check-runs listing whole${read}: ${why}`,
+  });
   await reportPassLeftovers("What the pass left in the tree:");
   driverRuntime.stopLeftWork = await measureStop();
   return CHECK_RUNS_UNREADABLE_EXIT;

@@ -25,7 +25,7 @@ test("a cleared finish record reads as absent for the retried pass", () => {
   }
 });
 
-test("a record for another pull request, launch or round, or a malformed one, reads as absent", () => {
+test("a record for another pull request, launch or round, or one whose envelope is malformed, reads as absent", () => {
   const dir = mkdtempSync(join(tmpdir(), "pass-finish-"));
   try {
     const report = { state: "CHECK_RUNS_UNREADABLE" } as unknown as Report;
