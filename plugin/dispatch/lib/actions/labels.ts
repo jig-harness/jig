@@ -110,7 +110,10 @@ function commandsOf(
     out.push({
       target,
       command: "rearm",
-      note: "a person's request to re-arm a stopped drive in its existing tree; consumed after its launch is accepted",
+      note:
+        typeof drive?.evidence.rearmExpired === "string"
+          ? drive.evidence.rearmExpired
+          : "a request for this drive stop, consumed on launch or retired when it expires",
     });
   if (hasCommand(config, labels, "hold"))
     out.push({ target, command: "hold", note: HOLD_NOTE });

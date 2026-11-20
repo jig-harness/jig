@@ -25,8 +25,9 @@
  * per cause (actions/notify.ts); everything else is still reported.
  *
  * The locks (receipts.ts) are taken in one order: each repository's observe
- * lock first, never waited for (a repository another tick holds is left to
- * it, and said on the receipt), then the act lock (`tick.lock`, the file
+ * lock first, waited for only within `TickOptions.observeLockWaitMs` (the
+ * timer's sweep waits; a repository another tick still holds after it is
+ * left to that tick, and said on the receipt), then the act lock (`tick.lock`, the file
  * every earlier version took for its whole tick), waited for within
  * `ACT_LOCK_WAIT_MS`. A repository's observe lock is kept until its act
  * part is done, so a tick for one repository (a wake-up) reads and acts on
@@ -118,6 +119,11 @@ import {
   type TickOptions,
 } from "./lib/tick-context.ts";
 import { boundAt, heldTo } from "./lib/sources/bounded.ts";
+import {
+  REPOSITORY_LOCK_PREFIX,
+  releaseRepositoryLocks,
+  waitForLock,
+} from "./lib/tick-locks.ts";
 import { copyLog, recordTickHealth, writeTickLine } from "./lib/tick-line.ts";
 import { rerunsHeld } from "./lib/rerun-gate.ts";
 import {
@@ -131,6 +137,7 @@ import {
   defectReport,
   type Observed,
   openTurn,
+  REOPEN,
   observeOpenedTurn,
   startTurn,
 } from "./lib/tick-repo.ts";
@@ -142,6 +149,7 @@ import {
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
 import { planOverlap } from "./lib/overlap-plan.ts";
+import { holdSerialPickups } from "./lib/serial-pickups.ts";
 import { rankPriorities } from "./lib/tick-priorities.ts";
 import type { RepoReport } from "./lib/types.ts";
 import {
@@ -183,6 +191,13 @@ type Held = Exclude<Lock, { heldBy: string }>;
 const ACT_LOCK_WAIT_MS = 120_000;
 /** How often the act phase looks at the act lock again while it waits. */
 const ACT_LOCK_POLL_MS = 250;
+/**
+ * How long the timer's sweep waits for a repository another tick holds (a
+ * woken tick, say) before leaving it to that tick: with wake-ups arriving
+ * every minute or two, a sweep that never waited would skip the repository
+ * on most of its ticks.
+ */
+export const SWEEP_OBSERVE_WAIT_MS = 120_000;
 
 function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
   return machine === null
@@ -293,6 +308,9 @@ async function observeAll(
   // A repository named twice is read once.
   // Checkouts of one repository in this tick share the repository's lock: the first holds it.
   const claimed = new Set<string>();
+  const acquiring = new Map<string, Promise<void>>();
+  // Repositories whose lock was waited for: a checkout opened before the wait opens again.
+  const waitedFor = new Set<string>();
   const prepared: Array<
     Extract<Awaited<ReturnType<typeof openTurn>>, { turn: unknown }>
   > = [];
@@ -300,13 +318,20 @@ async function observeAll(
   await Promise.all(
     [...new Set(context.options.repos)].map(async (path) => {
       const turn = startTurn(path);
+      // One wait allowance for the repository's turn, shared by both lock scopes.
+      const deadline = currentMs() + (context.options.observeLockWaitMs ?? 0);
       const own: Held[] = [];
       const give = () => {
         for (const lock of own) lock.release();
         locks.delete(path);
       };
       try {
-        const lock = takeObserveLock(path);
+        const lock = await waitForLock(
+          () => takeObserveLock(path),
+          context,
+          deadline,
+        );
+        if (lock === null) return;
         if ("heldBy" in lock) {
           out.busy.set(path, lock.heldBy);
           return;
@@ -317,13 +342,47 @@ async function observeAll(
             for (const held of own) held.release();
           },
         });
-        const observed = await openTurn(turn, context, (slug) => {
-          if (claimed.has(slug)) return null;
-          const repository = takeRepositoryLock(slug);
-          if ("heldBy" in repository) return repository.heldBy;
-          claimed.add(slug);
-          own.push(repository);
-          return null;
+        const observed = await openTurn(turn, context, async (slug) => {
+          // A checkout of this repository still acquiring answers for the others: its lock is not reentrant.
+          // A promise published meanwhile is awaited too: only a settled slug is decided on.
+          let earlier = acquiring.get(slug);
+          while (earlier !== undefined) {
+            await earlier;
+            earlier = acquiring.get(slug);
+          }
+          if (claimed.has(slug)) return waitedFor.has(slug) ? REOPEN : null;
+          let settle: () => void = () => undefined;
+          acquiring.set(
+            slug,
+            new Promise<void>((resolve) => {
+              settle = resolve;
+            }),
+          );
+          let waited = false;
+          try {
+            const repository = await waitForLock(
+              () => takeRepositoryLock(slug),
+              context,
+              deadline,
+              () => claimed.has(slug),
+              () => {
+                waited = true;
+              },
+            );
+            // Another checkout of this repository took the lock while this one waited.
+            if (repository === null) return null;
+            if ("heldBy" in repository) return repository.heldBy;
+            claimed.add(slug);
+            // Sibling checkouts borrow this lock: the tick owns it, so one checkout giving up its turn never releases it.
+            locks.set(`${REPOSITORY_LOCK_PREFIX}${slug}`, repository);
+            // The holder may have acted during the wait: every checkout's open read of the repository is stale.
+            return waited || waitedFor.has(slug) ? REOPEN : null;
+          } finally {
+            // A wait that gave up still let the holder act: a sibling acquiring afterwards opens again.
+            if (waited) waitedFor.add(slug);
+            acquiring.delete(slug);
+            settle();
+          }
         });
         if ("busy" in observed) {
           out.busy.set(path, observed.busy);
@@ -516,9 +575,13 @@ async function actAll(
     complete,
     options.machine?.priorities?.enforce === true,
   );
-  // Report-only, and after the ranking: its order is the one the pickups start in.
-  for (const { observation } of context.overlaps ?? [])
+  // After the ranking, whose order is the one the pickups start in: a
+  // serialized area's declared hold first, then overlap, reported only, over
+  // the pickups it leaves.
+  for (const { observation } of context.overlaps ?? []) {
+    holdSerialPickups(observation, allRecords(context), context.nowMs);
     planOverlap(context, observation);
+  }
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);
   // A repository's observe lock is kept until its launches and close are done.
@@ -526,6 +589,7 @@ async function actAll(
     locks.get(path)?.release();
     locks.delete(path);
   }
+  releaseRepositoryLocks(locks);
   // In the order the repositories were named, not the order their reads finished.
   const busy = [...new Set(order)].flatMap((path) => {
     const heldBy = observe.busy.get(path);

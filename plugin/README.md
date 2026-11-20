@@ -297,7 +297,9 @@ reads `DEAD` or `WEDGED`,
 runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
 holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
-the pass to an account the machine file lists, through that account's
+the pass to an account the machine file lists that serves the `rearm`
+stage ([`accounts[].stages`](CONFIGURATION.md#the-machines-dispatch-file)),
+through that account's
 configuration directory, and only while the account has a free slot and no
 recorded usage-limit wall; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
@@ -1114,7 +1116,7 @@ automation pull request (a bot's the rule does not name, or one carrying
 or re-armed of the dispatcher's own accord only while it needs work: a
 failed check (not a cancelled one or one waiting for approval), a conflict
 with its base, or an unresolved review thread. A healthy one is left for a
-person to merge; `jig:drive` or `jig:rearm` still drives one on request. Each
+person to merge. A person can still ask the dispatcher to drive it. Each
 run reports every pull request the rule adopted, with the reason.
 
 **Serialized areas.** Some pull requests conflict with each other whenever
@@ -1136,7 +1138,17 @@ contention cost. When the leader merges or leaves the group, the next run
 promotes the next, which a conflict with the new base re-drives once. A
 pull request in two serialized areas waits unless it leads both. Only the
 dispatcher's own launches wait: a drive a person arms on a held pull
-request runs, and the run reports that the group has two drives. The run
+request runs, and the run reports that the group has two drives. A pickup
+waits too: one whose item's [footprint](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+reaches a serialized area while an open pull request, a pickup in flight or
+a pickup planned ahead of it touches the area is reported as
+`held: serialized behind #N in <area>` and gets no slot. A footprint that
+is unknown cannot rule an area out, on either side: such a pickup waits
+while any serialized area is occupied (`, footprint unknown`), and such
+work occupies every serialized area (`, #N's footprint unknown`) until its
+footprint is known or it ends. Every open pull request counts, a draft or a
+quiet one included, so close a stale one to free its area. A run that
+cannot read the catalog or the open pull requests starts no pickup. The run
 never adds an area: the conflict report proposes them
 (`history.ts --propose-serialize` in
 [resolve-conflicts](skills/resolve-conflicts/README.md#where-past-merges-conflicted)),
@@ -1649,9 +1661,9 @@ not changed since the last read costs nothing against the forge's limit; it
 never calls the tracker. A `pickup` reads the item through the tracker the
 repository's configuration names, and makes no forge call. On the machine
 that dispatched the work it also reads the dispatcher's launch records, its
-outcome log and, for a drive, the drive's own listing in a checkout of the
-repository (`drives-read-only.ts`), whose doctor verdict and recovery command
-it prints and never runs. It opens these databases read-only and migrates
+outcome log. For a drive, it reads the local driver lock and the doctor's
+diagnosis as separate sources in a checkout of the repository. It prints
+the doctor's recovery command when available. It opens these databases read-only and migrates
 none: against one an older schema holds, it reads what that schema allows or
 names the source in `sources` as not read until the owner's next run brings
 it forward. On a machine that never dispatched, it answers
@@ -1734,7 +1746,8 @@ jig send <station>@<owner>/<name>#<key> <verb> [arguments] [--dry-run] [--as <lo
 | --- | --- | --- | --- |
 | `assign` | `pickup` | the item assigned to the factory identity (`dispatch.identity`), moved into the first dispatch state (`dispatch.states`) when it is in none | the dispatcher's next tick, which starts the pick-up when the person who made the assignment can write to the repository |
 | `drive` | `drive` | the `drive` [dispatch label](CONFIGURATION.md#dispatch) | the dispatcher's next tick, which arms a drive |
-| `rearm` | `drive` | the `rearm` dispatch label for a stopped drive | the dispatcher's next tick, which re-arms it on an admitted account in the existing worktree |
+| `rearm` | `drive` | a rearm request naming the stopped drive, plus its dispatch label | the dispatcher, which re-arms it on an admitted account in the original worktree |
+| `withdraw-rearm` | `drive` | withdrawal of the pending request and removal of its dispatch label | the dispatcher, which drops the pending request |
 | `hold`, `release` | `drive`, `followup` | the `hold` dispatch label, added or removed | the dispatcher's next tick, which keeps every stage off a held pull request |
 | `answer <key> <text>`, `answer <key> --approve`, `answer <key> --choose <option>`, `answer --all --approve` | `drive` | a comment on the pull request whose first line is `answer <key>: <text>`, or `answer <key>: approve [<digest>]` and `answer <key>: choose <option> [<digest>]` for a structured answer, one comment per item for `--all` | the re-arm, which hands the answer to the drive's passes as your verdict |
 | `answer <key> --approve`, `answer <key> --choose <option>` | `followup`, `pickup`, `drive` | for a need's decision other than a park's (a follow-up's, a pickup's, or the dispatcher's own framing), the same structured comment on the pull request, or on the item: the forge issue where the items are the forge's issues, else the item on its tracker, written as the user the tracker's credential acts as here | the dispatcher's next tick on the host that owns the repository, which carries out the option once (see [Every need is a decision](#every-need-is-a-decision)) |
@@ -1749,7 +1762,8 @@ ask`'s readers, and refuses (exit `1`) a request the station cannot take:
   already carries the label; a second `hold`; a `release` with no `hold`;
 - `rearm` without a stopped ledger or an existing worktree on this machine,
   while a driver or launch still holds it, after a person's recorded stop,
-  or while a re-arm request is already pending;
+  or while a re-arm request is already pending. `withdraw-rearm` requires
+  a pending request label;
 - `answer` whose key is not a parked question in the pull request's drive
   ledger, or when not every place an answer could be (the pull request's
   comments, a parked thread's replies) was read; a structured answer
@@ -1846,14 +1860,15 @@ by someone who can write to the repository, an answer from an owner, member
 or collaborator.
 
 **What it refuses outright.** A verb whose record the repository has
-switched off is refused with the setting named: `drive`, `rearm`, `hold` and
-`release` need `dispatch.labels.enabled`, read as the dispatcher reads it,
+switched off is refused with the setting named. The dispatch label verbs
+need `dispatch.labels.enabled`, read as the dispatcher reads it,
 from the configuration on the repository's default branch, and the label
 carries the repository's prefix. A machine whose
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) says
 `send: false` refuses every send. A session the line started (a dispatched
 launch, or a drive's pass) runs with `JIG_LAUNCH` set, and there `send`
-refuses `assign`, `drive`, `rearm`, `hold`, `release` and `answer`, which are a
+refuses `assign`, `drive`, `rearm`, `withdraw-rearm`, `hold`, `release` and
+`answer`, which are a
 person's commands; the mailbox verbs are not refused by it. That stops a
 skill's mistake; a session holding its person's credentials could still
 clear the variable or call the forge itself, as it could before.
@@ -1870,7 +1885,7 @@ generation that holds the drive when it is sent. A `resume` needs only the
 tree, so it also clears a directive a driver left behind.
 
 **It wakes the tick that reads its record.** After `assign`, `drive`, `rearm`,
-`hold`, `release` or `answer`, when this machine's
+`withdraw-rearm`, `hold`, `release` or `answer`, when this machine's
 [dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists the
 repository with the stage the tick acts under (`pickup` for `assign`,
 `followup` for a follow-up's `hold` and `release`, `rearm` for the rest),
@@ -1896,9 +1911,16 @@ when the send woke it. The forge can take
 a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
-**What can be taken back.** `release` undoes a `hold`, and `hold` a
-`release`; a `drive` or `rearm` label can be removed by hand until the tick has armed
-the drive; `resume` withdraws a directive; an assignment can be undone on
+**What can be taken back.** Use `jig send 'drive@owner/repository#123' withdraw-rearm`
+to withdraw a pending rearm. A request lapses when the drive leaves the stop
+it named or when the pull request closes. The tick removes the label and records
+what happened. A missing or reused worktree, or a request still waiting after
+30 minutes, raises a need. Re-send an older request with `jig send` to bind it
+to a stop after the tick removes its unbound label.
+
+`release` undoes a `hold`, and `hold` a `release`. A `drive` label can be
+removed by hand until the tick has armed the drive. `resume` withdraws a
+directive. An assignment can be undone on
 the tracker until the tick starts the pick-up. An `answer` the re-arm has
 read cannot be taken back, which is why it is checked, shown and sent in
 your own words; until then, deleting the comment withdraws it.

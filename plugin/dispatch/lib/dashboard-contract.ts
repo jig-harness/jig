@@ -185,8 +185,10 @@ export interface LineAccount {
   vendor: string;
   /** Sessions the dispatcher may hold on it at once. */
   cap: number;
-  /** Launch records holding one of its slots. A takeover and the record it replaces count once. */
+  /** Launch records holding one of its slots. A takeover and the record it replaces on the same account count once. */
   held: number;
+  /** The launching stages it serves, when the machine file narrows them (`accounts[].stages`); absent, every one. */
+  stages?: string[];
   wall: LineWall | null;
   /** A launch ended on this account's wall and the wall was never recorded: no launch is admitted until a person clears that record. */
   wallUnrecorded: boolean;

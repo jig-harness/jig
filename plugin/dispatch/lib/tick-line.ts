@@ -170,6 +170,9 @@ function accountsOf(
       vendor: slots.account.vendor,
       cap: slots.account.maxPerAccount,
       held: slots.held,
+      ...(slots.account.stages === undefined
+        ? {}
+        : { stages: [...slots.account.stages] }),
       wall:
         slots.wall === null
           ? null

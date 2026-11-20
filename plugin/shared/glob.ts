@@ -150,6 +150,8 @@ interface Automaton {
     slash: boolean;
     dot: boolean;
     names: string[];
+    /** Literal and punctuation characters this token accepts, beyond plain names. */
+    chars: string[];
     to: number;
   }[][];
   accept: number;
@@ -180,6 +182,46 @@ const DEVICE_PREFIXES = new Set(
   [...DEVICE_NAMES].flatMap((n) => [...n].map((_, i) => n.slice(0, i + 1))),
 );
 
+// Characters a class may accept beyond its own members, so a negated or
+// ranged class reaches punctuation, a non-ASCII letter, and each half of a
+// supplementary character (the automaton reads UTF-16 code units).
+const EXTRA_CHARS = [
+  ...".~@+= !\"#$%&'()*,:;<>?[\\]^`{|}",
+  "é",
+  "中",
+  "\ud83d",
+  "\ude00",
+];
+
+/**
+ * The sampled characters a token accepts besides `/`. When none of the sample
+ * passes, the first code unit that does stands in, found over the whole
+ * UTF-16 domain, so a class that accepts only characters outside the sample
+ * is never read as empty. U+0000 is never a witness: git cannot store it in a
+ * file name. A source with no regular-expression syntax is a literal, whose
+ * characters the sample already holds, so it is never searched.
+ */
+function acceptedChars(source: string, test: RegExp): string[] {
+  const sampled = [...new Set([...source, ...EXTRA_CHARS])].filter(
+    (c) => c !== "/" && c !== "\0" && test.test(c),
+  );
+  if (sampled.length > 0 || !/[\\[\]().*+?{}|^$]/.test(source)) return sampled;
+  const hit = fallbackChars.get(source);
+  if (hit !== undefined) return hit;
+  let found: string[] = [];
+  for (let unit = 1; unit <= 0xffff; unit++) {
+    const c = String.fromCharCode(unit);
+    if (c !== "/" && test.test(c)) {
+      found = [c];
+      break;
+    }
+  }
+  remember(fallbackChars, source, found);
+  return found;
+}
+
+const fallbackChars = new Map<string, string[]>();
+
 const automata = new Map<string, Automaton>();
 
 function automatonOf(glob: string): Automaton {
@@ -198,6 +240,7 @@ function automatonOf(glob: string): Automaton {
       slash: test.test("/"),
       dot: test.test("."),
       names: NAME_CHARS.filter((c) => test.test(c)),
+      chars: acceptedChars(source, test),
       to,
     });
   };
@@ -248,7 +291,17 @@ function automatonOf(glob: string): Automaton {
  */
 export function globMatchesUnder(glob: string, dir: string): boolean {
   const a = automatonOf(glob);
-  return endsInName(a, statesAfter(a, `${dir}/`));
+  return endsInPlainName(a, statesAfter(a, `${dir}/`));
+}
+
+/**
+ * Whether `glob` can match some path under `dir`, including dotfiles and
+ * punctuation. This is intentionally broader than `globMatchesUnder`: a
+ * serialized-work guard must hold when any supported path may intersect.
+ */
+export function globMayMatchUnder(glob: string, dir: string): boolean {
+  const a = automatonOf(glob);
+  return endsInPathSegment(a, statesAfter(a, `${dir}/`));
 }
 
 /** The states the automaton reaches without reading a character more. */
@@ -277,14 +330,26 @@ function statesAfter(a: Automaton, text: string): Set<number> {
  * only after that, and a `/` or the end of the path closes it only when it
  * is a plain name.
  */
-function endsInName(a: Automaton, states: Set<number>): boolean {
+function endsInPlainName(a: Automaton, states: Set<number>): boolean {
   const seen = new Set<string>();
   const queue: Position[] = [...states].map((s) => [s, EMPTY]);
   for (let at = queue.pop(); at !== undefined; at = queue.pop()) {
     if (seen.has(`${at}`)) continue;
     seen.add(`${at}`);
     if (at[0] === a.accept && closes(at[1])) return true;
-    queue.push(...successors(a, at));
+    queue.push(...plainSuccessors(a, at));
+  }
+  return false;
+}
+
+function endsInPathSegment(a: Automaton, states: Set<number>): boolean {
+  const seen = new Set<string>();
+  const queue: Position[] = [...states].map((s) => [s, EMPTY]);
+  for (let at = queue.pop(); at !== undefined; at = queue.pop()) {
+    if (seen.has(`${at}`)) continue;
+    seen.add(`${at}`);
+    if (at[0] === a.accept && at[1] !== EMPTY) return true;
+    queue.push(...pathSuccessors(a, at));
   }
   return false;
 }
@@ -324,12 +389,23 @@ function closes(segment: Segment): boolean {
   return segment === "n" || (segment.startsWith("s:") && takesDot(segment));
 }
 
-function successors(a: Automaton, [s, segment]: Position): Position[] {
+function plainSuccessors(a: Automaton, [s, segment]: Position): Position[] {
   const next: Position[] = (a.empty[s] ?? []).map((t) => [t, segment]);
   for (const e of a.steps[s] ?? []) {
     for (const c of e.names) next.push([e.to, afterName(segment, c)]);
     if (e.dot && takesDot(segment)) next.push([e.to, "."]);
     if (e.slash && closes(segment)) next.push([e.to, EMPTY]);
+  }
+  return next;
+}
+
+function pathSuccessors(a: Automaton, [s, segment]: Position): Position[] {
+  const next: Position[] = (a.empty[s] ?? []).map((t) => [t, segment]);
+  for (const e of a.steps[s] ?? []) {
+    for (const c of e.names) next.push([e.to, afterName(segment, c)]);
+    for (const c of e.chars) next.push([e.to, afterName(segment, c)]);
+    if (e.dot) next.push([e.to, "."]);
+    if (e.slash && segment !== EMPTY) next.push([e.to, EMPTY]);
   }
   return next;
 }

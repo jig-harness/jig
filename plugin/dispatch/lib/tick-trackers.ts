@@ -7,7 +7,8 @@ import {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { nativeQueueRequirements } from "../../skills/do-item/scripts/lib/tracker/dispatch-source.ts";
 import { swallow } from "../../shared/errors.ts";
-import { slotTable } from "./accounts.ts";
+import { type Slots, slotTable } from "./accounts.ts";
+import { serves } from "./account-stages.ts";
 import { pickupReads } from "./pickup-reads.ts";
 import { trackerConfigOf } from "./section.ts";
 import { sharedView } from "./sources/served-reads.ts";
@@ -38,13 +39,18 @@ export function pickupHeadroom(
       context.nowMs,
       undefined,
       context.weights,
-    ).some(
-      (slot) =>
-        slot.held < slot.account.maxPerAccount &&
-        slot.wall === null &&
-        !slot.wallUnrecorded &&
-        (slot.weight.configured ?? 0) > 0,
-    )
+    ).some(takesPickup)
+  );
+}
+
+/** Whether an account's slots could take a pickup now: it serves the stage and has a free, unwalled slot and a positive weight. */
+export function takesPickup(slot: Slots): boolean {
+  return (
+    serves(slot.account, "pickup") &&
+    slot.held < slot.account.maxPerAccount &&
+    slot.wall === null &&
+    !slot.wallUnrecorded &&
+    (slot.weight.configured ?? 0) > 0
   );
 }
 
