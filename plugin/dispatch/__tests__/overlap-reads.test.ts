@@ -88,6 +88,7 @@ function fakeTracker(
 }
 
 const base = {
+  repo: "example-org/example-repo",
   claimed: [] as ClaimedItem[],
   records: [] as ReadRecord[],
   catalogText: CATALOG,
@@ -100,6 +101,7 @@ describe("the footprint read", () => {
     const running = {
       record: {
         action: "pickup",
+        repo: "example-org/example-repo",
         item: "#30",
         batchItems: [{ key: "#30" }, { key: "#31" }],
         sessionId: "s-1",

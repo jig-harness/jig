@@ -564,6 +564,7 @@ export async function observeRepo(
   const overlap = await timer.time("observe", () =>
     pool.run(() =>
       readOverlapFacts({
+        repo: repo.slug,
         tracker: tracked.tracker,
         wanted: tracked.pickups,
         claimed: tracked.claimed,

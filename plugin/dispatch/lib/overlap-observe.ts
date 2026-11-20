@@ -91,11 +91,13 @@ function labelsOf(item: { queueIssue?: { labels: string[] } }): string[] {
 /** The session of this host's launch record that holds `key` with a session, when there is one. */
 function activeSession(
   key: string,
+  repo: string,
   records: readonly ReadRecord[],
 ): string | undefined {
   const holding = records.find(
     (r) =>
       r.record.action === "pickup" &&
+      r.record.repo === repo &&
       pickupItems(r.record).includes(key) &&
       holdsItem(r.record, key) &&
       r.state.kind === "alive" &&
@@ -106,6 +108,8 @@ function activeSession(
 }
 
 export interface OverlapObserveInput {
+  /** Repository whose pickup records may supply an active session. */
+  repo: string;
   tracker: Tracker | null;
   wanted: readonly WantedItem[];
   claimed: readonly ClaimedItem[] | null;
@@ -129,7 +133,7 @@ export function footprintItems(input: OverlapObserveInput): FootprintItem[] {
   }) => {
     if (seen.has(item.key)) return;
     seen.add(item.key);
-    const active = activeSession(item.key, input.records);
+    const active = activeSession(item.key, input.repo, input.records);
     out.push({
       key: item.key,
       labels: labelsOf(item),
