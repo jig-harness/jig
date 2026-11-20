@@ -724,8 +724,22 @@ async function stop(
       );
       return 3;
     }
-    if (idle !== null && idle.personStop === undefined)
-      markIdlePersonStop(stateDir, pr, idle.started, reason);
+    if (idle !== null && idle.personStop === undefined) {
+      // A concurrent recovery may have published and deleted the record meanwhile; settling then would leave the ledger without the person's stop.
+      const marked = markIdlePersonStop(stateDir, pr, idle.started, reason);
+      const now = ledgerStop.readDriverRecord(stateDir, pr);
+      if (
+        !marked &&
+        (now === null ||
+          now.started !== idle.started ||
+          now.personStop === undefined)
+      ) {
+        console.log(
+          `PR #${pr}'s retained driver record (started ${idle.started}) changed while the stop was recorded — the person's stop is not on the ledger; not reporting it settled.`,
+        );
+        return 1;
+      }
+    }
     // A record may stay as a retained CI-hold witness after the ledger is settled; only the outcome says which.
     console.log(
       (await ledgerStop.recoverIdleStop(stateDir, pr, row)) === "settled"
