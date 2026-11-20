@@ -27,7 +27,11 @@ import { runRoundIteration } from "./round-step.ts";
 
 import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
 
-import { ledgerRenewal, standDownOnNewerClaim } from "./ledger.ts";
+import { ledgerRenewal } from "./ledger.ts";
+import {
+  roundBoundaryTakeoverCheck,
+  standDownOnNewerClaim,
+} from "./takeover-check.ts";
 
 interface DriverRoundOptions {
   pr: string;
@@ -196,6 +200,7 @@ export async function runDriverRounds({
     agent,
     passIdentity: null,
     mailboxCheckpoint,
+    roundBoundaryTakeoverCheck: roundBoundaryTakeoverCheck(pr),
     held,
     witnessWaitHead,
     witnessWaitLimit,

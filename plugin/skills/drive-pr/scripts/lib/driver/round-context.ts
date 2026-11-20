@@ -55,6 +55,8 @@ export interface DriveRoundContext {
   mailboxCheckpoint: (opts?: {
     beforePass?: boolean;
   }) => Promise<number | "resumed" | "clear">;
+  /** Remote takeover check on the round boundary's own cadence. */
+  roundBoundaryTakeoverCheck: () => Promise<number | null>;
   held: DriveLock[];
   witnessWaitHead: string;
   witnessWaitLimit: number;
