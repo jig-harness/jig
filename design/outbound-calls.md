@@ -14,7 +14,9 @@ sends, stays inside a budget the whole machine shares, records what each
 operation cost, and tells a reader exactly how a call failed.
 
 This is the design of [plan.md](plan.md) item 55, decided in
-[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md). Built so
+[ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md), which
+model providers join by its amendment ([§ Model providers](#model-providers),
+built by [plan.md](plan.md) item 59). Built so
 far: the shared budget record for the tracker adapters and the forge
 (`plugin/shared/outbound/budget.ts`, with GitHub's profile and the forge
 client's admission in `github-budget.ts`, documented under `outbound_share`
@@ -308,8 +310,113 @@ to tell them apart.
 | `not-found` | What was asked for does not exist or is not visible | No | No: an absence is an answer |
 | `invalid` | The system refused the request as malformed | No | Yes: a defect in the request |
 
+For a model provider, `too-costly` also means the account's credit is
+spent, and its policy differs: see [§ Model providers](#model-providers).
+
 A write whose answer was lost is `unreachable` with a mark that the request
 was sent: the caller reads the item again before it writes again.
+
+### Model providers
+
+A model provider is the fourth kind of system under the rule: it limits its
+callers, charges for use and refuses a caller whose credit is spent. It is
+unlike the forge and the trackers in one way that shapes everything below.
+**Jig does not send the model requests.** A harness
+([ADR-0026](../docs/adr/ADR-0026-the-agent-harness-is-an-interface.md))
+sends them, many to a pass, from inside a session Jig started. What Jig
+governs is the *launch*: whether a pass may start on a provider account, what
+it may spend, and what it cost. The one request Jig sends itself is the
+[offline measurement](provider-accounts.md#measuring-a-fast-decision-model)'s
+call to a provider, and that call goes through a transport built from the
+library like any other.
+
+**What a provider limits.** The limits differ by provider and by the account's
+plan, so a profile models them and holds none of their numbers.
+
+| System | What it limits | How a limit refills | How an answer reports it | How it refuses |
+| --- | --- | --- | --- | --- |
+| A model provider, by API key | Requests and tokens a minute; for a prepaid provider, a credit balance; for a postpaid one, a spending limit the account holder set | A rate limit refills continuously or at a window's end; a balance refills only when a person adds credit | Rate-limit headers where the provider sends them; a usage block in each answer, with the cost where the provider reports it | 429 with `Retry-After` or a reset header for a rate limit; 402 for credit spent |
+
+**The failure classes, for a provider.** A harness implementation maps what
+its program reports of a provider's refusal to the closed classes, so the
+dispatcher never reads a status or a message to tell them apart:
+
+- **402 is `too-costly`: the account's credit is spent.** It is not retried,
+  since waiting does not clear it. The dispatcher parks that provider account,
+  raises one [need](../GLOSSARY.md) that names the account, and starts no pass
+  on it until a person clears the park. A second account of the same provider
+  keeps launching: the park belongs to the account, never to the provider or
+  the host.
+- **429 is `rate-limited`, with the time it clears.** It is retried: a pass
+  that meets it before it changed anything records that it waits until the
+  time, and the dispatcher starts it again then, as for any rate-limited
+  class. It is never an unknown wall, and it raises no need for the wait
+  itself. Where the provider names no time, the wait is the library's, at
+  least a minute and longer with each repeat.
+- **The account's own spend cap is a `rate-limited` refusal too.** The
+  [cap](provider-accounts.md#the-spend-cap) is the caller's share, and a
+  spent share is refused with the time it clears: the next day boundary for
+  the daily cap. The need raised when the cap is reached says which cap.
+- `unauthorized`, `server-fault`, `unreachable` and `invalid` mean what they
+  mean for any system. A stop the harness implementation cannot classify
+  stays a pass failure, as before; it is never recorded as a wall.
+
+**Admission happens per launch.** A launch on a provider account is admitted
+before it starts, in this order, and the first refusal ends it:
+
+1. The repository's [provider allow list](provider-accounts.md#the-provider-allow-list)
+   names the account's provider. A launch that would send a repository's
+   code to a provider the list lacks is refused, and nothing is reserved.
+2. The account is not parked, and its credential reference resolves.
+3. The day's remaining cap covers the reservation: the per-run ceiling when
+   the account has one, else the account's configured reservation (the
+   account's mean pass cost over its last 20 passes, else one tenth of the
+   cap). The budget record holds the reservation, as it holds a request's.
+
+A pass that ends gives back its reservation and the budget record takes the
+cost the harness reported. A pass that ends with no report keeps the full
+reservation for the day and is recorded as unknown, never as free.
+
+**A usage report becomes a ledger row.** Each harness implementation reads
+its program's usage output at the end of a pass (and a transcript's usage
+blocks where the program writes no summary) and returns the input and output
+tokens, the cost the program or the provider reported, and the model. One
+ledger row is then added or increased, in the same shape as every other
+system's:
+
+- the system is `model-provider:<provider>`, the credential's key is the hash
+  of the account's identity ([provider-accounts.md](provider-accounts.md#the-identity-of-each-kind-of-account)),
+  and the operation is the stage that ran (`DrivePass`, `Pickup`, `Steward`,
+  `Measurement`), the key the cost report groups by;
+- the caller is the dispatcher's tick, or the person's skill that started the
+  pass;
+- the requests are the model requests the program reports, else 1 for the
+  launch; the cost is in micro-dollars (millionths of a US dollar), as whole
+  numbers like every other unit; the time is the pass's own.
+
+**Where the provider reports no cost, the cost comes from a configured
+price.** The account's `prices` give dollars per million input tokens and per
+million output tokens for each model it may run, and the row is marked as an
+estimate, as the `gh` wrapper marks its own. For example, Gemini 4 Neon costs
+$3 per million input tokens and $15 per million output tokens on the Gemini
+API (blog.google, read 2026-11-20): a pass that read 400,000 tokens and wrote
+40,000 is $1.20 for the input and $0.60 for the output, $1.80 in all. A model
+with neither a reported cost nor a price is recorded with an unknown cost and
+the account's day counts it at the reservation; the dispatcher shows the
+account as `cost unknown` so a person adds the price.
+
+**What is reported.** `jig budget` and the tick report add a line per
+provider account: the day's spend against the cap, the passes it paid for and
+the costliest stages. A cap the last hours' spending would pass before the
+day ends raises the same low-quota [need](../GLOSSARY.md) the other systems
+raise, naming the stages that spend it.
+
+**What a reader sees of an account.** A pass whose account is parked or
+over its cap does not start, and the dispatcher's reading shows the account's
+state and the time it clears. A pass is never moved to another provider's
+account on its own: only an account of the same provider and harness, which the
+repository's list already allows, takes a launch an account's park or cap
+refused.
 
 ### What a reader does without an answer
 
