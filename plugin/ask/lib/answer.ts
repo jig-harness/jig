@@ -65,6 +65,7 @@ export const PERSON_ACTS = [
   "authorize the account's tracker credential",
   "inspect the quota spending",
   "settle the launch that holds the drive",
+  "release the pickup hold",
 ] as const;
 export type PersonAct = (typeof PERSON_ACTS)[number];
 
@@ -96,6 +97,7 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   "authorize the account's tracker credential": "Authorize",
   "inspect the quota spending": "Investigate",
   "settle the launch that holds the drive": "Investigate",
+  "release the pickup hold": "Authorize",
 };
 
 /** What a station waits on: nothing, something that settles by itself, or a person's act. */
@@ -220,6 +222,10 @@ export interface AskAnswer {
   /** The state in words: why it reads so. */
   stateDetail: string;
   waitsOn: WaitsOn;
+  /** For a pickup the newest tick found waiting on overlap: the structured reason (relation, the work it waits on, a count, the text). */
+  overlap?: import("../../dispatch/lib/dashboard-contract.ts").OverlapReason;
+  /** For a pickup whose footprint the newest tick found unknown or from labels alone: its note. */
+  footprint?: string;
   last: Last | null;
   sources: Sources;
   thread?: ThreadEntry[];

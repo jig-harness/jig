@@ -85,6 +85,10 @@ label current.
 
 <!-- /protocol:generated -->
 
+Send a rearm with [`jig send`](addresses.md#the-verbs-of-jig-send). The command binds the
+request to the stopped drive. Its label expires when the drive moves on or
+the pull request closes.
+
 How the dispatcher reads each label, and the settings that turn them on:
 [the configuration reference](../CONFIGURATION.md#dispatch). The same
 values, for a program in any language:

@@ -823,6 +823,7 @@ export function ledgerSettlement(
         code === CHECK_RUNS_UNREADABLE_EXIT
           ? driverRuntime.stopListingPages
           : null,
+        driverRuntime.stopLimitedUntil,
       ));
     if (driver === null) return { landed: true, label: null };
     if (!recorded) {

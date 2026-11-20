@@ -39,10 +39,33 @@ const ITEM: LineQueued = {
 };
 
 describe("the queue", () => {
+  it("leads with a refused launch's own detail, with the overlap beside it", () => {
+    const refused: LineQueued = {
+      ...ITEM,
+      group: "never",
+      why: "assigned to factory-bot · waits on overlap",
+      launch: { outcome: "refused", detail: "the account is at its cap" },
+      overlap: {
+        relation: "waits on overlap",
+        item: "PR #7",
+        on: [],
+        count: 1,
+        text: "overlaps #9",
+      },
+    };
+    const [group] = queueGroups(
+      { ...lineOf("queue"), queue: [refused] },
+      CLOCK,
+    );
+    expect(group?.items[0]?.why).toBe(
+      "the account is at its cap · overlaps #9",
+    );
+  });
+
   it("is ordered by what will happen, with a heading for each", () => {
     expect(queueGroups(lineOf("queue"), CLOCK).map((g) => g.title)).toEqual([
       "Starts next",
-      "Held behind a serialized leader",
+      "Held",
       "Reported, not started",
       "Will not start",
     ]);
@@ -132,6 +155,48 @@ describe("the queue", () => {
     expect(starts?.items.map((i) => i.source)).toEqual([
       "re-armable",
       "label drive",
+    ]);
+  });
+
+  it("says why a pickup waits on overlap, with the work it waits on, and its unknown footprint beside it", () => {
+    const pickup: LineQueued = {
+      ...ITEM,
+      source: "assigned",
+      target: "#12",
+      pr: null,
+      item: "#12",
+      why: "assigned to factory-bot",
+      overlap: {
+        relation: "waits on the overlap bound",
+        item: "#12",
+        on: [
+          {
+            kind: "pull request",
+            ref: "#20",
+            state: "open",
+            url: "https://forge.example/pull/20",
+          },
+          { kind: "pickup", ref: "#30", state: "claimed", url: null },
+        ],
+        count: 2,
+        text: "waits on the overlap bound: 2 in flight already change src/a.ts (#20, #30); starts when no other work can take a slot",
+      },
+      footprint:
+        "footprint unknown: no footprint record; derived from its area labels (dispatch)",
+    };
+    const line = { ...lineOf("quiet"), queue: [pickup] };
+    const [item] = queueGroups(line, CLOCK).flatMap((g) => g.items);
+    expect(item?.why).toBe(
+      "waits on the overlap bound: 2 in flight already change src/a.ts (#20, #30); starts when no other work can take a slot · footprint unknown: no footprint record; derived from its area labels (dispatch)",
+    );
+    expect(item?.evidence.slice(-4)).toEqual([
+      { k: "waits on the overlap bound", v: "2" },
+      { k: "pull request", v: "#20 (open) https://forge.example/pull/20" },
+      { k: "pickup", v: "#30 (claimed)" },
+      {
+        k: "footprint",
+        v: "footprint unknown: no footprint record; derived from its area labels (dispatch)",
+      },
     ]);
   });
 

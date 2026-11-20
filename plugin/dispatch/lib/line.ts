@@ -31,6 +31,11 @@ import {
 } from "./line-station.ts";
 export { decisionOf } from "./line-decision.ts";
 import { holds, targetOf } from "./launches.ts";
+import {
+  type QueuedFields,
+  unplacedQueueFields,
+} from "./person-pickup-holds.ts";
+import { SERIAL_UNDECIDED } from "./contention.ts";
 import { isFailureCause } from "./failure-notices.ts";
 import { lowQuotaNeeds, type QuotaRisk } from "./outbound-report.ts";
 import { preflightNeeds } from "./preflight.ts";
@@ -545,8 +550,7 @@ function needsOf(
 
 function queued(
   view: RepoView,
-  fields: Pick<LineQueued, "source" | "group" | "target" | "why"> &
-    Partial<Pick<LineQueued, "stale" | "assignedBy" | "hold" | "launch">>,
+  fields: QueuedFields,
   evidence: Evidence = {},
 ): LineQueued {
   const pr = prNumber(fields.target);
@@ -615,19 +619,29 @@ function plannedStage(view: RepoView, action: Action): LineQueued | null {
       action.evidence,
     );
   }
-  if (action.stage === "pickup")
-    return queued(
-      view,
-      {
-        source: "assigned",
-        group: groupOf(launch, "reported"),
-        target: action.target,
-        why: action.reason,
-        assignedBy: text(action.evidence, "assignedBy"),
-        ...launchFields,
-      },
-      action.evidence,
+  if (action.stage === "pickup") {
+    const overlap = view.report.overlap?.entries.find(
+      (e) => e.item === action.target,
     );
+    return {
+      ...queued(
+        view,
+        {
+          source: "assigned",
+          group: groupOf(launch, "reported"),
+          target: action.target,
+          why: action.reason,
+          assignedBy: text(action.evidence, "assignedBy"),
+          ...launchFields,
+        },
+        action.evidence,
+      ),
+      ...(overlap?.reason === undefined ? {} : { overlap: overlap.reason }),
+      ...(overlap?.footprintNote === undefined
+        ? {}
+        : { footprint: overlap.footprintNote }),
+    };
+  }
   if (action.stage === "followup")
     return queued(
       view,
@@ -675,34 +689,34 @@ function queueOf(view: RepoView): LineQueued[] {
         },
       }),
     );
+  const entry = (
+    source: LineQueued["source"],
+    group: LineQueued["group"],
+    target: string,
+    why: string,
+    hold: LineQueued["hold"] = null,
+  ) => queued(view, { source, group, target, why, hold });
   const serial = (view.report.serialized?.held ?? []).map((h) =>
-    queued(view, {
-      source: "held",
-      group: "held",
-      target: h.target,
-      why: h.reason,
-      hold: view.stored.holds.find((s) => s.pr === prNumber(h.target)) ?? null,
-    }),
+    entry(
+      "held",
+      "held",
+      h.target,
+      h.reason,
+      view.stored.holds.find((s) => s.pr === prNumber(h.target)) ?? null,
+    ),
   );
   const labelled = (view.report.labels?.held ?? []).map((h) =>
-    queued(view, {
-      source: "held",
-      group: "held",
-      target: h.target,
-      why: h.reason,
-    }),
+    entry("held", "held", h.target, h.reason),
   );
-  const refused = view.report.unplaced
-    .filter((u) => u.record === "tracker" && isItemTarget(u.target))
-    .map((u) =>
-      queued(view, {
-        source: "assigned",
-        group: "never",
-        target: u.target,
-        why: u.reason,
-      }),
-    );
-  return [...planned, ...replayed, ...serial, ...labelled, ...refused];
+  const unplaced = view.report.unplaced.filter((u) => isItemTarget(u.target));
+  // A pickup serialization could not place this tick waits on the next tick's reads.
+  const undecided = unplaced
+    .filter((u) => u.reason.startsWith(SERIAL_UNDECIDED))
+    .map((u) => entry("held", "held", u.target, u.reason));
+  const refused = unplaced
+    .filter((u) => u.record === "tracker")
+    .map((u) => queued(view, unplacedQueueFields(u)));
+  return [planned, replayed, serial, undecided, labelled, refused].flat();
 }
 
 function repoOf(

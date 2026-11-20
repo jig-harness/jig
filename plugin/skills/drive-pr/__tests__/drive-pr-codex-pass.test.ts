@@ -13,7 +13,11 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import { passCommand, skillPrompt } from "../scripts/lib/pass-command.ts";
+import {
+  passCommand,
+  passPrompt,
+  skillPrompt,
+} from "../scripts/lib/pass-command.ts";
 import { tmpRoot, useDrivePrSuite } from "./drive-pr-harness.ts";
 import { runDrive } from "./drive-loop-harness.ts";
 import { ownTree } from "./drive-pr-pickup-fixtures.ts";
@@ -59,19 +63,19 @@ describe("the documented Codex pass command", () => {
     expect(passCommand("codex", 999)).toEqual([
       "codex",
       "exec",
-      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+      passPrompt("codex", 999),
     ]);
     expect(passCommand("codex", 999, false)).toEqual(passCommand("codex", 999));
     expect(CODEX_PASS).toEqual([
       "codex",
       "exec",
       "--dangerously-bypass-approvals-and-sandbox",
-      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+      passPrompt("codex", 999),
     ]);
     expect(passCommand("claude", 999)).toEqual([
       "claude",
       "-p",
-      "/jig:drive-pr --bots-only 999",
+      passPrompt("claude", 999),
     ]);
     expect(passCommand("claude", 999, true)).toEqual(
       passCommand("claude", 999),
@@ -79,7 +83,7 @@ describe("the documented Codex pass command", () => {
     expect(passCommand("codex", 999, true, ["--x"]).slice(2)).toEqual([
       "--dangerously-bypass-approvals-and-sandbox",
       "--x",
-      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+      passPrompt("codex", 999),
     ]);
     expect(passCommand("claude", 999, true, ["--x"])).toEqual(
       passCommand("claude", 999),
@@ -108,7 +112,7 @@ describe("the documented Codex pass command", () => {
       },
     );
     expect(wouldRun(r.stderr)).toBe(
-      "codex exec -m gpt-5.6-terra Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+      `codex exec -m gpt-5.6-terra ${passPrompt("codex", 999)}`,
     );
     expect(r.stderr).toContain(
       "permission mode: inherited (the pass command sets no --sandbox; Codex's configuration decides)",
@@ -120,10 +124,10 @@ describe("the documented Codex pass command", () => {
       JIG__ROUTING__MODELS__CODEX__STANDARD: "sol",
     });
     expect(wouldRun(r.stderr)).toStartWith(
-      "codex exec -m gpt-6.1-sol --dangerously-bypass-approvals-and-sandbox",
+      "codex exec -m gpt-6.2-sol --dangerously-bypass-approvals-and-sandbox",
     );
     expect(r.stderr).toContain(
-      "pass model: gpt-6.1-sol (routing.models.codex.standard (sol))",
+      "pass model: gpt-6.2-sol (routing.models.codex.standard (sol))",
     );
     expect(r.stderr).toContain(
       "permission mode: no sandbox, no approvals (the pass command's --dangerously-bypass-approvals-and-sandbox)",
@@ -151,7 +155,7 @@ describe("the documented Codex pass command", () => {
     const HOOK_TRUST = {
       JIG__DRIVE__CODEX_PASS_ARGS: "[--dangerously-bypass-hook-trust]",
     };
-    const PROMPT = "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999";
+    const PROMPT = passPrompt("codex", 999);
 
     it("adds the words after the bypass and before the prompt, and names them in the driver log", async () => {
       const r = await dryRun([], HOOK_TRUST);

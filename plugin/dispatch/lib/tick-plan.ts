@@ -14,7 +14,8 @@
  * owner host the priorities ranking's inputs are read after the plan, for the
  * tick to rank once every repository is planned (`tick-priorities.ts`); the
  * plan never reads it, and only the host's `priorities.enforce` lets the
- * ranking reorder the planned pickups.
+ * ranking reorder the planned pickups. The planned pickups are then weighed
+ * against the work in flight (`overlap-plan.ts`), for the report only.
  */
 import { slotTable } from "./accounts.ts";
 import { planSteers, readNudges, settlePending } from "./actions/steer.ts";
@@ -47,6 +48,7 @@ import { type CarrierInput, carrierInput } from "./carried-pr.ts";
 import { branchPattern } from "./section.ts";
 import type { PrLinkText } from "./work-links.ts";
 import { preparePriorities } from "./tick-priorities.ts";
+import { rearmLockNeeds } from "./rearm-lock-needs.ts";
 
 /** Put the steward's recorded queue order on the tracked pickups, where this host owns the repository. */
 function orderTracked(
@@ -103,10 +105,16 @@ export function planObserved(
       ? {}
       : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
     ...(onlyLabeled ? { inScope: forge.inScope } : {}),
-    ...withStalledPr(observation),
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
+    ...withStalledPr(observation, context.nowMs),
     ...withTrees(context, opened.stages.has("pickup")),
   });
   if (onlyLabeled) report.inScope = [...forge.inScope];
+  // Reported only, and weighed after the priorities ranking so it sees the pickup order that starts.
+  context.overlaps ??= [];
+  context.overlaps.push({ observation });
   if (opened.owner) {
     const prepared = preparePriorities(report, {
       slug: repo.slug,
@@ -125,9 +133,30 @@ export function planObserved(
       context.priorities.push(prepared);
     }
   }
-  // A failing action on a held pull request, or one not known to be labelled, stands down with every other.
+  // A failure on a held pull request, or one not known to be labelled, stands down with every other action.
   const failing = {
-    actions: planFailureNotices(context, opened),
+    actions: [
+      ...planFailureNotices(context, opened),
+      ...rearmLockNeeds(
+        repo.slug,
+        observation.drives,
+        context.apply?.root,
+        (reason) =>
+          // A failed read leaves each stopped pull request's need unobserved, so its suppression record stays.
+          report.unplaced.push(
+            ...[
+              "the rearm lock needs",
+              ...observation.drives.map((drive) => `PR #${drive.number}`),
+            ].map((target) => ({
+              target,
+              record: "runtime" as const,
+              reason,
+              readFailed: true as const,
+            })),
+          ),
+        observation.forge.ok,
+      ),
+    ],
     held: [],
     withheld: report.withheld ?? [],
   };
@@ -147,7 +176,10 @@ export function planObserved(
  * pull requests carry an item with the drives that work them. None where
  * the tracker's keys do not read.
  */
-function withStalledPr(observation: RepoObservation): {
+function withStalledPr(
+  observation: RepoObservation,
+  nowMs: number,
+): {
   prOpen?: StalledPrInput;
 } {
   const { tracked, forge, opened, ctx } = observation;
@@ -160,7 +192,7 @@ function withStalledPr(observation: RepoObservation): {
   return {
     prOpen: {
       prs,
-      carried: carriersOf(observation, prs),
+      carried: carriersOf(observation, prs, nowMs),
       prOpen: (nativeType) => prOpenOf(tracked.tracker, nativeType),
       owner: ctx.owner,
       pickup: opened.stages.has("pickup"),
@@ -188,10 +220,11 @@ function withTrees(
   return { trees: (path) => readPickupTree(path, deadlineMs) };
 }
 
-/** Which open pull requests carry an item, and the drives the tick read for them (`carried-pr.ts`). */
+/** Which open pull requests carry an item, the drives the tick read for them, and the merged pull requests that settle one (`carried-pr.ts`). */
 function carriersOf(
   observation: RepoObservation,
   prs: readonly PrLinkText[] | null,
+  nowMs: number,
 ): CarrierInput {
   const { tracked, forge, opened, drives } = observation;
   return carrierInput({
@@ -208,6 +241,8 @@ function carriersOf(
     drives,
     read: forge.read,
     ...(forge.scoped ? { inScope: forge.inScope } : {}),
+    merged: forge.merged,
+    nowMs,
   });
 }
 

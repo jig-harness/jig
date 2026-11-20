@@ -124,25 +124,34 @@
       "stations": "drive",
       "person": true,
       "args": null,
-      "meaning": "Ask for a stopped drive to be re-armed in its existing working tree: the rearm command label, which the dispatcher's next tick reads"
+      "meaning": "Ask for a stopped drive to be re-armed in its existing working tree: a request bound to that stop and the rearm command label that the dispatcher reads"
+    },
+    {
+      "kind": "verb",
+      "name": "withdraw-rearm",
+      "key": null,
+      "stations": "drive",
+      "person": true,
+      "args": null,
+      "meaning": "Withdraw a pending re-arm request and remove its rearm command label"
     },
     {
       "kind": "verb",
       "name": "hold",
       "key": null,
-      "stations": "drive, followup",
+      "stations": "drive, followup, pickup",
       "person": true,
       "args": null,
-      "meaning": "Keep the line off a pull request: add the hold command label, which every stage of the dispatcher respects"
+      "meaning": "Keep the line off a pull request with the hold command label, or keep a tracker item out of pickups and batches with a hold on its dispatcher host"
     },
     {
       "kind": "verb",
       "name": "release",
       "key": null,
-      "stations": "drive, followup",
+      "stations": "drive, followup, pickup",
       "person": true,
       "args": null,
-      "meaning": "Withdraw a hold: remove the hold command label, so the dispatcher's next tick takes the pull request up again"
+      "meaning": "Withdraw the pull request's hold label or the tracker item's hold on its dispatcher host"
     },
     {
       "kind": "verb",

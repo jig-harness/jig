@@ -40,6 +40,7 @@ import {
   terminalCreates,
   waitFor,
 } from "./launch-fixtures.ts";
+import { passPrompt } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -56,7 +57,7 @@ const PASS = [
   "--",
   "claude",
   "-p",
-  "/jig:drive-pr --bots-only 7",
+  passPrompt("claude", 7),
 ];
 
 let current: World | null = null;

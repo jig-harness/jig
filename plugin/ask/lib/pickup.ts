@@ -23,7 +23,15 @@ import type {
 } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { dispatchSection } from "../../dispatch/lib/section.ts";
 import { lastEnded } from "../../dispatch/lib/log.ts";
-import type { LineNeed } from "../../dispatch/lib/dashboard-contract.ts";
+import type {
+  LineNeed,
+  LineQueued,
+} from "../../dispatch/lib/dashboard-contract.ts";
+import {
+  type PersonPickupHold,
+  personPickupHolds,
+  pickupHoldReason,
+} from "../../dispatch/lib/person-pickup-holds.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import {
   type Holder,
@@ -44,7 +52,7 @@ import {
 import { localLaunchEntries, logEntries } from "./thread.ts";
 import { personAct } from "./waiting.ts";
 import { actOfLineNeed } from "../../shared/acts.ts";
-import { lineNeeds } from "./line-needs.ts";
+import { lineNeeds, lineQueue } from "./line-needs.ts";
 
 /** A repository's tracker, from the configuration of its checkout at `root`. */
 export interface RepoTracker {
@@ -161,11 +169,19 @@ function needWhy(need: LineNeed): string {
   return [need.reason, ...unread].join("; ");
 }
 
+/** The newest tick's queue entry for this item as an assigned pickup, where it planned one. */
+function queuedOf(ctx: AskContext): LineQueued | undefined {
+  return lineQueue(ctx).find(
+    (q) => q.item === ctx.address.key && q.source === "assigned",
+  );
+}
+
 function waitsOnOf(
   state: string,
   needs: readonly LineNeed[],
   ctx: AskContext,
   held: boolean,
+  queued: LineQueued | undefined,
 ): WaitsOn {
   // The tick's own need comes first: a session that runs may be the one waiting on a person.
   const need = needs[0];
@@ -174,6 +190,8 @@ function waitsOnOf(
       act: actOfLineNeed(need),
     });
   if (held) return "none";
+  if (state === "assigned" && queued?.overlap !== undefined)
+    return { waiting: queued.overlap.text };
   if (state === "assigned" && ctx.dispatches)
     return { waiting: "the dispatcher's next tick, which starts the pick-up" };
   return "none";
@@ -288,6 +306,68 @@ export async function readPickup(
   return { answer: await issueAnswer(ctx, tracker, issue), issue };
 }
 
+/** The item's state with the person's hold on it, and the hold's own reading: why it did not read, when it did not. */
+function withPersonHold(
+  ctx: AskContext,
+  raw: { state: string; detail: string },
+) {
+  const holds =
+    ctx.dispatcher === null
+      ? null
+      : personPickupHolds(ctx.address.repo, ctx.dispatcher);
+  const personHold = holds?.ok
+    ? holds.value.find((hold) => hold.item === ctx.address.key)
+    : undefined;
+  const holdUnread = holds?.ok === false ? holds.failure.reason : null;
+  if (holds !== null)
+    ctx.reading.note({
+      record: "pickup-hold",
+      read: holds.ok,
+      ...(holdUnread === null ? {} : { detail: holdUnread }),
+    });
+  const holdDetail =
+    personHold === undefined ? holdUnread : pickupHoldReason(personHold);
+  return {
+    personHold,
+    holdUnread,
+    state: personHold === undefined ? raw.state : "held",
+    detail: holdDetail === null ? raw.detail : `${raw.detail}; ${holdDetail}`,
+  };
+}
+
+/** What a pickup waits on: the person's hold when nothing else holds it, else what the line says. */
+function pickupWaitsOn(
+  ctx: AskContext,
+  w: {
+    personHold: PersonPickupHold | undefined;
+    holdUnread: string | null;
+    state: string;
+    needs: LineNeed[];
+    holding: ReturnType<typeof holdingRecord>;
+    claim: ReturnType<typeof claimHolder>;
+    queued: LineQueued | undefined;
+  },
+) {
+  if (
+    w.personHold !== undefined &&
+    w.needs.length === 0 &&
+    w.holding === null &&
+    w.claim === "none"
+  )
+    return personWait(
+      "release the pickup hold",
+      pickupHoldReason(w.personHold),
+      { people: [w.personHold.by] },
+    );
+  return waitsOnOf(
+    w.holdUnread === null ? w.state : "unknown",
+    w.needs,
+    ctx,
+    w.holding !== null,
+    w.queued,
+  );
+}
+
 /** The answer for an item the tracker read. */
 async function issueAnswer(
   ctx: AskContext,
@@ -297,26 +377,41 @@ async function issueAnswer(
   const { address, name } = ctx;
   const local = await dispatcherReads(
     ctx,
-    (r) => r.record.action === "pickup" && r.record.item === address.key,
+    (r) =>
+      r.record.action === "pickup" &&
+      (r.record.item === address.key ||
+        (r.record.batchItems?.some((i) => i.key === address.key) ?? false)),
     address.key,
   );
   const member = await membershipOf(ctx, tracker);
   const needs = currentNeeds(needsOf(ctx), issue, tracker.identity, member);
-  const { state, detail } = stateOf(issue, tracker.identity, needs, member);
+  const raw = stateOf(issue, tracker.identity, needs, member);
+  const { personHold, holdUnread, state, detail } = withPersonHold(ctx, raw);
   const holding = holdingRecord(local.records);
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
   const last = lastEnded(local.rows, ["pickup"]);
+  // The newest tick's overlap reason and footprint note hold only while the item still waits to be picked up.
+  const queued = state === "assigned" ? queuedOf(ctx) : undefined;
+  const claim = claimHolder(raw.state, issue);
+  const waitsOn = pickupWaitsOn(ctx, {
+    personHold,
+    holdUnread,
+    state,
+    needs,
+    holding,
+    claim,
+    queued,
+  });
   return {
     found: true,
     title: issue.title,
     url: issue.url,
-    holder:
-      holding === null
-        ? claimHolder(state, issue)
-        : recordHolder(holding, null),
+    holder: holding === null ? claim : recordHolder(holding, null),
     state,
     stateDetail: detail,
-    waitsOn: waitsOnOf(state, needs, ctx, holding !== null),
+    waitsOn,
+    ...(queued?.overlap === undefined ? {} : { overlap: queued.overlap }),
+    ...(queued?.footprint === undefined ? {} : { footprint: queued.footprint }),
     last: last === null ? null : lastOfRow(last),
     entries: [
       ...(await assignment(ctx, tracker, issue, member)),

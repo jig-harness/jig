@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { retryAttempts } from "../../../shared/retry.ts";
-import { recoverCancelledOnHead } from "./lib/cancelled-recovery-live.ts";
-import { recoveryExit } from "./lib/cancelled-recovery-reads.ts";
+import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -20,6 +19,8 @@ import { recoveryExit } from "./lib/cancelled-recovery-reads.ts";
  *   ci-hold.ts final-ready [PR] --expect-head SHA [--require-success]
  *
  * `--require-success` requires completed checks to succeed, for final-ready only.
+ *
+ * `ensure`'s stdout outcomes are listed in `lib/ci-hold-unobserved.ts`.
  */
 
 import {
@@ -27,6 +28,7 @@ import {
   completedHoldPrecondition,
   completedRequiredCi,
   type LabelTransition,
+  mayMutateHold,
   mutationProven,
   ownsHeldTransition,
   reportsConflict,
@@ -55,7 +57,6 @@ import {
   checkRunsRead,
 } from "./lib/ci-hold-state.ts";
 import { listingStopExit, type ProofRead } from "./lib/ci-proof.ts";
-import { driverRuntime } from "./lib/driver/runtime.ts";
 import type { ListingCutShort } from "./lib/paged-read.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
 import {
@@ -474,22 +475,13 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     return 0;
   }
   if (!observed) {
-    const recovery = await recoverCancelledOnHead(
+    return waitOnUnobserved(
       pr,
       head,
       policy.requiredChecks,
-      true,
+      runs,
+      latest?.event === "unlabeled",
     );
-    if (recovery === "listing-cut-short")
-      return listingStopExit(driverRuntime.stopListingPages);
-    const stop = recoveryExit(recovery);
-    if (stop !== null) return stop;
-    console.error(
-      latest?.event === "unlabeled"
-        ? "ci-hold: the required checks triggered by the latest unlabel have not completed on this head; refusing to re-add the hold yet"
-        : "ci-hold: the initial required checks have not completed on this head; waiting before suppressing intermediate CI",
-    );
-    return 4;
   }
   // Refresh immediately before the mutation while the PR-wide mutation fence
   // is held. A same-login human action through another client remains an API
@@ -498,9 +490,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   if (!before.ok) return unread(before.failure);
   const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
   if (
-    beforeLive.state !== "OPEN" ||
-    beforeLive.head !== head ||
-    beforeLive.held ||
+    !mayMutateHold(beforeLive, head, false) ||
     latestOf(beforeTimeline)?.id !== latest?.id
   )
     return 4;
@@ -652,14 +642,12 @@ async function release(
 
   const before = await readBeforeMutation(pr, policy.holdLabel);
   if (!before.ok) return unread(before.failure);
-  const { login, live: beforeLive, timeline: beforeTimeline } = before.value;
+  const { login, live: heldLive, timeline: heldTimeline } = before.value;
   if (
-    beforeLive.state !== "OPEN" ||
-    beforeLive.head !== head ||
-    !beforeLive.held ||
+    !mayMutateHold(heldLive, head, true) ||
     (expectedTransition !== undefined &&
-      latestOf(beforeTimeline)?.id !== expectedTransition) ||
-    !ownsHeldTransition(persisted, latestOf(beforeTimeline))
+      latestOf(heldTimeline)?.id !== expectedTransition) ||
+    !ownsHeldTransition(persisted, latestOf(heldTimeline))
   )
     return 4;
   const watermarkRead = await headWatermark(head, "before the unlabel");

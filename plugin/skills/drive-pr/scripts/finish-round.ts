@@ -203,6 +203,8 @@ import { listingPagesReadFrom } from "./lib/ci-proof.ts";
 import { DRIVE_EXIT } from "./lib/status/terminal-states.ts";
 import { writePassFinish } from "./lib/state/pass-finish.ts";
 import { resolveStateDir } from "./lib/state/store.ts";
+import { holdParkReason, isUnheldOutcome } from "./lib/missing-required-run.ts";
+import { roundFinishRecorder } from "./lib/state/round-finish.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -1188,6 +1190,7 @@ async function main(): Promise<number> {
           stateDir: process.env.DRIVE_PR_STATE_DIR || (await resolveStateDir()),
         }
       : null;
+  const recordFinish = await roundFinishRecorder(pr);
   const done = (
     code: number,
     state: Report["state"],
@@ -1204,6 +1207,7 @@ async function main(): Promise<number> {
         report,
       );
     emit(report, asJson);
+    recordFinish({ state, reason, head: report.head });
     return code;
   };
 
@@ -1312,11 +1316,7 @@ async function main(): Promise<number> {
     );
   }
   if (holdRes.code === 8) {
-    return done(
-      8,
-      "HITL_PARKED",
-      "cancelled CI needs a person; see the cancelled-ci parked finding for the run and recovery",
-    );
+    return done(8, "HITL_PARKED", holdParkReason(holdRes.stdout));
   }
   if (holdRes.code === 4) {
     return done(
@@ -1358,11 +1358,9 @@ async function main(): Promise<number> {
     },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
-  // `disabled` and `conflicting` pushed without a hold, and `adopted` under a
-  // label this push did not add: none rolls back.
-  const unheld = ["disabled", "conflicting", "adopted"].includes(
-    holdRes.stdout.trim(),
-  );
+  // `disabled`, `conflicting`, `workflow-change`, `timed-out` and `adopted` pushed without
+  // a hold this push added: none rolls back.
+  const unheld = isUnheldOutcome(holdRes.stdout);
   if (pushRes.code !== 0 && !unheld) {
     const rollback = await run(
       tsArgv(ciHold, ["rollback", pr, "--expect-head", report.head]),

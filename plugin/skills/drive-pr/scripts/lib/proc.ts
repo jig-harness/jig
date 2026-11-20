@@ -71,6 +71,8 @@ export {
   readTimeoutEnv,
   tsArgv,
 } from "../../../../shared/proc.ts";
+import { ghRepoEnv } from "../../../../shared/gh-repo-env.ts";
+export { ghRepoEnv };
 
 /**
  * GIT_CALL_TIMEOUT, the same convention as `ghCallTimeoutSeconds()` above but
@@ -1159,31 +1161,4 @@ export function pidCheckCommand(
       ? `powershell.exe -NoProfile -Command "Get-Process -Id ${pid}"`
       : `ps -p ${pid}`;
   return remote ? `ssh ${host} ${check}` : check;
-}
-
-/**
- * `process.env` with `GH_REPO` removed — the `gh` CLI's equivalent of `GIT_DIR`
- * above: `gh` gives `GH_REPO` precedence over the repository it would otherwise
- * detect from the current directory, ahead even of an explicit `cwd`. Pass as
- * `env:` to any `cwd`-anchored `gh` call whose answer must be about the
- * repository AT that `cwd` — an inherited `GH_REPO` from the ambient
- * environment would otherwise silently redirect it to a different repository
- * regardless of `cwd`. `GH_HOST` is left alone: it selects which host's
- * credentials to use, never which repository, so it carries none of this
- * hazard.
- *
- * Windows environment-variable names are case-insensitive (`gitIdentityEnv()`
- * above documents the same trap), so an exact-match delete leaves an inherited
- * `Gh_Repo` in place there, still honored by `gh`.
- */
-export function ghRepoEnv(): Record<string, string | undefined> {
-  const env = { ...process.env };
-  if (process.platform === "win32") {
-    for (const key of Object.keys(env)) {
-      if (key.toLowerCase() === "gh_repo") delete env[key];
-    }
-  } else {
-    delete env.GH_REPO;
-  }
-  return env;
 }

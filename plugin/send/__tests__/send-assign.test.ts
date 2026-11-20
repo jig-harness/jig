@@ -205,3 +205,36 @@ describe("jig send assign", () => {
     expect(writes(ops)).toEqual(["TrackerAssign"]);
   });
 });
+
+describe("jig send pickup hold", () => {
+  it("holds an assigned item locally, shows who held it, and releases it without a tracker write", async () => {
+    const { w, ops } = world();
+    mkdirSync(join(w.home, ".jig"), { recursive: true });
+    writeFileSync(
+      join(w.home, ".jig", "dispatch.yaml"),
+      `repositories:\n  - path: ${w.repo}\n    stages: [pickup]\n`,
+    );
+    const address = `pickup@${REPO}#15`;
+    const dry = await w.send([address, "hold", "--dry-run"]);
+    expectSpawnExit(dry, 0);
+    expect(dry.stdout).toContain("dry run: nothing was written");
+    const before = await w.ask([address]);
+    expectSpawnExit(before, 0);
+    expect(before.stdout).not.toContain("held by maintainer");
+    const held = await w.send([address, "hold"]);
+    expectSpawnExit(held, 0);
+    expect(held.stdout).toContain("hold pickup of #15");
+    const queried = await w.ask([address]);
+    expectSpawnExit(queried, 0);
+    expect(queried.stdout).toContain("held by maintainer at");
+    expect(queried.stdout).toContain("assigned to dana");
+    const released = await w.send([address, "release"]);
+    expectSpawnExit(released, 0);
+    expect(released.stdout).toContain("release the local hold on #15");
+    const asked = await w.ask([address]);
+    expectSpawnExit(asked, 0);
+    expect(asked.stdout).not.toContain("held by maintainer at");
+    expect(writes(ops)).toEqual([]);
+    expect(w.writes()).toEqual([]);
+  });
+});

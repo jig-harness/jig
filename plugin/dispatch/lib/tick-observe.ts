@@ -11,7 +11,9 @@
  * forge's part (its open pull requests with their ledgers, its merges) are
  * read through the tick's world view (`world-view.ts`), whose facts carry
  * their freshness class. The launch claims (the shared records), Control's
- * reads and the board read the forge directly. The forge's drives as this
+ * reads and the board read the forge directly, and overlap reads the
+ * footprints of the wanted and claimed items through the tracker the tick
+ * opened (`overlap-observe.ts`). The forge's drives as this
  * host's launch records and every host's claims settle them are the
  * machine view, `RepoObservation.drives`, kept apart from the forge's read:
  * nothing of what this host did is written into a fact the view returned.
@@ -90,6 +92,7 @@ import {
   heldElsewhere,
   type SharedContext,
 } from "./shared-launches.ts";
+import { type OverlapFacts, readOverlapFacts } from "./overlap-observe.ts";
 import { observeContention } from "./sources/contention.ts";
 import type { FilesObservation } from "./sources/pr-files.ts";
 import { type HolderReadings, readHolders } from "./sources/doctor.ts";
@@ -135,6 +138,7 @@ import type {
 } from "./types.ts";
 import { currentIso, isoFromMs } from "../../shared/time.ts";
 import { observeTestLockWaits } from "./test-lock-waits.ts";
+import { stateRoot } from "../receipts.ts";
 
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
@@ -196,12 +200,16 @@ export interface RepoObservation {
   serialized: Contention;
   /** Changed-file paths and their freshness, kept in memory for planning. */
   prFiles?: FilesObservation;
+  /** The footprints and the catalog overlap weighs (`overlap-observe.ts`). */
+  overlap?: OverlapFacts;
   /** The pull requests a person's hold label keeps every stage off. */
   held: Set<number>;
   /** Each pull request's lock holder as this clone's drive doctor reads it, read when a drive fell silent. */
   holders?: HolderReadings;
   /** The board read: the converged pull requests placed in Ready to merge, or why they were not. */
   board?: BoardRead;
+  /** The launch records of follow-ups whose spent pending arm the tick read again as settled (`arm-reread.ts`). */
+  armsSettled?: ReadonlySet<string>;
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
@@ -396,6 +404,7 @@ export async function observeRepo(
                   : [],
                 serveDefaults: context.options.machine?.serveDefaults,
                 nowMs,
+                root: stateRoot(),
                 headroom: pickupHeadroom(context, records),
                 records,
                 preparedTracker: opened.tracker,
@@ -507,7 +516,7 @@ export async function observeRepo(
   );
 
   const held = heldPullRequests(labels, [...forge.open, ...forge.merged]);
-  const { serialized, prFiles } = await timer.time("observe", () =>
+  const { serialized, prFiles, catalogText } = await timer.time("observe", () =>
     pool.run(async () => {
       const skipped = await optionalSkipped(reads, context.bound);
       const threads = boundedThreads(
@@ -548,6 +557,21 @@ export async function observeRepo(
         context.bound,
       );
     }),
+  );
+  // The footprints overlap weighs, through the tracker the tick opened.
+  const overlap = await timer.time("observe", () =>
+    pool.run(() =>
+      readOverlapFacts({
+        tracker: tracked.tracker,
+        wanted: tracked.pickups,
+        claimed: tracked.claimed,
+        records,
+        catalogText,
+        where: `${repo.slug}@${repo.defaultBranch}`,
+        nowMs,
+        bound: context.bound,
+      }),
+    ),
   );
   // The board read, a query of its own whose failure touches nothing planned.
   const board = await timer.time("board", () =>
@@ -600,6 +624,7 @@ export async function observeRepo(
     sessions,
     serialized,
     ...(prFiles === undefined ? {} : { prFiles }),
+    overlap,
     held,
     board,
     ...(holders === undefined ? {} : { holders }),

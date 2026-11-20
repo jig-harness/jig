@@ -27,6 +27,7 @@ import {
   quoteWord,
   type TabDeps,
 } from "../scripts/lib/arm.ts";
+import { passPrompt } from "../scripts/lib/pass-command.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "arm-drive.ts");
 const IN_ORCA = { CLAUDECODE: "1", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
@@ -103,7 +104,7 @@ describe("the command that starts the drive", () => {
       "--model",
       "opus",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
   });
 
@@ -119,7 +120,7 @@ describe("the command that starts the drive", () => {
       "--permission-mode",
       "bypassPermissions",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
   });
 
@@ -442,7 +443,7 @@ describe("the arm's answer", () => {
       "spawn",
     ]);
     expect(report.command).toContain(
-      '-- claude --model sonnet -p "/jig:drive-pr --bots-only 42"',
+      `-- claude --model sonnet -p "${passPrompt("claude", 42)}"`,
     );
     expect(report.handles?.stop).toEndWith("--stop 42");
     expect(orca.calls).toEqual([]);
@@ -488,7 +489,9 @@ function cleanEnv(extra: Record<string, string>): Record<string, string> {
   for (const [k, v] of Object.entries(process.env))
     if (
       v !== undefined &&
-      !/^(GIT_|DRIVE_PR_|ORCA_|CONDUCTOR_|CODEX_|JIG__)/.test(k) &&
+      !/^(GIT_|DRIVE_PR_|ORCA_|CONDUCTOR_|CODEX_|JIG__|JIG_LAUNCH$|JIG_DISPATCHED_FROM$)/.test(
+        k,
+      ) &&
       !["CLAUDECODE", "HERDR_ENV", "CLAUDE_CODE_ENTRYPOINT"].includes(k)
     )
       env[k] = v;
@@ -626,7 +629,7 @@ describe("arm-drive.ts", () => {
       { CODEX_HOME: "/unused/codex" },
     );
     expectSpawnExit(run, 0);
-    expect(report(run)).toMatchObject({ model: "gpt-6.1-sol" });
+    expect(report(run)).toMatchObject({ model: "gpt-6.2-sol" });
   });
 
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {
@@ -727,11 +730,11 @@ describe("arm-drive.ts", () => {
       "--model",
       "sonnet",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
     expect(answer.command).toBe(commandLine(answer.argv));
     expect(answer.command).toEndWith(
-      ' 42 --bots-only -- claude --model sonnet -p "/jig:drive-pr --bots-only 42"',
+      ` 42 --bots-only -- claude --model sonnet -p "${passPrompt("claude", 42)}"`,
     );
     expect(answer).toMatchObject({
       passArgs: [],
@@ -754,10 +757,10 @@ describe("arm-drive.ts", () => {
       "sonnet",
       ...BYPASS,
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
     expect(answer.command).toContain(
-      'claude --model sonnet --permission-mode bypassPermissions -p "/jig:drive-pr --bots-only 42"',
+      `claude --model sonnet --permission-mode bypassPermissions -p "${passPrompt("claude", 42)}"`,
     );
     expect(answer.argv).not.toContain("--pass-args");
     expect(answer).toMatchObject({
@@ -798,7 +801,7 @@ describe("arm-drive.ts", () => {
       "--model",
       "sonnet",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
   });
 

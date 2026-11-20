@@ -26,6 +26,9 @@
  *     that did not record it, is read as holding none. `listingPages`
  *     records, on a `CHECK_RUNS_UNREADABLE` stop, how many pages of the
  *     head's check-runs listing were read.
+ *     that did not record it, is read as holding none. `until` records, on
+ *     a stop on the forge's spent rate limit, when the limit resets: the
+ *     dispatcher re-drives it from then.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -51,6 +54,8 @@ export interface DriveEvent {
   tree?: string;
   /** On a `stop` for a check-runs listing cut short: the pages it read. */
   listingPages?: number;
+  /** On a `stop` on the forge's spent rate limit: when the limit resets, an instant. The ledger's shape leaves the field open, so a reader takes it only when it is an instant (`stopInstant`) and a malformed value never makes the ledger unreadable. */
+  until?: unknown;
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -60,6 +65,11 @@ function isCause(kind: unknown, cause: unknown): boolean {
   if (kind !== "restart" && kind !== "rearm") return false;
   const causes: readonly unknown[] = EVENT_CAUSES[kind];
   return causes.includes(cause);
+}
+
+/** Whether the optional field `value` of an event of `kind` is absent, or valid and on a `stop`. */
+function stopOnly(kind: unknown, value: unknown, valid: boolean): boolean {
+  return value === undefined || (valid && kind === "stop");
 }
 
 export function isDriveEvent(v: unknown): v is DriveEvent {
@@ -77,8 +87,18 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     (v.listingPages === undefined ||
       (Number.isSafeInteger(v.listingPages) &&
         (v.listingPages as number) >= 0 &&
-        v.kind === "stop"))
+        v.kind === "stop")) &&
+    stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
+    stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "")
   );
+}
+
+/** The reset a stop recorded, when it is an instant; `undefined` for any other value. */
+export function stopInstant(stop: DriveEvent | undefined): string | undefined {
+  const until = stop?.until;
+  return typeof until === "string" && Number.isFinite(parseMs(until))
+    ? until
+    : undefined;
 }
 
 export function isOptionalEvents(v: unknown): boolean {
@@ -116,6 +136,7 @@ export function lastStopEvent(
 }
 
 /** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, `"leftWork"` with `"tree"` on a stop that measured its tree, `"listingPages"` on a stop for a listing cut short). */
+/** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`, `"leftWork"` with `"tree"` on a stop that measured its tree, and `"until"` on a stop on the forge's rate limit). */
 export async function recordEvent(
   store: StateStore,
   raw: string,
@@ -140,6 +161,7 @@ export async function recordEvent(
       ...(input.listingPages === undefined
         ? {}
         : { listingPages: input.listingPages }),
+      ...(input.until === undefined ? {} : { until: input.until }),
     };
     if (!isDriveEvent(event))
       fail(

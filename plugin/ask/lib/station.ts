@@ -49,6 +49,10 @@ export interface StationAnswer {
   last: Last | null;
   /** The thread's entries, unwindowed. */
   entries: ThreadEntry[];
+  /** For a pickup: why the newest tick found it waiting on overlap with the work in flight. */
+  overlap?: import("../../dispatch/lib/dashboard-contract.ts").OverlapReason;
+  /** For a pickup: the newest tick's note on its footprint, when it is unknown or from labels alone. */
+  footprint?: string;
 }
 
 /** The answer for a key that names nothing. */
@@ -76,6 +80,11 @@ export function holdingRecord(
       b.record.createdAt.localeCompare(a.record.createdAt),
     )[0] ?? null
   );
+}
+
+/** Every one of this machine's records that holds its stage. */
+export function holdingRecordsOf(records: readonly ReadRecord[]): ReadRecord[] {
+  return records.filter((r) => holds(r.state));
 }
 
 /** A launch record of this machine that holds its stage, as the holder. */

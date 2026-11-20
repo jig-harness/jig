@@ -16,12 +16,15 @@
  * | `followup_releases` | repository and merged pull request | the one stale claim the tick released, pending until the forge deleted its marker |
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
+ * | `pickup_holds` | repository and tracker item | the operator's login and time of the hold, kept until release |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository; an ended row's closing-report `cause` and writer (`report_by`) are columns too |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
  * | `reflection_findings` | finding the reflection route made of a recurring class | its id, derived from the repository, stage, class and week: the event as every append sends it, pending until the store reports it stored |
  * | `load_samples` | kind of launch and sample | the memory one running session of that kind used at one tick; only each kind's newest samples are kept (`load-samples.ts`) |
  * | `merge_reads` | repository and merged pull request in the follow-up window | the follow-up markers a tick last read on it, and the launch claims where an ended launch of this host's needed them, at its `updatedAt` then and as the forge login that read them; replaced by each read, removed by a write the tick makes on it |
  * | `merge_facts` | repository and directly verified merged pull request | immutable merged time, base branch and complete changed files, independent of follow-up activation; associations and edge release are read again each tick |
+ * | `overlap_waits` | repository and wanted pickup waiting on overlap | since when it waited in tier 2 or 3, since when in tier 3, and when it was promoted past the bound; removed once it starts or is no longer wanted |
+ * | `overlap_hotspots` | repository, day and file | in how many ticks of the day the file kept a pickup over the overlap bound |
  * | `allocation_charge` | pickup claim | its claim id: written once, in the claim's transaction; a replay inserts nothing |
  * | `allocation_week` | completed week | the week, written once by the next week's first tick and never rewritten |
  * | `allocation_lane_epoch` | weighted lane's ready or empty transition | an increasing sequence; the newest is the epochs' revision |
@@ -532,6 +535,37 @@ export const MIGRATIONS: readonly Migration[] = [
     additive: true,
     sql: `ALTER TABLE release_needs ADD COLUMN taken_as TEXT;
     ${RELEASES_ALREADY_TAKEN}`,
+  },
+  {
+    // The overlap walk's waits and the files that kept work over the overlap bound (`overlap-waits.ts`).
+    additive: true,
+    sql: `
+    CREATE TABLE overlap_waits (repo TEXT NOT NULL, item TEXT NOT NULL, since_ms INTEGER NOT NULL, tier3_since_ms INTEGER, promoted_ms INTEGER, PRIMARY KEY (repo, item));
+    CREATE TABLE overlap_hotspots (repo TEXT NOT NULL, day TEXT NOT NULL, path TEXT NOT NULL, ticks INTEGER NOT NULL, PRIMARY KEY (repo, day, path));
+  `,
+  },
+  {
+    additive: true,
+    sql: `CREATE TABLE rearm_lock_needs (
+      repo TEXT NOT NULL,
+      pr INTEGER NOT NULL,
+      generation INTEGER NOT NULL,
+      heartbeat TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      PRIMARY KEY (repo, pr)
+    );`,
+  },
+  {
+    additive: true,
+    sql: `CREATE TABLE pickup_holds (
+      repo TEXT NOT NULL,
+      item TEXT NOT NULL,
+      held_by TEXT NOT NULL,
+      held_at TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT,
+      PRIMARY KEY (repo, item)
+    );`,
   },
 ];
 

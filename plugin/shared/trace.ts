@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
+import { noteForgeAnswer } from "./outbound/forge-limit-seen.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
 import { admitPaced, endedFailure } from "./outbound/forge-pacing.ts";
 import {
@@ -438,11 +439,16 @@ function traceGhCall<
     const page = { ...effective, env: { ...env, GH_REPO: pinned } };
     return ghRequest(argv, page, timeoutSec, run, refuse, held);
   };
-  return traceCommand("ghCall", "gh", deadline, () =>
-    plan === null
+  return traceCommand("ghCall", "gh", deadline, async () => {
+    const result = await (plan === null
       ? request(args, wholeSec)
-      : drivePages(plan, paged, deadline, refuse, wholeSec),
-  );
+      : drivePages(plan, paged, deadline, refuse, wholeSec));
+    // What a reader ending on this call's failure is told of a spent limit.
+    // A runner that reports no stderr has nothing to classify.
+    if (typeof result.stderr === "string")
+      noteForgeAnswer(ghRunFailure(result));
+    return result;
+  });
 }
 
 /** Adapt a process runner once, preserving its options and complete result type. */

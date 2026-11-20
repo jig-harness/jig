@@ -263,8 +263,26 @@ function parkText(slug: string, pr: DrivenPr): Notice {
   );
 }
 
+/** A person's rearm request expired before the dispatcher could deliver it. */
+export function rearmFailureNotice(
+  slug: string,
+  pr: DrivenPr,
+  reason: string,
+): Notice {
+  return notice(
+    `${slug} PR #${pr.number} undelivered rearm request ${String(pr.evidence.rearmRequestId)}`,
+    [
+      `PR #${pr.number} (${pr.title}): the rearm request could not be delivered. ${reason}.`,
+      "Inspect the stopped drive and its checkout before requesting another rearm.",
+      pr.url,
+    ],
+  );
+}
+
 /** A drive stopped on an exit only a person settles, or with no exit at all. */
 export function stopNotice(slug: string, pr: DrivenPr): Notice {
+  if (typeof pr.evidence.rearmFailure === "string")
+    return rearmFailureNotice(slug, pr, pr.evidence.rearmFailure);
   if (typeof pr.evidence.usageRefusal === "string")
     return {
       ...usageRefusalNotice(slug, pr),
@@ -283,6 +301,26 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
         ? []
         : [`jig send ${driveAddress(slug, pr)} rearm`]),
     ]),
+  };
+}
+
+/** A rearm refused before launch because this host's lock could not be read. */
+export function rearmLockNotice(
+  slug: string,
+  pr: DrivenPr,
+  heartbeat: string,
+  reason: string,
+): Notice {
+  return {
+    ...notice(
+      `${slug} PR #${pr.number} rearm lock unreadable, generation ${generation(pr)}, heartbeat ${heartbeat}`,
+      [
+        `PR #${pr.number} (${pr.title}): ${reason}.`,
+        "Investigate the drive-lock read on the host where rearm was refused. Retry rearm once that read succeeds.",
+      ],
+      [pr.url],
+    ),
+    ...driveFields(slug, pr),
   };
 }
 
@@ -480,6 +518,8 @@ export function strandedHoldNotice(
   hold: {
     key: string;
     holder: string;
+    /** What the hold costs, after "holds its drive". */
+    cost: string;
     why: string;
     heldSince: string;
     settle: string;
@@ -488,7 +528,7 @@ export function strandedHoldNotice(
 ): Notice {
   return {
     ...notice(`${slug} PR #${pr.number} held by ${hold.key}`, [
-      `PR #${pr.number} (${pr.title}): ${hold.holder} holds its drive, so no tick starts it again: ${hold.why}. It has held the drive since ${hold.heldSince}.`,
+      `PR #${pr.number} (${pr.title}): ${hold.holder} holds its drive, ${hold.cost}: ${hold.why}. It has held the drive since ${hold.heldSince}.`,
       hold.settle,
       pr.url,
     ]),

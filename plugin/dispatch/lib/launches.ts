@@ -51,6 +51,7 @@ import {
   asClaim,
   claimState,
   malformedLiveWrapper,
+  processFacts,
   uncertainCleanupState,
   type StageSupervision,
 } from "./launch-supervision.ts";
@@ -214,6 +215,7 @@ export interface LaunchRecord {
   launchCalled?: boolean;
   /** Explicit re-arm request consumed after a successful launch. */
   rearmLabel?: string | null;
+  rearmRequestId?: number;
   /** The request label was successfully removed after this launch was accepted. */
   rearmConsumed?: boolean;
   /** The vendor session id the tick minted for a Claude Code session or follow-up pass and passed to its agent; `null` when none was. */
@@ -683,6 +685,24 @@ const NO_PROCESS: LaunchClaim = {
   claimedAt: "",
 };
 
+/** The state of a launch that ended on its account's wall, which was never written: the account stays held until a person clears the record. */
+function wallUnrecordedState(
+  claim: LaunchClaim | null | undefined,
+  rows: ProcessRow[] | null,
+  here: HostIdentity,
+): LaunchState {
+  return {
+    kind: "unknown",
+    reason: "it ended on its account's wall, which could not be recorded",
+    wallUnrecorded: true,
+    process: claim ?? NO_PROCESS,
+    // Only a judged process table proves the stage's processes gone.
+    ...(claim == null
+      ? { unjudged: true as const }
+      : processFacts(claim, rows, here)),
+  };
+}
+
 /** One record's state, read from its row and `rows` (one process-table read per tick). */
 function stateOf(
   row: LaunchRow,
@@ -694,13 +714,7 @@ function stateOf(
   const uncertain = uncertainCleanupState(claim, rows, here);
   if (uncertain !== null) return uncertain;
   if (exit?.wallUnrecorded === true)
-    // The wall was never written: the account stays held until a person clears the record.
-    return {
-      kind: "unknown",
-      reason: "it ended on its account's wall, which could not be recorded",
-      wallUnrecorded: true,
-      process: claim ?? NO_PROCESS,
-    };
+    return wallUnrecordedState(claim, rows, here);
   if (exit !== null)
     return {
       kind: "ended",

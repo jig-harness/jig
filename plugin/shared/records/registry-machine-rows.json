@@ -127,6 +127,30 @@
       "The follow-up that reserved tracker filing for a release, the issue that carries it, the observed tag state, and whether the dispatcher claimed its one authorized rerun."
     ],
     [
+      "dispatch-rearm-lock-need",
+      "dispatch/lib/rearm-lock-needs.ts",
+      "rearm_lock_needs",
+      "An unreadable driver lock that refused an operator's rearm, keyed by repository and pull request and projected while the same stopped ledger stands."
+    ],
+    [
+      "dispatch-overlap-wait",
+      "dispatch/lib/overlap-waits.ts",
+      "overlap_waits",
+      "Since when a wanted pickup has waited on overlap with the work in flight (the first tick that put it in tier 2 or 3), since when it was first over the overlap bound, and when it was promoted past the bound; kept until it starts or is no longer wanted, so its patience and bound patience count from its first wait."
+    ],
+    [
+      "dispatch-overlap-hotspot",
+      "dispatch/lib/overlap-waits.ts",
+      "overlap_hotspots",
+      "In how many ticks of one day each file kept a wanted pickup over the overlap bound, from which the receipt proposes serializing the file once it did so in at least 3 ticks of the day; rows older than the day before are removed."
+    ],
+    [
+      "dispatch-person-pickup-hold",
+      "dispatch/lib/person-pickup-holds.ts",
+      "pickup_holds",
+      "A dispatching host's hold on a tracker item, with the tracker login and time that placed it, kept until a person releases it."
+    ],
+    [
       "dispatch-pickup-read",
       "dispatch/lib/pickup-reads.ts",
       "pickup_reads",

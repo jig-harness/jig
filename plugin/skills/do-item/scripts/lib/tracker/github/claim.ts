@@ -11,6 +11,7 @@ import {
   type TrackerUser,
 } from "../port.ts";
 import type { Client } from "./client.ts";
+import type { IssueRef } from "./refs.ts";
 import { record, str } from "./read.ts";
 import { GitHubApiError } from "./transport.ts";
 
@@ -49,7 +50,7 @@ export function claimOperations(
   /** The issue's node id and every assignee; throws when the issue is absent or the list is cut. */
   async function read(
     key: string,
-  ): Promise<{ id: string; users: TrackerUser[] }> {
+  ): Promise<{ id: string; users: TrackerUser[]; ref: IssueRef }> {
     const ref = client.ref(key);
     const data = record(
       await client.transport(
@@ -78,7 +79,7 @@ export function claimOperations(
       throw new GitHubApiError(
         `issue ${key}: its assignees could not be read in full`,
       );
-    return { id: str(found.id, `issue ${key}.id`), users };
+    return { id: str(found.id, `issue ${key}.id`), users, ref };
   }
 
   return {
@@ -93,8 +94,13 @@ export function claimOperations(
       return (await read(key)).users;
     },
     async assign(key, user) {
-      const { id } = await read(key);
-      await client.mutate(ASSIGN, { input: { id, assigneeIds: [user.id] } });
+      const { id, ref } = await read(key);
+      await client.mutate(
+        ASSIGN,
+        { input: { id, assigneeIds: [user.id] } },
+        undefined,
+        ref,
+      );
     },
     async assignUnassigned(key, user) {
       const before = await read(key);
@@ -104,6 +110,8 @@ export function claimOperations(
         addAssigneesToAssignable(input: $input) { assignable { __typename } }
       }`,
         { input: { assignableId: before.id, assigneeIds: [user.id] } },
+        undefined,
+        before.ref,
       );
       const after = await read(key);
       return after.users.length === 1 && after.users[0]?.id === user.id

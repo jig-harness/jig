@@ -36,6 +36,17 @@ import { recordDriveEvent } from "./rearm.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
+import {
+  finishSince,
+  readRoundFinishes,
+  type RoundFinish,
+  sharedFinish,
+} from "./../state/round-finish.ts";
+
+import { resolveStateDir } from "./../state/store.ts";
+
+import { swallow } from "../../../../../shared/errors.ts";
+
 import { measureStop } from "./stop-measure.ts";
 
 import { exportPolicyBase, policyBaseNotice } from "./policy-base.ts";
@@ -78,9 +89,24 @@ export async function checkRoundStall(
     context.noopRounds,
   );
   context.prevFingerprint = fingerprint;
-  if (context.noopRounds === 0) context.stallExtraRound = false;
+  if (context.noopRounds === 0) {
+    context.stallExtraRound = false;
+    context.stallFinishes = [];
+  } else
+    context.stallFinishes = [
+      ...(context.stallFinishes ?? []),
+      await lastPassFinish(context.pr),
+    ];
   if (stallRounds > 0 && context.noopRounds >= stallRounds) {
-    const diagnostics = stallDiagnostics(status, context);
+    const held = sharedFinish(context.stallFinishes ?? []);
+    const diagnostics = [
+      ...stallDiagnostics(status, context),
+      ...(held === null
+        ? []
+        : [
+            `  Every one of those passes ended finish-round.ts ${held.state}: ${held.reason}`,
+          ]),
+    ];
     for (const line of diagnostics) console.error(line);
     // One more round before the stop, with these diagnostics in the pass's
     // notice: a pass that stood down for a reason it can see past once told
@@ -116,10 +142,27 @@ export async function checkRoundStall(
     process.stderr.write(await leftoverReport());
     process.stderr.write(economyReport);
     driverRuntime.stopLeftWork = await measureStop();
+    driverRuntime.stallFinish = held;
     return STALLED_EXIT;
   }
 
   return null;
+}
+
+/**
+ * How the last pass's round finished (`state/round-finish.ts`): the newest
+ * finish recorded since that pass started; `null` when it recorded none or
+ * the state directory cannot be resolved.
+ */
+async function lastPassFinish(pr: string): Promise<RoundFinish | null> {
+  const started = driverRuntime.passStartedAt;
+  if (started === null) return null;
+  try {
+    return finishSince(readRoundFinishes(await resolveStateDir(), pr), started);
+  } catch (error) {
+    swallow(error, "the stalled pass's round finish is unreadable");
+    return null;
+  }
 }
 
 /**

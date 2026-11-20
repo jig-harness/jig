@@ -16,6 +16,7 @@ export async function consumeRearm(
   root?: string,
   remove: typeof writeCommandLabel = writeCommandLabel,
   timeLeft: () => number | null = () => null,
+  current?: () => Promise<Outcome<boolean, "refused">>,
 ): Promise<Outcome<void, "refused">> {
   if (record.rearmLabel == null || record.rearmConsumed === true)
     return ok(undefined);
@@ -37,12 +38,13 @@ export async function consumeRearm(
   const row = await inspectRow(record.id, root, probeSec);
   if (!pendingRearm(record, row?.state)) return ok(undefined);
   if (!room(0)) return later();
-  const removed = await remove(
-    record.repo,
-    Number(record.pr),
-    String(record.rearmLabel),
-    false,
-  );
+  const stillCarried = await current?.();
+  if (stillCarried?.ok === false) return stillCarried;
+  if (!room(0)) return later();
+  const removed =
+    stillCarried?.value === false
+      ? ok(undefined)
+      : await remove(record.repo, Number(record.pr), record.rearmLabel, false);
   if (!removed.ok) return removed;
   record.rearmConsumed = true;
   try {

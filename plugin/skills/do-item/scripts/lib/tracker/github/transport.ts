@@ -4,7 +4,10 @@
  *
  * Two transports exist. By default every request is `gh api graphql`, which
  * holds its own credential (`gh auth login`, or `GH_TOKEN` / `GITHUB_TOKEN`)
- * and knows the host. With `JIG_GITHUB_GRAPHQL_URL` set, requests go over
+ * and knows the host; each run names the repository its request is about
+ * (`requestRepository`: the one its variables name, else the repository the
+ * transport serves) in `GH_REPO`, so whatever picks the account `gh` runs as
+ * sees it. With `JIG_GITHUB_GRAPHQL_URL` set, requests go over
  * HTTPS to that endpoint with the token from `GH_TOKEN` or `GITHUB_TOKEN`
  * instead: a GitHub Enterprise endpoint `gh` is not signed in to, or a local
  * fake (plain `http` is accepted for a loopback address only). Tests of the
@@ -25,6 +28,7 @@ import {
   type RunResult,
   ghCall,
 } from "../../../../../drive-pr/scripts/lib/proc.ts";
+import { ghRepoEnvFor } from "../../../../../../shared/gh-repo-env.ts";
 import { unheldForm } from "../../../../../../shared/trace.ts";
 import { swallow } from "../../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../../shared/guards.ts";
@@ -70,6 +74,8 @@ export type GitHubTransport = (
   variables: Record<string, unknown>,
   signal?: AbortSignal,
   idempotent?: boolean,
+  /** `owner/name` the request is about, for a call whose variables name none (a mutation by node id). */
+  repository?: string,
 ) => Promise<unknown>;
 
 /**
@@ -89,6 +95,7 @@ export class GitHubApiError extends OutboundError {
     opts: {
       code?: FailureClass;
       data?: unknown;
+      account?: string | undefined;
       until?: number | null;
       sent?: boolean;
       retryAfterMs?: number | null;
@@ -114,6 +121,7 @@ function errorOf(failure: OutboundFailure, data?: unknown): GitHubApiError {
   return new GitHubApiError(failure.reason, {
     code: failure.code,
     data,
+    account: failure.account,
     until: failure.until ?? null,
     sent: failure.sent ?? false,
     retryAfterMs: failure.retryAfterMs ?? null,
@@ -163,6 +171,7 @@ export function unwrapResponse(
         : null;
     throw errorOf(
       outboundFailure(code, message, {
+        account: failure?.account,
         until: failure?.until ?? limit?.until ?? null,
         retryAfterMs: failure?.retryAfterMs ?? limit?.retryAfterMs ?? null,
       }),
@@ -271,10 +280,41 @@ async function call(
   return unwrapResponse(answer.body);
 }
 
+/** `owner/name` of each repository a request's variables name, told apart ignoring case. */
+function namedRepositories(variables: Record<string, unknown>): string[] {
+  const named = new Map<string, string>();
+  for (const [key, owner] of Object.entries(variables)) {
+    const suffix = /^owner(\d*)$/.exec(key)?.[1];
+    const name = suffix === undefined ? undefined : variables[`name${suffix}`];
+    if (typeof owner !== "string" || typeof name !== "string") continue;
+    if (owner === "" || name === "") continue;
+    const slug = `${owner}/${name}`;
+    named.set(slug.toLowerCase(), slug);
+  }
+  return [...named.values()];
+}
+
+/**
+ * The repository a request is about, as `owner/name`: the one its variables
+ * name (`owner` and `name`, or each batched `owner<i>` and `name<i>`) when
+ * they name exactly one, else `home`, the repository the transport serves.
+ * A batch over several repositories gets `home`: one run has one account,
+ * and the serving repository's owner is the likeliest to see them all.
+ * `null` when neither says.
+ */
+export function requestRepository(
+  variables: Record<string, unknown>,
+  home: string | null,
+): string | null {
+  const named = namedRepositories(variables);
+  return named.length === 1 ? (named[0] ?? home) : home;
+}
+
 /** One `gh api graphql` run's answer, its body read with the status and headers `--include` prints. */
 async function ghOnce(
   runner: typeof ghCall,
   payload: { query: string; variables: Record<string, unknown> },
+  repository: string | null,
   bound: AbortSignal,
   signal: AbortSignal | undefined,
 ): Promise<Answer> {
@@ -286,6 +326,7 @@ async function ghOnce(
       stdin: JSON.stringify(payload),
       timeoutMs: GITHUB_TIMEOUT_MS,
       signal: bound,
+      ...(repository === null ? {} : { env: ghRepoEnvFor(repository) }),
     },
   );
   if (cancelled(signal)) return abortedError(signal, true);
@@ -328,13 +369,25 @@ function ghExitAnswer(
   tookMs: number,
 ): GitHubApiError {
   const answered = parsed.status !== 200;
-  const failure =
-    (answered
-      ? gitHubHttpFailure(parsed.status, parsed.headers, parsed.body, tookMs)
-      : null) ??
+  const http = answered
+    ? gitHubHttpFailure(parsed.status, parsed.headers, parsed.body, tookMs)
+    : null;
+  const base =
+    http ??
     run ??
     outboundFailure("invalid", `gh api graphql exited ${r.code}`);
-  const named = errorsFailure(body, answered ? failure : null, parsed.headers);
+  // The status classifies the failure; the run still says whose credential it used.
+  const account = base.account ?? run?.account;
+  const failure =
+    account === undefined || base.account === account
+      ? base
+      : { ...base, account };
+  const named = errorsFailure(
+    body,
+    answered ? failure : null,
+    parsed.headers,
+    account,
+  );
   if (named !== null) return named;
   const said = (r.stderr || parsed.body).trim().slice(0, 300);
   return errorOf({
@@ -348,6 +401,7 @@ function errorsFailure(
   body: unknown,
   failure: OutboundFailure | null,
   headers: Headers | null = null,
+  account?: string,
 ): GitHubApiError | null {
   if (
     !isRecord(body) ||
@@ -358,7 +412,19 @@ function errorsFailure(
   try {
     unwrapResponse(body, failure, headers);
   } catch (err) {
-    if (err instanceof GitHubApiError) return err;
+    if (err instanceof GitHubApiError)
+      // A success status leaves the class to the errors' types, but the run
+      // still says whose credential it used.
+      return err.account !== undefined || account === undefined
+        ? err
+        : new GitHubApiError(err.message, {
+            code: err.code,
+            data: err.data,
+            account,
+            until: err.until,
+            sent: err.sent,
+            retryAfterMs: err.retryAfterMs,
+          });
     throw err;
   }
   return null;
@@ -368,19 +434,34 @@ function errorsFailure(
  * Transport through `gh api graphql`, run through drive-pr's deadline
  * wrapper (`runClient`). The request travels on standard input as one JSON
  * body, so variables keep their types and nothing reaches the command line.
+ * `home` (`owner/name`) is the repository the transport serves: a run names
+ * it in `GH_REPO` when its variables name no single repository. A run that
+ * names none keeps the environment it inherits.
  */
-export function ghTransport(runner: typeof ghCall = ghCall): GitHubTransport {
+export function ghTransport(
+  runner: typeof ghCall = ghCall,
+  home: string | null = null,
+): GitHubTransport {
   // The shared runner is not held per run: the hold lands around the whole
   // call, after its retry. An injected runner is the caller's own.
   const unheld = unheldForm(runner);
   const hold = unheld === undefined ? null : GITHUB;
-  return (query, variables, signal, idempotent = false) =>
-    call(
-      (bound) => ghOnce(unheld ?? runner, { query, variables }, bound, signal),
+  return (query, variables, signal, idempotent = false, target) => {
+    const repository = requestRepository(variables, target ?? home);
+    return call(
+      (bound) =>
+        ghOnce(
+          unheld ?? runner,
+          { query, variables },
+          repository,
+          bound,
+          signal,
+        ),
       signal,
       idempotent,
       hold,
     );
+  };
 }
 
 /** `gh --include` prints the HTTP status and headers before the JSON body. */
@@ -637,11 +718,15 @@ export function httpTransport(
 
 /**
  * The transport the environment asks for: HTTPS to `JIG_GITHUB_GRAPHQL_URL`
- * when it is set (a token is then required), else `gh`.
+ * when it is set (a token is then required), else `gh` serving `home`
+ * (`owner/name`, see `ghTransport`).
  */
-export function defaultTransport(env = process.env): GitHubTransport {
+export function defaultTransport(
+  env = process.env,
+  home: string | null = null,
+): GitHubTransport {
   const url = env.JIG_GITHUB_GRAPHQL_URL?.trim();
-  if (url === undefined || url === "") return ghTransport();
+  if (url === undefined || url === "") return ghTransport(ghCall, home);
   const token = resolveGitHubToken(env);
   if (token === null)
     throw new GitHubApiError(

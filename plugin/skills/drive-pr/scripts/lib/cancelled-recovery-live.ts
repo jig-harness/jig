@@ -16,6 +16,7 @@ import {
   recoverCancelled,
   RERUN_OPTION,
   type RecoveryDeps,
+  unreplacedCancelledJobs,
 } from "./cancelled-recovery.ts";
 import {
   type LiveRecovery,
@@ -25,16 +26,14 @@ import {
 import { checkRunsRead, readPrSnapshot } from "./ci-hold-state.ts";
 import { driverRuntime } from "./driver/runtime.ts";
 import type { ListingCutShort } from "./paged-read.ts";
+import type { CheckRunLite } from "./ci-hold.ts";
+import { readCheckRuns } from "./ci-hold-state.ts";
+import { type TimedOutJob, timedOutJobs } from "./job-timeout.ts";
+import type { WorkflowRun } from "./status/workflow-runs.ts";
 import { ghCall } from "./proc.ts";
 import { rerunnableRuns } from "./driver/failed-runs.ts";
-import { openStore } from "./state/store.ts";
-import {
-  parkAdmissionContext,
-  parkAdmissionProblem,
-} from "./state/park-admission.ts";
-import { fail } from "./cli.ts";
+import { clearParkedFinding, parkFinding } from "./state/park-finding.ts";
 import type { ParkedDecision } from "../../../../shared/decisions/park.ts";
-import { resolveParkPerson } from "./state/park-person.ts";
 import {
   assertRemoteMutationAllowed,
   resolveFenceContext,
@@ -42,7 +41,7 @@ import {
 import { swallow } from "../../../../shared/errors.ts";
 import { holdLabelPolicy } from "./ci-policy.ts";
 import { readWorkflowRuns, withoutSuperseded } from "./status/workflow-runs.ts";
-import { currentIso, currentMs } from "../../../../shared/time.ts";
+import { currentMs } from "../../../../shared/time.ts";
 
 /** Thrown by a guarded mutation when the drive passed to another driver; the recovery stands down. */
 class OwnershipLost extends Error {
@@ -75,38 +74,18 @@ const live: Omit<RecoveryDeps, "rerunnable" | "labelWrites" | "park"> & {
   },
   rerun: (id) => ghCall(["run", "rerun", String(id)]),
   async park(pr, reason, stillOwned) {
-    const person = await resolveParkPerson(pr, "cancelled-ci", "finding", "");
-    const decision = cancelledCiDecision(reason);
-    const question = decision.call.question;
-    const store = await openStore(pr);
-    const capacity = await parkAdmissionContext(pr, store.stateDir);
     // Ownership is asked inside the store's lock, after the wait for it, as the
     // write is about to run.
-    if (stillOwned !== undefined)
-      store.setFence(async () => {
-        if (!(await stillOwned())) throw new OwnershipLost();
-      });
-    await store.update((state) => {
-      const next = {
-        ...state,
-        parked: [
-          ...state.parked.filter((p) => p.key !== "cancelled-ci"),
-          {
-            key: "cancelled-ci",
-            kind: "finding" as const,
-            reason: question,
-            class: "human-decision",
-            person,
-            decision,
-            round: state.rounds,
-            at: currentIso(),
+    await parkFinding(
+      pr,
+      "cancelled-ci",
+      cancelledCiDecision(reason),
+      stillOwned === undefined
+        ? undefined
+        : async () => {
+            if (!(await stillOwned())) throw new OwnershipLost();
           },
-        ],
-      };
-      const admission = parkAdmissionProblem(next, decision, capacity);
-      if (admission !== null) fail(2, `park: ${admission}`);
-      return next;
-    });
+    );
   },
 };
 
@@ -308,7 +287,15 @@ function fencedDeps(
   };
 }
 
-/** A required-check subset at acquisition; all cancelled workflow jobs at final convergence. */
+/**
+ * A required-check subset at acquisition; all cancelled workflow jobs at final
+ * convergence. A job the runner stopped at its time limit is no cancellation:
+ * its workflow run is kept out of the recovery (never re-run, counted or
+ * parked), and the answer names it for the CI-repair path once the other
+ * cancellations have had this poll's recovery. A stop those others end in
+ * (a park, an unknown head, a read that kept failing) still wins: it ends the
+ * drive, and the next drive finds the timed-out job again.
+ */
 export async function recoverCancelledOnHead(
   pr: string,
   head: string,
@@ -357,6 +344,77 @@ export async function recoverCancelledOnHead(
       (required === undefined || required.includes(job.name)) &&
       runs.some((run) => run.checkSuiteId === job.suiteId),
   );
+  const timedOut = await timedOutJobs(
+    unreplacedCancelledJobs(relevant, runs),
+    runs,
+  );
+  const answer = await recoverRelevant(
+    pr,
+    head,
+    withoutTimedOutRuns(relevant, timedOut),
+    runs,
+    alreadyFenced,
+    mayMutate,
+  );
+  return timedOut.length > 0 && (answer === "none" || answer === "wait")
+    ? { timedOut, recovery: answer }
+    : answer;
+}
+
+/**
+ * The jobs the runner stopped at their time limit on `head`, read and nothing
+ * else: no claim, re-run or park. For a failure beside them that the
+ * recovery does not take; a read that fails answers none.
+ */
+export async function timedOutOnHead(head: string): Promise<TimedOutJob[]> {
+  const checks = await recoveryRead("check runs", () => readCheckRuns(head));
+  if (!checks.ok) return [];
+  // No completed cancelled job with annotations: nothing to classify, so the
+  // workflow runs are not listed.
+  if (
+    !checks.value.some(
+      (job) =>
+        job.status === "completed" &&
+        job.conclusion === "cancelled" &&
+        (job.annotationsCount ?? 0) > 0,
+    )
+  )
+    return [];
+  const provenance = await headWorkflowRuns(head);
+  if (!provenance.ok) return [];
+  const runs = provenance.value;
+  const relevant = withoutSuperseded(checks.value, runs).filter((job) =>
+    runs.some((run) => run.checkSuiteId === job.suiteId),
+  );
+  return await timedOutJobs(unreplacedCancelledJobs(relevant, runs), runs);
+}
+
+/**
+ * The jobs whose workflow run had no job stopped at its time limit. A re-run
+ * of that run would run the timed-out job again, and its other cancelled jobs
+ * (a matrix's siblings, cancelled when it failed) are answered by the repair.
+ */
+function withoutTimedOutRuns(
+  jobs: readonly CheckRunLite[],
+  timedOut: readonly { checkRunId: number }[],
+): CheckRunLite[] {
+  const suites = new Set(
+    jobs
+      .filter((job) => timedOut.some((t) => t.checkRunId === job.id))
+      .map((job) => job.suiteId),
+  );
+  return jobs.filter((job) => !suites.has(job.suiteId));
+}
+
+/** The once-per-head recovery of the cancelled workflow jobs in `relevant`. */
+async function recoverRelevant(
+  pr: string,
+  head: string,
+  relevant: readonly CheckRunLite[],
+  runs: readonly WorkflowRun[],
+  alreadyFenced: boolean,
+  mayMutate: (() => Promise<boolean>) | undefined,
+): Promise<LiveRecovery> {
   if (relevant.length === 0) return await clearRecoveredPark(pr);
   // The durable claim must not be spent until the mutation fence is held.
   // Otherwise a rival can make this invocation unable to re-run after it has
@@ -365,31 +423,42 @@ export async function recoverCancelledOnHead(
   if (fence === "unavailable") return "unknown";
   const lock = fence;
   try {
-    // A caller that can lose the drive to a successor asks again here, where
-    // the first claim is about to be spent.
-    if (mayMutate !== undefined && !(await mayMutate())) return "unknown";
-    // Every durable claim, forge mutation and park asks again immediately
-    // before it commits, after the reads that precede it.
-    const owned = async () => {
-      if (mayMutate !== undefined && !(await mayMutate()))
-        throw new OwnershipLost();
-    };
-    const unread: { failure: RecoveryReadFailure | null } = { failure: null };
-    const answer = await recoverCancelled(
-      pr,
-      head,
-      relevant,
-      runs,
-      fencedDeps(pr, head, mayMutate, owned, unread),
-    );
-    if (answer === "unknown" && unread.failure !== null) return unread.failure;
-    return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
+    return await recoverFenced(pr, head, relevant, runs, mayMutate);
   } catch (err) {
     if (err instanceof OwnershipLost) return "unknown";
     throw err;
   } finally {
     lock?.dispose();
   }
+}
+
+/** The recovery proper, with the mutation fence already held. */
+async function recoverFenced(
+  pr: string,
+  head: string,
+  relevant: readonly CheckRunLite[],
+  runs: readonly WorkflowRun[],
+  mayMutate: (() => Promise<boolean>) | undefined,
+): Promise<LiveRecovery> {
+  // A caller that can lose the drive to a successor asks again here, where
+  // the first claim is about to be spent.
+  if (mayMutate !== undefined && !(await mayMutate())) return "unknown";
+  // Every durable claim, forge mutation and park asks again immediately
+  // before it commits, after the reads that precede it.
+  const owned = async () => {
+    if (mayMutate !== undefined && !(await mayMutate()))
+      throw new OwnershipLost();
+  };
+  const unread: { failure: RecoveryReadFailure | null } = { failure: null };
+  const answer = await recoverCancelled(
+    pr,
+    head,
+    relevant,
+    runs,
+    fencedDeps(pr, head, mayMutate, owned, unread),
+  );
+  if (answer === "unknown" && unread.failure !== null) return unread.failure;
+  return answer === "none" ? await waitForRequestedRun(pr, head) : answer;
 }
 
 /** The workflow runs on `head`, read as the recovery reads the forge. */
@@ -441,11 +510,6 @@ async function waitForRequestedRun(
 }
 
 async function clearRecoveredPark(pr: string): Promise<"none"> {
-  const store = await openStore(pr);
-  if (store.read().state.parked.some((p) => p.key === "cancelled-ci"))
-    await store.update((state) => ({
-      ...state,
-      parked: state.parked.filter((p) => p.key !== "cancelled-ci"),
-    }));
+  await clearParkedFinding(pr, "cancelled-ci");
   return "none";
 }
