@@ -15,7 +15,7 @@
  * | `git status` | it reports a change, an untracked file or a submodule change |
  * | the index flags | an assume-unchanged or skip-worktree flag hides a change from `git status` |
  * | the git directory | a merge, cherry-pick, revert, bisect, rebase or sequencer is unfinished |
- * | the remote | `HEAD` has a commit `<remote>/<branch>` lacks, or, with no such branch, one no `<remote>` branch has |
+ * | the remote | `HEAD` has a commit `<remote>/<branch>` lacks, or, with no such branch, one no `<remote>` branch has whose change the remote's default branch lacks too: neither it nor a later commit has the tree of a commit there, and its patch is not there |
  * | drives and sessions | the caller's `drivers` reader names a live driver or session lease on the tree |
  * | processes | a process of this user has its working directory in the tree |
  *
@@ -114,7 +114,96 @@ export type HolderVerdict =
 /** The deadline of one probe. */
 const PROBE_TIMEOUT_MS = 30_000;
 
-/** Commits on `HEAD` the remote's copy of the branch lacks, or a reason it cannot be told. */
+/** How many unmerged commits a busy reason names, newest first; the rest are counted. */
+const NAMED_COMMITS = 5;
+
+/** The remote's default branch, as the remote names it now, or a reason it cannot be read. */
+function defaultBranch(
+  git: (args: string[]) => RunResult,
+  remote: string,
+): { branch: string } | { unreadable: string } {
+  const listed = git(["ls-remote", "--symref", remote, "HEAD"]);
+  const named = /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(listed.stdout);
+  return listed.status === 0 && named?.[1] !== undefined
+    ? { branch: named[1] }
+    : {
+        unreadable: `${remote}'s default branch cannot be read: ${output(listed) || `exit ${listed.status}`}`,
+      };
+}
+
+/** Lines of a git answer, or `null` when git failed. */
+function lines(answer: RunResult): string[] | null {
+  return answer.status === 0 ? answer.stdout.split("\n").filter(Boolean) : null;
+}
+
+/**
+ * The commits on `HEAD` no `remote` branch has whose change the remote's
+ * base branch lacks too, newest first, each as `<short hash> <subject>`; or
+ * why that cannot be told. A squash merge holds a branch's change under a
+ * new commit, so a commit is merged when it, or a commit after it, has the
+ * tree of a commit on the base branch, or when its own patch is on the base
+ * branch (`git cherry`'s patch-id equivalence).
+ */
+function unmerged(
+  git: (args: string[]) => RunResult,
+  remote: string,
+): { base: string; commits: string[] } | { unreadable: string } {
+  const base = defaultBranch(git, remote);
+  if ("unreadable" in base) return base;
+  const ref = `refs/remotes/${remote}/${base.branch}`;
+  const ours = lines(
+    git(["log", "--format=%H %T", "HEAD", "--not", `--remotes=${remote}`]),
+  );
+  const theirs = lines(git(["log", "--format=%T", ref, "--not", "HEAD"]));
+  const cherry = lines(git(["cherry", ref, "HEAD"]));
+  if (ours === null || theirs === null || cherry === null)
+    return {
+      unreadable: `its commits cannot be compared with ${remote}/${base.branch}`,
+    };
+  const trees = new Set(theirs);
+  const merged = ours
+    .map((line) => line.split(" "))
+    .filter(([, tree]) => tree !== undefined && trees.has(tree))
+    .map(([commit]) => commit as string);
+  const patched = new Set(
+    cherry.filter((line) => line.startsWith("- ")).map((line) => line.slice(2)),
+  );
+  const left = lines(
+    git([
+      "log",
+      "--format=%H %h %s",
+      "--abbrev=12",
+      "HEAD",
+      "--not",
+      `--remotes=${remote}`,
+      ...merged,
+    ]),
+  );
+  if (left === null)
+    return {
+      unreadable: `its commits cannot be compared with ${remote}/${base.branch}`,
+    };
+  return {
+    base: `${remote}/${base.branch}`,
+    commits: left
+      .filter((line) => !patched.has(line.slice(0, line.indexOf(" "))))
+      .map((line) => line.slice(line.indexOf(" ") + 1)),
+  };
+}
+
+/** The commits, the first few by hash and subject and the rest counted. */
+function named(commits: string[]): string {
+  const shown = commits.slice(0, NAMED_COMMITS).join(", ");
+  const more = commits.length - NAMED_COMMITS;
+  return more > 0 ? `${shown} and ${more} more` : shown;
+}
+
+/**
+ * Commits on `HEAD` the remote's copy of the branch lacks, or a reason it
+ * cannot be told. With no such branch on the remote, as after a pull
+ * request's branch was merged and deleted, only the commits whose change
+ * the remote's base branch lacks count (`unmerged`), and they are named.
+ */
 function unpushed(
   git: (args: string[]) => RunResult,
   remote: string,
@@ -148,9 +237,13 @@ function unpushed(
   if (counted.status !== 0 || !Number.isSafeInteger(count))
     return `its commits cannot be compared with ${remote}: ${output(counted)}`;
   if (count === 0) return null;
-  return onRemote
-    ? `${count} commit(s) not on ${remote}/${branch}`
-    : `${count} commit(s) on no ${remote} branch, and ${remote} has no ${branch}`;
+  if (onRemote) return `${count} commit(s) not on ${remote}/${branch}`;
+  const left = unmerged(git, remote);
+  if ("unreadable" in left)
+    return `${count} commit(s) on no ${remote} branch, and ${remote} has no ${branch}; whether the base branch holds their change cannot be told: ${left.unreadable}`;
+  const { base, commits } = left;
+  if (commits.length === 0) return null;
+  return `${commits.length} commit(s) on no ${remote} branch whose change ${base} lacks, and ${remote} has no ${branch}: ${named(commits)}`;
 }
 
 /** Which operation markers the git directory `admin` holds, or a reason they cannot be read. */
