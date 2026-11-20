@@ -640,7 +640,11 @@ export function portabilityFindings(
       });
     }
   }
-  return { ok: true, files: [...seen].sort(), findings };
+  return {
+    ok: true,
+    files: [...seen].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+    findings,
+  };
 }
 
 /** The gate: exit 0 when every file reached is portable, 1 on a finding, 2 when it cannot check. */
