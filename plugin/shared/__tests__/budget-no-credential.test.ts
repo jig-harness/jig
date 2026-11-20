@@ -96,6 +96,8 @@ process.exit(1);
     expect(row.cost).toBe(0);
     expect(row.unknownCost).toBe(0);
   }
+  // Keyless calls are listed apart, never as spending of a repository.
+  expect(answer.repositories).toEqual([]);
   expect(answer.noCredential).toEqual([
     {
       system: "linear",
@@ -107,6 +109,7 @@ process.exit(1);
   const text = budget(path, ["budget"]);
   expect(text).toContain("no Linear key configured: 2 calls");
   expect(text).toContain("tick:keyless-run");
+  expect(text).not.toContain("(no repository)");
   expect(text).not.toContain(client);
 });
 

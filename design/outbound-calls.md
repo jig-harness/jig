@@ -342,9 +342,10 @@ was sent: the caller reads the item again before it writes again.
   until it knows, its calls through the client go out one at a time, and
   the knowledge holds for a few minutes. A tick names the missing
   credential once on its receipt and, when nothing else failed, exits with
-  the class's status, `9`, its failure ledger row told at once; each repository that system tracks keeps its tracker part
-  of the line from the last reading that had a credential, and no account
-  is probed or held for it.
+  the class's status, `9`, its failure ledger row told at once; a repository whose reading the missing credential cut keeps its tracker
+  part of the line from the last reading that had a credential (one read
+  before the credential was lost keeps its fresh reading, and a launch
+  without a credential cuts none), and no account is probed or held for it.
 
 ### Bounding what a call can cost
 

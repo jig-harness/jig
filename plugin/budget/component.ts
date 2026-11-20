@@ -154,7 +154,8 @@ function repositoryGroups(rows: readonly LedgerRow[]) {
     string,
     RepositoryPart & { system: string; credential: string; unit: string }
   >();
-  for (const row of rows)
+  for (const row of rows) {
+    if (row.credential === NO_CREDENTIAL) continue;
     for (const share of repositoryShares(row)) {
       const key = JSON.stringify([
         row.system,
@@ -177,6 +178,7 @@ function repositoryGroups(rows: readonly LedgerRow[]) {
       known.unknownCost += share.unknownCost;
       known.notModified += share.notModified;
     }
+  }
   return [...totals.values()].sort(
     (a, b) =>
       a.system.localeCompare(b.system) ||
