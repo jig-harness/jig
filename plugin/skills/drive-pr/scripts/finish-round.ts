@@ -1322,7 +1322,7 @@ async function main(): Promise<number> {
     },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
-  // `disabled`, `conflicting`, `workflow-change` and `adopted` pushed without
+  // `disabled`, `conflicting`, `workflow-change`, `timed-out` and `adopted` pushed without
   // a hold this push added: none rolls back.
   const unheld = isUnheldOutcome(holdRes.stdout);
   if (pushRes.code !== 0 && !unheld) {

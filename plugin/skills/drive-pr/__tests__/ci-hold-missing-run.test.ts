@@ -14,6 +14,7 @@ import type { CheckRunLite } from "../scripts/lib/ci-hold.ts";
 import { missingRunDecision } from "../scripts/lib/missing-required-run-live.ts";
 import {
   describeMissing,
+  isUnheldOutcome,
   headPushedMs,
   MISSING_RUN_PARK_KEY,
   missingRequiredRuns,
@@ -84,6 +85,13 @@ const verdictAt = (
 
 // A GitHub expression, spelled out so no plain string carries a template marker.
 const expr = (e: string): string => `$\{{ ${e} }}`;
+
+describe("isUnheldOutcome", () => {
+  it("pushes unheld after a timed-out required check, so the round can carry its repair", () => {
+    expect(isUnheldOutcome("timed-out\n")).toBe(true);
+    expect(isUnheldOutcome("missing-required-run")).toBe(false);
+  });
+});
 
 describe("missingRequiredRuns", () => {
   it("names a required check with no run on the head past the grace", () => {

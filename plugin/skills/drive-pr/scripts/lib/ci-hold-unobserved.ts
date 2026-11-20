@@ -4,7 +4,7 @@
  * workflow run ever reported, or tell the caller to wait.
  */
 import { recoverCancelledOnHead } from "./cancelled-recovery-live.ts";
-import { recoveryExit } from "./cancelled-recovery-reads.ts";
+import { isTimedOut, recoveryExit } from "./cancelled-recovery-reads.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
 import { stopOnMissingRequiredRun } from "./missing-required-run-live.ts";
 import { MISSING_RUN_PARK_KEY } from "./missing-required-run.ts";
@@ -23,7 +23,8 @@ export async function waitOnUnobserved(
   if (stop !== null) return stop;
   // A required check with no run at all never completes: past the grace
   // from the head's push it parks for a person instead of waiting.
-  if (recovery === "none") {
+  const settled = isTimedOut(recovery) ? recovery.recovery : recovery;
+  if (settled === "none") {
     const missing = await stopOnMissingRequiredRun(pr, head, required, runs);
     if (missing === "parked") {
       process.stdout.write(`${MISSING_RUN_PARK_KEY}\n`);
@@ -31,6 +32,12 @@ export async function waitOnUnobserved(
     }
     if (missing === "workflow-change") {
       process.stdout.write("workflow-change\n");
+      return 0;
+    }
+    // A job the runner stopped at its time limit is a failure to repair: with
+    // no other recovery outstanding, the round's push may carry the repair.
+    if (isTimedOut(recovery)) {
+      process.stdout.write("timed-out\n");
       return 0;
     }
   }

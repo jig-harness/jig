@@ -271,6 +271,7 @@ const UNHELD_OUTCOMES: readonly string[] = [
   "disabled",
   "conflicting",
   "workflow-change",
+  "timed-out",
   "adopted",
 ];
 

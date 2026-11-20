@@ -23,7 +23,8 @@ import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
  * `ensure` prints the hold's outcome on stdout: `added`, `owned`, `adopted`,
  * or one of the outcomes that push unheld: `disabled`, `conflicting`, and
  * `workflow-change` (a required check never ran on the head and the push
- * changes the workflows). At exit 8 it prints `missing-required-run` when it
+ * changes the workflows), and `timed-out` (a required check's job stopped at
+ * its time limit, a failure for the push's repair). At exit 8 it prints `missing-required-run` when it
  * parked a required check with no run on the head past the grace, and
  * nothing when the cancelled-run recovery parked `cancelled-ci`.
  */
