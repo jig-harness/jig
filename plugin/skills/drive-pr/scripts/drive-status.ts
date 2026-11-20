@@ -271,7 +271,7 @@ import {
   run,
   tsArgv,
 } from "./lib/proc.ts";
-import { reviewerApp } from "./lib/overlay.ts";
+import { reviewerApp, reviewerPollMaxSeconds } from "./lib/overlay.ts";
 // The code itself, not hand-written `11`/`13` literals repeated here: this
 // script's exit means what `drive-state.ts`'s means, and two independent
 // numbers are exactly how that stops being true.
@@ -581,7 +581,10 @@ async function main(): Promise<number> {
       waitingCache = new WaitingEvaluationCache(waitingChecksMaxAgeMs());
       pollPacing = new StatusPollPacing(
         interval * 1000,
-        readStatusPolling(readConfig()),
+        {
+          ...readStatusPolling(readConfig()),
+          maxIntervalSeconds: reviewerPollMaxSeconds(),
+        },
         pollDependencies(systemClock),
       );
     } catch (error) {

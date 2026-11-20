@@ -19,7 +19,7 @@ import { resolveMarkerSha } from "../../skills/drive-pr/scripts/lib/status/revie
 import { reviewerStickyIn } from "../../skills/drive-pr/scripts/lib/status/reviewer-sticky.ts";
 import { parseMs } from "../../shared/time.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
-import { heldRead, type TickBound } from "./sources/bounded.ts";
+import { heldRead, unlessEnded, type TickBound } from "./sources/bounded.ts";
 import type { Classified } from "./sources/ledgers.ts";
 import type { Evidence } from "./types.ts";
 
@@ -210,12 +210,26 @@ async function recovered(
       .sort((a, b) => a.id - b.id)
       .at(-1);
     if (run === undefined || run.status !== "completed") return ok(false);
-    const latest = await latestReviewBy(owner, repo, String(pr), `${app}[bot]`);
-    if (latest === null)
-      return failed("unreadable", "the reviewer's reviews could not be read");
-    return ok(
-      judgeReviewObject(run, latest.review, stop.head, isDraft, app).state ===
-        "witnessed",
+    return unlessEnded(
+      bound,
+      "the reviewer's pull-request reviews were read",
+      async () => {
+        const latest = await latestReviewBy(
+          owner,
+          repo,
+          String(pr),
+          `${app}[bot]`,
+        );
+        if (latest === null)
+          return failed(
+            "unreadable",
+            "the reviewer's reviews could not be read",
+          );
+        return ok(
+          judgeReviewObject(run, latest.review, stop.head, isDraft, app)
+            .state === "witnessed",
+        );
+      },
     );
   });
 }
