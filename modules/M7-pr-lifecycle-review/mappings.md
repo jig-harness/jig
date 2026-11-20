@@ -473,8 +473,12 @@ documentation, and a team checks it against the version it installs.
 drive-pr has a built-in profile for CodeRabbit and for no other reviewer in
 the table. For the others, a repository sets the check pattern, the comment
 marker and the commit stamp in its own configuration
-([AI reviewers](../../plugin/EXTENDING.md#ai-reviewers)), and a profile waits
-until a consumer has validated one.
+([AI reviewers](../../plugin/EXTENDING.md#ai-reviewers)). Those settings only
+name evidence that exists; they post nothing. A reviewer that emits no commit
+stamp, or no summary comment, also needs a workflow step or a reviewer
+customization that posts and updates the marked, stamped comment, or the drive
+waits for evidence that never arrives. A profile waits until a consumer has
+validated one.
 
 | Reviewer | Takes | Check run | Summary comment naming the reviewed commit | Review objects | drive-pr profile |
 |----------|-------|-----------|--------------------------------------------|----------------|------------------|

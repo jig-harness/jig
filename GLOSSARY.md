@@ -1748,10 +1748,14 @@ make, use the entry's term instead.
   comment marker, or its latest *review object* together with its check run.
 - **Reviewer-evidence contract** — what the drive reads to learn that an AI
   reviewer reviewed the head commit: a check run whose name matches
-  `review.reviewer_check_pattern`, and either a *sticky comment* that carries
-  `review.sticky_marker` and stamps the reviewed commit (and may carry a *skip
-  notice*), or, in the `review_object` *reviewer evidence mode*, the commit
-  that the newest *review object* names. Any reviewer that produces this
+  `review.reviewer_check_pattern` (from the configured reviewer app, when one
+  is named), and either a *sticky comment* that the reviewer's own bot account
+  posts, that carries `review.sticky_marker` and that stamps the reviewed
+  commit as an HTML comment, `<!-- <review.reviewed_sha_marker>: <commit SHA> -->`
+  (and may carry a *skip notice*), or, in the `review_object` *reviewer
+  evidence mode*, the commit that the newest *review object* names, or a
+  successful or neutral check run on the head when the reviewer posts nothing
+  for a push with no new findings. Any reviewer that produces this
   evidence works with the drive, whoever wrote it
   ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md),
   [drive-pr](plugin/skills/drive-pr/README.md)).

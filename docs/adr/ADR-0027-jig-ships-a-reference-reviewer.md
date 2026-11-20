@@ -23,16 +23,21 @@ tags: [adr, review, drive-pr, reviewer]
 through review rounds until it converges. It finds out that an AI reviewer
 has reviewed the head commit from the reviewer's own evidence, which is the
 *reviewer-evidence contract* ([GLOSSARY.md](../../GLOSSARY.md)): a check run
-whose name matches `review.reviewer_check_pattern`, plus either a sticky
-summary comment that carries `review.sticky_marker` and stamps the reviewed
-commit under `review.reviewed_sha_marker` (and may carry a skip notice), or,
-in `review_object` mode, the commit that the newest review object names.
+whose name matches `review.reviewer_check_pattern` (from the configured
+reviewer app, when one is named), plus either a sticky summary comment that
+the reviewer's own bot account posts, that carries `review.sticky_marker` and
+that stamps the reviewed commit as an HTML comment under
+`review.reviewed_sha_marker` (and may carry a skip notice), or, in
+`review_object` mode, the commit that the newest review object names, or a
+successful or neutral check run on the head when the reviewer posts nothing
+for a push with no new findings. [drive-pr's README](../../plugin/skills/drive-pr/README.md)
+is the complete definition; the shorter statements elsewhere abbreviate it.
 
 Jig writes none of that evidence. The [`review`](../../plugin/skills/review/SKILL.md)
 skill checks a change before it is pushed and never posts. The dispatcher has
-no review stage. [M7](../../modules/M7-pr-lifecycle-review/README.md) lists
-"a reviewer runtime" under "Left out by design", and drive-pr's README says
-Jig ships no reviewer that implements the protocol. A team with no AI
+no review stage. [M7](../../modules/M7-pr-lifecycle-review/README.md) left a
+reviewer runtime out of the module, and drive-pr's README says Jig ships no
+reviewer that implements the protocol. A team with no AI
 reviewer of its own has nothing to drive against, and a drive on such a
 repository converges on CI and threads alone.
 
@@ -60,9 +65,11 @@ repository as one implementation beside the others, as its writing rules
 ask of a tool that Jig's tooling is bound to. The repository is planned and
 not yet public, so every document says "planned" until it is.
 
-**Until it is published, M7's mappings name reviewers that take an API key
-today** and say what each meets of the contract. drive-pr gets no built-in
-profile for any of them until a consumer validates one.
+**Until it is published, M7's mappings name the reviewers a team can add
+today**, most with a model key it keeps as a secret and CodeRabbit as a hosted
+service, and say what each meets of the contract. drive-pr already has a
+built-in profile for CodeRabbit and gets none for the others until a consumer
+validates one.
 
 **How the audit scores a repository with no automated reviewer is not
 decided here.** That stays with the audit's own change.

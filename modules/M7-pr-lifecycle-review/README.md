@@ -380,7 +380,10 @@ pieces that are portable gates: the fork-safe wiring lint, the resolution
 gate and its exporter, and the convergence check. The contract is what the
 drive reads to learn that a reviewer reviewed the head commit: a check run,
 and either a summary comment that names the reviewed commit or a review
-object that names it. Any reviewer that produces that evidence works, and
+object that names it (or a successful check run on the head, for a reviewer
+that posts nothing when a push has no new findings). The glossary and
+[drive-pr's README](../../plugin/skills/drive-pr/README.md) give the complete
+definition. Any reviewer that produces that evidence works, and
 [mappings.md](mappings.md#review-bots--harness-the-tool-registry) says what
 each reviewer Jig knows of meets.
 
