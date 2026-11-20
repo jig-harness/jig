@@ -173,6 +173,29 @@ describe("a paged REST read the forge client sends a page at a time", () => {
     ]);
   });
 
+  it("retains a blank page as unreadable evidence in a slurped listing", async () => {
+    budget(1000);
+    const pages = restPages(3);
+    const forge = client((argv, n) => {
+      const page = pages(argv);
+      return n === 2
+        ? { ...page, stdout: page.stdout.split("\n\n")[0] + "\n\n" }
+        : page;
+    });
+    const read = await forge.run([
+      "api",
+      "--paginate",
+      "--slurp",
+      "repos/o/r/items",
+    ]);
+    expect(forge.sent).toHaveLength(3);
+    expect(JSON.parse(read.stdout)).toEqual([
+      [{ name: "a1" }, { name: "b1" }],
+      null,
+      [{ name: "a3" }, { name: "b3" }],
+    ]);
+  });
+
   it("joins each page's --jq output in turn, and sends a GET's fields with the first page only", async () => {
     budget(1000);
     const forge = client(restPages(2));

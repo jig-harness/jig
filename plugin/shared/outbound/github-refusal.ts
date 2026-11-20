@@ -5,7 +5,7 @@
  * reads it only there, never from the rest of an answer, which can be a page
  * of content quoting the same words.
  */
-import { swallow } from "../errors.ts";
+import { dropped } from "../dropped.ts";
 import { isRecord } from "../guards.ts";
 
 /** The user a refusal's text names as the one whose allowance is spent: GitHub's "rate limit exceeded for user ID N". */
@@ -29,7 +29,7 @@ export function errorMessages(body: string): string {
   try {
     value = JSON.parse(text);
   } catch (error) {
-    swallow(error, "an answer that is not JSON carries no error message");
+    dropped(error, "an answer that is not JSON carries no error message");
     return "";
   }
   if (!isRecord(value)) return "";

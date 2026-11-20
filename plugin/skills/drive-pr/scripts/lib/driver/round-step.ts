@@ -48,7 +48,7 @@ import { preparePassBoundary, markReadyAfterRound } from "./round-ready.ts";
 
 import { runReviewPassPhase } from "./review-pass.ts";
 
-import { publishRunning, standDownOnNewerClaim } from "./ledger.ts";
+import { publishRunning } from "./ledger.ts";
 
 import { sweepProvisional } from "./provisional-sweep.ts";
 
@@ -203,7 +203,7 @@ async function waitForRoundBoundary(
   if (mailboxAtRoundStart === "resumed") context.finalCiWait.clear();
   // Another clone's takeover claim, newer than this driver's own, ends the
   // drive here, before another pass could reply beside its successor.
-  const takenOver = await standDownOnNewerClaim(context.pr);
+  const takenOver = await context.roundBoundaryTakeoverCheck();
   if (takenOver !== null) return takenOver;
   // A person's comment on a provisional decision is parked for them before
   // the gate counts the round's work (`provisional-sweep.ts`). A dry run

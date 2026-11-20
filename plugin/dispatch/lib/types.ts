@@ -122,6 +122,8 @@ export interface PickupRelaunch {
   record: string;
   workspace: { id: string; path: string };
   head: string;
+  /** The host fault the pickup stopped on, when it did (`pickup-host-fault.ts`): the relaunch resumes it rather than only pushing it. */
+  fault?: string;
 }
 
 /** `dispatch.stalled_relaunch`'s values. */

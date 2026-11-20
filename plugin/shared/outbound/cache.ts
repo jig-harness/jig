@@ -1,4 +1,11 @@
-/** Reuse answers under their source's update time or validator. Storage remains the caller's. */
+/**
+ * Reuse answers under their source's update time or validator, and the
+ * conditional request: a read sent with the validator of the answer it
+ * holds (`If-None-Match`), which the system answers `304 Not Modified`,
+ * charging nothing, when nothing changed. Storage remains the caller's.
+ */
+import { failed, ok, type Outcome } from "../outcome.ts";
+
 export interface VersionedStore {
   get<T>(key: string): T | null | undefined;
   set<T>(key: string, value: T): void;
@@ -48,4 +55,43 @@ export function validatorCache(store: {
       if (etag !== "") store.set(key, { v: 1, path: request, etag, body });
     },
   };
+}
+
+/** The header that makes a read conditional on the answer held: `If-None-Match` with its validator; none when nothing is held. */
+export function conditionalHeaders(
+  held: ValidatedBody | null,
+): Record<string, string> {
+  return held === null ? {} : { "If-None-Match": held.etag };
+}
+
+/** What a conditional read's answer comes to: the body, whether it changed, and the validated body to keep (`null`: keep nothing new). */
+export interface Revalidated {
+  changed: boolean;
+  body: string;
+  keep: ValidatedBody | null;
+}
+
+/**
+ * What an answer of `status` to a read sent with `held`'s validator comes
+ * to: a `304` is the held body, unchanged; a success is its own body, kept
+ * with its validator when it carries one. A `304` to a read that held
+ * nothing cannot be trusted (`unvalidated`); any other status is `null`,
+ * for the transport to classify.
+ */
+export function revalidated(
+  status: number,
+  etag: string,
+  body: string,
+  held: ValidatedBody | null,
+): Outcome<Revalidated, "unvalidated"> | null {
+  if (status === 304)
+    return held === null
+      ? failed("unvalidated", "a 304 answer to a read that held nothing")
+      : ok({ changed: false, body: held.body, keep: null });
+  if (status < 200 || status >= 300) return null;
+  return ok({
+    changed: true,
+    body,
+    keep: etag === "" ? null : { etag, body },
+  });
 }

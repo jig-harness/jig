@@ -7,6 +7,8 @@ export interface Attempt {
   system: string;
   credential: string;
   operation: string;
+  /** The repository the attempt addressed, `owner/name`, where it is known. */
+  repository?: string | null;
   requests: number;
   /** Of `requests`, how many a conditional request had answered `304 Not Modified`. */
   notModified?: number;
