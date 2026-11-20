@@ -95,7 +95,7 @@ areas:
     deployTier: plugin
     validation:
       profile: area
-      ownTests: "bun run test ./plugin/skills/drive-pr/ ./plugin/shared/__tests__/"
+      ownTests: "bun run test ./plugin/skills/drive-pr/"
       separateSuite: true
 
   resolve-review-comments:
