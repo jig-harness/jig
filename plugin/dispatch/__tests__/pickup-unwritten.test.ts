@@ -2,8 +2,9 @@
  * A pickup whose result the host could not write never raises the question
  * its pass stopped on: that question is about the dispatcher's own database
  * or host, whose health check reports the cause. While the check fails the
- * tick raises nothing for it; once it passes, a person is asked to settle or
- * release the item. Its end is logged as a stage that ended without a result.
+ * tick raises nothing for it; once it passes, an item its pass never claimed
+ * is picked up afresh (`pickup-host-fault.test.ts` covers the claimed one's
+ * relaunch). Its end is logged as a stage that ended without a result.
  */
 import { describe, expect, it } from "bun:test";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
@@ -95,7 +96,7 @@ describe("a pickup whose result the host could not write", () => {
     state: "In Progress",
   };
 
-  it("never raises the question its pass stopped on, where a pass that wrote nothing on its own asks it", () => {
+  it("never raises the question its pass stopped on, where a pass that wrote nothing on its own asks it, and is picked up afresh", () => {
     expect(plan(stopped(false)).actions).toContainEqual(
       expect.objectContaining({
         stage: "notify",
@@ -103,13 +104,11 @@ describe("a pickup whose result the host could not write", () => {
         evidence: expect.objectContaining({ question: QUESTION }),
       }),
     );
-    const [asked, ...rest] = plan(stopped(true)).actions.filter(
-      (a) => a.stage === "notify",
-    );
-    expect(rest).toEqual([]);
-    expect(asked?.evidence?.question).not.toBe(QUESTION);
-    expect(asked?.reason).toContain("this host could not write it");
-    expect(asked?.reason).toContain("settled or released");
+    const planned = plan(stopped(true));
+    expect(planned.actions.filter((a) => a.stage === "notify")).toEqual([]);
+    expect(planned.actions).toEqual([
+      expect.objectContaining({ stage: "pickup", target: "#12" }),
+    ]);
   });
 
   it("raises nothing while the host's health check fails, its own need standing for it", () => {
@@ -168,7 +167,9 @@ describe("a pickup whose result the host could not write", () => {
       expect.objectContaining({
         target: "#12",
         class: "pickup-ended",
-        why: expect.stringContaining("this host could write"),
+        why: expect.stringContaining(
+          "its result or exit could not be written on this host",
+        ),
       }),
     );
   });
