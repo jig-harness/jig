@@ -101,6 +101,11 @@ export async function releaseAndReadFinalCi(
   );
   if (release.stderr.trim() !== "") console.error(release.stderr.trimEnd());
   if (release.code === 5) return 5;
+  if (release.code === 4 && release.stdout.trim() === "release-proof-pending") {
+    console.error("Waiting to verify the CI hold label removal");
+    await sleep(UNLABEL_SETTLE_SECONDS);
+    return "continue";
+  }
   if (release.code === 4) {
     console.error(
       "review converged, but the CI hold's release could not settle (the head moved, the label changed, or the forge could not be read); not reporting merge-ready",

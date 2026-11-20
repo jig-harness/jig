@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -205,6 +205,45 @@ describe.skipIf(
       expect(r.stderr).toContain("the re-read saw ROUND_READY");
       expect(r.stderr).toContain("DRIVE_PR_FINAL_REGATE_LIMIT=2");
       expect(r.stderr).not.toContain("converged after");
+    },
+    DRIVE_DEADLINE_MS * 2,
+  );
+
+  it(
+    "continues convergence after a timeout verifying CI hold removal",
+    async () => {
+      const { dir, stateDir } = writeFixture({
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        threads: [],
+        ciHeld: true,
+      });
+      writeFileSync(
+        join(dir, "timeline.json"),
+        JSON.stringify([
+          {
+            node_id: "LE_1",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: { login: "drive-user" },
+            created_at: "2026-09-10T09:59:00Z",
+          },
+        ]),
+      );
+      writeFileSync(join(dir, "timeline-timeout-after-unlabel"), "");
+      const r = await driveUntilEnd(
+        dir,
+        stateDir,
+        ["--no-head-sync", "--keep-draft", "--", ...PASS_NOOP],
+        {},
+      );
+      expectEnded(r);
+      expectSpawnExit(
+        { exitCode: r.exitCode, stderr: r.stderr, stdout: null },
+        0,
+      );
+      expect(r.stderr).toContain("simulated proof timeline timeout");
+      expect(r.stderr).toContain("Waiting to verify the CI hold label removal");
     },
     DRIVE_DEADLINE_MS * 2,
   );

@@ -1832,6 +1832,7 @@ if [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "edit" ]; then
     mv "$F/check-runs.json.tmp" "$F/check-runs.json"
   fi
   mv "$F/pr-view.json.tmp" "$F/pr-view.json"
+  if [ "$action" = "unlabeled" ] && [ -f "$F/omit-unlabel-event" ]; then exit 0; fi
   n=$(jq 'length + 1' "$F/timeline.json")
   jq --arg event "$action" --arg node "LE_$n" \
     '. + [{node_id:$node,event:$event,label:{name:"ci:hold"},actor:{login:"drive-user"},created_at:"2026-09-10T10:00:00Z"}]' \
@@ -2006,6 +2007,10 @@ for a in "$@"; do
     graphql)             emit "$F/threads.json"; exit 0 ;;
     *issues/*/timeline*)
       # The forge timing out on the timeline read, while every other read answers.
+      if [ -f "$F/timeline-timeout-after-unlabel" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+        rm "$F/timeline-timeout-after-unlabel"
+        echo "gh-stub: simulated proof timeline timeout" >&2; exit 124
+      fi
       if [ -f "$F/timeline-unreachable" ]; then
         echo "gh-stub: simulated timeline timeout" >&2; exit 1
       fi

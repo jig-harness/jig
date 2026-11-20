@@ -359,6 +359,26 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(r.stdout.trim()).toBe("removed");
   });
 
+  it("retries a timed-out timeline read after removing the label", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "timeline-timeout-after-unlabel"), ""),
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("simulated proof timeline timeout");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+    });
+  });
+
+  it("stops when the readable timeline cannot prove the removal", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "omit-unlabel-event"), ""),
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("the unlabeled transition could not be proven");
+  }, 15_000);
+
   it("release retries later, saying why, when the forge cannot be reached for the PR state", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) =>
       writeFileSync(join(dir, "transient-failure"), ""),

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { ok, type Outcome } from "../../../shared/outcome.ts";
 import { retryAttempts } from "../../../shared/retry.ts";
 import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
 
@@ -218,7 +219,12 @@ async function transitionAfter(
   beforeId: string,
   event: "labeled" | "unlabeled",
   actor: string,
-): Promise<{ event: LabelTransition; intervening: boolean } | null> {
+): Promise<
+  Outcome<
+    { event: LabelTransition; intervening: boolean } | null,
+    HoldReadFailure["code"]
+  >
+> {
   // GitHub's timeline can trail the label mutation briefly. Bound the retry;
   // an unobserved event is not ownership and must never be persisted as one.
   for await (const attempt of retryAttempts({
@@ -228,18 +234,19 @@ async function transitionAfter(
     random: () => 1,
   })) {
     void attempt;
-    const all = await transitions(pr);
-    if (all === null) return null;
+    const read = await readHoldTransitions(pr, holdLabel());
+    if (!read.ok) return read;
+    const all = read.value;
     const beforeIndex =
       beforeId === "" ? -1 : all.findIndex((item) => item.id === beforeId);
-    if (beforeId !== "" && beforeIndex < 0) return null;
+    if (beforeId !== "" && beforeIndex < 0) return ok(null);
     const after = all.slice(beforeIndex + 1);
     const observed = after.at(-1);
     if (observed?.event === event && observed.actor === actor) {
-      return { event: observed, intervening: after.length !== 1 };
+      return ok({ event: observed, intervening: after.length !== 1 });
     }
   }
-  return null;
+  return ok(null);
 }
 
 /** The label transition a recorded hold names, if its phase names one. */
@@ -490,7 +497,9 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     checkRunWatermark: preHoldWatermark,
   });
   const add = await ghCall(["pr", "edit", pr, "--add-label", holdLabel()]);
-  const mutation = await transitionAfter(pr, beforeId, "labeled", login);
+  const mutation = valueOrNull(
+    await transitionAfter(pr, beforeId, "labeled", login),
+  );
   const confirmed = await snapshot(pr);
   if (mutation?.intervening === true) {
     await writeCiState(pr, null);
@@ -660,12 +669,18 @@ async function release(
     "--remove-label",
     holdLabel(),
   ]);
-  const mutation = await transitionAfter(
+  const proof = await transitionAfter(
     pr,
     persisted.eventId,
     "unlabeled",
     login,
   );
+  if (remove.code === 0 && !proof.ok) {
+    const code = unread(proof.failure);
+    process.stdout.write("release-proof-pending\n");
+    return code;
+  }
+  const mutation = valueOrNull(proof);
   const confirmed = await snapshot(pr);
   if (mutation?.intervening === true) {
     if (
@@ -685,7 +700,9 @@ async function release(
       const restoreMutation =
         restoreBefore === null
           ? null
-          : await transitionAfter(pr, restoreBeforeId, "labeled", login);
+          : valueOrNull(
+              await transitionAfter(pr, restoreBeforeId, "labeled", login),
+            );
       const restored = await snapshot(pr);
       const restoreProven = mutationProven(
         restore.code,
