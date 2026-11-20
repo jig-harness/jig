@@ -24,7 +24,7 @@
  */
 import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import { ok, type Outcome } from "../../shared/outcome.ts";
-import { systemClock } from "../../shared/clock.ts";
+import { type Clock, systemClock } from "../../shared/clock.ts";
 import { within } from "../../ask/lib/reading.ts";
 import { assignPickup } from "../../dispatch/lib/requests.ts";
 import { openTracker } from "../../skills/do-item/scripts/lib/tracker/index.ts";
@@ -141,11 +141,35 @@ export async function assignableFrom(
   return from.ok ? from : refused(`${key}: ${from.failure.reason}; send again`);
 }
 
+/** Wait out the tracker's creation window, then write the assignment (and the move). */
+export async function writeAfterWindow(
+  tracker: Parameters<typeof assignPickup>[0],
+  item: {
+    key: string;
+    identity: string;
+    move: CanonicalState | null;
+    moveFor: Parameters<typeof assignPickup>[4];
+    from: number | null;
+  },
+  clock: Pick<Clock, "now" | "sleep">,
+): ReturnType<typeof assignPickup> {
+  const { waitMs } = waitBeforeAssigning(item.from, clock.now());
+  if (waitMs > 0) await clock.sleep(waitMs);
+  return assignPickup(
+    tracker,
+    item.key,
+    item.identity,
+    item.move,
+    item.moveFor,
+  );
+}
+
 /** The plan of an assignment, or why the item cannot take it. */
 export async function planAssign(
   written: AskContext,
   root: string,
   as: string | undefined,
+  clock: Pick<Clock, "now" | "sleep"> = systemClock,
 ): Promise<Planned> {
   const { repo } = written.address;
   const settings = await tickSettings(written, root);
@@ -193,7 +217,7 @@ export async function planAssign(
   const move = moveFor(issue.state.name);
   const from = await assignableFrom(tracker, key, sec);
   if (!from.ok) return from;
-  const { until } = waitBeforeAssigning(from.value, systemClock.now());
+  const { until } = waitBeforeAssigning(from.value, clock.now());
   return ok({
     address: ctx.name,
     repo,
@@ -213,9 +237,11 @@ export async function planAssign(
         ? null
         : `${windowWords(tracker)}: the send waits until ${until}, then writes the assignment`,
     write: async () => {
-      const { waitMs } = waitBeforeAssigning(from.value, systemClock.now());
-      if (waitMs > 0) await systemClock.sleep(waitMs);
-      const wrote = await assignPickup(tracker, key, identity, move, moveFor);
+      const wrote = await writeAfterWindow(
+        tracker,
+        { key, identity, move, moveFor, from: from.value },
+        clock,
+      );
       return wrote.ok ? ok(issue.url ?? key) : wrote;
     },
   });

@@ -18,23 +18,52 @@ import {
   WINDOW_MARGIN_MS,
   waitBeforeAssigning,
 } from "../../skills/do-item/scripts/lib/tracker/assignment-window.ts";
-import { assignableFrom, unseenAssignment } from "../lib/assign.ts";
+import type { Issue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import {
+  assignableFrom,
+  unseenAssignment,
+  writeAfterWindow,
+} from "../lib/assign.ts";
 
 const FROM = T0 + LINEAR_CREATION_QUIET_MS + WINDOW_MARGIN_MS;
 
 describe("jig send assign on Linear", () => {
-  it("waits until the creation window has passed before writing", async () => {
-    const linear = fakeLinear(fakeClock(T0 + 58_000));
+  it("waits until the creation window has passed before writing, and the write lands after it", async () => {
+    const clock = fakeClock(T0 + 58_000);
+    const linear = fakeLinear(clock);
     const from = await assignableFrom(linear.tracker, "ENG-1", 30);
     expect(from).toEqual({ ok: true, value: FROM });
-    expect(waitBeforeAssigning(FROM, T0 + 58_000)).toEqual({
-      waitMs: FROM - (T0 + 58_000),
-      until: iso(FROM),
-    });
+    if (!from.ok) return;
+    const unstarted = {
+      state: { id: "s-todo", name: "Todo", type: "unstarted" },
+    } as unknown as Issue;
+    const tracker = {
+      ...linear.tracker,
+      getIssue: async () => unstarted,
+      user: linear.tracker.user.bind(linear.tracker),
+      assignees: linear.tracker.assignees.bind(linear.tracker),
+      assign: linear.tracker.assign.bind(linear.tracker),
+      transition: async () => {},
+    };
+    const wrote = await writeAfterWindow(
+      tracker,
+      {
+        key: "ENG-1",
+        identity: FACTORY,
+        move: null,
+        moveFor: () => null,
+        from: from.value,
+      },
+      clock,
+    );
+    expect(wrote.ok).toBe(true);
+    expect(clock.waits).toEqual([FROM - (T0 + 58_000)]);
+    expect(linear.writes).toEqual([{ at: FROM, to: FACTORY }]);
     expect(waitBeforeAssigning(FROM, FROM + 1)).toEqual({
       waitMs: 0,
       until: null,
     });
+    expect(waitBeforeAssigning(FROM, T0)).toMatchObject({ until: iso(FROM) });
   });
 
   it("refuses an item assigned to the identity with no assignment in its history, naming the remedy", async () => {

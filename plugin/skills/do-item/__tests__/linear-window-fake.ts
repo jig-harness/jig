@@ -104,6 +104,20 @@ export function fakeLinear(
           issue.history.push({ createdAt: iso(clock.now()), toAssignee: to });
         return { issueUpdate: { success: true } };
       }
+      case "TrackerAssigneeHistory":
+        return {
+          issue: {
+            history: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: writes.map((w, i) => ({
+                id: `w${i}`,
+                createdAt: iso(w.at),
+                fromAssignee: null,
+                toAssignee: w.to === null ? null : { id: w.to },
+              })),
+            },
+          },
+        };
       case "TrackerAssignmentHistory":
         return {
           issue: {

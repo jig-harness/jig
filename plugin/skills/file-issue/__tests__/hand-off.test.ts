@@ -37,7 +37,7 @@ describe("handOff on Linear", () => {
     expect(linear.writes).toHaveLength(1);
     const written = linear.writes[0]?.at ?? 0;
     expect(written).toBeGreaterThanOrEqual(T0 + LINEAR_CREATION_QUIET_MS);
-    expect(result.handedOver && result.writtenAt).toBe(iso(written));
+    expect(result.handedOver && result.confirmedAt).toBe(iso(written));
     expect(clock.waits).toEqual([
       LINEAR_CREATION_QUIET_MS + WINDOW_MARGIN_MS - 58_000,
     ]);
@@ -109,7 +109,7 @@ describe("handOff on Linear", () => {
       wait: true,
       clock,
     });
-    expect(result).toMatchObject({ handedOver: true, writtenAt: null });
+    expect(result).toMatchObject({ handedOver: true, confirmedAt: null });
     expect(linear.writes).toEqual([]);
   });
 
@@ -215,9 +215,7 @@ describe("handOff on a tracker whose history records every change", () => {
         assignee = user;
       },
       assignees: async () => (assignee === null ? [] : [assignee]),
-      assignedBy: async () => {
-        throw new Error("not read");
-      },
+      assignedBy: async () => ({ id: "m", name: "maintainer", trusted: true }),
     };
     const result = await handOff(github, "#7", "factory-bot", {
       wait: true,
@@ -225,7 +223,7 @@ describe("handOff on a tracker whose history records every change", () => {
     });
     expect(result).toMatchObject({
       handedOver: true,
-      writtenAt: iso(T0 + 1_000),
+      confirmedAt: iso(T0 + 1_000),
     });
     expect(assigned).toEqual(["#7"]);
     expect(clock.waits).toEqual([]);
