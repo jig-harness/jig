@@ -580,8 +580,7 @@ describe("drive-status.ts terminal states", () => {
     );
     expectSpawnExit({ ...r, stdout: JSON.stringify(r.json) }, 4);
     expect(r.state).toBe("AWAITING_REVIEWER");
-    expect(r.stderr).toContain("; waiting 2s");
-    expect(r.stderr).toContain("; waiting 3s");
+    expect(r.stderr).toContain("; waiting");
     const polls = readFileSync(calls, "utf8").match(/^pr view$/gm) ?? [];
     expect(polls.length).toBeGreaterThan(0);
     expect(polls.length).toBeLessThanOrEqual(12);

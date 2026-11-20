@@ -1729,7 +1729,14 @@ async function main(): Promise<number> {
         if (fits) console.error(`${report.state}: ${report.reason}; waiting`);
         if (
           !fits ||
-          !(await pollPacing.wait(pollFingerprint(report), deadline))
+          !(await pollPacing.wait(
+            pollFingerprint(report),
+            deadline,
+            undefined,
+            report.state === "AWAITING_REVIEWER"
+              ? reviewerPollMaxSeconds() * 1000
+              : undefined,
+          ))
         ) {
           report.reason = `${report.reason} (gave up after ${timeout}s)`;
           await emit(4, false);

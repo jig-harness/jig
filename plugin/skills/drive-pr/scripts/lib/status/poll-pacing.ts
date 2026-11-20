@@ -217,6 +217,7 @@ export class StatusPollPacing {
     low: BudgetWindow,
     started: number,
     pollAt: number,
+    maximumMs: number,
   ): number {
     const share = this.policy.waitingShare;
     if (share <= 0 || low.remaining === null || low.resetAt === null)
@@ -227,7 +228,7 @@ export class StatusPollPacing {
       return Math.max(pollAt, low.resetAt);
     if (fraction === null || fraction >= share) return pollAt;
     const stretched = Math.min(
-      this.maximumMs,
+      maximumMs,
       Math.ceil((this.baseMs * share) / fraction),
       Math.max(this.baseMs, low.resetAt - started),
     );
@@ -235,18 +236,19 @@ export class StatusPollPacing {
   }
 
   /** An unchanged signal doubles the interval up to the ceiling. */
-  private nextCadence(signal: string): number {
+  private nextCadence(signal: string, maximumMs: number): number {
     return signal === this.previous
-      ? Math.min(this.maximumMs, this.cadence * 2)
-      : this.baseMs;
+      ? Math.min(maximumMs, this.cadence * 2)
+      : Math.min(this.baseMs, maximumMs);
   }
 
   async wait(
     signal: string,
     deadline: number,
     abort?: AbortSignal,
+    maximumMs = this.maximumMs,
   ): Promise<boolean> {
-    this.cadence = this.nextCadence(signal);
+    this.cadence = this.nextCadence(signal, maximumMs);
     this.previous = signal;
     const started = this.deps.now();
     let pollAt = started + this.cadence;
@@ -258,7 +260,7 @@ export class StatusPollPacing {
       this.compactLower(now);
       this.completeLimits();
       for (const low of this.lower)
-        pollAt = this.pollAfter(low, started, pollAt);
+        pollAt = this.pollAfter(low, started, pollAt, maximumMs);
       const wakeAt = Math.min(pollAt, deadline);
       if (wakeAt <= now || abort?.aborted) break;
       await this.deps.sleep(wakeAt - now, abort);

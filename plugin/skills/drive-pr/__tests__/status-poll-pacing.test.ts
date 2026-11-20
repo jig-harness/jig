@@ -50,15 +50,30 @@ function fixture(balance: (now: number) => BudgetWindow | undefined) {
   return {
     clock,
     ledger,
-    wait: (report: string, deadline: number) =>
+    wait: (
+      report: string,
+      deadline: number,
+      abort?: AbortSignal,
+      maximumMs?: number,
+    ) =>
       withLedgerWriter(
         (entry) => ledger.push(entry),
-        () => pacing.wait(report, deadline),
+        () => pacing.wait(report, deadline, abort, maximumMs),
       ),
   };
 }
 
 describe("waiting status poll pacing", () => {
+  test("a reviewer wait can use a narrower ceiling without changing general pacing", async () => {
+    const probe = fixture(() => window(4500, 3600));
+    expect(
+      await probe.wait("reviewer", 100 * second, undefined, 3 * second),
+    ).toBe(true);
+    expect(probe.clock.now()).toBe(3 * second);
+    expect(await probe.wait("other", 200 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(33 * second);
+  });
+
   test("fewer polls over half an hour and an observed change resets the cadence", async () => {
     const probe = fixture(() => window(4500, 3600));
     const report = emptyReport();
