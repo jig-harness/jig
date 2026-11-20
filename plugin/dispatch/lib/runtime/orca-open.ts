@@ -11,8 +11,9 @@
  *
  * A checkout Orca does not list that holds the branch is detached when it
  * is idle, judged with the drive's records of what drives a tree
- * (`tree-drivers.ts`); one in use refuses the open, and the receipt names
- * it (`busyHolder`) for the notice a person gets.
+ * (`tree-drivers.ts`), and the receipt names it (`detached`); one in use
+ * refuses the open, and the receipt names it (`busyHolder`) for the notice
+ * a person gets.
  *
  * A workspace the open creates is named by the target's `dispatched` name
  * (`--name`) and carries its mark as its comment (`--comment`); one it
@@ -203,6 +204,7 @@ async function open(
       detail: `${opened.reattached ? "reattached" : "opened"} ${opened.worktree.path}${opened.hookRan ? ", create hook ran" : ""}`,
       workspace: { id: opened.worktree.id, path: opened.worktree.path },
       reattached: opened.reattached,
+      ...(opened.detached === undefined ? {} : { detached: opened.detached }),
     };
   } catch (error) {
     return {

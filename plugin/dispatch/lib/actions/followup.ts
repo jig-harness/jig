@@ -67,6 +67,7 @@ import type { Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
+  DetachedCheckout,
   DispatchSection,
   LaunchOutcome,
   MarkedPr,
@@ -384,7 +385,28 @@ async function launchOne(
     { id, mark: named.mark },
     action,
   );
-  return claimAndLaunch(state, repo, action, ctx, record, slots);
+  return leftBehind(
+    await claimAndLaunch(state, repo, action, ctx, record, slots),
+    opened.detached,
+  );
+}
+
+/**
+ * A follow-up's outcome that lists the idle checkout its open detached: a
+ * leftover tree never blocks a follow-up, and nothing of it is deleted, so
+ * the follow-up says where it is and which branch it kept for whoever
+ * clears it.
+ */
+function leftBehind(
+  outcome: LaunchOutcome,
+  detached: DetachedCheckout | undefined,
+): LaunchOutcome {
+  if (detached === undefined) return outcome;
+  return {
+    ...outcome,
+    detached,
+    detail: `${outcome.detail}; left the idle checkout at ${detached.path} detached at ${detached.head.slice(0, 12)}, its branch ${detached.branch} kept`,
+  };
 }
 
 /** A launch's outcome, saying what started: a headless pass, and the account and directory it is bound to. */

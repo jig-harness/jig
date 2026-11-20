@@ -521,6 +521,13 @@ export interface BusyHolder {
   reasons: string[];
 }
 
+/** An idle checkout the runtime does not list that held a launch's branch, detached at its commit by the open; its branch is kept. */
+export interface DetachedCheckout {
+  path: string;
+  branch: string;
+  head: string;
+}
+
 /** What `--apply` did with one planned launch. */
 export interface LaunchOutcome {
   target: string;
@@ -556,6 +563,8 @@ export interface LaunchOutcome {
   waitsOn?: LaneWait;
   /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
   holder?: BusyHolder;
+  /** For a follow-up whose workspace open detached an idle checkout the runtime does not list: that checkout, left where it was, and the branch it gave up, kept. */
+  detached?: DetachedCheckout;
 }
 
 /** What holds a follow-up back this tick; `detail` gives the specific reason. */

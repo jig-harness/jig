@@ -54,6 +54,7 @@ import type {
   Action,
   LaneWait,
   BusyHolder,
+  DetachedCheckout,
   LaunchOutcome,
   RepoTarget,
   Stage,
@@ -229,6 +230,7 @@ export type Opened =
   | {
       workspace: NonNullable<LaunchRecord["workspace"]>;
       cleanupFailure?: string;
+      detached?: DetachedCheckout;
     }
   | { waits: string; waitsOn?: LaneWait }
   | { refused: string; holder?: BusyHolder };
@@ -327,6 +329,7 @@ export async function openWithinBudget(
       ...(opened.cleanupFailure === undefined
         ? {}
         : { cleanupFailure: opened.cleanupFailure }),
+      ...(opened.detached === undefined ? {} : { detached: opened.detached }),
     };
   return {
     refused: `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`,
@@ -512,7 +515,10 @@ function workspaceOr(
   opened: Opened,
   account: string,
 ):
-  | { workspace: NonNullable<LaunchRecord["workspace"]> }
+  | {
+      workspace: NonNullable<LaunchRecord["workspace"]>;
+      detached?: DetachedCheckout;
+    }
   | { outcome: LaunchOutcome } {
   if ("waits" in opened)
     return {
@@ -545,7 +551,10 @@ export async function openedFor(
   slots: Slots,
   opening: Promise<Opened>,
 ): Promise<
-  | { workspace: NonNullable<LaunchRecord["workspace"]> }
+  | {
+      workspace: NonNullable<LaunchRecord["workspace"]>;
+      detached?: DetachedCheckout;
+    }
   | { outcome: LaunchOutcome }
 > {
   const opened = workspaceOr(action, await opening, slots.account.name);

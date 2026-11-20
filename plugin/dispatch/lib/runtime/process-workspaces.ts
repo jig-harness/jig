@@ -131,7 +131,7 @@ export async function processOpen(
     () => ok(undefined),
   );
   if (!opened.ok) return { ok: false, detail: opened.failure.reason };
-  const { worktree, reattached, hookRan } = opened.value;
+  const { worktree, reattached, hookRan, detached } = opened.value;
   return {
     ok: true,
     workspace: {
@@ -140,5 +140,6 @@ export async function processOpen(
       branch: worktree.branch,
     },
     detail: `${reattached ? "reattached" : "opened"} ${worktree.path}${hookRan ? ", create hook ran" : ""}`,
+    ...(detached === undefined ? {} : { detached }),
   };
 }
