@@ -24,6 +24,7 @@ import {
   stationDecision,
 } from "../../dispatch/lib/line-station.ts";
 import { writeLine } from "../../dispatch/lib/line-store.ts";
+import { setPersonPickupHold } from "../../dispatch/lib/person-pickup-holds.ts";
 import type { AskAnswer } from "../lib/answer.ts";
 import { type AskWorld, askWorld, REPO } from "./ask-fixtures.ts";
 
@@ -190,6 +191,25 @@ describe("jig ask pickup", () => {
     const r = await w.ask([`pickup@${REPO}#13`, "--json"]);
     expectSpawnExit(r, 0);
     expect((JSON.parse(r.stdout) as AskAnswer).state).toBe("claimed");
+  });
+
+  it("does not ask for the hold's release while a tracker claim still holds the item", async () => {
+    const w = world();
+    const set = setPersonPickupHold(
+      REPO,
+      "#13",
+      { title: "A held item", url: "", by: "maintainer" },
+      w.state,
+    );
+    if (!set.ok) throw new Error(JSON.stringify(set));
+    const r = await w.ask([`pickup@${REPO}#13`, "--json"]);
+    expectSpawnExit(r, 0);
+    const answer = JSON.parse(r.stdout) as AskAnswer;
+    expect(answer.state).toBe("held");
+    expect(answer.holder).not.toBe("none");
+    expect(JSON.stringify(answer.waitsOn)).not.toContain(
+      "release the pickup hold",
+    );
   });
 
   it("says a need's answer is unreadable, and why, rather than only that it waits", async () => {

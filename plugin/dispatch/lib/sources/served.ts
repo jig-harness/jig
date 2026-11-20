@@ -80,7 +80,8 @@ import type { ServedView, ServedViews } from "./served-reads.ts";
 import type { LiveIssue } from "../../../skills/do-item/scripts/lib/execution-plan.ts";
 import type { ServedPerson } from "../serve-config.ts";
 import { pickupReads, type PickupReads } from "../pickup-reads.ts";
-import { PERSON_HOLD, queueHold } from "../queue-rank.ts";
+import { PERSON_HOLD, queueHold, type QueueHoldPolicy } from "../queue-rank.ts";
+import { seenOrHeld } from "../queue-rank.ts";
 import { failureText } from "../text.ts";
 import type { ClaimedItem, Unplaced, WantedItem } from "../types.ts";
 import { isoFromMs } from "../../../shared/time.ts";
@@ -98,10 +99,8 @@ export interface ServedReading {
   /** What each read that fails the record raised: a queue's, or an item's a failed call stopped, so every class reaches the record. */
   failures?: unknown[];
 }
-export interface ServedPolicy {
+export interface ServedPolicy extends QueueHoldPolicy {
   mergeEvidence?: PlanMergeReader | undefined;
-  hitl?: string;
-  manualOps?: string;
   executionPlanBlock?: string;
   /** This repository's label and the other repositories': an item carrying another's is not this checkout's to start. */
   repoScope?: RepoScope;
@@ -309,6 +308,7 @@ function freshParentHold(
     policy.executionPlanBlock,
     undefined,
     policy.mergeEvidence,
+    policy.personHold,
   );
 }
 
@@ -623,7 +623,7 @@ function leavesNode(
 ): boolean {
   const walkedEpic = issue.isEpic && issue.hasOpenChildren && !closed(issue);
   if (
-    seen.has(issue.identifier) ||
+    seenOrHeld(issue, options, seen) ||
     (!readyForWalk(issue, tracker, options) && !walkedEpic)
   )
     return true;
@@ -775,6 +775,7 @@ async function placeLeaf(
     options.executionPlanBlock,
     view,
     options.mergeEvidence,
+    options.personHold,
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return void unplace(parentHold);
@@ -799,7 +800,7 @@ function nodeHold(
   tracker: Pick<Tracker, "stateName">,
 ): string | null {
   if (node.planHold) return node.planHold;
-  if (parkedOnPerson(node.issue, tracker, options)) return PERSON_HOLD;
+  if (parkedOnPerson(node.issue, tracker, options, true)) return PERSON_HOLD;
   if (
     node.ancestor === undefined &&
     node.pull === undefined &&
@@ -811,7 +812,6 @@ function nodeHold(
     : null;
 }
 
-/** The live state of an epic's children and the issues its plan names, read together; `unread` is set for an epic with no plan, where an unreadable child takes one slot. */
 async function childStates(
   ctx: WalkContext,
   children: PoolIssue[],
@@ -937,6 +937,7 @@ async function heldReason(
     options.executionPlanBlock,
     view,
     options.mergeEvidence,
+    options.personHold,
   );
   if (parentHoldUnread(parentHold)) itemFailed(found);
   if (parentHold !== null) return parentHold;

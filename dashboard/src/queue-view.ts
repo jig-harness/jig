@@ -91,7 +91,7 @@ export interface QueueGroupView {
 
 const GROUP_TITLE: Record<QueueGroup, string> = {
   starts: "Starts next",
-  held: "Held behind a serialized leader",
+  held: "Held",
   reported: "Reported, not started",
   never: "Will not start",
 };

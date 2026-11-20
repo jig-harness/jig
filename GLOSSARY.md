@@ -970,6 +970,11 @@ make, use the entry's term instead.
   "waits on"), object references, a count and an optional reason. Each reference carries its
   kind (issue or pull request), state, link and counterpart, so a view can
   show it as a chip with its link ([design](design/epic-planner.md)).
+- **Pickup hold** — a person's hold on one tracker item, written to the
+  dispatching host's own state by `jig send` rather than to the tracker. It
+  keeps the item out of new launches until `release` withdraws it, and leaves
+  work already running alone. Unlike a tracker label hold, it is host-local;
+  unlike a serialized-area hold, it names one item, not a shared area.
 - **Epic census** — the read-only count of how a repository's started *epics*
   stand, kept by the fleet-health sensor: *finished-but-open* (every child is
   closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
