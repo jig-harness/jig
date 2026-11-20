@@ -89,11 +89,16 @@ async function refuseRace(
   head: string,
   login: string,
   label: string,
-  live: Snapshot | null,
   transitions: () => Promise<readonly LabelTransition[] | null>,
   mutate: (args: string[]) => Promise<{ code: number }>,
 ): Promise<number> {
-  if (live?.state === "OPEN" && live.head === head && !live.held)
+  const live = await readPrSnapshot(pr, label);
+  if (
+    live.ok &&
+    live.value.state === "OPEN" &&
+    live.value.head === head &&
+    !live.value.held
+  )
     await restoreAfterRace(pr, head, login, label, transitions, mutate);
   else await writeCiState(pr, null);
   console.error(
@@ -126,7 +131,9 @@ export async function releaseHeldLabel(
   if (!proof.ok) return unread(proof.failure);
   const mutation = valueOrNull(proof);
   if (mutation?.intervening === true)
-    return refuseRace(pr, head, login, label, null, transitions, mutate);
+    return refuseRace(pr, head, login, label, transitions, mutate);
+  if (mutation === null)
+    fail(1, "ci-hold: the unlabeled transition could not be proven");
   const confirmed = await readPrSnapshot(pr, label);
   if (!confirmed.ok) return unread(confirmed.failure);
   const event = eventOf(mutation);
@@ -142,7 +149,6 @@ export async function releaseHeldLabel(
       1,
       `ci-hold: remove-label exited ${remove.code}, and the unlabeled transition could not be proven on the unchanged open head`,
     );
-  if (mutation === null) fail(1, "ci-hold: unlabeled transition disappeared");
   await writeCiState(pr, {
     phase: "released",
     eventId: mutation.event.id,

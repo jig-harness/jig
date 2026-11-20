@@ -384,16 +384,30 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     });
   });
 
-  it("refuses an intervening release race before a failed confirmation can make it retryable", async () => {
+  it("restores the live label after an intervening release race", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) => {
       writeFileSync(join(dir, "intervening-release-race"), "");
-      writeFileSync(join(dir, "recovery-snapshot-timeout"), "");
     });
     expectSpawnExit(r, 4);
     expect(r.stdout).not.toContain("release-proof-pending");
     expect(r.stderr).toContain("ownership changed during removal");
     expect(ciHoldOf(r.stateDir)).toBeNull();
+    expect(
+      readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
+        .labels,
+    ).toContainEqual({ name: "ci:hold" });
+    expect(readJson<unknown[]>(join(r.dir, "timeline.json"))).toHaveLength(5);
   });
+
+  it("rejects an unproven readable transition before confirmation can become unreadable", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "omit-unlabel-event"), "");
+      writeFileSync(join(dir, "recovery-snapshot-timeout"), "");
+    });
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("the unlabeled transition could not be proven");
+    expect(r.stderr).not.toContain("simulated recovery snapshot timeout");
+  }, 15_000);
 
   it("stops when the readable timeline cannot prove the removal", async () => {
     const r = await runRelease(undefined, undefined, false, (dir) =>
