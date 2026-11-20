@@ -57,6 +57,25 @@ describe("handOff on Linear", () => {
     ).rejects.toBeInstanceOf(AssignerUnknown);
   });
 
+  it("ends a hand-off that outruns its own deadline without writing", async () => {
+    const clock = fakeClock(T0 + 58_000);
+    const linear = fakeLinear(clock);
+    const slow: HandOffTracker = {
+      ...linear.tracker,
+      poolIssue: (_key, signal) =>
+        new Promise((_, reject) =>
+          signal?.addEventListener("abort", () => reject(signal.reason)),
+        ),
+    };
+    const result = await handOff(slow, "ENG-1", FACTORY, {
+      wait: true,
+      clock,
+      deadlineMs: 20,
+    });
+    expect(result.handedOver).toBe(false);
+    expect(linear.writes).toHaveLength(0);
+  });
+
   it("without waiting, names the time from which the hand-off may run and writes nothing", async () => {
     const clock = fakeClock(T0 + 58_000);
     const linear = fakeLinear(clock);

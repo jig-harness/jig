@@ -27,6 +27,7 @@ import { AssignerUnknown } from "../../../do-item/scripts/lib/tracker/assigner-u
 import {
   assignableFromMs,
   waitBeforeAssigning,
+  WINDOW_MARGIN_MS,
   windowWords,
 } from "../../../do-item/scripts/lib/tracker/assignment-window.ts";
 import {
@@ -82,6 +83,9 @@ type Run = {
 
 const AGAIN = "run the hand-off again";
 
+/** What a hand-off may spend on its reads, write and confirmation, beyond any wait for the creation window. */
+export const WORK_BUDGET_MS = 120_000;
+
 function notYet(
   run: Run,
   reason: string,
@@ -105,7 +109,7 @@ function interrupted(run: Run, step: string): HandOff | null {
   return run.signal?.aborted === true
     ? notYet(
         run,
-        `the hand-off was interrupted before it could ${step}`,
+        `the hand-off was interrupted or ran past its deadline before it could ${step}`,
         `read ${run.key} on the tracker, then ${rerunWords(run)}`,
       )
     : null;
@@ -267,9 +271,12 @@ async function waitForWindow(
 /**
  * Hand `key` to `identity`. With `wait`, an issue younger than the
  * tracker's creation window is waited for; without it, the result names
- * the time from which the hand-off may run. An aborted `signal` ends the
- * wait and starts no further read or write; the result is then a
- * not-handed-over one.
+ * the time from which the hand-off may run. An aborted `signal`, or the
+ * operation's own deadline (the creation window, its margin and
+ * `WORK_BUDGET_MS`, counted from the start and covering the prerequisite
+ * reads, the wait, the write and the confirmation), ends the wait and
+ * starts no further read or write; the result is then a not-handed-over
+ * one.
  */
 export async function handOff(
   tracker: HandOffTracker,
@@ -279,14 +286,24 @@ export async function handOff(
     wait: boolean;
     clock?: Pick<Clock, "now" | "sleep">;
     signal?: AbortSignal;
+    /** Replaces the operation's deadline (tests). */
+    deadlineMs?: number;
   },
 ): Promise<HandOff> {
+  const quiet = tracker.creationQuietMs ?? 0;
+  const deadline = AbortSignal.timeout(
+    opts.deadlineMs ??
+      WORK_BUDGET_MS + (opts.wait && quiet > 0 ? quiet + WINDOW_MARGIN_MS : 0),
+  );
   const run: Run = {
     tracker,
     key,
     identity,
     clock: opts.clock ?? systemClock,
-    signal: opts.signal,
+    signal:
+      opts.signal === undefined
+        ? deadline
+        : AbortSignal.any([opts.signal, deadline]),
     step: "read the issue",
   };
   try {

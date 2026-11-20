@@ -458,8 +458,8 @@ Who made an assignment is read from the tracker's history, and Linear
 leaves changes made in an issue's first three minutes out of it: an item
 assigned then is never started. Assign a Linear item at least three minutes
 after its creation, or unassign it and assign it again after them; the
-dispatcher starts it at its next tick after an assignment the history
-shows. `jig send … assign` and `/jig:file-issue`'s hand-off wait for that
+dispatcher considers it at its next tick after an assignment the history
+shows, subject to the usual holds and admission checks. `jig send … assign` and `/jig:file-issue`'s hand-off wait for that
 window themselves.
 
 A repository whose lane is a ready pool sets `dispatch.pool.states`: an
