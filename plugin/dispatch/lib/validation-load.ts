@@ -114,13 +114,14 @@ function forecast(
   deadlineMs: number,
   admittedRuns: number,
   demand?: ValidationDemand,
+  waitLimitMs = state.waitLimitMs,
 ): ValidationForecast | null {
   if ("unread" in state.demand) return null;
   return forecastValidation(
     state.measured,
     kind,
     demand ?? state.demand,
-    state.waitLimitMs,
+    waitLimitMs,
     deadlineMs || Infinity,
     admittedRuns,
   );
@@ -155,7 +156,6 @@ export function validationHold(
     // An immediately admitted pickup still occupies its slot when a drive
     // arrives next. Reserve every run this pickup commits, not only runs that
     // wait before their own acquisition.
-    const committedRuns = state.admittedRuns + own.ownRuns;
     // A reserved drive starts after this pickup has begun. Its measured time
     // to validation is therefore time in which the pickup's whole service
     // waves can finish. Keep only the runs that can still occupy the lock
@@ -165,12 +165,29 @@ export function validationHold(
       Math.floor(
         state.measured.kinds.drive.timeToValidationMs / state.measured.runMs,
       );
-    const stillRunning = Math.max(0, committedRuns - completedBeforeDrive);
+    // Work already forecast ahead of this pickup spends the early service
+    // first. Only remaining service can complete the pickup before a drive
+    // reaches validation; otherwise the pickup is incorrectly given the same
+    // capacity credit as its predecessors.
+    const predecessorRuns =
+      state.demand.atLock + state.demand.toArrive + state.admittedRuns;
+    const pickupCompletedBeforeDrive = Math.max(
+      0,
+      Math.min(own.ownRuns, completedBeforeDrive - predecessorRuns),
+    );
+    const stillRunning = Math.max(0, own.ownRuns - pickupCompletedBeforeDrive);
     const reservedDemand: ValidationDemand = {
       atLock: state.demand.atLock + stillRunning,
       toArrive: state.demand.toArrive,
     };
-    const reserved = forecast(state, "drive", deadline, 0, reservedDemand);
+    const reserved = forecast(
+      state,
+      "drive",
+      deadline,
+      0,
+      reservedDemand,
+      own.waitWindowMs,
+    );
     const drive = forecast(
       state,
       "drive",

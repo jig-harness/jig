@@ -263,16 +263,25 @@ export function forecastValidation(
   const requiredWithoutActiveRuns =
     concurrency *
     Math.ceil(Math.max(0, queuedRuns - concurrency) / concurrency);
-  const immediateSlots = Math.max(0, concurrency - activeRuns);
-  const waitingRuns = Math.max(0, toArrive + ownRuns - immediateSlots);
-  const required =
-    // `atLock` includes waiters. Once it exceeds the observed concurrency,
-    // their individual acquisition times are unknown, so retain the
-    // conservative aggregate forecast rather than treating them as one wave.
-    activeRuns === 0 || atLock > concurrency || waitingRuns === 0
-      ? requiredWithoutActiveRuns
-      : concurrency *
-        (residualMs / runMs + Math.ceil(waitingRuns / concurrency) - 1);
+  let required = requiredWithoutActiveRuns;
+  // Preserve each slot's release time. In particular, a predecessor can take
+  // an idle slot while another waits for an occupied slot; treating both as
+  // one residual wave would let the candidate acquire too early.
+  if (atLock <= concurrency) {
+    const releases = Array.from({ length: concurrency }, (_, index) =>
+      index < activeRuns ? residualMs : 0,
+    );
+    const acquire = () => {
+      releases.sort((left, right) => left - right);
+      const at = releases[0] ?? 0;
+      releases[0] = at + runMs;
+      return at;
+    };
+    for (let index = 0; index < toArrive; index++) acquire();
+    let lastAcquisition = 0;
+    for (let index = 0; index < ownRuns; index++) lastAcquisition = acquire();
+    required = (concurrency * lastAcquisition) / runMs;
+  }
   return {
     ahead,
     capacity,

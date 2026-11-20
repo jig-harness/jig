@@ -221,6 +221,28 @@ describe("validation forecast", () => {
     expect(forecast.fill).toBeCloseTo(5);
   });
 
+  test("preserves different release times for occupied and newly filled slots", () => {
+    const measured = {
+      ...measureValidation([], []),
+      concurrency: 2,
+      kinds: {
+        pickup: { runsPerPass: 1, timeToValidationMs: 10 * MINUTE },
+        drive: { runsPerPass: 1, timeToValidationMs: 0 },
+      },
+    };
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 1, toArrive: 2 },
+      10 * MINUTE,
+      HOUR,
+    );
+    // One predecessor uses the idle slot until minute 25, so the candidate
+    // cannot acquire at the occupied holder's release at minute 15.
+    expect(forecast.required).toBe(2);
+    expect(forecast.fill).toBe(1.5);
+  });
+
   test("reserves an immediately admitted pickup before admitting its drive", () => {
     const state: ValidationLoad = {
       measured: {
@@ -251,6 +273,48 @@ describe("validation forecast", () => {
       admittedRuns: 0,
     };
     expect(validationHold(state, 1, "pickup", 3 * HOUR)).toBeNull();
+  });
+
+  test("reserves a pickup behind work already forecast before a drive", () => {
+    const state: ValidationLoad = {
+      measured: {
+        runMs: 15 * MINUTE,
+        concurrency: 1,
+        kinds: {
+          pickup: { runsPerPass: 1, timeToValidationMs: 45 * MINUTE },
+          drive: { runsPerPass: 1, timeToValidationMs: 0 },
+        },
+        defaults: [],
+      },
+      demand: { atLock: 0, toArrive: 0 },
+      waitLimitMs: HOUR,
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(validationHold(state, 0.3, "pickup", 90 * MINUTE)).toContain(
+      "keep room for a drive",
+    );
+  });
+
+  test("bounds a drive reserve by the pickup wait window", () => {
+    const state: ValidationLoad = {
+      measured: {
+        runMs: 15 * MINUTE,
+        concurrency: 1,
+        kinds: {
+          pickup: { runsPerPass: 1, timeToValidationMs: HOUR },
+          drive: { runsPerPass: 3, timeToValidationMs: 0 },
+        },
+        defaults: [],
+      },
+      demand: { atLock: 0, toArrive: 1 },
+      waitLimitMs: HOUR,
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(validationHold(state, 1, "pickup", 90 * MINUTE)).toContain(
+      "keep room for a drive",
+    );
   });
 
   test("counts every active run attributed to a pass before forecasting arrivals", () => {
