@@ -30,6 +30,38 @@ export function hasCheckRunsUnreadableFinish(
   return !timedOut && finish?.state === "CHECK_RUNS_UNREADABLE";
 }
 
+/** The pages a finish record says the listing read; a count that is not a
+ * whole number is unknown, as an absent one is, since the record is a file. */
+function pagesRead(finish: Report): number | null {
+  const pages = finish.listingPagesRead;
+  return typeof pages === "number" && Number.isSafeInteger(pages) && pages >= 0
+    ? pages
+    : null;
+}
+
+/** Stop the drive on the listing stop a pass's finish record reports. */
+async function stopOnPassListing(
+  context: DriveRoundContext,
+  finish: Report,
+  round: number,
+): Promise<number> {
+  // The pass process can be an agent or an arbitrary wrapper, so its exit
+  // code does not attest to finish-round's result. The report is bound to
+  // this launch and round, and a later successful finish overwrites it.
+  const mailboxAfterListingStop = await context.mailboxCheckpoint();
+  if (typeof mailboxAfterListingStop === "number")
+    return mailboxAfterListingStop;
+  const pages = pagesRead(finish);
+  driverRuntime.stopListingPages = pages;
+  const read = pages === null ? "" : ` after ${pages} page(s)`;
+  console.error(
+    `pass reported CHECK_RUNS_UNREADABLE${read} on round ${round}; stopping`,
+  );
+  await reportPassLeftovers("What the pass left in the tree:");
+  driverRuntime.stopLeftWork = await measureStop();
+  return CHECK_RUNS_UNREADABLE_EXIT;
+}
+
 export async function runReviewPassPhase(
   context: DriveRoundContext,
   apiHead: string,
@@ -67,31 +99,8 @@ export async function runReviewPassPhase(
     launchOf(process.env) ?? "",
     round,
   );
-  if (hasCheckRunsUnreadableFinish(finish, passRes.timedOut)) {
-    // The pass process can be an agent or an arbitrary wrapper, so its exit
-    // code does not attest to finish-round's result. The report is bound to
-    // this launch and round, and a later successful finish overwrites it.
-    const mailboxAfterListingStop = await context.mailboxCheckpoint();
-    if (typeof mailboxAfterListingStop === "number")
-      return mailboxAfterListingStop;
-    // The record is read from a file: a count that is not a whole number is
-    // unknown, as an absent one is.
-    const pages = finish.listingPagesRead;
-    driverRuntime.stopListingPages =
-      typeof pages === "number" && Number.isSafeInteger(pages) && pages >= 0
-        ? pages
-        : null;
-    const read =
-      driverRuntime.stopListingPages === null
-        ? ""
-        : ` after ${driverRuntime.stopListingPages} page(s)`;
-    console.error(
-      `pass reported CHECK_RUNS_UNREADABLE${read} on round ${round}; stopping`,
-    );
-    await reportPassLeftovers("What the pass left in the tree:");
-    driverRuntime.stopLeftWork = await measureStop();
-    return CHECK_RUNS_UNREADABLE_EXIT;
-  }
+  if (hasCheckRunsUnreadableFinish(finish, passRes.timedOut))
+    return await stopOnPassListing(context, finish, round);
   const disposition = passExitDisposition(passRes.code);
   // A pass that completed has acted on what it was carried. Until one does (a
   // quota wall retried, say), every pass is told again. Whether it pushed what
