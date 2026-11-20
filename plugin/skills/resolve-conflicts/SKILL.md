@@ -64,8 +64,8 @@ configuration and the operation in progress from the working directory.
 
 ### Commands that run the repository's hooks
 
-A commit, a merge that completes without a conflict and
-`git rebase --continue` run the repository's git hooks, whose length Jig
+A commit, a merge that completes without a conflict and a continued rebase
+run the repository's git hooks, whose length Jig
 does not know. The command wrapper (`shared/command.ts`) kills a command and
 its hooks at 120 seconds unless told otherwise, so every such command below
 passes `--timeout-seconds 3600`: an hour lets a slow hook finish and still
@@ -513,7 +513,7 @@ outside this procedure or skip the hooks (`--no-verify`) to get past it:
   `MERGE_HEAD` in place with nothing to resolve: conclude it with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 7200 -- git commit --no-edit`,
   which keeps git's prepared merge message.
-- **`git rebase --continue`.** When the rebase still stands at the same
+- **The continued rebase.** When the rebase still stands at the same
   stop with its resolution staged, continue it with the longer deadline.
   When it has moved on, take what it shows as you would after a continue
   that exited `0`: a further stop, or the rebase done.
