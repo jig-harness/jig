@@ -781,7 +781,7 @@ async function settleFinalCiVerdict(
   if (
     finalVerdict.startsWith("failing:") &&
     !staleRequiredFailure &&
-    selection.names.length > 0
+    (selection.names.length > 0 || context.ciRepairBudget > 0)
   ) {
     return await repairConvergedCi(
       finalVerdict,
