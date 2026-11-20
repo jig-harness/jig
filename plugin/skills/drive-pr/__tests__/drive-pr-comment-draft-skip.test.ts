@@ -198,6 +198,7 @@ describe("a comment-only draft skip", () => {
     const r = await gate(7);
     expectProbeExit(r, 1);
     expect(r.state).toBe("INDETERMINATE");
+    expect(r.json.failure).toBe("read");
   });
 
   it("marks the draft Ready before waiting for its first review", async () => {

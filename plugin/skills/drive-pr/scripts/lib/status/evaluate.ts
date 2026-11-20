@@ -366,6 +366,9 @@ async function evaluateFresh(
   // from the pass before the reviewer's check-run vanished from a re-query.
   // The report is what callers act on, so a stale field in it is a correctness
   // bug, not a cosmetic one.
+  // `failure` is optional, so it is absent from `emptyReport()` and would
+  // otherwise survive Object.assign from a prior transient forge-read error.
+  delete report.failure;
   Object.assign(report, emptyReport(), { localHead: ctx.localHead });
 
   // Every witness below is measured against `apiHead`, read at the TOP.
@@ -816,7 +819,9 @@ async function evaluateFresh(
       report.isDraft === true,
     );
     if (verdict.state !== "draft-skip")
-      return terminal(report, verdict.state, verdict.reason);
+      return verdict.state === "INDETERMINATE"
+        ? readFailure(report, verdict.reason)
+        : terminal(report, verdict.state, verdict.reason);
     report.reviewedShaSource = "draft-skip";
   }
 
