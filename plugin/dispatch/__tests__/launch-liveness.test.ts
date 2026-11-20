@@ -9,7 +9,12 @@ import { claimedLaunchRoot } from "./plan-input-fixtures.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 import { captureIdentity, thisHost } from "../../shared/liveness.ts";
-import { holds, type LaunchClaim, readLaunches } from "../lib/launches.ts";
+import {
+  holds,
+  type LaunchClaim,
+  readLaunches,
+  recordExit,
+} from "../lib/launches.ts";
 import {
   asClaim,
   claimState,
@@ -294,5 +299,48 @@ describe("a launch record's claim, judged by the shared process identity", () =>
     const dir = claimedRoot(older as LaunchClaim);
     const { records } = await readLaunches(dir);
     expect(records[0]?.state.kind).toBe("alive");
+  });
+});
+
+describe("a launch that ended on its account's wall, which was never recorded", () => {
+  const WALL = {
+    at: "2026-11-04T09:30:00.000Z",
+    code: 1,
+    signal: null,
+    wallUnrecorded: true as const,
+  };
+
+  async function readWall(claim: LaunchClaim) {
+    const dir = claimedRoot(claim);
+    recordExit(ID, WALL, dir);
+    const { records } = await readLaunches(dir);
+    const state = records[0]?.state;
+    if (state?.kind !== "unknown") throw new Error("the state is not unknown");
+    return state;
+  }
+
+  it("names the live registered process and holds the slot", async () => {
+    const state = await readWall(await ownClaim());
+    expect(state.wallUnrecorded).toBe(true);
+    expect(state.liveProcess).toBeDefined();
+    expect(state.unjudged).toBeUndefined();
+    expect(holds(state)).toBe(true);
+  });
+
+  it("proves every process gone when the table judges them dead", async () => {
+    const state = await readWall({ ...(await ownClaim()), pid: 2147483647 });
+    expect(state.wallUnrecorded).toBe(true);
+    expect(state.liveProcess).toBeUndefined();
+    expect(state.unjudged).toBeUndefined();
+  });
+
+  it("leaves a process this host cannot judge unjudged", async () => {
+    const state = await readWall({
+      ...(await ownClaim()),
+      hostId: "f".repeat(32),
+    });
+    expect(state.wallUnrecorded).toBe(true);
+    expect(state.unjudged).toBe(true);
+    expect(state.liveProcess).toBeUndefined();
   });
 });

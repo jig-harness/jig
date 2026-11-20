@@ -67,7 +67,7 @@ import {
   type ThreadEntry,
   type WaitsOn,
 } from "./answer.ts";
-import { heldStopWait } from "./hold-wait.ts";
+import { type HoldFacts, heldStopWait } from "./hold-wait.ts";
 import { lineParkOf, parkedWait } from "./park-wait.ts";
 import {
   parkReading,
@@ -92,6 +92,7 @@ import {
   type AskContext,
   dispatcherReads,
   holdingRecord,
+  holdingRecordsOf,
   labelThread,
   lastOfRow,
   pullFor,
@@ -107,7 +108,12 @@ import {
   loggedRecords,
 } from "./thread.ts";
 import type { ReadRecord } from "../../dispatch/lib/launches.ts";
-import type { CiHoldDiagnosis } from "../../skills/drive-pr/scripts/lib/ci-hold-diagnosis.ts";
+import {
+  diagnosticDetail,
+  diagnosticWait,
+  locallyStopped,
+  sameDriver,
+} from "./hold-diagnosis.ts";
 import type { LogRow } from "../../dispatch/lib/log.ts";
 import { currentMs, parseMs } from "../../shared/time.ts";
 
@@ -303,6 +309,32 @@ function runningLaunchSpeaks(holder: Holder | "none", cls: string): boolean {
   return alive && !["parked", "stale", "silent"].includes(cls);
 }
 
+/** The wait of a drive that settles by itself where a dispatcher is known to re-arm it, else the person's. */
+function rearmWait(dispatched: boolean, why: string): WaitsOn {
+  return dispatched
+    ? { waiting: why }
+    : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
+}
+
+/** What the hold diagnosis reads of this machine's launch records. */
+function holdFactsOf(dispatched: boolean, r: DriveReads): HoldFacts {
+  return {
+    dispatched,
+    record: holdingRecord(r.records),
+    holding: holdingRecordsOf(r.records),
+  };
+}
+
+/** What a pull request that is no longer open waits on: nothing, unless a launch record still holds its drive. */
+function closedWait(
+  reads: DriveReads,
+  holder: Holder | "none",
+  holdFacts: HoldFacts,
+): WaitsOn {
+  const mergedAt = reads.pull.mergedAt ?? "";
+  return heldStopWait(holder, "done", false, mergedAt, holdFacts) ?? "none";
+}
+
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
 function waitsOnOf(
   ledger: Ledger,
@@ -317,14 +349,14 @@ function waitsOnOf(
   if (settled !== null) return personWait("re-arm", settled);
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
   const dispatched = ctx.dispatches || current(r.claims) !== null;
-  const rearm = (why: string): WaitsOn =>
-    dispatched
-      ? { waiting: why }
-      : personWait("re-arm", `${why}; no dispatcher is known to re-arm it`);
-  const onHold = heldStopWait(holder, placed.class, ledger.driver.heartbeat, {
-    dispatched,
-    record: holdingRecord(r.records),
-  });
+  const rearm = (why: string): WaitsOn => rearmWait(dispatched, why);
+  const onHold = heldStopWait(
+    holder,
+    placed.class,
+    ledger.driver.state === "running",
+    ledger.driver.heartbeat,
+    holdFactsOf(dispatched, r),
+  );
   if (onHold !== null) return onHold;
   // A running launch says nothing of a park nobody answered or of a ledger gone silent.
   if (runningLaunchSpeaks(holder, placed.class)) return "none";
@@ -754,6 +786,7 @@ export async function readDrive(
       base,
       presence,
       merge: await convergedWait(ctx, read, doc),
+      unread: typeof ledger === "string",
     }),
     last: lastOf(reads),
     entries,
@@ -813,6 +846,59 @@ async function silentPresence(
   return driverPresence(doc.number, ledger);
 }
 
+/** A drive whose driver this host shows ended: what its ledger waits on, as the dispatcher's takeover leaves it. */
+function goneDriverWait(
+  reads: DriveReads,
+  ledger: Ledger,
+  ctx: AskContext,
+  facts: { base: PrFacts["base"] },
+  presence: DriverPresence,
+): WaitsOn {
+  const spent = takeoverSettled(
+    reads.pull,
+    reads.records,
+    reads.claims,
+    ctx.host,
+    ledger,
+    parkReading(reads.parks),
+    facts.base,
+  );
+  return spent === null
+    ? {
+        waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
+      }
+    : personWait("re-arm", spent);
+}
+
+/** What a launch nobody can show running holds, by the ledger's own state. */
+function ledgerHoldWait(
+  reads: DriveReads,
+  ledger: Ledger | null,
+  holder: Holder | "none",
+  facts: { base: PrFacts["base"]; unread: boolean },
+  holdFacts: HoldFacts,
+): WaitsOn | null {
+  if (ledger === null)
+    return heldStopWait(
+      holder,
+      facts.unread ? "unplaced" : "unarmed",
+      false,
+      "",
+      holdFacts,
+    );
+  if (ledger.driver.state !== "running")
+    return stoppedHoldWait(reads, ledger, holder, facts.base, holdFacts);
+  return heldStopWait(
+    holder,
+    currentMs() - parseMs(ledger.driver.heartbeat) > stallThresholdMs()
+      ? "silent"
+      : "driven",
+    true,
+    ledger.driver.heartbeat,
+    holdFacts,
+  );
+}
+
 /** Select the station's wait after reconciling the current pull request and local diagnosis. */
 function driveWait(
   reads: DriveReads,
@@ -824,6 +910,7 @@ function driveWait(
     base: PrFacts["base"];
     presence: DriverPresence | null;
     merge: WaitsOn;
+    unread: boolean;
   },
 ): WaitsOn {
   if (!facts.read)
@@ -831,142 +918,48 @@ function driveWait(
       waiting:
         "the pull request could not be read; its head and CI hold are unknown",
     };
-  if (reads.pull.state !== "OPEN") return "none";
-  if (facts.presence?.gone === true && ledger !== null) {
-    const spent = takeoverSettled(
-      reads.pull,
-      reads.records,
-      reads.claims,
-      ctx.host,
-      ledger,
-      parkReading(reads.parks),
-      facts.base,
-    );
-    return spent === null
-      ? {
-          waiting: `its heartbeat is past the lease window and this host shows its driver's run ended (${facts.presence.why}): a dispatcher may take it over, once per ledger state and within the pull request's recovery budget, and drive.ts --take-over decides`,
-        }
-      : personWait("re-arm", spent);
-  }
-  const diagnosis = diagnosticWait(reads.row, ledger, reads.pull, holder);
+  const holdFacts = holdFactsOf(
+    ctx.dispatches || current(reads.claims) !== null,
+    reads,
+  );
+  if (reads.pull.state !== "OPEN") return closedWait(reads, holder, holdFacts);
+  if (facts.presence?.gone === true && ledger !== null)
+    return goneDriverWait(reads, ledger, ctx, facts, facts.presence);
+  const running = ledgerHoldWait(reads, ledger, holder, facts, holdFacts);
+  const diagnosis = diagnosticWait(
+    reads.row,
+    ledger,
+    reads.pull,
+    holder,
+    running,
+  );
   if (diagnosis !== null) return diagnosis;
-  if (ledger === null)
-    return (
-      heldStopWait(holder, "unarmed", "", {
-        dispatched: ctx.dispatches || current(reads.claims) !== null,
-        record: holdingRecord(reads.records),
-      }) ?? "none"
-    );
+  if (ledger === null) return running ?? "none";
   return waitsOnOf(ledger, reads, ctx, holder, facts.base, facts.merge);
 }
 
-/** The doctor names a stranded hold's guarded recovery; an unproven running ledger names a missing probe. */
-function diagnosticWait(
-  row: DriveRow | null,
+/** A stopped ledger's stranded launch, read only where a local CI-hold diagnosis would otherwise answer first: it takes the same precedence as a running ledger's. */
+function stoppedHoldWait(
+  reads: DriveReads,
   ledger: Ledger | null,
-  doc: PullDoc,
   holder: Holder | "none",
+  base: PrFacts["base"],
+  holdFacts: HoldFacts,
 ): WaitsOn | null {
-  if (ledger !== null && ledger.parked.length > 0) return null;
-  const diagnosis = row?.doctor?.ciHold;
-  if (diagnosis !== undefined && diagnosis.held !== false) {
-    return holdWait(
-      diagnosis,
-      sameDriver(row, ledger),
-      doc.head,
-      holder === "none",
-    );
-  }
+  const diagnosis = reads.row?.doctor?.ciHold;
   if (
-    ledger?.driver.state === "running" &&
-    (holder === "none" || holder.process !== "alive")
-  ) {
-    return {
-      waiting:
-        diagnosis?.driver === "dead"
-          ? `the local driver stopped while its ledger still reports running; ${diagnosis.driverReason}; inspect the drive doctor before re-arming`
-          : "the ledger reports running, but driver liveness and ownership are unknown; inspect the owning driver's process or drive doctor",
-    };
-  }
-  return null;
-}
-
-/** The shared diagnosis supplies the release proof; these reads must still describe the same run and head. */
-function holdWait(
-  diagnosis: CiHoldDiagnosis,
-  matched: boolean,
-  head: string,
-  unheld: boolean,
-): WaitsOn {
-  const reason = `${diagnosis.driverReason}; ${diagnosis.reason}`;
-  const current = diagnosis.head === head;
-  if (
-    matched &&
-    current &&
-    unheld &&
-    diagnosis.recovery !== null &&
-    diagnosis.driver === "dead" &&
-    diagnosis.review === "converged"
+    ledger === null ||
+    ledger.driver.state === "running" ||
+    diagnosis === undefined ||
+    diagnosis.held === false
   )
-    return personWait(
-      "release the CI hold",
-      `${reason}; recovery: ${diagnosis.recovery}; this starts full CI, whose success remains to be checked`,
-    );
-  const missing = [reason];
-  if (!matched)
-    missing.push(
-      "the local diagnosis does not identify the ledger writer, so ownership remains unknown",
-    );
-  if (!current)
-    missing.push(
-      "the diagnosis does not establish the current pull request head",
-    );
-  return { waiting: missing.join("; ") };
-}
-
-/** Only an identified stopped run with no active holder can override its ledger. */
-function locallyStopped(
-  row: DriveRow | null,
-  ledger: Ledger | null,
-  holder: Holder | "none",
-): boolean {
-  return (
-    sameDriver(row, ledger) &&
-    row?.doctor?.ciHold?.driver === "dead" &&
-    holder === "none"
+    return null;
+  const placed = placeLedger(ledger, reads, base);
+  return heldStopWait(
+    holder,
+    placed.class,
+    false,
+    ledger.driver.heartbeat,
+    holdFacts,
   );
-}
-
-/** A process probe applies only to the run that wrote the forge ledger. */
-function sameDriver(row: DriveRow | null, ledger: Ledger | null): boolean {
-  const diagnosis = row?.doctor?.ciHold;
-  return (
-    ledger !== null &&
-    diagnosis !== undefined &&
-    typeof diagnosis.actor === "string" &&
-    diagnosis.actor === ledger.driver.actor &&
-    typeof diagnosis.started === "string" &&
-    diagnosis.started === ledger.driver.started &&
-    diagnosis.ledgerGeneration === ledger.generation
-  );
-}
-
-/** Separate what the ledger reports from what a local probe has established. */
-function diagnosticDetail(
-  row: DriveRow | null,
-  ledger: Ledger | null,
-  holder: Holder | "none",
-): string[] {
-  const detail: string[] = [];
-  if (
-    ledger?.driver.state === "running" &&
-    (holder === "none" || holder.process !== "alive")
-  )
-    detail.push(
-      "ledger reports running, but process liveness is not established by that ledger",
-    );
-  const diagnosis = row?.doctor?.ciHold;
-  if (diagnosis !== undefined)
-    detail.push(diagnosis.driverReason, diagnosis.reason);
-  return detail;
 }

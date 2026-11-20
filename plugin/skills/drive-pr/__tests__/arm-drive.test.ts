@@ -27,6 +27,7 @@ import {
   quoteWord,
   type TabDeps,
 } from "../scripts/lib/arm.ts";
+import { passPrompt } from "../scripts/lib/pass-command.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "arm-drive.ts");
 const IN_ORCA = { CLAUDECODE: "1", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
@@ -103,7 +104,7 @@ describe("the command that starts the drive", () => {
       "--model",
       "opus",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
   });
 
@@ -119,7 +120,7 @@ describe("the command that starts the drive", () => {
       "--permission-mode",
       "bypassPermissions",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
   });
 
@@ -365,6 +366,15 @@ function inputs(
 }
 
 describe("the arm's answer", () => {
+  it("hands a process pickup's drive to the dispatcher without opening a tab", async () => {
+    const { report, exit } = await arm(
+      { ...inputs("auto", IN_ORCA), processPickup: true },
+      deps(fakeOrca(REFUSED).runner, [null]),
+    );
+    expect(exit).toBe(0);
+    expect(report).toMatchObject({ status: "owed", way: null, tab: null });
+  });
+
   it("falls back to the background under auto when Orca refuses the tab, and says so", async () => {
     const { report, exit } = await arm(
       inputs("auto", IN_ORCA),
@@ -442,7 +452,7 @@ describe("the arm's answer", () => {
       "spawn",
     ]);
     expect(report.command).toContain(
-      '-- claude --model sonnet -p "/jig:drive-pr --bots-only 42"',
+      `-- claude --model sonnet -p "${passPrompt("claude", 42)}"`,
     );
     expect(report.handles?.stop).toEndWith("--stop 42");
     expect(orca.calls).toEqual([]);
@@ -729,11 +739,11 @@ describe("arm-drive.ts", () => {
       "--model",
       "sonnet",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
     expect(answer.command).toBe(commandLine(answer.argv));
     expect(answer.command).toEndWith(
-      ' 42 --bots-only -- claude --model sonnet -p "/jig:drive-pr --bots-only 42"',
+      ` 42 --bots-only -- claude --model sonnet -p "${passPrompt("claude", 42)}"`,
     );
     expect(answer).toMatchObject({
       passArgs: [],
@@ -756,10 +766,10 @@ describe("arm-drive.ts", () => {
       "sonnet",
       ...BYPASS,
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
     expect(answer.command).toContain(
-      'claude --model sonnet --permission-mode bypassPermissions -p "/jig:drive-pr --bots-only 42"',
+      `claude --model sonnet --permission-mode bypassPermissions -p "${passPrompt("claude", 42)}"`,
     );
     expect(answer.argv).not.toContain("--pass-args");
     expect(answer).toMatchObject({
@@ -800,7 +810,7 @@ describe("arm-drive.ts", () => {
       "--model",
       "sonnet",
       "-p",
-      "/jig:drive-pr --bots-only 42",
+      passPrompt("claude", 42),
     ]);
   });
 

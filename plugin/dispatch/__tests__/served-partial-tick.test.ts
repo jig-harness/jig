@@ -5,6 +5,9 @@
  * records or reporting the tracker complete.
  */
 import { expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   PoolIssue,
   Tracker,
@@ -46,25 +49,31 @@ function tracker(ancestry: boolean): Tracker {
   } as unknown as Tracker;
 }
 
-function tick(prepared: Tracker) {
+async function tick(prepared: Tracker) {
   const repo = { path: PATH, slug: REPO, defaultBranch: "main" };
-  return readTracker(
-    {
-      values: {},
-      repo,
-      section: { identity: null } as DispatchSection,
-      report: report(),
-      where: "test",
-      people,
-      serveDefaults: undefined,
-      nowMs: Date.parse("2026-11-18T09:00:00Z"),
-      headroom: true,
-      records: [],
-      preparedTracker: prepared,
-    },
-    undefined,
-    { budget: async () => ({}) as never, pool: pool(2) },
-  );
+  const root = mkdtempSync(join(tmpdir(), "jig-served-partial-"));
+  try {
+    return await readTracker(
+      {
+        values: {},
+        repo,
+        section: { identity: null } as DispatchSection,
+        report: report(),
+        where: "test",
+        people,
+        serveDefaults: undefined,
+        nowMs: Date.parse("2026-11-18T09:00:00Z"),
+        root,
+        headroom: true,
+        records: [],
+        preparedTracker: prepared,
+      },
+      undefined,
+      { budget: async () => ({}) as never, pool: pool(2) },
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 it("marks the tracked state partial when an epic's children cannot be read, and keeps the claims known", async () => {

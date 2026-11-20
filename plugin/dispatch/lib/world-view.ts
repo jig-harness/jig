@@ -1,3 +1,4 @@
+import type { PickupArms } from "./pickup-arms.ts";
 /**
  * The world view: what the forge and the tracker say, as one repository's
  * observe phase reads it. Every read the tick makes of the forge's
@@ -90,6 +91,7 @@ export interface ForgeFacts extends Fact<ForgeRead> {
 
 /** What the forge's part of a repository's tick is asked with. */
 export interface ForgeRequest {
+  pickupArms?: PickupArms;
   repo: RepoTarget;
   /** The report the read's records and unplaced targets go on. */
   report: RepoReport;
@@ -207,6 +209,7 @@ function directWorldView(
           request.nowMs,
           request.shared,
           reads,
+          request.pickupArms,
         ),
       );
     },

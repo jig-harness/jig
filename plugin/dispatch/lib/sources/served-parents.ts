@@ -189,6 +189,27 @@ export function parentHoldUnread(hold: string | null): boolean {
   return hold !== null && UNREAD_HOLDS.has(hold);
 }
 
+/** Whether the ancestry walk met an item twice or went past the depth it follows. */
+function cyclic(seen: ReadonlySet<string>, identifier: string): boolean {
+  return seen.has(identifier) || seen.size >= 100;
+}
+
+/** A plan's parent with its body, or why either cannot be read. */
+async function readParent(
+  tracker: Tracker,
+  key: string,
+  cache: PickupReads,
+  reads: ParentReads,
+): Promise<{ parent: PoolIssue; parentBody: Body } | string> {
+  const parent = await reads.pool(key);
+  if (parent === null || parent.truncated.length)
+    return "the parent cannot be read completely";
+  const parentBody = await body(tracker, parent, cache, reads);
+  return parentBody === null
+    ? "the parent plan cannot be read"
+    : { parent, parentBody };
+}
+
 /**
  * Tracker completion never substitutes for directly verified delivering
  * merges. Without `reads`, the check reads fresh: straight from the tracker,
@@ -201,21 +222,22 @@ export async function servedParentHold(
   block?: string,
   reads: ParentReads = freshReads(tracker),
   merges?: PlanMergeReader,
+  personHold: (key: string) => string | null = () => null,
 ): Promise<string | null> {
   const seen = new Set<string>();
   let child = issue;
   let up = await parentOf(tracker, issue, cache, reads);
   for (;;) {
-    if (seen.has(child.identifier) || seen.size >= 100)
+    if (cyclic(seen, child.identifier))
       return "the epic ancestry is cyclic or too deep";
     seen.add(child.identifier);
     if (up === null) return "the item's parent plan cannot be read";
     if (up.parent === null) return null;
-    const parent = await reads.pool(up.parent);
-    if (parent === null || parent.truncated.length)
-      return "the parent cannot be read completely";
-    const parentBody = await body(tracker, parent, cache, reads);
-    if (parentBody === null) return "the parent plan cannot be read";
+    const localHold = personHold(up.parent);
+    if (localHold !== null) return `${up.parent} is ${localHold}`;
+    const read = await readParent(tracker, up.parent, cache, reads);
+    if (typeof read === "string") return read;
+    const { parent, parentBody } = read;
     const held = await parentStepHold(
       reads,
       child.identifier,

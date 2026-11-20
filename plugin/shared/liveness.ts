@@ -104,6 +104,8 @@ export interface ProcessIdentity {
   /** The kernel's boot id; empty where the platform has none. */
   bootId: string;
   pid: number;
+  /** POSIX process group, when a run records it for its process owner. */
+  pgid?: number;
   /** The start time the process table reports; empty when it could not be read. */
   start: string;
 }
@@ -249,6 +251,7 @@ function userHostId(): string {
  */
 export async function captureIdentity(
   pid = process.pid,
+  includeGroup = false,
 ): Promise<Outcome<ProcessIdentity, "unreadable" | "absent">> {
   const rows = await processTable();
   if (rows === null)
@@ -258,7 +261,10 @@ export async function captureIdentity(
     return failed("absent", `no process has pid ${pid} now`);
   if (row.start === "")
     return failed("unreadable", `the start time of pid ${pid} cannot be read`);
-  return ok(identityOf(row, thisHost()));
+  return ok({
+    ...identityOf(row, thisHost()),
+    ...(includeGroup && row.pgid > 0 ? { pgid: row.pgid } : {}),
+  });
 }
 
 let own: ProcessIdentity | undefined;
@@ -629,6 +635,7 @@ export function encodeIdentity(identity: ProcessIdentity): string {
     host: identity.host,
     bootId: identity.bootId,
     pid: identity.pid,
+    ...(identity.pgid === undefined ? {} : { pgid: identity.pgid }),
     start: identity.start,
   });
 }
@@ -645,7 +652,7 @@ export function decodeIdentity(value: unknown): ProcessIdentity | null {
     }
   }
   if (!isRecord(parsed)) return null;
-  const { hostId = "", host, bootId = "", pid, start } = parsed;
+  const { hostId = "", host, bootId = "", pid, pgid, start } = parsed;
   if (
     typeof hostId !== "string" ||
     typeof host !== "string" ||
@@ -653,10 +660,19 @@ export function decodeIdentity(value: unknown): ProcessIdentity | null {
     typeof start !== "string" ||
     typeof pid !== "number" ||
     !Number.isSafeInteger(pid) ||
-    pid < 1
+    pid < 1 ||
+    (pgid !== undefined &&
+      (typeof pgid !== "number" || !Number.isSafeInteger(pgid) || pgid < 1))
   )
     return null;
-  return { hostId, host, bootId, pid, start };
+  return {
+    hostId,
+    host,
+    bootId,
+    pid,
+    start,
+    ...(pgid === undefined ? {} : { pgid }),
+  };
 }
 
 /**

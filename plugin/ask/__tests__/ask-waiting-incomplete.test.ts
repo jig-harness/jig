@@ -60,6 +60,49 @@ const LINE: LineSnapshot = {
 };
 
 describe("jig ask --waiting from a line with refused repositories", () => {
+  it("lists a pickup held by a person, with the address and time to use when releasing it", async () => {
+    const w = askWorld();
+    current = w;
+    writeLine(
+      {
+        ...LINE,
+        repos: [],
+        queue: [
+          {
+            source: "held",
+            group: "held",
+            repo: REPO,
+            target: "#12",
+            pr: null,
+            item: "#12",
+            url: null,
+            title: "A held item",
+            why: `held by maintainer at ${READ_AT}`,
+            pickupHold: { by: "maintainer", at: READ_AT },
+            stale: false,
+            assignedBy: null,
+            hold: null,
+            launch: null,
+          },
+        ],
+      },
+      "{}",
+      w.state,
+    );
+    const json = await w.ask(["--waiting", "--json"], w.away);
+    expectSpawnExit(json, 0);
+    const answer = JSON.parse(json.stdout) as WaitingAnswer;
+    expect(answer.waiting).toEqual([
+      expect.objectContaining({
+        address: `pickup@${REPO}#12`,
+        people: ["maintainer"],
+        act: "release the pickup hold",
+        since: READ_AT,
+        reason: `held by maintainer at ${READ_AT}`,
+      }),
+    ]);
+  });
+
   it("names each repository the newest tick could not read, why, and the reading its part is from", async () => {
     const w = askWorld();
     current = w;

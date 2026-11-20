@@ -66,6 +66,7 @@ export const PERSON_ACTS = [
   "inspect the quota spending",
   "inspect Jig state storage",
   "settle the launch that holds the drive",
+  "release the pickup hold",
 ] as const;
 export type PersonAct = (typeof PERSON_ACTS)[number];
 
@@ -98,6 +99,7 @@ const ACT_OF_PERSON: Record<PersonAct, NeedAct> = {
   "inspect the quota spending": "Investigate",
   "inspect Jig state storage": "Investigate",
   "settle the launch that holds the drive": "Investigate",
+  "release the pickup hold": "Authorize",
 };
 
 /** What a station waits on: nothing, something that settles by itself, or a person's act. */
