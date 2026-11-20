@@ -302,10 +302,14 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    `scripts/tracker-boundary-allow.txt`); every hidden marker, drive state
    family and table the plugin's code names held by the
    [records registry](GLOSSARY.md), and every registry entry still named
-   (`scripts/check-records-registry.ts`); no throw in the dispatcher or
-   resource collection but a defect, the usage exit or a rethrow
+   (`scripts/check-records-registry.ts`); no throw in the dispatcher,
+   resource collection or the hub but a defect, the usage exit or a rethrow
    (`scripts/check-throws.ts`,
-   [ADR-0012](docs/adr/ADR-0012-failures-as-values.md)); the licence files and NOTICE complete
+   [ADR-0012](docs/adr/ADR-0012-failures-as-values.md)); nothing one runtime
+   alone gives (a `bun:` or `node:` module, a package, the `Bun`, `process`
+   or `Deno` global) in the hub's portable core or in any module it
+   imports (`scripts/check-portability.ts`, the
+   [portability gate](GLOSSARY.md)); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); no workflow that runs a fork's code with
    secrets (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in

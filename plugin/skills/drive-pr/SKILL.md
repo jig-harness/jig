@@ -489,9 +489,12 @@ forever. This is elapsed time on one head, independent of poll count; a new
 head or a fresh required-check witness starts a new wait. Unchanged final-CI
 signal probes back off from ten seconds through twenty and forty to sixty
 seconds between observation starts. Activity or an unreadable signal clears
-the wait cache and restores responsive probing. Local mailbox controls and
-remote takeover/provisional checks keep their ten-second idle cadence, with
-the mailbox checked before remote work. These are scheduling bounds: an
+the wait cache and restores responsive probing. The mailbox runs first and keeps
+its ten-second idle cadence, as does the provisional-decision sweep. A
+complete round-boundary takeover read defers the next to the first checkpoint
+at least sixty seconds later. An unread listing is retried at the next
+checkpoint. The pre-pass and ledger-write claim checks still read fresh.
+These are scheduling bounds: an
 in-flight helper adds its configured deadline and a GitHub rate-limit hold
 remains authoritative. Age and witness expiry force fresh evidence before
 any terminal verdict; no cached wait authorizes success, a push or a launch.

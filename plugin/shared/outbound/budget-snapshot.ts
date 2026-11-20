@@ -3,7 +3,11 @@
  * it names (GitHub's `rate_limit` endpoint), replaces what a budget record
  * holds (`budget.ts`), and what it shows was spent beyond the record's count.
  */
-import type { BudgetRecord, BudgetWindow, Unexplained } from "./budget.ts";
+import type {
+  BudgetRecord,
+  BudgetWindow,
+  Unexplained,
+} from "./budget-governor.ts";
 
 /** A window no answer has reported. */
 export const EMPTY: BudgetWindow = {

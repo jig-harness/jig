@@ -165,7 +165,7 @@ function relaunchRecord(
     vendor,
     configDir: slots.account.configDir,
     createdAt: currentIso(),
-    facts: `stalled pickup relaunch of ${source.id} at ${relaunch.head}`,
+    facts: `${relaunch.fault === undefined ? "stalled" : "host-fault"} pickup relaunch of ${source.id} at ${relaunch.head}`,
     workspace: relaunch.workspace,
     replaces: null,
     attempts: [],
@@ -187,11 +187,13 @@ function relaunchRecord(
     "stewardContext",
     "stewardDecision",
     "answered",
+    "relaunchFault",
     "testLockWait",
     "releasedItems",
     "codexPassArgs",
   ] as const)
     delete record[field];
+  if (relaunch.fault !== undefined) record.relaunchFault = relaunch.fault;
   // Admission judged the account by this tick's Codex opt-in, not the source's.
   return { ...record, ...codexLaunchFields(state.codexOptIn) };
 }
@@ -226,11 +228,18 @@ async function relaunchOne(
   const started = await startRecord(state, record, admitted.slots);
   const begun = started.outcome === "launched" || started.outcome === "retried";
   return begun
-    ? {
-        ...started,
-        detail: `the stalled pickup ${source.id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to push and record its work: ${started.detail}`,
-      }
+    ? { ...started, detail: relaunchedDetail(source.id, relaunch, started) }
     : started;
+}
+
+/** What a begun relaunch says: whose work it finishes, where and to what end. */
+function relaunchedDetail(
+  id: string,
+  relaunch: PickupRelaunch,
+  started: { detail: string },
+): string {
+  const fault = relaunch.fault !== undefined;
+  return `the ${fault ? "host-fault" : "stalled"} pickup ${id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to ${fault ? "resume" : "push and record"} its work: ${started.detail}`;
 }
 
 /** Retry, once and under its own record, each pending relaunch of `repo` whose launch got no answer. */
@@ -254,6 +263,9 @@ async function retryPending(
       record: record.relaunchOf,
       workspace: record.workspace,
       head: record.relaunchHead,
+      ...(record.relaunchFault === undefined
+        ? {}
+        : { fault: record.relaunchFault }),
     };
     const blocked =
       ctx.serialUndecided ??
