@@ -33,11 +33,7 @@ import {
   removeRecordIf,
   writeRecord,
 } from "../launches.ts";
-import {
-  type MachineConfig,
-  OPENS_PER_TICK,
-  tickDeadlineMs,
-} from "../machine-config.ts";
+import { type MachineConfig, OPENS_PER_TICK } from "../machine-config.ts";
 import {
   dispatchedMark,
   type ItemTarget,
@@ -66,12 +62,15 @@ import { laneBudgetWait } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
+import { enforcedDeadlineMs } from "./launch-deadline.ts";
 import {
   checksStage,
   heldAccounts,
   heldDetail,
   type Preflight,
 } from "../preflight.ts";
+
+export { enforcedDeadlineMs } from "./launch-deadline.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -118,22 +117,6 @@ export interface ApplyState {
   load?: LoadState;
   /** The checks run on an account before a tracker stage launches on it, and their answers this tick (`preflight.ts`). */
   preflight?: Preflight;
-}
-
-/**
- * The deadline the installed launcher enforces on the tick, in milliseconds:
- * the one it was installed with (`JIG_LAUNCHER_DEADLINE_SEC`, whole seconds,
- * which the launcher passes on to the tick), else the one the machine file's
- * limits calculate for a tick run outside a launcher.
- */
-export function enforcedDeadlineMs(
-  machine: MachineConfig,
-  env: NodeJS.ProcessEnv = process.env,
-): number {
-  const installed = env.JIG_LAUNCHER_DEADLINE_SEC ?? "";
-  return /^[1-9][0-9]*$/.test(installed)
-    ? Number(installed) * 1000
-    : tickDeadlineMs(machine);
 }
 
 /** The kill grace a timed-out child may take beyond its timeout before it settles. */

@@ -4,13 +4,7 @@
  * and claim the launch before calling the runtime. Pending launches replay
  * under their own record and token once their checkout is proven again.
  */
-import { worktreePathKey } from "../../../skills/drive-pr/scripts/lib/state/actor.ts";
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { git, gitIdentityEnv } from "../../../shared/proc.ts";
 import { idleBlocksStart } from "../automation.ts";
-import { cloneId } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
-import { peekCloneKey } from "../../../skills/drive-pr/scripts/lib/state/clone-key.ts";
 import { readCloneKey, takeoverHostDriver } from "../host-drivers.ts";
 import type { UnrecordedDriver } from "../host-drivers.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
@@ -79,9 +73,9 @@ import {
 } from "./retire-rearm.ts";
 import { clearRearmRequest, clearRearmWait } from "../rearm-waits.ts";
 import { currentIso } from "../../../shared/time.ts";
+import { originalTree } from "./rearm-worktree.ts";
 
 export type { ApplyState } from "./launch.ts";
-
 /** A fresh read of one pull request's drive, whether a person's `hold` label is on it, and how a launch claims it where another host reads it. */
 export interface FreshDrive {
   /** The drive read again; a failure when the pull request or its ledger does not read. */
@@ -577,45 +571,6 @@ function stillWanted(
   if (action.takeoverGone !== undefined && fresh.evidence.driverGone !== true)
     return `this host no longer shows its driver's run ended: ${String(fresh.evidence.driverCheck)}`;
   return changedStale(action.redrive, fresh);
-}
-
-/** A proven mismatch requires readable identities. */
-async function originalTree(
-  path: string,
-  actor: string,
-  clone: string,
-): Promise<{ why: string; proven: boolean } | null> {
-  try {
-    if (`wt-${worktreePathKey(realpathSync(path))}` !== actor)
-      return {
-        why: `${path}: its actor differs from the stopped driver's ${actor}`,
-        proven: true,
-      };
-    const common = await git(["rev-parse", "--git-common-dir"], {
-      cwd: path,
-      env: gitIdentityEnv(),
-      stderr: "pipe",
-      timeoutSec: 10,
-    });
-    if (common.code !== 0)
-      return {
-        why: `${path}: its clone identity cannot be read (git exit ${common.code}: ${common.stderr.trim()})`,
-        proven: false,
-      };
-    const local = peekCloneKey(resolve(path, common.stdout.trim()));
-    if (local !== null && cloneId(local) === clone) return null;
-    return {
-      why: `${path}: its clone identity ${local === null ? "missing" : cloneId(local)} differs from the stopped driver's ${clone}`,
-      proven: local !== null,
-    };
-  } catch (error) {
-    return {
-      why: `${path}: its original-tree identity cannot be read: ${failureText(error)}`,
-      proven:
-        error instanceof Error &&
-        (error as NodeJS.ErrnoException).code === "ENOENT",
-    };
-  }
 }
 
 /**

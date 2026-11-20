@@ -91,6 +91,7 @@ describe("a defect in one stage of a repository's --apply", () => {
     ]);
     expect(report?.stageDefects).toEqual([
       { code: "defect", phase: "apply", stage: "rearm", reason },
+      { code: "defect", phase: "apply", stage: "rearm", reason },
     ]);
     // The turn itself was not stopped.
     expect(report?.refused).toBeNull();
@@ -120,6 +121,6 @@ describe("a defect in one stage of a repository's --apply", () => {
 
     const text = await w.dispatch(["receipts"]);
     expectSpawnExit(text, 0);
-    expect(text.stdout).toContain("1 defect(s)");
+    expect(text.stdout).toContain("2 defect(s)");
   });
 });

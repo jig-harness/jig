@@ -2,6 +2,8 @@ import { expect, it } from "bun:test";
 import { applyInTurns, backgroundOrder } from "../lib/apply-order.ts";
 import { rotated, type ApplyState } from "../lib/actions/launch.ts";
 
+const noOp = async () => undefined;
+
 it("alternates launch groups globally while retaining repository rotation within each", async () => {
   for (const tick of [0, 1]) {
     const seen: string[] = [];
@@ -38,12 +40,12 @@ it("gives a request in a later repository the last slot before automatic drives"
         apply: async (group) => {
           if (group === "drives") start("automatic retry");
         },
-        finish: async () => {},
+        finish: async () => undefined,
       },
       {
         applyRearmRequests: async () => start("queued rearm"),
-        apply: async () => {},
-        finish: async () => {},
+        apply: noOp,
+        finish: noOp,
       },
     ],
     0,
@@ -72,9 +74,7 @@ it("rotates notifications when one failed open consumes the reserved allowance",
     let noticeAvailable = true;
     await applyInTurns(
       Array.from({ length: 4 }, (_, repo) => ({
-        apply: async () => {
-          /* Launches leave only the reserved notification open. */
-        },
+        apply: noOp,
         finish: async () => {
           if (!noticeAvailable) return;
           noticeAvailable = false;
@@ -106,9 +106,7 @@ it("lets each background stage lead in every repository under sustained drive tr
                 )[0] as string,
               );
           },
-          finish: async () => {
-            /* This fixture has no notifications. */
-          },
+          finish: noOp,
         })),
         tick,
       );
@@ -132,9 +130,7 @@ it("lets every repository lead each group, including even repository counts", as
               available = false;
             }
           },
-          finish: async () => {
-            /* No notifications in this admission fixture. */
-          },
+          finish: noOp,
         })),
         tick,
       );
