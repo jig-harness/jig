@@ -31,6 +31,7 @@
  */
 import {
   type ClosingReport,
+  type ReportCause,
   CLOSING_REPORT_SCHEMA,
   CONCLUDED_MAX,
   closingReportOf,
@@ -46,6 +47,7 @@ import { launchOf } from "../../../../../shared/launched-session.ts";
 import type { ParkedItem } from "../state/park-frame.ts";
 import { readRoundReport } from "../state/round-report.ts";
 import type { DriveState } from "../state/schema.ts";
+import { probeFailure } from "../status/probe-stop.ts";
 import { driveExitReport } from "../status/terminal-states.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -129,12 +131,34 @@ export function composeDriverReport(input: {
   const stall = code === exitOf("STALLED") ? (input.stall ?? null) : null;
   const named = driveExitReport(code);
   const stop = redactReportText(stopText(pr, code, state, stall));
-  const base: ClosingReport = {
+  const probe = driverRuntime.stopProbe;
+  const failure = probe?.code === code ? probeFailure(probe) : null;
+  const cause =
+    failure !== null
+      ? "environment"
+      : named === null
+        ? "unknown"
+        : stall !== null
+          ? finishCause(stall.state)
+          : named.report.cause;
+  const concluded = composeConcluded(
+    stop,
+    round === null ? null : redactReportText(round.concluded),
+  );
+  const base = baseDriverReport(pr, concluded, named, cause);
+  const ask = parkAsk(code, state);
+  return checkedDriverReport(base, ask, state, stop);
+}
+
+function baseDriverReport(
+  pr: string,
+  concluded: string,
+  named: ReturnType<typeof driveExitReport>,
+  cause: ReportCause | undefined,
+): ClosingReport {
+  return {
     schema: CLOSING_REPORT_SCHEMA,
-    concluded: composeConcluded(
-      stop,
-      round === null ? null : redactReportText(round.concluded),
-    ),
+    concluded,
     suggested_next:
       named === null
         ? {
@@ -143,16 +167,17 @@ export function composeDriverReport(input: {
             act: "Investigate",
           }
         : { ...named.report.next },
-    ...(named === null
-      ? { cause: "unknown" as const }
-      : stall !== null
-        ? { cause: finishCause(stall.state) }
-        : named.report.cause === undefined
-          ? {}
-          : { cause: named.report.cause }),
+    ...(cause === undefined ? {} : { cause }),
     evidence: [`pr:#${pr}`],
   };
-  const ask = parkAsk(code, state);
+}
+
+function checkedDriverReport(
+  base: ClosingReport,
+  ask: ReturnType<typeof parkAsk>,
+  state: DriveState | null,
+  stop: string,
+): ClosingReport {
   const tries: ClosingReport[] =
     ask === null
       ? [base]

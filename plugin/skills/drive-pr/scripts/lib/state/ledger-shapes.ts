@@ -1,6 +1,7 @@
 /** The ledger's JSON fields, shared by its reader and the stable marker schema. */
 import { type Infer, s } from "../../../../../shared/shapes.ts";
 import { AUTONOMY_LEVELS } from "../../../../../shared/autonomy-values.ts";
+import type { ProbeStop } from "../status/probe-stop.ts";
 import { ANSWER_FORM_NAMES } from "../../../../../shared/decisions/decision-values.ts";
 
 import {
@@ -38,6 +39,7 @@ export const LEDGER_DRIVER_SHAPE = s.object({
   heartbeat: text,
   state: s.enum(["running", "stopped"]),
   exit: s.optional(count),
+  probe: s.optional(s.unknown()),
   personStop: s.optional(s.object({ at: text, reason: text })),
   recoveryVersion: s.optional(s.literal(1)),
   started: s.optional(text),
@@ -135,6 +137,7 @@ const event = s.union([
     leftWork: s.optional(s.boolean()),
     tree: s.optional(nonempty),
     until: s.optional(s.unknown()),
+    probe: s.optional(s.unknown()),
   }),
 ]);
 const ciAction = s.object({
@@ -231,5 +234,7 @@ export const LEDGER_PAYLOAD_FIELDS = {
 /** The envelope supplies generation and may supply ledgerVersion from its v. */
 export const LEDGER_PAYLOAD_SHAPE = s.object(LEDGER_PAYLOAD_FIELDS);
 export type LedgerHeld = Infer<typeof LEDGER_HELD_SHAPE>;
-export type LedgerDriver = Infer<typeof LEDGER_DRIVER_SHAPE>;
+export type LedgerDriver = Omit<Infer<typeof LEDGER_DRIVER_SHAPE>, "probe"> & {
+  probe?: ProbeStop;
+};
 export type LedgerClaimRef = Infer<typeof LEDGER_CLAIM_REF_SHAPE>;
