@@ -126,18 +126,20 @@ function reservations(value: unknown): Checked<Record<LoadKind, number>> {
   return ok(out);
 }
 
-/** The `load:` section, every setting it leaves out at its default; an unknown key or a value out of range is refused. */
-export function loadSettings(value: unknown): Checked<LoadSettings> {
-  if (value === undefined || value === null) return ok(LOAD_DEFAULTS);
-  if (!isMapping(value)) return invalid("load must be a mapping");
-  const stray = Object.keys(value).find((key) => !KEYS.includes(key));
-  if (stray !== undefined)
-    return invalid(
-      `load has an unknown key: ${stray} (known: ${KEYS.join(", ")})`,
-    );
-  const enforce = value.enforce ?? LOAD_DEFAULTS.enforce;
-  if (typeof enforce !== "boolean")
-    return invalid("load.enforce must be true or false");
+type NumberSettings = Pick<
+  LoadSettings,
+  | "memoryFree"
+  | "loadPerCore"
+  | "lockWaiters"
+  | "validation"
+  | "diskFreeBytes"
+  | "forgeFloor"
+>;
+
+/** Read the numeric settings after the section shape has been accepted. */
+function numberSettings(
+  value: Record<string, unknown>,
+): Checked<NumberSettings> {
   const memoryFree = positive(
     value.memory_free,
     "load.memory_free",
@@ -172,6 +174,9 @@ export function loadSettings(value: unknown): Checked<LoadSettings> {
     LOAD_DEFAULTS.diskFreeBytes / GIB,
   );
   if (!diskFreeGb.ok) return diskFreeGb;
+  const diskFreeBytes = diskFreeGb.value * GIB;
+  if (!Number.isFinite(diskFreeBytes))
+    return invalid("load.disk_free_gb must fit in bytes");
   const forgeFloor = positive(
     value.forge_floor,
     "load.forge_floor",
@@ -179,19 +184,35 @@ export function loadSettings(value: unknown): Checked<LoadSettings> {
     1,
   );
   if (!forgeFloor.ok) return forgeFloor;
-  const reserved = reservations(value.reservations_gb);
-  if (!reserved.ok) return reserved;
-  const diskFreeBytes = diskFreeGb.value * GIB;
-  if (!Number.isFinite(diskFreeBytes))
-    return invalid("load.disk_free_gb must fit in bytes");
   return ok({
-    enforce,
     memoryFree: memoryFree.value,
     loadPerCore: loadPerCore.value,
     lockWaiters: lockWaiters.value,
     validation: validation.value,
     diskFreeBytes,
     forgeFloor: forgeFloor.value,
+  });
+}
+
+/** The `load:` section, every setting it leaves out at its default; an unknown key or a value out of range is refused. */
+export function loadSettings(value: unknown): Checked<LoadSettings> {
+  if (value === undefined || value === null) return ok(LOAD_DEFAULTS);
+  if (!isMapping(value)) return invalid("load must be a mapping");
+  const stray = Object.keys(value).find((key) => !KEYS.includes(key));
+  if (stray !== undefined)
+    return invalid(
+      `load has an unknown key: ${stray} (known: ${KEYS.join(", ")})`,
+    );
+  const enforce = value.enforce ?? LOAD_DEFAULTS.enforce;
+  if (typeof enforce !== "boolean")
+    return invalid("load.enforce must be true or false");
+  const numbers = numberSettings(value);
+  if (!numbers.ok) return numbers;
+  const reserved = reservations(value.reservations_gb);
+  if (!reserved.ok) return reserved;
+  return ok({
+    enforce,
+    ...numbers.value,
     reservations: reserved.value,
   });
 }

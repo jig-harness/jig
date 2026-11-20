@@ -43,6 +43,30 @@ function occupancyEvents(sample: ValidationSample): OccupancyEvent[] {
   ];
 }
 
+function recordContention(
+  durations: Map<number, number>,
+  holding: number,
+  waiting: number,
+  duration: number,
+): void {
+  if (holding > 0 && waiting > 0)
+    durations.set(holding, (durations.get(holding) ?? 0) + duration);
+}
+
+function contentionMedian(durations: Map<number, number>): number | null {
+  const half =
+    [...durations.values()].reduce((sum, duration) => sum + duration, 0) / 2;
+  let elapsed = 0;
+  const distribution = [...durations].sort(([left], [right]) => left - right);
+  for (const [index, [count, duration]] of distribution.entries()) {
+    elapsed += duration;
+    if (elapsed > half) return count;
+    if (elapsed === half)
+      return (count + (distribution[index + 1]?.[0] ?? count)) / 2;
+  }
+  return null;
+}
+
 /** Measure concurrency over elapsed time with a waiter, or peak overlap without contention. */
 function concurrencyOf(samples: readonly ValidationSample[]): number | null {
   const events = samples
@@ -57,24 +81,13 @@ function concurrencyOf(samples: readonly ValidationSample[]): number | null {
   for (const event of events) {
     if (event.at > last) {
       peak = Math.max(peak, holding);
-      if (holding > 0 && waiting > 0) {
-        durations.set(holding, (durations.get(holding) ?? 0) + event.at - last);
-      }
+      recordContention(durations, holding, waiting, event.at - last);
     }
     waiting += event.waiting;
     holding += event.holding;
     last = event.at;
   }
-  const half = [...durations.values()].reduce((a, b) => a + b, 0) / 2;
-  let elapsed = 0;
-  const distribution = [...durations].sort(([a], [b]) => a - b);
-  for (const [index, [count, duration]] of distribution.entries()) {
-    elapsed += duration;
-    if (elapsed > half) return count;
-    if (elapsed === half)
-      return (count + (distribution[index + 1]?.[0] ?? count)) / 2;
-  }
-  return peak || null;
+  return (contentionMedian(durations) ?? peak) || null;
 }
 
 function median(values: number[]): number | null {
@@ -106,6 +119,28 @@ interface PassRuns {
   firstRequest: number;
 }
 
+function addRun(
+  attributed: Map<ValidationPass, PassRuns>,
+  pass: ValidationPass,
+  requestedAtMs: number,
+): void {
+  const prior = attributed.get(pass);
+  if (prior) prior.count++;
+  else attributed.set(pass, { count: 1, firstRequest: requestedAtMs });
+}
+
+function passForRequest(
+  passes: readonly ValidationPass[],
+  requestedAtMs: number,
+): ValidationPass | null {
+  const pass = passes.findLast(
+    ({ launchedAtMs }) => launchedAtMs <= requestedAtMs,
+  );
+  return pass === undefined || requestedAtMs >= (pass.endedAtMs ?? Infinity)
+    ? null
+    : pass;
+}
+
 /** Attribute each sample to at most one pass, even when a drive workspace is reused. */
 function attributeRuns(
   passes: readonly ValidationPass[],
@@ -117,20 +152,9 @@ function attributeRuns(
     group.sort((a, b) => a.launchedAtMs - b.launchedAtMs);
     const requests = byWorkspace.get(workspace) ?? [];
     requests.sort((a, b) => a.requestedAtMs - b.requestedAtMs);
-    let index = 0;
     for (const { requestedAtMs } of requests) {
-      while ((group[index + 1]?.launchedAtMs ?? Infinity) <= requestedAtMs)
-        index++;
-      const pass = group[index];
-      if (
-        pass === undefined ||
-        requestedAtMs < pass.launchedAtMs ||
-        requestedAtMs >= (pass.endedAtMs ?? Infinity)
-      )
-        continue;
-      const prior = attributed.get(pass);
-      if (prior) prior.count++;
-      else attributed.set(pass, { count: 1, firstRequest: requestedAtMs });
+      const pass = passForRequest(group, requestedAtMs);
+      if (pass !== null) addRun(attributed, pass, requestedAtMs);
     }
   }
   return attributed;
