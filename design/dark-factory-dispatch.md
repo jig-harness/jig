@@ -682,6 +682,13 @@ relaunched once per head in that tree, with a fixed prompt to push and
 record the work, rather than reported (`dispatch.stalled_relaunch`,
 `finish-once` by default, `never` to turn it off); a second stall at the
 same head, or a tree no open workspace on the host holds, is reported. A
+pickup whose push the pre-push hook refused only because its wait for the
+host's test lock ran out records `waits --reason test-lock` and is
+relaunched in its tree without waiting for `dispatch.stalled_after`, to
+push and go on; the relaunch waits while the host's validation and
+test-lock gauges have no room, whatever `load.enforce` says, and is counted
+along its chain of relaunches rather than per head, so the third such wait
+in a row is one need for the steward or a person. A
 claimed item with no running session whose
 launch already opened its pull request is finished work, not a stall: when
 an open pull request whose head is the branch the runtime reports in the
@@ -1300,6 +1307,7 @@ jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
 jig dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]  # a pickup or follow-up a rate limit stopped, or a follow-up whose arm is still pending
+jig dispatch result <record> <token> waits --reason test-lock [--until <time>]  # a claimed pickup whose push the host's test lock held past the pre-push hook's wait
 jig dispatch result <record> <token> failed --decision <file>  # a pass that stopped on the decision it framed for a person
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
@@ -1445,11 +1453,12 @@ Every reader (the tick, the outcome log, the dashboard, the steward and a
 follow-up's outcome) takes a recorded answer as one of these launch
 results: `done`; `waits`, a pass that recorded a wait (a rate limit's
 reset, or a follow-up's arm still pending) and starts again once its time
-has come; `parked`, a pass that recorded `failed --decision <file>` and so
+has come, or a claimed pickup whose push the host's test lock held, which
+is relaunched in its tree once the host's validation capacity has room; `parked`, a pass that recorded `failed --decision <file>` and so
 stopped on the decision it framed for a person; and `failed`, a pass that
 recorded `failed` with neither, or ended with none. A `waits` on a pending arm and a
-`parked` do not count as a failure; a `waits` on a rate limit is logged
-as a quota wall. The `launches` table keeps only `done` and
+`parked` do not count as a failure; a `waits` on a rate limit or on the
+test lock is logged as a quota wall. The `launches` table keeps only `done` and
 `failed`: `waits` is kept as `failed` with the time in `result_until`, and
 `parked` as `failed` with the decision in `result_decision`, so a host
 that rolls back to a release that knows neither reads a failed pass, which
@@ -2406,7 +2415,7 @@ replaced by a takeover is stalled, not refused.
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | converged           | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done`                                                                                         |
 | merged              | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge                                                          |
-| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood; a pass that recorded `waits` on a rate limit    |
+| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood; a pass that recorded `waits` on a rate limit or the test lock    |
 | parked for a person | a park (exit `8`); a pickup or follow-up pass that stopped on a question for a person, or recorded the launch result `parked`                                                         |
 | arm pending         | a follow-up pass that recorded the launch result `waits` on an arm still pending                                                                                                      |
 | stalled             | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over`                                                         |

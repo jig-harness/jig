@@ -591,6 +591,13 @@ tracker's rate limit stopped before it claimed the item (a tracker script
 exits `5`) records `waits --until <time>` instead (after the claim the pass
 waits for the reset within its deadline, else records `failed`): the item is held until that time, with no
 question for a person, and the first tick after it launches the item again. A pickup
+whose push, after its claim, the repository's pre-push hook refused only because
+its wait for the host's test lock ran out, and whose retries in the pass did not
+get through, records `waits --reason test-lock`: nothing asks a person, and the
+dispatcher relaunches it in its own tree to push and go on, holding the relaunch
+while the host's validation capacity has no room, whether or not `load.enforce`
+is set. After three such waits in a row it is one need, for the steward or a
+person to find why the lock keeps running out. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
 shows the item as held with that reason until the item changes. A batch
@@ -672,6 +679,7 @@ never held by it.
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --reason test-lock [--until <time>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch report <record> <token> <file>
 ```

@@ -59,7 +59,7 @@ import type {
 import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
-import { judge, type LoadState } from "../load.ts";
+import { judge, type LoadState, VALIDATION_GAUGES } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 import {
   checksStage,
@@ -764,6 +764,7 @@ function byLoad(
     repo,
     action.target,
     pickupDeadlineSec * 1000,
+    action.relaunch?.lockWait === true ? VALIDATION_GAUGES : [],
   );
   return held === null
     ? { slots }

@@ -114,7 +114,7 @@ export { isDrive, isInteractive } from "./launch-kind.ts";
 
 /**
  * A pickup's or follow-up pass's own answer, recorded through `jig dispatch
- * result`: `waits` is one a rate limit or a pending arm stopped (`waitsUntil`).
+ * result`: `waits` is one a rate limit, a pending arm or the host's test lock stopped (`waitsUntil`).
  */
 export type { SessionResult } from "./session-result-types.ts";
 
@@ -138,6 +138,8 @@ export interface LaunchRecord {
   relaunchHead?: string;
   /** For the relaunch of a pickup stopped on a fault of its host: that fault, which the relaunch's prompt names (`pickup-host-fault.ts`). */
   relaunchFault?: string;
+  /** For the relaunch of a claimed pickup whose push the host's test lock held past its wait (`pickup-lock-wait.ts`): its prompt is to push and go on. */
+  relaunchLockWait?: true;
   version: 1;
   id: string;
   token: string;
@@ -218,12 +220,7 @@ export interface LaunchRecord {
   rearmConsumed?: boolean;
   /** The vendor session id the tick minted for a Claude Code session or follow-up pass and passed to its agent; `null` when none was. */
   sessionId?: string | null;
-  /**
-   * The dispatched mark the launch's workspace was named and marked with
-   * (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this
-   * record's id. It joins a workspace renamed since to its launch.
-   * `null` on a record written before the mark was kept.
-   */
+  /** The dispatched mark the launch's workspace was named and marked with (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this record's id, which join a workspace renamed since to its launch; `null` on a record written before the mark was kept. */
   mark?: string | null;
   /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round (the `thread_samples` table). */
   samples?: ThreadSample[];

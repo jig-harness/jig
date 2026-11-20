@@ -19,7 +19,13 @@
  * Account slots and walls are admitted as before (`accounts.ts`); their
  * gauge only reports how full they are, beside the others. With
  * `load.enforce: false`, the default, a launch a gauge refuses still starts
- * and is reported as one the load factor would hold.
+ * and is reported as one the load factor would hold, except a launch whose
+ * caller names gauges that hold it whatever enforcement says: the relaunch
+ * of a pickup whose push the host's test lock held past its wait
+ * (`pickup-lock-wait.ts`) waits on the validation and test-lock gauges
+ * (`VALIDATION_GAUGES`), since started while they have no room it would
+ * only queue at the lock and run out again. A gauge that does not read
+ * holds nothing, so a host whose load cannot be read admits it.
  */
 import type { NotAdmitted } from "./accounts.ts";
 import type {
@@ -298,6 +304,12 @@ export function factorText(load: Pick<LineLoad, "factor" | "binds">): string {
 
 type Refusal = { gauge: LoadGauge; detail: string };
 
+/** The gauges that hold a lock-wait relaunch whatever `load.enforce` says: the host's validation capacity and its test lock's waiters. */
+export const VALIDATION_GAUGES: readonly LoadGauge[] = [
+  "validation",
+  "test-lock",
+];
+
 /** Why the memory gauge refuses a launch of `kind`: its reservation, and for a pickup the reserve it keeps, past the floor. */
 function memoryRefusal(state: LoadState, kind: LoadKind): Refusal | null {
   const own = reservation(state, kind);
@@ -391,12 +403,44 @@ function refusal(
   return null;
 }
 
+/** Why one of the `pinned` gauges refuses a launch of `kind`; `null` when none does or none reads. */
+function pinnedRefusal(
+  state: LoadState,
+  kind: LoadKind,
+  repo: string,
+  pickupDeadlineMs: number,
+  pinned: readonly LoadGauge[],
+): Refusal | null {
+  if (
+    pinned.includes("validation") &&
+    state.validation !== undefined &&
+    (kind === "pickup" || kind === "drive")
+  ) {
+    const detail = validationHold(
+      state.validation,
+      state.settings.validation,
+      kind,
+      pickupDeadlineMs,
+      repo,
+    );
+    if (detail !== null) return { gauge: "validation", detail };
+  }
+  for (const g of gauges(state))
+    if (g.gauge !== "validation" && pinned.includes(g.gauge)) {
+      const refused = sharedGaugeRefusal(kind, g);
+      if (refused !== null) return refused;
+    }
+  return null;
+}
+
 /**
  * Judge a launch of `kind` for `target`: `null` when it starts, its
  * reservation then counted for the rest of the tick; else the reason it
  * waits. A refused launch is recorded as a hold, and waits only under
  * enforcement; without it, it starts as it would have, uncounted, so the
- * holds the tick reports are the ones enforcement would make.
+ * holds the tick reports are the ones enforcement would make. A gauge in
+ * `pinned` holds it without enforcement too, and the reason names the
+ * host's validation capacity it waits for.
  */
 export function judge(
   state: LoadState,
@@ -404,7 +448,15 @@ export function judge(
   repo: string,
   target: string,
   pickupDeadlineMs = 0,
+  pinned: readonly LoadGauge[] = [],
 ): string | null {
+  const pinnedHold = state.settings.enforce
+    ? null
+    : pinnedRefusal(state, kind, repo, pickupDeadlineMs, pinned);
+  if (pinnedHold !== null) {
+    state.holds.push({ repo, target, kind, ...pinnedHold, held: true });
+    return `the host's validation capacity holds it: ${pinnedHold.detail}`;
+  }
   const refused = refusal(state, kind, repo, pickupDeadlineMs);
   if (refused === null) {
     state.spentBytes += reservation(state, kind);

@@ -17,6 +17,11 @@
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
  *   launched again after it, with no person asked;
+ * - except a record whose pass recorded `waits --reason test-lock` (its
+ *   push, after its claim, was refused only because the wait for the host's
+ *   test lock ran out): it holds the item with no time to it, since the
+ *   claimed item's plan relaunches the pickup in its tree
+ *   (`pickup-lock-wait.ts`) rather than starting it afresh;
  * - except a record whose pass stopped at startup on its account's usage
  *   notice, with the account's wall recorded (`run.ts`): the wall keeps the
  *   next pickup off that account until its reset, so the item is wanted
@@ -161,6 +166,12 @@ export function pickupHold(
   const latest = mine.at(-1);
   if (latest === undefined || !holdsItem(latest.record, item))
     return { kind: "none" };
+  if (latest.result === "waits" && latest.waitsFor?.reason === "test-lock")
+    return {
+      kind: "held",
+      record: latest,
+      why: `launch record ${latest.record.id} waits for the host's test lock, which held its push past the pre-push hook's wait; the pickup is relaunched in its tree once the host's validation capacity admits it`,
+    };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
   if (latest.result === "waits" && latest.waitsUntil !== undefined)
     return waitsHold(latest, latest.waitsUntil, nowMs);
