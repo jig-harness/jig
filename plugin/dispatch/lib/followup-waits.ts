@@ -229,12 +229,17 @@ function restart(run: Run): Run {
   return { ...EMPTY, spentArms };
 }
 
+/** An arm that names a release tag the window's arm does not: one that only drops tags is the same window, which a settled tag does not restart. */
+function newerArm(window: string | null, arm: string | null): boolean {
+  if (arm === null || window === null) return false;
+  const known = new Set(window.split(" "));
+  return arm.split(" ").some((t) => !known.has(t));
+}
+
 /** The pending run after `a`, a pending wait, from `from`. */
 function nextPending(from: Run, a: Attempt): Run {
   const arm = armKey(a.wait);
-  const fresh =
-    from.pendingSince === null ||
-    (arm !== null && from.arm !== null && arm !== from.arm);
+  const fresh = from.pendingSince === null || newerArm(from.arm, arm);
   const pendingSince = fresh ? a.createdAt : (from.pendingSince as string);
   const firstPending = from.firstPending ?? a.createdAt;
   const at = parseMs(a.createdAt);

@@ -37,12 +37,7 @@
 import { parseMs } from "../../shared/time.ts";
 import { stateOf } from "./labels.ts";
 import type { DrivenPr, MergedPr } from "./types.ts";
-import {
-  type LinkRules,
-  type PrLinkText,
-  sameRepository,
-  workLinks,
-} from "./work-links.ts";
+import { type LinkRules, type PrLinkText, workLinks } from "./work-links.ts";
 
 /** An open pull request, by number and link. */
 export interface CarrierPr {
@@ -164,17 +159,14 @@ export function carrierInput(read: {
   const { nowMs } = read;
   const recent = (p: MergedPr) =>
     nowMs !== undefined && nowMs - parseMs(p.mergedAt) <= MERGED_SETTLES_MS;
-  const separateIssues =
-    read.rules?.issueRepository != null &&
-    !sameRepository(read.rules.issueRepository, read.rules.repository);
   const merged = (read.merged ?? []).filter(recent).map(
     (p): PrLinkText => ({
       number: p.number,
       url: p.url,
       headRefName: p.head,
       body: p.body ?? "",
-      // The merged listing carries no closing references; an issue in another repository is linked only by them, so there the pull request's links are unknown.
-      closing: separateIssues ? null : [],
+      // The merged listing carries no closing references, so only a link the branch or the description affirms is read; an item in another repository linked by closing references alone reads as not linked.
+      closing: [],
     }),
   );
   const mergedLinks =

@@ -458,6 +458,19 @@ describe("a merged pull request whose link rests on the forge's closing referenc
     expect(read("example-org/issues").merged?.("#12")).toEqual([]);
   });
 
+  it("keeps a link the branch affirms where the issues are in another repository", () => {
+    const branch = { ...merged, head: "12-fix" };
+    const input = carrierInput({
+      prs: [],
+      rules: rules("example-org/issues"),
+      drives: [],
+      read: new Set(),
+      merged: [branch],
+      nowMs: NOW,
+    });
+    expect(input.merged?.("#12")).toEqual([{ number: 30, url: branch.url }]);
+  });
+
   it("is read as before where the issues are in the repository itself", () => {
     expect(read(SLUG).merged?.("#12")).toEqual([]);
   });

@@ -256,6 +256,32 @@ it("counts pending waits apart from rate-limit waits", () => {
   expect(waitStreak(late, SLUG, 9)).toMatchObject({ spent: true });
 });
 
+it("keeps the window when a later arm only drops release tags", () => {
+  const w = world();
+  current = w;
+  const base = earlierRecord(w, {
+    id: "20261031T100000Z-aaaaaaaa",
+    account: "a",
+    action: "followup",
+    pr: 9,
+    repo: SLUG,
+  });
+  const both: WaitFor = { reason: "pending", arm: "v1.0.0 v1.0.1" };
+  const rest: WaitFor = { reason: "pending", arm: "v1.0.1" };
+  const streak = waitStreak(
+    [
+      waited(base, "2026-10-31T06:55:00.000Z", both),
+      waited(base, "2026-10-31T08:01:00.000Z", rest),
+    ],
+    SLUG,
+    9,
+  );
+  expect(streak).toMatchObject({
+    spent: true,
+    pendingSince: "2026-10-31T06:55:00.000Z",
+  });
+});
+
 it("starts a pending window again on a newer arm, re-reads an arm past its window once, and bounds the run", () => {
   const w = world();
   current = w;
