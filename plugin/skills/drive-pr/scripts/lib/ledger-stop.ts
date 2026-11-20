@@ -247,6 +247,205 @@ async function recoverDriverRecords(
 
 /** The stopped driver's tree and acquisition, as a lock or a record names them. */
 type StoppedDiag = Pick<ClaimDiag, "worktree" | "started">;
+type StoppedLedger = Exclude<
+  ReturnType<typeof ledgerOfStoppedDriver>,
+  { why: string }
+>;
+
+function stoppedDriver(
+  snapshot: Exclude<Awaited<ReturnType<typeof readLedgerSnapshot>>, string>,
+  who: { actor: string; clone: string; started: string },
+  byPerson: boolean,
+  pending: boolean,
+) {
+  return ledgerOfStoppedDriver(snapshot, who, byPerson || pending);
+}
+
+function stoppedDriverEnv(
+  who: { actor: string; clone: string; started: string },
+  login: string | null,
+  found: StoppedLedger,
+  exit: number | null,
+  pending: boolean,
+): LedgerDriverEnv {
+  const driver: LedgerDriverEnv = {
+    ...who,
+    login,
+    floor: found.ledger.driver.position ?? null,
+    claim: found.own,
+    stopped: exit,
+    recovering: true,
+  };
+  if (pending) driver.pending = true;
+  return driver;
+}
+
+async function readStoppedLedger(
+  pr: string,
+  login: string | null,
+  who: { actor: string; clone: string; started: string },
+): Promise<ReturnType<typeof ledgerOfStoppedDriver> | null> {
+  const snapshot = await readLedgerSnapshot(pr, login);
+  if (typeof snapshot !== "string")
+    return stoppedDriver(snapshot, who, true, false);
+  console.error(
+    `ledger: PR #${pr}'s stopped label ownership did not read: ${snapshot}.`,
+  );
+  return null;
+}
+
+async function labelPublishedStop(
+  stateDir: string,
+  pr: string,
+  diag: StoppedDiag,
+  exit: number | null,
+  pending: boolean,
+  login: string | null,
+  who: { actor: string; clone: string; started: string },
+  found: StoppedLedger,
+): Promise<"done" | "retry"> {
+  const published = pending ? await readStoppedLedger(pr, login, who) : found;
+  if (published === null) return "retry";
+  if ("why" in published) return "done";
+  const byPerson =
+    personStopFor(stateDir, pr, diag.started).personStop !== undefined;
+  if (pending && exit === DRIVE_EXIT.CONVERGED && !byPerson) return "done";
+  const label = await labelDrive(
+    pr,
+    {
+      stopped: exit,
+      byPerson,
+      verifiedSha: published.ledger.verifiedSha,
+      stop: stopKey(published.ledger.driver.started, published.ledger.round),
+      parks: published.ledger.parked,
+    },
+    undefined,
+    pending
+      ? async () => {
+          const fresh = await readStoppedLedger(pr, login, who);
+          return fresh !== null && !("why" in fresh);
+        }
+      : undefined,
+  );
+  return projectionOutcome(label, pending, byPerson);
+}
+
+function projectionOutcome(
+  label: Awaited<ReturnType<typeof labelDrive>>,
+  pending: boolean,
+  byPerson: boolean,
+): "done" | "retry" {
+  if (!pending) return "done";
+  if (label?.write.outcome === "refused") return "retry";
+  return byPerson && label === null ? "retry" : "done";
+}
+
+function recoveryEnvironment(
+  stateDir: string,
+  worktree: string,
+  recoverySession: string,
+) {
+  return {
+    ...process.env,
+    DRIVE_PR_STATE_DIR: stateDir,
+    DRIVE_PR_WORKTREE: worktree,
+    DRIVE_PR_SESSION: String(process.pid),
+    DRIVE_PR_SESSION_STARTED: recoverySession,
+  };
+}
+
+async function publishStoppedLedger(
+  pr: string,
+  exit: number | null,
+  env: NodeJS.ProcessEnv,
+  driver: LedgerDriverEnv,
+): Promise<number> {
+  const event = await run(tsArgv(driveState, ["record-event", pr]), {
+    stdin: JSON.stringify({ kind: "stop", cause: String(exit ?? "unknown") }),
+    stdout: "ignore",
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+    env,
+  });
+  if (event.code !== 0) return event.code;
+  return (
+    await run(tsArgv(driveState, ["handoff", pr]), {
+      stdout: "ignore",
+      stderr: "inherit",
+      timeoutSec: helperTimeoutSeconds(),
+      env: {
+        ...env,
+        [LEDGER_DRIVER_ENV]: JSON.stringify(driver),
+        [HANDOFF_TELLS_REFUSED]: "1",
+      },
+    })
+  ).code;
+}
+
+function releaseRecoveryLeases(
+  stateDir: string,
+  pr: string,
+  who: { actor: string },
+  recoverySession: string,
+): void {
+  inTransaction(driveDb(stateDir).db, () => {
+    const ref = leaseRef(stateDir, pr, who.actor);
+    const tree = treeLeaseRef(stateDir, who.actor);
+    releaseSessionLease(ref, recoverySession);
+    releaseTreeSessionLease(tree, pr, recoverySession);
+  });
+}
+
+function releaseSessionLease(
+  ref: ReturnType<typeof leaseRef>,
+  recoverySession: string,
+): void {
+  const lease = readLease(ref);
+  if (
+    lease?.holder === "session" &&
+    lease.pid === process.pid &&
+    lease.host === hostname() &&
+    lease.sessionStarted === recoverySession
+  )
+    removeLease(ref);
+}
+
+function releaseTreeSessionLease(
+  tree: ReturnType<typeof treeLeaseRef>,
+  pr: string,
+  recoverySession: string,
+): void {
+  const held = readTreeLease(tree);
+  if (
+    held?.holder === "session" &&
+    held.pid === process.pid &&
+    held.host === hostname() &&
+    held.pr === pr &&
+    held.sessionStarted === recoverySession
+  )
+    removeTreeLease(tree);
+}
+
+async function stoppedLedgerSnapshot(pr: string, login: string | null) {
+  const snapshot = await readLedgerSnapshot(pr, login);
+  if (typeof snapshot !== "string") return snapshot;
+  console.error(
+    `ledger: PR #${pr}'s ledger was not marked stopped: ${snapshot}.`,
+  );
+  return null;
+}
+
+function stoppedLedgerIsClaimed(
+  pr: string,
+  snapshot: Exclude<Awaited<ReturnType<typeof readLedgerSnapshot>>, string>,
+  found: ReturnType<typeof ledgerOfStoppedDriver>,
+): found is { why: string } {
+  if (!("why" in found)) return false;
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed?.kind === "ledger" && parsed.ledger.driver.state === "running")
+    console.error(`ledger: PR #${pr}'s ledger is left as it is: ${found.why}.`);
+  return true;
+}
 
 /**
  * Mark PR `pr`'s ledger stopped for the driver `diag` names, guarded as the
@@ -300,153 +499,43 @@ async function markGuarded(
     started: diag.started,
   };
   const login = await resolveLogin();
-  const snapshot = await readLedgerSnapshot(pr, login);
-  if (typeof snapshot === "string") {
-    console.error(
-      `ledger: PR #${pr}'s ledger was not marked stopped: ${snapshot}.`,
-    );
-    return "retry";
-  }
+  const snapshot = await stoppedLedgerSnapshot(pr, login);
+  if (snapshot === null) return "retry";
   const byPerson =
     personStopFor(stateDir, pr, diag.started).personStop !== undefined;
-  const found = ledgerOfStoppedDriver(snapshot, who, byPerson || pending);
-  if ("why" in found) {
-    // Silent when there is nothing to say: no ledger, or one already stopped.
-    const parsed = snapshot.canonical?.parsed;
-    if (parsed?.kind === "ledger" && parsed.ledger.driver.state === "running")
-      console.error(
-        `ledger: PR #${pr}'s ledger is left as it is: ${found.why}.`,
-      );
-    return "done";
-  }
-  const driver: LedgerDriverEnv = {
-    ...who,
-    login,
-    floor: found.ledger.driver.position ?? null,
-    claim: found.own,
-    stopped: exit,
-    // The writer re-checks the guard against every snapshot it builds from:
-    // a successor can publish between this read and that write.
-    recovering: true,
-    ...(pending ? { pending: true } : {}),
-  };
+  const found = stoppedDriver(snapshot, who, byPerson, pending);
+  if (stoppedLedgerIsClaimed(pr, snapshot, found)) return "done";
+  const driver = stoppedDriverEnv(who, login, found, exit, pending);
   const recoverySession = randomUUID();
-  const env = {
-    ...process.env,
-    DRIVE_PR_STATE_DIR: stateDir,
-    DRIVE_PR_WORKTREE: diag.worktree,
-    // Recovery owns a short-lived identity, never the interactive caller.
-    DRIVE_PR_SESSION: String(process.pid),
-    DRIVE_PR_SESSION_STARTED: recoverySession,
-  };
+  // Recovery owns a short-lived identity, never the interactive caller.
+  const env = recoveryEnvironment(stateDir, diag.worktree, recoverySession);
   // The stop goes into the local state first, so the report reads this run's
   // end there (an earlier run's recorded exit would otherwise speak for it),
   // and the ledger built from that state carries it. A retry appends it
   // again, which changes nothing a report reads.
   try {
-    const event = await run(tsArgv(driveState, ["record-event", pr]), {
-      stdin: JSON.stringify({ kind: "stop", cause: String(exit ?? "unknown") }),
-      stdout: "ignore",
-      stderr: "inherit",
-      timeoutSec: helperTimeoutSeconds(),
-      env,
-    });
-    if (event.code !== 0) {
+    const result = await publishStoppedLedger(pr, exit, env, driver);
+    if (result !== 0 && result !== LEDGER_REFUSED_EXIT) {
       console.error(
-        `ledger: PR #${pr}'s stop was not recorded (drive-state.ts record-event exited ${event.code}).`,
+        `ledger: PR #${pr}'s ledger was not marked stopped (drive-state.ts handoff exited ${result}).`,
       );
       return "retry";
     }
-    const res = await run(tsArgv(driveState, ["handoff", pr]), {
-      stdout: "ignore",
-      stderr: "inherit",
-      timeoutSec: helperTimeoutSeconds(),
-      env: {
-        ...env,
-        [LEDGER_DRIVER_ENV]: JSON.stringify(driver),
-        [HANDOFF_TELLS_REFUSED]: "1",
-      },
-    });
     // A write the guards refused has nothing left to write, and is not ours to label.
-    if (res.code === LEDGER_REFUSED_EXIT) return "done";
-    if (res.code === 0) {
-      let readFailed = false;
-      const current = async () => {
-        const snapshot = await readLedgerSnapshot(pr, login);
-        if (typeof snapshot !== "string")
-          return ledgerOfStoppedDriver(snapshot, who, true);
-        readFailed = true;
-        console.error(
-          `ledger: PR #${pr}'s stopped label ownership did not read: ${snapshot}.`,
-        );
-        return null;
-      };
-      const published = pending ? await current() : found;
-      if (published === null) return "retry";
-      if ("why" in published) return "done";
-      // The handoff can publish an operator stop after the initial snapshot.
-      // Decide whether the converged-CI watch remains applicable from that
-      // post-handoff state, not from the earlier local read.
-      const currentByPerson =
-        personStopFor(stateDir, pr, diag.started).personStop !== undefined;
-      if (pending && exit === DRIVE_EXIT.CONVERGED && !currentByPerson)
-        return "done";
-      const label = await labelDrive(
-        pr,
-        {
-          stopped: exit,
-          byPerson: currentByPerson,
-          verifiedSha: published.ledger.verifiedSha,
-          stop: stopKey(
-            published.ledger.driver.started,
-            published.ledger.round,
-          ),
-          parks: published.ledger.parked,
-        },
-        undefined,
-        pending
-          ? async () => {
-              const fresh = await current();
-              return fresh !== null && !("why" in fresh);
-            }
-          : undefined,
-      );
-      if (
-        readFailed ||
-        (pending &&
-          (label?.write.outcome === "refused" ||
-            (currentByPerson && label === null)))
-      )
-        return "retry";
-      return "done";
-    }
-    console.error(
-      `ledger: PR #${pr}'s ledger was not marked stopped (drive-state.ts handoff exited ${res.code}).`,
+    if (result === LEDGER_REFUSED_EXIT) return "done";
+    return labelPublishedStop(
+      stateDir,
+      pr,
+      diag,
+      exit,
+      pending,
+      login,
+      who,
+      found,
     );
-    return "retry";
   } finally {
     // A successor or an unrelated session must retain its admission.
-    inTransaction(driveDb(stateDir).db, () => {
-      const ref = leaseRef(stateDir, pr, who.actor);
-      const tree = treeLeaseRef(stateDir, who.actor);
-      const lease = readLease(ref);
-      if (
-        lease?.holder === "session" &&
-        lease.pid === process.pid &&
-        lease.host === hostname() &&
-        lease.sessionStarted === recoverySession
-      )
-        removeLease(ref);
-      const held = readTreeLease(tree);
-      if (
-        held?.holder === "session" &&
-        held.pid === process.pid &&
-        held.host === hostname() &&
-        held.pr === pr &&
-        held.sessionStarted === recoverySession
-      )
-        removeTreeLease(tree);
-    });
+    releaseRecoveryLeases(stateDir, pr, who, recoverySession);
   }
 }
 
