@@ -432,7 +432,7 @@ write nothing: the labels already carry the areas, which a coarse
 footprint can be derived from. With sub-issues, write each child's
 own paths on that child, and none on an issue whose paths are not known:
 never copy one diff onto every child. Exit `3` (no change, no path) wrote
-nothing; any other non-zero exit is reported in step 12 and filing goes
+nothing; any other non-zero exit is reported in step 13 and filing goes
 on: the issue stands without its footprint.
 
 ### 11. Record the relations
@@ -452,7 +452,42 @@ this run. `relations <KEY>` reports each relation from `<KEY>`'s side:
 `blocks`, `blocked_by`, `related`, `duplicate` (`<KEY>` is the duplicate)
 and `duplicated_by` (the other issue is a duplicate of `<KEY>`).
 
-### 12. Report
+### 12. Hand it over, when asked
+
+**exact** — Only when the person filing names who takes the work for the
+line: the repository's factory identity (`dispatch.identity`) or a person
+this host serves. Otherwise leave the issue unassigned and skip this step.
+The issue was filed unassigned; never assign it in the creation itself or
+by hand right after it. On a tracker whose history leaves out changes made
+just after an issue's creation (Linear: its first three minutes), the
+dispatcher never sees who made such an assignment and never starts the
+item. Hand the issue (with sub-issues, the one to start, usually the
+parent) over with the command for its taker, in the foreground: each
+waits until that window has passed, then writes.
+
+- **The factory identity**: `jig send pickup@<owner>/<name>#<KEY> assign`
+  (`<owner>/<name>` is this repository). It also moves the item into a
+  dispatch state the tick reads.
+- **A served person**:
+
+  ```bash
+  bun "${CLAUDE_SKILL_DIR}/scripts/hand-off.ts" "<KEY>" --to "<their tracker identity>"
+  ```
+
+  It prints JSON: exit `0` with `writtenAt` (the time it wrote the
+  assignment, or `null` when the issue was already assigned and its history
+  shows it); exit `3` when the issue was not handed over, with `reason`,
+  `earliest` (the earliest time to run it again, when it waits on that) and
+  `remedy`; exit `2` a malformed command line.
+
+Neither changes an existing assignment. When the session cannot wait (it
+ends, or the write fails), do not report the issue as handed over: put the
+command, and the earliest time it may run, in the report so a person or the
+next session finishes it. For an issue already assigned whose history does
+not show the assignment, report the remedy as printed: unassign it on the
+tracker, then assign it again after the window.
+
+### 13. Report
 
 **exact** — End with:
 
@@ -464,6 +499,7 @@ and `duplicated_by` (the other issue is a duplicate of `<KEY>`).
 - Parent: <key, or none> · Sub-issues: <keys, or none>
 - Relations: <KEY blocks …, related …, or none>
 - Footprint: <paths and areas recorded, or none (filed from a description)>
+- Hand-off: <assigned to <identity> at <time>; the dispatcher sees it from its next tick after then | not handed over: <reason>; run `<command>` at or after <earliest time> | none asked>
 - Next: `/jig:do-item <KEY>` (or the first child to pick up)
 ```
 
@@ -534,7 +570,7 @@ or remove the ones created. When the update itself fails after the children
 exist, report that the issue still carries the flags its children now carry,
 and the update that would remove them. Then record the relations as in
 [File, step 11](#11-record-the-relations). Report as in
-[File, step 12](#12-report), headed `## Planned <KEY>: <title>`.
+[File, step 13](#13-report), headed `## Planned <KEY>: <title>`.
 
 ## Check the open issues
 

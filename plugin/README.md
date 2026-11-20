@@ -454,6 +454,14 @@ open, not-started assignments need no dispatch state. Unassigned items
 under an epic assigned to them inherit that person, including nested
 epics. Only assignments made by a repository writer qualify.
 
+Who made an assignment is read from the tracker's history, and Linear
+leaves changes made in an issue's first three minutes out of it: an item
+assigned then is never started. Assign a Linear item at least three minutes
+after its creation, or unassign it and assign it again after them; the
+dispatcher starts it at its next tick after an assignment the history
+shows. `jig send … assign` and `/jig:file-issue`'s hand-off wait for that
+window themselves.
+
 A repository whose lane is a ready pool sets `dispatch.pool.states`: an
 unassigned open item in one of those states is a pickup too, ranked by the
 queue's rules after the items assigned to the factory identity, when the

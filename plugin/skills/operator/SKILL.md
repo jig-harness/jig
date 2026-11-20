@@ -258,6 +258,15 @@ are not proof that full CI passed.
 | stop a drive | `jig send drive@<owner>/<name> <PR> stop --dry-run` |
 | hand a tracker item to the line | `jig send pickup@<owner>/<name> <item key> assign --dry-run` |
 
+`assign` hands an unassigned item to the repository's factory identity. On
+a tracker whose history leaves out changes made just after an issue's
+creation (Linear: its first three minutes), the dispatcher never sees an
+assignment made then, so the send waits until that window has passed and
+then writes; its `note` row names the time. An item already assigned to the
+factory identity whose history holds no assignment of it is refused with the
+remedy: the person unassigns it on the tracker and sends again. The send
+never changes an existing assignment.
+
 `resume` names the directive it withdraws: `resume pause`, `resume
 hold-push` or `resume stop`. The mailbox verbs (`pause`, `hold-push`,
 `resume`, `stop`) reach a driver on this machine only; for a drive held
@@ -343,6 +352,8 @@ tick for a label or an assignment (the send woke it, now or within a
 minute, when `next` says so; otherwise its next tick), the re-arm for an
 answer, the
 driver's next round boundary (before its next push, for `hold-push`) for a
-directive. That link shows the request landed; do not run `jig ask` right
+directive. For an assignment the next tick is the first after the write,
+and the write comes after the tracker's creation window when the send
+waited for it. That link shows the request landed; do not run `jig ask` right
 after it to check, since the forge can take a moment to list a new
 comment. A failed write (`jig send: not sent: …`) is reported as it is.
