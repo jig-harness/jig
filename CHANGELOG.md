@@ -401,6 +401,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.287.1] - 2026-11-20
+
+### Changed
+
+- The dispatch dashboard shows parked decisions on the face of Needs you cards. Open a card for the remaining options and use the check panel to confirm a guarded copy.
+
 ## [0.287.0] - 2026-11-20
 
 ### Added
@@ -10196,7 +10202,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.287.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.287.1...HEAD
+[0.287.1]: https://github.com/jig-harness/jig/compare/v0.287.0...v0.287.1
 [0.287.0]: https://github.com/jig-harness/jig/compare/v0.286.4...v0.287.0
 [0.286.4]: https://github.com/jig-harness/jig/compare/v0.286.3...v0.286.4
 [0.286.3]: https://github.com/jig-harness/jig/compare/v0.286.2...v0.286.3
