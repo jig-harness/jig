@@ -427,6 +427,34 @@ export function judge(
   return held ? `the host's load holds it: ${refused.detail}` : null;
 }
 
+/**
+ * Whether the load holds a launch of `kind` for `target` before anything is
+ * read or reserved for it: the reason it waits, recorded as a hold as
+ * `judge` records one, or `null`, reserving nothing. Only enforcement holds
+ * here; without it `judge` still reports the hold it would make, when the
+ * launch is judged.
+ */
+export function holdsBefore(
+  state: LoadState,
+  kind: LoadKind,
+  repo: string,
+  target: string,
+  pickupDeadlineMs = 0,
+): string | null {
+  if (!state.settings.enforce) return null;
+  const refused = refusal(state, kind, pickupDeadlineMs);
+  if (refused === null) return null;
+  state.holds.push({
+    repo,
+    target,
+    kind,
+    gauge: refused.gauge,
+    detail: refused.detail,
+    held: true,
+  });
+  return `the host's load holds it: ${refused.detail}`;
+}
+
 /** What the tick reports: the gauges as they were read, the load factor, the reservations and the holds. */
 export function loadReport(state: LoadState): LineLoad {
   const read = gauges({ ...state, spentBytes: 0, spentSlots: 0 });
