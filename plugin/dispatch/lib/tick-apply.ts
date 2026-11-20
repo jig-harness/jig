@@ -16,6 +16,7 @@ import { serialUndecided } from "./serial-pickups.ts";
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./accounts.ts";
+import { driversOf, type HostDrivers } from "./host-drivers.ts";
 import {
   type ApplyState,
   applyDrives,
@@ -24,7 +25,8 @@ import {
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
 import { retireRearmRequests } from "./actions/retire-rearm.ts";
-import { applyPickups } from "./actions/pickup.ts";
+import { applyPickups, type PickupContext } from "./actions/pickup.ts";
+import { planOverlap } from "./overlap-plan.ts";
 import { newPreflight, trackerTargetOf } from "./preflight.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
 import { timeLeftMs } from "./actions/launch.ts";
@@ -95,6 +97,7 @@ export function applyState(
   unreadable: string[],
   startedAt: number,
   weights?: import("./local-weights.ts").AccountWeights,
+  drivers?: HostDrivers,
 ): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
@@ -104,6 +107,11 @@ export function applyState(
     return {
       withheld: `${unreadable.length} launch record(s) do not read, so no slot can be told free`,
     };
+  // A driver no record started still holds its account's slot: unread, no slot can be told free either.
+  if (drivers !== undefined && !drivers.ok)
+    return {
+      withheld: `the host's live drivers do not read (${drivers.failure.reason}), so no slot can be told free`,
+    };
   // A rotation cursor that cannot be recorded would repeat: launch nothing.
   const tick = nextTickIndex();
   if (typeof tick !== "number")
@@ -112,11 +120,19 @@ export function applyState(
     machine,
     runtime,
     records,
-    table: slotTable(machine.accounts, records, nowMs, undefined, weights),
+    table: slotTable(
+      machine.accounts,
+      records,
+      nowMs,
+      undefined,
+      weights,
+      driversOf(drivers),
+    ),
     weights,
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
     codexOptIn: hostCodexOptIn(),
+    ...(drivers === undefined ? {} : { drivers }),
     startedAt,
     tick,
     repos: options.repos.length,
@@ -199,6 +215,8 @@ export async function actObserved(
     pickupArms: pickupArms(allRecords(context), repo),
     section,
     tracked: observation.tracked,
+    admitPickups: (wanted, launch) =>
+      planOverlap(context, observation, wanted, launch),
     login: forge.login,
     merged: forge.merged,
     drives: observation.drives,
@@ -282,6 +300,7 @@ interface ApplyInputs {
   runtime: SessionRuntime;
   section: DispatchSection;
   tracked: Tracked;
+  admitPickups: NonNullable<PickupContext["admit"]>;
   login: string | null;
   merged: MarkedPr[];
   drives: DrivenPr[];
@@ -380,6 +399,7 @@ async function applyStages(
         const { tracker, keys } = tracked;
         if (enabled.has("pickup") && tracker !== null && keys)
           await applyPickups(apply, repo, report, {
+            admit: inputs.admitPickups,
             section,
             tracker,
             keys,

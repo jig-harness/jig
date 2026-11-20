@@ -10,7 +10,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { scopedStateDir } from "../../skills/drive-pr/__tests__/scoped-state-dir.ts";
+import { holdLock } from "./host-driver-fixtures.ts";
 import { orphanTakeover, parseHolders } from "../lib/sources/doctor.ts";
+import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   labeled,
@@ -23,6 +26,7 @@ import {
 } from "./fixtures.ts";
 import {
   account,
+  dispatchState,
   driveRuns,
   exitWritten,
   machineFile,
@@ -154,6 +158,36 @@ describe("a silent driver no launch started", () => {
       // The doctor was read in the repository's clone.
       expect(doctorRuns(w)).toEqual([{ argv: ["--json"], cwd: w.repo }]);
     });
+
+  it("is taken over at cap one when its live wedged holder occupies the account's only slot", async () => {
+    const w = fixture();
+    // A real live lock of this repository's clone, billing account a, in the worktree the doctor reads wedged.
+    holdLock(
+      w.env.DRIVE_PR_STATE_DIR as string,
+      7,
+      join(w.root, "ws-7"),
+      "a@example.com",
+      undefined,
+      scopedStateDir(w.env.DRIVE_PR_STATE_DIR as string, w.repo),
+    );
+    doctorReads(w, {
+      state: "live",
+      verdict: "WEDGED",
+      reason: "no recorded progress for 300 minute(s) (threshold 240)",
+    });
+    const receipt = await tick(w);
+    const [launched] = repo(receipt)?.launches ?? [];
+    expect(launched).toMatchObject({
+      action: "takeover",
+      outcome: "launched",
+      account: "a",
+    });
+    await waitFor("the drive", () => driveRuns(w).length === 1);
+    expect(driveRuns(w)[0]?.argv.slice(0, 2)).toEqual(["7", "--take-over"]);
+    const record = readRecord(launched?.record ?? "", dispatchState(w));
+    expect(record?.replacesHostDriver).toMatchObject({ pr: 7 });
+    await waitFor("the exit", () => exitWritten(w, launched?.record ?? ""));
+  }, 90_000);
 
   it("is never taken over while its holder is alive and making progress", async () => {
     const w = fixture();

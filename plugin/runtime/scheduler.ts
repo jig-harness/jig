@@ -5,6 +5,7 @@
  * environment, and the launcher runs the installed copy of the plugin.
  */
 import { jigHome } from "../shared/config-layers.ts";
+import { fixtureRegistryLimit } from "../shared/fixture-registry-index.ts";
 import { GcError } from "../shared/gc-error.ts";
 import {
   copyFileSync,
@@ -295,6 +296,14 @@ function lockEnvironment(removing: boolean): Record<string, string> {
       : {}),
   };
 }
+/** The test fixture registry limit, kept only when the host set a valid one. */
+function fixtureLimitEnvironment(): Record<string, string> {
+  const configured = process.env.JIG_TEST_FIXTURE_REGISTRY_LIMIT;
+  return configured !== undefined &&
+    fixtureRegistryLimit() === Number(configured)
+    ? { JIG_TEST_FIXTURE_REGISTRY_LIMIT: configured }
+    : {};
+}
 /** The job to write; a removal names it only, so a bad value cannot block it. */
 function installedJob(spec: JobSpec, removing = false): Job {
   return {
@@ -305,6 +314,8 @@ function installedJob(spec: JobSpec, removing = false): Job {
       JIG_HOME: jigHome(),
       ...resolvedPaths(["TMPDIR"]),
       ...lockEnvironment(removing),
+      // The collector and dispatcher judge registry pressure by this limit.
+      ...fixtureLimitEnvironment(),
       // The agent tools read their registries from these.
       ...resolvedPaths([
         "CLAUDE_CONFIG_DIR",

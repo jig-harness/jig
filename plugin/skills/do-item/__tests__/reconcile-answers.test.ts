@@ -16,6 +16,7 @@ import { linearTracker } from "../scripts/lib/tracker/linear.ts";
 import type { Tracker } from "../scripts/lib/tracker/port.ts";
 import {
   type AnswersInput,
+  type IssueAnswer,
   isAnswersInput,
   listingFromAnswers,
 } from "../scripts/lib/reconcile-answers.ts";
@@ -186,6 +187,28 @@ describe("parent-status reconciliation from the port's answers", () => {
 // ── Gaps fail closed ───────────────────────────────────────────────────────
 
 describe("listingFromAnswers", () => {
+  it("keeps the existing status rules for explicitly non-epic parents", () => {
+    const parent = { identifier: "ENG-1", labels: [], isEpic: false };
+    const child = (
+      state: NonNullable<IssueAnswer["state"]>,
+      labels: string[] = [],
+    ) =>
+      reconcileParentStatus(
+        listingFromAnswers({
+          issue: "ENG-1",
+          parent,
+          children: { "ENG-2": { identifier: "ENG-2", state, labels } },
+          complete: true,
+        }),
+      );
+    expect(child({ name: "Ops Pending", type: "started" })).toMatchObject({
+      verdict: "set_status",
+      parentState: "ops_pending",
+    });
+    expect(child({ name: "Todo", type: "unstarted" }, ["hitl"]).verdict).toBe(
+      "keep_in_progress",
+    );
+  });
   const answer = (identifier: string, name: string, type: string) => ({
     found: true,
     identifier,

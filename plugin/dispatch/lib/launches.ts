@@ -127,7 +127,6 @@ export interface LaunchAttempt {
   outcome: "sent" | "failed" | "lost";
   detail: string;
 }
-
 /** The tick's part of a record. */
 export interface LaunchRecord {
   /** The last attributable test-lock wait this host observed, retained after it ends. */
@@ -168,6 +167,7 @@ export interface LaunchRecord {
   ancestorEpic?: string;
   /** Factory-assigned epic whose authority an unassigned child inherits. */
   factoryAncestor?: string;
+  ancestors?: string[];
   /** For a pickup of a blocker pulled forward: the served item it blocks, whose authority the claim re-reads. */
   blockingFor?: string;
   /** For a pickup from the ready pool: the launch re-reads it as one, so a later assignment cannot move it to the assigned lane. */
@@ -178,6 +178,8 @@ export interface LaunchRecord {
   codexPassArgs?: string[];
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
+  /** Host-driver lock this takeover replaces, if any. */
+  replacesHostDriver?: { clone: string; pr: number; since: string };
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
   facts: string;
   createdAt: string;

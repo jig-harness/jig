@@ -154,7 +154,7 @@ async function evaluateKind(
 /** The exit of a command whose configuration gc refuses. */
 const CONFIGURATION_EXIT = 2;
 /**
- * The exit for a failure that stops a gc command before it does anything: a
+ * The exit for a run-level gc failure: a
  * refused configuration exits 2 with its reason alone on standard error;
  * anything else exits 1 with its reason logged as an error (`failureExit`).
  */
@@ -201,7 +201,11 @@ export function recordFailedRun(
 /** A receipt exists before any action; each removal records intent and proof first. */
 export async function runCollection(
   kinds: CollectionKind[],
-  options: { collect: boolean; receiptRoot?: string },
+  options: {
+    collect: boolean;
+    receiptRoot?: string;
+    verify?: (receipt: Receipt) => Failure | null;
+  },
 ): Promise<{ receipt: Receipt; path: string }> {
   const receipt = newReceipt(options.collect);
   receipt.kinds = kinds.map((kind) => ({
@@ -213,6 +217,11 @@ export async function runCollection(
   for (const kind of kinds) {
     await evaluateKind(kind, receipt, journal.update);
     journal.update();
+  }
+  const failure = options.verify?.(receipt);
+  if (failure) {
+    receipt.failure = { code: failure.code, reason: failure.reason };
+    receipt.exitStatus = stopped(failure);
   }
   receipt.completed = true;
   receipt.finishedAt = currentIso();

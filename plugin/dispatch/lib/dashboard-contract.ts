@@ -127,7 +127,8 @@ export type NeedCause =
   | Exclude<NotifyCause, "waiting" | "drifting" | "ready" | FailureCause>
   | "assigner-cannot-write"
   | "tracker-unreachable"
-  | "low-quota";
+  | "low-quota"
+  | "state-storage";
 
 /** One thing the line waits on a person for. */
 export interface LineNeed {
@@ -184,7 +185,7 @@ export interface LineAccount {
   vendor: string;
   /** Sessions the dispatcher may hold on it at once. */
   cap: number;
-  /** Launch records holding one of its slots. A takeover and the record it replaces on the same account count once. */
+  /** Slots held: launch records holding one (a takeover and the record it replaces on the same account count once), and the live drivers no such record accounts for (`drivers`). */
   held: number;
   /** The launching stages it serves, when the machine file narrows them (`accounts[].stages`); absent, every one. */
   stages?: string[];
@@ -193,6 +194,27 @@ export interface LineAccount {
   wallUnrecorded: boolean;
   /** Why a drive's pass is never admitted on it; `null` when it is. */
   notAdmitted: string | null;
+}
+
+/** A live driver on the host that no launch record holding its stage accounts for: it holds a slot of the account its passes bill. */
+export interface LineDriver {
+  pr: number;
+  /** The tree it works; `null` when its lock carries no diagnostics. */
+  worktree: string | null;
+  /** The listed account whose slot it holds; `null` when no listed account answers it, and then it holds none. */
+  account: string | null;
+  /** Why `account` is `null`; `null` otherwise. */
+  accountReason: string | null;
+  /** The account identity its passes bill, as the driver resolved it; `null` when unresolved. */
+  identity: string | null;
+  vendor: string | null;
+  /** `pickup`: a pickup armed it and has ended; `dispatcher`: a drive launch of the dispatcher's whose record has ended; `unrecorded`: no launch record (a person or a repair session). */
+  startedBy: "pickup" | "dispatcher" | "unrecorded";
+  /** The ended launch record that started it; `null` when unrecorded. */
+  record: string | null;
+  pid: number;
+  since: string;
+  log: string | null;
 }
 
 /** An agent's state as the runtime reports it, for an interactive session. */
@@ -530,6 +552,10 @@ export interface LineSnapshot {
   /** The account of the last launch, which the next admission rotates from; `null` before any. */
   lastAccount: string | null;
   sessions: LineSession[];
+  /** The host's live drivers no session accounts for, each holding a slot of its account; absent from a line written before they were counted. */
+  drivers?: LineDriver[];
+  /** Why the host's live drivers could not be read, when they could not: `drivers` is then absent and `accounts[].held` counts launch records only. */
+  driversUnread?: string;
   needs: LineNeed[];
   /** Decisions answered with hold, still visible until their facts change; absent in older snapshots. */
   answeredHolds?: Array<{ repo: string; target: string; why: string }>;

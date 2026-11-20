@@ -13,6 +13,7 @@ import {
   slotTable,
 } from "./accounts.ts";
 import type { LoadKind } from "./dashboard-contract.ts";
+import { driversOf } from "./host-drivers.ts";
 import { holds, type LaunchRecord, type ReadRecord } from "./launches.ts";
 import { accountsReading, loadState, type LoadState } from "./load.ts";
 import { readLoad } from "./load-read.ts";
@@ -81,6 +82,7 @@ export function readTickLoad(input: {
   nowMs: number;
   sample: boolean;
   weights?: import("./local-weights.ts").AccountWeights | undefined;
+  drivers?: import("./host-drivers.ts").HostDrivers | undefined;
 }): Outcome<LoadState, "load-unread"> {
   return attempt("load-unread", "the host's load was not read", () => {
     const { machine, records, nowMs } = input;
@@ -101,7 +103,14 @@ export function readTickLoad(input: {
     }
     const table =
       input.table ??
-      slotTable(machine.accounts, records, nowMs, undefined, input.weights);
+      slotTable(
+        machine.accounts,
+        records,
+        nowMs,
+        undefined,
+        input.weights,
+        driversOf(input.drivers),
+      );
     const refused = notAdmitted(
       machine.accounts,
       passTimeoutSeconds(),

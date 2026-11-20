@@ -49,7 +49,7 @@ import { importStateDir } from "./import.ts";
 export const DB_FILE = "state.sqlite";
 
 /** Each entry moves the schema one version forward; see `shared/records/db.ts`. */
-const MIGRATIONS: readonly Migration[] = [
+export const MIGRATIONS: readonly Migration[] = [
   {
     additive: false,
     sql: `

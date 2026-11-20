@@ -270,7 +270,7 @@ describe("CONFIGURATION.md", () => {
         ]);
   });
 
-  test("its complete example sets every field and passes the schema and the skills", () => {
+  test("its complete example sets every active field and passes the schema and the skills", () => {
     const example = completeExample();
     const findings = checkConfig(example, schema);
     expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
@@ -294,12 +294,12 @@ describe("CONFIGURATION.md", () => {
           (node, key) => (node as Record<string, unknown> | undefined)?.[key],
           example,
         );
-    // A repository's file refuses what only the host sets.
-    for (const f of schema.fields)
-      expect([f.path, set(f.path) !== undefined]).toEqual([
-        f.path,
-        f.user_only !== true,
-      ]);
+    // The example may omit deprecated keys. A repository file refuses host-only keys.
+    for (const f of schema.fields) {
+      const present = set(f.path) !== undefined;
+      if (!present && f.deprecated !== undefined) continue;
+      expect([f.path, present]).toEqual([f.path, f.user_only !== true]);
+    }
   });
 });
 

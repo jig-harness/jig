@@ -144,6 +144,7 @@ import { stateRoot } from "../receipts.ts";
 /** What the observe phase needs: the run's options, the runtime, the tick's clock and this machine's launch records. */
 export interface ObserveContext {
   weights?: import("./local-weights.ts").AccountWeights | undefined;
+  drivers?: import("./host-drivers.ts").HostDrivers | undefined;
   options: TickOptions;
   runtime: SessionRuntime;
   nowMs: number;
@@ -564,6 +565,7 @@ export async function observeRepo(
   const overlap = await timer.time("observe", () =>
     pool.run(() =>
       readOverlapFacts({
+        repo: repo.slug,
         tracker: tracked.tracker,
         wanted: tracked.pickups,
         claimed: tracked.claimed,

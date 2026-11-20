@@ -262,7 +262,8 @@ jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 
 `jig dispatch --help` lists its options, and `jig dispatch dashboard --help`,
 `jig dispatch log --help`, `jig dispatch line --help`,
-`jig dispatch clear --help` and `jig dispatch probe --help` list those of
+`jig dispatch clear --help`, `jig dispatch attach --help` and
+`jig dispatch probe --help` list those of
 each subcommand. For each
 repository (`--repo`, else the machine file's, else the current one) it
 prints every action it would take, each with the record that wants it and
@@ -294,6 +295,36 @@ back to the dispatcher, which admits it when the pickup has ended. With
 label before the dispatcher can admit the drive.
 The dashboard shows causes that need attention.
 
+A person follows a process run, or takes it over, from any shell on the
+host:
+
+```sh
+jig dispatch attach <record> [--take-over]
+```
+
+Without `--take-over` it prints the run's worktree, account, stage and how
+long it has run, then the run's output as it is written
+(`~/.local/state/jig/dispatch/runs/<record>/output.log`), until the run
+ends; interrupting it leaves the run going. With `--take-over` it first
+holds the run's pull request or item in the person's name, as
+`jig send <address> hold` does, so no tick starts anything on it; then
+stops the run (a drive through `drives.ts --stop` too, so its ledger reads
+stopped) and records its end `by: person`, which frees the account's slot.
+It prints the command that resumes the Claude Code or Codex session in the
+worktree under the same account's directory; it does not run it. Run again
+after an interruption, it finishes the take-over. A run on Orca is refused,
+since its tab already shows it.
+
+- A drive taken over has a person's stop recorded on its ledger by
+  `drives.ts --stop`, so releasing the hold does not make the tick re-arm
+  it: a person restarts the drive.
+- Taking over a drive or a follow-up holds its pull request with the
+  repository's dispatch hold label (`dispatch.labels`). Where that label is
+  off, the hold is refused and the run is left going.
+- The end reaches this host's launch claim on the forge, as the wrapper's
+  end does, only where the claim has no end yet: a claim whose end the
+  wrapper already wrote when the run stopped keeps that end.
+
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,
@@ -311,7 +342,11 @@ the pass to an account the machine file lists that serves the `rearm`
 stage ([`accounts[].stages`](CONFIGURATION.md#the-machines-dispatch-file)),
 through that account's
 configuration directory, and only while the account has a free slot and no
-recorded usage-limit wall; before the launch the dispatcher checks that the
+recorded usage-limit wall. A slot is held by each launch record still
+running and by each live driver on the host that no such record accounts
+for, whoever started it (a drive a pickup armed, which keeps its pickup's
+slot when the pickup ends, or one a person or a repair session started
+by hand), on the account whose identity its lock says its passes bill; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
 does not. Every launch begins with a launch record in the state database,
 so a launch whose answer is lost
@@ -459,18 +494,14 @@ assignee makes the pickup refuse without restoring anyone. Linear and Jira
 have one assignee, so they assign first and verify the assignment from history;
 when that check finds a concurrent assignee was replaced, they conditionally
 make a best-effort restoration and refuse the pickup. A tracker without either
-operation leaves the blocker for a person to assign. An assigned epic without
-an execution plan has its ready children started in parallel, best-ranked
-first, up to `dispatch.epic_width` of them under way at once (4 by default;
-1 starts one child at a time). A started child counts toward the width while
-it still needs an agent, and so does a child that cannot be read, since it
-may be under way. A child awaiting a person takes no part of the width: it
-is in the tracker's `ops_pending` state, or carries `hitl`, `hitl:*`,
-`manual-ops` (including their configured names) or `jig:hold`. Nor does a
-child this host's ended pickup record keeps from starting: its next
-startable sibling takes its place, and the epic reports the held child and
-why. A child that waits on the width says so, naming the epic and the width
-([ADR-0024](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)).
+operation leaves the blocker for a person to assign. The dispatcher considers
+all ready children of an assigned epic alongside other pickups. It gives
+work that shares files with open pull requests or active pickups a later
+turn, then weighs the remaining candidates again after each start. If only
+overlapping work can use a free slot, it starts. An execution plan's
+dependency edges or a serialized area can require one child at a time.
+The retired `dispatch.epic_width` key is ignored and named in the receipt
+with its replacement, `dispatch.overlap`.
 An epic none of whose open children can start reports one reason,
 naming a child waiting on a person when it has one. An execution plan keeps
 its own ordering rules.
@@ -1503,6 +1534,13 @@ workspaces. It is `null` when none is known or the records are ambiguous.
 It never falls back to the notices workspace: `notified.workspace` still
 names where the notification went. This is an additive version-1 field;
 readers treat its absence in an older snapshot as unknown.
+`line.drivers` lists the live drivers on the host that no running launch
+record accounts for, each with its pull request, its tree, the `account`
+whose slot it holds (`null`, with `accountReason`, when no listed account
+has the identity its passes bill, and then it holds none) and how it was
+started (`startedBy`: `pickup`, `dispatcher` or `unrecorded`); it is absent
+from a line written before they were counted, and when the drive's database
+could not be read, which `line.driversUnread` then says.
 Each entry in `line.repos` carries `tracker`, the adapter its configuration
 names (`{"adapter":"linear"}`), and each row of `needs`, `sessions`, `queue`
 and `ready` carries `links`: for a pull request, the items its branch names,
@@ -1667,8 +1705,8 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, whether its process is alive, dead or unknown, why, and when its launch began (`since`); the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `held` (a person's pickup hold on the dispatching host, shown even when the item already has a holder or an open need, which stay in `holder` and `waitsOn`), `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `inspect the quota spending`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
-| `overlap`, `footprint` | for a pick-up still assigned, when the newest tick found it so: why it waits on [overlap](https://github.com/jig-harness/jig/blob/main/design/overlap-aware-admission.md#the-reason-a-person-sees) with the work in flight (the relation, `waits on overlap` or `waits on the overlap bound`; each pull request or pickup it waits on with its state and link; how many; and the sentence its `waitsOn` repeats), and the note on a footprint unknown or derived from area labels alone (`footprint unknown: …`). Reported only: the dispatcher does not yet order its starts by them |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `inspect the quota spending`, `inspect Jig state storage`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
+| `overlap`, `footprint` | for a pick-up still assigned, when the newest tick found it so: why it waits on [overlap](https://github.com/jig-harness/jig/blob/main/design/overlap-aware-admission.md#the-reason-a-person-sees) with the work in flight (the relation, `waits on overlap` or `waits on the overlap bound`; each pull request or pickup it waits on with its state and link; how many; and the sentence its `waitsOn` repeats), and the note on a footprint unknown or derived from area labels alone (`footprint unknown: …`). The dispatcher uses these tiers to order its pickup attempts |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
 

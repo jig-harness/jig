@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   DEFAULT_VOCABULARY,
+  epicChildDisposition,
   type ReconcileChildInput,
   reconcileParentStatus,
 } from "../scripts/reconcile_parent_status.ts";
@@ -106,6 +107,46 @@ describe("reconcileParentStatus with the consumer's vocabulary", () => {
       vocabulary,
     );
     expect(oldName.verdict).toBe("keep_in_progress");
+  });
+
+  it("identifies person checks using the repository's exact label and operations state", () => {
+    expect(
+      epicChildDisposition(child("Todo", { labels: ["human"] }), vocabulary),
+    ).toBe("person-check");
+    expect(
+      epicChildDisposition(
+        child("Awaiting Ops", { type: "started" }),
+        vocabulary,
+      ),
+    ).toBe("person-check");
+    expect(
+      epicChildDisposition(
+        child("Awaiting Ops", { type: "backlog" }),
+        vocabulary,
+      ),
+    ).toBe("incomplete");
+    expect(
+      epicChildDisposition(
+        child("Awaiting Ops", { type: "completed" }),
+        vocabulary,
+      ),
+    ).toBe("completed");
+  });
+
+  it("requires a tail label when the operations state shares its name with review", () => {
+    const shared = {
+      ...vocabulary,
+      states: { ...vocabulary.states, ops_pending: "Reviewing" },
+    };
+    expect(
+      epicChildDisposition(child("Reviewing", { type: "started" }), shared),
+    ).toBe("incomplete");
+    expect(
+      epicChildDisposition(
+        child("Reviewing", { type: "started", labels: ["human"] }),
+        shared,
+      ),
+    ).toBe("person-check");
   });
 
   describe("a child state with no category", () => {
