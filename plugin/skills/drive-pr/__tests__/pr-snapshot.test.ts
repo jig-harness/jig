@@ -183,6 +183,20 @@ describe("readPrSnapshot", () => {
     expect(!r.ok && r.reason).toContain("then the full read");
   });
 
+  it("names the conditional read's own failure beside the full read's", async () => {
+    await read();
+    let calls = 0;
+    const failing: typeof get = async () => {
+      calls += 1;
+      return { ok: false, reason: `gh api: HTTP ${calls === 1 ? 503 : 502}` };
+    };
+    const r = await readPrSnapshot("acme", "widgets", "7", "snapshot", failing);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.reason).toContain("HTTP 503");
+    expect(!r.ok && r.reason).toContain("then the full read");
+    expect(!r.ok && r.reason).toContain("HTTP 502");
+  });
+
   it("names the conditional failure too when the full read answers something that is not a pull document", async () => {
     await read();
     const inner = get;
