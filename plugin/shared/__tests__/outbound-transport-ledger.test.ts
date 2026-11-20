@@ -164,8 +164,13 @@ describe("outbound transport cost accounting", () => {
       cost: 1,
       unit: "requests",
       estimated: true,
+      repository: "private-owner/private-repo",
     });
-    expect(JSON.stringify(events)).not.toContain("private-");
+    // The repository is kept in its own field; nothing else of the route is.
+    expect(JSON.stringify(events)).not.toContain("private-value");
+    expect(
+      JSON.stringify(events.map(({ repository: _, ...event }) => event)),
+    ).not.toContain("private-");
   });
 
   it("attributes flag-first REST reads to their redacted route", async () => {
@@ -194,7 +199,13 @@ describe("outbound transport cost accounting", () => {
       "GET /repos/{}/{}/issues/{}/comments",
       "GET /repos/{}/{}/pulls/{}",
     ]);
-    expect(JSON.stringify(events)).not.toContain("private-");
+    expect(events.map((e) => e.repository)).toEqual([
+      "private-owner/private-repo",
+      "private-owner/private-repo",
+    ]);
+    expect(
+      JSON.stringify(events.map(({ repository: _, ...event }) => event)),
+    ).not.toContain("private-");
   });
 
   it("records each Jira credential renewal attempt and body-read failure with a safe route", async () => {

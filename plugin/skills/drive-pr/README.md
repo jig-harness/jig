@@ -374,9 +374,13 @@ window it closes.
 While final CI stays unchanged, its conditional signal observations back off
 from ten seconds through twenty and forty to sixty seconds between starts.
 A changed head, check, review or pull signal restores responsive probing.
-Local mailbox stop, hold and resume and remote takeover/provisional checks
-retain a ten-second idle cadence, independent of bulk CI observation. The
-mailbox runs before remote reads. In-flight work adds its helper deadline;
+Local mailbox stop, hold and resume and the provisional-decision sweep
+retain a ten-second idle cadence, independent of bulk CI observation.
+After a complete round-boundary takeover read, the drive waits at least
+sixty seconds between read starts. If the listing cannot be read, the next
+round checkpoint retries it. The drive still reads claims fresh before
+dispatching a pass and before writing the ledger. The mailbox runs before
+remote reads. In-flight work adds its helper deadline;
 GitHub's Retry-After and primary reset holds still take precedence. These
 bounds describe scheduling while requests can be admitted, not a guarantee
 that an unavailable forge will answer. Terminal verdicts, launches and pushes
