@@ -29,7 +29,10 @@ const window = (remaining: number, resetIn: number): BudgetWindow => ({
   limit: 5000,
 });
 
-function fixture(balance: (now: number) => BudgetWindow | undefined) {
+function fixture(
+  balance: (now: number) => BudgetWindow | undefined,
+  baseMs = base,
+) {
   let now = 0;
   const clock = {
     now: () => now,
@@ -38,7 +41,7 @@ function fixture(balance: (now: number) => BudgetWindow | undefined) {
     },
   };
   const ledger: CallRecord[] = [];
-  const pacing = new StatusPollPacing(base, defaultPolicy, {
+  const pacing = new StatusPollPacing(baseMs, defaultPolicy, {
     ...pollDependencies(clock),
     balance: () => {
       const observed = balance(now);
@@ -72,6 +75,18 @@ describe("waiting status poll pacing", () => {
     expect(probe.clock.now()).toBe(30 * second);
     expect(await probe.wait("other", 200 * second)).toBe(true);
     expect(probe.clock.now()).toBe(60 * second);
+  });
+
+  test("an unchanged reviewer wait doubles to its capped cadence", async () => {
+    const probe = fixture(() => window(4500, 3600), second);
+    const deadline = 10 * second;
+    const wakes: number[] = [];
+
+    while (await probe.wait("reviewer", deadline, undefined, 3 * second))
+      wakes.push(probe.clock.now());
+
+    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second));
+    expect(probe.clock.now()).toBe(deadline);
   });
 
   test("fewer polls over half an hour and an observed change resets the cadence", async () => {
