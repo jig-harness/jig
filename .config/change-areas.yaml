@@ -347,7 +347,10 @@ areas:
           The hub's storage migrations, which drizzle-kit generates from the
           schema and each adapter applies when the hub starts. The check
           generates into a copy of the folder under .context/ and fails on
-          any file a fresh generation adds or changes. A branch whose schema
+          any file a fresh generation adds or changes, and on any table or
+          index the checked-in migrations build otherwise than one migration
+          freshly generated from the schema, which finds an SQL file edited by
+          hand (drizzle-kit's snapshot does not). A branch whose schema
           change meets another branch's migration takes the other's as it
           is, drops its own and regenerates: migrations are never merged by
           hand. A migration the command adds is listed here with it.

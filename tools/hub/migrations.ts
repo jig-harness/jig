@@ -22,14 +22,23 @@
  *                                                 nothing
  *   bun tools/hub/migrations.ts --check           exit 1 naming each file a
  *                                                 fresh generation would add
- *                                                 or change
+ *                                                 or change, or when the
+ *                                                 checked-in migrations build
+ *                                                 another schema than the
+ *                                                 schema file declares
  *
- * The check generates into a copy of the checked-in folder under the
+ * The check runs two comparisons, in scratch folders under the
  * repository's ignored `.context/` (drizzle-kit reads the snapshots of an
- * output folder only by a path relative to where it runs), so it changes
- * nothing tracked; drizzle-kit's snapshot of the last migration is
- * what it compares the schema with. Both modes format the JSON drizzle-kit
- * writes with the repository's pinned formatter, as a commit would.
+ * output folder only by a path relative to where it runs), removed after,
+ * so it changes nothing tracked. First it generates into a copy of the
+ * checked-in folder: drizzle-kit compares the schema with its snapshot of
+ * the last migration, so this finds a schema change with no migration.
+ * The snapshot says nothing of the SQL files, so it then generates one
+ * migration from the schema into an empty folder, applies it and the
+ * checked-in migrations each to a fresh in-memory database, and compares
+ * the tables and indexes the two build, which finds an SQL file edited by
+ * hand. Both modes format the JSON drizzle-kit writes with the
+ * repository's pinned formatter, as a commit would.
  */
 import {
   cpSync,
@@ -43,8 +52,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { Database } from "bun:sqlite";
 import type { Config } from "drizzle-kit";
 import { cli, strictOptions } from "../../lib/cli.ts";
+import {
+  drizzle,
+  migrate,
+} from "../../plugin/shared/vendor/drizzle-bun-sqlite.mjs";
 
 const ROOT = resolve(import.meta.dir, "../..");
 /** What drizzle-kit generates from: the hub's schema, in SQLite's dialect. */
@@ -56,6 +70,10 @@ export const MIGRATIONS = "plugin/hub/storage/migrations";
 const KIT = "node_modules/drizzle-kit/bin.cjs";
 const COMMAND = "bun tools/hub/migrations.ts";
 const USAGE = `Usage: ${COMMAND} [--name <name>] | --check`;
+/** How long one drizzle-kit run may take before it is stopped. */
+const KIT_TIMEOUT_MS = 120_000;
+/** How long one formatter run may take before it is stopped. */
+const FORMAT_TIMEOUT_MS = 30_000;
 /** A migration's name: what drizzle-kit puts after its number in the file name. */
 const NAME = /^[a-z][a-z0-9_]*$/;
 
@@ -88,7 +106,7 @@ function generate(out: string, name: string): void {
       "--name",
       name,
     ],
-    { cwd: ROOT, stdout: "pipe", stderr: "pipe" },
+    { cwd: ROOT, stdout: "pipe", stderr: "pipe", timeout: KIT_TIMEOUT_MS },
   );
   const printed = `${run.stdout.toString()}${run.stderr.toString()}`;
   if (run.exitCode !== 0 || !GENERATED.test(printed))
@@ -112,6 +130,7 @@ function formatJson(dir: string): void {
         stdin: readFileSync(join(dir, path)),
         stdout: "pipe",
         stderr: "pipe",
+        timeout: FORMAT_TIMEOUT_MS,
       },
     );
     if (run.exitCode !== 0)
@@ -131,29 +150,85 @@ function files(dir: string): string[] {
     .sort();
 }
 
+/** The tables and indexes `folder`'s migrations build in a fresh database, each as SQLite records it, its SQL's spacing normalized. */
+function schemaBuiltBy(folder: string): string[] {
+  const client = new Database(":memory:");
+  try {
+    migrate(drizzle({ client }), { migrationsFolder: folder });
+    return client
+      .query<
+        { type: string; name: string; tbl_name: string; sql: string | null },
+        []
+      >(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' ORDER BY type, name",
+      )
+      .all()
+      .map(
+        (row) =>
+          `${row.type} ${row.name} on ${row.tbl_name}: ${(row.sql ?? "").replace(/\s+/g, " ").trim()}`,
+      );
+  } finally {
+    client.close();
+  }
+}
+
 /**
- * The files of the checked-in migrations a fresh generation adds or
- * changes, as repository paths.
+ * What is wrong with the migrations in `folder` (the checked-in ones when
+ * absent): each file a fresh generation adds or changes, named as
+ * `shown/<file>`, and each table or index they build otherwise than the
+ * schema declares.
  */
-export function staleMigrations(): string[] {
+export function migrationProblems(
+  folder = join(ROOT, MIGRATIONS),
+  shown = MIGRATIONS,
+): string[] {
   mkdirSync(join(ROOT, ".context"), { recursive: true });
   const scratch = mkdtempSync(join(ROOT, ".context", "hub-migrations-"));
   try {
-    const checkedIn = join(ROOT, MIGRATIONS);
     const copy = join(scratch, "migrations");
-    if (existsSync(checkedIn)) cpSync(checkedIn, copy, { recursive: true });
+    if (existsSync(folder)) cpSync(folder, copy, { recursive: true });
     generate(copy, "hub");
     formatJson(copy);
-    return files(copy)
+    const stale = files(copy)
       .filter((path) => {
-        const current = join(checkedIn, path);
+        const current = join(folder, path);
         return (
           !existsSync(current) ||
           readFileSync(current, "utf8") !==
             readFileSync(join(copy, path), "utf8")
         );
       })
-      .map((path) => `${MIGRATIONS}/${path}`);
+      .map(
+        (path) =>
+          `${shown}/${path} is missing or differs from what the schema generates`,
+      );
+    const fresh = join(scratch, "fresh");
+    generate(fresh, "hub");
+    const declared = schemaBuiltBy(fresh);
+    let built: string[];
+    try {
+      built = schemaBuiltBy(folder);
+    } catch (error) {
+      return [
+        ...stale,
+        `${shown} cannot be applied to an empty database: ${error instanceof Error ? error.message : String(error)}`,
+      ];
+    }
+    const drift = [
+      ...built
+        .filter((entry) => !declared.includes(entry))
+        .map(
+          (entry) =>
+            `${shown} builds what the schema does not declare: ${entry}`,
+        ),
+      ...declared
+        .filter((entry) => !built.includes(entry))
+        .map(
+          (entry) =>
+            `${shown} does not build what the schema declares: ${entry}`,
+        ),
+    ];
+    return [...stale, ...drift];
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -172,12 +247,9 @@ function main(args: string[]): number {
       console.error(USAGE);
       return 2;
     }
-    const stale = staleMigrations();
-    for (const path of stale)
-      console.error(
-        `${path} is missing or differs from what the schema generates; run ${COMMAND}`,
-      );
-    return stale.length === 0 ? 0 : 1;
+    const problems = migrationProblems();
+    for (const problem of problems) console.error(`${problem}; run ${COMMAND}`);
+    return problems.length === 0 ? 0 : 1;
   }
   const name = values.name ?? "hub";
   if (!NAME.test(name)) {
