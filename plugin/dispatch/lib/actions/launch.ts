@@ -59,7 +59,7 @@ import type {
 import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
-import { judge, type LoadState } from "../load.ts";
+import { holdsBefore, judge, type LoadState } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 import {
   checksStage,
@@ -768,6 +768,35 @@ function byLoad(
   return held === null
     ? { slots }
     : { outcome: waits(action, held, slots.account.name) };
+}
+
+/**
+ * Why a launch waits on what this host can tell without asking anyone: no
+ * account with a free slot for it, or a host load that holds it under
+ * enforcement. Asked before a launch's fresh tracker reads, so a launch
+ * these would hold spends none; it reserves nothing, and `admitAccount`
+ * still judges a launch that passes. `null` when neither holds it.
+ */
+export function localHold(
+  state: ApplyState,
+  repo: string,
+  action: Action,
+  pickupDeadlineSec = 0,
+): LaunchOutcome | null {
+  refreshWalls(state.table, state.records, currentMs(), state.root);
+  const admitted = admission(state, action, new Set(), pickupDeadlineSec);
+  if ("waits" in admitted) return waits(action, admitted.waits);
+  if (state.load === undefined) return null;
+  const held = holdsBefore(
+    state.load,
+    loadKindOf(action),
+    repo,
+    action.target,
+    pickupDeadlineSec * 1000,
+  );
+  return held === null
+    ? null
+    : waits(action, held, admitted.admitted.account.name);
 }
 
 /**
