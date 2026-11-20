@@ -25,6 +25,27 @@ export interface ReviewerSticky {
   skip: SkipNotice | null;
 }
 
+/** The last review stamp in a comment's body, or `''` when it carries none. */
+function lastStamp(body: string, markerRe: RegExp): string {
+  let sha = "";
+  for (const m of body.matchAll(markerRe)) sha = m[1] ?? "";
+  return sha;
+}
+
+/** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
+function stickyBody(
+  raw: unknown,
+  reviewerLogin: (login: string) => boolean,
+  summaryMarker: string,
+): string | null {
+  if (!isRecord(raw)) return null;
+  const login = String(
+    ((raw.user as Record<string, unknown> | null)?.login ?? "") || "",
+  );
+  const body = String(raw.body ?? "");
+  return reviewerLogin(login) && body.includes(summaryMarker) ? body : null;
+}
+
 /** The review stamp and its companion markers from the newest qualifying sticky. */
 export function reviewerStickyIn(
   comments: readonly unknown[],
@@ -44,16 +65,9 @@ export function reviewerStickyIn(
     skip: null,
   };
   for (const raw of comments) {
-    if (!isRecord(raw)) continue;
-    const c = raw;
-    const login = String(
-      ((c.user as Record<string, unknown> | null)?.login ?? "") || "",
-    );
-    const body = String(c.body ?? "");
-    if (!reviewerLogin(login)) continue;
-    if (!body.includes(summaryMarker)) continue;
-    let bodySha = "";
-    for (const m of body.matchAll(markerRe)) bodySha = m[1] ?? "";
+    const body = stickyBody(raw, reviewerLogin, summaryMarker);
+    if (body === null) continue;
+    const bodySha = lastStamp(body, markerRe);
     if (bodySha === "") continue;
     sticky = {
       sha: bodySha,
@@ -61,7 +75,7 @@ export function reviewerStickyIn(
       // Absent/malformed reads as `''`, never as "now" — a caller flooring
       // on this must fail closed on an undatable sticky rather than treat it
       // as freshly written.
-      updatedAt: String(c.updated_at ?? ""),
+      updatedAt: String((raw as Record<string, unknown>).updated_at ?? ""),
       skip: skipNoticeIn(body, skipNoticeMarker),
     };
   }

@@ -59,6 +59,22 @@ function jobTiming(c: Record<string, unknown>) {
   };
 }
 
+/** One check-run of a listing page, reduced to the fields the decision reads. */
+function checkRunOf(c: Record<string, unknown>): CheckRun {
+  return {
+    name: String(c.name ?? ""),
+    status: String(c.status ?? ""),
+    conclusion: c.conclusion === null ? null : String(c.conclusion ?? ""),
+    app: String(((c.app as Record<string, unknown> | null)?.slug ?? "") || ""),
+    title: String(
+      ((c.output as Record<string, unknown> | null)?.title ?? "") || "",
+    ),
+    id: Number(c.id ?? 0),
+    started: c.started_at === null ? null : String(c.started_at ?? "") || null,
+    ...jobTiming(c),
+  };
+}
+
 /**
  * Every check-run on `sha`, across every page (`--paginate --slurp`), reduced
  * to the fields the decision reads. `null` when the API could not be read —
@@ -74,26 +90,11 @@ export async function checkRunsFor(
 ): Promise<CheckRun[] | null> {
   const pages = await commitPages(owner, repo, sha, "check-runs", read);
   if (pages === null) return null;
-  const runs: CheckRun[] = [];
-  for (const page of pages) {
-    const list = (page as { check_runs?: unknown[] } | null)?.check_runs ?? [];
-    for (const c of list as Array<Record<string, unknown>>) {
-      runs.push({
-        name: String(c.name ?? ""),
-        status: String(c.status ?? ""),
-        conclusion: c.conclusion === null ? null : String(c.conclusion ?? ""),
-        app: String(
-          ((c.app as Record<string, unknown> | null)?.slug ?? "") || "",
-        ),
-        title: String(
-          ((c.output as Record<string, unknown> | null)?.title ?? "") || "",
-        ),
-        id: Number(c.id ?? 0),
-        started:
-          c.started_at === null ? null : String(c.started_at ?? "") || null,
-        ...jobTiming(c),
-      });
-    }
-  }
-  return runs;
+  return pages.flatMap((page) =>
+    (
+      ((page as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<
+        Record<string, unknown>
+      >
+    ).map(checkRunOf),
+  );
 }

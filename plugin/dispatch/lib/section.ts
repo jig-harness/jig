@@ -437,6 +437,26 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
+/** The section's epic width, reviewer-failure policy and overlap costs. */
+function admission(
+  values: Record<string, unknown>,
+  section: Record<string, unknown>,
+): Checked<
+  Pick<DispatchSection, "epicWidth" | "reviewerFailures" | "overlap">
+> {
+  const epicWidth = width(section.epic_width);
+  if (!epicWidth.ok) return epicWidth;
+  const before = reviewerFailures(section.reviewer_failures_before_escalation);
+  if (!before.ok) return before;
+  const overlap = parseOverlap(section.overlap);
+  if (!overlap.ok) return overlap;
+  return ok({
+    epicWidth: epicWidth.value,
+    reviewerFailures: reviewerFailurePolicy(values, before.value),
+    overlap: overlap.value,
+  });
+}
+
 /**
  * The `dispatch` section of parsed configuration values, with defaults;
  * `invalid`, its reason naming the setting, for the first value that does
@@ -471,26 +491,14 @@ export function dispatchSection(
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
-  const epicWidth = width(section.epic_width);
-  if (!epicWidth.ok) return epicWidth;
-  const reviewerFailuresBeforeEscalation = reviewerFailures(
-    section.reviewer_failures_before_escalation,
-  );
-  if (!reviewerFailuresBeforeEscalation.ok)
-    return reviewerFailuresBeforeEscalation;
-  const overlap = parseOverlap(section.overlap);
-  if (!overlap.ok) return overlap;
+  const bounds = admission(values, section);
+  if (!bounds.ok) return bounds;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
     pickupDeadlineMs: pickupDeadlineMs.value,
-    epicWidth: epicWidth.value,
-    reviewerFailures: reviewerFailurePolicy(
-      values,
-      reviewerFailuresBeforeEscalation.value,
-    ),
-    overlap: overlap.value,
+    ...bounds.value,
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });
