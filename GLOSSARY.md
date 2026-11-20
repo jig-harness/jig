@@ -932,7 +932,7 @@ make, use the entry's term instead.
   request, while the epic itself tracks the whole. A `do-item` session takes
   one sub-issue at a time; the dispatcher starts an epic's ready sub-issues
   in parallel, in the order and parallelism its execution plan sets, or
-  without one up to a per-epic width. Jig's `do-item` skill picks up the
+  without one alongside the other ready work. Jig's `do-item` skill picks up the
   next sub-issue and follows the epic's order when a machine-readable
   execution plan is present
   ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
@@ -2996,7 +2996,7 @@ make, use the entry's term instead.
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-cost)).
 - **Overlap bound** — how many pieces of work in flight may change one file
   before the *dispatcher* puts more work on that file behind everything
-  else that is ready. It replaces the width per epic, applies across all
+  else that is ready. It applies across all
   work, and like the *overlap cost* only orders: work over the bound still
   starts when nothing else can take a free slot
   ([overlap-aware admission](design/overlap-aware-admission.md#the-overlap-bound)).

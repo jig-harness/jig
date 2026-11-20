@@ -743,16 +743,12 @@ links from the assigned item and ends at a cycle. A blocker that is assigned
 to someone else, in progress, an epic, held, another repository's or unreadable
 is never started on the strength of the relation, since anyone with write
 access to the tracker can add one: the blocked item waits, and its reason
-names the blocker and why it was left. An epic's ready children are started
-in parallel
-([ADR-0024](../docs/adr/ADR-0024-epic-children-are-admitted-in-parallel.md)):
-without an execution plan, its best-ranked ready children are wanted until
-`dispatch.epic_width` of them (4 by default) are under way, counting a
-started child that still needs an agent and a child that cannot be read, and
-a child that waits on the width names the epic and the width; a plan that
-lists several eligible steps sets its own order and parallelism. An epic
-none of whose open children can start reports one reason of its own, so the
-queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
+names the blocker and why it was left. An epic's ready children are eligible
+in parallel. Execution plan dependencies and serialized areas may hold
+them. Overlap with work in flight orders pickups across the repository's
+queues, and the host's available slots and validation capacity limit how
+many can start. An epic none of whose open children can start reports one
+reason of its own, so the queue says why the epic is idle. Every repository's tick reads the same assigned list from a shared tracker namespace, so an item that carries another repository's label (one of `review.taxonomy.repos` other than this repository's `review.repo_label`) is left to that repository's checkout, neither wanted nor reported as held, and refused again at the launch recheck. An item no repository label places is started only by the repository the machine file's `serve_defaults` names for the tracker namespace, and reported once as needing a repository label where none is named, so that several repositories reading one tracker never start it together. Their pull
 requests are adopted as `dispatch.adopt.authors` adopts a repository's own.
 The tick ranks those items by rules as data, shows each item it holds out
 with its reason, and starts the next within the host's load factor; the

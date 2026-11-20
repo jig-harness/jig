@@ -80,6 +80,11 @@ import { currentIso } from "../../../shared/time.ts";
 
 /** What a repository's pickups need beyond the apply state. */
 export interface PickupContext {
+  /** The overlap walk controls the order of new attempts once recovery has run. */
+  admit?: (
+    wanted: Action[],
+    launch: (action: Action) => Promise<LaunchOutcome>,
+  ) => Promise<void>;
   servedPolicy?: import("../sources/served.ts").ServedPolicy;
   section: DispatchSection;
   tracker: Tracker;
@@ -512,9 +517,14 @@ export async function applyPickups(
         )
         .filter((person): person is string => person !== undefined) ?? [],
   });
-  // A pickup that waits passes its start to the next.
-  for (const action of pickupSequence(state, report, wanted))
-    report.launches.push(await launchOne(state, repo, action, ctx));
+  const ranked = pickupSequence(state, report, wanted);
+  const launch = async (action: Action) => {
+    const outcome = await launchOne(state, repo, action, ctx);
+    report.launches.push(outcome);
+    return outcome;
+  };
+  if (ctx.admit !== undefined) await ctx.admit(ranked, launch);
+  else for (const action of ranked) await launch(action);
 }
 
 export function servedAuthorization(

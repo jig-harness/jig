@@ -151,7 +151,7 @@ import {
   settleOutcomes,
 } from "./lib/tick-settle.ts";
 import { launchedMeanwhile } from "./lib/tick-plan.ts";
-import { planOverlap } from "./lib/overlap-plan.ts";
+import { planProjectedOverlap } from "./lib/overlap-plan.ts";
 import { holdSerialPickups } from "./lib/serial-pickups.ts";
 import { rankPriorities } from "./lib/tick-priorities.ts";
 import type { RepoReport } from "./lib/types.ts";
@@ -580,12 +580,10 @@ async function actAll(
     complete,
     options.machine?.priorities?.enforce === true,
   );
-  // After the ranking, whose order is the one the pickups start in: a
-  // serialized area's declared hold first, then overlap, reported only, over
-  // the pickups it leaves.
+  // Apply declared holds after ranking; the pickup stage then orders remaining attempts by overlap.
   for (const { observation } of context.overlaps ?? []) {
     holdSerialPickups(observation, allRecords(context), context.nowMs);
-    planOverlap(context, observation);
+    await planProjectedOverlap(context, observation);
   }
   // The launches wait until every repository is gathered, so none holds the tick's time against another's.
   await applyInTurns(context.pending, apply?.tick ?? 0);

@@ -401,6 +401,13 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.289.0] - 2026-11-20
+
+### Changed
+
+- **Breaking:** The dispatcher orders ready pickups by overlap with work in flight and how long each pickup has waited. A free slot can take overlapping work. The retired `dispatch.epic_width` key is ignored and the dispatch receipt points to `dispatch.overlap`. **Consumer action:** advised at configuration, instructions. Remove `dispatch.epic_width` and update runbooks that use it. To require one child at a time, use execution plan dependency edges or a serialized area. Configure `dispatch.overlap` to tune shared-file admission. **Detect:** `config:dispatch.epic_width`.
+- The advice to set an epic width of 1 is obsolete. **Consumer action:** retracts 0.244.0#b4855f8e.
+
 ## [0.288.2] - 2026-11-20
 
 ### Fixed
@@ -10237,7 +10244,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.288.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.289.0...HEAD
+[0.289.0]: https://github.com/jig-harness/jig/compare/v0.288.2...v0.289.0
 [0.288.2]: https://github.com/jig-harness/jig/compare/v0.288.1...v0.288.2
 [0.288.1]: https://github.com/jig-harness/jig/compare/v0.288.0...v0.288.1
 [0.288.0]: https://github.com/jig-harness/jig/compare/v0.287.2...v0.288.0
