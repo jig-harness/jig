@@ -1,4 +1,9 @@
-/** The wake preserves installed context and budgets a fallback from the machine file. */
+/**
+ * The wake preserves installed context and budgets a fallback from the
+ * machine file. A systemd job is run as systemd runs it, its drop-ins
+ * applied: a drop-in's credential wrapper is what the woken tick runs, and a
+ * drop-in the waiter cannot reproduce leaves the tick unstarted.
+ */
 import { expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +14,7 @@ import type { tickCall } from "../lib/wake-tick.ts";
 function call(
   files: Record<string, string | null>,
   launcher: Record<string, string | null> = {},
+  dropIns: Array<{ path: string; text: string }> = [],
 ): Awaited<ReturnType<typeof tickCall>> {
   const home = mkdtempSync(join(tmpdir(), "wake-call-"));
   try {
@@ -31,6 +37,22 @@ function call(
         ", launcher: Object.fromEntries(Object.entries(" +
         JSON.stringify(launcher) +
         ").map(([name, text]) => [join(scheduler.launcherDirectory(spec), name), text])) } }),",
+      "}));",
+      "const dropIns = await import(" +
+        JSON.stringify(
+          resolve(import.meta.dir, "../../runtime/systemd-dropins.ts"),
+        ) +
+        ");",
+      "mock.module(" +
+        JSON.stringify(
+          resolve(import.meta.dir, "../../runtime/systemd-dropins.ts"),
+        ) +
+        ", () => ({",
+      "...dropIns,",
+      "readDropIns: async () => ({ ok: true, value: " +
+        JSON.stringify(dropIns) +
+        " }),",
+      'userSpecifiers: (unit) => ({ home: "/home/someone", user: "someone", uid: "1000", unit }),',
       "}));",
       "const { tickCall } = await import(" +
         JSON.stringify(resolve(import.meta.dir, "../lib/wake-tick.ts")) +
@@ -115,3 +137,71 @@ it("runs a complete installed timer", () => {
       "/repo",
     ]);
 });
+
+const UNIT =
+  '[Unit]\nDescription=Dispatch\n[Service]\nExecStart="/bun" "/launcher/launcher.ts" "--" "dispatch" "--apply"\nEnvironment="JIG_LAUNCHER_DEADLINE_SEC=600"\n';
+const TIMER = "[Timer]\nOnUnitActiveSec=5min\n";
+const LAUNCHER = { "launcher.ts": "launcher", "bunfig.toml": "preload = []" };
+const conf = (text: string) => ({
+  path: "/home/someone/.config/systemd/user/jig-dispatch.service.d/secrets.conf",
+  text,
+});
+
+it("runs the command a drop-in puts in place of the timer's, with the tick's arguments", () => {
+  const result = call(
+    { "jig-dispatch.service": UNIT, "jig-dispatch.timer": TIMER },
+    LAUNCHER,
+    [
+      conf(
+        "[Service]\nExecStart=\nExecStart=%h/bin/with-op --set jig-dispatch -- %h/.local/bin/jig dispatch --apply\nEnvironment=EXTRA=1\n",
+      ),
+    ],
+  );
+  expect(result).toMatchObject({ ok: true });
+  if (result.ok) {
+    expect(result.value.argv).toEqual([
+      "/home/someone/bin/with-op",
+      "--set",
+      "jig-dispatch",
+      "--",
+      "/home/someone/.local/bin/jig",
+      "dispatch",
+      "--apply",
+      "--repo",
+      "/repo",
+    ]);
+    expect(result.value.env).toMatchObject({
+      EXTRA: "1",
+      JIG_LAUNCHER_DEADLINE_SEC: "600",
+      JIG_LAUNCHER_ROLE: "wake",
+    });
+    expect(result.value.timeoutSec).toBe(660);
+  }
+});
+
+it.each([
+  [
+    "it cannot reproduce",
+    "[Service]\nEnvironmentFile=/etc/dispatch.env\n",
+    "EnvironmentFile=",
+  ],
+  [
+    "whose command does not end with the job's arguments",
+    "[Service]\nExecStart=\nExecStart=/bin/with-op /home/someone/.local/bin/jig dispatch\n",
+    "does not end with the job's 2 arguments",
+  ],
+])(
+  "starts no tick for a drop-in %s, and leaves the request for the timer",
+  (_, text, reason) => {
+    const result = call(
+      { "jig-dispatch.service": UNIT, "jig-dispatch.timer": TIMER },
+      LAUNCHER,
+      [conf(text)],
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.failure.reason).toContain(reason);
+      expect(result.failure.reason).toContain("left for the timer's next tick");
+    }
+  },
+);

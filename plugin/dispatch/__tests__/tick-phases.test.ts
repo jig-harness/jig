@@ -183,6 +183,18 @@ describe("a tick for one repository beside a sweep", () => {
   }, 60_000);
 });
 
+describe("two checkouts of one repository in one tick", () => {
+  it("claims the repository's lock once without waiting, and reports neither checkout as busy", async () => {
+    const { w, second } = fixture();
+    const plain = entry(w, "plain.ts", tickScript({ actLockWaitMs: 1000 }));
+    const both = await w.dispatch([w.repo, second], plain);
+    expectSpawnExit(both, 0);
+    const receipt = JSON.parse(both.stdout) as TickReceipt;
+    expect(receipt.busy ?? []).toEqual([]);
+    expect(paths(receipt).sort()).toEqual([w.repo, second].sort());
+  }, 60_000);
+});
+
 describe("the act lock", () => {
   it("is never taken while another process holds tick.lock, as a tick of an earlier version does for its whole run", async () => {
     const { w } = fixture();

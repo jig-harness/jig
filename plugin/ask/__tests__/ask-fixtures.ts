@@ -67,7 +67,10 @@ if (args[0] === "pr" && args[1] === "edit") {
   fs.appendFileSync(F + "/gh-writes.log", JSON.stringify(args) + "\\n");
   process.exit(0);
 }
-if (args[0] === "api" && args[1] === "--method" && args[2] === "POST") {
+const commentPath =
+  args[0] === "api" && args[1] === "--method" && args[2] === "POST" ? args[3] :
+  args[0] === "api" && args[2] === "--input" && args[3] === "-" ? args[1] : null;
+if (commentPath !== null && /issues\\/\\d+\\/comments$/.test(commentPath)) {
   // post-fail-at: the forge refuses the post of that number (1 for the first), as a failure mid-way would.
   const posts = (fs.existsSync(F + "/post-count") ? Number(fs.readFileSync(F + "/post-count", "utf8")) : 0) + 1;
   fs.writeFileSync(F + "/post-count", String(posts));
@@ -76,7 +79,9 @@ if (args[0] === "api" && args[1] === "--method" && args[2] === "POST") {
     process.exit(1);
   }
   fs.appendFileSync(F + "/gh-writes.log", JSON.stringify(args) + "\\n");
-  const pr = (args[3].match(/issues\\/(\\d+)\\/comments/) || [])[1];
+  if (args.includes("--input"))
+    fs.writeFileSync(F + "/gh-posted-comment.json", fs.readFileSync(0));
+  const pr = (commentPath.match(/issues\\/(\\d+)\\/comments/) || [])[1];
   process.stdout.write(JSON.stringify({ id: 901, html_url: "https://github.com/" + process.env.ASK_FAKE_REPO + "/pull/" + pr + "#issuecomment-901" }));
   process.exit(0);
 }

@@ -39,6 +39,12 @@ export interface TickOptions {
   /** How long the act phase waits for another tick's act lock before it gives up, in milliseconds. */
   actLockWaitMs?: number;
   /**
+   * How long the observe phase waits for a repository's observe lock
+   * another tick holds before leaving the repository to it, in
+   * milliseconds, within the tick's deadline; none when absent.
+   */
+  observeLockWaitMs?: number;
+  /**
    * What the observe phase reads the forge and the tracker through
    * (`world-view.ts`), made once for the tick from its direct view: a caller
    * wraps the direct view, serves from it where it holds nothing, or

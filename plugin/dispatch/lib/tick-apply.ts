@@ -23,6 +23,7 @@ import {
 } from "./actions/drive.ts";
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
+import { retireRearmRequests } from "./actions/retire-rearm.ts";
 import { applyPickups } from "./actions/pickup.ts";
 import { newPreflight, trackerTargetOf } from "./preflight.ts";
 import { applyPrOpenMoves } from "./actions/pr-open-moves.ts";
@@ -197,6 +198,7 @@ export async function actObserved(
     tracked: observation.tracked,
     login: forge.login,
     merged: forge.merged,
+    drives: observation.drives,
     join: observation.join,
     sessions: observation.sessions,
     rerunsHeld: context.rerunsHeld ?? null,
@@ -279,6 +281,7 @@ interface ApplyInputs {
   tracked: Tracked;
   login: string | null;
   merged: MarkedPr[];
+  drives: DrivenPr[];
   join: JoinTargets;
   sessions: SessionsReport;
   rerunsHeld: string | null;
@@ -441,6 +444,17 @@ async function applyStages(
       await applySteers(apply, repo.slug, report, inputs.book, observed);
     else retireSteers(report, inputs.book, observed);
   });
+  if (labels !== null && inputs.shared.owner && enabled.has("rearm"))
+    await guard("rearm", () =>
+      retireRearmRequests(
+        apply,
+        repo.slug,
+        report,
+        labels,
+        inputs.drives,
+        login,
+      ),
+    );
   if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
