@@ -88,6 +88,11 @@ export function claimOperations(
   | "assignUnassigned"
   | "deleteComment"
 > {
+  // The user each identity names, kept for the adapter's life (a dispatcher
+  // tick opens its own), so many candidates of one person cost one lookup.
+  // Linear matches the identity ignoring case; only an answer is kept.
+  const users = new Map<string, TrackerUser>();
+
   async function read(
     key: string,
   ): Promise<{ id: string; assignee: TrackerUser | null }> {
@@ -192,6 +197,8 @@ export function claimOperations(
     },
     async user(identity, signal) {
       const who = identity.trim();
+      const known = users.get(who.toLowerCase());
+      if (known !== undefined) return known;
       const data = record(await transport(USERS, { who }, signal), "data");
       const nodes = record(data.users, "users").nodes;
       if (!Array.isArray(nodes))
@@ -201,7 +208,9 @@ export function claimOperations(
           "unresolved",
           `${JSON.stringify(who)} names ${nodes.length === 0 ? "no" : "more than one"} Linear user by email or display name`,
         );
-      return userOf(nodes[0], `user ${who}`);
+      const user = userOf(nodes[0], `user ${who}`);
+      users.set(who.toLowerCase(), user);
+      return user;
     },
   };
 }

@@ -8,6 +8,7 @@
  */
 import { JigError } from "../outcome.ts";
 import { currentMs, isoFromMs } from "../time.ts";
+import { withGraphqlPollFloors } from "./graph-poll-budget.ts";
 import {
   EMPTY,
   olderWindow,
@@ -687,7 +688,11 @@ function holdOf(
  */
 export function budgetGovernorWith(
   store: BudgetStore,
-  opts: { clock?: () => number; share?: () => number | null } = {},
+  opts: {
+    clock?: () => number;
+    share?: () => number | null;
+    keepGraphqlPollFloor?: boolean;
+  } = {},
 ): BudgetGovernor {
   const clock = opts.clock ?? currentMs;
   const share = opts.share ?? (() => null);
@@ -745,7 +750,7 @@ export function budgetGovernorWith(
         const stillLimited =
           base.limitedUntil !== null && base.limitedUntil > now;
         const hold = holdOf(answer, base, now, sentAt);
-        const windows =
+        const observed =
           answer.snapshot === true && answer.windows !== undefined
             ? {
                 ...base.windows,
@@ -773,6 +778,13 @@ export function budgetGovernorWith(
           now,
           sentAt,
         );
+        const windows = opts.keepGraphqlPollFloor
+          ? withGraphqlPollFloors(
+              observed,
+              [base.complexity, answer.complexity],
+              now,
+            )
+          : observed;
         unexplained =
           answer.snapshot === true
             ? unexplainedSpending(base, { requests, complexity })

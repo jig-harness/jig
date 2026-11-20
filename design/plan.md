@@ -645,21 +645,12 @@ A dispatched run's conclusion is lost: the wrapper keeps only its last
 `Question:` line, so why a run died or stalled is found only in the
 terminal tab it left. And the dispatcher runs nothing
 without Orca. [design/dispatched-sessions.md](dispatched-sessions.md) has
-how it works. What it will build, one pull request per step in the design's
-order, after `jig gc`'s fixes (#990, #991):
+how it works. The closing report and the process runtime are built: a
+dispatched run can end with a `closing-report/v1` record kept on its launch
+record and the outcome log, a host's machine file can choose
+`runtime: process`, and `jig dispatch attach` lets a person follow a process
+run or take it over. What is left:
 
-- **The closing report.** Every dispatched run ends with a
-  `closing-report/v1` record, written by the agent that did the work through
-  `jig dispatch report`: what it concluded, its question for a person, the
-  next step it suggests, and a cause when it fell short. A drive's comes
-  from `drive.ts` at its stop, built on its passes' round reports. It is
-  kept on the launch record and the outcome log, and shown on the dashboard
-  and by `jig ask`.
-- **The process runtime.** A second session runtime, chosen in the host's
-  machine file (`runtime: process`), that starts each run as a unit or job of the
-  host's service manager with an environment built from a list and bound to
-  its account as today, launches a pickup's first drive itself, and lets a
-  person follow or take over a run (`jig dispatch attach`).
 - **The default changes** to the process runtime after a week's run on a
   dispatching host, as the
   [ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)

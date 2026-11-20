@@ -164,7 +164,11 @@ function currentShare(): number | null {
 /** A governor over `store`; `clock` and `share` are for tests, and `share` is this process's dispatcher share when left out. */
 export function budgetGovernor(
   store: BudgetStore,
-  opts: { clock?: () => number; share?: () => number | null } = {},
+  opts: {
+    clock?: () => number;
+    share?: () => number | null;
+    keepGraphqlPollFloor?: boolean;
+  } = {},
 ): BudgetGovernor {
   return budgetGovernorWith(store, {
     ...opts,

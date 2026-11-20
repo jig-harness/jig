@@ -23,7 +23,7 @@ a worktree Jig opens itself, so a host needs no terminal kept open and no
 desktop app to dispatch; once it has run on a host that dispatches, it
 becomes the default, and Orca stays supported as an option.
 
-This is the design of [plan.md](plan.md) item 51. Steps 1 to 7 of the
+This is the design of [plan.md](plan.md) item 51. Steps 1 to 8 of the
 [build order](#build-order) are built: the `closing-report/v1` check,
 `jig dispatch report`, the report on the launch record and the outcome
 log, and the prompts that ask for it; a drive's round reports, the report
@@ -39,7 +39,8 @@ for such a run, from the copy's excerpt in its digest, for pickups and
 follow-ups; and the run tab closed on every exit the wrapper records,
 with `endRun` in the session runtime interface, which the tick calls for a
 record that ended without its wrapper; and the worktree opener and process
-runtime. Attaching to a run and changing the default remain pending. It builds on the dispatcher (item 33,
+runtime; and `jig dispatch attach`, which follows a process run's spool or
+takes the run over. Changing the default remains pending. It builds on the dispatcher (item 33,
 [dark-factory-dispatch.md](dark-factory-dispatch.md)), whose
 [session runtime interface](dark-factory-dispatch.md#the-session-runtime-interface)
 the process runtime implements, and on the
@@ -532,8 +533,8 @@ without making it the default; step 7 waits on step 6, and step 8 on step
 
 ## Left out
 
-- **Building the rest of it.** Steps 1 to 7 of the build order are built;
-  the steps after them are filed as the build reaches them.
+- **Building the rest of it.** Steps 1 to 8 of the build order are built;
+  step 9 is filed when the proof week is run.
 - **`jig gc`'s own fixes** (#990, #991), which come first.
 - **The closing report as a protocol chapter.** The Jig Protocol (#1016) may
   make the report's shape one of its chapters; this design defines the

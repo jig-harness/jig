@@ -29,6 +29,7 @@ describe("parseTrackerLabels", () => {
       pattern_prefix: "pattern:",
       batch_sizes: ["xs", "small", "medium"],
       extractable_tails: [
+        "hitl",
         "hitl:legal",
         "hitl:tactical",
         "manual-ops",
@@ -57,6 +58,7 @@ describe("parseTrackerLabels", () => {
       pattern_prefix: "pattern/",
       batch_sizes: ["S"],
       extractable_tails: [
+        "needs-human",
         "needs-human:legal",
         "needs-human:tactical",
         "ops",

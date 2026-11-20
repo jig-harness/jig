@@ -60,7 +60,6 @@ import {
   type BudgetGovernor,
   type BudgetRecord,
   type BudgetStore,
-  type BudgetWindow,
   type Unexplained,
   budgetGovernor,
   credentialKey,
@@ -81,6 +80,8 @@ import {
 } from "./github-owner.ts";
 import { ghRunScope } from "./github-scope.ts";
 import { apiRoute } from "./gh-route.ts";
+import { definedFields } from "../defined-fields.ts";
+import type { GithubBalances } from "./graph-poll-budget.ts";
 import {
   admission,
   type Governed,
@@ -178,6 +179,12 @@ interface Machine {
 let machines = new Map<string, Machine>();
 let override: BudgetGovernor | null = null;
 let overrideOwners: GithubOwnerResolver | null = null;
+let overridePacing = true;
+
+/** Whether the supplied test governor keeps the shared pacing transport. */
+export function forgeGovernorPacingOn(): boolean {
+  return override === null || overridePacing;
+}
 
 /**
  * Govern the forge's runs with `governor` instead of the machine's record;
@@ -188,9 +195,11 @@ let overrideOwners: GithubOwnerResolver | null = null;
 export function setForgeGovernor(
   governor: BudgetGovernor | null,
   owners: GithubOwnerResolver | null = null,
+  pace: boolean = true,
 ): void {
   override = governor;
   overrideOwners = governor === null ? null : owners;
+  overridePacing = pace;
 }
 
 /** The machine's governor, store and owners over the budget database this process writes. */
@@ -199,7 +208,7 @@ function machine(): Machine {
   let found = machines.get(path);
   if (found === undefined) {
     const store = sqliteBudgetStore(path);
-    const governor = budgetGovernor(store);
+    const governor = budgetGovernor(store, { keepGraphqlPollFloor: true });
     found = {
       governor,
       store,
@@ -483,12 +492,7 @@ export function httpsGovernance(
   };
 }
 
-/**
- * GitHub's balances in the record of the credential's quota owner, as the
- * machine knows it without asking (the credential's own record or its
- * earlier one when no owner is known yet): core and GraphQL as their
- * windows hold them now, with when the record was last read.
- */
+/** Read the local balance under the same repository scope as a default `gh` call. */
 export function githubBalances(
   env: Record<string, string | undefined> = process.env,
   read: (key: string) => BudgetRecord | null = (key) =>
@@ -500,16 +504,21 @@ export function githubBalances(
         ghRunScope(["api", "rate_limit"], e, process.cwd()),
       ) ?? machine().owners.known(e)
     )?.owner ?? null,
-): { core: BudgetWindow; graphql: BudgetWindow; observedAt: number } | null {
-  const known = owner(env);
-  const record =
-    (known === null ? null : read(known)) ??
-    read(githubCredential(env)) ??
-    read(legacyGithubCredential(env));
-  if (record === null) return null;
-  return {
-    core: record.requests,
-    graphql: record.complexity,
-    observedAt: record.observedAt,
-  };
+): GithubBalances | null {
+  for (const credential of [
+    owner(env),
+    githubCredential(env),
+    legacyGithubCredential(env),
+  ]) {
+    const record = credential === null ? null : read(credential);
+    if (credential !== null && record !== null)
+      return {
+        core: record.requests,
+        graphql: record.complexity,
+        observedAt: record.observedAt,
+        credential,
+        ...definedFields({ windows: record.windows }),
+      };
+  }
+  return null;
 }

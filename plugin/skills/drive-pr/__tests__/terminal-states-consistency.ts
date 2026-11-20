@@ -1523,8 +1523,8 @@ function isEmitterZoneVariableDeclaration(
 
 /**
  * Does `fn`'s parameter list match the real reporter's own call contract —
- * exactly one parameter, typed `number` wherever a type annotation is
- * present? Position alone (`isEmitterZoneStatement` above) accepts every
+ * a first parameter typed `number` wherever annotated, with only optional
+ * trailing parameters? Position alone (`isEmitterZoneStatement`) accepts every
  * direct statement child of a top-level function without regard to what it
  * actually takes — `drive-status.ts`'s `main()` declares OTHER direct
  * function children alongside the real `emit` (`countOrNull(n: number |
@@ -1534,9 +1534,9 @@ function isEmitterZoneVariableDeclaration(
  * `countOrNull(11)` would be classified as an emit call purely on structural
  * depth. The reporting function is therefore identified through a feature
  * unique to its call contract rather than declaration depth alone. The
- * reporter always takes the exit code as its sole argument, so
- * its declared arity and (where annotated) parameter type are real evidence
- * position alone is not. An UNANNOTATED parameter is not rejected — this scan
+ * reporter always takes the exit code first, so its declared parameter shape
+ * and (where annotated) type are real evidence position alone is not. An
+ * UNANNOTATED first parameter is not rejected — this scan
  * has no full program to infer its type from, so the absence of an
  * annotation is "not disproven", not a positive match.
  *
@@ -1544,8 +1544,8 @@ function isEmitterZoneVariableDeclaration(
  * fail-CLOSED heuristic, not a proof of reporter identity. "Is this function
  * THE canonical reporter" is a semantic property no structural or type-level
  * predicate can decide without full call-graph/whole-program analysis, so a
- * future same-zone sibling that happens to share this exact contract (one
- * parameter, `number`-typed or unannotated) WILL be misclassified as the
+ * future same-zone sibling sharing this contract (a `number`-typed or
+ * unannotated first parameter, then only optional ones) WILL be misclassified as the
  * reporter — on purpose. That is the same deliberate posture already stated
  * above for the sibling `return`-statement scan's own false-positive
  * residual ("a future helper function that legitimately returns one of these
@@ -1560,12 +1560,12 @@ function isEmitterZoneVariableDeclaration(
 function matchesReporterSignature(
   fn: ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression,
 ): boolean {
-  if (fn.parameters.length !== 1) {
-    return false;
-  }
-  const paramType = fn.parameters[0]?.type;
+  const [code, ...rest] = fn.parameters;
   return (
-    paramType === undefined || paramType.kind === ts.SyntaxKind.NumberKeyword
+    code !== undefined &&
+    (code.type === undefined ||
+      code.type.kind === ts.SyntaxKind.NumberKeyword) &&
+    rest.every((parameter) => parameter.questionToken || parameter.initializer)
   );
 }
 

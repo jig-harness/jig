@@ -73,6 +73,8 @@ export interface TrackerConfig {
   states: StateNames;
   /** The labels the skills act on, by role, defaults filled in. */
   labels: TrackerLabels;
+  /** Issue key of the standing person-checks list, when configured. */
+  personChecks?: string;
   /** The GitHub adapter's settings, defaults filled in. */
   github: GitHubSettings;
   /** The Jira adapter's settings, defaults filled in. */
@@ -377,6 +379,21 @@ export function facetsOf(config: TrackerConfig, root: string | null): Facets {
   );
 }
 
+function parsePersonChecks(
+  section: Record<string, unknown>,
+): string | undefined {
+  const personChecks = section.person_checks;
+  if (
+    personChecks !== undefined &&
+    (typeof personChecks !== "string" || !/^\S+$/.test(personChecks))
+  )
+    throw new TrackerConfigError(
+      "issue_tracker.person_checks",
+      "issue_tracker.person_checks must be a nonempty issue key",
+    );
+  return personChecks;
+}
+
 /** Validate the `issue_tracker` section of a parsed overlay. */
 export function parseTrackerConfig(
   overlay: Record<string, unknown>,
@@ -400,6 +417,8 @@ export function parseTrackerConfig(
     );
 
   refuseTeamWithoutAdapter(section.adapter, team);
+
+  const personChecks = parsePersonChecks(section);
 
   const states = defaultStateNames();
   const rawStates = section.states;
@@ -438,6 +457,7 @@ export function parseTrackerConfig(
     team,
     states,
     labels: parseTrackerLabels(overlay),
+    ...(personChecks === undefined ? {} : { personChecks }),
     github,
     jira,
     facets,
