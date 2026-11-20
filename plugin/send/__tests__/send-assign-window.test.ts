@@ -43,7 +43,7 @@ describe("jig send assign on Linear", () => {
       user: linear.tracker.user.bind(linear.tracker),
       assignees: linear.tracker.assignees.bind(linear.tracker),
       assign: linear.tracker.assign.bind(linear.tracker),
-      transition: async () => {},
+      transition: async () => undefined,
     };
     const wrote = await writeAfterWindow(
       tracker,

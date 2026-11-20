@@ -8,7 +8,7 @@ release: minor
   names who takes it: `jig send pickup@<owner>/<name>#<KEY> assign` for the
   repository's factory identity, and the skill's `hand-off.ts` for a served
   person. Each writes the assignment only once the tracker's history records
-  it, and the filing report says when it was written, or, when it was not,
+  it, and the filing report says when the history confirmed it, or, when it was not,
   the command to run and the earliest time to run it. An issue already
   assigned is never changed. **Consumer action:** none.
 
