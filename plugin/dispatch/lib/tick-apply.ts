@@ -174,6 +174,9 @@ export async function actObserved(
     nowMs: context.nowMs,
     book,
     rerunsHeld: context.rerunsHeld ?? null,
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
   });
   apply.sessionsOf ??= new Map();
   apply.sessionsOf.set(repo.slug, observation.sessions);

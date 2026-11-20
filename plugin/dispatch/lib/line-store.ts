@@ -300,7 +300,9 @@ const LINE_FIELDS: Fields = {
       target: isString,
       pr: (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0,
       url: isString,
-      drive: (v) => v === "driving" || v === "converged",
+      drive: (v) =>
+        typeof v === "string" &&
+        ["driving", "converged", "parked", "stopped", "unplaced"].includes(v),
       why: isString,
     })(value),
   sessions: listOf(ENTRY_FIELDS.sessions),

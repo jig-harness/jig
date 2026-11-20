@@ -113,6 +113,8 @@ export interface PlanInput {
   retried?: ReadonlySet<string>;
   /** Why runs again of the follow-ups the host failed are held (`rerun-gate.ts`); `null` or absent while the host's health check passes. */
   rerunsHeld?: string | null;
+  /** The launch records of follow-ups whose spent pending arm the tick read again as settled (`arm-reread.ts`). */
+  armsSettled?: ReadonlySet<string>;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -239,6 +241,9 @@ export function planTick(input: PlanInput): Plan {
         owner: input.shared?.owner ?? true,
         retried: input.retried ?? new Set(),
         rerunsHeld: input.rerunsHeld ?? null,
+        ...(input.armsSettled === undefined
+          ? {}
+          : { armsSettled: input.armsSettled }),
         nowMs: input.nowMs,
       },
       plan,

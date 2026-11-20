@@ -208,6 +208,8 @@ export interface RepoObservation {
   holders?: HolderReadings;
   /** The board read: the converged pull requests placed in Ready to merge, or why they were not. */
   board?: BoardRead;
+  /** The launch records of follow-ups whose spent pending arm the tick read again as settled (`arm-reread.ts`). */
+  armsSettled?: ReadonlySet<string>;
 }
 
 /** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
