@@ -17,7 +17,8 @@ if (import.meta.main) {
     pr: Number(env.DRIVE_PR_TARGET),
     head: "",
     state: "CHECK_RUNS_UNREADABLE",
-    reason: `the head's check-runs listing was cut short after ${LISTING_PAGES} page(s) at a deadline`,
+    reason:
+      "the head's check-runs listing could not be read whole — nothing was pushed",
     pushed: true,
     stamped: false,
     headSynced: false,

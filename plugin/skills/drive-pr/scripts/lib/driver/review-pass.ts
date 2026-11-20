@@ -41,15 +41,15 @@ export function pagesRead(finish: Report): number | null {
 }
 
 /** The probe reason for a pass's listing stop: finish-round's own reason,
- * which names the pages it read, else the count the record carries. */
+ * then the validated page count, which the record carries apart from it. */
 function passListingReason(finish: Report, read: string): string {
   const own =
     typeof finish.reason === "string" && finish.reason.trim() !== ""
       ? finish.reason
       : null;
-  return own === null
-    ? `the review pass could not read the head's check-runs listing whole${read}`
-    : `the review pass could not read the head's check-runs listing whole: ${own}`;
+  const base =
+    "the review pass could not read the head's check-runs listing whole";
+  return own === null ? `${base}${read}` : `${base}: ${own}${read}`;
 }
 
 /** Stop the drive on the listing stop a pass's finish record reports. */

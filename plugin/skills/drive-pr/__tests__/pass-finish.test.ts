@@ -34,9 +34,17 @@ test("a record for another pull request, launch or round, or one whose envelope 
     expect(readPassFinish(dir, "7", "launch-2", 2)).toBeNull();
     expect(readPassFinish(dir, "7", "launch-1", 3)).toBeNull();
     expect(readPassFinish(dir, "8", "launch-1", 2)).toBeNull();
+    // An envelope naming another pull request, found in this one's file.
     const file = join(dir, "drive-pr-7.pass-finish.json");
     for (const text of [
       "not json",
+      JSON.stringify({
+        schema: "drive-pass-finish/v1",
+        pr: 8,
+        launch: "launch-1",
+        round: 2,
+        report,
+      }),
       JSON.stringify({
         schema: "drive-pass-finish/v0",
         pr: 7,
