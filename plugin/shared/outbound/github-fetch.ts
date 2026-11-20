@@ -224,7 +224,12 @@ function afterBlockString(document: string, start: number): number {
 /** Where a string starting at `i` ends. */
 function afterString(document: string, start: number): number {
   let i = start + 1;
-  while (i < document.length && document[i] !== '"' && document[i] !== "\n")
+  while (
+    i < document.length &&
+    document[i] !== '"' &&
+    document[i] !== "\n" &&
+    document[i] !== "\r"
+  )
     i += document[i] === "\\" ? 2 : 1;
   return i + 1;
 }
@@ -232,7 +237,8 @@ function afterString(document: string, start: number): number {
 /** Where a comment starting at `i` ends. */
 function afterComment(document: string, start: number): number {
   let i = start;
-  while (i < document.length && document[i] !== "\n") i += 1;
+  while (i < document.length && document[i] !== "\n" && document[i] !== "\r")
+    i += 1;
   return i;
 }
 

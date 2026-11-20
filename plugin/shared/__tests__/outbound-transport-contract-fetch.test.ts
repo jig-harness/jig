@@ -316,6 +316,7 @@ describe("the fetch transport, beyond the shared contract", () => {
     for (const query of [
       'fragment F on Issue { id } # shared fragment\nmutation Close { closeIssue(input: {issueId: "I_1"}) { issue { id } } }',
       'query Q { a(b: "# mutation") { id } }\n#mutation\nsubscription S { x }',
+      '# comment\rmutation Close { closeIssue(input: {issueId: "I_1"}) { issue { id } } }',
     ]) {
       const { transport, records } = build(() => ({ status: 502, body: "{}" }));
       const got = await transport.graphql({ ...call(), query });
