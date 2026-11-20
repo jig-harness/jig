@@ -401,6 +401,13 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.287.2] - 2026-11-20
+
+### Fixed
+
+- Drives keep their cross-clone lease during the CI watch after writing the converged label. If the final ledger write fails, recovery can publish the same exit once the drive has released its lock.
+- Drives retain a stopped-driver recovery record when the state-label configuration cannot be read, and retry the projection once it is available.
+
 ## [0.287.1] - 2026-11-20
 
 ### Changed
@@ -10202,7 +10209,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.287.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.287.2...HEAD
+[0.287.2]: https://github.com/jig-harness/jig/compare/v0.287.1...v0.287.2
 [0.287.1]: https://github.com/jig-harness/jig/compare/v0.287.0...v0.287.1
 [0.287.0]: https://github.com/jig-harness/jig/compare/v0.286.4...v0.287.0
 [0.286.4]: https://github.com/jig-harness/jig/compare/v0.286.3...v0.286.4
