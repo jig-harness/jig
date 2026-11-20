@@ -498,7 +498,9 @@ Then finish from where the command stopped, by the state git shows, running
 a command again with a longer deadline, `--timeout-seconds 7200`, in place of
 the hour. Never commit outside this procedure or skip the hooks
 (`--no-verify`) to get past it. Inside a drive pass, whose own deadline the
-longer one would outrun, retry nothing: stop as for a hung hook, below.
+longer one would outrun, still take every step below that runs no hook (the
+clean-up after a commit that landed, a reset, a quit), but run no
+hook-running command again: stop there as for a hung hook, below.
 
 - **The concluding commit of a merge, a cherry-pick or a revert.** When the
   operation is still in progress (`MERGE_HEAD`, `CHERRY_PICK_HEAD` or
@@ -510,7 +512,8 @@ longer one would outrun, retry nothing: stop as for a hung hook, below.
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log -1` shows
   the commit with the recorded section, the commit landed and only a later
   hook was killed: run `git clean` and `events.ts`.
-- **The changelog conversion commit (Step 1).** When the last commit is the
+- **The changelog conversion commit (Step 1).** When
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log -1` shows the
   conversion commit, it landed and only a later hook was killed: go on to
   the merge. Otherwise the converted files are still staged: commit them
   with the longer deadline, then merge.
@@ -526,23 +529,27 @@ longer one would outrun, retry nothing: stop as for a hung hook, below.
     is left to do.
   - Otherwise the base's changes are staged with no `MERGE_HEAD` (killed in
     the hook that runs before a merge commit). Committing them would make a
-    single-parent commit that hides the merge, so put the branch back with
+    single-parent commit that hides the merge, so return the index and the
+    working tree to the branch's commit with
     `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git reset --merge`
     and run the merge again with the longer deadline.
 - **The continued rebase.** When the rebase still stands at the same stop
   with its resolution staged, continue it with the longer deadline. When it
   has moved on, take what it shows as you would after a continue that
-  exited `0`: a further stop, or the rebase done. When `git status` still
-  reports a rebase in progress but with no commands remaining and the
-  branch checked out again, the rebase finished and only its last hook was
-  killed; a further continue fails on the moved branch, so clear the
-  leftover state with
+  exited `0`: a further stop, or the rebase done. When it is still in
+  progress with commands remaining and no conflicted path (killed in a hook
+  after a commit it made), continue it with the longer deadline. When
+  `git status` still reports a rebase in progress but with no commands
+  remaining and the branch checked out again, the rebase finished and only
+  its last hook was killed; a further continue fails on the moved branch,
+  so clear the leftover state with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rebase --quit`
   and go on as after a rebase done.
 
 A command killed at the longer deadline too is treated as a hung hook: stop
-with the operation open, the message and section files and the snapshot in
-place, and report the command, its deadline and what `git status` shows.
+with the operation open (or the merge reset), the message and section files
+and the snapshot in place, and report the command, its deadline and what
+`git status` shows.
 Inside a drive, the round ends there and its report says so.
 
 ## Step 8: Escalation
