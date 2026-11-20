@@ -218,6 +218,8 @@ describe("telling a host fault from a question about the work", () => {
       "Should tests retry on ENOSPC: or delete the fixture?",
       "Should the implementation retry on ENOSPC: or clear the fixture?",
       "should the documentation explain how to free inodes?",
+      "Can we make the code delete the cache on ENOSPC: instead of retry?",
+      "Should I change the code to clear the cache on ENOSPC: or retry?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
     for (const failure of [
@@ -227,6 +229,8 @@ describe("telling a host fault from a question about the work", () => {
       "Can I remove leaked test fixtures to free inodes and retry the build?",
       "Can I prune the cache and retry the build after ENOSPC:?",
       "Could we delete the cache and retry the build after ENOSPC:?",
+      "Can the build retry after I remove the leaked test fixture that caused ENOSPC:?",
+      "Could the build retry after we clear the leaked fixture following ENOSPC:?",
       "ENOSPC: no space left on device while writing the lockfile; retry later?",
       "the disk is full: may the build cache be pruned?",
       "the state directory is not writable: may I fix its permissions?",
