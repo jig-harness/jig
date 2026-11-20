@@ -26,6 +26,11 @@ import {
 import { retryAttempts } from "../../../../shared/retry.ts";
 import { isGitSha } from "./cli.ts";
 import { forgeReadClass, type ForgeReadCode } from "./forge-read.ts";
+import {
+  listingCutShort,
+  type ListingCutShort,
+  slurpCheckRuns,
+} from "./paged-read.ts";
 import { ghCall } from "./proc.ts";
 import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
@@ -246,15 +251,33 @@ export async function writeCiState(
 export async function readCheckRuns(
   head: string,
 ): Promise<Outcome<CheckRunLite[], ForgeReadCode>> {
-  const decoded = await ghReadJson(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
-    ],
-    "gh api check-runs",
+  return (await checkRunsRead(head)).runs;
+}
+
+/** `readCheckRuns`' answer, and how the listing was cut short when it was. */
+export async function checkRunsRead(head: string): Promise<{
+  runs: Outcome<CheckRunLite[], ForgeReadCode>;
+  cutShort: ListingCutShort | null;
+}> {
+  const result = await slurpCheckRuns("{owner}", "{repo}", head, "fresh");
+  return {
+    runs: parsedCheckRuns(result),
+    cutShort: result.code === 0 ? null : listingCutShort(head, result),
+  };
+}
+
+function parsedCheckRuns(
+  result: Awaited<ReturnType<typeof slurpCheckRuns>>,
+): Outcome<CheckRunLite[], ForgeReadCode> {
+  if (result.code !== 0)
+    return failed(
+      forgeReadClass(result),
+      `gh api check-runs exited ${result.code}: ${(result.stderrTail || result.stderr).trim().slice(-500)}`,
+    );
+  const decoded = attempt(
+    "malformed",
     "the check-runs answer is not JSON",
+    (): unknown => JSON.parse(result.stdout),
   );
   if (!decoded.ok) return decoded;
   const runs = parseCheckRuns(decoded.value);
@@ -277,18 +300,27 @@ export async function checkRuns(head: string): Promise<CheckRunLite[] | null> {
 export async function headWatermark(
   head: string,
   why: string,
-): Promise<Outcome<number | null, "unreadable" | "malformed">> {
+): Promise<
+  | Outcome<number | null, "unreadable" | "malformed">
+  | {
+      ok: false;
+      failure: Failure<"unreadable" | "malformed">;
+      cutShort: ListingCutShort;
+    }
+> {
   if (!isGitSha(head))
     return failed(
       "malformed",
       `cannot establish the check-run watermark ${why}: the head is not a SHA`,
     );
-  const runs = await readCheckRuns(head);
-  if (!runs.ok)
-    return failed(
+  const { runs, cutShort } = await checkRunsRead(head);
+  if (!runs.ok) {
+    const failure = failed(
       runs.failure.code === "malformed" ? "malformed" : "unreadable",
       `cannot establish the check-run watermark ${why}: ${runs.failure.reason}`,
     );
+    return cutShort === null ? failure : { ...failure, cutShort };
+  }
   return ok(checkRunWatermark(runs.value, head));
 }
 

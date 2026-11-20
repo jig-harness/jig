@@ -3,7 +3,7 @@ import { readRemoteName } from "../../../../../shared/consumer.ts";
 
 import { isDigits, fail, shellQuote, testPacing } from "../cli.ts";
 
-import { driverOnlyExitCode } from "../status/terminal-states.ts";
+import { DRIVE_EXIT, driverOnlyExitCode } from "../status/terminal-states.ts";
 
 import {
   maxRoundsSetting,
@@ -288,6 +288,9 @@ export const CI_REPAIR_SPENT_EXIT = driverOnlyExitCode("CI_REPAIR_SPENT");
 
 /** Every failing check failed on the infrastructure, and its re-runs and head moves are spent. */
 export const CI_INFRA_PERSISTED_EXIT = driverOnlyExitCode("CI_INFRA_PERSISTED");
+
+/** The head's check-runs listing could not be read whole. */
+export const CHECK_RUNS_UNREADABLE_EXIT = DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
 
 /**
  * The result of one `runRepairPass` call, kept apart from a raw process exit

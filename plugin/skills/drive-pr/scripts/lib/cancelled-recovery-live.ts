@@ -23,8 +23,11 @@ import {
   recoveryRead,
   type RecoveryReadFailure,
 } from "./cancelled-recovery-reads.ts";
+import { checkRunsRead, readPrSnapshot } from "./ci-hold-state.ts";
+import { driverRuntime } from "./driver/runtime.ts";
+import type { ListingCutShort } from "./paged-read.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
-import { readCheckRuns, readPrSnapshot } from "./ci-hold-state.ts";
+import { readCheckRuns } from "./ci-hold-state.ts";
 import { type TimedOutJob, timedOutJobs } from "./job-timeout.ts";
 import type { WorkflowRun } from "./status/workflow-runs.ts";
 import { ghCall } from "./proc.ts";
@@ -300,8 +303,22 @@ export async function recoverCancelledOnHead(
   alreadyFenced = false,
   mayMutate?: () => Promise<boolean>,
 ): Promise<LiveRecovery> {
-  const checks = await recoveryRead("check runs", () => readCheckRuns(head));
-  if (!checks.ok) return checks.answer;
+  const listing: { cutShort: ListingCutShort | null } = { cutShort: null };
+  const checks = await recoveryRead(
+    "check runs",
+    async () => {
+      const read = await checkRunsRead(head);
+      listing.cutShort = read.cutShort;
+      return read.runs;
+    },
+    () => listing.cutShort?.atBound === true,
+  );
+  if (!checks.ok) {
+    if (listing.cutShort === null) return checks.answer;
+    console.error(`cancelled CI recovery: ${listing.cutShort.reason}`);
+    driverRuntime.stopListingPages = listing.cutShort.pagesRead;
+    return "listing-cut-short";
+  }
   const jobs = checks.value;
   if (
     !jobs.some(
