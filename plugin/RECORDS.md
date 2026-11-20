@@ -420,7 +420,7 @@ hub keeps none of these.
 | Record | Where it lives | Format | Written by | What guards it |
 | --- | --- | --- | --- | --- |
 | `hub-in-flight-read` | table `in_flight_reads`, one row per partition and target | the unit reading the target through, when it took the read and its deadline, 30 seconds later | `hub/storage/operations.ts`, for the core's `takeInFlightRead` and `releaseInFlightRead` | taken by one insert that replaces the row only once its deadline has passed; released only by its holder; the trimming job deletes a row a day after its deadline |
-| `hub-job-lease` | table `job_leases`, one row per partition and job | the run holding the job and until when, its progress as JSON, and when a run last started and finished | `hub/storage/operations.ts`, for the core's job helper (`hub/core/jobs.ts`) | taken by one insert that takes the row only when it is free, lapsed or already the holder's; progress saved and the lease renewed only while the holder's lease holds; finished only by its holder |
+| `hub-job-lease` | table `job_leases`, one row per partition and job | the run holding the job and until when, its progress as JSON, and when a run last started and finished | `hub/storage/operations.ts`, for the core's job helper (`hub/core/jobs.ts`) | taken by one insert that takes the row only when it is free or lapsed; progress saved and the lease renewed only while the holder's lease holds; finished only by its holder |
 
 ## Markers that are not records
 

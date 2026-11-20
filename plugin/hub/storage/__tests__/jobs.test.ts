@@ -85,7 +85,7 @@ describe("a job's run", () => {
       finished.push(next);
       return ok({ progress: { next: next + 1 }, done: next === 4 });
     };
-    const spec = { ...JOB, timeoutMs: 5_000, leaseMs: 1_000 };
+    const spec = { ...JOB, timeoutMs: 5_000, leaseMs: 5_000 };
 
     const first = await runJob(ports, { ...spec, stop: stop.signal }, step);
     expect(first.ok ? null : first.failure.code).toBe("aborted");
@@ -96,7 +96,7 @@ describe("a job's run", () => {
     expect(early.ok && !early.value.ran).toBe(true);
     expect(finished).toEqual([0, 1]);
 
-    ports.advance(1_000);
+    ports.advance(5_000);
     const second = await runJob(ports, spec, step);
     expect(second).toEqual({ ok: true, value: { ran: true, steps: 3 } });
     expect(finished).toEqual([0, 1, 2, 3, 4]);
@@ -111,6 +111,52 @@ describe("a job's run", () => {
       progress: null,
       finishedAt: ports.clock.now(),
     });
+  });
+
+  test("a spec whose lease is shorter than its timeout is refused before it runs", async () => {
+    const ports = portsWithStore();
+    let stepped = false;
+    const outcome = await runJob(
+      ports,
+      { ...JOB, timeoutMs: 5_000, leaseMs: 4_999 },
+      async () => {
+        stepped = true;
+        return ok({ progress: { next: 1 }, done: true });
+      },
+    );
+    expect(outcome.ok ? null : outcome.failure.code).toBe("defect");
+    expect(stepped).toBe(false);
+    expect(ports.defects).toHaveLength(1);
+    const row = await ports.storage.run(
+      { unit: "test", signal: new AbortController().signal, deadlineAt: 0 },
+      DIRECTORY_PARTITION,
+      readJob,
+      { job: JOB.job },
+    );
+    expect(row).toEqual(ok(null));
+  });
+
+  test("a run given another live run's holder id does not run", async () => {
+    const ports = portsWithStore();
+    const inStep = gate();
+    const release = gate();
+    const ran: string[] = [];
+    const spec = { ...JOB, timeoutMs: 5_000, leaseMs: 5_000, holder: "same" };
+    const step = (run: string) => async () => {
+      ran.push(run);
+      if (run === "first") {
+        inStep.open();
+        await release.opened;
+      }
+      return ok({ progress: { next: 1 }, done: true });
+    };
+    const first = runJob(ports, spec, step("first"));
+    await inStep.opened;
+    const second = await runJob(ports, spec, step("second"));
+    expect(second.ok && !second.value.ran).toBe(true);
+    release.open();
+    expect(await first).toEqual({ ok: true, value: { ran: true, steps: 1 } });
+    expect(ran).toEqual(["first"]);
   });
 
   test("two runs of one job never overlap", async () => {
@@ -151,15 +197,16 @@ describe("a job's run", () => {
   test("a run whose lease another run took over stops at its next save", async () => {
     const ports = portsWithStore();
     const steps: number[] = [];
-    const spec = { ...JOB, timeoutMs: 5_000, leaseMs: 1_000 };
+    const spec = { ...JOB, timeoutMs: 5_000, leaseMs: 5_000 };
     const outcome = await runJob(
       ports,
       { ...spec, holder: "slow" },
       async (_context, progress: Progress | null) => {
         const next = progress?.next ?? 0;
         steps.push(next);
-        // The step outlasts the lease, and another run takes the job over.
-        ports.advance(1_000);
+        // The store's clock passes the lease while the run's own timer has
+        // not fired, and another run takes the job over.
+        ports.advance(5_000);
         const other = await ports.storage.run(
           {
             unit: "other",
@@ -261,6 +308,38 @@ describe("the trimming job", () => {
       );
       expect(fresh.ok && fresh.value !== null).toBe(true);
     }
+  });
+
+  test("a partition that does not parse is skipped and reported, and the rest are trimmed", async () => {
+    const ports = portsWithStore();
+    const good = repositoryPartition("acme/widgets");
+    await ports.storage.run(unit(), good, takeInFlightRead, {
+      target: "old",
+      holder: "h",
+      now: ports.clock.now(),
+    });
+    ports.advance(IN_FLIGHT_READ_MS + RETENTION.inFlightReadAfterDeadline + 1);
+    // "acme/broken" sorts before the good partition's name.
+    const handler = trimmingHandler(ports, {
+      partitions: async () => ok(["acme/broken", good]),
+    });
+    expect(await handler(unit(), { job: TRIM_JOB, dueAt: 0 })).toEqual(
+      ok(undefined),
+    );
+    expect(
+      await ports.storage.run(unit(), good, readInFlightRead, {
+        target: "old",
+      }),
+    ).toEqual(ok(null));
+    expect(
+      ports.calls
+        .filter((c) => c.call === "observability.event")
+        .map((c) => c.call),
+    ).toEqual(["observability.event"]);
+    const job = await ports.storage.run(unit(), DIRECTORY_PARTITION, readJob, {
+      job: TRIM_JOB,
+    });
+    expect(job.ok ? job.value?.finishedAt : null).toBe(ports.clock.now());
   });
 
   test("a stopped trimming run resumes at the partition it was on", async () => {

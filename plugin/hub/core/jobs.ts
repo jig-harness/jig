@@ -13,12 +13,20 @@
  * it is done. A run that finds the lease held by a live run does not run
  * at all, which is no failure.
  *
+ * A run's lease always outlives its deadline: a spec whose lease is
+ * shorter than its timeout is a defect, refused before the run starts.
+ * The lease is taken when the run starts and renewed after each step, so
+ * while the run may still act, no other run can take the lease over, even
+ * when one step takes most of the run's time. Once the deadline passes, the
+ * unit's signal aborts and the storage port refuses every further call of
+ * that run, so nothing it does after reaches the store.
+ *
  * A run that stops early leaves its lease to lapse and its progress
  * stored: the next run after the lease lapsed resumes from that progress,
  * and redoes at most the step that was running, which is why each step is
  * idempotent.
  */
-import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { Defect, failed, ok, type Outcome } from "../../shared/outcome.ts";
 import {
   finishJob,
   type JsonValue,
@@ -37,8 +45,10 @@ export interface JobSpec {
   /** How long one run may take, a positive whole number of milliseconds. */
   readonly timeoutMs: number;
   /**
-   * How long a lease lasts from its last renewal; a run that stops without
-   * finishing blocks the next run this long. Longer than any one step.
+   * How long a lease lasts from its taking and from each renewal, a whole
+   * number of milliseconds no shorter than `timeoutMs`, so the lease
+   * outlives the run's deadline; a run that stops without finishing blocks
+   * the next run this long.
    */
   readonly leaseMs: number;
   /** This run's holder id; a fresh random one when absent. */
@@ -95,6 +105,10 @@ export function runJob<Progress extends JsonValue, Code extends string>(
       ...(spec.stop === undefined ? {} : { stop: spec.stop }),
     },
     async (context) => {
+      if (!Number.isSafeInteger(leaseMs) || leaseMs < spec.timeoutMs)
+        throw new Defect(
+          `the job ${job}'s lease of ${leaseMs} ms is shorter than its timeout of ${spec.timeoutMs} ms, so another run could take it over while this one still acts`,
+        );
       const lease = await ports.storage.run(context, partition, takeJobLease, {
         job,
         holder,

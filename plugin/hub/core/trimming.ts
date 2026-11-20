@@ -9,7 +9,9 @@
  * operation `trimExpired`, which reads them through the table's
  * (partition, time) index. Its position (the partition and the rule it is
  * on) is the job's stored progress, so a run that stops resumes where it
- * was, and a run that trims nothing more finishes.
+ * was, and a run that trims nothing more finishes. A partition the lister
+ * names that does not parse is skipped and reported as an event
+ * (`hub.trim.partition-skipped`), so one bad name never stops the walk.
  *
  * The periods the design sets are named here for the tables that keep
  * those things; a table's rule is declared when the table arrives.
@@ -17,7 +19,7 @@
 import { ok, type Outcome } from "../../shared/outcome.ts";
 import { type JobFailureCode, runJob } from "./jobs.ts";
 import { trimExpired } from "./operations.ts";
-import { DIRECTORY_PARTITION } from "./partitions.ts";
+import { DIRECTORY_PARTITION, parsePartition } from "./partitions.ts";
 import type { HubPorts } from "./ports.ts";
 import type { JobHandler, SchedulingFailureCode } from "./scheduling.ts";
 import type { UnitContext } from "./unit.ts";
@@ -73,8 +75,8 @@ export const TRIM_EVERY_MS = HOUR_MS;
 const TRIM_CHUNK = 500;
 /** How long one run of the trimming job may take. */
 const TRIM_TIMEOUT_MS = 10 * 60 * 1000;
-/** How long the trimming job's lease lasts from its last step. */
-const TRIM_LEASE_MS = 2 * 60 * 1000;
+/** How long the trimming job's lease lasts: as long as a run may take, so it outlives the run. */
+const TRIM_LEASE_MS = TRIM_TIMEOUT_MS;
 
 /** Schedules the trimming job to run every hour. */
 export function scheduleTrimming(
@@ -165,6 +167,22 @@ export function trimmingHandler(
         const at = position(partitions, rules.length, progress);
         if (at === null)
           return ok({ progress: { partition: "", rule: 0 }, done: true });
+        const parsed = parsePartition(at.partition);
+        if (!parsed.ok) {
+          ports.observability.event(unit, {
+            name: "hub.trim.partition-skipped",
+            at: ports.clock.now(),
+            code: parsed.failure.code,
+            fields: { partition: at.partition, reason: parsed.failure.reason },
+          });
+          const past = position(partitions, rules.length, {
+            partition: at.partition,
+            rule: rules.length,
+          });
+          return past === null
+            ? ok({ progress: at, done: true })
+            : ok({ progress: past, done: false });
+        }
         const rule = rules[at.rule] as RetentionRule;
         const trimmed = await ports.storage.run(
           unit,

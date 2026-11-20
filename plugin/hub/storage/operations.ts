@@ -229,10 +229,11 @@ const takeJobLeaseImpl = implement(
           holder,
           leaseUntil: until,
           updatedAt: now,
-          startedAt: sql`case when ${jobLeases.holder} = ${holder} then ${jobLeases.startedAt} else ${now} end`,
+          startedAt: now,
         },
-        // Free, lapsed, or already this holder's.
-        setWhere: sql`${jobLeases.holder} is null or ${jobLeases.leaseUntil} is null or ${jobLeases.leaseUntil} <= ${now} or ${jobLeases.holder} = ${holder}`,
+        // Free or lapsed; a live lease is never taken again, not even by
+        // its own holder's id, so two runs given one id cannot both run.
+        setWhere: sql`${jobLeases.holder} is null or ${jobLeases.leaseUntil} is null or ${jobLeases.leaseUntil} <= ${now}`,
       })
       .returning({ progress: jobLeases.progress })
       .prepare();

@@ -88,8 +88,9 @@ export type JobLeaseAnswer =
 
 /**
  * Takes `job`'s lease for `holder` until `now` plus `leaseMs`: only when no
- * run holds it, its lease has lapsed, or `holder` already holds it. The
- * progress stays, so the new holder resumes where the last run stopped.
+ * run holds it or its lease has lapsed; a live lease is not taken again,
+ * whoever asks. The progress stays, so the new holder resumes where the
+ * last run stopped.
  */
 export const takeJobLease = operation<
   { job: string; holder: string; now: number; leaseMs: number },
