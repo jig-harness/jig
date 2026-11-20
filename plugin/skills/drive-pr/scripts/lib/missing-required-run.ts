@@ -207,18 +207,32 @@ function templatedPattern(name: string, job: unknown): RegExp | null {
     last = m.index + m[0].length;
   }
   source += escapeRegExp(name.slice(last));
-  return new RegExp(`^${source}(?: \\([\\s\\S]*| / [\\s\\S]*)?$`);
+  return new RegExp(
+    `^${source}${reusableSuffix(job) ? "(?: / [\\s\\S]*)?" : ""}$`,
+  );
+}
+
+/** Whether the job calls a reusable workflow, whose jobs report as `name / job`. */
+function reusableSuffix(job: unknown): boolean {
+  return isRecord(job) && typeof job.uses === "string";
+}
+
+/** Whether the job has a matrix, whose unnamed jobs report as `name (values)`. */
+function matrixSuffix(job: unknown): boolean {
+  const strategy = isRecord(job) ? job.strategy : undefined;
+  return isRecord(strategy) && strategy.matrix !== undefined;
 }
 
 /**
- * Whether a job named `name` reports `check`: the same name, a matrix job's
- * `name (values)`, or a reusable workflow's `name / job`.
+ * Whether the job named `name` reports `check`: the same name, a matrix
+ * job's `name (values)` only where the job has a matrix, or a reusable
+ * workflow's `name / job` only where the job calls one.
  */
-function reports(check: string, name: string): boolean {
+function reports(check: string, name: string, job: unknown): boolean {
   return (
     check === name ||
-    check.startsWith(`${name} (`) ||
-    check.startsWith(`${name} / `)
+    (matrixSuffix(job) && check.startsWith(`${name} (`)) ||
+    (reusableSuffix(job) && check.startsWith(`${name} / `))
   );
 }
 
@@ -250,7 +264,7 @@ function fileReports(check: string, file: WorkflowFile): boolean {
   return Object.entries(jobs).some(([id, job]) => {
     const { exact, pattern } = jobNames(id, job);
     return (
-      exact.some((name) => reports(check, name)) ||
+      exact.some((name) => reports(check, name, job)) ||
       pattern.some((re) => re.test(check))
     );
   });

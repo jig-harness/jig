@@ -188,7 +188,7 @@ describe("workflowForCheck", () => {
   const matrix = {
     path: ".github/workflows/matrix.yml",
     text:
-      "on: pull_request\njobs:\n  e2e:\n    name: End to end\n    runs-on: x\n  shard:\n    name: Shard $" +
+      "on: pull_request\njobs:\n  e2e:\n    name: End to end\n    strategy:\n      matrix:\n        browser: [chromium]\n    runs-on: x\n  shard:\n    name: Shard $" +
       "{{ matrix.n }}\n    strategy:\n      matrix:\n        n: [1, 2, 3]\n    runs-on: x\n",
   };
 
@@ -226,6 +226,26 @@ describe("workflowForCheck", () => {
     };
     expect(workflowForCheck("Pair 1-2", [ci, repeated])).toBeNull();
     expect(workflowForCheck("Pair 1-1", [ci, repeated])).toBeNull();
+  });
+
+  it("accepts a suffix only on a job that can report it", () => {
+    const plain = {
+      path: ".github/workflows/plain.yml",
+      text:
+        "on: push\njobs:\n  b:\n    name: Build $" +
+        "{{ matrix.n }}\n    strategy:\n      matrix:\n        n: [1, 2]\n    runs-on: x\n  c:\n    name: Solo\n    runs-on: x\n",
+    };
+    const reusable = {
+      path: ".github/workflows/reuse.yml",
+      text: "on: push\njobs:\n  r:\n    name: Call\n    uses: ./.github/workflows/x.yml\n",
+    };
+    expect(workflowForCheck("Build 1", [plain])).toBe(plain.path);
+    expect(workflowForCheck("Build 1 / nonexistent", [plain])).toBeNull();
+    expect(workflowForCheck("Build 1 (unlisted)", [plain])).toBeNull();
+    expect(workflowForCheck("Solo (x)", [plain])).toBeNull();
+    expect(workflowForCheck("Solo / x", [plain])).toBeNull();
+    expect(workflowForCheck("Call / job", [reusable])).toBe(reusable.path);
+    expect(workflowForCheck("Call (x)", [reusable])).toBeNull();
   });
 
   it("says unknown when no workflow, or several, report it", () => {

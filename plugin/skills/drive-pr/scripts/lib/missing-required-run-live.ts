@@ -12,7 +12,7 @@ import type { ParkedDecision } from "../../../../shared/decisions/park.ts";
 import { currentMs } from "../../../../shared/time.ts";
 import { testPacing } from "./cli.ts";
 import type { CheckRunLite } from "./ci-hold.ts";
-import { readCheckRuns } from "./ci-hold-state.ts";
+import { readCheckRuns, readPrSnapshot } from "./ci-hold-state.ts";
 import {
   describeMissing,
   type MissingRunVerdict,
@@ -252,6 +252,13 @@ export async function stopOnMissingRequiredRun(
   console.error(
     `ci-hold: required check(s) ${named.join(", ")} have no run on this head ${Math.round(graceMs / 60_000)} minutes after its push, and no workflow run on it is still to finish; parking ${MISSING_RUN_PARK_KEY} for a person`,
   );
+  const live = await readPrSnapshot(pr, null);
+  if (!live.ok || live.value.state !== "OPEN" || live.value.head !== head) {
+    console.error(
+      "ci-hold: the pull request's head or state changed or cannot be read while the missing check was examined; not parking, waiting",
+    );
+    return "wait";
+  }
   await parkFinding(
     pr,
     MISSING_RUN_PARK_KEY,
