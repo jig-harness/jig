@@ -221,6 +221,8 @@ describe("telling a host fault from a question about the work", () => {
       "Can we make the code delete the cache on ENOSPC: instead of retry?",
       "Should I change the code to clear the cache on ENOSPC: or retry?",
       "Should the code retry on ENOSPC: if we delete the legacy column?",
+      "Should the code retry on ENOSPC: if we delete src/cache.ts?",
+      "Should the code retry on ENOSPC: if we delete the column, keeping cache behavior unchanged?",
     ])
       expect(hostFault(ended({}, { said: topic }))).toBeNull();
     for (const failure of [

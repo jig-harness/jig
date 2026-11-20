@@ -46,6 +46,50 @@ const HOST_FAULT_QUESTION = new RegExp(
   "i",
 );
 
+const CLEANUP_VERB =
+  /\b(?:i|we)\s+(?:(?:can|could|should|may|will|would|first|safely|now|also|then|just|simply)\s+){0,3}(?:remove|delete|free(?: up)?|clean(?: up)?|purge|prune|clear|wipe)\s+(.*)$/is;
+const HOST_RESOURCE = new Set(
+  "cache caches file files fixture fixtures log logs tmp temp artifact artifacts output outputs space disk inodes inode directory directories image images checkout checkouts worktree worktrees".split(
+    " ",
+  ),
+);
+
+/**
+ * Host recovery is cleanup the asker performs ("I"/"we" is the actor of the
+ * verb) on a host resource; cleanup the code, tests or build would perform,
+ * or of a work product such as a column, is implementation. The object is the
+ * next few words, cut at the first clause punctuation: a plain word or
+ * hyphenated name naming a resource (a possessive allowed), or a rooted path
+ * (`/` or `~`) with a resource segment and no file extension. A resource word
+ * inside a source path (`src/cache.ts`) or past a comma is not the object.
+ */
+function cleansHostResource(text: string): boolean {
+  const rest = CLEANUP_VERB.exec(text)?.[1];
+  if (rest === undefined) return false;
+  for (const raw of rest.split(/\s+/).slice(0, 4)) {
+    const token = raw.replace(/[,;:?!.]+$/, "");
+    const rooted = /^[~/][\w~./-]*$/.test(token);
+    const plain = /^[\w'\u2019-]+$/.test(token);
+    if (plain) {
+      const parts = token
+        .toLowerCase()
+        .replace(/['\u2019]s$/, "")
+        .split("-");
+      if (parts.some((part) => HOST_RESOURCE.has(part))) return true;
+    } else if (rooted && !/\.[A-Za-z]{1,5}$/.test(token)) {
+      if (
+        token
+          .toLowerCase()
+          .split(/[/~]/)
+          .some((seg) => HOST_RESOURCE.has(seg.replace(/^\./, "")))
+      )
+        return true;
+    }
+    if (/[,;:?!]$/.test(raw)) break;
+  }
+  return false;
+}
+
 /**
  * A question that is explicitly about an observed host failure, not a test,
  * documentation or implementation question that quotes one. An implementation
@@ -61,16 +105,7 @@ function isHostFaultQuestion(question: string): boolean {
     )
   )
     return false;
-  // Host recovery is cleanup the asker performs ("I"/"we" is the actor of the
-  // verb); cleanup the code, tests or build would perform is implementation.
-  // The actor ("I"/"we", optionally with a modal and adverbs between) does a
-  // cleanup verb to a host resource (cache, files, fixtures, logs, space...);
-  // deleting a column or other work product is not host recovery. The object
-  // may be a path, a possessive or a hyphenated name that ends in the resource.
-  const cleansItself =
-    /\b(?:i|we)\s+(?:(?:can|could|should|may|will|would|first|safely|now|also|then|just|simply)\s+){0,3}(?:remove|delete|free(?: up)?|clean(?: up)?|purge|prune|clear|wipe)\s+(?:\S+\s+){0,3}\S*?\b(?:cache|caches|files?|fixtures?|logs?|tmp|temp|artifacts?|outputs?|space|disk|inodes?|directory|directories|images?|checkouts?|worktrees?)\b/i.test(
-      text,
-    );
+  const cleansItself = cleansHostResource(text);
   if (
     !cleansItself &&
     /^(?:should|would|could|can|do|does|did)\b(?=.{0,160}\b(?:test|tests|build|code|implementation|workflow)\b)(?=.{0,160}\b(?:retry|fail|failing)\b)/i.test(
