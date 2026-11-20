@@ -205,3 +205,52 @@ export function unrecordedDrivers(
     ];
   });
 }
+
+/** An unrecorded driver identified by the pull request and clone it holds. */
+function unrecordedDriverFor(
+  accounts: readonly MachineAccount[],
+  records: readonly ReadRecord[],
+  drivers: readonly HostDriver[],
+  clone: string,
+  pr: number,
+): UnrecordedDriver | undefined {
+  return unrecordedDrivers(accounts, records, drivers).find(
+    (entry) => entry.driver.clone === clone && entry.driver.pr === pr,
+  );
+}
+
+/** The live host driver a takeover replaces, when the current reading proves one. */
+export function takeoverHostDriver(
+  takeoverHolder: unknown | undefined,
+  drivers: HostDrivers | undefined,
+  accounts: readonly MachineAccount[],
+  records: readonly ReadRecord[],
+  clone: string | null,
+  pr: number,
+): UnrecordedDriver | undefined {
+  if (takeoverHolder === undefined || !drivers?.ok || clone === null)
+    return undefined;
+  return unrecordedDriverFor(accounts, records, drivers.value, clone, pr);
+}
+
+/** Whether a host driver is the same lock a takeover replaces. */
+export function unrecordedDriverMatches(
+  accounts: readonly MachineAccount[],
+  records: readonly ReadRecord[],
+  drivers: readonly HostDriver[],
+  account: string | undefined,
+  replacement: { clone: string; pr: number; since: string },
+): boolean {
+  const driver = unrecordedDriverFor(
+    accounts,
+    records,
+    drivers,
+    replacement.clone,
+    replacement.pr,
+  );
+  return (
+    driver !== undefined &&
+    driver.account === account &&
+    driver.driver.since === replacement.since
+  );
+}

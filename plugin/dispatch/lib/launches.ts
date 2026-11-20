@@ -132,7 +132,6 @@ export interface LaunchAttempt {
   outcome: "sent" | "failed" | "lost";
   detail: string;
 }
-
 /** The tick's part of a record. */
 export interface LaunchRecord {
   /** The last attributable test-lock wait this host observed, retained after it ends. */
@@ -182,7 +181,7 @@ export interface LaunchRecord {
   codexPassArgs?: string[];
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
-  /** For a takeover of an unrecorded host driver: that driver's lock identity. */
+  /** Host-driver lock this takeover replaces, if any. */
   replacesHostDriver?: { clone: string; pr: number; since: string };
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
   facts: string;

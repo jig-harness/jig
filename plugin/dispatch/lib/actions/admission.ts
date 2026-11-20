@@ -36,12 +36,25 @@ export interface AdmissionState {
  * the stage. Such a takeover may try the next account after an identity
  * check fails, as a re-arm does.
  */
-export function takeoverMoves(state: AdmissionState, action: Action): boolean {
+function takeoverMoves(state: AdmissionState, action: Action): boolean {
   if (action.takeover === undefined) return false;
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   if (replaced === undefined) return false;
   const own = slotsOf(state.table, replaced.record);
   return own !== undefined && !serves(own.account, action.stage);
+}
+
+/** Whether a failed identity check leaves the account whose takeover slot remains occupied. */
+export function keepsTakeoverAccount(
+  state: AdmissionState,
+  action: Action,
+  holderAccount: string | null | undefined,
+  account: string,
+): boolean {
+  return (
+    (action.takeover !== undefined && !takeoverMoves(state, action)) ||
+    holderAccount === account
+  );
 }
 
 export function admission(

@@ -19,9 +19,12 @@ import {
   type Slots,
   slotsOf,
 } from "../accounts.ts";
-import { unrecordedDrivers } from "../host-drivers.ts";
+import {
+  unrecordedDriverMatches,
+  takeoverHostDriver,
+} from "../host-drivers.ts";
 import { serves } from "../account-stages.ts";
-import { admission, takeoverMoves } from "./admission.ts";
+import { admission, keepsTakeoverAccount } from "./admission.ts";
 import type { HostDrivers } from "../host-drivers.ts";
 import {
   isInteractive,
@@ -348,7 +351,6 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
     detail: receipt.detail,
   };
 }
-
 /** What the dispatcher's names call a record's target: the item's key, else `#<pr>`. */
 function nameKey(
   record: Pick<LaunchRecord, "item" | "pr"> &
@@ -357,14 +359,12 @@ function nameKey(
   if (record.action === "steward") return "line";
   return record.item ?? `#${String(record.pr)}`;
 }
-
 /** The mark a record carries: the one it was written with, else the convention's for it. */
 function markOf(record: LaunchRecord): string {
   return (
     record.mark ?? dispatchedMark(record.action, nameKey(record), record.id)
   );
 }
-
 /** What the runtime starts for a record: a headless pass (a drive's, a follow-up's, a pickup's), or an interactive pickup an earlier release recorded, which a runtime that cannot bind one refuses. */
 function stageOf(record: LaunchRecord): LaunchStage {
   const named = {
@@ -383,7 +383,6 @@ function stageOf(record: LaunchRecord): LaunchStage {
     };
   return { kind: "headless", ...named, record: record.id };
 }
-
 /** Call the runtime's `launch` under the record's token, and keep its answer (and agent id) on the record. */
 async function callLaunch(
   state: ApplyState,
@@ -413,7 +412,6 @@ async function callLaunch(
   writeRecord(record, state.root);
   return attempt;
 }
-
 /** Whether a takeover shares the slot of the record or live host driver it replaces on the same account. */
 function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
   if (
@@ -425,20 +423,15 @@ function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
     )
   )
     return true;
-  if (record.replacesHostDriver === undefined || state.drivers?.ok !== true)
-    return false;
-  const replaced = unrecordedDrivers(
-    state.table.map((s) => s.account),
-    state.records,
-    state.drivers.value,
-  ).find(
-    ({ driver, account }) =>
-      account === slotsOf(state.table, record)?.account.name &&
-      driver.clone === record.replacesHostDriver?.clone &&
-      driver.pr === record.replacesHostDriver?.pr &&
-      driver.since === record.replacesHostDriver?.since,
-  );
-  return replaced !== undefined;
+  return state.drivers?.ok === true && record.replacesHostDriver !== undefined
+    ? unrecordedDriverMatches(
+        state.table.map((s) => s.account),
+        state.records,
+        state.drivers.value,
+        slotsOf(state.table, record)?.account.name,
+        record.replacesHostDriver,
+      )
+    : false;
 }
 
 /** A lost earlier answer might have started the wrapper, so only known failures release it. */
@@ -791,7 +784,7 @@ export async function admitAccount(
   repo: string,
   action: Action,
   pickupDeadlineSec = 0,
-  clone?: string | null,
+  clone: string | null = null,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
@@ -826,22 +819,15 @@ export async function admitAccount(
     if (identity.ok) return byLoad(state, repo, action, slots);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    const holder =
-      action.takeoverHolder === undefined || !state.drivers?.ok
-        ? undefined
-        : unrecordedDrivers(
-            state.table.map((entry) => entry.account),
-            state.records,
-            state.drivers.value,
-          ).find(
-            (entry) =>
-              entry.driver.clone === clone &&
-              entry.driver.pr === Number(action.target.replace("PR #", "")),
-          );
-    if (
-      (action.takeover !== undefined && !takeoverMoves(state, action)) ||
-      holder?.account === name
-    )
+    const holder = takeoverHostDriver(
+      action.takeoverHolder,
+      state.drivers,
+      state.table.map((entry) => entry.account),
+      state.records,
+      clone,
+      Number(action.target.replace("PR #", "")),
+    );
+    if (keepsTakeoverAccount(state, action, holder?.account, name))
       return { outcome: refusal };
     failed.add(name);
   }

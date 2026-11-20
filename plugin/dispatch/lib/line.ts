@@ -10,7 +10,6 @@
 import type {
   LineAccount,
   LineDecision,
-  LineDriver,
   LineLinks,
   LineNeed,
   LineQueued,
@@ -117,13 +116,11 @@ export interface LineInput {
   reports: RepoReport[];
   /** By repository path; a repository refused before its reads has none. */
   inputs: Map<string, RepoLineInput>;
-  /** By repository slug. */
   stored: (slug: string) => RepoStored;
   records: ReadRecord[];
   accounts: LineAccount[];
-  hostDrivers?: { drivers?: LineDriver[]; driversUnread?: string };
+  hostDrivers?: Pick<LineSnapshot, "drivers" | "driversUnread">;
   lastAccount: string | null;
-  /** The durations the previous line carried. */
   recentTicksMs: number[];
 }
 

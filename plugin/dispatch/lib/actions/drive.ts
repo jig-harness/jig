@@ -37,7 +37,8 @@ import { git, gitIdentityEnv } from "../../../shared/proc.ts";
 import { idleBlocksStart } from "../automation.ts";
 import { cloneId } from "../../../skills/drive-pr/scripts/lib/state/ledger-mirror.ts";
 import { peekCloneKey } from "../../../skills/drive-pr/scripts/lib/state/clone-key.ts";
-import { readCloneKey, unrecordedDrivers } from "../host-drivers.ts";
+import { readCloneKey, takeoverHostDriver } from "../host-drivers.ts";
+import type { UnrecordedDriver } from "../host-drivers.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
 import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
@@ -686,6 +687,21 @@ function roundOf(pr: DrivenPr): number | null {
   return typeof round === "number" ? round : null;
 }
 
+/** The record fields identifying the host driver this launch takes over. */
+function hostDriverReplacement(
+  holder: UnrecordedDriver | undefined,
+): Pick<LaunchRecord, "replacesHostDriver"> {
+  return holder === undefined
+    ? {}
+    : {
+        replacesHostDriver: {
+          clone: holder.driver.clone,
+          pr: holder.driver.pr,
+          since: holder.driver.since,
+        },
+      };
+}
+
 /** The admitted drive launch recorded before the runtime starts it. */
 function driveRecord(
   state: ApplyState,
@@ -700,17 +716,14 @@ function driveRecord(
 ): LaunchRecord {
   const kind = isTakeover(action) ? "takeover" : "rearm";
   const clone = readCloneKey(repo.path);
-  const holder =
-    action.takeoverHolder === undefined || !state.drivers?.ok || clone === null
-      ? undefined
-      : unrecordedDrivers(
-          state.table.map((entry) => entry.account),
-          state.records,
-          state.drivers.value,
-        ).find(
-          (entry) =>
-            entry.driver.clone === clone && entry.driver.pr === pr.number,
-        );
+  const holder = takeoverHostDriver(
+    action.takeoverHolder,
+    state.drivers,
+    state.table.map((entry) => entry.account),
+    state.records,
+    clone,
+    pr.number,
+  );
   return {
     version: 1,
     ...(action.steward === undefined
@@ -729,15 +742,7 @@ function driveRecord(
     passTimeoutSec: state.passDeadlineSec,
     ...codexLaunchFields(state.codexOptIn),
     replaces: action.takeover ?? null,
-    ...(holder === undefined
-      ? {}
-      : {
-          replacesHostDriver: {
-            clone: holder.driver.clone,
-            pr: holder.driver.pr,
-            since: holder.driver.since,
-          },
-        }),
+    ...hostDriverReplacement(holder),
     facts: action.facts ?? factsOf(pr),
     createdAt: currentIso(),
     workspace,
