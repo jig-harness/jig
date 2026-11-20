@@ -349,6 +349,19 @@ describe("the validation gauge's hold on a lock-wait relaunch", () => {
     expect(judge(load, "pickup", SLUG, "#13", 3 * HOUR)).toBeNull();
   });
 
+  it("counts the validation runs of a pinned relaunch an advisory gauge lets start", () => {
+    const load = withDemand(0);
+    load.validation!.demand = { atLock: 0, toArrive: 0 };
+    // Memory over its line refuses the launch advisorily; it still starts and still validates.
+    load.reading.host.availableBytes = 0;
+    const before = load.validation!.admittedRuns;
+    expect(
+      judge(load, "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),
+    ).toBeNull();
+    expect(load.holds.length).toBeGreaterThan(0);
+    expect(load.validation!.admittedRuns).toBeGreaterThan(before);
+  });
+
   it("admits it when the validation capacity has room, or when the gauge does not read", () => {
     expect(
       judge(withDemand(0), "pickup", SLUG, "#12", 3 * HOUR, VALIDATION_GAUGES),

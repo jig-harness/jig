@@ -481,6 +481,18 @@ export function judge(
     detail: refused.detail,
     held,
   });
+  // A pinned launch an advisory gauge lets start still runs validation, so it counts against the forecast.
+  if (
+    !held &&
+    pinned.includes("validation") &&
+    state.validation !== undefined &&
+    (kind === "pickup" || kind === "drive")
+  )
+    state.validation.admittedRuns += runsPerPassFor(
+      state.validation.measured,
+      kind,
+      repo,
+    );
   return held ? `the host's load holds it: ${refused.detail}` : null;
 }
 

@@ -39,6 +39,7 @@ import {
   accountBlock,
   admitAccount,
   type ApplyState,
+  loadKindOf,
   outOfTime,
   replay,
   replayable,
@@ -46,6 +47,7 @@ import {
   timeLeftMs,
   waits,
 } from "./launch.ts";
+import { judge, VALIDATION_GAUGES } from "../load.ts";
 import { holdingRecords } from "./pickup-hold.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 
@@ -265,6 +267,24 @@ function relaunchKind(
   return relaunch.fault === undefined ? "stalled" : "host-fault";
 }
 
+/** Why the host's mandatory gauges hold a lock-wait relaunch's replay; `null` when they leave room. */
+function lockWaitHold(
+  state: ApplyState,
+  repo: string,
+  action: Action,
+  record: LaunchRecord,
+): string | null {
+  if (state.load === undefined) return null;
+  return judge(
+    state.load,
+    loadKindOf(action),
+    repo,
+    action.target,
+    (record.passTimeoutSec ?? 0) * 1000,
+    VALIDATION_GAUGES,
+  );
+}
+
 /** Retry, once and under its own record, each pending relaunch of `repo` whose launch got no answer. */
 async function retryPending(
   state: ApplyState,
@@ -291,11 +311,14 @@ async function retryPending(
         : { fault: record.relaunchFault }),
       ...(record.relaunchLockWait === true ? { lockWait: true as const } : {}),
     };
-    const blocked =
+    let blocked =
       ctx.serialUndecided ??
       (await changed(state, repo, ctx, item, relaunch, record.id)) ??
       (await accountBlock(state, record));
     const action = { target: item, stage: "pickup", relaunch } as Action;
+    // A lock-wait relaunch replays only into room the mandatory gauges still show.
+    if (blocked === null && relaunch.lockWait === true)
+      blocked = lockWaitHold(state, repo.slug, action, record);
     report.launches.push(await replay(state, record, action, blocked));
   }
 }
