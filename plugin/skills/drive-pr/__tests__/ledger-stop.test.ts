@@ -12,7 +12,10 @@ import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   markDriverRecordReleased,
   recordPendingExit,
+  type DriverRecord,
+  readDriverRecord,
   removeDriverRecord,
+  removeSettledRecord,
   writeDriverRecord,
 } from "../scripts/lib/ledger-stop.ts";
 import {
@@ -649,6 +652,33 @@ describe("an idle stop marks only a retained record", () => {
     expect(personStopFor(s.leaf, "999", s.started)).toMatchObject({
       personStop: { reason: "maintenance" },
     });
+  });
+});
+
+describe("recovery settles a record only for the person stop it published", () => {
+  it("keeps a record marked after its snapshot and drops it once the snapshot matches", () => {
+    const s = stage();
+    const driver = {
+      worktree: s.forge.repo,
+      started: s.started,
+      pid: 1,
+      host: "h",
+    };
+    writeDriverRecord(s.leaf, "999", driver);
+    const snapshot = readDriverRecord(s.leaf, "999");
+    expect(snapshot).not.toBeNull();
+    expect(markIdlePersonStop(s.leaf, "999", s.started, "maintenance")).toBe(
+      true,
+    );
+    expect(removeSettledRecord(s.leaf, "999", snapshot as DriverRecord)).toBe(
+      "unsettled",
+    );
+    const marked = readDriverRecord(s.leaf, "999");
+    expect(marked?.personStop?.reason).toBe("maintenance");
+    expect(removeSettledRecord(s.leaf, "999", marked as DriverRecord)).toBe(
+      "settled",
+    );
+    expect(readDriverRecord(s.leaf, "999")).toBeNull();
   });
 });
 

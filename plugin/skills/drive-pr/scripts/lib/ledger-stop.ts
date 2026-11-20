@@ -148,6 +148,31 @@ export function removeDriverRecord(
 }
 
 /**
+ * Settle a recovered acquisition: drop its record only while the person stop it
+ * published is still the one on the record. A stop marked after the payload was
+ * built is not on the ledger, so the record stays and the recovery is unsettled.
+ */
+export function removeSettledRecord(
+  stateDir: string,
+  pr: string,
+  record: DriverRecord,
+): Settlement {
+  if (retainDriverWitness(stateDir, pr)) return "settled";
+  removeDriverObservation(stateDir, pr, record.started);
+  const drive = driveDb(stateDir);
+  const published =
+    record.personStop === undefined ? null : JSON.stringify(record.personStop);
+  drive.db.run(
+    "DELETE FROM driver_records WHERE clone = ? AND pr = ? AND started = ? AND person_stop IS ?",
+    [drive.clone, pr, record.started, published],
+  );
+  const left = readDriverRecord(stateDir, pr);
+  return left !== null && left.started === record.started
+    ? "unsettled"
+    : "settled";
+}
+
+/**
  * Mark the driver record of `pr` released, while it is still the one started
  * at `started`: the driver gave its locks back, so `--stop` and `--doctor`
  * may mark its ledger stopped.
@@ -225,8 +250,7 @@ export async function recoverFromDriverRecord(
       await recoverObservedDriver(stateDir, pr, record, async () => {
         markDriverRecordReleased(stateDir, pr, record.started);
         if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
-          outcome = "settled";
-          removeDriverRecord(stateDir, pr, record.started);
+          outcome = removeSettledRecord(stateDir, pr, record);
         }
       })
     )
@@ -241,8 +265,7 @@ export async function recoverFromDriverRecord(
   let outcome: Settlement = "unsettled";
   await reserveDeadDriver(stateDir, pr, record, async () => {
     if ((await markLedgerStopped(stateDir, pr, record, null)) === "done") {
-      outcome = "settled";
-      removeDriverRecord(stateDir, pr, record.started);
+      outcome = removeSettledRecord(stateDir, pr, record);
     }
   });
   return outcome;
