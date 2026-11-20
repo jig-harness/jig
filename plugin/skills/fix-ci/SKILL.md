@@ -545,14 +545,20 @@ can be retried with it; left behind, it makes the worktree dirty.
 
 The commit runs the repository's commit hooks, whose length Jig does not
 know, so like the push it gets an hour where the command wrapper would give
-120 seconds; give your shell tool's call a timeout to match. A commit that
-exits `124` was killed at that deadline with its hooks. Read
-`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status`, settle any
-change the killed hook left (a formatter's edit, a stash it never restored),
-and commit again with `--timeout-seconds 7200`; never skip the hooks
-(`--no-verify`). Killed at that deadline too, the hook is hung: stop with
-the fixes staged and uncommitted, and report the command, its deadline and
-what `git status` shows.
+120 seconds. Give your shell tool's call a timeout to match, or, where its
+ceiling is shorter, wait for it as resolve-conflicts'
+[Commands that run the repository's hooks](../resolve-conflicts/SKILL.md#commands-that-run-the-repositorys-hooks)
+says. A commit that exits `124` was killed at that deadline with its hooks.
+When `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log -1` shows
+this repair's commit, it landed and only a later hook was killed: go on.
+Otherwise read `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status`,
+settle any change the killed hook left (a formatter's edit, a stash it
+never restored) and commit again with
+`--timeout-seconds 7200`; never skip the hooks (`--no-verify`). Killed at
+that deadline too, or killed once inside a drive pass, whose own deadline the
+longer one would outrun, the hook is treated as hung: stop with the fixes
+staged and uncommitted, and report the command, its deadline and what
+`git status` shows.
 
 `commit-prefix.ts` puts the issue key in every unpushed commit where the
 repository sets `pull_requests.commit_prefix`, and does nothing where it

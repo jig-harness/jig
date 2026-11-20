@@ -17,8 +17,10 @@ const SKILL_DIR = "$" + "{CLAUDE_SKILL_DIR}";
 
 const WRAPPED_GIT = /command\.ts"?(.*?)\s--\s+git\s+(.*)$/;
 const HOOK_RUNNING =
-  /^(?:-c\s+\S+\s+)*(?:commit|merge|cherry-pick|revert|push|am|rebase\s+--continue)(?=[\s`'"]|$)/;
+  /^(?:-[cC]\s+\S+\s+|--[\w-]+(?:=\S+)?\s+)*(?:commit|merge|cherry-pick|revert|push|pull|am|rebase\s+--continue)(?=[\s`'";]|$)/;
 const NO_HOOKS = /\s--(?:abort|quit)\b/;
+/** Where a command's own arguments end on a line of prose or shell. */
+const ARGUMENTS_END = /[`;|]/;
 
 /** Each wrapped, hook-running git command on a line, without its deadline. */
 function undeadlinedHookCommands(text: string): string[] {
@@ -30,7 +32,8 @@ function undeadlinedHookCommands(text: string): string[] {
       const match = WRAPPED_GIT.exec(call);
       if (!match) continue;
       const [, options = "", rest = ""] = match;
-      if (!HOOK_RUNNING.test(rest) || NO_HOOKS.test(rest)) continue;
+      const own = rest.split(ARGUMENTS_END)[0] ?? "";
+      if (!HOOK_RUNNING.test(own) || NO_HOOKS.test(own)) continue;
       if (!/--timeout-seconds\s+\d+/.test(options)) found.push(call.trim());
     }
   }
@@ -60,11 +63,13 @@ describe("hook-running commands carry a deadline", () => {
         'run `bun "<skill-dir>/../../shared/command.ts" --env GIT_EDITOR true -- git rebase --continue`, which',
       ),
     ).toHaveLength(1);
-    expect(
-      undeadlinedHookCommands(
-        'bun "<skill-dir>/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge origin/main',
-      ),
-    ).toHaveLength(1);
+    for (const line of [
+      'bun "<skill-dir>/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge origin/main',
+      'bun "<skill-dir>/../../shared/command.ts" -- git -C sub commit -m x',
+      'bun "<skill-dir>/../../shared/command.ts" -- git --no-pager pull',
+      'merge with `bun "<skill-dir>/../../shared/command.ts" -- git merge main`, or `git merge --abort` it',
+    ])
+      expect(undeadlinedHookCommands(line)).toHaveLength(1);
   });
 
   test("the scanner passes a deadline and commands that run no hook", () => {
@@ -76,11 +81,14 @@ describe("hook-running commands carry a deadline", () => {
       'bun "<skill-dir>/../../shared/command.ts" -- git commit-tree x',
       'bun "<skill-dir>/../../shared/command.ts" -- git log -1',
       'bun "<skill-dir>/../../shared/command.ts" -- git clean -f -- conflict-message.txt',
+      'bun "<skill-dir>/../../shared/command.ts" -- git merge-base --is-ancestor a HEAD',
+      'bun "<skill-dir>/../../shared/command.ts" -- git rebase --quit',
+      'bun "<skill-dir>/../../shared/command.ts" -- git reset --merge',
     ])
       expect(undeadlinedHookCommands(line)).toEqual([]);
   });
 
-  test("every plugin document and script prescribes one", () => {
+  test("every command line the plugin's documents and scripts write has one", () => {
     const offenders: string[] = [];
     for (const file of sources(PLUGIN))
       for (const call of undeadlinedHookCommands(readFileSync(file, "utf8")))
