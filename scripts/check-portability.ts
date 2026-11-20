@@ -167,9 +167,25 @@ const TS_VALUE_WRAPPERS = new Set([
   "TSExportAssignment",
 ]);
 
+/** TypeScript declarations that emit code: an enum's initializers and a namespace's statements run. Only the keys below them hold that code. */
+const TS_RUNTIME_CONTAINERS = new Set([
+  "TSEnumDeclaration",
+  "TSEnumBody",
+  "TSEnumMember",
+  "TSModuleDeclaration",
+  "TSModuleBlock",
+]);
+
+/** The keys of a runtime-bearing TypeScript declaration whose children run (never its name or its types). */
+const TS_RUNTIME_KEYS = new Set(["body", "members", "initializer"]);
+
 /** The children whose code runs: none of a type, a declaration's `declare` form or a wrapper's type. */
 function runtimeChildren(node: AstNode): Array<[string, AstNode]> {
   if (node.type.startsWith("TS")) {
+    if (TS_RUNTIME_CONTAINERS.has(node.type))
+      return node.declare === true
+        ? []
+        : children(node).filter(([key]) => TS_RUNTIME_KEYS.has(key));
     if (!TS_VALUE_WRAPPERS.has(node.type)) return [];
     return isNode(node.expression) ? [["expression", node.expression]] : [];
   }
@@ -270,19 +286,45 @@ function namePosition(parent: AstNode | null, key: string): boolean {
   }
 }
 
+/** The property a member expression reads when it is fixed: a name, or a literal in brackets. */
+function fixedProperty(node: AstNode): string | null {
+  return node.computed === true
+    ? literalOf(node.property)
+    : nameOf(node.property);
+}
+
+/** The global object `node` is: the global object's own name, or a chain of its names (`globalThis.globalThis`, `self["window"]`); `null` for anything else. */
+function globalObject(node: unknown, declared: Set<string>): string | null {
+  if (!isNode(node)) return null;
+  const name = nameOf(node);
+  if (name !== null)
+    return GLOBAL_OBJECTS.has(name) && !declared.has(name) ? name : null;
+  if (node.type !== "MemberExpression") return null;
+  const property = fixedProperty(node);
+  return property !== null &&
+    GLOBAL_OBJECTS.has(property) &&
+    globalObject(node.object, declared) !== null
+    ? property
+    : null;
+}
+
+/** Whether a node is read for a fixed property: the object of a member expression that names one. */
+function readForFixedProperty(parent: AstNode | null, key: string): boolean {
+  return (
+    parent?.type === "MemberExpression" &&
+    key === "object" &&
+    (parent.computed !== true || literalOf(parent.property) !== null)
+  );
+}
+
 /** The runtime-global use a member expression is, if it is one. */
 function memberUse(node: AstNode, declared: Set<string>): Use | null {
   const object = node.object;
-  const property =
-    node.computed === true ? literalOf(node.property) : nameOf(node.property);
-  if (property === null || !isNode(object)) return null;
-  const holder = nameOf(object);
-  if (
-    holder !== null &&
-    GLOBAL_OBJECTS.has(holder) &&
-    !declared.has(holder) &&
-    RUNTIME_GLOBALS.has(property)
-  )
+  const property = fixedProperty(node);
+  if (!isNode(object)) return null;
+  if (property === null) return null;
+  const holder = globalObject(object, declared);
+  if (holder !== null && RUNTIME_GLOBALS.has(property))
     return {
       kind: "runtime-global",
       at: node.start,
@@ -345,7 +387,44 @@ function readModule(
       case "MemberExpression": {
         const use = memberUse(node, declared);
         if (use !== null) uses.push(use);
+        else if (
+          fixedProperty(node) !== null &&
+          globalObject(node, declared) !== null &&
+          !readForFixedProperty(parent, key)
+        )
+          uses.push({
+            kind: "runtime-global",
+            at: node.start,
+            problem:
+              "a global-object alias is read other than for a fixed property, so the runtime globals it can reach are unchecked",
+          });
         break;
+      }
+      case "MetaProperty":
+        if (
+          nameOf(node.meta) === "import" &&
+          !readForFixedProperty(parent, key)
+        )
+          uses.push({
+            kind: "runtime-global",
+            at: node.start,
+            problem:
+              "`import.meta` is read other than for a fixed property, so the properties it can reach are unchecked",
+          });
+        return;
+      case "TSImportEqualsDeclaration": {
+        const reference = node.moduleReference;
+        if (
+          node.importKind !== "type" &&
+          isNode(reference) &&
+          reference.type === "TSExternalModuleReference"
+        )
+          edges.push({
+            specifier: literalOf(reference.expression),
+            at: node.start,
+            dynamic: false,
+          });
+        return;
       }
       case "Identifier": {
         const name = String(node.name);
@@ -356,11 +435,7 @@ function readModule(
           GLOBAL_OBJECTS.has(name) &&
           !declared.has(name) &&
           !namePosition(parent, key) &&
-          !(
-            parent?.type === "MemberExpression" &&
-            key === "object" &&
-            (parent.computed !== true || literalOf(parent.property) !== null)
-          )
+          !readForFixedProperty(parent, key)
         ) {
           uses.push({
             kind: "runtime-global",

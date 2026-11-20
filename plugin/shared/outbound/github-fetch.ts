@@ -48,9 +48,8 @@ import {
   type GitHubLimit,
   limitsOf,
   measuredCost,
-  nextLink,
-  onApiOrigin,
 } from "./github-answer.ts";
+import { linkNext } from "./paging.ts";
 import { gitHubHttpFailure, graphQLErrorsClass } from "./github.ts";
 import type { CallRecord } from "./ledger.ts";
 import { queryOperation, restOperation } from "./operations.ts";
@@ -72,9 +71,11 @@ export interface GitHubFetchOptions {
   /** The REST API's base: `https://api.github.com` (the default), or an Enterprise Server's `https://HOST/api/v3`. */
   baseUrl?: string;
   /** The token to send; `null` or empty when there is none, which fails the call as `unauthorized`. */
-  token: () => Promise<string | null> | string | null;
-  /** The opaque key the credential's budget record and ledger rows are kept under, never the token. */
+  token: (signal: AbortSignal) => Promise<string | null> | string | null;
+  /** The opaque key the credential's ledger rows and held bodies are kept under, never the token. */
   credential: string;
+  /** The opaque key of the quota's owner (the user or installation the forge counts spending against), which the `gh` transport's budget record is kept under too; the credential's when left out. */
+  quotaOwner?: string;
   /** Tells each attempt to the cost ledger. */
   record: (call: CallRecord) => void;
   /** The shared budget; left out, requests are admitted without one. */
@@ -157,6 +158,11 @@ interface Received {
   tookMs: number;
 }
 
+/** What one send came to: what it received, or its failure, with the headers of an answer whose body could not be read. */
+type Sent =
+  | { ok: true; value: Received }
+  | { ok: false; failure: OutboundFailure; headers: Headers | null };
+
 /** The record windows the headers' `x-ratelimit-resource` names. */
 const RESOURCE_WINDOWS: Readonly<Record<string, string>> = {
   core: "requests",
@@ -187,11 +193,52 @@ function routeRepository(route: string): string | null {
   return match === null ? null : `${match[1]}/${match[2]}`.toLowerCase();
 }
 
-/** The host whose API origin a next link must be on: `github.com` for `api.github.com`, else the server's own. A base that is no https URL is a caller's defect. */
-function originHost(baseUrl: string): string {
+/** The origin (scheme, host and port) the API's base names; a base that is no https URL is a caller's defect. */
+function apiOrigin(baseUrl: string): string {
   if (!URL.canParse(baseUrl) || new URL(baseUrl).protocol !== "https:")
     throw new Defect(`GitHub's API base is no https URL: ${baseUrl}`);
-  return new URL(baseUrl).hostname.replace(/^api\./, "");
+  return new URL(baseUrl).origin;
+}
+
+/** Whether `url` is an https URL on exactly `origin`, with no credentials in it. */
+function onOrigin(url: string, origin: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const at = new URL(url);
+  return at.origin === origin && at.username === "" && at.password === "";
+}
+
+/** The next page's URL the `Link` header names, when it is on `origin`. */
+function nextOn(headers: Headers | null, origin: string): string | null {
+  const url = linkNext(headers);
+  return url !== null && onOrigin(url, origin) ? url : null;
+}
+
+/** Whether a GraphQL document holds a mutation or a subscription, which are never sent again: a lexical scan that skips strings, block strings and comments, so none hides or fakes a keyword. */
+function writesOrStreams(document: string): boolean {
+  let code = "";
+  let i = 0;
+  while (i < document.length) {
+    const c = document[i];
+    if (document.startsWith('"""', i)) {
+      i += 3;
+      while (i < document.length && !document.startsWith('"""', i))
+        i += document.startsWith('\\"""', i) ? 4 : 1;
+      i += 3;
+      code += " ";
+    } else if (c === '"') {
+      i += 1;
+      while (i < document.length && document[i] !== '"' && document[i] !== "\n")
+        i += document[i] === "\\" ? 2 : 1;
+      i += 1;
+      code += " ";
+    } else if (c === "#") {
+      while (i < document.length && document[i] !== "\n") i += 1;
+    } else {
+      code += c;
+      i += 1;
+    }
+  }
+  return /\b(?:mutation|subscription)\b/.test(code);
 }
 
 /** The GraphQL endpoint beside a REST base: `/graphql` on github.com, `/api/graphql` on an Enterprise Server. */
@@ -207,14 +254,15 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
     /\/+$/,
     "",
   );
-  const host = originHost(baseUrl);
+  const origin = apiOrigin(baseUrl);
   const now = options.now ?? currentMs;
   const digest = options.digest ?? shortDigest;
+  /** A held body's storage key: the credential and the URL, so no two endpoints share an entry. */
+  const heldKey = (url: string) => `${options.credential}\n${url}`;
 
-  /** The request's URL: a full URL is taken only on the API's origin. */
+  /** The request's URL: a full URL is taken only on exactly the API's origin, port included. */
   function urlOf(path: string): string | null {
-    if (/^https?:\/\//i.test(path))
-      return onApiOrigin(path, host) ? path : null;
+    if (/^https?:\/\//i.test(path)) return onOrigin(path, origin) ? path : null;
     return `${baseUrl}/${path.replace(/^\/+/, "")}`;
   }
 
@@ -234,7 +282,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
     options.record({
       system: "github",
       credential: options.credential,
-      owner: options.credential,
+      owner: options.quotaOwner ?? options.credential,
       window: outcome.window,
       operation: sending.operation,
       ...(options.caller === undefined ? {} : { caller: options.caller }),
@@ -270,7 +318,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       return { governed: null, sentAt: now() };
     const governed = governedRequest(
       governor,
-      options.credential,
+      options.quotaOwner ?? options.credential,
       admissionOf(sending.limits, {
         conditional: sending.held !== null,
         readable: true,
@@ -283,10 +331,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
   }
 
   /** Send once: `fetch` within the call's deadline; what it received, or the failure a throw stands for. */
-  async function send(
-    sending: Sending,
-    token: string,
-  ): Promise<Called<Received>> {
+  async function send(sending: Sending, token: string): Promise<Sent> {
     const began = now();
     const left = Math.max(1, sending.call.deadlineAt - began);
     const signal = AbortSignal.any([
@@ -302,6 +347,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
         ? {}
         : { "Content-Type": "application/json" }),
     };
+    let answered: Headers | null = null;
     try {
       const response = await options.fetch(sending.url, {
         method: sending.method,
@@ -309,6 +355,9 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
         signal,
         ...(sending.body === undefined ? {} : { body: sending.body }),
       });
+      // What the answer said about the budget stands even when its body
+      // cannot be read.
+      answered = response.headers;
       const text = await response.text();
       return ok({
         status: response.status,
@@ -329,6 +378,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
           `GitHub ${sending.method} ${sending.route} got no answer: ${said.reason}`,
           { sent: sending.method !== "GET", cause: error },
         ),
+        headers: answered,
       };
     }
   }
@@ -393,6 +443,22 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
     };
   }
 
+  /** The token, within the call's deadline and cancellation: the provider is handed the signal, and an acquisition that outlasts either gives no token (the caller then finds the call spent). */
+  async function acquireToken(call: GitHubCall): Promise<string | null> {
+    const signal = AbortSignal.any([
+      call.signal,
+      AbortSignal.timeout(Math.max(1, call.deadlineAt - now())),
+    ]);
+    if (signal.aborted) return null;
+    const asked = Promise.resolve(options.token(signal));
+    // A provider that settles after the race ended has nobody to tell.
+    asked.catch(() => undefined);
+    const ended = new Promise<null>((resolve) => {
+      signal.addEventListener("abort", () => resolve(null), { once: true });
+    });
+    return Promise.race([asked, ended]);
+  }
+
   /** One attempt: admitted, sent, observed into the budget and recorded. */
   async function attempt(sending: Sending): Promise<Called<GitHubAnswer>> {
     const began = now();
@@ -407,21 +473,27 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       });
       return { ok: false, failure };
     };
-    if (sending.call.signal.aborted)
-      return local(
-        outboundFailure(
+    /** The refusal when the call was cancelled or its time is up: nothing was sent. */
+    const spent = (): OutboundFailure | null => {
+      if (sending.call.signal.aborted)
+        return outboundFailure(
           "unreachable",
           "the call was cancelled; nothing was sent",
-        ),
-      );
-    if (now() >= sending.call.deadlineAt)
-      return local(
-        outboundFailure(
+        );
+      if (now() >= sending.call.deadlineAt)
+        return outboundFailure(
           "unreachable",
           "the call's deadline was spent before it was sent; nothing was sent",
-        ),
-      );
-    const token = (await options.token())?.trim() ?? "";
+        );
+      return null;
+    };
+    const before = spent();
+    if (before !== null) return local(before);
+    const acquired = await acquireToken(sending.call);
+    // Acquisition takes time of its own: the call may have ended meanwhile.
+    const after = spent();
+    if (after !== null) return local(after);
+    const token = acquired?.trim() ?? "";
     if (token === "")
       return local(
         outboundFailure(
@@ -435,13 +507,19 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
     const sent = await send(sending, token);
     if (!sent.ok) {
       const failure = sent.failure;
-      governed?.observe(["api", sending.route], null, "", failure, sentAt);
+      governed?.observe(
+        ["api", sending.route],
+        sent.headers,
+        "",
+        failure,
+        sentAt,
+      );
       recordAttempt(sending, began, {
         requests: 1,
         cost: null,
         estimated: false,
         notModified: false,
-        window: windowOf(sending, null),
+        window: windowOf(sending, sent.headers),
         failure: failure.code,
       });
       return { ok: false, failure };
@@ -485,7 +563,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       };
     if (read.value.keep !== null && sending.method === "GET")
       options.held?.set(
-        options.credential,
+        heldKey(sending.url),
         sending.url,
         read.value.keep.etag,
         read.value.keep.body,
@@ -553,7 +631,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
     const route = apiRoute(["api", url]);
     const held =
       request.conditional === true && method === "GET"
-        ? (options.held?.get(options.credential, url) ?? null)
+        ? (options.held?.get(heldKey(url), url) ?? null)
         : null;
     return governedCall(
       {
@@ -578,13 +656,9 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
 
   /** A GraphQL request: the answer's `data`, or the closed-class failure it met. A query is sent again as a read; a mutation never. */
   async function graphql(request: GraphQLRequest): Promise<Called<unknown>> {
-    // A mutation is an operation definition that opens the document or
-    // follows another definition's closing brace (a fragment, say).
-    const mutation = /(?:^|\})\s*mutation\b/.test(
-      request.query
-        .replace(/^\s*#.*$/gm, "")
-        .replace(/"(?:\\.|[^"\\])*"/g, '""'),
-    );
+    // A document that holds a mutation or a subscription is never sent
+    // again; one is taken for a read only when the scan finds neither.
+    const mutation = writesOrStreams(request.query);
     const answered = await governedCall(
       {
         method: "POST",
@@ -639,7 +713,14 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
             `${request.path} has more than ${MOST_PAGES} pages`,
           ),
         };
-      const answered = await rest({ ...request, path, method: "GET" });
+      // A page revalidated by `304` would come back without its `Link`
+      // header, which the held body does not keep: pages are read whole.
+      const answered = await rest({
+        ...request,
+        path,
+        method: "GET",
+        conditional: false,
+      });
       if (!answered.ok) return answered;
       let value: unknown;
       try {
@@ -656,7 +737,7 @@ export function githubFetchTransport(options: GitHubFetchOptions) {
       }
       if (Array.isArray(value)) items.push(...value);
       else items.push(value);
-      path = nextLink(answered.value.headers, host);
+      path = nextOn(answered.value.headers, origin);
     }
     return ok(items);
   }

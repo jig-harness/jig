@@ -102,6 +102,49 @@ export const c = self.Deno;`),
     ]);
   });
 
+  test("code a TypeScript enum or namespace runs is read", () => {
+    expect(
+      core(`export enum E { pid = process.pid }
+export namespace N { export const read = () => Bun.file("x"); }
+declare namespace D { const x: typeof process }
+export enum Fine { a = 1, process = 2 }`),
+    ).toEqual([
+      "plugin/hub/core/unit.ts:1 portability:runtime-global",
+      "plugin/hub/core/unit.ts:2 portability:runtime-global",
+    ]);
+  });
+
+  test("a chain of global-object names reaches the same globals", () => {
+    expect(
+      core(`export const a = globalThis.globalThis.process.env;
+export const b = globalThis["globalThis"]["Bun"].file("x");
+export const c = globalThis.globalThis;
+export const ok = globalThis.setTimeout;`),
+    ).toEqual([
+      "plugin/hub/core/unit.ts:1 portability:runtime-global",
+      "plugin/hub/core/unit.ts:2 portability:runtime-global",
+      "plugin/hub/core/unit.ts:3 portability:runtime-global",
+    ]);
+  });
+
+  test("import.meta is read only for a fixed portable property", () => {
+    expect(
+      core(`export const a = import.meta["d" + "ir"];
+const meta = import.meta;
+export const b = meta.dir;
+export const c = import.meta.url;`),
+    ).toEqual([
+      "plugin/hub/core/unit.ts:1 portability:runtime-global",
+      "plugin/hub/core/unit.ts:2 portability:runtime-global",
+    ]);
+  });
+
+  test("a require-form import equals declaration is an import", () => {
+    expect(core(`import fs = require("fs");\nexport const x = fs;`)).toEqual([
+      "plugin/hub/core/unit.ts:1 portability:runtime-module",
+    ]);
+  });
+
   test("a declared runtime global is still the runtime's", () => {
     expect(
       core(`declare const process: { env: Record<string, string> };

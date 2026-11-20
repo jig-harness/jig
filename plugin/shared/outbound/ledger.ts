@@ -354,7 +354,9 @@ function repositoryParts(
       unknownCost: row.unknown_cost,
       notModified: row.not_modified,
     };
-    parts.set(key, [...(parts.get(key) ?? []), part]);
+    const kept = parts.get(key);
+    if (kept === undefined) parts.set(key, [part]);
+    else kept.push(part);
   }
   return parts;
 }

@@ -23,6 +23,7 @@ describe("a unit's context", () => {
     const ports = fakePorts();
     const stop = new AbortController();
     let given: UnitContext | undefined;
+    let sawAborted = false;
     const outcome = await runUnit(
       ports,
       { name: "test:every-port", timeoutMs: 5_000, stop: stop.signal },
@@ -58,10 +59,12 @@ describe("a unit's context", () => {
         });
         // The signal the work holds is the one the boundary aborts.
         stop.abort();
-        return ok(context.signal.aborted ? "done" : "a signal of its own");
+        sawAborted = context.signal.aborted;
+        return ok("done");
       },
     );
-    expect(outcome).toEqual(ok("done"));
+    expect(sawAborted).toBe(true);
+    expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
     expect(ports.calls.map((c) => c.call)).toEqual([
       "storage.setCount",
       "serving.serve",
@@ -168,7 +171,50 @@ describe("the deadline", () => {
   });
 });
 
+describe("stopping", () => {
+  test("a stop settles the unit at once, though the work ignores its signal", async () => {
+    const ports = fakePorts();
+    const stop = new AbortController();
+    const running = runUnit(
+      ports,
+      { name: "test:ignores", timeoutMs: 60_000, stop: stop.signal },
+      () => new Promise<never>(() => undefined),
+    );
+    stop.abort();
+    const outcome = await running;
+    expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
+  });
+
+  test("work is never started for a unit already stopped", async () => {
+    const ports = fakePorts();
+    let started = false;
+    const outcome = await runUnit(
+      ports,
+      { name: "test:stopped", timeoutMs: 5_000, stop: AbortSignal.abort() },
+      async () => {
+        started = true;
+        return ok("ran");
+      },
+    );
+    expect(started).toBe(false);
+    expect(outcome.ok ? null : outcome.failure.code).toBe("aborted");
+  });
+});
+
 describe("the defect boundary", () => {
+  test("a thrown value that cannot be converted to text is still reported", async () => {
+    const ports = fakePorts();
+    const outcome = await runUnit(
+      ports,
+      { name: "test:opaque", timeoutMs: 5_000 },
+      async () => {
+        throw Object.create(null);
+      },
+    );
+    expect(outcome.ok ? null : outcome.failure.code).toBe("defect");
+    expect(ports.defects).toHaveLength(1);
+  });
+
   test("a thrown non-defect becomes a reported Defect, and the unit fails with code defect", async () => {
     const ports = fakePorts();
     const outcome = await runUnit(

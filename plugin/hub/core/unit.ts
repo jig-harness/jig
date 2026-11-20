@@ -9,7 +9,9 @@
  * place that unit's defects are caught: whatever the work throws, a
  * `Defect` or anything else, becomes a failed outcome with the code
  * `defect` and is reported once through the observability port, with its
- * stack. A defect ends that unit only. When the deadline passes first, the
+ * stack. A defect ends that unit only. When the adapter stops the unit, the
+ * signal aborts and the unit answers `aborted` at once, and work is never
+ * started for a unit already stopped. When the deadline passes first, the
  * signal aborts, every port call still running sees it, and the unit
  * answers `deadline-passed` without waiting for the work to notice.
  *
@@ -35,7 +37,7 @@ export interface UnitContext {
 }
 
 /** How the boundary itself fails a unit; the work's own codes pass through. */
-export type UnitFailureCode = "deadline-passed" | "defect";
+export type UnitFailureCode = "deadline-passed" | "defect" | "aborted";
 
 export interface UnitSpec {
   /** The unit's name, as `UnitContext.unit` carries it. */
@@ -52,11 +54,19 @@ export type UnitOutcome<T, Code extends string> = Outcome<
   Code | UnitFailureCode
 >;
 
+/** What was thrown as text; a value that cannot be converted (a null-prototype object, a throwing `toString`) is named by a constant. */
+function describe(thrown: unknown): string {
+  try {
+    return thrown instanceof Error ? thrown.message : String(thrown);
+  } catch {
+    return "a value that cannot be converted to text";
+  }
+}
+
 /** A thrown value as a `Defect`, keeping what was thrown as its cause. */
 function asDefect(thrown: unknown): Defect {
   if (thrown instanceof Defect) return thrown;
-  const message = thrown instanceof Error ? thrown.message : String(thrown);
-  return new Defect(`a unit threw: ${message}`, { cause: thrown });
+  return new Defect(`a unit threw: ${describe(thrown)}`, { cause: thrown });
 }
 
 /** Reports a defect; a reporter that fails or throws has nowhere further to report. */
@@ -79,6 +89,14 @@ function lateFailure(spec: UnitSpec): Failure<"deadline-passed"> {
     "deadline-passed",
     `${spec.name} did not finish within ${spec.timeoutMs} ms`,
   ).failure;
+}
+
+/** The failure a unit answers with when the adapter stopped it. */
+function stoppedFailure(spec: UnitSpec): {
+  ok: false;
+  failure: Failure<"aborted">;
+} {
+  return failed("aborted", `${spec.name} was stopped before it finished`);
 }
 
 /** The failure a unit answers with when it threw, reported once. */
@@ -109,7 +127,11 @@ export async function runUnit<T, Code extends string>(
     deadlineAt: 0,
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const onStop = () => controller.abort(spec.stop?.reason);
+  let settleStopped: (() => void) | undefined;
+  const onStop = () => {
+    controller.abort(spec.stop?.reason);
+    settleStopped?.();
+  };
   try {
     if (!Number.isInteger(spec.timeoutMs) || spec.timeoutMs <= 0)
       throw new Defect(
@@ -117,8 +139,16 @@ export async function runUnit<T, Code extends string>(
       );
     context = { ...context, deadlineAt: ports.clock.now() + spec.timeoutMs };
     const unit = context;
-    if (spec.stop?.aborted) controller.abort(spec.stop.reason);
-    else spec.stop?.addEventListener("abort", onStop, { once: true });
+    if (spec.stop?.aborted) {
+      controller.abort(spec.stop.reason);
+      return stoppedFailure(spec);
+    }
+    spec.stop?.addEventListener("abort", onStop, { once: true });
+    const stopped = new Promise<{ ok: false; failure: Failure<"aborted"> }>(
+      (resolve) => {
+        settleStopped = () => resolve(stoppedFailure(spec));
+      },
+    );
     const late = new Promise<{
       ok: false;
       failure: Failure<"deadline-passed">;
@@ -134,7 +164,7 @@ export async function runUnit<T, Code extends string>(
     const running = Promise.resolve()
       .then(() => work(unit))
       .catch((thrown: unknown) => defectFailure(ports, unit, thrown));
-    return await Promise.race([running, late]);
+    return await Promise.race([running, late, stopped]);
   } catch (thrown) {
     return defectFailure(ports, context, thrown);
   } finally {

@@ -4,7 +4,7 @@ release: minor
 
 ### Added
 
-- The hub's portable core (`plugin/hub/core/`): the five ports through which
+- The hub's portable core (`plugin/hub/core/`): the ports through which
   the hub reaches its platform (storage, serving, scheduling, outbound calls
   and observability), each method returning an `Outcome`, and `runUnit`, the
   one defect boundary around a unit of work, which hands every port call the
