@@ -415,6 +415,33 @@ areas:
           an update of either (mise.toml, package.json) is followed by a run
           of the command. tools/plugin/vendored.test.ts rebuilds and compares
           the three files as well.
+      - outputs:
+          - "plugin/shared/vendor/drizzle.mjs"
+          - "plugin/shared/vendor/drizzle-bun-sqlite.mjs"
+          - "plugin/shared/vendor/drizzle-shared.mjs"
+          - "plugin/shared/vendor/drizzle.d.mts"
+          - "plugin/shared/vendor/drizzle-bun-sqlite.d.mts"
+        source:
+          - "package.json"
+          - "bun.lock"
+          - "mise.toml"
+          - "tools/plugin/drizzle-entry.ts"
+          - "tools/plugin/drizzle-bun-sqlite-entry.ts"
+          - "tools/plugin/vendor-drizzle.ts"
+        command: "bun tools/plugin/vendor-drizzle.ts"
+        check: "bun tools/plugin/vendor-drizzle.ts --check"
+        notes: >-
+          Drizzle, the object-relational mapper the hub's storage is written
+          with, ships no single-file build, so the plugin carries Bun's
+          unminified bundle of the parts the hub imports, built in one split
+          build: a portable entry (tools/plugin/drizzle-entry.ts), the
+          bun:sqlite driver's entry (tools/plugin/drizzle-bun-sqlite-entry.ts)
+          and the chunk both import, each entry's declarations naming the
+          package's own types. The package ships no licence file, so
+          drizzle.LICENSE is kept by hand from Drizzle's repository at the
+          pinned tag, and the check fails when the package declares another
+          licence. tools/plugin/vendored.test.ts rebuilds and compares the
+          five files as well.
 
   plugin-manifests:
     title: "The plugin manifests: name, version and description"
