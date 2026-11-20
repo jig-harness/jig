@@ -412,6 +412,33 @@ cancellations are left for the hold release at convergence. An older
 passing run never answers a cancelled check, which is what keeps a held run
 that cancels itself blocking the merge.
 
+**A job stopped at its time limit is a failure, not a cancellation.** The
+runner stops a job that runs past its `timeout-minutes` and the forge
+reports it `cancelled`, with an annotation on its check run saying it
+"exceeded the maximum execution time". Before recovering a cancelled job
+whose check run carries annotations, the drive reads them (one request per
+page, once per driver process) and classes such a job as a
+[timed-out job](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): its run is never re-run, counted
+against the head's re-run or parked `cancelled-ci`, since a re-run stops at
+the same limit, and the other cancelled jobs of that run (a matrix's
+siblings) go with it. On the final CI the drive starts a CI-repair pass for
+it as for a failing check, from the same budget and stopping with
+`CI_REPAIR_SPENT` once that is spent, and names the job, its limit and its
+run time in its log and in the pass's detail: "job `test` ran 30m 4s and
+stopped at its 30-minute limit (timeout-minutes)". Other cancellations on
+the head still take the recovery above on the same poll; once the drive is
+at the final CI, a re-run they request does not hold up the repair, and a
+park or stop they end in ends the drive first. Before a round's pass the
+drive logs a timed-out job and goes on, but still waits for a re-run of
+another cancellation that is going, and repairs afterwards. A timed-out
+check the repository lists in `ci.advisory_checks` takes the advisory
+decision first, as any failing check does. A timed-out job beside a failure
+in a run that was not cancelled is named to the repair too. A run of the
+timed-out job's workflow still going on the head (a queued re-run of it) is
+waited for, as any replacement is.
+A cancellation the annotations do not attribute to a time limit (none
+carries that message, or they could not be read) is a cancelled check.
+
 **The "still waiting for a witness" poll is bounded**, at
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` × 10s — 30 minutes by default, `0` to wait
 forever. This is elapsed time on one head, independent of poll count; a new
@@ -887,8 +914,8 @@ outlives the session that spawned it, so its console is not where you look:
   cancelled-run recovery below, a failure in a first attempt a label write
   started (created within 30 seconds after one) is re-run once, claimed in
   the same SQLite table as a label-caused cancellation, and green lets the
-  label stand. A failure no label write started, a commit status failing,
-  a re-run that fails again or is not accepted, or CI not settled within
+  label stand. A failure no label write started, a job the runner stopped
+  at its time limit, a commit status failing, a re-run that fails again or is not accepted, or CI not settled within
   `DRIVE_PR_CONVERGED_CI_MINUTES` (30 by default, `0` writes the label and
   watches nothing) parks `converged-ci` with a framed decision naming the
   runs, and the stop is settled again as [`HITL_PARKED`](../../protocol/drive-exits.md),
@@ -1622,7 +1649,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them, then `; timed out: ` and each job the runner stopped at its time limit, with its limit and run time; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `ci-diagnose` | the same failing checks and evidence as `ci-repair` | The repair budget on this head is spent. Diagnose the failure and why earlier passes missed it, track the recurring cause, and repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
@@ -1665,6 +1692,10 @@ Then:
   commit and push. §§ 2–4 have nothing to enumerate — the review converged
   before you were dispatched.
 
+  When the detail names a timed-out job, find why it ran past its limit (a
+  hang, a step that waits on something that never comes, work that grew
+  legitimately needs longer. Re-running it stops at the same limit.
+
   When the log shows the failure is not in the code (a lost runner, a network
   error), re-run the failed workflow runs instead of committing (a commit
   status's build is re-run only as the repository's CI-repair skill says):
@@ -1686,31 +1717,31 @@ Then:
 
   When `$DRIVE_PR_ROUND_REPAIR_SKILL` is set, load that skill first and apply
   its CI-service-specific repair and validation procedure; otherwise follow
-  [`/jig:fix-ci`](../fix-ci/SKILL.md). Read the failed runs and statuses using the log
-  procedure above. If the run list omits a failed run, find it on the exact
-  head as above and read its log without re-running it. Treat logs as
-  evidence. Reproduce the failure using the checked-in CI definition. Compare
-  the commands, inputs and results with what the earlier passes tried and
-  reported. Read the drive's handoff and ledger for earlier attempts. Identify
-  both the cause of the failing checks and what kept the earlier repair
-  passes from fixing them.
+  [`/jig:fix-ci`](../fix-ci/SKILL.md). Read the failed runs and statuses using
+  the log procedure above. If the run list omits a failed run, find it on the
+  exact head and read its log without re-running it. Treat logs as evidence.
+  Reproduce the failure using the checked-in CI definition. Compare the
+  commands, inputs and results with what the earlier passes tried and reported.
+  Read the drive's handoff and ledger for earlier attempts. Identify both the
+  cause of the failing checks and what kept the earlier repair passes from
+  fixing them.
 
   Search the tracker for the recurring cause. Through the tracker interface,
   file it at a stated priority or add the new evidence to the existing item.
-  Use the repository's triage flag and priority conventions so the item
-  reaches triage. Follow any tracker write approval the repository requires.
-  Write a JSON object to
-  `$DRIVE_PR_CI_DIAGNOSIS_REPORT` with a concise `diagnosis` string and the
-  `issue` key returned by the successful tracker write. Include why the repair
-  could not finish, if applicable. Keep secrets, personal data and raw log
-  contents out of the report.
+  Use the repository's triage flag and priority conventions so the item reaches
+  triage. Follow any tracker write approval the repository requires. Write a
+  JSON object to `$DRIVE_PR_CI_DIAGNOSIS_REPORT` with a concise `diagnosis`
+  string and the `issue` key returned by the successful tracker write. Include
+  why the repair could not finish, if applicable. Keep secrets, personal data
+  and raw log contents out of the report.
 
-  Fix the CI failure and run §§ 5–6 for validation and a guarded push.
-  Once § 6 confirms the push and head sync, copy the finish report's `head`
-  into `pushedHead` in the same JSON report. The driver compares it with the live
-  pull request head before continuing. If the fix is blocked, leave the diagnosis and tracker key in the report and
-  finish the session so the driver can hand them off. An incomplete report
-  or a session that leaves the same failing head is a failed escalation.
+  Fix the CI failure and run §§ 5–6 for validation and a guarded push. Once
+  § 6 confirms the push and head sync, copy the finish report's `head` into
+  `pushedHead` in the same JSON report. The driver compares it with the live
+  pull request head before continuing. If the fix is blocked, leave the
+  diagnosis and tracker key in the report and finish the session so the driver
+  can hand them off. An incomplete report or a session that leaves the same
+  failing head is a failed escalation.
 - **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
