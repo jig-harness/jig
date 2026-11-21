@@ -549,9 +549,13 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
   });
 
-  test("revalidates a corrected held batch entry before recording it", async () => {
+  async function refileCorrectedHeldBatch(
+    recordedCategory: string | undefined,
+    replacement: [string, string],
+  ) {
     const body = withDeferredEntry("", {
       ...REC,
+      ...(recordedCategory === undefined ? {} : { category: recordedCategory }),
       source: THREAD,
       finding: FINDING,
       reason: "r",
@@ -567,17 +571,25 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     forge.beforeRead.push(
       () => undefined,
       (state) => {
-        state.body = state.body.replace(
-          "category=correctness",
-          "category=unrecognized",
-        );
+        state.body = state.body.replace(...replacement);
       },
     );
-    const result = await fileDeferred(forge, t, "42", {
-      label: "pr-followup",
-      facets: FACETS,
-      reviewVocabulary: { types: ["bug"], categories: ["correctness"] },
-    });
+    return {
+      forge,
+      calls,
+      result: await fileDeferred(forge, t, "42", {
+        label: "pr-followup",
+        facets: FACETS,
+        reviewVocabulary: { types: ["bug"], categories: ["correctness"] },
+      }),
+    };
+  }
+
+  test("revalidates a corrected held batch entry before recording it", async () => {
+    const { forge, calls, result } = await refileCorrectedHeldBatch(undefined, [
+      "category=correctness",
+      "category=unrecognized",
+    ]);
     expect(result.filed).toEqual([]);
     expect(result.forPerson[0]?.why).toContain("--category must be one of");
     expect(deferredEntries(forge.state.body)[0]?.filed).toBeUndefined();
@@ -585,35 +597,10 @@ describe("file-deferred.ts files each entry through the tracker", () => {
   });
 
   test("accepts a corrected held batch entry after an earlier refusal", async () => {
-    const body = withDeferredEntry("", {
-      ...REC,
-      category: "unrecognized",
-      source: THREAD,
-      finding: FINDING,
-      reason: "r",
-    }).body;
-    const forge = fakeForge(body);
-    const [entry] = deferredEntries(body);
-    const { t, calls } = trackerThatFiles([
-      {
-        number: 7,
-        body: `<!-- defer-batch-key: repo=acme/app pr=42 type=bug -->\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
-      },
-    ]);
-    forge.beforeRead.push(
-      () => undefined,
-      (state) => {
-        state.body = state.body.replace(
-          "category=unrecognized",
-          "category=correctness",
-        );
-      },
+    const { forge, calls, result } = await refileCorrectedHeldBatch(
+      "unrecognized",
+      ["category=unrecognized", "category=correctness"],
     );
-    const result = await fileDeferred(forge, t, "42", {
-      label: "pr-followup",
-      facets: FACETS,
-      reviewVocabulary: { types: ["bug"], categories: ["correctness"] },
-    });
     expect(result.why).toBeNull();
     expect(result.forPerson).toEqual([]);
     expect(result.filed.map(({ key }) => key)).toEqual(["#7"]);
