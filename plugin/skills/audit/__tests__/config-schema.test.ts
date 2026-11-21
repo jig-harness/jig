@@ -530,6 +530,7 @@ describe("the reading skills", () => {
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
       "changelog.release.rerun_failed_gates":
         CHANGELOG_DEFAULTS.rerunFailedGates,
+      "changelog.release.tagged_by": CHANGELOG_DEFAULTS.taggedBy,
       "changelog.consumer_actions": CHANGELOG_DEFAULTS.consumerActions,
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
       "docs.stale_after_days": DEFAULT_STALE_AFTER_DAYS,

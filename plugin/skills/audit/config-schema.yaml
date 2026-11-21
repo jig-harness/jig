@@ -1510,9 +1510,16 @@ fields:
     type: integer
     min: 0
     default: 1
-    read_by: [changelog]
+    read_by: [changelog, dispatch]
     repository_only: true
     since: 0.227.2
+  changelog.release.tagged_by:
+    type: enum
+    values: [workflow, person]
+    default: workflow
+    read_by: [changelog, dispatch]
+    repository_only: true
+    since: next
   changelog.consumer_actions:
     type: boolean
     default: false

@@ -61,6 +61,8 @@ export interface ChangelogConfig {
     push: "direct" | "pull-request";
     branch: string;
     rerunFailedGates: number;
+    /** Who creates a release's tag: the workflow's tag job, or a person. */
+    taggedBy: "workflow" | "person";
   };
   /** Whether a breaking entry must declare a consumer action (consumer-actions.ts). */
   consumerActions: boolean;
@@ -84,6 +86,7 @@ export const FIELDS = [
   "release.push",
   "release.branch",
   "release.rerun_failed_gates",
+  "release.tagged_by",
   "consumer_actions",
   "consumer_actions_record",
 ] as const;
@@ -95,6 +98,7 @@ export const DEFAULTS = {
   push: "direct",
   branch: "changelog-release",
   rerunFailedGates: 1,
+  taggedBy: "workflow",
   consumerActions: false,
 } as const;
 
@@ -274,13 +278,14 @@ function releaseSetting(value: unknown): ChangelogConfig["release"] {
       push: DEFAULTS.push,
       branch: DEFAULTS.branch,
       rerunFailedGates: DEFAULTS.rerunFailedGates,
+      taggedBy: DEFAULTS.taggedBy,
     };
   if (!isMapping(value))
     throw new ChangelogError("changelog.release must be a mapping");
   for (const key of Object.keys(value))
-    if (!["push", "branch", "rerun_failed_gates"].includes(key))
+    if (!["push", "branch", "rerun_failed_gates", "tagged_by"].includes(key))
       throw new ChangelogError(
-        `changelog.release.${key} is not a field (push, branch, rerun_failed_gates)`,
+        `changelog.release.${key} is not a field (push, branch, rerun_failed_gates, tagged_by)`,
       );
   const rerunFailedGates =
     value.rerun_failed_gates ?? DEFAULTS.rerunFailedGates;
@@ -305,6 +310,11 @@ function releaseSetting(value: unknown): ChangelogConfig["release"] {
     ]),
     branch,
     rerunFailedGates,
+    taggedBy: oneOf(
+      "changelog.release.tagged_by",
+      value.tagged_by ?? DEFAULTS.taggedBy,
+      ["workflow", "person"],
+    ),
   };
 }
 
@@ -540,6 +550,7 @@ export function changes(
     before.release.rerunFailedGates,
     after.release.rerunFailedGates,
   );
+  compare("release.tagged_by", before.release.taggedBy, after.release.taggedBy);
   compare("consumer_actions", before.consumerActions, after.consumerActions);
   compare(
     "consumer_actions_record",

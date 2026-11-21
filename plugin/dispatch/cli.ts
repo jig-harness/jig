@@ -77,6 +77,7 @@ import {
 } from "./result.ts";
 import { reportFileMain } from "./report-command.ts";
 import { releaseOwedMain } from "./release-owed-command.ts";
+import { OWED_PLAN_STATES } from "./lib/release-needs.ts";
 import { runTick, SWEEP_OBSERVE_WAIT_MS } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -296,6 +297,11 @@ const releaseOwed = command(
     token: argument(string({ metavar: "TOKEN" })),
     tag: argument(string({ metavar: "TAG" })),
     item: optional(argument(string({ metavar: "ITEM" }))),
+    state: optional(
+      option("--state", choice(OWED_PLAN_STATES), {
+        description: message`The version's state in the tag plan, which tells the release decision whether a re-run of the failed gates is left to try.`,
+      }),
+    ),
   }),
   {
     brief: message`Reserve a release's tracker filing or record its item.`,
@@ -836,7 +842,13 @@ function subcommandMain(
   if (args.action === "report")
     return reportFileMain(args.record, args.token, args.file);
   if (args.action === "release-owed")
-    return releaseOwedMain(args.record, args.token, args.tag, args.item);
+    return releaseOwedMain(
+      args.record,
+      args.token,
+      args.tag,
+      args.item,
+      args.state,
+    );
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "log")
     return logMain({

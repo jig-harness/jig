@@ -1230,7 +1230,7 @@
       "options": "gates, inspect, tag",
       "option": null,
       "reversible": null,
-      "meaning": "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item."
+      "meaning": "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. It recommends re-running the failed gates unless a re-run was already requested (then it recommends investigating), or no failed gate is left to re-run: the version's follow-up recorded that every required check passed or that the version is outside automatic tagging, the repository disables re-runs (`changelog.release.rerun_failed_gates: 0`), or it leaves the tag to a person (then it recommends a person's tag). In both cases it offers only the other two options."
     },
     {
       "kind": "station-key",
