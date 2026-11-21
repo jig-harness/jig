@@ -65,7 +65,7 @@ export interface AccountWeight {
 }
 export type AccountWeights = ReadonlyMap<string, AccountWeight>;
 
-/** Account names a weights file names that the machine file does not list, sorted. */
+/** Account names a weights file names that the machine file does not list, in code-unit order (the notice key is built from it). */
 export interface SkippedNames {
   names: readonly string[];
   path: string;
@@ -91,7 +91,7 @@ function isWeight(value: unknown): value is number {
   );
 }
 
-/** The accounts section's fault, if any, and the names it carries that the machine file does not list, sorted. */
+/** The accounts section's fault, if any, and the names it carries that the machine file does not list, in code-unit order (the notice key is built from it). */
 function checkSection(
   section: unknown,
   accounts: readonly MachineAccount[],
@@ -106,7 +106,10 @@ function checkSection(
     if (!accounts.some((a) => a.name === name)) skipped.push(name);
     else if (!isWeight(value))
       problem = `${path}: accounts.${name} must be a finite weight from 0 to 100`;
-  return { problem, skipped: skipped.sort((a, b) => a.localeCompare(b)) };
+  return {
+    problem,
+    skipped: skipped.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+  };
 }
 
 /** Why an account the section gives no weight has weight 100. */
