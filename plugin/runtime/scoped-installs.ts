@@ -53,6 +53,9 @@ export interface ScopedInstall {
   project: string;
   version: string;
   enabled: boolean;
+  /** The folder and commit the record named when it was read, to tell a record changed since. */
+  installPath?: string;
+  gitCommitSha?: string;
 }
 
 /** The project- and local-scope installs from `claude plugin list --json`. */
@@ -81,6 +84,12 @@ export function claudeScopedInstalls(list: unknown): ScopedInstall[] {
         project: entry.projectPath,
         version: entry.version,
         enabled: entry.enabled === true,
+        ...(typeof entry.installPath === "string"
+          ? { installPath: entry.installPath }
+          : {}),
+        ...(typeof entry.gitCommitSha === "string"
+          ? { gitCommitSha: entry.gitCommitSha }
+          : {}),
       },
     ];
   });
@@ -221,6 +230,15 @@ function recordEntries(
   return { data: data as { plugins: Record<string, unknown> }, entries };
 }
 
+/** Whether the install record lists a user-scope entry of the plugin now. */
+function recordHasUser(record: string): boolean {
+  const read = recordEntries(record);
+  return (
+    typeof read !== "string" &&
+    read.entries.some((entry) => isRecord(entry) && entry.scope === "user")
+  );
+}
+
 /** The key that names one scoped install in the record and in the list. */
 const scopedKey = (scope: unknown, project: unknown) =>
   JSON.stringify([scope, project]);
@@ -307,22 +325,27 @@ function pointAtUserInstall(
   stale: readonly ScopedInstall[],
   version: string,
   installPath: string,
+  /** Whether the record listed a user-scope entry when the upgrade began. */
+  userRecorded: boolean,
 ): RecordEdit {
-  const wanted = new Map(
-    stale.map((i) => [scopedKey(i.scope, i.project), i.version]),
-  );
+  const wanted = new Map(stale.map((i) => [scopedKey(i.scope, i.project), i]));
   return (entries) => {
     const user = entries.find(
       (entry) => isRecord(entry) && entry.scope === "user",
     ) as Record<string, unknown> | undefined;
-    // Another upgrade may have moved the user-scope install since it was read.
+    // The user-scope entry must be as it was read: one removed or added since,
+    // or moved by another upgrade, is left for the next upgrade. A record that
+    // never listed one (its install is read from elsewhere) stays without.
     if (
-      user !== undefined &&
-      (user.version !== version || user.installPath !== installPath)
+      user === undefined
+        ? userRecorded
+        : !userRecorded ||
+          user.version !== version ||
+          user.installPath !== installPath
     )
       return { entries, settled: new Set<string>(), changed: false };
     const commit =
-      user?.version === version && typeof user.gitCommitSha === "string"
+      user !== undefined && typeof user.gitCommitSha === "string"
         ? user.gitCommitSha
         : undefined;
     const settled = new Set<string>();
@@ -334,9 +357,18 @@ function pointAtUserInstall(
         settled.add(key);
         return entry;
       }
-      // A target that is no longer at the version it was read at was moved by
-      // another upgrade: leave it for the next one.
-      if (entry.version !== wanted.get(key)) return entry;
+      // A target that is no longer the record it was read as (its version,
+      // folder or commit) was replaced by another upgrade: leave it for the next.
+      const read = wanted.get(key);
+      if (
+        read === undefined ||
+        entry.version !== read.version ||
+        (read.installPath !== undefined &&
+          entry.installPath !== read.installPath) ||
+        (read.gitCommitSha !== undefined &&
+          entry.gitCommitSha !== read.gitCommitSha)
+      )
+        return entry;
       settled.add(key);
       changed = true;
       const { gitCommitSha: _stale, ...rest } = entry;
@@ -525,6 +557,7 @@ function rewriteUnreached(
   current: string,
   installPath: string | null,
   record: string,
+  userRecorded: boolean,
   say: Say,
 ): ScopedResult[] {
   if (unreached.length === 0) return [];
@@ -545,6 +578,7 @@ function rewriteUnreached(
       unreached.map((u) => u.install),
       current,
       installPath,
+      userRecorded,
     ),
   );
   return unreached.map(({ install, detail }) =>
@@ -675,6 +709,7 @@ export function refreshScoped(
   repository: (dir: string) => string | null = repositoryOf,
 ): ScopedResult[] {
   const listing = json(program, ["plugin", "list", "--json"]);
+  const userRecorded = recordHasUser(record);
   const left: ScopedResult[] = [];
   const gone: ScopedInstall[] = [];
   const present: ScopedInstall[] = [];
@@ -706,6 +741,7 @@ export function refreshScoped(
           current,
           userInstallPath(listing),
           record,
+          userRecorded,
           say,
         )),
   ];
