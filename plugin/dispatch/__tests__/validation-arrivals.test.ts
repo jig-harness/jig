@@ -73,7 +73,7 @@ describe("the lock's queue when a pass arrives", () => {
     });
     // Its first run is served by minute 10; its second holds one slot until
     // minute 20 and leaves the other free for the candidate at once.
-    expect(queue).toEqual({
+    expect(queue).toMatchObject({
       waitMs: 0,
       lastStartMs: 15 * MINUTE,
       ahead: 1,
@@ -92,7 +92,7 @@ describe("the lock's queue when a pass arrives", () => {
       arriveMs: 15 * MINUTE,
       candidateRuns: 1,
     });
-    expect(queue).toEqual({
+    expect(queue).toMatchObject({
       waitMs: 0,
       lastStartMs: 15 * MINUTE,
       ahead: 0,
@@ -114,7 +114,7 @@ describe("the lock's queue when a pass arrives", () => {
     // The candidate holds minutes 15 to 25; the run arriving at minute 20
     // takes the slot next, so the candidate's second run waits 10 minutes
     // and starts at minute 35.
-    expect(queue).toEqual({
+    expect(queue).toMatchObject({
       waitMs: 10 * MINUTE,
       lastStartMs: 35 * MINUTE,
       ahead: 0,
@@ -172,6 +172,9 @@ describe("the lock's queue when a pass arrives", () => {
       candidateRuns: 40,
     });
     expect(Number.isFinite(queue.lastStartMs)).toBe(true);
+    // One simulation serves each run once: 40 arrivals of 40 runs and the
+    // candidate's 40, never a replay of the schedule per request.
+    expect(queue.served_requests).toBeLessThanOrEqual(41 * 40);
     expect(queue.later).toBeGreaterThanOrEqual(0);
   });
 });

@@ -39,6 +39,8 @@ export interface ArrivalQueue {
   served: number;
   /** Runs asking after the candidate's arrival whose slot would otherwise have served one of its runs sooner. */
   later: number;
+  /** Requests the simulation served: one pass over every run asked for, never a replay per request. */
+  served_requests: number;
 }
 
 interface Request {
@@ -122,6 +124,7 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
     ahead: 0,
     served: 0,
     later: 0,
+    served_requests: 0,
   };
   const settle = (end: number) => {
     if (end <= arriveMs) result.served++;
@@ -139,6 +142,7 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
     const start = Math.max(request.at, releases[0] ?? 0);
     const end = start + runMs;
     releases[0] = end;
+    result.served_requests++;
     if (request.rank === CANDIDATE) {
       result.waitMs = Math.max(result.waitMs, start - request.at);
       result.lastStartMs = start;
