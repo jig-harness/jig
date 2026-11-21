@@ -124,7 +124,13 @@ test("change-note commands run from the plugin cache and read the repository's c
  * script's `#!` line, which the scanner rejects, is blanked first.
  */
 function relativeImports(text: string, file = "source.ts"): string[] {
-  const loader = file.endsWith(".mjs") ? "js" : "ts";
+  const loader = /\.(c|m)?jsx?$/.test(file)
+    ? file.endsWith("x")
+      ? "jsx"
+      : "js"
+    : file.endsWith("x")
+      ? "tsx"
+      : "ts";
   return new Bun.Transpiler({ loader })
     .scanImports(text.replace(/^#!.*/, ""))
     .map((entry) => entry.path)
@@ -206,9 +212,18 @@ test("every relative import in the copied plugin resolves inside the copy", () =
   expect(intoSkills).toEqual([]);
 });
 
+/** Every executable source extension the copied plugin can hold. */
+const EXECUTABLE = /\.(c|m)?(t|j)sx?$/;
+
 /** The Drizzle package specifiers `text` imports at run time, as Bun reads them. */
 function drizzlePackageImports(text: string, file = "source.ts"): string[] {
-  const loader = file.endsWith(".mjs") ? "js" : "ts";
+  const loader = /\.(c|m)?jsx?$/.test(file)
+    ? file.endsWith("x")
+      ? "jsx"
+      : "js"
+    : file.endsWith("x")
+      ? "tsx"
+      : "ts";
   return new Bun.Transpiler({ loader })
     .scanImports(text.replace(/^#!.*/, ""))
     .map((entry) => entry.path)
@@ -224,9 +239,14 @@ test("the copied plugin imports no Drizzle package at run time", () => {
       'export { sql } from "drizzle-orm";\nawait import("drizzle-orm/sqlite-core");',
     ).toSorted(),
   ).toEqual(["drizzle-orm", "drizzle-orm/sqlite-core"]);
+  // Each executable extension is read with its own loader.
+  for (const name of ["a.cts", "a.js", "a.cjs", "a.tsx", "a.jsx", "a.mjs"])
+    expect(
+      drizzlePackageImports('export { sql } from "drizzle-orm";', name),
+    ).toEqual(["drizzle-orm"]);
   const cache = join(scratch, "cache");
   const offenders = readdirSync(cache, { recursive: true, encoding: "utf8" })
-    .filter((path) => /\.(ts|mts|mjs)$/.test(path) && !/\.d\.m?ts$/.test(path))
+    .filter((path) => EXECUTABLE.test(path) && !/\.d\.(c|m)?ts$/.test(path))
     .filter(
       (path) =>
         drizzlePackageImports(readFileSync(join(cache, path), "utf8"), path)
