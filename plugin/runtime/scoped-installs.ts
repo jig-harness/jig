@@ -124,7 +124,9 @@ export function directoryState(path: string): "present" | "gone" | string {
 function directoryKey(path: string): string {
   try {
     return realpathSync(path);
-  } catch {
+  } catch (error) {
+    if (code(error) !== "ENOENT")
+      swallow(error, `${path} cannot be resolved; compared by its name`);
     return resolve(path);
   }
 }
@@ -146,7 +148,17 @@ function repositoryOf(dir: string): string | null {
     killSignal: "SIGKILL",
   });
   const out = result.status === 0 ? result.stdout.trim() : "";
-  return out === "" ? null : directoryKey(resolve(dir, out));
+  if (out !== "") return directoryKey(resolve(dir, out));
+  // Outside a checkout is an answer; anything else is git failing to give one.
+  if (
+    result.error !== undefined ||
+    !/not a git repository/i.test(result.stderr)
+  )
+    swallow(
+      result.error ?? new Error(result.stderr.trim()),
+      `git could not say which repository ${dir} belongs to; it is refreshed on its own`,
+    );
+  return null;
 }
 
 /**
@@ -394,7 +406,7 @@ function scopedUpdate(
   try {
     return run(program, [...args, "--json"], say, install.project);
   } catch (error) {
-    if (!/unknown option '?--json/.test(reason(error))) throw error;
+    if (!/unknown option\W*--json/i.test(reason(error))) throw error;
     return run(program, args, say, install.project);
   }
 }
