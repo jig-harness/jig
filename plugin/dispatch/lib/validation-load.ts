@@ -69,19 +69,22 @@ export function passLockWait(
   };
 }
 
-function passOf({ record, state }: ReadRecord): ValidationPass | null {
+function launchedAtOf({ record, state }: ReadRecord): string {
+  return state.kind !== "pending"
+    ? (state.process?.claimedAt ?? record.createdAt)
+    : record.createdAt;
+}
+
+function passOf(read: ReadRecord): ValidationPass | null {
+  const { record, state } = read;
   const { action } = record;
   if (action === "followup" || action === "steward") return null;
   if (!holds(state) && state.kind !== "ended") return null;
-  const launchedAt =
-    state.kind === "pending"
-      ? record.createdAt
-      : (state.process?.claimedAt ?? record.createdAt);
   return {
     kind: action === "pickup" ? action : "drive",
     workspace: record.workspace ? resolve(record.workspace.path) : null,
     repo: record.repo,
-    launchedAtMs: parseMs(launchedAt),
+    launchedAtMs: parseMs(launchedAtOf(read)),
     ...(state.kind === "ended" ? { endedAtMs: parseMs(state.exit.at) } : {}),
   };
 }

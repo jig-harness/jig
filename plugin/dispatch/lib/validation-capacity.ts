@@ -189,6 +189,65 @@ function timeToValidationName(kind: ValidationKind): string {
   return `${kind} time to validation`;
 }
 
+type MeasuredOr = (
+  number: number | null,
+  fallback: number,
+  name: string,
+) => number;
+
+/** Each repository's run counts per finished pass of `kind`. */
+function countsByRepository(
+  kind: ValidationKind,
+  attributed: ReadonlyMap<ValidationPass, PassRuns>,
+  finished: readonly ValidationPass[],
+): Map<string | null, number[]> {
+  const counts = new Map<string | null, number[]>();
+  for (const pass of finished.filter((own) => own.kind === kind)) {
+    const repo = pass.repo ?? null;
+    const count = attributed.get(pass)?.count ?? 0;
+    counts.set(repo, [...(counts.get(repo) ?? []), count]);
+  }
+  return counts;
+}
+
+/** The runs per pass of each repository with enough passes to measure on its own. */
+function ownRunsPerRepository(
+  counts: ReadonlyMap<string | null, number[]>,
+): Map<string, number> {
+  const own = new Map<string, number>();
+  for (const [repo, repoCounts] of counts) {
+    const runs = runsPerPassOf(repoCounts);
+    if (repo !== null && runs !== null && repoCounts.length >= OWN_MEASURE)
+      own.set(repo, runs);
+  }
+  return own;
+}
+
+function kindMeasurements(
+  kind: ValidationKind,
+  attributed: ReadonlyMap<ValidationPass, PassRuns>,
+  finished: readonly ValidationPass[],
+  measuredOr: MeasuredOr,
+): KindMeasurements {
+  const counts = countsByRepository(kind, attributed, finished);
+  const measured = [...attributed].filter(([pass]) => pass.kind === kind);
+  return {
+    runsPerPass: measuredOr(
+      runsPerPassOf([...counts.values()].flat()),
+      1,
+      `${kind} runs per pass`,
+    ),
+    runsPerRepository: ownRunsPerRepository(counts),
+    timeToValidationMs: measuredOr(
+      median(
+        measured.map(([pass, runs]) => runs.firstRequest - pass.launchedAtMs),
+      ),
+      60 * 60_000,
+      timeToValidationName(kind),
+    ),
+  };
+}
+
 /** Derive each estimate from observed runs and name every estimate using its default. */
 export function measureValidation(
   samples: readonly ValidationSample[],
@@ -212,39 +271,8 @@ export function measureValidation(
   const concurrency = measuredOr(concurrencyOf(samples), 1, "runs at once");
   const attributed = attributeRuns(passes, samples);
   const finished = measurablePasses(passes, samples, attributed);
-  const measureKind = (kind: ValidationKind): KindMeasurements => {
-    const measured = [...attributed].filter(([pass]) => pass.kind === kind);
-    const counts = new Map<string | null, number[]>();
-    for (const pass of finished) {
-      if (pass.kind !== kind) continue;
-      const repo = pass.repo ?? null;
-      const count = attributed.get(pass)?.count ?? 0;
-      const repoCounts = counts.get(repo);
-      if (repoCounts) repoCounts.push(count);
-      else counts.set(repo, [count]);
-    }
-    const runsPerRepository = new Map<string, number>();
-    for (const [repo, repoCounts] of counts) {
-      const runs = runsPerPassOf(repoCounts);
-      if (repo !== null && runs !== null && repoCounts.length >= OWN_MEASURE)
-        runsPerRepository.set(repo, runs);
-    }
-    return {
-      runsPerPass: measuredOr(
-        runsPerPassOf([...counts.values()].flat()),
-        1,
-        `${kind} runs per pass`,
-      ),
-      runsPerRepository,
-      timeToValidationMs: measuredOr(
-        median(
-          measured.map(([pass, runs]) => runs.firstRequest - pass.launchedAtMs),
-        ),
-        60 * 60_000,
-        timeToValidationName(kind),
-      ),
-    };
-  };
+  const measureKind = (kind: ValidationKind) =>
+    kindMeasurements(kind, attributed, finished, measuredOr);
   return {
     runMs,
     concurrency,
@@ -438,6 +466,28 @@ function fillOf(input: {
   return capacity > 0 ? required / capacity : null;
 }
 
+function queuedFor(
+  { runMs, concurrency }: ValidationMeasurements,
+  demand: ValidationDemand,
+  toArrive: number,
+  candidateRuns: number,
+  arriveMs: number,
+) {
+  const arrivals = demand.arrivals ?? [];
+  return queued({
+    concurrency,
+    runMs,
+    atLock: demand.atLock,
+    arrivals,
+    unknownRuns: Math.max(
+      0,
+      toArrive - arrivals.reduce((sum, { runs }) => sum + runs, 0),
+    ),
+    arriveMs,
+    candidateRuns,
+  });
+}
+
 export function forecastValidation(
   measured: ValidationMeasurements,
   kind: ValidationKind,
@@ -471,19 +521,7 @@ export function forecastValidation(
   const { ahead, served, later, required, lastStartMs } = Number.isInteger(
     concurrency,
   )
-    ? queued({
-        concurrency,
-        runMs,
-        atLock,
-        arrivals: demand.arrivals ?? [],
-        unknownRuns: Math.max(
-          0,
-          toArrive -
-            (demand.arrivals ?? []).reduce((sum, { runs }) => sum + runs, 0),
-        ),
-        arriveMs: timeToValidationMs,
-        candidateRuns: ownRuns,
-      })
+    ? queuedFor(measured, demand, toArrive, ownRuns, timeToValidationMs)
     : aggregate(measured, atLock, toArrive, ownRuns, timeToValidationMs);
   // The lock timeout bounds each acquisition separately, but the pass's runs
   // are sequential and the pass deadline bounds the last one. An idle lock

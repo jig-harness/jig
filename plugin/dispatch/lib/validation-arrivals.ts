@@ -134,6 +134,14 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   const pending = requestsOf(input, holding);
   const waits: Occupancy[] = [];
   const laterRuns: Occupancy[] = [];
+  const record = (request: Request, start: number, end: number) => {
+    if (request.rank === CANDIDATE) {
+      result.waitMs = Math.max(result.waitMs, start - request.at);
+      result.lastStartMs = start;
+      if (start > request.at) waits.push({ start: request.at, end: start });
+    } else if (request.at <= arriveMs) settle(end);
+    else laterRuns.push({ start, end });
+  };
   let ownLeft = Math.ceil(input.candidateRuns);
   for (;;) {
     const request = earliest(pending);
@@ -143,12 +151,7 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
     const end = start + runMs;
     releases[0] = end;
     result.served_requests++;
-    if (request.rank === CANDIDATE) {
-      result.waitMs = Math.max(result.waitMs, start - request.at);
-      result.lastStartMs = start;
-      if (start > request.at) waits.push({ start: request.at, end: start });
-    } else if (request.at <= arriveMs) settle(end);
-    else laterRuns.push({ start, end });
+    record(request, start, end);
     if (request.rank === CANDIDATE && --ownLeft <= 0) break;
     if (request.next > 0)
       pending.push({ ...request, at: end, next: request.next - 1 });
