@@ -410,10 +410,27 @@ that is a default.
   lock now, which is counted at the lock. Follow-ups and the steward do not run
   the test stage.
 
-**The measure.** A new pass reaches the lock after its kind's time to
-validation, `T`. Until then the lock can work only on the runs at the lock
-now, and clears at most `runs at once × T ÷ run time` of them; the passes
-still implementing give it nothing to do. Once there, each of the new pass's
+**When each run reaches the lock.** A new pass reaches the lock after its
+kind's time to validation, `T`. A pass in flight is placed the same way:
+its next run asks for the lock at its launch plus its kind's time to
+validation, or now when that is past; a pass that has already made a run is
+at validation now, and one with a run at the lock asks again when that run
+releases. Its remaining runs follow one another. A run has no estimate when
+its kind's time to validation is still the default or its launch time does
+not read, and the runs a tick admits reach validation together with the new
+pass: those runs are counted at the lock when the new pass arrives, as if
+due with it.
+
+**The measure.** The forecast serves the lock's requests in the order they
+arrive, each on the slot that frees first, from the runs at the lock now
+(a holder may have just begun) through every run with an estimate that asks
+before the new pass, until the new pass's first run takes a slot. A run the
+lock has released by the time the new pass arrives is **served before
+arrival** and not ahead of it; a run still holding or waiting then is
+**ahead**; a run that asks later queues behind the new pass. Passes launched
+together arrive together and contend for the same slots, so those a slot
+cannot take in time stay ahead rather than each being credited as served.
+Once there, each of the new pass's
 runs can wait at most the **wait window** `W`: the shorter of the wait the
 pass's test stage gives the lock and the pass deadline less `T`. That wait
 is the `LOCK_TIMEOUT` of the pass's launch environment: a process launch
@@ -430,10 +447,14 @@ after the deadline waits. So the host can take a new pass
 while
 
 ```text
-runs ahead = runs still to arrive + max(0, runs at the lock now − runs at once × T ÷ run time)
 validation capacity = runs at once × W ÷ run time
-the new pass's first acquisition, after the runs ahead, falls within W
+the new pass's first acquisition, after the runs ahead of it when it arrives, falls within W
 ```
+
+A measured concurrency is a whole number of slots; a fractional one (only a
+hand-set figure) keeps the aggregate measure, which counts every run still to
+arrive ahead and credits the runs at the lock with at most
+`runs at once × T ÷ run time` of service.
 
 For example, with nothing at the lock now, a negligible time to
 validation, one run at a time, runs of 12 minutes, an hour to
@@ -443,11 +464,11 @@ while its first acquisition falls within the window: of 10 passes started
 together, 6 are taken and 4 wait for a later tick, where on 2026-11-14 all of
 them would have started and half would have run out their wait. With more runs
 per pass the result differs, since each admitted pass reserves all its runs
-ahead of the next candidate. The measure is
-conservative: it assumes every pass ahead reaches the lock no later than
-the new one, and credits the lock with no run of a pass that has not
-arrived yet. A pass admitted this tick counts all of its runs ahead of the
-next candidate. On a lock with nothing ahead the new pass always fits,
+ahead of the next candidate. The measure stays conservative where it
+cannot see: a run without an estimate is counted ahead, and a pass admitted
+this tick counts all of its runs ahead of the next candidate. The reason
+names the runs served before arrival beside the runs ahead, so a person
+can see why a pass was admitted or held. On a lock with nothing ahead the new pass always fits,
 whatever its runs per pass, even with a wait of zero; a wait window
 shorter than one run admits a pass only while a slot is free, or about to
 be, for its first run, and the reason says so with the window, its source,
@@ -577,11 +598,6 @@ One pull request each, in this order.
 - **Reading an unpushed branch** of a running pickup. Its footprint record
   stands for it until its pull request opens; reading every workspace's
   working tree would tie the tick to one host's disk.
-- **Modelling when each pass ahead reaches the lock.** The measure counts
-  every run still to arrive as if it were due when the new pass is; a finer
-  model, one that places each pass's arrival at its launch plus its kind's
-  time to validation, waits for the receipts to show the conservative one
-  holds back work the host could have taken.
 - **Raising the number of suites that may run at once**, the lock's
   waiting order and its holder reporting (#608).
 - **Overlap across repositories.** Files collide only within one

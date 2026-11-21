@@ -144,6 +144,7 @@ export function readValidationLoad(
               })),
             passes.filter(({ endedAtMs }) => endedAtMs === undefined),
             samples,
+            nowMs,
           ),
     ...passLockWait(env),
     driveDeadlineMs,
@@ -194,7 +195,13 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
     result.waitWindowMs < runMs
       ? `; the wait window is shorter than one run, so a pass is admitted only while a slot is free, or about to be, for its first run (${Number(result.ownRuns.toFixed(2))} runs per pass)`
       : "";
-  return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
+  // The runs credited as served say why a pass is admitted with work in
+  // flight; the runs ahead, why one waits.
+  const served =
+    result.served > 0
+      ? ` (${result.served} in flight served before it reaches the lock)`
+      : "";
+  return `${ahead} runs ahead${served}, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
 /**
@@ -274,6 +281,7 @@ export function validationHold(
       // their eventual runs are being reserved for this downstream drive.
       atLock: state.demand.atLock,
       toArrive: state.demand.toArrive + state.admittedRuns + stillRunning,
+      ...(state.demand.arrivals ? { arrivals: state.demand.arrivals } : {}),
     };
     const reserved = forecast(
       state,
