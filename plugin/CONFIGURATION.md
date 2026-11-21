@@ -493,8 +493,9 @@ round. When that commit or its file cannot be read (the base is not in the
 clone, git fails, the file does not parse or names an invalid ceiling or
 class list), the policy fails closed: the ceiling is `attended`, the only
 park classes are `escalated`, `human-decision` and `human-thread`, and the
-printed line tells the pass to park every decision under `human-decision`
-until the policy reads. A default class list could be weaker than the
+printed line tells the pass to park every new decision under
+`human-decision` until the policy reads; a deferral already decided is carried
+out without confirmation. A default class list could be weaker than the
 repository's own, so none stands in for it. A session with a person in it
 reads both fields from the working tree.
 
