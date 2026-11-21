@@ -193,4 +193,17 @@ process.exit(result.exitCode);`,
     expect(report.reason).toContain("failed to preserve the merge tree");
     expect(report.reason).toContain("bun.lock");
   });
+
+  it("refuses an installer that rewrites a tracked source file", () => {
+    const cwd = fixture();
+    const before = baseChange(cwd, "bun.lock", "new");
+    git(cwd, ["merge", "-q", "--no-ff", "base"]);
+    writeFileSync(
+      join(cwd, "install-fixture.ts"),
+      `await Bun.write("example.txt", "rewritten");`,
+    );
+    const report = refresh(cwd, ["--before", before], 1);
+    expect(report.reason).toContain("failed to preserve the merge tree");
+    expect(report.reason).toContain("working tree");
+  });
 });

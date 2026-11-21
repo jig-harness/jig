@@ -33,15 +33,15 @@ const otherManagers: Readonly<
     install: "go mod tidy -diff",
     manifests: ["go.mod"],
   },
-  "uv.lock": { install: "uv sync --locked", manifests: ["pyproject.toml"] },
+  "uv.lock": {
+    install: "uv sync --locked --all-packages",
+    manifests: ["pyproject.toml"],
+  },
   "poetry.lock": {
     install: "poetry install --sync",
     manifests: ["pyproject.toml"],
   },
-  "Gemfile.lock": {
-    install: "bundle install --frozen",
-    manifests: ["Gemfile"],
-  },
+  "Gemfile.lock": { install: "bundle install", manifests: ["Gemfile"] },
   "composer.lock": {
     install:
       "composer validate --check-lock --no-check-publish && composer install --no-interaction",
@@ -54,6 +54,7 @@ type Candidate = {
   lockfile: string;
   command: string;
   manifests: readonly string[];
+  env?: Record<string, string>;
   matchesLockfile(name: string): boolean;
 };
 export type DependencyInstallReport =
@@ -201,6 +202,7 @@ function managersAt(root: string, names: Set<string>): Candidate[] {
       lockfile: name,
       command: other.install,
       manifests: other.manifests,
+      ...(name === "Gemfile.lock" ? { env: { BUNDLE_FROZEN: "true" } } : {}),
       matchesLockfile: (changedName) => changedName === name,
     });
   }
@@ -273,6 +275,10 @@ async function modifiedDependencyInputs(root: string): Promise<string[]> {
   );
 }
 
+async function workingTreeState(root: string): Promise<string> {
+  return gitOutput(root, ["diff", "--raw", "-z", "--"]);
+}
+
 async function untrackedLockfiles(
   root: string,
   jobs: InstallJob[],
@@ -298,6 +304,7 @@ async function dependencyInputChanges(
   indexTree: string,
   jobs: InstallJob[],
   untracked: ReadonlySet<string>,
+  workingTreeBefore: string,
 ): Promise<string[]> {
   const staged = pathList(
     await gitOutput(root, [
@@ -313,10 +320,20 @@ async function dependencyInputChanges(
   const created = (await untrackedLockfiles(root, jobs)).filter(
     (path) => !untracked.has(path),
   );
-  return [...staged, ...(await modifiedDependencyInputs(root)), ...created];
+  const workingTreeAfter = await workingTreeState(root);
+  return [
+    ...staged,
+    ...(workingTreeAfter === workingTreeBefore ? [] : ["working tree"]),
+    ...created,
+  ];
 }
 
-type InstallJob = { lockfile: string; command: string; dir: string };
+type InstallJob = {
+  lockfile: string;
+  command: string;
+  dir: string;
+  env?: Record<string, string>;
+};
 
 function installDirectory(root: string, job: InstallJob): string {
   const cwd = join(root, job.dir);
@@ -345,7 +362,7 @@ async function runInstall(
     return `dependency install deadline expired before ${job.command} in ${job.dir}`;
   const result = await run(shellArgv(job.command), {
     cwd,
-    env: gitIdentityEnv(),
+    env: { ...gitIdentityEnv(), ...job.env },
     timeoutSec,
   });
   process.stderr.write(result.stdout + result.stderr);
@@ -360,10 +377,11 @@ function installJobs(
   overrides: Map<string, string>,
 ): InstallJob[] {
   return Array.from(candidates).flatMap(([dir, managers]) =>
-    managers.map(({ lockfile, command }) => ({
+    managers.map(({ lockfile, command, env }) => ({
       dir,
       lockfile,
       command: overrides.get(lockfile) ?? command,
+      ...(env === undefined ? {} : { env }),
     })),
   );
 }
@@ -382,6 +400,7 @@ async function installAll(
 
   const indexTree = (await gitOutput(root, ["write-tree"])).trim();
   const untracked = new Set(await untrackedLockfiles(root, jobs));
+  const workingTreeBefore = await workingTreeState(root);
   const deadline =
     performance.now() + DEPENDENCY_INSTALL_TIMEOUT_SECONDS * 1000;
   for (const job of jobs) {
@@ -391,6 +410,7 @@ async function installAll(
       indexTree,
       jobs,
       untracked,
+      workingTreeBefore,
     );
     if (modified.length !== 0)
       return {

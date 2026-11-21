@@ -621,6 +621,7 @@ fields:
     read_by: [drive-pr]
   drive.dependency_install:
     type: map
+    keys: [bun.lock, bun.lockb, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, Cargo.lock, go.sum, uv.lock, poetry.lock, Gemfile.lock, composer.lock]
     values_type: command
     nullable: true
     since: next

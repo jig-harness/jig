@@ -10,9 +10,10 @@ with its context and nobody notices.
 
 **What it does.** `/jig:drive-pr` is a [PR drive loop](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): it runs a PR's [review rounds](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) unattended until the PR reaches exactly one [terminal state](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Each round it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the validation plan for the change, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long drive never depends on one session surviving.
 
-When a round merges the base and changes dependency inputs, it runs a frozen
-install before validation. The round report records the command and outcome
-so an install failure can be diagnosed independently of a validation failure.
+When a round merges the base and changes dependency inputs, it runs a [frozen
+install](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) before
+validation. The round report records the command and outcome so an install
+failure can be diagnosed independently of a validation failure.
 
 A few behaviours worth knowing before you arm one:
 
