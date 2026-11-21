@@ -1,3 +1,4 @@
+import { PULL_DOCUMENT_JQ } from "./drive-pr-pull-document.ts";
 import { RUN_FORGE_FIXTURE } from "./drive-pr-run-forge.ts";
 import { seedAcceptedLadder } from "./ladder-verdict-fixture.ts";
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
@@ -1244,27 +1245,7 @@ if [ -n "$rest_pr" ]; then
     exit 1
   fi
   if [ "$rest_doc" -eq 1 ]; then
-    rest_body=$(printf '%s' "$rest_out" | jq -c '
-      def present($k): has($k) and .[$k] != null;
-      . as $v
-      | {}
-      | if ($v | present("state")) then
-          .state = (if $v.state == "OPEN" then "open"
-                    elif ($v.state == "CLOSED" or $v.state == "MERGED") then "closed"
-                    else ($v.state | tostring | ascii_downcase) end)
-          | .merged = ($v.state == "MERGED")
-        else . end
-      | if ($v | has("isDraft")) then .draft = $v.isDraft else . end
-      | if ($v | present("headRefOid")) then .head.sha = $v.headRefOid else . end
-      | if ($v | present("headRefName")) then .head.ref = $v.headRefName else . end
-      | if ($v | present("baseRefOid")) then .base.sha = $v.baseRefOid else . end
-      | if ($v | present("baseRefName")) then .base.ref = $v.baseRefName else . end
-      | if ($v | present("mergeable")) then
-          .mergeable = (($v.mergeable | tostring | ascii_upcase) as $m
-            | if $m == "MERGEABLE" then true elif $m == "CONFLICTING" then false
-              elif $m == "UNKNOWN" then null else $v.mergeable end)
-        else . end
-      | if ($v | present("mergeStateStatus")) then .mergeable_state = ($v.mergeStateStatus | tostring | ascii_downcase) else . end') || {
+    rest_body=$(printf '%s' "$rest_out" | jq -c '${PULL_DOCUMENT_JQ}') || {
       printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
       exit 1
     }
