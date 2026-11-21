@@ -94,6 +94,16 @@ export function scopedInstalls(program = "claude"): ScopedInstall[] {
   return claudeScopedInstalls(json(program, ["plugin", "list", "--json"]));
 }
 
+/** Says what an upgrade would do with each scoped install, changing nothing. */
+export function sayScopedPlan(program: string, say: Say): void {
+  for (const scoped of scopedInstalls(program)) {
+    const where = directoryState(scoped.project);
+    say(
+      `claude: ${scoped.scope} install ${scoped.project}: ${where === "gone" ? "remove stale install record" : where === "present" ? "refresh from its directory" : `leave unchanged (${where})`}`,
+    );
+  }
+}
+
 /**
  * Whether a scoped install's directory is there: `present`, `gone`, or why
  * neither can be said (a file in its place, a directory that cannot be read).
@@ -124,7 +134,7 @@ function directoryKey(path: string): string {
  * or null outside a checkout or when git cannot say. The inherited `GIT_*`
  * variables are dropped, so a hook's `GIT_DIR` does not answer for `dir`.
  */
-export function repositoryOf(dir: string): string | null {
+function repositoryOf(dir: string): string | null {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
   );

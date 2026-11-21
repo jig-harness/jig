@@ -36,10 +36,9 @@ import {
   UpgradeRequestError,
 } from "./harness-command.ts";
 import {
-  directoryState,
   refreshScoped,
   type ScopedResult,
-  scopedInstalls,
+  sayScopedPlan,
 } from "./scoped-installs.ts";
 import {
   type Channel,
@@ -69,7 +68,6 @@ export {
   claudeScopedInstalls,
   directoryState,
   refreshScoped,
-  type ScopedInstall,
   type ScopedResult,
   scopedInstalls,
 } from "./scoped-installs.ts";
@@ -526,14 +524,7 @@ export function prepareHarnesses(
     say(
       `${harness}: ${state ? `installed ${state.version}` : "fresh install"}; source ${source}`,
     );
-    if (harness === "claude") {
-      for (const scoped of scopedInstalls(program)) {
-        const where = directoryState(scoped.project);
-        say(
-          `claude: ${scoped.scope} install ${scoped.project}: ${where === "gone" ? "remove stale install record" : where === "present" ? "refresh from its directory" : `leave unchanged (${where})`}`,
-        );
-      }
-    }
+    if (harness === "claude") sayScopedPlan(program, say);
     return [{ harness, source, registered, state }];
   });
   if (plans.length === 0)
