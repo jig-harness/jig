@@ -404,6 +404,55 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.299.0] - 2026-11-21
+
+### Added
+
+- The hub's storage: its tables, declared once with Drizzle and kept in
+  partitions (one per repository, one per host, and one directory), and the
+  one implementation of the storage port every adapter runs, over a
+  synchronous SQLite database. Each change runs in one transaction with its
+  statements prepared first, and the port gains an atomic batch of changes in
+  one partition. The first tables hold the in-flight read row, so one unit at
+  a time reads a target through, taken over 30 seconds after it was taken,
+  and the job lease row, so two runs of one scheduled job never overlap.
+  `drizzle-kit` generates the migrations from the schema; the hub has no
+  command yet that opens the store.
+- The hub's job helper and the trimming job's framework: a scheduled job runs
+  its steps under a deadline and a lease that outlives it, storing its
+  progress after each step, so a run that stops is resumed by the next one.
+  The trimming job runs hourly and deletes, in chunks, the expired rows of
+  each table that declares a retention rule. Only the in-flight reads have
+  one so far; each later table declares its own as it arrives, by the
+  periods [design/control-plane.md](design/control-plane.md#how-long-it-keeps-things)
+  sets.
+- The plugin vendors Drizzle (`drizzle-orm` 0.45.4, Apache License 2.0) under
+  `plugin/shared/vendor/`, built from the pinned package and listed in
+  `NOTICE`.
+- The records registry gains the hub medium, whose kinds are its
+  tables ([RECORDS.md](plugin/RECORDS.md#in-the-hub)).
+
+### Fixed
+
+- A follow-up of a merged pull request no longer waits on a person when a
+  checkout the workspace runtime does not list still holds the merged
+  branch and its commits are already in the squash merge. The idle check
+  counts as unpushed only the commits whose change the remote's default
+  branch lacks (by tree, by patch, or because merging the checkout into it
+  would change nothing, with merge attributes and drivers neutralized or refused; the merge proof needs git 2.43), so such a checkout is detached, its
+  local branch kept, and the follow-up's launch outcome names the checkout
+  and the branch. A checkout that is still busy for its commits names them
+  in its reason. On a host with git older than 2.43 a checkout whose commits only
+  the merge proof can clear stays busy; the tree and patch checks work on any
+  git. **Consumer action:** none.
+- Drive rounds refresh dependencies before validating a base merge that
+  changed a package manifest or lockfile. They use a frozen install and report
+  its command and outcome, so an install failure is distinguishable from a
+  validation failure.
+- **Breaking:** The dispatcher no longer starts an item that has no priority, assigned or from the ready pool, which it used to place after every low-priority item. The line lists the item in its queue with the priority it lacks; once a person sets one, or the steward's `facet` record fills it for an assigned item, the next tick ranks and starts it. A repository that wants such items started anyway sets `dispatch.missing_priority: start` ([configuration](plugin/CONFIGURATION.md#dispatch)). **Consumer action:** advised at configuration. Give the items the dispatcher starts a priority, or set `dispatch.missing_priority: start` where the repository does not rank its items. **Detect:** `config:!dispatch.missing_priority`.
+- A served batch no longer stops on a question about a member's priority. The dispatcher leaves an item with no priority out of the batches it forms, as `work-batch` already does, and a batch's pass leaves a member whose priority was cleared after the batch formed for its own pickup.
+- The missing-priority hold is read again when a pickup launches and when a pending pickup is retried, so clearing an item's priority after planning no longer starts it. A Jira priority the configuration maps to none of Jig's is treated as ranked, not as missing, so list every priority the project uses under `issue_tracker.jira.priorities` to order its items. A pending batch pickup is checked for each member's priority too, and a batch that ends with no member claimed because priorities were cleared holds each member only until it changes.
+
 ## [0.298.0] - 2026-11-21
 
 ### Added
@@ -10544,7 +10593,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.298.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.299.0...HEAD
+[0.299.0]: https://github.com/jig-harness/jig/compare/v0.298.0...v0.299.0
 [0.298.0]: https://github.com/jig-harness/jig/compare/v0.297.0...v0.298.0
 [0.297.0]: https://github.com/jig-harness/jig/compare/v0.296.0...v0.297.0
 [0.296.0]: https://github.com/jig-harness/jig/compare/v0.295.0...v0.296.0

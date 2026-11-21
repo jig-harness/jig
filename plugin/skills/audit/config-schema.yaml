@@ -218,7 +218,7 @@ fields:
     values: [hold, start]
     read_by: [dispatch, work-batch]
     repository_only: true
-    since: next
+    since: 0.299.0
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"
@@ -643,7 +643,7 @@ fields:
     keys: [bun.lock, bun.lockb, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, Cargo.lock, go.sum, uv.lock, poetry.lock, Gemfile.lock, composer.lock]
     values_type: command
     nullable: true
-    since: next
+    since: 0.299.0
     read_by: [drive-pr, resolve-conflicts]
   drive.change_areas_catalog:
     type: path
