@@ -57,6 +57,7 @@ import { derivedNext, type NextOwner, parkedNext } from "./lib/next-owner.ts";
 import { stateDbFailure } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
+import { recordConditionalResult } from "./lib/launch-conditional-result.ts";
 import { framedResultOf } from "./lib/framed-result.ts";
 import { timingSafeEqual } from "node:crypto";
 import {
@@ -78,8 +79,15 @@ import {
   type WaitReason,
 } from "./lib/wait-for.ts";
 
+import {
+  parsePickupPr,
+  pickupConditionWords,
+  readPickupCondition,
+  type PickupCondition,
+} from "./lib/pickup-condition.ts";
+
 const USAGE =
-  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>] | waits --reason test-lock [--until <time>]";
+  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>] | waits --until-merged <pr> | waits --until-closed <item> | waits --reason test-lock [--until <time>]";
 /** The host could not write the result: the evidence is kept, and the dispatcher settles the stage. */
 const UNWRITTEN = 4;
 /** The longest a pass may wait on a rate limit: a tracker's or the forge's window is an hour or less. */
@@ -335,11 +343,87 @@ function waitFor(reason = "rate-limit", raw?: string): WaitFor | null {
   return { reason: "pending", arm };
 }
 
+function conditionArgs(rest: readonly string[]): PickupCondition | null {
+  const [flag, value] = rest;
+  if (rest.length !== 2 || value === undefined) return null;
+  if (flag === "--until-closed")
+    return readPickupCondition({ kind: "item-closed", item: value });
+  if (flag !== "--until-merged") return null;
+  const pr = parsePickupPr(value);
+  return pr === null ? null : { kind: "pr-merged", pr };
+}
+
+/** Why `record` cannot wait on `condition`, or `null` when it can: only a single-item pickup waits, on another item in its tracker's key format or on a pull request. */
+function conditionalWaitRefusal(
+  record: LaunchRecord,
+  condition: PickupCondition,
+): string | null {
+  const item = record.item;
+  if (
+    record.action !== "pickup" ||
+    record.batchItems !== undefined ||
+    item === null ||
+    (condition.kind === "item-closed" && condition.item === item.toUpperCase())
+  )
+    return "a single-item pickup can wait on another item or on a pull request";
+  if (
+    condition.kind === "item-closed" &&
+    item.startsWith("#") !== condition.item.startsWith("#")
+  )
+    return "the dependency must use the pickup's tracker key format";
+  return null;
+}
+
+function recordConditionalWait(
+  record: LaunchRecord,
+  condition: PickupCondition,
+  root?: string,
+): number {
+  const refusal = conditionalWaitRefusal(record, condition);
+  if (refusal !== null) {
+    console.error(`jig dispatch result: ${refusal}`);
+    return 2;
+  }
+  const item = record.item as string;
+  const next = { none: `waiting for ${pickupConditionWords(condition)}` };
+  const written = recordConditionalResult(
+    record,
+    item,
+    {
+      by: "pickup",
+      title: item,
+      url: null,
+      condition,
+      resumeRecord: record.id,
+    },
+    next,
+    root,
+  );
+  if (!written.ok) {
+    console.error(`jig dispatch result: ${written.failure.reason}`);
+    return 2;
+  }
+  if (!written.value) return already(record.id, root);
+  console.log(
+    JSON.stringify({
+      record: record.id,
+      item,
+      result: "waits",
+      condition,
+      next,
+    }),
+  );
+  return 0;
+}
+
 /** A command line this command takes: `done|failed` with their options, or `waits` with its own. */
 function wellFormed(argv: string[]): boolean {
   const [id, token, result] = argv;
   if (id === undefined || token === undefined) return false;
-  if (result === "waits") return waitsArgs(argv.slice(3)) !== null;
+  if (result === "waits")
+    return (
+      waitsArgs(argv.slice(3)) !== null || conditionArgs(argv.slice(3)) !== null
+    );
   if (argv.length !== 3 && argv.length !== 5) return false;
   return result === "done" || result === "failed";
 }
@@ -371,47 +455,31 @@ function answerable(
   return record;
 }
 
-export function resultMain(argv: string[], root?: string): number {
-  if (!wellFormed(argv)) {
-    console.error(USAGE);
-    return 2;
-  }
-  const [id, token, result, flag, value] = argv as [
-    string,
-    string,
-    string,
-    string?,
-    string?,
-  ];
-  const record = answerable(id, token, root);
-  if (typeof record === "string") {
-    console.error(`jig dispatch result: ${record}`);
-    return 2;
-  }
-  const waited = result === "waits" ? waitsArgs(argv.slice(3)) : null;
-  if (waited?.wait.reason === "pending" && record.action !== "followup") {
-    console.error(
-      "jig dispatch result: --reason pending is a follow-up's; a pickup waits on a rate limit or the host's test lock",
-    );
-    return 2;
-  }
-  if (waited?.wait.reason === "test-lock" && record.action !== "pickup") {
-    console.error(
-      "jig dispatch result: --reason test-lock is a claimed pickup's; a follow-up waits on a rate limit or an arm still pending",
-    );
-    return 2;
-  }
-  if (waited?.wait.reason === "test-lock" && record.batchItems !== undefined) {
-    console.error(
-      "jig dispatch result: --reason test-lock is a pickup's of one item; a batch's pass is never relaunched, so it records failed",
-    );
-    return 2;
-  }
-  const next =
-    waited === null
-      ? nextForResult(record, result, flag, value)
-      : waitsNext(waited);
-  if (next === null) return 2;
+/** Why `record` cannot wait as `waited` says, or `null` when it can: `pending` is a follow-up's, `test-lock` a single-item pickup's. */
+function waitRefusal(
+  waited: WaitsArgs | null,
+  record: LaunchRecord,
+): string | null {
+  const reason = waited?.wait.reason;
+  if (reason === "pending" && record.action !== "followup")
+    return "--reason pending is a follow-up's; a pickup waits on a rate limit or the host's test lock";
+  if (reason !== "test-lock") return null;
+  if (record.action !== "pickup")
+    return "--reason test-lock is a claimed pickup's; a follow-up waits on a rate limit or an arm still pending";
+  if (record.batchItems !== undefined)
+    return "--reason test-lock is a pickup's of one item; a batch's pass is never relaunched, so it records failed";
+  return null;
+}
+
+/** Record `result` on `record` with its handoff `next`, and print what was recorded. */
+function recordAndPrint(
+  id: string,
+  record: LaunchRecord,
+  result: string,
+  next: NextOwner,
+  waited: WaitsArgs | null,
+  root?: string,
+): number {
   if (
     !recordResult(
       id,
@@ -436,6 +504,40 @@ export function resultMain(argv: string[], root?: string): number {
     }),
   );
   return 0;
+}
+
+export function resultMain(argv: string[], root?: string): number {
+  if (!wellFormed(argv)) {
+    console.error(USAGE);
+    return 2;
+  }
+  const [id, token, result, flag, value] = argv as [
+    string,
+    string,
+    string,
+    string?,
+    string?,
+  ];
+  const record = answerable(id, token, root);
+  if (typeof record === "string") {
+    console.error(`jig dispatch result: ${record}`);
+    return 2;
+  }
+  const waits = result === "waits";
+  const condition = waits ? conditionArgs(argv.slice(3)) : null;
+  if (condition !== null) return recordConditionalWait(record, condition, root);
+  const waited = waits ? waitsArgs(argv.slice(3)) : null;
+  const refusal = waitRefusal(waited, record);
+  if (refusal !== null) {
+    console.error(`jig dispatch result: ${refusal}`);
+    return 2;
+  }
+  const next =
+    waited === null
+      ? nextForResult(record, result, flag, value)
+      : waitsNext(waited);
+  if (next === null) return 2;
+  return recordAndPrint(id, record, result, next, waited, root);
 }
 
 /**

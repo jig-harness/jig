@@ -43,7 +43,7 @@ import {
   poolQueries,
 } from "./linear-pool.ts";
 import * as lf from "./linear-facets.ts";
-import { queueOperations } from "./linear-queue.ts";
+import { linearDependencyState, queueOperations } from "./linear-queue.ts";
 import { namedState } from "./config-error.ts";
 import { LINEAR_CREATION_QUIET_MS } from "./assignment-window.ts";
 import {
@@ -1152,6 +1152,8 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       return nodes.map(parsePoolIssue);
     },
 
+    dependencyState: linearDependencyState(transport),
+
     async poolIssue(key, signal) {
       let data: unknown;
       try {
@@ -1303,18 +1305,14 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       ];
     },
 
-    async relate(key, type, target) {
+    async relate(key, type, target, signal) {
       checkRelation(key, type, target);
-      const issueId = (await issueIdAndTeam(key)).id;
-      const relatedIssueId = (await issueIdAndTeam(target)).id;
-      const data = record(
-        await transport(RELATE_MUTATION, {
-          input: { issueId, relatedIssueId, type },
-        }),
-        "data",
-      );
+      const issueId = (await issueIdAndTeam(key, signal)).id;
+      const relatedIssueId = (await issueIdAndTeam(target, signal)).id;
+      const input = { issueId, relatedIssueId, type };
+      const data = await transport(RELATE_MUTATION, { input }, signal);
       assertMutationOk(
-        data.issueRelationCreate,
+        record(data, "data").issueRelationCreate,
         `recording that ${key} ${type} ${target}`,
       );
     },

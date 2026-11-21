@@ -1966,6 +1966,17 @@ and `jig ask` show who held the item and when. Use `release` at the same
 address to withdraw the host's hold. Tracker labels can still hold the item
 independently.
 
+Add `--until-merged 123` to hold the pickup until pull request #123 in the
+same repository merges, or `--until-closed <KEY>` to wait for another item
+on the configured tracker to close. Quote a GitHub item key, as in
+`--until-closed '#123'`. The tick also records the item dependency as a
+blocker on trackers that support it. To cancel a linked dependency before
+it closes, release the local hold and remove the blocker on the tracker.
+Approving or choosing a pickup's framed option named `Wait for #123 to
+merge` without a note also places a conditional hold. The tick clears the
+hold after the dependency is satisfied and raises a need if the pull
+request closes unmerged.
+
 **What it refuses outright.** A verb whose record the repository has
 switched off is refused with the setting named. The dispatch label verbs
 (`drive`, `rearm` and the pull request forms of `hold` and `release`)

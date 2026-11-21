@@ -177,6 +177,9 @@ export function pickupHold(
   const latest = mine.at(-1);
   if (latest === undefined || !holdsItem(latest.record, item))
     return { kind: "none" };
+  // Conditional waits are governed by their durable pickup hold, including when it clears.
+  if (latest.result === "waits" && latest.waitsFor?.condition !== undefined)
+    return { kind: "none" };
   const lockWait =
     latest.result === "waits" && latest.waitsFor?.reason === "test-lock";
   if (lockWait && claimedAlone(latest.record, item))

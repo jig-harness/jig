@@ -267,6 +267,16 @@ export function pickupsOf(
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
 }
 
+/** The latest unreleased pickup for this item, shared by its question and host-health hold. */
+export function latestPickupFor(
+  item: string,
+  launches: readonly ReadRecord[],
+): ReadRecord | undefined {
+  return pickupsOf(item, launches).findLast((row) =>
+    holdsItem(row.record, item),
+  );
+}
+
 /** The item's immediately preceding pickup, if any. Its release is intentionally retained as a restart boundary. */
 function previousPickup(
   latest: ReadRecord,

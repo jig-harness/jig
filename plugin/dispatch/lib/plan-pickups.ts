@@ -54,11 +54,16 @@ import {
   reportFramed,
   reportQuestion,
 } from "./report-needs.ts";
+import {
+  conditionalRecords,
+  planConditionalClaim,
+  planConditionNeeds,
+  type ConditionalPickups,
+} from "./plan-pickup-conditions.ts";
 import { batchPickups } from "./queue-batch.ts";
 import { unrankedHold } from "./pickup-priority.ts";
 import { minutes } from "./duration.ts";
 import {
-  agentOf,
   endedHow,
   endedQuestion,
   holdingRecords,
@@ -69,21 +74,17 @@ import {
   pickupHold,
 } from "./actions/pickup-hold.ts";
 import { type Holding, holding, liveAgents } from "./holding.ts";
-import {
-  isInteractive,
-  type LaunchRecord,
-  type ReadRecord,
-  targetOf,
-} from "./launches.ts";
+import type { ReadRecord } from "./launches.ts";
 import { type Carriage, readCarriage } from "./carried-pr.ts";
-import { holdsItem } from "./launch-pickups.ts";
 import { pickupNotice } from "./notices.ts";
+import { planWaiting } from "./plan-pickup-waiting.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import {
   faultedAgain,
   type HostFault,
   hostFault,
+  latestPickupFor,
 } from "./pickup-host-fault.ts";
 import { ANY_KEY_SOURCE } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { relaunched, relaunchStep } from "./pickup-relaunch.ts";
@@ -97,11 +98,7 @@ import {
   type StalledPrInput,
   stallNote,
 } from "./stalled-pr.ts";
-import {
-  type SessionsReport,
-  WAITING_STATES,
-  type Workspace,
-} from "./runtime/port.ts";
+import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
   Action,
   ClaimedItem,
@@ -112,7 +109,7 @@ import type {
 } from "./types.ts";
 import { isoFromMs } from "../../shared/time.ts";
 
-export interface PickupInput {
+export interface PickupInput extends ConditionalPickups {
   /** The repository's `owner/name`, which every notification names. */
   slug: string;
   section: DispatchSection;
@@ -216,58 +213,16 @@ export function planPickups(input: PickupInput): PickupPlan {
     idleKeep: [],
     moves: [],
   };
-  const { sessions, launches } = input;
+  const { launches } = input;
+  planConditionNeeds(input, plan);
+
   const joined = (key: string) => {
     const left = leftBehindWorkspaces(key, launches);
     return (w: Workspace) => w.items.includes(key) && !left.has(w.path);
   };
 
-  for (const item of input.pickups) {
-    const held = holding(sessions, joined(item.key));
-    const { count, evidence, who } = sessionsFor(item.key, held, launches);
-    if (count > 1) {
-      plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
-      continue;
-    }
-    const hold = pickupHold(
-      item.key,
-      launches,
-      item.updatedAt,
-      input.nowMs,
-      assigneeOf(item),
-    );
-    if (hold.kind === "held") {
-      plan.running.push({
-        target: item.key,
-        stage: "pickup",
-        reason: hold.why,
-        evidence: { record: hold.record.record.id },
-      });
-      continue;
-    }
-    if (held.kind === "unknown") {
-      plan.unplaced.push({
-        target: item.key,
-        record: "runtime",
-        reason: held.reason,
-      });
-      continue;
-    }
-    if (held.kind === "running") {
-      plan.running.push({
-        target: item.key,
-        stage: "pickup",
-        reason: `a session is running for it: ${evidence}`,
-        evidence: { workspaces: held.workspaces.map((w) => w.path).join(", ") },
-      });
-      continue;
-    }
-    if (hold.kind !== "none") {
-      planStopped(input, item, hold, plan);
-      continue;
-    }
-    planFresh(item, held.evidence, input, plan);
-  }
+  for (const item of input.pickups)
+    planWanted(item, input, plan, joined(item.key));
 
   for (const item of input.claimed ?? [])
     planClaimed(item, input, plan, joined(item.key));
@@ -280,6 +235,69 @@ export function planPickups(input: PickupInput): PickupPlan {
       input.root,
     );
   return plan;
+}
+
+/** The sessions that hold `item`, or `null` once more than one does and its double claim is planned. */
+function sessionsHolding(
+  item: { key: string; state: string },
+  input: PickupInput,
+  plan: PickupPlan,
+  joined: (w: Workspace) => boolean,
+): { held: Holding; count: number; evidence: string } | null {
+  const held = holding(input.sessions, joined);
+  const { count, evidence, who } = sessionsFor(item.key, held, input.launches);
+  if (count <= 1) return { held, count, evidence };
+  plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
+  return null;
+}
+
+/** Plan one wanted item: a double claim, a hold, a running session, a stopped pickup or a fresh one. */
+function planWanted(
+  item: WantedItem,
+  input: PickupInput,
+  plan: PickupPlan,
+  joined: (w: Workspace) => boolean,
+): void {
+  const sessions = sessionsHolding(item, input, plan, joined);
+  if (sessions === null) return;
+  const { held, evidence } = sessions;
+  const eligible = conditionalRecords(input, item.key);
+  if (eligible === null) return;
+  const hold = pickupHold(
+    item.key,
+    eligible,
+    item.updatedAt,
+    input.nowMs,
+    assigneeOf(item),
+  );
+  if (hold.kind === "held") {
+    plan.running.push({
+      target: item.key,
+      stage: "pickup",
+      reason: hold.why,
+      evidence: { record: hold.record.record.id },
+    });
+    return;
+  }
+  if (held.kind === "unknown") {
+    plan.unplaced.push({
+      target: item.key,
+      record: "runtime",
+      reason: held.reason,
+    });
+    return;
+  }
+  if (held.kind === "running") {
+    plan.running.push({
+      target: item.key,
+      stage: "pickup",
+      reason: `a session is running for it: ${evidence}`,
+      evidence: { workspaces: held.workspaces.map((w) => w.path).join(", ") },
+    });
+    return;
+  }
+  if (hold.kind !== "none") planStopped(input, item, hold, plan);
+  else planFresh(item, held.evidence, input, plan);
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */
@@ -569,12 +587,9 @@ function planClaimed(
   plan: PickupPlan,
   joined: (w: Workspace) => boolean,
 ): void {
-  const held = holding(input.sessions, joined);
-  const { count, evidence, who } = sessionsFor(item.key, held, input.launches);
-  if (count > 1) {
-    plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
-    return;
-  }
+  const sessions = sessionsHolding(item, input, plan, joined);
+  if (sessions === null) return;
+  const { held, count, evidence } = sessions;
   if (count === 1) {
     plan.quiet.push({
       target: item.key,
@@ -583,6 +598,12 @@ function planClaimed(
     });
     return;
   }
+  if (
+    planConditionalClaim(item, input, plan, held, (pr) =>
+      quietByPr(item, input, pr, plan, false),
+    )
+  )
+    return;
   // A claimed item is assigned, to its claimant.
   const pickup = pickupHold(
     item.key,
@@ -895,67 +916,6 @@ function questionAsked(
     // The pass's ended row in the outcome log already holds how it ended.
     launched: true,
   };
-}
-
-/** The latest unreleased pickup for this item, shared by its question and host-health hold. */
-function latestPickupFor(
-  item: string,
-  launches: readonly ReadRecord[],
-): ReadRecord | undefined {
-  return launches
-    .filter(
-      (r) =>
-        r.record.action === "pickup" &&
-        (r.record.item === item ||
-          r.record.batchItems?.some((entry) => entry.key === item) === true) &&
-        holdsItem(r.record, item),
-    )
-    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
-    .at(-1);
-}
-
-/** What the tick read as a waiting session's cause: the usage-limit wall still its last record, if any. */
-function waitCause(record: LaunchRecord): string {
-  const latest = record.episodes?.at(-1);
-  return latest?.last === true
-    ? `, on its account's usage-limit wall since ${latest.observedAt} (resets ${latest.resetAt ?? "at an unknown time"})`
-    : ", with no usage-limit wall read as its cause";
-}
-
-/** Each session this machine launched that has waited past `blocked_after`. */
-function planWaiting(input: PickupInput, plan: PickupPlan): void {
-  for (const r of input.launches) {
-    const { record, state } = r;
-    if (!isInteractive(record) || record.agentId === null) continue;
-    if (state.kind !== "alive") continue;
-    const found = agentOf(input.sessions, record.agentId);
-    if (found === undefined || !WAITING_STATES.has(found.agent.state)) continue;
-    const since = found.agent.since;
-    if (since === null || input.nowMs - since < input.section.blockedAfterMs)
-      continue;
-    const target = targetOf(record);
-    const reason = `session waiting: its agent has been ${found.agent.state} for ${minutes(input.nowMs - since)} (dispatch.blocked_after ${minutes(input.section.blockedAfterMs)})${waitCause(record)}; it keeps its slot until it ends or a person ends it`;
-    plan.actions.push({
-      stage: "notify",
-      target,
-      record: "runtime",
-      reason,
-      evidence: {
-        record: record.id,
-        stage: record.action,
-        agent: record.agentId,
-        workspace: found.workspace.path,
-        account: record.account,
-      },
-      cause: "waiting",
-      notice: pickupNotice(
-        input.slug,
-        `${target} waiting, record ${record.id} since ${isoFromMs(since)}`,
-        `${target}: the ${record.action} session in ${found.workspace.path} ${reason}`,
-      ),
-      workspace: found.workspace.path,
-    });
-  }
 }
 
 function pickupAction(

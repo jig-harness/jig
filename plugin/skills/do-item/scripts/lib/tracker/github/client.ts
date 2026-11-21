@@ -18,7 +18,7 @@ import {
   gitHubFacets,
 } from "./facets.ts";
 import type { GitHubSettings } from "./settings.ts";
-import { TrackerRequestError } from "../port.ts";
+import { type DependencyState, TrackerRequestError } from "../port.ts";
 import type { GitHubModel } from "./model.ts";
 import {
   type Board,
@@ -74,6 +74,10 @@ export interface Client {
     extra?: string,
     signal?: AbortSignal,
   ): Promise<{ issue: GhIssue; raw: Record<string, unknown> } | null>;
+  dependencyState(
+    ref: IssueRef,
+    signal?: AbortSignal,
+  ): Promise<DependencyState | null>;
   /** One issue that must exist. */
   mustIssue(key: string, signal?: AbortSignal): Promise<GhIssue>;
   /** Every issue of the home repository the listing selects, raw and parsed. */
@@ -236,6 +240,36 @@ export function gitHubClient(opts: ClientOptions): Client {
   let labels: Promise<Array<{ id: string; name: string }>> | undefined;
   let boardIds: Promise<BoardIds> | undefined;
 
+  async function readIssue(
+    ref: IssueRef,
+    selected: string,
+    signal?: AbortSignal,
+  ) {
+    let data: unknown;
+    try {
+      data = await transport(
+        ISSUE_QUERY(selected),
+        { owner: ref.owner, name: ref.name, number: ref.number },
+        signal,
+        true,
+      );
+    } catch (err) {
+      // The issue is absent only when its repository answered: a
+      // repository the token cannot see is a setting or access problem.
+      if (
+        err instanceof GitHubApiError &&
+        err.notFound &&
+        isRecord(err.data) &&
+        isRecord(err.data.repository)
+      )
+        return null;
+      throw err;
+    }
+    const repo = record(record(data, "data").repository, "repository");
+    if (repo.issue === null || repo.issue === undefined) return null;
+    return record(repo.issue, "repository.issue");
+  }
+
   const client: Client = {
     shareReads: (reads) => {
       DISPATCH_READS.set(opts.transport, reads);
@@ -250,30 +284,16 @@ export function gitHubClient(opts: ClientOptions): Client {
     ref: (key) => requireRef(key, home),
 
     async issue(ref, extra = "", signal) {
-      let data: unknown;
-      try {
-        data = await transport(
-          ISSUE_QUERY(`${fields} ${extra}`),
-          { owner: ref.owner, name: ref.name, number: ref.number },
-          signal,
-          true,
-        );
-      } catch (err) {
-        // The issue is absent only when its repository answered: a
-        // repository the token cannot see is a setting or access problem.
-        if (
-          err instanceof GitHubApiError &&
-          err.notFound &&
-          isRecord(err.data) &&
-          isRecord(err.data.repository)
-        )
-          return null;
-        throw err;
-      }
-      const repo = record(record(data, "data").repository, "repository");
-      if (repo.issue === null || repo.issue === undefined) return null;
-      const raw = record(repo.issue, "repository.issue");
-      return { issue: parseIssue(raw, ctx), raw };
+      const raw = await readIssue(ref, `${fields} ${extra}`, signal);
+      return raw === null ? null : { issue: parseIssue(raw, ctx), raw };
+    },
+
+    async dependencyState(ref, signal) {
+      const raw = await readIssue(ref, "state", signal);
+      if (raw === null) return null;
+      if (raw.state === "OPEN") return "open";
+      if (raw.state === "CLOSED") return "closed";
+      throw new GitHubApiError(`issue #${ref.number} has an unreadable state`);
     },
 
     async mustIssue(key, signal) {
