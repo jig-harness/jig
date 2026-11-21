@@ -339,7 +339,7 @@ interface ApplyInputs {
   /** Read the answers to the needs' framed decisions and act on the ones that count (`station-answers.ts`). */
   answers: () => Promise<void>;
   /** The host notices outside the failure ledger that stand this tick (`standingWeightsKeys`). */
-  hostStanding: readonly string[];
+  hostStanding: readonly string[] | null;
 }
 
 /**

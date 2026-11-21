@@ -314,11 +314,16 @@ export function skippedWeightsCause(
   };
 }
 
-/** The keys of the host notices the weights file makes stand this tick, at every repository: a home that moves keeps the record of one already told. */
+/**
+ * The keys of the host notices the weights file makes stand this tick, at every repository: a home that moves keeps the record of one already told.
+ * `null` when the file was not read whole (an unreadable document or an invalid weight): what stands is unknown, so no record of one is retired.
+ */
 export function standingWeightsKeys(
   weights: AccountWeights | undefined,
   machine: Pick<MachineConfig, "accounts"> | null | undefined,
-): string[] {
+): string[] | null {
+  for (const weight of weights?.values() ?? [])
+    if (weight.configured === null) return null;
   const key =
     machine == null
       ? undefined

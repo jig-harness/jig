@@ -23,6 +23,7 @@
  * releases it on every channel.
  */
 import type { Database } from "bun:sqlite";
+import { WEIGHTS_SKIP_KEY } from "./failure-notices.ts";
 import { insertRow, type LogRow } from "./log.ts";
 import { unobservedTarget } from "./notices.ts";
 import { entryKeys } from "./runtime/notice-comment.ts";
@@ -198,6 +199,23 @@ export function releaseOnEveryChannel(db: Database): {
     "DELETE FROM notices WHERE key = ?1 OR (channel <> ?2 AND key = channel || ':' || ?1)",
   );
   return { run: (key) => release.run(key, ORCA_CARD) };
+}
+
+/** The notice keys of the weights notices recorded on any channel at any repository. */
+export function storedWeightsKeys(db: Database): Set<string> {
+  const rows = db
+    .query(
+      "SELECT channel, key FROM notices WHERE key LIKE ?1 ESCAPE '\\' OR key LIKE ?2 ESCAPE '\\'",
+    )
+    .all(
+      `${likeLiteral(WEIGHTS_SKIP_KEY)}%`,
+      `%:${likeLiteral(WEIGHTS_SKIP_KEY)}%`,
+    ) as Array<{ channel: string; key: string }>;
+  return new Set(
+    rows
+      .map((r) => noticeKeyOf(r.channel, r.key))
+      .filter((k) => k.startsWith(WEIGHTS_SKIP_KEY)),
+  );
 }
 
 /** When each notice of `repo` was first sent, on whichever channel sent it first, by notice key. */

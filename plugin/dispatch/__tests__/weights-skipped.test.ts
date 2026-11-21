@@ -24,7 +24,8 @@ import {
   type SessionRuntime,
   type Workspace,
 } from "../lib/runtime/port.ts";
-import { closeStateDb } from "../lib/state.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
+import { storedWeightsKeys, suppress } from "../lib/notice-records.ts";
 import type { RepoReport, RepoTarget } from "../lib/types.ts";
 
 const roots: string[] = [];
@@ -238,5 +239,44 @@ describe("the notice of skipped account names", () => {
     );
     writeFileSync(file, "accounts: {a: 0, old: 3}");
     expect(await tick(file, elsewhere, { repo: other })).toEqual(["sent"]);
+  });
+  it("keeps its record while the weights file is unreadable, and stays told once when the same names return", async () => {
+    const root = scratch();
+    const card = noticesCard(root);
+    const file = join(scratch(), "weights.local.yaml");
+    writeFileSync(file, "accounts: {a: 0, old: 3}");
+    expect(await tick(file, card)).toEqual(["sent"]);
+    writeFileSync(file, "accounts: [");
+    expect(
+      standingWeightsKeys(
+        readAccountWeights(accounts, readLocalWeights(file)),
+        machine,
+      ),
+    ).toBeNull();
+    expect(await tick(file, card, { home: false })).toEqual([]);
+    writeFileSync(file, "accounts: {a: 0, old: 3}");
+    expect(await tick(file, card)).toEqual(["suppressed"]);
+    expect(card.sent).toHaveLength(1);
+  });
+
+  it("finds a weights record on a channel the tick no longer sends through", () => {
+    const root = scratch();
+    suppress(
+      "webhook-a",
+      {
+        repo: "o/r",
+        key: 'host weights skip "old"',
+        target: "t",
+        workspace: "",
+        at: "2026-01-01T00:00:00.000Z",
+        lasting: false,
+      },
+      null,
+      root,
+      false,
+    );
+    expect([...storedWeightsKeys(stateDb(root))]).toEqual([
+      'host weights skip "old"',
+    ]);
   });
 });

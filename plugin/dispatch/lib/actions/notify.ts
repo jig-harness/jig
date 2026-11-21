@@ -62,7 +62,6 @@ import {
 import { type ActionBook, readFailures } from "../failures.ts";
 import {
   HOST_NOTICE,
-  WEIGHTS_SKIP_KEY,
   hostNoticeKeys,
   isFailureCause,
 } from "../failure-notices.ts";
@@ -74,6 +73,7 @@ import {
   readHostSuppressions,
   readSuppressions,
   releaseOnEveryChannel,
+  storedWeightsKeys,
   suppress,
   type Suppression,
 } from "../notice-records.ts";
@@ -210,14 +210,14 @@ function prune(
 function retireStaleWeightsRecords(
   report: RepoReport,
   standing: ReadonlySet<string>,
-  hostSent: ReadonlyMap<string, Suppression>,
   root: string,
 ): void {
   if (!report.records.every((r) => r.ok)) return;
-  const release = releaseOnEveryChannel(stateDb(root));
-  for (const key of hostSent.keys())
-    if (key.startsWith(WEIGHTS_SKIP_KEY) && !standing.has(key))
-      release.run(key);
+  const db = stateDb(root);
+  const release = releaseOnEveryChannel(db);
+  // Every channel's records, not the channel being processed: a channel that is no longer configured still holds one.
+  for (const key of storedWeightsKeys(db))
+    if (!standing.has(key)) release.run(key);
 }
 
 /** The stage a cause is about, for its event row. */
@@ -308,7 +308,7 @@ export interface NoticeSettings {
   /** Whether the tick writes the `orca-card` channel and observes its notices workspace; `true` unless the session runtime is the process runtime, which has neither. */
   orcaCard?: boolean;
   /** Keys of host notices outside the failure ledger that stand this tick wherever they are told (`standingWeightsKeys`). */
-  hostStanding?: readonly string[];
+  hostStanding?: readonly string[] | null;
 }
 
 /** The failure ledger's key and kind of a cause's delivery on `channel`. */
@@ -412,12 +412,13 @@ function dueAgain(
 function standingKeys(
   causes: readonly Cause[],
   root: string,
-  host: readonly string[] = [],
+  host: readonly string[] | null = [],
 ): Set<string> {
   const live = new Set(causes.map((c) => c.notice.key));
   for (const key of hostNoticeKeys(readFailures(undefined, root)))
     live.add(key);
-  for (const key of host) live.add(key);
+  // A weights file that was not read whole leaves what stands unknown: every notice told stays.
+  for (const key of host ?? storedWeightsKeys(stateDb(root))) live.add(key);
   return live;
 }
 
@@ -647,7 +648,7 @@ function dueThere(
   const sent = readSuppressions(channel, repo.slug, root);
   const hostSent = readHostSuppressions(channel, HOST_NOTICE, root);
   prune(channel, report, standing, sent, root);
-  retireStaleWeightsRecords(report, standing, hostSent, root);
+  retireStaleWeightsRecords(report, standing, root);
   const nowMs = currentMs();
   const all: Cause[] = [];
   for (const c of causes) {
