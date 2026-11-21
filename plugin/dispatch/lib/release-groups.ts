@@ -66,7 +66,7 @@ const NO_FAILED_GATE: Readonly<Record<string, (tags: string) => string>> = {
 function remedyOf(release: OwedRelease, policy: ReleasePolicy): Remedy {
   if (policy.personTags || policy.noReruns) return "tag";
   const state = release.plan_state;
-  if (state != null && state in NO_FAILED_GATE) return "tag";
+  if (state != null && Object.hasOwn(NO_FAILED_GATE, state)) return "tag";
   return release.rerun_claimed !== 0 ? "spent" : "gates";
 }
 

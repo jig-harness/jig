@@ -473,7 +473,7 @@ function noRerun(
     question,
     "tag",
     `${why} A re-run of the gates has nothing to change, so a person tags the release.`,
-    `No re-run of the gates was requested. ${covers}`,
+    `The dispatcher offers no re-run of the gates here. ${covers}`,
     ["inspect", "tag"],
   );
 }
