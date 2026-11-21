@@ -104,7 +104,7 @@ test.each([false, true])(
 
 const lateDir = "migrations";
 const lateJournal = `${lateDir}/meta/_journal.json`;
-const lateFeature = `${lateDir}/0003_feature.sql`;
+const featureSql = "CREATE TABLE feature (value INT);\n";
 // The integration journal lists 0002 before 0001, as a repository's
 // journal does when a long-lived branch's lower sequence merged late.
 const lateBase: [string, number][] = [
@@ -118,6 +118,7 @@ function lateMerge(
   repo: Scratch,
   branchAddsMigration: boolean,
   integrationJournal = journal(lateBase),
+  branchMigration = "0003_feature",
 ): void {
   repo.overlay(`resolve_conflicts:
   sequenced_migrations:
@@ -135,10 +136,10 @@ function lateMerge(
     "Branch change",
     branchAddsMigration
       ? {
-          [lateFeature]: "CREATE TABLE feature (value INT);\n",
+          [`${lateDir}/${branchMigration}.sql`]: featureSql,
           [lateJournal]: journal([
             ["0000_init", 100],
-            ["0003_feature", 400],
+            [branchMigration, 400],
           ]),
         }
       : { "notes.txt": "branch\n" },
@@ -168,6 +169,32 @@ test("accepts a branch migration appended to an out-of-order integration journal
   try {
     lateMerge(repo, true);
     stageJournal(repo, [...lateBase, ["0003_feature", 400]]);
+    exit(repo.script("record.ts", [lateJournal, "regenerated"]), 0);
+    exit(repo.script("check-resolution.ts"), 0);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test("renumbers a branch migration after an out-of-order integration journal", () => {
+  const repo = new Scratch();
+  const first = `${lateDir}/0001_feature.sql`;
+  const moved = `${lateDir}/0003_feature.sql`;
+  try {
+    lateMerge(repo, true, journal(lateBase), "0001_feature");
+    repo.write(moved, featureSql);
+    repo.git("rm", "-q", "--", first);
+    stageJournal(repo, [...lateBase, ["0003_feature", 400]]);
+    repo.git("add", "--", moved);
+    exit(
+      repo.script("record.ts", [
+        first,
+        "deleted",
+        "--reason",
+        `Renumbered to ${moved}.`,
+      ]),
+      0,
+    );
     exit(repo.script("record.ts", [lateJournal, "regenerated"]), 0);
     exit(repo.script("check-resolution.ts"), 0);
   } finally {

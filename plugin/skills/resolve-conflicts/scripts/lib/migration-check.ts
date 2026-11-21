@@ -102,7 +102,7 @@ function expectedNames(
 const ORDER_MESSAGE =
   "migration journal must list each staged migration in sequence order: regenerate the journal and snapshots";
 const PREFIX_ORDER_MESSAGE =
-  "migration journal must keep the integration journal's entries as committed, then list each other staged migration in sequence order: regenerate the journal and snapshots";
+  "migration journal must keep the integration journal's entries as committed, then list each staged migration the integration side does not commit in sequence order: regenerate the journal and snapshots";
 
 /** Each migration the integration journal lists and commits, but the resolution dropped. */
 function droppedMigrations(

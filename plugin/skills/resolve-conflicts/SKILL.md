@@ -299,7 +299,7 @@ path when one exists.
 Preserve the integration side's existing snapshots when renumbering.
 Preserve the committed integration journal as the prefix, its entries in
 their committed order even where that is not sequence order. Append the
-remaining migrations in sequence order; with a legacy Drizzle journal, give
+migrations the integration side does not commit, in sequence order; with a legacy Drizzle journal, give
 them strictly increasing timestamps greater than every integration entry's.
 Stage the rebuilt files and record `regenerated` for each one that
 conflicted. Never combine a journal or snapshot by hand.
@@ -453,7 +453,8 @@ The check also verifies every sequenced migration added on either side.
 The staged SQL and file mode must match the committed input at the required
 path, even when a decision acknowledges deletion or rewriting. It checks
 that the journal keeps the integration journal's entries as committed and
-then lists every other staged migration once in order, that the required
+then lists every staged migration the integration side does not commit
+once in order, that the required
 snapshots are present, and that renumbering preserves the integration side's
 snapshots.
 
