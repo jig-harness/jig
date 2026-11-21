@@ -24,7 +24,7 @@ export function readPickupCondition(value: unknown): PickupCondition | null {
     value.kind === "item-closed" &&
     "item" in value &&
     typeof value.item === "string" &&
-    /^(?:#[1-9][0-9]*|[A-Za-z][A-Za-z0-9]*-[1-9][0-9]*)$/.test(value.item)
+    /^(?:#[1-9][0-9]*|[A-Za-z][A-Za-z0-9_]*-[1-9][0-9]*)$/.test(value.item)
   )
     return { kind: value.kind, item: value.item.toUpperCase() };
   return null;

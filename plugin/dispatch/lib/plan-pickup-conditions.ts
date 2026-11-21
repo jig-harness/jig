@@ -21,10 +21,12 @@ export interface ConditionalPickups {
 export function planConditionNeeds(input: PickupInput, plan: PickupPlan): void {
   for (const wait of input.conditionalHolds ?? []) {
     // A hold whose item left the line (completed, deleted, reassigned) needs no one;
-    // with no claimed list read, keep it rather than drop a need.
+    // an item still claimed or still assigned for pickup is on it. With no claimed
+    // list read, keep the need rather than drop it.
     const onLine =
       input.claimed == null ||
-      input.claimed.some((item) => item.key === wait.item);
+      input.claimed.some((item) => item.key === wait.item) ||
+      input.pickups.some((item) => item.key === wait.item);
     if (wait.settled === "closed-unmerged" && onLine)
       plan.actions.push(conditionNeed(input, wait, pickupHoldReason(wait)));
   }
@@ -96,6 +98,16 @@ export function planConditionalClaim(
     return false;
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   if (settledByPr(pr)) return true;
+  if (pr.read.kind === "unread") {
+    // An open pull request may already settle the pickup: wait for a tick that reads it.
+    plan.idleKeep.push(item.key);
+    plan.unplaced.push({
+      target: item.key,
+      record: "runtime",
+      reason: pr.read.why,
+    });
+    return true;
+  }
   const dependency = pickupConditionWords(wait.condition);
   const step = relaunchStep(item, latest, { ...input, dependency });
   if (step.kind === "relaunch") plan.actions.push(step.action);

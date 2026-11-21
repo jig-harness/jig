@@ -24,6 +24,8 @@ import {
 } from "./launch-fixtures.ts";
 import { applyTick, claudeRuns, withOrigin } from "./pickup-fixtures.ts";
 import { emptyReport } from "../lib/tick-context.ts";
+import { planConditionNeeds } from "../lib/plan-pickup-conditions.ts";
+import { readPickupCondition } from "../lib/pickup-condition.ts";
 import {
   readPickupConditions,
   linkPickupConditions,
@@ -283,4 +285,38 @@ it("records a native blocker only in apply, then releases the hold when the item
     [],
   );
   expect(stored()).toEqual([]);
+});
+
+it("reads a dependency key the tracker's queue accepts, underscores included", () => {
+  expect(
+    readPickupCondition({ kind: "item-closed", item: "team_one-42" }),
+  ).toEqual({ kind: "item-closed", item: "TEAM_ONE-42" });
+  expect(readPickupCondition({ kind: "item-closed", item: "_x-1" })).toBeNull();
+});
+
+it("raises the closed-unmerged need for a still-assigned pickup, not for an item that left the line", () => {
+  const hold = (item: string) => ({
+    item,
+    by: "a person",
+    at: "2026-01-01T00:00:00.000Z",
+    title: item,
+    url: null,
+    condition: { kind: "pr-merged", pr: 42 } as const,
+    settled: "closed-unmerged" as const,
+  });
+  const run = (item: string) => {
+    const plan = { actions: [] as unknown[] };
+    planConditionNeeds(
+      {
+        slug: SLUG,
+        claimed: [],
+        pickups: [{ key: "ENG-1", title: "t" }],
+        conditionalHolds: [hold(item)],
+      } as never,
+      plan as never,
+    );
+    return plan.actions.length;
+  };
+  expect(run("ENG-1")).toBe(1);
+  expect(run("ENG-2")).toBe(0);
 });
