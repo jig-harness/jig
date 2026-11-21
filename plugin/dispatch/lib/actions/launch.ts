@@ -73,7 +73,7 @@ import {
 } from "../preflight.ts";
 
 export { enforcedDeadlineMs } from "./launch-deadline.ts";
-export { rotated, type RotationLevel } from "./launch-rotation.ts";
+export { rotated } from "./launch-rotation.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
