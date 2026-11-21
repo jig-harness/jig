@@ -195,6 +195,7 @@ function checkPath(
       message,
     });
   const { decision, reason, command, dropped } = entry.resolution;
+  const inspectDrops = entry.class === "text" || entry.class === "migration";
 
   if (decision === null || decision === undefined) {
     if (!stillUnmerged)
@@ -231,7 +232,7 @@ function checkPath(
       problem(
         `removed from the index, but the decision is '${decision}': record deleted with a reason, or restore the path`,
       );
-    else if (entry.class === "text")
+    else if (inspectDrops)
       for (const d of droppedLines(root, stages, ""))
         note(`${d.side} line ${d.line} dropped: "${d.text}"`);
     return;
@@ -270,7 +271,7 @@ function checkPath(
   for (const line of [...lines].sort((a, b) => a - b))
     problem("conflict marker left in the staged file", line);
 
-  if (entry.class !== "text") return;
+  if (!inspectDrops) return;
   // A hand-edited acknowledgement counts only with a reason and its lines.
   const acknowledgement =
     typeof dropped?.why === "string" &&

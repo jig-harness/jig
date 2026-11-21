@@ -197,3 +197,39 @@ test("detects the legacy Drizzle journal and blocks renumbering without a comman
     drizzle.cleanup();
   }
 });
+
+test("checks dropped lines when both sides edit an existing migration", () => {
+  const existing = new Scratch();
+  try {
+    const file = `${dir}/001_init.sql`;
+    existing.overlay(`resolve_conflicts:
+  sequenced_migrations:
+    - directory: ${dir}
+      journal: ${journal}
+      command: bun rebuild-migrations.ts
+`);
+    existing.commit("Start migrations", {
+      [file]: "CREATE TABLE original (value INT);\n",
+      [journal]: '["001_init.sql"]\n',
+    });
+    existing.git("switch", "-q", "-c", "feature");
+    existing.commit("Edit feature migration", {
+      [file]: "CREATE TABLE feature (value INT);\n",
+    });
+    existing.git("switch", "-q", "main");
+    existing.commit("Edit integration migration", {
+      [file]: "CREATE TABLE integration (value INT);\n",
+    });
+    existing.git("switch", "-q", "feature");
+    exit(existing.gitTry("merge", "main"), 1);
+    exit(existing.script("conflict-map.ts"), 0);
+    existing.git("checkout", "--ours", file);
+    existing.git("add", file);
+    exit(existing.script("record.ts", [file, "combined"]), 0);
+    const check = existing.script("check-resolution.ts");
+    exit(check, 1);
+    expect(check.stdout).toContain("theirs line 1 dropped");
+  } finally {
+    existing.cleanup();
+  }
+});
