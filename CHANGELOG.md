@@ -404,6 +404,32 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.300.3] - 2026-11-21
+
+### Fixed
+
+- `resolve-conflicts`: the resolution check no longer refuses a merge
+  because the base branch's own migration journal lists its migrations out
+  of sequence order or with timestamps out of order, as a journal does when a
+  long-lived branch's migration merged late. The committed journal is taken
+  as given: the check fails only when the resolution drops or changes one of
+  its entries, or the branch's migrations do not follow it in sequence order
+  with later timestamps. A conflict round on a repository with such a
+  journal, including one whose pull request adds no migration, can conclude
+  again.
+- `jig upgrade` (and the scheduled refresh) no longer fails on every run
+  when several git worktrees of one repository each hold a Claude Code
+  project-scope install of the plugin. `claude plugin update --scope project`
+  updates the first install of the repository, not the worktree it runs
+  from, so the upgrade now runs it once per repository, reports when it
+  refreshed another directory than the one it ran in (naming both), and
+  brings each install it cannot reach to the user-scope version in Claude
+  Code's install record, reported as `rewritten`. Configuration directories
+  sharing one plugins directory then find every install current, so a
+  second one runs no update. An install the upgrade still cannot bring
+  there, or a user-scope install that is missing or disabled, still fails
+  the run. **Consumer action:** none.
+
 ## [0.300.2] - 2026-11-21
 
 ### Fixed
@@ -10640,7 +10666,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.3...HEAD
+[0.300.3]: https://github.com/jig-harness/jig/compare/v0.300.2...v0.300.3
 [0.300.2]: https://github.com/jig-harness/jig/compare/v0.300.1...v0.300.2
 [0.300.1]: https://github.com/jig-harness/jig/compare/v0.300.0...v0.300.1
 [0.300.0]: https://github.com/jig-harness/jig/compare/v0.299.0...v0.300.0
