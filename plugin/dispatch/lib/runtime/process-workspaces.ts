@@ -16,6 +16,7 @@ import type { LaunchRecord } from "../launches.ts";
 import { stateDb } from "../state.ts";
 import type { DetachedCheckout, RepoTarget } from "../types.ts";
 import { resolvePullRequestHead } from "./orca-pr-head.ts";
+import { detachedField } from "./port.ts";
 import {
   marksIn,
   type ItemTarget,
@@ -138,7 +139,7 @@ export async function processOpen(
     return {
       ok: false,
       detail: opened.failure.reason,
-      ...(left === undefined ? {} : { detached: left }),
+      ...detachedField(left),
     };
   const { worktree, reattached, hookRan, detached } = opened.value;
   return {
@@ -149,6 +150,6 @@ export async function processOpen(
       branch: worktree.branch,
     },
     detail: `${reattached ? "reattached" : "opened"} ${worktree.path}${hookRan ? ", create hook ran" : ""}`,
-    ...(detached === undefined ? {} : { detached }),
+    ...detachedField(detached),
   };
 }

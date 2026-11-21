@@ -60,6 +60,7 @@ import type {
   Stage,
 } from "../types.ts";
 import type { SessionsReport } from "../runtime/port.ts";
+import { detachedField } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState, VALIDATION_GAUGES } from "../load.ts";
@@ -330,12 +331,12 @@ export async function openWithinBudget(
       ...(opened.cleanupFailure === undefined
         ? {}
         : { cleanupFailure: opened.cleanupFailure }),
-      ...(opened.detached === undefined ? {} : { detached: opened.detached }),
+      ...detachedField(opened.detached),
     };
   return {
     refused: `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`,
     ...(opened.busyHolder === undefined ? {} : { holder: opened.busyHolder }),
-    ...(opened.detached === undefined ? {} : { detached: opened.detached }),
+    ...detachedField(opened.detached),
   };
 }
 
@@ -525,8 +526,7 @@ function workspaceOr(
       },
     };
   if ("refused" in opened) {
-    const left =
-      opened.detached === undefined ? {} : { detached: opened.detached };
+    const left = detachedField(opened.detached);
     return {
       outcome:
         opened.holder === undefined
@@ -556,12 +556,7 @@ export async function openedFor(
   if ("outcome" in opened) return opened;
   const stale = await changedWhileOpening(state, action, slots);
   if (stale === null) return opened;
-  return {
-    outcome:
-      opened.detached === undefined
-        ? stale
-        : { ...stale, detached: opened.detached },
-  };
+  return { outcome: { ...stale, ...detachedField(opened.detached) } };
 }
 
 /** The pending records of `repo` whose launch got no answer and may be replayed once, of the actions `kinds` names. */

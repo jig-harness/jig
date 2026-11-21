@@ -45,6 +45,7 @@ import type {
   PullRequestTarget,
   RuntimeReceipt,
 } from "./port.ts";
+import { detachedField } from "./port.ts";
 import { currentMs } from "../../../shared/time.ts";
 
 function portOn(ctx: Context): OpenPort {
@@ -209,14 +210,14 @@ async function open(
       detail: `${opened.reattached ? "reattached" : "opened"} ${opened.worktree.path}${opened.hookRan ? ", create hook ran" : ""}`,
       workspace: { id: opened.worktree.id, path: opened.worktree.path },
       reattached: opened.reattached,
-      ...(opened.detached === undefined ? {} : { detached: opened.detached }),
+      ...detachedField(opened.detached),
     };
   } catch (error) {
     return {
       ok: false,
       lost: currentMs() - started >= timeoutMs,
       detail: [failureText(error), ...lines.slice(-3)].join("; "),
-      ...(left === undefined ? {} : { detached: left }),
+      ...detachedField(left),
       ...(error instanceof BusyHolderError
         ? {
             busyHolder: {

@@ -94,6 +94,13 @@ export const WAITING_STATES: ReadonlySet<string> = new Set([
   "blocked",
 ]);
 
+/** A receipt's `detached` field, present only when an idle checkout was detached. */
+export function detachedField(detached: DetachedCheckout | undefined): {
+  detached?: DetachedCheckout;
+} {
+  return detached === undefined ? {} : { detached };
+}
+
 /** A runtime's answer to a call that starts or sends something. */
 export interface RuntimeReceipt {
   ok: boolean;

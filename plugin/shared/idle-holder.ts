@@ -250,35 +250,42 @@ function unmerged(
   const rows = left
     .map((line) => line.split(" "))
     .filter(([commit]) => commit !== undefined && !patched.has(commit));
-  let commits = rows.map((row) => row.slice(1).join(" "));
-  // Merging a tip into the base changes nothing when the base holds that
-  // tip's whole history; the newest such tip settles it and every commit
-  // before it, so work left on top of a merged prefix stays named.
-  for (const tip of ["HEAD", ...rows.map(([commit]) => commit as string)].slice(
-    0,
-    MERGE_PROBES,
-  )) {
-    if (commits.length === 0) break;
-    const proof = mergesToNothing(git, ref, tip);
-    if (typeof proof === "object")
-      return {
-        unreadable: `its commits cannot be compared with ${base}: ${proof.unreadable}`,
+  const commits = withoutMergedPrefix(git, remote, ref, rows);
+  return Array.isArray(commits)
+    ? { base, commits }
+    : {
+        unreadable: `its commits cannot be compared with ${base}: ${commits.unreadable}`,
       };
+}
+
+/**
+ * The unmerged commits (`[hash, short hash, ...subject]`, newest first) left
+ * once the history merged into the base is taken off, as `<short hash>
+ * <subject>`. Merging a tip into the base changes nothing when the base holds
+ * that tip's whole history; the newest such tip settles it and every commit
+ * before it, so work left on top of a merged prefix stays named.
+ */
+function withoutMergedPrefix(
+  git: (args: string[]) => RunResult,
+  remote: string,
+  ref: string,
+  rows: string[][],
+): string[] | { unreadable: string } {
+  const named = (list: string[][]) => list.map((row) => row.slice(1).join(" "));
+  const tips = ["HEAD", ...rows.map(([commit]) => commit as string)];
+  for (const tip of tips.slice(0, MERGE_PROBES)) {
+    if (rows.length === 0) break;
+    const proof = mergesToNothing(git, ref, tip);
+    if (typeof proof === "object") return proof;
     if (!proof) continue;
     const covered = lines(
       git(["log", "--format=%H", tip, "--not", `--remotes=${remote}`]),
     );
-    if (!Array.isArray(covered))
-      return {
-        unreadable: `its commits cannot be compared with ${base}: ${covered.unreadable}`,
-      };
+    if (!Array.isArray(covered)) return covered;
     const gone = new Set(covered);
-    commits = rows
-      .filter(([commit]) => !gone.has(commit as string))
-      .map((row) => row.slice(1).join(" "));
-    break;
+    return named(rows.filter(([commit]) => !gone.has(commit as string)));
   }
-  return { base, commits };
+  return named(rows);
 }
 
 /** The commits, the first few by hash and subject and the rest counted. */
