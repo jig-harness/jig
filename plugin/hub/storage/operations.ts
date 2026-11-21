@@ -94,6 +94,14 @@ function refuse(
   return failed("refused", `${op}: ${reason}`);
 }
 
+/** The condition that picks the in-flight read of `target` in `partition`. */
+function inFlightKey(partition: string, target: string) {
+  return and(
+    eq(inFlightReads.partition, partition),
+    eq(inFlightReads.target, target),
+  );
+}
+
 const takeInFlightReadImpl = implement(
   takeInFlightRead,
   (db, partition, { target, holder, now }) => {
@@ -112,12 +120,7 @@ const takeInFlightReadImpl = implement(
     const held = db
       .select({ holder: inFlightReads.holder, until: inFlightReads.deadlineAt })
       .from(inFlightReads)
-      .where(
-        and(
-          eq(inFlightReads.partition, partition),
-          eq(inFlightReads.target, target),
-        ),
-      )
+      .where(inFlightKey(partition, target))
       .prepare();
     return ok({
       statements: [take, held],
@@ -169,12 +172,7 @@ const readInFlightReadImpl = implement(
         deadlineAt: inFlightReads.deadlineAt,
       })
       .from(inFlightReads)
-      .where(
-        and(
-          eq(inFlightReads.partition, partition),
-          eq(inFlightReads.target, target),
-        ),
-      )
+      .where(inFlightKey(partition, target))
       .prepare();
     return ok({
       statements: [read],
@@ -202,18 +200,26 @@ function isJsonValue(value: unknown): value is JsonValue {
   }
 }
 
+/** Whether `value` is an array or a plain object, as JSON text parses to. */
+function isPlainContainer(value: object): boolean {
+  if (Array.isArray(value)) return true;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 /** Whether `value` equals `stored`, its JSON round trip, array holes and own properties included. */
 function sameJson(value: unknown, stored: unknown): boolean {
   if (value === null || typeof value !== "object") return value === stored;
   if (stored === null || typeof stored !== "object") return false;
   if (Array.isArray(value) !== Array.isArray(stored)) return false;
-  if (!Array.isArray(value)) {
-    const proto = Object.getPrototypeOf(value);
-    if (proto !== Object.prototype && proto !== null) return false;
-  }
+  if (!isPlainContainer(value)) return false;
+  return sameOwnProperties(value, stored);
+}
+
+/** Whether `value` and `stored` have the same own keys, each holding the same JSON. */
+function sameOwnProperties(value: object, stored: object): boolean {
   const keys = Reflect.ownKeys(value);
-  const storedKeys = Reflect.ownKeys(stored);
-  if (keys.length !== storedKeys.length) return false;
+  if (keys.length !== Reflect.ownKeys(stored).length) return false;
   return keys.every(
     (key) =>
       Object.hasOwn(stored, key) &&

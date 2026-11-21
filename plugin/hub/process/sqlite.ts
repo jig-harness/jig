@@ -82,18 +82,24 @@ export function classifyBunSqlite(
       depth <= CAUSE_DEPTH && link instanceof Error;
       depth++
     ) {
-      if (link instanceof SQLiteError) {
-        const code = typeof link.code === "string" ? link.code : "";
-        if (code.startsWith("SQLITE_CONSTRAINT")) return "refused";
-        return UNAVAILABLE_CODES.some((prefix) => code.startsWith(prefix))
-          ? "unavailable"
-          : "defect";
-      }
-      if (link instanceof RangeError && closed()) return "unavailable";
+      const found = classifyLink(link, closed);
+      if (found !== null) return found;
       link = link.cause;
     }
     return "defect";
   };
+}
+
+/** The class one error in a cause chain settles, or `null` to look at its cause. */
+function classifyLink(link: Error, closed: () => boolean): ThrownClass | null {
+  if (link instanceof SQLiteError) {
+    const code = typeof link.code === "string" ? link.code : "";
+    if (code.startsWith("SQLITE_CONSTRAINT")) return "refused";
+    return UNAVAILABLE_CODES.some((prefix) => code.startsWith(prefix))
+      ? "unavailable"
+      : "defect";
+  }
+  return link instanceof RangeError && closed() ? "unavailable" : null;
 }
 
 /**

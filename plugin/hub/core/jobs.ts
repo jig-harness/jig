@@ -97,6 +97,36 @@ export function runJob<Progress extends JsonValue, Code extends string>(
       "lease-lost",
       `the run ${holder} of ${job} no longer holds its lease; another run took it over`,
     );
+  const halted = (context: UnitContext) =>
+    context.signal.aborted || ports.clock.now() >= context.deadlineAt
+      ? failed("aborted", `the run of ${job} was stopped`)
+      : null;
+  /** Stores the step's progress, or finishes the job: the run's answer when it ends here, else `null`. */
+  const settle = async (
+    context: UnitContext,
+    result: StepResult<Progress>,
+    steps: number,
+  ): Promise<Outcome<JobRunAnswer, Code | JobFailureCode> | null> => {
+    const now = ports.clock.now();
+    if (result.done) {
+      const finished = await ports.storage.run(context, partition, finishJob, {
+        job,
+        holder,
+        now,
+      });
+      if (!finished.ok) return finished;
+      return finished.value.finished ? ok({ ran: true, steps }) : lost();
+    }
+    const saved = await ports.storage.run(context, partition, saveJobProgress, {
+      job,
+      holder,
+      now,
+      leaseMs,
+      progress: result.progress,
+    });
+    if (!saved.ok) return saved;
+    return saved.value.saved ? null : lost();
+  };
   return runUnit<JobRunAnswer, Code | JobFailureCode>(
     ports,
     {
@@ -128,35 +158,18 @@ export function runJob<Progress extends JsonValue, Code extends string>(
         // never gets to run: the deadline is read from the clock, and a
         // macrotask turn lets the timer and a stop signal be delivered.
         await new Promise<void>((resume) => setTimeout(resume, 0));
-        if (context.signal.aborted || ports.clock.now() >= context.deadlineAt)
-          return failed("aborted", `the run of ${job} was stopped`);
+        const early = halted(context);
+        if (early !== null) return early;
         const stepped = await step(context, progress);
         // A step can work synchronously past the deadline and settle at
         // once, before the timer runs: what it did is not stored, and a
         // failed result is no different from a successful one.
-        if (context.signal.aborted || ports.clock.now() >= context.deadlineAt)
-          return failed("aborted", `the run of ${job} was stopped`);
+        const late = halted(context);
+        if (late !== null) return late;
         if (!stepped.ok) return stepped;
         progress = stepped.value.progress;
-        const now = ports.clock.now();
-        if (stepped.value.done) {
-          const finished = await ports.storage.run(
-            context,
-            partition,
-            finishJob,
-            { job, holder, now },
-          );
-          if (!finished.ok) return finished;
-          return finished.value.finished ? ok({ ran: true, steps }) : lost();
-        }
-        const saved = await ports.storage.run(
-          context,
-          partition,
-          saveJobProgress,
-          { job, holder, now, leaseMs, progress },
-        );
-        if (!saved.ok) return saved;
-        if (!saved.value.saved) return lost();
+        const settled = await settle(context, stepped.value, steps);
+        if (settled !== null) return settled;
       }
     },
   );

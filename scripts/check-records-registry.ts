@@ -157,6 +157,26 @@ function isSqliteTableCall(callee: unknown): boolean {
   );
 }
 
+/** The cooked text of a template literal with no substitutions, else `null`. */
+function plainTemplateText(node: AstNode): string | null {
+  if (node.type !== "TemplateLiteral") return null;
+  if (!Array.isArray(node.expressions) || node.expressions.length !== 0)
+    return null;
+  const quasi = Array.isArray(node.quasis) ? node.quasis[0] : undefined;
+  const value = isNode(quasi) ? (quasi as { value?: unknown }).value : null;
+  if (typeof value !== "object" || value === null) return null;
+  const cooked = (value as { cooked?: unknown }).cooked;
+  return typeof cooked === "string" ? cooked : null;
+}
+
+/** The table name a `sqliteTable` call's first argument gives: a string or a plain template literal; else `null`. */
+function tableNameOf(first: unknown): string | null {
+  if (!isNode(first)) return null;
+  if (first.type === "Literal")
+    return typeof first.value === "string" ? first.value : null;
+  return plainTemplateText(first);
+}
+
 /**
  * The tables a file declares through Drizzle's `sqliteTable`, each by its
  * name or as unclassified: calls found in the parsed file, so text inside a
@@ -187,27 +207,7 @@ function drizzleTables(
     if (node.type !== "CallExpression" || !isSqliteTableCall(node.callee))
       return;
     const first = Array.isArray(node.arguments) ? node.arguments[0] : undefined;
-    const quasi =
-      isNode(first) &&
-      first.type === "TemplateLiteral" &&
-      Array.isArray(first.expressions) &&
-      first.expressions.length === 0 &&
-      Array.isArray(first.quasis) &&
-      typeof first.quasis[0] === "object" &&
-      first.quasis[0] !== null &&
-      typeof (first.quasis[0] as { value?: unknown }).value === "object" &&
-      (first.quasis[0] as { value: object | null }).value !== null
-        ? ((first.quasis[0] as { value: { cooked?: unknown } }).value.cooked ??
-          null)
-        : null;
-    const name =
-      isNode(first) &&
-      first.type === "Literal" &&
-      typeof first.value === "string"
-        ? first.value
-        : typeof quasi === "string"
-          ? quasi
-          : null;
+    const name = tableNameOf(first);
     found.push({ name, line: lineAt(node.start) });
   });
   return found;

@@ -36,17 +36,11 @@
  * The bundle is what the pinned Bun writes for the pinned package, so an
  * update of either is followed by a run of this script.
  */
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cli } from "../../lib/cli.ts";
+import { vendorMain } from "./vendor-main.ts";
 
 const ROOT = resolve(import.meta.dir, "../..");
 const PACKAGE = "node_modules/drizzle-orm";
@@ -165,27 +159,7 @@ export function vendoredDrizzle(): Record<string, string> {
 }
 
 function main(args: string[]): number {
-  if (args.length > 1 || (args.length === 1 && args[0] !== "--check")) {
-    console.error(`Usage: ${COMMAND} [--check]`);
-    return 2;
-  }
-  const files = vendoredDrizzle();
-  if (args[0] !== "--check") {
-    for (const [name, content] of Object.entries(files))
-      writeFileSync(join(ROOT, VENDOR_DIR, name), content);
-    return 0;
-  }
-  const stale = Object.entries(files)
-    .map(([name, content]) => ({ path: `${VENDOR_DIR}/${name}`, content }))
-    .filter(
-      ({ path, content }) =>
-        !existsSync(join(ROOT, path)) ||
-        readFileSync(join(ROOT, path), "utf8") !== content,
-    )
-    .map(({ path }) => path);
-  for (const path of stale)
-    console.error(`${path} differs from a fresh build; run ${COMMAND}`);
-  return stale.length === 0 ? 0 : 1;
+  return vendorMain(args, ROOT, VENDOR_DIR, COMMAND, vendoredDrizzle);
 }
 
 if (import.meta.main) cli(() => main(process.argv.slice(2)));

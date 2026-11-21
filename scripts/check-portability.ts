@@ -700,6 +700,36 @@ function isAllowedVendoredUse(use: Use): boolean {
   );
 }
 
+/** What reading one file of the closure yields: its findings and the files it leads to, or why it could not be read. */
+function inspectFile(
+  root: string,
+  file: string,
+  chain: string[],
+  scope: PortabilityScope,
+):
+  | { ok: true; findings: PortabilityFinding[]; targets: string[] }
+  | { ok: false; reason: string } {
+  let source: string;
+  try {
+    source = readRegularFile(join(root, file));
+  } catch (error) {
+    return { ok: false, reason: `${file}: ${reason(error)}` };
+  }
+  const read = readModule(source, file);
+  if ("unparsed" in read)
+    return { ok: false, reason: `${file}: ${read.unparsed}` };
+  const followed = followEdges(root, file, source, read.edges, scope.allowed);
+  if (typeof followed === "string") return { ok: false, reason: followed };
+  const uses = scope.vendored?.includes(file)
+    ? read.uses.filter((use) => !isAllowedVendoredUse(use))
+    : read.uses;
+  return {
+    ok: true,
+    findings: findingsOf(file, source, chain, [...uses, ...followed.uses]),
+    targets: followed.targets,
+  };
+}
+
 export function portabilityFindings(
   root: string,
   scope: PortabilityScope,
@@ -718,24 +748,10 @@ export function portabilityFindings(
     if (seen.has(file)) continue;
     seen.add(file);
     if (file.endsWith(".json")) continue;
-    let source: string;
-    try {
-      source = readRegularFile(join(root, file));
-    } catch (error) {
-      return { ok: false, reason: `${file}: ${reason(error)}` };
-    }
-    const read = readModule(source, file);
-    if ("unparsed" in read)
-      return { ok: false, reason: `${file}: ${read.unparsed}` };
-    const followed = followEdges(root, file, source, read.edges, scope.allowed);
-    if (typeof followed === "string") return { ok: false, reason: followed };
-    for (const target of followed.targets) queue.push([...chain, target]);
-    const uses = scope.vendored?.includes(file)
-      ? read.uses.filter((use) => !isAllowedVendoredUse(use))
-      : read.uses;
-    findings.push(
-      ...findingsOf(file, source, chain, [...uses, ...followed.uses]),
-    );
+    const inspected = inspectFile(root, file, chain, scope);
+    if (!inspected.ok) return inspected;
+    for (const target of inspected.targets) queue.push([...chain, target]);
+    findings.push(...inspected.findings);
   }
   return {
     ok: true,
