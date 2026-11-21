@@ -67,7 +67,7 @@ import {
 import { isPersonHold } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
-import type { Unplaced } from "../types.ts";
+import type { Unplaced, WantedItem } from "../types.ts";
 
 export { endedQuestion };
 
@@ -512,4 +512,20 @@ function noteClaims(
   if (!changed) return;
   record.claimedItems = [...seen];
   writeRecord(record, root);
+}
+
+/**
+ * Who the tracker says an item is assigned to, or nothing for an unassigned
+ * one. `assignee` names who its claim assigns it to, which for an item from
+ * the ready pool, an epic's inherited child or a pulled blocker is not yet
+ * anyone, so the tracker's read decides where the plan has one.
+ */
+export function assigneeOf(item: WantedItem): string | undefined {
+  if (item.queueIssue !== undefined) return item.queueIssue.assignee?.name;
+  const unassigned =
+    item.pooled === true ||
+    item.factoryAncestor !== undefined ||
+    item.ancestorEpic !== undefined ||
+    item.blockingFor !== undefined;
+  return unassigned ? undefined : item.assignee;
 }

@@ -61,6 +61,7 @@ import {
   endedQuestion,
   holdingRecords,
   leftBehindWorkspaces,
+  assigneeOf,
   pickupClaimed,
   type PickupHold,
   pickupHold,
@@ -281,22 +282,6 @@ export function planPickups(input: PickupInput): PickupPlan {
       input.root,
     );
   return plan;
-}
-
-/**
- * Who the tracker says an item is assigned to, or nothing for an unassigned
- * one. `assignee` names who its claim assigns it to, which for an item from
- * the ready pool, an epic's inherited child or a pulled blocker is not yet
- * anyone, so the tracker's read decides where the plan has one.
- */
-function assigneeOf(item: WantedItem): string | undefined {
-  if (item.queueIssue !== undefined) return item.queueIssue.assignee?.name;
-  const unassigned =
-    item.pooled === true ||
-    item.factoryAncestor !== undefined ||
-    item.ancestorEpic !== undefined ||
-    item.blockingFor !== undefined;
-  return unassigned ? undefined : item.assignee;
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait. */
