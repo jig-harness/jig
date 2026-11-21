@@ -218,6 +218,8 @@ interface StartedTick {
   withheld: string | undefined;
   /** Whether settling the launch records' follow-up outcomes failed; each repository's turn settles its own again, and the close retries. */
   settleFailed: boolean;
+  /** Retiring the stale weights notice records failed: the tick ran, but its exit says it did not run whole. */
+  retireFailed: boolean;
 }
 
 /**
@@ -294,7 +296,13 @@ async function startTick(
     world: tickWorld(options, reads, bound),
     rerunsHeld: rerunsHeld(),
   };
-  return { receipt, context, withheld: undefined, settleFailed: false };
+  return {
+    receipt,
+    context,
+    withheld: undefined,
+    settleFailed: false,
+    retireFailed: false,
+  };
 }
 
 /** A repository's observation that was made, as opposed to one another tick held. */
@@ -498,6 +506,7 @@ async function startAct(started: StartedTick): Promise<void> {
         stateRoot(),
       );
     } catch (error) {
+      started.retireFailed = true;
       receipt.defect = defectOf("start", error);
       logDefect("the weights notice records", receipt.defect, error);
     }
@@ -641,7 +650,7 @@ async function closeTick(
   started: StartedTick,
   timer: PhaseTimer<TickPhase>,
 ): Promise<void> {
-  const { receipt, context, withheld, settleFailed } = started;
+  const { receipt, context, withheld, settleFailed, retireFailed } = started;
   const machine = context.options.machine ?? null;
   // A tracker the tick had no credential for is named once, not as each repository's failure.
   settleNoCredential(receipt);
@@ -667,7 +676,7 @@ async function closeTick(
   await routeReflection(receipt, context);
   // Anything else that failed keeps its exit; with nothing else, a missing tracker credential has its class's.
   receipt.exitStatus =
-    failed || !copied || settleFailed || withheld !== undefined
+    failed || !copied || settleFailed || retireFailed || withheld !== undefined
       ? 1
       : (noCredentialExit(receipt) ?? 0);
   Object.assign(receipt, signInFallbackReport(context.apply?.signInChecks));

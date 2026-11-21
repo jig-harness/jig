@@ -207,9 +207,20 @@ export function releaseOnEveryChannel(db: Database): {
  * history of other notices is never scanned.
  */
 export function storedWeightsKeys(db: Database, prefix: string): Set<string> {
-  const channels = db
-    .query("SELECT DISTINCT channel FROM notices")
-    .all() as Array<{ channel: string }>;
+  // The channels are found by skipping from one to the next through the (channel, key) index, one
+  // seek each, so the cost follows the number of channels and not the history of notices.
+  const next = db.query(
+    "SELECT MIN(channel) AS channel FROM notices WHERE channel > ?",
+  );
+  const channels: Array<{ channel: string }> = [];
+  for (
+    let row = db.query("SELECT MIN(channel) AS channel FROM notices").get() as {
+      channel: string | null;
+    };
+    row.channel !== null;
+    row = next.get(row.channel) as { channel: string | null }
+  )
+    channels.push({ channel: row.channel });
   const range = db.query(
     "SELECT key FROM notices WHERE channel = ?1 AND key >= ?2 AND key < ?3",
   );

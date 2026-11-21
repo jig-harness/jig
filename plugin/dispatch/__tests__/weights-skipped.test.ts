@@ -303,4 +303,35 @@ describe("the notice of skipped account names", () => {
       'host weights skip "old"',
     ]);
   });
+
+  it("finds weights records on several channels, among many other notices", () => {
+    const root = scratch();
+    const record = (channel: string, key: string) =>
+      suppress(
+        channel,
+        {
+          repo: "o/r",
+          key,
+          target: "t",
+          workspace: "",
+          at: "2026-01-01T00:00:00.000Z",
+          lasting: false,
+        },
+        null,
+        root,
+        false,
+      );
+    for (const channel of ["orca-card", "slack", "webhook-a", "zz"])
+      for (let n = 0; n < 5; n++) record(channel, `o/r PR #${n} ready`);
+    record("slack", 'host weights skip "a"');
+    record("zz", 'host weights skip "b"');
+    record("orca-card", 'host weights skip "c"');
+    expect(
+      [...storedWeightsKeys(stateDb(root), WEIGHTS_SKIP_KEY)].sort(),
+    ).toEqual([
+      'host weights skip "a"',
+      'host weights skip "b"',
+      'host weights skip "c"',
+    ]);
+  });
 });
