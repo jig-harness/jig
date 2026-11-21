@@ -168,6 +168,10 @@ export function stagedEntries(root: string): Map<string, Stage> {
 }
 
 type Problem = { path: string; message: string };
+type InspectMigrations = (
+  staged: ReadonlyMap<string, Stage>,
+  proof: Provenance,
+) => { problems: Problem[]; verified: Set<string> };
 const OUTSIDE_OPERATION =
   "staged path is outside this operation: unstage the unrelated change and carry it in a separate commit";
 
@@ -204,10 +208,12 @@ function inspectProvenance(
   root: string,
   snapshot: Snapshot,
   unmerged: ReadonlySet<string>,
+  inspectMigrations?: InspectMigrations,
 ): Problem[] {
   const proof = provenance(root, snapshot);
   const staged = stagedEntries(root);
-  const problems: Problem[] = [];
+  const migrations = inspectMigrations?.(staged, proof);
+  const problems = [...(migrations?.problems ?? [])];
   for (const path of new Set([
     ...staged.keys(),
     ...proof.automatic.keys(),
@@ -215,6 +221,7 @@ function inspectProvenance(
     ...Object.keys(snapshot.paths),
   ])) {
     if (unmerged.has(path)) continue;
+    if (migrations?.verified.has(path) && !proof.conflicts.has(path)) continue;
     const message = pathProblem(path, proof, staged, snapshot);
     if (message !== null) problems.push({ path, message });
   }
@@ -226,9 +233,10 @@ export function provenanceProblems(
   root: string,
   snapshot: Snapshot,
   unmerged: ReadonlySet<string>,
+  inspectMigrations?: InspectMigrations,
 ): Problem[] {
   try {
-    return inspectProvenance(root, snapshot, unmerged);
+    return inspectProvenance(root, snapshot, unmerged, inspectMigrations);
   } catch (err) {
     return [
       {

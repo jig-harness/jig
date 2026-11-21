@@ -6,7 +6,7 @@
  * Usage: bun conflict-map.ts [--json] [--integration ours|theirs]
  *   Run from inside the repository. Prints which operation stopped, the role
  *   of each side ("ours" and "theirs" swap meaning in a rebase), and for every
- *   conflicted path: how it conflicts, its class (lockfile, generated, binary,
+ *   conflicted path: how it conflicts, its class (lockfile, generated, migration, binary,
  *   text), its conflict regions, and the commits on each side that changed
  *   it. --json prints the map as JSON. --integration names the side that
  *   carries the base branch when the merge heuristic would guess wrong.
@@ -42,6 +42,8 @@ import {
   type PathClass,
   type Regenerate,
   regenerateFor,
+  migrationClass,
+  migrationGroups,
 } from "./lib/classify.ts";
 import { indexAttributesGit } from "./lib/attributes.ts";
 import { git, isBinaryBlob, splitNul, topLevel } from "./lib/git.ts";
@@ -291,10 +293,12 @@ export function classifyPaths(
     "conflict-marker-size",
   ]);
   const result = new Map<string, Classification>();
+  const groups = migrationGroups(root);
   for (const [path, stages] of stagesByPath) {
     const pathAttrs = attrs.get(path) ?? {};
     const markerSize = markerSizeOf(pathAttrs);
-    const derived = regenerateFor(path, entries);
+    const derived =
+      migrationClass(path, groups, entries) ?? regenerateFor(path, entries);
     result.set(path, {
       class: derived
         ? derived.class
