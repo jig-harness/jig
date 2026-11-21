@@ -190,7 +190,7 @@ function escaped(text: string): string {
 
 /** The finding quoted as a Markdown blockquote, every line of it. */
 function quoted(finding: string): string {
-  return escaped(finding)
+  return escaped(finding.replaceAll("\r", ""))
     .trim()
     .split("\n")
     .map((l) => (l.trim() === "" ? ">" : `> ${l}`))

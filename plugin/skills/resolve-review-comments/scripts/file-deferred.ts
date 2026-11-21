@@ -473,10 +473,25 @@ async function howToFile(
   initial: Open,
   entry: DeferredEntry,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+  reviewVocabulary: RecordedVocabulary | undefined,
 ): Promise<How | { why: string }> {
   if (initial.held !== null) {
-    if (initial.plan !== null && "why" in initial.plan) return initial.plan;
-    return { held: initial.held, plan: initial.plan };
+    // A person can correct the entry between the initial search and this
+    // fresh read. Validate the current recorded vocabulary before recording a
+    // held issue, so an old acceptance cannot bypass a correction.
+    const recorded = recordedEntryError(entry, reviewVocabulary);
+    if (recorded !== null) return { why: recorded };
+    if (
+      !/^<!-- defer-batch-key: repo=\S+ pr=\d+ type=\S+ -->$/.test(
+        leadingKeyLine(initial.held.issue.description) ?? "",
+      )
+    )
+      return { held: initial.held, plan: null };
+
+    // Batch repair also needs the current facets and labels.
+    const next = await plan(entry);
+    if ("why" in next) return next;
+    return { held: initial.held, plan: next };
   }
   const next = await plan(entry);
   return "why" in next ? next : { held: null, plan: next };
@@ -530,7 +545,7 @@ export async function fileDeferred(
   for (const [i, initial] of open.entries()) {
     const entry = await stillOpen(forge, pr, initial.entry);
     if (entry === null) continue;
-    const how = await howToFile(initial, entry, plan);
+    const how = await howToFile(initial, entry, plan, opts.reviewVocabulary);
     if ("why" in how) {
       result.forPerson.push({ entry, why: how.why });
       continue;

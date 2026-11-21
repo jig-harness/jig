@@ -95,6 +95,19 @@ describe("the deferred section", () => {
     ).toBe(false);
   });
 
+  test("retries the same CRLF finding without a conflict", () => {
+    const finding = "first\r\nsecond";
+    const once = withDeferredEntry("", {
+      source: THREAD,
+      finding,
+      reason: "later",
+    }).body;
+    expect(
+      withDeferredEntry(once, { source: THREAD, finding, reason: "later" })
+        .added,
+    ).toBe(false);
+  });
+
   test("refuses an existing finding with changed text or recorded facets", () => {
     const once = withDeferredEntry("", {
       ...REC,
@@ -483,6 +496,74 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     ]);
     expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
     expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+  });
+
+  test("revalidates a corrected held batch entry before recording it", async () => {
+    const body = withDeferredEntry("", {
+      ...REC,
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    const forge = fakeForge(body);
+    const [entry] = deferredEntries(body);
+    const { t, calls } = trackerThatFiles([
+      {
+        number: 7,
+        body: `<!-- defer-batch-key: repo=acme/app pr=42 type=bug -->\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
+      },
+    ]);
+    forge.beforeRead.push(
+      () => undefined,
+      (state) => {
+        state.body = state.body.replace(
+          "category=correctness",
+          "category=unrecognized",
+        );
+      },
+    );
+    const result = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+      reviewVocabulary: { types: ["bug"], categories: ["correctness"] },
+    });
+    expect(result.filed).toEqual([]);
+    expect(result.forPerson[0]?.why).toContain("--category must be one of");
+    expect(deferredEntries(forge.state.body)[0]?.filed).toBeUndefined();
+    expect(calls.filter((call) => call.op === "TrackerCreate")).toHaveLength(0);
+  });
+
+  test("accepts a corrected held batch entry after an earlier refusal", async () => {
+    const body = withDeferredEntry("", {
+      ...REC,
+      category: "unrecognized",
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    const forge = fakeForge(body);
+    const [entry] = deferredEntries(body);
+    const { t } = trackerThatFiles([
+      {
+        number: 7,
+        body: `<!-- defer-batch-key: repo=acme/app pr=42 type=bug -->\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
+      },
+    ]);
+    forge.beforeRead.push(
+      () => undefined,
+      (state) => {
+        state.body = state.body.replace(
+          "category=unrecognized",
+          "category=correctness",
+        );
+      },
+    );
+    const result = await fileDeferred(forge, t, "42", {
+      label: "pr-followup",
+      facets: FACETS,
+      reviewVocabulary: { types: ["bug"], categories: ["correctness"] },
+    });
+    expect(result.forPerson).toEqual([]);
   });
 
   test("an issue filed from an earlier text of a corrected entry does not replace the correction", async () => {
