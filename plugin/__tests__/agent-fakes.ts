@@ -46,6 +46,8 @@ export type ToolState = Release & {
   scopedUpdateRedirect?: string;
   /** Claude Code's scoped update has no `--json` option, as before it had one. */
   scopedUpdateNoJson?: boolean;
+  /** Another upgrade replaces the commit of the install for this directory while a scoped update runs. */
+  scopedUpdateSwapsCommitOf?: string;
 };
 
 /** What the channel offers next, and what each tool has installed and refreshed. */
@@ -85,6 +87,9 @@ else if (scopeUpdate) {
   const old = entry.version;
   if (!tool.scopedUpdateNoop)
     Object.assign(entry, { version: tool.snapshot.version, installPath: tool.snapshot.path });
+  if (tool.scopedUpdateSwapsCommitOf)
+    for (const other of scoped)
+      if (other.projectPath === tool.scopedUpdateSwapsCommitOf) other.gitCommitSha = "commit-of-another-upgrade";
   writeFileSync(record, JSON.stringify(stored, null, 2));
   if (scopeUpdate[2])
     console.log(JSON.stringify({ command: "update", outcome: "ok", pluginId: "jig@jig", scope: scopeUpdate[1], oldVersion: old, newVersion: tool.snapshot.version, message: old === tool.snapshot.version ? "jig is already at the latest version (" + old + ")." : "updated from " + old + " to " + tool.snapshot.version + " for scope " + scopeUpdate[1] + " (" + entry.projectPath + ")" }));

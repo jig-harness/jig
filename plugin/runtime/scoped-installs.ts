@@ -239,6 +239,35 @@ function recordHasUser(record: string): boolean {
   );
 }
 
+/** What the record held for one entry when the upgrade began; an absent field stays absent. */
+interface RecordedInstall {
+  version: unknown;
+  installPath: unknown;
+  gitCommitSha: unknown;
+}
+
+/**
+ * The record's project- and local-scope entries as they stand, by key, so a
+ * later rewrite compares against the record itself and not the CLI listing,
+ * which can leave a field out.
+ */
+function recordedInstalls(record: string): Map<string, RecordedInstall> {
+  const read = recordEntries(record);
+  const recorded = new Map<string, RecordedInstall>();
+  if (typeof read === "string") return recorded;
+  for (const entry of read.entries)
+    if (
+      isRecord(entry) &&
+      (entry.scope === "project" || entry.scope === "local")
+    )
+      recorded.set(entryKey(entry), {
+        version: entry.version,
+        installPath: entry.installPath,
+        gitCommitSha: entry.gitCommitSha,
+      });
+  return recorded;
+}
+
 /** The key that names one scoped install in the record and in the list. */
 const scopedKey = (scope: unknown, project: unknown) =>
   JSON.stringify([scope, project]);
@@ -327,6 +356,8 @@ function pointAtUserInstall(
   installPath: string,
   /** Whether the record listed a user-scope entry when the upgrade began. */
   userRecorded: boolean,
+  /** The targets' entries as the record held them when the upgrade began. */
+  recorded: ReadonlyMap<string, RecordedInstall>,
 ): RecordEdit {
   const wanted = new Map(stale.map((i) => [scopedKey(i.scope, i.project), i]));
   return (entries) => {
@@ -357,16 +388,16 @@ function pointAtUserInstall(
         settled.add(key);
         return entry;
       }
-      // A target that is no longer the record it was read as (its version,
-      // folder or commit) was replaced by another upgrade: leave it for the next.
-      const read = wanted.get(key);
+      // A target that is no longer the record it began as (its version,
+      // folder or commit, an absent field included) was replaced by another
+      // upgrade: leave it for the next. One the record did not list then
+      // cannot be checked, and is left too.
+      const read = recorded.get(key);
       if (
         read === undefined ||
         entry.version !== read.version ||
-        (read.installPath !== undefined &&
-          entry.installPath !== read.installPath) ||
-        (read.gitCommitSha !== undefined &&
-          entry.gitCommitSha !== read.gitCommitSha)
+        entry.installPath !== read.installPath ||
+        entry.gitCommitSha !== read.gitCommitSha
       )
         return entry;
       settled.add(key);
@@ -558,6 +589,7 @@ function rewriteUnreached(
   installPath: string | null,
   record: string,
   userRecorded: boolean,
+  recorded: ReadonlyMap<string, RecordedInstall>,
   say: Say,
 ): ScopedResult[] {
   if (unreached.length === 0) return [];
@@ -579,6 +611,7 @@ function rewriteUnreached(
       current,
       installPath,
       userRecorded,
+      recorded,
     ),
   );
   return unreached.map(({ install, detail }) =>
@@ -710,6 +743,7 @@ export function refreshScoped(
 ): ScopedResult[] {
   const listing = json(program, ["plugin", "list", "--json"]);
   const userRecorded = recordHasUser(record);
+  const recorded = recordedInstalls(record);
   const left: ScopedResult[] = [];
   const gone: ScopedInstall[] = [];
   const present: ScopedInstall[] = [];
@@ -742,6 +776,7 @@ export function refreshScoped(
           userInstallPath(listing),
           record,
           userRecorded,
+          recorded,
           say,
         )),
   ];

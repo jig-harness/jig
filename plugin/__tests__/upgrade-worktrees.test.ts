@@ -316,6 +316,26 @@ test.skipIf(onWindows)(
 );
 
 test.skipIf(onWindows)(
+  "a worktree whose recorded commit changed during the update is left, though the listing names no commit",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    const { first, second } = worktrees(m);
+    const record = writeRecord(join(m.home, ".claude"), [
+      { project: first, version: "0.1.0" },
+      { project: second, version: "0.1.0" },
+    ]);
+    m.release("0.3.0", m.plugin);
+    m.agentState((state) => {
+      state.claude.scopedUpdateSwapsCommitOf = second;
+    });
+    m.jig(["upgrade", "--claude", "--json"]);
+    const other = entries(record)[1];
+    expect(other?.version).toBe("0.1.0");
+    expect(other?.gitCommitSha).toBe("commit-of-another-upgrade");
+  },
+);
+
+test.skipIf(onWindows)(
   "an update that says it refreshed this worktree and did not is left and fails the run, whatever its siblings are at",
   () => {
     const m = machine(SCHEDULERS[0]);
