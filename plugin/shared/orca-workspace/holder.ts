@@ -24,6 +24,13 @@ import { fetchBranchRef, findGitWorktree } from "./git.ts";
 import type { OpenPort } from "./port.ts";
 import { output } from "./runner.ts";
 
+/** An idle checkout the open detached: where it is, the branch it gave up (kept, with its commits) and the commit it was left at. */
+export interface DetachedHolder {
+  path: string;
+  branch: string;
+  head: string;
+}
+
 /** The remote the open reads and checks branches out from. */
 const REMOTE = "origin";
 
@@ -106,9 +113,10 @@ function detachAt(
 
 /**
  * Free `branch` from the checkout at `path`, which Orca does not list:
- * detach it when it is idle, else throw what keeps it busy. `clone` is the
- * repository's own clone, whose worktree list must no longer name the
- * branch afterwards.
+ * detach it when it is idle, and say where it was left, else throw what
+ * keeps it busy. `clone` is the repository's own clone, whose worktree list
+ * must no longer name the branch afterwards. `detached` is told the moment
+ * the detach has happened, before the checks that follow it can throw.
  */
 export function releaseHiddenHolder(
   port: OpenPort,
@@ -116,7 +124,8 @@ export function releaseHiddenHolder(
   branch: string,
   path: string,
   repoId: string,
-): void {
+  detached?: (holder: DetachedHolder) => void,
+): DetachedHolder {
   if (port.drivers === undefined)
     throw new OrcaError(
       `${branch} is checked out at ${path}, which Orca${port.where} does not list; show the repository's non-Orca worktrees (orca repo set --repo id:${repoId} --external-worktree-visibility show) and open it again, or remove that checkout`,
@@ -136,6 +145,9 @@ export function releaseHiddenHolder(
     throw new BusyHolderError(branch, path, verdict.reasons, port.where);
   }
   detachAt(port, branch, path, verdict.head);
+  const left = { path, branch, head: verdict.head };
+  // Told before any check that can throw: the checkout is already detached.
+  detached?.(left);
   const still = findGitWorktree(port.host, clone, branch);
   if (still !== null)
     throw new OrcaError(
@@ -144,4 +156,5 @@ export function releaseHiddenHolder(
   port.host.log(
     `↺ detached the idle checkout at ${path} from ${branch} (at ${verdict.head.slice(0, 12)})`,
   );
+  return left;
 }

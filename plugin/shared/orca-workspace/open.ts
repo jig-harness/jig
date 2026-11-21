@@ -19,7 +19,7 @@ import {
   findGitWorktree,
 } from "./git.ts";
 import { attachWorkspace, openWorkspace } from "../workspace-open.ts";
-import { releaseHiddenHolder } from "./holder.ts";
+import { type DetachedHolder, releaseHiddenHolder } from "./holder.ts";
 import { type OpenPort, orcaResult } from "./port.ts";
 import { output } from "./runner.ts";
 
@@ -162,19 +162,20 @@ export function listedWorktree(
  * The worktree that already holds the branch, as Orca lists it, or null.
  * A checkout made with plain git that Orca hides is never duplicated: it is
  * detached when idle, so the branch is free for a new worktree (null), and
- * refused otherwise (`holder.ts`).
+ * refused otherwise (`holder.ts`); `detached` is told where it was left.
  */
 function existingWorktree(
   port: OpenPort,
   repo: OrcaRepo,
   branch: string,
+  detached?: (holder: DetachedHolder) => void,
 ): OrcaWorktree | null {
   const path = findGitWorktree(port.host, repo.path, branch);
   if (path === null) return null;
   assertLinkedWorktree(port.host, path, `reattach to ${branch}`);
   const row = listedWorktree(port, repo, path);
   if (row === null) {
-    releaseHiddenHolder(port, repo.path, branch, path, repo.id);
+    releaseHiddenHolder(port, repo.path, branch, path, repo.id, detached);
     return null;
   }
   port.host.log(`↺ reattaching: ${branch} is at ${path}`);
@@ -372,6 +373,8 @@ export interface OpenBranchOptions extends CreateOptions {
   branch: string;
   /** Whether the repository's create hook runs in the worktree; `true` when absent. A worktree no agent works in needs none. */
   createHook?: boolean;
+  /** Told the moment an idle checkout is detached, so a later failure of the open still reports it. */
+  onDetached?: (holder: DetachedHolder) => void;
 }
 
 export interface OpenedBranch {
@@ -381,6 +384,8 @@ export interface OpenedBranch {
   reattached: boolean;
   /** This open ran the repository's create hook. */
   hookRan: boolean;
+  /** An idle checkout Orca does not list held the branch, and this open detached it there. */
+  detached?: DetachedHolder;
 }
 
 /**
@@ -398,12 +403,15 @@ export function openBranch(
     typeof options.repo === "string"
       ? repoOf(port, options.repo)
       : options.repo;
-  return {
-    repo,
-    ...openWorkspace(port, repo.path, options, {
-      existing: (branch) => existingWorktree(port, repo, branch),
-      create: (branch, from, start) =>
-        createWorktree(port, repo, options, branch, from, start),
-    }),
-  };
+  let detached: DetachedHolder | undefined;
+  const opened = openWorkspace(port, repo.path, options, {
+    existing: (branch) =>
+      existingWorktree(port, repo, branch, (left) => {
+        detached = left;
+        options.onDetached?.(left);
+      }),
+    create: (branch, from, start) =>
+      createWorktree(port, repo, options, branch, from, start),
+  });
+  return { repo, ...opened, ...(detached === undefined ? {} : { detached }) };
 }

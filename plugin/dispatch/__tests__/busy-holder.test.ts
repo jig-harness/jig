@@ -4,7 +4,10 @@
  * is in use, the launch is refused, and a person is notified once, with the
  * checkout's path and what keeps it busy; a later tick that is refused the
  * same way sends nothing new. Once the checkout is idle, the next tick
- * detaches it at its commit and opens the workspace on the branch.
+ * detaches it at its commit and opens the workspace on the branch. A
+ * follow-up whose merged branch such a checkout holds, its commits
+ * squash-merged into the base branch, detaches it and lists it, with no
+ * person asked.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
@@ -14,6 +17,7 @@ import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
   ledgerComment,
+  mergedPr,
   openPr,
   SLUG,
   stoppedLedger,
@@ -139,5 +143,83 @@ describe("jig dispatch with a checkout Orca does not list holding the head branc
     );
     expectSpawnExit(detached, 1, "the holder's HEAD is detached");
     expect(rearmCreates(w)).toHaveLength(1);
+  }, 90_000);
+});
+
+const MERGED = "feature/10-merged";
+const AUTHOR = [
+  "-c",
+  "user.name=Probe",
+  "-c",
+  "user.email=probe@example.invalid",
+  "-c",
+  "commit.gpgsign=false",
+];
+
+/**
+ * PR #10 merged, its follow-up due: its branch squash-merged into origin's
+ * main and deleted on origin, and still checked out, with its one commit,
+ * by a plain-git worktree Orca does not list.
+ */
+function heldMergedFollowup(): { w: World; holder: string } {
+  const w = world();
+  current = w;
+  w.setConfig(`${CONFIG}dispatch:\n  followup_command: /followup\n`);
+  withOrigin(w);
+  machineFile(
+    w,
+    [account(w, "a", "a@example.com")],
+    {},
+    ["followup", "notify"],
+    { followup_since: "2026-10-30T00:00:00Z" },
+  );
+  w.setPrs("merged", [mergedPr(10, MERGED, "2026-10-31T12:00:00Z")]);
+  w.setComments(10, []);
+  w.setWorkspaces([]);
+  const holder = join(w.root, "agent-tree");
+  git(w, "-C", w.repo, "worktree", "add", "-q", "-b", MERGED, holder, "main");
+  writeFileSync(join(holder, "merged.txt"), "the merged change\n");
+  git(w, "-C", holder, "add", "merged.txt");
+  git(w, "-C", holder, ...AUTHOR, "commit", "-q", "-m", "the change");
+  git(w, "-C", holder, "push", "-q", "origin", MERGED);
+  const merger = join(w.root, "merger");
+  git(w, "-C", w.repo, "worktree", "add", "-q", "--detach", merger, "main");
+  git(w, "-C", merger, "merge", "-q", "--squash", `origin/${MERGED}`);
+  git(w, "-C", merger, ...AUTHOR, "commit", "-q", "-m", "the change (#10)");
+  git(w, "-C", merger, "push", "-q", "origin", "HEAD:main");
+  git(w, "-C", w.repo, "worktree", "remove", merger);
+  git(w, "-C", w.repo, "push", "-q", "origin", "--delete", MERGED);
+  return { w, holder };
+}
+
+describe("jig dispatch with a squash-merged checkout Orca does not list holding a follow-up's branch", () => {
+  it("detaches it, launches the follow-up and lists the checkout and its kept branch, asking no person", async () => {
+    const { w, holder } = heldMergedFollowup();
+    const head = git(w, "-C", holder, "rev-parse", "HEAD");
+
+    const receipt = await tick(w);
+    const [launched] = launches(receipt);
+    expect(launched).toMatchObject({
+      target: "PR #10",
+      action: "followup",
+      outcome: "launched",
+      detached: { path: holder, branch: MERGED, head },
+    });
+    expect(launched?.holder).toBeUndefined();
+    expect(launched?.detail).toContain(
+      `left the idle checkout at ${holder} detached at ${head.slice(0, 12)}, its branch ${MERGED} kept`,
+    );
+    expect(
+      notifications(receipt).filter((n) => n.cause === "needs-person"),
+    ).toEqual([]);
+    expect(git(w, "-C", holder, "rev-parse", "HEAD")).toBe(head);
+    const detached = Bun.spawnSync(
+      ["git", "-C", holder, "symbolic-ref", "-q", "HEAD"],
+      { env: w.env, stdout: "pipe", stderr: "pipe" },
+    );
+    expectSpawnExit(detached, 1, "the holder's HEAD is detached");
+    expect(git(w, "-C", w.repo, "rev-parse", `refs/heads/${MERGED}`)).toBe(
+      head,
+    );
   }, 90_000);
 });
