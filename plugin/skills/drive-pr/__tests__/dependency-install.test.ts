@@ -285,22 +285,22 @@ process.exit(result.exitCode);`,
     },
   );
 
-  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
-    "refuses certification when a tracked file cannot be inspected",
-    () => {
-      const cwd = fixture();
-      const before = baseChange(cwd, "bun.lock", "new");
-      git(cwd, ["merge", "-q", "--no-ff", "base"]);
-      writeFileSync(
-        join(cwd, "install-fixture.ts"),
-        `import { chmodSync } from "node:fs";
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "chmod cannot make a file owner-unreadable on Windows",
+    ) || process.getuid?.() === 0,
+  )("refuses certification when a tracked file cannot be inspected", () => {
+    const cwd = fixture();
+    const before = baseChange(cwd, "bun.lock", "new");
+    git(cwd, ["merge", "-q", "--no-ff", "base"]);
+    writeFileSync(
+      join(cwd, "install-fixture.ts"),
+      `import { chmodSync } from "node:fs";
 chmodSync("example.txt", 0o000);`,
-      );
-      const report = refresh(cwd, ["--before", before], 2);
-      expect(report.outcome).toBe("error");
-      expect(report.reason).toContain(
-        "cannot inspect tracked path example.txt",
-      );
-    },
-  );
+    );
+    const report = refresh(cwd, ["--before", before], 2);
+    expect(report.outcome).toBe("error");
+    expect(report.reason).toContain("cannot inspect tracked path example.txt");
+  });
 });
