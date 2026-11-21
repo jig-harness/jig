@@ -1,6 +1,7 @@
 import { filedByLine } from "../../../../shared/issue-provenance.ts";
 import { JigError } from "../../../../shared/outcome.ts";
 import { TrackerRequestError } from "../../../do-item/scripts/lib/tracker/port.ts";
+import { TrackerConfigError } from "../../../do-item/scripts/lib/tracker/config-error.ts";
 import { deferInPr, type DeferInPrArgs } from "../defer-in-pr.ts";
 import type { PrBodyForge } from "./pr-body.ts";
 
@@ -15,7 +16,13 @@ export async function fileDriveDeferral<T>(
   try {
     return await file(filedByLine("drive-pr", pr.href, args.reason));
   } catch (error) {
-    if (!(error instanceof JigError || error instanceof TrackerRequestError))
+    if (
+      !(
+        error instanceof JigError ||
+        error instanceof TrackerConfigError ||
+        error instanceof TrackerRequestError
+      )
+    )
       throw error;
     const why = error.message;
     try {

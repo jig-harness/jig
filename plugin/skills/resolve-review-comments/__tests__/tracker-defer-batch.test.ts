@@ -1,4 +1,5 @@
 import { JigError } from "../../../shared/outcome.ts";
+import { TrackerConfigError } from "../../do-item/scripts/lib/tracker/config-error.ts";
 import { describe, expect, test } from "bun:test";
 import type {
   Issue,
@@ -138,6 +139,18 @@ describe("tracker-independent deferral batches", () => {
     });
     expect(forge.state.body).toContain(deferral.finding);
     expect(forge.state.body).toContain(deferral.reason);
+  });
+
+  test("a tracker configuration refusal leaves a linked Deferred entry", async () => {
+    const forge = fakeForge("");
+    const result = await fileDriveDeferral(forge, deferral, async () => {
+      throw new TrackerConfigError("issue_tracker.team", "team is invalid");
+    });
+    expect(result).toMatchObject({
+      link: `${PR_URL}#deferred`,
+      why: "team is invalid",
+    });
+    expect(forge.state.body).toContain(deferral.finding);
   });
 
   test("retrospective filing leaves a category outside the review taxonomy for a person", async () => {

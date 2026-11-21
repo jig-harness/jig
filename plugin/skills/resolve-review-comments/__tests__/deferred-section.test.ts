@@ -95,6 +95,32 @@ describe("the deferred section", () => {
     ).toBe(false);
   });
 
+  test("refuses an existing finding with changed text or recorded facets", () => {
+    const once = withDeferredEntry("", {
+      ...REC,
+      source: THREAD,
+      finding: FINDING,
+      reason: "later",
+    }).body;
+    expect(() =>
+      withDeferredEntry(once, {
+        ...REC,
+        source: THREAD,
+        finding: "corrected finding",
+        reason: "later",
+      }),
+    ).toThrow("differs from this finding");
+    expect(() =>
+      withDeferredEntry(once, {
+        ...REC,
+        category: "security",
+        source: THREAD,
+        finding: FINDING,
+        reason: "later",
+      }),
+    ).toThrow("differs from this finding");
+  });
+
   test("keys a summary finding on its comment and fingerprint", () => {
     const comment = `${PR_URL}#issuecomment-77`;
     let body = withDeferredEntry("", {

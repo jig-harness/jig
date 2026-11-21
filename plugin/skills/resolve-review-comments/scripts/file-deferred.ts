@@ -514,7 +514,13 @@ export async function fileDeferred(
     why: null,
   };
   const plan = planner(forge, pr, opts);
-  const open = await fileable(deferredEntries(body), tracker, plan, result);
+  const open = await fileable(
+    deferredEntries(body),
+    tracker,
+    plan,
+    opts.reviewVocabulary,
+    result,
+  );
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
     result.remaining = open.map((o) => o.entry);
@@ -573,22 +579,8 @@ function planner(
     return catalog;
   };
   return async (entry) => {
-    if (
-      opts.reviewVocabulary !== undefined &&
-      entry.type !== undefined &&
-      entry.severity !== undefined
-    ) {
-      const why = recordedError(
-        {
-          type: entry.type,
-          severity: entry.severity,
-          category: entry.category ?? "unknown",
-          ...(entry.size === undefined ? {} : { size: entry.size }),
-        },
-        opts.reviewVocabulary,
-      );
-      if (why !== null) return { why };
-    }
+    const recorded = recordedEntryError(entry, opts.reviewVocabulary);
+    if (recorded !== null) return { why: recorded };
     const facets = entryFacets(entry, opts.facets);
     if ("why" in facets) return facets;
     let file: FindingFile = { none: "it is a summary finding" };
@@ -637,21 +629,24 @@ async function heldPlan(
   held: Held,
   entry: DeferredEntry,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+  reviewVocabulary?: RecordedVocabulary,
 ): Promise<Plan | { why: string } | null> {
+  const recorded = recordedEntryError(entry, reviewVocabulary);
+  if (recorded !== null) return { why: recorded };
   if (
     !/^<!-- defer-batch-key: repo=\S+ pr=\d+ type=\S+ -->$/.test(
       leadingKeyLine(held.issue.description) ?? "",
     )
   )
     return null;
-  const expected = await plan(entry);
-  return expected;
+  return await plan(entry);
 }
 
 async function fileable(
   entries: DeferredEntry[],
   tracker: Tracker | null,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+  reviewVocabulary: RecordedVocabulary | undefined,
   result: FileDeferredResult,
 ): Promise<Open[]> {
   const open: Open[] = [];
@@ -662,7 +657,7 @@ async function fileable(
       open.push({
         entry,
         held,
-        plan: await heldPlan(held, entry, plan),
+        plan: await heldPlan(held, entry, plan, reviewVocabulary),
       });
       continue;
     }
@@ -671,6 +666,27 @@ async function fileable(
     else open.push({ entry, held: null, plan: found });
   }
   return open;
+}
+
+function recordedEntryError(
+  entry: DeferredEntry,
+  vocabulary: RecordedVocabulary | undefined,
+): string | null {
+  if (
+    vocabulary === undefined ||
+    entry.type === undefined ||
+    entry.severity === undefined
+  )
+    return null;
+  return recordedError(
+    {
+      type: entry.type,
+      severity: entry.severity,
+      category: entry.category ?? "unknown",
+      ...(entry.size === undefined ? {} : { size: entry.size }),
+    },
+    vocabulary,
+  );
 }
 
 /** Why a run files nothing at all, or `null` when it can file. */
@@ -831,9 +847,7 @@ export function configuredTracker(
       label: config.labels.followup,
       facets: facetsOf(config, consumerRoot()),
       taxonomy: readTaxonomy(consumerRoot(), config.taxonomy),
-      ...(review.taxonomy === undefined
-        ? {}
-        : { reviewVocabulary: review.taxonomy }),
+      reviewVocabulary: review.taxonomy ?? {},
     };
   } catch (err) {
     return {
@@ -900,7 +914,7 @@ async function main(): Promise<number> {
       label,
       facets,
       taxonomy,
-      ...(reviewVocabulary === undefined ? {} : { reviewVocabulary }),
+      reviewVocabulary: reviewVocabulary ?? {},
       dryRun,
       ...(why === undefined ? {} : { noTrackerWhy: why }),
       onFiled: (f) =>

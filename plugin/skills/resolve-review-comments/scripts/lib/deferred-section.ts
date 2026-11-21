@@ -240,9 +240,22 @@ export function withDeferredEntry(
   entry: EntryId & Recorded & { finding: string; reason: string },
 ): { body: string; added: boolean } {
   const text = body.replaceAll("\r", "");
-  if (deferredEntries(text).some((e) => sameEntry(e, entry)))
-    return { body: text, added: false };
   const { finding, reason, ...id } = entry;
+  const existing = deferredEntries(text).find((e) => sameEntry(e, id));
+  if (existing !== undefined) {
+    const sameRecorded = RECORDED.every((key) => existing[key] === id[key]);
+    const sameText =
+      existing.text ===
+      [
+        `**[The finding](${id.source})**, deferred: ${escaped(reason)}`,
+        "",
+        quoted(finding),
+      ].join("\n");
+    if (sameRecorded && sameText) return { body: text, added: false };
+    throw new DeferredSectionError(
+      `the deferred entry for ${id.source} differs from this finding; resolve the conflict before retrying`,
+    );
+  }
   const block = entryBlock(id, finding, reason);
   const at = locate(text);
   if (at === null) {
