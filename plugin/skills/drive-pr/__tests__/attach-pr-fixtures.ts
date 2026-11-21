@@ -66,7 +66,8 @@ if (args[0] === "repo" && args[1] === "view") {
     .sort((a, b) => b[0].length - a[0].length);
   const slug = repos[0]?.[1] ?? process.env.FAKE_GH_REPO;
   if (slug) {
-    console.log(project({ nameWithOwner: slug, url: "https://github.com/" + slug }));
+    const [login, name] = slug.split("/");
+    console.log(project({ nameWithOwner: slug, owner: { login }, name, url: "https://github.com/" + slug }));
     process.exit(0);
   }
 }
