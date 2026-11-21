@@ -222,4 +222,68 @@ process.exit(result.exitCode);`,
       expect(report.reason).toContain("failed to preserve the merge tree");
       expect(report.reason).toContain("working tree");
     });
+
+  for (const flag of ["--assume-unchanged", "--skip-worktree"])
+    it(`refuses an installer that changes executable permissions on a ${flag} source file`, () => {
+      const cwd = fixture();
+      const before = baseChange(cwd, "bun.lock", "new");
+      git(cwd, ["merge", "-q", "--no-ff", "base"]);
+      git(cwd, ["update-index", flag, "example.txt"]);
+      writeFileSync(
+        join(cwd, "install-fixture.ts"),
+        `import { chmodSync } from "node:fs";
+chmodSync("example.txt", 0o755);`,
+      );
+      const report = refresh(cwd, ["--before", before], 1);
+      expect(report.reason).toContain("failed to preserve the merge tree");
+      expect(report.reason).toContain("working tree");
+    });
+
+  for (const flag of ["--assume-unchanged", "--skip-worktree"])
+    it(`refuses an installer that replaces a ${flag} source file with a symlink`, () => {
+      const cwd = fixture();
+      const before = baseChange(cwd, "bun.lock", "new");
+      git(cwd, ["merge", "-q", "--no-ff", "base"]);
+      git(cwd, ["update-index", flag, "example.txt"]);
+      writeFileSync(join(cwd, "same-content"), "initial");
+      writeFileSync(
+        join(cwd, "install-fixture.ts"),
+        `import { rmSync, symlinkSync } from "node:fs";
+rmSync("example.txt");
+symlinkSync("same-content", "example.txt");`,
+      );
+      const report = refresh(cwd, ["--before", before], 1);
+      expect(report.reason).toContain("failed to preserve the merge tree");
+      expect(report.reason).toContain("working tree");
+    });
+
+  it("refuses an installer that replaces a tracked file with a FIFO", () => {
+    const cwd = fixture();
+    const before = baseChange(cwd, "bun.lock", "new");
+    git(cwd, ["merge", "-q", "--no-ff", "base"]);
+    writeFileSync(
+      join(cwd, "install-fixture.ts"),
+      `import { rmSync } from "node:fs";
+rmSync("example.txt");
+const result = Bun.spawnSync(["mkfifo", "example.txt"]);
+process.exit(result.exitCode);`,
+    );
+    const report = refresh(cwd, ["--before", before], 2);
+    expect(report.outcome).toBe("error");
+    expect(report.reason).toContain("not a regular file or symbolic link");
+  });
+
+  it("refuses certification when a tracked file cannot be inspected", () => {
+    const cwd = fixture();
+    const before = baseChange(cwd, "bun.lock", "new");
+    git(cwd, ["merge", "-q", "--no-ff", "base"]);
+    writeFileSync(
+      join(cwd, "install-fixture.ts"),
+      `import { chmodSync } from "node:fs";
+chmodSync("example.txt", 0o000);`,
+    );
+    const report = refresh(cwd, ["--before", before], 2);
+    expect(report.outcome).toBe("error");
+    expect(report.reason).toContain("cannot inspect tracked path example.txt");
+  });
 });

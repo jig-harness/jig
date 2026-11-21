@@ -295,12 +295,36 @@ async function workingTreeState(root: string): Promise<string> {
       if (path === undefined) return "";
       try {
         const stat = lstatSync(join(root, path));
-        const content = stat.isSymbolicLink()
-          ? readlinkSync(join(root, path))
-          : readFileSync(join(root, path));
-        return `${path}\0${createHash("sha256").update(content).digest("hex")}`;
-      } catch {
-        return `${path}\0<missing>`;
+        const type = stat.isSymbolicLink()
+          ? "symlink"
+          : stat.isFile()
+            ? "file"
+            : null;
+        if (type === null)
+          throw new JigError(
+            "git-failed",
+            `tracked path is not a regular file or symbolic link: ${path}`,
+          );
+        const content =
+          type === "symlink"
+            ? readlinkSync(join(root, path))
+            : readFileSync(join(root, path));
+        const digest = createHash("sha256").update(content).digest("hex");
+        return `${path}\0${type}\0${stat.mode.toString(8)}\0${digest}`;
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        )
+          return `${path}\0<missing>`;
+        if (error instanceof JigError) throw error;
+        throw new JigError(
+          "git-failed",
+          `cannot inspect tracked path ${path}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     });
   const raw = await gitOutput(root, [
