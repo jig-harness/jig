@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../lib/test-helpers/windows-skip.ts";
 import { type Machine, machine, SCHEDULERS } from "./lifecycle-fixtures.ts";
+import { agreeingWithListing } from "../runtime/scoped-installs.ts";
 
 const onWindows = skipsOnWindows(
   "powershell",
@@ -328,7 +329,7 @@ test.skipIf(onWindows)(
     m.agentState((state) => {
       state.claude.scopedUpdateSwapsCommitOf = second;
     });
-    m.jig(["upgrade", "--claude", "--json"]);
+    expectSpawnExit(m.jig(["upgrade", "--claude", "--json"]), 1);
     const other = entries(record)[1];
     expect(other?.version).toBe("0.1.0");
     expect(other?.gitCommitSha).toBe("commit-of-another-upgrade");
@@ -390,3 +391,27 @@ test.skipIf(onWindows)(
     expect(entries(record).map((e) => e.version)).toEqual(["0.3.0", "0.3.0"]);
   },
 );
+
+test("a recorded target whose version, folder or commit differs from the listing is dropped from the snapshot", () => {
+  const key = (project: string) => JSON.stringify(["project", project]);
+  const listed = (project: string, version: string) => ({
+    scope: "project" as const,
+    project,
+    version,
+    enabled: true,
+  });
+  const recorded = new Map([
+    [key("/a"), { version: "0.4.0", installPath: "/p", gitCommitSha: "c" }],
+    [key("/b"), { version: "0.1.0", installPath: "/p", gitCommitSha: "c" }],
+  ]);
+  const agreed = agreeingWithListing(recorded, [
+    listed("/a", "0.1.0"),
+    { ...listed("/b", "0.1.0"), gitCommitSha: "other" },
+  ]);
+  expect([...agreed.keys()]).toEqual([]);
+  const same = agreeingWithListing(recorded, [
+    listed("/a", "0.4.0"),
+    listed("/b", "0.1.0"),
+  ]);
+  expect([...same.keys()].length).toBe(2);
+});

@@ -268,6 +268,33 @@ function recordedInstalls(record: string): Map<string, RecordedInstall> {
   return recorded;
 }
 
+/**
+ * The record's snapshot of the targets, minus every one that disagrees with
+ * the listing read just before it on a field the listing names: its version,
+ * folder or commit. Such a target changed between the two reads, so it is
+ * not the install the upgrade began with and is left for the next upgrade.
+ */
+export function agreeingWithListing(
+  recorded: ReadonlyMap<string, RecordedInstall>,
+  listed: readonly ScopedInstall[],
+): Map<string, RecordedInstall> {
+  const agreed = new Map(recorded);
+  for (const install of listed) {
+    const key = scopedKey(install.scope, install.project);
+    const read = recorded.get(key);
+    if (
+      read !== undefined &&
+      (read.version !== install.version ||
+        (install.installPath !== undefined &&
+          read.installPath !== install.installPath) ||
+        (install.gitCommitSha !== undefined &&
+          read.gitCommitSha !== install.gitCommitSha))
+    )
+      agreed.delete(key);
+  }
+  return agreed;
+}
+
 /** The key that names one scoped install in the record and in the list. */
 const scopedKey = (scope: unknown, project: unknown) =>
   JSON.stringify([scope, project]);
@@ -743,11 +770,12 @@ export function refreshScoped(
 ): ScopedResult[] {
   const listing = json(program, ["plugin", "list", "--json"]);
   const userRecorded = recordHasUser(record);
-  const recorded = recordedInstalls(record);
+  const scoped = claudeScopedInstalls(listing);
+  const recorded = agreeingWithListing(recordedInstalls(record), scoped);
   const left: ScopedResult[] = [];
   const gone: ScopedInstall[] = [];
   const present: ScopedInstall[] = [];
-  for (const install of claudeScopedInstalls(listing)) {
+  for (const install of scoped) {
     const where = directoryState(install.project);
     if (where === "gone") gone.push(install);
     else if (where !== "present")
