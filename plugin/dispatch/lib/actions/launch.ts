@@ -61,7 +61,7 @@ import type {
 } from "../types.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { detachedField } from "../runtime/port.ts";
-import { laneBudgetWait } from "./followup-lane.ts";
+import { laneBudgetWait, leftBehind } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState, VALIDATION_GAUGES } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
@@ -227,7 +227,6 @@ export function rotated<T>(
   return [...items.slice(start), ...items.slice(0, start)];
 }
 
-/** An open that gave a launch its workspace, with the idle checkout it detached on the way. */
 type OpenedWorkspace = Pick<RuntimeReceipt, "cleanupFailure" | "detached"> & {
   workspace: NonNullable<LaunchRecord["workspace"]>;
 };
@@ -512,25 +511,6 @@ function refused(
   return { ...waits(action, detail, account), outcome: "refused" };
 }
 
-/**
- * An outcome that lists the idle checkout its open detached,
- * launched or waiting: a leftover tree never blocks a follow-up, and nothing
- * of it is deleted, so the follow-up says where it is and which branch it
- * kept for whoever clears it. A later tick finds the branch free and would
- * not see the checkout again.
- */
-export function leftBehind(
-  outcome: LaunchOutcome,
-  detached: DetachedCheckout | undefined,
-): LaunchOutcome {
-  if (detached === undefined) return outcome;
-  return {
-    ...outcome,
-    detached,
-    detail: `${outcome.detail}; left the idle checkout at ${detached.path} detached at ${detached.head.slice(0, 12)}, its branch ${detached.branch} kept`,
-  };
-}
-
 /** The workspace a launch runs in, or the outcome that ends it: a budget that waits, an open that failed. */
 function workspaceOr(
   action: Action,
@@ -545,17 +525,12 @@ function workspaceOr(
       },
     };
   if ("refused" in opened) {
-    return {
-      outcome: leftBehind(
-        opened.holder === undefined
-          ? refused(action, opened.refused, account)
-          : {
-              ...refused(action, holderRefusal(opened.holder), account),
-              holder: opened.holder,
-            },
-        opened.detached,
-      ),
-    };
+    const { refused: why, holder, detached } = opened;
+    const base =
+      holder === undefined
+        ? refused(action, why, account)
+        : { ...refused(action, holderRefusal(holder), account), holder };
+    return { outcome: leftBehind(base, detached) };
   }
   return opened;
 }

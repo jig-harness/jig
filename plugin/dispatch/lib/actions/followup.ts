@@ -80,7 +80,6 @@ import {
   dropRecord,
   holdRecord,
   launchHeld,
-  leftBehind,
   type Opened,
   openedFor,
   openWithinBudget,
@@ -94,6 +93,7 @@ import {
   joinedWorkspace,
   laneBudgetWait,
   laneCapWait,
+  leftBehind,
   type WorkspaceRef,
 } from "./followup-lane.ts";
 import { currentIso } from "../../../shared/time.ts";

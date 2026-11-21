@@ -15,6 +15,7 @@
  */
 import { holds } from "../launches.ts";
 import type { SessionsReport } from "../runtime/port.ts";
+import type { DetachedCheckout, LaunchOutcome } from "../types.ts";
 import { holding } from "../holding.ts";
 import { joinedTo, stuckWhy } from "../stuck-launches.ts";
 import { failureText } from "../text.ts";
@@ -97,5 +98,24 @@ export async function joinedWorkspace(
     sessions,
     joined:
       joined === undefined ? undefined : { id: joined.id, path: joined.path },
+  };
+}
+
+/**
+ * An outcome that lists the idle checkout its open detached,
+ * launched or waiting: a leftover tree never blocks a follow-up, and nothing
+ * of it is deleted, so the follow-up says where it is and which branch it
+ * kept for whoever clears it. A later tick finds the branch free and would
+ * not see the checkout again.
+ */
+export function leftBehind(
+  outcome: LaunchOutcome,
+  detached: DetachedCheckout | undefined,
+): LaunchOutcome {
+  if (detached === undefined) return outcome;
+  return {
+    ...outcome,
+    detached,
+    detail: `${outcome.detail}; left the idle checkout at ${detached.path} detached at ${detached.head.slice(0, 12)}, its branch ${detached.branch} kept`,
   };
 }
