@@ -57,7 +57,7 @@ import { derivedNext, type NextOwner, parkedNext } from "./lib/next-owner.ts";
 import { stateDbFailure } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
-import { recordConditionalResult } from "./lib/launch-result.ts";
+import { recordConditionalResult } from "./lib/launch-conditional-result.ts";
 import { framedResultOf } from "./lib/framed-result.ts";
 import { timingSafeEqual } from "node:crypto";
 import {

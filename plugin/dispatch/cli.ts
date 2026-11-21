@@ -43,6 +43,7 @@ import {
   type ValueParser,
   withDefault,
 } from "../shared/vendor/optique.mjs";
+import { pickupConditionOptions } from "../shared/pickup-condition-options.ts";
 import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
 import { dashboardAccess } from "./dashboard-access.ts";
 import {
@@ -249,16 +250,10 @@ const result = command(
         description: message`With waits: when the rate limit resets, or when to look at the pending arm again (ISO 8601, at most a day ahead); the item or the follow-up starts again after it. Optional with --reason test-lock, whose relaunch waits for the host's validation capacity.`,
       }),
     ),
-    untilMerged: optional(
-      option("--until-merged", string({ metavar: "PR" }), {
-        description: message`With waits: resume the single-item pickup after the pull request merges.`,
-      }),
-    ),
-    untilClosed: optional(
-      option("--until-closed", string({ metavar: "ITEM" }), {
-        description: message`With waits: resume the single-item pickup after the tracker item closes.`,
-      }),
-    ),
+    ...pickupConditionOptions({
+      merged: message`With waits: resume the single-item pickup after the pull request merges.`,
+      closed: message`With waits: resume the single-item pickup after the tracker item closes.`,
+    }),
     arm: optional(
       option("--arm", string({ metavar: "NAME" }), {
         description: message`With waits --reason pending: the arm still pending and what it waits for, in one line, which a person is told if it stays pending past dispatch.followup_within.`,

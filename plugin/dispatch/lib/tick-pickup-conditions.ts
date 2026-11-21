@@ -183,12 +183,8 @@ function settleCondition(
   const remove =
     state === "cleared" &&
     hold.resumeRecord === undefined &&
-    !input.records.some(
-      ({ record }) =>
-        record.repo === input.slug &&
-        record.action === "pickup" &&
-        pickupItems(record).includes(hold.item) &&
-        holdsItem(record, hold.item),
+    !pickupRecordsFor(hold, input).some(({ record }) =>
+      holdsItem(record, hold.item),
     );
   if (settlePickupHold(input.slug, hold, input.root, remove ? "remove" : state))
     return remove ? null : { ...hold, settled: state };
@@ -218,13 +214,17 @@ function currentHold(
 }
 
 function launchedAfter(hold: PersonPickupHold, input: ConditionRead): boolean {
-  return input.records.some(
+  return pickupRecordsFor(hold, input).some(
+    ({ record }) => holdsItem(record, hold.item) && record.createdAt > hold.at,
+  );
+}
+
+function pickupRecordsFor(hold: PersonPickupHold, input: ConditionRead) {
+  return input.records.filter(
     ({ record }) =>
       record.repo === input.slug &&
       record.action === "pickup" &&
-      pickupItems(record).includes(hold.item) &&
-      holdsItem(record, hold.item) &&
-      record.createdAt > hold.at,
+      pickupItems(record).includes(hold.item),
   );
 }
 

@@ -32,6 +32,7 @@
  * `answer` verb's alone (`lib/answer-request.ts`).
  */
 import { ExitError, shellQuote } from "../shared/cli.ts";
+import { pickupConditionOptions } from "../shared/pickup-condition-options.ts";
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { formatAddress, parseAddress } from "../shared/address.ts";
 import { launchOf, LAUNCH_VARIABLE } from "../shared/launched-session.ts";
@@ -120,16 +121,10 @@ export const sendCommand = command(
         description: message`answer --all: the set token the dry run printed; the send refuses when the eligible items or their digests changed.`,
       }),
     ),
-    untilMerged: optional(
-      option("--until-merged", string({ metavar: "PR" }), {
-        description: message`pickup hold: release the hold when this repository's pull request merges.`,
-      }),
-    ),
-    untilClosed: optional(
-      option("--until-closed", string({ metavar: "ITEM" }), {
-        description: message`pickup hold: release the hold when another item on the configured tracker closes.`,
-      }),
-    ),
+    ...pickupConditionOptions({
+      merged: message`pickup hold: release the hold when this repository's pull request merges.`,
+      closed: message`pickup hold: release the hold when another item on the configured tracker closes.`,
+    }),
     dryRun: option("--dry-run", {
       description: message`Print what the send would write, and write nothing.`,
     }),
