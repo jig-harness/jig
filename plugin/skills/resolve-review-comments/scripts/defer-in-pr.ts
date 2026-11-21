@@ -122,18 +122,27 @@ export function recordedError(
   recorded: DeferInPrArgs["recorded"],
   vocabulary: RecordedVocabulary,
 ): string | null {
-  for (const [flag, value] of Object.entries(recorded))
-    if (value !== undefined && (!TOKEN.test(value) || value.includes("--")))
-      return `--${flag} must be one token with no <, > or -- (got '${value}')`;
+  const malformed = recordedShapeError(recorded);
+  if (malformed !== null) return malformed;
   const types = vocabulary.types ?? [];
   if (types.length > 0 && !types.includes(recorded.type))
     return `--type must be one of ${types.join("|")} (review.taxonomy.types), got '${recorded.type}'`;
-  const severities = [...CANONICAL_SEVERITIES, SEVERITY_UNKNOWN];
-  if (!severities.includes(recorded.severity))
-    return `--severity must be one of ${severities.join("|")}, got '${recorded.severity}'`;
   const categories = [...(vocabulary.categories ?? []), CATEGORY_UNKNOWN];
   if (!categories.includes(recorded.category))
     return `--category must be one of ${categories.join("|")} (review.taxonomy.categories), got '${recorded.category}'`;
+  return null;
+}
+
+/** What must be safe to record even before consulting the filing vocabulary. */
+export function recordedShapeError(
+  recorded: DeferInPrArgs["recorded"],
+): string | null {
+  for (const [flag, value] of Object.entries(recorded))
+    if (value !== undefined && (!TOKEN.test(value) || value.includes("--")))
+      return `--${flag} must be one token with no <, > or -- (got '${value}')`;
+  const severities = [...CANONICAL_SEVERITIES, SEVERITY_UNKNOWN];
+  if (!severities.includes(recorded.severity))
+    return `--severity must be one of ${severities.join("|")}, got '${recorded.severity}'`;
   return null;
 }
 

@@ -371,6 +371,10 @@ before step 9.
 
 ### 9. Confirm
 
+An already-decided review deferral in a drive uses the
+[deferral protocol](../resolve-review-comments/references/deferral-protocol.md#who-decides-a-deferral)
+and bypasses this step at every autonomy level.
+
 **exact** — Read whether this run confirms. Name the skill that asked for the
 issue (this one, or the one that called it), the pull request it came from,
 and why, in one line:

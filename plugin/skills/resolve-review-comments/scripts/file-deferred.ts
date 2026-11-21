@@ -60,6 +60,7 @@ import {
   findingIdentityLines,
 } from "./lib/tracker-defer-batch.ts";
 import { leadingKeyLine } from "./lib/batch-description.ts";
+import { recordedError, type RecordedVocabulary } from "./defer-in-pr.ts";
 import { JigError } from "../../../shared/outcome.ts";
 import { createHash } from "node:crypto";
 import { fail, runMain } from "../../../shared/cli.ts";
@@ -495,6 +496,7 @@ export async function fileDeferred(
     facets: Facets | null;
     /** The repository's label taxonomy, whose required groups an issue carries a label of; absent or `null` with none. */
     taxonomy?: Taxonomy | null;
+    reviewVocabulary?: RecordedVocabulary;
     /** The change-area catalog those labels are derived from, read only when a group needs one; the configured one by default. */
     catalog?: () => CatalogSource;
     dryRun?: boolean;
@@ -559,6 +561,7 @@ function planner(
     label: string;
     facets: Facets | null;
     taxonomy?: Taxonomy | null;
+    reviewVocabulary?: RecordedVocabulary;
     catalog?: () => CatalogSource;
   },
 ): (entry: DeferredEntry) => Promise<Plan | { why: string }> {
@@ -570,6 +573,22 @@ function planner(
     return catalog;
   };
   return async (entry) => {
+    if (
+      opts.reviewVocabulary !== undefined &&
+      entry.type !== undefined &&
+      entry.severity !== undefined
+    ) {
+      const why = recordedError(
+        {
+          type: entry.type,
+          severity: entry.severity,
+          category: entry.category ?? "unknown",
+          ...(entry.size === undefined ? {} : { size: entry.size }),
+        },
+        opts.reviewVocabulary,
+      );
+      if (why !== null) return { why };
+    }
     const facets = entryFacets(entry, opts.facets);
     if ("why" in facets) return facets;
     let file: FindingFile = { none: "it is a summary finding" };
@@ -801,18 +820,20 @@ export function configuredTracker(
   label: string;
   facets: Facets | null;
   taxonomy: Taxonomy | null;
+  reviewVocabulary?: RecordedVocabulary;
   why?: string;
 } {
   try {
-    const config = deferralTrackerConfig(
-      values,
-      parseReviewConfig(values.review),
-    );
+    const review = parseReviewConfig(values.review);
+    const config = deferralTrackerConfig(values, review);
     return {
       tracker: openTracker(config),
       label: config.labels.followup,
       facets: facetsOf(config, consumerRoot()),
       taxonomy: readTaxonomy(consumerRoot(), config.taxonomy),
+      ...(review.taxonomy === undefined
+        ? {}
+        : { reviewVocabulary: review.taxonomy }),
     };
   } catch (err) {
     return {
@@ -869,7 +890,8 @@ async function main(): Promise<number> {
   const pr = rest[0] ?? "";
   if (rest.length !== 1 || !/^\d+$/.test(pr))
     fail(2, "usage: file-deferred.ts <PR> [--dry-run]");
-  const { tracker, label, facets, taxonomy, why } = configuredTracker();
+  const { tracker, label, facets, taxonomy, reviewVocabulary, why } =
+    configuredTracker();
   const forge = ghPrBodyForge();
   let code: number;
   let missing: DeferredReply[];
@@ -878,6 +900,7 @@ async function main(): Promise<number> {
       label,
       facets,
       taxonomy,
+      ...(reviewVocabulary === undefined ? {} : { reviewVocabulary }),
       dryRun,
       ...(why === undefined ? {} : { noTrackerWhy: why }),
       onFiled: (f) =>
