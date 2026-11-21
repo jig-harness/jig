@@ -99,6 +99,41 @@ function expectedNames(
   return [...given, ...rest];
 }
 
+const ORDER_MESSAGE =
+  "migration journal must list each staged migration in sequence order: regenerate the journal and snapshots";
+const PREFIX_ORDER_MESSAGE =
+  "migration journal must keep the integration journal's entries as committed, then list each other staged migration in sequence order: regenerate the journal and snapshots";
+
+/** Each migration the integration journal lists and commits, but the resolution dropped. */
+function droppedMigrations(
+  group: MigrationPlan["group"],
+  listed: string[],
+  staged: Tree,
+  integrationTree: Tree,
+): Problem[] {
+  const names = (tree: Tree) =>
+    new Set(sources(group, tree).map(({ path }) => posix.basename(path)));
+  const kept = names(staged);
+  const committed = names(integrationTree);
+  return listed
+    .filter((name) => committed.has(name) && !kept.has(name))
+    .map((name) => ({
+      path: posix.join(group.directory, name),
+      message:
+        "migration the integration journal lists is missing: preserve the committed migration",
+    }));
+}
+
+/** The integration journal: `undefined` when it has none, `null` when unreadable. */
+function committedJournal(
+  root: string,
+  group: MigrationPlan["group"],
+  tree: Tree,
+): Journal | null | undefined {
+  const stage = tree.get(group.journal);
+  return stage === undefined ? undefined : readJournal(root, stage);
+}
+
 function checkJournal(
   root: string,
   plan: MigrationPlan,
@@ -106,50 +141,54 @@ function checkJournal(
   integrationTree: Tree,
 ): Problem[] {
   const { group } = plan;
-  const files = sources(group, staged);
-  const problems = duplicateSequences(files, "the staged tree");
+  const problems = duplicateSequences(
+    sources(group, staged),
+    "the staged tree",
+  );
   const actual = readJournal(root, staged.get(group.journal));
-  const committed = integrationTree.get(group.journal);
-  const integration =
-    committed === undefined ? undefined : readJournal(root, committed);
-  if (integration === null) {
-    problems.push({
-      path: group.journal,
-      message:
-        "cannot verify the committed integration journal: repair its format before resolving the sequence",
-    });
-    return problems;
-  }
-  const expected = expectedNames(
-    group,
-    staged,
+  const integration = committedJournal(root, group, integrationTree);
+  if (integration === null)
+    return [
+      ...problems,
+      {
+        path: group.journal,
+        message:
+          "cannot verify the committed integration journal: repair its format before resolving the sequence",
+      },
+    ];
+  const given =
     integration === undefined
       ? null
-      : { journal: integration, tree: integrationTree },
-  );
-  if (!isDeepStrictEqual(actual?.names, expected))
+      : { journal: integration, tree: integrationTree };
+  if (!isDeepStrictEqual(actual?.names, expectedNames(group, staged, given)))
     problems.push({
       path: group.journal,
-      message:
-        integration === undefined
-          ? "migration journal must list each staged migration in sequence order: regenerate the journal and snapshots"
-          : "migration journal must keep the integration journal's entries as committed, then list each other staged migration in sequence order: regenerate the journal and snapshots",
+      message: given === null ? ORDER_MESSAGE : PREFIX_ORDER_MESSAGE,
     });
-  const stagedNames = new Set(files.map(({ path }) => posix.basename(path)));
-  const committedNames = new Set(
-    sources(group, integrationTree).map(({ path }) => posix.basename(path)),
+  problems.push(
+    ...droppedMigrations(
+      group,
+      integration?.names ?? [],
+      staged,
+      integrationTree,
+    ),
   );
-  for (const name of integration?.names ?? [])
-    if (committedNames.has(name) && !stagedNames.has(name))
-      problems.push({
-        path: posix.join(group.directory, name),
-        message:
-          "migration the integration journal lists is missing: preserve the committed migration",
-      });
   const problem = timestampProblem(actual, integration);
   if (problem !== null)
     problems.push({ path: group.journal, message: problem });
   return problems;
+}
+
+const WATERMARK_MESSAGE =
+  "preserve the integration journal entries and append migrations after their timestamps";
+
+function increasing(entries: JournalEntry[], after: number): boolean {
+  let previous = after;
+  for (const { when } of entries) {
+    if (when <= previous) return false;
+    previous = when;
+  }
+  return true;
 }
 
 /**
@@ -163,24 +202,23 @@ function timestampProblem(
   integration: Journal | undefined,
 ): string | null {
   const given = integration?.entries ?? null;
+  const entries = actual?.entries ?? null;
+  if (given === null)
+    return increasing(entries ?? [], -Infinity)
+      ? null
+      : "migration journal timestamps must increase strictly: regenerate the journal and snapshots";
   if (
-    given !== null &&
-    !isDeepStrictEqual(given, actual?.entries?.slice(0, given.length))
+    entries === null ||
+    !isDeepStrictEqual(given, entries.slice(0, given.length))
   )
-    return "preserve the integration journal entries and append migrations after their timestamps";
-  const appended = actual?.entries?.slice(given?.length ?? 0) ?? [];
-  let previous = (given ?? []).reduce(
-    (latest, { when }) => Math.max(latest, when),
+    return WATERMARK_MESSAGE;
+  const latest = given.reduce(
+    (max, { when }) => Math.max(max, when),
     -Infinity,
   );
-  for (const { when } of appended) {
-    if (when <= previous)
-      return given === null
-        ? "migration journal timestamps must increase strictly: regenerate the journal and snapshots"
-        : "preserve the integration journal entries and append migrations after their timestamps";
-    previous = when;
-  }
-  return null;
+  return increasing(entries.slice(given.length), latest)
+    ? null
+    : WATERMARK_MESSAGE;
 }
 
 function checkSources(plan: MigrationPlan, staged: Tree, check: Check): void {
