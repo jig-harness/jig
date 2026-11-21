@@ -27,19 +27,22 @@
  *      limit nor starts it again: it is not a rate limit, and the pass that
  *      recorded it met none on the way.
  *
- *      A window starts again when a pass names other release tags than the
- *      ones its window started on (a newer release replaced the one waited
- *      for); an arm that names none never starts one again. However often
+ *      A window starts again when a pass names other release tags or
+ *      workflow runs than the ones its window started on (a newer release
+ *      replaced the one waited for, or a newer deploy run that contains the
+ *      merge replaced the one before it); an arm that names neither never
+ *      starts one again. However often
  *      it starts again, a run of pending waits is a person's once
  *      `WINDOWS_FOR_PERSON` windows have passed since its first.
  *
  *      Before a wait past its window goes to a person, the tick reads the
- *      release tags its arm names again (`armTags`, `arm-reread.ts`): when
- *      every one now exists, the arm has settled, so the tick releases the
- *      marker instead and the follow-up runs once more, as a new run. An
- *      arm a run of the pull request already went past its window on is
- *      not read again, so a pass that keeps finding the same arm pending
- *      reaches a person; nor is an arm that names no tag.
+ *      release tags and the workflow runs its arm names again (`armTags`,
+ *      `armRuns`, `arm-reread.ts`): when every tag now exists and every run
+ *      has finished, the arm has settled, so the tick releases the marker
+ *      instead and the follow-up runs once more, as a new run. An arm a run
+ *      of the pull request already went past its window on is not read
+ *      again, so a pass that keeps finding the same arm pending reaches a
+ *      person; nor is an arm that names neither a tag nor a run.
  *
  * A pass that stopped on a question instead, whose question names a rate
  * limit and carries no routine class's tag (`routine-questions.ts`), waits
@@ -66,10 +69,13 @@ import type { SharedContext } from "./shared-launches.ts";
 import { stateDb } from "./state.ts";
 import type { MarkedPr } from "./types.ts";
 import {
+  armRuns,
   armWords,
   RATE_LIMIT_WAIT,
   readWaitFor,
+  runWord,
   type WaitFor,
+  type WorkflowRun,
 } from "./wait-for.ts";
 import { isoFromMs, parseMs } from "../../shared/time.ts";
 import { releaseTag } from "../../shared/records/release-tags.ts";
@@ -101,6 +107,8 @@ export interface WaitStreak {
   spent: boolean;
   /** For a pending wait past its window on an arm no earlier run went past its window on: the release tags it names, which the tick reads again before the follow-up goes to a person; empty otherwise. */
   reread: string[];
+  /** For the same wait: the workflow runs it names (`armRuns`), which the tick reads again with the tags; empty otherwise. */
+  rereadRuns: WorkflowRun[];
 }
 
 /** Characters that end a word in an arm's text: a release tag holds none. */
@@ -123,11 +131,11 @@ export function armTags(arm: string | undefined): string[] {
   return [...new Set(words)];
 }
 
-/** What an arm is, to tell a newer one from the one a window started on: the release tags it names; `null` when it names none. */
+/** What an arm is, to tell a newer one from the one a window started on: the release tags and the workflow runs it names; `null` when it names neither. */
 function armKey(wait: WaitFor): string | null {
-  const tags = armTags(wait.arm);
-  return tags.length > 0
-    ? [...tags].sort((a, b) => a.localeCompare(b)).join(" ")
+  const words = [...armTags(wait.arm), ...armRuns(wait.arm).map(runWord)];
+  return words.length > 0
+    ? words.sort((a, b) => a.localeCompare(b)).join(" ")
     : null;
 }
 
@@ -214,6 +222,7 @@ interface Run {
   /** The run was spent by a pending wait, past its window or the run's bound. */
   pendingSpent: boolean;
   reread: string[];
+  rereadRuns: WorkflowRun[];
   /** The arm of the newest pass past its window, whether or not a re-read was allowed on it. */
   rereadArm: string | null;
   /** The arms earlier runs of the pull request went past their window on, which are never read again. */
@@ -228,6 +237,7 @@ const EMPTY: Run = {
   spent: false,
   pendingSpent: false,
   reread: [],
+  rereadRuns: [],
   rereadArm: null,
   spentArms: new Set(),
 };
@@ -242,7 +252,7 @@ function restart(run: Run): Run {
   return { ...EMPTY, spentArms };
 }
 
-/** An arm that names a release tag the window's arm does not: one that only drops tags is the same window, which a settled tag does not restart. */
+/** An arm that names a release tag or a run the window's arm does not: one that only drops some is the same window, which a settled tag does not restart. */
 function newerArm(window: string | null, arm: string | null): boolean {
   if (arm === null || window === null) return false;
   const known = new Set(window.split(" "));
@@ -286,6 +296,7 @@ function nextPending(from: Run, a: Attempt): Run {
     spent: pastWindow || pastRun,
     pendingSpent: pastWindow || pastRun,
     reread: readable ? armTags(a.wait.arm) : [],
+    rereadRuns: readable ? armRuns(a.wait.arm) : [],
     rereadArm: pastWindow || pastRun ? arm : from.rereadArm,
   };
 }
@@ -303,6 +314,7 @@ function nextRun(run: Run, a: Attempt): Run {
     spent: count >= WAITS_FOR_PERSON,
     pendingSpent: false,
     reread: [],
+    rereadRuns: [],
     rereadArm: null,
   };
 }
@@ -334,6 +346,7 @@ function streakOf(attempts: Attempt[]): WaitStreak | null {
     withinMs: newest.withinMs,
     spent: run.spent,
     reread: run.reread,
+    rereadRuns: run.rereadRuns,
   };
 }
 
@@ -521,7 +534,7 @@ export async function releaseWaitMarkers(
         pr,
         streak.record,
         streak.spent
-          ? `found ${armWords(streak.wait)} still pending, whose tags now exist`
+          ? `found ${armWords(streak.wait)} still pending, which has since settled`
           : streak.wait.reason === "pending"
             ? `waited on ${armWords(streak.wait)} still pending`
             : "waited out a rate limit",

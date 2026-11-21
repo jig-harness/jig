@@ -13,6 +13,19 @@ import { runRepairPass } from "./repair.ts";
 import { announcePolicyBase } from "./policy-base.ts";
 
 import { beforeConflictPass, mergeOpen } from "./conflict-merge.ts";
+import { launchOf } from "../../../../../shared/launched-session.ts";
+import {
+  CONCLUDED_MAX,
+  CLOSING_REPORT_SCHEMA,
+} from "../../../../../shared/closing-report.ts";
+import { currentIso } from "../../../../../shared/time.ts";
+import { swallow } from "../../../../../shared/errors.ts";
+import {
+  ROUND_REPORT_SCHEMA,
+  readRoundReport,
+  writeRoundReport,
+} from "../state/round-report.ts";
+import { cutTo } from "./closing-report.ts";
 
 export async function runConflictPhase(
   context: DriveRoundContext,
@@ -143,6 +156,9 @@ async function attemptConflictRepair(
     await rejoinConflictTakeover(context);
     return "continue";
   }
+  const settlement = await settleMerge();
+  if (settlement !== null || resolveCode !== 0)
+    recordConflictSettlement(context.pr, resolveCode, settlement);
   // Same post-pass mailbox precedence as the CI-repair call site
   // above — see its own comment for why.
   if (resolve.postPassMailboxExit !== null) return resolve.postPassMailboxExit;
@@ -154,7 +170,6 @@ async function attemptConflictRepair(
     );
     return 5;
   }
-  await settleMerge();
   if (resolveCode === 0) return "continue";
   console.error(
     "the conflict-resolution pass failed; stopping with the manual fix below.",
@@ -171,5 +186,59 @@ async function rejoinConflictTakeover(
     !(await driverRuntime.passStopWitness)
   ) {
     context.held.length = 0;
+  }
+}
+
+/** Keep the observed cleanup with the pass's own explanation, when it wrote one. */
+function recordConflictSettlement(
+  pr: string,
+  code: number,
+  settlement: string | null,
+): void {
+  const launch = launchOf(process.env);
+  const stateDir = process.env.DRIVE_PR_STATE_DIR;
+  const { passRound, passStartedAt } = driverRuntime;
+  if (
+    launch === null ||
+    !stateDir ||
+    passRound === null ||
+    passStartedAt === null
+  )
+    return;
+  try {
+    const previous = readRoundReport(
+      stateDir,
+      pr,
+      launch,
+      passRound,
+      passStartedAt,
+    );
+    if (previous !== null && settlement === null) return;
+    const reason =
+      previous?.concluded ?? `The conflict-resolution pass exited ${code}.`;
+    writeRoundReport(stateDir, {
+      schema: ROUND_REPORT_SCHEMA,
+      pr: Number(pr),
+      launch,
+      round: passRound,
+      at: currentIso(),
+      report: {
+        ...(previous ?? {
+          schema: CLOSING_REPORT_SCHEMA,
+          suggested_next: {
+            step: "Read the conflict-resolution stop and retry the merge once the worktree is ready.",
+            owner: "person",
+            act: "Investigate",
+          },
+          evidence: [`pr:#${pr}`],
+        }),
+        concluded: cutTo(
+          settlement === null ? reason : `${settlement} ${reason}`,
+          CONCLUDED_MAX,
+        ),
+      },
+    });
+  } catch (error) {
+    swallow(error, "the conflict-resolution settlement could not be recorded");
   }
 }

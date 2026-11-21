@@ -383,3 +383,83 @@ describe("an epic's slot", () => {
     ).toBeNull();
   });
 });
+
+describe("why an ended pickup record holds its item", () => {
+  const launch = () => endedBatch(["#7"], "done", []);
+
+  it("names the unreleased record and never says an unassigned item stayed assigned", () => {
+    const records = [launch()];
+    const result = planPickups({
+      slug: SLUG,
+      section: { stalledAfterMs: 3_600_000 } as DispatchSection,
+      pickups: [{ ...wanted("#7"), pooled: true, assignee: "factory" }],
+      claimed: [],
+      sessions: { ok: true, source: "test", workspaces: [] },
+      launches: records,
+      idleSince: new Map(),
+      nowMs: NOW,
+    });
+    const reason =
+      result.actions.find((a) => a.cause === "pickup-ended")?.reason ?? "";
+    expect(reason).toContain(
+      `launch record ${records[0]?.record.id} ended (its session exited, done) and has not been released`,
+    );
+    expect(reason).not.toContain("assigned");
+    const hold = pickupHold("#7", records, undefined, NOW);
+    expect(hold.kind === "ended" ? hold.why : "").not.toContain("assigned");
+  });
+
+  it("names the record and the assignee for an item still assigned", () => {
+    const records = [launch()];
+    const reason =
+      plan(["#7"], records).actions.find((a) => a.cause === "pickup-ended")
+        ?.reason ?? "";
+    expect(reason).toContain("has not been released");
+    expect(reason).toContain("still assigned to alex");
+  });
+});
+
+describe("why an ended pickup record holds an item its claim would assign", () => {
+  const reasonFor = (item: WantedItem) => {
+    const records = [endedBatch([item.key], "done", [])];
+    const result = planPickups({
+      slug: SLUG,
+      section: { stalledAfterMs: 3_600_000 } as DispatchSection,
+      pickups: [item],
+      claimed: [],
+      sessions: { ok: true, source: "test", workspaces: [] },
+      launches: records,
+      idleSince: new Map(),
+      nowMs: NOW,
+    });
+    return result.actions.find((a) => a.cause === "pickup-ended")?.reason ?? "";
+  };
+
+  it("never says an epic's inherited child or a pulled blocker stayed assigned", () => {
+    for (const extra of [
+      { factoryAncestor: "#1" },
+      { ancestorEpic: "#1", servedPerson: "alex" },
+      { blockingFor: "#2" },
+    ]) {
+      const reason = reasonFor({ ...wanted("#7"), ...extra });
+      expect(reason).toContain("has not been released");
+      expect(reason).not.toContain("assigned");
+    }
+  });
+
+  it("takes the assignment from the tracker's read where the plan has one", () => {
+    const queueIssue = (assignee: { id: string; name: string } | null) =>
+      ({ identifier: "#7", assignee }) as unknown as NonNullable<
+        WantedItem["queueIssue"]
+      >;
+    expect(
+      reasonFor({ ...wanted("#7"), queueIssue: queueIssue(null) }),
+    ).not.toContain("assigned");
+    expect(
+      reasonFor({
+        ...wanted("#7"),
+        queueIssue: queueIssue({ id: "u1", name: "Dana Lee" }),
+      }),
+    ).toContain("still assigned to Dana Lee");
+  });
+});

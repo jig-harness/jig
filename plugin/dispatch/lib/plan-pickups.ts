@@ -63,6 +63,7 @@ import {
   endedQuestion,
   holdingRecords,
   leftBehindWorkspaces,
+  assigneeOf,
   pickupClaimed,
   type PickupHold,
   pickupHold,
@@ -228,7 +229,13 @@ export function planPickups(input: PickupInput): PickupPlan {
       plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
-    const hold = pickupHold(item.key, launches, item.updatedAt, input.nowMs);
+    const hold = pickupHold(
+      item.key,
+      launches,
+      item.updatedAt,
+      input.nowMs,
+      assigneeOf(item),
+    );
     if (hold.kind === "held") {
       plan.running.push({
         target: item.key,
@@ -576,7 +583,14 @@ function planClaimed(
     });
     return;
   }
-  const pickup = pickupHold(item.key, input.launches, undefined, input.nowMs);
+  // A claimed item is assigned, to its claimant.
+  const pickup = pickupHold(
+    item.key,
+    input.launches,
+    undefined,
+    input.nowMs,
+    true,
+  );
   // A rate-limit wait holds an ended pickup, which claims nothing by waiting.
   const endedUnclaimed =
     (pickup.kind === "ended" ||

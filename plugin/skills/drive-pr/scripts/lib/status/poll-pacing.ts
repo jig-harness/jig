@@ -90,6 +90,10 @@ interface Dependencies extends Clock {
   record(credential: string | undefined, ms: number, skipped: number): void;
 }
 
+// Leave enough time for the final loop iteration to start its forge read even
+// when the timer fires late and this wait records its outbound-call telemetry.
+const FINAL_EVALUATION_MARGIN_MS = 1_000;
+
 export function pollDependencies(clock: Clock): Dependencies {
   return {
     ...clock,
@@ -160,6 +164,7 @@ export class StatusPollPacing {
   private cadence = 0;
   private lower: BudgetWindow[] = [];
   private credential: string | undefined;
+  private finalEvaluationDeadline: number | undefined;
   private readonly maximumMs: number;
   private readonly baseMs: number;
   private readonly policy: StatusPolling;
@@ -217,6 +222,7 @@ export class StatusPollPacing {
     low: BudgetWindow,
     started: number,
     pollAt: number,
+    maximumMs: number,
   ): number {
     const share = this.policy.waitingShare;
     if (share <= 0 || low.remaining === null || low.resetAt === null)
@@ -227,7 +233,7 @@ export class StatusPollPacing {
       return Math.max(pollAt, low.resetAt);
     if (fraction === null || fraction >= share) return pollAt;
     const stretched = Math.min(
-      this.maximumMs,
+      maximumMs,
       Math.ceil((this.baseMs * share) / fraction),
       Math.max(this.baseMs, low.resetAt - started),
     );
@@ -235,38 +241,118 @@ export class StatusPollPacing {
   }
 
   /** An unchanged signal doubles the interval up to the ceiling. */
-  private nextCadence(signal: string): number {
+  private nextCadence(signal: string, maximumMs: number): number {
     return signal === this.previous
-      ? Math.min(this.maximumMs, this.cadence * 2)
-      : this.baseMs;
+      ? Math.min(maximumMs, this.cadence * 2)
+      : Math.min(this.baseMs, maximumMs);
+  }
+
+  /** Whether the previous wait reserved this deadline's final evaluation and the clock is inside its margin. */
+  private finalWaitDue(started: number, deadline: number): boolean {
+    return (
+      this.finalEvaluationDeadline === deadline &&
+      started >= deadline - FINAL_EVALUATION_MARGIN_MS
+    );
+  }
+
+  /** When to wake, and whether that wake reserves the final evaluation. */
+  private wakeTime(
+    pollAt: number,
+    cadencePollAt: number,
+    deadline: number,
+    now: number,
+  ): { wakeAt: number; reserves: boolean } {
+    // Reserve a practical margin before the deadline for a final evaluation.
+    // Otherwise timer lateness and the wait's own telemetry can leave the
+    // consuming loop with no time to observe evidence from its last interval.
+    // An ordinary cadence wake inside the final margin is itself the final
+    // evaluation. Reserving another wake at the same time would return a
+    // zero-delay poll on the next call. A budget-limited wake at that same
+    // boundary is also an evaluation, so retain that reservation even when
+    // the budget, rather than cadence, chose the wake time.
+    const margin = deadline - FINAL_EVALUATION_MARGIN_MS;
+    const reserves =
+      pollAt >= margin && (pollAt === cadencePollAt || pollAt === margin);
+    const wakeAt = Math.min(
+      pollAt,
+      reserves ? Math.max(now, margin) : deadline,
+    );
+    return { wakeAt, reserves };
   }
 
   async wait(
     signal: string,
     deadline: number,
     abort?: AbortSignal,
+    maximumMs = this.maximumMs,
   ): Promise<boolean> {
-    this.cadence = this.nextCadence(signal);
-    this.previous = signal;
+    // A reviewer-specific ceiling limits backoff, not the caller's requested
+    // polling interval. Keep the base interval as the floor so a low ceiling
+    // cannot turn `--interval` into a faster forge-read cadence.
+    const effectiveMaximumMs = Math.max(this.baseMs, maximumMs);
     const started = this.deps.now();
+    if (this.finalWaitDue(started, deadline)) {
+      this.finalEvaluationDeadline = undefined;
+      if (started < deadline) await this.deps.sleep(deadline - started, abort);
+      return false;
+    }
+    this.cadence = this.nextCadence(signal, effectiveMaximumMs);
+    this.previous = signal;
     let pollAt = started + this.cadence;
     let sample = this.deps.balance();
     for (;;) {
       const now = this.deps.now();
-      this.adoptCredential(sample);
-      this.lower = [...this.lower, ...sample.windows];
-      this.compactLower(now);
-      this.completeLimits();
-      for (const low of this.lower)
-        pollAt = this.pollAfter(low, started, pollAt);
-      const wakeAt = Math.min(pollAt, deadline);
+      this.absorb(sample, now);
+      const cadencePollAt = pollAt;
+      pollAt = this.budgetPollAt(started, pollAt, effectiveMaximumMs);
+      const { wakeAt, reserves } = this.wakeTime(
+        pollAt,
+        cadencePollAt,
+        deadline,
+        now,
+      );
+      if (reserves) this.finalEvaluationDeadline = deadline;
       if (wakeAt <= now || abort?.aborted) break;
       await this.deps.sleep(wakeAt - now, abort);
       if (abort?.aborted) break;
       sample = this.deps.balance();
     }
+    return this.finish(started, deadline, abort);
+  }
+
+  /** Fold one balance reading into the lowest windows held. */
+  private absorb(sample: BalanceSample, now: number): void {
+    this.adoptCredential(sample);
+    this.lower = [...this.lower, ...sample.windows];
+    this.compactLower(now);
+    this.completeLimits();
+  }
+
+  /** The poll time after every held window has had its say. */
+  private budgetPollAt(
+    started: number,
+    pollAt: number,
+    maximumMs: number,
+  ): number {
+    let at = pollAt;
+    for (const low of this.lower)
+      at = this.pollAfter(low, started, at, maximumMs);
+    return at;
+  }
+
+  /** Record the wait and say whether the caller polls now. */
+  private finish(
+    started: number,
+    deadline: number,
+    abort: AbortSignal | undefined,
+  ): boolean {
     const ended = this.deps.now();
     const willPoll = !abort?.aborted && ended < deadline;
+    // A wake that lands inside the final margin without a reservation (the
+    // cadence wake was just before it, or a timer ran late) is itself the final
+    // evaluation; reserve it so the next call does not poll again at once.
+    if (willPoll && ended >= deadline - FINAL_EVALUATION_MARGIN_MS)
+      this.finalEvaluationDeadline = deadline;
     this.deps.record(
       this.credential,
       ended - started,

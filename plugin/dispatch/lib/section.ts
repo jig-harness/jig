@@ -18,6 +18,10 @@ import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
+import {
+  DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
+  reviewerFailurePolicy,
+} from "./reviewer-failure.ts";
 import type {
   AdoptRule,
   DispatchSection,
@@ -54,6 +58,7 @@ const KEYS = [
   "missing_priority",
   "blocked_after",
   "drive_rounds_flat",
+  "reviewer_failures_before_escalation",
   "pickup_within",
   "pickup_deadline",
   "followup_within",
@@ -169,6 +174,16 @@ function rounds(value: unknown): Checked<number> {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
     return invalid(
       "dispatch.drive_rounds_flat must be a positive whole number",
+    );
+  return ok(value);
+}
+
+function reviewerFailures(value: unknown): Checked<number> {
+  if (value === undefined || value === null)
+    return ok(DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION);
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    return invalid(
+      "dispatch.reviewer_failures_before_escalation must be a positive whole number",
     );
   return ok(value);
 }
@@ -441,6 +456,14 @@ function launchPolicy(
   });
 }
 
+function trackerOf(values: Record<string, unknown>): Checked<TrackerConfig> {
+  try {
+    return ok(parseTrackerConfig(values));
+  } catch (error) {
+    return invalid(error instanceof Error ? error.message : String(error));
+  }
+}
+
 /**
  * The `dispatch` section of parsed configuration values, with defaults;
  * `invalid`, its reason naming the setting, for the first value that does
@@ -457,12 +480,9 @@ export function dispatchSection(
   if (refused !== null) return refused;
   const rules = labelsAndAdopt(section);
   if (!rules.ok) return rules;
-  let tracker: TrackerConfig;
-  try {
-    tracker = parseTrackerConfig(values);
-  } catch (error) {
-    return invalid(error instanceof Error ? error.message : String(error));
-  }
+  const parsed = trackerOf(values);
+  if (!parsed.ok) return parsed;
+  const tracker = parsed.value;
   const picked = pickup(section, tracker);
   if (!picked.ok) return picked;
   const waits = timings(section);
@@ -471,6 +491,10 @@ export function dispatchSection(
   if (!launching.ok) return launching;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
+  const reviewerFailureThreshold = reviewerFailures(
+    section.reviewer_failures_before_escalation,
+  );
+  if (!reviewerFailureThreshold.ok) return reviewerFailureThreshold;
   const overlap = parseOverlap(section.overlap);
   if (!overlap.ok) return overlap;
   return ok({
@@ -485,6 +509,10 @@ export function dispatchSection(
         }
       : {}),
     overlap: overlap.value,
+    reviewerFailures: reviewerFailurePolicy(
+      values,
+      reviewerFailureThreshold.value,
+    ),
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

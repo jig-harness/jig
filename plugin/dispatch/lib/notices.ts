@@ -292,6 +292,18 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
     return { ...silentText(slug, pr), ...driveFields(slug, pr) };
   if (typeof pr.evidence.failedRearm === "string")
     return failedRearmNotice(slug, pr);
+  if (typeof pr.evidence.reviewerFailureHead === "string")
+    return {
+      ...notice(
+        `${slug} PR #${pr.number} reviewer failed on ${pr.evidence.reviewerFailureHead}`,
+        [
+          `PR #${pr.number} (${pr.title}): ${pr.why}.`,
+          "Restore the reviewer and request a review of this commit. The dispatcher re-arms when that review appears or the head changes.",
+          pr.url,
+        ],
+      ),
+      ...driveFields(slug, pr),
+    };
   return {
     ...stopText(slug, pr),
     ...driveFields(slug, pr, [
