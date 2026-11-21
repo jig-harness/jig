@@ -4,8 +4,15 @@
  * "an approval is still required", and refuses a head the forge does not
  * witness a review of, whatever the drive's ledger says.
  */
-import { beforeAll, describe, expect, it } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
@@ -29,7 +36,12 @@ const OPENER = "**Safe to merge from the driver's perspective.**";
 /** The board query's answer for PR #999 at `head`. */
 function board(
   head: string,
-  over: { checked?: boolean; association?: string } = {},
+  over: {
+    checked?: boolean;
+    association?: string;
+    bot?: string;
+    config?: string;
+  } = {},
 ): string {
   const contexts =
     over.checked === false
@@ -50,6 +62,15 @@ function board(
     data: {
       repository: {
         squashMergeAllowed: true,
+        ...(over.config === undefined
+          ? {}
+          : {
+              defaultBranchRef: {
+                target: {
+                  file: { object: { text: over.config, isTruncated: false } },
+                },
+              },
+            }),
         pr999: {
           number: 999,
           headRefOid: head,
@@ -58,6 +79,13 @@ function board(
           mergeStateStatus: "CLEAN",
           reviewDecision: null,
           authorAssociation: over.association ?? "OWNER",
+          ...(over.bot === undefined
+            ? {}
+            : {
+                author: { __typename: "Bot", login: over.bot },
+                isCrossRepository: false,
+                baseRefName: "main",
+              }),
           isMergeQueueEnabled: false,
           labels: none,
           reviewThreads: none,
@@ -92,11 +120,14 @@ async function dryRun(
     timeline?: unknown[];
     env?: Record<string, string>;
     driverEnv?: Record<string, string>;
+    compare?: unknown;
   } = {},
 ) {
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
   writeFileSync(join(dir, "board.json"), answer);
+  if (more.compare !== undefined)
+    writeFileSync(join(dir, "compare.json"), JSON.stringify(more.compare));
   if (more.timeline !== undefined)
     writeFileSync(join(dir, "timeline.json"), JSON.stringify(more.timeline));
   const proc = Bun.spawn(
@@ -129,6 +160,7 @@ async function dryRun(
     stderr,
     exitCode,
     posted: existsSync(join(dir, "posted.jsonl")),
+    compared: existsSync(join(dir, "last-compare-path.txt")),
   };
 }
 
@@ -167,6 +199,86 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
     expect(r.posted).toBe(false);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("not witnessed on this head");
+  });
+});
+
+describe("announce-merge-ready.ts and trusted automation", () => {
+  const LISTED = 'pull_requests:\n  trusted_automation: ["renovate[bot]"]\n';
+  let converged: Fixture & { head: string };
+  let compare: unknown;
+  /** A `gh` before the suite's own that answers the compare read from compare.json and keeps the path it was asked for. */
+  let wrapper: string;
+  beforeAll(() => {
+    wrapper = mkdtempSync(join(tmpdir(), "trusted-gh-"));
+    const gh = join(wrapper, "gh");
+    writeFileSync(
+      gh,
+      `#!/usr/bin/env bash
+if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */compare/* ]]; then
+  printf '%s' "$2" > "$DRIVE_PR_FIXTURES/last-compare-path.txt"
+  cat "$DRIVE_PR_FIXTURES/compare.json"; exit $?
+fi
+exec ${JSON.stringify(join(binDir, "gh"))} "$@"
+`,
+    );
+    chmodSync(gh, 0o755);
+    converged = {
+      threads: [],
+      reviewedSha: scratchClean.head,
+      head: scratchClean.head,
+    };
+    compare = {
+      total_commits: 1,
+      commits: [
+        {
+          sha: scratchClean.head,
+          author: { login: "renovate[bot]" },
+          commit: { verification: { verified: true } },
+        },
+      ],
+      files: [{ filename: "pnpm-lock.yaml" }],
+    };
+  });
+  afterAll(() => rmSync(wrapper, { recursive: true, force: true }));
+  const viaWrapper = () => ({
+    PATH: `${wrapper}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+  });
+
+  it("would announce a listed bot's pull request in merge now when the default branch lists it", async () => {
+    const r = await dryRun(
+      converged,
+      board(converged.head, {
+        association: "NONE",
+        bot: "renovate",
+        config: LISTED,
+      }),
+      { compare, driverEnv: viaWrapper() },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.compared).toBe(true);
+    expect(r.stdout).toContain(OPENER);
+    expect(r.stdout).not.toContain("An approval is still required");
+  });
+
+  it("does not trust a bot only the pull request's own checkout lists", async () => {
+    const r = await dryRun(
+      converged,
+      board(converged.head, {
+        association: "NONE",
+        bot: "renovate",
+        config: "pull_requests: {}\n",
+      }),
+      {
+        compare,
+        env: {
+          JIG__PULL_REQUESTS__TRUSTED_AUTOMATION: '["renovate[bot]"]',
+        },
+        driverEnv: viaWrapper(),
+      },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.compared).toBe(false);
+    expect(r.stdout).toContain("An approval is still required");
   });
 });
 

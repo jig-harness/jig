@@ -143,6 +143,22 @@ describe("jig dispatch adopts a repository's own recent pull requests", () => {
     expect(planned.map((a) => a.target)).toEqual(["PR #10", "PR #11"]);
   });
 
+  it("adopts a healthy pull request by a bot pull_requests.trusted_automation lists, which adopt.authors does not name", async () => {
+    const w = fixture(
+      `${ADOPT}pull_requests:\n  trusted_automation: ["renovate[bot]"]\n`,
+    );
+    w.setPrs("open", [
+      authored(13, "app/renovate", ago(HOUR), { bot: true }),
+      authored(14, "app/dependabot", ago(HOUR), { bot: true }),
+    ]);
+    for (const n of [13, 14]) w.setComments(n, []);
+    const planned = rearms(await tick(w));
+    expect(planned.map((a) => a.target)).toEqual(["PR #13"]);
+    expect(String(planned[0]?.evidence.adopted)).toContain(
+      "trusted automation, driven to convergence while healthy",
+    );
+  });
+
   it("adopts nothing without the rule", async () => {
     const w = fixture(NONE);
     population(w);
@@ -314,5 +330,57 @@ describe("the default author", () => {
         Date.now(),
       ),
     ).toContain("it conflicts with its base");
+  });
+});
+
+describe("trusted automation and the adoption rule", () => {
+  const bot = { login: "app/renovate", bot: true };
+  const healthy = {
+    author: bot,
+    updatedAt: new Date().toISOString(),
+    failingChecks: false,
+    unresolvedThreads: 0,
+  };
+  const section = (trusted?: string[]) => ({
+    adopt: {
+      enabled: true,
+      authors: null,
+      withinMs: 168 * HOUR,
+      ...(trusted === undefined ? {} : { trusted }),
+    },
+  });
+
+  it("adopts a listed bot's healthy pull request, and a bot the list does not name not at all", () => {
+    const listed = adoptionOf(section(["renovate[bot]"]), "drive-bot");
+    expect(adopts(healthy, listed as Adoption, null, Date.now())).toContain(
+      "a bot pull_requests.trusted_automation lists",
+    );
+    const unlisted = adoptionOf(section(), "drive-bot");
+    expect(adopts(healthy, unlisted as Adoption, null, Date.now())).toBeNull();
+  });
+
+  it("never reads a listed bot's pull request as idle, so its moved head is re-driven", async () => {
+    const { idleAutomation } = await import("../lib/automation.ts");
+    expect(idleAutomation(healthy, [])).toEqual({ automationIdle: true });
+    expect(idleAutomation(healthy, [], ["renovate[bot]"])).toEqual({});
+  });
+
+  it("takes the listed bots from pull_requests.trusted_automation, and none from a list that does not read", () => {
+    const read = (list: unknown) =>
+      dispatchSection({
+        issue_tracker: {
+          adapter: "github",
+          github: { repository: SLUG },
+        },
+        dispatch: {
+          labels: { enabled: true },
+          adopt: { enabled: true },
+        },
+        pull_requests: { trusted_automation: list },
+      });
+    const listed = read(["Renovate[bot]"]);
+    expect(listed.ok && listed.value.adopt.trusted).toEqual(["renovate[bot]"]);
+    const broken = read("renovate[bot]");
+    expect(broken.ok && broken.value.adopt.trusted).toBeUndefined();
   });
 });

@@ -19,6 +19,11 @@
  * still being computed is read once more after `UNKNOWN_WAIT_MS`, within the
  * deadline, so the tick after a merge does not leave the list unread.
  *
+ * A converged pull request by a bot `pull_requests.trusted_automation`
+ * lists has its commits and files read at its head as well
+ * (`trusted-automation-read.ts`), within the same deadline, and kept between
+ * ticks, since a head's commits and files never change.
+ *
  * Update next holds one pull request per repository: the first behind its
  * base in Ready order; every other one behind its base is in Coming,
  * updated after it.
@@ -39,6 +44,12 @@ import {
   type WaitsOn,
 } from "../../skills/drive-pr/scripts/lib/merge-ready.ts";
 import { defaultReviewerCheckFor } from "../../skills/drive-pr/scripts/lib/overlay.ts";
+import { trustedAutomationOf } from "../../skills/drive-pr/scripts/lib/trusted-automation.ts";
+import {
+  automationFor,
+  AUTOMATION_CACHE_PREFIX,
+} from "../../skills/drive-pr/scripts/lib/trusted-automation-read.ts";
+import { pickupReads } from "./pickup-reads.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { isRecord } from "../../shared/guards.ts";
 import type { Contention } from "./contention.ts";
@@ -118,12 +129,30 @@ export interface BoardIo {
     numbers: readonly number[],
     timeoutSec: number,
   ) => Promise<Outcome<FactsRead, "unreadable">>;
+  /** A trusted bot's commits and files at its head; `undefined` when the pull request needs none, or where the reader reads none. */
+  automation?: (
+    slug: string,
+    facts: ForgeFacts,
+    rules: ReadyRules,
+    timeoutSec: number,
+  ) => ReturnType<typeof automationFor>;
+  /** Drop the kept reads of pull requests outside `numbers`. */
+  keepAutomation?: (slug: string, numbers: readonly number[]) => void;
   wait: (ms: number) => Promise<void>;
   now: () => number;
 }
 
 const realIo: BoardIo = {
   read: readMergeFacts,
+  automation: (slug, facts, rules, timeoutSec) =>
+    automationFor(slug, facts, rules, timeoutSec, pickupReads),
+  keepAutomation: (slug, numbers) => {
+    const prefix = `${AUTOMATION_CACHE_PREFIX}${slug}:`;
+    pickupReads.prune(
+      prefix,
+      numbers.map((n) => `${prefix}${n}`),
+    );
+  },
   wait: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => currentMs(),
 };
@@ -148,6 +177,7 @@ export function rulesOf(values: Record<string, unknown>): ReadyRules {
         defaultReviewerCheckFor(reviewerApp),
     ),
     ciHoldLabel: setting(values, "ci", "hold_label"),
+    trustedAutomation: trustedAutomationOf(values),
   };
 }
 
@@ -240,6 +270,27 @@ async function readFacts(
   return read;
 }
 
+/** Read a trusted bot's commits and files within the board's remaining deadline. */
+async function boardAutomation(
+  io: BoardIo,
+  slug: string,
+  facts: ForgeFacts,
+  rules: ReadyRules,
+  startedMs: number,
+): Promise<{
+  automation?: NonNullable<Awaited<ReturnType<typeof automationFor>>>;
+}> {
+  const left = BOARD_DEADLINE_MS - (io.now() - startedMs);
+  if (left < 1000 || io.automation === undefined) return {};
+  const automation = await io.automation(
+    slug,
+    facts,
+    rules,
+    Math.floor(left / 1000),
+  );
+  return automation === undefined ? {} : { automation };
+}
+
 /** One repository's board read (see the module comment). */
 export async function readBoard(
   input: BoardInput,
@@ -310,6 +361,13 @@ export async function readBoard(
       continue;
     }
     const verifiedSha = String(drive.evidence.verifiedSha ?? "");
+    const automation = await boardAutomation(
+      io,
+      input.slug,
+      facts,
+      rules,
+      startedMs,
+    );
     const answer = readiness(
       {
         ...facts,
@@ -317,6 +375,7 @@ export async function readBoard(
         converged: true,
         verifiedSha,
         held: input.held.has(drive.number),
+        ...automation,
       },
       rules,
     );
@@ -341,6 +400,7 @@ export async function readBoard(
       since: String(drive.evidence.heartbeat ?? ""),
     });
   }
+  io.keepAutomation?.(input.slug, numbers);
   return {
     ok: true,
     reason: null,

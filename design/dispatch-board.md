@@ -152,7 +152,13 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    (`mergeStateStatus` is `CLEAN` or `HAS_HOOKS`), or its base requires a
    merge queue (`isMergeQueueEnabled`), whose own rules then decide.
 8. Its author is the repository's own (association `OWNER`, `MEMBER` or
-   `COLLABORATOR`), or a person approved it.
+   `COLLABORATOR`), or a person approved it, or its author is
+   [trusted automation](../GLOSSARY.md): a bot the default branch's
+   `pull_requests.trusted_automation` lists, whose head is in the
+   repository, whose commits are all the bot's own (signed) or a listed
+   committer's, whose changed files are all within the entry's paths, and,
+   where the entry names update types, whose manifest diff shows one of
+   them.
 9. It carries neither the `hold` label nor the
    [CI hold](../GLOSSARY.md) label (`ci.hold_label`), under which its
    required checks fail on purpose.
@@ -177,6 +183,19 @@ recorded by the forge against the head it approved. So merge now never
 rests on the ledger alone. Condition 8 keeps a pull request from outside
 the repository from reaching merge now on an agent's review alone, so text
 written to steer the reviewer never becomes a "merge now" for a person.
+Trusted automation narrows that only for a bot the repository names, and
+only where the change stays within what the bot is trusted to change: a
+dependency bot's identity is trusted, while the third-party text it
+carries (release notes, upstream code) is not, so the rules bound what the
+change may touch rather than what it says. A commit by anyone else, a path
+outside the entry, a fork, or a fact that does not read leaves the pull
+request in approve first, and the card's fact names the rule. The list is
+read from the default branch by every caller, the drive's announcement
+included, never from the pull request's own configuration, which could
+otherwise list its own author. The commits and files are read in one
+request pinned to the head (the forge's compare of the base branch with
+the head), only for a pull request by a listed bot, and kept between ticks
+by head.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".

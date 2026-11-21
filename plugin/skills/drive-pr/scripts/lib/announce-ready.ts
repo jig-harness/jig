@@ -6,7 +6,10 @@
  * is still required"; anywhere else it refuses with the predicate's words.
  *
  * The repository's rules are the drive's own (`overlay.ts`), so the review
- * witness is the reviewer app and check the drive's convergence matched.
+ * witness is the reviewer app and check the drive's convergence matched;
+ * except the trusted automation list, which is read from the default
+ * branch's configuration in the same query as the facts, never from the
+ * pull request's own copy, which could otherwise list its own author.
  */
 import { isRecord } from "../../../../shared/guards.ts";
 import { reconcileWording } from "./announce-wording.ts";
@@ -19,7 +22,13 @@ import {
   type ReadyRules,
   readiness,
 } from "./merge-ready.ts";
-import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import { parseConfigText } from "../../../../shared/config-layers.ts";
+import {
+  attempt,
+  failed,
+  ok,
+  type Outcome,
+} from "../../../../shared/outcome.ts";
 import {
   ciHoldLabelSetting,
   readOptionalOverlay,
@@ -27,6 +36,8 @@ import {
 } from "./overlay.ts";
 import { ghCallTimeoutSeconds } from "./proc.ts";
 import { REVIEWER_CHECK } from "./status/evidence.ts";
+import { type TrustedList, trustedAutomationOf } from "./trusted-automation.ts";
+import { automationFor } from "./trusted-automation-read.ts";
 
 /** What the predicate says of the announced head: `rc` `0` with its lane, `4` placed elsewhere, `1` unread. */
 export interface AnnounceReady {
@@ -45,16 +56,39 @@ function driveRules(): ReadyRules {
   };
 }
 
-/** PR `pr`'s facts, read live, or why they did not read. */
+/** The trusted automation list of the default branch's configuration text; one that does not read trusts nobody, with why. */
+export function trustedFromDefaultBranch(
+  config: string | null | undefined,
+): TrustedList {
+  if (config === undefined)
+    return failed(
+      "invalid",
+      "the default branch's configuration did not read whole, so pull_requests.trusted_automation is not known",
+    );
+  if (config === null) return ok([]);
+  const values = attempt(
+    "invalid",
+    "the default branch's configuration does not parse, so pull_requests.trusted_automation is not known",
+    () => parseConfigText(config, ".config/jig.yaml"),
+  );
+  return values.ok ? trustedAutomationOf(values.value) : values;
+}
+
+/** PR `pr`'s facts, read live, with the default branch's configuration text, or why they did not read. */
 async function liveFacts(
   pr: number,
-): Promise<Outcome<ForgeFacts, "unreadable">> {
+): Promise<
+  Outcome<
+    { facts: ForgeFacts; config: string | null | undefined },
+    "unreadable"
+  >
+> {
   const read = await readMergeFacts(null, [pr], ghCallTimeoutSeconds());
   if (!read.ok) return read;
   const facts = read.value.pulls.get(pr);
   return facts === undefined
     ? failed("unreadable", "the forge did not give this pull request")
-    : ok(facts);
+    : ok({ facts, config: read.value.config });
 }
 
 /** The predicate's placement as the announcement's exit: `0` in merge now or approve first, `1` where it was, `4` elsewhere. */
@@ -68,23 +102,35 @@ export async function announceReady(
   pr: string,
   head: string,
 ): Promise<AnnounceReady> {
-  const facts = await liveFacts(Number(pr));
-  if (!facts.ok)
+  const live = await liveFacts(Number(pr));
+  if (!live.ok)
     return {
       rc: 1,
       lane: null,
-      says: `the forge's merge facts did not read: ${facts.failure.reason}`,
+      says: `the forge's merge facts did not read: ${live.failure.reason}`,
     };
+  const { facts, config } = live.value;
   const hold = holdLabel();
+  const rules: ReadyRules = {
+    ...driveRules(),
+    trustedAutomation: trustedFromDefaultBranch(config),
+  };
+  const automation = await automationFor(
+    null,
+    facts,
+    rules,
+    ghCallTimeoutSeconds(),
+  );
   const answer = readiness(
     {
-      ...facts.value,
+      ...facts,
       slug: "",
       converged: true,
       verifiedSha: head,
-      held: facts.value.labels.includes(hold),
+      held: facts.labels.includes(hold),
+      ...(automation === undefined ? {} : { automation }),
     },
-    driveRules(),
+    rules,
   );
   return { rc: rcOf(answer), lane: answer.lane, says: answer.says };
 }

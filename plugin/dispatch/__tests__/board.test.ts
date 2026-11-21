@@ -400,3 +400,75 @@ it("a known reviewer app brings its check name when the repository names none", 
   expect(named.reviewerCheck.test("Own")).toBe(true);
   expect(rulesOf({ review: {} }).reviewerCheck.test("AI review")).toBe(true);
 });
+
+describe("the board read and trusted automation", () => {
+  const listed = {
+    review: { reviewer_app: "example-review" },
+    pull_requests: { trusted_automation: ["renovate[bot]"] },
+  };
+  const bot = (number: number) =>
+    forge(number, {
+      authorAssociation: "NONE",
+      author: "renovate[bot]",
+      crossRepository: false,
+      base: "main",
+    });
+  const allowed = {
+    head: HEAD,
+    commits: [{ sha: HEAD, login: "renovate[bot]", verified: true }],
+    files: [{ path: "pnpm-lock.yaml", previous: null, patch: null }],
+  };
+
+  it("reads a listed bot's commits and files at its head and places it in merge now, keeping only converged reads", async () => {
+    const asked: Array<[number, string]> = [];
+    const kept: number[][] = [];
+    const forgeIo: BoardIo = {
+      ...io([
+        new Map([
+          [7, bot(7)],
+          [8, forge(8)],
+        ]),
+      ]),
+      automation: async (_slug, facts) => {
+        asked.push([facts.number, facts.head]);
+        return facts.author === "renovate[bot]" ? ok(allowed) : undefined;
+      },
+      keepAutomation: (_slug, numbers) => kept.push([...numbers]),
+    };
+    const read = await readBoard(
+      input([converged(7), converged(8)], { values: listed }),
+      forgeIo,
+    );
+    expect(read.cards.map((c) => [c.number, c.lane])).toEqual([
+      [7, "merge-now"],
+      [8, "merge-now"],
+    ]);
+    expect(
+      read.cards[0]?.conditions.find((c) => c.name === "own author or approved")
+        ?.fact,
+    ).toBe(
+      "trusted automation renovate[bot]: same repository, 1 commit allowed, 1 file within its paths",
+    );
+    expect(asked).toEqual([
+      [7, HEAD],
+      [8, HEAD],
+    ]);
+    expect(kept).toEqual([[7, 8]]);
+  });
+
+  it("leaves a listed bot's pull request in approve first when its commits and files do not read", async () => {
+    const read = await readBoard(input([converged(7)], { values: listed }), {
+      ...io([new Map([[7, bot(7)]])]),
+      automation: async () => failed("unreadable", "gh api compare exited 1"),
+    });
+    expect(read.cards.map((c) => [c.number, c.lane])).toEqual([
+      [7, "approve-first"],
+    ]);
+  });
+
+  it("reads the list from the default branch's values into its rules", () => {
+    const rules = rulesOf(listed);
+    expect(rules.trustedAutomation?.ok).toBe(true);
+    expect(rulesOf({}).trustedAutomation).toEqual(ok([]));
+  });
+});

@@ -13,6 +13,8 @@ import {
   readiness,
   readyOrder,
 } from "../scripts/lib/merge-ready.ts";
+import { trustedAutomationOf } from "../scripts/lib/trusted-automation.ts";
+import { ok } from "../../../shared/outcome.ts";
 
 const HEAD = "a".repeat(40);
 const OTHER = "b".repeat(40);
@@ -619,4 +621,142 @@ it("requires every distinct reviewer check and reduces retries within each name"
   if (base === undefined) throw new Error("fixture has no reviewer check");
   f.checks.push({ ...base, name: "AI review (security)" });
   expect(readiness(f, RULES).lane).toBe("merge-now");
+});
+
+describe("condition 8 for trusted automation", () => {
+  const TRUSTED: ReadyRules = {
+    ...RULES,
+    trustedAutomation: trustedAutomationOf({
+      pull_requests: { trusted_automation: ["renovate[bot]"] },
+    }),
+  };
+  const bot = (over: Partial<MergeFacts> = {}): Partial<MergeFacts> => ({
+    authorAssociation: "NONE",
+    author: "renovate[bot]",
+    crossRepository: false,
+    base: "main",
+    automation: ok({
+      head: HEAD,
+      commits: [{ sha: HEAD, login: "renovate[bot]", verified: true }],
+      files: [{ path: "pnpm-lock.yaml", previous: null, patch: null }],
+    }),
+    ...over,
+  });
+  const authorCondition = (r: ReturnType<typeof readiness>) =>
+    r.conditions.find((c) => c.name === "own author or approved");
+
+  it("places a listed bot's converged pull request in merge now when every rule holds", () => {
+    const r = at(bot(), TRUSTED);
+    expect([r.place, r.lane]).toEqual(["ready", "merge-now"]);
+    expect(authorCondition(r)).toEqual({
+      name: "own author or approved",
+      met: true,
+      fact: "trusted automation renovate[bot]: same repository, 1 commit allowed, 1 file within its paths",
+    });
+  });
+
+  it("leaves it in approve first, naming the rule, when a rule fails", () => {
+    const r = at(
+      bot({
+        automation: ok({
+          head: HEAD,
+          commits: [{ sha: HEAD, login: "outsider", verified: true }],
+          files: [],
+        }),
+      }),
+      TRUSTED,
+    );
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)).toMatchObject({
+      met: false,
+      fact: "renovate[bot] is trusted automation, but commit aaaaaaa is by outsider",
+    });
+  });
+
+  it("leaves it in approve first where its commits and files were not read", () => {
+    const { automation: _unread, ...unread } = bot();
+    const r = at(unread, TRUSTED);
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.fact).toContain("were not read");
+  });
+
+  it("changes nothing where no reviewer app is named: a person's approval is still the witness", () => {
+    const r = at(bot(), { ...TRUSTED, reviewerApp: null });
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.met).toBe(true);
+  });
+
+  it("says why a bot is not trusted when the list does not read", () => {
+    const r = at(bot(), {
+      ...RULES,
+      trustedAutomation: trustedAutomationOf({
+        pull_requests: { trusted_automation: "renovate[bot]" },
+      }),
+    });
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.fact).toBe(
+      "pull_requests.trusted_automation must be a list",
+    );
+  });
+
+  it("reads a bot the list does not name as an outside author", () => {
+    const r = at(bot({ author: "dependabot[bot]" }), TRUSTED);
+    expect(r.lane).toBe("approve-first");
+    expect(authorCondition(r)?.fact).toBe("outside author (NONE)");
+  });
+
+  it("still lets a person's approval of the head meet the condition when a rule fails", () => {
+    const r = at(
+      bot({
+        crossRepository: true,
+        reviews: [
+          {
+            author: "maintainer",
+            person: true,
+            association: "MEMBER",
+            state: "APPROVED",
+            commit: HEAD,
+          },
+        ],
+      }),
+      TRUSTED,
+    );
+    expect(r.lane).toBe("merge-now");
+    expect(authorCondition(r)?.fact).toBe(
+      "outside author, approved by a person",
+    );
+  });
+});
+
+describe("the board query's author, fork flag and base", () => {
+  it("reads a bot author as <name>[bot], the fork flag and the base branch", () => {
+    const none = { pageInfo: { hasNextPage: false }, nodes: [] };
+    const read = parseAnswer(
+      {
+        data: {
+          repository: {
+            pr7: {
+              number: 7,
+              headRefOid: HEAD,
+              author: { __typename: "Bot", login: "renovate" },
+              isCrossRepository: false,
+              baseRefName: "main",
+              labels: none,
+              reviewThreads: none,
+              reviewRequests: none,
+              latestReviews: none,
+              commits: { nodes: [] },
+            },
+          },
+        },
+      },
+      [7],
+    );
+    const f = read.pulls.get(7);
+    expect([f?.author, f?.crossRepository, f?.base]).toEqual([
+      "renovate[bot]",
+      false,
+      "main",
+    ]);
+  });
 });
