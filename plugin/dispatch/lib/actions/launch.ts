@@ -19,7 +19,12 @@ import {
   takeoverHostDriver,
 } from "../host-drivers.ts";
 import { serves } from "../account-stages.ts";
-import { admission, keepsTakeoverAccount } from "./admission.ts";
+import {
+  admission,
+  type AccountAdmission,
+  keepsTakeoverAccount,
+  waitsForRearmSlot,
+} from "./admission.ts";
 import type { HostDrivers } from "../host-drivers.ts";
 import {
   isInteractive,
@@ -30,11 +35,7 @@ import {
   removeRecordIf,
   writeRecord,
 } from "../launches.ts";
-import {
-  type MachineConfig,
-  OPENS_PER_TICK,
-  tickDeadlineMs,
-} from "../machine-config.ts";
+import { type MachineConfig, OPENS_PER_TICK } from "../machine-config.ts";
 import {
   dispatchedMark,
   type ItemTarget,
@@ -65,12 +66,16 @@ import { laneBudgetWait, leftBehind } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState, VALIDATION_GAUGES } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
+import { enforcedDeadlineMs } from "./launch-deadline.ts";
 import {
   checksStage,
   heldAccounts,
   heldDetail,
   type Preflight,
 } from "../preflight.ts";
+
+export { enforcedDeadlineMs } from "./launch-deadline.ts";
+export { rotated } from "./launch-rotation.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -110,22 +115,6 @@ export interface ApplyState {
   /** The checks run on an account before a tracker stage launches on it, and their answers this tick (`preflight.ts`). */
   preflight?: Preflight;
   signInChecks?: SignInChecks;
-}
-
-/**
- * The deadline the installed launcher enforces on the tick, in milliseconds:
- * the one it was installed with (`JIG_LAUNCHER_DEADLINE_SEC`, whole seconds,
- * which the launcher passes on to the tick), else the one the machine file's
- * limits calculate for a tick run outside a launcher.
- */
-export function enforcedDeadlineMs(
-  machine: MachineConfig,
-  env: NodeJS.ProcessEnv = process.env,
-): number {
-  const installed = env.JIG_LAUNCHER_DEADLINE_SEC ?? "";
-  return /^[1-9][0-9]*$/.test(installed)
-    ? Number(installed) * 1000
-    : tickDeadlineMs(machine);
 }
 
 /** The kill grace a timed-out child may take beyond its timeout before it settles. */
@@ -196,37 +185,6 @@ export function outOfTime(state: ApplyState): string | null {
   return `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`;
 }
 
-/** Two launch groups and two background stages per repository complete a target turn. */
-const TARGET_TURN_PER_REPO = 4;
-
-/** The level of the hierarchy a rotation orders; each is a digit of the tick index, the repositories the lowest. */
-export type RotationLevel = "repositories" | "stages" | "targets";
-
-/**
- * `items` in this tick's order: rotated by a digit of the tick's own index, a
- * counter that advances once per applying tick whatever the timer's interval.
- * Target order advances after both launch groups and both background stages
- * have led every repository. A failed open at the front of one stage then
- * cannot keep every later target waiting across successive opportunities.
- * The global repository and stage order is applied by `apply-order.ts`.
- */
-export function rotated<T>(
-  state: ApplyState,
-  items: T[],
-  level: RotationLevel = "repositories",
-): T[] {
-  if (items.length < 2 || state.tick === undefined) return items;
-  const repos = Math.max(1, state.repos ?? 1);
-  const divisor =
-    level === "repositories"
-      ? 1
-      : level === "stages"
-        ? repos
-        : repos * TARGET_TURN_PER_REPO;
-  const start = Math.floor(state.tick / divisor) % items.length;
-  return [...items.slice(start), ...items.slice(0, start)];
-}
-
 type OpenedWorkspace = Pick<RuntimeReceipt, "cleanupFailure" | "detached"> & {
   workspace: NonNullable<LaunchRecord["workspace"]>;
 };
@@ -234,7 +192,13 @@ type OpenedWorkspace = Pick<RuntimeReceipt, "cleanupFailure" | "detached"> & {
 export type Opened =
   | OpenedWorkspace
   | { waits: string; waitsOn?: LaneWait }
-  | { refused: string; holder?: BusyHolder; detached?: DetachedCheckout };
+  | {
+      refused: string;
+      /** A proof established that the checkout is structurally the wrong one. */
+      structural?: boolean;
+      holder?: BusyHolder;
+      detached?: DetachedCheckout;
+    };
 
 /** Total and launch-specific allowances count notices once. */
 function openAllowance(state: ApplyState) {
@@ -756,7 +720,7 @@ function byLoad(
   action: Action,
   slots: Slots,
   pickupDeadlineSec: number,
-): { slots: Slots } | { outcome: LaunchOutcome } {
+): AccountAdmission {
   if (state.load === undefined) return { slots };
   const held = judge(
     state.load,
@@ -769,18 +733,54 @@ function byLoad(
   );
   return held === null
     ? { slots }
-    : { outcome: waits(action, held, slots.account.name) };
+    : { outcome: waits(action, held, slots.account.name), capacity: "load" };
+}
+
+/** Whether a refused identity ends admission: a takeover tied to the slot of the driver it takes over. */
+function keepsTakeover(
+  state: ApplyState,
+  action: Action,
+  name: string,
+  clone: string | null,
+): boolean {
+  const holder = takeoverHostDriver(
+    action.takeoverHolder,
+    state.drivers,
+    state.table.map((entry) => entry.account),
+    state.records,
+    clone,
+    Number(action.target.replace("PR #", "")),
+  );
+  return keepsTakeoverAccount(state, action, holder?.account, name);
+}
+
+/** The admission that waits on the accounts: the refusal an identity check left, else what the slots say. */
+function accountsWait(
+  state: ApplyState,
+  action: Action,
+  failed: ReadonlySet<string>,
+  held: ReadonlyMap<string, string>,
+  waitsOn: LaneWait | undefined,
+  refusal: LaunchOutcome | null,
+  why: string,
+): AccountAdmission {
+  return {
+    ...(refusal === null && waitsForRearmSlot(state, action, failed)
+      ? { capacity: "accounts" as const }
+      : {}),
+    outcome: refusal ?? {
+      ...waits(action, withHeld(state, held, why)),
+      // A follow-up says what it waits on: here, the accounts.
+      ...(action.stage === "followup"
+        ? { waitsOn: waitsOn ?? "accounts" }
+        : {}),
+    },
+  };
 }
 
 /**
- * The account a launch bills, admitted afresh against the walls and the
- * identity check, then against the host's load (`load.ts`): under
- * `load.enforce` a launch a gauge refuses waits, and otherwise it starts and
- * is reported as one the load factor would hold. A re-arm or a pickup tries the next account when one
- * fails its identity check, so a stale login cannot starve the others; a
- * takeover has only its own account, unless that account does not serve its
- * stage and it is admitted as a new launch (`admission.ts`). A pickup is admitted as a headless
- * pass under `pickupDeadlineSec`, the repository's `dispatch.pickup_deadline`.
+ * Check account identity and load after admission. A failed identity can pass
+ * to the next account, except for a takeover tied to its recorded slot.
  */
 export async function admitAccount(
   state: ApplyState,
@@ -788,7 +788,7 @@ export async function admitAccount(
   action: Action,
   pickupDeadlineSec = 0,
   clone: string | null = null,
-): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
+): Promise<AccountAdmission> {
   refreshWalls(state.table, state.records, currentMs(), state.root);
   const checked = await preflightHolds(state, repo, action, pickupDeadlineSec);
   if ("outcome" in checked) return checked;
@@ -799,15 +799,15 @@ export async function admitAccount(
   for (;;) {
     const admitted = admission(state, action, failed, pickupDeadlineSec, clone);
     if ("waits" in admitted)
-      return {
-        outcome: refusal ?? {
-          ...waits(action, withHeld(state, held, admitted.waits)),
-          // A follow-up says what it waits on: here, the accounts.
-          ...(action.stage === "followup"
-            ? { waitsOn: checked.waitsOn ?? "accounts" }
-            : {}),
-        },
-      };
+      return accountsWait(
+        state,
+        action,
+        failed,
+        held,
+        checked.waitsOn,
+        refusal,
+        admitted.waits,
+      );
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);
     if ("waits" in identity)
@@ -823,16 +823,7 @@ export async function admitAccount(
       return byLoad(state, repo, action, slots, pickupDeadlineSec);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    const holder = takeoverHostDriver(
-      action.takeoverHolder,
-      state.drivers,
-      state.table.map((entry) => entry.account),
-      state.records,
-      clone,
-      Number(action.target.replace("PR #", "")),
-    );
-    if (keepsTakeoverAccount(state, action, holder?.account, name))
-      return { outcome: refusal };
+    if (keepsTakeover(state, action, name, clone)) return { outcome: refusal };
     failed.add(name);
   }
 }

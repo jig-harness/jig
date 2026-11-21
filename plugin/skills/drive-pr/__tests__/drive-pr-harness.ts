@@ -920,6 +920,9 @@ set -euo pipefail
 if [ -n "\${DRIVE_PR_STUB_GH_LOG:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ]; then
   printf '%s\\n' "\${1:-} \${2:-}" >> "$DRIVE_PR_STUB_GH_LOG"
 fi
+if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ] && [ "\${1:-} \${2:-}" = "pr view" ]; then
+  date +%s%N >> "$DRIVE_PR_STUB_GH_TIMES"
+fi
 export DRIVE_PR_STUB_GH_NESTED=1
 (
   # Model gh's flag parser before any fixture response. A newly misspelled

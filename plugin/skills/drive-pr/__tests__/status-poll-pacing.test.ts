@@ -29,7 +29,10 @@ const window = (remaining: number, resetIn: number): BudgetWindow => ({
   limit: 5000,
 });
 
-function fixture(balance: (now: number) => BudgetWindow | undefined) {
+function fixture(
+  balance: (now: number) => BudgetWindow | undefined,
+  baseMs = base,
+) {
   let now = 0;
   const clock = {
     now: () => now,
@@ -38,7 +41,7 @@ function fixture(balance: (now: number) => BudgetWindow | undefined) {
     },
   };
   const ledger: CallRecord[] = [];
-  const pacing = new StatusPollPacing(base, defaultPolicy, {
+  const pacing = new StatusPollPacing(baseMs, defaultPolicy, {
     ...pollDependencies(clock),
     balance: () => {
       const observed = balance(now);
@@ -50,15 +53,107 @@ function fixture(balance: (now: number) => BudgetWindow | undefined) {
   return {
     clock,
     ledger,
-    wait: (report: string, deadline: number) =>
+    wait: (
+      report: string,
+      deadline: number,
+      abort?: AbortSignal,
+      maximumMs?: number,
+    ) =>
       withLedgerWriter(
         (entry) => ledger.push(entry),
-        () => pacing.wait(report, deadline),
+        () => pacing.wait(report, deadline, abort, maximumMs),
       ),
   };
 }
 
 describe("waiting status poll pacing", () => {
+  test("a reviewer ceiling never shortens the requested base interval", async () => {
+    const probe = fixture(() => window(4500, 3600));
+    expect(
+      await probe.wait("reviewer", 100 * second, undefined, 3 * second),
+    ).toBe(true);
+    expect(probe.clock.now()).toBe(30 * second);
+    expect(await probe.wait("other", 200 * second)).toBe(true);
+    expect(probe.clock.now()).toBe(60 * second);
+  });
+
+  test("an unchanged reviewer wait doubles to its capped cadence", async () => {
+    const probe = fixture(() => window(4500, 3600), second);
+    const deadline = 10 * second;
+    const wakes: number[] = [];
+
+    while (await probe.wait("reviewer", deadline, undefined, 3 * second))
+      wakes.push(probe.clock.now());
+
+    expect(wakes).toEqual([1, 3, 6, 9].map((s) => s * second));
+    expect(probe.clock.now()).toBe(deadline);
+  });
+
+  test("reserves a final evaluation instead of sleeping through the deadline", async () => {
+    const probe = fixture(() => window(4500, 3600), second);
+    const deadline = 10 * second;
+
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(3 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(6 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(9 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      false,
+    );
+    expect(probe.clock.now()).toBe(deadline);
+  });
+
+  test("keeps the final evaluation margin when its timer wakes late", async () => {
+    let now = 9 * second;
+    const pacing = new StatusPollPacing(second, defaultPolicy, {
+      now: () => now,
+      async sleep(ms) {
+        now += ms + 100;
+      },
+      balance: () => ({ windows: [] }),
+      record: () => undefined,
+    });
+
+    expect(
+      await pacing.wait("reviewer", 12 * second, undefined, 3 * second),
+    ).toBe(true);
+    expect(now).toBe(10_100);
+    expect(
+      await pacing.wait("reviewer", 12 * second, undefined, 3 * second),
+    ).toBe(true);
+    expect(now).toBe(11_100);
+    expect(
+      await pacing.wait("reviewer", 12 * second, undefined, 3 * second),
+    ).toBe(false);
+    expect(now).toBe(12_100);
+  });
+
+  test("does not add a zero-delay poll when a budget delay reaches the final margin", async () => {
+    const probe = fixture(() => window(100, 9), second);
+    const deadline = 10 * second;
+
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      true,
+    );
+    expect(probe.clock.now()).toBe(9 * second);
+    expect(await probe.wait("reviewer", deadline, undefined, 3 * second)).toBe(
+      false,
+    );
+    expect(probe.clock.now()).toBe(deadline);
+  });
+
   test("fewer polls over half an hour and an observed change resets the cadence", async () => {
     const probe = fixture(() => window(4500, 3600));
     const report = emptyReport();

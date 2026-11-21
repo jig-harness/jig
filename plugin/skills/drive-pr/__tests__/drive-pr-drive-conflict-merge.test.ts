@@ -17,8 +17,10 @@ import {
   gitCleanEnv,
   tmpRoot,
   useDrivePrSuite,
+  writeFixture,
 } from "./drive-pr-harness.ts";
-import { runDrive } from "./drive-loop-harness.ts";
+import { runDrive, runDriveIn } from "./drive-loop-harness.ts";
+import { readRoundReport } from "../scripts/lib/state/round-report.ts";
 
 useDrivePrSuite();
 
@@ -94,11 +96,19 @@ describe("the merge a conflict-resolve pass leaves open", () => {
     for (const exit of [0, 1]) {
       const dir = conflictingTree();
       const head = gitIn(dir, "rev-parse", "HEAD").stdout;
-      const r = await drive(dir, pass(STAGES_THE_MERGE, exit));
+      const r = await drive(
+        dir,
+        pass(
+          `${STAGES_THE_MERGE}; mkdir migrations; echo generated > migrations/snapshot.json; echo sql > migrations/0002.sql; git add migrations/0002.sql`,
+          exit,
+        ),
+      );
       expect(r.stderr).toContain("FOUND_A_CLEAN_TREE");
       expectSpawnExit({ ...r, stdout: null }, 9);
       expect(mergeIsOpen(dir)).toBe(false);
-      expect(gitIn(dir, "status", "--porcelain").stdout).toBe("");
+      expect(
+        gitIn(dir, "status", "--porcelain", "--untracked-files=normal").stdout,
+      ).toBe("");
       expect(gitIn(dir, "rev-parse", "HEAD").stdout).toBe(head);
       expect(r.stderr).toContain("left its merge open; aborted it");
       expect(r.stderr).toContain("M  f.txt");
@@ -108,6 +118,87 @@ describe("the merge a conflict-resolve pass leaves open", () => {
       // where an open merge would refuse it with `128`.
       expect(gitIn(dir, "merge", "other").code).toBe(1);
     }
+  });
+
+  it.each([true, false])(
+    "reports a pass that aborted its merge (untracked leftovers: %s)",
+    async (leavesUntracked) => {
+      const dir = conflictingTree();
+      gitIn(dir, "config", "status.showUntrackedFiles", "no");
+      const fixture = writeFixture(CONFLICTING, dir);
+      const launch = "20260101T000000Z-aaaaaaaa";
+      const r = await runDriveIn(
+        fixture.dir,
+        fixture.stateDir,
+        [
+          "--no-head-sync",
+          "--",
+          ...pass(
+            `${STAGES_THE_MERGE}; ${leavesUntracked ? "echo generated > snapshot.json; " : ""}git merge --abort`,
+            1,
+          ),
+        ],
+        dir,
+        { env: { JIG_LAUNCH: launch, DRIVE_PR_CONFLICT_REPAIR_ROUNDS: "1" } },
+      );
+      const report = readRoundReport(fixture.stateDir, "999", launch, 0);
+      expect(report?.concluded).toContain(
+        "The conflict-resolution pass exited 1.",
+      );
+      expectSpawnExit({ ...r, stdout: null }, 9);
+      expect(mergeIsOpen(dir)).toBe(false);
+      expect(
+        gitIn(dir, "status", "--porcelain", "--untracked-files=normal").stdout,
+      ).toBe("");
+      if (leavesUntracked)
+        expect(r.stderr).toContain("verified the worktree is clean");
+    },
+  );
+
+  it("preserves untracked paths that predate the attempt", async () => {
+    const dir = conflictingTree();
+    writeFileSync(join(dir, "before.txt"), "keep me");
+    const r = await drive(
+      dir,
+      pass(`${STAGES_THE_MERGE}; echo generated > snapshot.json`, 1),
+    );
+    expectSpawnExit({ ...r, stdout: null }, 9);
+    expect(mergeIsOpen(dir)).toBe(false);
+    expect(
+      gitIn(dir, "status", "--porcelain", "--untracked-files=normal").stdout,
+    ).toBe("?? before.txt");
+    expect(r.stderr).toContain(
+      "the conflict-resolution worktree could not be verified clean",
+    );
+  });
+
+  it("preserves ignored paths that predate the attempt", async () => {
+    const dir = conflictingTree();
+    writeFileSync(join(dir, ".gitignore"), "before.ignored\n");
+    writeFileSync(join(dir, "before.ignored"), "keep me");
+    const r = await drive(
+      dir,
+      pass(`${STAGES_THE_MERGE}; echo generated > snapshot.json`, 1),
+    );
+    expectSpawnExit({ ...r, stdout: null }, 9);
+    expect(mergeIsOpen(dir)).toBe(false);
+    expect(gitIn(dir, "status", "--porcelain", "--ignored").stdout).toContain(
+      "!! before.ignored",
+    );
+  });
+
+  it("removes ignored paths created by the failed pass", async () => {
+    const dir = conflictingTree();
+    writeFileSync(join(dir, ".gitignore"), "generated.ignored\n");
+    const r = await drive(
+      dir,
+      pass(`${STAGES_THE_MERGE}; echo generated > generated.ignored`, 1),
+    );
+    expectSpawnExit({ ...r, stdout: null }, 9);
+    expect(mergeIsOpen(dir)).toBe(false);
+    expect(
+      gitIn(dir, "status", "--porcelain", "--ignored").stdout,
+    ).not.toContain("generated.ignored");
   });
 
   it("does not reach the next pass of the budget", async () => {
@@ -132,11 +223,12 @@ describe("the merge a conflict-resolve pass leaves open", () => {
     expect(mergeIsOpen(dir)).toBe(true);
   });
 
-  it("stays when the pass finds the pull request closed", async () => {
+  it("cleans up when the pass finds the pull request closed", async () => {
     const dir = conflictingTree();
     const r = await drive(dir, pass(STAGES_THE_MERGE, 5));
     expectSpawnExit({ ...r, stdout: null }, 5);
-    expect(r.stderr).not.toContain("left its merge open");
+    expect(mergeIsOpen(dir)).toBe(false);
+    expect(r.stderr).toContain("left its merge open; aborted it");
   });
 });
 

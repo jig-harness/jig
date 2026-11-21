@@ -12,6 +12,8 @@ import { run, tsArgv } from "./../proc.ts";
 import { driveStatus } from "./paths.ts";
 
 import { measureUnpushed } from "./unpushed.ts";
+import { DRIVE_EXIT } from "../status/terminal-states.ts";
+import { driverRuntime } from "./runtime.ts";
 
 async function previewConflictingRound(
   status: Record<string, unknown>,
@@ -109,6 +111,26 @@ export async function readRoundStatus(
   const mailboxAfterStatus = await context.mailboxCheckpoint();
   if (typeof mailboxAfterStatus === "number") return mailboxAfterStatus;
   if (mailboxAfterStatus === "resumed") return "continue";
+
+  const apiHead = (status.head as Record<string, unknown> | undefined)?.api;
+  const reviewer = status.reviewer as Record<string, unknown> | undefined;
+  const app = reviewer?.app;
+  driverRuntime.reviewerFailure =
+    code === DRIVE_EXIT.REVIEWER_FAILED &&
+    status.state === "REVIEWER_FAILED" &&
+    // A neutral run is terminal here only if it said it gave up and the
+    // probe could confirm there was no review. Other exit-7 stops keep
+    // their existing recovery rules.
+    reviewer?.conclusion === "neutral" &&
+    typeof apiHead === "string" &&
+    /^[0-9a-f]{40}$/.test(apiHead)
+      ? {
+          reviewerHead: apiHead,
+          ...(typeof app === "string" && /^[a-z0-9-]+$/i.test(app)
+            ? { reviewerApp: app }
+            : {}),
+        }
+      : null;
 
   // A dry run can NEVER see the real `code === 9` (PR_CONFLICTING)
   // certification: `--no-count` — part of every dry-run probe's

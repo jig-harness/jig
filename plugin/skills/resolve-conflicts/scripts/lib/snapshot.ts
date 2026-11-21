@@ -221,7 +221,13 @@ const KINDS: readonly unknown[] = [
   "added-by-ours",
   "added-by-theirs",
 ];
-const CLASSES: readonly unknown[] = ["lockfile", "generated", "binary", "text"];
+const CLASSES: readonly unknown[] = [
+  "lockfile",
+  "generated",
+  "migration",
+  "binary",
+  "text",
+];
 
 function isStringOrNull(value: unknown): boolean {
   return value === null || typeof value === "string";

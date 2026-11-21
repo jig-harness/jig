@@ -581,6 +581,18 @@ export const MIGRATIONS: readonly Migration[] = [
       PRIMARY KEY (vendor, config_dir)
     );`,
   },
+  {
+    additive: true,
+    sql: `CREATE TABLE rearm_waits (
+      repo TEXT NOT NULL,
+      pr INTEGER NOT NULL,
+      request_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      since_ms INTEGER NOT NULL,
+      PRIMARY KEY (repo, pr)
+    );`,
+  },
 ];
 
 /** The schema version this plugin writes. */

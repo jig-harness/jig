@@ -23,7 +23,7 @@
  * | the same, while the host's health check passes: a death within the session lease, or an unwritten result at any age | running: the tick releases the marker, and a later tick runs the follow-up again once, within the pull request's recovery budget |
  * | this host's, its outcome failed on a question tagged with a routine class, or failed before passes tagged their questions, not itself a run again | running: the tick releases the marker, and a later tick runs the follow-up again once with the class's standing answer (every class's, for one that failed before), within the same recovery budget (`routine-reruns.ts`) |
  * | this host's, its pass recorded `waits` for a rate limit, or stopped on an untagged question that names a rate limit, fewer than 3 such waits in a row since a person last started it; or recorded `waits --reason pending` before `dispatch.followup_within` passed since its window's first pending wait | running: held until the time it named (an hour after a question), whatever answer other than done its marker carries; then the tick releases the marker, and a later tick starts the follow-up again as a first run (`followup-waits.ts`) |
- * | this host's, its pass recorded `waits --reason pending` past its window on an arm no earlier run went past its window on, and the release tags that arm names all exist when the tick reads them again within 15 minutes of the pass's end (`arm-reread.ts`) | running: the tick releases the marker, and a later tick runs the follow-up again as a new run |
+ * | this host's, its pass recorded `waits --reason pending` past its window on an arm no earlier run went past its window on, and the release tags that arm names all exist and the workflow runs it links to have all finished when the tick reads them again within 15 minutes of the pass's end (`arm-reread.ts`) | running: the tick releases the marker, and a later tick runs the follow-up again as a new run |
  * | this host's, its pass waited on a rate limit so 3 times in a row, or found its arm still pending once `dispatch.followup_within` had passed since the run's first pending wait | a failed follow-up: notified, the rate limit or the pending arm named, with the question it stopped on, never started again until a person deletes its marker or chooses to run it again, which starts a new run |
  * | this host's, its outcome failed on an untagged question or none, its run again failed, died or could not record its result, a death older than the session lease, one launched under `failures.rerun_died: 0`, or record and outcome both gone | a failed follow-up: notified on the configured cadence, with the question its pass stopped on when it stated one (never one from a pass whose result could not be written: that question is the host's fault), never started again |
  * | this host's, naming a record for anything else | reports it, starts nothing |
@@ -92,6 +92,7 @@ import {
   spentWords,
   waitOver,
   waitStreak,
+  type WaitStreak,
   waitsSpent,
   waitWords,
 } from "./followup-waits.ts";
@@ -519,10 +520,23 @@ function settledArm(
   plan.running.push({
     target,
     stage: "followup",
-    reason: `launch record ${id}'s pass found ${armWords(spent.wait)} still pending past dispatch.followup_within, and read again this tick, ${spent.reread.join(", ")} now exist: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
+    reason: `launch record ${id}'s pass found ${armWords(spent.wait)} still pending past dispatch.followup_within, and read again this tick, ${settledWords(spent)}: the tick releases its marker (comment ${marker.id}), and a later tick runs the follow-up again once`,
     evidence: { record: id, marker: marker.id },
   });
   return true;
+}
+
+/** What the tick's re-read of a spent arm found settled, in words: its tags exist, its runs finished. */
+function settledWords(spent: WaitStreak): string {
+  const tags =
+    spent.reread.length === 0 ? [] : [`${spent.reread.join(", ")} now exist`];
+  const runs =
+    spent.rereadRuns.length === 0
+      ? []
+      : [
+          `the run${spent.rereadRuns.length === 1 ? "" : "s"} ${spent.rereadRuns.map((r) => `${r.slug}#${r.id}`).join(", ")} finished`,
+        ];
+  return [...tags, ...runs].join(" and ");
 }
 
 /** A failed follow-up this host's marker claims: its pass ended short of done, or its record and outcome are both gone. */

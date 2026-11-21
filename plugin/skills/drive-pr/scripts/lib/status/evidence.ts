@@ -5,15 +5,14 @@
  * `evaluate.ts` owns the decision; this module owns the witnesses.
  */
 
-import { parseReviewRound } from "../../summary-findings.ts";
 import { liveHeldChecks } from "../held-checks.ts";
-import { suiteIdOf } from "../ci-hold.ts";
 import {
   isReviewerLogin,
   reviewedShaMarker,
   reviewerApp,
   reviewerCheckPattern,
   reviewerExpected,
+  skipNoticeMarker,
   stickyMarker,
 } from "../overlay.ts";
 import { checkPattern } from "../merge-ready.ts";
@@ -24,6 +23,8 @@ import {
   slurpCheckRuns,
   slurpPages,
 } from "../paged-read.ts";
+import { type CheckRun, parsePages } from "./commit-observations.ts";
+export type { CheckRun } from "./commit-observations.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
 import {
   type FailedRun,
@@ -35,7 +36,8 @@ import {
   withoutSuperseded,
   workflowRunsBehind,
 } from "./workflow-runs.ts";
-import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
+import { type ReviewerSticky, reviewerStickyIn } from "./reviewer-sticky.ts";
+export type { ReviewerSticky } from "./reviewer-sticky.ts";
 import {
   type CommitStatus,
   combinedStatuses,
@@ -83,35 +85,69 @@ export const SHA_MARKER = reviewedShaMarker();
 // a SHA marker would otherwise override the real witness.
 export const STICKY_MARKER = stickyMarker();
 
-export interface CheckRun {
-  name: string;
-  status: string;
-  conclusion: string | null;
-  app: string;
-  title: string;
-  id: number;
-  /** ISO timestamp, or `null` for a queued attempt that has not started —
-   * the same nullability `latestPerName`'s ordering comment already documents.
-   * Read by the stranded-check-run bypass to floor how long an
-   * `in_progress` run must have been running before its sticky is trusted,
-   * distinguishing a genuine in-flight publish (seconds) from a stranded one
-   * (measured: 3.5+ hours). */
-  started: string | null;
-  /** ISO timestamp; absent or `null` until it has completed. */
-  completed?: string | null;
-  /** The check suite of the workflow run behind it, when it names one. */
-  suiteId?: number | null;
-}
-
 export type { CommitStatus, FailingStatus };
 
-function parsePages(raw: string): unknown[] | null {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return null;
-  }
+/** A head's check runs, or `null` with how the listing was cut short. */
+export interface CheckRunListing {
+  runs: CheckRun[] | null;
+  cutShort: ListingCutShort | null;
+}
+
+/**
+ * Every check-run on `sha`, preserving a deadline or page-bound failure for
+ * the status decision instead of reducing it to an unreadable listing.
+ */
+export async function checkRunListing(
+  owner: string,
+  repo: string,
+  sha: string,
+  read: PagedRead = "fresh",
+): Promise<CheckRunListing> {
+  const result = await slurpCheckRuns(owner, repo, sha, read);
+  if (result.code !== 0)
+    return { runs: null, cutShort: listingCutShort(sha, result) };
+  const pages = parsePages(result.stdout);
+  if (pages === null) return { runs: null, cutShort: null };
+  return {
+    runs: pages.flatMap((page) =>
+      (
+        ((page as { check_runs?: unknown[] } | null)?.check_runs ??
+          []) as Array<Record<string, unknown>>
+      ).map((run) => ({
+        name: String(run.name ?? ""),
+        status: String(run.status ?? ""),
+        conclusion:
+          run.conclusion === null ? null : String(run.conclusion ?? ""),
+        app: String(
+          ((run.app as Record<string, unknown> | null)?.slug ?? "") || "",
+        ),
+        title: String(
+          ((run.output as Record<string, unknown> | null)?.title ?? "") || "",
+        ),
+        id: Number(run.id ?? 0),
+        started:
+          run.started_at === null ? null : String(run.started_at ?? "") || null,
+        completed:
+          typeof run.completed_at === "string" ? run.completed_at : null,
+        suiteId:
+          typeof (run.check_suite as Record<string, unknown> | null)?.id ===
+          "number"
+            ? ((run.check_suite as Record<string, unknown>).id as number)
+            : null,
+      })),
+    ),
+    cutShort: null,
+  };
+}
+
+/** `checkRunListing`'s runs alone, for callers that do not need the cause. */
+export async function checkRunsFor(
+  owner: string,
+  repo: string,
+  sha: string,
+  read: PagedRead = "fresh",
+): Promise<CheckRun[] | null> {
+  return (await checkRunListing(owner, repo, sha, read)).runs;
 }
 
 /** Every page of a commit's `statuses` listing; `null` when unreadable. */
@@ -127,79 +163,6 @@ async function statusPages(
   );
   return r.code === 0 ? parsePages(r.stdout) : null;
 }
-
-/** What ties a check-run to its workflow run and to when it ended. */
-function jobTiming(c: Record<string, unknown>) {
-  return {
-    completed: typeof c.completed_at === "string" ? c.completed_at : null,
-    suiteId: suiteIdOf(c.check_suite),
-  };
-}
-
-/** A head's check runs, or `null` with how the listing was cut short, if it was. */
-export interface CheckRunListing {
-  runs: CheckRun[] | null;
-  cutShort: ListingCutShort | null;
-}
-
-/**
- * Every check-run on `sha`, across every page (`--paginate --slurp`), reduced
- * to the fields the decision reads. `fresh` unless the caller only observes
- * (`paged-read.ts`): a CI-green proof or a hold release reads what GitHub says
- * now. `runs` is `null` when the API could not be read — the caller decides
- * whether that is INDETERMINATE (a MERGEABLE head), `CHECK_RUNS_UNREADABLE`
- * (the listing was cut short) or a degraded-to-unknown verdict (a CONFLICTING
- * one, where no consumer of the runs is reachable).
- */
-export async function checkRunListing(
-  owner: string,
-  repo: string,
-  sha: string,
-  read: PagedRead = "fresh",
-): Promise<CheckRunListing> {
-  const r = await slurpCheckRuns(owner, repo, sha, read);
-  if (r.code !== 0) return { runs: null, cutShort: listingCutShort(sha, r) };
-  const pages = parsePages(r.stdout);
-  return { runs: pages === null ? null : checkRunsIn(pages), cutShort: null };
-}
-
-/** `checkRunListing`'s runs alone, for a caller any failure stops the same way. */
-export async function checkRunsFor(
-  owner: string,
-  repo: string,
-  sha: string,
-  read: PagedRead = "fresh",
-): Promise<CheckRun[] | null> {
-  return (await checkRunListing(owner, repo, sha, read)).runs;
-}
-
-const text = (value: unknown): string => String(value ?? "");
-const nested = (value: unknown, key: string): string =>
-  text((value as Record<string, unknown> | null)?.[key]) || "";
-
-function checkRunOf(c: Record<string, unknown>): CheckRun {
-  return {
-    name: text(c.name),
-    status: text(c.status),
-    conclusion: c.conclusion === null ? null : text(c.conclusion),
-    app: nested(c.app, "slug"),
-    title: nested(c.output, "title"),
-    id: Number(c.id ?? 0),
-    started: c.started_at === null ? null : text(c.started_at) || null,
-    ...jobTiming(c),
-  };
-}
-
-function checkRunsIn(pages: unknown[]): CheckRun[] {
-  return pages.flatMap((page) =>
-    (
-      ((page as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<
-        Record<string, unknown>
-      >
-    ).map(checkRunOf),
-  );
-}
-
 /**
  * Paginated for the same reason the check-runs query is: a commit can carry
  * more than one page of legacy status contexts, and reading only the first
@@ -814,29 +777,6 @@ export async function ciReportFor(
   };
 }
 
-export interface ReviewerSticky {
-  /** The `ai-reviewed-sha` marker from the newest STICKY comment, or `''`
-   * when the reviewer has posted no sticky. */
-  sha: string;
-  /** The `ai-review-round` marker from that SAME comment, or `null` when the
-   * sticky carries no round marker. */
-  round: number | null;
-  /**
-   * That SAME comment's own `updated_at`, or `''` when there is no sticky.
-   *
-   * The reviewer edits its one sticky in place each round rather than posting a
-   * new one, so this is when the marker content above was last written — the
-   * only readable proxy for "when did this evidence come into being". The
-   * stranded-check-run bypass needs precisely that: the check-run's own
-   * `started_at` says when the RUN began, which is a different quantity and
-   * cannot distinguish a sticky written moments ago mid-run from one written by
-   * an earlier, already-completed run on the same head.
-   */
-  updatedAt: string;
-  /** The skip notice in that SAME comment (`skip-notice.ts`), or `null`. */
-  skip: SkipNotice | null;
-}
-
 /**
  * The reviewer's own record of what it reviewed, read from the newest STICKY
  * comment it posted: its SHA, round, last-updated and skip-notice markers,
@@ -874,40 +814,14 @@ export async function reviewerStickyMarkers(
   if (r.code !== 0) return null;
   const pages = parsePages(r.stdout);
   if (pages === null) return null;
-  const markerRe = new RegExp(
-    `<!--\\s*${SHA_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
-    "g",
+
+  return reviewerStickyIn(
+    pages.flatMap((page) => (Array.isArray(page) ? page : [])),
+    isReviewerLogin,
+    STICKY_MARKER,
+    SHA_MARKER,
+    skipNoticeMarker(),
   );
-  let sticky: ReviewerSticky = {
-    sha: "",
-    round: null,
-    updatedAt: "",
-    skip: null,
-  };
-  for (const page of pages) {
-    const comments = Array.isArray(page) ? page : [];
-    for (const c of comments as Array<Record<string, unknown>>) {
-      const login = String(
-        ((c.user as Record<string, unknown> | null)?.login ?? "") || "",
-      );
-      const body = String(c.body ?? "");
-      if (!isReviewerLogin(login)) continue;
-      if (!body.includes(STICKY_MARKER)) continue;
-      let bodySha = "";
-      for (const m of body.matchAll(markerRe)) bodySha = m[1] ?? "";
-      if (bodySha === "") continue;
-      sticky = {
-        sha: bodySha,
-        round: parseReviewRound(body),
-        // Absent/malformed reads as `''`, never as "now" — a caller flooring
-        // on this must fail closed on an undatable sticky rather than treat it
-        // as freshly written.
-        updatedAt: String(c.updated_at ?? ""),
-        skip: skipNoticeIn(body),
-      };
-    }
-  }
-  return sticky;
 }
 
 export interface UnresolvedThread {

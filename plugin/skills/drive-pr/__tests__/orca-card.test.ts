@@ -115,7 +115,7 @@ describe("the stop's comment", () => {
       [MAX_ROUNDS_EXIT, "used its round budget without converging"],
       [
         REVIEWER_FAILED_EXIT,
-        "stopped: the posting reviewer's check did not pass",
+        "stopped: the posting reviewer's check reported a failure",
       ],
       [9, "stopped: it conflicts with its base and has nothing left to work"],
       [22, "stopped: the reviewer skipped its head and will not review it"],
@@ -188,7 +188,7 @@ describe("in an Orca terminal", () => {
 
   test("a failure stop marks the card unread without reading the drive state", async () => {
     const comment =
-      "PR #42's drive stopped: the posting reviewer's check did not pass (exit 7)";
+      "PR #42's drive stopped: the posting reviewer's check reported a failure (exit 7)";
     const {
       calls,
       reads,
