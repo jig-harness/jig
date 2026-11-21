@@ -72,6 +72,7 @@ function worktrees(m: Machine): { first: string; second: string } {
 function writeRecord(
   config: string,
   installs: { project: string; version: string }[],
+  user?: { version: string; installPath: string },
 ): string {
   const plugins = join(config, "plugins");
   mkdirSync(plugins, { recursive: true });
@@ -81,13 +82,24 @@ function writeRecord(
     JSON.stringify({
       version: 2,
       plugins: {
-        "jig@jig": installs.map(({ project, version }) => ({
-          scope: "project",
-          projectPath: project,
-          installPath: join(config, "cache", version),
-          version,
-          gitCommitSha: `commit-of-${version}`,
-        })),
+        "jig@jig": [
+          ...(user === undefined
+            ? []
+            : [
+                {
+                  scope: "user",
+                  ...user,
+                  gitCommitSha: `commit-of-${user.version}`,
+                },
+              ]),
+          ...installs.map(({ project, version }) => ({
+            scope: "project",
+            projectPath: project,
+            installPath: join(config, "cache", version),
+            version,
+            gitCommitSha: `commit-of-${version}`,
+          })),
+        ],
       },
     }),
   );
@@ -121,10 +133,14 @@ test.skipIf(onWindows)(
   () => {
     const m = machine(SCHEDULERS[0]);
     const { first, second } = worktrees(m);
-    const record = writeRecord(join(m.home, ".claude"), [
-      { project: first, version: "0.1.0" },
-      { project: second, version: "0.1.0" },
-    ]);
+    const record = writeRecord(
+      join(m.home, ".claude"),
+      [
+        { project: first, version: "0.1.0" },
+        { project: second, version: "0.1.0" },
+      ],
+      { version: "0.3.0", installPath: m.plugin },
+    );
     m.release("0.3.0", m.plugin);
     const result = m.jig(["upgrade", "--json"]);
     expectSpawnExit(result, 0);
@@ -150,15 +166,15 @@ test.skipIf(onWindows)(
     expect(scopedUpdates(m)).toEqual([
       "claude plugin update jig@jig --scope project --json",
     ]);
-    const after = entries(record);
+    const after = entries(record).filter((e) => e.scope === "project");
     expect(after.map((e) => [e.projectPath, e.version, e.installPath])).toEqual(
       [
         [first, "0.3.0", m.plugin],
         [second, "0.3.0", m.plugin],
       ],
     );
-    // The stale commit is not carried over; the record names no user-scope one.
-    expect(after[1]?.gitCommitSha).toBeUndefined();
+    // The rewritten record takes the user-scope install's commit.
+    expect(after[1]?.gitCommitSha).toBe("commit-of-0.3.0");
     const err = result.stderr.toString();
     expect(err).toContain(
       `claude: jig@jig 0.1.0 for ${second} (project scope): rewritten, claude plugin update, run once for its repository from ${first}`,
@@ -278,5 +294,78 @@ test.skipIf(onWindows)(
     const claude = claudeOf(result);
     expect(claude?.outcome).toBe("missing");
     expect(claude?.scoped?.map((r) => r.outcome)).not.toContain("left");
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig upgrade drops the stale commit of a rewritten record when the user-scope install names none",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    const { first, second } = worktrees(m);
+    const record = writeRecord(join(m.home, ".claude"), [
+      { project: first, version: "0.1.0" },
+      { project: second, version: "0.1.0" },
+    ]);
+    m.release("0.3.0", m.plugin);
+    expectSpawnExit(m.jig(["upgrade", "--claude", "--json"]), 0);
+    const rewritten = entries(record)[1];
+    expect(rewritten?.version).toBe("0.3.0");
+    expect(rewritten?.gitCommitSha).toBeUndefined();
+  },
+);
+
+test.skipIf(onWindows)(
+  "an update that says it refreshed this worktree and did not is left and fails the run, whatever its siblings are at",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    const { first, second } = worktrees(m);
+    const record = writeRecord(join(m.home, ".claude"), [
+      { project: first, version: "0.3.0" },
+      { project: second, version: "0.1.0" },
+    ]);
+    m.release("0.3.0", m.plugin);
+    m.agentState((state) => {
+      state.claude.scopedUpdateRedirect = second;
+      state.claude.scopedUpdateNoop = true;
+    });
+    const result = m.jig(["upgrade", "--claude", "--json"]);
+    expectSpawnExit(result, 1);
+    expect(claudeOf(result)?.scoped).toContainEqual(
+      expect.objectContaining({
+        project: second,
+        outcome: "left",
+        detail: expect.stringContaining("remains at 0.1.0; expected 0.3.0"),
+      }),
+    );
+    expect(entries(record).map((e) => e.version)).toEqual(["0.3.0", "0.1.0"]);
+  },
+);
+
+test.skipIf(onWindows)(
+  "a Claude Code without the update's --json option is asked again without it",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    const { first, second } = worktrees(m);
+    const record = writeRecord(join(m.home, ".claude"), [
+      { project: first, version: "0.1.0" },
+      { project: second, version: "0.1.0" },
+    ]);
+    m.release("0.3.0", m.plugin);
+    m.agentState((state) => {
+      state.claude.scopedUpdateNoJson = true;
+    });
+    const result = m.jig(["upgrade", "--claude", "--json"]);
+    expectSpawnExit(result, 0);
+    expect(scopedUpdates(m)).toEqual([
+      "claude plugin update jig@jig --scope project --json",
+      "claude plugin update jig@jig --scope project",
+    ]);
+    expect(
+      claudeOf(result)?.scoped?.map((r) => [r.project, r.outcome]),
+    ).toEqual([
+      [first, "refreshed"],
+      [second, "rewritten"],
+    ]);
+    expect(entries(record).map((e) => e.version)).toEqual(["0.3.0", "0.3.0"]);
   },
 );

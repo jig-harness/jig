@@ -379,6 +379,26 @@ function removeGone(
   );
 }
 
+/**
+ * Runs `claude plugin update` for `install` from its directory, asking for
+ * its `--json` result line; what it printed. A Claude Code that has no
+ * `--json` for the command is asked again without it, and its message then
+ * names no directory.
+ */
+function scopedUpdate(
+  program: string,
+  install: ScopedInstall,
+  say: Say,
+): string {
+  const args = ["plugin", "update", PLUGIN_ID, "--scope", install.scope];
+  try {
+    return run(program, [...args, "--json"], say, install.project);
+  } catch (error) {
+    if (!/unknown option '?--json/.test(reason(error))) throw error;
+    return run(program, args, say, install.project);
+  }
+}
+
 /** One `claude plugin update` run for a repository's stale installs. */
 interface Update {
   /** The directory it ran from. */
@@ -411,13 +431,10 @@ function updateEachRepository(
     if (update === undefined) {
       if (reached.has(scopedKey(install.scope, here))) continue;
       try {
-        const output = run(
-          program,
-          ["plugin", "update", PLUGIN_ID, "--scope", install.scope, "--json"],
-          say,
-          install.project,
-        );
-        update = { from: install.project, reached: updatedProject(output) };
+        update = {
+          from: install.project,
+          reached: updatedProject(scopedUpdate(program, install, say)),
+        };
         if (update.reached !== null)
           reached.add(scopedKey(install.scope, directoryKey(update.reached)));
       } catch (error) {
@@ -444,10 +461,14 @@ function unreachedBy(
 ): string | null {
   if (update === undefined || update.error !== undefined) return null;
   const here = directoryKey(install.project);
-  if (update.reached !== null && directoryKey(update.reached) !== here)
+  if (update.reached !== null) {
+    // An update that says it refreshed this very directory, and did not, is
+    // a fault of its own, not one another worktree explains.
+    if (directoryKey(update.reached) === here) return null;
     return update.from === install.project
       ? `claude plugin update from ${install.project} refreshed ${update.reached} instead`
       : `claude plugin update, run once for its repository from ${update.from}, refreshed ${update.reached}, not this one`;
+  }
   const repo = repository(install.project);
   if (repo === null) return null;
   const sibling = listed.find(
@@ -633,13 +654,14 @@ export function refreshScoped(
     else present.push(install);
   }
   const repositoryOfDir = remembered(repository);
+  // Gone first: Claude Code may take a gone record for its repository's first.
+  const removed = removeGone(gone, record, say);
   const updates = updateEachRepository(
     program,
     present.filter((install) => install.version !== current),
     say,
     repositoryOfDir,
   );
-  const removed = removeGone(gone, record, say);
   const after = settled(program, present, current, updates, repositoryOfDir);
   const results = [
     ...left,

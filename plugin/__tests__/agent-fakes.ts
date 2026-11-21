@@ -40,10 +40,12 @@ export type ToolState = Release & {
   readFromFolder?: string;
   /** The message an update command fails with, exiting 1. */
   fail?: string;
-  /** Claude Code reports success without moving the scoped install's record. */
+  /** Claude Code reports the scoped update done without moving the install's record. */
   scopedUpdateNoop?: boolean;
   /** Claude Code's scoped update refreshes the install for this directory, wherever it runs. */
   scopedUpdateRedirect?: string;
+  /** Claude Code's scoped update has no `--json` option, as before it had one. */
+  scopedUpdateNoJson?: boolean;
 };
 
 /** What the channel offers next, and what each tool has installed and refreshed. */
@@ -71,6 +73,7 @@ else if (line === "plugin marketplace update jig") { failing(); tool.snapshot = 
 else if (line === "plugin update jig@jig --scope user") { failing(); Object.assign(tool, tool.snapshot); }
 else if (scopeUpdate) {
   failing();
+  if (scopeUpdate[2] && tool.scopedUpdateNoJson) { console.error("error: unknown option '--json'"); process.exit(1); }
   const here = realpathSync(process.cwd());
   const ofScope = scoped.filter((e) => e.scope === scopeUpdate[1] && existsSync(e.projectPath));
   // As Claude Code does: the first record of the repository the directory is in, else the directory's own.
@@ -84,7 +87,7 @@ else if (scopeUpdate) {
     Object.assign(entry, { version: tool.snapshot.version, installPath: tool.snapshot.path });
   writeFileSync(record, JSON.stringify(stored, null, 2));
   if (scopeUpdate[2])
-    console.log(JSON.stringify({ command: "update", outcome: "ok", pluginId: "jig@jig", scope: scopeUpdate[1], oldVersion: old, newVersion: entry.version, message: old === entry.version ? "jig is already at the latest version (" + old + ")." : "updated from " + old + " to " + entry.version + " for scope " + scopeUpdate[1] + " (" + entry.projectPath + ")" }));
+    console.log(JSON.stringify({ command: "update", outcome: "ok", pluginId: "jig@jig", scope: scopeUpdate[1], oldVersion: old, newVersion: tool.snapshot.version, message: old === tool.snapshot.version ? "jig is already at the latest version (" + old + ")." : "updated from " + old + " to " + tool.snapshot.version + " for scope " + scopeUpdate[1] + " (" + entry.projectPath + ")" }));
 }
 else refuse();
 `;
