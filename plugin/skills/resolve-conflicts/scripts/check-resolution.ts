@@ -63,6 +63,8 @@ import {
 } from "./lib/classify.ts";
 import { THROWAWAY_INDEX_CONFIG } from "./lib/attributes.ts";
 import { droppedLines } from "./lib/drops.ts";
+import { checkMigrations } from "./lib/migration-check.ts";
+import { migrationPlans } from "./lib/migration-plan.ts";
 import {
   git,
   gitPath,
@@ -193,6 +195,7 @@ function checkPath(
       message,
     });
   const { decision, reason, command, dropped } = entry.resolution;
+  const inspectDrops = entry.class === "text" || entry.class === "migration";
 
   if (decision === null || decision === undefined) {
     if (!stillUnmerged)
@@ -229,7 +232,7 @@ function checkPath(
       problem(
         `removed from the index, but the decision is '${decision}': record deleted with a reason, or restore the path`,
       );
-    else if (entry.class === "text")
+    else if (inspectDrops)
       for (const d of droppedLines(root, stages, ""))
         note(`${d.side} line ${d.line} dropped: "${d.text}"`);
     return;
@@ -268,7 +271,7 @@ function checkPath(
   for (const line of [...lines].sort((a, b) => a - b))
     problem("conflict marker left in the staged file", line);
 
-  if (entry.class !== "text") return;
+  if (!inspectDrops) return;
   // A hand-edited acknowledgement counts only with a reason and its lines.
   const acknowledgement =
     typeof dropped?.why === "string" &&
@@ -411,7 +414,18 @@ export function checkResolution(
     );
   result.problems.push(...stagedMarkers(root, snapshot.paths));
   result.problems.push(
-    ...provenanceProblems(root, snapshot, new Set(unmerged.keys())),
+    ...provenanceProblems(
+      root,
+      snapshot,
+      new Set(unmerged.keys()),
+      (staged, proof) =>
+        checkMigrations(
+          root,
+          migrationPlans(root, snapshot, proof),
+          staged,
+          proof[snapshot.sides.integration],
+        ),
+    ),
   );
   result.exit =
     result.escalations.length > 0 ? 4 : result.problems.length > 0 ? 1 : 0;

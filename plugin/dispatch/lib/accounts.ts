@@ -462,6 +462,18 @@ function closed(slots: Slots, launch: LaunchKind): string | null {
   return slots.held >= slots.account.maxPerAccount ? "full" : null;
 }
 
+/** A slot can clear this wait only if it is the reason an eligible account is closed. */
+export function hasFullAccount(
+  table: readonly Slots[],
+  launch: LaunchKind,
+  excluded: ReadonlySet<string>,
+): boolean {
+  return table.some(
+    (slots) =>
+      !excluded.has(slots.account.name) && closed(slots, launch) === "full",
+  );
+}
+
 export type Admission = { admitted: Slots } | { waits: string };
 
 /** A new launch follows weighted shares, or the turn after `last` when eligible weights are equal. */

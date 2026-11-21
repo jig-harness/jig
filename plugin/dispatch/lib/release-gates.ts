@@ -6,9 +6,15 @@ import {
   type RunHandle,
 } from "../../skills/drive-pr/scripts/lib/proc.ts";
 import { isRecord, isString, isStringArray } from "../../shared/guards.ts";
-import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import {
+  attempt,
+  failed,
+  ok,
+  type Failure,
+  type Outcome,
+} from "../../shared/outcome.ts";
 import { ghRunFailure } from "../../shared/outbound/github.ts";
-import { failedBy } from "../../shared/outbound/failure.ts";
+import { failedBy, outboundOf } from "../../shared/outbound/failure.ts";
 import { failedGateRuns } from "./release-gate-reads.ts";
 import {
   claimReleaseRerun,
@@ -23,6 +29,7 @@ import {
 } from "./sources/bounded.ts";
 import { currentMs } from "../../shared/time.ts";
 import type { RepoTarget } from "./types.ts";
+import { runWord, type WorkflowRun } from "./wait-for.ts";
 import { resolve } from "node:path";
 
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
@@ -235,6 +242,66 @@ export async function taggedReleases(
     found.add(tag);
   }
   return ok(found);
+}
+
+/** What a read of workflow runs answered: the finished ones, the ones that could not be read, and the first failure. */
+export interface RunReads {
+  finished: Set<string>;
+  unread: Set<string>;
+  failure: Failure<"refused"> | null;
+}
+
+/**
+ * Which of `runs`, the workflow runs a pending follow-up arm links to, have
+ * finished (`status: completed`) in a conclusion other than `cancelled`, by
+ * `runWord`: one REST request per run, its own core-rate point. A cancelled
+ * run was superseded, not settled: in a held queue each new run cancels the
+ * one before it, so counting it would start the follow-up again on every
+ * cancellation and a person would never be told. A run of a repository
+ * other than `repo` is read where its link points; a run the forge no
+ * longer has (`not-found`) is left unfinished, for a person.
+ */
+export async function finishedRuns(
+  repo: RepoTarget,
+  runs: readonly WorkflowRun[],
+  bound?: TickBound,
+): Promise<Outcome<RunReads, "refused">> {
+  const finished = new Set<string>();
+  const unread = new Set<string>();
+  let failure: Failure<"refused"> | null = null;
+  for (const run of runs) {
+    if (ended(bound)) {
+      // The runs not yet asked about are unread, each for the same reason.
+      failure ??= refused("the tick ran out of time").failure;
+      unread.add(runWord(run));
+      continue;
+    }
+    const reply = await forge(
+      repo,
+      [
+        "api",
+        `repos/${run.slug}/actions/runs/${run.id}`,
+        "--jq",
+        '.status + " " + (.conclusion // "")',
+      ],
+      bound,
+    );
+    if (!reply.ok) {
+      if (outboundOf(reply.failure)?.code === "not-found") continue;
+      failure ??= reply.failure;
+      unread.add(runWord(run));
+      continue;
+    }
+    const [status, conclusion] = reply.value.trim().split(" ");
+    if (
+      status === "completed" &&
+      conclusion !== undefined &&
+      conclusion !== "" &&
+      conclusion !== "cancelled"
+    )
+      finished.add(runWord(run));
+  }
+  return ok({ finished, unread, failure });
 }
 
 export async function observeReleaseTags(

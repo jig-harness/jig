@@ -1,5 +1,4 @@
 /** Retire requests that can no longer launch, and surface undelivered requests as needs. */
-import { currentMs } from "../../../shared/time.ts";
 import { listCommentsKept } from "../../../shared/records/comment-pages.ts";
 import { KILL_ESCALATE_MS } from "../../../skills/drive-pr/scripts/lib/proc.ts";
 import { snapshotFromListing } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
@@ -14,15 +13,78 @@ import {
 } from "../rearm-binding.ts";
 import { rearmFailureNotice } from "../notices.ts";
 import { readFailureOf } from "../read-failures.ts";
-import type { DrivenPr, Evidence, RepoReport } from "../types.ts";
+import type {
+  DrivenPr,
+  Evidence,
+  LaunchOutcome,
+  RepoReport,
+} from "../types.ts";
 import { timeLeftMs, type ApplyState } from "./launch.ts";
 import { pendingRearm } from "../rearm-state.ts";
+import {
+  clearRearmRequest,
+  rearmWaitAge,
+  settleRearmWaits,
+} from "../rearm-waits.ts";
 
 const REARM_WAIT_MS = 30 * 60_000;
+const LONG_CAPACITY_WAIT_MS = 4 * 60 * 60_000;
 
-export function rearmTimedOut(pr: DrivenPr, now = currentMs()): boolean {
-  const sent = pr.evidence.rearmRequestedAt;
-  return typeof sent === "number" && now - sent >= REARM_WAIT_MS;
+/** Whether an observed structural blocker has outlasted the bound. */
+export function rearmBlockExpired(
+  state: ApplyState,
+  repo: string,
+  pr: DrivenPr,
+  kind: "tree" | "stop",
+  reason: string,
+): boolean {
+  const request = pr.evidence.rearmRequestId;
+  return (
+    typeof request === "number" &&
+    rearmWaitAge({ repo, pr: pr.number, request, kind }, reason, state.root) >=
+      REARM_WAIT_MS
+  );
+}
+
+/** One capacity entry per waiting request in the line's current capacity view. */
+export function reportRearmCapacity(
+  state: ApplyState,
+  repo: string,
+  pr: DrivenPr,
+  outcome: LaunchOutcome,
+  capacity: "accounts" | "load",
+): void {
+  const request = pr.evidence.rearmRequestId;
+  const load = state.load;
+  if (
+    load === undefined ||
+    typeof request !== "number" ||
+    rearmWaitAge(
+      { repo, pr: pr.number, request, kind: "capacity" },
+      "capacity",
+      state.root,
+    ) < LONG_CAPACITY_WAIT_MS
+  )
+    return;
+  const detail = `rearm request queued for at least 4 hours: ${outcome.detail}`;
+  if (capacity === "load") {
+    const existing = load.holds.at(-1);
+    if (
+      existing?.repo === repo &&
+      existing.target === outcome.target &&
+      existing.held
+    )
+      existing.detail = detail;
+  } else {
+    load.holds.push({
+      repo,
+      target: outcome.target,
+      kind: "drive",
+      gauge: "accounts",
+      detail,
+      held: true,
+    });
+  }
 }
 
 export function failedRearmRequest(
@@ -62,7 +124,21 @@ function retirementReason(
   pr: DrivenPr,
 ): string | null {
   const { rearmExpired, rearmRequestId, rearm } = pr.evidence;
-  if (typeof rearmExpired === "string") return rearmExpired;
+  if (typeof rearmExpired === "string") {
+    const { rearmMovedTo, rearmMovedGeneration } = pr.evidence;
+    if (
+      typeof rearmMovedTo === "number" &&
+      !rearmBlockExpired(
+        state,
+        slug,
+        pr,
+        "stop",
+        `${rearmMovedTo}/${rearmMovedGeneration}`,
+      )
+    )
+      return null;
+    return rearmExpired;
+  }
   if (rearm !== true) return null;
   const failure = report.actions.find(
     (a) =>
@@ -70,12 +146,7 @@ function retirementReason(
       a.evidence.rearmFailedRequest === rearmRequestId &&
       typeof rearmRequestId === "number",
   );
-  return (
-    failure?.reason ??
-    (rearmTimedOut(pr) && !delivered(state, slug, pr)
-      ? "the request could not launch within 30 minutes"
-      : null)
-  );
+  return delivered(state, slug, pr) ? null : (failure?.reason ?? null);
 }
 
 function deadline(state: ApplyState): { timeoutSec?: number } | null {
@@ -104,6 +175,33 @@ function recordFault(run: Retirement, source: string, fault: Failure): void {
   });
 }
 
+function endedBinding(
+  requestId: number,
+  reason: string,
+  evidence: Evidence,
+  room: ReturnType<typeof deadline> & object,
+) {
+  const moved =
+    typeof evidence.rearmMovedTo === "number" &&
+    typeof evidence.rearmMovedGeneration === "number"
+      ? {
+          failureStop: {
+            comment: evidence.rearmMovedTo,
+            generation: evidence.rearmMovedGeneration,
+          },
+        }
+      : {};
+  return {
+    requestId,
+    reason,
+    ...(evidence.rearm === true || evidence.rearmMoved === true
+      ? { needsPerson: true as const }
+      : {}),
+    ...moved,
+    deadline: room,
+  };
+}
+
 /** End this exact request before removing its shared label. */
 async function retire(
   run: Retirement,
@@ -118,12 +216,13 @@ async function retire(
   let room = deadline(state);
   if (room === null) return;
   if (typeof requestId === "number" && evidence.rearmCancelled !== true) {
-    const ended = await writeRearmBinding(target, login, label, null, {
-      requestId,
-      reason: why,
-      ...(evidence.rearm === true ? { needsPerson: true } : {}),
-      deadline: room,
-    });
+    const ended = await writeRearmBinding(
+      target,
+      login,
+      label,
+      null,
+      endedBinding(requestId, why, evidence, room),
+    );
     if (!ended.ok) {
       recordFault(run, source, ended.failure);
       return;
@@ -153,6 +252,8 @@ async function retire(
     ok: true,
     detail: `removed ${label}: ${why}`,
   });
+  if (typeof requestId === "number")
+    clearRearmRequest(slug, pr, requestId, state.root);
 }
 
 /** Only the label, request marker, and stopped ledger are needed for retirement. */
@@ -222,16 +323,34 @@ async function retireClosed(run: Retirement): Promise<void> {
   }
 }
 
+/** A request that ended on a moved stop or a spent wait is notified once. */
+function noticeFailure(
+  report: RepoReport,
+  slug: string,
+  now: DrivenPr,
+  why: string,
+): void {
+  const ended = now.evidence.rearm === true || now.evidence.rearmMoved === true;
+  const told = report.actions.some(
+    (a) =>
+      a.target === `PR #${now.number}` &&
+      a.evidence.rearmFailedRequest === now.evidence.rearmRequestId,
+  );
+  if (ended && !told) failedRearmRequest(report, slug, now, why);
+}
+
 export async function retireRearmRequests(
   state: ApplyState,
   slug: string,
   report: RepoReport,
   labels: LabelConfig,
   observed: readonly DrivenPr[],
+  requested: ReadonlySet<number> | null,
   login: string | null,
 ): Promise<void> {
   const label = commandLabel(labels, "rearm");
   const run = { state, slug, report, label, login };
+  settleRearmWaits(slug, requested, state.root);
   for (const pr of observed) {
     if (deadline(state) === null) return;
     if (!pr.labels?.includes(label)) continue;
@@ -246,17 +365,8 @@ export async function retireRearmRequests(
     const now = { ...pr, evidence: current.evidence };
     if (retirementReason(state, slug, report, now) !== why) continue;
     // Planning withholds a held pull request's notifications, so the notice waits; the binding keeps the failure for after the release.
-    const held = hasCommand(labels, pr.labels, "hold");
-    if (
-      now.evidence.rearm === true &&
-      !held &&
-      !report.actions.some(
-        (a) =>
-          a.target === `PR #${now.number}` &&
-          a.evidence.rearmFailedRequest === now.evidence.rearmRequestId,
-      )
-    )
-      failedRearmRequest(report, slug, now, why);
+    if (!hasCommand(labels, pr.labels, "hold"))
+      noticeFailure(report, slug, now, why);
     await retire(run, pr.number, why, now.evidence);
   }
   await retireClosed(run);
