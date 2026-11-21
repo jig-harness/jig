@@ -6,7 +6,14 @@
  * Print one JSON report, keeping installer output on stderr.
  */
 import { join, posix } from "node:path";
-import { lstatSync, realpathSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { readPolicySnapshot } from "../../../shared/autonomy.ts";
 import { isMapping } from "../../../shared/config-layers.ts";
 import { consumerRoot, layeredConfig } from "../../../shared/consumer.ts";
@@ -276,7 +283,43 @@ async function modifiedDependencyInputs(root: string): Promise<string[]> {
 }
 
 async function workingTreeState(root: string): Promise<string> {
-  return gitOutput(root, ["diff", "--raw", "-z", "--"]);
+  const entries = pathList(await gitOutput(root, ["ls-files", "-s", "-z"]));
+  const contents = entries
+    .map((entry) => entry.match(/^(\d+) [0-9a-f]+ 0\t(.*)$/s))
+    .filter(
+      (match): match is RegExpMatchArray =>
+        match !== null && match[1] !== "160000" && match[2] !== undefined,
+    )
+    .map((match) => {
+      const path = match[2];
+      if (path === undefined) return "";
+      try {
+        const stat = lstatSync(join(root, path));
+        const content = stat.isSymbolicLink()
+          ? readlinkSync(join(root, path))
+          : readFileSync(join(root, path));
+        return `${path}\0${createHash("sha256").update(content).digest("hex")}`;
+      } catch {
+        return `${path}\0<missing>`;
+      }
+    });
+  const raw = await gitOutput(root, [
+    "diff",
+    "--raw",
+    "-z",
+    "--ignore-submodules=none",
+    "--",
+  ]);
+  const submodules = entries
+    .map((entry) => entry.match(/^160000 [0-9a-f]+ 0\t(.*)$/s)?.[1])
+    .filter(
+      (path): path is string =>
+        path !== undefined && existsSync(join(root, path, ".git")),
+    )
+    .map(
+      async (path) => `${path}\0${await workingTreeState(join(root, path))}`,
+    );
+  return `${raw}\0${contents.join("\0")}\0${(await Promise.all(submodules)).join("")}`;
 }
 
 async function untrackedLockfiles(

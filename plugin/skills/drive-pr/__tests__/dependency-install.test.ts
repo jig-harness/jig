@@ -206,4 +206,20 @@ process.exit(result.exitCode);`,
     expect(report.reason).toContain("failed to preserve the merge tree");
     expect(report.reason).toContain("working tree");
   });
+
+  for (const flag of ["--assume-unchanged", "--skip-worktree"])
+    it(`refuses an installer that overwrites a ${flag} source edit`, () => {
+      const cwd = fixture();
+      const before = baseChange(cwd, "bun.lock", "new");
+      git(cwd, ["merge", "-q", "--no-ff", "base"]);
+      writeFileSync(join(cwd, "example.txt"), "existing edit");
+      git(cwd, ["update-index", flag, "example.txt"]);
+      writeFileSync(
+        join(cwd, "install-fixture.ts"),
+        `await Bun.write("example.txt", "overwritten");`,
+      );
+      const report = refresh(cwd, ["--before", before], 1);
+      expect(report.reason).toContain("failed to preserve the merge tree");
+      expect(report.reason).toContain("working tree");
+    });
 });
