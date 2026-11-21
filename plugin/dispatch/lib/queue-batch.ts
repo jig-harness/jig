@@ -1,7 +1,9 @@
 /**
  * Small independent items sharing a configured change area use one pickup. A
  * size that needs a person's verdict to stay in a batch never joins one here,
- * where nobody is there to give it: that item is its own pickup.
+ * where nobody is there to give it: that item is its own pickup. Nor does an
+ * urgent item, or one with no priority, which `work-batch` holds back as a
+ * labelling gap: a batch holding one would stop on a question for a person.
  */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { matchOne } from "../../shared/rule-matcher.ts";
@@ -57,7 +59,7 @@ export function batchPickups(
       item?.servedPerson === undefined ||
       item.batchAllowed === false ||
       issue === undefined ||
-      issue.priority === 1 ||
+      issue.priority <= 1 ||
       !Object.hasOwn(policy.sizePoints, size) ||
       ownPickup.includes(size)
     )

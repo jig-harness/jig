@@ -22,6 +22,7 @@ Contents: [the registry and the envelope](#the-registry-and-the-envelope) ·
 [on the machine](#on-the-machine) ·
 [in the working tree](#in-the-working-tree) ·
 [on the forge and the tracker](#on-the-forge-and-the-tracker) ·
+[in the hub](#in-the-hub) ·
 [markers that are not records](#markers-that-are-not-records)
 
 ## The registry and the envelope
@@ -410,6 +411,19 @@ readable and keep their time-based answer binding.
 | `epic-acceptance-verdict`    | a comment on an epic, with its verdict marker on the last line | Markdown                                                                                                                                                                                                                                                                                                                                                                                                          | outside Jig: a person accepting the epic; read by `shared/epic-closure.ts`                                                                                                                                                                                                                   | trusted authors only                                                                                                                                                                                                                                                                                                                                          |
 | `epic-sweep` | a comment presenting epic closure proposals | Markdown with a digest of the proposed rows | `skills/do-item/scripts/lib/epic-sweep-plan.ts` | an acceptance applies to the proposal with the matching digest |
 | `epic-waiver` | a comment on each epic the person accepted for closure | Markdown with a link to the reply and the marker on the last line | `shared/epic-closure.ts` | trusted authors only. A rejection still blocks closure |
+
+## In the hub
+
+Records the optional hub keeps in its storage, for every host enrolled in
+it: tables declared once in `hub/storage/schema.ts`, with a `partition`
+column first (one repository's, one host's, or the hub's directory) that
+starts every key. Times are epoch milliseconds. A host that enrolls in no
+hub keeps none of these.
+
+| Record | Where it lives | Format | Written by | What guards it |
+| --- | --- | --- | --- | --- |
+| `hub-in-flight-read` | table `in_flight_reads`, one row per partition and target | the unit reading the target through, when it took the read and its deadline, 30 seconds later | `hub/storage/operations.ts`, for the core's `takeInFlightRead` and `releaseInFlightRead` | taken by one insert that replaces the row only once its deadline has passed; released only by its holder; the trimming job deletes a row a day after its deadline |
+| `hub-job-lease` | table `job_leases`, one row per partition and job | the run holding the job and until when, its progress as JSON, and when a run last started and finished | `hub/storage/operations.ts`, for the core's job helper (`hub/core/jobs.ts`) | taken by one insert that takes the row only when it is free or lapsed; progress saved and the lease renewed only while the holder's lease holds; finished only by its holder |
 
 ## Markers that are not records
 

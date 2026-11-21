@@ -19,8 +19,8 @@ import type { Writer } from "./writer-shape.ts";
 
 export { readWriter, type Writer } from "./writer-shape.ts";
 
-/** Where a record is kept: on the machine, in the working tree, on the forge, on the tracker. */
-export type Medium = "machine" | "tree" | "forge" | "tracker";
+/** Where a record is kept: on the machine, in the working tree, on the forge, on the tracker, in the hub's storage. */
+export type Medium = "machine" | "tree" | "forge" | "tracker" | "hub";
 
 /** Whether everyone who can read the repository can read a record kept on `medium`. */
 function isPublic(medium: Medium): boolean {
