@@ -111,11 +111,7 @@ import type {
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { snapshotFromListing } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
-import {
-  diagnosisPrefix,
-  diagnosisSkippedPrefix,
-  diagnosisStartedPrefix,
-} from "../../../skills/drive-pr/scripts/lib/state/ci-actions.ts";
+import { diagnosisOutcome } from "../../../skills/drive-pr/scripts/lib/state/ci-actions.ts";
 import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { ledgerTree } from "../stall-tree.ts";
 import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
@@ -382,6 +378,18 @@ const MECHANICAL_STOPS: ReadonlyMap<
   ],
 ]);
 
+/** Why a `CI_REPAIR_SPENT` stop whose head was diagnosed is a person's, or `null`. */
+function diagnosedStopWhy(
+  ledger: Ledger,
+  exit: number,
+  head: string,
+): string | null {
+  const detail = diagnosisOutcome(ledger.ciActions ?? [], head);
+  return detail === undefined
+    ? null
+    : `stopped ${exit} after escalating CI repair on head ${short(head)}: ${detail}`;
+}
+
 /**
  * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE`,
  * read beside its pull request's head: `stale`, keyed on that head and the
@@ -402,29 +410,13 @@ function mechanicalStopClass(
     };
   if (stop.kind === "ci-infra")
     return infraStopClass(ledger, exit, head, stop.words);
-  if (stop.kind === "ci-repair") {
-    const prefix = diagnosisPrefix(head);
-    const started = diagnosisStartedPrefix(head);
-    const diagnosis = ledger.ciActions?.findLast(
-      (action) =>
-        action.action === "repair" &&
-        (action.detail.startsWith(prefix) ||
-          action.detail.startsWith(started) ||
-          action.detail.startsWith(diagnosisSkippedPrefix(head))),
-    );
-    if (
-      diagnosis !== undefined &&
-      !diagnosis.detail.startsWith(diagnosisSkippedPrefix(head))
-    ) {
-      const detail = diagnosis.detail.startsWith(prefix)
-        ? diagnosis.detail.slice(prefix.length)
-        : "the diagnosing session recorded no outcome";
-      return {
-        class: "needs-person",
-        why: `stopped ${exit} after escalating CI repair on head ${short(head)}: ${detail}${conflictNote(forge.mergeable)}`,
-      };
-    }
-  }
+  const diagnosed =
+    stop.kind === "ci-repair" ? diagnosedStopWhy(ledger, exit, head) : null;
+  if (diagnosed !== null)
+    return {
+      class: "needs-person",
+      why: `${diagnosed}${conflictNote(forge.mergeable)}`,
+    };
   if (stop.kind === "forge-limit")
     return forgeLimitStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);

@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
@@ -19,6 +20,7 @@ import {
   failingStatusNames,
 } from "../scripts/lib/status/evidence";
 
+import { parkRecord } from "./park-record-fixture.ts";
 import {
   type CheckRunFixture,
   REVIEWER_RUN,
@@ -28,6 +30,7 @@ import {
   scratchClean,
   writeFixture as rawFixture,
   probeIn,
+  SCRIPTS,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import {
@@ -121,37 +124,89 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
     expect(r.stderr).toContain("diagnosing now");
     expect(r.stderr).toContain(
-      "a diagnosis and, unless filing was parked, a tracker issue key",
+      "a diagnosis and either a tracker issue key or the key of the filing it parked",
     );
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
   }, 20_000);
 
-  it("keeps the diagnosis of a report that parked the issue filing", async () => {
-    // The pass exits 0 but changes nothing, so the drive re-gates onto the
-    // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
-    const r = await runDrive(
+  // A pass that omits the issue key must name the filing decision it parked
+  // during this diagnosis: the driver reads the drive state for that park.
+  const FILING_KEY = "ci-diagnosis-filing";
+  const diagnoseOnly = (body: string) => [
+    "sh",
+    "-c",
+    `: pass for 999; if [ "$DRIVE_PR_ROUND_TASK" = ci-diagnose ]; then echo "diagnosing now" >&2; ${body}; fi`,
+  ];
+  const diagnoseOnRed = async (pass: string[]) =>
+    await runDrive(
       {
         threads: [],
         head: scratchClean.head,
         reviewedSha: scratchClean.head,
         checkRuns: [REVIEWER_RUN, DORMANT_ARM, FAILING_RUN],
       },
-      [
-        "--keep-draft",
-        "--no-head-sync",
-        "--",
-        "sh",
-        "-c",
-        ': pass for 999; if [ "$DRIVE_PR_ROUND_TASK" = ci-diagnose ]; then echo "diagnosing now" >&2; printf \'%s\\n\' \'{"diagnosis":"the local gate ran no tests"}\' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; fi',
-      ],
+      ["--keep-draft", "--no-head-sync", "--", ...pass],
       undefined,
-      { env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" } },
+      {
+        env: {
+          DRIVE_PR_CI_REPAIR_ROUNDS: "1",
+          JIG__dispatch__person: "maintainer",
+        },
+      },
+    );
+
+  it("keeps the diagnosis of a report that parked the issue filing", async () => {
+    // The pass exits 0 but changes nothing, so the drive re-gates onto the
+    // identical red verdict. Budget 1 grants one ordinary repair before diagnosis.
+    const record = join(
+      mkdtempSync(join(tmpdir(), "diagnosis-park-")),
+      "record.json",
+    );
+    writeFileSync(
+      record,
+      parkRecord(
+        "File the recurring CI cause as a tracker issue",
+        "human-decision",
+      ),
+    );
+    const r = await diagnoseOnRed(
+      diagnoseOnly(
+        `"${join(SCRIPTS, "drive-state.ts")}" park 999 --key ${FILING_KEY} --kind finding --class human-decision < "${record}" && printf '%s\\n' '{"diagnosis":"the local gate ran no tests","parked":"${FILING_KEY}"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
+      ),
     );
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
     expect(r.stderr).toContain("diagnosing now");
     expect(r.stderr).toContain(
       "no issue filed (parked for a person). the local gate ran no tests",
     );
+    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+  }, 20_000);
+
+  it("rejects a diagnosis report with no issue key and no parked filing", async () => {
+    const r = await diagnoseOnRed(
+      diagnoseOnly(
+        `printf '%s\\n' '{"diagnosis":"done"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
+      ),
+    );
+    expect(r.stderr).toContain("diagnosing now");
+    expect(r.stderr).toContain(
+      "a diagnosis and either a tracker issue key or the key of the filing it parked",
+    );
+    expect(r.stderr).not.toContain("parked for a person");
+    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+  }, 20_000);
+
+  it("rejects a diagnosis report naming a filing park the drive does not hold", async () => {
+    const r = await diagnoseOnRed(
+      diagnoseOnly(
+        `printf '%s\\n' '{"diagnosis":"done","parked":"${FILING_KEY}"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
+      ),
+    );
+    expect(r.stderr).toContain("diagnosing now");
+    expect(r.stderr).toContain(
+      `names the filing park ${FILING_KEY}, but this diagnosis parked no human-decision under that key`,
+    );
+    expect(r.stderr).not.toContain("parked for a person");
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
   }, 20_000);
 

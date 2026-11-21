@@ -17,6 +17,39 @@ export const diagnosisStartedPrefix = (head: string) =>
 export const diagnosisSkippedPrefix = (head: string) =>
   `diagnose-skipped: head ${head}: `;
 
+/** The latest escalation at `head`: a started, recorded or skipped diagnosis. */
+export function lastDiagnosisAt(
+  actions: readonly CiAction[],
+  head: string,
+): CiAction | undefined {
+  return actions.findLast(
+    (a) =>
+      a.action === "repair" &&
+      (a.detail.startsWith(diagnosisPrefix(head)) ||
+        a.detail.startsWith(diagnosisStartedPrefix(head)) ||
+        a.detail.startsWith(diagnosisSkippedPrefix(head))),
+  );
+}
+
+/**
+ * What the escalation at `head` left: its recorded diagnosis, a note that the
+ * session recorded none, or `undefined` when none ran or it was skipped.
+ */
+export function diagnosisOutcome(
+  actions: readonly CiAction[],
+  head: string,
+): string | undefined {
+  const last = lastDiagnosisAt(actions, head);
+  if (
+    last === undefined ||
+    last.detail.startsWith(diagnosisSkippedPrefix(head))
+  )
+    return undefined;
+  return last.detail.startsWith(diagnosisPrefix(head))
+    ? last.detail.slice(diagnosisPrefix(head).length)
+    : "the diagnosing session recorded no outcome";
+}
+
 function diagnosisHead(action: CiAction): string | undefined {
   if (action.action !== "repair") return undefined;
   const match = /^diagnos(?:is|e(?:-skipped)?): head (\S+): /.exec(

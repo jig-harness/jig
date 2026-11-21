@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { CI_REPAIR_SPENT_EXIT } from "../scripts/lib/driver/settings.ts";
 import { readRoundSessions } from "../../../dispatch/lib/round-sessions.ts";
 import { stateDb, statePath } from "../../../dispatch/lib/state.ts";
 import {
@@ -109,7 +110,12 @@ for (const scenario of [
       new Response(child.stderr).text(),
       child.exited,
     ]);
-    expectSpawnExit({ stdout, stderr, exitCode }, 1);
+    // A failed repair spends the head's budget, so the drive escalates to one
+    // diagnosing pass, which leaves no receipt and stops the drive.
+    expectSpawnExit(
+      { stdout, stderr, exitCode },
+      repair ? CI_REPAIR_SPENT_EXIT : 1,
+    );
     const row = db
       .query<{ sessions: string | null }, []>("SELECT sessions FROM launches")
       .get();
@@ -119,9 +125,11 @@ for (const scenario of [
       expect(stderr).toContain("task=ci-repair");
       const id = /^repair id=(.+)$/m.exec(stderr)?.[1] ?? "";
       expect(id).toMatch(/^[0-9a-f-]{36}$/);
-      expect(sessions).toEqual([
-        { round: 0, session: id, at: expect.any(String) },
-      ]);
+      expect(sessions[0]).toEqual({
+        round: 0,
+        session: id,
+        at: expect.any(String),
+      });
     } else if (scenario === "codex-review") {
       expect(stderr).toContain(`session id: ${SESSION}`);
       expect(stdout).toContain("recorded before pass exit=true");
@@ -130,9 +138,11 @@ for (const scenario of [
       ]);
     } else if (scenario === "codex-json-repair") {
       expect(stdout).toContain(THREAD_STARTED);
-      expect(sessions).toEqual([
-        { round: 0, session: SESSION, at: expect.any(String) },
-      ]);
+      expect(sessions[0]).toEqual({
+        round: 0,
+        session: SESSION,
+        at: expect.any(String),
+      });
     } else {
       expect(stdout).toContain("no startup session header");
       expect(sessions).toEqual([]);

@@ -71,22 +71,32 @@ export function passEnv(
   // dispatcher's report file is the driver's alone to write.
   delete env[ROUND_VARIABLE];
   delete env[DRIVER_REPORT_VARIABLE];
-  if (task !== undefined) {
-    env.DRIVE_PR_ROUND_TASK = task.task;
-    env.DRIVE_PR_ROUND_TASK_DETAIL = task.detail;
-    if ((task.failedRuns ?? []).length > 0)
-      env.DRIVE_PR_ROUND_FAILED_RUNS = (task.failedRuns ?? []).join(" ");
-    // JSON, one `{context, target_url}` per status: the form
-    // `ci.log_command` reads, so a pass can hand an entry on unchanged.
-    if ((task.failedStatuses ?? []).length > 0)
-      env.DRIVE_PR_ROUND_FAILED_STATUSES = JSON.stringify(task.failedStatuses);
-    if (task.repairSkill !== undefined)
-      env.DRIVE_PR_ROUND_REPAIR_SKILL = task.repairSkill;
-    if (task.task === "ci-diagnose" && task.diagnosisReport !== undefined)
-      env[DIAGNOSIS_REPORT_VARIABLE] = task.diagnosisReport;
-    if (task.task === "ci-diagnose" && task.diagnosisHead !== undefined)
-      env[DIAGNOSIS_HEAD_VARIABLE] = task.diagnosisHead;
-  }
+  if (task !== undefined) Object.assign(env, repairTaskEnv(task));
+  return env;
+}
+
+/** The variables that tell a repair pass its task and what failed. */
+function repairTaskEnv(
+  task: { task: RepairTask; detail: string } & RepairCi,
+): Record<string, string> {
+  const env: Record<string, string> = {
+    DRIVE_PR_ROUND_TASK: task.task,
+    DRIVE_PR_ROUND_TASK_DETAIL: task.detail,
+  };
+  const runs = task.failedRuns ?? [];
+  if (runs.length > 0) env.DRIVE_PR_ROUND_FAILED_RUNS = runs.join(" ");
+  // JSON, one `{context, target_url}` per status: the form
+  // `ci.log_command` reads, so a pass can hand an entry on unchanged.
+  const statuses = task.failedStatuses ?? [];
+  if (statuses.length > 0)
+    env.DRIVE_PR_ROUND_FAILED_STATUSES = JSON.stringify(statuses);
+  if (task.repairSkill !== undefined)
+    env.DRIVE_PR_ROUND_REPAIR_SKILL = task.repairSkill;
+  if (task.task !== "ci-diagnose") return env;
+  if (task.diagnosisReport !== undefined)
+    env[DIAGNOSIS_REPORT_VARIABLE] = task.diagnosisReport;
+  if (task.diagnosisHead !== undefined)
+    env[DIAGNOSIS_HEAD_VARIABLE] = task.diagnosisHead;
   return env;
 }
 

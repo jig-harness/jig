@@ -13,21 +13,40 @@ import {
   diagnosisPrefix,
   diagnosisSkippedPrefix,
   diagnosisStartedPrefix,
-  type CiAction,
+  lastDiagnosisAt,
 } from "../state/ci-actions.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
+import { afterTakeover } from "./ci-repair-pass.ts";
 import { mirrorNow } from "./ledger.ts";
 import { readDriveState } from "./rearm.ts";
 import { type RepairCi, runRepairPass } from "./repair.ts";
 import type { DriveRoundContext } from "./round-context.ts";
 import { driverRuntime } from "./runtime.ts";
 import { CI_REPAIR_SPENT_EXIT } from "./settings.ts";
+import { HUMAN_DECISION_CLASS } from "../state/rulings.ts";
+import { parseMs } from "../../../../../shared/time.ts";
 
 const REPORT_BYTES = 4096;
 const DIAGNOSIS_CHARS = 400;
+const PARK_KEY_CHARS = 200;
 type DiagnosisReport =
   | { staleHead: true }
-  | { diagnosis: string; pushedHead: string | undefined };
+  | {
+      diagnosis: string;
+      issue: string | undefined;
+      parked: string | undefined;
+      pushedHead: string | undefined;
+    };
+
+/** A park key as `drive-state.ts park` accepts one, bounded for the receipt. */
+function isParkKey(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value !== "" &&
+    value.length <= PARK_KEY_CHARS &&
+    !/[\n\r]/.test(value)
+  );
+}
 
 /** The report supplied by this pass, bounded and read from a regular file. */
 function readDiagnosis(path: string): DiagnosisReport | null {
@@ -43,10 +62,13 @@ function readDiagnosis(path: string): DiagnosisReport | null {
     if (
       !isRecord(value) ||
       typeof value.diagnosis !== "string" ||
+      // Exactly one of a filed issue's key or the key of the parked filing.
+      (value.issue === undefined) === (value.parked === undefined) ||
       (value.issue !== undefined &&
         (typeof value.issue !== "string" ||
           value.issue.length > 80 ||
           shapeOfKey(value.issue) === null)) ||
+      (value.parked !== undefined && !isParkKey(value.parked)) ||
       (value.pushedHead !== undefined &&
         (typeof value.pushedHead !== "string" || !isGitSha(value.pushedHead)))
     )
@@ -58,10 +80,9 @@ function readDiagnosis(path: string): DiagnosisReport | null {
     return diagnosis === ""
       ? null
       : {
-          diagnosis:
-            value.issue === undefined
-              ? `no issue filed (parked for a person). ${diagnosis}`
-              : `issue ${value.issue}. ${diagnosis}`,
+          diagnosis,
+          issue: value.issue as string | undefined,
+          parked: value.parked as string | undefined,
           pushedHead: value.pushedHead,
         };
   } catch (error) {
@@ -70,18 +91,54 @@ function readDiagnosis(path: string): DiagnosisReport | null {
   }
 }
 
-/** The last recorded escalation at this head, including an interrupted start. */
-function previousDiagnosis(
-  actions: readonly CiAction[],
+const INCOMPLETE =
+  "The diagnosing repair report must contain a diagnosis and either a tracker issue key or the key of the filing it parked.";
+
+/** A receipt the driver accepted, a refused one, or a report of a moved head. */
+type Receipt =
+  | { text: string; pushedHead: string | undefined }
+  | { refused: string }
+  | { staleHead: true };
+
+/**
+ * Judge the pass's receipt. Its diagnosis is prefixed with the tracker issue,
+ * or with the filing the pass parked: a receipt that names no issue is
+ * accepted only when the drive state holds a `human-decision` park of the key
+ * it names, recorded after this diagnosis was reserved.
+ */
+async function judgeReceipt(
+  pr: string,
   head: string,
-): CiAction | undefined {
-  return actions.findLast(
+  answer: DiagnosisReport | null,
+): Promise<Receipt> {
+  if (answer === null) return { refused: INCOMPLETE };
+  if ("staleHead" in answer) return answer;
+  const { diagnosis, pushedHead } = answer;
+  if (answer.issue !== undefined)
+    return { text: `issue ${answer.issue}. ${diagnosis}`, pushedHead };
+  const state = await readDriveState(pr, true);
+  if (state === null)
+    return {
+      refused:
+        "The diagnosing repair report names a parked filing, but the drive state could not be read to verify it.",
+    };
+  const started = state.ciActions?.findLast(
     (a) =>
       a.action === "repair" &&
-      (a.detail.startsWith(diagnosisPrefix(head)) ||
-        a.detail.startsWith(diagnosisStartedPrefix(head)) ||
-        a.detail.startsWith(diagnosisSkippedPrefix(head))),
+      a.detail.startsWith(diagnosisStartedPrefix(head)),
   );
+  const since = started === undefined ? Number.NaN : parseMs(started.at);
+  const parked = state.parked.some(
+    (p) =>
+      p.key === answer.parked &&
+      p.class === HUMAN_DECISION_CLASS &&
+      parseMs(p.at ?? "") >= since,
+  );
+  return parked
+    ? { text: `no issue filed (parked for a person). ${diagnosis}`, pushedHead }
+    : {
+        refused: `The diagnosing repair report names the filing park ${redactReportText(answer.parked ?? "")}, but this diagnosis parked no ${HUMAN_DECISION_CLASS} under that key; it must name a tracker issue key or a filing parked during this diagnosis.`,
+      };
 }
 
 async function reportOutcome(
@@ -111,7 +168,7 @@ export async function diagnosedHeadStop(
 ): Promise<number | null> {
   const prior = await readDriveState(context.pr, true);
   if (prior === null) return 1;
-  const previous = previousDiagnosis(prior.ciActions ?? [], head);
+  const previous = lastDiagnosisAt(prior.ciActions ?? [], head);
   if (
     previous === undefined ||
     previous.detail.startsWith(diagnosisSkippedPrefix(head))
@@ -130,6 +187,35 @@ export async function diagnosedHeadStop(
   );
 }
 
+/**
+ * Reserve the one diagnosis this head is allowed, before spawning, so a crash
+ * cannot repeat the pass; `false` when the reservation could not be recorded
+ * and published.
+ */
+async function reserveDiagnosis(
+  pr: string,
+  head: string,
+  names: string,
+): Promise<boolean> {
+  const marked = await recordCiAttempt(
+    pr,
+    "repair",
+    `${diagnosisStartedPrefix(head)}CI-repair budget spent for ${names}`,
+  );
+  if (!marked) return false;
+  const mirrored = await mirrorNow(pr, true);
+  if (mirrored === 0) return true;
+  console.error(
+    `Could not publish the CI diagnosis reservation (exit ${mirrored}).`,
+  );
+  await recordCiAttempt(
+    pr,
+    "repair",
+    `${diagnosisSkippedPrefix(head)}the reservation could not be published before dispatch`,
+  );
+  return false;
+}
+
 export async function diagnoseCi(
   context: DriveRoundContext,
   head: string,
@@ -139,25 +225,7 @@ export async function diagnoseCi(
   const dir = mkdtempSync(join(tmpdir(), "jig-ci-diagnosis-"));
   const report = join(dir, "report.json");
   try {
-    // Reserve the allowance before spawning so a crash cannot repeat the pass.
-    const marked = await recordCiAttempt(
-      context.pr,
-      "repair",
-      `${diagnosisStartedPrefix(head)}CI-repair budget spent for ${names}`,
-    );
-    if (!marked) return 1;
-    const mirrored = await mirrorNow(context.pr, true);
-    if (mirrored !== 0) {
-      console.error(
-        `Could not publish the CI diagnosis reservation (exit ${mirrored}).`,
-      );
-      await recordCiAttempt(
-        context.pr,
-        "repair",
-        `${diagnosisSkippedPrefix(head)}the reservation could not be published before dispatch`,
-      );
-      return 1;
-    }
+    if (!(await reserveDiagnosis(context.pr, head, names))) return 1;
     console.error(
       `  Running diagnosing CI repair on head ${head} for ${names}.`,
     );
@@ -169,14 +237,7 @@ export async function diagnoseCi(
       context.mailboxCheckpoint,
       { ...channel, diagnosisReport: report, diagnosisHead: head },
     );
-    if (driverRuntime.compromised !== "") {
-      if (
-        driverRuntime.passStopWitness !== null &&
-        !(await driverRuntime.passStopWitness)
-      )
-        context.held.length = 0;
-      return "continue";
-    }
+    if (driverRuntime.compromised !== "") return await afterTakeover(context);
     if (!result.dispatched) {
       await recordCiAttempt(
         context.pr,
@@ -185,74 +246,95 @@ export async function diagnoseCi(
       );
       return result.resumed ? "continue" : result.code;
     }
-    const answer = readDiagnosis(report);
-    if (result.postPassMailboxExit !== null) {
-      if (answer !== null && !("staleHead" in answer))
-        await reportOutcome(
-          context.pr,
-          head,
-          `${answer.diagnosis} The diagnosing pass completed before the mailbox stopped the drive.`,
-        );
-      return result.postPassMailboxExit;
-    }
-    if (result.code === 5) return 5;
-    if (answer !== null && "staleHead" in answer && result.code === 0) {
-      const current = await readPrSnapshot(context.pr, null);
-      if (current.ok && current.value.state !== "OPEN") return 5;
-      if (current.ok && current.value.head !== head) {
-        await recordCiAttempt(
-          context.pr,
-          "repair",
-          `${diagnosisSkippedPrefix(head)}the pull request moved to ${current.value.head}`,
-        );
-        return "continue";
-      }
-      return await stopWithDiagnosis(
-        context.pr,
-        head,
-        current.ok
-          ? "The diagnosing pass reported a changed head, but the forge still reports the failing head."
-          : `The diagnosing pass reported a changed head that could not be verified: ${redactReportText(current.failure.reason)}`,
-      );
-    }
-    if (answer === null || "staleHead" in answer) {
-      return await stopWithDiagnosis(
-        context.pr,
-        head,
-        "The diagnosing repair report must contain a diagnosis and, unless filing was parked, a tracker issue key.",
-      );
-    }
-    const { diagnosis, pushedHead } = answer;
-    if (result.code !== 0) {
-      return await stopWithDiagnosis(
-        context.pr,
-        head,
-        `${diagnosis} (pass exit ${result.code})`,
-      );
-    }
-    if (pushedHead === undefined || pushedHead === head) {
-      return await stopWithDiagnosis(
-        context.pr,
-        head,
-        `${diagnosis} The pass reported no replacement head pushed.`,
-      );
-    }
-    const current = await readPrSnapshot(context.pr, null);
-    const verified = current.ok && current.value.head === pushedHead;
-    const outcome = !current.ok
-      ? `The pushed head could not be verified: ${current.failure.reason}`
-      : verified
-        ? `The pull request moved to ${pushedHead}.`
-        : `The pull request is at ${current.value.head}, but the pass reported a push to ${pushedHead}.`;
-    const recorded = await reportOutcome(
-      context.pr,
-      head,
-      `${diagnosis} ${redactReportText(outcome)}`,
-    );
-    if (current.ok && current.value.state !== "OPEN") return 5;
-    if (!recorded) return 1;
-    return verified ? "continue" : CI_REPAIR_SPENT_EXIT;
+    const receipt = await judgeReceipt(context.pr, head, readDiagnosis(report));
+    return await settleDiagnosis(context.pr, head, result, receipt);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** The drive's next step once the diagnosing pass ran and left `receipt`. */
+async function settleDiagnosis(
+  pr: string,
+  head: string,
+  result: { code: number; postPassMailboxExit: number | null },
+  receipt: Receipt,
+): Promise<number | "continue"> {
+  if (result.postPassMailboxExit !== null) {
+    if ("text" in receipt)
+      await reportOutcome(
+        pr,
+        head,
+        `${receipt.text} The diagnosing pass completed before the mailbox stopped the drive.`,
+      );
+    return result.postPassMailboxExit;
+  }
+  if (result.code === 5) return 5;
+  if ("staleHead" in receipt)
+    return result.code === 0
+      ? await staleHeadOutcome(pr, head)
+      : await stopWithDiagnosis(pr, head, INCOMPLETE);
+  if ("refused" in receipt)
+    return await stopWithDiagnosis(pr, head, receipt.refused);
+  if (result.code !== 0)
+    return await stopWithDiagnosis(
+      pr,
+      head,
+      `${receipt.text} (pass exit ${result.code})`,
+    );
+  return await pushedHeadOutcome(pr, head, receipt.text, receipt.pushedHead);
+}
+
+/** The pass reported that the pull request left the failing head. */
+async function staleHeadOutcome(
+  pr: string,
+  head: string,
+): Promise<number | "continue"> {
+  const current = await readPrSnapshot(pr, null);
+  if (current.ok && current.value.state !== "OPEN") return 5;
+  if (current.ok && current.value.head !== head) {
+    await recordCiAttempt(
+      pr,
+      "repair",
+      `${diagnosisSkippedPrefix(head)}the pull request moved to ${current.value.head}`,
+    );
+    return "continue";
+  }
+  return await stopWithDiagnosis(
+    pr,
+    head,
+    current.ok
+      ? "The diagnosing pass reported a changed head, but the forge still reports the failing head."
+      : `The diagnosing pass reported a changed head that could not be verified: ${redactReportText(current.failure.reason)}`,
+  );
+}
+
+/** Record the accepted diagnosis beside what the forge says of its push. */
+async function pushedHeadOutcome(
+  pr: string,
+  head: string,
+  diagnosis: string,
+  pushedHead: string | undefined,
+): Promise<number | "continue"> {
+  if (pushedHead === undefined || pushedHead === head)
+    return await stopWithDiagnosis(
+      pr,
+      head,
+      `${diagnosis} The pass reported no replacement head pushed.`,
+    );
+  const current = await readPrSnapshot(pr, null);
+  const verified = current.ok && current.value.head === pushedHead;
+  const outcome = !current.ok
+    ? `The pushed head could not be verified: ${current.failure.reason}`
+    : verified
+      ? `The pull request moved to ${pushedHead}.`
+      : `The pull request is at ${current.value.head}, but the pass reported a push to ${pushedHead}.`;
+  const recorded = await reportOutcome(
+    pr,
+    head,
+    `${diagnosis} ${redactReportText(outcome)}`,
+  );
+  if (current.ok && current.value.state !== "OPEN") return 5;
+  if (!recorded) return 1;
+  return verified ? "continue" : CI_REPAIR_SPENT_EXIT;
 }
