@@ -92,7 +92,7 @@ export function reserveRelease(
   const db = stateDb(root);
   return inTransaction(db, () => {
     const reserved = reserveIn(db, repo, tag, launch, item);
-    // The newest tag plan a follow-up read says what is left to try, whichever follow-up files the release.
+    // The state of the last follow-up to record one is kept, whichever follow-up files the release.
     if (reserved.ok && state !== undefined)
       db.query(
         "UPDATE release_needs SET plan_state = ? WHERE repo = ? AND tag = ? AND tagged = 0",

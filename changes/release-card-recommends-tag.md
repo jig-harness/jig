@@ -14,8 +14,9 @@ release: minor
 ### Fixed
 
 - The dispatcher's release decision recommended **Re-run the failed gates**
-  even when no gate had failed. Now it recommends the re-run only while the
-  releasing commit has a failed required check and a re-run is left. It
+  even when no gate had failed. Now it recommends the re-run unless the
+  follow-up recorded that every required check passed or that the version is
+  outside automatic tagging, or a re-run was already requested. It
   recommends **Tag it by hand**, giving the reason, when every required
   check passed, the version is outside automatic tagging, the repository
   allows no re-run (`changelog.release.rerun_failed_gates: 0`), or the

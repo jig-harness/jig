@@ -36,8 +36,8 @@ A release that still owes a tag and needs a person gets one tracker item
 per version. Dispatched follow-ups refer to that item and finish once their
 remaining checks settle. The dispatcher presents one decision for the
 release with the options **Re-run the failed gates**, **Investigate**, and
-**Tag it by hand**. It recommends the re-run only while the releasing
-commit has a failed required check to run again; where every check passed,
+**Tag it by hand**. It recommends the re-run unless the follow-up
+recorded that no required check failed; where every check passed,
 the version is outside automatic tagging, or the repository makes the tag a
 person's step (`changelog.release.tagged_by: person`), it offers only the
 last two and recommends tagging by hand. Untagged releases of a repository

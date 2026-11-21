@@ -63,7 +63,7 @@ export const STATION_KEYS = {
     class: "release",
     options: ["gates", "inspect", "tag"],
     meaning:
-      "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. It recommends re-running the failed gates only while the releasing commit has a failed required check and a re-run is left; otherwise it offers only the other two, recommending a person's tag where no failed gate is left to re-run.",
+      "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. It recommends re-running the failed gates unless the version's follow-up recorded that every required check passed or that the version is outside automatic tagging, a re-run was already requested, or the repository leaves the tag to a person; then it offers only the other two, recommending a person's tag where no failed gate is left to re-run.",
   },
   pickup: {
     class: "pickup-recovery",
