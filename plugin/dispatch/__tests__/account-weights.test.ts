@@ -280,11 +280,10 @@ describe("host-local account weights", () => {
     });
     expect(sequence("accounts: {a: 0}", 8)).toEqual(Array(8).fill("b"));
   });
-  it("fails closed on unreadable syntax, unknown accounts, and invalid values, independently of lanes", () => {
+  it("fails closed on unreadable syntax, an unknown section and invalid values, independently of lanes", () => {
     for (const text of [
       "accounts: [",
       "acounts: {a: 0}",
-      "accounts: {other: 50}",
       "accounts: {a: -1}",
       "accounts: {a: 101}",
       "accounts: {a: nope}",

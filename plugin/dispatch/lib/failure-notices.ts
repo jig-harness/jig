@@ -43,6 +43,7 @@ import {
   standingHostRows,
 } from "./failure-groups.ts";
 import { failingNotice } from "./notices.ts";
+import { type AccountWeights, skippedAccountNames } from "./local-weights.ts";
 import type { TickContext } from "./tick-context.ts";
 import type { OpenedRepo } from "./tick-observe.ts";
 import type { Action, FailureCause, NotifyCause, RecordName } from "./types.ts";
@@ -104,6 +105,9 @@ const RECEIPT =
 
 /** What the key of a host failure's notice starts with, in place of a repository's slug. */
 export const HOST_NOTICE = "host";
+
+/** What a skipped-names notice key starts with. */
+export const WEIGHTS_SKIP_KEY = `${HOST_NOTICE} weights skip `;
 
 /**
  * The notice keys of this host's own failures that stand: each row's, of
@@ -278,6 +282,55 @@ export function failureCauses(
   return actions;
 }
 
+/**
+ * The notice that the host's weights file names accounts the machine file
+ * does not list, keyed by those names, so one set is told once and a
+ * changed set is a new notice. The names are skipped: an account meant to
+ * be paused under a misspelt name keeps running, and this is how a person
+ * learns of it.
+ */
+export function skippedWeightsCause(
+  weights: AccountWeights | undefined,
+  machine: Pick<MachineConfig, "accounts">,
+): Action | null {
+  const found = skippedAccountNames(weights);
+  if (found === null) return null;
+  const { names: skipped, path: file } = found;
+  // Quoted, so a name holding a comma or a line break keeps the key one line and one set one key.
+  const names = skipped.map((name) => JSON.stringify(name)).join(", ");
+  const listed = machine.accounts.map((a) => a.name).join(", ");
+  return {
+    stage: "notify",
+    target: "this host's account weights",
+    record: "runtime",
+    reason: `${file} names ${skipped.length === 1 ? "an account" : "accounts"} the machine file does not list, skipped: ${names}`,
+    evidence: { skipped: names, file, listed },
+    cause: "host-failing",
+    notice: failingNotice(HOST_NOTICE, `weights skip ${names}`, [
+      `The host's weights file ${file} names ${skipped.length === 1 ? "an account" : "accounts"} the machine file does not list: ${names}. The dispatcher skips ${skipped.length === 1 ? "it" : "them"} and applies the file's other weights.`,
+      `The machine file lists: ${listed}. An account the weights file does not name has weight 100, so an account meant to be paused under a misspelt name keeps taking launches.`,
+      `Fix or remove ${skipped.length === 1 ? "the name" : "the names"} in the weights file; this notice retires at the first tick that reads none. ${RECEIPT}`,
+    ]),
+  };
+}
+
+/**
+ * The keys of the host notices the weights file makes stand this tick, at every repository: a home that moves keeps the record of one already told.
+ * `null` when the file was not read whole (an unreadable document or an invalid weight): what stands is unknown, so no record of one is retired.
+ */
+export function standingWeightsKeys(
+  weights: AccountWeights | undefined,
+  machine: Pick<MachineConfig, "accounts"> | null | undefined,
+): string[] | null {
+  for (const weight of weights?.values() ?? [])
+    if (weight.configured === null) return null;
+  const key =
+    machine == null
+      ? undefined
+      : skippedWeightsCause(weights, machine)?.notice?.key;
+  return key === undefined ? [] : [key];
+}
+
 /** The failure ledger's notifications for one opened repository, with `--apply` where this host notifies for it. */
 export function planFailureNotices(
   context: TickContext,
@@ -292,5 +345,15 @@ export function planFailureNotices(
   )
     return [];
   const rows = readFailures(undefined, context.apply.root ?? stateRoot());
-  return failureCauses(opened.repo.slug, opened.repo.path, rows, machine);
+  const actions = failureCauses(
+    opened.repo.slug,
+    opened.repo.path,
+    rows,
+    machine,
+  );
+  const skipped =
+    homeOf(machine, rows) === resolve(opened.repo.path)
+      ? skippedWeightsCause(context.weights, machine)
+      : null;
+  return skipped === null ? actions : [...actions, skipped];
 }
