@@ -57,9 +57,13 @@ const green = (color: string) =>
   saturation(color) > 0.4 && hue(color) >= 80 && hue(color) <= 160;
 
 const problems = PROJECTED_STATES.filter((s) => STATE_LABELS[s].problem);
-const problemColors = new Set(problems.map(colorOf));
+const problemColors = new Set(problems.map((s) => colorOf(s).toLowerCase()));
 
 describe("the state labels' colors", () => {
+  it("are each exactly six hexadecimal digits", () => {
+    expect(SET.filter((l) => !/^[0-9a-fA-F]{6}$/.test(l.color))).toEqual([]);
+  });
+
   it("give converged, parked and followup-failed their own colors", () => {
     expect(colorOf("converged")).toBe("0e8a16");
     expect(colorOf("parked")).toBe("d93f0b");
@@ -84,7 +88,9 @@ describe("the state labels' colors", () => {
     const names = new Set(problems.map((s) => `${DEFAULT_LABELS.prefix}${s}`));
     const others = SET.filter((l) => !names.has(l.name));
     expect(
-      others.filter((l) => problemColors.has(l.color)).map((l) => l.name),
+      others
+        .filter((l) => problemColors.has(l.color.toLowerCase()))
+        .map((l) => l.name),
     ).toEqual([]);
     expect(others.filter((l) => alert(l.color)).map((l) => l.name)).toEqual([]);
   });
