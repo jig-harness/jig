@@ -185,9 +185,14 @@ jig run       [COMPONENT...]
   that changes state is printed before it runs (read-only queries, such as
   a version or a plugin list, are not), and `--json` prints what became of each
   harness and job. In Claude Code it also refreshes each project- and
-  local-scope install of the plugin from its directory, and removes from
-  Claude Code's install record each whose directory no longer exists; one it
-  cannot update safely it leaves as it was, saying why. `--jobs-only`
+  local-scope install of the plugin from its directory, once per repository,
+  and removes from Claude Code's install record each whose directory no
+  longer exists. Claude Code's update reaches one install per repository
+  whichever worktree it runs in, so an install it cannot reach (it refreshed
+  another directory, or another worktree of the repository is current) is
+  refreshed in the install record itself, pointed at the user-scope
+  install's version, and reported as `rewritten`; one it cannot bring there
+  safely it leaves as it was, saying why, and the upgrade then exits 1. `--jobs-only`
   refreshes the jobs and the command without updating the plugin, for after a tool updated it on its own. Each tool
   command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).
   `--scheduled` is what the timers run before each job
@@ -1177,10 +1182,10 @@ that carry a label of the set, which includes one a drive armed by hand
 has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
 creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
 ones, the marker labels with them, and the labels of the set whose
-description is not the one this release gives them, with no job installed,
-and with `--yes` names each it created or updated (the description only: a
-color a person chose stays) and lists the rest with the command a person who
-may create or edit labels runs; `jig install dispatch --repo <path>` does the same
+description or color is not the one this release gives them, with no job
+installed, and with `--yes` names each it created or updated (only what
+differs; a marker label that exists is left as the repository has it) and
+lists the rest with the command a person who may create or edit labels runs; `jig install dispatch --repo <path>` does the same
 beside the timer. A label write the forge refuses is reported (in the
 receipt, or on the drive's or the command's output) and fails nothing, except
 `jig dispatch marker failed`, which exits `1` when it cannot write its enabled
@@ -2206,6 +2211,12 @@ copy, but `claude plugin update jig@jig` without `--scope` updates the most
 specific one, so a forgotten project-scope copy falls behind unseen.
 `jig doctor` lists each and fails one older than the user-scope install or
 left behind by a deleted directory; `jig upgrade` refreshes or removes them.
+`claude plugin update --scope project` updates the first install of the
+repository its directory belongs to, not that worktree's own, so where
+several worktrees of one repository hold an install, `jig upgrade` runs it
+once for the repository and refreshes the others in Claude Code's install
+record. Configuration directories that share one plugins directory share
+that record: after the first upgrade, the others find every install current.
 
 Start a **new** session afterwards. Sessions that were already open load the
 plugin after `/reload-plugins` (Claude Code) or a restart (Codex).

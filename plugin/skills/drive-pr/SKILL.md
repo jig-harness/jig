@@ -1737,9 +1737,9 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 
 Then:
 
-- **`ci-repair`** — repair CI on this PR. When `$DRIVE_PR_ROUND_REPAIR_SKILL`
-  is set, load that skill first and follow it; otherwise follow
-  [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure. Read the logs of the runs
+- **`ci-repair`** — repair CI on this PR. Read `$DRIVE_PR_ROUND_REPAIR_SKILL`
+  when set, or [`/jig:fix-ci`](../fix-ci/SKILL.md) otherwise. Apply its repair
+  steps after the log triage and base sync below. Read the logs of the runs
   `$DRIVE_PR_ROUND_FAILED_RUNS` names and of the statuses
   `$DRIVE_PR_ROUND_FAILED_STATUSES` names:
   `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
@@ -1751,16 +1751,6 @@ Then:
   own host (never a loopback, internal-network or metadata address, or a
   host the repository does not use for CI), and when that gives none either,
   end the round without a commit and say the log is missing: a fix without it is a guess.
-  Reproduce locally where possible, fix the cause. Fix every failing
-  check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
-  run the round's validation plan over the cumulative tree, and **§ 6** to
-  commit and push. §§ 2–4 have nothing to enumerate — the review converged
-  before you were dispatched.
-
-  When the detail names a timed-out job, find why it ran past its limit (a
-  hang, a step that waits on something that never comes, work that grew
-  slower) and fix that; raise its `timeout-minutes` only when the work
-  legitimately needs longer. Re-running it stops at the same limit.
 
   When the log shows the failure is not in the code (a lost runner, a network
   error), re-run the failed workflow runs instead of committing (a commit
@@ -1775,6 +1765,22 @@ Then:
   the hold again; the variable omits those, and is empty or unset when no run
   could be named safely. Then re-run nothing, and read the failing checks' runs
   from `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --commit <head>`.
+  End the round after an infrastructure rerun.
+
+  For a code repair, run **§ 5**'s base sync and dependency check before
+  reproducing the failure, editing, or validating. CI repair syncs any
+  advanced base so local validation includes the gates and configuration
+  that CI sees. On `fetch-failed`, stop the round. On exit `9`, follow § 5's
+  conflict handoff. Reproduce locally where possible and fix every failing
+  check using the chosen repair skill. Use **§ 5** for cumulative validation
+  and **§ 6** for committing and pushing this round. §§ 2–4 have nothing to
+  enumerate because the review already converged.
+
+  When the detail names a timed-out job, find why it ran past its limit (a
+  hang, a step that waits on something that never comes, work that grew
+  slower) and fix that; raise its `timeout-minutes` only when the work
+  legitimately needs longer. Re-running it stops at the same limit.
+
 - **`ci-diagnose`** — a `ci-repair` whose earlier passes on this head did not
   fix CI. Work in this order:
   1. Compare the earlier attempts with the failure: read the driver log and the
@@ -1792,9 +1798,10 @@ Then:
      the issue-filing row allows. At `attended`, or when the base branch's
      policy cannot be read, file nothing: park the decision under
      `human-decision` (§ 4) and still repair the cause.
-  3. Repair the cause as `ci-repair` does: when `$DRIVE_PR_ROUND_REPAIR_SKILL` is
-     set load it, else follow [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and
-     § 6, pushing through `finish-round.ts`.
+  3. Repair the cause as `ci-repair` does, base sync first: when
+     `$DRIVE_PR_ROUND_REPAIR_SKILL` is set load it, else follow
+     [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and § 6, pushing through
+     `finish-round.ts`.
   4. Write the receipt to the path in `$DRIVE_PR_CI_DIAGNOSIS_REPORT`, at most
      4096 bytes of JSON, with the file editor:
      `{"diagnosis": "<why the earlier attempts failed and what this one changes>", "issue": "<tracker key>", "pushedHead": "<sha of the head you pushed>"}`.
@@ -2993,6 +3000,7 @@ nothing, naming which one was missing:
    local commit the head branch does not have. A merge riding a round that was
    pushing anyway costs no extra round and no extra reviewer cycle.
 
+CI-repair rounds require only condition 1 and a successful fetch.
 `--check` reports without merging. `--force` drops 2 and 3 — for the case the
 loop cannot see, such as converging and wanting the local gates and the
 `refs/pull/N/merge` CI checkout to agree first. Say why when you use it.

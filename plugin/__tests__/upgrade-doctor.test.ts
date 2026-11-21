@@ -323,7 +323,7 @@ test.skipIf(onWindows)(
     ]);
     const err = result.stderr.toString();
     expect(err).toContain(
-      `$ (cd ${kept}) claude plugin update jig@jig --scope project\n`,
+      `$ (cd ${kept}) claude plugin update jig@jig --scope project --json\n`,
     );
     expect(err).toContain(
       `claude: jig@jig 0.1.0 for ${deleted} (project scope): removed, its directory no longer exists`,

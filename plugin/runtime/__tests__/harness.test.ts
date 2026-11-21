@@ -75,12 +75,17 @@ test("the project- and local-scope Claude Code installs, each with its directory
         enabled: false,
       },
       { id: "other@elsewhere", scope: "project", projectPath: "/repo" },
-      { id: PLUGIN_ID, scope: "project", version: "0.1.0" },
     ]),
   ).toEqual([
     { scope: "project", project: "/repo", version: "0.1.0", enabled: true },
     { scope: "local", project: "/other", version: "0.1.5", enabled: false },
   ]);
+  // An entry of the plugin that cannot be read is a failed inspection too.
+  expect(() =>
+    claudeScopedInstalls([
+      { id: PLUGIN_ID, scope: "project", version: "0.1.0" },
+    ]),
+  ).toThrow("without a directory or a version");
   // An answer that is not a list is a failed inspection, not an empty one.
   expect(() => claudeScopedInstalls({ installed: [] })).toThrow(
     "did not print a list",

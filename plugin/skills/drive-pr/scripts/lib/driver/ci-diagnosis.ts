@@ -49,49 +49,55 @@ function isParkKey(value: unknown): value is string {
   );
 }
 
+/** A one-key marker report such as `{"standDown": true}`. */
+const isMarker = (value: unknown, key: string): boolean =>
+  isRecord(value) && value[key] === true && Object.keys(value).length === 1;
+
+/** Whether a receipt names a well-formed issue key or a parked filing, one of the two. */
+function namesIssueOrFiling(value: Record<string, unknown>): boolean {
+  if ((value.issue === undefined) === (value.parked === undefined))
+    return false;
+  if (value.issue !== undefined)
+    return (
+      typeof value.issue === "string" &&
+      value.issue.length <= 80 &&
+      shapeOfKey(value.issue) !== null
+    );
+  return isParkKey(value.parked);
+}
+
+/** The full receipt: a diagnosis, its issue or parked filing, an optional pushed head. */
+function fullReport(value: unknown): DiagnosisReport | null {
+  if (
+    !isRecord(value) ||
+    typeof value.diagnosis !== "string" ||
+    !namesIssueOrFiling(value) ||
+    (value.pushedHead !== undefined &&
+      (typeof value.pushedHead !== "string" || !isGitSha(value.pushedHead)))
+  )
+    return null;
+  const diagnosis = redactReportText(value.diagnosis)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, DIAGNOSIS_CHARS);
+  return diagnosis === ""
+    ? null
+    : {
+        diagnosis,
+        issue: value.issue as string | undefined,
+        parked: value.parked as string | undefined,
+        pushedHead: value.pushedHead,
+      };
+}
+
 /** The report supplied by this pass, bounded and read from a regular file. */
 function readDiagnosis(path: string): DiagnosisReport | null {
   try {
     const text = readBoundedText(path, REPORT_BYTES);
     const value: unknown = text === null ? null : JSON.parse(text);
-    if (
-      isRecord(value) &&
-      value.staleHead === true &&
-      Object.keys(value).length === 1
-    )
-      return { staleHead: true };
-    if (
-      isRecord(value) &&
-      value.standDown === true &&
-      Object.keys(value).length === 1
-    )
-      return { standDown: true };
-    if (
-      !isRecord(value) ||
-      typeof value.diagnosis !== "string" ||
-      // Exactly one of a filed issue's key or the key of the parked filing.
-      (value.issue === undefined) === (value.parked === undefined) ||
-      (value.issue !== undefined &&
-        (typeof value.issue !== "string" ||
-          value.issue.length > 80 ||
-          shapeOfKey(value.issue) === null)) ||
-      (value.parked !== undefined && !isParkKey(value.parked)) ||
-      (value.pushedHead !== undefined &&
-        (typeof value.pushedHead !== "string" || !isGitSha(value.pushedHead)))
-    )
-      return null;
-    const diagnosis = redactReportText(value.diagnosis)
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, DIAGNOSIS_CHARS);
-    return diagnosis === ""
-      ? null
-      : {
-          diagnosis,
-          issue: value.issue as string | undefined,
-          parked: value.parked as string | undefined,
-          pushedHead: value.pushedHead,
-        };
+    if (isMarker(value, "staleHead")) return { staleHead: true };
+    if (isMarker(value, "standDown")) return { standDown: true };
+    return fullReport(value);
   } catch (error) {
     swallow(error, "the CI diagnosis report is missing or unreadable");
     return null;

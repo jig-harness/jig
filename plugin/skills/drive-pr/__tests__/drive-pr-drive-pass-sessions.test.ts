@@ -130,7 +130,9 @@ for (const scenario of [
 
     if (claude) {
       expect(stderr).toContain("task=ci-repair");
-      const ids = [...stderr.matchAll(/^repair id=(.+)$/gm)].map((m) => m[1]);
+      const ids = [...stderr.matchAll(/^repair id=(.+)$/gm)].map(
+        (m) => m[1] ?? "",
+      );
       expect(ids).toHaveLength(2);
       for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
       expect(ids[0]).not.toBe(ids[1]);
