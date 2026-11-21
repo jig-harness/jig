@@ -76,3 +76,15 @@ in [briefs/brief.md](briefs/brief.md). Step 1 says "Seven stations, run as a
 loop." and "The follow-up sends what the merge owes back to the first." Both
 need rewording once the line is not a loop; the follow-up still reaches pickup,
 as a side path.
+
+## motion-kit state, as of 2026-11-21
+
+- motion-kit issue 70 is fixed by pull request 77 (merged 2026-11-21 12:11 UTC):
+  built pages now get the isometric helpers of the isometric kit (pull request
+  64). Build the figure for the page against a motion-kit release that has it.
+- Issue 72 asks the contrast gate to check only the pairs a scene draws. Its
+  pull request 79 is not merged. Until it is, the style's `emphasis` pair still
+  fails the gate and the CLI's export, build and video refuse the scene, so
+  `figure/render.mjs` calls the renderer directly
+  ([README.md](README.md#the-figure)). Check whether 79 has merged before
+  working around the gate again.
