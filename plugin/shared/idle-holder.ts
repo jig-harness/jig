@@ -186,6 +186,28 @@ function mergeAttributes(
   return set ? "a merge attribute applies outside the tree" : null;
 }
 
+/** Why the merge proof cannot run here (an old git, or a configured merge driver); `null` when it can. */
+function proofUnavailable(git: (args: string[]) => RunResult): string | null {
+  const version = git(["--version"]);
+  const parsed = /git version (\d+)\.(\d+)/.exec(version.stdout);
+  const current: [number, number] = [
+    Number(parsed?.[1] ?? 0),
+    Number(parsed?.[2] ?? 0),
+  ];
+  const [major, minor] = MERGE_PROOF_GIT;
+  if (
+    version.status !== 0 ||
+    current[0] < major ||
+    (current[0] === major && current[1] < minor)
+  )
+    return `the merge proof needs git ${MERGE_PROOF_GIT.join(".")} or newer`;
+  const drivers = git(["config", "--get-regexp", "^merge\\..*\\.driver$"]);
+  if (drivers.status === 0) return "a custom merge driver is configured";
+  if (drivers.status !== 1)
+    return `merge drivers cannot be read: ${output(drivers) || `exit ${drivers.status}`}`;
+  return null;
+}
+
 /**
  * Whether merging `tip` into `ref` changes nothing: the base branch already
  * holds that history's whole change, as after a squash merge of several
@@ -205,25 +227,8 @@ function mergesToNothing(
   ref: string,
   tip: string,
 ): boolean | { unreadable: string } {
-  const version = git(["--version"]);
-  const parsed = /git version (\d+)\.(\d+)/.exec(version.stdout);
-  const major = Number(parsed?.[1] ?? 0);
-  const minor = Number(parsed?.[2] ?? 0);
-  if (
-    version.status !== 0 ||
-    major < MERGE_PROOF_GIT[0] ||
-    (major === MERGE_PROOF_GIT[0] && minor < MERGE_PROOF_GIT[1])
-  )
-    return {
-      unreadable: `the merge proof needs git ${MERGE_PROOF_GIT.join(".")} or newer`,
-    };
-  const drivers = git(["config", "--get-regexp", "^merge\\..*\\.driver$"]);
-  if (drivers.status === 0)
-    return { unreadable: "a custom merge driver is configured" };
-  if (drivers.status !== 1)
-    return {
-      unreadable: `merge drivers cannot be read: ${output(drivers) || `exit ${drivers.status}`}`,
-    };
+  const unready = proofUnavailable(git);
+  if (unready !== null) return { unreadable: unready };
   const empty = git(["hash-object", "-t", "tree", "/dev/null"]);
   const emptyTree = empty.stdout.trim();
   if (empty.status !== 0 || emptyTree === "")
