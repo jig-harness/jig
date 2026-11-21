@@ -490,7 +490,7 @@ describe("jig install dispatch --repo", () => {
     expectSpawnExit(refused, 1);
     expect(refused.stdout).toContain(`${SLUG}: created automation`);
     expect(refused.stdout).toContain(
-      `gh label edit 'jig:stale' --repo ${SLUG} --description '${stale.description}'`,
+      `gh label edit 'jig:stale' --repo ${SLUG} --description '${stale.description}'   # `,
     );
     expect(repoLabels(w).find((l) => l.name === stale.name)).toEqual(earlier);
 

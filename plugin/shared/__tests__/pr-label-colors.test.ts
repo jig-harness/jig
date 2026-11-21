@@ -80,13 +80,13 @@ describe("the state labels' colors", () => {
     expect(problemColors.size).toBe(problems.length);
   });
 
-  it("give no other label of the set a problem state's color", () => {
+  it("give no other label of the set a problem state's color, nor any of the alert family", () => {
     const names = new Set(problems.map((s) => `${DEFAULT_LABELS.prefix}${s}`));
+    const others = SET.filter((l) => !names.has(l.name));
     expect(
-      SET.filter((l) => !names.has(l.name) && problemColors.has(l.color)).map(
-        (l) => l.name,
-      ),
+      others.filter((l) => problemColors.has(l.color)).map((l) => l.name),
     ).toEqual([]);
+    expect(others.filter((l) => alert(l.color)).map((l) => l.name)).toEqual([]);
   });
 
   it("keep green for converged alone", () => {
