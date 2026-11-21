@@ -53,6 +53,73 @@ function weights(text: string) {
   return readAccountWeights(accounts, readLocalWeights(path));
 }
 
+const REPO: RepoTarget = { path: "/repo", slug: "o/r", defaultBranch: "main" };
+
+/** A notices card the runtime merges each message into, as Orca's does, and the messages it took. */
+function noticesCard(root: string) {
+  const card = { comment: NOTICES_NAME, unread: false };
+  const sent: unknown[] = [];
+  const runtime = {
+    async notify(_target, message) {
+      sent.push(message);
+      card.comment =
+        noticeComment(card, message, false, new Set()) ?? card.comment;
+      card.unread = true;
+      return {
+        ok: true,
+        detail: "written",
+        comment: card.comment,
+        unread: true,
+      };
+    },
+  } satisfies Partial<SessionRuntime>;
+  const state = {
+    root,
+    runtime,
+    machine: { runtimeTimeoutMs: 1000, workspaceTimeoutMs: 1000 },
+  } as unknown as ApplyState;
+  const workspace = (): Workspace => ({
+    id: "notices",
+    path: join(root, "notices"),
+    branch: NOTICES_BRANCH,
+    prs: [],
+    items: [],
+    agents: [],
+    unverifiableTerminals: 0,
+    comment: card.comment,
+    unread: card.unread,
+    name: NOTICES_NAME,
+  });
+  return { state, workspace, sent };
+}
+
+/** One tick's notices at the host's home, with the weights file as it now reads: each notification's outcome. */
+async function tick(
+  file: string,
+  { state, workspace }: ReturnType<typeof noticesCard>,
+): Promise<string[]> {
+  const cause = skippedWeightsCause(
+    readAccountWeights(accounts, readLocalWeights(file)),
+    machine,
+  ) as Action;
+  const report = {
+    path: REPO.path,
+    slug: REPO.slug,
+    records: [],
+    unplaced: [],
+    notifications: [],
+    actions: [cause],
+  } as unknown as RepoReport;
+  await applyNotices(
+    state,
+    REPO,
+    report,
+    { ok: true, source: "test", workspaces: [workspace()] },
+    { branch: null, lingerMs: 0, renotifyAfterMs: 0 },
+  );
+  return report.notifications.map((n) => n.outcome);
+}
+
 describe("an unknown account name in the weights file", () => {
   it("is skipped while the known accounts keep their weights and admission goes on", () => {
     const read = weights("accounts: {a: 0, b: 50, retired: 25}");
@@ -78,8 +145,10 @@ describe("an unknown account name in the weights file", () => {
         [...weights(text).values()].every((w) => w.configured === null),
       ).toBe(true);
   });
+});
 
-  it("frames one host notice keyed by the skipped names and the accounts listed", () => {
+describe("the notice of skipped account names", () => {
+  it("is one host notice keyed by the skipped names, naming the accounts listed", () => {
     const cause = skippedWeightsCause(
       weights("accounts: {zed: 1, a: 0, old: 3}"),
       machine,
@@ -97,71 +166,11 @@ describe("an unknown account name in the weights file", () => {
   });
 
   it("is sent once: the next tick with the same file sends nothing", async () => {
-    const root = scratch();
-    const card = { comment: NOTICES_NAME, unread: false };
-    const sent: string[] = [];
-    const runtime = {
-      async notify(_target, message) {
-        sent.push(message);
-        card.comment =
-          noticeComment(card, message, false, new Set()) ?? card.comment;
-        card.unread = true;
-        return {
-          ok: true,
-          detail: "written",
-          comment: card.comment,
-          unread: true,
-        };
-      },
-    } satisfies Partial<SessionRuntime>;
-    const state = {
-      root,
-      runtime,
-      machine: { runtimeTimeoutMs: 1000, workspaceTimeoutMs: 1000 },
-    } as unknown as ApplyState;
-    const workspace = (): Workspace => ({
-      id: "notices",
-      path: join(root, "notices"),
-      branch: NOTICES_BRANCH,
-      prs: [],
-      items: [],
-      agents: [],
-      unverifiableTerminals: 0,
-      comment: card.comment,
-      unread: card.unread,
-      name: NOTICES_NAME,
-    });
-    const repo: RepoTarget = {
-      path: "/repo",
-      slug: "o/r",
-      defaultBranch: "main",
-    };
+    const card = noticesCard(scratch());
     const file = join(scratch(), "weights.local.yaml");
     writeFileSync(file, "accounts: {a: 0, old: 3}");
-    const tick = async () => {
-      const cause = skippedWeightsCause(
-        readAccountWeights(accounts, readLocalWeights(file)),
-        machine,
-      ) as Action;
-      const report = {
-        path: "/repo",
-        slug: "o/r",
-        records: [],
-        unplaced: [],
-        notifications: [],
-        actions: [cause],
-      } as unknown as RepoReport;
-      await applyNotices(
-        state,
-        repo,
-        report,
-        { ok: true, source: "test", workspaces: [workspace()] },
-        { branch: null, lingerMs: 0, renotifyAfterMs: 0 },
-      );
-      return report.notifications.map((n) => n.outcome);
-    };
-    expect(await tick()).toEqual(["sent"]);
-    expect(await tick()).toEqual(["suppressed"]);
-    expect(sent).toHaveLength(1);
+    expect(await tick(file, card)).toEqual(["sent"]);
+    expect(await tick(file, card)).toEqual(["suppressed"]);
+    expect(card.sent).toHaveLength(1);
   });
 });
