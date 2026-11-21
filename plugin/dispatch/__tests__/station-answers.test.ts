@@ -688,6 +688,40 @@ describe("settleStationAnswers on an item of another tracker", () => {
     expect(prompt).not.toContain("Release the claim");
   });
 
+  it("hands a replayed launch record no release answer an earlier version kept in it", () => {
+    const answered = {
+      question: "q?",
+      option: "Release the claim",
+      recommended: false,
+      changes: "",
+      costs: "",
+      by: "maintainer",
+      url: `https://github.com/${SLUG}/issues/12#issuecomment-1`,
+    };
+    const record = (extra: object) =>
+      ({
+        id: "r-9",
+        token: "0".repeat(32),
+        action: "pickup",
+        repo: SLUG,
+        pr: null,
+        item: "ENG-12",
+        vendor: "claude",
+        model: null,
+        effort: null,
+        sessionId: null,
+        ...extra,
+      }) as unknown as LaunchRecord;
+    const legacy = pickupPassArgv(record({ answered }), []).at(-1) ?? "";
+    expect(legacy).not.toContain("Carry out the option they chose");
+    const framed =
+      pickupPassArgv(
+        record({ answered: { ...answered, step: "session" } }),
+        [],
+      ).at(-1) ?? "";
+    expect(framed).toContain("Carry out the option they chose");
+  });
+
   it("acts on no answer from an author the tracker does not vouch for, a stale digest or two people who differ", async () => {
     const dir = root();
     const cases: Array<[CommentLike[], "stale" | "disputed" | undefined]> = [

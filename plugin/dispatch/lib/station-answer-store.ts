@@ -198,6 +198,19 @@ export function isCarriedAnswer(value: unknown): value is CarriedAnswer {
 }
 
 /**
+ * Whether a carried answer is a release the tick carries out whole, so no
+ * session is handed it. A carry that names its step is judged by it; one
+ * with no recorded step (persisted before the step was kept) is judged by
+ * its option's name, which a session-framed option of the same name from
+ * that time cannot be told from.
+ */
+export function isCarriedReleaseDone(c: CarriedAnswer): boolean {
+  return c.step === undefined
+    ? c.option === STATION_OPTIONS.release.name
+    : c.step === "release";
+}
+
+/**
  * The answer the next session of `target` is handed, taken for the launch
  * record `record`: the newest carried answer no launch has taken. `null`
  * when there is none.
@@ -218,14 +231,10 @@ export function takeCarried(
       )
       .all(repo, target) as { rowid: number; carry: string }[];
     // A release the tick carried out whole is no task for the next session:
-    // carries an earlier version persisted for it are passed over. Only a
-    // carry with no recorded step is judged by its option's name; one that
-    // names its step (a session-framed option may share the name) is not.
+    // carries an earlier version persisted for it are passed over.
     const found = rows.find((r) => {
       const c = carriedOf(r.carry);
-      return c?.step === undefined
-        ? c?.option !== STATION_OPTIONS.release.name
-        : c.step !== "release";
+      return c === null || !isCarriedReleaseDone(c);
     });
     if (found === undefined) return null;
     db.query("UPDATE station_answers SET consumed_by = ? WHERE rowid = ?").run(
