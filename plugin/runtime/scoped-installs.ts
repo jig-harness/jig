@@ -32,6 +32,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { swallow } from "../shared/errors.ts";
 import { isRecord } from "../shared/guards.ts";
 import { currentIso } from "../shared/time.ts";
 import {
@@ -148,7 +149,9 @@ export function updatedProject(output: string): string | null {
   let result: unknown;
   try {
     result = JSON.parse(line);
-  } catch {
+  } catch (error) {
+    // The update succeeded; a result line it cannot read names no directory.
+    swallow(error, "claude plugin update --json printed no JSON result line");
     return null;
   }
   const message = isRecord(result) ? result.message : undefined;
