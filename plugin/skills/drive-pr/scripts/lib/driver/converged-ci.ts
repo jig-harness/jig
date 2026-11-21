@@ -88,7 +88,12 @@ export interface ConvergedCiDeps {
     head: string,
     run: number,
     mayMutate: () => Promise<boolean>,
-  ): Promise<{ ok: boolean; indeterminate?: boolean; detail: string }>;
+  ): Promise<{
+    ok: boolean;
+    indeterminate?: boolean;
+    unsent?: boolean;
+    detail: string;
+  }>;
   /**
    * The cancelled-run recovery on the head; `mayMutate` is asked at its
    * mutation boundary, after its own fence and before it claims or re-runs.
@@ -323,6 +328,13 @@ async function rerun(
     // An indeterminate answer may still have started the run: the claim is
     // recorded, so the next reading looks for its new attempt and parks when
     // none appears.
+    if (!asked.ok && asked.unsent === true) {
+      await deps.withdrawRerun?.(pr, run);
+      return {
+        next: "wait",
+        saw: `the re-run of run ${run.id} was not sent (${asked.detail})`,
+      };
+    }
     if (!asked.ok && asked.indeterminate !== true) {
       await deps.withdrawRerun?.(pr, run);
       return {

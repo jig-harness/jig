@@ -104,6 +104,8 @@ export interface RetryForge {
     ok: boolean;
     /** A mutation may have reached the forge despite no acknowledgement. */
     indeterminate?: boolean;
+    /** The retry was refused before any mutation was sent. */
+    unsent?: boolean;
     detail: string;
     attempt?: number;
   }>;

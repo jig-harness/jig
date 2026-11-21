@@ -72,6 +72,7 @@ interface Script {
   rerunnable?: number[];
   rerunOk?: boolean;
   rerunIndeterminate?: boolean;
+  rerunUnsent?: boolean;
   /** Each ownership read in turn, the last repeating; `true` and `false` read ours and lost. */
   owned?: boolean | Ownership[] | { afterMs: number; becomes: Ownership };
 }
@@ -125,6 +126,12 @@ function fake(script: Script) {
       asked.push(run);
       if (script.rerunIndeterminate === true)
         return { ok: false, indeterminate: true, detail: "timed out" };
+      if (script.rerunUnsent === true)
+        return {
+          ok: false,
+          unsent: true,
+          detail: "rate limit refused the request",
+        };
       return script.rerunOk === false
         ? { ok: false, detail: "HTTP 403: the run cannot be re-run" }
         : { ok: true, detail: "" };
@@ -514,6 +521,17 @@ describe("the converged CI watch", () => {
     expect(verdict.kind === "park" && verdict.reason).toContain(
       "shows no new attempt",
     );
+  });
+
+  it("releases an unsent re-run claim so the next poll can retry it", async () => {
+    const f = fake({
+      ci: [failing(55), GREEN],
+      runs: [[workflowRun(55, 2_000)]],
+      rerunUnsent: true,
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.reruns.size).toBe(0);
   });
 
   it("parks when a requested re-run shows no new attempt a minute on", async () => {

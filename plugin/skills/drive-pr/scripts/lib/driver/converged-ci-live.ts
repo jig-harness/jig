@@ -193,6 +193,7 @@ export function liveConvergedCi(
         ok: asked.ok,
         detail: asked.detail,
         ...(asked.indeterminate === true ? { indeterminate: true } : {}),
+        ...(asked.unsent === true ? { unsent: true } : {}),
       };
     },
     withdrawRerun: (pr, run) => withdrawLabelRerun(pr, run),

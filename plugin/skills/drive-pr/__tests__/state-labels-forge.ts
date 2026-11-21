@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { currentMs } from "../../../shared/time.ts";
 
 /** The default branch's configuration with the labels on, as the forge serves it. */
 const LABELS_ON = "dispatch:\n  labels:\n    enabled: true\n";
@@ -82,7 +83,7 @@ if (fs.existsSync(limitFile) && read().includes("jig:converged") &&
 }
 const shortLimit = path.join(dir, "short-ci-limit");
 if (fs.existsSync(shortLimit) && read().includes("jig:converged") &&
-    args[0] === "api" && args.some((arg) => arg.includes("/check-runs?"))) {
+    args[0] === "api" && args.some((arg) => arg.includes("/check-runs"))) {
   fs.unlinkSync(shortLimit);
   process.stdout.write("HTTP/2.0 429 Too Many Requests\\r\\nRetry-After: 1\\r\\n\\r\\n");
   process.stderr.write("HTTP 429: rate limit exceeded\\n");
@@ -91,8 +92,9 @@ if (fs.existsSync(shortLimit) && read().includes("jig:converged") &&
 const explicitLimit = path.join(dir, "explicit-ci-limit");
 if (fs.existsSync(explicitLimit) && read().includes("jig:converged") &&
     args[0] === "api" && args.some((arg) => arg.includes("/check-runs?"))) {
+  const reset = Math.ceil(${currentMs()} / 1000) + 24 * 60 * 60;
   fs.unlinkSync(explicitLimit);
-  process.stdout.write("HTTP/2.0 429 Too Many Requests\\r\\nx-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: 1800000000\\r\\n\\r\\n{\\"message\\":\\"API rate limit exceeded\\"}");
+  process.stdout.write("HTTP/2.0 429 Too Many Requests\\r\\nx-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: " + reset + "\\r\\n\\r\\n{\\"message\\":\\"API rate limit exceeded\\"}");
   process.exit(1);
 }
 const stopLimit = path.join(dir, "limit-stopped-ledger-read");
