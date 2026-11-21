@@ -786,6 +786,12 @@ export async function settleStationAnswers(
 
 /** Why an answered need sits among the report's quiet entries. */
 function answeredHoldWhy(action: Action): string {
+  const acted = action.answered?.acted;
+  if (
+    acted !== undefined &&
+    /^held .+ until PR #\d+ merges$/.test(acted.detail)
+  )
+    return `${acted.author} chose ${acted.option}; ${acted.detail}, and the pickup resumes when it merges`;
   if (action.cause !== "release-owed")
     return `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`;
   const unread = action.answered?.unread;

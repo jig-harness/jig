@@ -345,3 +345,30 @@ it("lets a person's new hold replace a cleared conditional hold but not an activ
   expect(after.value[0]?.settled).toBeUndefined();
   expect(after.value[0]?.condition).toBeUndefined();
 });
+
+it("keeps a released conditional hold that names its resume record as cleared", () => {
+  const w = world();
+  current = w;
+  const root = dispatchState(w);
+  const condition = { kind: "pr-merged", pr: 42 } as const;
+  const hold = {
+    by: "a person",
+    title: "t",
+    url: null,
+    condition,
+    resumeRecord: "rec-1",
+  };
+  expect(setPersonPickupHold(SLUG, "#13", hold, root).ok).toBe(true);
+  expect(setPersonPickupHold(SLUG, "#13", null, root).ok).toBe(true);
+  const read = personPickupHolds(SLUG, root);
+  if (!read.ok) throw new Error(read.failure.reason);
+  expect(read.value).toHaveLength(1);
+  expect(read.value[0]?.settled).toBe("cleared");
+  expect(read.value[0]?.resumeRecord).toBe("rec-1");
+  const plain = { by: "a person", title: "t", url: null };
+  expect(setPersonPickupHold(SLUG, "#14", plain, root).ok).toBe(true);
+  expect(setPersonPickupHold(SLUG, "#14", null, root).ok).toBe(true);
+  const after = personPickupHolds(SLUG, root);
+  if (!after.ok) throw new Error(after.failure.reason);
+  expect(after.value.map((h) => h.item)).toEqual(["#13"]);
+});
