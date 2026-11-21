@@ -22,7 +22,8 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  *     work an unattended round should meet EARLY, while there is still a human
  *     around to park it for, not at the announce gate.
  *
- * What this module deliberately does NOT do is treat "behind" as the trigger.
+ * Ordinary rounds use overlap to decide whether to merge. CI repair needs the
+ * current base even when its changes are outside the PR diff.
  * Commits-behind is a proxy; the predicate that tracks both a textual
  * conflict and the semantic breakage class far more reliably is whether the
  * base touched a file this PR also touches. A base that advanced 200 commits
@@ -131,13 +132,20 @@ export function driftVerdict(d: BaseDrift): DriftVerdict {
  * measurement is always worth a line, because its silence is the untrustworthy
  * kind.
  */
-export function driftLine(d: BaseDrift): string | null {
+export function driftLine(d: BaseDrift, ciRepair = false): string | null {
   const verdict = driftVerdict(d);
   const stale = d.fetched ? "" : " (fetch FAILED — read off a stale local ref)";
   if (verdict === "in-sync") {
     return d.fetched
       ? null
       : `BASE: cannot confirm ${d.baseRef} is current${stale}`;
+  }
+  if (ciRepair) {
+    return (
+      `BASE: ${d.baseRef} is ${d.behind} commit(s) ahead${stale}\n` +
+      "  Sync it before reproducing the CI failure, including changes to the gates:\n" +
+      "    <skill-dir>/scripts/base-sync.ts [PR]"
+    );
   }
   if (verdict === "no-overlap") {
     return (
