@@ -52,48 +52,148 @@ export async function mergeOpen(): Promise<boolean | null> {
 export async function beforeConflictPass(
   pr: string,
   held: readonly DriveLock[],
-): Promise<() => Promise<void>> {
+): Promise<() => Promise<string | null>> {
   const openBefore = await mergeOpen();
+  const options = cleanupOptions();
+  const before =
+    openBefore === false ? await listedFiles(options, ["--cached"]) : null;
+  const head =
+    openBefore === false ? await git(["rev-parse", "HEAD"], options) : null;
   return async () => {
-    if (openBefore === false && held.length > 0) await abortMergeLeftOpen(pr);
+    if (openBefore === false && held.length > 0) {
+      return settleConflictTree(
+        pr,
+        before,
+        head?.code === 0 ? head.stdout : null,
+      );
+    } else if (openBefore !== true && (await mergeOpen()) === true) {
+      const why =
+        held.length === 0
+          ? "the driver no longer holds its locks"
+          : "the initial merge state was unreadable";
+      const result = `An open merge (MERGE_HEAD) remains because ${why}.`;
+      console.error(`PR #${pr}: ${result}`);
+      return result;
+    }
+    return null;
   };
 }
 
-/**
- * Abort the merge a conflict-resolve pass left open, under the tree's fence, and
- * say what it held. A merge that cannot be aborted (its files edited since they
- * were staged, another session holding the tree) stays and is reported: its
- * content is not this driver's to force away.
- */
-async function abortMergeLeftOpen(pr: string): Promise<void> {
-  if ((await mergeOpen()) !== true) return;
+function cleanupOptions() {
+  return {
+    ...inDrivenTree(),
+    stderr: "pipe" as const,
+    timeoutSec: gitCallTimeoutSeconds(),
+  };
+}
+
+async function listedFiles(
+  options: ReturnType<typeof cleanupOptions>,
+  extra: string[] = [],
+) {
+  const result = await git(
+    ["ls-files", "-z", "--others", "--exclude-standard", ...extra],
+    options,
+  );
+  return result.code === 0
+    ? new Set(result.stdout.split("\0").filter(Boolean))
+    : null;
+}
+
+/** Restore a pass's unfinished merge under the same fence as its other writes. */
+async function settleConflictTree(
+  pr: string,
+  before: ReadonlySet<string> | null,
+  originalHead: string | null,
+): Promise<string | null> {
   const left = `PR #${pr}: the conflict-resolution pass left its merge open`;
+  const opts = cleanupOptions();
+  const operation = await unconcludedGitOpMarker(opts.timeoutSec, opts);
+  if (!operation.ok) {
+    console.error(
+      `PR #${pr}: could not read the merge state after the conflict-resolution pass`,
+    );
+    return "The merge state could not be read after the conflict-resolution pass.";
+  }
+  if (operation.marker !== null && operation.marker !== "MERGE_HEAD")
+    return null;
+  const open = operation.marker === "MERGE_HEAD";
+  const head = await git(["rev-parse", "HEAD"], opts);
+  if (!open && (head.code !== 0 || head.stdout !== originalHead)) return null;
   let fence: Awaited<ReturnType<typeof treeFence>>;
   try {
     fence = await treeFence(pr, "drive.ts");
   } catch (err) {
     console.error(
-      `${left}, and it stays: ${err instanceof Error ? err.message : String(err)}`,
+      `${open ? left : `PR #${pr}: could not check conflict-resolution leftovers`}: ${err instanceof Error ? err.message : String(err)}`,
     );
-    return;
+    return open
+      ? "The merge (MERGE_HEAD) could not be aborted because the tree fence was refused."
+      : "Conflict-resolution leftovers could not be checked because the tree fence was refused.";
   }
   try {
-    const opts = {
-      ...inDrivenTree(),
-      stderr: "pipe" as const,
-      timeoutSec: gitCallTimeoutSeconds(),
-    };
-    const held = await git(["status", "--short", "--untracked-files=no"], opts);
-    const abort = await git(["merge", "--abort"], opts);
-    if (abort.code !== 0 || (await mergeOpen()) !== false) {
-      console.error(
-        `${left}, and 'git merge --abort' did not close it: ${abort.stderr.trim()}`,
+    if (open) {
+      const held = await git(
+        ["status", "--short", "--untracked-files=normal"],
+        opts,
       );
-      return;
+      const abort = await git(["merge", "--abort"], opts);
+      if (abort.code !== 0 || (await mergeOpen()) !== false) {
+        console.error(
+          `${left}, and 'git merge --abort' did not close it: ${abort.stderr.trim() || "merge closure could not be verified"}`,
+        );
+        return "Git could not verify that aborting the unfinished merge closed MERGE_HEAD.";
+      }
+      console.error(`${left}; aborted it. It held:`);
+      for (const line of held.stdout.trimEnd().split("\n"))
+        console.error(`  ${line}`);
     }
-    console.error(`${left}; aborted it, so nothing is half-merged. It held:`);
-    for (const line of held.stdout.trimEnd().split("\n"))
-      console.error(`  ${line}`);
+    const after = before === null ? null : await listedFiles(opts);
+    if (after === null || before === null) {
+      console.error(
+        `PR #${pr}: could not identify new untracked files after conflict resolution`,
+      );
+      return "New untracked files could not be identified after conflict resolution.";
+    }
+    let removed = 0;
+    for (const path of after) {
+      // A trailing slash represents an embedded repository. Leave it for
+      // the final status check to report.
+      if (before.has(path) || path.endsWith("/")) continue;
+      const clean = await git(
+        ["--literal-pathspecs", "clean", "-f", "--", path],
+        opts,
+      );
+      if (clean.code === 0) removed += 1;
+      else
+        console.error(
+          `PR #${pr}: could not remove ${JSON.stringify(path)}: ${clean.stderr.trim()}`,
+        );
+    }
+    const status = await git(
+      [
+        "status",
+        "--porcelain",
+        "--untracked-files=normal",
+        "--ignore-submodules=none",
+      ],
+      opts,
+    );
+    if (status.code !== 0 || status.stdout !== "") {
+      console.error(
+        `PR #${pr}: the conflict-resolution worktree could not be verified clean:\n${(status.stdout || status.stderr).trimEnd()}`,
+      );
+      return "The conflict-resolution worktree could not be verified clean.";
+    }
+    if (open || removed > 0) {
+      console.error(
+        `PR #${pr}: verified the worktree is clean after discarding unfinished conflict-resolution work`,
+      );
+      return open
+        ? "The pass ended with its merge open. The driver aborted it and verified that the worktree is clean."
+        : "The driver removed new untracked files and verified that the worktree is clean.";
+    }
+    return null;
   } finally {
     fence?.release();
   }

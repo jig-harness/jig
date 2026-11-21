@@ -63,6 +63,7 @@ import {
 } from "./lib/classify.ts";
 import { THROWAWAY_INDEX_CONFIG } from "./lib/attributes.ts";
 import { droppedLines } from "./lib/drops.ts";
+import { checkMigrations, migrationPlans } from "./lib/migration-plan.ts";
 import {
   git,
   gitPath,
@@ -411,7 +412,13 @@ export function checkResolution(
     );
   result.problems.push(...stagedMarkers(root, snapshot.paths));
   result.problems.push(
-    ...provenanceProblems(root, snapshot, new Set(unmerged.keys())),
+    ...provenanceProblems(
+      root,
+      snapshot,
+      new Set(unmerged.keys()),
+      (staged, proof) =>
+        checkMigrations(root, migrationPlans(root, snapshot, proof), staged),
+    ),
   );
   result.exit =
     result.escalations.length > 0 ? 4 : result.problems.length > 0 ? 1 : 0;

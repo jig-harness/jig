@@ -1795,8 +1795,11 @@ Then:
   resolved, so go on from its Step 6 (`round-plan.ts` plans an open merge
   whose conflicts are resolved). Otherwise abort it as its Step 8 does,
   verify the tree is clean, and start from its Step 1. A merge this round
-  started and does not conclude is aborted for you when the pass ends, and the
-  round has achieved nothing.
+  started and does not conclude is aborted when the pass ends, while the
+  driver still holds its locks and the tree's fence. The driver removes new
+  untracked files from the unfinished attempt and checks the worktree with
+  untracked files included. The stop reports any merge it could not abort
+  or worktree it could not verify clean.
 
 Either way **push, or the round achieved nothing the driver can observe** —
 the driver re-gates from the top afterwards and reads the remote head, not

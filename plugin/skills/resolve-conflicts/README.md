@@ -33,6 +33,20 @@ even in a file that merged cleanly. Inspect the output of `bun "<skill-dir>/../.
 hunks belong to the resolution. Blob contents, file modes and deletions all
 matter; merely appearing on a changed-file list does not establish ownership.
 
+## Sequenced database migrations
+
+When two branches add migrations at the same sequence number, the plan
+keeps the base branch's series and moves the feature branch's migrations
+after it. The repository's own command rebuilds the journal and snapshots.
+The staged check compares the SQL and file mode at each required path to
+its committed input and checks the journal order, even when the conflict
+decision records a deletion.
+
+The skill detects the legacy Drizzle journal layout. For a command that
+rebuilds that layout, or to declare a different migration directory, set
+[`resolve_conflicts.sequenced_migrations`](../../CONFIGURATION.md#procedure-skills).
+The [agent procedure](SKILL.md#apply-a-migration-plan) gives the steps.
+
 ## Repository obligations
 
 Path-specific agent instructions may never load when Git makes an edit.
