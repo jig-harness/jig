@@ -766,6 +766,48 @@ function byLoad(
     : { outcome: waits(action, held, slots.account.name), capacity: "load" };
 }
 
+/** Whether a refused identity ends admission: a takeover tied to the slot of the driver it takes over. */
+function keepsTakeover(
+  state: ApplyState,
+  action: Action,
+  name: string,
+  clone: string | null,
+): boolean {
+  const holder = takeoverHostDriver(
+    action.takeoverHolder,
+    state.drivers,
+    state.table.map((entry) => entry.account),
+    state.records,
+    clone,
+    Number(action.target.replace("PR #", "")),
+  );
+  return keepsTakeoverAccount(state, action, holder?.account, name);
+}
+
+/** The admission that waits on the accounts: the refusal an identity check left, else what the slots say. */
+function accountsWait(
+  state: ApplyState,
+  action: Action,
+  failed: ReadonlySet<string>,
+  held: ReadonlyMap<string, string>,
+  waitsOn: LaneWait | undefined,
+  refusal: LaunchOutcome | null,
+  why: string,
+): AccountAdmission {
+  return {
+    ...(refusal === null && waitsForRearmSlot(state, action, failed)
+      ? { capacity: "accounts" as const }
+      : {}),
+    outcome: refusal ?? {
+      ...waits(action, withHeld(state, held, why)),
+      // A follow-up says what it waits on: here, the accounts.
+      ...(action.stage === "followup"
+        ? { waitsOn: waitsOn ?? "accounts" }
+        : {}),
+    },
+  };
+}
+
 /**
  * Check account identity and load after admission. A failed identity can pass
  * to the next account, except for a takeover tied to its recorded slot.
@@ -787,18 +829,15 @@ export async function admitAccount(
   for (;;) {
     const admitted = admission(state, action, failed, pickupDeadlineSec, clone);
     if ("waits" in admitted)
-      return {
-        ...(refusal === null && waitsForRearmSlot(state, action, failed)
-          ? { capacity: "accounts" as const }
-          : {}),
-        outcome: refusal ?? {
-          ...waits(action, withHeld(state, held, admitted.waits)),
-          // A follow-up says what it waits on: here, the accounts.
-          ...(action.stage === "followup"
-            ? { waitsOn: checked.waitsOn ?? "accounts" }
-            : {}),
-        },
-      };
+      return accountsWait(
+        state,
+        action,
+        failed,
+        held,
+        checked.waitsOn,
+        refusal,
+        admitted.waits,
+      );
     const slots = admitted.admitted;
     const identity = await identityOf(state, slots);
     if ("waits" in identity)
@@ -814,16 +853,7 @@ export async function admitAccount(
       return byLoad(state, repo, action, slots, pickupDeadlineSec);
     const name = slots.account.name;
     refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    const holder = takeoverHostDriver(
-      action.takeoverHolder,
-      state.drivers,
-      state.table.map((entry) => entry.account),
-      state.records,
-      clone,
-      Number(action.target.replace("PR #", "")),
-    );
-    if (keepsTakeoverAccount(state, action, holder?.account, name))
-      return { outcome: refusal };
+    if (keepsTakeover(state, action, name, clone)) return { outcome: refusal };
     failed.add(name);
   }
 }

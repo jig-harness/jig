@@ -557,6 +557,12 @@ function changedStale(
   return `its pull request changed since the plan read it (now ${fresh.stale?.cause ?? fresh.why})`;
 }
 
+/** Why a fresh read stops a launch before its facts are compared: a hold label, or a later rearm request. */
+function heldOrMoved(fresh: DrivenPr, held: FreshDrive["held"]): string | null {
+  if (held(fresh)) return HELD;
+  return fresh.evidence.rearmMoved === true ? EARLIER_REARM : null;
+}
+
 /** The fresh read: the ledger, and a stale one's pull request, must still say what the plan acted on, and no hold label stand on it. */
 function stillWanted(
   action: Action,
@@ -564,8 +570,8 @@ function stillWanted(
   held: FreshDrive["held"],
 ): string | null {
   if (fresh === null) return "its ledger cannot be read again";
-  if (held(fresh)) return HELD;
-  if (fresh.evidence.rearmMoved === true) return EARLIER_REARM;
+  const stopped = heldOrMoved(fresh, held);
+  if (stopped !== null) return stopped;
   if (!sameFacts(factsOf(fresh), action.facts))
     return `its ledger changed since the plan read it (now ${factsOf(fresh)})`;
   const want = wantedClass(isTakeover(action), action.redrive, action.facts);
@@ -752,6 +758,29 @@ function driveRecord(
   };
 }
 
+/** The account admission of a launch, noting on a rearm's track that capacity held it or let it through. */
+async function admitTracked(
+  state: ApplyState,
+  repo: RepoTarget,
+  action: Action,
+  track: ReturnType<typeof rearmTrack>,
+): Promise<{ outcome: LaunchOutcome } | { slots: Slots }> {
+  const admitted = await admitAccount(
+    state,
+    repo.slug,
+    action,
+    0,
+    readCloneKey(repo.path),
+  );
+  if ("outcome" in admitted) {
+    if (admitted.capacity !== undefined)
+      track?.capacity(admitted.outcome, admitted.capacity);
+    return admitted;
+  }
+  track?.passed("capacity");
+  return admitted;
+}
+
 /** The account slot and the workspace one launch runs in, or the outcome that ends it. */
 async function admitAndOpen(
   state: ApplyState,
@@ -786,23 +815,27 @@ async function admitAndOpen(
     track?.treeMissing(original.waits);
     return { outcome: waits(action, original.waits) };
   }
-  const admitted = await admitAccount(
-    state,
-    repo.slug,
-    action,
-    0,
-    readCloneKey(repo.path),
-  );
-  if ("outcome" in admitted) {
-    if (admitted.capacity !== undefined)
-      track?.capacity(admitted.outcome, admitted.capacity);
-    return admitted;
-  }
-  track?.passed("capacity");
-  const slots = admitted.slots;
+  const admitted = await admitTracked(state, repo, action, track);
+  if ("outcome" in admitted) return admitted;
+  const { slots } = admitted;
   const candidate = await (original && "workspace" in original
     ? provenWorkspace(state, repo, pr.number, pr.head, original.workspace)
     : (original ?? open(true)));
+  return openAdmitted(state, action, slots, candidate, track, original);
+}
+
+/** The admitted slot's workspace, once the tree a rearm waits on is proven or refused. */
+async function openAdmitted(
+  state: ApplyState,
+  action: Action,
+  slots: Slots,
+  candidate: Opened,
+  track: ReturnType<typeof rearmTrack>,
+  original: Opened | undefined,
+): Promise<
+  | { outcome: LaunchOutcome }
+  | { slots: Slots; workspace: { id: string; path: string } }
+> {
   if (track && "refused" in candidate) {
     track.treeRefused(candidate.refused, candidate.structural);
     return { outcome: waits(action, candidate.refused, slots.account.name) };

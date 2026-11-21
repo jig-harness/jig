@@ -85,6 +85,53 @@ export function rearmableStop(ledger: Ledger): boolean {
   );
 }
 
+type Payload = {
+  reason?: unknown;
+  needsPerson?: unknown;
+  failureStop?: unknown;
+  failureGeneration?: unknown;
+};
+
+/** A request a person withdrew, or that the drive itself ended with a failure to report. */
+function cancelledEvidence(
+  evidence: Evidence,
+  payload: Payload,
+  stop: RearmStop | null,
+  sameStop: boolean,
+): Evidence {
+  const { reason, needsPerson, failureStop, failureGeneration } = payload;
+  const atFailure =
+    stop !== null &&
+    stop.comment === failureStop &&
+    stop.generation === failureGeneration;
+  const report = (sameStop || atFailure) && needsPerson === true;
+  return {
+    ...evidence,
+    rearmCancelled: true,
+    ...(report && typeof reason === "string" ? { rearmFailure: reason } : {}),
+    rearmExpired:
+      typeof reason === "string"
+        ? reason
+        : "the person withdrew the rearm request",
+  };
+}
+
+/** A request whose stop the drive has moved past. */
+function movedEvidence(evidence: Evidence, stop: RearmStop | null): Evidence {
+  return {
+    ...evidence,
+    rearmExpired:
+      "the drive is no longer at the stop named by the rearm request",
+    ...(stop !== null
+      ? {
+          rearmMoved: true,
+          rearmMovedTo: stop.comment,
+          rearmMovedGeneration: stop.generation,
+        }
+      : {}),
+  };
+}
+
 /** Read the newest trusted binding for the carried label from the tick's comment listing. */
 export function rearmBinding(
   target: ClaimTarget,
@@ -116,40 +163,15 @@ export function rearmBinding(
     stop !== null &&
     payload.stopComment === stop.comment &&
     generation === stop.generation;
-  if (cancelled?.record.ok) {
-    const { reason, needsPerson, failureStop, failureGeneration } =
-      cancelled.record.value.payload;
-    return {
-      ...evidence,
-      rearmCancelled: true,
-      ...((sameStop ||
-        (stop !== null &&
-          stop.comment === failureStop &&
-          stop.generation === failureGeneration)) &&
-      needsPerson === true &&
-      typeof reason === "string"
-        ? { rearmFailure: reason }
-        : {}),
-      rearmExpired:
-        typeof reason === "string"
-          ? reason
-          : "the person withdrew the rearm request",
-    };
-  }
+  if (cancelled?.record.ok)
+    return cancelledEvidence(
+      evidence,
+      cancelled.record.value.payload,
+      stop,
+      sameStop,
+    );
   const requestedAt = parseMs(newest.createdAt || at);
-  if (!sameStop)
-    return {
-      ...evidence,
-      rearmExpired:
-        "the drive is no longer at the stop named by the rearm request",
-      ...(stop !== null
-        ? {
-            rearmMoved: true,
-            rearmMovedTo: stop.comment,
-            rearmMovedGeneration: stop.generation,
-          }
-        : {}),
-    };
+  if (!sameStop) return movedEvidence(evidence, stop);
   if (!Number.isFinite(requestedAt))
     return { ...evidence, rearmExpired: "the rearm request time did not read" };
   return {

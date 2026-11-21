@@ -323,6 +323,22 @@ async function retireClosed(run: Retirement): Promise<void> {
   }
 }
 
+/** A request that ended on a moved stop or a spent wait is notified once. */
+function noticeFailure(
+  report: RepoReport,
+  slug: string,
+  now: DrivenPr,
+  why: string,
+): void {
+  const ended = now.evidence.rearm === true || now.evidence.rearmMoved === true;
+  const told = report.actions.some(
+    (a) =>
+      a.target === `PR #${now.number}` &&
+      a.evidence.rearmFailedRequest === now.evidence.rearmRequestId,
+  );
+  if (ended && !told) failedRearmRequest(report, slug, now, why);
+}
+
 export async function retireRearmRequests(
   state: ApplyState,
   slug: string,
@@ -349,17 +365,8 @@ export async function retireRearmRequests(
     const now = { ...pr, evidence: current.evidence };
     if (retirementReason(state, slug, report, now) !== why) continue;
     // Planning withholds a held pull request's notifications, so the notice waits; the binding keeps the failure for after the release.
-    const held = hasCommand(labels, pr.labels, "hold");
-    if (
-      (now.evidence.rearm === true || now.evidence.rearmMoved === true) &&
-      !held &&
-      !report.actions.some(
-        (a) =>
-          a.target === `PR #${now.number}` &&
-          a.evidence.rearmFailedRequest === now.evidence.rearmRequestId,
-      )
-    )
-      failedRearmRequest(report, slug, now, why);
+    if (!hasCommand(labels, pr.labels, "hold"))
+      noticeFailure(report, slug, now, why);
     await retire(run, pr.number, why, now.evidence);
   }
   await retireClosed(run);

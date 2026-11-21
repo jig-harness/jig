@@ -379,6 +379,36 @@ function asksForDrive(
   );
 }
 
+/** The rearm requests whose pull request no longer asks for one are retired, by the host that owns the repository. */
+async function retireRequests(
+  apply: ApplyState,
+  enabled: ReadonlySet<string>,
+  report: RepoReport,
+  inputs: ApplyInputs,
+  labels: LabelConfig | null,
+  guard: StageGuard,
+): Promise<void> {
+  if (labels === null || !inputs.shared.owner || !enabled.has("rearm")) return;
+  const asking = inputs.forge.openReadable
+    ? new Set(
+        inputs.forge.open
+          .filter((pr) => pr.labels?.includes(commandLabel(labels, "rearm")))
+          .map((pr) => pr.number),
+      )
+    : null;
+  await guard("rearm", () =>
+    retireRearmRequests(
+      apply,
+      inputs.repo.slug,
+      report,
+      labels,
+      inputs.drives,
+      asking,
+      inputs.login,
+    ),
+  );
+}
+
 /**
  * `--apply` for one repository: the launch stages its machine-file entry
  * enables, in this tick's turn, then its nudges and notifications, which
@@ -492,26 +522,7 @@ async function applyStages(
       await applySteers(apply, repo.slug, report, inputs.book, observed);
     else retireSteers(report, inputs.book, observed);
   });
-  if (labels !== null && inputs.shared.owner && enabled.has("rearm"))
-    await guard("rearm", () =>
-      retireRearmRequests(
-        apply,
-        repo.slug,
-        report,
-        labels,
-        inputs.drives,
-        inputs.forge.openReadable
-          ? new Set(
-              inputs.forge.open
-                .filter((pr) =>
-                  pr.labels?.includes(commandLabel(labels, "rearm")),
-                )
-                .map((pr) => pr.number),
-            )
-          : null,
-        login,
-      ),
-    );
+  await retireRequests(apply, enabled, report, inputs, labels, guard);
   if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
