@@ -427,9 +427,9 @@ arrive, each on the slot that frees first, from the runs at the lock now
 (a holder may have just begun) through every run with an estimate, until the
 new pass's last run takes a slot. A run the
 lock has released by the time the new pass arrives is served before
-arrival** and not ahead of it; a run still holding or waiting then is
+arrival and not ahead of it; a run still holding or waiting then is
 ahead; a run that asks later queues behind the new pass's first run,
-but can still be ahead of its later ones. Passes launched
+but can still be ahead of its later ones, and is counted only when its slot delays one of them. Passes launched
 together arrive together and contend for the same slots, so those a slot
 cannot take in time stay ahead rather than each being credited as served.
 Once there, each of the new pass's
@@ -471,15 +471,16 @@ cannot see: a run without an estimate is counted ahead, and a pass admitted
 this tick counts all of its runs ahead of the next candidate. The reason
 names the runs served before arrival, and those arriving after its first run
 that a later one waits behind, beside the runs ahead, so a person
-can see why a pass was admitted or held. On a lock with nothing ahead the new pass always fits,
-whatever its runs per pass, even with a wait of zero; a wait window
+can see why a pass was admitted or held. On a lock with nothing ahead and nothing arriving later that its later runs
+wait behind, the new pass always fits, whatever its runs per pass, even with a
+wait of zero; a wait window
 shorter than one run admits a pass only while a slot is free, or about to
 be, for its first run, and the reason says so with the window, its source,
 the run time and the runs per pass.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
-`validation`, whose fill is the candidate's wait before its first
-acquisition, in runs of service, divided by the capacity; the gauge then
+`validation`, whose fill is the longest wait of any of the candidate's runs
+before it takes a slot, in runs of service, divided by the capacity; the gauge then
 reads that fill as a share of `load.validation`. The launch's own runs
 add nothing to the numerator: they follow one another, so only the runs
 reserved ahead of later candidates (those of passes admitted this tick and

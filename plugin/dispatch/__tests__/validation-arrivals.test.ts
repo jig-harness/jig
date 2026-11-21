@@ -75,7 +75,7 @@ describe("the lock's queue when a pass arrives", () => {
     // minute 20 and leaves the other free for the candidate at once.
     expect(queue).toEqual({
       waitMs: 0,
-      lastRequestMs: 15 * MINUTE,
+      lastStartMs: 15 * MINUTE,
       ahead: 1,
       served: 1,
       later: 0,
@@ -94,7 +94,7 @@ describe("the lock's queue when a pass arrives", () => {
     });
     expect(queue).toEqual({
       waitMs: 0,
-      lastRequestMs: 15 * MINUTE,
+      lastStartMs: 15 * MINUTE,
       ahead: 0,
       served: 0,
       later: 0,
@@ -113,10 +113,10 @@ describe("the lock's queue when a pass arrives", () => {
     });
     // The candidate holds minutes 15 to 25; the run arriving at minute 20
     // takes the slot next, so the candidate's second run waits 10 minutes
-    // and asks for the lock at minute 25.
+    // and starts at minute 35.
     expect(queue).toEqual({
       waitMs: 10 * MINUTE,
-      lastRequestMs: 25 * MINUTE,
+      lastStartMs: 35 * MINUTE,
       ahead: 0,
       served: 0,
       later: 1,
@@ -133,7 +133,10 @@ describe("the validation forecast's arrival model", () => {
     // Runs of 4 minutes, two at once, 25 minutes from launch to validation
     // for a pickup and an hour for a drive. The passes in flight were
     // launched over the last hour and have yet to reach the lock: they reach
-    // it, and leave it, before a drive launched now arrives.
+    // it, and leave it, before a drive launched now arrives. This replay
+    // checks compatibility with the earlier forecast; the direct queue tests
+    // above are the ones that fail when arrival estimates or later-run
+    // simulation are switched off.
     const figures = measured(4 * MINUTE, 2, 25 * MINUTE, HOUR);
     const inFlight = [
       ...[1, 3, 5, 8, 11, 14, 17, 20, 22, 24].map((ago, i) =>

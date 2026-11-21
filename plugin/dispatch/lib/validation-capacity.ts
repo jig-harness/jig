@@ -376,18 +376,18 @@ interface QueueEstimate {
   later: number;
   /** Service, in runs, before the pass's longest-waiting run takes a slot. */
   required: number;
-  /** When the pass's last run asks for the lock, from now. */
-  lastRequestMs: number;
+  /** When the pass's last run takes its slot, from now. */
+  lastStartMs: number;
 }
 
 function queued(input: ArrivalQueueInput): QueueEstimate {
-  const { waitMs, lastRequestMs, ahead, served, later } = arrivalQueue(input);
+  const { waitMs, lastStartMs, ahead, served, later } = arrivalQueue(input);
   return {
     ahead,
     served,
     later,
     required: (input.concurrency * waitMs) / input.runMs,
-    lastRequestMs,
+    lastStartMs,
   };
 }
 
@@ -417,7 +417,7 @@ function aggregate(
     served: 0,
     later: 0,
     required,
-    lastRequestMs:
+    lastStartMs:
       timeToValidationMs +
       (required * runMs) / concurrency +
       Math.max(0, ownRuns - 1) * runMs,
@@ -427,13 +427,13 @@ function aggregate(
 function fillOf(input: {
   required: number;
   capacity: number;
-  lastRequestMs: number;
+  lastStartMs: number;
   passLimitMs: number;
   timeToValidationMs: number;
 }): number | null {
-  const { required, capacity, lastRequestMs, passLimitMs } = input;
+  const { required, capacity, lastStartMs, passLimitMs } = input;
   if (passLimitMs <= input.timeToValidationMs) return null;
-  if (required > 0 && lastRequestMs > passLimitMs) return null;
+  if (required > 0 && lastStartMs > passLimitMs) return null;
   if (required === 0) return 0;
   return capacity > 0 ? required / capacity : null;
 }
@@ -468,7 +468,7 @@ export function forecastValidation(
   // validation with this pass, are counted ahead. A partial service wave
   // does not make a slot free, but it does shorten the wait until the next
   // release.
-  const { ahead, served, later, required, lastRequestMs } = Number.isInteger(
+  const { ahead, served, later, required, lastStartMs } = Number.isInteger(
     concurrency,
   )
     ? queued({
@@ -499,7 +499,7 @@ export function forecastValidation(
     fill: fillOf({
       required,
       capacity,
-      lastRequestMs,
+      lastStartMs,
       passLimitMs,
       timeToValidationMs,
     }),

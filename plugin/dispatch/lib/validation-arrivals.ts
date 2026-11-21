@@ -31,13 +31,13 @@ export interface ArrivalQueueInput {
 export interface ArrivalQueue {
   /** The longest any of the candidate's runs waits for a slot. */
   waitMs: number;
-  /** When the candidate's last run asks for the lock, from now. */
-  lastRequestMs: number;
+  /** When the candidate's last run takes its slot, from now. */
+  lastStartMs: number;
   /** Runs holding or waiting for the lock when the candidate arrives. */
   ahead: number;
   /** Runs the lock is expected to have released by then. */
   served: number;
-  /** Runs asking after the candidate's arrival that take a slot before one of its later runs. */
+  /** Runs asking after the candidate's arrival whose slot would otherwise have served one of its runs sooner. */
   later: number;
 }
 
@@ -109,7 +109,7 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   );
   const result = {
     waitMs: 0,
-    lastRequestMs: arriveMs,
+    lastStartMs: arriveMs,
     ahead: 0,
     served: 0,
     later: 0,
@@ -119,12 +119,17 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
     else result.ahead++;
   };
   /** Count a served request; the candidate's leaves its wait and its time. */
-  const record = (request: Request, start: number, end: number) => {
+  const record = (
+    request: Request,
+    start: number,
+    end: number,
+    delays: boolean,
+  ) => {
     if (request.rank === CANDIDATE) {
       result.waitMs = Math.max(result.waitMs, start - request.at);
-      result.lastRequestMs = request.at;
+      result.lastStartMs = start;
     } else if (request.at <= arriveMs) settle(end);
-    else result.later++;
+    else if (delays) result.later++;
   };
   releases.slice(0, holding).forEach(settle);
   const pending = requestsOf(input, holding);
@@ -136,8 +141,14 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
     releases.sort((left, right) => left - right);
     const start = Math.max(request.at, releases[0] ?? 0);
     const end = start + runMs;
+    const own = pending.find((other) => other.rank === CANDIDATE);
+    // The candidate's next run would take this slot, or the next to free.
+    const delays =
+      own !== undefined &&
+      Math.max(own.at, Math.min(releases[1] ?? end, end)) >
+        Math.max(own.at, releases[0] ?? 0);
     releases[0] = end;
-    record(request, start, end);
+    record(request, start, end, delays);
     if (request.rank === CANDIDATE && --ownLeft <= 0) return result;
     if (request.next > 0)
       pending.push({ ...request, at: end, next: request.next - 1 });
