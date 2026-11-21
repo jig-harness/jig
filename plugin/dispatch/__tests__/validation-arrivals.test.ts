@@ -141,6 +141,37 @@ describe("the lock's queue when a pass arrives", () => {
     expect(queue.lastStartMs).toBe(15 * MINUTE);
     expect(queue.later).toBe(2);
   });
+
+  test("counts each of several arrivals that jointly block a wait", () => {
+    const queue = arrivalQueue({
+      concurrency: 3,
+      runMs: 10 * MINUTE,
+      atLock: 0,
+      arrivals: Array.from({ length: 4 }, () => ({
+        atMs: 5 * MINUTE,
+        runs: 1,
+      })),
+      unknownRuns: 0,
+      arriveMs: 0,
+      candidateRuns: 2,
+    });
+    expect(queue.lastStartMs).toBe(15 * MINUTE);
+    expect(queue.later).toBeGreaterThan(0);
+  });
+
+  test("forecasts a large queue in one bounded pass", () => {
+    const started = performance.now();
+    arrivalQueue({
+      concurrency: 2,
+      runMs: 10 * MINUTE,
+      atLock: 0,
+      arrivals: Array.from({ length: 40 }, () => ({ atMs: MINUTE, runs: 40 })),
+      unknownRuns: 0,
+      arriveMs: 0,
+      candidateRuns: 40,
+    });
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe("the validation forecast's arrival model", () => {
