@@ -25,12 +25,18 @@
  * relaunched the same way, to resume its work: as soon as it is idle and the
  * health check passes, whatever its tree holds; its record keeps the fault,
  * which the relaunch's prompt names.
+ *
+ * A claimed pickup whose push the host's test lock held past its wait
+ * (`pickup-lock-wait.ts`) is relaunched the same way, to push and go on,
+ * as soon as it is idle; its relaunch is counted along its chain of
+ * relaunches there rather than once per head, since a push that never got
+ * through leaves the head where it was.
  */
 import type { ReadRecord } from "./launches.ts";
 import type { HostFault } from "./pickup-host-fault.ts";
 import { treeText, type TreeReader, unshipped } from "./pickup-tree.ts";
 import type { SessionsReport } from "./runtime/port.ts";
-import type { Action, DispatchSection } from "./types.ts";
+import type { Action, DispatchSection, RepoReport } from "./types.ts";
 
 /** What the rule reads. */
 export interface RelaunchInput {
@@ -43,6 +49,8 @@ export interface RelaunchInput {
   rerunsHeld?: string | null;
   /** The host fault the pickup stopped on, when it did: relaunched to resume it, whatever its tree holds. */
   fault?: HostFault | null;
+  /** The pickup's push was refused only because its wait for the host's test lock ran out: relaunched to push and go on, whatever its tree holds and whatever relaunch its head already had. */
+  lockWait?: boolean;
 }
 
 /** What the rule makes of a stalled pickup. */
@@ -114,14 +122,17 @@ export function relaunchStep(
     };
   const noResult = latest.result === null;
   const fault = input.fault ?? null;
-  if (!unshipped(tree) && !noResult && fault === null) return NONE;
+  const lockWait = input.lockWait === true;
+  if (!unshipped(tree) && !noResult && fault === null && !lockWait) return NONE;
   const holds = `launch record ${record.id}'s tree ${path} holds ${treeText(tree)}${noResult ? ", and the pickup recorded no result" : ""}`;
   if (open === undefined)
     return {
       kind: "stall",
       note: `${holds}, but no open workspace on this host holds that tree: a fresh tree would not carry the work, so a person recovers it`,
     };
-  const earlier = relaunchedAt(item.key, tree.head, input.launches);
+  const earlier = lockWait
+    ? undefined
+    : relaunchedAt(item.key, tree.head, input.launches);
   if (earlier !== undefined)
     return {
       kind: "stall",
@@ -139,10 +150,7 @@ export function relaunchStep(
       stage: "pickup",
       target: item.key,
       record: "runtime",
-      reason:
-        fault === null
-          ? `stalled pickup: ${holds}; relaunched once in that tree to push and record it (dispatch.stalled_relaunch finish-once)`
-          : `pickup stopped on a fault of this host (${fault.why}), whose health check passes again: ${holds}; relaunched once in that tree to resume it (dispatch.stalled_relaunch finish-once)`,
+      reason: relaunchReason(holds, fault, lockWait),
       evidence: {
         title: item.title,
         state: item.state,
@@ -157,9 +165,40 @@ export function relaunchStep(
         workspace: { id: open.id, path: open.path },
         head: tree.head,
         ...(fault === null ? {} : { fault: fault.why }),
+        ...(lockWait ? { lockWait: true as const } : {}),
       },
     },
   };
+}
+
+/** Why the pickup is relaunched in its tree, in words. */
+function relaunchReason(
+  holds: string,
+  fault: HostFault | null,
+  lockWait: boolean,
+): string {
+  if (lockWait)
+    return `pickup whose push the pre-push hook refused only because its wait for the host's test lock ran out: ${holds}; relaunched in that tree to push and go on once the host's validation capacity admits it (dispatch.stalled_relaunch finish-once)`;
+  return fault === null
+    ? `stalled pickup: ${holds}; relaunched once in that tree to push and record it (dispatch.stalled_relaunch finish-once)`
+    : `pickup stopped on a fault of this host (${fault.why}), whose health check passes again: ${holds}; relaunched once in that tree to resume it (dispatch.stalled_relaunch finish-once)`;
+}
+
+/** Whether the relaunch rule settles the item for this tick: relaunched in its tree, or waiting for the host's health check. */
+export function relaunched(
+  step: RelaunchStep,
+  key: string,
+  plan: Pick<RepoReport, "actions" | "quiet">,
+): boolean {
+  if (step.kind === "relaunch") {
+    plan.actions.push(step.action);
+    return true;
+  }
+  if (step.kind === "held") {
+    plan.quiet.push({ target: key, class: "pickup-ended", why: step.why });
+    return true;
+  }
+  return false;
 }
 
 /** Relaunch records are durable recovery evidence: keep each head and source. */

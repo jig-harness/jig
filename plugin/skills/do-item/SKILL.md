@@ -1214,7 +1214,24 @@ implementation. Skip this check for issues about the repository's own code.
    refusal: follow its remedy before opening anything.
 
    **Pre-push hook failure protocol:** when the repository's pre-push hook
-   fails (type check, lint, tests), classify before acting:
+   refuses the push, first tell a **lock-wait timeout** from a hook that ran
+   and failed. A hook that runs its checks under the host's machine-wide
+   test lock waits for that lock first; when the wait runs out, the lock's
+   own refusal is in the hook's output,
+   `ERROR: could not acquire lock '<name>' within <N>s (held by …)`, and no
+   check ran; where the hook's output shows the lock command's exit,
+   `with-resource-lock` exits `3` for it. Nothing failed, so nothing is related or unrelated to fix:
+   push again after a bounded backoff (a few minutes, longer each time, a
+   few tries at most) while the session has time left, the hook running
+   every time. When the retries do not get through and the session cannot
+   wait longer, stop and report the lock and its holder; a dispatched pass
+   records the test-lock wait instead
+   ([Dispatched passes](#dispatched-passes)). Never get past the lock by
+   bypassing the hook: no `--no-verify`, no `RESOURCE_LOCK_BYPASS`, no
+   `CI=1`.
+
+   When the hook ran and failed (type check, lint, tests), classify before
+   acting:
 
    1. **exact** — Run the failing command locally and capture the full error
       list.
@@ -1977,6 +1994,20 @@ report. In such a pass:
   never reworded. A push the repository's pre-push hook refuses is no stop:
   go on with validation, fix what it found, and push after it. The pull
   request still opens only after validation and the pre-PR review.
+- **The host's test lock running out is a wait, not a question.** A push
+  the pre-push hook refused only because its wait for the host's test lock
+  ran out (the lock-wait timeout of the
+  [pre-push hook failure protocol](#step-4a-standard-start-no-sub-issues))
+  is retried there after a bounded backoff while the pass has time left.
+  When the retries do not get through and the pass cannot wait longer,
+  with the claim made and the work committed, record
+  `waits --reason test-lock` with the command the prompt names, and ask
+  nothing. The dispatcher relaunches the pickup in the same tree once the
+  host's validation capacity has room, to push (the hook runs again) and go
+  on; after a few such waits in a row it hands the pickup to a repair
+  session or a person instead. A batch's pass, whose prompt offers no such
+  result, records `failed` as for any other stop. The hook is never bypassed
+  to get through.
 - **Push and record before the pass ends, whatever ends it.** Push the
   branch whenever it holds committed work, and record the pickup's result
   with one of the commands the prompt names. A pass that ends with its

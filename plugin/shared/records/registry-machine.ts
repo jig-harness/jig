@@ -18,7 +18,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 44;
+const DISPATCH_DB = 45;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 10;
 const REFLECT = "skills/reflect/scripts/";
@@ -333,6 +333,14 @@ export const DISPATCHER: RecordKind[] = [
     `${DISPATCH_DIR}walls/<account>/<ms>-<8 hex>.json`,
     0,
     "An account's usage-limit wall: the reset a drive recorded when it stopped at the limit. The latest reset of all of them is the wall, and admission launches nothing on the account before it.",
+  ),
+  plain(
+    "machine",
+    "dispatch-account-sign-in-cache",
+    "dispatch/lib/claude-sign-in.ts",
+    `${DISPATCH_DIR}claude-sign-in/<40 hex>.json`,
+    0,
+    "The time and outcome class of the last sign-in probe for an account. A later tick reuses a fresh answer before sending another request.",
   ),
   plain(
     "machine",

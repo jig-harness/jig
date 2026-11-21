@@ -39,6 +39,16 @@ show you the whole plan, and only after you accept it create the issues and
 their relations. Planning reads the issue, its comments and its relations
 and proposes a change the same way.
 
+When you say who takes the work, the filing hands the issue to the line:
+`jig send … assign` for the repository's factory identity, `hand-off.ts`
+for a person this host serves. Linear leaves changes made in an issue's
+first three minutes out of its history, and the dispatcher reads who made
+an assignment from that history, so both wait until those minutes have
+passed and then write. The report says when the assignment was written,
+or, when it was not, the command to run and the earliest time to run it.
+An issue already assigned is never changed: if its history does not show
+the assignment, unassign it and assign it again after the window.
+
 The confirmation follows the repository's
 [autonomy level](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#autonomy).
 Under `attended`, the default and every session a person runs unless they
@@ -324,6 +334,7 @@ The body is written for a reader who arrives after the code has moved
 | `scripts/check-label-taxonomy.ts` | The taxonomy lint |
 | `scripts/validate-labels.ts` | The label validator |
 | `scripts/check-fields.ts` | The weekly sweep and the move between stores |
+| `scripts/hand-off.ts`, `scripts/lib/hand-off.ts` | The hand-off of a filed issue to a served person, after the tracker's creation window |
 | `scripts/lib/sweep.ts` | The sweep's reads, moves and bounds |
 | `scripts/lib/move.ts`, `scripts/lib/move-record.ts` | The move's phases and its record |
 | `scripts/lib/pace.ts` | How the sweep and the move pace their writes and report a failure |

@@ -96,7 +96,23 @@ export async function applySteward(
     return skip("a steward pass already holds this repository");
   if (!forge.ok || report.records.some((r) => !r.ok))
     return skip("the digest's records did not all read");
-  if (stewardBudgetSpent(stewardRuns(null, state.root), currentMs())) {
+  const released = new Set(
+    state.records
+      .filter(
+        (r) =>
+          r.record.action === "steward" &&
+          r.state.kind === "ended" &&
+          (r.state.exit.startup === "sign-in" ||
+            r.state.exit.startup === "breaker"),
+      )
+      .map((r) => r.record.id),
+  );
+  if (
+    stewardBudgetSpent(
+      stewardRuns(null, state.root).filter((run) => !released.has(run.id)),
+      currentMs(),
+    )
+  ) {
     report.steward = {
       status: "the host's hourly steward budget is spent",
       trigger: "budget",
@@ -181,6 +197,9 @@ export async function applySteward(
     vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    ...(state.machine.failures?.startupThreshold === undefined
+      ? {}
+      : { startupFailureThreshold: state.machine.failures.startupThreshold }),
     passTimeoutSec: STEWARD_DEADLINE_SEC,
     ...codexLaunchFields(state.codexOptIn),
     replaces: null,

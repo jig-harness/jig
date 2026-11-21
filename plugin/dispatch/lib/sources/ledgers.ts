@@ -132,15 +132,15 @@ import {
 import type { Listing } from "../tick-comments.ts";
 import { minutesBetween } from "../text.ts";
 import { readPark, type ParkReading } from "./park-reading.ts";
+import { failedRead } from "./ledger-read-failure.ts";
 import { ledgerParks } from "../park-events.ts";
-import { combinedFailure, readFailureOf } from "../read-failures.ts";
+import { readFailureOf } from "../read-failures.ts";
 import { listComments } from "../../../shared/records/forge-claims.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
   Evidence,
   LedgerClass,
-  ReadFailure,
   StaleCause,
   WaitingPark,
 } from "../types.ts";
@@ -915,28 +915,6 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...waitingOf(classified, park, pr.author?.login),
     parks: ledgerParks(ledger),
   };
-}
-
-/**
- * The read that failed beside an unplaced ledger, its park's answers or its
- * base branch's head, with the class of the call that failed it; nothing
- * when neither failed.
- */
-function failedRead(
-  ledger: Ledger,
-  park: ParkReading | undefined,
-  forge: PrFacts,
-): { readFailed?: true; failure?: ReadFailure } {
-  const failed: (ReadFailure | undefined)[] = [];
-  if (
-    ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
-    (park === undefined || "unreadable" in park)
-  )
-    failed.push(park?.failure);
-  if (forge.base !== undefined && "unreadable" in forge.base)
-    failed.push(forge.base.failure);
-  if (failed.length === 0) return {};
-  return { readFailed: true, ...classed(combinedFailure(failed)) };
 }
 
 /** The unanswered decisions a parked ledger carries into its notification, its conflict's re-drive included. */

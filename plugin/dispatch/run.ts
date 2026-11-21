@@ -181,9 +181,23 @@ import {
 } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
+import { DEFAULT_STARTUP_THRESHOLD } from "./lib/failures.ts";
 import { writeWall } from "./lib/walls.ts";
-import { failedStartup, startupReset } from "./lib/session-startup.ts";
+import {
+  failedStartup,
+  passedStartupWindow,
+  quickStartupDeath,
+  type SignInPhrase,
+  type StartupFailure,
+  startupReset,
+} from "./lib/session-startup.ts";
 import { settleUnreported } from "./lib/end-report.ts";
+import {
+  recordAccountStartupProblem,
+  recordStartupDeath,
+  recordWorkingStartup,
+} from "./lib/account-startup.ts";
+import { forgetClaudeSignIn } from "./lib/claude-sign-in.ts";
 import { codexSessionIn } from "./lib/transcript-copy.ts";
 import {
   currentIso,
@@ -576,22 +590,66 @@ async function supervise(id: string, token: string): Promise<number> {
   });
 }
 
-/** Startup evidence is checked only when the session left no result or question. */
-function startupOf(record: LaunchRecord, ran: Ran) {
+/** Evaluate account startup before the exit hands its slot back to the tick. */
+function startupOf(
+  record: LaunchRecord,
+  ran: Ran,
+): {
+  startup?: StartupFailure;
+  phrase?: SignInPhrase;
+} {
   if (
-    readResult(record.id) !== null ||
-    ran.said ||
+    !ownPass(record) ||
+    record.vendor !== "claude" ||
     ran.started === undefined ||
     ran.exited === undefined
   )
-    return undefined;
-  return failedStartup(
+    return {};
+  const started = ran.started;
+  const exited = ran.exited;
+  if (
+    readResult(record.id) !== null ||
+    ran.code === 0 ||
+    ran.said ||
+    passedStartupWindow(started, exited)
+  ) {
+    recordWorkingStartup(record, isoFromMs(started));
+    return {};
+  }
+  if (!quickStartupDeath(record, ran.code, started, exited)) return {};
+  let phrase: SignInPhrase | undefined;
+  const startup = failedStartup(
     record,
     ran.code,
-    ran.started,
+    started,
     startupOutputOf(ran),
-    ran.exited,
+    exited,
+    (found) => {
+      phrase = found;
+    },
   );
+  const threshold = record.startupFailureThreshold ?? DEFAULT_STARTUP_THRESHOLD;
+  const deaths = recordStartupDeath(
+    record,
+    startup ?? "died",
+    isoFromMs(started),
+    threshold,
+  );
+  const at = isoFromMs(exited);
+  if (startup === "sign-in") {
+    recordAccountStartupProblem(record, "sign-in", at);
+    try {
+      forgetClaudeSignIn(record.configDir);
+    } catch (error) {
+      swallow(error, "the cached sign-in probe could not be dropped");
+    }
+    return phrase === undefined ? { startup } : { startup, phrase };
+  }
+  if (startup !== "quota" && deaths >= threshold) {
+    recordAccountStartupProblem(record, "breaker", at);
+    return { startup: "breaker" };
+  }
+  return startup === undefined ? {} : { startup };
 }
 
 /** What a stage printed at its start, where a vendor's usage notice would be. */
@@ -653,7 +711,7 @@ function startupWallSource(
 function settlePassReport(
   record: LaunchRecord,
   ran: Ran,
-  startup: "quota" | "unstarted" | undefined,
+  startup: StartupFailure | undefined,
   session: string | null,
 ): void {
   settleUnreported(
@@ -663,7 +721,9 @@ function settlePassReport(
       signal: ran.signal,
       ...(startup === undefined ? {} : { startup }),
       timedOut: ran.timedOut === true,
-      ...(ran.output === undefined ? {} : { output: ran.output }),
+      ...(startup === "sign-in" || ran.output === undefined
+        ? {}
+        : { output: ran.output }),
     },
     record.sessionId ?? session,
   );
@@ -680,7 +740,7 @@ function recordFinishedExit(
   try {
     // Every read of the state database sits inside the boundary that keeps the
     // exit evidence, so a database that refuses reads still leaves it.
-    const startup = startupOf(record, ran);
+    const { startup, phrase } = startupOf(record, ran);
     const startupWallUnrecorded =
       startup !== undefined &&
       !recordStartupWall(record, startup, startupOutputOf(ran));
@@ -696,8 +756,9 @@ function recordFinishedExit(
         ? { wallUnrecorded: true as const }
         : {}),
       ...(startup === undefined ? {} : { startup }),
+      ...(phrase === undefined ? {} : { signInPhrase: phrase }),
       ...(session === null ? {} : { session }),
-      ...saidOf(record, ran),
+      ...(startup === "sign-in" ? {} : saidOf(record, ran)),
       ...usageOf(record, ran),
     });
   } catch (error) {

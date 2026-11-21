@@ -77,6 +77,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       value.followupWithinMs,
       value.accountLaunchOrdinal,
       value.rearmRequestId,
+      value.startupFailureThreshold,
     ].every(optionalPositiveInteger) &&
     optionalBooleans(value, [
       "rearmConsumed",
@@ -85,6 +86,7 @@ export function optionalLaunchFields(value: Record<string, unknown>): boolean {
       "headless",
       "routineTags",
       "launchCalled",
+      "relaunchLockWait",
     ]) &&
     (value.standing === undefined ||
       value.standing === null ||

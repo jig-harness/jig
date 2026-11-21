@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -26,7 +26,7 @@ const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
 useDrivePrSuite();
 
 /** A drive that has not ended by then loops, which is what these tests catch. */
-const DRIVE_DEADLINE_MS = 45_000;
+const DRIVE_DEADLINE_MS = 60_000;
 
 /**
  * A `gh` in front of the fixture's that finds which drive step called it by
@@ -58,6 +58,14 @@ while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
       if [ -n "$KILL_RELEASE" ]; then
         kill -KILL "$pid"
         exit 1
+      fi
+      if [ -n "$RECOVERY_SNAPSHOT_TIMEOUT" ] &&
+        [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "view" ] &&
+        jq -e 'last.event == "unlabeled"' "$DRIVE_PR_FIXTURES/timeline.json" >/dev/null &&
+        [ ! -e "$DRIVE_PR_FIXTURES/recovery-snapshot-timeout-consumed" ]; then
+        : > "$DRIVE_PR_FIXTURES/recovery-snapshot-timeout-consumed"
+        echo "gh-stub: simulated recovery snapshot timeout" >&2
+        exit 124
       fi
       break ;;
     */drive.ts" "*) break ;;
@@ -208,6 +216,94 @@ describe.skipIf(
     },
     DRIVE_DEADLINE_MS * 2,
   );
+
+  const releaseProofCases = [
+    {
+      name: "continues convergence after a timeout verifying CI hold removal",
+      signal: "timeline-timeout-after-unlabel",
+      signalContent: "",
+      expectedExit: 0,
+      expectedWaits: 1,
+      expectedMessage: "simulated proof timeline timeout",
+    },
+    {
+      name: "continues convergence after consecutive timeouts verifying CI hold removal",
+      signal: "timeline-timeout-after-unlabel-count",
+      signalContent: "2",
+      expectedExit: 0,
+      expectedWaits: 2,
+    },
+    {
+      name: "stops after the configured consecutive timeouts verifying CI hold removal",
+      signal: "timeline-timeout-after-unlabel-count",
+      signalContent: "2",
+      env: { DRIVE_PR_RELEASE_PROOF_ATTEMPTS: "1" },
+      expectedExit: 1,
+      expectedWaits: 1,
+      expectedMessage:
+        "CI hold removal is still unproven after 2 consecutive read(s)",
+    },
+    {
+      name: "continues convergence when a recovery snapshot fails after a timed-out proof",
+      signal: "recovery-snapshot-timeout",
+      signalContent: "",
+      precedingSignal: "timeline-timeout-after-unlabel",
+      precedingSignalContent: "",
+      env: { RECOVERY_SNAPSHOT_TIMEOUT: "1" },
+      expectedExit: 0,
+      expectedWaits: 2,
+      expectedMessage: "simulated recovery snapshot timeout",
+    },
+  ];
+
+  for (const testCase of releaseProofCases) {
+    it(
+      testCase.name,
+      async () => {
+        const { dir, stateDir } = writeFixture({
+          head: scratchClean.head,
+          reviewedSha: scratchClean.head,
+          threads: [],
+          ciHeld: true,
+        });
+        writeFileSync(
+          join(dir, "timeline.json"),
+          JSON.stringify([
+            {
+              node_id: "LE_1",
+              event: "labeled",
+              label: { name: "ci:hold" },
+              actor: { login: "drive-user" },
+              created_at: "2026-09-10T09:59:00Z",
+            },
+          ]),
+        );
+        writeFileSync(join(dir, testCase.signal), testCase.signalContent);
+        if (testCase.precedingSignal)
+          writeFileSync(
+            join(dir, testCase.precedingSignal),
+            testCase.precedingSignalContent ?? "",
+          );
+        const r = await driveUntilEnd(
+          dir,
+          stateDir,
+          ["--no-head-sync", "--keep-draft", "--", ...PASS_NOOP],
+          testCase.env ?? {},
+        );
+        expectEnded(r);
+        expectSpawnExit(
+          { exitCode: r.exitCode, stderr: r.stderr, stdout: null },
+          testCase.expectedExit,
+        );
+        expect(
+          r.stderr.match(/Waiting to verify the CI hold label removal/g),
+        ).toHaveLength(testCase.expectedWaits);
+        if (testCase.expectedMessage)
+          expect(r.stderr).toContain(testCase.expectedMessage);
+      },
+      DRIVE_DEADLINE_MS * (testCase.expectedWaits + 1),
+    );
+  }
 
   it(
     "logs why the CI hold's release failed when it exits with nothing on stderr",

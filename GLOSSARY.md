@@ -2844,9 +2844,16 @@ make, use the entry's term instead.
   Protocol, is the protocol that sends it to any collector that speaks it. The *hub*'s process adapter exports its
   signals this way.
 - **Notification channel** — one way the *dispatcher*'s notices reach a
-  person: a workspace card in Orca, a team's chat. The tick sends each
-  notice through every channel a machine enables and keeps a record per
-  channel of what was delivered ([design/chat.md](design/chat.md)).
+  person: a workspace card in Orca, an *incoming webhook*, a team's chat.
+  The tick sends each notice through every channel a machine enables and
+  keeps a record per channel of what was delivered
+  ([design/chat.md](design/chat.md)).
+- **Incoming webhook** — an address a chat tool or a push service (Slack,
+  Discord, ntfy) gives out so that a program can post a message to one
+  channel or topic with a single web request. Whoever holds the address
+  can post, so the address is a credential. The *dispatcher*'s `webhook`
+  *notification channel* posts to one; it is the opposite direction of a
+  *webhook*, which a system sends to a receiver.
 - **Chat bridge** — the one process that turns a person's click or command
   in a team's chat into one `jig send` request. It runs inside the *hub* or
   on a host that is not enrolled, connects out to the chat tool and listens
@@ -3437,6 +3444,14 @@ make, use the entry's term instead.
   immutable. Jig's helpers write a moment as an ISO 8601 string in UTC to
   the millisecond
   ([ADR-0018](docs/adr/ADR-0018-time-is-temporal.md)).
+<a id="creation-window"></a>
+- **Creation window** — how long after an issue's creation a tracker's
+  history leaves out a change made to it. An assignment made inside the
+  window is never read by the dispatcher's assigner check, so the item is
+  never started; Linear's is the issue's first three minutes, and GitHub
+  Issues has none. A hand-off or a send waits until the window has passed
+  before writing an assignment. See
+  [file-issue § Hand it over](plugin/skills/file-issue/SKILL.md).
 
 ## External precondition
 

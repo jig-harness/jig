@@ -1,4 +1,6 @@
 /** Account admission, launch records and outcomes shared by the apply stages. */
+import { prelaunchSignIn, type SignInChecks } from "./account-sign-in.ts";
+import { SIGN_IN_TIMEOUT_SEC } from "../claude-sign-in.ts";
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
   checkIdentity,
@@ -59,7 +61,7 @@ import type {
 import type { SessionsReport } from "../runtime/port.ts";
 import { laneBudgetWait } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
-import { judge, type LoadState } from "../load.ts";
+import { judge, type LoadState, VALIDATION_GAUGES } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 import {
   checksStage,
@@ -77,19 +79,9 @@ export interface ApplyState {
   table: Slots[];
   /** The account of the most recent launch record, where the turn resumes. */
   last: string | null;
-  /**
-   * The pass deadline every headless pass this tick launches runs under, in
-   * seconds (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`,
-   * else the drive's default), written on the launch record and handed to
-   * `drive.ts` as `--pass-timeout` (a follow-up pass's wrapper enforces it
-   * itself), so the deadline admission judged is the one the pass gets.
-   */
+  /** The tick's pass deadline in seconds (0 for none), recorded for the driver and follow-up wrapper. */
   passDeadlineSec: number;
-  /**
-   * This host's opt-in to Codex's bypass, read once for the tick: admission
-   * judges a Codex account by it, and a headless pass's launch record keeps
-   * it, so the pass command does what was judged.
-   */
+  /** The tick's Codex bypass opt-in, also recorded so the pass uses the admitted options. */
   codexOptIn: CodexOptIn;
   /** Live driver locks read at the start of this apply phase. */
   drivers?: HostDrivers;
@@ -99,6 +91,8 @@ export interface ApplyState {
   opened?: number;
   /** Opens spent on notices, which do not consume the launches' allowance. */
   noticesOpened?: number;
+  /** The notification channels this tick has reported unreachable, so a host's fault is reported once a tick, not once a repository. */
+  channelFaults?: Set<string>;
   /** The follow-up workspaces this tick has opened so far, within `followup_opens_per_tick`, outside `opened` (`followup-lane.ts`). */
   followupOpened?: number;
   /** When the tick began (its invocation, not its act phase), for its overall deadline. */
@@ -113,6 +107,7 @@ export interface ApplyState {
   load?: LoadState;
   /** The checks run on an account before a tracker stage launches on it, and their answers this tick (`preflight.ts`). */
   preflight?: Preflight;
+  signInChecks?: SignInChecks;
 }
 
 /**
@@ -297,12 +292,11 @@ function takeOpen(
 }
 
 /**
- * Open a workspace through the runtime, within the tick's budget: a tick
- * opens at most `opens_per_tick` (four by default), one of them kept for the notices workspace, and a launch that needs another waits for
- * the next tick rather than run past the deadline the timer gives it. A
- * follow-up's open (`lane`) is counted against `followup_opens_per_tick`
- * instead, and never against the launches' allowance or the notices'
- * reservation.
+ * Open a workspace through the runtime, within the tick's budget: a tick opens
+ * at most `opens_per_tick`, one of them kept for the notices workspace, and a
+ * launch that needs another waits for the next tick rather than run past the
+ * deadline the timer gives it. A follow-up's open (`lane`) is counted against
+ * `followup_opens_per_tick` instead, never against the launches' or notices'.
  */
 export async function openWithinBudget(
   state: ApplyState,
@@ -632,12 +626,19 @@ async function identityOf(
       waitsOn: "tick-deadline",
     };
   // Read afresh each time: a login file can change between two launches.
-  return checkIdentity(
-    slots.account,
-    timeoutSec,
+  const settings =
     state.runtime.name === "process"
       ? (state.machine.process ?? { envKeep: [] })
-      : undefined,
+      : undefined;
+  const identity = await checkIdentity(slots.account, timeoutSec, settings);
+  if (!identity.ok || slots.account.vendor !== "claude") return identity;
+  const remaining = timeLeftMs(state);
+  return prelaunchSignIn(
+    state,
+    slots.account,
+    identity,
+    settings,
+    remaining === null || remaining >= settleMs(SIGN_IN_TIMEOUT_SEC * 1000),
   );
 }
 
@@ -764,6 +765,8 @@ function byLoad(
     repo,
     action.target,
     pickupDeadlineSec * 1000,
+    action.relaunch?.lockWait === true ? VALIDATION_GAUGES : [],
+    action.relaunch?.lockWait === true,
   );
   return held === null
     ? { slots }

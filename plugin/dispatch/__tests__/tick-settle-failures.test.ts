@@ -408,3 +408,76 @@ console.log(JSON.stringify(out));`,
     );
   });
 });
+
+describe("a sweep of two repositories, one item's read of which was answered not-found", () => {
+  /** The first repository's parked thread, answered not-found, as its turn reports it. */
+  function absent(receipt: TickReceipt): void {
+    receipt.repos[0]?.unplaced.push({
+      target: "PR #7",
+      reason:
+        "stopped 8 (parked), and the answers to thread t could not be read",
+      readFailed: true,
+      failure: { class: "not-found", absence: true },
+    } as never);
+  }
+
+  it("adds no row and tells nobody, and retires the rows an earlier failure left", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    recordFailure(
+      { repo: "/a", key: "repository", kind: "repository", target: "o/a" },
+      "no answer",
+      Date.now(),
+      FAILURE_DEFAULTS,
+      root,
+    );
+    absent(receipt);
+    settleFailures(receipt, context);
+    finalizeTickFailure(receipt, context);
+    expect(readFailures(undefined, root)).toEqual([]);
+    expect(receipt.repos[0]?.unplaced[0]?.failure?.class).toBe("not-found");
+  });
+
+  it("still fails the turn of a repository whose other read was refused", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    absent(receipt);
+    receipt.repos[0]?.unplaced.push({
+      target: "PR #8",
+      reason: "its ledger did not read",
+      readFailed: true,
+      failure: { class: "unauthorized" },
+    } as never);
+    settleFailures(receipt, context);
+    const rows = readFailures(undefined, root);
+    expect(rows.map((r) => r.kind)).toEqual(["repository"]);
+    expect(rows[0]?.reason).toContain("PR #8");
+  });
+
+  it("fails the turn for another item's not-found, such as a base branch that is gone", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    receipt.repos[0]?.unplaced.push({
+      target: "PR #7",
+      reason: "the head of its base branch does not read",
+      readFailed: true,
+      failure: { class: "not-found" },
+    } as never);
+    settleFailures(receipt, context);
+    expect(readFailures(undefined, root).map((r) => r.kind)).toEqual([
+      "repository",
+    ]);
+  });
+
+  it("fails the turn of a repository whose own record was answered not-found", () => {
+    const { root, context, receipt } = world(["/a", "/b"]);
+    receipt.repos[0]?.records.push({
+      record: "forge",
+      source: "the forge",
+      ok: false,
+      detail: "not found",
+      failure: { class: "not-found" },
+    } as never);
+    settleFailures(receipt, context);
+    expect(readFailures(undefined, root).map((r) => r.kind)).toEqual([
+      "repository",
+    ]);
+  });
+});

@@ -879,12 +879,14 @@ function planMerged(
     );
     return;
   }
-  planTick(
-    input,
-    pr,
-    marker as FollowupMarker & { run: { kind: "tick" } },
-    plan,
-  );
+  const tickMarker = marker as FollowupMarker & { run: { kind: "tick" } };
+  if (releasedAccountStartup(input, pr.number, tickMarker)) {
+    // The act phase releases this marker first. The launch re-reads all
+    // trusted markers and proceeds only if that release actually succeeded.
+    wantFollowup(input, pr, ignored, plan, want);
+    return;
+  }
+  planTick(input, pr, tickMarker, plan);
 }
 
 /** A follow-up whose run again the pull request's spent recovery budget withholds: a person's. */
@@ -920,6 +922,33 @@ function failedRerun(
     launched: true,
     ...(framed === undefined ? {} : { framed }),
   };
+}
+
+/** Account faults get another turn as soon as the owner settles the marker. */
+function releasedAccountStartup(
+  input: FollowupInput,
+  pr: number,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+): boolean {
+  if (
+    !input.owner ||
+    marker.run.outcome !== undefined ||
+    foreignHost(input, marker) !== null
+  )
+    return false;
+  const record = input.launches.find((r) => r.record.id === marker.run.record);
+  return (
+    record !== undefined &&
+    record.record.repo === input.slug &&
+    record.record.action === "followup" &&
+    record.record.pr === pr &&
+    record.record.marker === marker.id &&
+    record.result === null &&
+    record.state.kind === "ended" &&
+    (record.state.exit.startup === "sign-in" ||
+      record.state.exit.startup === "breaker") &&
+    record.state.exit.wallUnrecorded !== true
+  );
 }
 
 export function planFollowups(
