@@ -69,19 +69,22 @@ export function passLockWait(
   };
 }
 
-function passOf({ record, state }: ReadRecord): ValidationPass | null {
+function launchedAtOf({ record, state }: ReadRecord): string {
+  return state.kind !== "pending"
+    ? (state.process?.claimedAt ?? record.createdAt)
+    : record.createdAt;
+}
+
+function passOf(read: ReadRecord): ValidationPass | null {
+  const { record, state } = read;
   const { action } = record;
   if (action === "followup" || action === "steward") return null;
   if (!holds(state) && state.kind !== "ended") return null;
-  const launchedAt =
-    state.kind === "pending"
-      ? record.createdAt
-      : (state.process?.claimedAt ?? record.createdAt);
   return {
     kind: action === "pickup" ? action : "drive",
     workspace: record.workspace ? resolve(record.workspace.path) : null,
     repo: record.repo,
-    launchedAtMs: parseMs(launchedAt),
+    launchedAtMs: parseMs(launchedAtOf(read)),
     ...(state.kind === "ended" ? { endedAtMs: parseMs(state.exit.at) } : {}),
   };
 }
@@ -144,6 +147,7 @@ export function readValidationLoad(
               })),
             passes.filter(({ endedAtMs }) => endedAtMs === undefined),
             samples,
+            nowMs,
           ),
     ...passLockWait(env),
     driveDeadlineMs,
@@ -174,7 +178,7 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
   const { concurrency, runMs } = state.measured;
   const ahead = Number(result.ahead.toFixed(2));
   const minutes = (ms: number) => Math.round(ms / 60_000);
-  const waited = minutes((result.ahead * runMs) / concurrency);
+  const waited = minutes((result.required * runMs) / concurrency);
   const defaults = state.measured.defaults;
   const note = defaults.length > 0 ? ` (defaults: ${defaults.join(", ")})` : "";
   const span =
@@ -194,7 +198,17 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
     result.waitWindowMs < runMs
       ? `; the wait window is shorter than one run, so a pass is admitted only while a slot is free, or about to be, for its first run (${Number(result.ownRuns.toFixed(2))} runs per pass)`
       : "";
-  return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
+  // The runs credited as served say why a pass is admitted with work in
+  // flight; the runs ahead, why one waits.
+  const served =
+    result.served > 0
+      ? ` (${result.served} in flight served before it reaches the lock)`
+      : "";
+  const later =
+    result.later > 0
+      ? `, and ${result.later} arriving after its first run ahead of a later one`
+      : "";
+  return `${ahead} runs ahead${served}${later}, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
 /**
@@ -213,6 +227,49 @@ function arrivingAt(
       ...measured.kinds,
       [kind]: { ...measured.kinds[kind], timeToValidationMs: 0 },
     },
+  };
+}
+
+/**
+ * The demand a drive launched after this pickup meets: everything ahead of
+ * the pickup, the runs this tick admitted, and the pickup's runs still on the
+ * lock when the drive asks for it.
+ */
+function driveReserve(
+  state: ValidationLoad & { demand: ValidationDemand },
+  ownRuns: number,
+): ValidationDemand {
+  // An immediately admitted pickup still occupies its slot when a drive
+  // arrives next. Reserve every run this pickup commits, not only runs that
+  // wait before their own acquisition.
+  // A reserved drive starts after this pickup has begun. Its measured time
+  // to validation is therefore time in which the pickup's whole service
+  // waves can finish. Keep only the runs that can still occupy the lock
+  // when that downstream drive asks for it.
+  const completedBeforeDrive =
+    state.measured.concurrency *
+    Math.floor(
+      state.measured.kinds.drive.timeToValidationMs / state.measured.runMs,
+    );
+  // Work already forecast ahead of this pickup spends the early service
+  // first. Only remaining service can complete the pickup before a drive
+  // reaches validation; otherwise the pickup is incorrectly given the same
+  // capacity credit as its predecessors.
+  const predecessorRuns =
+    state.demand.atLock + state.demand.toArrive + state.admittedRuns;
+  const pickupCompletedBeforeDrive = Math.max(
+    0,
+    Math.min(ownRuns, completedBeforeDrive - predecessorRuns),
+  );
+  const stillRunning = Math.max(0, ownRuns - pickupCompletedBeforeDrive);
+  // Only work at the lock, and passes in flight with an arrival estimate,
+  // may consume service before the drive arrives. Admitted passes still have
+  // to reach validation, even when their eventual runs are being reserved
+  // for this downstream drive, so they and the pickup's own runs are counted
+  // ahead of it.
+  return {
+    ...state.demand,
+    toArrive: state.demand.toArrive + state.admittedRuns + stillRunning,
   };
 }
 
@@ -245,36 +302,7 @@ export function validationHold(
     // Reserve this pickup and a drive in the pickup's window. The independent
     // drive-window check only judges work committed before this pickup, which
     // has not yet been admitted by its caller.
-    // An immediately admitted pickup still occupies its slot when a drive
-    // arrives next. Reserve every run this pickup commits, not only runs that
-    // wait before their own acquisition.
-    // A reserved drive starts after this pickup has begun. Its measured time
-    // to validation is therefore time in which the pickup's whole service
-    // waves can finish. Keep only the runs that can still occupy the lock
-    // when that downstream drive asks for it.
-    const completedBeforeDrive =
-      state.measured.concurrency *
-      Math.floor(
-        state.measured.kinds.drive.timeToValidationMs / state.measured.runMs,
-      );
-    // Work already forecast ahead of this pickup spends the early service
-    // first. Only remaining service can complete the pickup before a drive
-    // reaches validation; otherwise the pickup is incorrectly given the same
-    // capacity credit as its predecessors.
-    const predecessorRuns =
-      state.demand.atLock + state.demand.toArrive + state.admittedRuns;
-    const pickupCompletedBeforeDrive = Math.max(
-      0,
-      Math.min(own.ownRuns, completedBeforeDrive - predecessorRuns),
-    );
-    const stillRunning = Math.max(0, own.ownRuns - pickupCompletedBeforeDrive);
-    const reservedDemand: ValidationDemand = {
-      // Only work already at the lock may consume service before the drive
-      // arrives. Admitted passes still have to reach validation, even when
-      // their eventual runs are being reserved for this downstream drive.
-      atLock: state.demand.atLock,
-      toArrive: state.demand.toArrive + state.admittedRuns + stillRunning,
-    };
+    const reservedDemand = driveReserve(state, own.ownRuns);
     const reserved = forecast(
       state,
       "drive",

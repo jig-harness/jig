@@ -404,6 +404,26 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.300.1] - 2026-11-21
+
+### Fixed
+
+- The dispatcher's validation-capacity gauge (`load.validation`) no longer
+  counts a run in flight ahead of a new pass when that run is expected to
+  finish before the new pass reaches the test lock. Each pickup or drive in
+  flight that has yet to make its first run is placed at its launch plus its
+  kind's measured time to validation, its remaining runs follow one another,
+  and the lock's requests are served in arrival order. Passes launched
+  together queue behind each other, and a run reaching the lock between the
+  new pass's own runs counts against its later ones. A pass with no estimate
+  (its kind's time to validation is still the default, its launch time does
+  not read, that time has passed, or it has made a run already) and the runs
+  admitted in the same tick are counted ahead. The gauge's reason, in the
+  receipt and on the dashboard, names the runs served before the pass
+  reaches the lock and the runs arriving after its first run that a later
+  one waits behind, beside the runs ahead, which are whole runs still holding
+  or waiting when the pass arrives, and its minutes are the pass's wait.
+
 ## [0.300.0] - 2026-11-21
 
 ### Added
@@ -10604,7 +10624,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.1...HEAD
+[0.300.1]: https://github.com/jig-harness/jig/compare/v0.300.0...v0.300.1
 [0.300.0]: https://github.com/jig-harness/jig/compare/v0.299.0...v0.300.0
 [0.299.0]: https://github.com/jig-harness/jig/compare/v0.298.0...v0.299.0
 [0.298.0]: https://github.com/jig-harness/jig/compare/v0.297.0...v0.298.0
