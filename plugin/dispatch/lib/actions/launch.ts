@@ -54,6 +54,7 @@ import type {
   Action,
   LaneWait,
   BusyHolder,
+  DetachedCheckout,
   LaunchOutcome,
   RepoTarget,
   Stage,
@@ -233,7 +234,7 @@ type OpenedWorkspace = Pick<RuntimeReceipt, "cleanupFailure" | "detached"> & {
 export type Opened =
   | OpenedWorkspace
   | { waits: string; waitsOn?: LaneWait }
-  | { refused: string; holder?: BusyHolder };
+  | { refused: string; holder?: BusyHolder; detached?: DetachedCheckout };
 
 /** Total and launch-specific allowances count notices once. */
 function openAllowance(state: ApplyState) {
@@ -334,6 +335,7 @@ export async function openWithinBudget(
   return {
     refused: `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`,
     ...(opened.busyHolder === undefined ? {} : { holder: opened.busyHolder }),
+    ...(opened.detached === undefined ? {} : { detached: opened.detached }),
   };
 }
 
@@ -522,16 +524,20 @@ function workspaceOr(
         ...(opened.waitsOn === undefined ? {} : { waitsOn: opened.waitsOn }),
       },
     };
-  if ("refused" in opened)
+  if ("refused" in opened) {
+    const left =
+      opened.detached === undefined ? {} : { detached: opened.detached };
     return {
       outcome:
         opened.holder === undefined
-          ? refused(action, opened.refused, account)
+          ? { ...refused(action, opened.refused, account), ...left }
           : {
               ...refused(action, holderRefusal(opened.holder), account),
               holder: opened.holder,
+              ...left,
             },
     };
+  }
   return opened;
 }
 
@@ -549,7 +555,13 @@ export async function openedFor(
   const opened = workspaceOr(action, await opening, slots.account.name);
   if ("outcome" in opened) return opened;
   const stale = await changedWhileOpening(state, action, slots);
-  return stale === null ? opened : { outcome: stale };
+  if (stale === null) return opened;
+  return {
+    outcome:
+      opened.detached === undefined
+        ? stale
+        : { ...stale, detached: opened.detached },
+  };
 }
 
 /** The pending records of `repo` whose launch got no answer and may be replayed once, of the actions `kinds` names. */

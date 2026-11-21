@@ -37,6 +37,7 @@ import { treeDrivers } from "../../../skills/drive-pr/scripts/lib/state/tree-dri
 import { resolvePullRequestHead } from "./orca-pr-head.ts";
 import { failureText } from "../text.ts";
 import { call } from "./orca-comment.ts";
+import type { DetachedCheckout } from "../types.ts";
 import type {
   Dispatched,
   ItemTarget,
@@ -176,6 +177,7 @@ async function open(
     timeoutMs,
   );
   const started = currentMs();
+  let left: DetachedCheckout | undefined;
   try {
     const resolved =
       options.pr === undefined
@@ -194,6 +196,9 @@ async function open(
       name: options.dispatched.name,
       comment: options.dispatched.mark,
       createFlags: options.createFlags,
+      onDetached: (holder) => {
+        left = holder;
+      },
       ...(resolved?.ok ? { expectedHead: resolved.value } : {}),
       ...(options.createHook === undefined
         ? {}
@@ -211,6 +216,7 @@ async function open(
       ok: false,
       lost: currentMs() - started >= timeoutMs,
       detail: [failureText(error), ...lines.slice(-3)].join("; "),
+      ...(left === undefined ? {} : { detached: left }),
       ...(error instanceof BusyHolderError
         ? {
             busyHolder: {

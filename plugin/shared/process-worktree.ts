@@ -30,6 +30,8 @@ export interface ProcessWorktreeOptions extends WorkspaceOpenOptions {
   launch: string;
   home?: string;
   reserve?: (worktree: WorkspaceCheckout) => Outcome<void>;
+  /** Told the moment an idle checkout is detached, so a later failure of the open still reports it. */
+  onDetached?: (holder: DetachedHolder) => void;
 }
 
 /** Publication is part of admission, so a stalled publisher must cooperate. */
@@ -105,6 +107,7 @@ export async function openProcessWorktree(
               path,
               repository,
             );
+            options.onDetached?.(detached);
             return null;
           },
           prepare: (worktree) => {

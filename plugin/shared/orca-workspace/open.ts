@@ -374,6 +374,8 @@ export interface OpenBranchOptions extends CreateOptions {
   branch: string;
   /** Whether the repository's create hook runs in the worktree; `true` when absent. A worktree no agent works in needs none. */
   createHook?: boolean;
+  /** Told the moment an idle checkout is detached, so a later failure of the open still reports it. */
+  onDetached?: (holder: DetachedHolder) => void;
 }
 
 export interface OpenedBranch {
@@ -407,6 +409,7 @@ export function openBranch(
     existing: (branch) =>
       existingWorktree(port, repo, branch, (left) => {
         detached = left;
+        options.onDetached?.(left);
       }),
     create: (branch, from, start) =>
       createWorktree(port, repo, options, branch, from, start),

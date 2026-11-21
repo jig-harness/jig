@@ -14,7 +14,7 @@ import { treeDrivers } from "../../../skills/drive-pr/scripts/lib/state/tree-dri
 import { currentIso } from "../../../shared/time.ts";
 import type { LaunchRecord } from "../launches.ts";
 import { stateDb } from "../state.ts";
-import type { RepoTarget } from "../types.ts";
+import type { DetachedCheckout, RepoTarget } from "../types.ts";
 import { resolvePullRequestHead } from "./orca-pr-head.ts";
 import {
   marksIn,
@@ -118,6 +118,7 @@ export async function processOpen(
       : null;
   if (expected !== null && !expected.ok)
     return { ok: false, detail: expected.failure.reason };
+  let left: DetachedCheckout | undefined;
   const opened = await openProcessWorktree(
     { host, runHook: supervisedHook, drivers: treeDrivers },
     {
@@ -125,12 +126,20 @@ export async function processOpen(
       branch,
       launch,
       ...(expected === null ? {} : { expectedHead: expected.value }),
+      onDetached: (holder) => {
+        left = holder;
+      },
       reserve: (worktree) =>
         reserve(repo, target, launch, worktree, identity.value),
     },
     () => ok(undefined),
   );
-  if (!opened.ok) return { ok: false, detail: opened.failure.reason };
+  if (!opened.ok)
+    return {
+      ok: false,
+      detail: opened.failure.reason,
+      ...(left === undefined ? {} : { detached: left }),
+    };
   const { worktree, reattached, hookRan, detached } = opened.value;
   return {
     ok: true,

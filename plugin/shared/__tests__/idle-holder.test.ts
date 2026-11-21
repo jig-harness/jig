@@ -224,6 +224,48 @@ describe("holderVerdict", () => {
     ]);
   });
 
+  test("with the branch gone from origin, extra work on a squash-merged prefix names only the extra commit", () => {
+    const { clone, holder } = heldTree();
+    writeFileSync(join(holder, "file.txt"), "two\n");
+    git(holder, "commit", "-q", "-am", "more work");
+    git(holder, "push", "-q", "origin", BRANCH);
+    git(clone, "pull", "-q", "--ff-only", "origin", "main");
+    writeFileSync(join(clone, "other.txt"), "base work\n");
+    git(clone, "add", "other.txt");
+    git(clone, "commit", "-q", "-m", "base work");
+    git(clone, "fetch", "-q", "origin");
+    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+    git(clone, "commit", "-q", "-m", "squash");
+    git(clone, "push", "-q", "origin", "HEAD:main");
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    writeFileSync(join(holder, "extra.txt"), "not merged\n");
+    git(holder, "add", "extra.txt");
+    git(holder, "commit", "-q", "-m", "extra work");
+    const extra = git(holder, "rev-parse", "--short=12", "HEAD");
+    expect(reasons(holder)).toEqual([
+      `1 commit(s) on no origin branch whose change origin/main lacks, and origin has no ${BRANCH}: ${extra} extra work`,
+    ]);
+  });
+
+  test("a configured merge driver keeps a squash-merged holder busy and says so", () => {
+    const { clone, holder } = heldTree();
+    writeFileSync(join(holder, "file.txt"), "two\n");
+    git(holder, "commit", "-q", "-am", "more work");
+    git(holder, "push", "-q", "origin", BRANCH);
+    git(clone, "pull", "-q", "--ff-only", "origin", "main");
+    writeFileSync(join(clone, "other.txt"), "base work\n");
+    git(clone, "add", "other.txt");
+    git(clone, "commit", "-q", "-m", "base work");
+    git(clone, "fetch", "-q", "origin");
+    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+    git(clone, "commit", "-q", "-m", "squash");
+    git(clone, "push", "-q", "origin", "HEAD:main");
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    git(holder, "config", "merge.ours.driver", "true");
+    const [reason] = reasons(holder);
+    expect(reason).toContain("a custom merge driver is configured");
+  });
+
   test("a stale ref outside the remote's configured refspec does not vouch either", () => {
     const { clone, holder } = heldTree();
     git(clone, "push", "-q", "origin", "--delete", BRANCH);

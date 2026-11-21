@@ -118,6 +118,9 @@ export type HolderVerdict =
 /** The deadline of one probe. */
 const PROBE_TIMEOUT_MS = 30_000;
 
+/** How many tips of the unmerged commits are tried as a merged prefix. */
+const MERGE_PROBES = 12;
+
 /** How many unmerged commits a busy reason names, newest first; the rest are counted. */
 const NAMED_COMMITS = 5;
 
@@ -142,19 +145,53 @@ function lines(answer: RunResult): string[] | { unreadable: string } {
     : { unreadable: output(answer) || `exit ${answer.status}` };
 }
 
+/** The tree git hashes for no content: attributes read from it name no merge driver. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
 /**
- * Whether merging `HEAD` into `ref` changes nothing: the base branch already
- * holds the branch's whole change, as after a squash merge of several
- * commits once the base had moved on. `git merge-tree --write-tree` needs git
- * 2.38; an older git, or a merge that conflicts, answers no.
+ * Whether merging `tip` into `ref` changes nothing: the base branch already
+ * holds that history's whole change, as after a squash merge of several
+ * commits once the base had moved on. The merge ignores every attributes
+ * file and refuses a repository that configures a custom merge driver, since
+ * a driver can resolve conflicting edits to either side and an unchanged
+ * result would then prove nothing. `git merge-tree --write-tree` needs git
+ * 2.38 and `--attr-source` 2.40; an older git is reported, never read as
+ * merged. A merge that conflicts answers no.
  */
-function mergesToNothing(git: (args: string[]) => RunResult, ref: string) {
-  const merged = git(["merge-tree", "--write-tree", ref, "HEAD"]);
+function mergesToNothing(
+  git: (args: string[]) => RunResult,
+  ref: string,
+  tip: string,
+): boolean | { unreadable: string } {
+  const drivers = git(["config", "--get-regexp", "^merge\\..*\\.driver$"]);
+  if (drivers.status === 0)
+    return { unreadable: "a custom merge driver is configured" };
+  if (drivers.status !== 1)
+    return {
+      unreadable: `merge drivers cannot be read: ${output(drivers) || `exit ${drivers.status}`}`,
+    };
+  const merged = git([
+    "--attr-source",
+    EMPTY_TREE,
+    "-c",
+    "core.attributesFile=/dev/null",
+    "merge-tree",
+    "--write-tree",
+    ref,
+    tip,
+  ]);
+  if (merged.status !== 0 && merged.status !== 1)
+    return {
+      unreadable: `merging ${tip} into ${ref} failed: ${output(merged) || `exit ${merged.status}`}`,
+    };
+  if (merged.status === 1) return false;
   const tree = git(["rev-parse", `${ref}^{tree}`]);
+  if (tree.status !== 0)
+    return {
+      unreadable: `${ref}'s tree cannot be read: ${output(tree) || `exit ${tree.status}`}`,
+    };
   const [result] = merged.stdout.split("\n");
-  return (
-    merged.status === 0 && tree.status === 0 && result === tree.stdout.trim()
-  );
+  return result === tree.stdout.trim();
 }
 
 /**
@@ -210,13 +247,38 @@ function unmerged(
     return {
       unreadable: `its commits cannot be compared with ${base}: ${left.unreadable}`,
     };
-  const commits = left
-    .filter((line) => !patched.has(line.slice(0, line.indexOf(" "))))
-    .map((line) => line.slice(line.indexOf(" ") + 1));
-  return {
-    base,
-    commits: commits.length > 0 && mergesToNothing(git, ref) ? [] : commits,
-  };
+  const rows = left
+    .map((line) => line.split(" "))
+    .filter(([commit]) => commit !== undefined && !patched.has(commit));
+  let commits = rows.map((row) => row.slice(1).join(" "));
+  // Merging a tip into the base changes nothing when the base holds that
+  // tip's whole history; the newest such tip settles it and every commit
+  // before it, so work left on top of a merged prefix stays named.
+  for (const tip of ["HEAD", ...rows.map(([commit]) => commit as string)].slice(
+    0,
+    MERGE_PROBES,
+  )) {
+    if (commits.length === 0) break;
+    const proof = mergesToNothing(git, ref, tip);
+    if (typeof proof === "object")
+      return {
+        unreadable: `its commits cannot be compared with ${base}: ${proof.unreadable}`,
+      };
+    if (!proof) continue;
+    const covered = lines(
+      git(["log", "--format=%H", tip, "--not", `--remotes=${remote}`]),
+    );
+    if (!Array.isArray(covered))
+      return {
+        unreadable: `its commits cannot be compared with ${base}: ${covered.unreadable}`,
+      };
+    const gone = new Set(covered);
+    commits = rows
+      .filter(([commit]) => !gone.has(commit as string))
+      .map((row) => row.slice(1).join(" "));
+    break;
+  }
+  return { base, commits };
 }
 
 /** The commits, the first few by hash and subject and the rest counted. */
