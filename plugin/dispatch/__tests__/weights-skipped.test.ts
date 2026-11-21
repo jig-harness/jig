@@ -135,8 +135,10 @@ describe("an unknown account name in the weights file", () => {
     for (const report of table.map((slots) => weightReport(slots)))
       expect(report.reason).toContain("skipped an unknown account retired in");
     const admitted = admitRearm(table, null, PASS);
-    if (!("admitted" in admitted)) throw new Error(admitted.waits);
-    expect(["b", "c"]).toContain(admitted.admitted.account.name);
+    expect(admitted).toEqual({ admitted: expect.anything() });
+    expect(["b", "c"]).toContain(
+      "admitted" in admitted ? admitted.admitted.account.name : "",
+    );
   });
 
   it("still closes every account for any other fault", () => {
