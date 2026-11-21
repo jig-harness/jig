@@ -15,11 +15,19 @@ deploy or a build could not be read.
 ## 1. Did it deploy?
 
 ```bash
-gh run list --workflow website.yml --commit <range.head> --json status,conclusion,url
+gh run list --workflow website.yml --commit <range.head> --json databaseId,status,conclusion,url
 ```
 
-- Not started or still running: `pending`, with the run's link, until it
-  ends.
+- Not started or still running: read the newest such run first, as the
+  skill says for a deploy that has not finished
+  (`bun <followup skill>/scripts/followup.ts deploy-run <databaseId>`).
+  - `moving`: `pending`, with the run's link (in a dispatched pass, in
+    `--arm` as well), until it ends.
+  - `stuck`: the deploy queue is held and the run cannot start. Record the
+    arm `owed` as a step owed by a person, with the run's link and its
+    `reason` as evidence and, as `--item`, the open issue that tracks the
+    stuck deploy queue (search open issues for one before filing a new
+    one), then answer 2 and 3 and finish the other arms.
 - Failed: read its log (`gh run view <id> --log-failed`) and record the
   arm `owed` with the cause. Re-running the deploy is an act the follow-up
   asks first about (`deploy-rerun`); with nobody to ask, file the failure
@@ -27,11 +35,12 @@ gh run list --workflow website.yml --commit <range.head> --json status,conclusio
 - Succeeded: the deploy is settled; go on.
 - Cancelled, skipped or timed out, or no run for that commit: a later
   commit's deploy supersedes it. Look at the newest `website.yml` run on
-  `main` (`gh run list --workflow website.yml --branch main --limit 1`).
+  `main` (`gh run list --workflow website.yml --branch main --limit 1 --json databaseId,headSha,status,conclusion,url`).
   When the listing cannot be read, record `unread`. When that run has not
   finished (queued or in progress) and its commit contains `range.head`
-  (`git merge-base --is-ancestor <range.head> <that commit>`), record
-  `pending` with its link: it settles by itself. When it succeeded and its
+  (`git merge-base --is-ancestor <range.head> <that commit>`), read that
+  run with `deploy-run` and record it as above: `pending` with its link
+  while it is `moving`, a person's step while it is `stuck`. When it succeeded and its
   commit contains `range.head`, the merge is deployed and this part is
   settled. Otherwise (it failed, or its commit does not contain
   `range.head`) record the arm `owed` with the run's link as the actionable

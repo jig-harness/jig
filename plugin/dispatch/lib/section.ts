@@ -18,9 +18,14 @@ import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
+import {
+  DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
+  reviewerFailurePolicy,
+} from "./reviewer-failure.ts";
 import type {
   AdoptRule,
   DispatchSection,
+  MissingPriority,
   StalledRelaunch,
   StalledScope,
 } from "./types.ts";
@@ -50,8 +55,10 @@ const KEYS = [
   "stalled_after",
   "stalled_scope",
   "stalled_relaunch",
+  "missing_priority",
   "blocked_after",
   "drive_rounds_flat",
+  "reviewer_failures_before_escalation",
   "pickup_within",
   "pickup_deadline",
   "followup_within",
@@ -167,6 +174,16 @@ function rounds(value: unknown): Checked<number> {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
     return invalid(
       "dispatch.drive_rounds_flat must be a positive whole number",
+    );
+  return ok(value);
+}
+
+function reviewerFailures(value: unknown): Checked<number> {
+  if (value === undefined || value === null)
+    return ok(DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION);
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    return invalid(
+      "dispatch.reviewer_failures_before_escalation must be a positive whole number",
     );
   return ok(value);
 }
@@ -354,6 +371,14 @@ function stalledRelaunch(value: unknown): Checked<StalledRelaunch> {
     : invalid("dispatch.stalled_relaunch must be finish-once or never");
 }
 
+/** `missing_priority`: `hold` unless the section says `start`. */
+function missingPriority(value: unknown): Checked<MissingPriority> {
+  if (value === undefined || value === null) return ok("hold");
+  return value === "hold" || value === "start"
+    ? ok(value)
+    : invalid("dispatch.missing_priority must be hold or start");
+}
+
 /** The section's waits and expectations, and where and how often notices go. */
 function timings(section: Record<string, unknown>): Checked<Timings> {
   const stalledAfterMs = wait(section.stalled_after, "stalled_after");
@@ -413,6 +438,32 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
+/** What bounds and gates a launch: its deadline, and what a priority-less item does. */
+function launchPolicy(
+  section: Record<string, unknown>,
+): Checked<Pick<DispatchSection, "pickupDeadlineMs" | "missingPriority">> {
+  const pickupDeadlineMs = wait(
+    section.pickup_deadline,
+    "pickup_deadline",
+    DEFAULT_PICKUP_DEADLINE_MS,
+  );
+  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
+  const unranked = missingPriority(section.missing_priority);
+  if (!unranked.ok) return unranked;
+  return ok({
+    pickupDeadlineMs: pickupDeadlineMs.value,
+    missingPriority: unranked.value,
+  });
+}
+
+function trackerOf(values: Record<string, unknown>): Checked<TrackerConfig> {
+  try {
+    return ok(parseTrackerConfig(values));
+  } catch (error) {
+    return invalid(error instanceof Error ? error.message : String(error));
+  }
+}
+
 /**
  * The `dispatch` section of parsed configuration values, with defaults;
  * `invalid`, its reason naming the setting, for the first value that does
@@ -429,31 +480,28 @@ export function dispatchSection(
   if (refused !== null) return refused;
   const rules = labelsAndAdopt(section);
   if (!rules.ok) return rules;
-  let tracker: TrackerConfig;
-  try {
-    tracker = parseTrackerConfig(values);
-  } catch (error) {
-    return invalid(error instanceof Error ? error.message : String(error));
-  }
+  const parsed = trackerOf(values);
+  if (!parsed.ok) return parsed;
+  const tracker = parsed.value;
   const picked = pickup(section, tracker);
   if (!picked.ok) return picked;
   const waits = timings(section);
   if (!waits.ok) return waits;
-  const pickupDeadlineMs = wait(
-    section.pickup_deadline,
-    "pickup_deadline",
-    DEFAULT_PICKUP_DEADLINE_MS,
-  );
-  if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
+  const launching = launchPolicy(section);
+  if (!launching.ok) return launching;
   const ready = pool(values, section, picked.value.identity, tracker);
   if (!ready.ok) return ready;
+  const reviewerFailureThreshold = reviewerFailures(
+    section.reviewer_failures_before_escalation,
+  );
+  if (!reviewerFailureThreshold.ok) return reviewerFailureThreshold;
   const overlap = parseOverlap(section.overlap);
   if (!overlap.ok) return overlap;
   return ok({
     ...(ready.value === undefined ? {} : { pool: ready.value }),
     ...picked.value,
     ...waits.value,
-    pickupDeadlineMs: pickupDeadlineMs.value,
+    ...launching.value,
     ...(Object.hasOwn(section, "epic_width")
       ? {
           retiredEpicWidth:
@@ -461,6 +509,10 @@ export function dispatchSection(
         }
       : {}),
     overlap: overlap.value,
+    reviewerFailures: reviewerFailurePolicy(
+      values,
+      reviewerFailureThreshold.value,
+    ),
     labels: rules.value.labels,
     adopt: rules.value.adopt,
   });

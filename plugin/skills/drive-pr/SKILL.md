@@ -197,7 +197,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed. A re-arm unparks items once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive). A conflicting PR reports `PR_CONFLICTING` before the park, allowing conflict repair while the questions remain parked; `jig dispatch` re-drives it once per pair of its head and its base branch's head |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `REVIEW_SKIPPED` | 22 | The reviewer's skip notice names this head, and its review of an earlier head does not cover it: the pull request's diff changed; or a review-object reviewer's check run on the head reads `Review paused…` or `Review skipped…` (a draft skip is not one: on a draft it converges provisionally, on a Ready PR it waits for the review), the reason naming which and quoting the title. No review of this head will come; a person reviews the change and has the reviewer review the head (or resume its reviews), or pushes a commit it reviews, then re-arms. A skipped head whose diff is unchanged converges on the earlier review instead ([terminal-states.md § The reviewer skips a head](references/terminal-states.md)) |
-| `CHECK_RUNS_UNREADABLE` | 25 | The head's check-runs listing ran into a deadline or its page bound: each page may take `GH_CALL_TIMEOUT`, the whole listing four times that, and a read at most 100 pages (with `JIG_FORGE_BUDGET=off`, `gh` pages a fresh listing itself under the whole-read bound, with no page bound). Nothing was judged, and the reason names the pages read. `drive-status.ts` retries it as it retries `INDETERMINATE`, except at the page bound; `drive.ts` also ends with it when the cancelled-run recovery, the CI hold's release or the final CI proof cannot read the listing. Under `jig dispatch` the dispatcher re-drives it once per head commit, and a second such stop on that head goes to a person as a systematic read failure |
+| `CHECK_RUNS_UNREADABLE` | 25 | The head's check-runs listing ran into a deadline or its page bound: each page may take `GH_CALL_TIMEOUT`, the whole listing four times that, and a read at most 100 pages (with `JIG_FORGE_BUDGET=off`, `gh` pages a fresh listing itself under the whole-read bound, with no page bound). Nothing was judged, and the reason names the pages read. `drive-status.ts` retries it as it retries `INDETERMINATE`, except at the page bound; `drive.ts` also ends with it when the cancelled-run recovery, the CI hold's release or the final CI proof cannot read the listing, and when a review pass's `finish-round.ts` reports it in the finish record bound to that pass's launch and round, whatever the pass process exited (except a pass the driver's own timeout ended, whose earlier record never masks the cancellation). Under `jig dispatch` the dispatcher re-drives it once per head commit, and a second such stop on that head goes to a person as a systematic read failure |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget. Under `jig dispatch` the dispatcher re-drives this stop once per head commit, in the tree it stopped in when it left work there, and a drive re-armed in that tree inherits those edits as its own to finish |
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
@@ -516,6 +516,13 @@ re-read on the reviewed head that is not `CONVERGED` re-gates at most
 `DRIVE_PR_FINAL_REGATE_LIMIT` times in a row (default 3), then stops with exit
 `1` naming what the re-read saw ([terminal-states.md](references/terminal-states.md)
 § The final status re-read). A moved head re-gates uncounted.
+
+**An unproven CI-hold removal is bounded too.** When GitHub accepted the
+removal but a proof or recovery read remains unreadable while its `releasing`
+record remains, the driver retries at most `DRIVE_PR_RELEASE_PROOF_ATTEMPTS`
+times in a row (default 3; `0` stops on the first). It then stops with exit
+`1`, retaining the record so a later drive can reconcile the removal without
+assuming it happened.
 
 If another actor removes the hold, the drive preserves the strongest
 check-run watermark it can prove and treats the removal as external. GitHub
@@ -1812,8 +1819,9 @@ Then:
   the branch's own changelog edits into a change note. It maps
   both sides and why each changed, regenerates derived files rather than
   hand-merging them, checks that no change was silently dropped, records
-  every decision in the merge commit message, and validates with this round's
-  plan (§ 5) before concluding the merge, and records the conflicts it
+  every decision in the merge commit message, refreshes dependencies when the
+  resolved merge changes their inputs, validates with this round's plan (§ 5)
+  before concluding the merge, and records the conflicts it
   resolved in the clone's live record, marked as this drive's
   (`$DRIVE_PR_ROUND_TASK` and `$DRIVE_PR_TARGET` are how it knows). Then the
   rest of § 5 and § 6 as normal. A conflict it records as `escalate` is the human hand-off below: it
@@ -1825,8 +1833,11 @@ Then:
   resolved, so go on from its Step 6 (`round-plan.ts` plans an open merge
   whose conflicts are resolved). Otherwise abort it as its Step 8 does,
   verify the tree is clean, and start from its Step 1. A merge this round
-  started and does not conclude is aborted for you when the pass ends, and the
-  round has achieved nothing.
+  started and does not conclude is aborted when the pass ends, while the
+  driver still holds its locks and the tree's fence. The driver removes new
+  untracked files from the unfinished attempt and checks the worktree with
+  untracked files included. The stop reports any merge it could not abort
+  or worktree it could not verify clean.
 
 Either way **push, or the round achieved nothing the driver can observe** —
 the driver re-gates from the top afterwards and reads the remote head, not
@@ -1978,6 +1989,11 @@ That `ROUND_READY` is the one where the reviewer gates did **not** run, so its
 head, or last reviewed an earlier commit and these predate it, or never stamped
 this PR at all. It is evidence, not a gate: work the findings either way, and
 read it as what to expect after the push rather than as permission to start.
+
+**Reviewer waits back off on the same head.** Start at `--interval` and
+double the spacing up to `review.reviewer_poll_max_seconds` (default 300
+seconds). A completed neutral check titled `Review did not complete` with
+no review of the current head ends the wait with `REVIEWER_FAILED`.
 
 **Unchanged waiting polls use conditional REST detectors.**
 `evaluate()` reuses only an `AWAITING_REVIEWER` observation with a reviewer
@@ -2915,7 +2931,7 @@ changes nothing the note says leaves it alone. Where the check prints
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR] --json
 ```
 
 **Before the plan is resolved, not after** — the plan describes a tree, and a
@@ -2926,17 +2942,20 @@ that was planned for.
 work no earlier pass shipped (uncommitted edits, a merge left open, local
 commits), finish that work before this command, in this order:
 
-1. A merge left open (`MERGE_HEAD`) with every conflict resolved: run
-   `round-plan.ts` below and what it prints. It plans an open merge against
-   the merge base its commit will have, so the plan is the change's files,
-   not the base's. Then conclude the merge with a commit, by
+1. A merge left open (`MERGE_HEAD`) with every conflict resolved: use
    [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md) Steps 5 to 7
-   where the repository uses it. With a conflict still unresolved, resolve it
-   by that skill from its Step 2, or abort the merge and start from its
-   Step 1.
-2. Uncommitted edits with no merge open: run the plan over the dirty tree,
+   where the repository uses it. Otherwise run the dependency install check
+   below without `--before`, run `round-plan.ts` and its checks, and commit.
+   The plan compares the open merge against the base its commit will have.
+   With a conflict still unresolved, resolve it by that skill from Step 2,
+   or abort the merge and start from Step 1.
+2. A clean base merge already at HEAD with no successful install outcome
+   in this worktree, including a merge inherited from the driver's CI
+   infrastructure recovery: run the dependency install check below with
+   `--before "HEAD^1"` before validation.
+3. Uncommitted edits with no merge open: run the plan over the dirty tree,
    and commit what is sound; discard what is not on purpose.
-3. Then run this command, which now meets a clean tree, and the rest of the
+4. Then run this command, which now meets a clean tree, and the rest of the
    round. `finish-round.ts` pushes the inherited commits with the round's own.
 
 Each of `base-sync.ts`, the plan and `finish-round.ts` refuses the partial
@@ -2972,7 +2991,7 @@ loop cannot see, such as converging and wanting the local gates and the
 
 | Exit | Means | What to do |
 |---|---|---|
-| `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
+| `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which. On `merged`, run the dependency install step below before validation |
 | `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge the round inherited, finish it as **A tree the round inherits** above says; in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
@@ -3002,6 +3021,25 @@ that merge ref. Drift left alone until it becomes a conflict is a required-check
 blackout that widens for as long as the drive runs, and the round's own local
 gates were meanwhile validating a tree CI never sees. Full argument, and what
 was measured: `scripts/lib/base-drift.ts`.
+
+**Refresh dependencies after a base merge.** When `base-sync.ts` reports
+`action: "merged"`, run this before resolving or running the validation plan:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/dependency-install.ts" --before "HEAD^1"
+```
+
+For an open merge with every conflict staged, use the same command without
+`--before`, as [resolve-conflicts Step 6](../resolve-conflicts/SKILL.md#step-6-validate)
+does. The command compares the merged tree with the branch tip before the
+merge and runs the frozen install in each affected directory with a
+recognized lockfile. Keep its JSON outcome for the round report.
+
+If the install fails, stop before validation or push. Name the directory,
+command and diagnostic in the round report. Report a detection or
+configuration error as such if an install never started. Retry a clean
+merge's install against the same first parent before validating or pushing
+that merge in a later round.
 
 Then resolve the plan over the tree you just settled:
 

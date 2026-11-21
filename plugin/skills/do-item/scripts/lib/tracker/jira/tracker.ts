@@ -42,7 +42,7 @@ import type {
   RelationType,
   Tracker,
 } from "../port.ts";
-import { TrackerRequestError } from "../port.ts";
+import { CLOSED_STATE_TYPES, TrackerRequestError } from "../port.ts";
 import { TrackerConfigError } from "../config-error.ts";
 import { type CoreTracker, withFacets } from "../facets/tracker.ts";
 import {
@@ -66,7 +66,7 @@ import {
 import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta, RelationLink } from "./client.ts";
 import { jiraFacetStores } from "./facets.ts";
-import { type JiraIssue, record, str } from "./read.ts";
+import { type JiraIssue, record, stateInputOf, str } from "./read.ts";
 import { fieldOfLabel, inProject, openClause, quote } from "./jql.ts";
 import { isResolvedState } from "./model.ts";
 import { reportOperations } from "./reports.ts";
@@ -348,27 +348,35 @@ export function jiraTracker(client: Client): Tracker {
   }
 
   /** Link `key` to `target` as the outward side, unless the link exists. */
-  async function link(key: string, type: RelationType, target: string) {
+  async function link(
+    key: string,
+    type: RelationType,
+    target: string,
+    signal?: AbortSignal,
+  ) {
     checkRelation(key, type, target);
-    const types = await client.linkTypes();
+    const types = await client.linkTypes(signal);
     const [from, to] = [
-      await client.mustIssue(key),
-      await client.mustIssue(target),
+      await client.mustIssue(key, signal),
+      await client.mustIssue(target, signal),
     ];
     refuseSameIssue([from.id, to.id], key, target, from.key);
-    const existing = await relations(from.key);
+    const existing = relationsOf(from, types);
     if (existing.some((r) => r.type === type && r.issue === to.key)) return;
     const first = types[type][0] as RelationLink;
     const [inward, outward] = first.inverted ? [to, from] : [from, to];
-    await transport({
-      method: "POST",
-      path: "issueLink",
-      body: {
-        type: { name: first.name },
-        inwardIssue: { key: inward.key },
-        outwardIssue: { key: outward.key },
+    await transport(
+      {
+        method: "POST",
+        path: "issueLink",
+        body: {
+          type: { name: first.name },
+          inwardIssue: { key: inward.key },
+          outwardIssue: { key: outward.key },
+        },
       },
-    });
+      signal,
+    );
   }
 
   const tracker: CoreTracker = {
@@ -709,6 +717,27 @@ export function jiraTracker(client: Client): Tracker {
     },
 
     listRelations: relations,
+
+    async dependencyState(key, signal) {
+      let raw: unknown;
+      try {
+        raw = await transport(
+          {
+            method: "GET",
+            path: `issue/${encodeURIComponent(key)}`,
+            query: { fields: "status,issuetype,resolution" },
+          },
+          signal,
+        );
+      } catch (error) {
+        if (error instanceof JiraApiError && error.notFound) return null;
+        throw error;
+      }
+      const { state } = model.read(stateInputOf(raw));
+      return CLOSED_STATE_TYPES.some((type) => type === state.type)
+        ? "closed"
+        : "open";
+    },
 
     relate: link,
   };

@@ -17,6 +17,15 @@
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
  *   launched again after it, with no person asked;
+ * - except a record of one item whose pass claimed it and recorded
+ *   `waits --reason test-lock` (its push was refused only because the wait
+ *   for the host's test lock ran out): it holds the item with no time to it,
+ *   since the claimed item's plan relaunches the pickup in its tree
+ *   (`pickup-lock-wait.ts`) rather than starting it afresh. Such a result
+ *   from a pass that never claimed the item, or from a batch's pass, broke
+ *   the result's rule (a claimed pickup's only, and a batch's stop stays a
+ *   person's): it holds the item as any end does, with no time to it, so a
+ *   person picks it up again or leaves it;
  * - except a record whose pass stopped at startup on its account's usage
  *   notice, with the account's wall recorded (`run.ts`): the wall keeps the
  *   next pickup off that account until its reset, so the item is wanted
@@ -58,7 +67,7 @@ import {
 import { isPersonHold } from "../queue-rank.ts";
 import { RUNNING_STATES, type SessionsReport } from "../runtime/port.ts";
 import { currentMs, isoFromMs, parseMs } from "../../../shared/time.ts";
-import type { Unplaced } from "../types.ts";
+import type { Unplaced, WantedItem } from "../types.ts";
 
 export { endedQuestion };
 
@@ -148,11 +157,18 @@ function changedSince(updatedAt: string | undefined, seen: string): boolean {
   return Number.isFinite(now) && now > parseMs(seen);
 }
 
+/**
+ * What holds `item` from a new pickup. `assignee` is who the tracker's read
+ * says the item is assigned to, `true` for an item assigned to someone the
+ * read does not name; a caller that read no assignee passes none, so the
+ * hold's reason never says the item is still assigned.
+ */
 export function pickupHold(
   item: string,
   records: ReadRecord[],
   updatedAt?: string,
   nowMs = currentMs(),
+  assignee?: string | true,
 ): PickupHold {
   const mine = recordsOf(item, records);
   const holding = mine.find((r) => holds(r.state));
@@ -161,20 +177,38 @@ export function pickupHold(
   const latest = mine.at(-1);
   if (latest === undefined || !holdsItem(latest.record, item))
     return { kind: "none" };
+  // Conditional waits are governed by their durable pickup hold, including when it clears.
+  if (latest.result === "waits" && latest.waitsFor?.condition !== undefined)
+    return { kind: "none" };
+  const lockWait =
+    latest.result === "waits" && latest.waitsFor?.reason === "test-lock";
+  if (lockWait && claimedAlone(latest.record, item))
+    return {
+      kind: "held",
+      record: latest,
+      why: `launch record ${latest.record.id} waits for the host's test lock, which held its push past the pre-push hook's wait; the pickup is relaunched in its tree once the host's validation capacity admits it`,
+    };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
-  if (latest.result === "waits" && latest.waitsUntil !== undefined)
+  if (!lockWait && latest.result === "waits" && latest.waitsUntil !== undefined)
     return waitsHold(latest, latest.waitsUntil, nowMs);
   if (stoppedOnWall(latest)) return { kind: "none" };
   if (restartsAfterHostFault(latest, mine, item)) return { kind: "none" };
-  return stoppedHold(latest, item, updatedAt);
+  return stoppedHold(latest, item, updatedAt, assignee);
 }
 
-/** Whether a pass stopped at startup on its account's usage notice, and the wrapper walled that account. */
+/** Whether a pickup of `item` alone claimed it: only such a pickup is relaunched in its tree. */
+function claimedAlone(record: LaunchRecord, item: string): boolean {
+  return record.batchItems === undefined && wasClaimed(record, item);
+}
+
+/** Whether a pass stopped at startup, and the wrapper walled its account and released its work. */
 function stoppedOnWall(r: ReadRecord): boolean {
   return (
     r.result === null &&
     r.state.kind === "ended" &&
-    r.state.exit.startup === "quota" &&
+    (r.state.exit.startup === "quota" ||
+      r.state.exit.startup === "sign-in" ||
+      r.state.exit.startup === "breaker") &&
     r.state.exit.wallUnrecorded !== true
   );
 }
@@ -218,6 +252,7 @@ function stoppedHold(
   latest: ReadRecord,
   item: string,
   updatedAt: string | undefined,
+  assignee: string | true | undefined,
 ): PickupHold {
   const recorded = latest.refusal ?? null;
   const refusal = recorded === null ? null : refusalOf(recorded, item);
@@ -235,8 +270,20 @@ function stoppedHold(
   return {
     kind: "ended",
     record: latest,
-    why: `launch record ${latest.record.id} ended (${endedHow(latest)}) while the item stayed assigned in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`,
+    why: endedWhy(latest, assignee),
   };
+}
+
+/** Why an ended record holds its item: the record, never released, and the assignment only when there is one. */
+function endedWhy(
+  latest: ReadRecord,
+  assignee: string | true | undefined,
+): string {
+  const ended = `launch record ${latest.record.id} ended (${endedHow(latest)}) and has not been released, so it holds the item`;
+  if (assignee === undefined)
+    return `${ended}; it is not picked up again until that record is released, as when the item leaves the dispatch states and comes back`;
+  const to = assignee === true ? "" : ` to ${assignee}`;
+  return `${ended}, which is still assigned${to} in a dispatch state; it is not picked up again until the item leaves the dispatch states or its assignment and comes back`;
 }
 
 /**
@@ -287,10 +334,20 @@ export function endedPassOver(
   records: readonly ReadRecord[],
   repo: string,
   nowMs: number,
-): (issue: { identifier: string; updatedAt?: string }) => string | null {
+): (issue: {
+  identifier: string;
+  updatedAt?: string;
+  assignee?: { name: string } | null;
+}) => string | null {
   const mine = records.filter((r) => r.record.repo === repo);
   return (issue) => {
-    const hold = pickupHold(issue.identifier, mine, issue.updatedAt, nowMs);
+    const hold = pickupHold(
+      issue.identifier,
+      mine,
+      issue.updatedAt,
+      nowMs,
+      issue.assignee?.name,
+    );
     return hold.kind === "ended" || hold.kind === "refused" ? hold.why : null;
   };
 }
@@ -458,4 +515,20 @@ function noteClaims(
   if (!changed) return;
   record.claimedItems = [...seen];
   writeRecord(record, root);
+}
+
+/**
+ * Who the tracker says an item is assigned to, or nothing for an unassigned
+ * one. `assignee` names who its claim assigns it to, which for an item from
+ * the ready pool, an epic's inherited child or a pulled blocker is not yet
+ * anyone, so the tracker's read decides where the plan has one.
+ */
+export function assigneeOf(item: WantedItem): string | undefined {
+  if (item.queueIssue !== undefined) return item.queueIssue.assignee?.name;
+  const unassigned =
+    item.pooled === true ||
+    item.factoryAncestor !== undefined ||
+    item.ancestorEpic !== undefined ||
+    item.blockingFor !== undefined;
+  return unassigned ? undefined : item.assignee;
 }

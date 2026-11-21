@@ -27,6 +27,14 @@
 //   the check cannot follow, or a relative import of a file that is neither
 //   a script nor JSON (a text or SQL file only a runtime's loader reads).
 //
+// A vendored bundle `ALLOWED_VENDORED` names is read like any other file,
+// its imports followed and held to the rules, except that its references to
+// `Buffer` are not reported (any other runtime global, `Bun`, `process`,
+// `require` or an `import.meta` member, still is): a bundle of a library's portable
+// parts, checked to run on every platform first, whose code for features
+// the hub does not use refers to them. Any other vendored file it reaches
+// is held to every rule.
+//
 // A type-only import or export (`import type`, `export type … from`) is not
 // followed and not checked: its module never runs. An `import { type A }`
 // of a module is followed, since the import of the module itself remains.
@@ -55,7 +63,10 @@ import { type AstNode, isNode } from "./check-throws.ts";
 const RULE = "portability";
 
 /** The directories every file of which must be portable. */
-export const PORTABLE_ROOTS: readonly string[] = ["plugin/hub/core/"];
+export const PORTABLE_ROOTS: readonly string[] = [
+  "plugin/hub/core/",
+  "plugin/hub/storage/",
+];
 
 /** Shared modules declared portable, checked whether the core imports them yet or not. */
 export const PORTABLE_SHARED: readonly string[] = [
@@ -77,6 +88,21 @@ export const PORTABLE_SHARED: readonly string[] = [
 
 /** Packages a portable module may import: each one checked to run on every platform first. */
 export const ALLOWED_PACKAGES: readonly string[] = [];
+
+/**
+ * Vendored bundles whose references to a runtime's globals the check
+ * accepts; their imports are still followed and checked. Each is checked to
+ * run on every platform first. Drizzle's portable entry and its shared
+ * chunk are SQLite's dialect and query builder, which Drizzle's Durable
+ * Object and D1 drivers run in a worker; the chunk's `Buffer` references
+ * sit in the mapping of blob columns, some behind a check that `Buffer`
+ * exists and some not, and the hub's schema declares no blob column.
+ * Drizzle's `bun:sqlite` entry is the process adapter's and is not listed.
+ */
+export const ALLOWED_VENDORED: readonly string[] = [
+  "plugin/shared/vendor/drizzle.mjs",
+  "plugin/shared/vendor/drizzle-shared.mjs",
+];
 
 /** The globals one runtime gives without an import. */
 const RUNTIME_GLOBALS = new Set([
@@ -103,6 +129,8 @@ export interface PortabilityScope {
   roots: readonly string[];
   shared: readonly string[];
   allowed: readonly string[];
+  /** Vendored bundles whose runtime-global references are accepted; none when absent. */
+  vendored?: readonly string[];
 }
 
 export interface PortabilityFinding extends Finding {
@@ -664,6 +692,44 @@ function findingsOf(
     }));
 }
 
+/** A vendored bundle's `Buffer` reference (also as `globalThis.Buffer`): the one global the allowance covers. */
+function isAllowedVendoredUse(use: Use): boolean {
+  return (
+    use.kind === "runtime-global" &&
+    /^`(?:[A-Za-z]+\.)?Buffer` is a runtime's own global/.test(use.problem)
+  );
+}
+
+/** What reading one file of the closure yields: its findings and the files it leads to, or why it could not be read. */
+function inspectFile(
+  root: string,
+  file: string,
+  chain: string[],
+  scope: PortabilityScope,
+):
+  | { ok: true; findings: PortabilityFinding[]; targets: string[] }
+  | { ok: false; reason: string } {
+  let source: string;
+  try {
+    source = readRegularFile(join(root, file));
+  } catch (error) {
+    return { ok: false, reason: `${file}: ${reason(error)}` };
+  }
+  const read = readModule(source, file);
+  if ("unparsed" in read)
+    return { ok: false, reason: `${file}: ${read.unparsed}` };
+  const followed = followEdges(root, file, source, read.edges, scope.allowed);
+  if (typeof followed === "string") return { ok: false, reason: followed };
+  const uses = scope.vendored?.includes(file)
+    ? read.uses.filter((use) => !isAllowedVendoredUse(use))
+    : read.uses;
+  return {
+    ok: true,
+    findings: findingsOf(file, source, chain, [...uses, ...followed.uses]),
+    targets: followed.targets,
+  };
+}
+
 export function portabilityFindings(
   root: string,
   scope: PortabilityScope,
@@ -682,21 +748,10 @@ export function portabilityFindings(
     if (seen.has(file)) continue;
     seen.add(file);
     if (file.endsWith(".json")) continue;
-    let source: string;
-    try {
-      source = readRegularFile(join(root, file));
-    } catch (error) {
-      return { ok: false, reason: `${file}: ${reason(error)}` };
-    }
-    const read = readModule(source, file);
-    if ("unparsed" in read)
-      return { ok: false, reason: `${file}: ${read.unparsed}` };
-    const followed = followEdges(root, file, source, read.edges, scope.allowed);
-    if (typeof followed === "string") return { ok: false, reason: followed };
-    for (const target of followed.targets) queue.push([...chain, target]);
-    findings.push(
-      ...findingsOf(file, source, chain, [...read.uses, ...followed.uses]),
-    );
+    const inspected = inspectFile(root, file, chain, scope);
+    if (!inspected.ok) return inspected;
+    for (const target of inspected.targets) queue.push([...chain, target]);
+    findings.push(...inspected.findings);
   }
   return {
     ok: true,
@@ -714,6 +769,7 @@ export function checkPortability(
     roots: scope.roots ?? PORTABLE_ROOTS,
     shared: scope.shared ?? PORTABLE_SHARED,
     allowed: scope.allowed ?? ALLOWED_PACKAGES,
+    vendored: scope.vendored ?? ALLOWED_VENDORED,
   });
   if (!read.ok) return couldNotCheck(RULE, read.reason);
   if (read.findings.length > 0) {

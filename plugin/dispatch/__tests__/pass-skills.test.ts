@@ -85,7 +85,10 @@ describe("a fixed served batch's prompt", () => {
   });
 
   it("lets the first member left out be claimed when none stays", () => {
-    expect(prompt).toContain("(the first member left out when none stays)");
+    expect(prompt).toContain(
+      "(the first member left out whose priority is set when none stays)",
+    );
+    expect(prompt).toContain("claim none and record those refusals");
   });
 });
 

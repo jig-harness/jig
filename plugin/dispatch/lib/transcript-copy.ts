@@ -122,7 +122,10 @@ function codexThreadId(line: string): string | null {
 }
 
 /** Claude Code's transcript of `session` under `configDir`, in any project. */
-function claudeTranscript(configDir: string, session: string): string | null {
+export function claudeTranscript(
+  configDir: string,
+  session: string,
+): string | null {
   const root = join(configDir, "projects");
   let found: string | null = null;
   let entries = 0;

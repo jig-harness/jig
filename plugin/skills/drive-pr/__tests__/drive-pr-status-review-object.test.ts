@@ -79,6 +79,31 @@ async function gate(f: Fixture, env: Record<string, string> = CODERABBIT) {
 }
 
 describe("a review-object reviewer (CodeRabbit's profile)", () => {
+  it("distinguishes a neutral failed attempt from a review of the head", async () => {
+    const checkRuns = [
+      rabbit({ conclusion: "neutral", title: "Review did not complete" }),
+    ];
+    const opts = { env: CODERABBIT };
+    const failed = await probe({ checkRuns, threads: [] }, [], opts);
+    expectSpawnExit(
+      { ...failed, stdout: JSON.stringify(failed.json) },
+      7,
+      "no review of this head",
+    );
+    expect(failed.state).toBe("REVIEWER_FAILED");
+    const reviewed = await probe(
+      { checkRuns, threads: [], reviews: [review(HEAD)] },
+      [],
+      opts,
+    );
+    expectSpawnExit(
+      { ...reviewed, stdout: JSON.stringify(reviewed.json) },
+      3,
+      "a posted review witnesses this head",
+    );
+    expect(reviewed.state).toBe("CONVERGED");
+  });
+
   it("converges on a review object naming the head, with no sticky stamp", async () => {
     const r = await gate({
       checkRuns: [rabbit()],

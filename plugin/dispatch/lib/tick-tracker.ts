@@ -13,7 +13,12 @@ import {
   issueKeysOf,
 } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { Tracker } from "../../skills/do-item/scripts/lib/tracker/port.ts";
-import { personPickupHolds, pickupHoldReason } from "./person-pickup-holds.ts";
+import {
+  personPickupHolds,
+  pickupHoldReason,
+  type PersonPickupHold,
+} from "./person-pickup-holds.ts";
+import { readPickupConditions } from "./tick-pickup-conditions.ts";
 import { endedPassOver } from "./actions/pickup-hold.ts";
 import type { ReadRecord } from "./launches.ts";
 import { batchSafePickups } from "./queue-batch-areas.ts";
@@ -42,6 +47,8 @@ import type {
 
 /** What the tracker gives one repository's tick. */
 export interface Tracked {
+  conditionalHolds?: PersonPickupHold[];
+  conditionalBlockers?: PersonPickupHold[];
   servedPolicy?: import("./sources/served.ts").ServedPolicy;
   keys: IssueKeys | null;
   /** The configured adapter (`issue_tracker.adapter`); `null` when the tracker configuration does not read. */
@@ -74,6 +81,7 @@ export interface TrackerRequest {
   root: string;
   /** Whether some account has room for a pickup this tick. */
   headroom: boolean;
+  settleConditions?: boolean;
   /** This machine's launch records, for the pickups a person passed over. */
   records: readonly ReadRecord[];
   /** The tracker the tick opened while it gathered the queues, reused here. */
@@ -236,8 +244,27 @@ export async function readTracker(
       });
       return { ...tracked, partial: true };
     }
-    const byKey = new Map(holds.value.map((hold) => [hold.item, hold]));
-    for (const hold of holds.value) {
+    const tracker = request.preparedTracker ?? openTracker(config, repo.path);
+    const { holds: currentHolds, blockers } = await readPickupConditions(
+      holds.value,
+      {
+        slug: repo.slug,
+        root: request.root,
+        checkout: repo.path,
+        apply: request.settleConditions === true,
+        tracker,
+        bound,
+        records,
+      },
+      report,
+    );
+    tracked.conditionalBlockers = blockers;
+    tracked.conditionalHolds = currentHolds.filter(
+      (hold) => hold.condition !== undefined,
+    );
+    const active = currentHolds.filter((hold) => hold.settled !== "cleared");
+    const byKey = new Map(active.map((hold) => [hold.item, hold]));
+    for (const hold of active) {
       report.unplaced.push({
         target: hold.item,
         record: "tracker",
@@ -247,7 +274,6 @@ export async function readTracker(
         pickupHold: { by: hold.by, at: hold.at },
       });
     }
-    const tracker = request.preparedTracker ?? openTracker(config, repo.path);
     const mergeFailures: unknown[] = [];
     tracked.servedPolicy = servedPolicyOf(
       { values, repo, config, serveDefaults: request.serveDefaults },
@@ -273,7 +299,20 @@ export async function readTracker(
         people: request.people,
         nowMs,
         headroom: request.headroom,
-        passOver: endedPassOver(records, repo.slug, nowMs),
+        passOver: endedPassOver(
+          records.filter(
+            ({ record }) =>
+              !currentHolds.some(
+                (hold) =>
+                  hold.settled === "cleared" &&
+                  hold.item === record.item &&
+                  record.batchItems === undefined &&
+                  record.createdAt <= hold.at,
+              ),
+          ),
+          repo.slug,
+          nowMs,
+        ),
         ...tracked.servedPolicy,
         ...(reads.servedViews === undefined
           ? {}

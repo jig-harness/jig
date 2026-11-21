@@ -53,6 +53,7 @@ import {
   refusedPassArgs,
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
+import { DEFAULT_REVIEWER_POLL_MAX_SECONDS } from "../../drive-pr/scripts/lib/status/reviewer-poll.ts";
 import {
   CODEX_PASS_ARG_PATTERN,
   codexPassArgsProblem,
@@ -152,6 +153,8 @@ import {
   LOAD_DEFAULTS,
   loadSettings,
 } from "../../../dispatch/lib/load-config.ts";
+import { notifyChannels } from "../../../dispatch/lib/notify-config.ts";
+import { WEBHOOK_FORMATS } from "../../../chat/webhook.ts";
 
 const schema = loadSchema();
 const field = (path: string) => schema.fields.find((f) => f.path === path);
@@ -225,6 +228,31 @@ test("documents the dispatch machine file's validation share in the audit schema
   expect(loadSettings({ validation: validation?.min }).ok).toBe(true);
   expect(loadSettings({ validation: validation?.max }).ok).toBe(true);
   expect(loadSettings({ validation: 0 }).ok).toBe(false);
+});
+
+test("documents the dispatch machine file's notification channels in the audit schema", () => {
+  const channels = schema.machineFields?.find(
+    ({ path }) => path === "notify.channels",
+  );
+  expect(channels).toMatchObject({
+    type: "list",
+    items: {
+      fields: {
+        name: "string",
+        kind: { type: "enum", values: ["webhook"] },
+        url_env: "string",
+        format: { type: "enum", values: [...WEBHOOK_FORMATS] },
+      },
+      optional: ["format"],
+    },
+    read_by: ["dispatch"],
+  });
+  for (const format of WEBHOOK_FORMATS)
+    expect(
+      notifyChannels({
+        channels: [{ name: "phone", kind: "webhook", url_env: "HOOK", format }],
+      }).ok,
+    ).toBe(true);
 });
 
 describe("CONFIGURATION.md", () => {
@@ -515,6 +543,7 @@ describe("the reading skills", () => {
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "file_issue.sweep.move": sweepSettings({}).move,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "review.reviewer_poll_max_seconds": DEFAULT_REVIEWER_POLL_MAX_SECONDS,
       "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
       "specs.body_section": DEFAULT_BODY_SECTION,
@@ -533,6 +562,8 @@ describe("the reading skills", () => {
       "dispatch.overlap.file_rate": dispatch.value.overlap?.fileRate,
       "dispatch.overlap.area_rate": dispatch.value.overlap?.areaRate,
       "dispatch.overlap.unknown_cost": dispatch.value.overlap?.unknownCost,
+      "dispatch.reviewer_failures_before_escalation":
+        dispatch.value.reviewerFailures?.threshold,
     });
   });
 

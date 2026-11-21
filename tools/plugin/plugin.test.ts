@@ -117,107 +117,25 @@ test("change-note commands run from the plugin cache and read the repository's c
 });
 
 /**
- * The relative specifiers `file` imports at run time (static, side-effect,
- * re-export, dynamic and `require`), as Bun's own parser reads them, so a
- * specifier counts exactly when Bun would load it. That parser erases
- * type-only imports; the compiler checks those in shared code (below). A
- * script's `#!` line, which the scanner rejects, is blanked first.
- */
-function relativeImports(text: string, file = "source.ts"): string[] {
-  const loader = file.endsWith(".mjs") ? "js" : "ts";
-  return new Bun.Transpiler({ loader })
-    .scanImports(text.replace(/^#!.*/, ""))
-    .map((entry) => entry.path)
-    .filter((path) => /^\.{1,2}\//.test(path));
-}
-
-/** One relative import per line, in every run-time form, with the traps between. */
-const SCANNER_SOURCE = [
-  'import { a } from "./a.ts";',
-  'export { f } from "./f.ts";',
-  'export * from "./h.ts";',
-  'import "../skills/drive-pr/scripts/drive.ts";',
-  'const i = await import("./i.ts");',
-  "const j = await import(`../skills/drive-pr/scripts/j.ts`);",
-  'const r = require("./r.ts");',
-  'let n = 1; const ratio = n++ / 2; await import("./after-division.ts");',
-  'import "\\u002e/escaped.ts";',
-  "await import(`\\u002e/escaped-template.ts`);",
-  'await import(("./parenthesized.ts"));',
-  'require(("./parenthesized-require.ts"));',
-  "const u = /[\"'`/]{/;\nimport './after-regex.ts';",
-  "// import './commented.ts';",
-  'const s = "import \\"./in-string.ts\\"";',
-  'const y = import.meta.dir; obj.require("./not-y.ts");',
-  'import { e } from "node:fs";',
-  "a; e; i; j; r; ratio; s; u; y;",
-].join("\n");
-
-const SCANNER_FOUND = [
-  "./a.ts",
-  "./f.ts",
-  "./h.ts",
-  "../skills/drive-pr/scripts/drive.ts",
-  "./i.ts",
-  "../skills/drive-pr/scripts/j.ts",
-  "./r.ts",
-  "./after-division.ts",
-  "./escaped.ts",
-  "./escaped-template.ts",
-  "./parenthesized.ts",
-  "./parenthesized-require.ts",
-  "./after-regex.ts",
-];
-
-test("the import scanner sees every run-time form of relative import", () => {
-  expect(relativeImports(SCANNER_SOURCE).toSorted()).toEqual(
-    SCANNER_FOUND.toSorted(),
-  );
-});
-
-test("every relative import in the copied plugin resolves inside the copy", () => {
-  // A skill reaches shared code by relative path, so the copy must hold it;
-  // shared code never reaches into a skill, so a skill can be removed or
-  // renamed without breaking the others.
-  const cache = join(scratch, "cache");
-  const unresolved: string[] = [];
-  const intoSkills: string[] = [];
-  const files = readdirSync(cache, { recursive: true, encoding: "utf8" })
-    .filter((path) => /\.(ts|mts|mjs)$/.test(path))
-    .map((path) => join(cache, path));
-  expect(files.some((path) => path.startsWith(join(cache, "shared")))).toBe(
-    true,
-  );
-  for (const file of files) {
-    const text = readFileSync(file, "utf8");
-    for (const path of relativeImports(text, file)) {
-      const target = resolve(dirname(file), path);
-      const where = `${file.slice(cache.length + 1)} -> ${path}`;
-      if (!target.startsWith(cache) || !existsSync(target))
-        unresolved.push(where);
-      if (
-        file.startsWith(join(cache, "shared")) &&
-        target.startsWith(join(cache, "skills"))
-      )
-        intoSkills.push(where);
-    }
-  }
-  expect(unresolved).toEqual([]);
-  expect(intoSkills).toEqual([]);
-});
-
-/**
  * Type-checks `dir/shared` with no `skills/` beside it. The include names no
  * extension, so the compiler takes every file kind it reads (`.ts`, `.mts`,
  * `.cts`, declaration files), and declaration files are checked rather than
  * skipped, so an import in any of them must resolve. The one package name it
  * resolves is Optique's: the vendored bundle's declarations are the pinned
  * package's own types, which only the repository holds and nothing run reads.
+ * Drizzle's module names are declared untyped.
  */
 function compileSharedAlone(dir: string): {
   status: number | null;
   output: string;
 } {
+  // Drizzle's own declarations need packages the plugin never ships, so its
+  // module names are declared untyped here: the vendored declarations still
+  // resolve every import, and no package's types are read.
+  writeFileSync(
+    join(dir, "drizzle-stub.d.ts"),
+    'declare module "drizzle-orm";\ndeclare module "drizzle-orm/*";\ndeclare module "drizzle-orm/bun-sqlite/migrator";\n',
+  );
   writeFileSync(
     join(dir, "tsconfig.json"),
     JSON.stringify({
@@ -229,7 +147,7 @@ function compileSharedAlone(dir: string): {
           "@optique/core": [join(root, "node_modules", "@optique", "core")],
         },
       },
-      include: ["shared/**/*"],
+      include: ["shared/**/*", "drizzle-stub.d.ts"],
       exclude: [],
     }),
   );

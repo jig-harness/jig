@@ -1,7 +1,7 @@
 /** A session owns its result and handoff; one conditional write settles both. */
 import { Defect } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
-import type { PickupRefusal } from "./launches.ts";
+import type { LaunchRow, PickupRefusal } from "./launches.ts";
 import type { SessionResult } from "./session-result-types.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { endedNext, type NextOwner } from "./next-owner.ts";
@@ -11,7 +11,7 @@ import { type FramedResult, readFramedResult } from "./framed-result.ts";
 import { storedEndedRow } from "./closing-report-store.ts";
 import { currentIso, parseMs } from "../../shared/time.ts";
 import { testLockNote } from "./test-lock-note.ts";
-import { RATE_LIMIT_WAIT, type WaitFor } from "./wait-for.ts";
+import { RATE_LIMIT_WAIT, readWaitFor, type WaitFor } from "./wait-for.ts";
 
 /**
  * A row's answer as every reader takes it. Storage knows only `done` and
@@ -30,12 +30,31 @@ export function asResult(
   value: string | null,
   until: string | null = null,
   decision: string | null = null,
+  wait: string | null = null,
 ): SessionResult | null {
-  if (value === "failed" && until !== null && !Number.isNaN(parseMs(until)))
+  if (
+    value === "failed" &&
+    ((until !== null && !Number.isNaN(parseMs(until))) ||
+      readWaitFor(wait).condition !== undefined)
+  )
     return "waits";
   if (value === "failed" && readFramedResult(decision) !== null)
     return "parked";
   return value === "done" || value === "failed" ? value : null;
+}
+
+export function rowResult(
+  row: Pick<
+    LaunchRow,
+    "result" | "result_until" | "result_decision" | "result_wait"
+  >,
+): SessionResult | null {
+  return asResult(
+    row.result,
+    row.result_until,
+    row.result_decision,
+    row.result_wait,
+  );
 }
 
 /** A record's recorded answer; `null` when none. */
@@ -45,17 +64,19 @@ export function readResult(
 ): SessionResult | null {
   const row = stateDb(root)
     .query(
-      "SELECT result, result_until, result_decision FROM launches WHERE id = ?",
+      "SELECT result, result_until, result_decision, result_wait FROM launches WHERE id = ?",
     )
     .get(id) as {
     result: string | null;
     result_until: string | null;
     result_decision: string | null;
+    result_wait: string | null;
   } | null;
   return asResult(
     row?.result ?? null,
     row?.result_until ?? null,
     row?.result_decision ?? null,
+    row?.result_wait ?? null,
   );
 }
 
@@ -88,29 +109,39 @@ export function recordResult(
     throw new Defect("a waits result needs the time it waits until");
   if (result === "parked" && framed === undefined)
     throw new Defect("a parked result needs the decision it framed");
-  // A failed pass that carries a framed decision is kept, and so read, as parked.
-  const read = result === "failed" && framed !== undefined ? "parked" : result;
   const db = stateDb(root);
-  const refused = refusal === null ? null : JSON.stringify(refusal);
-  return inTransaction(db, () => {
-    const done = db
-      .query(
-        "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ?, refusal = ?, result_decision = ?, result_wait = ? WHERE id = ? AND result IS NULL",
-      )
-      .run(
-        storedResult(result),
-        framed?.at ?? currentIso(),
-        next === null ? null : JSON.stringify(next),
-        until ?? null,
-        refused,
-        framed === undefined ? null : JSON.stringify(framed),
-        result === "waits" ? JSON.stringify(wait) : null,
-        id,
-      );
-    if (done.changes !== 1) return false;
-    reclassifyEnded(db, id, { result: read, next, wait, framed });
-    return true;
-  });
+  return inTransaction(db, () =>
+    writeResult(db, id, { result, next, refusal, until, wait, framed }),
+  );
+}
+
+export function writeResult(
+  db: ReturnType<typeof stateDb>,
+  id: string,
+  fields: Recorded & {
+    refusal: PickupRefusal | null;
+    until: string | undefined;
+  },
+): boolean {
+  const { result, next, refusal, until, framed, wait } = fields;
+  const done = db
+    .query(
+      "UPDATE launches SET result = ?, result_at = ?, result_next = ?, result_until = ?, refusal = ?, result_decision = ?, result_wait = ? WHERE id = ? AND result IS NULL",
+    )
+    .run(
+      storedResult(result),
+      framed?.at ?? currentIso(),
+      next === null ? null : JSON.stringify(next),
+      until ?? null,
+      refusal === null ? null : JSON.stringify(refusal),
+      framed === undefined ? null : JSON.stringify(framed),
+      result === "waits" ? JSON.stringify(wait) : null,
+      id,
+    );
+  if (done.changes !== 1) return false;
+  const read = result === "failed" && framed !== undefined ? "parked" : result;
+  reclassifyEnded(db, id, { result: read, next, wait, framed });
+  return true;
 }
 
 /** What a session recorded, as its ended row is classed from it. */

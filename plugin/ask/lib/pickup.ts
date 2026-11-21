@@ -32,6 +32,7 @@ import {
   personPickupHolds,
   pickupHoldReason,
 } from "../../dispatch/lib/person-pickup-holds.ts";
+import { pickupConditionWords } from "../../dispatch/lib/pickup-condition.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import {
   type Holder,
@@ -316,7 +317,9 @@ function withPersonHold(
       ? null
       : personPickupHolds(ctx.address.repo, ctx.dispatcher);
   const personHold = holds?.ok
-    ? holds.value.find((hold) => hold.item === ctx.address.key)
+    ? holds.value.find(
+        (hold) => hold.item === ctx.address.key && hold.settled !== "cleared",
+      )
     : undefined;
   const holdUnread = holds?.ok === false ? holds.failure.reason : null;
   if (holds !== null)
@@ -348,6 +351,8 @@ function pickupWaitsOn(
     queued: LineQueued | undefined;
   },
 ) {
+  if (w.personHold?.condition !== undefined && w.needs.length === 0)
+    return { waiting: pickupConditionWords(w.personHold.condition) };
   if (
     w.personHold !== undefined &&
     w.needs.length === 0 &&

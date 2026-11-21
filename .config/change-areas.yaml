@@ -332,6 +332,30 @@ areas:
           a phone loads it (ADR-0001), with the licence of each package the
           bundler read. dashboard/build.test.ts rebuilds and
           compares the files as well.
+      - outputs:
+          - "plugin/hub/storage/migrations/0000_hub.sql"
+          - "plugin/hub/storage/migrations/meta/0000_snapshot.json"
+          - "plugin/hub/storage/migrations/meta/_journal.json"
+        source:
+          - "plugin/hub/storage/schema.ts"
+          - "package.json"
+          - "bun.lock"
+          - "tools/hub/migrations.ts"
+        command: "bun tools/hub/migrations.ts"
+        check: "bun tools/hub/migrations.ts --check"
+        notes: >-
+          The hub's storage migrations, which drizzle-kit generates from the
+          schema and each adapter applies when the hub starts. The check
+          generates into a copy of the folder under .context/ and fails on
+          any file a fresh generation adds or changes, and on any table or
+          index the checked-in migrations build otherwise than one migration
+          freshly generated from the schema, which finds an SQL file edited by
+          hand (drizzle-kit's snapshot does not). A branch whose schema
+          change meets another branch's migration takes the other's as it
+          is, drops its own and regenerates: migrations are never merged by
+          hand. A migration the command adds is listed here with it.
+          drizzle-kit's JSON is laid out as Biome formats it, so the
+          formatter leaves it as derived.
       - outputs: ["plugin/consumer-actions.json"]
         source:
           - "CHANGELOG.md"
@@ -415,6 +439,33 @@ areas:
           an update of either (mise.toml, package.json) is followed by a run
           of the command. tools/plugin/vendored.test.ts rebuilds and compares
           the three files as well.
+      - outputs:
+          - "plugin/shared/vendor/drizzle.mjs"
+          - "plugin/shared/vendor/drizzle-bun-sqlite.mjs"
+          - "plugin/shared/vendor/drizzle-shared.mjs"
+          - "plugin/shared/vendor/drizzle.d.mts"
+          - "plugin/shared/vendor/drizzle-bun-sqlite.d.mts"
+        source:
+          - "package.json"
+          - "bun.lock"
+          - "mise.toml"
+          - "tools/plugin/drizzle-entry.ts"
+          - "tools/plugin/drizzle-bun-sqlite-entry.ts"
+          - "tools/plugin/vendor-drizzle.ts"
+        command: "bun tools/plugin/vendor-drizzle.ts"
+        check: "bun tools/plugin/vendor-drizzle.ts --check"
+        notes: >-
+          Drizzle, the object-relational mapper the hub's storage is written
+          with, ships no single-file build, so the plugin carries Bun's
+          unminified bundle of the parts the hub imports, built in one split
+          build: a portable entry (tools/plugin/drizzle-entry.ts), the
+          bun:sqlite driver's entry (tools/plugin/drizzle-bun-sqlite-entry.ts)
+          and the chunk both import, each entry's declarations naming the
+          package's own types. The package ships no licence file, so
+          drizzle.LICENSE is kept by hand from Drizzle's repository at the
+          pinned tag, and the check fails when the package declares another
+          licence. tools/plugin/vendored.test.ts rebuilds and compares the
+          five files as well.
 
   plugin-manifests:
     title: "The plugin manifests: name, version and description"

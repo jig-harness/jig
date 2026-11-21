@@ -124,6 +124,55 @@ describe("what the code names", () => {
     ).toEqual(["table 1 board_seen"]);
   });
 
+  test("a Drizzle table declaration names its table; one it cannot read is a finding", () => {
+    expect(
+      texts(
+        "plugin/hub/storage/schema.ts",
+        [
+          'export const reads = sqliteTable("in_flight_reads", {});',
+          "export const leases = sqliteTable(",
+          '  "job_leases",',
+          "  {},",
+          ");",
+          '// sqliteTable("in_a_comment", {})',
+        ].join("\n"),
+      ),
+    ).toEqual(["table 1 in_flight_reads", "table 2 job_leases"]);
+    // Text in a string, a template or a trailing comment declares nothing.
+    expect(
+      texts(
+        "plugin/hub/storage/schema.ts",
+        [
+          "const example = 'sqliteTable(\"job_leases\", {})';",
+          'const note = `sqliteTable("in_flight_reads", {})`; // sqliteTable("x", {})',
+          'export const t = d.sqliteTable("real_rows", {});',
+        ].join("\n"),
+      ),
+    ).toEqual(["table 3 real_rows"]);
+    // A backtick name is a literal name, not an unclassified table.
+    expect(
+      texts(
+        "plugin/hub/storage/schema.ts",
+        "export const t = sqliteTable(`in_flight_reads`, {});",
+      ),
+    ).toEqual(["table 1 in_flight_reads"]);
+    const unread = namedIn(
+      "plugin/hub/storage/schema.ts",
+      "export const t = sqliteTable(NAME, {});",
+    );
+    expect(unread.map((n) => n.unclassified)).toEqual([true]);
+    expect(
+      findings(root, unread).some((f) => f.problem.includes("cannot classify")),
+    ).toBe(true);
+    const unregistered = namedIn(
+      "plugin/hub/storage/schema.ts",
+      'export const t = sqliteTable("unregistered_rows", {});',
+    );
+    expect(findings(root, unregistered).map((f) => f.problem)).toContain(
+      'the table "unregistered_rows" is in no registered record kind',
+    );
+  });
+
   test("SQL spelling, whitespace and identifier quoting cannot hide a table", () => {
     for (const declaration of [
       "CREATE\nTABLE new_records (id TEXT)",

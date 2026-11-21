@@ -45,10 +45,14 @@ export interface DispatchSection {
   stalledScope: StalledScope;
   /** Whether a stalled pickup whose tree holds its unshipped work is relaunched once in that tree to push and record it (`stalled_relaunch`): `finish-once`, or `never`. */
   stalledRelaunch: StalledRelaunch;
+  /** What a pickup with no priority does (`missing_priority`): `hold`, absent included, keeps it off the line's starts until it has one; `start` starts it ranked after every low-priority item. */
+  missingPriority?: MissingPriority;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
   driveRoundsFlat: number;
+  /** The reviewer failures on a single head before the dispatcher escalates and waits for new review evidence. */
+  reviewerFailures?: import("./reviewer-failure.ts").ReviewerFailurePolicy;
   /** How long a pickup may run before it has opened a pull request. */
   pickupWithinMs: number;
   /** The deadline a pickup's headless pass runs under (`pickup_deadline`), after which its wrapper stops it. */
@@ -117,6 +121,9 @@ export interface ClaimedItem {
 /** `dispatch.stalled_scope`'s values. */
 export type StalledScope = "claimed" | "assigned";
 
+/** `dispatch.missing_priority`'s values. */
+export type MissingPriority = "hold" | "start";
+
 /** A stalled pickup's relaunch: the launch record it finishes, the workspace that holds its tree, and the tree's head when the plan read it. */
 export interface PickupRelaunch {
   record: string;
@@ -124,6 +131,9 @@ export interface PickupRelaunch {
   head: string;
   /** The host fault the pickup stopped on, when it did (`pickup-host-fault.ts`): the relaunch resumes it rather than only pushing it. */
   fault?: string;
+  dependency?: string;
+  /** The pickup's push was refused only because its wait for the host's test lock ran out (`pickup-lock-wait.ts`): the relaunch pushes and goes on, and waits for the host's validation capacity. */
+  lockWait?: true;
 }
 
 /** `dispatch.stalled_relaunch`'s values. */
@@ -519,6 +529,13 @@ export interface BusyHolder {
   reasons: string[];
 }
 
+/** An idle checkout the runtime does not list that held a launch's branch, detached at its commit by the open; its branch is kept. */
+export interface DetachedCheckout {
+  path: string;
+  branch: string;
+  head: string;
+}
+
 /** What `--apply` did with one planned launch. */
 export interface LaunchOutcome {
   target: string;
@@ -554,6 +571,8 @@ export interface LaunchOutcome {
   waitsOn?: LaneWait;
   /** For a launch refused because a busy checkout the runtime does not list holds its branch: that checkout, which the tick notifies a person of. */
   holder?: BusyHolder;
+  /** For a follow-up whose workspace open detached an idle checkout the runtime does not list: that checkout, left where it was, and the branch it gave up, kept. */
+  detached?: DetachedCheckout;
 }
 
 /** What holds a follow-up back this tick; `detail` gives the specific reason. */
@@ -637,6 +656,10 @@ export interface ReadFailure {
   account?: string;
   until?: string;
   quota?: QuotaHold;
+  /** The read was one item's whose absence is an answer (a parked drive's review thread the credential cannot see), `not-found` only: it fails neither the turn nor the tick (`absence.ts`). */
+  absence?: true;
+  /** The process had no credential for the system at all: the tick names it once (`no-credential.ts`) rather than as this read's failure. */
+  noCredential?: true;
 }
 
 /** Where opening a repository for its tick stopped: looking up which repository the path is, reading its dispatch section, or the tick's time ran out first. */

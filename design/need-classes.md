@@ -326,6 +326,13 @@ branch.
 - `jig gc` collects agent tools' and other managers' worktrees within its
   proven bounds (#343, #585), and test runs reap their orphan processes
   (#880).
+- A holder whose branch the remote no longer has counts as unpushed only
+  the commits whose change the remote's default branch lacks: neither the
+  commit nor a later one has the tree of a commit on that branch, its patch
+  is not there, and merging the checkout into that branch would change it. A squash-merged pull request's leftover checkout is
+  therefore idle, so a follow-up detaches it, keeps its branch and lists
+  both in its launch outcome rather than asking a person. A busy holder's
+  reason names the commits that keep it busy.
 - With `detach_idle_holders` on, the tick detaches a holder no process uses
   and whose every commit is on the remote. With `rescue_unpushed` on as
   well, a holder with unpushed commits first has them kept on a

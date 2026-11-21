@@ -1,21 +1,23 @@
 ---
 title: "ADR-0021: Every call to an outside system goes through a governed transport"
 type: adr
-status: approved
+status: amended
 description: "Each system Jig integrates with has one transport, built from one shared library, that reuses an answer before it sends, asks a shared budget, bounds what a call can cost, records what it spent, and fails as one of a closed set of classes"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-11-13
+version: "1.1"
+last_updated: 2026-11-20
 owner: maintainers
 decision_date: 2026-11-13
 supersedes: ~
 superseded_by: ~
+related:
+  - docs/adr/ADR-0026-the-agent-harness-is-an-interface.md
 tags: [adr, integrations, rate-limits, plugin]
 ---
 
 # ADR-0021: Every call to an outside system goes through a governed transport
 
-**Status:** Approved · **Date:** 2026-11-13 · **Deciders:** Jig's maintainers through pull-request review
+**Status:** Amended · **Date:** 2026-11-13 · **Deciders:** Jig's maintainers through pull-request review
 
 ## Context
 
@@ -84,7 +86,8 @@ obligations:
    retries and for when a person is told.
 7. **Say what the reader does without an answer.** A reader shows its last
    reading with its age. A tick does not exit nonzero or ask a person for a
-   class that clears by waiting, until that class's threshold. A system
+   class that clears by waiting, until that class's threshold, nor for a
+   parked drive's thread answered `not-found`: an absence is an answer. A system
    that did not answer is not asked again in the same tick.
 
 The rule covers every system Jig reaches over the network: the forge, the
@@ -154,3 +157,48 @@ tick reports when a system refuses. The review skill's integration
 [lens](../../GLOSSARY.md) asks each obligation as a question of any change
 in the integrations' change area. Each of these arrives with the step of the design
 that builds it; until then review holds the obligation.
+
+## Amendments
+
+### 2026-11-20 — model providers join the governed systems (v1.1)
+
+Touches the Decision, which names the systems the rule covers. A model
+provider is the fourth kind of outside system: it limits its callers, it
+charges for use, and it refuses a caller whose credit is spent. A host that
+dispatches on a provider account, not only on a subscription, calls it
+through every launch.
+
+Jig does not send the model requests: the agent harness a pass runs in does
+([ADR-0026](ADR-0026-the-agent-harness-is-an-interface.md)). So the
+obligations apply to what Jig does send and control, the **launch** of a
+pass on a provider account, and to the one request Jig makes itself, the
+offline measurement of a model. The obligations read for a provider as
+follows; each is built by plan item 59 and detailed in
+[design/outbound-calls.md](../../design/outbound-calls.md#model-providers):
+
+- **Admit before sending (obligation 3)** is per launch, not per request.
+  The budget record holds each provider account's spend for its day, and a launch is
+  admitted against the cap that account declares, with a reservation the
+  pass gives back when it ends. A launch that the cap refuses fails as
+  `rate-limited` with the next day boundary.
+- **Bound what one call can cost (4)** is the account's per-run ceiling
+  where it has one, passed to the harness as its own budget limit where the
+  program offers it.
+- **Record what it cost (5)** adds each pass's usage, as the harness reports
+  it, to the ledger's row for the account and the stage. Where the provider reports no cost, the cost is computed
+  from a price the account configures and the row is marked as an estimate.
+  The ledger's cost unit for a provider is millionths of a US dollar.
+- **Fail as a closed class (6)**: 402 is `too-costly`, meaning the account's
+  credit is spent. It is not retried, parks that account only and raises one
+  need. 429 is `rate-limited`: it is retried when the reset it names has
+  passed, and it is never read as an unknown wall of the account.
+- **A repository's provider allow list** is a condition of admission checked
+  before any launch sends the repository's code to a provider. The dispatcher
+  refuses a launch on a provider the repository's own list lacks, whatever the
+  host's accounts hold.
+
+Reuse before sending (2) has nothing to reuse for a launch and is not
+claimed for one. A model provider's calls from inside a harness are not
+reached by `check-outbound-boundary.ts`, which looks at what Jig's own code
+sends; the launch's admission and the ledger are what hold the obligations
+there.

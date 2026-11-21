@@ -24,6 +24,7 @@ import {
 } from "./actions/drive.ts";
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
+import { noticeOutlets } from "./notify-config.ts";
 import { retireRearmRequests } from "./actions/retire-rearm.ts";
 import { applyPickups, type PickupContext } from "./actions/pickup.ts";
 import { planOverlap } from "./overlap-plan.ts";
@@ -45,7 +46,12 @@ import {
   unresolvedThreadCount,
 } from "./forge.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
-import { carriesSet, hasCommand, type LabelConfig } from "./labels.ts";
+import {
+  carriesSet,
+  commandLabel,
+  hasCommand,
+  type LabelConfig,
+} from "./labels.ts";
 import { nextTickIndex } from "../receipts.ts";
 import { pickupArms, pickupAsked, type PickupArms } from "./pickup-arms.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -56,6 +62,7 @@ import type {
 } from "./runtime/port.ts";
 import { launchClaimer, type SharedContext } from "./shared-launches.ts";
 import { readDrives } from "./sources/ledgers.ts";
+import type { ForgeRead } from "./tick-forge.ts";
 import {
   allRecords,
   bookOf,
@@ -210,6 +217,7 @@ export async function actObserved(
         }),
     );
   const inputs: ApplyInputs = {
+    forge,
     repo,
     runtime: context.runtime,
     pickupArms: pickupArms(allRecords(context), repo),
@@ -255,6 +263,15 @@ export async function actObserved(
     },
   };
   context.pending.push({
+    applyRearmRequests: () =>
+      applyStages(
+        apply,
+        opened.stages,
+        report,
+        inputs,
+        "requests",
+        hooks.guard,
+      ),
     apply: (group) =>
       applyStages(apply, opened.stages, report, inputs, group, hooks.guard),
     finish: () =>
@@ -295,6 +312,7 @@ export function withheldFromReplay(
 
 /** What `--apply` acts on for one repository, as its tick read it. */
 interface ApplyInputs {
+  forge: ForgeRead;
   pickupArms: PickupArms;
   repo: RepoTarget;
   runtime: SessionRuntime;
@@ -361,6 +379,36 @@ function asksForDrive(
   );
 }
 
+/** The rearm requests whose pull request no longer asks for one are retired, by the host that owns the repository. */
+async function retireRequests(
+  apply: ApplyState,
+  enabled: ReadonlySet<string>,
+  report: RepoReport,
+  inputs: ApplyInputs,
+  labels: LabelConfig | null,
+  guard: StageGuard,
+): Promise<void> {
+  if (labels === null || !inputs.shared.owner || !enabled.has("rearm")) return;
+  const asking = inputs.forge.openReadable
+    ? new Set(
+        inputs.forge.open
+          .filter((pr) => pr.labels?.includes(commandLabel(labels, "rearm")))
+          .map((pr) => pr.number),
+      )
+    : null;
+  await guard("rearm", () =>
+    retireRearmRequests(
+      apply,
+      inputs.repo.slug,
+      report,
+      labels,
+      inputs.drives,
+      asking,
+      inputs.login,
+    ),
+  );
+}
+
 /**
  * `--apply` for one repository: the launch stages its machine-file entry
  * enables, in this tick's turn, then its nudges and notifications, which
@@ -371,7 +419,7 @@ async function applyStages(
   enabled: ReadonlySet<string>,
   report: RepoReport,
   inputs: ApplyInputs,
-  group: LaunchGroup | "finish",
+  group: LaunchGroup | "requests" | "finish",
   guard: StageGuard,
   project?: () => Promise<void>,
 ): Promise<void> {
@@ -390,7 +438,14 @@ async function applyStages(
       "rearm",
       async () => {
         if (enabled.has("rearm"))
-          await applyDrives(apply, repo, report, inputs.sessions, drive());
+          await applyDrives(
+            apply,
+            repo,
+            report,
+            inputs.sessions,
+            drive(),
+            group === "requests" ? "requested" : "automatic",
+          );
       },
     ],
     [
@@ -445,7 +500,7 @@ async function applyStages(
   ];
   for (const [stage, run] of launchStageOrder(
     stages,
-    group,
+    group === "requests" ? "drives" : group,
     apply.tick ?? 0,
     apply.repos ?? 1,
   ))
@@ -467,17 +522,7 @@ async function applyStages(
       await applySteers(apply, repo.slug, report, inputs.book, observed);
     else retireSteers(report, inputs.book, observed);
   });
-  if (labels !== null && inputs.shared.owner && enabled.has("rearm"))
-    await guard("rearm", () =>
-      retireRearmRequests(
-        apply,
-        repo.slug,
-        report,
-        labels,
-        inputs.drives,
-        login,
-      ),
-    );
+  await retireRequests(apply, enabled, report, inputs, labels, guard);
   if (project !== undefined) await guard("close", project, false);
   await guard("notify", async () => {
     // A launch a busy holder refused is notified in the same tick, as a nudge left unanswered is.
@@ -492,6 +537,7 @@ async function applyStages(
         branch: section.noticesBranch,
         book: inputs.book,
         about: inputs.about,
+        ...noticeOutlets(apply.machine),
       });
   });
 }
@@ -527,7 +573,15 @@ async function freshDriveReading(
     currentMs(),
     labels,
     adoption,
-    { pickupArms: inputs.pickupArms },
+    {
+      pickupArms: inputs.pickupArms,
+      reviewer: {
+        cwd: repo.path,
+        ...(section.reviewerFailures === undefined
+          ? {}
+          : { policy: section.reviewerFailures }),
+      },
+    },
   );
   if (again === undefined) return ok(null);
   if (steward) return ok({ ...again, labels: listed.labels ?? [] });

@@ -11,8 +11,9 @@
  *
  * A checkout Orca does not list that holds the branch is detached when it
  * is idle, judged with the drive's records of what drives a tree
- * (`tree-drivers.ts`); one in use refuses the open, and the receipt names
- * it (`busyHolder`) for the notice a person gets.
+ * (`tree-drivers.ts`), and the receipt names it (`detached`); one in use
+ * refuses the open, and the receipt names it (`busyHolder`) for the notice
+ * a person gets.
  *
  * A workspace the open creates is named by the target's `dispatched` name
  * (`--name`) and carries its mark as its comment (`--comment`); one it
@@ -36,6 +37,7 @@ import { treeDrivers } from "../../../skills/drive-pr/scripts/lib/state/tree-dri
 import { resolvePullRequestHead } from "./orca-pr-head.ts";
 import { failureText } from "../text.ts";
 import { call } from "./orca-comment.ts";
+import type { DetachedCheckout } from "../types.ts";
 import type {
   Dispatched,
   ItemTarget,
@@ -43,6 +45,7 @@ import type {
   PullRequestTarget,
   RuntimeReceipt,
 } from "./port.ts";
+import { detachedField } from "./port.ts";
 import { currentMs } from "../../../shared/time.ts";
 
 function portOn(ctx: Context): OpenPort {
@@ -175,6 +178,7 @@ async function open(
     timeoutMs,
   );
   const started = currentMs();
+  let left: DetachedCheckout | undefined;
   try {
     const resolved =
       options.pr === undefined
@@ -193,6 +197,9 @@ async function open(
       name: options.dispatched.name,
       comment: options.dispatched.mark,
       createFlags: options.createFlags,
+      onDetached: (holder) => {
+        left = holder;
+      },
       ...(resolved?.ok ? { expectedHead: resolved.value } : {}),
       ...(options.createHook === undefined
         ? {}
@@ -203,12 +210,14 @@ async function open(
       detail: `${opened.reattached ? "reattached" : "opened"} ${opened.worktree.path}${opened.hookRan ? ", create hook ran" : ""}`,
       workspace: { id: opened.worktree.id, path: opened.worktree.path },
       reattached: opened.reattached,
+      ...detachedField(opened.detached),
     };
   } catch (error) {
     return {
       ok: false,
       lost: currentMs() - started >= timeoutMs,
       detail: [failureText(error), ...lines.slice(-3)].join("; "),
+      ...detachedField(left),
       ...(error instanceof BusyHolderError
         ? {
             busyHolder: {

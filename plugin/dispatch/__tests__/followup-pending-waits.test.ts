@@ -4,8 +4,9 @@
  * starts it again, never as a rate limit, and hands it to a person once
  * `dispatch.followup_within` has passed since the first pass that found the
  * arm pending, the window starting again on a newer arm. Before it goes to
- * a person, the tick reads the release tags the arm names again, and runs
- * the follow-up once more when they all exist. A follow-up stage with no
+ * a person, the tick reads the release tags and the deploy runs the arm
+ * names again, and runs the follow-up once more when every tag exists and
+ * every run has finished. A follow-up stage with no
  * `dispatch.followup_command` runs
  * the plugin's own follow-up skill, and a repository whose follow-up stage
  * is off reads no merged pull request for a default it does not use.
@@ -19,7 +20,7 @@ import { type ReadRecord, readRecord } from "../lib/launches.ts";
 import { DEFAULT_FOLLOWUP_COMMAND } from "../lib/section.ts";
 import { followupPassArgv } from "../lib/session.ts";
 import { stateDb } from "../lib/state.ts";
-import type { WaitFor } from "../lib/wait-for.ts";
+import { armRuns, type WaitFor } from "../lib/wait-for.ts";
 import { resultMain } from "../result.ts";
 import type { World } from "./fixtures.ts";
 import { SLUG, world } from "./fixtures.ts";
@@ -132,8 +133,8 @@ it("hands a follow-up to a person, naming the pending arm, once followup_within 
 const TAG = "v9.9.9";
 const TAG_ARM = `release: tag ${TAG} waits for the release workflow`;
 
-/** Two passes that found the tagged arm pending, the first two hours back: the second is past followup_within. */
-async function pastWindow(w: World): Promise<string> {
+/** Two passes that found `arm` pending, the first two hours back: the second is past followup_within. */
+async function pastWindow(w: World, arm = TAG_ARM): Promise<string> {
   const past = () => isoFromMs(currentMs() - 1000);
   const args = (until: string) => [
     "--until",
@@ -141,12 +142,12 @@ async function pastWindow(w: World): Promise<string> {
     "--reason",
     "pending",
     "--arm",
-    TAG_ARM,
+    arm,
   ];
   const first = await passWaits(w, args(past()));
   await releasedWith(
     w,
-    `launch record ${first}'s pass found the arm ${TAG_ARM} still pending`,
+    `launch record ${first}'s pass found the arm ${arm} still pending`,
   );
   launchedEarlier(w, first, 2 * 3_600_000);
   return passWaits(w, args(past()));
@@ -176,6 +177,51 @@ it("runs a follow-up past followup_within again, raising no need, once the relea
   expect(again).toMatchObject({ action: "followup", outcome: "launched" });
   await waitFor("the run after the re-read", () => claudeRuns(w).length > runs);
 }, 480_000);
+
+const RUN_LINK = `https://github.com/${SLUG}/actions/runs/4242`;
+const RUN_ARM = `website: the deploy run ${RUN_LINK} contains the merge and is pending`;
+
+it("runs a follow-up past followup_within again, raising no need, once the deploy run its arm links to has finished", async () => {
+  const w = fixture();
+  const second = await pastWindow(w, RUN_ARM);
+  writeFileSync(
+    join(w.dir, "run-status.json"),
+    JSON.stringify({ [`${SLUG}/4242`]: "completed success" }),
+  );
+
+  const after = await applyTick(w, false);
+  expect(launches(after)).toEqual([]);
+  expect(notices(after)).toEqual([]);
+  expect(after.repos[0]?.running).toContainEqual(
+    expect.objectContaining({
+      target: "PR #9",
+      stage: "followup",
+      reason: expect.stringContaining(
+        `launch record ${second}'s pass found the arm ${RUN_ARM} still pending past dispatch.followup_within, and read again this tick, the run ${SLUG}#4242 finished`,
+      ),
+    }),
+  );
+  expect(markers(w)).toEqual([]);
+}, 480_000);
+
+// A cancelled run was superseded, not settled; an unfinished one has not settled yet.
+for (const answer of ["completed cancelled", "in_progress", "completed"]) {
+  it(`raises the follow-up for a person when the deploy run its arm links to reads "${answer}" at the re-read`, async () => {
+    const w = fixture();
+    const second = await pastWindow(w, RUN_ARM);
+    writeFileSync(
+      join(w.dir, "run-status.json"),
+      JSON.stringify({ [`${SLUG}/4242`]: answer }),
+    );
+
+    const after = await applyTick(w, false);
+    const raised = notices(after).filter((n) => n.target === "PR #9");
+    expect(raised).toHaveLength(1);
+    expect(raised[0]?.reason).toContain(
+      `its pass under launch record ${second} found the arm ${RUN_ARM} still pending`,
+    );
+  }, 480_000);
+}
 
 it("raises one failed follow-up naming the arm when its release tag is still missing at the re-read", async () => {
   const w = fixture();
@@ -416,6 +462,159 @@ it("starts a pending window again on a newer arm, re-reads an arm past its windo
   });
 });
 
+it("starts a pending window again on a newer deploy run, and re-reads the run an arm past its window links to", () => {
+  const base = streakBase();
+  const on = (id: number): WaitFor => ({
+    reason: "pending",
+    arm: `website: deploy https://github.com/${SLUG}/actions/runs/${id} is pending`,
+  });
+  const at = atTime;
+  // A newer run that contains the merge replaced the one the first pass waited for: a fresh window.
+  const newer = [
+    waited(base, at(6, 55), on(100)),
+    waited(base, at(8, 1), on(101)),
+  ];
+  expect(waitStreak(newer, SLUG, 9)).toMatchObject({
+    spent: false,
+    pendingSince: at(8, 1),
+  });
+  // The same run past the window: spent, and the run read again once.
+  const same = [
+    waited(base, at(6, 55), on(100)),
+    waited(base, at(8, 1), on(100)),
+  ];
+  expect(waitStreak(same, SLUG, 9)).toMatchObject({
+    spent: true,
+    reread: [],
+    rereadRuns: [{ slug: SLUG, id: 100 }],
+  });
+  // Past the next window on the same run it is a person's, read no more.
+  const still = [
+    ...same,
+    waited(base, at(8, 20), on(100)),
+    waited(base, at(9, 30), on(100)),
+  ];
+  expect(waitStreak(still, SLUG, 9)).toMatchObject({
+    spent: true,
+    rereadRuns: [],
+  });
+});
+
+it("reads the workflow runs an arm links to", () => {
+  expect(
+    armRuns(
+      "deploy https://github.com/o/r/actions/runs/123 and https://github.com/o/r/actions/runs/123/job/9, then https://github.com/x/y.z/actions/runs/77.",
+    ),
+  ).toEqual([
+    { slug: "o/r", id: 123 },
+    { slug: "x/y.z", id: 77 },
+  ]);
+  expect(armRuns("https://github.com/../r/actions/runs/5")).toEqual([]);
+  expect(armRuns("deploy run 123 is pending (PR #12)")).toEqual([]);
+  expect(armRuns(undefined)).toEqual([]);
+});
+
+it("re-reads the runs of a spent pending arm, settling it only once every run it links to has finished", async () => {
+  const w = world();
+  current = w;
+  const b = earlierRecord(w, {
+    id: "20261031T100009Z-aaaaaaaa",
+    account: "a",
+    action: "followup",
+    pr: 9,
+    repo: SLUG,
+  });
+  const arm: WaitFor = {
+    reason: "pending",
+    arm: `deploy https://github.com/${SLUG}/actions/runs/7 and tag v3.0.0`,
+  };
+  const records = [
+    waited(b, "2026-10-31T06:55:00.000Z", arm),
+    waited(b, "2026-10-31T08:01:00.000Z", arm),
+  ];
+  const repo = { path: w.dir, slug: SLUG, defaultBranch: "main" };
+  const nowMs = parseMs("2026-10-31T08:05:00.000Z");
+  const asked: unknown[] = [];
+  const settle = (finished: string[], tags: string[]) =>
+    rereadPendingArms(
+      repo,
+      [{ number: 9 }],
+      records,
+      nowMs,
+      undefined,
+      async () => ok(new Set(tags)),
+      async (_repo, runs) => {
+        asked.push(runs);
+        return ok({
+          finished: new Set(finished),
+          unread: new Set<string>(),
+          failure: null,
+        });
+      },
+    );
+  const id = records[1]?.record.id ?? "";
+  expect(await settle([`run:${SLUG}/7`], ["v3.0.0"])).toEqual({
+    settled: new Set([id]),
+    failure: null,
+  });
+  expect(asked).toEqual([[{ slug: SLUG, id: 7 }]]);
+  expect(await settle([], ["v3.0.0"])).toEqual({
+    settled: new Set(),
+    failure: null,
+  });
+  expect(await settle([`run:${SLUG}/7`], [])).toEqual({
+    settled: new Set(),
+    failure: null,
+  });
+  const refused = await rereadPendingArms(
+    repo,
+    [{ number: 9 }],
+    records,
+    nowMs,
+    undefined,
+    async () => ok(new Set(["v3.0.0"])),
+    async () => failed("refused", "the forge did not answer"),
+  );
+  expect(refused.failure).not.toBeNull();
+  // The arm names a tag and a run: the failed run read leaves it unsettled
+  // and still reports the failure.
+  expect(refused.settled).toEqual(new Set());
+  // A run lookup that failed leaves only the arms naming that run unsettled.
+  const partial = await rereadPendingArms(
+    repo,
+    [{ number: 9 }],
+    records,
+    nowMs,
+    undefined,
+    async () => ok(new Set(["v3.0.0"])),
+    async () =>
+      ok({
+        finished: new Set<string>(),
+        unread: new Set([`run:${SLUG}/7`]),
+        failure: failed("refused", "timed out").failure,
+      }),
+  );
+  expect(partial.settled).toEqual(new Set());
+  expect(partial.failure?.reason).toContain("timed out");
+  // A failed tag read still reports itself, and a failed read of one kind
+  // does not discard what the other answered.
+  const tagRefused = await rereadPendingArms(
+    repo,
+    [{ number: 9 }],
+    records,
+    nowMs,
+    undefined,
+    async () => failed("refused", "no tags"),
+    async () =>
+      ok({
+        finished: new Set([`run:${SLUG}/7`]),
+        unread: new Set<string>(),
+        failure: null,
+      }),
+  );
+  expect(tagRefused.failure?.reason).toContain("no tags");
+});
+
 it("reads the release tags an arm names", () => {
   expect(armTags("release: tag v0.286.0 waits for its run")).toEqual([
     "v0.286.0",
@@ -469,7 +668,10 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     },
   );
   expect(asked).toEqual([["v2.0.0", "v2.0.1"]]);
-  expect(settled).toEqual(ok(new Set([records[1]?.record.id ?? ""])));
+  expect(settled).toEqual({
+    settled: new Set([records[1]?.record.id ?? ""]),
+    failure: null,
+  });
   const noRead = () => {
     throw new Error("no read is owed");
   };
@@ -481,7 +683,7 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     undefined,
     noRead,
   );
-  expect(none).toEqual(ok(new Set()));
+  expect(none).toEqual({ settled: new Set(), failure: null });
   // A spent pass that ended longer ago than a few ticks is not read again.
   const later = await rereadPendingArms(
     repo,
@@ -491,7 +693,7 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     undefined,
     noRead,
   );
-  expect(later).toEqual(ok(new Set()));
+  expect(later).toEqual({ settled: new Set(), failure: null });
   const refused = await rereadPendingArms(
     repo,
     [{ number: 9 }],
@@ -500,7 +702,7 @@ it("re-reads the tags of each spent pending arm in one read, settling only those
     undefined,
     async () => failed("refused", "the forge did not answer"),
   );
-  expect(refused.ok).toBe(false);
+  expect(refused.failure).not.toBeNull();
 });
 
 it("reads a waits result with no --reason as a rate limit's, and refuses a pending wait on a pickup", () => {
@@ -605,6 +807,9 @@ it("tells a follow-up's pass how to record an arm still pending", () => {
     `dispatch result ${record.id} earlier-token waits --until <when to look again> --reason pending --arm`,
   );
   expect(prompt).toContain("dispatch.followup_within");
+  expect(prompt).toContain(
+    "the link of the deploy run it waits for (https://github.com/<owner>/<repo>/actions/runs/<id>)",
+  );
 });
 
 /** The forge's listings of merged pull requests among the calls the fake answered. */

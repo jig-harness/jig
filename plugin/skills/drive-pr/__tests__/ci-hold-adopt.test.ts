@@ -320,7 +320,15 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    return { dir, stateDir, exitCode, stdout, stderr };
+    return {
+      dir,
+      stateDir,
+      cwd: repo.dir,
+      head: repo.head,
+      exitCode,
+      stdout,
+      stderr,
+    };
   };
 
   it("release adopts a label someone else added and removes it at convergence", async () => {
@@ -357,6 +365,131 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     const r = await runRelease(undefined, "LE_1");
     expectSpawnExit(r, 0);
     expect(r.stdout.trim()).toBe("removed");
+  });
+
+  it("retries a timed-out timeline read after removing the label", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "timeline-timeout-after-unlabel"), ""),
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stderr).toContain("simulated proof timeline timeout");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+    });
+  });
+
+  it("keeps the retry signal when the confirmation snapshot times out", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "recovery-snapshot-timeout"), ""),
+    );
+    expectSpawnExit(r, 4);
+    expect(r.stdout.trim()).toBe("release-proof-pending");
+    expect(r.stderr).toContain("simulated recovery snapshot timeout");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+    });
+  });
+
+  it("restores the live label after an intervening release race", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "intervening-release-race"), "");
+    });
+    expectSpawnExit(r, 4);
+    expect(r.stdout).not.toContain("release-proof-pending");
+    expect(r.stderr).toContain("ownership changed during removal");
+    expect(ciHoldOf(r.stateDir)).toBeNull();
+    expect(
+      readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
+        .labels,
+    ).toContainEqual({ name: "ci:hold" });
+    expect(readJson<unknown[]>(join(r.dir, "timeline.json"))).toHaveLength(5);
+  });
+
+  it("keeps the release retry when the live race snapshot is unreadable", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "intervening-release-race"), "");
+      writeFileSync(join(dir, "recovery-snapshot-timeout"), "");
+    });
+    expectSpawnExit(r, 4);
+    expect(r.stdout).toContain("release-proof-pending");
+    expect(r.stderr).toContain("simulated recovery snapshot timeout");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+      raceDetected: true,
+    });
+    expect(
+      readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
+        .labels,
+    ).not.toContainEqual({ name: "ci:hold" });
+
+    const proc = Bun.spawn(
+      scriptArgv(
+        join(SCRIPTS, "ci-hold.ts"),
+        "ensure",
+        "999",
+        "--expect-head",
+        // The commit about to be pushed can differ from the remote head
+        // recorded by the interrupted release. Recovery must reconcile the
+        // latter, rather than clearing the record and losing its hold.
+        "b".repeat(40),
+      ),
+      {
+        cwd: r.cwd,
+        env: {
+          ...stateEnv(r.stateDir, r.dir),
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_FIXTURES: r.dir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expectSpawnExit({ exitCode, stdout, stderr }, 4);
+    expect(stderr).toContain("ownership changed during removal");
+    expect(
+      readJson<{ labels: { name: string }[] }>(join(r.dir, "pr-view.json"))
+        .labels,
+    ).toContainEqual({ name: "ci:hold" });
+    expect(ciHoldOf(r.stateDir)).toBeNull();
+  });
+
+  it("rejects an unproven readable transition before confirmation can become unreadable", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "omit-unlabel-event"), "");
+      writeFileSync(join(dir, "recovery-snapshot-timeout"), "");
+    });
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("the unlabeled transition could not be proven");
+    expect(r.stderr).not.toContain("simulated recovery snapshot timeout");
+  }, 15_000);
+
+  it("stops when the readable timeline cannot prove the removal", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) =>
+      writeFileSync(join(dir, "omit-unlabel-event"), ""),
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("the unlabeled transition could not be proven");
+  }, 15_000);
+
+  it("fails closed when removal reports failure and its proof is malformed", async () => {
+    const r = await runRelease(undefined, undefined, false, (dir) => {
+      writeFileSync(join(dir, "remove-label-fails"), "");
+      writeFileSync(join(dir, "timeline-malformed-after-unlabel"), "");
+    });
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("timeline JSON could not be decoded");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "releasing",
+      heldEventId: "LE_1",
+    });
   });
 
   it("release retries later, saying why, when the forge cannot be reached for the PR state", async () => {

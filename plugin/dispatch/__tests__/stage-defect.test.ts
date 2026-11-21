@@ -91,6 +91,7 @@ describe("a defect in one stage of a repository's --apply", () => {
     ]);
     expect(report?.stageDefects).toEqual([
       { code: "defect", phase: "apply", stage: "rearm", reason },
+      { code: "defect", phase: "apply", stage: "rearm", reason },
     ]);
     // The turn itself was not stopped.
     expect(report?.refused).toBeNull();
@@ -102,14 +103,13 @@ describe("a defect in one stage of a repository's --apply", () => {
       Number.POSITIVE_INFINITY,
       dispatchState(w),
     ).filter((row) => row.kind === "event" && row.event === "defect");
-    expect(rows).toEqual([
-      expect.objectContaining({
-        repo: SLUG,
-        stage: "rearm",
-        class: null,
-        reason,
-      }),
-    ]);
+    const defectRow = expect.objectContaining({
+      repo: SLUG,
+      stage: "rearm",
+      class: null,
+      reason,
+    });
+    expect(rows).toEqual([defectRow, defectRow]);
 
     // The stack goes to the error output, never on the receipt or in the log.
     expect(r.stderr).toContain(
@@ -120,6 +120,6 @@ describe("a defect in one stage of a repository's --apply", () => {
 
     const text = await w.dispatch(["receipts"]);
     expectSpawnExit(text, 0);
-    expect(text.stdout).toContain("1 defect(s)");
+    expect(text.stdout).toContain("2 defect(s)");
   });
 });

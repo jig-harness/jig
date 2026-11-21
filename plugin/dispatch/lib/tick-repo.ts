@@ -16,6 +16,8 @@
  * `--apply`, each stage is a boundary of its own (`stageDefect`): a defect
  * in one stops that stage only, and the turn's other stages still run.
  */
+import { linkPickupConditions } from "./tick-pickup-conditions.ts";
+import { stateRoot } from "../receipts.ts";
 import { defectOf, logDefect, logStageDefect } from "./defect.ts";
 import { PhaseTimer } from "./phase-timer.ts";
 import { actObserved } from "./tick-apply.ts";
@@ -145,16 +147,14 @@ async function observeArmsSettled(
       tickBound(context),
     ),
   );
-  if (settled.ok) {
-    observation.armsSettled = settled.value;
-    return;
-  }
+  observation.armsSettled = settled.settled;
+  if (settled.failure === null) return;
   const failure = readFailureOf(settled.failure);
   opened.report.records.push({
     record: "forge",
     source: `gh ${opened.repo.slug} release tags`,
     ok: false,
-    detail: `The pending follow-up arms past dispatch.followup_within were not read again, so they go to a person as their passes read them: ${settled.failure.reason}`,
+    detail: `The pending follow-up arms past dispatch.followup_within were not all read again, so those that needed the failed read go to a person as their passes read them: ${settled.failure.reason}`,
     ...(failure === undefined ? {} : { failure }),
   });
 }
@@ -248,6 +248,27 @@ export async function actTurn(
     logRepo(context, opened.repo.slug, report, observation.drives),
   );
   // The labels are projected before the notices go out, so a failure alert is judged against the rows the projection leaves.
+  const { tracker, conditionalBlockers } = observation.tracked;
+  if (
+    context.apply !== null &&
+    opened.owner &&
+    opened.stages.has("pickup") &&
+    tracker !== null &&
+    conditionalBlockers !== undefined &&
+    conditionalBlockers.length > 0
+  )
+    await timer.time("apply", () =>
+      linkPickupConditions(
+        conditionalBlockers,
+        {
+          tracker,
+          slug: opened.repo.slug,
+          root: stateRoot(),
+          bound: tickBound(context),
+        },
+        report,
+      ),
+    );
   const project = () =>
     timer.time("labels", () => projectObserved(context, observation));
   const close = async () => {

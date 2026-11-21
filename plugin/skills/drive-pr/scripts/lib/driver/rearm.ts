@@ -454,7 +454,12 @@ export async function recordDriveEvent(
   pr: string,
   kind: "restart" | "rearm" | "stop",
   cause: string,
-  measured: { leftWork: boolean; tree: string } | null = null,
+  measured: {
+    leftWork?: boolean;
+    tree?: string;
+    reviewerHead?: string;
+    reviewerApp?: string;
+  } | null = null,
   listingPages: number | null = null,
   until: string | null = null,
   probe: ProbeStop | null = null,

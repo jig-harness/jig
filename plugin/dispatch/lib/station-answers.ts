@@ -54,6 +54,8 @@ import type { ParkedItem } from "../../skills/drive-pr/scripts/lib/state/park-fr
 import type { PendingAnswer } from "../../skills/drive-pr/scripts/lib/state/pass-handoff.ts";
 import type { LineDecision, NeedCause } from "./dashboard-contract.ts";
 import { type StationContext, stationDecision } from "./line-station.ts";
+import { setPersonPickupHold } from "./person-pickup-holds.ts";
+import { parsePickupPr } from "./pickup-condition.ts";
 import { isTakenNeed, owedTags, takenDecision } from "./release-groups.ts";
 import type { TrackerConversation } from "./tracker-answers.ts";
 import {
@@ -395,6 +397,52 @@ function sessionStep(
     : Promise.resolve(refused("only an item's pickup is started again"));
 }
 
+function pickupWaitPr(
+  decision: LineDecision,
+  answer: PendingAnswer,
+): string | undefined {
+  if (
+    decision.answer?.station !== "pickup" ||
+    decision.answer.framedBy !== "session"
+  )
+    return undefined;
+  return /^wait for (?:pr )?(#[1-9]\d*) to merge$/i.exec(
+    answer.choice?.option ?? "",
+  )?.[1];
+}
+
+function holdPickupFromAnswer(
+  row: AnswerRow,
+  action: Action,
+  answer: PendingAnswer,
+  pr: string,
+  root: string | undefined,
+): Outcome<string, "refused"> {
+  const number = parsePickupPr(pr);
+  const resumeRecord = evidenceText(action, "record");
+  if (number === null || resumeRecord === null)
+    return refused(
+      "the conditional hold needs a valid pull request and a pickup record",
+    );
+  if (answer.choice?.note !== undefined)
+    return refused("answer without a note to place this conditional hold");
+  const held = setPersonPickupHold(
+    row.repo,
+    action.target,
+    {
+      by: answer.author,
+      title: evidenceText(action, "title") ?? action.target,
+      url: evidenceText(action, "url"),
+      condition: { kind: "pr-merged", pr: number },
+      resumeRecord,
+    },
+    root,
+  );
+  return held.ok
+    ? ok(`held ${action.target} until PR #${number} merges`)
+    : held;
+}
+
 /** What the next session is handed for a counted answer, for a step that starts one. */
 function carriedOf(
   decision: LineDecision,
@@ -415,11 +463,15 @@ function carriedOf(
   };
 }
 
-/** The steps that start a session, whose answer the next one is handed. */
+/**
+ * The steps that start a session, whose answer the next one is handed. A
+ * step the tick carries out whole is not one of them: after `release` the
+ * next launch is an ordinary fresh pickup, and an answer handed to it would
+ * read as its task, which the tick already did.
+ */
 const STARTS_SESSION: ReadonlySet<StationOptionId | "session"> = new Set([
   "session",
   "rerun",
-  "release",
 ]);
 
 /** The step a counted answer takes, or `undefined` when it names none the dispatcher carries out. */
@@ -434,13 +486,18 @@ function stepOf(
 
 /** What the session a step starts is handed; `null` for a step that starts none. */
 function carryOf(
-  step: StationOptionId | "session" | undefined,
+  step: ReturnType<typeof stepOf>,
   decision: LineDecision,
   counted: PendingAnswer,
 ): CarriedAnswer | null {
-  return step !== undefined && STARTS_SESSION.has(step)
-    ? carriedOf(decision, counted)
-    : null;
+  if (
+    step === undefined ||
+    !STARTS_SESSION.has(step) ||
+    pickupWaitPr(decision, counted) !== undefined
+  )
+    return null;
+  const carried = carriedOf(decision, counted);
+  return carried === null ? null : { ...carried, step };
 }
 
 /** Run the counted answer's step once, and keep how it ended. */
@@ -454,13 +511,20 @@ async function act(
 ): Promise<ActedAnswer> {
   const choice = counted.choice?.option ?? "";
   const step = stepOf(decision, counted);
+  const waitPr = pickupWaitPr(decision, counted);
   const outcome =
-    step === undefined
-      ? refused(`${choice} is not an option the dispatcher carries out`)
-      : step === "session"
-        ? await sessionStep(action, ports)
-        : await dispatcherStep(step, action, ports);
-  const handedOff = step === "hold" || step === "inspect" || step === "tag";
+    waitPr !== undefined
+      ? holdPickupFromAnswer(row, action, counted, waitPr, root)
+      : step === undefined
+        ? refused(`${choice} is not an option the dispatcher carries out`)
+        : step === "session"
+          ? await sessionStep(action, ports)
+          : await dispatcherStep(step, action, ports);
+  const handedOff =
+    waitPr !== undefined ||
+    step === "hold" ||
+    step === "inspect" ||
+    step === "tag";
   const ended = !outcome.ok ? "refused" : handedOff ? "held" : "done";
   const detail = outcome.ok ? outcome.value : outcome.failure.reason;
   const carry = outcome.ok ? carryOf(step, decision, counted) : null;
@@ -722,6 +786,12 @@ export async function settleStationAnswers(
 
 /** Why an answered need sits among the report's quiet entries. */
 function answeredHoldWhy(action: Action): string {
+  const acted = action.answered?.acted;
+  if (
+    acted?.detail != null &&
+    /^held .+ until PR #\d+ merges$/.test(acted.detail)
+  )
+    return `${acted.author} chose ${acted.option}; ${acted.detail}, and the pickup resumes when it merges`;
   if (action.cause !== "release-owed")
     return `${action.answered?.acted?.author ?? "a person"} chose I'll handle it — hide this card for this ${action.cause ?? "need"}; nothing is done and the work stays where it is; it returns when its facts change`;
   const unread = action.answered?.unread;

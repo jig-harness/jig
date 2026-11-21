@@ -1,0 +1,83 @@
+import { isRecord } from "../../../../../shared/guards.ts";
+import { parseReviewRound } from "../../summary-findings.ts";
+import { type SkipNotice, skipNoticeIn } from "./skip-notice.ts";
+
+export interface ReviewerSticky {
+  /** The `ai-reviewed-sha` marker from the newest STICKY comment, or `''`
+   * when the reviewer has posted no sticky. */
+  sha: string;
+  /** The `ai-review-round` marker from that SAME comment, or `null` when the
+   * sticky carries no round marker. */
+  round: number | null;
+  /**
+   * That SAME comment's own `updated_at`, or `''` when there is no sticky.
+   *
+   * The reviewer edits its one sticky in place each round rather than posting a
+   * new one, so this is when the marker content above was last written — the
+   * only readable proxy for "when did this evidence come into being". The
+   * stranded-check-run bypass needs precisely that: the check-run's own
+   * `started_at` says when the RUN began, which is a different quantity and
+   * cannot distinguish a sticky written moments ago mid-run from one written by
+   * an earlier, already-completed run on the same head.
+   */
+  updatedAt: string;
+  /** The skip notice in that SAME comment (`skip-notice.ts`), or `null`. */
+  skip: SkipNotice | null;
+}
+
+/** The last review stamp in a comment's body, or `''` when it carries none. */
+function lastStamp(body: string, markerRe: RegExp): string {
+  let sha = "";
+  for (const m of body.matchAll(markerRe)) sha = m[1] ?? "";
+  return sha;
+}
+
+/** A comment's body when the reviewer wrote it as its sticky summary, else `null`. */
+function stickyBody(
+  raw: unknown,
+  reviewerLogin: (login: string) => boolean,
+  summaryMarker: string,
+): string | null {
+  if (!isRecord(raw)) return null;
+  const login = String(
+    ((raw.user as Record<string, unknown> | null)?.login ?? "") || "",
+  );
+  const body = String(raw.body ?? "");
+  return reviewerLogin(login) && body.includes(summaryMarker) ? body : null;
+}
+
+/** The review stamp and its companion markers from the newest qualifying sticky. */
+export function reviewerStickyIn(
+  comments: readonly unknown[],
+  reviewerLogin: (login: string) => boolean,
+  summaryMarker: string,
+  shaMarker: string,
+  skipNoticeMarker = "ai-review-skip-notice",
+): ReviewerSticky {
+  const markerRe = new RegExp(
+    `<!--\\s*${shaMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
+    "g",
+  );
+  let sticky: ReviewerSticky = {
+    sha: "",
+    round: null,
+    updatedAt: "",
+    skip: null,
+  };
+  for (const raw of comments) {
+    const body = stickyBody(raw, reviewerLogin, summaryMarker);
+    if (body === null) continue;
+    const bodySha = lastStamp(body, markerRe);
+    if (bodySha === "") continue;
+    sticky = {
+      sha: bodySha,
+      round: parseReviewRound(body),
+      // Absent/malformed reads as `''`, never as "now" — a caller flooring
+      // on this must fail closed on an undatable sticky rather than treat it
+      // as freshly written.
+      updatedAt: String((raw as Record<string, unknown>).updated_at ?? ""),
+      skip: skipNoticeIn(body, skipNoticeMarker),
+    };
+  }
+  return sticky;
+}

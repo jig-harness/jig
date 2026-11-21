@@ -32,6 +32,7 @@
  * `answer` verb's alone (`lib/answer-request.ts`).
  */
 import { ExitError, shellQuote } from "../shared/cli.ts";
+import { pickupConditionOptions } from "../shared/pickup-condition-options.ts";
 import { failed, ok, type Outcome } from "../shared/outcome.ts";
 import { formatAddress, parseAddress } from "../shared/address.ts";
 import { launchOf, LAUNCH_VARIABLE } from "../shared/launched-session.ts";
@@ -58,6 +59,11 @@ import { planAnswerRequest } from "./lib/answer.ts";
 import { openTrackerHere, planTrackerAnswer } from "./lib/answer-tracker.ts";
 import { planAssign } from "./lib/assign.ts";
 import { planPickupHold } from "./lib/pickup-hold.ts";
+import {
+  type PickupCondition,
+  parsePickupPr,
+  readPickupCondition,
+} from "../dispatch/lib/pickup-condition.ts";
 import { planLabel } from "./lib/labels.ts";
 import { planMailbox } from "./lib/mailbox.ts";
 import {
@@ -115,6 +121,10 @@ export const sendCommand = command(
         description: message`answer --all: the set token the dry run printed; the send refuses when the eligible items or their digests changed.`,
       }),
     ),
+    ...pickupConditionOptions({
+      merged: message`pickup hold: release the hold when this repository's pull request merges.`,
+      closed: message`pickup hold: release the hold when another item on the configured tracker closes.`,
+    }),
     dryRun: option("--dry-run", {
       description: message`Print what the send would write, and write nothing.`,
     }),
@@ -194,11 +204,12 @@ function planPickupHoldHere(
   resolved: ResolvedAddress,
   request: Request,
   as: string | undefined,
+  condition: PickupCondition | undefined,
 ): Promise<Planned> | null {
   if (!isPickupHold(resolved.address.station, request.verb)) return null;
   const verb = request.verb === "hold" ? "hold" : "release";
   const ctx = contextFor(resolved, reading(), null);
-  return planPickupHold(ctx, resolved.checkout, verb, as);
+  return planPickupHold(ctx, resolved.checkout, verb, as, condition);
 }
 
 /** The plan of an assignment: the checkout it is written through, else why it cannot be. */
@@ -219,10 +230,11 @@ async function planFor(
   request: Request,
   as: string | undefined,
   dryRun: boolean,
+  condition?: PickupCondition,
 ): Promise<Planned> {
   const r = reading();
   if (request.verb === "assign") return planAssignHere(resolved, as);
-  const held = planPickupHoldHere(resolved, request, as);
+  const held = planPickupHoldHere(resolved, request, as, condition);
   if (held !== null) return held;
   if (request.verb === "answer" && !request.all) {
     const first = await planPickupAnswer(resolved, strict, request, as, dryRun);
@@ -302,6 +314,28 @@ export async function holdTarget(
   }
 }
 
+/** The condition `--until-merged` or `--until-closed` names for a pickup hold, if either is given; a usage error for any other request or for both. */
+function pickupConditionOf(
+  args: Pick<SendArguments, "untilMerged" | "untilClosed">,
+  station: string,
+  request: Request,
+): PickupCondition | undefined {
+  if (args.untilMerged === undefined && args.untilClosed === undefined)
+    return undefined;
+  if (station !== "pickup" || request.verb !== "hold")
+    usage("only pickup hold takes --until-merged or --until-closed");
+  if (args.untilMerged === undefined)
+    return (
+      readPickupCondition({ kind: "item-closed", item: args.untilClosed }) ??
+      usage("--until-closed needs an item key")
+    );
+  if (args.untilClosed !== undefined) usage("name one pickup condition");
+  const pr =
+    parsePickupPr(args.untilMerged) ??
+    usage("--until-merged needs a positive pull request number");
+  return { kind: "pr-merged", pr };
+}
+
 export async function sendMain(args: SendArguments): Promise<number> {
   const [text, ...rest] = args.words;
   if (text === undefined)
@@ -319,6 +353,7 @@ export async function sendMain(args: SendArguments): Promise<number> {
     decision: args.decision,
     decisionSet: args.decisionSet,
   });
+  const condition = pickupConditionOf(args, written.value.station, request);
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
   const strict = () =>
@@ -340,11 +375,20 @@ export async function sendMain(args: SendArguments): Promise<number> {
     request,
     args.as,
     args.dryRun,
+    condition,
   );
   if (!planned.ok) return refusal(planned.failure.reason);
-  const plan = planned.value;
-  console.log(renderPlan(plan, args.dryRun));
-  if (args.dryRun) return SEND_EXIT.SENT;
+  return sendPlan(planned.value, resolved, args.dryRun);
+}
+
+/** Print `plan`, then, unless this is a dry run, write it and say what was sent. */
+async function sendPlan(
+  plan: Plan,
+  resolved: ResolvedAddress,
+  dryRun: boolean,
+): Promise<number> {
+  console.log(renderPlan(plan, dryRun));
+  if (dryRun) return SEND_EXIT.SENT;
   const wrote = await plan.write();
   if (!wrote.ok) {
     console.error(shown(`jig send: not sent: ${wrote.failure.reason}`));

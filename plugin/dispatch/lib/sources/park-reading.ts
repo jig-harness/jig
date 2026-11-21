@@ -50,8 +50,11 @@ export async function readPark(
         failures.set(key, CUT_AT_BOUND);
         return null;
       }
-      const read = await threadComments(key, secondsLeft(bound), (f) =>
-        failures.set(key, readFailureOf(f)),
+      const read = await threadComments(
+        key,
+        secondsLeft(bound),
+        (f) => failures.set(key, readFailureOf(f)),
+        slug,
       );
       if (read !== null) kept?.keep(key, read);
       return read;
@@ -61,13 +64,21 @@ export async function readPark(
   kept?.save();
   if (!("unreadable" in found) && found.unread.length > 0) {
     // A park with no time is also an unclassified defect beside its thread's failed call, so a class that waiting does not clear still wins over it.
-    const failure = combinedFailure(
-      found.unread.flatMap((p) =>
-        p.at === undefined
-          ? [failures.get(p.key), undefined]
-          : [failures.get(p.key)],
-      ),
+    const reads = found.unread.flatMap((p) =>
+      p.at === undefined
+        ? [failures.get(p.key), undefined]
+        : [failures.get(p.key)],
     );
+    // An absence beside a read of another class does not compete with it: that read decides the class and its waiting policy.
+    const allAbsent = reads.every((f) => f?.class === "not-found");
+    const combined = combinedFailure(
+      allAbsent ? reads : reads.filter((f) => f?.class !== "not-found"),
+    );
+    // An absence is an answer only when every unread read was one: a read with no class, or of another class, still fails the turn.
+    const failure =
+      combined !== undefined && allAbsent
+        ? { ...combined, absence: true as const }
+        : combined;
     return {
       unreadable: found.unread.map((p) => `${p.kind} ${p.key}`).join(", "),
       ...(failure === undefined ? {} : { failure }),
