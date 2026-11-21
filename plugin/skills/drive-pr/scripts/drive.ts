@@ -197,6 +197,7 @@ export {
   resolveHandoffAt,
   advanceStallStreak,
   passExitDisposition,
+  UNSUPPORTED_CLI_EXIT,
   PASS_DEADLINE_EXIT,
   QUOTA_PARKED_EXIT,
   MAX_ROUNDS_EXIT,

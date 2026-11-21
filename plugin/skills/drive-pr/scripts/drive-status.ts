@@ -5,6 +5,7 @@ import {
   readRemoteName,
 } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
+import { pullUrlMismatch, pullUrlParts } from "./lib/status/pr-url.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
  * refuse to say "converged" on any evidence weaker than "the finding-posting
@@ -208,11 +209,9 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       as settled
  *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit;
  *                       the report names its reset (`rateLimit.until`)
- *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite: a `gh` that cannot
- *                       report mergeability. Reported through the JSON
- *                       contract like every other state — only argument
- *                       errors, which happen before there is a PR to
- *                       describe, exit without a report
+ *   2  UNSUPPORTED_CLI  [drive.ts only, no report] `drive.ts` refuses to
+ *                       start. This script's own argument errors, before
+ *                       there is a PR to describe, exit 2 without a report
  *
  *  12  —  [drive.ts only, no report] converged, but the worktree is not
  *         clean. No named `state` — this exit never reaches `--json` at all
@@ -332,7 +331,7 @@ const MAX_QUERY_ERRORS = 3;
  * loop for the criterion that produces this set, and for why each code NOT in
  * it is absent.
  */
-const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
+const UNRECONCILED_STOPPERS = new Set([7, 8, 9, 10, 22]);
 
 /** The verdict's optional fields: present only when the read produced them. */
 function optionalVerdictFields(
@@ -450,9 +449,20 @@ async function main(): Promise<number> {
   }
   const helperTimeoutSec = helperRead.seconds;
 
-  if (pr === "") {
-    const r = await ghCall(["pr", "view", "--json", "number", "-q", ".number"]);
-    if (r.code !== 0 || r.stdout.trim() === "") {
+  // REST names a pull request by number: resolve a URL or branch to one here.
+  // A URL's repository must be the one this checkout drives.
+  const urlParts = pullUrlParts(pr);
+  if (!isDigits(pr)) {
+    const r = await ghCall([
+      "pr",
+      "view",
+      ...(pr === "" ? [] : [pr]),
+      "--json",
+      "number",
+      "-q",
+      ".number",
+    ]);
+    if (r.code !== 0 || !isDigits(r.stdout.trim())) {
       if (r.stderr) process.stderr.write(r.stderr);
       fail(2, "could not resolve a PR number");
     }
@@ -595,6 +605,11 @@ async function main(): Promise<number> {
   if (!owner || !repo) {
     fail(2, "could not resolve the repository (gh returned no owner/name)");
   }
+  const mismatch =
+    urlParts === undefined
+      ? null
+      : pullUrlMismatch(urlParts, pr, { owner, repo, url: repoUrl });
+  if (mismatch !== null) fail(2, mismatch);
 
   let waitingCache: WaitingEvaluationCache | undefined;
   let pollPacing: StatusPollPacing | undefined;
@@ -617,8 +632,14 @@ async function main(): Promise<number> {
       );
     }
   }
+  const startedMs = currentMs();
+  let firstEvaluationDone = false;
   const ctx = {
     ...definedFields({ waitingCache }),
+    budgetLeftSec: (): number | undefined =>
+      firstEvaluationDone
+        ? Math.ceil((startedMs + timeout * 1000 - currentMs()) / 1000)
+        : undefined,
     pr,
     owner,
     repo,
@@ -1100,9 +1121,8 @@ async function main(): Promise<number> {
   // all; `--all-open` already scopes itself to OPEN PRs, so the embedded sweep
   // was the one caller that did not.
   //
-  // A separate `gh` read, on `state` alone — the same cheap read, for the
-  // same reason, as the liveness probe on `evaluate()`'s missing-field path.
-  // It gates the sweep ONLY: the verdict still comes from the full snapshot
+  // A separate `gh` read, on `state` alone (`readPrState`, a conditional REST
+  // read). It gates the sweep ONLY: the verdict still comes from the full snapshot
   // below, so a stale or racing answer here can suppress a sweep but can never
   // decide the round.
   //
@@ -1343,8 +1363,6 @@ async function main(): Promise<number> {
       // A conditional REST read, not `gh pr view`: the state alone
       // is all this probe asks for, so an unchanged PR answers `304` and spends
       // nothing from the GraphQL bucket a handful of parallel drives exhaust.
-      // The evaluation's own snapshot below stays GraphQL — it compares fields
-      // against each other, and REST and GraphQL disagree on some of them.
       const live = await readPrState(pr, {
         timeoutSec: Math.max(1, Math.ceil(budgetLeftMs() / 1000)),
         caller: "sweep",
@@ -1358,15 +1376,9 @@ async function main(): Promise<number> {
       // the three.
       if (!live.ok) {
         const stop = await degrade(
-          // Named as the transient failure it is, in `evaluate()`'s own
-          // vocabulary for the identical condition: this probe runs ahead of
-          // that read, so it is what an operator sees first when `gh` is
-          // failing, and describing the same fault in different words
-          // depending on which call noticed it is how a diagnostic stops being
-          // one. `reason` says whether the read failed or came back
-          // unrecognised — both are the retry class, since neither is a
-          // confirmed finished PR.
-          `cannot read PR #${pr}'s state (${live.reason}) — a transient failure, not a missing-field error — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
+          // Named as the transient failure it is: a failed or unrecognised
+          // read is the retry class, since neither is a confirmed finished PR.
+          `cannot read PR #${pr}'s state (${live.reason}) — a transient failure — to decide whether the replied-thread reconciliation sweep may run — refusing to judge this round, since a verdict that does not re-arm would strand the sweep for good`,
           "read",
         );
         if (stop !== null) return stop;
@@ -1533,6 +1545,7 @@ async function main(): Promise<number> {
     }
 
     const code = await evaluate(ctx, report);
+    firstEvaluationDone = true;
 
     // RETRACT a skip the evaluation just contradicted. The liveness read said
     // the PR was finished, so the sweep was skipped as pointless; the
@@ -1611,30 +1624,16 @@ async function main(): Promise<number> {
     // Every exclusion below is stated against that same criterion, so a future
     // code is classified by reading it rather than by adding a case.
     //
-    // UNSUPPORTED_CLI (2) was the last code to be excluded and is now IN the
-    // set, which is worth recording because its exclusion looked sound twice.
-    // The argument was "a retry cannot clear an unsupported `gh`, and the
-    // sweep cannot run under that `gh` either, so gating buys no
-    // reconciliation" — the second clause being the load-bearing one, and it
-    // is simply false: this suite's own `reconciles ahead of the EARLIEST
-    // return — UNSUPPORTED_CLI` test exists because the sweep DOES run, and
-    // can succeed, before exit 2 is reached. A `gh` too old for
-    // `--json mergeable` can still serve the sweep's GraphQL calls.
-    //
-    // An earlier cut of this fix kept the exclusion and made it conditional on
-    // a `sweepSkippedForBudget` flag, which covered the sweep being SKIPPED and
-    // left the sweep having RUN AND FAILED — the same hole, other branch.
-    // Membership needs no flag: a successful sweep sets `sweepReconciled`, so
-    // exit 2 still returns with the one message naming the actual fix in every
-    // case where `gh` can talk to GitHub at all. Only a genuinely unreconciled
-    // pass degrades, which is the criterion above applied without an exception.
+    // UNSUPPORTED_CLI (2) is NOT in the set: the evaluation never reports it.
+    // It is `drive.ts`'s refusal to start, and this script's own argument
+    // errors exit 2 before any sweep runs, with no report.
     //
     // CONVERGED (3) STAYS out of this set, and that took a false start to
     // learn: a first cut of this fix reasoned "3 needs zero unresolved
     // threads, so a failed sweep cannot be hiding one behind it" is true of
     // the GitHub thread but not of this script's own `held` bookkeeping (see
-    // the next paragraph) and folded 3 in here, blanket, the same way 2
-    // joined above. That broke `announce-merge-ready.ts`: its own `--no-count`
+    // the next paragraph) and folded 3 in here, blanket, the way 7 is.
+    // That broke `announce-merge-ready.ts`: its own `--no-count`
     // re-read (SKILL.md §§ 3 and 6) exists SPECIFICALLY to check CONVERGED
     // without spending a round, and CONVERGED is the ONLY verdict that caller
     // ever acts on. `--no-count` sets `sweepSuppressed` exactly like

@@ -276,7 +276,7 @@ export const DRIVE_EXITS: Chapter = {
   title: "Drive end states and exit codes",
   summary:
     "How a drive, or one round of it, ended: each state and the exit code `drive-status.ts` and `drive.ts` report it with.",
-  version: 1,
+  version: 2,
   status: "stable",
   planItems: [],
   module: "tools/protocol/chapters/drive-exits.ts",
