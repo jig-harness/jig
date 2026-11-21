@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   GIT_OPERATION_MARKERS,
   holderVerdict,
@@ -264,6 +264,30 @@ describe("holderVerdict", () => {
     git(holder, "config", "merge.ours.driver", "true");
     const [reason] = reasons(holder);
     expect(reason).toContain("a custom merge driver is configured");
+  });
+
+  test("a merge attribute in the clone's info/attributes keeps a squash-merged holder busy", () => {
+    const { clone, holder } = heldTree();
+    writeFileSync(join(holder, "file.txt"), "two\n");
+    git(holder, "commit", "-q", "-am", "more work");
+    git(holder, "push", "-q", "origin", BRANCH);
+    git(clone, "pull", "-q", "--ff-only", "origin", "main");
+    writeFileSync(join(clone, "other.txt"), "base work\n");
+    git(clone, "add", "other.txt");
+    git(clone, "commit", "-q", "-m", "base work");
+    git(clone, "fetch", "-q", "origin");
+    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+    git(clone, "commit", "-q", "-m", "squash");
+    git(clone, "push", "-q", "origin", "HEAD:main");
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    const info = join(
+      clone,
+      git(clone, "rev-parse", "--git-path", "info/attributes"),
+    );
+    mkdirSync(dirname(info), { recursive: true });
+    writeFileSync(info, "* merge=union\n");
+    const [reason] = reasons(holder);
+    expect(reason).toContain("a merge attribute applies outside the tree");
   });
 
   test("a stale ref outside the remote's configured refspec does not vouch either", () => {

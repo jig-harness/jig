@@ -145,18 +145,54 @@ function lines(answer: RunResult): string[] | { unreadable: string } {
     : { unreadable: output(answer) || `exit ${answer.status}` };
 }
 
-/** The tree git hashes for no content: attributes read from it name no merge driver. */
-const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+/** Most paths the merge's attribute check names; a change touching more reads as unprovable. */
+const ATTRIBUTE_PATHS = 200;
+
+/** Why a `merge` attribute may apply to a path `ref` and `tip` differ in, or why that cannot be read; `null` when none does. */
+function mergeAttributes(
+  git: (args: string[]) => RunResult,
+  ref: string,
+  tip: string,
+  emptyTree: string,
+): string | null {
+  const differing = git(["diff", "--name-only", "-z", ref, tip]);
+  if (differing.status !== 0)
+    return `${ref} and ${tip} cannot be compared: ${output(differing) || `exit ${differing.status}`}`;
+  const paths = differing.stdout.split("\0").filter(Boolean);
+  if (paths.length > ATTRIBUTE_PATHS)
+    return `${tip} differs from ${ref} in too many files`;
+  if (paths.length === 0) return null;
+  const checked = git([
+    "--attr-source",
+    emptyTree,
+    "-c",
+    "core.attributesFile=/dev/null",
+    "check-attr",
+    "merge",
+    "--",
+    ...paths,
+  ]);
+  if (checked.status !== 0)
+    return `merge attributes cannot be read: ${output(checked) || `exit ${checked.status}`}`;
+  const set = checked.stdout
+    .split("\n")
+    .some((line) => line !== "" && !line.endsWith(": unspecified"));
+  return set ? "a merge attribute applies outside the tree" : null;
+}
 
 /**
  * Whether merging `tip` into `ref` changes nothing: the base branch already
  * holds that history's whole change, as after a squash merge of several
- * commits once the base had moved on. The merge ignores every attributes
- * file and refuses a repository that configures a custom merge driver, since
- * a driver can resolve conflicting edits to either side and an unchanged
- * result would then prove nothing. `git merge-tree --write-tree` needs git
- * 2.38 and `--attr-source` 2.40; an older git is reported, never read as
- * merged. A merge that conflicts answers no.
+ * commits once the base had moved on. The merge ignores tracked attributes
+ * files, the user's attributes file and the default merge driver
+ * (`merge.default`), and is not trusted when the repository configures a
+ * custom merge driver or any attribute source it cannot neutralize (the
+ * clone's `info/attributes`, the system attributes) assigns a `merge`
+ * attribute to a path the two sides differ in: a driver can resolve
+ * conflicting edits to either side, and an unchanged result would then prove
+ * nothing. `git merge-tree --write-tree` needs git 2.38 and `--attr-source`
+ * git 2.41; an older git is reported, never read as merged. A merge that
+ * conflicts answers no.
  */
 function mergesToNothing(
   git: (args: string[]) => RunResult,
@@ -170,11 +206,21 @@ function mergesToNothing(
     return {
       unreadable: `merge drivers cannot be read: ${output(drivers) || `exit ${drivers.status}`}`,
     };
+  const empty = git(["hash-object", "-t", "tree", "/dev/null"]);
+  const emptyTree = empty.stdout.trim();
+  if (empty.status !== 0 || emptyTree === "")
+    return {
+      unreadable: `the empty tree cannot be read: ${output(empty) || `exit ${empty.status}`}`,
+    };
+  const attributes = mergeAttributes(git, ref, tip, emptyTree);
+  if (attributes !== null) return { unreadable: attributes };
   const merged = git([
     "--attr-source",
-    EMPTY_TREE,
+    emptyTree,
     "-c",
     "core.attributesFile=/dev/null",
+    "-c",
+    "merge.default=text",
     "merge-tree",
     "--write-tree",
     ref,

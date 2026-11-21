@@ -512,6 +512,25 @@ function refused(
   return { ...waits(action, detail, account), outcome: "refused" };
 }
 
+/**
+ * An outcome that lists the idle checkout its open detached,
+ * launched or waiting: a leftover tree never blocks a follow-up, and nothing
+ * of it is deleted, so the follow-up says where it is and which branch it
+ * kept for whoever clears it. A later tick finds the branch free and would
+ * not see the checkout again.
+ */
+export function leftBehind(
+  outcome: LaunchOutcome,
+  detached: DetachedCheckout | undefined,
+): LaunchOutcome {
+  if (detached === undefined) return outcome;
+  return {
+    ...outcome,
+    detached,
+    detail: `${outcome.detail}; left the idle checkout at ${detached.path} detached at ${detached.head.slice(0, 12)}, its branch ${detached.branch} kept`,
+  };
+}
+
 /** The workspace a launch runs in, or the outcome that ends it: a budget that waits, an open that failed. */
 function workspaceOr(
   action: Action,
@@ -526,16 +545,16 @@ function workspaceOr(
       },
     };
   if ("refused" in opened) {
-    const left = detachedField(opened.detached);
     return {
-      outcome:
+      outcome: leftBehind(
         opened.holder === undefined
-          ? { ...refused(action, opened.refused, account), ...left }
+          ? refused(action, opened.refused, account)
           : {
               ...refused(action, holderRefusal(opened.holder), account),
               holder: opened.holder,
-              ...left,
             },
+        opened.detached,
+      ),
     };
   }
   return opened;
@@ -556,7 +575,7 @@ export async function openedFor(
   if ("outcome" in opened) return opened;
   const stale = await changedWhileOpening(state, action, slots);
   if (stale === null) return opened;
-  return { outcome: { ...stale, ...detachedField(opened.detached) } };
+  return { outcome: leftBehind(stale, opened.detached) };
 }
 
 /** The pending records of `repo` whose launch got no answer and may be replayed once, of the actions `kinds` names. */

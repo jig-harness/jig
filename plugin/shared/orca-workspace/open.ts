@@ -175,8 +175,7 @@ function existingWorktree(
   assertLinkedWorktree(port.host, path, `reattach to ${branch}`);
   const row = listedWorktree(port, repo, path);
   if (row === null) {
-    const left = releaseHiddenHolder(port, repo.path, branch, path, repo.id);
-    detached?.(left);
+    releaseHiddenHolder(port, repo.path, branch, path, repo.id, detached);
     return null;
   }
   port.host.log(`↺ reattaching: ${branch} is at ${path}`);

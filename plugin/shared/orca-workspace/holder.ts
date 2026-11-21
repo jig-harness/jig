@@ -115,7 +115,8 @@ function detachAt(
  * Free `branch` from the checkout at `path`, which Orca does not list:
  * detach it when it is idle, and say where it was left, else throw what
  * keeps it busy. `clone` is the repository's own clone, whose worktree list
- * must no longer name the branch afterwards.
+ * must no longer name the branch afterwards. `detached` is told the moment
+ * the detach has happened, before the checks that follow it can throw.
  */
 export function releaseHiddenHolder(
   port: OpenPort,
@@ -123,6 +124,7 @@ export function releaseHiddenHolder(
   branch: string,
   path: string,
   repoId: string,
+  detached?: (holder: DetachedHolder) => void,
 ): DetachedHolder {
   if (port.drivers === undefined)
     throw new OrcaError(
@@ -143,6 +145,9 @@ export function releaseHiddenHolder(
     throw new BusyHolderError(branch, path, verdict.reasons, port.where);
   }
   detachAt(port, branch, path, verdict.head);
+  const left = { path, branch, head: verdict.head };
+  // Told before any check that can throw: the checkout is already detached.
+  detached?.(left);
   const still = findGitWorktree(port.host, clone, branch);
   if (still !== null)
     throw new OrcaError(
@@ -151,5 +156,5 @@ export function releaseHiddenHolder(
   port.host.log(
     `↺ detached the idle checkout at ${path} from ${branch} (at ${verdict.head.slice(0, 12)})`,
   );
-  return { path, branch, head: verdict.head };
+  return left;
 }

@@ -106,8 +106,8 @@ export async function openProcessWorktree(
               branch,
               path,
               repository,
+              (left) => options.onDetached?.(left),
             );
-            options.onDetached?.(detached);
             return null;
           },
           prepare: (worktree) => {
