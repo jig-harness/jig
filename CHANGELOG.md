@@ -404,6 +404,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.300.0] - 2026-11-21
+
+### Added
+
+- Pickup passes can wait for a pull request to merge or a tracker item to
+  close. The dispatcher shows the dependency and resumes the pickup when
+  it clears. A pull request that closes unmerged raises a need.
+- Set a conditional pickup hold with `jig send … hold --until-merged` or
+  `--until-closed`. Choosing a pickup's framed option to wait for a pull
+  request to merge also places a hold.
+
 ## [0.299.0] - 2026-11-21
 
 ### Added
@@ -10593,7 +10604,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.299.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.0...HEAD
+[0.300.0]: https://github.com/jig-harness/jig/compare/v0.299.0...v0.300.0
 [0.299.0]: https://github.com/jig-harness/jig/compare/v0.298.0...v0.299.0
 [0.298.0]: https://github.com/jig-harness/jig/compare/v0.297.0...v0.298.0
 [0.297.0]: https://github.com/jig-harness/jig/compare/v0.296.0...v0.297.0
