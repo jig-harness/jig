@@ -336,7 +336,7 @@ fields:
     default: 3
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.298.0
   dispatch.labels.enabled:
     type: boolean
     default: false
@@ -488,7 +488,7 @@ fields:
     min: 1
     default: 300
     read_by: [drive-pr]
-    since: next
+    since: 0.298.0
   review.reviewer_evidence:
     type: enum
     values: [sticky, review_object]
@@ -1288,7 +1288,7 @@ fields:
         command: command
       optional: [snapshots]
     read_by: [resolve-conflicts]
-    since: next
+    since: 0.298.0
   resolve_conflicts.hotspot_min_merges:
     type: integer
     min: 1

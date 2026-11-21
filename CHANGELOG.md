@@ -404,6 +404,52 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.298.0] - 2026-11-21
+
+### Added
+
+- `followup.ts deploy-run <run-id>` reads a workflow run a deploy arm waits
+  for and says whether it will settle by itself: `finished`, `moving`, or
+  `stuck` when the queue has waited on that holder past a bound (30 minutes, `--stuck-after`)
+  and an older run of its workflow is still running while every run since
+  ended cancelled, the sign of a held concurrency group; the reading names
+  that holder. The follow-up records a stuck deploy as
+  a step owed by a person and finishes its other arms, instead of waiting
+  until the dispatcher hands the whole follow-up to a person.
+
+### Fixed
+
+- Drives stop promptly when the configured reviewer reports that it gave up
+  on the current head. While a review is pending, the drive backs off its
+  forge polls. After repeated reviewer failures on the same head, the
+  dispatcher raises one need and waits for a review or a new head.
+- A malformed optional reviewer-evidence field no longer makes an otherwise
+  usable drive ledger unreadable during recovery.
+- A requested drive restart stays queued while the dispatcher waits for capacity.
+  Waiting requests get the next available slot ahead of automatic retries.
+- A dispatched follow-up whose deploy arm stayed pending past
+  `dispatch.followup_within` was raised for a person even when the deploy
+  had since finished, because only release tags were read again. A pending
+  arm that links to its deploy run
+  (`https://github.com/<owner>/<repo>/actions/runs/<id>`) now has that run
+  read again before a person is told: a run that finished, other than
+  cancelled, runs the follow-up once more, and a pass naming a newer run
+  starts a fresh window, as a newer release tag does.
+- A drive whose review pass stops on an unreadable check-runs listing now records that stop as it records its own listing stop: the stop line names the pages the pass read (`pass reported CHECK_RUNS_UNREADABLE after <n> page(s) on round <r>; stopping`), and the handoff file and the ledger's stop event carry the class and the pages as a status probe stop. A page count in the pass's finish record that is not a whole number reads as unknown.
+- `jig dispatch`: after a person answers **Release the claim** on a stalled
+  pickup, the dispatcher releases it at the tick and the next launch is an
+  ordinary fresh pickup. That launch is no longer handed the answer as an
+  option to carry out, which could make it only re-confirm the release, end
+  without claiming the item and raise the same card again.
+- The ended-pickup card now says what holds the item: the named launch
+  record ended and has not been released. It says the item is still assigned
+  only when it is.
+- A release answer an earlier version already kept for the next session is
+  passed over, so that launch is an ordinary fresh pickup too.
+- Conflict resolution keeps both sides' sequenced migrations when their numbers collide and checks the staged result for missing migrations and changes to the integration journal's applied entries.
+- Configuration audit now rejects sequenced-migration settings that conflict resolution cannot read at runtime.
+- An unfinished pull request conflict repair preserves pre-existing ignored files, clears new untracked files and reports unavailable inventory before cleanup.
+
 ## [0.297.0] - 2026-11-20
 
 ### Fixed
@@ -10498,7 +10544,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.297.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.298.0...HEAD
+[0.298.0]: https://github.com/jig-harness/jig/compare/v0.297.0...v0.298.0
 [0.297.0]: https://github.com/jig-harness/jig/compare/v0.296.0...v0.297.0
 [0.296.0]: https://github.com/jig-harness/jig/compare/v0.295.0...v0.296.0
 [0.295.0]: https://github.com/jig-harness/jig/compare/v0.294.0...v0.295.0
