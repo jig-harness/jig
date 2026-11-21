@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Strip board: figure frame and close, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1a6444}a:hover{color:#005031}
+</style>
+</helmet>
+<!-- C3 Strip board, light. Tokens: bg #f9f6f1, card #fffdfa, sunk #f0ece5, ink #251e18, muted #59514a, line #d5d0c8, line-strong #867f77, accent #1a6444, hl #f7e8af, hl-line #815b1f -->
+<div style="width:1440px; height:760px; box-sizing:border-box; position:relative; overflow:hidden; background:#f9f6f1; color:#251e18; font-family:system-ui,-apple-system,'Segoe UI',Ubuntu,Cantarell,'Noto Sans',sans-serif;">
+
+  <!-- Figure window: full bleed, 300px high, fixed scale 0.8, step 1 frame; the whole line in view -->
+  <div style="position:absolute; left:0; top:48px; width:1440px; height:300px; overflow:hidden; background:#f9f6f1; border-top:1px solid #867f77; border-bottom:1px solid #867f77; box-sizing:border-box;">
+    <img src="/_blob/ab86ece52ca4920c9a94dcd39d56ca28" width="768" height="432" alt="Isometric engraving of the line: seven stations around a loop on one slab. Pick up, build, open, drive and repair are agent stations; merge, drawn in green with a person on it, is the person's station; follow up returns to pick up." style="position:absolute; left:336px; top:-50px; width:768px; height:432px; display:block;">
+  </div>
+
+  <!-- Station tags band: the window's caption -->
+  <div style="position:absolute; left:0; top:348px; width:1440px; height:48px; box-sizing:border-box; padding:0 80px; display:flex; align-items:center; border-bottom:1px solid #d5d0c8; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase; letter-spacing:0.02em;">
+    <span style="width:256px; color:#59514a;">01 · The line</span>
+    <div style="display:flex; align-items:center;">
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Pick up</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Build</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Open</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Drive</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Repair</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px 3px 8px; border:1px solid #867f77; border-left:4px solid #815b1f; background:#f7e8af; color:#251e18;">Merge</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Follow up</span>
+    </div>
+  </div>
+
+  <!-- The page's end: the board's last channel holds the person's strip -->
+  <section style="position:absolute; left:0; top:448px; width:1440px; height:232px; box-sizing:border-box; background:#f0ece5; border-top:1px solid #867f77; border-bottom:1px solid #867f77;">
+    <div style="position:absolute; left:280px; top:40px; width:880px; height:152px; box-sizing:border-box; display:grid; grid-template-columns:120px 1fr 320px; background:#fffdfa; border:1px solid #d5d0c8; border-left:4px solid #815b1f; color:#251e18;">
+      <div style="padding:16px; background:#f7e8af; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace;">
+        <div style="font-size:14px; line-height:20px; text-transform:uppercase;">Station</div>
+        <div style="font-size:40px; line-height:44px; font-weight:500; margin-top:4px;">06</div>
+      </div>
+      <div style="padding:16px 24px; border-left:1px solid #d5d0c8; display:flex; align-items:center;">
+        <p style="margin:0; font-size:40px; line-height:48px; font-weight:600; letter-spacing:-0.01em;">You merge.</p>
+      </div>
+      <div style="padding:16px 24px; border-left:1px solid #d5d0c8; display:flex; align-items:center;">
+        <a href="#audit" style="display:inline-flex; align-items:center; height:48px; padding:0 20px; box-sizing:border-box; background:#1a6444; color:#fffdfa; font-size:16px; font-weight:600; text-decoration:none; border:1px solid #1a6444;">Start with an audit</a>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

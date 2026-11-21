@@ -37,6 +37,40 @@ pickup and drive skills. It promises neither that every item finishes nor
 that every transition starts by itself. The headline links the glossary;
 the sentence links the line. A count of modules does not lead either.
 
+**Ophir's decisions on the introduction and the site's look.** They come from
+the program plan of 2026-11-19 and 2026-11-20 (its decisions D8 to D10 and
+D15) and the verdict of 2026-11-21.
+
+- **One round.** The round of
+  [#1066](https://github.com/jig-harness/jig/issues/1066) covers both the
+  overhaul of jig-harness.dev and a new introduction to Jig. There is no
+  second round.
+- **The figures are isometric engravings in the plate style.** They are ink on
+  warm paper, with hatching and the green accent, drawn as scenes of motion-kit's
+  isometric kit. The jig model's hatching shader is their 3D
+  counterpart, so the illustration rule below holds: a plate in the plate
+  style, or the jig model.
+- **The introduction is one stepped page** on jig-harness.dev. The same scenes
+  give a talk deck and a short video.
+- **“Software factory” is not a headline.** Ophir calls it an overhyped
+  buzzword. It leaves the home page's headline and the introduction's opening
+  and stays internal vocabulary: the glossary, this design and the code. Both
+  lead with Jig's concrete machinery: the line's seven stations, the
+  dispatcher's tick, how the dispatcher takes capacity into account (the
+  wall), the drive's ledger on the pull request, and a question parked until a
+  person answers it. This reopens the factory-first position above on
+  purpose. The build ([#1067](https://github.com/jig-harness/jig/issues/1067))
+  replaces the headline and sentence quoted above. The person-merges boundary
+  and the capability table stay as they are.
+- **The layout is the Broadside**, with the Strip board as runner-up
+  ([the round's record](prototypes/intro-directions/README.md)).
+- **The figure shows how an item changes.** The line is not a closed loop: the
+  follow-up reaches pickup as a minority path. The pickup queue is drawn. The
+  item changes form from an issue to a pull request, to one with comments and
+  build status, to one with every check green, to merged. The wall is
+  capacity, with no number and no mention of several accounts
+  ([the brief](prototypes/intro-directions/figure-brief.md)).
+
 The site tells the factory in layers, in this order:
 
 1. **What runs by itself.** The work-item loop and the points where it
@@ -594,8 +628,8 @@ design round and visitor-page work under that epic, in this order:
    Design; the returned bundle is audited against the brief and prototype
    rubric. Settle every failure and obtain the person's acceptance before
    treating the result as the page design. The round may reopen layout and
-   information architecture, but does not silently reopen the factory-first
-   position or the status of a capability.
+   information architecture, and reopens the factory-first headline as the
+   decision above records it. It does not reopen the status of a capability.
 3. **Build the visitor pages and site together.** Apply the accepted design
    to README.md, FACTORY.md, FEATURES.md and `website/src`, with the parser
    and test changes above. The Protocol routes follow its design's

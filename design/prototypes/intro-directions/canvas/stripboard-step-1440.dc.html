@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Strip board: step 3, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1a6444}a:hover{color:#005031}
+</style>
+</helmet>
+<!-- C3 Strip board, light. Tokens: bg #f9f6f1, card #fffdfa, sunk #f0ece5, ink #251e18, muted #59514a, line #d5d0c8, line-strong #867f77, accent #1a6444, hl #f7e8af, hl-line #815b1f -->
+<div style="width:1440px; height:980px; box-sizing:border-box; position:relative; overflow:hidden; background:#f9f6f1; color:#251e18; font-family:system-ui,-apple-system,'Segoe UI',Ubuntu,Cantarell,'Noto Sans',sans-serif;">
+
+  <!-- Nav -->
+  <header style="position:absolute; left:0; top:0; width:1440px; height:64px; box-sizing:border-box; padding:0 80px; display:flex; align-items:center; border-bottom:1px solid #d5d0c8;">
+    <a href="#top" style="display:flex; align-items:center; gap:10px; text-decoration:none; color:#251e18;">
+      <img src="/_blob/4e4a4deae898600f4161603cde29de41" width="28" height="28" alt="Jig" style="display:block; width:28px; height:28px;">
+      <span style="font-size:20px; font-weight:600; letter-spacing:-0.01em;">Jig</span>
+    </a>
+  </header>
+
+  <!-- Figure window, panned to the stations of bay 3: step 2 frame (two slots and the wall), same 0.8 scale -->
+  <div style="position:absolute; left:0; top:64px; width:1440px; height:300px; overflow:hidden; background:#f9f6f1; border-bottom:1px solid #867f77; box-sizing:border-box;">
+    <img src="/_blob/9d9bf0edd891283a0cb640c0a3220955" width="768" height="432" alt="Isometric engraving of one account: a raised plate holding two green slots, each a session. Beside it stands the wall, a hatched barrier; a third session waits in front of it on the track." style="position:absolute; left:400px; top:-52px; width:768px; height:432px; display:block;">
+  </div>
+
+  <!-- Tags band for the window -->
+  <div style="position:absolute; left:0; top:364px; width:1440px; height:48px; box-sizing:border-box; padding:0 80px; display:flex; align-items:center; border-bottom:1px solid #d5d0c8; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase; letter-spacing:0.02em;">
+    <span style="width:360px; color:#59514a;">03 · The slots</span>
+    <div style="display:flex; align-items:center;">
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Account</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Slot 1</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #867f77; background:#fffdfa; color:#251e18;">Slot 2</span>
+      <span style="width:14px; height:1px; background:#867f77;"></span>
+      <span style="padding:3px 10px; border:1px solid #251e18; border-width:1px 3px; background:#fffdfa; color:#251e18;">The wall</span>
+    </div>
+  </div>
+
+  <!-- Five-slot rail; slot 3 in view -->
+  <nav aria-label="Steps" style="position:absolute; left:80px; top:436px; width:1280px; height:56px; box-sizing:border-box; background:#f0ece5; border-top:1px solid #867f77; border-bottom:1px solid #867f77; padding:7px 0; display:flex; gap:8px; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase; letter-spacing:0.02em;">
+    <a href="#step-1" style="flex:1; display:flex; align-items:center; gap:12px; padding:0 14px; box-sizing:border-box; background:#fffdfa; border:1px solid #d5d0c8; color:#251e18; text-decoration:none;"><span>01</span><span>The line</span></a>
+    <a href="#step-2" style="flex:1; display:flex; align-items:center; gap:12px; padding:0 14px; box-sizing:border-box; background:#fffdfa; border:1px solid #d5d0c8; color:#251e18; text-decoration:none;"><span>02</span><span>The tick</span><span style="margin-left:auto; display:flex; align-items:center; gap:6px; color:#59514a;"><span style="width:12px; height:12px; box-sizing:border-box; border:1px solid #251e18; background:repeating-linear-gradient(45deg,#251e18 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,#251e18 0 1px,transparent 1px 4px);"></span>Planned</span></a>
+    <a href="#step-3" aria-current="step" style="flex:1; display:flex; align-items:center; gap:12px; padding:0 14px; box-sizing:border-box; background:#1a6444; border:1px solid #1a6444; color:#fffdfa; text-decoration:none;"><span>03</span><span>The slots</span></a>
+    <a href="#step-4" style="flex:1; display:flex; align-items:center; gap:12px; padding:0 14px; box-sizing:border-box; background:#fffdfa; border:1px solid #d5d0c8; color:#251e18; text-decoration:none;"><span>04</span><span>The ledger</span></a>
+    <a href="#step-5" style="flex:1; display:flex; align-items:center; gap:12px; padding:0 14px 0 0; box-sizing:border-box; background:#fffdfa; border:1px solid #d5d0c8; border-left:4px solid #815b1f; color:#251e18; text-decoration:none;"><span style="align-self:stretch; display:flex; align-items:center; padding:0 10px; background:#f7e8af;">05</span><span>The question</span></a>
+  </nav>
+
+  <!-- Board: sunk, lips top and bottom; bay 3 centred, bays 2 and 4 at the edges -->
+  <div style="position:absolute; left:0; top:508px; width:1440px; height:392px; box-sizing:border-box; background:#f0ece5; border-top:1px solid #867f77; border-bottom:1px solid #867f77; overflow:hidden;">
+
+    <!-- Strip 2, neighbour, quiet; planned: cocked 8px out of the rail, hatched status cell, status line as its log line -->
+    <article id="step-2" style="position:absolute; left:-144px; top:8px; width:560px; box-sizing:border-box; display:grid; grid-template-columns:80px 168px 1fr 96px; grid-template-rows:296px auto; background:#fffdfa; border:1px solid #d5d0c8; color:#59514a;">
+      <div style="padding:12px 14px; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace;">
+        <div style="font-size:14px; line-height:20px; text-transform:uppercase;">Step</div>
+        <div style="font-size:40px; line-height:44px; font-weight:500; margin-top:4px;">02</div>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8;">
+        <div style="font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase;">The tick</div>
+        <h2 style="margin:6px 0 0 0; font-size:20px; line-height:26px; font-weight:600;">A timer wakes the dispatcher.</h2>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8;">
+        <p style="margin:0; font-size:16px; line-height:24px;">Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not.</p>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase;">
+        <div>Status</div>
+        <div style="width:56px; height:40px; box-sizing:border-box; border:1px solid #59514a; margin:8px 0 6px 0; background:repeating-linear-gradient(45deg,#59514a 0 1px,transparent 1px 6px),repeating-linear-gradient(-45deg,#59514a 0 1px,transparent 1px 6px);"></div>
+        <div>Planned</div>
+      </div>
+      <div style="grid-column:1 / 3; padding:10px 14px; border-top:1px solid #d5d0c8; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase;">Log</div>
+      <div style="grid-column:3 / 5; padding:10px 14px; border-top:1px solid #d5d0c8; border-left:1px solid #d5d0c8; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase;">Machinery ships. Running unattended is planned.</div>
+    </article>
+
+    <!-- Strip 3, in view -->
+    <article id="step-3" style="position:absolute; left:440px; top:16px; width:560px; box-sizing:border-box; display:grid; grid-template-columns:80px 168px 1fr 96px; grid-template-rows:296px; background:#fffdfa; border:1px solid #d5d0c8; color:#251e18;">
+      <div style="padding:12px 14px; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace;">
+        <div style="font-size:14px; line-height:20px; text-transform:uppercase; color:#59514a;">Step</div>
+        <div style="font-size:40px; line-height:44px; font-weight:500; margin-top:4px;">03</div>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8;">
+        <div style="font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase; color:#59514a;">The slots</div>
+        <h2 style="margin:6px 0 0 0; font-size:20px; line-height:26px; font-weight:600;">Two slots per account, and the wall.</h2>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8;">
+        <p style="margin:0; font-size:16px; line-height:24px;">Each subscription account holds two sessions at once. When an account reaches its usage limit, that is the wall: the account stays out of every launch until the wall resets.</p>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase;">
+        <div style="color:#59514a;">Status</div>
+        <div style="width:56px; height:40px; background:#251e18; margin:8px 0 6px 0;"></div>
+        <div>Ships</div>
+      </div>
+    </article>
+
+    <!-- Strip 4, neighbour, quiet -->
+    <article id="step-4" style="position:absolute; left:1024px; top:16px; width:560px; box-sizing:border-box; display:grid; grid-template-columns:80px 168px 1fr 96px; grid-template-rows:296px; background:#fffdfa; border:1px solid #d5d0c8; color:#59514a;">
+      <div style="padding:12px 14px; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace;">
+        <div style="font-size:14px; line-height:20px; text-transform:uppercase;">Step</div>
+        <div style="font-size:40px; line-height:44px; font-weight:500; margin-top:4px;">04</div>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8;">
+        <div style="font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase;">The ledger</div>
+        <h2 style="margin:6px 0 0 0; font-size:20px; line-height:26px; font-weight:600;">The drive keeps its ledger on the pull request.</h2>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8;">
+        <p style="margin:0; font-size:16px; line-height:24px;">One comment records the round, the last head checked and every parked question. Another machine reads it and picks up where the drive stopped.</p>
+      </div>
+      <div style="padding:12px 14px; border-left:1px solid #d5d0c8; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase;">
+        <div>Status</div>
+        <div style="width:56px; height:40px; background:#59514a; margin:8px 0 6px 0;"></div>
+        <div>Ships</div>
+      </div>
+    </article>
+  </div>
+
+  <!-- Previous / next: anchor links, aligned to the bay in view -->
+  <div style="position:absolute; left:440px; top:916px; width:560px; height:44px; display:flex; justify-content:space-between; font-family:ui-monospace,'SF Mono','Cascadia Mono',Consolas,'Liberation Mono',monospace; font-size:14px; line-height:20px; text-transform:uppercase; letter-spacing:0.02em;">
+    <a href="#step-2" style="display:flex; align-items:center; gap:8px; padding:0 14px; height:44px; box-sizing:border-box; border:1px solid #867f77; background:#fffdfa; color:#1a6444; text-decoration:none;"><span aria-hidden="true">&#8592;</span><span>02 The tick</span></a>
+    <a href="#step-4" style="display:flex; align-items:center; gap:8px; padding:0 14px; height:44px; box-sizing:border-box; border:1px solid #867f77; background:#fffdfa; color:#1a6444; text-decoration:none;"><span>04 The ledger</span><span aria-hidden="true">&#8594;</span></a>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
