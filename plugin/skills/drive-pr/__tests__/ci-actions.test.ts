@@ -8,6 +8,7 @@ import { isOptionalEvents, recordEvent } from "../scripts/lib/state/events.ts";
 import { isOptionalCiActions } from "../scripts/lib/state/ci-actions.ts";
 import {
   ledgerFromState,
+  LEDGER_MARKER,
   parseLedger,
   renderLedger,
   seedFromLedger,
@@ -15,6 +16,35 @@ import {
 import type { StateStore } from "../scripts/lib/state/store.ts";
 
 describe("additive CI telemetry", () => {
+  it("keeps a ledger readable when optional reviewer evidence is malformed", () => {
+    const events = [
+      {
+        at: "2026-11-20T00:00:00.000Z",
+        round: 1,
+        kind: "stop",
+        cause: "1",
+        reviewerHead: "not-a-commit",
+        reviewerApp: 42,
+      },
+    ];
+    expect(isOptionalEvents(events)).toBe(true);
+    const ledger = ledgerFromState(freshState(999), {
+      generation: 1,
+      claims: [],
+      narrative: [],
+      driver: {
+        actor: "wt-aaaaaaaaaaaaaaaa",
+        clone: "clone-a",
+        heartbeat: "2026-11-20T00:00:00.000Z",
+        state: "running",
+      },
+    });
+    const parsed = parseLedger(
+      `${LEDGER_MARKER}\n<!-- drive-pr-ledger-data\n${JSON.stringify({ ...ledger, events })}\n-->\n`,
+    );
+    expect(parsed?.kind).toBe("ledger");
+  });
+
   it("records bounded telemetry without changing the control events older readers validate", async () => {
     let state = freshState(999);
     const store = {

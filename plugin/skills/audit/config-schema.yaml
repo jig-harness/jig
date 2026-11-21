@@ -330,6 +330,13 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.149.0
+  dispatch.reviewer_failures_before_escalation:
+    type: integer
+    min: 1
+    default: 3
+    read_by: [dispatch]
+    repository_only: true
+    since: next
   dispatch.labels.enabled:
     type: boolean
     default: false
@@ -394,7 +401,7 @@ fields:
       or: string
       fields: { login: string, confirmation_marker: string, chat_marker: string }
       optional: [confirmation_marker, chat_marker]
-    read_by: [resolve-review-comments, drive-pr, review]
+    read_by: [resolve-review-comments, drive-pr, review, dispatch]
   review.job_pattern:
     type: regex
     nullable: true
@@ -476,10 +483,16 @@ fields:
   review.reviewer_check_pattern:
     type: regex
     read_by: [drive-pr, dispatch]
+  review.reviewer_poll_max_seconds:
+    type: integer
+    min: 1
+    default: 300
+    read_by: [drive-pr]
+    since: next
   review.reviewer_evidence:
     type: enum
     values: [sticky, review_object]
-    read_by: [drive-pr]
+    read_by: [drive-pr, dispatch]
     since: 0.210.0
   review.draft_skipping_reviewers:
     type: list
@@ -489,13 +502,13 @@ fields:
     since: 0.210.0
   review.sticky_marker:
     type: string
-    read_by: [drive-pr]
+    read_by: [drive-pr, dispatch]
   review.reviewed_sha_marker:
     type: string
-    read_by: [drive-pr]
+    read_by: [drive-pr, dispatch]
   review.skip_notice_marker:
     type: string
-    read_by: [drive-pr]
+    read_by: [drive-pr, dispatch]
     since: 0.169.0
   review.code_scanning_severities:
     type: map

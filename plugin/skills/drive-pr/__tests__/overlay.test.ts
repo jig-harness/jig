@@ -20,6 +20,7 @@ import {
   reviewerEvidenceProblem,
   reviewerExpected,
   reviewerLabel,
+  reviewerPollMaxSeconds,
   reviewsDrafts,
   skipNoticeMarker,
   stickyMarker,
@@ -160,6 +161,10 @@ describe("base branch and catalog", () => {
 });
 
 describe("reviewer protocol", () => {
+  it("reads the reviewer polling ceiling", () => {
+    overlay("review:\n  reviewer_poll_max_seconds: 90\n");
+    expect(reviewerPollMaxSeconds()).toBe(90);
+  });
   it("defaults to the AI review check and its markers", () => {
     overlay("review:\n  bots: []\n");
     expect(reviewerCheckPattern()).toBe("^ai[ _-]?review(\\s*\\(.+\\))?$");

@@ -58,6 +58,8 @@ import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
 import { fingerprintOf } from "./lib/finding-fingerprint.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
+  DEFAULT_REVIEWED_SHA_MARKER,
+  DEFAULT_STICKY_MARKER,
   isReviewerLogin,
   reviewedShaMarker,
   reviewerApp,
@@ -135,7 +137,9 @@ export interface SummaryReport {
  * findings, so a custom-marker repo converges over every unanchored finding
  * the reviewer ever posted.
  */
-export const STICKY_MARKER = stickyMarker();
+// Configuration can be malformed while the auditor imports this parser to
+// validate it. Read its override only while parsing a review response.
+export const STICKY_MARKER = DEFAULT_STICKY_MARKER;
 
 /**
  * The marker the reviewer stamps its reviewed SHA into. Same override, same
@@ -143,12 +147,12 @@ export const STICKY_MARKER = stickyMarker();
  * it silently degrades every slot to the shared `nohead` scope, where an answer
  * given on one head marks a *different* finding addressed on the next.
  */
-export const SHA_MARKER = reviewedShaMarker();
+export const SHA_MARKER = DEFAULT_REVIEWED_SHA_MARKER;
 
 /** Extract the reviewed SHA the reviewer stamped, under whatever marker name. */
 export function reviewedShaFrom(body: string): string | undefined {
   const re = new RegExp(
-    `<!--\\s*${SHA_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
+    `<!--\\s*${reviewedShaMarker().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*([0-9a-f]{7,40})\\s*-->`,
   );
   return body.match(re)?.[1];
 }
@@ -1323,7 +1327,7 @@ async function issueCommentsFor(
  * backlog and reviewed-SHA stamp are never decoded. Without it, a `review.bots`
  * login's sticky is read, which is what the standalone resolver relies on.
  */
-function reviewerSticky(
+export function reviewerSticky(
   comments: IssueComment[],
   configuredOnly: boolean,
 ): IssueComment | undefined {
@@ -1331,7 +1335,8 @@ function reviewerSticky(
   return comments
     .filter(
       (c) =>
-        isReviewerLogin(c.user?.login ?? "") && c.body?.includes(STICKY_MARKER),
+        isReviewerLogin(c.user?.login ?? "") &&
+        c.body?.includes(stickyMarker()),
     )
     .pop();
 }

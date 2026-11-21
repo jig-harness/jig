@@ -382,7 +382,12 @@ its base. A drive whose failing checks kept failing on the CI service's
 infrastructure through its re-runs and head moves (exit `23`) is re-driven
 once per stop, after a backoff from the stop that doubles with each such stop
 in a row (15 minutes, at most 4 hours), and a person is told once 7 stand in a
-row. A drive that could not read its head's check-runs listing whole (exit
+row. When the configured reviewer reports that its review did not complete
+and the drive stops (exit `7`), the dispatcher counts the failures on that
+pull request's head. At
+[`dispatch.reviewer_failures_before_escalation`](CONFIGURATION.md#dispatch)
+it raises one need naming the reviewer and waits for a review of that head
+or a new head. A drive that could not read its head's check-runs listing whole (exit
 `25`) is re-driven once per head commit, and a second such stop on that head
 goes to a person as a systematic read failure, with the pages read. A pass
 deadline that recurred past the drive's restarts (exit `15`)

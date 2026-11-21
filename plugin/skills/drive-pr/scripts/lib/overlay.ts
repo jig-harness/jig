@@ -40,6 +40,7 @@ import {
 import { attachedTree } from "./driven-branch.ts";
 import { codexPassArgsProblem } from "./codex-pass-args.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
+import { DEFAULT_REVIEWER_POLL_MAX_SECONDS } from "./status/reviewer-poll.ts";
 
 let cache: { key: string; value: Record<string, unknown> } | undefined;
 
@@ -140,6 +141,20 @@ export function reviewerCheckPattern(): string {
 
 /** The posting reviewer's check-run name where the repository names no pattern and no known app. */
 export const DEFAULT_REVIEWER_CHECK = "^ai[ _-]?review(\\s*\\(.+\\))?$";
+
+/** The ceiling for a drive's reviewer polling back-off, in whole seconds. */
+export function reviewerPollMaxSeconds(): number {
+  const value = section("review").reviewer_poll_max_seconds;
+  if (value === undefined || value === null)
+    return DEFAULT_REVIEWER_POLL_MAX_SECONDS;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    throw new DecodeError(
+      configSource("review.reviewer_poll_max_seconds"),
+      "$.review.reviewer_poll_max_seconds",
+      "must be a whole number of at least 1",
+    );
+  return value;
+}
 
 /** The check-run pattern for the app `app` where the repository names none: its profile's, else the default. */
 export function defaultReviewerCheckFor(app: string | null): string {
@@ -250,7 +265,7 @@ export function stickyMarker(): string {
   return (
     nonEmptyEnv("DRIVE_PR_STICKY_MARKER") ??
     optionalString("review", "sticky_marker") ??
-    "<!-- ai-code-review -->"
+    DEFAULT_STICKY_MARKER
   );
 }
 
@@ -263,9 +278,12 @@ export function reviewedShaMarker(): string {
   return (
     nonEmptyEnv("DRIVE_PR_SHA_MARKER") ??
     optionalString("review", "reviewed_sha_marker") ??
-    "ai-reviewed-sha"
+    DEFAULT_REVIEWED_SHA_MARKER
   );
 }
+
+export const DEFAULT_STICKY_MARKER = "<!-- ai-code-review -->";
+export const DEFAULT_REVIEWED_SHA_MARKER = "ai-reviewed-sha";
 
 /**
  * The marker around the reviewer's notice, in that comment, that it did not

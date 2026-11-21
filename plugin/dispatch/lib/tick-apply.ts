@@ -529,7 +529,15 @@ async function freshDriveReading(
     currentMs(),
     labels,
     adoption,
-    { pickupArms: inputs.pickupArms },
+    {
+      pickupArms: inputs.pickupArms,
+      reviewer: {
+        cwd: repo.path,
+        ...(section.reviewerFailures === undefined
+          ? {}
+          : { policy: section.reviewerFailures }),
+      },
+    },
   );
   if (again === undefined) return ok(null);
   if (steward) return ok({ ...again, labels: listed.labels ?? [] });

@@ -429,6 +429,12 @@ The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 `drive.ts` sets for its own passes) are documented where they act, in
 [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
 
+While waiting for a reviewer on the same pull request head, the drive doubles
+the poll interval up to `review.reviewer_poll_max_seconds` (300 seconds by
+default). A completed neutral check titled `Review did not complete` stops
+the drive with [`REVIEWER_FAILED`](../../protocol/drive-exits.md) if the
+reviewer has no review of that head.
+
 ### The background time limit
 
 None of the limits above bounds the whole drive, but the harness that starts
