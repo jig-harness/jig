@@ -106,7 +106,7 @@ function checkSection(
     if (!accounts.some((a) => a.name === name)) skipped.push(name);
     else if (!isWeight(value))
       problem = `${path}: accounts.${name} must be a finite weight from 0 to 100`;
-  return { problem, skipped: skipped.sort() };
+  return { problem, skipped: skipped.sort((a, b) => a.localeCompare(b)) };
 }
 
 /** Why an account the section gives no weight has weight 100. */
@@ -168,6 +168,6 @@ export function readAccountWeights(
 export function skippedAccountNames(
   weights: AccountWeights | undefined,
 ): SkippedNames | null {
-  for (const weight of weights?.values() ?? []) return weight.skipped ?? null;
-  return null;
+  const first = weights?.values().next();
+  return first?.done === false ? (first.value.skipped ?? null) : null;
 }
