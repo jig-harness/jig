@@ -189,17 +189,14 @@ function mergeAttributes(
 /** Why the merge proof cannot run here (an old git, or a configured merge driver); `null` when it can. */
 function proofUnavailable(git: (args: string[]) => RunResult): string | null {
   const version = git(["--version"]);
+  if (version.status !== 0)
+    return `the git version cannot be read: ${output(version) || `exit ${version.status}`}`;
   const parsed = /git version (\d+)\.(\d+)/.exec(version.stdout);
-  const current: [number, number] = [
-    Number(parsed?.[1] ?? 0),
-    Number(parsed?.[2] ?? 0),
-  ];
+  if (parsed === null)
+    return `the git version cannot be read: ${output(version) || "unrecognized output"}`;
+  const current: [number, number] = [Number(parsed[1]), Number(parsed[2])];
   const [major, minor] = MERGE_PROOF_GIT;
-  if (
-    version.status !== 0 ||
-    current[0] < major ||
-    (current[0] === major && current[1] < minor)
-  )
+  if (current[0] < major || (current[0] === major && current[1] < minor))
     return `the merge proof needs git ${MERGE_PROOF_GIT.join(".")} or newer`;
   const drivers = git(["config", "--get-regexp", "^merge\\..*\\.driver$"]);
   if (drivers.status === 0) return "a custom merge driver is configured";

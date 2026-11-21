@@ -266,6 +266,40 @@ describe("holderVerdict", () => {
     expect(reason).toContain("a custom merge driver is configured");
   });
 
+  test("a git version probe that fails keeps its own diagnostic, not the version message", () => {
+    const { clone, holder } = heldTree();
+    writeFileSync(join(holder, "file.txt"), "two\n");
+    git(holder, "commit", "-q", "-am", "more work");
+    git(holder, "push", "-q", "origin", BRANCH);
+    git(clone, "pull", "-q", "--ff-only", "origin", "main");
+    writeFileSync(join(clone, "other.txt"), "base work\n");
+    git(clone, "add", "other.txt");
+    git(clone, "commit", "-q", "-m", "base work");
+    git(clone, "fetch", "-q", "origin");
+    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+    git(clone, "commit", "-q", "-m", "squash");
+    git(clone, "push", "-q", "origin", "HEAD:main");
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    const real = localContext(() => undefined);
+    const ctx = {
+      ...real,
+      run: (argv: string[], options?: Parameters<typeof real.run>[1]) =>
+        argv.includes("--version")
+          ? { status: 127, stdout: "", stderr: "git: probe broke" }
+          : real.run(argv, options),
+    };
+    const v = holderVerdict(ctx as typeof real, {
+      path: holder,
+      branch: BRANCH,
+      remote: "origin",
+      drivers: none,
+    });
+    if (v.idle) throw new Error("the holder was judged idle");
+    const text = v.reasons.join("\n");
+    expect(text).toContain("the git version cannot be read: git: probe broke");
+    expect(text).not.toContain("or newer");
+  });
+
   test("a merge attribute in the clone's info/attributes keeps a squash-merged holder busy", () => {
     const { clone, holder } = heldTree();
     writeFileSync(join(holder, "file.txt"), "two\n");
