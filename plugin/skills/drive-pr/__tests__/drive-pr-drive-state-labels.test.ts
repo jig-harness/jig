@@ -204,6 +204,20 @@ describe("a drive writes its own state label", () => {
     expect(readState(run.stateDir, "999")?.parked).toEqual([]);
   }, 90_000);
 
+  it("records the forge's explicit reset after a converged-CI read", async () => {
+    const run = labelled({ threads: [] }, ["jig:stale"]);
+    writeFileSync(join(run.bin, "explicit-ci-limit"), "");
+    const r = await drive(run, PASS_NOOP, [], {
+      ...LEDGER_ON,
+      DRIVE_PR_RATE_LIMIT_WAIT: "0",
+    });
+    expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.FORGE_RATE_LIMITED);
+    const events = readState(run.stateDir, "999")?.events as DriveEvent[];
+    const stop = events.findLast(({ kind }) => kind === "stop");
+    expect(stop?.cause).toBe(String(DRIVE_EXIT.FORGE_RATE_LIMITED));
+    expect(stopInstant(stop)).toBe("2027-01-15T08:00:00.000Z");
+  });
+
   it("records the reset when the stopped-ledger helper's comment read is rate-limited", async () => {
     const run = labelled({ threads: [] }, ["jig:stale"]);
     writeFileSync(join(run.bin, "limit-stopped-ledger-read"), "");

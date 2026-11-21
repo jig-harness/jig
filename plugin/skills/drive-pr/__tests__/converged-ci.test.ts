@@ -112,6 +112,9 @@ function fake(script: Script) {
       reruns.set(key, now);
       return true;
     },
+    withdrawRerun: async (_pr, run) => {
+      reruns.delete(`${run.id}:${run.attempt}`);
+    },
     rerunFailed: async (_pr, _head, run, mayMutate) => {
       if (!(await mayMutate()))
         return {
@@ -145,7 +148,7 @@ function fake(script: Script) {
           },
         }),
   };
-  return { deps, asked, recovered, clock: () => now };
+  return { deps, asked, recovered, reruns, clock: () => now };
 }
 
 describe("the converged CI watch", () => {
@@ -375,6 +378,7 @@ describe("the converged CI watch", () => {
     });
     const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
     expect(verdict.kind === "park" && verdict.reason).toContain("HTTP 403");
+    expect(f.reruns.size).toBe(0);
   });
 
   it("parks a failing commit status, which has no run to re-run", async () => {

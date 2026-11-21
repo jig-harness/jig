@@ -35,6 +35,7 @@ export async function waitForWatchReset(
   pr: string,
   limit: ForgeLimit,
   waits: number,
+  renew?: () => Promise<number | null>,
 ): Promise<number | "continue"> {
   const plan = limitPlan(limit);
   if (plan.action === "stop") return stopOnLimit(pr, limit);
@@ -50,8 +51,16 @@ export async function waitForWatchReset(
   const abort = new AbortController();
   driverRuntime.quotaSleepAbort = abort;
   try {
-    if (driverRuntime.compromised === "")
-      await sleep(plan.ms / 1000, abort.signal);
+    // This final-CI watch is outside the ordinary between-pass wait, so keep
+    // its cross-clone ledger lease alive while a short forge window elapses.
+    const endsAt = performance.now() + plan.ms;
+    while (performance.now() < endsAt && driverRuntime.compromised === "") {
+      const takenOver = await renew?.();
+      if (takenOver !== undefined && takenOver !== null) return takenOver;
+      const remaining = endsAt - performance.now();
+      if (remaining > 0)
+        await sleep(Math.min(60_000, remaining) / 1000, abort.signal);
+    }
   } finally {
     driverRuntime.quotaSleepAbort = null;
   }

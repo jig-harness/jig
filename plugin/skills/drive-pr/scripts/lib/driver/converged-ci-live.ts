@@ -9,7 +9,11 @@ import {
   recoverCancelledOnHead,
   timedOutOnHead,
 } from "../cancelled-recovery-live.ts";
-import { claimLabelRerun, labelReruns } from "../cancelled-recovery-state.ts";
+import {
+  claimLabelRerun,
+  labelReruns,
+  withdrawLabelRerun,
+} from "../cancelled-recovery-state.ts";
 import { parsePrSnapshot } from "../ci-hold.ts";
 import { holdLabelPolicy } from "../ci-policy.ts";
 import { sleep, testPacing } from "../cli.ts";
@@ -191,6 +195,7 @@ export function liveConvergedCi(
         ...(asked.indeterminate === true ? { indeterminate: true } : {}),
       };
     },
+    withdrawRerun: (pr, run) => withdrawLabelRerun(pr, run),
     recoverCancelled: (pr, head, mayMutate) =>
       recoverCancelledOnHead(pr, head, undefined, false, mayMutate),
     timedOutJobs: (head) => timedOutOnHead(head),
@@ -449,7 +454,7 @@ export async function stopAfterConvergedLabel(
       };
     });
     if (limit === null) return value;
-    const retry = await waitForWatchReset(pr, limit, waits);
+    const retry = await waitForWatchReset(pr, limit, waits, renew);
     if (retry !== "continue") return { exit: retry, ownership: "unreadable" };
   }
 }

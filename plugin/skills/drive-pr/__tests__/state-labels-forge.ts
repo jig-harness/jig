@@ -88,6 +88,13 @@ if (fs.existsSync(shortLimit) && read().includes("jig:converged") &&
   process.stderr.write("HTTP 429: rate limit exceeded\\n");
   process.exit(1);
 }
+const explicitLimit = path.join(dir, "explicit-ci-limit");
+if (fs.existsSync(explicitLimit) && read().includes("jig:converged") &&
+    args[0] === "api" && args.some((arg) => arg.includes("/check-runs?"))) {
+  fs.unlinkSync(explicitLimit);
+  process.stdout.write("HTTP/2.0 429 Too Many Requests\\r\\nx-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: 1800000000\\r\\n\\r\\n{\\"message\\":\\"API rate limit exceeded\\"}");
+  process.exit(1);
+}
 const stopLimit = path.join(dir, "limit-stopped-ledger-read");
 if (fs.existsSync(stopLimit) && read().includes("jig:converged") &&
     JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER || "{}").stopped === 0 &&

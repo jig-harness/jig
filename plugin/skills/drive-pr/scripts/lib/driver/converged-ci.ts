@@ -80,6 +80,8 @@ export interface ConvergedCiDeps {
   rerunnable(pr: string, runs: readonly FailedRun[]): Promise<number[]>;
   /** Claim the one re-run of this run attempt; false when it was claimed before. */
   claimRerun(pr: string, run: WorkflowRun): Promise<boolean>;
+  /** Give back a claim when the forge definitively refused the re-run. */
+  withdrawRerun?(pr: string, run: WorkflowRun): Promise<void>;
   /** Re-run the run's failed jobs after the head and CI-hold checks. */
   rerunFailed(
     pr: string,
@@ -321,12 +323,14 @@ async function rerun(
     // An indeterminate answer may still have started the run: the claim is
     // recorded, so the next reading looks for its new attempt and parks when
     // none appears.
-    if (!asked.ok && asked.indeterminate !== true)
+    if (!asked.ok && asked.indeterminate !== true) {
+      await deps.withdrawRerun?.(pr, run);
       return {
         next: "park",
         reason: `run ${run.id} on head ${head} failed in a run a label write started, and its re-run was not accepted: ${asked.detail}`,
         labelCaused: true,
       };
+    }
     if (!asked.ok) {
       console.error(
         `converged CI: the re-run of run ${run.id} on head ${head} is unconfirmed (${asked.detail}); watching for its new attempt`,
