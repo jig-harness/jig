@@ -404,6 +404,22 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.300.2] - 2026-11-21
+
+### Fixed
+
+- The `jig:followup-failed` pull request label has its own crimson
+  (`a40e4c`) instead of `jig:parked`'s red, so a pull request whose
+  follow-up failed is told apart from one waiting on a person's answer.
+  Green stays `jig:converged`'s alone, and a test holds the label set to
+  that rule.
+- `jig dispatch labels` (and the labels part of `jig install dispatch`)
+  now also lists a dispatch label whose color differs from this release's
+  and, with `--yes`, sets it. A label the signed-in account cannot edit is
+  printed with the `gh label edit … --color` command a person runs. Run
+  `jig dispatch labels --yes` once in each repository that installed the
+  labels earlier to bring its colors up to date.
+
 ## [0.300.1] - 2026-11-21
 
 ### Fixed
@@ -10624,7 +10640,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.2...HEAD
+[0.300.2]: https://github.com/jig-harness/jig/compare/v0.300.1...v0.300.2
 [0.300.1]: https://github.com/jig-harness/jig/compare/v0.300.0...v0.300.1
 [0.300.0]: https://github.com/jig-harness/jig/compare/v0.299.0...v0.300.0
 [0.299.0]: https://github.com/jig-harness/jig/compare/v0.298.0...v0.299.0
