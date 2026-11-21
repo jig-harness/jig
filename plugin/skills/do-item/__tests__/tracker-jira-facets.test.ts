@@ -195,6 +195,31 @@ describe("Jira: type in the issue types and size in a custom field", () => {
   });
 });
 
+describe("Jira: reading a priority the configuration does not map", () => {
+  const read = async (priority: string | null) => {
+    const { t } = jira(
+      routes({
+        ...SITE,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          type: "Story",
+          priority,
+          fields: { customfield_10050: null },
+        }),
+      }),
+      STORES,
+    );
+    const pool = await t.poolIssue("ENG-1");
+    return [pool?.priority, pool?.unmappedFacets ?? []];
+  };
+
+  it("marks a named priority outside the map as unmapped, and an empty one or a mapped one as not", async () => {
+    expect(await read("Lowest")).toEqual([0, ["priority"]]);
+    expect(await read(null)).toEqual([0, []]);
+    expect(await read("High")).toEqual([2, []]);
+  });
+});
+
 describe("Jira: reading a type kept in the issue types", () => {
   const read = async (opts: {
     type: string;

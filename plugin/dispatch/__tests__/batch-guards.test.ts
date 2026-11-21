@@ -38,6 +38,7 @@ function guards() {
       user: async () => ({ id: "alex", name: "alex" }),
       assignedBy: async () => ({ trusted: true }),
     },
+    section: {},
     sessions: async () => ({
       ok: true,
       workspaces: [
@@ -118,6 +119,22 @@ it("refuses replay on a secondary competing session or a removed served person",
   expect(servedAuthorization(state, ctx, record, "#1")).toContain(
     "no longer served",
   );
+});
+it("holds a pending batch whose secondary member lost its priority", async () => {
+  const { state, ctx, record } = guards();
+  ctx.sessions = async () => ({ ok: true, workspaces: [] }) as never;
+  expect(await pendingBatchBlock(state, repo, ctx, record)).toBeNull();
+  const tracker = ctx.tracker as unknown as {
+    poolIssue: (key: string) => Promise<object>;
+  };
+  const poolIssue = tracker.poolIssue;
+  tracker.poolIssue = async (key: string) => ({
+    ...(await poolIssue(key)),
+    ...(key === "#2" ? { priority: 0 } : {}),
+  });
+  const block = await pendingBatchBlock(state, repo, ctx, record);
+  expect(block).toContain("no priority");
+  expect(block).toContain("#2");
 });
 it("releases an ended batch when its returned member is ready to retry", () => {
   const w = world();

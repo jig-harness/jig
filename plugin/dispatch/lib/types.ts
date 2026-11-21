@@ -45,6 +45,8 @@ export interface DispatchSection {
   stalledScope: StalledScope;
   /** Whether a stalled pickup whose tree holds its unshipped work is relaunched once in that tree to push and record it (`stalled_relaunch`): `finish-once`, or `never`. */
   stalledRelaunch: StalledRelaunch;
+  /** What a pickup with no priority does (`missing_priority`): `hold`, absent included, keeps it off the line's starts until it has one; `start` starts it ranked after every low-priority item. */
+  missingPriority?: MissingPriority;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
@@ -118,6 +120,9 @@ export interface ClaimedItem {
 
 /** `dispatch.stalled_scope`'s values. */
 export type StalledScope = "claimed" | "assigned";
+
+/** `dispatch.missing_priority`'s values. */
+export type MissingPriority = "hold" | "start";
 
 /** A stalled pickup's relaunch: the launch record it finishes, the workspace that holds its tree, and the tree's head when the plan read it. */
 export interface PickupRelaunch {

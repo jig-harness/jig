@@ -81,7 +81,7 @@ import {
   type LeftOut,
   leftOutLines,
   readFixedMembers,
-  sizeLeavesBatch,
+  leavesFixedBatch,
   splitFixed,
 } from "./lib/fixed-batch.ts";
 import { Refusal } from "./lib/errors.ts";
@@ -536,7 +536,7 @@ function seedPoolLabels(
   // here could still be held back there and silently vanish.
   const reason = excludeReason(seed, policy, opts);
   const leftOut =
-    opts.fixed !== undefined && reason !== null && sizeLeavesBatch(reason);
+    opts.fixed !== undefined && reason !== null && leavesFixedBatch(reason);
   if (reason !== null && !leftOut) refuse(seedRefusal(key, reason, policy));
   return poolLabels;
 }

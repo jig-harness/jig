@@ -55,6 +55,8 @@ import {
   reportQuestion,
 } from "./report-needs.ts";
 import { batchPickups } from "./queue-batch.ts";
+import { unrankedHold } from "./pickup-priority.ts";
+import { minutes } from "./duration.ts";
 import {
   agentOf,
   endedHow,
@@ -204,10 +206,6 @@ function doubleClaim(
   };
 }
 
-function minutes(ms: number): string {
-  return `${Math.floor(ms / 60_000)}m`;
-}
-
 export function planPickups(input: PickupInput): PickupPlan {
   const plan: PickupPlan = {
     actions: [],
@@ -284,7 +282,7 @@ export function planPickups(input: PickupInput): PickupPlan {
   return plan;
 }
 
-/** An item nothing holds: picked up, unless its host-fault hold says to wait. */
+/** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */
 function planFresh(
   item: WantedItem,
   evidence: string | null,
@@ -292,7 +290,9 @@ function planFresh(
   plan: PickupPlan,
 ): void {
   if (heldAfterHostFault(item.key, input, plan)) return;
-  plan.actions.push(pickupAction(item, evidence));
+  const unranked = unrankedHold(item, input.section);
+  if (unranked === null) plan.actions.push(pickupAction(item, evidence));
+  else plan.unplaced.push(unranked);
 }
 
 /**

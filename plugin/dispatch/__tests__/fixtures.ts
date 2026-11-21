@@ -943,13 +943,25 @@ function noFacetStores(query: string): Record<string, unknown> {
   };
 }
 
-/** An open issue of the tracker, assigned to `login`, in GitHub node form. */
-export function assignedIssue(number: number, login: string, labels: string[]) {
+/**
+ * An open issue of the tracker, assigned to `login`, in GitHub node form:
+ * ranked medium unless `labels` names its priority or `ranked` is false,
+ * since the dispatcher holds an item with none (`dispatch.missing_priority`).
+ */
+export function assignedIssue(
+  number: number,
+  login: string,
+  labels: string[],
+  ranked = true,
+) {
   return issueNode({
     number,
     repo: SLUG,
     assignee: login,
-    labels,
+    labels:
+      !ranked || labels.some((l) => l.startsWith("priority:"))
+        ? labels
+        : [...labels, "priority: medium"],
     extra: { subIssues: { pageInfo: { hasNextPage: false }, nodes: [] } },
   });
 }
