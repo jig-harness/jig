@@ -61,22 +61,29 @@ export function claudeScopedInstalls(list: unknown): ScopedInstall[] {
     throw new HarnessError(
       "claude plugin list --json did not print a list of plugins",
     );
-  return list.flatMap((entry): ScopedInstall[] =>
-    entry?.id === PLUGIN_ID &&
-    (entry.scope === "project" || entry.scope === "local") &&
-    typeof entry.projectPath === "string" &&
-    entry.projectPath !== "" &&
-    typeof entry.version === "string"
-      ? [
-          {
-            scope: entry.scope,
-            project: entry.projectPath,
-            version: entry.version,
-            enabled: entry.enabled === true,
-          },
-        ]
-      : [],
-  );
+  return list.flatMap((entry): ScopedInstall[] => {
+    if (
+      entry?.id !== PLUGIN_ID ||
+      (entry.scope !== "project" && entry.scope !== "local")
+    )
+      return [];
+    if (
+      typeof entry.projectPath !== "string" ||
+      entry.projectPath === "" ||
+      typeof entry.version !== "string"
+    )
+      throw new HarnessError(
+        `claude plugin list --json lists a ${entry.scope}-scope ${PLUGIN_ID} install without a directory or a version`,
+      );
+    return [
+      {
+        scope: entry.scope,
+        project: entry.projectPath,
+        version: entry.version,
+        enabled: entry.enabled === true,
+      },
+    ];
+  });
 }
 
 /** The folder of the user-scope install `claude plugin list --json` names, or null. */
@@ -301,11 +308,19 @@ function pointAtUserInstall(
   version: string,
   installPath: string,
 ): RecordEdit {
-  const wanted = new Set(stale.map((i) => scopedKey(i.scope, i.project)));
+  const wanted = new Map(
+    stale.map((i) => [scopedKey(i.scope, i.project), i.version]),
+  );
   return (entries) => {
     const user = entries.find(
       (entry) => isRecord(entry) && entry.scope === "user",
     ) as Record<string, unknown> | undefined;
+    // Another upgrade may have moved the user-scope install since it was read.
+    if (
+      user !== undefined &&
+      (user.version !== version || user.installPath !== installPath)
+    )
+      return { entries, settled: new Set<string>(), changed: false };
     const commit =
       user?.version === version && typeof user.gitCommitSha === "string"
         ? user.gitCommitSha
@@ -315,9 +330,14 @@ function pointAtUserInstall(
     const next = entries.map((entry) => {
       const key = entryKey(entry);
       if (!wanted.has(key) || !isRecord(entry)) return entry;
-      settled.add(key);
-      if (entry.version === version && entry.installPath === installPath)
+      if (entry.version === version && entry.installPath === installPath) {
+        settled.add(key);
         return entry;
+      }
+      // A target that is no longer at the version it was read at was moved by
+      // another upgrade: leave it for the next one.
+      if (entry.version !== wanted.get(key)) return entry;
+      settled.add(key);
       changed = true;
       const { gitCommitSha: _stale, ...rest } = entry;
       return {
@@ -540,7 +560,7 @@ function rewriteUnreached(
         : scopedResult(
             install,
             "left",
-            `${detail}; ${record} no longer lists it`,
+            `${detail}; ${record} no longer lists it as read, or it has changed since`,
           ),
   );
 }
@@ -591,17 +611,17 @@ function settled(
           "claude plugin update finished, but claude plugin list no longer lists it",
         ),
       ];
+    if (update?.error !== undefined)
+      return [
+        scopedResult(
+          install,
+          "left",
+          update.from === install.project
+            ? update.error
+            : `claude plugin update for its repository, run from ${update.from}, failed: ${update.error}`,
+        ),
+      ];
     if (current !== null && version !== current) {
-      if (update?.error !== undefined)
-        return [
-          scopedResult(
-            install,
-            "left",
-            update.from === install.project
-              ? update.error
-              : `claude plugin update for its repository, run from ${update.from}, failed: ${update.error}`,
-          ),
-        ];
       const detail = unreachedBy(install, update, listed, current, repository);
       if (detail !== null) {
         unreached.push({ install, detail });

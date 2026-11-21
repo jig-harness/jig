@@ -41,6 +41,7 @@ function git(m: Machine, cwd: string, ...args: string[]): void {
     env: m.env,
     stdout: "pipe",
     stderr: "pipe",
+    timeout: 30_000,
   });
   expectSpawnExit(result, 0);
 }

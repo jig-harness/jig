@@ -61,7 +61,7 @@ const stored = existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : {
 const scoped = (stored.plugins["jig@jig"] ?? []).filter((entry) => entry.scope !== "user");
 const scopeUpdate = /^plugin update jig@jig --scope (project|local)( --json)?$/.exec(line);
 function commonDir(dir) {
-  const out = spawnSync("git", ["rev-parse", "--git-common-dir"], { cwd: dir, encoding: "utf8" });
+  const out = spawnSync("git", ["rev-parse", "--git-common-dir"], { cwd: dir, encoding: "utf8", timeout: 30000 });
   return out.status === 0 ? realpathSync(resolve(dir, out.stdout.trim())) : null;
 }
 if (line === "--version") console.log("2.1.300 (Claude Code)");
