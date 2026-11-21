@@ -23,7 +23,6 @@
  * releases it on every channel.
  */
 import type { Database } from "bun:sqlite";
-import { WEIGHTS_SKIP_KEY } from "./failure-notices.ts";
 import { insertRow, type LogRow } from "./log.ts";
 import { unobservedTarget } from "./notices.ts";
 import { entryKeys } from "./runtime/notice-comment.ts";
@@ -202,19 +201,19 @@ export function releaseOnEveryChannel(db: Database): {
 }
 
 /** The notice keys of the weights notices recorded on any channel at any repository. */
-export function storedWeightsKeys(db: Database): Set<string> {
+export function storedWeightsKeys(db: Database, prefix: string): Set<string> {
   const rows = db
     .query(
       "SELECT channel, key FROM notices WHERE key LIKE ?1 ESCAPE '\\' OR key LIKE ?2 ESCAPE '\\'",
     )
-    .all(
-      `${likeLiteral(WEIGHTS_SKIP_KEY)}%`,
-      `%:${likeLiteral(WEIGHTS_SKIP_KEY)}%`,
-    ) as Array<{ channel: string; key: string }>;
+    .all(`${likeLiteral(prefix)}%`, `%:${likeLiteral(prefix)}%`) as Array<{
+    channel: string;
+    key: string;
+  }>;
   return new Set(
     rows
       .map((r) => noticeKeyOf(r.channel, r.key))
-      .filter((k) => k.startsWith(WEIGHTS_SKIP_KEY)),
+      .filter((k) => k.startsWith(prefix)),
   );
 }
 

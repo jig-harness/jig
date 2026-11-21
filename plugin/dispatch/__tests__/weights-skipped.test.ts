@@ -13,6 +13,7 @@ import type { ApplyState } from "../lib/actions/launch.ts";
 import { applyNotices } from "../lib/actions/notify.ts";
 import {
   skippedWeightsCause,
+  WEIGHTS_SKIP_KEY,
   standingWeightsKeys,
 } from "../lib/failure-notices.ts";
 import { readAccountWeights, readLocalWeights } from "../lib/local-weights.ts";
@@ -275,7 +276,7 @@ describe("the notice of skipped account names", () => {
       root,
       false,
     );
-    expect([...storedWeightsKeys(stateDb(root))]).toEqual([
+    expect([...storedWeightsKeys(stateDb(root), WEIGHTS_SKIP_KEY)]).toEqual([
       'host weights skip "old"',
     ]);
   });

@@ -64,6 +64,7 @@ import {
   HOST_NOTICE,
   hostNoticeKeys,
   isFailureCause,
+  WEIGHTS_SKIP_KEY,
 } from "../failure-notices.ts";
 import { holderRecordStands } from "../holder-notices.ts";
 import {
@@ -216,7 +217,7 @@ function retireStaleWeightsRecords(
   const db = stateDb(root);
   const release = releaseOnEveryChannel(db);
   // Every channel's records, not the channel being processed: a channel that is no longer configured still holds one.
-  for (const key of storedWeightsKeys(db))
+  for (const key of storedWeightsKeys(db, WEIGHTS_SKIP_KEY))
     if (!standing.has(key)) release.run(key);
 }
 
@@ -418,7 +419,8 @@ function standingKeys(
   for (const key of hostNoticeKeys(readFailures(undefined, root)))
     live.add(key);
   // A weights file that was not read whole leaves what stands unknown: every notice told stays.
-  for (const key of host ?? storedWeightsKeys(stateDb(root))) live.add(key);
+  for (const key of host ?? storedWeightsKeys(stateDb(root), WEIGHTS_SKIP_KEY))
+    live.add(key);
   return live;
 }
 
