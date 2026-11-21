@@ -90,10 +90,10 @@ it("applies an edited local file on the very next tick and admits only the resum
     await waitFor("the weighted launch to finish", () => exitWritten(w, id));
   }
 });
-it("reports bad files and unknown names even with no wanted launch, including terminal output and stored status", async () => {
+it("reports a bad file even with no wanted launch, including terminal output and stored status", async () => {
   const w = fixture();
   const path = join(w.home, ".jig", "weights.local.yaml");
-  for (const text of ["accounts: {missing: 50}", "accounts: ["]) {
+  for (const text of ["accounts: ["]) {
     writeFileSync(path, text);
     const receipt = await tick(w);
     expect(receipt.accountWeights).toHaveLength(2);
@@ -116,6 +116,24 @@ it("reports bad files and unknown names even with no wanted launch, including te
         effective: 0,
       });
   }
+});
+
+it("reports an unknown name as skipped, with no account closed", async () => {
+  const w = fixture();
+  writeFileSync(
+    join(w.home, ".jig", "weights.local.yaml"),
+    "accounts: {missing: 50}",
+  );
+  const receipt = await tick(w);
+  expect(receipt.accountWeights).toHaveLength(2);
+  expect(
+    receipt.accountWeights?.every(
+      (a) =>
+        a.effective !== 0 &&
+        a.reason.includes("weights.local.yaml") &&
+        a.reason.includes("missing"),
+    ),
+  ).toBe(true);
 });
 
 it("does not replay a lost runtime launch after the account is paused or its weights cannot be read", async () => {
