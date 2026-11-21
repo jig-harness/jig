@@ -411,23 +411,25 @@ that is a default.
   the test stage.
 
 **When each run reaches the lock.** A new pass reaches the lock after its
-kind's time to validation, `T`. A pass in flight is placed the same way:
-its next run asks for the lock at its launch plus its kind's time to
-validation, or now when that is past; a pass that has already made a run is
-at validation now, and one with a run at the lock asks again when that run
-releases. Its remaining runs follow one another. A run has no estimate when
-its kind's time to validation is still the default or its launch time does
-not read, and the runs a tick admits reach validation together with the new
-pass: those runs are counted at the lock when the new pass arrives, as if
-due with it.
+kind's time to validation, `T`. A pass in flight that has yet to make its
+first run is placed the same way: its first run asks for the lock at its
+launch plus its kind's time to validation, and its remaining runs follow one
+another. Where the forecast cannot see, a pass has no estimate: its kind's
+time to validation is still the default, its launch time does not read, that
+time has passed without a run, or it has made a run already (nothing
+measures the gap between a pass's runs). The runs of a pass without an
+estimate, and the runs a tick admits, which reach validation together with
+the new pass, are counted at the lock when the new pass arrives, as if due
+with it.
 
 **The measure.** The forecast serves the lock's requests in the order they
 arrive, each on the slot that frees first, from the runs at the lock now
-(a holder may have just begun) through every run with an estimate that asks
-before the new pass, until the new pass's first run takes a slot. A run the
-lock has released by the time the new pass arrives is **served before
+(a holder may have just begun) through every run with an estimate, until the
+new pass's last run takes a slot. A run the
+lock has released by the time the new pass arrives is served before
 arrival** and not ahead of it; a run still holding or waiting then is
-**ahead**; a run that asks later queues behind the new pass. Passes launched
+ahead; a run that asks later queues behind the new pass's first run,
+but can still be ahead of its later ones. Passes launched
 together arrive together and contend for the same slots, so those a slot
 cannot take in time stay ahead rather than each being credited as served.
 Once there, each of the new pass's
@@ -440,15 +442,15 @@ lock occupancy is read from that same environment. Unset, it is the test stage's
 `scripts/test.ts`), not the bare lock's minute, and the reason says that
 default stands in. A pass makes its runs one after another, each asking for
 the lock when the one before it has released, so its own earlier runs are
-never a wait for its later ones: every run ahead is in the queue before its
-first run, which therefore waits longest. The pass deadline still bounds the
+never a wait for its later ones; each run's wait for a slot is bounded by
+`W` on its own, and the measure takes the longest of them. The pass deadline still bounds the
 last of its sequential runs, so a pass whose later runs would ask for the lock
 after the deadline waits. So the host can take a new pass
 while
 
 ```text
 validation capacity = runs at once × W ÷ run time
-the new pass's first acquisition, after the runs ahead of it when it arrives, falls within W
+each of the new pass's acquisitions, after the runs ahead of it when it asks, falls within W
 ```
 
 A measured concurrency is a whole number of slots; a fractional one (only a

@@ -4,8 +4,10 @@ import {
   forecastValidation,
   measureValidation,
   validationDemand,
+  type ValidationDemand,
   type ValidationMeasurements,
   type ValidationPass,
+  type ValidationSample,
 } from "../lib/validation-capacity.ts";
 import {
   passLockWait,
@@ -29,6 +31,15 @@ function pass(
     repo: "example/jig",
     launchedAtMs: NOW - minutesAgo * MINUTE,
   };
+}
+
+function sample(
+  requestedAtMs: number,
+  waitMs: number,
+  holdMs: number,
+  workspace: string,
+): ValidationSample {
+  return { requestedAtMs, waitMs, holdMs, workspace };
 }
 
 /** Measured figures: no estimate is a default. */
@@ -58,14 +69,19 @@ describe("the lock's queue when a pass arrives", () => {
       arrivals: [{ atMs: 0, runs: 3 }],
       unknownRuns: 0,
       arriveMs: 15 * MINUTE,
-      candidate: true,
+      candidateRuns: 1,
     });
     // Its first run is served by minute 10; its second holds one slot until
     // minute 20 and leaves the other free for the candidate at once.
-    expect(queue).toEqual({ acquireMs: 15 * MINUTE, ahead: 1, served: 1 });
+    expect(queue).toEqual({
+      waitMs: 0,
+      lastRequestMs: 15 * MINUTE,
+      ahead: 1,
+      served: 1,
+    });
   });
 
-  test("queues a run asking after the candidate behind it", () => {
+  test("queues a run asking after the candidate's first run behind it", () => {
     const queue = arrivalQueue({
       concurrency: 1,
       runMs: 10 * MINUTE,
@@ -73,9 +89,35 @@ describe("the lock's queue when a pass arrives", () => {
       arrivals: [{ atMs: 20 * MINUTE, runs: 1 }],
       unknownRuns: 0,
       arriveMs: 15 * MINUTE,
-      candidate: true,
+      candidateRuns: 1,
     });
-    expect(queue).toEqual({ acquireMs: 15 * MINUTE, ahead: 0, served: 0 });
+    expect(queue).toEqual({
+      waitMs: 0,
+      lastRequestMs: 15 * MINUTE,
+      ahead: 0,
+      served: 0,
+    });
+  });
+
+  test("puts a run arriving between the candidate's runs ahead of its next one", () => {
+    const queue = arrivalQueue({
+      concurrency: 1,
+      runMs: 10 * MINUTE,
+      atLock: 0,
+      arrivals: [{ atMs: 20 * MINUTE, runs: 1 }],
+      unknownRuns: 0,
+      arriveMs: 15 * MINUTE,
+      candidateRuns: 2,
+    });
+    // The candidate holds minutes 15 to 25; the run arriving at minute 20
+    // takes the slot next, so the candidate's second run waits 10 minutes
+    // and asks for the lock at minute 25.
+    expect(queue).toEqual({
+      waitMs: 10 * MINUTE,
+      lastRequestMs: 25 * MINUTE,
+      ahead: 0,
+      served: 0,
+    });
   });
 });
 
@@ -87,14 +129,14 @@ describe("the validation forecast's arrival model", () => {
     // load per core, while seven pickups were held to keep room for a drive.
     // Runs of 4 minutes, two at once, 25 minutes from launch to validation
     // for a pickup and an hour for a drive. The passes in flight were
-    // launched over the last 80 minutes, so most reach the lock, and leave
-    // it, well before a drive launched now arrives.
+    // launched over the last hour and have yet to reach the lock: they reach
+    // it, and leave it, before a drive launched now arrives.
     const figures = measured(4 * MINUTE, 2, 25 * MINUTE, HOUR);
     const inFlight = [
-      ...[2, 6, 9, 13, 17, 21, 24, 28, 32, 40].map((ago, i) =>
+      ...[1, 3, 5, 8, 11, 14, 17, 20, 22, 24].map((ago, i) =>
         pass("pickup", ago, `pickup-${i}`),
       ),
-      ...[15, 22, 30, 38, 45, 52, 61, 75].map((ago, i) =>
+      ...[12, 20, 28, 35, 42, 48, 53, 58].map((ago, i) =>
         pass("drive", ago, `drive-${i}`),
       ),
     ];
@@ -171,30 +213,102 @@ describe("the validation forecast's arrival model", () => {
 
   test("counts a run with no arrival estimate ahead", () => {
     const figures = measured(5 * MINUTE, 1, 30 * MINUTE, 30 * MINUTE);
-    const early = pass("pickup", 60, "early");
-    const estimated = validationDemand(figures, [], [early], [], NOW);
-    expect(
-      forecastValidation(figures, "pickup", estimated, HOUR, 3 * HOUR),
-    ).toMatchObject({ ahead: 0, served: 1, required: 0 });
-    // A launch that does not read gives no estimate.
-    const unread = { ...early, launchedAtMs: Number.NaN };
-    const noLaunch = validationDemand(figures, [], [unread], [], NOW);
-    expect(noLaunch.arrivals).toEqual([]);
-    expect(
-      forecastValidation(figures, "pickup", noLaunch, HOUR, 3 * HOUR),
-    ).toMatchObject({ ahead: 1, served: 0, required: 1 });
-    // Neither does a kind with no measured time to validation.
+    const forecast = (demand: ValidationDemand, of = figures) =>
+      forecastValidation(of, "pickup", demand, HOUR, 3 * HOUR);
+    // Due at minute 5, served by minute 10, before the candidate at 30.
+    const due = pass("pickup", 25, "due");
+    const estimated = validationDemand(figures, [], [due], [], NOW);
+    expect(estimated.arrivals).toEqual([{ atMs: 5 * MINUTE, runs: 1 }]);
+    expect(forecast(estimated)).toMatchObject({
+      ahead: 0,
+      served: 1,
+      required: 0,
+    });
+    const unseen = (demand: ValidationDemand, of = figures) => {
+      expect(demand.arrivals).toEqual([]);
+      expect(forecast(demand, of)).toMatchObject({ ahead: 1, served: 0 });
+    };
+    // A launch that does not read.
+    const unread = { ...due, launchedAtMs: Number.NaN };
+    unseen(validationDemand(figures, [], [unread], [], NOW));
+    // A kind with no measured time to validation.
     const unmeasured = { ...figures, defaults: ["pickup time to validation"] };
-    const noHistory = validationDemand(unmeasured, [], [early], [], NOW);
-    expect(noHistory.arrivals).toEqual([]);
+    unseen(validationDemand(unmeasured, [], [due], [], NOW), unmeasured);
+    // A pass past its kind's time to validation without a run.
+    unseen(
+      validationDemand(figures, [], [pass("pickup", 45, "late")], [], NOW),
+    );
+    // A pass between its runs: nothing measures the gap.
+    const twice = {
+      ...figures,
+      kinds: {
+        ...figures.kinds,
+        pickup: { runsPerPass: 2, timeToValidationMs: 30 * MINUTE },
+      },
+    };
+    const between = pass("pickup", 25, "between");
+    const madeOne = [sample(NOW - 2 * MINUTE, 0, MINUTE, "between")];
+    unseen(validationDemand(twice, [], [between], madeOne, NOW), twice);
+  });
+
+  test("holds a pass whose later run waits behind passes arriving after its first", () => {
+    // One run at a time, runs of 10 minutes. A pickup of three runs reaches
+    // the lock at minute 25; eight drives reach it at minute 30, while its
+    // first run holds the lock, so its second run waits 80 minutes, past
+    // its hour.
+    const figures: ValidationMeasurements = {
+      ...measured(10 * MINUTE, 1, 25 * MINUTE, HOUR),
+      kinds: {
+        pickup: { runsPerPass: 3, timeToValidationMs: 25 * MINUTE },
+        drive: { runsPerPass: 1, timeToValidationMs: HOUR },
+      },
+    };
+    const drives = Array.from({ length: 8 }, (_, i) =>
+      pass("drive", 30, `drive-${i}`),
+    );
+    const demand = validationDemand(figures, [], drives, [], NOW);
+    const forecast = forecastValidation(
+      figures,
+      "pickup",
+      demand,
+      HOUR,
+      3 * HOUR,
+    );
+    expect(forecast.ahead).toBe(0);
+    expect(forecast.required).toBe(8);
+    expect(forecast.fill).toBeGreaterThan(1);
+  });
+
+  test("holds a relaunch arriving at once when its later runs meet arrivals", () => {
+    // A drive relaunched to push reaches the lock now; nine pickups reach it
+    // in 5 minutes, during the drive's first run.
+    const figures: ValidationMeasurements = {
+      ...measured(10 * MINUTE, 1, 30 * MINUTE, 30 * MINUTE),
+      kinds: {
+        pickup: { runsPerPass: 1, timeToValidationMs: 30 * MINUTE },
+        drive: { runsPerPass: 3, timeToValidationMs: 30 * MINUTE },
+      },
+    };
+    const pickups = Array.from({ length: 9 }, (_, i) =>
+      pass("pickup", 25, `pickup-${i}`),
+    );
+    const state: ValidationLoad = {
+      measured: figures,
+      demand: validationDemand(figures, [], pickups, [], NOW),
+      ...passLockWait({}),
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
     expect(
-      forecastValidation(unmeasured, "pickup", noHistory, HOUR, 3 * HOUR),
-    ).toMatchObject({ ahead: 1, served: 0 });
+      validationHold(state, 1, "drive", 3 * HOUR, "example/jig", true),
+    ).toContain("waits on validation capacity");
   });
 
   test("the November 14 replay still holds pickups with the arrival model on", () => {
     // The replay in validation-capacity.test.ts, with launch times and
-    // measured times to validation, so every pass has an estimate.
+    // measured times to validation. Every open pass in those receipts holds
+    // or waits for a run at the lock, so it has none left to arrive: the
+    // arrival model credits only what the lock serves before the pickup.
     const replay = [
       { holding: 4, waiting: 4, pickups: 3, drives: 1, launches: 4 },
       { holding: 5, waiting: 13, pickups: 7, drives: 3, launches: 6 },
@@ -244,7 +358,7 @@ describe("the validation forecast's arrival model", () => {
       admittedRuns: 0,
     };
     expect(validationGauge(state, 1).reads).toStartWith(
-      "8 runs ahead (7 in flight served before it reaches the lock), about 16 min",
+      "8 runs ahead (7 in flight served before it reaches the lock), about 15 min",
     );
   });
 });

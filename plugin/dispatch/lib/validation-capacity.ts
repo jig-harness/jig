@@ -311,24 +311,24 @@ export interface ValidationDemand {
 }
 
 /**
- * When a pass in flight asks for the lock next, from `nowMs`: a pass with a
- * run at the lock asks again when that run releases, a run from now; one
- * that has made a run is at validation now; one that has not arrives its
- * kind's measured time to validation after its launch, or now when that is
- * past. Null when its kind's time is a default or its launch does not read.
+ * When a pass in flight that has yet to make its first run asks for the
+ * lock, from `nowMs`: its launch plus its kind's measured time to
+ * validation. Null where the forecast cannot see: its kind's time is a
+ * default, its launch does not read, or that time has passed. A pass that
+ * has made a run, or holds one at the lock, has none either: nothing
+ * measures the gap between a pass's runs.
  */
 function arrivalOf(
   measured: ValidationMeasurements,
   pass: ValidationPass,
-  stage: { atLock: number; made: number },
+  started: boolean,
   nowMs: number,
 ): number | null {
+  if (started) return null;
   if (measured.defaults.includes(timeToValidationName(pass.kind))) return null;
-  if (!Number.isFinite(pass.launchedAtMs)) return null;
-  if (stage.atLock > 0) return measured.runMs;
-  if (stage.made > 0) return 0;
   const { timeToValidationMs } = measured.kinds[pass.kind];
-  return Math.max(0, pass.launchedAtMs + timeToValidationMs - nowMs);
+  const atMs = pass.launchedAtMs + timeToValidationMs - nowMs;
+  return Number.isFinite(atMs) && atMs >= 0 ? atMs : null;
 }
 
 /**
@@ -360,7 +360,7 @@ export function validationDemand(
     const atMs =
       nowMs === undefined || runs === 0
         ? null
-        : arrivalOf(measured, pass, { atLock, made }, nowMs);
+        : arrivalOf(measured, pass, made + atLock > 0, nowMs);
     if (atMs !== null) arrivals.push({ atMs, runs });
   }
   return nowMs === undefined
@@ -371,17 +371,19 @@ export function validationDemand(
 interface QueueEstimate {
   ahead: number;
   served: number;
-  /** Service, in runs, before the pass's first run takes a slot. */
+  /** Service, in runs, before the pass's longest-waiting run takes a slot. */
   required: number;
+  /** When the pass's last run asks for the lock, from now. */
+  lastRequestMs: number;
 }
 
 function queued(input: ArrivalQueueInput): QueueEstimate {
-  const { acquireMs, ahead, served } = arrivalQueue(input);
-  const waitMs = Math.max(0, acquireMs - input.arriveMs);
+  const { waitMs, lastRequestMs, ahead, served } = arrivalQueue(input);
   return {
     ahead,
     served,
     required: (input.concurrency * waitMs) / input.runMs,
+    lastRequestMs,
   };
 }
 
@@ -394,19 +396,26 @@ function aggregate(
   measured: ValidationMeasurements,
   atLock: number,
   toArrive: number,
-  waiting: boolean,
+  ownRuns: number,
   timeToValidationMs: number,
 ): QueueEstimate {
   const { concurrency, runMs } = measured;
   const early = Math.min(atLock, (concurrency * timeToValidationMs) / runMs);
   const ahead = toArrive + atLock - early;
-  const queuedRuns = Math.ceil(ahead) + (waiting ? 1 : 0);
+  const queuedRuns = Math.ceil(ahead) + (ownRuns > 0 ? 1 : 0);
+  const required =
+    concurrency *
+    Math.ceil(Math.max(0, queuedRuns - concurrency) / concurrency);
+  // Every run ahead is in the queue before the pass's first run, so each
+  // later run asks a run apart from the one before it, with nothing ahead.
   return {
     ahead,
     served: 0,
-    required:
-      concurrency *
-      Math.ceil(Math.max(0, queuedRuns - concurrency) / concurrency),
+    required,
+    lastRequestMs:
+      timeToValidationMs +
+      (required * runMs) / concurrency +
+      Math.max(0, ownRuns - 1) * runMs,
   };
 }
 
@@ -445,17 +454,18 @@ export function forecastValidation(
   // a slot, not how long a run may occupy that slot once it holds it.
   // A pass makes its runs one after another: each asks for the lock when the
   // one before it has released, so its earlier runs are never lock waits for
-  // its later ones. Every run counted ahead is in the queue before the
-  // candidate's first run, so that run waits longest; each later run asks
-  // when its predecessor releases a slot, with nothing left ahead of it.
-  // Capacity therefore measures the service before the candidate's first
-  // acquisition. A partial service wave does not make a slot free, but it
-  // does shorten the wait until the next release.
-  // A pass in flight with an arrival estimate is served in the order it
-  // reaches the lock, so a run that releases before this pass arrives is
-  // not ahead of it. Runs without one, and the runs this tick admitted,
-  // which reach validation with this pass, are counted ahead.
-  const { ahead, served, required } = Number.isInteger(concurrency)
+  // its later ones. A pass in flight with an arrival estimate is served in
+  // the order it reaches the lock: a run that releases before this pass
+  // arrives is not ahead of it, and one that arrives later queues behind its
+  // first run but can still be ahead of a later one. Capacity therefore
+  // measures the service before the longest wait of any of its runs. Runs
+  // with no estimate, and the runs this tick admitted, which reach
+  // validation with this pass, are counted ahead. A partial service wave
+  // does not make a slot free, but it does shorten the wait until the next
+  // release.
+  const { ahead, served, required, lastRequestMs } = Number.isInteger(
+    concurrency,
+  )
     ? queued({
         concurrency,
         runMs,
@@ -467,18 +477,13 @@ export function forecastValidation(
             (demand.arrivals ?? []).reduce((sum, { runs }) => sum + runs, 0),
         ),
         arriveMs: timeToValidationMs,
-        candidate: ownRuns > 0,
+        candidateRuns: ownRuns,
       })
-    : aggregate(measured, atLock, toArrive, ownRuns > 0, timeToValidationMs);
+    : aggregate(measured, atLock, toArrive, ownRuns, timeToValidationMs);
   // The lock timeout bounds each acquisition separately, but the pass's runs
-  // are sequential and the pass deadline bounds the last one: it asks for the
-  // lock a run apart from the one before it, after the first acquisition.
-  // An idle lock never queues the pass, so only a pass that waits is held
-  // back by its later runs.
-  const lastRequestMs =
-    timeToValidationMs +
-    (required * runMs) / concurrency +
-    Math.max(0, ownRuns - 1) * runMs;
+  // are sequential and the pass deadline bounds the last one. An idle lock
+  // never queues the pass, so only a pass that waits is held back by its
+  // later runs.
   return {
     ahead,
     served,

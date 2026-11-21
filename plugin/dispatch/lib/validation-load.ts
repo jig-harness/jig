@@ -175,7 +175,7 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
   const { concurrency, runMs } = state.measured;
   const ahead = Number(result.ahead.toFixed(2));
   const minutes = (ms: number) => Math.round(ms / 60_000);
-  const waited = minutes((result.ahead * runMs) / concurrency);
+  const waited = minutes((result.required * runMs) / concurrency);
   const defaults = state.measured.defaults;
   const note = defaults.length > 0 ? ` (defaults: ${defaults.join(", ")})` : "";
   const span =

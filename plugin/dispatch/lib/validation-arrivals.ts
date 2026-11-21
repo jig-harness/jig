@@ -1,7 +1,7 @@
 /**
- * The validation lock's queue when a new pass reaches it: which runs in
- * flight are still holding or waiting for a slot then, and which the lock
- * has already served.
+ * The validation lock's queue as a new pass makes its runs: which runs in
+ * flight are still holding or waiting for a slot when it arrives, which the
+ * lock has already served, and how long each of its own runs waits.
  */
 
 /** When a pass in flight is expected to ask for the lock next, from now. */
@@ -24,13 +24,15 @@ export interface ArrivalQueueInput {
   unknownRuns: number;
   /** When the candidate's first run asks for the lock, from now. */
   arriveMs: number;
-  /** Whether the candidate makes a run at all. */
-  candidate: boolean;
+  /** The candidate's runs, one after another; a fraction counts as a whole run. */
+  candidateRuns: number;
 }
 
 export interface ArrivalQueue {
-  /** When the candidate's first run takes a slot, from now; its arrival without a run. */
-  acquireMs: number;
+  /** The longest any of the candidate's runs waits for a slot. */
+  waitMs: number;
+  /** When the candidate's last run asks for the lock, from now. */
+  lastRequestMs: number;
   /** Runs holding or waiting for the lock when the candidate arrives. */
   ahead: number;
   /** Runs the lock is expected to have released by then. */
@@ -81,22 +83,21 @@ function requestsOf(input: ArrivalQueueInput, holding: number): Request[] {
     rank: UNESTIMATED,
     next: 0,
   });
-  add(input.candidate ? 1 : 0, {
-    at: input.arriveMs,
-    rank: CANDIDATE,
-    next: 0,
-  });
+  const own = Math.ceil(input.candidateRuns);
+  add(own > 0 ? 1 : 0, { at: input.arriveMs, rank: CANDIDATE, next: own - 1 });
   return pending;
 }
 
 /**
  * Serve the lock's requests in the order they arrive, each on the slot that
- * frees first, until the candidate's first run takes one. A holder now may
+ * frees first, until the candidate's last run takes one. A holder now may
  * have just begun, so it releases a whole run from now. A run counts ahead
- * when it is still holding or waiting at the candidate's arrival, and
- * served when it released before; a run asking later queues behind the
- * candidate. Passes estimated to arrive together contend for the same
- * slots, so the ones a slot cannot take in time stay ahead.
+ * when it asked by the candidate's arrival and still holds or waits then,
+ * and served when it released before; a run asking later queues behind the
+ * candidate's first run, but can still be ahead of its later ones, each of
+ * which asks when the one before releases. Passes estimated to arrive
+ * together contend for the same slots, so the ones a slot cannot take in
+ * time stay ahead.
  */
 export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   const { concurrency, runMs, arriveMs } = input;
@@ -104,24 +105,28 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   const releases = Array.from({ length: concurrency }, (_, index) =>
     index < holding ? runMs : 0,
   );
-  const counts = { ahead: 0, served: 0 };
+  const result = { waitMs: 0, lastRequestMs: arriveMs, ahead: 0, served: 0 };
   const settle = (end: number) => {
-    if (end <= arriveMs) counts.served++;
-    else counts.ahead++;
+    if (end <= arriveMs) result.served++;
+    else result.ahead++;
   };
   releases.slice(0, holding).forEach(settle);
   const pending = requestsOf(input, holding);
+  let ownLeft = Math.ceil(input.candidateRuns);
   for (;;) {
     const request = earliest(pending);
-    if (request === undefined || request.at > arriveMs)
-      return { acquireMs: arriveMs, ...counts };
+    if (request === undefined) return result;
+    if (ownLeft <= 0 && request.at > arriveMs) return result;
     releases.sort((left, right) => left - right);
     const start = Math.max(request.at, releases[0] ?? 0);
-    if (request.rank === CANDIDATE) return { acquireMs: start, ...counts };
     const end = start + runMs;
     releases[0] = end;
-    settle(end);
+    if (request.rank === CANDIDATE) {
+      result.waitMs = Math.max(result.waitMs, start - request.at);
+      result.lastRequestMs = request.at;
+      if (--ownLeft <= 0) return result;
+    } else if (request.at <= arriveMs) settle(end);
     if (request.next > 0)
-      pending.push({ at: end, rank: ESTIMATED, next: request.next - 1 });
+      pending.push({ ...request, at: end, next: request.next - 1 });
   }
 }
