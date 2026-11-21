@@ -2,7 +2,10 @@
 import { afterEach, expect, it } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExitNot,
+} from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { releasingCommit as inspectRelease } from "../../skills/changelog/scripts/releasing-commit.ts";
 import { localWriter } from "../../shared/records/writer.ts";
@@ -167,7 +170,7 @@ it("refuses a tag-plan state a release is never owed under", async () => {
     "--state",
     "pending",
   ]);
-  expect(result.exitCode).not.toBe(0);
+  expectSpawnExitNot(result, 0);
 });
 
 function git(w: World, ...args: string[]): string {
