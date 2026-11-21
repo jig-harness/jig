@@ -9,7 +9,6 @@ import { readCloneKey, takeoverHostDriver } from "../host-drivers.ts";
 import type { UnrecordedDriver } from "../host-drivers.ts";
 import { consumeRearm, pendingRearm } from "./rearm-request.ts";
 import { admittedVendor, codexLaunchFields, type Slots } from "../accounts.ts";
-import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   type LaunchRecord,
   newRecordId,
@@ -24,7 +23,7 @@ import {
 } from "../runtime/port.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 import { failureText } from "../text.ts";
-import { RECOVERY_FACTS, sameFacts } from "../recovery-facts.ts";
+import { sameFacts } from "../recovery-facts.ts";
 import { stewardFresh } from "../steward-apply.ts";
 import { markStewardEffect } from "../steward.ts";
 import {
@@ -36,12 +35,11 @@ import type {
   Action,
   DrivenPr,
   LaunchOutcome,
-  LedgerClass,
   RepoReport,
   RepoTarget,
-  StaleCause,
 } from "../types.ts";
-import { armsUnarmed, factsOf } from "./drive-hold.ts";
+import { factsOf } from "./drive-hold.ts";
+import { changedStale, classChanged, wantedClass } from "./drive-class.ts";
 import { pullStateLabels } from "../forge.ts";
 import { launchHeads } from "../failed-rearms.ts";
 import {
@@ -484,28 +482,6 @@ function classBlocked(record: LaunchRecord, read: DrivenPr): string | null {
   return idleBlocksStart(read, true) ? IDLE : classChanged(record, read);
 }
 
-/** Why a pending record's launch no longer acts on the class its ledger reads now, by the class alone. */
-function classChanged(record: LaunchRecord, read: DrivenPr): string | null {
-  const takeover = record.action === "takeover";
-  const want = wantedClass(takeover, record.redrive, record.facts);
-  // A pending conflict repair still owns its launch when the park's answers
-  // or mergeability change. Replay under the same token instead of leaving
-  // the pending record holding the park's ordinary re-arm forever.
-  const parkedReplay =
-    record.redrive?.conflictStop === true &&
-    read.evidence.exit === DRIVE_EXIT.HITL_PARKED &&
-    (read.class === "parked" || read.class === "re-armable");
-  if (read.class !== want && !parkedReplay)
-    return `its ledger now reads ${read.class}`;
-  const gone =
-    takeover &&
-    record.replaces === null &&
-    record.facts.startsWith(RECOVERY_FACTS);
-  return gone && read.evidence.driverGone !== true
-    ? `this host no longer shows its driver's run ended: ${String(read.evidence.driverCheck)}`
-    : null;
-}
-
 /**
  * A record that stopped on a conflict acts on the change read now: it names
  * that one and keeps the ones an earlier launch may have acted on. Why it must
@@ -535,26 +511,6 @@ function replayedChange(
     earlier: [...(redrive.earlier ?? []), redrive.change],
   };
   return null;
-}
-
-/** The class a launch acts on: a takeover's `silent`, a re-drive's `stale`, a labelled arm's `unarmed`, any other re-arm's `re-armable`. */
-function wantedClass(
-  takeover: boolean,
-  redrive: StaleCause | null | undefined,
-  facts: string | null | undefined,
-): LedgerClass {
-  if (takeover) return "silent";
-  if (armsUnarmed(facts)) return "unarmed";
-  return redrive == null ? "re-armable" : "stale";
-}
-
-/** Why a pull request no longer shows the change a re-drive acts on; `null` when it still does. */
-function changedStale(
-  redrive: StaleCause | null | undefined,
-  fresh: DrivenPr,
-): string | null {
-  if (redrive == null || fresh.stale?.change === redrive.change) return null;
-  return `its pull request changed since the plan read it (now ${fresh.stale?.cause ?? fresh.why})`;
 }
 
 /** Why a fresh read stops a launch before its facts are compared: a hold label, or a later rearm request. */
