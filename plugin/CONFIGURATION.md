@@ -1898,7 +1898,10 @@ restarted has died and frees its slot.
 ### The host-local account launch weights file
 
 The dispatcher reads `$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml`
-by default) once at the start of every tick. This optional file belongs to the
+by default) at the start of every tick and again once the tick holds the
+act lock; the second reading is the one that governs the tick's retirement of
+stale notices, its planning and its admission, so an edit made while the tick
+observed still applies to that tick. This optional file belongs to the
 host, beside `dispatch.yaml`; it is not repository configuration and requires
 no restart, install or commit. If `JIG_HOME` is inside a Git repository, add
 `weights.local.yaml` to that repository's `.gitignore` or local
