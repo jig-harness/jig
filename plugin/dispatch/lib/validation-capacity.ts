@@ -287,6 +287,8 @@ export interface ValidationForecast {
   ahead: number;
   /** Runs in flight the lock is expected to have served before the pass reaches it. */
   served: number;
+  /** Runs in flight reaching the lock after the pass's first run and ahead of a later one. */
+  later: number;
   capacity: number;
   ownRuns: number;
   required: number;
@@ -371,6 +373,7 @@ export function validationDemand(
 interface QueueEstimate {
   ahead: number;
   served: number;
+  later: number;
   /** Service, in runs, before the pass's longest-waiting run takes a slot. */
   required: number;
   /** When the pass's last run asks for the lock, from now. */
@@ -378,10 +381,11 @@ interface QueueEstimate {
 }
 
 function queued(input: ArrivalQueueInput): QueueEstimate {
-  const { waitMs, lastRequestMs, ahead, served } = arrivalQueue(input);
+  const { waitMs, lastRequestMs, ahead, served, later } = arrivalQueue(input);
   return {
     ahead,
     served,
+    later,
     required: (input.concurrency * waitMs) / input.runMs,
     lastRequestMs,
   };
@@ -411,6 +415,7 @@ function aggregate(
   return {
     ahead,
     served: 0,
+    later: 0,
     required,
     lastRequestMs:
       timeToValidationMs +
@@ -463,7 +468,7 @@ export function forecastValidation(
   // validation with this pass, are counted ahead. A partial service wave
   // does not make a slot free, but it does shorten the wait until the next
   // release.
-  const { ahead, served, required, lastRequestMs } = Number.isInteger(
+  const { ahead, served, later, required, lastRequestMs } = Number.isInteger(
     concurrency,
   )
     ? queued({
@@ -487,6 +492,7 @@ export function forecastValidation(
   return {
     ahead,
     served,
+    later,
     capacity,
     ownRuns,
     required,

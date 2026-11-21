@@ -16,5 +16,6 @@ release: patch
   not read, that time has passed, or it has made a run already) and the runs
   admitted in the same tick are counted ahead. The gauge's reason, in the
   receipt and on the dashboard, names the runs served before the pass
-  reaches the lock beside the runs ahead, which are whole runs still holding
+  reaches the lock and the runs arriving after its first run that a later
+  one waits behind, beside the runs ahead, which are whole runs still holding
   or waiting when the pass arrives, and its minutes are the pass's wait.

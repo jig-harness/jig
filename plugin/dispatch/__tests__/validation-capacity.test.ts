@@ -209,6 +209,7 @@ describe("validation forecast", () => {
     expect(forecast).toEqual({
       ahead: 2,
       served: 2,
+      later: 0,
       capacity: 4,
       ownRuns: 1,
       required: 2,

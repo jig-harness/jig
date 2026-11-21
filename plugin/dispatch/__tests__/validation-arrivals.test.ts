@@ -78,6 +78,7 @@ describe("the lock's queue when a pass arrives", () => {
       lastRequestMs: 15 * MINUTE,
       ahead: 1,
       served: 1,
+      later: 0,
     });
   });
 
@@ -96,6 +97,7 @@ describe("the lock's queue when a pass arrives", () => {
       lastRequestMs: 15 * MINUTE,
       ahead: 0,
       served: 0,
+      later: 0,
     });
   });
 
@@ -117,6 +119,7 @@ describe("the lock's queue when a pass arrives", () => {
       lastRequestMs: 25 * MINUTE,
       ahead: 0,
       served: 0,
+      later: 1,
     });
   });
 });
@@ -301,7 +304,9 @@ describe("the validation forecast's arrival model", () => {
     };
     expect(
       validationHold(state, 1, "drive", 3 * HOUR, "example/jig", true),
-    ).toContain("waits on validation capacity");
+    ).toStartWith(
+      "waits on validation capacity: 0 runs ahead, and 9 arriving after its first run ahead of a later one, about 90 min",
+    );
   });
 
   test("the November 14 replay still holds pickups with the arrival model on", () => {

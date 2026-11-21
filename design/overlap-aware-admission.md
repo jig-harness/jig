@@ -469,7 +469,8 @@ per pass the result differs, since each admitted pass reserves all its runs
 ahead of the next candidate. The measure stays conservative where it
 cannot see: a run without an estimate is counted ahead, and a pass admitted
 this tick counts all of its runs ahead of the next candidate. The reason
-names the runs served before arrival beside the runs ahead, so a person
+names the runs served before arrival, and those arriving after its first run
+that a later one waits behind, beside the runs ahead, so a person
 can see why a pass was admitted or held. On a lock with nothing ahead the new pass always fits,
 whatever its runs per pass, even with a wait of zero; a wait window
 shorter than one run admits a pass only while a slot is free, or about to

@@ -37,6 +37,8 @@ export interface ArrivalQueue {
   ahead: number;
   /** Runs the lock is expected to have released by then. */
   served: number;
+  /** Runs asking after the candidate's arrival that take a slot before one of its later runs. */
+  later: number;
 }
 
 interface Request {
@@ -105,27 +107,38 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   const releases = Array.from({ length: concurrency }, (_, index) =>
     index < holding ? runMs : 0,
   );
-  const result = { waitMs: 0, lastRequestMs: arriveMs, ahead: 0, served: 0 };
+  const result = {
+    waitMs: 0,
+    lastRequestMs: arriveMs,
+    ahead: 0,
+    served: 0,
+    later: 0,
+  };
   const settle = (end: number) => {
     if (end <= arriveMs) result.served++;
     else result.ahead++;
+  };
+  /** Count a served request; the candidate's leaves its wait and its time. */
+  const record = (request: Request, start: number, end: number) => {
+    if (request.rank === CANDIDATE) {
+      result.waitMs = Math.max(result.waitMs, start - request.at);
+      result.lastRequestMs = request.at;
+    } else if (request.at <= arriveMs) settle(end);
+    else result.later++;
   };
   releases.slice(0, holding).forEach(settle);
   const pending = requestsOf(input, holding);
   let ownLeft = Math.ceil(input.candidateRuns);
   for (;;) {
     const request = earliest(pending);
-    if (request === undefined) return result;
-    if (ownLeft <= 0 && request.at > arriveMs) return result;
+    if (request === undefined || (ownLeft <= 0 && request.at > arriveMs))
+      return result;
     releases.sort((left, right) => left - right);
     const start = Math.max(request.at, releases[0] ?? 0);
     const end = start + runMs;
     releases[0] = end;
-    if (request.rank === CANDIDATE) {
-      result.waitMs = Math.max(result.waitMs, start - request.at);
-      result.lastRequestMs = request.at;
-      if (--ownLeft <= 0) return result;
-    } else if (request.at <= arriveMs) settle(end);
+    record(request, start, end);
+    if (request.rank === CANDIDATE && --ownLeft <= 0) return result;
     if (request.next > 0)
       pending.push({ ...request, at: end, next: request.next - 1 });
   }

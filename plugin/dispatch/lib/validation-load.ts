@@ -201,7 +201,11 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
     result.served > 0
       ? ` (${result.served} in flight served before it reaches the lock)`
       : "";
-  return `${ahead} runs ahead${served}, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
+  const later =
+    result.later > 0
+      ? `, and ${result.later} arriving after its first run ahead of a later one`
+      : "";
+  return `${ahead} runs ahead${served}${later}, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
 /**
