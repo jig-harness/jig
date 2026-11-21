@@ -46,6 +46,7 @@ import { journalPath } from "../../../reflect/scripts/lib/context.ts";
 import { checkLensConfig } from "../../../review/scripts/select-lenses.ts";
 import { parseReflection } from "../../../reflect/scripts/lib/settings.ts";
 import { parseObligations } from "../../../resolve-conflicts/scripts/lib/obligations.ts";
+import { readMigrationGroups } from "../../../resolve-conflicts/scripts/lib/migration-config.ts";
 import {
   parseWorkBatchSection,
   sizePointsMismatch,
@@ -192,9 +193,19 @@ export function skillValidation(
   attempt("adr", () => adrConfig(path));
   attempt("decide, explain (sheets)", () => sheetRepositories(config, root));
   attempt("changelog", () => changelogValidation(config, root));
-  attempt("resolve-conflicts", () =>
-    parseObligations(config.resolve_conflicts),
-  );
+  attempt("resolve-conflicts", () => {
+    parseObligations(config.resolve_conflicts);
+    const section = isRecord(config.resolve_conflicts)
+      ? config.resolve_conflicts
+      : {};
+    readMigrationGroups(
+      section.sequenced_migrations,
+      "resolve_conflicts.sequenced_migrations",
+      (reason) => {
+        throw new ExitError(2, reason);
+      },
+    );
+  });
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
   attempt("do-item (review gates)", () =>
     parseGates(isRecord(config.do_item) ? config.do_item : {}),

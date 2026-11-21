@@ -1,4 +1,5 @@
 /** Repository checks applied to the entire resolved staged diff, including clean merges. */
+import { RESOLVE_CONFLICTS_KEYS } from "./migration-config.ts";
 import { fail } from "../../../../shared/cli.ts";
 import { withSource } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -61,11 +62,7 @@ export function parseObligations(section: unknown): ObligationEntry[] {
   if (section === undefined || section === null) return [];
   if (!isRecord(section))
     throw new ObligationConfigError("resolve_conflicts must be a mapping");
-  knownKeys(
-    section,
-    ["generated", "hotspot_min_merges", "obligations"],
-    "resolve_conflicts",
-  );
+  knownKeys(section, RESOLVE_CONFLICTS_KEYS, "resolve_conflicts");
   const entries = section.obligations;
   if (entries === undefined) return [];
   if (!Array.isArray(entries))

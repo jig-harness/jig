@@ -16,8 +16,9 @@
  * A review object naming the head is a review of the head. A check run that
  * completed on the head with no review object naming it also is: such a
  * reviewer posts no review when a push gives it nothing new to say, so the
- * completed run is the only trace of that review. A review submitted after
- * that run completed, against another commit, makes the head's run stale.
+ * completed run is the only trace of that review, unless its title says the
+ * review did not complete. A review submitted after that run completed,
+ * against another commit, makes the head's run stale.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
 import { readArrayPages } from "../paged-read.ts";
@@ -167,21 +168,46 @@ export function judgeReviewObject(
     };
   if (review?.commit === head)
     return { state: "witnessed", source: "review-object" };
-  if (review !== null) {
-    const completed = parseMs(run.completed ?? "");
-    const submitted = parseMs(review.submittedAt);
-    // An unreadable time cannot order the two, and an unordered pair must not
-    // certify the run as the review of this head.
-    if (!Number.isFinite(completed) || !Number.isFinite(submitted))
-      return {
-        state: "AWAITING_REVIEWER",
-        reason: `${label} last reviewed ${review.commit}, not ${head}, and the times of that review and of its ${run.name} check run on ${head} do not both read, so the order of the two is unknown`,
-      };
-    if (submitted > completed)
-      return {
-        state: "STALE_REVIEW",
-        reason: `${label} last reviewed ${review.commit}, after its ${run.name} check run on ${head} completed, so that run does not stand for a review of this head`,
-      };
-  }
+  const failure = incompleteReviewReason(run, head, label);
+  if (failure !== null) return { state: "REVIEWER_FAILED", reason: failure };
+  return review === null
+    ? { state: "witnessed", source: "review-check-run" }
+    : runAfterReview(run, review, head, label);
+}
+
+/** Whether the completed run on `head` stands for its review, given the reviewer's newest review of another commit. */
+function runAfterReview(
+  run: CheckRun,
+  review: ReviewObject,
+  head: string,
+  label: string,
+): ObjectVerdict {
+  const completed = parseMs(run.completed ?? "");
+  const submitted = parseMs(review.submittedAt);
+  // An unreadable time cannot order the two, and an unordered pair must not
+  // certify the run as the review of this head.
+  if (!Number.isFinite(completed) || !Number.isFinite(submitted))
+    return {
+      state: "AWAITING_REVIEWER",
+      reason: `${label} last reviewed ${review.commit}, not ${head}, and the times of that review and of its ${run.name} check run on ${head} do not both read, so the order of the two is unknown`,
+    };
+  if (submitted > completed)
+    return {
+      state: "STALE_REVIEW",
+      reason: `${label} last reviewed ${review.commit}, after its ${run.name} check run on ${head} completed, so that run does not stand for a review of this head`,
+    };
   return { state: "witnessed", source: "review-check-run" };
+}
+
+/** A neutral check can explicitly say the reviewer ended without a review. */
+export function incompleteReviewReason(
+  run: CheckRun | null,
+  head: string,
+  label: string,
+): string | null {
+  return run?.status === "completed" &&
+    run.conclusion === "neutral" &&
+    run.title.trim() === "Review did not complete"
+    ? `${label} check-run on ${head} reads "${run.title}" and there is no review of this head`
+    : null;
 }

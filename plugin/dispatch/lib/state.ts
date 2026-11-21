@@ -583,6 +583,18 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     additive: true,
+    sql: `CREATE TABLE rearm_waits (
+      repo TEXT NOT NULL,
+      pr INTEGER NOT NULL,
+      request_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      since_ms INTEGER NOT NULL,
+      PRIMARY KEY (repo, pr)
+    );`,
+  },
+  {
+    additive: true,
     sql: `ALTER TABLE pickup_holds ADD COLUMN wait_condition TEXT;
       ALTER TABLE pickup_holds ADD COLUMN resume_record TEXT;
       ALTER TABLE pickup_holds ADD COLUMN wait_cleared INTEGER NOT NULL DEFAULT 0;

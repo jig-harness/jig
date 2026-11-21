@@ -463,11 +463,15 @@ function carriedOf(
   };
 }
 
-/** The steps that start a session, whose answer the next one is handed. */
+/**
+ * The steps that start a session, whose answer the next one is handed. A
+ * step the tick carries out whole is not one of them: after `release` the
+ * next launch is an ordinary fresh pickup, and an answer handed to it would
+ * read as its task, which the tick already did.
+ */
 const STARTS_SESSION: ReadonlySet<StationOptionId | "session"> = new Set([
   "session",
   "rerun",
-  "release",
 ]);
 
 /** The step a counted answer takes, or `undefined` when it names none the dispatcher carries out. */
@@ -486,11 +490,14 @@ function carryOf(
   decision: LineDecision,
   counted: PendingAnswer,
 ): CarriedAnswer | null {
-  return step !== undefined &&
-    STARTS_SESSION.has(step) &&
-    pickupWaitPr(decision, counted) === undefined
-    ? carriedOf(decision, counted)
-    : null;
+  if (
+    step === undefined ||
+    !STARTS_SESSION.has(step) ||
+    pickupWaitPr(decision, counted) !== undefined
+  )
+    return null;
+  const carried = carriedOf(decision, counted);
+  return carried === null ? null : { ...carried, step };
 }
 
 /** Run the counted answer's step once, and keep how it ended. */

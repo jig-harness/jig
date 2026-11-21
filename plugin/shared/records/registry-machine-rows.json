@@ -133,6 +133,12 @@
       "An unreadable driver lock that refused an operator's rearm, keyed by repository and pull request and projected while the same stopped ledger stands."
     ],
     [
+      "dispatch-rearm-wait",
+      "dispatch/lib/rearm-waits.ts",
+      "rearm_waits",
+      "When the tick first observed the current capacity wait or proof that a person's rearm request could no longer use its original tree or stop, keyed by repository, pull request and request."
+    ],
+    [
       "dispatch-overlap-wait",
       "dispatch/lib/overlap-waits.ts",
       "overlap_waits",

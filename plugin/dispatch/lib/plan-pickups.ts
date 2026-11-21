@@ -67,6 +67,7 @@ import {
   endedQuestion,
   holdingRecords,
   leftBehindWorkspaces,
+  assigneeOf,
   pickupClaimed,
   type PickupHold,
   pickupHold,
@@ -273,7 +274,13 @@ function planWanted(
   const { held, evidence } = sessions;
   const eligible = conditionalRecords(input, item.key);
   if (eligible === null) return;
-  const hold = pickupHold(item.key, eligible, item.updatedAt, input.nowMs);
+  const hold = pickupHold(
+    item.key,
+    eligible,
+    item.updatedAt,
+    input.nowMs,
+    assigneeOf(item),
+  );
   if (hold.kind === "held") {
     plan.running.push({
       target: item.key,
@@ -606,7 +613,14 @@ function planClaimed(
     )
   )
     return;
-  const pickup = pickupHold(item.key, input.launches, undefined, input.nowMs);
+  // A claimed item is assigned, to its claimant.
+  const pickup = pickupHold(
+    item.key,
+    input.launches,
+    undefined,
+    input.nowMs,
+    true,
+  );
   // A rate-limit wait holds an ended pickup, which claims nothing by waiting.
   const endedUnclaimed =
     (pickup.kind === "ended" ||

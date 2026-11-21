@@ -17,8 +17,9 @@
  * `command` in each area's `generated:` list; those are read too, so the same
  * fact is not stated twice.
  *
- * Precedence, first match wins: `resolve_conflicts.generated`, then the
- * catalog's `generated[].outputs`, then the built-in lockfile table.
+ * Sequenced migrations and their metadata are classified first, then
+ * `resolve_conflicts.generated`, the catalog's `generated[].outputs` and
+ * the built-in lockfile table.
  *
  * The section's other key, `hotspot_min_merges`, is read here too, so one
  * reader validates the whole section: the history report's hotspot threshold.
@@ -32,12 +33,26 @@ import { fieldInMessage } from "../../../../shared/config-layers.ts";
 import { readConfig, sourceIn } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import {
+  detectMigrationGroups,
+  isMigrationMetadata,
+  migrationName,
+  type MigrationGroup,
+  readMigrationGroups,
+  RESOLVE_CONFLICTS_KEYS,
+} from "./migration-config.ts";
+import { git, splitNul } from "./git.ts";
+import {
   stagedCatalog,
   stagedConfig,
   UnmergedDeclarationError,
 } from "./staged-config.ts";
 
-export type PathClass = "lockfile" | "generated" | "binary" | "text";
+export type PathClass =
+  | "lockfile"
+  | "generated"
+  | "migration"
+  | "binary"
+  | "text";
 
 export interface Regenerate {
   command: string;
@@ -84,7 +99,6 @@ function firstInvalidGlob(paths: readonly string[]): string | null {
 }
 
 const SECTION = "resolve_conflicts";
-const KNOWN_KEYS = ["generated", "hotspot_min_merges", "obligations"];
 
 /** The least number of merges a path conflicts in to count as a hotspot, when unset. */
 export const DEFAULT_HOTSPOT_MIN_MERGES = 3;
@@ -130,11 +144,53 @@ function readSection(
   if (typeof section !== "object" || Array.isArray(section))
     bad(`${SECTION} must be a mapping`);
   for (const key of Object.keys(section as object))
-    if (!KNOWN_KEYS.includes(key))
+    if (!RESOLVE_CONFLICTS_KEYS.includes(key))
       bad(
-        `${SECTION}.${key} is not a known key (known: ${KNOWN_KEYS.join(", ")})`,
+        `${SECTION}.${key} is not a known key (known: ${RESOLVE_CONFLICTS_KEYS.join(", ")})`,
       );
   return { section: section as Record<string, unknown>, bad };
+}
+
+export function configuredMigrations(): MigrationGroup[] {
+  const read = readSection(mapConfiguration().values);
+  return read
+    ? readMigrationGroups(
+        read.section.sequenced_migrations,
+        `${SECTION}.sequenced_migrations`,
+        read.bad,
+      )
+    : [];
+}
+
+export function migrationGroups(root: string): MigrationGroup[] {
+  return detectMigrationGroups(
+    configuredMigrations(),
+    splitNul(git(root, ["ls-files", "-z"])),
+  );
+}
+
+export function migrationClass(
+  path: string,
+  groups: readonly MigrationGroup[],
+  entries: readonly GeneratedEntry[],
+) {
+  for (const group of groups) {
+    if (migrationName(group, path) !== null)
+      return { class: "migration" as const, regenerate: null };
+    if (isMigrationMetadata(group, path))
+      return {
+        class: "generated" as const,
+        regenerate:
+          group.command === null
+            ? (regenerateFor(path, entries)?.regenerate ?? null)
+            : {
+                command: group.command,
+                cwd: ".",
+                source: "configuration" as const,
+              },
+      };
+  }
+  return null;
 }
 
 /**
@@ -293,7 +349,7 @@ export function catalogGeneratedEntries(): CatalogGenerated {
   if (config.unmerged !== null) {
     result.incomplete = config.unmerged;
     result.problems.push(
-      `${config.unmerged}. Files it or its change-area catalog declares as generated are classified by the other rules until it is staged; resolve and stage it, then run conflict-map.ts again (check-resolution.ts refuses until then).`,
+      `${config.unmerged}. Files it declares as migrations and files it or its catalog declares as generated are classified by the other rules until it is staged; resolve and stage it, then run conflict-map.ts again (check-resolution.ts refuses until then).`,
     );
     return result;
   }

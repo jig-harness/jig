@@ -147,16 +147,14 @@ async function observeArmsSettled(
       tickBound(context),
     ),
   );
-  if (settled.ok) {
-    observation.armsSettled = settled.value;
-    return;
-  }
+  observation.armsSettled = settled.settled;
+  if (settled.failure === null) return;
   const failure = readFailureOf(settled.failure);
   opened.report.records.push({
     record: "forge",
     source: `gh ${opened.repo.slug} release tags`,
     ok: false,
-    detail: `The pending follow-up arms past dispatch.followup_within were not read again, so they go to a person as their passes read them: ${settled.failure.reason}`,
+    detail: `The pending follow-up arms past dispatch.followup_within were not all read again, so those that needed the failed read go to a person as their passes read them: ${settled.failure.reason}`,
     ...(failure === undefined ? {} : { failure }),
   });
 }

@@ -382,7 +382,12 @@ its base. A drive whose failing checks kept failing on the CI service's
 infrastructure through its re-runs and head moves (exit `23`) is re-driven
 once per stop, after a backoff from the stop that doubles with each such stop
 in a row (15 minutes, at most 4 hours), and a person is told once 7 stand in a
-row. A drive that could not read its head's check-runs listing whole (exit
+row. When the configured reviewer reports that its review did not complete
+and the drive stops (exit `7`), the dispatcher counts the failures on that
+pull request's head. At
+[`dispatch.reviewer_failures_before_escalation`](CONFIGURATION.md#dispatch)
+it raises one need naming the reviewer and waits for a review of that head
+or a new head. A drive that could not read its head's check-runs listing whole (exit
 `25`) is re-driven once per head commit, and a second such stop on that head
 goes to a person as a systematic read failure, with the pages read. A pass
 deadline that recurred past the drive's restarts (exit `15`)
@@ -958,12 +963,14 @@ limit's three. The outcome log classes such a pass `arm pending`, which
 the dashboard shows as held back, not as finishing badly. A pass that still finds the arm pending once
 `dispatch.followup_within` has passed since the first pass that found it so
 is notified as a failed follow-up that names the arm. That window starts
-again when a pass names other release tags than the ones it started on (a
-newer release), up to three windows after the first pending pass; an arm
-that names no tag keeps its window. Before a pass past its window goes to a
-person, the tick reads the release tags its arm names once more, within
-15 minutes of the pass's end: when they all exist, it releases the marker
-instead and the follow-up runs again as a new run. An arm a run of the pull
+again when a pass names other release tags or deploy runs than the ones it
+started on (a newer release, or a newer deploy run that contains the
+merge), up to three windows after the first pending pass; an arm that names
+neither keeps its window. Before a pass past its window goes to a person,
+the tick reads the release tags and the deploy runs its arm names once
+more, within 15 minutes of the pass's end: when every tag exists and every
+run has finished (a cancelled run has not), it releases the marker instead and the follow-up runs
+again as a new run. An arm a run of the pull
 request already went past its window on is not read again, so a follow-up
 that keeps finding it pending reaches a person. `--reason` absent is
 `rate-limit`.
@@ -2025,11 +2032,15 @@ a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
 **What can be taken back.** Use `jig send 'drive@owner/repository#123' withdraw-rearm`
-to withdraw a pending rearm. A request lapses when the drive leaves the stop
-it named or when the pull request closes. The tick removes the label and records
-what happened. A missing or reused worktree, or a request still waiting after
-30 minutes, raises a need. Re-send an older request with `jig send` to bind it
-to a stop after the tick removes its unbound label.
+to withdraw a pending rearm. The tick clears requests when the pull request
+closes or the drive converges. A request waits for capacity with its binding
+and label intact. The dispatcher gives queued requests a slot before new
+automatic retries, including when they are in different repositories.
+After four hours of waiting for
+capacity, the request appears in the line's capacity view. A missing or
+reused worktree, or a newer stopped drive, raises a need after the dispatcher
+has observed the same problem for 30 minutes. Re-send an older request with
+`jig send` to bind it to a stop after the tick removes its unbound label.
 
 `release` undoes a `hold`, and `hold` a `release`. A `drive` label can be
 removed by hand until the tick has armed the drive. `resume` withdraws a

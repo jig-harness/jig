@@ -192,7 +192,13 @@ export async function changed(
     key,
   );
   if (eligible === null) return { why: "a pickup hold still applies" };
-  const hold = pickupHold(key, eligible, issue.updatedAt);
+  const hold = pickupHold(
+    key,
+    eligible,
+    issue.updatedAt,
+    undefined,
+    issue.assignee?.name,
+  );
   if (hold.kind !== "none") return { why: hold.why };
   let sessions: SessionsReport;
   try {

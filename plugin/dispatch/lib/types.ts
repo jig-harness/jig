@@ -49,6 +49,8 @@ export interface DispatchSection {
   blockedAfterMs: number;
   /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
   driveRoundsFlat: number;
+  /** The reviewer failures on a single head before the dispatcher escalates and waits for new review evidence. */
+  reviewerFailures?: import("./reviewer-failure.ts").ReviewerFailurePolicy;
   /** How long a pickup may run before it has opened a pull request. */
   pickupWithinMs: number;
   /** The deadline a pickup's headless pass runs under (`pickup_deadline`), after which its wrapper stops it. */

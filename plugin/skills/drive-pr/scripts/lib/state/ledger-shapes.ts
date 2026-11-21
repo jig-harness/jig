@@ -136,6 +136,10 @@ const event = s.union([
     cause: s.string({ pattern: "^(\\d+|unknown)$" }),
     leftWork: s.optional(s.boolean()),
     tree: s.optional(nonempty),
+    // Readers validate reviewer evidence before using it. The open ledger
+    // shape accepts extensions independently of whether they are usable.
+    reviewerHead: s.optional(s.unknown()),
+    reviewerApp: s.optional(s.unknown()),
     until: s.optional(s.unknown()),
     probe: s.optional(s.unknown()),
   }),
