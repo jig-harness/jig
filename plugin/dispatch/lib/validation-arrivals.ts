@@ -47,6 +47,8 @@ interface Request {
   rank: number;
   /** Runs the same pass asks for after this one, each when the one before releases. */
   next: number;
+  /** Names the request across simulations; a continuation extends its run's. */
+  id: string;
 }
 
 const QUEUED = 0;
@@ -71,37 +73,43 @@ function earliest(pending: Request[]): Request | undefined {
 function requestsOf(input: ArrivalQueueInput, holding: number): Request[] {
   const pending: Request[] = [];
   const add = (count: number, request: Request) => {
-    for (let index = 0; index < count; index++) pending.push({ ...request });
+    for (let index = 0; index < count; index++)
+      pending.push({ ...request, id: `${pending.length}` });
   };
-  add(input.atLock - holding, { at: 0, rank: QUEUED, next: 0 });
+  add(input.atLock - holding, { at: 0, rank: QUEUED, next: 0, id: "" });
   for (const { atMs, runs } of input.arrivals)
     add(runs > 0 ? 1 : 0, {
       at: Math.max(0, atMs),
       rank: ESTIMATED,
       next: Math.ceil(runs) - 1,
+      id: "",
     });
   add(Math.ceil(input.unknownRuns), {
     at: input.arriveMs,
     rank: UNESTIMATED,
     next: 0,
+    id: "",
   });
   const own = Math.ceil(input.candidateRuns);
-  add(own > 0 ? 1 : 0, { at: input.arriveMs, rank: CANDIDATE, next: own - 1 });
+  add(own > 0 ? 1 : 0, {
+    at: input.arriveMs,
+    rank: CANDIDATE,
+    next: own - 1,
+    id: "",
+  });
   return pending;
 }
 
-/**
- * Serve the lock's requests in the order they arrive, each on the slot that
- * frees first, until the candidate's last run takes one. A holder now may
- * have just begun, so it releases a whole run from now. A run counts ahead
- * when it asked by the candidate's arrival and still holds or waits then,
- * and served when it released before; a run asking later queues behind the
- * candidate's first run, but can still be ahead of its later ones, each of
- * which asks when the one before releases. Passes estimated to arrive
- * together contend for the same slots, so the ones a slot cannot take in
- * time stay ahead.
- */
-export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
+interface Simulation {
+  result: ArrivalQueue;
+  /** Each of the candidate's runs' start, in order. */
+  starts: number[];
+  /** Requests asking after the candidate's arrival that took a slot before its last run did. */
+  laterIds: string[];
+}
+
+/** Serve the requests in arrival order, each on the slot that frees first; `skip` names a run that never takes a slot. */
+function simulate(input: ArrivalQueueInput, skip?: string): Simulation {
   const { concurrency, runMs, arriveMs } = input;
   const holding = Math.min(input.atLock, concurrency);
   const releases = Array.from({ length: concurrency }, (_, index) =>
@@ -114,22 +122,11 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
     served: 0,
     later: 0,
   };
+  const starts: number[] = [];
+  const laterIds: string[] = [];
   const settle = (end: number) => {
     if (end <= arriveMs) result.served++;
     else result.ahead++;
-  };
-  /** Count a served request; the candidate's leaves its wait and its time. */
-  const record = (
-    request: Request,
-    start: number,
-    end: number,
-    delays: boolean,
-  ) => {
-    if (request.rank === CANDIDATE) {
-      result.waitMs = Math.max(result.waitMs, start - request.at);
-      result.lastStartMs = start;
-    } else if (request.at <= arriveMs) settle(end);
-    else if (delays) result.later++;
   };
   releases.slice(0, holding).forEach(settle);
   const pending = requestsOf(input, holding);
@@ -137,20 +134,54 @@ export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   for (;;) {
     const request = earliest(pending);
     if (request === undefined || (ownLeft <= 0 && request.at > arriveMs))
-      return result;
+      return { result, starts, laterIds };
+    if (request.id === skip) {
+      if (request.next > 0)
+        pending.push({
+          ...request,
+          id: `${request.id}>`,
+          next: request.next - 1,
+        });
+      continue;
+    }
     releases.sort((left, right) => left - right);
     const start = Math.max(request.at, releases[0] ?? 0);
     const end = start + runMs;
-    const own = pending.find((other) => other.rank === CANDIDATE);
-    // The candidate's next run would take this slot, or the next to free.
-    const delays =
-      own !== undefined &&
-      Math.max(own.at, Math.min(releases[1] ?? end, end)) >
-        Math.max(own.at, releases[0] ?? 0);
     releases[0] = end;
-    record(request, start, end, delays);
-    if (request.rank === CANDIDATE && --ownLeft <= 0) return result;
+    if (request.rank === CANDIDATE) {
+      result.waitMs = Math.max(result.waitMs, start - request.at);
+      result.lastStartMs = start;
+      starts.push(start);
+    } else if (request.at <= arriveMs) settle(end);
+    else laterIds.push(request.id);
+    if (request.rank === CANDIDATE && --ownLeft <= 0)
+      return { result, starts, laterIds };
     if (request.next > 0)
-      pending.push({ ...request, at: end, next: request.next - 1 });
+      pending.push({
+        ...request,
+        at: end,
+        id: `${request.id}>`,
+        next: request.next - 1,
+      });
   }
+}
+
+/**
+ * Serve the lock's requests in the order they arrive, each on the slot that
+ * frees first, until the candidate's last run takes one. A holder now may
+ * have just begun, so it releases a whole run from now. A run counts ahead
+ * when it asked by the candidate's arrival and still holds or waits then,
+ * and served when it released before; a run asking later queues behind the
+ * candidate's first run, but can still be ahead of its later ones, each of
+ * which asks when the one before releases. A later run counts only when the
+ * completed schedule without it starts one of the candidate's runs sooner,
+ * so runs that jointly fill the slots each count.
+ */
+export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
+  const base = simulate(input);
+  const later = base.laterIds.filter((id) => {
+    const without = simulate(input, id).starts;
+    return without.some((start, index) => start < (base.starts[index] ?? 0));
+  });
+  return { ...base.result, later: later.length };
 }

@@ -122,6 +122,25 @@ describe("the lock's queue when a pass arrives", () => {
       later: 1,
     });
   });
+
+  test("counts later arrivals that jointly occupy the slots", () => {
+    const queue = arrivalQueue({
+      concurrency: 2,
+      runMs: 10 * MINUTE,
+      atLock: 0,
+      arrivals: [
+        { atMs: 5 * MINUTE, runs: 1 },
+        { atMs: 6 * MINUTE, runs: 1 },
+      ],
+      unknownRuns: 0,
+      arriveMs: 0,
+      candidateRuns: 2,
+    });
+    // The candidate's second run starts at minute 15; without either arrival
+    // it starts at minute 10, so both count.
+    expect(queue.lastStartMs).toBe(15 * MINUTE);
+    expect(queue.later).toBe(2);
+  });
 });
 
 describe("the validation forecast's arrival model", () => {
