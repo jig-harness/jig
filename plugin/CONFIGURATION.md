@@ -1936,17 +1936,20 @@ and effective weight with its reason. An unreadable or malformed file, an
 unknown section, an invalid `accounts` mapping or a weight outside the
 range on an account the machine file lists closes every account for new
 launches, and reports why. This prevents a broken file from resuming an
-account the host paused. An `accounts` name the machine file does not list
+account the host paused; fix or remove the file to resume admission on the
+next tick. An `accounts` name the machine file does not list
 gives no listed account a weight, so it is skipped and the file's other
-weights apply: every account's reason names the skipped names, and the
-host raises one notice, where it tells its own failures (`failures.notify_after`), naming the file, the skipped names and the accounts
-the machine file lists, once for each set of skipped names (again after
-`renotify_after` while the set stands). Because an account the file does
-not name has weight 100, a misspelt name for an account meant to be paused
-leaves that account taking launches; the notice is how a person learns of
-it. Fix or remove the
-file to resume admission on the next tick. The shared document can also hold
-`lanes`; each reader validates only its own section, so an invalid `lanes`
+weights apply: every account's reason names the skipped names, and from the
+first tick that reads them the host raises one notice naming the file, the
+skipped names and the accounts the machine file lists. The notice goes
+where the host's own failures go (the first repository it owns with
+`notify` enabled whose turn is not failing), is told once for each set of
+skipped names wherever it is told (again after `renotify_after` while the
+set stands), and retires at the first tick that reads none. A host that
+owns no repository with `notify` has only the reasons. Because an account
+the file does not name has weight 100, a misspelt name for an account meant
+to be paused leaves that account taking launches; the notice is how a
+person learns of it. The shared document can also hold `lanes`; each reader validates only its own section, so an invalid `lanes`
 section does not change the account weights.
 
 ### When an outside system refuses or does not answer

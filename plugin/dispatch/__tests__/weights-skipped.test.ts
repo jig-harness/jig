@@ -11,7 +11,10 @@ import { admitRearm, slotTable } from "../lib/accounts.ts";
 import { weightReport } from "../lib/account-report.ts";
 import type { ApplyState } from "../lib/actions/launch.ts";
 import { applyNotices } from "../lib/actions/notify.ts";
-import { skippedWeightsCause } from "../lib/failure-notices.ts";
+import {
+  skippedWeightsCause,
+  standingWeightsKeys,
+} from "../lib/failure-notices.ts";
 import { readAccountWeights, readLocalWeights } from "../lib/local-weights.ts";
 import type { MachineAccount } from "../lib/machine-config.ts";
 import { noticeComment } from "../lib/runtime/notice-comment.ts";
@@ -22,7 +25,7 @@ import {
   type Workspace,
 } from "../lib/runtime/port.ts";
 import { closeStateDb } from "../lib/state.ts";
-import type { Action, RepoReport, RepoTarget } from "../lib/types.ts";
+import type { RepoReport, RepoTarget } from "../lib/types.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -93,29 +96,33 @@ function noticesCard(root: string) {
   return { state, workspace, sent };
 }
 
-/** One tick's notices at the host's home, with the weights file as it now reads: each notification's outcome. */
+/** One tick's notices at `repo`, with the weights file as it now reads: each notification's outcome. The skipped-names cause is planned only where `home`. */
 async function tick(
   file: string,
   { state, workspace }: ReturnType<typeof noticesCard>,
+  { repo = REPO, home = true, standing = true } = {},
 ): Promise<string[]> {
-  const cause = skippedWeightsCause(
-    readAccountWeights(accounts, readLocalWeights(file)),
-    machine,
-  ) as Action;
+  const read = readAccountWeights(accounts, readLocalWeights(file));
+  const cause = skippedWeightsCause(read, machine);
   const report = {
-    path: REPO.path,
-    slug: REPO.slug,
+    path: repo.path,
+    slug: repo.slug,
     records: [],
     unplaced: [],
     notifications: [],
-    actions: [cause],
+    actions: home && cause !== null ? [cause] : [],
   } as unknown as RepoReport;
   await applyNotices(
     state,
-    REPO,
+    repo,
     report,
     { ok: true, source: "test", workspaces: [workspace()] },
-    { branch: null, lingerMs: 0, renotifyAfterMs: 0 },
+    {
+      branch: null,
+      lingerMs: 0,
+      renotifyAfterMs: 0,
+      ...(standing ? { hostStanding: standingWeightsKeys(read, machine) } : {}),
+    },
   );
   return report.notifications.map((n) => n.outcome);
 }
@@ -128,9 +135,8 @@ describe("an unknown account name in the weights file", () => {
     for (const report of table.map((slots) => weightReport(slots)))
       expect(report.reason).toContain("skipped an unknown account retired in");
     const admitted = admitRearm(table, null, PASS);
-    expect("admitted" in admitted && admitted.admitted.account.name).not.toBe(
-      "a",
-    );
+    if (!("admitted" in admitted)) throw new Error(admitted.waits);
+    expect(["b", "c"]).toContain(admitted.admitted.account.name);
   });
 
   it("still closes every account for any other fault", () => {
@@ -154,7 +160,7 @@ describe("the notice of skipped account names", () => {
       machine,
     );
     expect(cause?.cause).toBe("host-failing");
-    expect(cause?.notice?.key).toBe("host weights skip old, zed");
+    expect(cause?.notice?.key).toBe('host weights skip "old", "zed"');
     expect(cause?.notice?.text).toContain("The machine file lists: a, b, c.");
     expect(cause?.notice?.text).toContain("weights.local.yaml");
     expect(
@@ -172,5 +178,43 @@ describe("the notice of skipped account names", () => {
     expect(await tick(file, card)).toEqual(["sent"]);
     expect(await tick(file, card)).toEqual(["suppressed"]);
     expect(card.sent).toHaveLength(1);
+  });
+
+  it("is not told again when the host's home moves to another repository", async () => {
+    const root = scratch();
+    const card = noticesCard(root);
+    const elsewhere = noticesCard(root);
+    const file = join(scratch(), "weights.local.yaml");
+    writeFileSync(file, "accounts: {a: 0, old: 3}");
+    const other: RepoTarget = {
+      path: "/other",
+      slug: "o/other",
+      defaultBranch: "main",
+    };
+    expect(await tick(file, card)).toEqual(["sent"]);
+    expect(await tick(file, card, { home: false })).toEqual([]);
+    expect(await tick(file, elsewhere, { repo: other })).toEqual([
+      "suppressed",
+    ]);
+    expect([...card.sent, ...elsewhere.sent]).toHaveLength(1);
+  });
+
+  it("is told again on a home move when nothing holds its key standing", async () => {
+    const root = scratch();
+    const card = noticesCard(root);
+    const elsewhere = noticesCard(root);
+    const file = join(scratch(), "weights.local.yaml");
+    writeFileSync(file, "accounts: {a: 0, old: 3}");
+    const other: RepoTarget = {
+      path: "/other",
+      slug: "o/other",
+      defaultBranch: "main",
+    };
+    const unheld = { standing: false };
+    expect(await tick(file, card, unheld)).toEqual(["sent"]);
+    expect(await tick(file, card, { ...unheld, home: false })).toEqual([]);
+    expect(await tick(file, elsewhere, { ...unheld, repo: other })).toEqual([
+      "sent",
+    ]);
   });
 });

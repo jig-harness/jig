@@ -12,6 +12,7 @@
  * the deadline and the preflight's answers (preflight.ts), is built here
  * once per tick.
  */
+import { standingWeightsKeys } from "./failure-notices.ts";
 import { serialUndecided } from "./serial-pickups.ts";
 import type { Contention } from "./contention.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
@@ -217,6 +218,7 @@ export async function actObserved(
         }),
     );
   const inputs: ApplyInputs = {
+    hostStanding: standingWeightsKeys(context.weights, context.options.machine),
     forge,
     repo,
     runtime: context.runtime,
@@ -336,6 +338,8 @@ interface ApplyInputs {
   about: (target: string) => { title: string | null; url: string | null };
   /** Read the answers to the needs' framed decisions and act on the ones that count (`station-answers.ts`). */
   answers: () => Promise<void>;
+  /** The host notices outside the failure ledger that stand this tick (`standingWeightsKeys`). */
+  hostStanding: readonly string[];
 }
 
 /**
@@ -537,6 +541,7 @@ async function applyStages(
         branch: section.noticesBranch,
         book: inputs.book,
         about: inputs.about,
+        hostStanding: inputs.hostStanding,
         ...noticeOutlets(apply.machine),
       });
   });

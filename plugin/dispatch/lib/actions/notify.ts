@@ -286,6 +286,8 @@ export interface NoticeSettings {
   channels?: ReadonlyArray<NotificationChannel<Cause>>;
   /** Whether the tick writes the `orca-card` channel and observes its notices workspace; `true` unless the session runtime is the process runtime, which has neither. */
   orcaCard?: boolean;
+  /** Keys of host notices outside the failure ledger that stand this tick wherever they are told (`standingWeightsKeys`). */
+  hostStanding?: readonly string[];
 }
 
 /** The failure ledger's key and kind of a cause's delivery on `channel`. */
@@ -385,11 +387,16 @@ function dueAgain(
   return Number.isFinite(last) && nowMs - last >= everyMs;
 }
 
-/** The keys that stand: the causes named, and the host failures still standing, whose records stay at the repository that told them wherever they are told now. */
-function standingKeys(causes: readonly Cause[], root: string): Set<string> {
+/** The keys that stand: the causes named, and the host notices still standing, whose records stay at the repository that told them wherever they are told now. */
+function standingKeys(
+  causes: readonly Cause[],
+  root: string,
+  host: readonly string[] = [],
+): Set<string> {
   const live = new Set(causes.map((c) => c.notice.key));
   for (const key of hostNoticeKeys(readFailures(undefined, root)))
     live.add(key);
+  for (const key of host) live.add(key);
   return live;
 }
 
@@ -452,7 +459,7 @@ export async function applyNotices(
   );
   // The plan named a failing action's notice before the act phase found the action no longer wanted.
   const causes = planned.filter((c) => failureStands(settings.book, c));
-  const standing = standingKeys(causes, root);
+  const standing = standingKeys(causes, root, settings.hostStanding);
   const scope = {
     repo,
     report,

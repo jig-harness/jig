@@ -293,7 +293,8 @@ export function skippedWeightsCause(
   const found = skippedAccountNames(weights);
   if (found === null) return null;
   const { names: skipped, path: file } = found;
-  const names = skipped.join(", ");
+  // Quoted, so a name holding a comma or a line break keeps the key one line and one set one key.
+  const names = skipped.map((name) => JSON.stringify(name)).join(", ");
   const listed = machine.accounts.map((a) => a.name).join(", ");
   return {
     stage: "notify",
@@ -308,6 +309,18 @@ export function skippedWeightsCause(
       `Fix or remove ${skipped.length === 1 ? "the name" : "the names"} in the weights file; this notice retires at the first tick that reads none. ${RECEIPT}`,
     ]),
   };
+}
+
+/** The keys of the host notices the weights file makes stand this tick, at every repository: a home that moves keeps the record of one already told. */
+export function standingWeightsKeys(
+  weights: AccountWeights | undefined,
+  machine: Pick<MachineConfig, "accounts"> | null | undefined,
+): string[] {
+  const key =
+    machine == null
+      ? undefined
+      : skippedWeightsCause(weights, machine)?.notice?.key;
+  return key === undefined ? [] : [key];
 }
 
 /** The failure ledger's notifications for one opened repository, with `--apply` where this host notifies for it. */
