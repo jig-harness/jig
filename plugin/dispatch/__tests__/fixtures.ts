@@ -92,7 +92,7 @@ if (fs.existsSync(F + "/gh-hold.json")) {
   if (args.join(" ").includes(hold.match)) Bun.sleepSync(hold.ms);
 }
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
-// The repository's labels as labels-repo.json lists them: a name alone is a label with no description.
+// The repository's labels as labels-repo.json lists them: a name alone is a label with no description and the forge's gray.
 const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])
   .map((l) => (typeof l === "string" ? { name: l, description: "", color: "ededed" } : l));
 const release = require(${JSON.stringify(RELEASE_FAKE)}).releaseForgeAnswer(F, args);
@@ -194,7 +194,7 @@ if (args[0] === "pr" && args[1] === "edit") {
   out("https://github.com/${SLUG}/pull/" + n + "\\n");
 }
 if (args[0] === "label" && args[1] === "list")
-  out(repoLabels().map(({ name, description }) => ({ name, description })));
+  out(repoLabels().map(({ name, description, color }) => ({ name, description, color })));
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 if (args[0] === "label" && args[1] === "create") {
   // One label added to labels-repo.json; refused while label-create-fail exists.
