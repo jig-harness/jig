@@ -40,7 +40,11 @@ export interface MigrationPlan {
 function compare(a: Source, b: Source): number {
   if (a.name.ordinal !== b.name.ordinal)
     return a.name.ordinal < b.name.ordinal ? -1 : 1;
-  return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+  return comparePaths(a.path, b.path);
+}
+
+function comparePaths(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function sources(group: MigrationGroup, tree: Tree): Source[] {
@@ -203,10 +207,10 @@ function metadata(
   ]);
   return {
     outputs,
-    regenerate: [...regenerate].sort(),
+    regenerate: [...regenerate].sort(comparePaths),
     remove: [...obsolete]
       .filter((path) => !integration.tree.has(path) && !retained.has(path))
-      .sort(),
+      .sort(comparePaths),
   };
 }
 
@@ -222,7 +226,7 @@ function integrationPaths(
   ];
   return [...new Set(candidates)]
     .filter((path) => integration.tree.has(path))
-    .sort();
+    .sort(comparePaths);
 }
 
 function planProblems(
@@ -284,7 +288,7 @@ function makePlan(
         ? integrationPaths(group, integration, pending)
         : conflicted
             .filter((path) => integration.tree.has(path))
-            .sort((left, right) => left.localeCompare(right)),
+            .sort(comparePaths),
     },
     moves: moved.map(({ path, target }) => ({
       from: path,
