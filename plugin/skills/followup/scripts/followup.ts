@@ -13,6 +13,7 @@
  *   bun followup.ts settle [--pr <n>] [--json]
  *   bun followup.ts authority [--pr <n>] [--json]
  *   bun followup.ts release [--pr <n>]
+ *   bun followup.ts deploy-run <run-id> [--stuck-after <minutes>]
  *
  * - `facts` reads the merge facts (JSON) and starts the run's ledger under
  *   `.context/scratch/followup/`: a merged pull request is followed up, an
@@ -36,6 +37,9 @@
  * - `release` prints what the release arm reads (JSON): the merge's change
  *   notes, whether each still waits on the integration branch, and the
  *   changelog skill's `status.ts` report from a throwaway checkout of it.
+ * - `deploy-run` prints whether a workflow run an arm waits for will settle
+ *   by itself (JSON): `finished`, `moving`, or `stuck` behind a held
+ *   concurrency group (`lib/deploy.ts`).
  *
  * Exit codes: 0 done; 1 `facts`: the forge or the clone could not be read,
  * `settle`: an arm has no verdict, `instructions`: the integration branch's
@@ -45,7 +49,8 @@
  * the forge refused for its rate limit (`RATE-LIMITED until <time>`).
  * `guard` otherwise exits as `jig dispatch marker check` did: 1 the forge
  * could not be read, 2 the marker is missing or not trusted, 3 an earlier
- * marker holds the follow-up.
+ * marker holds the follow-up. `deploy-run` exits 1 when the forge could not
+ * be read and 5 when it refused for its rate limit.
  */
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -57,7 +62,9 @@ import {
 } from "../../../shared/consumer.ts";
 import { valueAt } from "../../../shared/config-layers.ts";
 import { attempt, failed, type Outcome } from "../../../shared/outcome.ts";
+import { currentMs, isoFromMs } from "../../../shared/time.ts";
 import { ghRunFailure } from "../../../shared/outbound/github.ts";
+import { failedBy } from "../../../shared/outbound/failure.ts";
 import {
   ghCall,
   git,
@@ -111,6 +118,7 @@ import {
   type ShowFile,
 } from "./lib/settings.ts";
 import { mergeNotes, statusInCheckout } from "./lib/release.ts";
+import { type ForgeRead, readDeployRun, STUCK_AFTER_MS } from "./lib/deploy.ts";
 import { renderSettled, settle } from "./lib/settle.ts";
 import {
   shellArgv,
@@ -127,6 +135,7 @@ const USAGE = [
   "       followup.ts settle [--pr <n>] [--json]",
   "       followup.ts authority [--pr <n>] [--json]",
   "       followup.ts release [--pr <n>]",
+  "       followup.ts deploy-run <run-id> [--stuck-after <minutes>]",
 ].join("\n");
 
 /** How long a local git call may take. */
@@ -683,6 +692,59 @@ async function releaseCommand(args: string[]): Promise<number> {
   return 0;
 }
 
+/** `gh api <path>` in the repository, parsed. */
+function forgeRead(dir: string): ForgeRead {
+  return async (path) => {
+    const r = await ghCall(["api", path], { cwd: dir });
+    const failure = ghRunFailure(r);
+    if (failure?.code === "rate-limited")
+      return failedBy(
+        "rate-limited",
+        failure,
+        `RATE-LIMITED until ${isoFromMs(failure.until ?? 0)}: ${failure.reason}`,
+      );
+    if (failure !== null)
+      return failedBy(
+        "unreadable",
+        failure,
+        `gh api ${path}: ${failure.reason}`,
+      );
+    return attempt(
+      "unreadable",
+      `gh api ${path} answered in a form that does not read`,
+      (): unknown => JSON.parse(r.stdout),
+    );
+  };
+}
+
+async function deployRunCommand(args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    options: { "stuck-after": { type: "string" } },
+    allowPositionals: true,
+    strict: true,
+  });
+  const takes = "deploy-run takes one run id";
+  const id = numberArg(exactly(positionals, 1, takes)[0], takes);
+  if (!Number.isSafeInteger(id)) usage(`${takes} that fits a safe integer`);
+  const after = values["stuck-after"];
+  if (after !== undefined && prNumber(after) === null)
+    usage("--stuck-after takes a whole number of minutes");
+  const stuckAfterMs =
+    after === undefined ? STUCK_AFTER_MS : Number(after) * 60_000;
+  if (!Number.isSafeInteger(stuckAfterMs)) usage("--stuck-after is too large");
+  const read = await readDeployRun(
+    id,
+    forgeRead(root()),
+    currentMs(),
+    stuckAfterMs,
+  );
+  if (!read.ok)
+    stop(read.failure.code === "rate-limited" ? 5 : 1, read.failure.reason);
+  console.log(JSON.stringify(read.value, null, 2));
+  return 0;
+}
+
 const COMMANDS: Record<string, (args: string[]) => Promise<number>> = {
   facts: factsCommand,
   arms: armsCommand,
@@ -693,6 +755,7 @@ const COMMANDS: Record<string, (args: string[]) => Promise<number>> = {
   settle: settleCommand,
   authority: authorityCommand,
   release: releaseCommand,
+  "deploy-run": deployRunCommand,
 };
 
 /** Whether `error` is `node:util`'s refusal of an unknown or malformed option. */

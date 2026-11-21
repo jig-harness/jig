@@ -12,6 +12,7 @@
  * - otherwise it is `done`.
  */
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import { armTags } from "../../../../dispatch/lib/followup-waits.ts";
 import { armTitle, repoArmOf } from "./arms.ts";
 import type { RunFile, Verdict } from "./run.ts";
 
@@ -156,13 +157,36 @@ export function renderSettled(s: Settled): string {
 /** The longest arm text `jig dispatch result … --arm` takes. */
 const ARM_MAX = 200;
 
+/** A workflow run's link on the forge, as a deploy arm carries it. */
+const RUN_LINK_TEXT =
+  /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d{1,19}(?!\d)/g;
+
 /** The pending arms and what each waits for, in one line short enough for `--arm`. */
 export function pendingArm(s: Settled): string {
   const text = s.rows
     .filter((r) => r.verdict === "pending")
     .map((r) => `${r.arm}: ${r.evidence.replace(/\s+/g, " ").trim()}`)
     .join("; ");
-  return text.length <= ARM_MAX ? text : `${text.slice(0, ARM_MAX - 1)}…`;
+  if (text.length <= ARM_MAX) return text;
+  // The re-read settles an arm only when every tag and run it names is
+  // done, so a shortened arm keeps the whole set or names none of it: a
+  // partial set would let part of the wait release the rest.
+  const deps = [...armTags(text), ...new Set(text.match(RUN_LINK_TEXT) ?? [])];
+  const depText = deps.join(" ");
+  const fits = depText.length <= ARM_MAX - 2;
+  // Run links come out as spans, whatever wraps them, before the prose is cut.
+  const prose = text
+    .replace(RUN_LINK_TEXT, "")
+    .split(" ")
+    .filter((w) => w !== "" && armTags(w).length === 0)
+    .join(" ");
+  const room = fits ? ARM_MAX - 2 - depText.length : ARM_MAX - 1;
+  let head = prose.slice(0, room);
+  // A word the cut ran through is dropped whole.
+  if (prose[room] !== undefined && prose[room] !== " ")
+    head = head.replace(/\S*$/, "");
+  head = head.trimEnd();
+  return fits ? `${head}… ${depText}`.trim() : `${head}…`;
 }
 
 /** How the session ends the run, for each way it was started. */
