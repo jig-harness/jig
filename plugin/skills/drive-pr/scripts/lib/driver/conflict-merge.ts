@@ -53,30 +53,49 @@ export async function beforeConflictPass(
   pr: string,
   held: readonly DriveLock[],
 ): Promise<() => Promise<string | null>> {
-  const openBefore = await mergeOpen();
   const options = cleanupOptions();
-  const before =
-    openBefore === false ? await listedFiles(options, ["--cached"]) : null;
-  const head =
-    openBefore === false ? await git(["rev-parse", "HEAD"], options) : null;
+  const initial = await unconcludedGitOpMarker(options.timeoutSec, options);
+  // Leave operations the pass inherited available for it to finish or restart.
+  if (initial.ok && initial.marker !== null) return async () => null;
+  if (!initial.ok)
+    console.error(
+      `PR #${pr}: could not read the initial git operation: ${initial.reason}`,
+    );
+
+  const before = initial.ok ? await listedFiles(pr, options, "before") : null;
+  const head = initial.ok ? await git(["rev-parse", "HEAD"], options) : null;
+  if (head !== null && head.code !== 0)
+    console.error(
+      `PR #${pr}: could not read HEAD before conflict resolution (exit ${head.code}): ${head.stderr.trim()}`,
+    );
   return async () => {
-    if (openBefore === false && held.length > 0) {
+    if (initial.ok && held.length > 0)
       return settleConflictTree(
         pr,
         before,
         head?.code === 0 ? head.stdout : null,
       );
-    } else if (openBefore !== true && (await mergeOpen()) === true) {
-      const why =
-        held.length === 0
-          ? "the driver no longer holds its locks"
-          : "the initial merge state was unreadable";
-      const result = `An open merge (MERGE_HEAD) remains because ${why}.`;
-      console.error(`PR #${pr}: ${result}`);
-      return result;
-    }
-    return null;
+
+    const why = initial.ok
+      ? "the driver no longer holds its locks"
+      : "the initial git operation was unreadable";
+    return reportBlockedCleanup(pr, options, why);
   };
+}
+
+async function reportBlockedCleanup(
+  pr: string,
+  options: GitOptions,
+  why: string,
+) {
+  const final = await unconcludedGitOpMarker(options.timeoutSec, options);
+  if (final.ok && final.marker !== "MERGE_HEAD") return null;
+  const result = final.ok
+    ? `An open merge (MERGE_HEAD) remains because ${why}.`
+    : `The final merge state could not be verified, and cleanup was skipped because ${why}.`;
+  console.error(`PR #${pr}: ${result}`);
+  if (!final.ok) console.error(final.reason);
+  return result;
 }
 
 function cleanupOptions() {
@@ -88,16 +107,19 @@ function cleanupOptions() {
 }
 
 async function listedFiles(
+  pr: string,
   options: ReturnType<typeof cleanupOptions>,
-  extra: string[] = [],
+  phase: "before" | "after",
 ) {
-  const result = await git(
-    ["ls-files", "-z", "--others", "--exclude-standard", ...extra],
-    options,
+  const args = ["ls-files", "-z", "--others", "--exclude-standard"];
+  if (phase === "before") args.push("--cached");
+  const result = await git(args, options);
+  if (result.code === 0)
+    return new Set(result.stdout.split("\0").filter(Boolean));
+  console.error(
+    `PR #${pr}: git ls-files exited ${result.code} ${phase} the conflict-resolution pass: ${result.stderr.trim()}`,
   );
-  return result.code === 0
-    ? new Set(result.stdout.split("\0").filter(Boolean))
-    : null;
+  return null;
 }
 
 type GitOptions = ReturnType<typeof cleanupOptions>;
@@ -112,13 +134,25 @@ async function abortUnfinishedMerge(
     opts,
   );
   const abort = await git(["merge", "--abort"], opts);
-  if (abort.code !== 0 || (await mergeOpen()) !== false) {
+  if (abort.code !== 0) {
     console.error(
-      `${left}, and 'git merge --abort' did not close it: ${abort.stderr.trim() || "merge closure could not be verified"}`,
+      `${left}, and 'git merge --abort' did not close it (exit ${abort.code}): ${abort.stderr.trim()}`,
+    );
+    return false;
+  }
+  const final = await unconcludedGitOpMarker(opts.timeoutSec, opts);
+  if (!final.ok || final.marker !== null) {
+    const reason = final.ok ? `${final.marker} remains` : final.reason;
+    console.error(
+      `${left}, and 'git merge --abort' did not close it: ${reason}`,
     );
     return false;
   }
   console.error(`${left}; aborted it. It held:\n${held.stdout.trimEnd()}`);
+  if (held.code !== 0)
+    console.error(
+      `PR #${pr}: the merge inventory failed (git status exit ${held.code}): ${held.stderr.trim()}`,
+    );
   return true;
 }
 
@@ -162,8 +196,12 @@ async function verifyRestoredTree(
   );
   if (status.code === 0 && status.stdout === "") return true;
   console.error(
-    `PR #${pr}: the conflict-resolution worktree could not be verified clean:\n${(status.stdout || status.stderr).trimEnd()}`,
+    `PR #${pr}: the conflict-resolution worktree could not be verified clean:\n${status.stdout.trimEnd()}`,
   );
+  if (status.code !== 0)
+    console.error(
+      `PR #${pr}: git status exited ${status.code}: ${status.stderr.trim()}`,
+    );
   return false;
 }
 
@@ -175,7 +213,7 @@ async function restoreConflictTree(
 ): Promise<string | null> {
   if (open && !(await abortUnfinishedMerge(pr, opts)))
     return "Git could not verify that aborting the unfinished merge closed MERGE_HEAD.";
-  const after = await listedFiles(opts);
+  const after = await listedFiles(pr, opts, "after");
   if (before === null || after === null) {
     const reason =
       "New untracked files could not be identified after conflict resolution.";
@@ -192,6 +230,24 @@ async function restoreConflictTree(
   return open
     ? "The pass ended with its merge open. The driver aborted it and verified that the worktree is clean."
     : "The driver removed new untracked files and verified that the worktree is clean.";
+}
+
+async function compareHead(
+  pr: string,
+  opts: GitOptions,
+  originalHead: string | null,
+): Promise<"same" | "changed" | { reason: string }> {
+  const head = await git(["rev-parse", "HEAD"], opts);
+  if (head.code === 0 && originalHead !== null)
+    return head.stdout === originalHead ? "same" : "changed";
+  const reason =
+    "Could not verify the worktree's HEAD before and after conflict resolution, so new untracked files were left in place.";
+  console.error(`PR #${pr}: ${reason}`);
+  if (head.code !== 0)
+    console.error(
+      `git rev-parse HEAD exited ${head.code}: ${head.stderr.trim()}`,
+    );
+  return { reason };
 }
 
 /** Restore a pass's unfinished merge under the same fence as its other writes. */
@@ -211,8 +267,9 @@ async function settleConflictTree(
   if (operation.marker !== null && operation.marker !== "MERGE_HEAD")
     return null;
   const open = operation.marker === "MERGE_HEAD";
-  const head = await git(["rev-parse", "HEAD"], opts);
-  if (!open && (head.code !== 0 || head.stdout !== originalHead)) return null;
+  const head = open ? "same" : await compareHead(pr, opts, originalHead);
+  if (head === "changed") return null;
+  if (head !== "same") return head.reason;
 
   let fence: Awaited<ReturnType<typeof treeFence>>;
   try {

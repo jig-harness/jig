@@ -48,10 +48,12 @@ function drizzleEntries(entries: unknown[]): JournalEntry[] | null {
 }
 
 /** An ordered JSON filename list, or legacy Drizzle's ordered tag entries. */
-function decodeJournal(text: string): {
+interface Journal {
   names: string[];
   entries: JournalEntry[] | null;
-} | null {
+}
+
+function decodeJournal(text: string): Journal | null {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -96,25 +98,33 @@ function checkJournal(
       message:
         "migration journal must list each staged migration in sequence order: regenerate the journal and snapshots",
     });
-  // Drizzle uses the applied journal's timestamp as the migration watermark.
-  // Preserve integration's original prefix, then validate the appended
-  // timestamps against it through decodeJournal's strict ordering check.
-  const integration = isRegular(committed)
-    ? decodeJournal(readBlob(root, committed.blob))?.entries
-    : null;
-  if (
-    integration &&
-    !isDeepStrictEqual(
-      integration,
-      actual?.entries?.slice(0, integration.length),
-    )
-  )
-    problems.push({
-      path: plan.group.journal,
-      message:
-        "preserve the integration journal entries and append migrations after their timestamps",
-    });
+  const problem = committedJournalProblem(root, committed, actual);
+  if (problem !== null)
+    problems.push({ path: plan.group.journal, message: problem });
   return problems;
+}
+
+function committedJournalProblem(
+  root: string,
+  committed: Stage | undefined,
+  actual: Journal | null,
+): string | null {
+  if (committed === undefined) return null;
+  const integration = isRegular(committed)
+    ? decodeJournal(readBlob(root, committed.blob))
+    : null;
+  if (integration === null)
+    return "cannot verify the committed integration journal: repair its format before resolving the sequence";
+
+  // Drizzle uses the applied journal's timestamp as the migration watermark.
+  // Preserve integration's prefix and require strictly ordered new entries.
+  const entries = integration.entries;
+  if (
+    entries !== null &&
+    !isDeepStrictEqual(entries, actual?.entries?.slice(0, entries.length))
+  )
+    return "preserve the integration journal entries and append migrations after their timestamps";
+  return null;
 }
 
 function checkSources(plan: MigrationPlan, staged: Tree, check: Check): void {
