@@ -481,9 +481,7 @@ async function startAct(started: StartedTick): Promise<void> {
     logDefect("the follow-up outcomes", receipt.defect, error);
   }
   // Read again under the lock, so retirement, planning and admission share one reading of the host.
-  const host = readHostInputs(options);
-  context.weights = host.weights;
-  context.drivers = host.drivers;
+  Object.assign(context, readHostInputs(options));
   const attempt = applyState(
     options,
     runtime,
