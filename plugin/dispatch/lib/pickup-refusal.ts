@@ -112,7 +112,8 @@ export function waitsOf(row: {
   result_wait?: string | null;
 }): { waitsUntil?: string; waitsFor?: WaitFor } {
   const until = row.result_until ?? null;
-  return row.result === "failed" && until !== null
-    ? { waitsUntil: until, waitsFor: readWaitFor(row.result_wait) }
-    : {};
+  if (row.result !== "failed") return {};
+  const wait = readWaitFor(row.result_wait);
+  if (until !== null) return { waitsUntil: until, waitsFor: wait };
+  return wait.condition === undefined ? {} : { waitsFor: wait };
 }

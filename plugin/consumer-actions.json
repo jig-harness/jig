@@ -217,6 +217,40 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.296.0",
+      "actions": [
+        {
+          "id": "0.296.0#28d34c01",
+          "strength": "advised",
+          "levels": ["instructions"],
+          "description": "On Linear, an issue assigned within three minutes of its creation was never started: Linear leaves changes made in an issue's first three minutes out of its history, so the dispatcher found no assignment and refused the item on every tick. `jig send … assign` now waits until that window has passed before writing, and for an item already assigned to the factory identity whose history shows no assignment it refuses with the remedy (unassign it, then send again) instead of the bare \"already assigned\". The served-queue documentation and the operator skill say the same.",
+          "instruction": "A runbook that assigns a Linear item to the factory identity or a served person right after filing it should wait three minutes, or unassign and assign it again after them.",
+          "hints": []
+        }
+      ],
+      "retracts": []
+    },
+    {
+      "version": "0.299.0",
+      "actions": [
+        {
+          "id": "0.299.0#a163679e",
+          "strength": "advised",
+          "levels": ["configuration"],
+          "description": "**Breaking:** The dispatcher no longer starts an item that has no priority, assigned or from the ready pool, which it used to place after every low-priority item. The line lists the item in its queue with the priority it lacks; once a person sets one, or the steward's `facet` record fills it for an assigned item, the next tick ranks and starts it. A repository that wants such items started anyway sets `dispatch.missing_priority: start` ([configuration](plugin/CONFIGURATION.md#dispatch)).",
+          "instruction": "Give the items the dispatcher starts a priority, or set `dispatch.missing_priority: start` where the repository does not rank its items.",
+          "hints": [
+            {
+              "kind": "config",
+              "value": "dispatch.missing_priority",
+              "absent": true
+            }
+          ]
+        }
+      ],
+      "retracts": []
     }
   ]
 }

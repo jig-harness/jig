@@ -891,21 +891,23 @@ export function gitHubTracker(client: Client): Tracker {
       return nodes.map((n) => summaryOf(parseIssue(n, ctx), model));
     },
 
+    dependencyState: (key, signal) =>
+      client.dependencyState(client.ref(key), signal),
     listRelations: relations,
 
     migrateRelations: (opts, signal) => migrateRelations(client, opts, signal),
 
-    async relate(key, type, target) {
+    async relate(key, type, target, signal) {
       checkRelation(key, type, target);
-      const a = await client.mustIssue(key);
-      const b = await client.mustIssue(target);
+      const a = await client.mustIssue(key, signal);
+      const b = await client.mustIssue(target, signal);
       // `#1`, `1`, the qualified key and the address all name one issue.
       refuseSameIssue([a.id, b.id], key, target, a.key);
       if (type === "blocks") {
         await client.mutate(
           M.addBlockedBy,
           { issueId: b.id, blockingIssueId: a.id },
-          undefined,
+          signal,
           b.ref,
         );
         return;
@@ -918,18 +920,18 @@ export function gitHubTracker(client: Client): Tracker {
             stateReason: "DUPLICATE",
             duplicateIssueId: b.id,
           },
-          undefined,
+          signal,
           a.ref,
         );
         return;
       }
-      const found = await client.issue(a.ref, RELATES_TO);
+      const found = await client.issue(a.ref, RELATES_TO, signal);
       const own = found === null ? [] : nativeRelated(found.raw, a.key);
       if (own.some((r) => r.issue === b.key)) return;
       await client.mutate(
         M.addRelatesTo,
         { issueId: a.id, relatedIssueId: b.id },
-        undefined,
+        signal,
         a.ref,
       );
     },

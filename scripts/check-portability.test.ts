@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
 import {
   checkPortability,
-  PORTABLE_ROOTS,
   type PortabilityScope,
   portabilityFindings,
 } from "./check-portability.ts";
@@ -13,7 +12,7 @@ import {
 const root = join(import.meta.dir, "..");
 const fixtures = join(import.meta.dir, "tests/fixtures/portability");
 const CORE: PortabilityScope = {
-  roots: PORTABLE_ROOTS,
+  roots: ["plugin/hub/core/"],
   shared: [],
   allowed: [],
 };
@@ -197,6 +196,85 @@ export const used = [readFileSync, $, z, sql];`),
       "plugin/hub/core/unit.ts": `import { sql } from "drizzle-orm/sql";\nexport const q = sql;\n`,
     });
     expect(found(dir, { ...CORE, allowed: ["drizzle-orm"] })).toEqual([]);
+  });
+
+  test("an allowed vendored bundle's globals pass; its imports and any other vendored file are checked", () => {
+    const dir = scratch({
+      "plugin/hub/storage/ops.ts": `import { sql } from "../../shared/vendor/orm.mjs";
+import { other } from "../../shared/vendor/other.mjs";
+export const q = [sql, other];
+`,
+      "plugin/shared/vendor/orm.mjs": `import { blob } from "./orm-chunk.mjs";
+import { readFileSync } from "node:fs";
+export const sql = () => (typeof Buffer !== "undefined" ? Buffer.from("a") : blob);
+export const read = readFileSync;
+`,
+      "plugin/shared/vendor/orm-chunk.mjs": `import "bun:sqlite";
+export const blob = Buffer.alloc(1);
+`,
+      "plugin/shared/vendor/other.mjs": `export const other = Buffer.from("b");
+`,
+    });
+    const scope = { ...CORE, roots: ["plugin/hub/storage/"] };
+    // The bundle's own Buffer passes; its node:fs import, and its sibling
+    // chunk, not listed, are held to every rule.
+    expect(
+      found(dir, {
+        ...scope,
+        vendored: ["plugin/shared/vendor/orm.mjs"],
+      }),
+    ).toEqual([
+      "plugin/shared/vendor/orm.mjs:2 portability:runtime-module",
+      "plugin/shared/vendor/other.mjs:1 portability:runtime-global",
+      "plugin/shared/vendor/orm-chunk.mjs:1 portability:runtime-module",
+      "plugin/shared/vendor/orm-chunk.mjs:2 portability:runtime-global",
+    ]);
+    // Listed too, the chunk's Buffer passes and its bun:sqlite import does not.
+    expect(
+      found(dir, {
+        ...scope,
+        vendored: [
+          "plugin/shared/vendor/orm.mjs",
+          "plugin/shared/vendor/orm-chunk.mjs",
+        ],
+      }),
+    ).toEqual([
+      "plugin/shared/vendor/orm.mjs:2 portability:runtime-module",
+      "plugin/shared/vendor/other.mjs:1 portability:runtime-global",
+      "plugin/shared/vendor/orm-chunk.mjs:1 portability:runtime-module",
+    ]);
+    expect(found(dir, scope)).toEqual([
+      "plugin/shared/vendor/orm.mjs:2 portability:runtime-module",
+      "plugin/shared/vendor/orm.mjs:3 portability:runtime-global",
+      "plugin/shared/vendor/orm.mjs:3 portability:runtime-global",
+      "plugin/shared/vendor/other.mjs:1 portability:runtime-global",
+      "plugin/shared/vendor/orm-chunk.mjs:1 portability:runtime-module",
+      "plugin/shared/vendor/orm-chunk.mjs:2 portability:runtime-global",
+    ]);
+  });
+
+  test("an allowed vendored bundle's other runtime globals are still found", () => {
+    const dir = scratch({
+      "plugin/hub/storage/ops.ts": `import { sql } from "../../shared/vendor/orm.mjs";
+export const q = sql;
+`,
+      "plugin/shared/vendor/orm.mjs": `export const sql = () => Buffer.from("a");
+export const cwd = () => process.cwd();
+export const run = () => Bun.spawn(["x"]);
+export const dir = () => import.meta.dir;
+`,
+    });
+    expect(
+      found(dir, {
+        ...CORE,
+        roots: ["plugin/hub/storage/"],
+        vendored: ["plugin/shared/vendor/orm.mjs"],
+      }),
+    ).toEqual([
+      "plugin/shared/vendor/orm.mjs:2 portability:runtime-global",
+      "plugin/shared/vendor/orm.mjs:3 portability:runtime-global",
+      "plugin/shared/vendor/orm.mjs:4 portability:runtime-global",
+    ]);
   });
 
   test("a dynamic import of a literal is followed; of a computed name, found", () => {

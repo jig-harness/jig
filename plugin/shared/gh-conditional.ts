@@ -138,7 +138,7 @@ export type ConditionalGet =
 
 export type PrLiveness =
   | { ok: true; state: "OPEN" | "CLOSED" | "MERGED"; head: string }
-  | { ok: false; reason: string };
+  | Extract<ConditionalGet, { ok: false }>;
 
 /** Bind cache calls to the caller's deadline-aware process transport. */
 export function createConditionalCache({

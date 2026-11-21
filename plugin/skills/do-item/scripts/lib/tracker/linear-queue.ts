@@ -25,11 +25,17 @@ import type {
 } from "./facets/tracker.ts";
 import type { WithEstimate } from "./linear-facets.ts";
 import { poolQueries, poolFields } from "./linear-pool.ts";
-import { dispatchCredential, dispatchPersistent } from "./linear-transport.ts";
+import {
+  dispatchCredential,
+  dispatchPersistent,
+  LinearApiError,
+} from "./linear-transport.ts";
 import type { LinearTransport } from "./linear-transport.ts";
 import { record, ShapeError, str } from "./linear-shapes.ts";
+import { CLOSED_STATE_TYPES, OPEN_STATE_TYPES } from "./port.ts";
 import type {
   CanonicalState,
+  Tracker,
   FacetReadOptions,
   ChangeAnswer,
   ChangeQuery,
@@ -68,6 +74,32 @@ export interface QueueOptions {
     key: string,
     signal?: AbortSignal,
   ) => Promise<WithEstimate<CorePoolIssue> | null>;
+}
+
+const DEPENDENCY_QUERY = `
+query TrackerDependencyState($id: String!) {
+  issue(id: $id) { state { type } }
+}`;
+
+/** Read just the workflow category, using the same transport and bound as other issue reads. */
+export function linearDependencyState(
+  transport: LinearTransport,
+): NonNullable<Tracker["dependencyState"]> {
+  return async (key, signal) => {
+    let data: unknown;
+    try {
+      data = await transport(DEPENDENCY_QUERY, { id: key }, signal);
+    } catch (error) {
+      if (error instanceof LinearApiError && error.notFound) return null;
+      throw error;
+    }
+    const issue = record(data, "data").issue;
+    if (issue === null) return null;
+    const state = record(record(issue, "issue").state, "issue.state");
+    if (CLOSED_STATE_TYPES.some((type) => type === state.type)) return "closed";
+    if (OPEN_STATE_TYPES.some((type) => type === state.type)) return "open";
+    throw new ShapeError(`issue ${key} has an unreadable workflow category`);
+  };
 }
 
 const KEY = /^([A-Za-z][A-Za-z0-9_]*)-(\d+)$/;

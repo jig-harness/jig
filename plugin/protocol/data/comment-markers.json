@@ -1364,6 +1364,8 @@
                             "type": "string",
                             "minLength": 1
                           },
+                          "reviewerHead": true,
+                          "reviewerApp": true,
                           "until": true,
                           "probe": true
                         },
@@ -2207,6 +2209,8 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "reviewerHead": true,
+                      "reviewerApp": true,
                       "until": true,
                       "probe": true
                     },
@@ -2694,7 +2698,9 @@
             },
             "requestId": true,
             "reason": true,
-            "needsPerson": true
+            "needsPerson": true,
+            "failureStop": true,
+            "failureGeneration": true
           },
           "required": ["label", "stopComment"],
           "additionalProperties": true

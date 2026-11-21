@@ -14,6 +14,7 @@ import {
   parseMachineConfigText,
 } from "../lib/machine-config.ts";
 import type { Action } from "../lib/types.ts";
+import { currentMs } from "../../shared/time.ts";
 
 /** The machine file with one account whose entry ends with `extra`. */
 function parsed(extra: string) {
@@ -361,6 +362,10 @@ describe("a moved takeover whose first account fails its identity check", () => 
       root: ROOT,
       runtime: { name: "orca" },
       machine: { runtimeTimeoutMs: 30_000 },
+      // The sign-in probe is not under test: every account reads as signed in.
+      signInChecks: new Map(
+        accounts.map((a) => [a.name, { failure: null, at: currentMs() }]),
+      ),
     } as unknown as ApplyState;
     const answer = await admitAccount(
       s,

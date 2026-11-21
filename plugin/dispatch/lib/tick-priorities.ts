@@ -15,6 +15,7 @@
  * reordered to start in its order, a lane out of rotation starting nothing
  * (`priorities-order.ts`). A ranking that fails leaves the plan's own order.
  */
+import { answeredByAbsence } from "./absence.ts";
 import type { Database } from "bun:sqlite";
 import { currentIso } from "../../shared/time.ts";
 import type { WeightedLane } from "../../shared/priorities/lanes.ts";
@@ -201,8 +202,8 @@ function observedWhole(p: PreparedPriorities): boolean {
     p.trackerComplete &&
     !p.report.unplaced.some(
       (u) =>
-        u.readFailed === true ||
-        u.failure !== undefined ||
+        (!answeredByAbsence(u) &&
+          (u.readFailed === true || u.failure !== undefined)) ||
         u.scopeFailure !== undefined,
     )
   );

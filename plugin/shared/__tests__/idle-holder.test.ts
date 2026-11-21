@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   GIT_OPERATION_MARKERS,
   holderVerdict,
@@ -61,6 +61,52 @@ function holderWithSubmodule() {
   git(holder, "commit", "-q", "-m", "add submodule");
   git(holder, "push", "-q", "origin", `HEAD:refs/heads/${BRANCH}`);
   return tree;
+}
+
+/**
+ * A holder whose branch was squash-merged into origin's main and then
+ * deleted on origin, as a merged pull request's branch is: two commits, the
+ * second pushed to the branch before the merge, and the merge commit's tree
+ * equal to the holder's HEAD.
+ */
+function squashMerged() {
+  const tree = heldTree();
+  const { clone, holder } = tree;
+  writeFileSync(join(holder, "file.txt"), "two\n");
+  git(holder, "commit", "-q", "-am", "more work");
+  git(holder, "push", "-q", "origin", BRANCH);
+  git(clone, "fetch", "-q", "origin");
+  git(clone, "pull", "-q", "--ff-only", "origin", "main");
+  git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+  git(clone, "commit", "-q", "-m", "squash");
+  git(clone, "push", "-q", "origin", "HEAD:main");
+  git(clone, "push", "-q", "origin", "--delete", BRANCH);
+  return tree;
+}
+
+/** Like `squashMerged`, but the base branch moved on first, so the squash merge's tree differs from the holder's HEAD. */
+function squashMergedAfterBaseMoved() {
+  const tree = heldTree();
+  const { clone, holder } = tree;
+  writeFileSync(join(holder, "file.txt"), "two\n");
+  git(holder, "commit", "-q", "-am", "more work");
+  git(holder, "push", "-q", "origin", BRANCH);
+  git(clone, "pull", "-q", "--ff-only", "origin", "main");
+  writeFileSync(join(clone, "other.txt"), "base work\n");
+  git(clone, "add", "other.txt");
+  git(clone, "commit", "-q", "-m", "base work");
+  git(clone, "fetch", "-q", "origin");
+  git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+  git(clone, "commit", "-q", "-m", "squash");
+  git(clone, "push", "-q", "origin", "HEAD:main");
+  git(clone, "push", "-q", "origin", "--delete", BRANCH);
+  return tree;
+}
+
+/** The busy reason of a holder whose one commit, `work`, is on no origin branch and not merged into main. */
+function unmergedWork(holder: string): string {
+  const work = git(holder, "rev-parse", "--short=12", "HEAD");
+  return `1 commit(s) on no origin branch whose change origin/main lacks, and origin has no ${BRANCH}: ${work} work`;
 }
 
 const HIDDEN =
@@ -142,11 +188,99 @@ describe("holderVerdict", () => {
     const { clone, holder } = heldTree();
     git(clone, "push", "-q", "origin", "--delete", BRANCH);
     git(clone, "fetch", "-q", "--prune", "origin");
-    expect(reasons(holder)).toEqual([
-      `1 commit(s) on no origin branch, and origin has no ${BRANCH}`,
-    ]);
+    expect(reasons(holder)).toEqual([unmergedWork(holder)]);
     git(holder, "push", "-q", "origin", `HEAD:refs/heads/elsewhere`);
     expect(verdict(holder).idle).toBe(true);
+  });
+
+  test("with the branch gone from origin, a squash merge into the base branch whose tree equals its HEAD makes it idle", () => {
+    const { holder } = squashMerged();
+    expect(verdict(holder)).toEqual({
+      idle: true,
+      head: git(holder, "rev-parse", "HEAD"),
+    });
+  });
+
+  test("with the branch gone from origin, a commit whose change is on the base branch by its patch is not unpushed work", () => {
+    const { clone, holder } = heldTree();
+    // The base moves on first, so the squash merge's tree differs from the holder's HEAD.
+    git(clone, "pull", "-q", "--ff-only", "origin", "main");
+    writeFileSync(join(clone, "other.txt"), "base work\n");
+    git(clone, "add", "other.txt");
+    git(clone, "commit", "-q", "-m", "base work");
+    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+    git(clone, "commit", "-q", "-m", "squash");
+    git(clone, "push", "-q", "origin", "HEAD:main");
+    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    expect(verdict(holder).idle).toBe(true);
+  });
+
+  test("with the branch gone from origin, a squash merge of several commits after the base moved on makes it idle", () => {
+    const { holder } = squashMergedAfterBaseMoved();
+    expect(verdict(holder).idle).toBe(true);
+  });
+
+  test("with the branch gone from origin, a local commit beyond the squash merge keeps it busy and is named", () => {
+    const { holder } = squashMerged();
+    writeFileSync(join(holder, "extra.txt"), "not merged\n");
+    git(holder, "add", "extra.txt");
+    git(holder, "commit", "-q", "-m", "extra work");
+    const extra = git(holder, "rev-parse", "--short=12", "HEAD");
+    expect(reasons(holder)).toEqual([
+      `1 commit(s) on no origin branch whose change origin/main lacks, and origin has no ${BRANCH}: ${extra} extra work`,
+    ]);
+  });
+
+  test("with the branch gone from origin, extra work on a squash-merged prefix names only the extra commit", () => {
+    const { holder } = squashMergedAfterBaseMoved();
+    writeFileSync(join(holder, "extra.txt"), "not merged\n");
+    git(holder, "add", "extra.txt");
+    git(holder, "commit", "-q", "-m", "extra work");
+    const extra = git(holder, "rev-parse", "--short=12", "HEAD");
+    expect(reasons(holder)).toEqual([
+      `1 commit(s) on no origin branch whose change origin/main lacks, and origin has no ${BRANCH}: ${extra} extra work`,
+    ]);
+  });
+
+  test("a configured merge driver keeps a squash-merged holder busy and says so", () => {
+    const { holder } = squashMergedAfterBaseMoved();
+    git(holder, "config", "merge.ours.driver", "true");
+    const [reason] = reasons(holder);
+    expect(reason).toContain("a custom merge driver is configured");
+  });
+
+  test("a git version probe that fails keeps its own diagnostic, not the version message", () => {
+    const { holder } = squashMergedAfterBaseMoved();
+    const real = localContext(() => undefined);
+    const ctx = {
+      ...real,
+      run: (argv: string[], options?: Parameters<typeof real.run>[1]) =>
+        argv.includes("--version")
+          ? { status: 127, stdout: "", stderr: "git: probe broke" }
+          : real.run(argv, options),
+    };
+    const v = holderVerdict(ctx as typeof real, {
+      path: holder,
+      branch: BRANCH,
+      remote: "origin",
+      drivers: none,
+    });
+    if (v.idle) throw new Error("the holder was judged idle");
+    const text = v.reasons.join("\n");
+    expect(text).toContain("the git version cannot be read: git: probe broke");
+    expect(text).not.toContain("or newer");
+  });
+
+  test("a merge attribute in the clone's info/attributes keeps a squash-merged holder busy", () => {
+    const { clone, holder } = squashMergedAfterBaseMoved();
+    const info = join(
+      clone,
+      git(clone, "rev-parse", "--git-path", "info/attributes"),
+    );
+    mkdirSync(dirname(info), { recursive: true });
+    writeFileSync(info, "* merge=union\n");
+    const [reason] = reasons(holder);
+    expect(reason).toContain("a merge attribute applies outside the tree");
   });
 
   test("a stale ref outside the remote's configured refspec does not vouch either", () => {
@@ -164,9 +298,7 @@ describe("holderVerdict", () => {
       "refs/remotes/origin/elsewhere",
       git(holder, "rev-parse", "HEAD"),
     );
-    expect(reasons(holder)).toEqual([
-      `1 commit(s) on no origin branch, and origin has no ${BRANCH}`,
-    ]);
+    expect(reasons(holder)).toEqual([unmergedWork(holder)]);
   });
 
   test("a cached tracking branch the remote no longer has does not vouch for its commits", () => {
@@ -180,9 +312,7 @@ describe("holderVerdict", () => {
       "refs/remotes/origin/elsewhere",
       git(holder, "rev-parse", "HEAD"),
     );
-    expect(reasons(holder)).toEqual([
-      `1 commit(s) on no origin branch, and origin has no ${BRANCH}`,
-    ]);
+    expect(reasons(holder)).toEqual([unmergedWork(holder)]);
   });
 
   test("a live driver or lease keeps it busy, and one that cannot be read does too", () => {

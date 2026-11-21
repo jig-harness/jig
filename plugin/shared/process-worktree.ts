@@ -8,7 +8,10 @@ import { failed, ok, type Outcome } from "./outcome.ts";
 import { OrcaError } from "./orca-workspace/envelope.ts";
 import { assertLinkedWorktree, findGitWorktree } from "./orca-workspace/git.ts";
 import { gitDirOf } from "./orca-workspace/hooks.ts";
-import { releaseHiddenHolder } from "./orca-workspace/holder.ts";
+import {
+  type DetachedHolder,
+  releaseHiddenHolder,
+} from "./orca-workspace/holder.ts";
 import type { OpenPort } from "./orca-workspace/port.ts";
 import { output } from "./orca-workspace/runner.ts";
 import {
@@ -27,6 +30,8 @@ export interface ProcessWorktreeOptions extends WorkspaceOpenOptions {
   launch: string;
   home?: string;
   reserve?: (worktree: WorkspaceCheckout) => Outcome<void>;
+  /** Told the moment an idle checkout is detached, so a later failure of the open still reports it. */
+  onDetached?: (holder: DetachedHolder) => void;
 }
 
 /** Publication is part of admission, so a stalled publisher must cooperate. */
@@ -50,6 +55,8 @@ export async function openProcessWorktree(
     worktree: WorkspaceCheckout;
     reattached: boolean;
     hookRan: boolean;
+    /** An idle checkout of another opener held the branch, and this open detached it there. */
+    detached?: DetachedHolder;
   }>
 > {
   if (!/^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$/.test(options.launch))
@@ -65,6 +72,7 @@ export async function openProcessWorktree(
     const locked = await withFileLock(
       `${repository}\0${options.branch}`,
       async () => {
+        let detached: DetachedHolder | undefined;
         const opened = openWorkspace(port, repository, options, {
           existing: (branch) => {
             const path = findGitWorktree(port.host, repository, branch);
@@ -87,7 +95,7 @@ export async function openProcessWorktree(
             }
             // A checkout made by another opener is detached only with its full
             // idle proof. No reader means refusal, never an assumed idle tree.
-            releaseHiddenHolder(
+            detached = releaseHiddenHolder(
               {
                 ...port,
                 where: "",
@@ -98,6 +106,7 @@ export async function openProcessWorktree(
               branch,
               path,
               repository,
+              (left) => options.onDetached?.(left),
             );
             return null;
           },
@@ -170,7 +179,7 @@ export async function openProcessWorktree(
               "worktree publication exceeded its deadline",
             )
           : published.ok
-            ? ok(opened)
+            ? ok(detached === undefined ? opened : { ...opened, detached })
             : published;
       },
       { root, name: "owner-publication" },

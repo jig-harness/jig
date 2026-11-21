@@ -93,6 +93,7 @@ import {
   joinedWorkspace,
   laneBudgetWait,
   laneCapWait,
+  leftBehind,
   type WorkspaceRef,
 } from "./followup-lane.ts";
 import { currentIso } from "../../../shared/time.ts";
@@ -311,6 +312,9 @@ function newFollowupRecord(
     vendor: admittedVendor(slots.account),
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    ...(state.machine.failures?.startupThreshold === undefined
+      ? {}
+      : { startupFailureThreshold: state.machine.failures.startupThreshold }),
     passTimeoutSec: state.passDeadlineSec,
     ...codexLaunchFields(state.codexOptIn),
     replaces: null,
@@ -370,7 +374,11 @@ async function launchOne(
   );
   if ("outcome" in opened) return opened.outcome;
   const after = await changed(repo, ctx, pr.number);
-  if (after !== null) return waits(action, after, slots.account.name);
+  if (after !== null)
+    return leftBehind(
+      waits(action, after, slots.account.name),
+      opened.detached,
+    );
   const record = newFollowupRecord(
     state,
     repo,
@@ -381,7 +389,10 @@ async function launchOne(
     { id, mark: named.mark },
     action,
   );
-  return claimAndLaunch(state, repo, action, ctx, record, slots);
+  return leftBehind(
+    await claimAndLaunch(state, repo, action, ctx, record, slots),
+    opened.detached,
+  );
 }
 
 /** A launch's outcome, saying what started: a headless pass, and the account and directory it is bound to. */

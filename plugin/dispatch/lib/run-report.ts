@@ -33,7 +33,7 @@ import {
   recordReport,
 } from "./closing-report-store.ts";
 import { isDrive, type LaunchAction } from "./launches.ts";
-import { startupNext } from "./session-startup.ts";
+import { startupNext, type StartupFailure } from "./session-startup.ts";
 import { stateDb } from "./state.ts";
 
 /** The file the wrapper names for a drive's closing report: in the run's own state directory. */
@@ -94,7 +94,7 @@ function withRemoval(path: string, lines: string[]): string[] {
 /** The report the wrapper records for a pass that could not start. */
 function startupReport(
   action: LaunchAction,
-  startup: "quota" | "unstarted",
+  startup: StartupFailure,
   wallUnrecorded: boolean,
 ): ClosingReport {
   if (wallUnrecorded)
@@ -114,7 +114,11 @@ function startupReport(
     concluded:
       startup === "quota"
         ? "The pass could not start: its account met a usage limit, and the account is walled."
-        : "The pass could not start: it exited at once, without a result or a transcript, and its account backs off.",
+        : startup === "sign-in"
+          ? "The vendor refused the account's sign-in, and the account backs off."
+          : startup === "breaker"
+            ? "Repeated startup failures triggered the account's backoff."
+            : "The pass could not start: it exited at once, without a result or a transcript, and its account backs off.",
     suggested_next: startupNext(action, startup),
     cause: startup === "quota" ? "usage-limit" : "startup",
   };
@@ -153,7 +157,7 @@ function keptReport(id: string, root = stateRoot()): KeptReport | null {
 function recordRunReport(
   id: string,
   action: LaunchAction,
-  startup: "quota" | "unstarted" | undefined,
+  startup: StartupFailure | undefined,
   wallUnrecorded = false,
   root = stateRoot(),
 ): string[] {
@@ -178,7 +182,7 @@ function recordRunReport(
 export function recordAndSay(
   id: string,
   action: LaunchAction,
-  startup: "quota" | "unstarted" | undefined,
+  startup: StartupFailure | undefined,
   wallUnrecorded = false,
 ): void {
   for (const line of recordRunReport(id, action, startup, wallUnrecorded))

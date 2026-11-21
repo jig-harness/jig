@@ -137,6 +137,7 @@ export interface PlanInput {
   unclaimedAfterMs?: number;
   /** What tells a stalled pickup's finished work (`stalled-pr.ts`). */
   prOpen?: StalledPrInput;
+  conditionalHolds?: import("./person-pickup-holds.ts").PersonPickupHold[];
   /** Reads a stalled pickup's tree for the work it left (`pickup-relaunch.ts`). */
   trees?: TreeReader;
   nowMs: number;
@@ -559,6 +560,24 @@ function planForeign(
 }
 
 /**
+ * Whether the drive keeps its tree as it reads: unread sessions, an open
+ * workspace holding the tree, or an explicit rearm, whose request stays
+ * while launch admission observes a missing original tree and starts the
+ * bounded tree-blocker clock itself.
+ */
+function treeKept(
+  pr: DrivenPr,
+  sessions: SessionsReport,
+  actor: string,
+): boolean {
+  return (
+    typeof pr.evidence.rearmRequestId === "number" ||
+    !sessions.ok ||
+    workspaceOfTree(sessions.workspaces, actor) !== undefined
+  );
+}
+
+/**
  * A stall re-drive bound to the tree that holds the work it left: `null`
  * where that tree is another host's, whose dispatcher re-drives it there; a
  * person's where it is this host's and no open workspace holds it, since a
@@ -569,11 +588,7 @@ function treeBound(pr: DrivenPr, sessions: SessionsReport): DrivenPr | null {
   const tree = pr.stale?.tree ?? requestedTree(pr);
   if (tree === undefined) return pr;
   if (!tree.here) return null;
-  if (
-    !sessions.ok ||
-    workspaceOfTree(sessions.workspaces, tree.actor) !== undefined
-  )
-    return pr;
+  if (treeKept(pr, sessions, tree.actor)) return pr;
   const { stale: _bound, ...rest } = pr;
   return {
     ...rest,
@@ -654,6 +669,11 @@ function raiseStrandedDrive(input: PlanInput, pr: DrivenPr, want: Want): void {
 }
 
 /** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
+/** The drive, unless its rearm request moved on to a later one. */
+function unmoved(pr: DrivenPr | null): DrivenPr | null {
+  return pr?.evidence.rearmMoved === true ? null : pr;
+}
+
 function planDrive(
   input: PlanInput,
   read: DrivenPr,
@@ -662,7 +682,7 @@ function planDrive(
 ): void {
   const { slug, launches } = input;
   const target = `PR #${read.number}`;
-  const pr = plannable(input, read, plan, want);
+  const pr = unmoved(plannable(input, read, plan, want));
   if (pr === null) return;
   const hold = driveHold(pr, launches);
   if (heldByRecord(target, pr, hold, plan)) {

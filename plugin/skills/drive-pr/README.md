@@ -10,6 +10,11 @@ with its context and nobody notices.
 
 **What it does.** `/jig:drive-pr` is a [PR drive loop](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): it runs a PR's [review rounds](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) unattended until the PR reaches exactly one [terminal state](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Each round it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the validation plan for the change, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long drive never depends on one session surviving.
 
+When a round merges the base and changes dependency inputs, it runs a [frozen
+install](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) before
+validation. The round report records the command and outcome so an install
+failure can be diagnosed independently of a validation failure.
+
 A few behaviours worth knowing before you arm one:
 
 - **Drafts.** It works [draft PRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) from the start and marks them Ready for review after its first completed round (or the round, or the convergence, `pull_requests.mark_ready` names), so reviewers that skip drafts (often billed per review) see an already-cleaned head.
@@ -27,6 +32,10 @@ The [cost report](../../CONFIGURATION.md#outbound-cost-reports) counts
 The practice it implements is Jig's [M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md); its loop-cost reports belong to [M11 — Process observability](https://github.com/jig-harness/jig/blob/main/modules/M11-process-observability/README.md).
 
 This page is for **you, the human** — the operator contract agents follow is the skill itself: [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
+
+When a conflict repair leaves a merge it started unfinished, the driver aborts
+it, removes the repair's new untracked files and verifies that the worktree is
+clean. The stop reports any merge or files it could not clear.
 
 ## Installation
 
@@ -98,6 +107,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `repository.remote` | The git remote the drive pushes to and fetches from, and whose `HEAD` names the integration branch. Its fetch and push addresses must name the pull request's repository, or the drive refuses to fetch the base or to push | `origin` |
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
 | `drive.load_guard_command` | A command `round-plan.ts` runs (in text mode) before printing the plan, which waits until the machine's load allows heavy checks | Unset: no load guard |
+| `drive.dependency_install` | Frozen install overrides keyed by lockfile name. See [configuration](../../CONFIGURATION.md#drive) for the command contract | Built-in command for each recognized lockfile |
 | `drive.change_areas_catalog` | Path, relative to the repository root or absolute, to a [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys, and refuses (exit 2, naming the field) a catalog whose `paths`, `generated[].source`, `labels` or `tracker` fields are malformed; the rest of the catalog schema is not checked | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
 | `drive.reviews_drafts` | `true` or `false`: does the AI reviewer review draft PRs. The drive uses it only to explain a draft PR that has no reviewer check run yet (`/jig:do-item` also reads it to decide whether new PRs open as drafts) | Unset: unknown, and no hint is given |
 | `ci.required_checks` | The exact check names that must complete on the converged head before the drive certifies it (and, with a hold, that must run again after the hold is removed). `[]` means none: the drive relies on the overall CI verdict alone, which is green even when no CI has registered on the head. Without a hold, the drive judges each required check as branch protection does: a skipped or neutral result passes, and a legacy commit status of that name can stand in for a check run. With a hold, required checks must be check runs, since only a run's id proves it ran after the hold was removed. Unrelated to `review.required_checks`, which names the review skill's reviewer checks | Derived: the checks the pull request's base branch requires, from classic branch protection and active rulesets together. For a stacked layer, whose base is a feature branch, the checks of the branch the stack's bottom layer targets are added to the base's own. A check that protection pins to a GitHub App counts only when that app publishes it, as a check run or a commit status; a check pinned to several apps (classic protection to one, a ruleset to another) needs a passing result from each. When the base requires none, the drive also waits until some non-reviewer CI has registered on the head; where a reviewer is expected, a commit status named like the reviewer's check does not count. A base branch, integration branch, stack or protection that cannot be read is an error that asks for this field; the drive never falls back to another branch's protection |
@@ -412,6 +422,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_RATE_LIMIT_WAIT` | Whole seconds, at most 86400 (a day); otherwise the default. How far off a reset of the forge's spent rate limit the drive waits for before it stops with [`FORGE_RATE_LIMITED`](../../protocol/drive-exits.md), which the dispatcher re-drives after the reset | `1800` |
 | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once) | `1` |
 | `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | Elapsed wait for required checks on the final commit, in ten-second units, independent of observation count (`0`: wait forever) | `180` (30 minutes) |
+| `DRIVE_PR_RELEASE_PROOF_ATTEMPTS` | Consecutive unreadable proof or recovery reads while the CI-hold removal's `releasing` record remains (`0`: stop on the first); the record remains for a later drive to reconcile | `3` |
 | `DRIVE_PR_CONVERGED_CI_MINUTES` | How long a drive that stopped `CONVERGED` watches the verified head's CI after its `converged` label write, which can start runs on it, before it parks `converged-ci` (`0`: write the label and watch nothing) | `30` |
 | `DRIVE_PR_FINAL_REGATE_LIMIT` | Re-gates in a row on one commit when the converged round's final status re-read disagrees with the round's own read, before the drive stops with exit `1` (`0`: stop on the first) | `3` |
 | `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with [`STALLED`](../../protocol/drive-exits.md) (`0`: off) | `2` |
@@ -427,6 +438,12 @@ legitimate step keeps hitting it, rather than removing it.
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 `drive.ts` sets for its own passes) are documented where they act, in
 [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
+
+While waiting for a reviewer on the same pull request head, the drive doubles
+the poll interval up to `review.reviewer_poll_max_seconds` (300 seconds by
+default). A completed neutral check titled `Review did not complete` stops
+the drive with [`REVIEWER_FAILED`](../../protocol/drive-exits.md) if the
+reviewer has no review of that head.
 
 ### The background time limit
 

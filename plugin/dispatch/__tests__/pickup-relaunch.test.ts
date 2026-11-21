@@ -136,6 +136,45 @@ const relaunches = (plan: ReturnType<typeof planPickups>) =>
 const stalls = (plan: ReturnType<typeof planPickups>) =>
   plan.actions.filter((a) => a.cause === "stalled");
 
+it.each(["claimed-carried", "claimed-merged"] as const)(
+  "honors a %s pull request when the original pickup dependency clears",
+  (classed) => {
+    const source = ended({}, "waits");
+    const pr = { number: 18, url: `https://github.com/${SLUG}/pull/18` };
+    const plan = planPickups({
+      ...input([source], { tree: clean }),
+      conditionalHolds: [
+        {
+          item: ITEM.key,
+          by: "pickup",
+          at: "2026-11-18T07:00:00Z",
+          title: ITEM.title,
+          url: null,
+          condition: { kind: "pr-merged", pr: 42 },
+          resumeRecord: source.record.id,
+          settled: "cleared",
+        },
+      ],
+      prOpen: {
+        prs: [],
+        prOpen: () => null,
+        owner: true,
+        pickup: true,
+        links: () => false,
+        carried: {
+          carriers: () => (classed === "claimed-carried" ? [pr] : []),
+          drive: () => ({ kind: "driving" }),
+          merged: () => (classed === "claimed-merged" ? [pr] : []),
+        },
+      },
+    });
+    expect(relaunches(plan)).toEqual([]);
+    expect(plan.quiet).toContainEqual(
+      expect.objectContaining({ class: classed, target: ITEM.key }),
+    );
+  },
+);
+
 describe("a stalled pickup's relaunch", () => {
   it("relaunches a stalled pickup whose tree holds an unpushed commit once, in that tree, and raises a need on a second stall at the same head", () => {
     const first = planPickups(input([ended()]));

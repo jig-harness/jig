@@ -1,5 +1,5 @@
 /** Environment shared by the process runtime's identity probe and wrapper. */
-import { delimiter, isAbsolute, join } from "node:path";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
 import { isMapping } from "../../../shared/config-layers.ts";
 import { failed, ok, type Outcome } from "../../../shared/outcome.ts";
 
@@ -11,6 +11,8 @@ export interface ProcessSettings {
 type Environment = Record<string, string | undefined>;
 
 const BASE = ["HOME", "USER", "LANG", "TMPDIR", "JIG_HOME"];
+/** Directory variables: a relative value would name another place once the launch changes to its workspace. */
+const PLACES = new Set(["TMPDIR", "LOCK_ROOT"]);
 const BLOCKED = new Set([
   "CLAUDE_CODE_OAUTH_TOKEN",
   "ANTHROPIC_API_KEY",
@@ -113,7 +115,7 @@ export function processEnvironment(
         name.startsWith("LC_") ||
         settings.envKeep.includes(name))
     )
-      env[name] = value;
+      env[name] = PLACES.has(name) && value !== "" ? resolve(value) : value;
   Object.assign(env, nativeEnvironment(source, settings.path));
   env[account.vendor === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"] =
     account.configDir;

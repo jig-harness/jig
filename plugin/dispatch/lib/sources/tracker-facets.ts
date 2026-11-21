@@ -5,9 +5,10 @@
  * its cache, and the assigned items that lack a facet the repository keeps.
  *
  * The dispatcher starts only what a trusted person assigned, so a missing
- * facet holds nothing back; it is counted here, so a store that fails or
- * changes, or an item filed around the filing check, is seen on the next
- * tick. The record names keys and facets only, never an item's content.
+ * type or size holds nothing back here, and a missing priority only at the
+ * pickup plan (`pickup-priority.ts`); each is counted here, so a store that
+ * fails or changes, or an item filed around the filing check, is seen on the
+ * next tick. The record names keys and facets only, never an item's content.
  *
  * The facet read runs inside the tick, so it is bounded: by the tick's own
  * deadline where its launcher sets one, and by `FACET_READ_MS` in any case,
