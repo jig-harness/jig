@@ -96,6 +96,28 @@ describe("a fixed batch with a member of the most expensive size", () => {
     }
   });
 
+  it("leaves out a member, the anchor included, whose priority was cleared, and asks nothing", async () => {
+    for (const anchor of ["ENG-1", "ENG-2"]) {
+      const p = await propose(
+        [
+          issue("ENG-1", anchor === "ENG-1" ? { priority: 0 } : {}),
+          issue("ENG-2", anchor === "ENG-2" ? { priority: 0 } : {}),
+          issue("ENG-3"),
+        ],
+        "ENG-1",
+        members,
+      );
+      const kept = members.filter((m) => m !== anchor);
+      expect(ids(p.candidates).sort()).toEqual(kept);
+      expect(p.leftOut.map((l) => [l.identifier, l.size])).toEqual([
+        [anchor, null],
+      ]);
+      expect(p.leftOut[0]?.why).toContain("no priority");
+      expect(p.excluded).toEqual([]);
+      expect(p.labellingGaps).toEqual([]);
+    }
+  });
+
   it("warns about a member the tracker returns under another key", async () => {
     const tracker = fakeTracker([issue("ENG-1"), issue("ENG-2")]);
     const read = tracker.poolIssue.bind(tracker);

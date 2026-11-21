@@ -55,12 +55,14 @@ import type {
   Action,
   LaneWait,
   BusyHolder,
+  DetachedCheckout,
   LaunchOutcome,
   RepoTarget,
   Stage,
 } from "../types.ts";
 import type { SessionsReport } from "../runtime/port.ts";
-import { laneBudgetWait } from "./followup-lane.ts";
+import { detachedField } from "../runtime/port.ts";
+import { laneBudgetWait, leftBehind } from "./followup-lane.ts";
 import type { LoadKind } from "../dashboard-contract.ts";
 import { judge, type LoadState, VALIDATION_GAUGES } from "../load.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
@@ -183,17 +185,19 @@ export function outOfTime(state: ApplyState): string | null {
   return `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`;
 }
 
+type OpenedWorkspace = Pick<RuntimeReceipt, "cleanupFailure" | "detached"> & {
+  workspace: NonNullable<LaunchRecord["workspace"]>;
+};
+
 export type Opened =
-  | {
-      workspace: NonNullable<LaunchRecord["workspace"]>;
-      cleanupFailure?: string;
-    }
+  | OpenedWorkspace
   | { waits: string; waitsOn?: LaneWait }
   | {
       refused: string;
       /** A proof established that the checkout is structurally the wrong one. */
       structural?: boolean;
       holder?: BusyHolder;
+      detached?: DetachedCheckout;
     };
 
 /** Total and launch-specific allowances count notices once. */
@@ -290,10 +294,12 @@ export async function openWithinBudget(
       ...(opened.cleanupFailure === undefined
         ? {}
         : { cleanupFailure: opened.cleanupFailure }),
+      ...detachedField(opened.detached),
     };
   return {
     refused: `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`,
     ...(opened.busyHolder === undefined ? {} : { holder: opened.busyHolder }),
+    ...detachedField(opened.detached),
   };
 }
 
@@ -474,9 +480,7 @@ function workspaceOr(
   action: Action,
   opened: Opened,
   account: string,
-):
-  | { workspace: NonNullable<LaunchRecord["workspace"]> }
-  | { outcome: LaunchOutcome } {
+): OpenedWorkspace | { outcome: LaunchOutcome } {
   if ("waits" in opened)
     return {
       outcome: {
@@ -484,16 +488,14 @@ function workspaceOr(
         ...(opened.waitsOn === undefined ? {} : { waitsOn: opened.waitsOn }),
       },
     };
-  if ("refused" in opened)
-    return {
-      outcome:
-        opened.holder === undefined
-          ? refused(action, opened.refused, account)
-          : {
-              ...refused(action, holderRefusal(opened.holder), account),
-              holder: opened.holder,
-            },
-    };
+  if ("refused" in opened) {
+    const { refused: why, holder, detached } = opened;
+    const base =
+      holder === undefined
+        ? refused(action, why, account)
+        : { ...refused(action, holderRefusal(holder), account), holder };
+    return { outcome: leftBehind(base, detached) };
+  }
   return opened;
 }
 
@@ -507,14 +509,12 @@ export async function openedFor(
   action: Action,
   slots: Slots,
   opening: Promise<Opened>,
-): Promise<
-  | { workspace: NonNullable<LaunchRecord["workspace"]> }
-  | { outcome: LaunchOutcome }
-> {
+): Promise<OpenedWorkspace | { outcome: LaunchOutcome }> {
   const opened = workspaceOr(action, await opening, slots.account.name);
   if ("outcome" in opened) return opened;
   const stale = await changedWhileOpening(state, action, slots);
-  return stale === null ? opened : { outcome: stale };
+  if (stale === null) return opened;
+  return { outcome: leftBehind(stale, opened.detached) };
 }
 
 /** The pending records of `repo` whose launch got no answer and may be replayed once, of the actions `kinds` names. */

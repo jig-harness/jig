@@ -45,6 +45,9 @@ export const DEFAULT_REFLECTION_TIMEOUT_SEC = 120;
 export const AFTER_VERSION_TIMEOUT_ENV = "JIG_AFTER_VERSION_TIMEOUT_SEC";
 export const DEFAULT_AFTER_VERSION_TIMEOUT_SEC = 1800;
 
+/** Total seconds for all package installs before validating one base merge. */
+export const DEPENDENCY_INSTALL_TIMEOUT_SECONDS = 1200;
+
 /** How long a caller lets one run take, and the environment variable or setting that changes it. */
 export interface CommandDeadline {
   readonly seconds: number;
@@ -118,6 +121,22 @@ export const REPO_COMMANDS = {
     deadline: null,
     exits: {},
     meaning: "Waits until the machine can take a round's heavy checks.",
+  },
+  "drive.dependency_install": {
+    runBy: ["drive-pr", "resolve-conflicts"],
+    shell: true,
+    given:
+      "Nothing on standard input. Each command runs in its lockfile's directory in the merged worktree.",
+    answers:
+      "Exit 0 when the pinned dependencies are available without changing the dependency inputs. Any other exit stops the round before validation.",
+    commandStore: false,
+    deadline: {
+      seconds: DEPENDENCY_INSTALL_TIMEOUT_SECONDS,
+      changedBy: "fixed per merge",
+    },
+    exits: {},
+    meaning:
+      "Overrides the frozen dependency install command for a recognized lockfile. A drive round reads overrides from its trusted policy.",
   },
   "ci.log_command": {
     runBy: ["fix-ci"],

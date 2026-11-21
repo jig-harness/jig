@@ -213,6 +213,12 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.280.0
+  dispatch.missing_priority:
+    type: enum
+    values: [hold, start]
+    read_by: [dispatch, work-batch]
+    repository_only: true
+    since: 0.299.0
   dispatch.blocked_after:
     type: string
     pattern: "^\\d+\\s*[smh]$"
@@ -632,6 +638,13 @@ fields:
   drive.load_guard_command:
     type: command
     read_by: [drive-pr]
+  drive.dependency_install:
+    type: map
+    keys: [bun.lock, bun.lockb, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, Cargo.lock, go.sum, uv.lock, poetry.lock, Gemfile.lock, composer.lock]
+    values_type: command
+    nullable: true
+    since: 0.299.0
+    read_by: [drive-pr, resolve-conflicts]
   drive.change_areas_catalog:
     type: path
     exists: expected

@@ -31,6 +31,7 @@ import { stateDb } from "../state.ts";
 import type { RepoReport, RetireOutcome } from "../types.ts";
 import { type ApplyState, enforcedDeadlineMs, outOfTime } from "./launch.ts";
 import { currentMs } from "../../../shared/time.ts";
+import { minutes } from "../duration.ts";
 
 /** What the retire step reads from the tick's notifications. */
 export interface RetireInput {
@@ -54,10 +55,6 @@ export interface RetireInput {
   lingerMs: number;
   nowMs: number;
   root: string;
-}
-
-function minutes(ms: number): string {
-  return `${Math.floor(ms / 60_000)}m`;
 }
 
 function clearRead(db: Database, repo: string): void {

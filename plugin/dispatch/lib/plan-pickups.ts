@@ -61,6 +61,8 @@ import {
   type ConditionalPickups,
 } from "./plan-pickup-conditions.ts";
 import { batchPickups } from "./queue-batch.ts";
+import { unrankedHold } from "./pickup-priority.ts";
+import { minutes } from "./duration.ts";
 import {
   endedHow,
   endedQuestion,
@@ -75,7 +77,7 @@ import { type Holding, holding, liveAgents } from "./holding.ts";
 import type { ReadRecord } from "./launches.ts";
 import { type Carriage, readCarriage } from "./carried-pr.ts";
 import { pickupNotice } from "./notices.ts";
-import { minutes, planWaiting } from "./plan-pickup-waiting.ts";
+import { planWaiting } from "./plan-pickup-waiting.ts";
 import { testLockNote } from "./test-lock-waits.ts";
 import { unwrittenResult } from "./session-startup.ts";
 import {
@@ -298,7 +300,7 @@ function planWanted(
   else planFresh(item, held.evidence, input, plan);
 }
 
-/** An item nothing holds: picked up, unless its host-fault hold says to wait. */
+/** An item nothing holds: picked up, unless its host-fault hold says to wait or it has no priority to rank it by. */
 function planFresh(
   item: WantedItem,
   evidence: string | null,
@@ -306,7 +308,9 @@ function planFresh(
   plan: PickupPlan,
 ): void {
   if (heldAfterHostFault(item.key, input, plan)) return;
-  plan.actions.push(pickupAction(item, evidence));
+  const unranked = unrankedHold(item, input.section);
+  if (unranked === null) plan.actions.push(pickupAction(item, evidence));
+  else plan.unplaced.push(unranked);
 }
 
 /**

@@ -2,7 +2,7 @@
  * The shape of an entry of the records registry (`registry.ts`): one kind of
  * record, and a hidden-marker literal that is not one. The registry's
  * entries are kept by medium beside it (`registry-machine.ts`,
- * `registry-tree.ts`, `registry-forge.ts`).
+ * `registry-tree.ts`, `registry-forge.ts`, `registry-hub.ts`).
  */
 import type { Medium } from "./writer.ts";
 
@@ -17,13 +17,13 @@ export interface RecordKind {
   readonly owner: string;
   /** Who writes a kind Jig only reads: another tool, or a person. */
   readonly foreign?: string;
-  /** Where it lives: on the machine (from `~` or `<tmp>`), in the tree (its root or `<git dir>`), on the forge or tracker. */
+  /** Where it lives: on the machine (from `~` or `<tmp>`), in the tree (its root or `<git dir>`), on the forge or tracker, in the hub's storage. */
   readonly at: string;
   /** The hidden markers it carries, each as written after `<!--`. */
   readonly markers?: readonly string[];
   /** The family the drive's state library tags its file patterns with. */
   readonly stateFamily?: string;
-  /** The SQLite table it is. */
+  /** The SQLite table it is: one a `CREATE TABLE` creates, or the hub's schema declares. */
   readonly table?: string;
   /** The schema version writers write now; `0` when it carries none. */
   readonly version: number;

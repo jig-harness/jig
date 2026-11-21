@@ -17,6 +17,7 @@ const root = join(import.meta.dir, "..", "..", "..");
 interface SchemaField {
   type?: string;
   items?: unknown;
+  values_type?: unknown;
   read_by?: string[];
   repository_only?: boolean;
 }
@@ -25,9 +26,10 @@ const schema = load(
   readFileSync(join(root, "plugin/skills/audit/config-schema.yaml"), "utf8"),
 ) as { fields: Record<string, SchemaField> };
 
-/** A field whose value is a command, a list of commands, or a list of entries that each hold one. */
+/** A field whose value contains a command directly, in a list, or in a map. */
 function holdsCommand(field: SchemaField): boolean {
   if (field.type === "command") return true;
+  if (field.type === "map") return field.values_type === "command";
   if (field.type !== "list") return false;
   const items = field.items as
     | string

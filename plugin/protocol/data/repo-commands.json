@@ -146,6 +146,20 @@
     },
     {
       "kind": "command",
+      "name": "drive.dependency_install",
+      "setting": "drive.dependency_install",
+      "exit": null,
+      "runBy": "drive-pr, resolve-conflicts",
+      "shell": true,
+      "given": "Nothing on standard input. Each command runs in its lockfile's directory in the merged worktree.",
+      "answers": "Exit 0 when the pinned dependencies are available without changing the dependency inputs. Any other exit stops the round before validation.",
+      "commandStore": false,
+      "deadlineSec": 1200,
+      "deadlineChangedBy": "fixed per merge",
+      "meaning": "Overrides the frozen dependency install command for a recognized lockfile. A drive round reads overrides from its trusted policy."
+    },
+    {
+      "kind": "command",
       "name": "ci.log_command",
       "setting": "ci.log_command",
       "exit": null,

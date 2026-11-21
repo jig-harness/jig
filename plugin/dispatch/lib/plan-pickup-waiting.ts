@@ -1,14 +1,11 @@
 /** How a tick reports a launched session that has waited too long. */
+import { minutes } from "./duration.ts";
 import { agentOf } from "./actions/pickup-hold.ts";
 import { isInteractive, type LaunchRecord, targetOf } from "./launches.ts";
 import { pickupNotice } from "./notices.ts";
 import type { PickupInput, PickupPlan } from "./plan-pickups.ts";
 import { WAITING_STATES } from "./runtime/port.ts";
 import { isoFromMs } from "../../shared/time.ts";
-
-export function minutes(ms: number): string {
-  return `${Math.floor(ms / 60_000)}m`;
-}
 
 /** What the tick read as a waiting session's cause: the usage-limit wall still its last record, if any. */
 function waitCause(record: LaunchRecord): string {
