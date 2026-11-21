@@ -63,7 +63,8 @@ import {
 } from "./lib/classify.ts";
 import { THROWAWAY_INDEX_CONFIG } from "./lib/attributes.ts";
 import { droppedLines } from "./lib/drops.ts";
-import { checkMigrations, migrationPlans } from "./lib/migration-plan.ts";
+import { checkMigrations } from "./lib/migration-check.ts";
+import { migrationPlans } from "./lib/migration-plan.ts";
 import {
   git,
   gitPath,
