@@ -242,7 +242,7 @@ describe("jig dispatch reads the host's load each tick", () => {
       0,
       90 * 60_000,
     );
-    expect(reading.demand).toEqual({ atLock: 2, toArrive: 0 });
+    expect(reading.demand).toEqual({ atLock: 2, toArrive: 0, arrivals: [] });
   });
 
   it("admits a pickup on an idle host with enforcement and the default deadlines", async () => {
