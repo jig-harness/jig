@@ -55,10 +55,22 @@ export interface LabelValue {
   readonly meaning: string;
 }
 
-/** A state label, with every writer that adds it. */
+/**
+ * A state label, with every writer that adds it and its color. A state
+ * that signals a problem (one a person must act on, not one that waits on
+ * them as a matter of course) takes a color of the alert family, red to
+ * orange, that no other label of the set shares; green is `converged`'s
+ * alone. `pr-label-colors.test.ts` holds the set to these rules.
+ */
 export interface StateLabel extends LabelValue {
   readonly writers: readonly LabelWriter[];
+  readonly problem: boolean;
+  /** Six hex digits, as `gh label create --color` takes it. */
+  readonly color: string;
 }
+
+/** The color of a state that needs no color of its own. */
+const STATE_COLOR = "c5def5";
 
 /**
  * The state labels the projection keeps current: each managed pull
@@ -70,33 +82,50 @@ export interface StateLabel extends LabelValue {
 export const STATE_LABELS = {
   driving: {
     writers: ["drive", "tick"],
+    problem: false,
+    color: STATE_COLOR,
     meaning:
       "A drive runs on this pull request, or the dispatcher re-arms the one that stopped",
   },
   converged: {
     writers: ["drive", "tick"],
+    problem: false,
+    /** Green, so a pull request ready for a person to merge stands out from one still driven. */
+    color: "0e8a16",
     meaning: "The drive converged at the pull request's head: a person merges",
   },
   parked: {
     writers: ["drive", "tick"],
+    problem: true,
+    /** Red, so a pull request waiting on a person's answer stands out from one still driven or followed up. */
+    color: "d93f0b",
     meaning: "The drive stopped on something only a person settles",
   },
   stale: {
     writers: ["tick"],
+    problem: false,
+    color: STATE_COLOR,
     meaning:
       "Its drive converged then went stale, or stopped or parked on a conflict: the dispatcher re-drives it",
   },
   held: {
     writers: ["tick"],
+    problem: false,
+    color: STATE_COLOR,
     meaning:
       "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
   },
   "followed-up": {
     writers: ["followup", "tick"],
+    problem: false,
+    color: STATE_COLOR,
     meaning: "Merged, and its follow-up is done",
   },
   "followup-failed": {
     writers: ["followup", "tick"],
+    problem: true,
+    /** Crimson, so a failed follow-up stands out from a parked drive: each calls for a different act. */
+    color: "a40e4c",
     meaning: "Merged, and its follow-up failed: a person acts",
   },
 } as const satisfies Readonly<Record<string, StateLabel>>;
@@ -135,19 +164,7 @@ export interface LabelSpec {
   description: string;
 }
 
-const STATE_COLOR = "c5def5";
-/** Green, so a pull request ready for a person to merge stands out from one still driven. */
-const CONVERGED_COLOR = "0e8a16";
-/** Red, so a pull request waiting on a person stands out from one still driven or followed up. */
-const PARKED_COLOR = "d93f0b";
 const COMMAND_COLOR = "fbca04";
-
-/** The states that have a color of their own; the rest take `STATE_COLOR`. */
-const STATE_COLORS: Partial<Record<StateName, string>> = {
-  converged: CONVERGED_COLOR,
-  parked: PARKED_COLOR,
-  "followup-failed": PARKED_COLOR,
-};
 
 /** The longest label name the forge takes, in characters. */
 export const MAX_LABEL = 50;
@@ -170,7 +187,7 @@ export function labelSet(config: LabelConfig): LabelSpec[] {
   return [
     ...PROJECTED_STATES.map((s) => ({
       name: labelName(config, s),
-      color: STATE_COLORS[s] ?? STATE_COLOR,
+      color: STATE_LABELS[s].color,
       description: STATE_LABELS[s].meaning,
     })),
     ...COMMANDS.map((c) => ({

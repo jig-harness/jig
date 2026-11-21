@@ -784,9 +784,11 @@ export async function editLabels(
 export interface RepositoryLabel {
   name: string;
   description: string;
+  /** Six hex digits, lowercase. */
+  color: string;
 }
 
-/** Every label the repository has, with its description (`""` for none). */
+/** Every label the repository has, with its description (`""` for none) and its color. */
 export async function repositoryLabels(
   slug: string,
 ): Promise<Outcome<RepositoryLabel[], "unreadable">> {
@@ -799,7 +801,7 @@ export async function repositoryLabels(
       "--limit",
       String(PR_LIMIT),
       "--json",
-      "name,description",
+      "name,description,color",
     ],
     "the label listing",
   );
@@ -811,6 +813,7 @@ export async function repositoryLabels(
       (l) =>
         !isRecord(l) ||
         typeof l.name !== "string" ||
+        typeof l.color !== "string" ||
         (l.description !== undefined &&
           l.description !== null &&
           typeof l.description !== "string"),
@@ -825,6 +828,7 @@ export async function repositoryLabels(
     value.map((l: Record<string, unknown>) => ({
       name: l.name as string,
       description: typeof l.description === "string" ? l.description : "",
+      color: (l.color as string).toLowerCase(),
     })),
   );
 }
@@ -851,10 +855,10 @@ export async function createLabel(
   return created.ok ? ok(undefined) : created;
 }
 
-/** Set one label's description, leaving its color; `refused` with the forge's reason (no permission). */
-export async function describeLabel(
+/** Set one label's description, its color or both, leaving what it is not given; `refused` with the forge's reason (no permission). */
+export async function editLabel(
   slug: string,
-  label: { name: string; description: string },
+  label: { name: string; description?: string; color?: string },
 ): Promise<Outcome<void, "refused">> {
   const edited = await gh(
     [
@@ -863,8 +867,10 @@ export async function describeLabel(
       label.name,
       "--repo",
       slug,
-      "--description",
-      label.description,
+      ...(label.description === undefined
+        ? []
+        : ["--description", label.description]),
+      ...(label.color === undefined ? [] : ["--color", label.color]),
     ],
     "refused",
   );
