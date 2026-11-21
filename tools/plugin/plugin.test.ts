@@ -213,11 +213,19 @@ test("every relative import in the copied plugin resolves inside the copy", () =
  * skipped, so an import in any of them must resolve. The one package name it
  * resolves is Optique's: the vendored bundle's declarations are the pinned
  * package's own types, which only the repository holds and nothing run reads.
+ * Drizzle's module names are declared untyped.
  */
 function compileSharedAlone(dir: string): {
   status: number | null;
   output: string;
 } {
+  // Drizzle's own declarations need packages the plugin never ships, so its
+  // module names are declared untyped here: the vendored declarations still
+  // resolve every import, and no package's types are read.
+  writeFileSync(
+    join(dir, "drizzle-stub.d.ts"),
+    'declare module "drizzle-orm";\ndeclare module "drizzle-orm/*";\ndeclare module "drizzle-orm/bun-sqlite/migrator";\n',
+  );
   writeFileSync(
     join(dir, "tsconfig.json"),
     JSON.stringify({
@@ -229,7 +237,7 @@ function compileSharedAlone(dir: string): {
           "@optique/core": [join(root, "node_modules", "@optique", "core")],
         },
       },
-      include: ["shared/**/*"],
+      include: ["shared/**/*", "drizzle-stub.d.ts"],
       exclude: [],
     }),
   );
