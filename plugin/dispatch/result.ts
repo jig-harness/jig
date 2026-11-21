@@ -353,32 +353,38 @@ function conditionArgs(rest: readonly string[]): PickupCondition | null {
   return pr === null ? null : { kind: "pr-merged", pr };
 }
 
-function recordConditionalWait(
+/** Why `record` cannot wait on `condition`, or `null` when it can: only a single-item pickup waits, on another item in its tracker's key format or on a pull request. */
+function conditionalWaitRefusal(
   record: LaunchRecord,
   condition: PickupCondition,
-  root?: string,
-): number {
+): string | null {
   const item = record.item;
   if (
     record.action !== "pickup" ||
     record.batchItems !== undefined ||
     item === null ||
     (condition.kind === "item-closed" && condition.item === item.toUpperCase())
-  ) {
-    console.error(
-      "jig dispatch result: a single-item pickup can wait on another item or on a pull request",
-    );
-    return 2;
-  }
+  )
+    return "a single-item pickup can wait on another item or on a pull request";
   if (
     condition.kind === "item-closed" &&
     item.startsWith("#") !== condition.item.startsWith("#")
-  ) {
-    console.error(
-      "jig dispatch result: the dependency must use the pickup's tracker key format",
-    );
+  )
+    return "the dependency must use the pickup's tracker key format";
+  return null;
+}
+
+function recordConditionalWait(
+  record: LaunchRecord,
+  condition: PickupCondition,
+  root?: string,
+): number {
+  const refusal = conditionalWaitRefusal(record, condition);
+  if (refusal !== null) {
+    console.error(`jig dispatch result: ${refusal}`);
     return 2;
   }
+  const item = record.item as string;
   const next = { none: `waiting for ${pickupConditionWords(condition)}` };
   const written = recordConditionalResult(
     record,
@@ -449,49 +455,31 @@ function answerable(
   return record;
 }
 
-export function resultMain(argv: string[], root?: string): number {
-  if (!wellFormed(argv)) {
-    console.error(USAGE);
-    return 2;
-  }
-  const [id, token, result, flag, value] = argv as [
-    string,
-    string,
-    string,
-    string?,
-    string?,
-  ];
-  const record = answerable(id, token, root);
-  if (typeof record === "string") {
-    console.error(`jig dispatch result: ${record}`);
-    return 2;
-  }
-  const condition = result === "waits" ? conditionArgs(argv.slice(3)) : null;
-  if (condition !== null) return recordConditionalWait(record, condition, root);
-  const waited = result === "waits" ? waitsArgs(argv.slice(3)) : null;
-  if (waited?.wait.reason === "pending" && record.action !== "followup") {
-    console.error(
-      "jig dispatch result: --reason pending is a follow-up's; a pickup waits on a rate limit or the host's test lock",
-    );
-    return 2;
-  }
-  if (waited?.wait.reason === "test-lock" && record.action !== "pickup") {
-    console.error(
-      "jig dispatch result: --reason test-lock is a claimed pickup's; a follow-up waits on a rate limit or an arm still pending",
-    );
-    return 2;
-  }
-  if (waited?.wait.reason === "test-lock" && record.batchItems !== undefined) {
-    console.error(
-      "jig dispatch result: --reason test-lock is a pickup's of one item; a batch's pass is never relaunched, so it records failed",
-    );
-    return 2;
-  }
-  const next =
-    waited === null
-      ? nextForResult(record, result, flag, value)
-      : waitsNext(waited);
-  if (next === null) return 2;
+/** Why `record` cannot wait as `waited` says, or `null` when it can: `pending` is a follow-up's, `test-lock` a single-item pickup's. */
+function waitRefusal(
+  waited: WaitsArgs | null,
+  record: LaunchRecord,
+): string | null {
+  const reason = waited?.wait.reason;
+  if (reason === "pending" && record.action !== "followup")
+    return "--reason pending is a follow-up's; a pickup waits on a rate limit or the host's test lock";
+  if (reason !== "test-lock") return null;
+  if (record.action !== "pickup")
+    return "--reason test-lock is a claimed pickup's; a follow-up waits on a rate limit or an arm still pending";
+  if (record.batchItems !== undefined)
+    return "--reason test-lock is a pickup's of one item; a batch's pass is never relaunched, so it records failed";
+  return null;
+}
+
+/** Record `result` on `record` with its handoff `next`, and print what was recorded. */
+function recordAndPrint(
+  id: string,
+  record: LaunchRecord,
+  result: string,
+  next: NextOwner,
+  waited: WaitsArgs | null,
+  root?: string,
+): number {
   if (
     !recordResult(
       id,
@@ -516,6 +504,40 @@ export function resultMain(argv: string[], root?: string): number {
     }),
   );
   return 0;
+}
+
+export function resultMain(argv: string[], root?: string): number {
+  if (!wellFormed(argv)) {
+    console.error(USAGE);
+    return 2;
+  }
+  const [id, token, result, flag, value] = argv as [
+    string,
+    string,
+    string,
+    string?,
+    string?,
+  ];
+  const record = answerable(id, token, root);
+  if (typeof record === "string") {
+    console.error(`jig dispatch result: ${record}`);
+    return 2;
+  }
+  const waits = result === "waits";
+  const condition = waits ? conditionArgs(argv.slice(3)) : null;
+  if (condition !== null) return recordConditionalWait(record, condition, root);
+  const waited = waits ? waitsArgs(argv.slice(3)) : null;
+  const refusal = waitRefusal(waited, record);
+  if (refusal !== null) {
+    console.error(`jig dispatch result: ${refusal}`);
+    return 2;
+  }
+  const next =
+    waited === null
+      ? nextForResult(record, result, flag, value)
+      : waitsNext(waited);
+  if (next === null) return 2;
+  return recordAndPrint(id, record, result, next, waited, root);
 }
 
 /**

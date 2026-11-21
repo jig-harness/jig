@@ -223,7 +223,7 @@ export function planPickups(input: PickupInput): PickupPlan {
     idleKeep: [],
     moves: [],
   };
-  const { sessions, launches } = input;
+  const { launches } = input;
   planConditionNeeds(input, plan);
 
   const joined = (key: string) => {
@@ -231,48 +231,8 @@ export function planPickups(input: PickupInput): PickupPlan {
     return (w: Workspace) => w.items.includes(key) && !left.has(w.path);
   };
 
-  for (const item of input.pickups) {
-    const held = holding(sessions, joined(item.key));
-    const { count, evidence, who } = sessionsFor(item.key, held, launches);
-    if (count > 1) {
-      plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
-      continue;
-    }
-    const eligible = conditionalRecords(input, item.key);
-    if (eligible === null) continue;
-    const hold = pickupHold(item.key, eligible, item.updatedAt, input.nowMs);
-    if (hold.kind === "held") {
-      plan.running.push({
-        target: item.key,
-        stage: "pickup",
-        reason: hold.why,
-        evidence: { record: hold.record.record.id },
-      });
-      continue;
-    }
-    if (held.kind === "unknown") {
-      plan.unplaced.push({
-        target: item.key,
-        record: "runtime",
-        reason: held.reason,
-      });
-      continue;
-    }
-    if (held.kind === "running") {
-      plan.running.push({
-        target: item.key,
-        stage: "pickup",
-        reason: `a session is running for it: ${evidence}`,
-        evidence: { workspaces: held.workspaces.map((w) => w.path).join(", ") },
-      });
-      continue;
-    }
-    if (hold.kind !== "none") {
-      planStopped(input, item, hold, plan);
-      continue;
-    }
-    planFresh(item, held.evidence, input, plan);
-  }
+  for (const item of input.pickups)
+    planWanted(item, input, plan, joined(item.key));
 
   for (const item of input.claimed ?? [])
     planClaimed(item, input, plan, joined(item.key));
@@ -285,6 +245,63 @@ export function planPickups(input: PickupInput): PickupPlan {
       input.root,
     );
   return plan;
+}
+
+/** The sessions that hold `item`, or `null` once more than one does and its double claim is planned. */
+function sessionsHolding(
+  item: { key: string; state: string },
+  input: PickupInput,
+  plan: PickupPlan,
+  joined: (w: Workspace) => boolean,
+): { held: Holding; count: number; evidence: string } | null {
+  const held = holding(input.sessions, joined);
+  const { count, evidence, who } = sessionsFor(item.key, held, input.launches);
+  if (count <= 1) return { held, count, evidence };
+  plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
+  return null;
+}
+
+/** Plan one wanted item: a double claim, a hold, a running session, a stopped pickup or a fresh one. */
+function planWanted(
+  item: WantedItem,
+  input: PickupInput,
+  plan: PickupPlan,
+  joined: (w: Workspace) => boolean,
+): void {
+  const sessions = sessionsHolding(item, input, plan, joined);
+  if (sessions === null) return;
+  const { held, evidence } = sessions;
+  const eligible = conditionalRecords(input, item.key);
+  if (eligible === null) return;
+  const hold = pickupHold(item.key, eligible, item.updatedAt, input.nowMs);
+  if (hold.kind === "held") {
+    plan.running.push({
+      target: item.key,
+      stage: "pickup",
+      reason: hold.why,
+      evidence: { record: hold.record.record.id },
+    });
+    return;
+  }
+  if (held.kind === "unknown") {
+    plan.unplaced.push({
+      target: item.key,
+      record: "runtime",
+      reason: held.reason,
+    });
+    return;
+  }
+  if (held.kind === "running") {
+    plan.running.push({
+      target: item.key,
+      stage: "pickup",
+      reason: `a session is running for it: ${evidence}`,
+      evidence: { workspaces: held.workspaces.map((w) => w.path).join(", ") },
+    });
+    return;
+  }
+  if (hold.kind !== "none") planStopped(input, item, hold, plan);
+  else planFresh(item, held.evidence, input, plan);
 }
 
 /** An item nothing holds: picked up, unless its host-fault hold says to wait. */
@@ -572,12 +589,9 @@ function planClaimed(
   plan: PickupPlan,
   joined: (w: Workspace) => boolean,
 ): void {
-  const held = holding(input.sessions, joined);
-  const { count, evidence, who } = sessionsFor(item.key, held, input.launches);
-  if (count > 1) {
-    plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
-    return;
-  }
+  const sessions = sessionsHolding(item, input, plan, joined);
+  if (sessions === null) return;
+  const { held, count, evidence } = sessions;
   if (count === 1) {
     plan.quiet.push({
       target: item.key,

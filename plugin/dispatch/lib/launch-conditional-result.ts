@@ -52,34 +52,31 @@ export function recordConditionalResult(
   });
 }
 
-/** Take ownership from the transaction's current records, including batch members. */
-function pickupForConditionalResult(
-  db: ReturnType<typeof stateDb>,
-  root: string,
+/** Whether `record` is still the single-item pickup of `item` that `launch` names, uncancelled and holding it. */
+function stillOwns(
+  record: LaunchRecord | null,
   launch: Pick<LaunchRecord, "id" | "token">,
   item: string,
-): Outcome<LaunchRecord | null, "refused"> {
-  const own = db
-    .query("SELECT *, rowid AS ordinal FROM launches WHERE id = ?")
-    .get(launch.id) as (LaunchRow & { ordinal: number }) | null;
-  if (own === null)
-    return failed(
-      "refused",
-      `pickup ${launch.id} no longer has a launch record`,
-    );
-  if (own.result !== null) return ok(null);
-  const record = recordOf(own, root, new Map(), db);
-  if (
-    record === null ||
-    record.action !== "pickup" ||
-    record.cancelledAt !== undefined ||
-    record.token !== launch.token ||
-    record.item !== item ||
-    record.batchItems !== undefined ||
-    !holdsItem(record, item)
-  )
-    return failed("refused", `pickup ${launch.id} no longer holds ${item}`);
+): record is LaunchRecord {
+  return (
+    record !== null &&
+    record.action === "pickup" &&
+    record.cancelledAt === undefined &&
+    record.token === launch.token &&
+    record.item === item &&
+    record.batchItems === undefined &&
+    holdsItem(record, item)
+  );
+}
 
+/** Why a later pickup of `item`, batch members included, supersedes `record`, or `null` when none does. */
+function supersession(
+  db: ReturnType<typeof stateDb>,
+  root: string,
+  record: LaunchRecord,
+  own: { id: string; ordinal: number },
+  item: string,
+): string | null {
   const later = db
     .query(
       `SELECT * FROM launches
@@ -101,19 +98,36 @@ function pickupForConditionalResult(
   for (const row of later) {
     const successor = recordOf(row, root, new Map(), db);
     if (successor === null)
-      return failed(
-        "refused",
-        `could not verify whether pickup ${row.id} superseded ${launch.id}`,
-      );
+      return `could not verify whether pickup ${row.id} superseded ${own.id}`;
     if (
       successor.cancelledAt === undefined &&
       pickupItems(successor).includes(item) &&
       holdsItem(successor, item)
     )
-      return failed(
-        "refused",
-        `pickup ${successor.id} superseded ${launch.id} for ${item}`,
-      );
+      return `pickup ${successor.id} superseded ${own.id} for ${item}`;
   }
-  return ok(record);
+  return null;
+}
+
+/** Take ownership from the transaction's current records, including batch members. */
+function pickupForConditionalResult(
+  db: ReturnType<typeof stateDb>,
+  root: string,
+  launch: Pick<LaunchRecord, "id" | "token">,
+  item: string,
+): Outcome<LaunchRecord | null, "refused"> {
+  const own = db
+    .query("SELECT *, rowid AS ordinal FROM launches WHERE id = ?")
+    .get(launch.id) as (LaunchRow & { ordinal: number }) | null;
+  if (own === null)
+    return failed(
+      "refused",
+      `pickup ${launch.id} no longer has a launch record`,
+    );
+  if (own.result !== null) return ok(null);
+  const record = recordOf(own, root, new Map(), db);
+  if (!stillOwns(record, launch, item))
+    return failed("refused", `pickup ${launch.id} no longer holds ${item}`);
+  const superseded = supersession(db, root, record, own, item);
+  return superseded === null ? ok(record) : failed("refused", superseded);
 }

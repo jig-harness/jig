@@ -44,36 +44,42 @@ interface ConditionRead {
   records: readonly ReadRecord[];
 }
 
-async function conditionState(
-  condition: PickupCondition,
+/** Whether the pull request a pickup waits on is open, merged or closed unmerged. */
+async function prState(
+  pr: number,
   input: ConditionRead,
+  bound: TickBound,
 ): Promise<ConditionObservation> {
-  const bound = facetBound(input.bound?.deadline);
-  if (ended(bound)) return failed("unreadable", "the tick's deadline passed");
-  if (condition.kind === "pr-merged") {
-    const timeoutSec = secondsLeft(bound);
-    const read = await readPrLiveness(String(condition.pr), {
-      cwd: input.checkout,
-      env: ghRepoEnvFor(input.slug),
-      repository: input.slug,
-      caller: "dispatch-pickup-condition",
-      ...(timeoutSec === undefined ? {} : { timeoutSec }),
-    });
-    if (!read.ok)
-      return read.failure === undefined
-        ? failed("unreadable", read.reason)
-        : failedBy("unreadable", read.failure, read.reason);
-    return ok(
-      ({ OPEN: "open", MERGED: "cleared", CLOSED: "closed-unmerged" } as const)[
-        read.state
-      ],
-    );
-  }
+  const timeoutSec = secondsLeft(bound);
+  const read = await readPrLiveness(String(pr), {
+    cwd: input.checkout,
+    env: ghRepoEnvFor(input.slug),
+    repository: input.slug,
+    caller: "dispatch-pickup-condition",
+    ...(timeoutSec === undefined ? {} : { timeoutSec }),
+  });
+  if (!read.ok)
+    return read.failure === undefined
+      ? failed("unreadable", read.reason)
+      : failedBy("unreadable", read.failure, read.reason);
+  return ok(
+    ({ OPEN: "open", MERGED: "cleared", CLOSED: "closed-unmerged" } as const)[
+      read.state
+    ],
+  );
+}
+
+/** Whether the tracker item a pickup waits on is still open. */
+async function itemState(
+  item: string,
+  input: ConditionRead,
+  bound: TickBound,
+): Promise<ConditionObservation> {
   try {
     if (input.tracker.dependencyState === undefined)
       return failed("unreadable", "the tracker does not expose item state");
     const state = await within(
-      input.tracker.dependencyState(condition.item, bound.signal),
+      input.tracker.dependencyState(item, bound.signal),
       bound,
     );
     return state === null
@@ -83,6 +89,17 @@ async function conditionState(
     if (error instanceof Defect) throw error;
     return failed("unreadable", failureText(error), error);
   }
+}
+
+async function conditionState(
+  condition: PickupCondition,
+  input: ConditionRead,
+): Promise<ConditionObservation> {
+  const bound = facetBound(input.bound?.deadline);
+  if (ended(bound)) return failed("unreadable", "the tick's deadline passed");
+  return condition.kind === "pr-merged"
+    ? prState(condition.pr, input, bound)
+    : itemState(condition.item, input, bound);
 }
 
 /** Try the tracker relation once it can be read. The local hold also covers a tracker that cannot write the relation. */
@@ -111,6 +128,31 @@ async function linkBlocker(
   settlePickupHold(input.slug, hold, input.root, "relation-settled");
 }
 
+/** The hold that stands for a cleared hold's item once the pickup launched after it is removed: the one read again, the old one when that read fails, none when the item has none. */
+function afterCleared(
+  hold: PersonPickupHold,
+  input: ConditionRead,
+  report: RepoReport,
+): PersonPickupHold | null {
+  settlePickupHold(input.slug, hold, input.root, "remove");
+  const replacement = currentHold(input, hold.item, report);
+  return replacement.ok ? replacement.value : hold;
+}
+
+/** Whether an open item dependency still owes its tracker relation. */
+function owesBlocker(
+  hold: PersonPickupHold,
+  condition: PickupCondition,
+  state: ConditionObservation,
+): boolean {
+  return (
+    state.ok &&
+    state.value === "open" &&
+    condition.kind === "item-closed" &&
+    hold.relationSettled !== true
+  );
+}
+
 export async function readPickupConditions(
   holds: PersonPickupHold[],
   input: ConditionRead,
@@ -119,6 +161,9 @@ export async function readPickupConditions(
   const read = new Map<string, ConditionObservation>();
   const current: PersonPickupHold[] = [];
   const blockers: PersonPickupHold[] = [];
+  const keep = (hold: PersonPickupHold | null) => {
+    if (hold !== null) current.push(hold);
+  };
   for (const hold of holds) {
     const { condition } = hold;
     if (
@@ -126,10 +171,7 @@ export async function readPickupConditions(
       input.apply &&
       launchedAfter(hold, input)
     ) {
-      settlePickupHold(input.slug, hold, input.root, "remove");
-      const replacement = currentHold(input, hold.item, report);
-      if (!replacement.ok) current.push(hold);
-      else if (replacement.value !== null) current.push(replacement.value);
+      keep(afterCleared(hold, input, report));
       continue;
     }
     if (condition === undefined || hold.settled !== undefined) {
@@ -139,17 +181,48 @@ export async function readPickupConditions(
     const key = JSON.stringify(condition);
     const state = read.get(key) ?? (await conditionState(condition, input));
     read.set(key, state);
-    if (
-      state.ok &&
-      state.value === "open" &&
-      condition.kind === "item-closed" &&
-      hold.relationSettled !== true
-    )
-      blockers.push(hold);
-    const settled = settleCondition(hold, state, input, report);
-    if (settled !== null) current.push(settled);
+    if (owesBlocker(hold, condition, state)) blockers.push(hold);
+    keep(settleCondition(hold, state, input, report));
   }
   return { holds: current, blockers };
+}
+
+/** Report a dependency that could not be read; the hold stands. */
+function reportUnreadable(
+  hold: PersonPickupHold,
+  failure: Extract<ConditionObservation, { ok: false }>["failure"],
+  input: ConditionRead,
+  report: RepoReport,
+): void {
+  if (hold.condition === undefined) return;
+  const classified = readFailureOf(failure);
+  if (failure.cause !== undefined)
+    swallow(
+      failure.cause,
+      `keeping ${hold.item}'s pickup hold after an unreadable dependency`,
+    );
+  report.records.push({
+    record: hold.condition.kind === "pr-merged" ? "forge" : "tracker",
+    source: input.slug,
+    ok: false,
+    detail: `could not check ${hold.item}'s wait for ${pickupConditionWords(hold.condition)}: ${failure.reason}`,
+    ...(classified === undefined ? {} : { failure: classified }),
+  });
+}
+
+/** Whether a cleared hold goes outright: no pickup waits to resume on it and none holds its item. */
+function removesOnClear(
+  hold: PersonPickupHold,
+  state: ConditionState,
+  input: ConditionRead,
+): boolean {
+  return (
+    state === "cleared" &&
+    hold.resumeRecord === undefined &&
+    !pickupRecordsFor(hold, input).some(({ record }) =>
+      holdsItem(record, hold.item),
+    )
+  );
 }
 
 function settleCondition(
@@ -159,33 +232,12 @@ function settleCondition(
   report: RepoReport,
 ): PersonPickupHold | null {
   if (!observation.ok) {
-    const { failure } = observation;
-    if (hold.condition !== undefined) {
-      const classified = readFailureOf(failure);
-      if (failure.cause !== undefined)
-        swallow(
-          failure.cause,
-          `keeping ${hold.item}'s pickup hold after an unreadable dependency`,
-        );
-      report.records.push({
-        record: hold.condition.kind === "pr-merged" ? "forge" : "tracker",
-        source: input.slug,
-        ok: false,
-        detail: `could not check ${hold.item}'s wait for ${pickupConditionWords(hold.condition)}: ${failure.reason}`,
-        ...(classified === undefined ? {} : { failure: classified }),
-      });
-    }
+    reportUnreadable(hold, observation.failure, input, report);
     return hold;
   }
   const state = observation.value;
-  if (!input.apply || (state !== "cleared" && state !== "closed-unmerged"))
-    return hold;
-  const remove =
-    state === "cleared" &&
-    hold.resumeRecord === undefined &&
-    !pickupRecordsFor(hold, input).some(({ record }) =>
-      holdsItem(record, hold.item),
-    );
+  if (!input.apply || state === "open") return hold;
+  const remove = removesOnClear(hold, state, input);
   if (settlePickupHold(input.slug, hold, input.root, remove ? "remove" : state))
     return remove ? null : { ...hold, settled: state };
   const replacement = currentHold(input, hold.item, report);

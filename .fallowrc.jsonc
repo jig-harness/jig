@@ -11,8 +11,6 @@
     // The page's own entry, which the dashboard's build hands to the bundler.
     "dashboard/src/main.tsx",
     "plugin/skills/*/scripts/**/*.ts",
-    // A fixture process a test spawns by path.
-    "plugin/send/__tests__/observe-pickup-conditions.ts",
     "modules/*/reference/**/*.ts"
   ],
   "ignorePatterns": [

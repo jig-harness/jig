@@ -314,6 +314,28 @@ export async function holdTarget(
   }
 }
 
+/** The condition `--until-merged` or `--until-closed` names for a pickup hold, if either is given; a usage error for any other request or for both. */
+function pickupConditionOf(
+  args: Pick<SendArguments, "untilMerged" | "untilClosed">,
+  station: string,
+  request: Request,
+): PickupCondition | undefined {
+  if (args.untilMerged === undefined && args.untilClosed === undefined)
+    return undefined;
+  if (station !== "pickup" || request.verb !== "hold")
+    usage("only pickup hold takes --until-merged or --until-closed");
+  if (args.untilMerged === undefined)
+    return (
+      readPickupCondition({ kind: "item-closed", item: args.untilClosed }) ??
+      usage("--until-closed needs an item key")
+    );
+  if (args.untilClosed !== undefined) usage("name one pickup condition");
+  const pr =
+    parsePickupPr(args.untilMerged) ??
+    usage("--until-merged needs a positive pull request number");
+  return { kind: "pr-merged", pr };
+}
+
 export async function sendMain(args: SendArguments): Promise<number> {
   const [text, ...rest] = args.words;
   if (text === undefined)
@@ -331,22 +353,7 @@ export async function sendMain(args: SendArguments): Promise<number> {
     decision: args.decision,
     decisionSet: args.decisionSet,
   });
-  let condition: PickupCondition | undefined;
-  if (args.untilMerged !== undefined || args.untilClosed !== undefined) {
-    if (written.value.station !== "pickup" || request.verb !== "hold")
-      usage("only pickup hold takes --until-merged or --until-closed");
-    if (args.untilMerged !== undefined) {
-      if (args.untilClosed !== undefined) usage("name one pickup condition");
-      const pr =
-        parsePickupPr(args.untilMerged) ??
-        usage("--until-merged needs a positive pull request number");
-      condition = { kind: "pr-merged", pr };
-    } else {
-      condition =
-        readPickupCondition({ kind: "item-closed", item: args.untilClosed }) ??
-        usage("--until-closed needs an item key");
-    }
-  }
+  const condition = pickupConditionOf(args, written.value.station, request);
   const refusedHere = standing(request);
   if (refusedHere !== null) return refusal(refusedHere);
   const strict = () =>
@@ -371,9 +378,17 @@ export async function sendMain(args: SendArguments): Promise<number> {
     condition,
   );
   if (!planned.ok) return refusal(planned.failure.reason);
-  const plan = planned.value;
-  console.log(renderPlan(plan, args.dryRun));
-  if (args.dryRun) return SEND_EXIT.SENT;
+  return sendPlan(planned.value, resolved, args.dryRun);
+}
+
+/** Print `plan`, then, unless this is a dry run, write it and say what was sent. */
+async function sendPlan(
+  plan: Plan,
+  resolved: ResolvedAddress,
+  dryRun: boolean,
+): Promise<number> {
+  console.log(renderPlan(plan, dryRun));
+  if (dryRun) return SEND_EXIT.SENT;
   const wrote = await plan.write();
   if (!wrote.ok) {
     console.error(shown(`jig send: not sent: ${wrote.failure.reason}`));

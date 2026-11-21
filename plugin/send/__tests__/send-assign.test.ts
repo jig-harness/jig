@@ -106,12 +106,39 @@ function world(
 const writes = (ops: Array<{ op: string }>) =>
   ops.filter((o) => o.op === "TrackerAssign").map((o) => o.op);
 
+const at = (path: string) => JSON.stringify(join(import.meta.dir, path));
+
+/** The tick's dependency observation, run with the send fixture's home. */
+const OBSERVE_PICKUP_CONDITIONS = `
+import { report } from ${at("../../dispatch/__tests__/line-fixtures.ts")};
+import { personPickupHolds } from ${at("../../dispatch/lib/person-pickup-holds.ts")};
+import { readPickupConditions } from ${at("../../dispatch/lib/tick-pickup-conditions.ts")};
+import { openTracker } from ${at("../../skills/do-item/scripts/lib/tracker/index.ts")};
+import { trackerConfigFrom } from ${at("../../skills/do-item/scripts/lib/tracker/config.ts")};
+const [slug, root, checkout] = process.argv.slice(1);
+const holds = personPickupHolds(slug, root);
+if (!holds.ok) throw new Error(holds.failure.reason);
+const tracker = openTracker(
+  trackerConfigFrom({ issue_tracker: { github: { repository: slug } } }),
+  checkout,
+);
+const observed = report();
+await readPickupConditions(
+  holds.value,
+  { slug, root, checkout, apply: true, records: [], tracker },
+  observed,
+);
+const failed = observed.records.find((record) => !record.ok);
+if (failed !== undefined) throw new Error(failed.detail);
+`;
+
 function observePickupConditions(w: SendWorld) {
   return Bun.spawnSync(
     [
       process.execPath,
       "--no-env-file",
-      join(import.meta.dir, "observe-pickup-conditions.ts"),
+      "-e",
+      OBSERVE_PICKUP_CONDITIONS,
       REPO,
       w.state,
       w.repo,

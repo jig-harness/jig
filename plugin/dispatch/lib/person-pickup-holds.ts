@@ -98,24 +98,37 @@ interface PickupHoldRow {
   wait_linked?: number;
 }
 
-function holdOf(row: PickupHoldRow): PersonPickupHold {
+/** What a readable stored wait says it settled as, if anything. */
+function settledOf(
+  cleared: number | undefined,
+): Pick<PersonPickupHold, "settled"> {
+  if (cleared === 1) return { settled: "cleared" };
+  if (cleared === 2) return { settled: "closed-unmerged" };
+  return {};
+}
+
+/** The stored wait's fields: its condition, or that it could not be read, and how it settled. */
+function waitFieldsOf(
+  row: PickupHoldRow,
+): Pick<PersonPickupHold, "condition" | "unreadableCondition" | "settled"> {
   const condition = storedCondition(row.item, row.wait_condition);
-  const unreadable = row.wait_condition != null && condition === null;
+  if (row.wait_condition != null && condition === null)
+    return { unreadableCondition: true };
+  return {
+    ...(condition === null ? {} : { condition }),
+    ...settledOf(row.wait_cleared),
+  };
+}
+
+function holdOf(row: PickupHoldRow): PersonPickupHold {
   return {
     item: row.item,
     by: row.held_by,
     at: row.held_at,
     title: row.title,
     url: row.url,
-    ...(condition === null ? {} : { condition }),
-    ...(unreadable ? { unreadableCondition: true as const } : {}),
+    ...waitFieldsOf(row),
     ...(row.resume_record == null ? {} : { resumeRecord: row.resume_record }),
-    ...(!unreadable && row.wait_cleared === 1
-      ? { settled: "cleared" as const }
-      : {}),
-    ...(!unreadable && row.wait_cleared === 2
-      ? { settled: "closed-unmerged" as const }
-      : {}),
     ...(row.wait_linked === 1 ? { relationSettled: true as const } : {}),
   };
 }

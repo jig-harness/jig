@@ -654,33 +654,45 @@ async function decisionResult(
   return framedResultMain(args.record, args.token, args.outcome, text);
 }
 
-/** `waits --until <time> [--reason rate-limit|pending|test-lock] [--arm <name>]`: no handoff, refusal or decision beside it. */
-function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
-  if (
+/** Whether a `waits` result names anything it does not take: a handoff, a refusal, a decision or a second reason. */
+function waitsOverreach(
+  args: Extract<Subcommand, { action: "result" }>,
+): boolean {
+  return (
     [args.pr, args.none, args.decision].some((v) => v !== undefined) ||
     args.refused.length > 0 ||
     args.keys.length > 0 ||
     args.reasons.length > 1
-  ) {
+  );
+}
+
+/** The `waits` options given, as the command line `resultMain` reads. */
+function waitsArgv(args: Extract<Subcommand, { action: "result" }>): string[] {
+  const named: Array<[string, string | undefined]> = [
+    ["--until", args.until],
+    ["--reason", args.reasons[0]],
+    ["--arm", args.arm],
+    ["--until-merged", args.untilMerged],
+    ["--until-closed", args.untilClosed],
+  ];
+  return named.flatMap(([flag, value]) =>
+    value === undefined ? [] : [flag, value],
+  );
+}
+
+/** `waits --until <time> [--reason rate-limit|pending|test-lock] [--arm <name>]`: no handoff, refusal or decision beside it. */
+function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
+  if (waitsOverreach(args)) {
     console.error(
       "jig dispatch result: waits takes --until (optional with --reason test-lock), and at most one --reason and one --arm; no --pr, --none, --decision, --refused or --key",
     );
     return 2;
   }
-  const reason = args.reasons[0];
   return resultMain([
     args.record,
     args.token,
     args.outcome,
-    ...(args.until === undefined ? [] : ["--until", args.until]),
-    ...(reason === undefined ? [] : ["--reason", reason]),
-    ...(args.arm === undefined ? [] : ["--arm", args.arm]),
-    ...(args.untilMerged === undefined
-      ? []
-      : ["--until-merged", args.untilMerged]),
-    ...(args.untilClosed === undefined
-      ? []
-      : ["--until-closed", args.untilClosed]),
+    ...waitsArgv(args),
   ]);
 }
 

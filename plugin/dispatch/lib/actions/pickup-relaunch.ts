@@ -22,7 +22,12 @@
  * is.
  */
 import { holdingAgain } from "../holding.ts";
-import { newRecordId, newToken, type LaunchRecord } from "../launches.ts";
+import {
+  newRecordId,
+  newToken,
+  type LaunchRecord,
+  type ReadRecord,
+} from "../launches.ts";
 import { readPickupTree, type TreeReader } from "../pickup-tree.ts";
 import { dispatched, type SessionsReport } from "../runtime/port.ts";
 import { sessionIdFor } from "../session.ts";
@@ -82,6 +87,44 @@ async function changed(
   );
 }
 
+/** Why the host's rules no longer admit the relaunch; `null` when they still do. */
+function rulesChanged(
+  ctx: RelaunchContext,
+  relaunch: PickupRelaunch,
+): string | null {
+  if (
+    relaunch.dependency === undefined &&
+    ctx.section.stalledRelaunch === "never"
+  )
+    return "dispatch.stalled_relaunch is now never";
+  if (ctx.rerunsHeld !== null)
+    return `the host health gate is failing: ${ctx.rerunsHeld}`;
+  return null;
+}
+
+/** Why another relaunch already made this one: of its source for a dependency or a lock wait, at its head otherwise; `null` when none did. */
+function relaunchedAlready(
+  records: readonly ReadRecord[],
+  read: { item: string; relaunch: PickupRelaunch; own: string | undefined },
+): string | null {
+  const { item, relaunch, own } = read;
+  const bySource =
+    relaunch.dependency !== undefined || relaunch.lockWait === true;
+  const again = records.find(
+    (r) =>
+      r.record.id !== own &&
+      r.record.item === item &&
+      r.record.relaunchOf !== undefined &&
+      (bySource
+        ? r.record.relaunchOf === relaunch.record
+        : r.record.relaunchHead === relaunch.head),
+  );
+  if (again === undefined) return null;
+  return relaunch.lockWait === true
+    ? `launch record ${again.record.id} already relaunched ${relaunch.record}`
+    : `launch record ${again.record.id} already relaunched it at ${relaunch.head}`;
+}
+
 /** Why the host's rules or launch records no longer admit the relaunch; `null` when they still do. */
 function recordsChanged(
   state: ApplyState,
@@ -90,13 +133,8 @@ function recordsChanged(
   read: { item: string; relaunch: PickupRelaunch; own: string | undefined },
 ): string | null {
   const { item, relaunch, own } = read;
-  if (
-    relaunch.dependency === undefined &&
-    ctx.section.stalledRelaunch === "never"
-  )
-    return "dispatch.stalled_relaunch is now never";
-  if (ctx.rerunsHeld !== null)
-    return `the host health gate is failing: ${ctx.rerunsHeld}`;
+  const rules = rulesChanged(ctx, relaunch);
+  if (rules !== null) return rules;
   const records = state.records.filter((r) => r.record.repo === repo.slug);
   const source = records.find((r) => r.record.id === relaunch.record);
   if (source === undefined)
@@ -104,19 +142,8 @@ function recordsChanged(
   const served = source.record.servedPerson;
   if (served !== undefined && !ctx.serves.includes(served))
     return `${served} is no longer served by this host`;
-  const again = records.find(
-    (r) =>
-      r.record.id !== own &&
-      r.record.item === item &&
-      r.record.relaunchOf !== undefined &&
-      (relaunch.dependency !== undefined || relaunch.lockWait === true
-        ? r.record.relaunchOf === relaunch.record
-        : r.record.relaunchHead === relaunch.head),
-  );
-  if (again !== undefined)
-    return relaunch.lockWait === true
-      ? `launch record ${again.record.id} already relaunched ${relaunch.record}`
-      : `launch record ${again.record.id} already relaunched it at ${relaunch.head}`;
+  const again = relaunchedAlready(records, read);
+  if (again !== null) return again;
   const other = holdingRecords(item, records).find((r) => r.record.id !== own);
   return other === undefined
     ? null
