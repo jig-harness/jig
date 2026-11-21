@@ -175,6 +175,33 @@ function recordFault(run: Retirement, source: string, fault: Failure): void {
   });
 }
 
+function endedBinding(
+  requestId: number,
+  reason: string,
+  evidence: Evidence,
+  room: ReturnType<typeof deadline> & object,
+) {
+  const moved =
+    typeof evidence.rearmMovedTo === "number" &&
+    typeof evidence.rearmMovedGeneration === "number"
+      ? {
+          failureStop: {
+            comment: evidence.rearmMovedTo,
+            generation: evidence.rearmMovedGeneration,
+          },
+        }
+      : {};
+  return {
+    requestId,
+    reason,
+    ...(evidence.rearm === true || evidence.rearmMoved === true
+      ? { needsPerson: true as const }
+      : {}),
+    ...moved,
+    deadline: room,
+  };
+}
+
 /** End this exact request before removing its shared label. */
 async function retire(
   run: Retirement,
@@ -189,23 +216,13 @@ async function retire(
   let room = deadline(state);
   if (room === null) return;
   if (typeof requestId === "number" && evidence.rearmCancelled !== true) {
-    const ended = await writeRearmBinding(target, login, label, null, {
-      requestId,
-      reason: why,
-      ...(evidence.rearm === true || evidence.rearmMoved === true
-        ? { needsPerson: true }
-        : {}),
-      ...(typeof evidence.rearmMovedTo === "number" &&
-      typeof evidence.rearmMovedGeneration === "number"
-        ? {
-            failureStop: {
-              comment: evidence.rearmMovedTo,
-              generation: evidence.rearmMovedGeneration,
-            },
-          }
-        : {}),
-      deadline: room,
-    });
+    const ended = await writeRearmBinding(
+      target,
+      login,
+      label,
+      null,
+      endedBinding(requestId, why, evidence, room),
+    );
     if (!ended.ok) {
       recordFault(run, source, ended.failure);
       return;

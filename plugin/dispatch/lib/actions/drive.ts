@@ -66,12 +66,8 @@ import {
   ghCallTimeoutSeconds,
   KILL_ESCALATE_MS,
 } from "../../../skills/drive-pr/scripts/lib/proc.ts";
-import {
-  failedRearmRequest,
-  rearmBlockExpired,
-  reportRearmCapacity,
-} from "./retire-rearm.ts";
-import { clearRearmRequest, clearRearmWait } from "../rearm-waits.ts";
+import { rearmTrack } from "./rearm-track.ts";
+import { clearRearmRequest } from "../rearm-waits.ts";
 import { currentIso } from "../../../shared/time.ts";
 import { originalTree } from "./rearm-worktree.ts";
 
@@ -310,6 +306,33 @@ function unstartedRequestEnded(
   );
 }
 
+/** Why a recorded launch no longer matches the ledger or its rearm request; `null` when it does. */
+function movedSinceRecord(record: LaunchRecord, read: DrivenPr): string | null {
+  if (read.evidence.rearmMoved === true) return EARLIER_REARM;
+  if (!sameFacts(record.facts, factsOf(read)))
+    return `its ledger changed since the launch (now ${factsOf(read)})`;
+  if (record.rearmLabel != null && requestMoved(read, record.rearmRequestId))
+    return "the rearm request changed or expired since the launch was recorded";
+  return null;
+}
+
+/** Why the original tree stops a replay; a proven mismatch also releases an unstarted rearm's record. */
+async function originalBlock(
+  state: ApplyState,
+  record: LaunchRecord,
+  read: DrivenPr,
+): Promise<string | null> {
+  const original = await replayOriginalTree(record, read);
+  if (original === null) return null;
+  if (
+    original.proven &&
+    unstartedRearm(record) &&
+    dropPendingRecord(state, record)
+  )
+    return `${original.why}; its unstarted launch record was released`;
+  return original.why;
+}
+
 /** Why a pending record's launch must not be replayed now; `null` when it may. */
 async function retryBlocked(
   state: ApplyState,
@@ -338,11 +361,8 @@ async function retryBlocked(
   );
   if (!verified.ok) return verified.failure.reason;
   const read = verified.value;
-  if (read.evidence.rearmMoved === true) return EARLIER_REARM;
-  if (!sameFacts(record.facts, factsOf(read)))
-    return `its ledger changed since the launch (now ${factsOf(read)})`;
-  if (record.rearmLabel != null && requestMoved(read, record.rearmRequestId))
-    return "the rearm request changed or expired since the launch was recorded";
+  const moved = movedSinceRecord(record, read);
+  if (moved !== null) return moved;
   const unwanted = classBlocked(record, read);
   if (unwanted !== null) return unwanted;
   // A stop on a conflict stands whatever moved since: its base moves often, and
@@ -354,16 +374,8 @@ async function retryBlocked(
       ? replayedChange(state, record, read)
       : changedStale(record.redrive, read);
   if (blocked !== null) return blocked;
-  const original = await replayOriginalTree(record, read);
-  if (original !== null) {
-    if (
-      original.proven &&
-      unstartedRearm(record) &&
-      dropPendingRecord(state, record)
-    )
-      return `${original.why}; its unstarted launch record was released`;
-    return original.why;
-  }
+  const original = await originalBlock(state, record, read);
+  if (original !== null) return original;
   const stopped =
     (await replayWorkspace(state, repo, record, read)) ??
     (await accountBlock(state, record));
@@ -573,6 +585,25 @@ function stillWanted(
   return changedStale(action.redrive, fresh);
 }
 
+/** A stall or a deadline that left work runs where the work is, or not at all: a fresh tree would not carry it. */
+function workTree(
+  state: ApplyState,
+  repo: RepoTarget,
+  pr: number,
+  head: string,
+  sessions: SessionsReport,
+  tree: string,
+): Promise<Opened> {
+  const own = sessions.ok
+    ? workspaceOfTree(sessions.workspaces, tree)
+    : undefined;
+  return own === undefined
+    ? Promise.resolve({
+        refused: `the stop left work in its tree (${tree}), which no open workspace holds now; a fresh tree would not carry it`,
+      })
+    : provenWorkspace(state, repo, pr, head, own);
+}
+
 /**
  * The workspace a drive launch runs in: an existing one (the tree a stop left
  * work in, the stopped driver's original tree, or the one workspace joined to
@@ -591,18 +622,8 @@ async function workspaceFor(
   originalClone: string,
   verify = true,
 ): Promise<Opened & { missingOriginal?: true }> {
-  // A stall or a deadline that left work runs where the work is, or not at all: a fresh
-  // tree would not carry it.
-  if (tree !== undefined && originalActor === null) {
-    const own = sessions.ok
-      ? workspaceOfTree(sessions.workspaces, tree)
-      : undefined;
-    return own === undefined
-      ? {
-          refused: `the stop left work in its tree (${tree}), which no open workspace holds now; a fresh tree would not carry it`,
-        }
-      : provenWorkspace(state, repo, pr, head, own);
-  }
+  if (tree !== undefined && originalActor === null)
+    return workTree(state, repo, pr, head, sessions, tree);
   const candidates = sessions.ok
     ? sessions.workspaces.filter(
         (w) =>
@@ -731,6 +752,73 @@ function driveRecord(
   };
 }
 
+/** The account slot and the workspace one launch runs in, or the outcome that ends it. */
+async function admitAndOpen(
+  state: ApplyState,
+  repo: RepoTarget,
+  action: Action,
+  pr: DrivenPr,
+  sessions: SessionsReport,
+  report: RepoReport,
+  named: ReturnType<typeof dispatched>,
+): Promise<
+  | { outcome: LaunchOutcome }
+  | { slots: Slots; workspace: { id: string; path: string } }
+> {
+  const open = (verify: boolean) =>
+    workspaceFor(
+      state,
+      repo,
+      pr.number,
+      pr.head,
+      sessions,
+      named,
+      action.redrive?.tree?.actor,
+      action.redrive?.uncleanTree === true || pr.evidence.rearm === true
+        ? String(pr.evidence.driverActor)
+        : null,
+      String(pr.evidence.driverClone),
+      verify,
+    );
+  const track = rearmTrack(state, repo.slug, pr, report);
+  const original = track ? await open(false) : undefined;
+  if (original?.missingOriginal && "waits" in original) {
+    track?.treeMissing(original.waits);
+    return { outcome: waits(action, original.waits) };
+  }
+  const admitted = await admitAccount(
+    state,
+    repo.slug,
+    action,
+    0,
+    readCloneKey(repo.path),
+  );
+  if ("outcome" in admitted) {
+    if (admitted.capacity !== undefined)
+      track?.capacity(admitted.outcome, admitted.capacity);
+    return admitted;
+  }
+  track?.passed("capacity");
+  const slots = admitted.slots;
+  const candidate = await (original && "workspace" in original
+    ? provenWorkspace(state, repo, pr.number, pr.head, original.workspace)
+    : (original ?? open(true)));
+  if (track && "refused" in candidate) {
+    track.treeRefused(candidate.refused, candidate.structural);
+    return { outcome: waits(action, candidate.refused, slots.account.name) };
+  }
+  if ("workspace" in candidate) track?.passed("tree");
+  const opened = await openedFor(
+    state,
+    action,
+    slots,
+    Promise.resolve(candidate),
+  );
+  if ("outcome" in opened) return opened;
+  if (original && "workspace" in original) track?.passed("stop");
+  return { slots, workspace: opened.workspace };
+}
+
 /** One planned re-arm or takeover, through its fresh read, admission, workspace, shared claim and launch. */
 async function launchOne(
   state: ApplyState,
@@ -749,89 +837,17 @@ async function launchOne(
   const id = newRecordId();
   const kind = isTakeover(action) ? "takeover" : "rearm";
   const named = dispatched(kind, `#${pr.number}`, id);
-  const open = (verify: boolean) =>
-    workspaceFor(
-      state,
-      repo,
-      pr.number,
-      pr.head,
-      sessions,
-      named,
-      action.redrive?.tree?.actor,
-      action.redrive?.uncleanTree === true || pr.evidence.rearm === true
-        ? String(pr.evidence.driverActor)
-        : null,
-      String(pr.evidence.driverClone),
-      verify,
-    );
-  const request = pr.evidence.rearmRequestId;
-  const explicit = pr.evidence.rearm === true && typeof request === "number";
-  const original = explicit ? await open(false) : undefined;
-  if (original?.missingOriginal && "waits" in original) {
-    if (rearmBlockExpired(state, repo.slug, pr, "tree", original.waits))
-      failedRearmRequest(report, repo.slug, pr, original.waits);
-    return waits(action, original.waits);
-  }
-  const admitted = await admitAccount(
+  const got = await admitAndOpen(
     state,
-    repo.slug,
+    repo,
     action,
-    0,
-    readCloneKey(repo.path),
+    pr,
+    sessions,
+    report,
+    named,
   );
-  if ("outcome" in admitted) {
-    if (explicit && admitted.capacity !== undefined)
-      reportRearmCapacity(
-        state,
-        repo.slug,
-        pr,
-        admitted.outcome,
-        admitted.capacity,
-      );
-    return admitted.outcome;
-  }
-  if (explicit)
-    clearRearmWait(
-      { repo: repo.slug, pr: pr.number, request, kind: "capacity" },
-      state.root,
-    );
-  const slots = admitted.slots;
-  const opening =
-    original && "workspace" in original
-      ? provenWorkspace(state, repo, pr.number, pr.head, original.workspace)
-      : (original ?? open(true));
-  const candidate = await opening;
-  if (explicit && "refused" in candidate) {
-    if (
-      candidate.structural === true &&
-      rearmBlockExpired(state, repo.slug, pr, "tree", candidate.refused)
-    )
-      failedRearmRequest(report, repo.slug, pr, candidate.refused);
-    return waits(action, candidate.refused, slots.account.name);
-  }
-  if (explicit && "workspace" in candidate && typeof request === "number")
-    clearRearmWait(
-      { repo: repo.slug, pr: pr.number, request, kind: "tree" },
-      state.root,
-    );
-  const opened = await openedFor(
-    state,
-    action,
-    slots,
-    Promise.resolve(candidate),
-  );
-  if ("outcome" in opened) return opened.outcome;
-  if (
-    original !== undefined &&
-    "workspace" in original &&
-    typeof request === "number"
-  ) {
-    clearRearmWait(
-      { repo: repo.slug, pr: pr.number, request, kind: "stop" },
-      state.root,
-    );
-  }
-  const { workspace } = opened;
+  if ("outcome" in got) return got.outcome;
+  const { slots, workspace } = got;
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
