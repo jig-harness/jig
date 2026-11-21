@@ -190,7 +190,7 @@ function metadata(
   if (!renumbering)
     for (const path of conflicted) {
       regenerate.add(path);
-      outputs.set(path, null);
+      if (!integrationOutputs.has(path)) outputs.set(path, null);
     }
 
   const retained = new Set([
@@ -282,7 +282,9 @@ function makePlan(
       commit: inputs.sides[integrationSide].commit,
       paths: renumbering
         ? integrationPaths(group, integration, pending)
-        : conflicted.filter((path) => integration.tree.has(path)).sort(),
+        : conflicted
+            .filter((path) => integration.tree.has(path))
+            .sort((left, right) => left.localeCompare(right)),
     },
     moves: moved.map(({ path, target }) => ({
       from: path,

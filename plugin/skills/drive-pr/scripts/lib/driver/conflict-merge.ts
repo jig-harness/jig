@@ -180,7 +180,7 @@ async function removeNewUntracked(
     if (before.has(path) || path.endsWith("/") || path.includes("\uFFFD"))
       continue;
     const clean = await git(
-      ["--literal-pathspecs", "clean", "-f", "--", path],
+      ["--literal-pathspecs", "clean", "-f", "-x", "--", path],
       opts,
     );
     if (clean.code === 0) removed = true;
