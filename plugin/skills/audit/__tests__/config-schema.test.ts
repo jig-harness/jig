@@ -53,6 +53,7 @@ import {
   refusedPassArgs,
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
+import { DEFAULT_REVIEWER_POLL_MAX_SECONDS } from "../../drive-pr/scripts/lib/status/reviewer-poll.ts";
 import {
   CODEX_PASS_ARG_PATTERN,
   codexPassArgsProblem,
@@ -542,6 +543,7 @@ describe("the reading skills", () => {
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "file_issue.sweep.move": sweepSettings({}).move,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "review.reviewer_poll_max_seconds": DEFAULT_REVIEWER_POLL_MAX_SECONDS,
       "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
       "specs.body_section": DEFAULT_BODY_SECTION,
@@ -560,6 +562,8 @@ describe("the reading skills", () => {
       "dispatch.overlap.file_rate": dispatch.value.overlap?.fileRate,
       "dispatch.overlap.area_rate": dispatch.value.overlap?.areaRate,
       "dispatch.overlap.unknown_cost": dispatch.value.overlap?.unknownCost,
+      "dispatch.reviewer_failures_before_escalation":
+        dispatch.value.reviewerFailures?.threshold,
     });
   });
 

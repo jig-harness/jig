@@ -28,6 +28,10 @@ The practice it implements is Jig's [M7 — PR lifecycle & review](https://githu
 
 This page is for **you, the human** — the operator contract agents follow is the skill itself: [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
 
+When a conflict repair leaves a merge it started unfinished, the driver aborts
+it, removes the repair's new untracked files and verifies that the worktree is
+clean. The stop reports any merge or files it could not clear.
+
 ## Installation
 
 The skill ships in the `jig` plugin, installed once per machine for
@@ -428,6 +432,12 @@ legitimate step keeps hitting it, rather than removing it.
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 `drive.ts` sets for its own passes) are documented where they act, in
 [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
+
+While waiting for a reviewer on the same pull request head, the drive doubles
+the poll interval up to `review.reviewer_poll_max_seconds` (300 seconds by
+default). A completed neutral check titled `Review did not complete` stops
+the drive with [`REVIEWER_FAILED`](../../protocol/drive-exits.md) if the
+reviewer has no review of that head.
 
 ### The background time limit
 

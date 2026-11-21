@@ -917,7 +917,12 @@ export function ledgerSettlement(
         pr,
         "stop",
         String(code ?? "unknown"),
-        driverRuntime.stopLeftWork,
+        {
+          ...driverRuntime.stopLeftWork,
+          ...(code === DRIVE_EXIT.REVIEWER_FAILED
+            ? driverRuntime.reviewerFailure
+            : null),
+        },
         code === CHECK_RUNS_UNREADABLE_EXIT
           ? driverRuntime.stopListingPages
           : null,

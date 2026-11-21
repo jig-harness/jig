@@ -60,15 +60,17 @@ import type { SkipNotice } from "./skip-notice.ts";
  * to every caller, which must treat `''` as fail-closed rather than as a
  * licence to fall back to a prefix comparison.
  */
-export async function resolveMarkerSha(marker: string): Promise<string> {
+export async function resolveMarkerSha(
+  marker: string,
+  cwd?: string,
+): Promise<string> {
   if (marker === "") return "";
   if (marker.length === 40) return marker;
-  const rp = await localGit([
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `${marker}^{commit}`,
-  ]);
+  const rp = await localGit(
+    ["rev-parse", "--verify", "--quiet", `${marker}^{commit}`],
+    gitCallTimeoutSeconds(),
+    cwd,
+  );
   return rp.code === 0 ? rp.stdout.trim() : "";
 }
 
@@ -80,8 +82,9 @@ export async function resolveMarkerSha(marker: string): Promise<string> {
 function localGit(
   args: string[],
   timeoutSec: number = gitCallTimeoutSeconds(),
+  cwd?: string,
 ): Promise<RunResult> {
-  const anchor = process.env.DRIVE_PR_WORKTREE;
+  const anchor = cwd ?? process.env.DRIVE_PR_WORKTREE;
   return git(args, {
     env: gitIdentityEnv(),
     timeoutSec,

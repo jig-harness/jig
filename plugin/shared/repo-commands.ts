@@ -213,6 +213,19 @@ export const REPO_COMMANDS = {
     meaning:
       "Rebuilds files that are regenerated, never merged by hand, when they conflict; each entry pairs `paths` with the `command` that rebuilds them.",
   },
+  "resolve_conflicts.sequenced_migrations": {
+    runBy: ["resolve-conflicts"],
+    shell: true,
+    given:
+      "Runs from the repository root after the planned migration source files and integration metadata are in place. Standard input is migration-plan.ts JSON, with an entry for each directory and its regenerate paths.",
+    answers:
+      "Exit 0 once the journal and required snapshots are rebuilt and integration snapshots are preserved.",
+    commandStore: false,
+    deadline: null,
+    exits: {},
+    meaning:
+      "Rebuilds the sequenced migration journal and snapshots after the sides' migrations are combined.",
+  },
   "explain.figure_build_command": {
     runBy: ["explain"],
     shell: true,

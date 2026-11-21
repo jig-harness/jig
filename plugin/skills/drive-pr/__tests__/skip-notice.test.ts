@@ -31,6 +31,11 @@ describe("skipNoticeIn", () => {
     expect(skipNoticeIn(body)?.head).toBe(HEAD);
   });
 
+  it("accepts the marker supplied by its caller", () => {
+    const body = `<!-- replacement-skip -->\npush \`${HEAD}\`\n<!-- /replacement-skip -->`;
+    expect(skipNoticeIn(body, "replacement-skip")?.head).toBe(HEAD);
+  });
+
   it("returns null for a block that names no head", () => {
     expect(skipNoticeIn(block("Review did not run for this push."))).toBeNull();
   });

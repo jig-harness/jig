@@ -222,6 +222,36 @@ describe("settling a run", () => {
     expect(pendingArm(long).length).toBeLessThanOrEqual(200);
   });
 
+  test("a shortened pending arm keeps every tag and run it names, or none", () => {
+    const wait = settle(settled(runOf(), { release: "pending" }));
+    if (!wait.ok) throw new Error(wait.failure.reason);
+    const link = (n: number) => `https://github.com/o/r/actions/runs/${n}`;
+    const withEvidence = (evidence: string) => ({
+      ...wait.value,
+      rows: wait.value.rows.map((r) =>
+        r.verdict === "pending" ? { ...r, evidence } : r,
+      ),
+    });
+    const some = pendingArm(
+      withEvidence(`${"x ".repeat(150)}${link(1)} ${link(2)} release: v1.2.3`),
+    );
+    expect(some.length).toBeLessThanOrEqual(200);
+    for (const dep of [link(1), link(2), "v1.2.3"]) expect(some).toContain(dep);
+    const many = pendingArm(
+      withEvidence([1, 2, 3, 4, 5, 6, 7].map(link).join(" ") + " v1.2.3"),
+    );
+    expect(many.length).toBeLessThanOrEqual(200);
+    expect(many).not.toContain("/actions/runs/");
+    expect(many).not.toContain("v1.2.3");
+    const wrapped = pendingArm(
+      withEvidence(
+        `${[1, 2, 3, 4, 5, 6, 7].map((n) => `[run](${link(n)})`).join(" ")} v1.2.3`,
+      ),
+    );
+    expect(wrapped.length).toBeLessThanOrEqual(200);
+    expect(wrapped).not.toContain("/actions/runs/");
+  });
+
   test("a preview carries out nothing: no marker, no result to record", () => {
     const preview = runOf({
       facts: factsOf({ mode: "preview", mergeSha: null }),
@@ -282,4 +312,15 @@ describe("the authority table", () => {
     ).toBe(false);
     expect(parseFollowupSettings({ followup: { steps: [] } }).ok).toBe(false);
   });
+});
+
+test("pendingArm never cuts a run link", () => {
+  const link = "https://github.com/o/r/actions/runs/123456";
+  const row = (evidence: string) =>
+    ({ rows: [{ arm: "deploy", verdict: "pending", evidence }] }) as never;
+  const long = pendingArm(row(`${"x ".repeat(120)}${link}`));
+  expect(long.length).toBeLessThanOrEqual(200);
+  expect(long).toContain(link);
+  const cut = pendingArm(row(`${"y".repeat(190)} ${link}`));
+  expect(cut).not.toMatch(/runs\/\d*…/);
 });
