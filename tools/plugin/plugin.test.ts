@@ -206,6 +206,35 @@ test("every relative import in the copied plugin resolves inside the copy", () =
   expect(intoSkills).toEqual([]);
 });
 
+/** The Drizzle package specifiers `text` imports at run time, as Bun reads them. */
+function drizzlePackageImports(text: string, file = "source.ts"): string[] {
+  const loader = file.endsWith(".mjs") ? "js" : "ts";
+  return new Bun.Transpiler({ loader })
+    .scanImports(text.replace(/^#!.*/, ""))
+    .map((entry) => entry.path)
+    .filter((path) => /^drizzle-orm(\/|$)/.test(path));
+}
+
+test("the copied plugin imports no Drizzle package at run time", () => {
+  // The compile check below declares Drizzle's module names so the vendored
+  // declarations resolve; that must not let a run-time import of the unshipped
+  // package pass.
+  expect(
+    drizzlePackageImports(
+      'export { sql } from "drizzle-orm";\nawait import("drizzle-orm/sqlite-core");',
+    ).toSorted(),
+  ).toEqual(["drizzle-orm", "drizzle-orm/sqlite-core"]);
+  const cache = join(scratch, "cache");
+  const offenders = readdirSync(cache, { recursive: true, encoding: "utf8" })
+    .filter((path) => /\.(ts|mts|mjs)$/.test(path) && !/\.d\.m?ts$/.test(path))
+    .filter(
+      (path) =>
+        drizzlePackageImports(readFileSync(join(cache, path), "utf8"), path)
+          .length > 0,
+    );
+  expect(offenders).toEqual([]);
+});
+
 /**
  * Type-checks `dir/shared` with no `skills/` beside it. The include names no
  * extension, so the compiler takes every file kind it reads (`.ts`, `.mts`,
