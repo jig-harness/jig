@@ -1933,9 +1933,18 @@ this count fall back to the retained launch count. Equal weights retain the exis
 
 The receipt, terminal report and dashboard account view show each configured
 and effective weight with its reason. An unreadable or malformed file, an
-unknown section, an invalid `accounts` mapping, an unknown account name or a weight outside the
-range closes every account for new launches, and reports why. This prevents
-a broken file from resuming an account the host paused. Fix or remove the
+unknown section, an invalid `accounts` mapping or a weight outside the
+range on an account the machine file lists closes every account for new
+launches, and reports why. This prevents a broken file from resuming an
+account the host paused. An `accounts` name the machine file does not list
+gives no listed account a weight, so it is skipped and the file's other
+weights apply: every account's reason names the skipped names, and the
+host raises one notice, where it tells its own failures (`failures.notify_after`), naming the file, the skipped names and the accounts
+the machine file lists, once for each set of skipped names (again after
+`renotify_after` while the set stands). Because an account the file does
+not name has weight 100, a misspelt name for an account meant to be paused
+leaves that account taking launches; the notice is how a person learns of
+it. Fix or remove the
 file to resume admission on the next tick. The shared document can also hold
 `lanes`; each reader validates only its own section, so an invalid `lanes`
 section does not change the account weights.
