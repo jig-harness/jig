@@ -752,6 +752,11 @@ work as part of the plugin:
   Optique, the command-line parser, built by `bun tools/plugin/vendor-optique.ts`
   from the names `tools/plugin/optique-entry.ts` lists, so a script that
   needs another of its functions adds the name there and runs that command.
+  Drizzle, the object-relational mapper the hub's storage is written with,
+  is built the same way by `bun tools/plugin/vendor-drizzle.ts`, from two
+  entries in one split build: `plugin/shared/vendor/drizzle.mjs` holds the
+  portable parts, `drizzle-bun-sqlite.mjs` the `bun:sqlite` driver and its
+  migrator, and both import `drizzle-shared.mjs`.
   A page the plugin serves is built the same way from source outside
   `plugin/`, and minified, since a phone loads it: `plugin/dispatch/dashboard-page/`
   is built by `bun dashboard/build.ts`

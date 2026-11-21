@@ -227,7 +227,9 @@ describe("the registry", () => {
     expect(new Set(names).size).toBe(names.length);
     for (const kind of RECORD_KINDS) {
       expect(kind.name).toMatch(/^[a-z][a-z0-9-]*$/);
-      expect(["machine", "tree", "forge", "tracker"]).toContain(kind.medium);
+      expect(["machine", "tree", "forge", "tracker", "hub"]).toContain(
+        kind.medium,
+      );
       expect(kind.owner).not.toBe("");
       expect(Number.isInteger(kind.version) && kind.version >= 0).toBe(true);
       expect(recordKind(kind.name)).toBe(kind);

@@ -88,6 +88,9 @@ lib/vendor/js-yaml.LICENSE
   js-yaml 4.3.2, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
 plugin/shared/vendor/optique.LICENSE
   Optique (@optique/core) 1.3.6, MIT License, Copyright 2025–2026 Hong Minhee
+plugin/shared/vendor/drizzle.LICENSE
+  Drizzle (drizzle-orm) 0.45.4, Apache License 2.0, Copyright Drizzle Team
+  (the package's named author; its licence names no other holder)
 plugin/dispatch/dashboard-page/bundle.LICENSE
   The libraries bundled into the dispatch dashboard's page, each with its
   version and licence in this file: React, TanStack Query, Table, Virtual,

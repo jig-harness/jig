@@ -12,6 +12,9 @@ cooldown:
   exempt: []
 install-scripts:
   # Packages that may run lifecycle scripts at install. None of Jig's
-  # dependencies needs one (`bun pm untrusted` lists nothing); a package that
-  # does is added here and to package.json's trustedDependencies together.
+  # dependencies needs one. `bun pm untrusted` lists esbuild, which
+  # drizzle-kit (a development dependency) pulls in: its postinstall stays
+  # blocked, and drizzle-kit generates the hub's migrations under Bun without
+  # it. A package that needs its script is added here and to package.json's
+  # trustedDependencies together.
   allow: []

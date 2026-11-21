@@ -7,6 +7,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { vendoredDrizzle } from "./vendor-drizzle.ts";
 import { vendoredOptique } from "./vendor-optique.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -32,4 +33,21 @@ test("the vendored command-line parser is a fresh build of the pinned Optique", 
       name,
       current: readFileSync(join(vendor, name), "utf8") === content,
     }).toEqual({ name, current: true });
+});
+
+test("the vendored object-relational mapper is a fresh build of the pinned Drizzle", () => {
+  // Drizzle ships no single-file build, so the plugin carries Bun's bundle of
+  // the parts the hub imports, split into a portable entry, the bun:sqlite
+  // driver's entry and the chunk they share, with their declarations;
+  // `bun tools/plugin/vendor-drizzle.ts` rebuilds all five.
+  for (const [name, content] of Object.entries(vendoredDrizzle()))
+    expect({
+      name,
+      current: readFileSync(join(vendor, name), "utf8") === content,
+    }).toEqual({ name, current: true });
+  // The package ships no licence file; the vendored one is its repository's
+  // Apache License 2.0, which the package declares.
+  expect(readFileSync(join(vendor, "drizzle.LICENSE"), "utf8")).toStartWith(
+    "                                 Apache License\n                           Version 2.0, January 2004\n",
+  );
 });
