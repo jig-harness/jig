@@ -20,6 +20,10 @@ the role of each side, maps the conflicts, regenerates derived files, records
 decisions, and checks for dropped changes. The
 [agent procedure](SKILL.md) gives the commands and exit codes.
 
+When resolving a base merge inside a drive, the skill refreshes dependencies
+before validation if the staged merge changes a package manifest or lockfile.
+The resolution record includes the frozen install command.
+
 ## Staged changes belong to the operation
 
 `check-resolution.ts` checks every staged path against the operation's

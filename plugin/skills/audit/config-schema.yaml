@@ -632,6 +632,13 @@ fields:
   drive.load_guard_command:
     type: command
     read_by: [drive-pr]
+  drive.dependency_install:
+    type: map
+    keys: [bun.lock, bun.lockb, package-lock.json, npm-shrinkwrap.json, pnpm-lock.yaml, yarn.lock, Cargo.lock, go.sum, uv.lock, poetry.lock, Gemfile.lock, composer.lock]
+    values_type: command
+    nullable: true
+    since: next
+    read_by: [drive-pr, resolve-conflicts]
   drive.change_areas_catalog:
     type: path
     exists: expected

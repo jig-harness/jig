@@ -4,6 +4,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { JigError } from "../errors.ts";
 
 export interface PackageManager {
   name: string;
@@ -69,14 +70,23 @@ const LOCKFILES: [
  * The package manager `package.json` declares in its `packageManager` field
  * (`pnpm@10.1.0` → `pnpm`), or null when it declares none or cannot be read.
  */
-function declaredManager(root: string): string | null {
+function declaredManager(
+  root: string,
+  requireReadable: boolean,
+): string | null {
   try {
     const manifest = JSON.parse(
       readFileSync(join(root, "package.json"), "utf8"),
     ) as { packageManager?: unknown };
     if (typeof manifest.packageManager !== "string") return null;
     return manifest.packageManager.split("@")[0]?.trim() || null;
-  } catch {
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (requireReadable && code !== "ENOENT")
+      throw new JigError(
+        "config-invalid",
+        `cannot choose a lockfile in ${root}: package.json is ${code ?? "invalid JSON"}`,
+      );
     return null;
   }
 }
@@ -87,12 +97,21 @@ function declaredManager(root: string): string | null {
  * another's lockfile for a tool), the one `package.json` declares in
  * `packageManager` wins; otherwise the first in `LOCKFILES` order.
  */
-export function detectPackageManager(root: string): {
+export function detectPackageManager(
+  root: string,
+  /** When acting on a git tree, consider only that tree's lockfiles. */
+  lockfiles?: ReadonlySet<string>,
+): {
   found: PackageManager | null;
   others: string[];
 } {
-  const present = LOCKFILES.filter(([file]) => existsSync(join(root, file)));
-  const declared = declaredManager(root);
+  const present = LOCKFILES.filter(
+    ([file]) => lockfiles?.has(file) ?? existsSync(join(root, file)),
+  );
+  const declared = declaredManager(
+    root,
+    lockfiles !== undefined && present.length > 1,
+  );
   const preferred = present.findIndex(
     ([, manager]) => manager(root).name === declared,
   );

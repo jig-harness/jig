@@ -3265,6 +3265,8 @@ make, use the entry's term instead.
   every dependency. When a merge conflicts in one, Jig's conflict tooling
   regenerates it from the manifests instead of merging it by hand, and the CI
   fixer reinstalls from it ([resolve-conflicts](plugin/skills/resolve-conflicts/SKILL.md)).
+- **Frozen install** — a dependency installation that uses the versions pinned
+  in its lockfile and refuses inputs that would require rewriting that file.
 - **WCAG (Web Content Accessibility Guidelines)** — the W3C's standard for
   making web pages usable by people with disabilities. Its levels A, AA and
   AAA are increasingly strict.

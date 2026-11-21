@@ -1782,8 +1782,9 @@ Then:
   the branch's own changelog edits into a change note. It maps
   both sides and why each changed, regenerates derived files rather than
   hand-merging them, checks that no change was silently dropped, records
-  every decision in the merge commit message, and validates with this round's
-  plan (§ 5) before concluding the merge, and records the conflicts it
+  every decision in the merge commit message, refreshes dependencies when the
+  resolved merge changes their inputs, validates with this round's plan (§ 5)
+  before concluding the merge, and records the conflicts it
   resolved in the clone's live record, marked as this drive's
   (`$DRIVE_PR_ROUND_TASK` and `$DRIVE_PR_TARGET` are how it knows). Then the
   rest of § 5 and § 6 as normal. A conflict it records as `escalate` is the human hand-off below: it
@@ -2893,7 +2894,7 @@ changes nothing the note says leaves it alone. Where the check prints
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR] --json
 ```
 
 **Before the plan is resolved, not after** — the plan describes a tree, and a
@@ -2904,17 +2905,20 @@ that was planned for.
 work no earlier pass shipped (uncommitted edits, a merge left open, local
 commits), finish that work before this command, in this order:
 
-1. A merge left open (`MERGE_HEAD`) with every conflict resolved: run
-   `round-plan.ts` below and what it prints. It plans an open merge against
-   the merge base its commit will have, so the plan is the change's files,
-   not the base's. Then conclude the merge with a commit, by
+1. A merge left open (`MERGE_HEAD`) with every conflict resolved: use
    [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md) Steps 5 to 7
-   where the repository uses it. With a conflict still unresolved, resolve it
-   by that skill from its Step 2, or abort the merge and start from its
-   Step 1.
-2. Uncommitted edits with no merge open: run the plan over the dirty tree,
+   where the repository uses it. Otherwise run the dependency install check
+   below without `--before`, run `round-plan.ts` and its checks, and commit.
+   The plan compares the open merge against the base its commit will have.
+   With a conflict still unresolved, resolve it by that skill from Step 2,
+   or abort the merge and start from Step 1.
+2. A clean base merge already at HEAD with no successful install outcome
+   in this worktree, including a merge inherited from the driver's CI
+   infrastructure recovery: run the dependency install check below with
+   `--before "HEAD^1"` before validation.
+3. Uncommitted edits with no merge open: run the plan over the dirty tree,
    and commit what is sound; discard what is not on purpose.
-3. Then run this command, which now meets a clean tree, and the rest of the
+4. Then run this command, which now meets a clean tree, and the rest of the
    round. `finish-round.ts` pushes the inherited commits with the round's own.
 
 Each of `base-sync.ts`, the plan and `finish-round.ts` refuses the partial
@@ -2950,7 +2954,7 @@ loop cannot see, such as converging and wanting the local gates and the
 
 | Exit | Means | What to do |
 |---|---|---|
-| `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
+| `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which. On `merged`, run the dependency install step below before validation |
 | `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge the round inherited, finish it as **A tree the round inherits** above says; in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
@@ -2980,6 +2984,25 @@ that merge ref. Drift left alone until it becomes a conflict is a required-check
 blackout that widens for as long as the drive runs, and the round's own local
 gates were meanwhile validating a tree CI never sees. Full argument, and what
 was measured: `scripts/lib/base-drift.ts`.
+
+**Refresh dependencies after a base merge.** When `base-sync.ts` reports
+`action: "merged"`, run this before resolving or running the validation plan:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/dependency-install.ts" --before "HEAD^1"
+```
+
+For an open merge with every conflict staged, use the same command without
+`--before`, as [resolve-conflicts Step 6](../resolve-conflicts/SKILL.md#step-6-validate)
+does. The command compares the merged tree with the branch tip before the
+merge and runs the frozen install in each affected directory with a
+recognized lockfile. Keep its JSON outcome for the round report.
+
+If the install fails, stop before validation or push. Name the directory,
+command and diagnostic in the round report. Report a detection or
+configuration error as such if an install never started. Retry a clean
+merge's install against the same first parent before validating or pushing
+that merge in a later round.
 
 Then resolve the plan over the tree you just settled:
 
