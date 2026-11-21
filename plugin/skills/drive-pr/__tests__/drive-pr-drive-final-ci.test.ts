@@ -210,6 +210,21 @@ describe("drive.ts loop control", () => {
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
   }, 20_000);
 
+  it("re-gates without stopping when the diagnosing pass stands down", async () => {
+    const r = await diagnoseOnRed(
+      diagnoseOnly(
+        `if [ ! -e "$DRIVE_PR_STATE_DIR/.stood-down" ]; then : > "$DRIVE_PR_STATE_DIR/.stood-down"; printf '%s\\n' '{"standDown":true}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; else printf '%s\\n' '{"diagnosis":"second try","issue":"#42"}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"; fi`,
+      ),
+    );
+    // The stand-down released the head's diagnosis: a second one ran.
+    expect(r.stderr.match(/Running diagnosing CI repair/g)?.length).toBe(2);
+    expect(r.stderr).not.toContain(
+      "a diagnosis and either a tracker issue key",
+    );
+    expect(r.stderr).toContain("issue #42. second try");
+    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+  }, 20_000);
+
   const failingHead = (head: string) => ({
     threads: [],
     head,

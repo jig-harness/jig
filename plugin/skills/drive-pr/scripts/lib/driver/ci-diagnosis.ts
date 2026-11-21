@@ -31,6 +31,7 @@ const DIAGNOSIS_CHARS = 400;
 const PARK_KEY_CHARS = 200;
 type DiagnosisReport =
   | { staleHead: true }
+  | { standDown: true }
   | {
       diagnosis: string;
       issue: string | undefined;
@@ -59,6 +60,12 @@ function readDiagnosis(path: string): DiagnosisReport | null {
       Object.keys(value).length === 1
     )
       return { staleHead: true };
+    if (
+      isRecord(value) &&
+      value.standDown === true &&
+      Object.keys(value).length === 1
+    )
+      return { standDown: true };
     if (
       !isRecord(value) ||
       typeof value.diagnosis !== "string" ||
@@ -98,7 +105,8 @@ const INCOMPLETE =
 type Receipt =
   | { text: string; pushedHead: string | undefined }
   | { refused: string }
-  | { staleHead: true };
+  | { staleHead: true }
+  | { standDown: true };
 
 /**
  * Judge the pass's receipt. Its diagnosis is prefixed with the tracker issue,
@@ -112,7 +120,7 @@ async function judgeReceipt(
   answer: DiagnosisReport | null,
 ): Promise<Receipt> {
   if (answer === null) return { refused: INCOMPLETE };
-  if ("staleHead" in answer) return answer;
+  if ("staleHead" in answer || "standDown" in answer) return answer;
   const { diagnosis, pushedHead } = answer;
   if (answer.issue !== undefined)
     return { text: `issue ${answer.issue}. ${diagnosis}`, pushedHead };
@@ -274,6 +282,10 @@ async function settleDiagnosis(
     return result.code === 0
       ? await staleHeadOutcome(pr, head)
       : await stopWithDiagnosis(pr, head, INCOMPLETE);
+  if ("standDown" in receipt)
+    return result.code === 0
+      ? await standDownOutcome(pr, head)
+      : await stopWithDiagnosis(pr, head, INCOMPLETE);
   if ("refused" in receipt)
     return await stopWithDiagnosis(pr, head, receipt.refused);
   if (result.code !== 0)
@@ -283,6 +295,23 @@ async function settleDiagnosis(
       `${receipt.text} (pass exit ${result.code})`,
     );
   return await pushedHeadOutcome(pr, head, receipt.text, receipt.pushedHead);
+}
+
+/**
+ * The pass's fresh gate no longer matched the dispatched task (a new finding
+ * made the head `ROUND_READY`): release the reservation without spending the
+ * head's diagnosis, and let the driver's next gate decide what runs.
+ */
+async function standDownOutcome(
+  pr: string,
+  head: string,
+): Promise<number | "continue"> {
+  const recorded = await recordCiAttempt(
+    pr,
+    "repair",
+    `${diagnosisSkippedPrefix(head)}the pass stood down: its gate no longer matched the task`,
+  );
+  return recorded ? "continue" : 1;
 }
 
 /** The pass reported that the pull request left the failing head. */

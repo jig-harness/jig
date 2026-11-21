@@ -20,10 +20,10 @@ useDrivePrSuite();
 
 const LAUNCH = "20261115T080000Z-abcdef02";
 const SESSION = "0b8e2f4c-1d2e-4f50-9a1b-2c3d4e5f6a7b";
-const THREAD_STARTED = JSON.stringify({
-  type: "thread.started",
-  thread_id: SESSION,
-});
+const DIAGNOSIS_SESSION = "1c9f3a5d-2e3f-4a61-8b2c-3d4e5f6a7b8c";
+const threadStarted = (id: string) =>
+  JSON.stringify({ type: "thread.started", thread_id: id });
+const THREAD_STARTED = threadStarted(SESSION);
 
 for (const scenario of [
   "claude-repair",
@@ -76,7 +76,14 @@ for (const scenario of [
             "console.log('recorded before pass exit=' + Boolean(db.query('SELECT sessions FROM launches').get()?.sessions));",
           ]
         : scenario === "codex-json-repair"
-          ? [`console.log(${JSON.stringify(THREAD_STARTED)});`]
+          ? [
+              // The first dispatch is the ordinary repair, the second the
+              // diagnosing pass: each reports its own session.
+              "import { existsSync, writeFileSync } from 'node:fs';",
+              `const mark = ${JSON.stringify(join(dir, "first-dispatch-done"))};`,
+              `console.log(existsSync(mark) ? ${JSON.stringify(threadStarted(DIAGNOSIS_SESSION))} : ${JSON.stringify(THREAD_STARTED)});`,
+              "writeFileSync(mark, '');",
+            ]
           : ["console.log('no startup session header');"];
     const pass = writeFakeProgram(
       join(dir, claude ? "claude" : "codex"),
@@ -123,13 +130,17 @@ for (const scenario of [
 
     if (claude) {
       expect(stderr).toContain("task=ci-repair");
-      const id = /^repair id=(.+)$/m.exec(stderr)?.[1] ?? "";
-      expect(id).toMatch(/^[0-9a-f-]{36}$/);
-      expect(sessions[0]).toEqual({
-        round: 0,
-        session: id,
-        at: expect.any(String),
-      });
+      const ids = [...stderr.matchAll(/^repair id=(.+)$/gm)].map((m) => m[1]);
+      expect(ids).toHaveLength(2);
+      for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(ids[0]).not.toBe(ids[1]);
+      expect(sessions).toEqual(
+        ids.map((session) => ({
+          round: 0,
+          session,
+          at: expect.any(String),
+        })),
+      );
     } else if (scenario === "codex-review") {
       expect(stderr).toContain(`session id: ${SESSION}`);
       expect(stdout).toContain("recorded before pass exit=true");
@@ -138,11 +149,10 @@ for (const scenario of [
       ]);
     } else if (scenario === "codex-json-repair") {
       expect(stdout).toContain(THREAD_STARTED);
-      expect(sessions[0]).toEqual({
-        round: 0,
-        session: SESSION,
-        at: expect.any(String),
-      });
+      expect(sessions).toEqual([
+        { round: 0, session: SESSION, at: expect.any(String) },
+        { round: 0, session: DIAGNOSIS_SESSION, at: expect.any(String) },
+      ]);
     } else {
       expect(stdout).toContain("no startup session header");
       expect(sessions).toEqual([]);

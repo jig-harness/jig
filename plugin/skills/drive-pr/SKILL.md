@@ -1809,7 +1809,11 @@ Then:
      `parked`, when present, at most 200 characters on one line;
      `pushedHead` is the full commit id, omitted when nothing was pushed. When
      the pull request's head is no longer `$DRIVE_PR_CI_DIAGNOSIS_HEAD` when
-     you start, write only `{"staleHead": true}` and stop without a push.
+     you start, write only `{"staleHead": true}` and stop without a push. When
+     the fresh gate no longer reads `CONVERGED` (a new finding made the head
+     `ROUND_READY`), write only `{"standDown": true}` and stop without a push:
+     the driver releases the reservation, keeps the head's diagnosis unspent
+     and re-gates.
 
   A pass that ends without a valid receipt stops the drive with the diagnosis
   missing, so write it even when the repair needs a person: say so in
