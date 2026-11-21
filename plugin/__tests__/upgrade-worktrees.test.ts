@@ -414,4 +414,8 @@ test("a recorded target whose version, folder or commit differs from the listing
     listed("/b", "0.1.0"),
   ]);
   expect([...same.keys()].length).toBe(2);
+  const folderOnly = agreeingWithListing(recorded, [
+    { ...listed("/b", "0.1.0"), installPath: "/elsewhere", gitCommitSha: "c" },
+  ]);
+  expect([...folderOnly.keys()]).toEqual([key("/a")]);
 });
