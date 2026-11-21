@@ -24,6 +24,8 @@ import { PASS_NOOP, runDriveIn } from "./drive-loop-harness.ts";
 import { labelForge } from "./state-labels-forge.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import { CONVERGED_CI_PHASE } from "../scripts/lib/state/ledger-values.ts";
+import { currentMs, parseMs } from "../../../shared/time.ts";
+import { type DriveEvent, stopInstant } from "../scripts/lib/state/events.ts";
 import { parseLedger } from "../scripts/lib/state/ledger.ts";
 import { driverRecordRow, readState } from "./state-rows.ts";
 
@@ -150,6 +152,88 @@ describe("a drive writes its own state label", () => {
       | Array<{ key: string }>
       | undefined;
     expect(parked?.map((p) => p.key)).toEqual(["converged-ci"]);
+  });
+
+  for (const successfulPolls of [0, 1]) {
+    it(`records the forge reset after ${successfulPolls} successful CI watch polls`, async () => {
+      const run = labelled({ threads: [] }, ["jig:stale"]);
+      writeFileSync(
+        join(run.bin, "limit-watch-after"),
+        String(successfulPolls),
+      );
+      writeFileSync(
+        join(run.bin, "status-after-converged.json"),
+        JSON.stringify({
+          state: "pending",
+          statuses: [{ context: "ci/legacy", state: "pending" }],
+        }),
+      );
+      const before = currentMs();
+      const r = await drive(run, PASS_NOOP, [], {
+        ...LEDGER_ON,
+        DRIVE_PR_RATE_LIMIT_WAIT: "0",
+      });
+      expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.FORGE_RATE_LIMITED);
+      const state = readState(run.stateDir, "999");
+      const events = state?.events as DriveEvent[];
+      const stop = events.findLast(({ kind }) => kind === "stop");
+      expect(stop?.cause).toBe(String(DRIVE_EXIT.FORGE_RATE_LIMITED));
+      expect(parseMs(stop ? (stopInstant(stop) ?? "") : "")).toBeGreaterThan(
+        before,
+      );
+      expect(state?.parked).toEqual([]);
+      expect(readFileSync(join(run.bin, "watch-reads"), "utf8")).toBe(
+        String(successfulPolls + 1),
+      );
+    });
+  }
+
+  it("reads CI again after a forge reset within the wait bound", async () => {
+    const run = labelled({ threads: [] }, ["jig:stale"]);
+    writeFileSync(join(run.bin, "short-ci-limit"), "");
+    const r = await drive(run, PASS_NOOP, [], {
+      ...LEDGER_ON,
+      DRIVE_PR_RATE_LIMIT_WAIT: "10",
+      JIG_FORGE_BUDGET: "on",
+      GH_TOKEN: "test-converged-ci-token",
+      XDG_STATE_HOME: run.dir,
+    });
+    expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.CONVERGED);
+    expect(r.stderr).toContain("for the reset");
+    expect(r.stderr).toContain("converged CI: the converged label stands");
+    expect(readState(run.stateDir, "999")?.parked).toEqual([]);
+  }, 90_000);
+
+  it("records the forge's explicit reset after a converged-CI read", async () => {
+    const run = labelled({ threads: [] }, ["jig:stale"]);
+    writeFileSync(join(run.bin, "explicit-ci-limit"), "");
+    const before = currentMs();
+    const r = await drive(run, PASS_NOOP, [], {
+      ...LEDGER_ON,
+      DRIVE_PR_RATE_LIMIT_WAIT: "0",
+    });
+    expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.FORGE_RATE_LIMITED);
+    const events = readState(run.stateDir, "999")?.events as DriveEvent[];
+    const stop = events.findLast(({ kind }) => kind === "stop");
+    expect(stop?.cause).toBe(String(DRIVE_EXIT.FORGE_RATE_LIMITED));
+    expect(parseMs(stopInstant(stop) ?? "")).toBeGreaterThan(before);
+  });
+
+  it("records the reset when the stopped-ledger helper's comment read is rate-limited", async () => {
+    const run = labelled({ threads: [] }, ["jig:stale"]);
+    writeFileSync(join(run.bin, "limit-stopped-ledger-read"), "");
+    const before = currentMs();
+    const r = await drive(run, PASS_NOOP, [], {
+      ...LEDGER_ON,
+      DRIVE_PR_RATE_LIMIT_WAIT: "0",
+    });
+    expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.FORGE_RATE_LIMITED);
+    const events = readState(run.stateDir, "999")?.events as DriveEvent[];
+    const stop = events.findLast(({ kind }) => kind === "stop");
+    expect(stop?.cause).toBe(String(DRIVE_EXIT.FORGE_RATE_LIMITED));
+    expect(parseMs(stop ? (stopInstant(stop) ?? "") : "")).toBeGreaterThan(
+      before,
+    );
   });
 
   it("replaces the state label with parked when it parks", async () => {

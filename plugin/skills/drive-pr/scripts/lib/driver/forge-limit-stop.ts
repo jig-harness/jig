@@ -1,7 +1,8 @@
 /**
  * The driver's answer to the forge's spent rate limit (`lib/forge-limit.ts`):
  * a status probe that ended `FORGE_RATE_LIMITED`, or an attach read the limit
- * refused. A reset the drive waits for is waited out, sending nothing before
+ * refused, or a read after a stop's label write. A reset the drive waits
+ * for is waited out, sending nothing before
  * it, and the drive goes on; one further off stops the drive with the reset
  * on its `stop` event, which the dispatcher re-drives it after.
  */
@@ -17,32 +18,11 @@ import {
   limitPlan,
   reportedLimit,
 } from "./../forge-limit.ts";
-import { DRIVE_EXIT } from "./../status/terminal-states.ts";
-import { currentMs, isoFromMs } from "../../../../../shared/time.ts";
+import { currentMs } from "../../../../../shared/time.ts";
 
-/** Seconds as a person reads a wait. */
-function seconds(ms: number): string {
-  return `${Math.ceil(ms / 1000)}s`;
-}
+import { LIMIT_WAITS, seconds, stopOnLimit } from "./forge-limit-wait.ts";
 
-/** Record `limit` as the stop's reset and say so, and why the drive does not wait for it; the exit to stop with. */
-function stopOnLimit(
-  pr: string,
-  limit: ForgeLimit | null,
-  why = "further off than the drive waits (DRIVE_PR_RATE_LIMIT_WAIT)",
-): number {
-  driverRuntime.stopLimitedUntil =
-    limit === null ? null : isoFromMs(limit.until);
-  console.error(
-    limit === null
-      ? `drive.ts: PR #${pr}: the forge's rate limit for this credential is spent, and its reset was not reported; stopping FORGE_RATE_LIMITED (exit ${DRIVE_EXIT.FORGE_RATE_LIMITED}). The line drives it again later.`
-      : `drive.ts: PR #${pr}: ${limitLine(limit)}, ${why}; stopping FORGE_RATE_LIMITED (exit ${DRIVE_EXIT.FORGE_RATE_LIMITED}). The line drives it again after the reset.`,
-  );
-  return DRIVE_EXIT.FORGE_RATE_LIMITED;
-}
-
-/** How many resets in a row the drive waits for, at the attach and between rounds: a limit spent again at every reset is not waited out for good. */
-export const LIMIT_WAITS = 3;
+export { LIMIT_WAITS };
 
 /**
  * A status probe ended `FORGE_RATE_LIMITED`: wait for its reset between

@@ -72,6 +72,7 @@ interface Script {
   rerunnable?: number[];
   rerunOk?: boolean;
   rerunIndeterminate?: boolean;
+  rerunUnsent?: boolean;
   /** Each ownership read in turn, the last repeating; `true` and `false` read ours and lost. */
   owned?: boolean | Ownership[] | { afterMs: number; becomes: Ownership };
 }
@@ -112,6 +113,9 @@ function fake(script: Script) {
       reruns.set(key, now);
       return true;
     },
+    withdrawRerun: async (_pr, run) => {
+      reruns.delete(`${run.id}:${run.attempt}`);
+    },
     rerunFailed: async (_pr, _head, run, mayMutate) => {
       if (!(await mayMutate()))
         return {
@@ -122,6 +126,12 @@ function fake(script: Script) {
       asked.push(run);
       if (script.rerunIndeterminate === true)
         return { ok: false, indeterminate: true, detail: "timed out" };
+      if (script.rerunUnsent === true)
+        return {
+          ok: false,
+          unsent: true,
+          detail: "rate limit refused the request",
+        };
       return script.rerunOk === false
         ? { ok: false, detail: "HTTP 403: the run cannot be re-run" }
         : { ok: true, detail: "" };
@@ -145,7 +155,7 @@ function fake(script: Script) {
           },
         }),
   };
-  return { deps, asked, recovered, clock: () => now };
+  return { deps, asked, recovered, reruns, clock: () => now };
 }
 
 describe("the converged CI watch", () => {
@@ -375,6 +385,7 @@ describe("the converged CI watch", () => {
     });
     const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
     expect(verdict.kind === "park" && verdict.reason).toContain("HTTP 403");
+    expect(f.reruns.size).toBe(0);
   });
 
   it("parks a failing commit status, which has no run to re-run", async () => {
@@ -510,6 +521,17 @@ describe("the converged CI watch", () => {
     expect(verdict.kind === "park" && verdict.reason).toContain(
       "shows no new attempt",
     );
+  });
+
+  it("releases an unsent re-run claim so the next poll can retry it", async () => {
+    const f = fake({
+      ci: [failing(55), GREEN],
+      runs: [[workflowRun(55, 2_000)]],
+      rerunUnsent: true,
+    });
+    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    expect(verdict.kind).toBe("stands");
+    expect(f.reruns.size).toBe(0);
   });
 
   it("parks when a requested re-run shows no new attempt a minute on", async () => {
