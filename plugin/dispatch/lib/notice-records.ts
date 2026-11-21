@@ -200,21 +200,31 @@ export function releaseOnEveryChannel(db: Database): {
   return { run: (key) => release.run(key, ORCA_CARD) };
 }
 
-/** The notice keys of the weights notices recorded on any channel at any repository. */
+/**
+ * The notice keys of the weights notices recorded on any channel at any
+ * repository. Each channel is asked for the range of keys that begin with
+ * its qualified prefix, which the (channel, key) index bounds, so the
+ * history of other notices is never scanned.
+ */
 export function storedWeightsKeys(db: Database, prefix: string): Set<string> {
-  const rows = db
-    .query(
-      "SELECT channel, key FROM notices WHERE key LIKE ?1 ESCAPE '\\' OR key LIKE ?2 ESCAPE '\\'",
-    )
-    .all(`${likeLiteral(prefix)}%`, `%:${likeLiteral(prefix)}%`) as Array<{
-    channel: string;
-    key: string;
-  }>;
-  return new Set(
-    rows
-      .map((r) => noticeKeyOf(r.channel, r.key))
-      .filter((k) => k.startsWith(prefix)),
+  const channels = db
+    .query("SELECT DISTINCT channel FROM notices")
+    .all() as Array<{ channel: string }>;
+  const range = db.query(
+    "SELECT key FROM notices WHERE channel = ?1 AND key >= ?2 AND key < ?3",
   );
+  const found = new Set<string>();
+  for (const { channel } of channels) {
+    const from = recordKey(channel, prefix);
+    const rows = range.all(channel, from, `${from}\u{10FFFF}`) as Array<{
+      key: string;
+    }>;
+    for (const r of rows) {
+      const key = noticeKeyOf(channel, r.key);
+      if (key.startsWith(prefix)) found.add(key);
+    }
+  }
+  return found;
 }
 
 /** When each notice of `repo` was first sent, on whichever channel sent it first, by notice key. */

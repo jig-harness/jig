@@ -206,19 +206,20 @@ function prune(
 /**
  * A weights notice told at a repository that no longer notifies keeps its
  * record there when the host's home moves; once the file no longer makes
- * its key stand, its records go from every repository and channel.
+ * its key stand, its records go from every repository and channel. Run once
+ * per apply tick from the weights reading, whatever repositories notify;
+ * `standing` is `null` when the file was not read whole, which retires nothing.
  */
-function retireStaleWeightsRecords(
-  report: RepoReport,
-  standing: ReadonlySet<string>,
+export function retireStaleWeightsRecords(
+  standing: readonly string[] | null,
   root: string,
 ): void {
-  if (!report.records.every((r) => r.ok)) return;
+  if (standing === null) return;
   const db = stateDb(root);
   const release = releaseOnEveryChannel(db);
-  // Every channel's records, not the channel being processed: a channel that is no longer configured still holds one.
+  // Every channel's records, not one channel's: a channel that is no longer configured still holds one.
   for (const key of storedWeightsKeys(db, WEIGHTS_SKIP_KEY))
-    if (!standing.has(key)) release.run(key);
+    if (!standing.includes(key)) release.run(key);
 }
 
 /** The stage a cause is about, for its event row. */
@@ -650,7 +651,6 @@ function dueThere(
   const sent = readSuppressions(channel, repo.slug, root);
   const hostSent = readHostSuppressions(channel, HOST_NOTICE, root);
   prune(channel, report, standing, sent, root);
-  retireStaleWeightsRecords(report, standing, root);
   const nowMs = currentMs();
   const all: Cause[] = [];
   for (const c of causes) {

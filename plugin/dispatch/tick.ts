@@ -109,6 +109,8 @@ import { processRuntime } from "./lib/runtime/process.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { signInFallbackReport } from "./lib/actions/account-sign-in.ts";
+import { retireStaleWeightsRecords } from "./lib/actions/notify.ts";
+import { standingWeightsKeys } from "./lib/failure-notices.ts";
 import { applyState } from "./lib/tick-apply.ts";
 import { loadReport } from "./lib/load.ts";
 import { readTickLoad } from "./lib/tick-load.ts";
@@ -488,6 +490,18 @@ async function startAct(started: StartedTick): Promise<void> {
   context.launches = read.records;
   context.apply = apply;
   receipt.apply = apply !== null;
+  // Host-local weights notice records are retired once per apply tick, whichever repositories notify.
+  if (apply !== null) {
+    try {
+      retireStaleWeightsRecords(
+        standingWeightsKeys(context.weights, options.machine),
+        stateRoot(),
+      );
+    } catch (error) {
+      receipt.defect = defectOf("start", error);
+      logDefect("the weights notice records", receipt.defect, error);
+    }
+  }
   if (started.withheld !== undefined) receipt.applyWithheld = started.withheld;
   Object.assign(
     receipt,

@@ -10,7 +10,10 @@ import { join } from "node:path";
 import { admitRearm, slotTable } from "../lib/accounts.ts";
 import { weightReport } from "../lib/account-report.ts";
 import type { ApplyState } from "../lib/actions/launch.ts";
-import { applyNotices } from "../lib/actions/notify.ts";
+import {
+  applyNotices,
+  retireStaleWeightsRecords,
+} from "../lib/actions/notify.ts";
 import {
   skippedWeightsCause,
   WEIGHTS_SKIP_KEY,
@@ -95,13 +98,13 @@ function noticesCard(root: string) {
     unread: card.unread,
     name: NOTICES_NAME,
   });
-  return { state, workspace, sent };
+  return { state, workspace, sent, root };
 }
 
 /** One tick's notices at `repo`, with the weights file as it now reads: each notification's outcome. The skipped-names cause is planned only where `home`. */
 async function tick(
   file: string,
-  { state, workspace }: ReturnType<typeof noticesCard>,
+  { state, workspace, root }: ReturnType<typeof noticesCard>,
   { repo = REPO, home = true, standing = true } = {},
 ): Promise<string[]> {
   const read = readAccountWeights(accounts, readLocalWeights(file));
@@ -114,6 +117,9 @@ async function tick(
     notifications: [],
     actions: home && cause !== null ? [cause] : [],
   } as unknown as RepoReport;
+  // The tick retires stale records once, before any repository's notices.
+  if (standing)
+    retireStaleWeightsRecords(standingWeightsKeys(read, machine), root);
   await applyNotices(
     state,
     repo,
@@ -241,6 +247,23 @@ describe("the notice of skipped account names", () => {
     writeFileSync(file, "accounts: {a: 0, old: 3}");
     expect(await tick(file, elsewhere, { repo: other })).toEqual(["sent"]);
   });
+  it("retires its record once per tick, even when no repository notifies", async () => {
+    const root = scratch();
+    const card = noticesCard(root);
+    const file = join(scratch(), "weights.local.yaml");
+    writeFileSync(file, "accounts: {a: 0, old: 3}");
+    expect(await tick(file, card)).toEqual(["sent"]);
+    expect(storedWeightsKeys(stateDb(root), "host weights skip ").size).toBe(1);
+    const fixed = readAccountWeights(accounts, readLocalWeights(file));
+    writeFileSync(file, "accounts: {a: 0}");
+    const read = readAccountWeights(accounts, readLocalWeights(file));
+    retireStaleWeightsRecords(standingWeightsKeys(fixed, machine), root);
+    expect(storedWeightsKeys(stateDb(root), "host weights skip ").size).toBe(1);
+    retireStaleWeightsRecords(standingWeightsKeys(read, machine), root);
+    expect(storedWeightsKeys(stateDb(root), "host weights skip ").size).toBe(0);
+    retireStaleWeightsRecords(null, root);
+  });
+
   it("keeps its record while the weights file is unreadable, and stays told once when the same names return", async () => {
     const root = scratch();
     const card = noticesCard(root);
