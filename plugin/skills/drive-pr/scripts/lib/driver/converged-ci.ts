@@ -105,6 +105,8 @@ export interface ConvergedCiDeps {
   owned?(): Promise<Ownership>;
   /** Renew between polls, outside the state locks used by the mutation fences. */
   renew?(): Promise<number | null>;
+  /** Has a forge read been refused for a spent rate limit during this watch? */
+  rateLimited?(): boolean;
 }
 
 /**
@@ -128,6 +130,7 @@ export type ConvergedCiVerdict =
   | { kind: "unverified"; why: string }
   | { kind: "parked" }
   | { kind: "listing-cut-short" }
+  | { kind: "rate-limited" }
   | { kind: "park"; reason: string; labelCaused: boolean };
 
 /** How long after a requested re-run the run must show its new attempt. */
@@ -341,9 +344,11 @@ async function rerun(
 }
 
 async function ownershipOf(deps: ConvergedCiDeps): Promise<Ownership> {
+  if (deps.rateLimited?.()) return "unreadable";
   if (deps.owned === undefined) return "ours";
   try {
-    return await deps.owned();
+    const owner = await deps.owned();
+    return deps.rateLimited?.() ? "unreadable" : owner;
   } catch {
     return "unreadable";
   }
@@ -558,7 +563,9 @@ export async function watchConvergedCi(
   let readOnce = false;
   for (;;) {
     await deps.renew?.();
+    if (deps.rateLimited?.()) return { kind: "rate-limited" };
     const { next, read, unread } = await poll(pr, verified, deps);
+    if (deps.rateLimited?.()) return { kind: "rate-limited" };
     if ("kind" in next) return parkOrHold(deps, next);
     if (next.next === "park")
       return parkOrHold(deps, {

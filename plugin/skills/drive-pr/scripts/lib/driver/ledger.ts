@@ -40,9 +40,16 @@
  * clone drives the pull request is unknown.
  */
 import { hostname } from "node:os";
+import { outboundFailure } from "../../../../../shared/outbound/failure.ts";
+import {
+  type ForgeLimit,
+  fenceOnForgeLimit,
+  fencedForgeLimit,
+  noteForgeAnswer,
+} from "../../../../../shared/outbound/forge-limit-seen.ts";
 import { ExitError, fail } from "./../cli.ts";
 import {
-  recordPendingExit,
+  rememberPendingExit,
   removeDriverRecord,
   writeDriverRecord,
 } from "./../ledger-stop.ts";
@@ -70,12 +77,13 @@ import {
   resolveLogin,
 } from "./../state/ledger-forge.ts";
 import {
+  HANDOFF_REPORT_LIMIT,
   HANDOFF_TELLS_REFUSED,
   LEDGER_DRIVER_ENV,
-  LEDGER_REFUSED_EXIT,
   type LedgerDriverEnv,
   cloneId,
   ledgerDriverFromEnv,
+  handoffLimit,
 } from "./../state/ledger-mirror.ts";
 import { personStopFor } from "./../state/person-stop.ts";
 import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
@@ -85,10 +93,14 @@ import { driveState } from "./paths.ts";
 import { type DriveLabelWrite, labelDrive } from "./state-labels.ts";
 import {
   type ConvergedRecheck,
-  convergedStopExit,
   liveRecheck,
+  stopAfterConvergedLabel,
 } from "./converged-ci-live.ts";
 import type { Ownership } from "./converged-ci.ts";
+import { stopOnLimit } from "./forge-limit-wait.ts";
+import { afterHandoff, writeStoppedHandoff } from "./ledger-handoff.ts";
+
+export { afterHandoff };
 
 /** How many times to attempt the final stop after the converged CI watch. */
 const CONVERGED_STOP_ATTEMPTS = 3;
@@ -512,7 +524,7 @@ export async function mirrorNow(
   const driver = ledgerDriverFromEnv();
   if (driver === null) return 0;
   const res = await run(tsArgv(driveState, ["handoff", pr]), {
-    stdout: "ignore",
+    stdout: watchingConvergedCi ? "pipe" : "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
     ...(tellsRefused
@@ -522,6 +534,7 @@ export async function mirrorNow(
             [HANDOFF_TELLS_REFUSED]: "1",
             ...(watchingConvergedCi
               ? {
+                  [HANDOFF_REPORT_LIMIT]: "1",
                   [LEDGER_DRIVER_ENV]: JSON.stringify({
                     ...driver,
                     watchingConvergedCi,
@@ -532,6 +545,11 @@ export async function mirrorNow(
         }
       : {}),
   });
+  const limit = watchingConvergedCi ? handoffLimit(res.stdout) : null;
+  if (limit !== null)
+    noteForgeAnswer(
+      outboundFailure("rate-limited", limit.reason, { until: limit.until }),
+    );
   return res.code;
 }
 
@@ -562,8 +580,9 @@ export function ledgerRenewal(
 ): () => Promise<number | null> {
   let dueAt = Number.NEGATIVE_INFINITY;
   return async () => {
-    if (performance.now() < dueAt) return null;
+    if (performance.now() < dueAt || fencedForgeLimit() !== null) return null;
     const code = await mirrorNow(pr, true, onWatchRenewal !== undefined);
+    if (fencedForgeLimit() !== null) return null;
     // A write the guards refused is not a failed one: the ledger is another's, and the claims below say whether to stand down.
     const landed = afterHandoff(code) !== "unwritten";
     if (afterHandoff(code) === "label") {
@@ -610,6 +629,7 @@ export async function publishStartup(pr: string): Promise<void> {
  * a newer claim displaced; `unreadable` for a listing that does not read.
  */
 async function ledgerOwnership(pr: string): Promise<Ownership> {
+  if (fencedForgeLimit() !== null) return "unreadable";
   const driver = ledgerDriverFromEnv();
   if (driver === null) return "lost";
   // No position among the claims, so none can be newer.
@@ -652,17 +672,6 @@ export async function publishRunning(pr: string): Promise<number> {
 }
 
 /**
- * What follows a ledger write the drive asked `handoff` for, told refusals
- * (`HANDOFF_TELLS_REFUSED`): `label` when it landed, so the state label may
- * follow; `refused` when the guards refused it, so the ledger is not this
- * driver's to label; `unwritten` when it was attempted and did not land.
- */
-export function afterHandoff(code: number): "label" | "refused" | "unwritten" {
-  if (code === 0) return "label";
-  return code === LEDGER_REFUSED_EXIT ? "refused" : "unwritten";
-}
-
-/**
  * What follows the stopped ledger's write: a write that landed, or one the
  * guards refused (nothing left to write), drops the driver record; any other
  * exit, `LEDGER_NOT_WRITTEN_EXIT` included, keeps it, as the recovery's only
@@ -676,17 +685,20 @@ async function afterStopWrite(
   started: string,
   dropRecord: () => Promise<void>,
   pending: boolean,
-): Promise<boolean> {
+): Promise<StopWrite> {
   const next = afterHandoff(handoff);
-  if (next === "unwritten") return false;
-  if (
-    next === "label" &&
-    (await stopLabelLeavesPending(pr, code, started, pending))
-  )
-    return false;
+  if (next === "unwritten") return { written: false, limit: null };
+  if (next === "label") {
+    const { value: leavesPending, limit } = await fenceOnForgeLimit(() =>
+      stopLabelLeavesPending(pr, code, started, pending),
+    );
+    if (limit !== null || leavesPending) return { written: false, limit };
+  }
   await dropRecord();
-  return true;
+  return { written: true, limit: null };
 }
+
+type StopWrite = { written: boolean; limit: ForgeLimit | null };
 
 /** Whether a stop-label write leaves a pending converged exit for recovery. */
 async function stopLabelLeavesPending(
@@ -742,53 +754,12 @@ async function labelStop(
   );
 }
 
-async function watchConvergedStop(
-  pr: string,
-  started: string,
-  recheck: ConvergedRecheck,
-  owned: () => Promise<Ownership>,
-  renew: () => Promise<number | null>,
-): Promise<{ exit: number; ownership: Ownership }> {
-  const labelled = await labelStop(
-    pr,
-    DRIVE_EXIT.CONVERGED,
-    started,
-    async () => {
-      return (await owned()) === "ours";
-    },
-  );
-  let exit = DRIVE_EXIT.INDETERMINATE;
-  if (
-    labelled === null ||
-    (labelled.converged && labelled.write.outcome === "refused")
-  ) {
-    console.error(
-      "converged CI: retrying the converged label requires a new drive to watch its CI.",
-    );
-  } else {
-    exit =
-      (await convergedStopExit(
-        pr,
-        labelled,
-        currentMs(),
-        recheck,
-        owned,
-        renew,
-      )) ?? DRIVE_EXIT.CONVERGED;
-  }
-  const ownership = await owned();
-  return {
-    exit: ownership === "unreadable" ? DRIVE_EXIT.INDETERMINATE : exit,
-    ownership,
-  };
-}
-
 async function settleConvergedStop(
   pr: string,
   started: string,
   recheck: ConvergedRecheck,
   dropRecord: () => Promise<void>,
-  writeStop: (code: number | null, attempts?: number) => Promise<boolean>,
+  writeStop: (code: number | null, attempts?: number) => Promise<StopWrite>,
 ): Promise<number> {
   let renewedAt = Number.NEGATIVE_INFINITY;
   const renew = ledgerRenewal(pr, (written) => {
@@ -801,13 +772,29 @@ async function settleConvergedStop(
       ? "unreadable"
       : owner;
   };
-  await renew();
-  let ownership = await owned();
-  let finalExit: number = DRIVE_EXIT.INDETERMINATE;
-  if (ownership === "ours") {
-    const watched = await watchConvergedStop(
+  const initial = await fenceOnForgeLimit(async () => {
+    await renew();
+    return owned();
+  });
+  let ownership = initial.value;
+  let finalExit =
+    initial.limit === null
+      ? DRIVE_EXIT.INDETERMINATE
+      : stopOnLimit(
+          pr,
+          initial.limit,
+          "the converged stop's lease check met the limit",
+        );
+  if (initial.limit === null && ownership === "ours") {
+    const watched = await stopAfterConvergedLabel(
       pr,
-      started,
+      () =>
+        labelStop(
+          pr,
+          DRIVE_EXIT.CONVERGED,
+          started,
+          async () => (await owned()) === "ours",
+        ),
       recheck,
       owned,
       renew,
@@ -819,14 +806,13 @@ async function settleConvergedStop(
     await dropRecord();
     return TAKEN_OVER_EXIT;
   }
-  if (
-    started !== "" &&
-    !recordPendingExit(await resolveStateDir(), pr, started, finalExit)
-  )
-    console.error(
-      `ledger: PR #${pr}'s final exit could not be saved because this acquisition's driver record is absent.`,
-    );
-  return (await writeStop(finalExit, CONVERGED_STOP_ATTEMPTS))
+  rememberPendingExit(await resolveStateDir(), pr, started, finalExit);
+  const { written, limit } = await writeStop(
+    finalExit,
+    CONVERGED_STOP_ATTEMPTS,
+  );
+  if (limit !== null) return DRIVE_EXIT.FORGE_RATE_LIMITED;
+  return written || finalExit === DRIVE_EXIT.FORGE_RATE_LIMITED
     ? finalExit
     : DRIVE_EXIT.INDETERMINATE;
 }
@@ -885,8 +871,8 @@ export function ledgerSettlement(
       return code;
     }
     if (code !== DRIVE_EXIT.CONVERGED || driver === null) {
-      await writeStop(code);
-      return code;
+      const { limit } = await writeStop(code);
+      return limit === null ? code : DRIVE_EXIT.FORGE_RATE_LIMITED;
     }
 
     return await settleConvergedStop(
@@ -899,11 +885,7 @@ export function ledgerSettlement(
   };
 
   /** Record stop `code` in the drive state, then the stopped ledger (up to `attempts` writes) and its label. */
-  const writeStop = async (
-    code: number | null,
-    attempts = 1,
-  ): Promise<boolean> => {
-    const driver = ledgerDriverFromEnv();
+  const recordStop = (code: number | null) =>
     // The exit goes into the state before the ledger's last write, which
     // mirrors the state's events: an unknown exit names none in the driver
     // record, so a report reading the ledger falls back to those events, and
@@ -911,51 +893,66 @@ export function ledgerSettlement(
     // ledger driver either) records nothing. An unrecorded stop writes no
     // ledger and keeps the record: the recovery (`lib/ledger-stop.ts`)
     // records the stop and then writes the ledger, in that order.
-    const recorded =
-      dryRun ||
-      (await recordDriveEvent(
-        pr,
-        "stop",
-        String(code ?? "unknown"),
-        {
-          ...driverRuntime.stopLeftWork,
-          ...(code === DRIVE_EXIT.REVIEWER_FAILED
-            ? driverRuntime.reviewerFailure
-            : null),
-        },
-        code === CHECK_RUNS_UNREADABLE_EXIT
-          ? driverRuntime.stopListingPages
-          : null,
-        driverRuntime.stopLimitedUntil,
-        driverRuntime.stopProbe?.code === code ? driverRuntime.stopProbe : null,
-      ));
-    if (driver === null) return true;
+    dryRun ||
+    recordDriveEvent(
+      pr,
+      "stop",
+      String(code ?? "unknown"),
+      {
+        ...driverRuntime.stopLeftWork,
+        ...(code === DRIVE_EXIT.REVIEWER_FAILED
+          ? driverRuntime.reviewerFailure
+          : null),
+      },
+      code === CHECK_RUNS_UNREADABLE_EXIT
+        ? driverRuntime.stopListingPages
+        : null,
+      driverRuntime.stopLimitedUntil,
+      driverRuntime.stopProbe?.code === code ? driverRuntime.stopProbe : null,
+    );
+
+  const recordProjectionLimit = async (
+    limit: ForgeLimit,
+  ): Promise<StopWrite> => {
+    const priorReset = parseMs(driverRuntime.stopLimitedUntil ?? "");
+    if (priorReset >= limit.until) return { written: false, limit };
+    const limited = stopOnLimit(
+      pr,
+      limit,
+      "a read during stopped-ledger settlement met the limit",
+    );
+    rememberPendingExit(await resolveStateDir(), pr, started, limited);
+    await recordStop(limited);
+    return { written: false, limit };
+  };
+
+  const writeStop = async (
+    code: number | null,
+    attempts = 1,
+  ): Promise<StopWrite> => {
+    const driver = ledgerDriverFromEnv();
+    const recorded = await recordStop(code);
+    if (driver === null) return { written: true, limit: null };
     if (!recorded) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
-      return false;
+      return { written: false, limit: null };
     }
-    let handoff = 0;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      const res = await run(tsArgv(driveState, ["handoff", pr]), {
-        stdout: "ignore",
-        stderr: "inherit",
-        timeoutSec: helperTimeoutSeconds(),
-        env: {
-          ...process.env,
-          [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
-          [HANDOFF_TELLS_REFUSED]: "1",
-        },
-      });
-      handoff = res.code;
-      if (afterHandoff(handoff) !== "unwritten") break;
-      if (attempts > 1)
-        console.error(
-          `ledger: PR #${pr}'s stopped ledger (exit ${code}) was not written (attempt ${attempt} of ${attempts}).`,
-        );
-    }
-    return await afterStopWrite(
+    if (
+      attempts > 1 &&
+      code === DRIVE_EXIT.FORGE_RATE_LIMITED &&
+      parseMs(driverRuntime.stopLimitedUntil ?? "") > currentMs()
+    )
+      return { written: false, limit: null };
+    const { handoff, limit } = await writeStoppedHandoff(
+      pr,
+      driver,
+      code,
+      attempts,
+    );
+    if (limit !== null) return recordProjectionLimit(limit);
+    const result = await afterStopWrite(
       pr,
       handoff,
       code,
@@ -963,6 +960,8 @@ export function ledgerSettlement(
       dropRecord,
       attempts > 1,
     );
+    if (result.limit !== null) return recordProjectionLimit(result.limit);
+    return result;
   };
   return {
     async done(code: number): Promise<number> {

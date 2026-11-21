@@ -69,6 +69,33 @@ if (args[0] === "pr" && args[1] === "edit" && [...add, ...remove].some((l) => l.
   }
   process.exit(0);
 }
+const limitFile = path.join(dir, "limit-watch-after");
+if (fs.existsSync(limitFile) && read().includes("jig:converged") &&
+    args[0] === "pr" && args[1] === "view" && args.at(-1) === "state,headRefOid,labels") {
+  const reads = path.join(dir, "watch-reads");
+  const count = fs.existsSync(reads) ? Number(fs.readFileSync(reads, "utf8")) : 0;
+  fs.writeFileSync(reads, String(count + 1));
+  if (count === Number(fs.readFileSync(limitFile, "utf8"))) {
+    process.stderr.write("GraphQL: API rate limit exceeded for user ID 1.\\n");
+    process.exit(1);
+  }
+}
+const shortLimit = path.join(dir, "short-ci-limit");
+if (fs.existsSync(shortLimit) && read().includes("jig:converged") &&
+    args[0] === "api" && args.some((arg) => arg.includes("/check-runs?"))) {
+  fs.unlinkSync(shortLimit);
+  process.stdout.write("HTTP/2.0 429 Too Many Requests\\r\\nRetry-After: 1\\r\\n\\r\\n");
+  process.stderr.write("HTTP 429: rate limit exceeded\\n");
+  process.exit(1);
+}
+const stopLimit = path.join(dir, "limit-stopped-ledger-read");
+if (fs.existsSync(stopLimit) && read().includes("jig:converged") &&
+    JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER || "{}").stopped === 0 &&
+    args[0] === "api" && args.some((arg) => arg.includes("/issues/999/comments?"))) {
+  fs.unlinkSync(stopLimit);
+  process.stderr.write("GraphQL: API rate limit exceeded for user ID 1.\\n");
+  process.exit(1);
+}
 const child = require("node:child_process").spawnSync(${JSON.stringify(stub)}, args, { stdio: "inherit" });
 process.exit(child.status ?? 1);
 `;

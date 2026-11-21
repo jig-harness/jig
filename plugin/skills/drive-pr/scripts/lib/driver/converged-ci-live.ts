@@ -1,5 +1,9 @@
 /** The converged CI watch's live reads and writes, and the park it ends in; every forge call is bounded. */
 import type { ParkedDecision } from "../../../../../shared/decisions/park.ts";
+import {
+  fenceOnForgeLimit,
+  fencedForgeLimit,
+} from "../../../../../shared/outbound/forge-limit-seen.ts";
 import { currentIso, currentMs } from "../../../../../shared/time.ts";
 import {
   recoverCancelledOnHead,
@@ -31,6 +35,7 @@ import type { DriveLabelWrite } from "./state-labels.ts";
 import { rerunnableRuns } from "./failed-runs.ts";
 import { driverRuntime } from "./runtime.ts";
 import { DRIVE_EXIT } from "../status/terminal-states.ts";
+import { stopOnLimit, waitForWatchReset } from "./forge-limit-wait.ts";
 
 /** The park key a converged head's unsettled CI parks under. */
 export const CONVERGED_CI_PARK = "converged-ci";
@@ -129,6 +134,7 @@ class OwnershipLost extends Error {
 async function requireOwnership(
   owned: (() => Promise<Ownership>) | undefined,
 ): Promise<void> {
+  if (fencedForgeLimit() !== null) throw new OwnershipLost();
   if (owned === undefined) return;
   let owner: Ownership;
   try {
@@ -136,7 +142,8 @@ async function requireOwnership(
   } catch {
     owner = "unreadable";
   }
-  if (owner !== "ours") throw new OwnershipLost();
+  if (owner !== "ours" || fencedForgeLimit() !== null)
+    throw new OwnershipLost();
 }
 
 /** The label re-run's claim, asked of ownership immediately before it is inserted; false, with no allowance spent, once the drive is lost. */
@@ -160,6 +167,7 @@ export function liveConvergedCi(
 ): ConvergedCiDeps {
   return {
     now: currentMs,
+    rateLimited: () => fencedForgeLimit() !== null,
     sleep: (ms) => sleep(ms / 1000),
     pollMs: testPacing("DRIVE_PR_CONVERGED_CI_POLL_MS", POLL_MS, 10),
     settleMs: testPacing(
@@ -250,7 +258,7 @@ export async function parkConvergedCi(
     const capacity = await parkAdmissionContext(pr, store.stateDir);
     // Ownership is asked inside the store's lock, after the wait for it, as
     // the write is about to run.
-    if (owned !== undefined) store.setFence(() => requireOwnership(owned));
+    store.setFence(() => requireOwnership(owned));
     let admitted = true;
     await store.update((state) => {
       const next = {
@@ -323,9 +331,9 @@ function described(err: unknown): string {
  * the converged stop stands. A park the watch asks for is `HITL_PARKED` only
  * once its `converged-ci` record is in the drive state (or the cancelled-run
  * recovery recorded `cancelled-ci`); a park that could not be recorded, or a
- * watch that failed, is `INDETERMINATE`, a stop the dispatcher drives again,
- * since the label must not say `converged` over CI nobody settled. Never
- * throws.
+ * watch that failed, is `INDETERMINATE` and needs a person to investigate.
+ * A spent forge limit lets the dispatcher drive again after the reset.
+ * Never throws.
  */
 export async function convergedStopExit(
   pr: string,
@@ -356,10 +364,11 @@ export async function convergedStopExit(
     }
     if (verdict.kind === "unverified") {
       console.error(
-        `converged CI: ${verdict.why}, so the stop is settled as INDETERMINATE for the next drive to judge the head again`,
+        `converged CI: ${verdict.why}, so the stop is settled as INDETERMINATE for a person to investigate`,
       );
       return DRIVE_EXIT.INDETERMINATE;
     }
+    if (verdict.kind === "rate-limited") return DRIVE_EXIT.FORGE_RATE_LIMITED;
     if (verdict.kind === "listing-cut-short") {
       console.error(
         "converged CI: the head's check-runs listing was cut short, so the stop is the named listing stop",
@@ -376,13 +385,71 @@ export async function convergedStopExit(
     if (await parkConvergedCi(pr, verdict.reason, verdict.labelCaused, owned))
       return DRIVE_EXIT.HITL_PARKED;
     console.error(
-      "converged CI: the park could not be recorded, so the stop is settled as INDETERMINATE for the next drive to judge the head again",
+      "converged CI: the park could not be recorded, so the stop is settled as INDETERMINATE for a person to investigate",
     );
     return DRIVE_EXIT.INDETERMINATE;
   } catch (err) {
     console.error(
-      `converged CI: the watch failed, so the stop is settled as INDETERMINATE for the next drive to judge the head again: ${described(err)}`,
+      `converged CI: the watch failed, so the stop is settled as INDETERMINATE for a person to investigate: ${described(err)}`,
     );
     return DRIVE_EXIT.INDETERMINATE;
+  }
+}
+
+/** Judge the watch and its final ownership read, retrying a refused watch after a near reset. */
+export async function stopAfterConvergedLabel(
+  pr: string,
+  writeLabel: () => Promise<DriveLabelWrite | null>,
+  recheck: ConvergedRecheck,
+  owned: () => Promise<Ownership>,
+  renew: () => Promise<number | null>,
+): Promise<{ exit: number; ownership: Ownership }> {
+  const { value: labelled, limit: labelLimit } =
+    await fenceOnForgeLimit(writeLabel);
+  if (labelLimit !== null)
+    return {
+      exit: stopOnLimit(
+        pr,
+        labelLimit,
+        "the stop's label projection met the limit",
+      ),
+      ownership: "unreadable",
+    };
+  if (
+    labelled === null ||
+    (labelled.converged && labelled.write.outcome === "refused")
+  ) {
+    console.error(
+      "converged CI: retrying the converged label requires a new drive to watch its CI.",
+    );
+    const { value: ownership, limit } = await fenceOnForgeLimit(owned);
+    return {
+      exit: limit === null ? DRIVE_EXIT.INDETERMINATE : stopOnLimit(pr, limit),
+      ownership,
+    };
+  }
+  const writtenAt = currentMs();
+  for (let waits = 0; ; waits++) {
+    const { value, limit } = await fenceOnForgeLimit(async () => {
+      const exit = await convergedStopExit(
+        pr,
+        labelled,
+        writtenAt,
+        recheck,
+        owned,
+        renew,
+      );
+      const ownership = await owned();
+      return {
+        exit:
+          ownership === "unreadable"
+            ? DRIVE_EXIT.INDETERMINATE
+            : (exit ?? DRIVE_EXIT.CONVERGED),
+        ownership,
+      };
+    });
+    if (limit === null) return value;
+    const retry = await waitForWatchReset(pr, limit, waits);
+    if (retry !== "continue") return { exit: retry, ownership: "unreadable" };
   }
 }

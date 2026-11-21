@@ -8,7 +8,10 @@ import { basename, dirname, join, resolve } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 import { GITHUB, type GhRun, ghRunFailure } from "./outbound/github.ts";
 import { guarded } from "./outbound/hold.ts";
-import { noteForgeAnswer } from "./outbound/forge-limit-seen.ts";
+import {
+  fencedForgeLimit,
+  noteForgeAnswer,
+} from "./outbound/forge-limit-seen.ts";
 import { recordGhAttempt } from "./outbound/gh-ledger.ts";
 import { admitPaced, endedFailure } from "./outbound/forge-pacing.ts";
 import {
@@ -443,6 +446,13 @@ function traceGhCall<
     return ghRequest(argv, page, timeoutSec, run, refuse, held);
   };
   return traceCommand("ghCall", "gh", wholeSec, async () => {
+    const limit = fencedForgeLimit();
+    if (limit !== null)
+      return refuse(
+        outboundFailure("rate-limited", limit.reason, {
+          until: limit.until,
+        }),
+      );
     const result = await (plan === null
       ? request(args, wholeSec)
       : drivePages(plan, paged, deadline, refuse, wholeSec));
