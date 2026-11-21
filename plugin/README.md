@@ -2019,11 +2019,15 @@ a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
 **What can be taken back.** Use `jig send 'drive@owner/repository#123' withdraw-rearm`
-to withdraw a pending rearm. A request lapses when the drive leaves the stop
-it named or when the pull request closes. The tick removes the label and records
-what happened. A missing or reused worktree, or a request still waiting after
-30 minutes, raises a need. Re-send an older request with `jig send` to bind it
-to a stop after the tick removes its unbound label.
+to withdraw a pending rearm. The tick clears requests when the pull request
+closes or the drive converges. A request waits for capacity with its binding
+and label intact. The dispatcher gives queued requests a slot before new
+automatic retries, including when they are in different repositories.
+After four hours of waiting for
+capacity, the request appears in the line's capacity view. A missing or
+reused worktree, or a newer stopped drive, raises a need after the dispatcher
+has observed the same problem for 30 minutes. Re-send an older request with
+`jig send` to bind it to a stop after the tick removes its unbound label.
 
 `release` undoes a `hold`, and `hold` a `release`. A `drive` label can be
 removed by hand until the tick has armed the drive. `resume` withdraws a
