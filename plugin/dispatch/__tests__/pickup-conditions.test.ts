@@ -333,7 +333,9 @@ it("lets a person's new hold replace a cleared conditional hold but not an activ
   expect(setPersonPickupHold(SLUG, "#12", different, root).ok).toBe(false);
   const read = personPickupHolds(SLUG, root);
   if (!read.ok) throw new Error(read.failure.reason);
-  expect(settlePickupHold(SLUG, read.value[0]!, root, "cleared")).toBe(true);
+  const [first] = read.value;
+  if (!first) throw new Error("no hold read");
+  expect(settlePickupHold(SLUG, first, root, "cleared")).toBe(true);
   expect(setPersonPickupHold(SLUG, "#12", different, root).ok).toBe(true);
   const after = personPickupHolds(SLUG, root);
   if (!after.ok) throw new Error(after.failure.reason);

@@ -1,4 +1,7 @@
 import { expect, it } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   changed,
   leftBehindBusy,
@@ -51,6 +54,7 @@ function guards() {
     }),
   } as unknown as PickupContext;
   const state = {
+    root: mkdtempSync(join(tmpdir(), "batch-guards-")),
     records: [],
     machine: {
       serve: [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }],
