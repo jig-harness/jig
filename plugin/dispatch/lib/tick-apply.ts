@@ -24,6 +24,7 @@ import {
 } from "./actions/drive.ts";
 import { applyFollowups } from "./actions/followup.ts";
 import { applyNotices } from "./actions/notify.ts";
+import { noticeOutlets } from "./notify-config.ts";
 import { retireRearmRequests } from "./actions/retire-rearm.ts";
 import { applyPickups, type PickupContext } from "./actions/pickup.ts";
 import { planOverlap } from "./overlap-plan.ts";
@@ -525,6 +526,7 @@ async function applyStages(
         branch: section.noticesBranch,
         book: inputs.book,
         about: inputs.about,
+        ...noticeOutlets(apply.machine),
       });
   });
 }

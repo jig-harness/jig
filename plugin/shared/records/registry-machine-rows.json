@@ -151,6 +151,12 @@
       "In how many ticks of one day each file kept a wanted pickup over the overlap bound, from which the receipt proposes serializing the file once it did so in at least 3 ticks of the day; rows older than the day before are removed."
     ],
     [
+      "dispatch-account-startup",
+      "dispatch/lib/account-startup.ts",
+      "account_startup",
+      "The last unresolved startup incident and the consecutive failure count for each account, keyed by vendor and configuration directory. The tick uses it to show one need for the account until it is seen working again."
+    ],
+    [
       "dispatch-person-pickup-hold",
       "dispatch/lib/person-pickup-holds.ts",
       "pickup_holds",

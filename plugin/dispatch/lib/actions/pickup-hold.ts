@@ -17,6 +17,15 @@
  * - except a record whose pass recorded `waits` (the tracker's rate limit
  *   stopped it): it holds the item until the time it names, and the item is
  *   launched again after it, with no person asked;
+ * - except a record of one item whose pass claimed it and recorded
+ *   `waits --reason test-lock` (its push was refused only because the wait
+ *   for the host's test lock ran out): it holds the item with no time to it,
+ *   since the claimed item's plan relaunches the pickup in its tree
+ *   (`pickup-lock-wait.ts`) rather than starting it afresh. Such a result
+ *   from a pass that never claimed the item, or from a batch's pass, broke
+ *   the result's rule (a claimed pickup's only, and a batch's stop stays a
+ *   person's): it holds the item as any end does, with no time to it, so a
+ *   person picks it up again or leaves it;
  * - except a record whose pass stopped at startup on its account's usage
  *   notice, with the account's wall recorded (`run.ts`): the wall keeps the
  *   next pickup off that account until its reset, so the item is wanted
@@ -161,20 +170,35 @@ export function pickupHold(
   const latest = mine.at(-1);
   if (latest === undefined || !holdsItem(latest.record, item))
     return { kind: "none" };
+  const lockWait =
+    latest.result === "waits" && latest.waitsFor?.reason === "test-lock";
+  if (lockWait && claimedAlone(latest.record, item))
+    return {
+      kind: "held",
+      record: latest,
+      why: `launch record ${latest.record.id} waits for the host's test lock, which held its push past the pre-push hook's wait; the pickup is relaunched in its tree once the host's validation capacity admits it`,
+    };
   // A pass the tracker's rate limit stopped waits for the reset, then starts again.
-  if (latest.result === "waits" && latest.waitsUntil !== undefined)
+  if (!lockWait && latest.result === "waits" && latest.waitsUntil !== undefined)
     return waitsHold(latest, latest.waitsUntil, nowMs);
   if (stoppedOnWall(latest)) return { kind: "none" };
   if (restartsAfterHostFault(latest, mine, item)) return { kind: "none" };
   return stoppedHold(latest, item, updatedAt);
 }
 
-/** Whether a pass stopped at startup on its account's usage notice, and the wrapper walled that account. */
+/** Whether a pickup of `item` alone claimed it: only such a pickup is relaunched in its tree. */
+function claimedAlone(record: LaunchRecord, item: string): boolean {
+  return record.batchItems === undefined && wasClaimed(record, item);
+}
+
+/** Whether a pass stopped at startup, and the wrapper walled its account and released its work. */
 function stoppedOnWall(r: ReadRecord): boolean {
   return (
     r.result === null &&
     r.state.kind === "ended" &&
-    r.state.exit.startup === "quota" &&
+    (r.state.exit.startup === "quota" ||
+      r.state.exit.startup === "sign-in" ||
+      r.state.exit.startup === "breaker") &&
     r.state.exit.wallUnrecorded !== true
   );
 }

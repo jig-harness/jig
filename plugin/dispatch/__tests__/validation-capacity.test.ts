@@ -9,6 +9,8 @@ import {
   type ValidationSample,
 } from "../lib/validation-capacity.ts";
 import {
+  PASS_LOCK_WAIT_SECONDS,
+  passLockWait,
   validationGauge,
   validationHold,
   validationPassesOf,
@@ -234,7 +236,7 @@ describe("validation forecast", () => {
     expect(forecast(HOUR).fill).toBeNull();
   });
 
-  test("charges only candidate runs that cannot acquire an idle slot immediately", () => {
+  test("does not count a pass's own sequential runs as lock waits for each other", () => {
     const measured = measureValidation([], []);
     const forecast = forecastValidation(
       {
@@ -250,8 +252,71 @@ describe("validation forecast", () => {
       HOUR,
       3 * HOUR,
     );
-    expect(forecast.required).toBe(1);
-    expect(forecast.fill).toBe(0.25);
+    expect(forecast.ownRuns).toBe(2);
+    expect(forecast.required).toBe(0);
+    expect(forecast.fill).toBe(0);
+  });
+
+  test("keeps the fill under the line on an idle lock for any runs per pass", () => {
+    const base = measureValidation([], []);
+    for (const concurrency of [1, 1.5, 2, 4])
+      for (const runsPerPass of [1, 1.5, 2, 10, 40, 1000]) {
+        const measured = {
+          ...base,
+          runMs: 2 * MINUTE,
+          concurrency,
+          kinds: {
+            pickup: { runsPerPass, timeToValidationMs: 0 },
+            drive: { runsPerPass, timeToValidationMs: 0 },
+          },
+        };
+        // A window shorter than one run, or none, still admits a pass to an
+        // idle lock.
+        for (const wait of [0, MINUTE, HOUR]) {
+          const forecast = forecastValidation(
+            measured,
+            "pickup",
+            { atLock: 0, toArrive: 0 },
+            wait,
+            3 * HOUR,
+          );
+          expect(forecast.fill).toBe(0);
+        }
+      }
+  });
+
+  test("the 10:30 figures admit a pickup behind three runs still to arrive", () => {
+    // The 10:30:25 UTC tick of 2026-11-20, measured from that host's launch
+    // records and lock samples as they stood then: two runs at once, runs of
+    // 2 minutes, one run per pass, 25 minutes to validation, nothing at the
+    // lock and three runs still to arrive from passes in flight.
+    const measured = {
+      ...measureValidation([], []),
+      runMs: 2 * MINUTE,
+      concurrency: 2,
+      kinds: {
+        pickup: { runsPerPass: 1, timeToValidationMs: 25 * MINUTE },
+        drive: { runsPerPass: 1, timeToValidationMs: HOUR },
+      },
+    };
+    const forecast = (wait: number) =>
+      forecastValidation(
+        measured,
+        "pickup",
+        { atLock: 0, toArrive: 3 },
+        wait,
+        3 * HOUR,
+      );
+    // The three runs ahead are still counted ahead: they take both slots and
+    // the first release, so the pickup's first run waits 2 minutes, 2 runs
+    // of service of the 60 its hour holds.
+    const hour = forecast(passLockWait({}).waitLimitMs);
+    expect(hour.ahead).toBe(3);
+    expect(hour.required).toBe(2);
+    expect(hour.fill).toBeCloseTo(2 / 60);
+    // The bare lock's minute, the window the tick read, holds one run of
+    // service, and held the pickup at twice its line.
+    expect(forecast(MINUTE).fill).toBe(2);
   });
 
   test("credits a lock slot predicted to be free when the candidate arrives", () => {
@@ -378,6 +443,7 @@ describe("validation forecast", () => {
       },
       demand: { atLock: 0, toArrive: 0 },
       waitLimitMs: HOUR,
+      waitSource: "LOCK_TIMEOUT",
       driveDeadlineMs: HOUR,
       admittedRuns: 0,
     };
@@ -391,6 +457,7 @@ describe("validation forecast", () => {
       measured: measureValidation([], []),
       demand: { atLock: 0, toArrive: 0 },
       waitLimitMs: MINUTE,
+      waitSource: "LOCK_TIMEOUT",
       driveDeadlineMs: 90 * MINUTE,
       admittedRuns: 0,
     };
@@ -410,6 +477,7 @@ describe("validation forecast", () => {
       },
       demand: { atLock: 1, toArrive: 0 },
       waitLimitMs: HOUR,
+      waitSource: "LOCK_TIMEOUT",
       driveDeadlineMs: 3 * HOUR,
       admittedRuns: 1,
     };
@@ -431,6 +499,7 @@ describe("validation forecast", () => {
       },
       demand: { atLock: 0, toArrive: 0 },
       waitLimitMs: HOUR,
+      waitSource: "LOCK_TIMEOUT",
       driveDeadlineMs: 3 * HOUR,
       admittedRuns: 4,
     };
@@ -469,11 +538,15 @@ describe("validation forecast", () => {
         },
         defaults: [],
       },
-      demand: { atLock: 0, toArrive: 1 },
+      demand: { atLock: 0, toArrive: 2 },
       waitLimitMs: HOUR,
+      waitSource: "LOCK_TIMEOUT",
       driveDeadlineMs: 3 * HOUR,
       admittedRuns: 0,
     };
+    // The pickup fits its 30-minute window (two runs ahead of its first),
+    // and the drive fits its own hour; only the reserve, behind the
+    // pickup's run too, overflows the pickup's window.
     expect(validationHold(state, 1, "pickup", 90 * MINUTE)).toContain(
       "keep room for a drive",
     );
@@ -565,6 +638,7 @@ describe("validation forecast", () => {
       },
       demand: { atLock: 0, toArrive: 0 },
       waitLimitMs: HOUR,
+      waitSource: "LOCK_TIMEOUT",
       driveDeadlineMs: 3 * HOUR,
       admittedRuns: 0,
     };
@@ -644,7 +718,7 @@ describe("validation forecast", () => {
         inFlight,
         samples,
       ),
-      waitLimitMs: 3 * HOUR,
+      ...passLockWait({}),
       driveDeadlineMs: 90 * MINUTE,
       admittedRuns: 0,
     };
@@ -728,5 +802,132 @@ describe("validation passes read from launch records", () => {
     }));
     const measured = measureValidation(samples, [...passes, ...early]);
     expect(runsPerPassFor(measured, "pickup", "example/new")).toBe(5);
+  });
+});
+
+describe("the wait window a pass's validation has", () => {
+  const tenRunPasses = {
+    runMs: 2 * MINUTE,
+    concurrency: 1,
+    kinds: {
+      pickup: { runsPerPass: 10, timeToValidationMs: HOUR },
+      drive: { runsPerPass: 10, timeToValidationMs: HOUR },
+    },
+    defaults: [],
+  };
+
+  test("takes LOCK_TIMEOUT from the environment passes inherit, else the test stage's hour", () => {
+    expect(passLockWait({ LOCK_TIMEOUT: "900" })).toEqual({
+      waitLimitMs: 15 * MINUTE,
+      waitSource: "LOCK_TIMEOUT",
+    });
+    expect(passLockWait({})).toEqual({
+      waitLimitMs: PASS_LOCK_WAIT_SECONDS * 1000,
+      waitSource: "default: the test stage's hour, LOCK_TIMEOUT unset",
+    });
+    expect(passLockWait({ LOCK_TIMEOUT: "" }).waitLimitMs).toBe(HOUR);
+    const refused = passLockWait({ LOCK_TIMEOUT: "soon" });
+    expect(refused.waitLimitMs).toBe(0);
+    expect(refused.waitInvalid).toContain("LOCK_TIMEOUT=soon");
+    expect(passLockWait({ LOCK_TIMEOUT: "604801" }).waitInvalid).toBeDefined();
+  });
+
+  test("holds a pass on a LOCK_TIMEOUT the lock refuses, and on later runs past the pass deadline", () => {
+    const state: ValidationLoad = {
+      measured: tenRunPasses,
+      demand: { atLock: 0, toArrive: 0 },
+      ...passLockWait({ LOCK_TIMEOUT: "-1" }),
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(validationHold(state, 1, "pickup", 3 * HOUR)).toContain(
+      "LOCK_TIMEOUT=-1",
+    );
+    // The refusal does not wait for an occupancy reading, and the gauge's
+    // fill shows it.
+    const unread = { ...state, demand: { unread: "lock unreadable" } };
+    expect(validationHold(unread, 1, "pickup", 3 * HOUR)).toContain(
+      "LOCK_TIMEOUT=-1",
+    );
+    expect(validationGauge(state, 0.5).fill).toBe(1);
+    const base = measureValidation([], []);
+    const measured = {
+      ...base,
+      runMs: 2 * MINUTE,
+      concurrency: 1,
+      kinds: {
+        pickup: { runsPerPass: 10, timeToValidationMs: 60 * MINUTE },
+        drive: { runsPerPass: 10, timeToValidationMs: 60 * MINUTE },
+      },
+    };
+    const forecast = forecastValidation(
+      measured,
+      "pickup",
+      { atLock: 0, toArrive: 3 },
+      HOUR,
+      61 * MINUTE + 10 * MINUTE,
+    );
+    expect(forecast.fill).toBeNull();
+  });
+
+  test("admits a pickup on an idle lock without LOCK_TIMEOUT in the dispatcher's environment", () => {
+    const state: ValidationLoad = {
+      measured: tenRunPasses,
+      demand: { atLock: 0, toArrive: 0 },
+      ...passLockWait({}),
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(state.waitLimitMs).toBe(HOUR);
+    expect(validationHold(state, 1, "pickup", 3 * HOUR)).toBeNull();
+    expect(validationGauge(state, 1).fill).toBe(0);
+  });
+
+  test("the reason names the wait window and its source", () => {
+    const state: ValidationLoad = {
+      measured: tenRunPasses,
+      demand: { atLock: 0, toArrive: 0 },
+      ...passLockWait({}),
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(validationGauge(state, 1).reads).toBe(
+      "0 runs ahead, about 0 min at 1 concurrent runs of 2 min, capacity 30 in a 60 min wait window (default: the test stage's hour, LOCK_TIMEOUT unset)",
+    );
+  });
+
+  test("a window shorter than one run says a pass needs a slot free for its first run", () => {
+    const state: ValidationLoad = {
+      measured: tenRunPasses,
+      demand: { atLock: 0, toArrive: 1 },
+      ...passLockWait({ LOCK_TIMEOUT: "60" }),
+      driveDeadlineMs: 3 * HOUR,
+      admittedRuns: 0,
+    };
+    expect(validationHold(state, 1, "pickup", 3 * HOUR)).toBe(
+      "waits on validation capacity: 1 runs ahead, about 2 min at 1 concurrent runs of 2 min, capacity 0.5 in a 1 min wait window (LOCK_TIMEOUT); the wait window is shorter than one run, so a pass is admitted only while a slot is free, or about to be, for its first run (10 runs per pass)",
+    );
+  });
+
+  test("the reason says when the pass deadline cut the window", () => {
+    const state: ValidationLoad = {
+      measured: tenRunPasses,
+      demand: { atLock: 0, toArrive: 0 },
+      ...passLockWait({}),
+      driveDeadlineMs: 90 * MINUTE,
+      admittedRuns: 0,
+    };
+    expect(
+      validationGauge({ ...state, driveDeadlineMs: 0 }, 1).reads,
+    ).toContain("(default: the test stage's hour, LOCK_TIMEOUT unset)");
+    const held = validationHold(
+      { ...state, demand: { atLock: 0, toArrive: 20 } },
+      1,
+      "drive",
+      3 * HOUR,
+    );
+    expect(held).toContain(
+      "30 min wait window (default: the test stage's hour, LOCK_TIMEOUT unset, limited by the pass deadline)",
+    );
   });
 });

@@ -18,6 +18,7 @@
  * `thread`: the conditional listing and a parked thread's query read it.
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /** How many comments one page of the query holds. */
 const COMMENTS_PAGE = 100;
@@ -166,10 +167,25 @@ export function replyConditionalCommentPage(dir: string, args: string[]): void {
   process.exit(unchanged ? 1 : 0);
 }
 
-/** A parked review thread's query, answered from the review comments that name the thread; a thread none names is left to the next fake. */
+/**
+ * A parked review thread's query, answered from the review comments that name the thread; a thread none names is left to the next fake.
+ * A node-id query names no repository, so on a host with several accounts it runs as the default login: while `thread-needs-gh-repo` holds a repository, the answer is `NOT_FOUND` unless `GH_REPO` names it, and while `thread-not-found` exists every thread is.
+ */
 export function replyParkedThread(dir: string, args: string[]): void {
   if (!args.some((a) => a.includes("on PullRequestReviewThread"))) return;
   const id = (args.find((a) => a.startsWith("id=")) ?? "").slice("id=".length);
+  const needs = existsSync(join(dir, "thread-needs-gh-repo"))
+    ? readFileSync(join(dir, "thread-needs-gh-repo"), "utf8").trim()
+    : null;
+  if (
+    existsSync(join(dir, "thread-not-found")) ||
+    (needs !== null && process.env.GH_REPO !== needs)
+  ) {
+    process.stderr.write(
+      `gh: Could not resolve to a node with the global id '${id}' (HTTP 404)\n`,
+    );
+    process.exit(1);
+  }
   const { json } = files(dir);
   const nodes = readdirSync(dir)
     .filter((name) => /^review-comments-\d+\.json$/.test(name))

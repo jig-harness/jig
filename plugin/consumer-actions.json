@@ -217,6 +217,20 @@
         }
       ],
       "retracts": []
+    },
+    {
+      "version": "0.296.0",
+      "actions": [
+        {
+          "id": "0.296.0#28d34c01",
+          "strength": "advised",
+          "levels": ["instructions"],
+          "description": "On Linear, an issue assigned within three minutes of its creation was never started: Linear leaves changes made in an issue's first three minutes out of its history, so the dispatcher found no assignment and refused the item on every tick. `jig send … assign` now waits until that window has passed before writing, and for an item already assigned to the factory identity whose history shows no assignment it refuses with the remedy (unassign it, then send again) instead of the bare \"already assigned\". The served-queue documentation and the operator skill say the same.",
+          "instruction": "A runbook that assigns a Linear item to the factory identity or a served person right after filing it should wait three minutes, or unassign and assign it again after them.",
+          "hints": []
+        }
+      ],
+      "retracts": []
     }
   ]
 }

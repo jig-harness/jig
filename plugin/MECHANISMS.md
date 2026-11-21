@@ -433,7 +433,12 @@ development and shipped as a version.
   a pickup the tracker's rate limit stopped before it claimed the item
   records `waits --until <time>`, and the tick starts it again after that
   time; after the claim the pass waits within its deadline or records
-  `failed`. A follow-up pass that meets the forge's or a tracker's rate
+  `failed`. A claimed pickup whose push the pre-push hook refused only
+  because its wait for the host's test lock ran out records
+  `waits --reason test-lock`: the tick relaunches it in its tree to push
+  and go on, held while the host's validation capacity has no room
+  whatever `load.enforce` says, and after three such waits in a row raises
+  one need instead (`dispatch/lib/pickup-lock-wait.ts`). A follow-up pass that meets the forge's or a tracker's rate
   limit records `waits --until <time>` too: its marker stays until then,
   the tick releases it after the reset and a later tick starts the
   follow-up again, and the third rate-limit wait in a row is notified
@@ -749,7 +754,8 @@ development and shipped as a version.
 - **If it fails.** The calling session sees exit 1 or 2, or `tracker.ts`'s
   exit for the failure class (5 to 11), and stops; the tick reports a record
   it could not read with the call's class, and does not fail for a class
-  that clears by waiting until the failure ledger's count. A tick with no
+  that clears by waiting until the failure ledger's count, nor for a
+  parked drive's thread answered `not-found`. A tick with no
   credential for a tracker names it once on its receipt (`noCredential`)
   and its log, probes and holds no account for it in the issue preflight,
   fails no repository's turn for it, keeps each such repository's tracker

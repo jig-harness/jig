@@ -6,6 +6,7 @@
  * | Table | One row per | Its key carries |
  * | --- | --- | --- |
  * | `launches` | session the dispatcher started | the record's id; its wrapper `claim`, `exit` and `result` each fill an empty column; a headless claim's pending supervisor and child identities are each acknowledged once by their owner; a pass that recorded `waits` has `result` `failed`, the time it waits until in `result_until` and what it waits for (a rate limit, or a follow-up's arm still pending) in `result_wait`; a pass that recorded `failed --decision` has the decision in `result_decision`, and reads as `parked` (`launch-result.ts`); a pickup's `refusal` is written with its `result`; `report`, the run's closing report, is replaced by each later one that passes the check; a drive's driver appends each round's pass session id to `sessions` |
+ * | `account_startup` | vendor account configuration | its current sign-in or repeated startup failure and consecutive quick deaths |
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes; its first send, and its last, which a repeat is timed from |
@@ -569,6 +570,19 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     additive: true,
+    sql: `CREATE TABLE account_startup (
+      vendor TEXT NOT NULL,
+      config_dir TEXT NOT NULL,
+      problem TEXT CHECK (problem IN ('sign-in', 'breaker')),
+      since TEXT,
+      seen_at TEXT,
+      working_at TEXT,
+      death_history TEXT NOT NULL DEFAULT '[]',
+      PRIMARY KEY (vendor, config_dir)
+    );`,
+  },
+  {
+    additive: true,
     sql: `CREATE TABLE rearm_waits (
       repo TEXT NOT NULL,
       pr INTEGER NOT NULL,
@@ -645,6 +659,15 @@ export function stateDbFailure(error: unknown): string | null {
  * rows a report it records rewrites (`refreshEnded`).
  */
 const AFTER_STAGE_COLUMNS: KnownColumns = {
+  account_startup: [
+    "vendor",
+    "config_dir",
+    "problem",
+    "since",
+    "seen_at",
+    "working_at",
+    "death_history",
+  ],
   launches: [
     "id",
     "repo",

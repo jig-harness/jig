@@ -143,7 +143,7 @@ export function channelNameFault(
   taken: readonly string[],
 ): string | null {
   if (!CHANNEL_NAME.test(name))
-    return `the notification channel name ${JSON.stringify(name)} is not lowercase letters, digits and hyphens starting with a letter`;
+    return `the notification channel name ${name.includes("://") ? "(withheld, since it looks like an address)" : JSON.stringify(name)} is not lowercase letters, digits and hyphens starting with a letter`;
   return taken.includes(name)
     ? `two notification channels are named ${name}`
     : null;

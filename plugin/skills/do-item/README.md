@@ -420,6 +420,18 @@ in its closing report that the drive is unarmed and gives the command; the
 dispatcher then drives the pull request only where `dispatch.adopt` is
 enabled or you put the `drive` label on it.
 
+When your pre-push hook runs its tests under the host's shared test lock,
+a push can be refused only because the hook's wait for that lock ran out:
+the hook prints the lock's `could not acquire lock` message and runs no
+test. The skill tells that apart from a hook that ran and failed, and
+pushes again after a short, growing pause while it has time, the hook
+running every time; it never bypasses the hook. A pass `jig dispatch`
+started that still cannot get through records a wait for the test lock
+rather than asking you anything: the dispatcher starts it again in the
+same tree once the host has room to validate it, to push and carry on, and
+only after a few such waits in a row asks a repair session or you to find
+why the lock keeps running out.
+
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,
 so that flow is not run beside it.

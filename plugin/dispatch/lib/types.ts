@@ -124,6 +124,8 @@ export interface PickupRelaunch {
   head: string;
   /** The host fault the pickup stopped on, when it did (`pickup-host-fault.ts`): the relaunch resumes it rather than only pushing it. */
   fault?: string;
+  /** The pickup's push was refused only because its wait for the host's test lock ran out (`pickup-lock-wait.ts`): the relaunch pushes and goes on, and waits for the host's validation capacity. */
+  lockWait?: true;
 }
 
 /** `dispatch.stalled_relaunch`'s values. */
@@ -637,6 +639,8 @@ export interface ReadFailure {
   account?: string;
   until?: string;
   quota?: QuotaHold;
+  /** The read was one item's whose absence is an answer (a parked drive's review thread the credential cannot see), `not-found` only: it fails neither the turn nor the tick (`absence.ts`). */
+  absence?: true;
   /** The process had no credential for the system at all: the tick names it once (`no-credential.ts`) rather than as this read's failure. */
   noCredential?: true;
 }
