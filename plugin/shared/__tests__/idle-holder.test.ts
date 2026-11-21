@@ -84,6 +84,25 @@ function squashMerged() {
   return tree;
 }
 
+/** Like `squashMerged`, but the base branch moved on first, so the squash merge's tree differs from the holder's HEAD. */
+function squashMergedAfterBaseMoved() {
+  const tree = heldTree();
+  const { clone, holder } = tree;
+  writeFileSync(join(holder, "file.txt"), "two\n");
+  git(holder, "commit", "-q", "-am", "more work");
+  git(holder, "push", "-q", "origin", BRANCH);
+  git(clone, "pull", "-q", "--ff-only", "origin", "main");
+  writeFileSync(join(clone, "other.txt"), "base work\n");
+  git(clone, "add", "other.txt");
+  git(clone, "commit", "-q", "-m", "base work");
+  git(clone, "fetch", "-q", "origin");
+  git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
+  git(clone, "commit", "-q", "-m", "squash");
+  git(clone, "push", "-q", "origin", "HEAD:main");
+  git(clone, "push", "-q", "origin", "--delete", BRANCH);
+  return tree;
+}
+
 /** The busy reason of a holder whose one commit, `work`, is on no origin branch and not merged into main. */
 function unmergedWork(holder: string): string {
   const work = git(holder, "rev-parse", "--short=12", "HEAD");
@@ -197,19 +216,7 @@ describe("holderVerdict", () => {
   });
 
   test("with the branch gone from origin, a squash merge of several commits after the base moved on makes it idle", () => {
-    const { clone, holder } = heldTree();
-    writeFileSync(join(holder, "file.txt"), "two\n");
-    git(holder, "commit", "-q", "-am", "more work");
-    git(holder, "push", "-q", "origin", BRANCH);
-    git(clone, "pull", "-q", "--ff-only", "origin", "main");
-    writeFileSync(join(clone, "other.txt"), "base work\n");
-    git(clone, "add", "other.txt");
-    git(clone, "commit", "-q", "-m", "base work");
-    git(clone, "fetch", "-q", "origin");
-    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
-    git(clone, "commit", "-q", "-m", "squash");
-    git(clone, "push", "-q", "origin", "HEAD:main");
-    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    const { holder } = squashMergedAfterBaseMoved();
     expect(verdict(holder).idle).toBe(true);
   });
 
@@ -225,19 +232,7 @@ describe("holderVerdict", () => {
   });
 
   test("with the branch gone from origin, extra work on a squash-merged prefix names only the extra commit", () => {
-    const { clone, holder } = heldTree();
-    writeFileSync(join(holder, "file.txt"), "two\n");
-    git(holder, "commit", "-q", "-am", "more work");
-    git(holder, "push", "-q", "origin", BRANCH);
-    git(clone, "pull", "-q", "--ff-only", "origin", "main");
-    writeFileSync(join(clone, "other.txt"), "base work\n");
-    git(clone, "add", "other.txt");
-    git(clone, "commit", "-q", "-m", "base work");
-    git(clone, "fetch", "-q", "origin");
-    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
-    git(clone, "commit", "-q", "-m", "squash");
-    git(clone, "push", "-q", "origin", "HEAD:main");
-    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    const { holder } = squashMergedAfterBaseMoved();
     writeFileSync(join(holder, "extra.txt"), "not merged\n");
     git(holder, "add", "extra.txt");
     git(holder, "commit", "-q", "-m", "extra work");
@@ -248,38 +243,14 @@ describe("holderVerdict", () => {
   });
 
   test("a configured merge driver keeps a squash-merged holder busy and says so", () => {
-    const { clone, holder } = heldTree();
-    writeFileSync(join(holder, "file.txt"), "two\n");
-    git(holder, "commit", "-q", "-am", "more work");
-    git(holder, "push", "-q", "origin", BRANCH);
-    git(clone, "pull", "-q", "--ff-only", "origin", "main");
-    writeFileSync(join(clone, "other.txt"), "base work\n");
-    git(clone, "add", "other.txt");
-    git(clone, "commit", "-q", "-m", "base work");
-    git(clone, "fetch", "-q", "origin");
-    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
-    git(clone, "commit", "-q", "-m", "squash");
-    git(clone, "push", "-q", "origin", "HEAD:main");
-    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    const { holder } = squashMergedAfterBaseMoved();
     git(holder, "config", "merge.ours.driver", "true");
     const [reason] = reasons(holder);
     expect(reason).toContain("a custom merge driver is configured");
   });
 
   test("a git version probe that fails keeps its own diagnostic, not the version message", () => {
-    const { clone, holder } = heldTree();
-    writeFileSync(join(holder, "file.txt"), "two\n");
-    git(holder, "commit", "-q", "-am", "more work");
-    git(holder, "push", "-q", "origin", BRANCH);
-    git(clone, "pull", "-q", "--ff-only", "origin", "main");
-    writeFileSync(join(clone, "other.txt"), "base work\n");
-    git(clone, "add", "other.txt");
-    git(clone, "commit", "-q", "-m", "base work");
-    git(clone, "fetch", "-q", "origin");
-    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
-    git(clone, "commit", "-q", "-m", "squash");
-    git(clone, "push", "-q", "origin", "HEAD:main");
-    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    const { holder } = squashMergedAfterBaseMoved();
     const real = localContext(() => undefined);
     const ctx = {
       ...real,
@@ -301,19 +272,7 @@ describe("holderVerdict", () => {
   });
 
   test("a merge attribute in the clone's info/attributes keeps a squash-merged holder busy", () => {
-    const { clone, holder } = heldTree();
-    writeFileSync(join(holder, "file.txt"), "two\n");
-    git(holder, "commit", "-q", "-am", "more work");
-    git(holder, "push", "-q", "origin", BRANCH);
-    git(clone, "pull", "-q", "--ff-only", "origin", "main");
-    writeFileSync(join(clone, "other.txt"), "base work\n");
-    git(clone, "add", "other.txt");
-    git(clone, "commit", "-q", "-m", "base work");
-    git(clone, "fetch", "-q", "origin");
-    git(clone, "merge", "-q", "--squash", `origin/${BRANCH}`);
-    git(clone, "commit", "-q", "-m", "squash");
-    git(clone, "push", "-q", "origin", "HEAD:main");
-    git(clone, "push", "-q", "origin", "--delete", BRANCH);
+    const { clone, holder } = squashMergedAfterBaseMoved();
     const info = join(
       clone,
       git(clone, "rev-parse", "--git-path", "info/attributes"),
