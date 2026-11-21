@@ -788,7 +788,7 @@ export async function settleStationAnswers(
 function answeredHoldWhy(action: Action): string {
   const acted = action.answered?.acted;
   if (
-    acted !== undefined &&
+    acted?.detail != null &&
     /^held .+ until PR #\d+ merges$/.test(acted.detail)
   )
     return `${acted.author} chose ${acted.option}; ${acted.detail}, and the pickup resumes when it merges`;
