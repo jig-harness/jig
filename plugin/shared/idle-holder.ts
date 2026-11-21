@@ -121,6 +121,12 @@ const PROBE_TIMEOUT_MS = 30_000;
 /** How many tips of the unmerged commits are tried as a merged prefix. */
 const MERGE_PROBES = 12;
 
+/**
+ * The oldest git whose `merge-tree` reads `--attr-source` without crashing
+ * (the floor the conflict replay keeps too).
+ */
+const MERGE_PROOF_GIT = [2, 43] as const;
+
 /** How many unmerged commits a busy reason names, newest first; the rest are counted. */
 const NAMED_COMMITS = 5;
 
@@ -191,7 +197,7 @@ function mergeAttributes(
  * attribute to a path the two sides differ in: a driver can resolve
  * conflicting edits to either side, and an unchanged result would then prove
  * nothing. `git merge-tree --write-tree` needs git 2.38 and `--attr-source`
- * git 2.41; an older git is reported, never read as merged. A merge that
+ * without a crash git 2.43; an older git is reported, never read as merged. A merge that
  * conflicts answers no.
  */
 function mergesToNothing(
@@ -199,6 +205,18 @@ function mergesToNothing(
   ref: string,
   tip: string,
 ): boolean | { unreadable: string } {
+  const version = git(["--version"]);
+  const parsed = /git version (\d+)\.(\d+)/.exec(version.stdout);
+  const major = Number(parsed?.[1] ?? 0);
+  const minor = Number(parsed?.[2] ?? 0);
+  if (
+    version.status !== 0 ||
+    major < MERGE_PROOF_GIT[0] ||
+    (major === MERGE_PROOF_GIT[0] && minor < MERGE_PROOF_GIT[1])
+  )
+    return {
+      unreadable: `the merge proof needs git ${MERGE_PROOF_GIT.join(".")} or newer`,
+    };
   const drivers = git(["config", "--get-regexp", "^merge\\..*\\.driver$"]);
   if (drivers.status === 0)
     return { unreadable: "a custom merge driver is configured" };
@@ -221,6 +239,8 @@ function mergesToNothing(
     "core.attributesFile=/dev/null",
     "-c",
     "merge.default=text",
+    "-c",
+    "merge.renormalize=false",
     "merge-tree",
     "--write-tree",
     ref,
@@ -318,7 +338,13 @@ function withoutMergedPrefix(
   rows: string[][],
 ): string[] | { unreadable: string } {
   const named = (list: string[][]) => list.map((row) => row.slice(1).join(" "));
-  const tips = ["HEAD", ...rows.map(([commit]) => commit as string)];
+  const head = git(["rev-parse", "--verify", "HEAD^{commit}"]);
+  const tips = [
+    ...new Set([
+      head.status === 0 ? head.stdout.trim() : "HEAD",
+      ...rows.map(([commit]) => commit as string),
+    ]),
+  ];
   for (const tip of tips.slice(0, MERGE_PROBES)) {
     if (rows.length === 0) break;
     const proof = mergesToNothing(git, ref, tip);
