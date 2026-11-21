@@ -95,6 +95,45 @@ describe("the deferred section", () => {
     ).toBe(false);
   });
 
+  test("retries the same CRLF finding without a conflict", () => {
+    const finding = "first\r\nsecond";
+    const once = withDeferredEntry("", {
+      source: THREAD,
+      finding,
+      reason: "later",
+    }).body;
+    expect(
+      withDeferredEntry(once, { source: THREAD, finding, reason: "later" })
+        .added,
+    ).toBe(false);
+  });
+
+  test("refuses an existing finding with changed text or recorded facets", () => {
+    const once = withDeferredEntry("", {
+      ...REC,
+      source: THREAD,
+      finding: FINDING,
+      reason: "later",
+    }).body;
+    expect(() =>
+      withDeferredEntry(once, {
+        ...REC,
+        source: THREAD,
+        finding: "corrected finding",
+        reason: "later",
+      }),
+    ).toThrow("differs from this finding");
+    expect(() =>
+      withDeferredEntry(once, {
+        ...REC,
+        category: "security",
+        source: THREAD,
+        finding: FINDING,
+        reason: "later",
+      }),
+    ).toThrow("differs from this finding");
+  });
+
   test("keys a summary finding on its comment and fingerprint", () => {
     const comment = `${PR_URL}#issuecomment-77`;
     let body = withDeferredEntry("", {
@@ -335,28 +374,49 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     existing: Array<{ number: number; body: string }> = [],
   ) {
     let next = 40;
+    const issues = existing.map((issue) => ({
+      ...issue,
+      labels: [] as string[],
+    }));
+    const labelNames = [
+      "pr-followup",
+      "Backlog",
+      ...TYPES_SIZES,
+      ...PRIORITY_LABELS,
+    ];
+    const labelName = (id: unknown) =>
+      labelNames.find((name, index) => id === `LA_${index}_${name}`);
     const fixture = gitHub(
       (c) => {
         if (c.op === "TrackerSearch")
           return {
             search: {
-              issueCount: existing.length,
+              issueCount: issues.length,
               pageInfo: { hasNextPage: false, endCursor: null },
-              nodes: existing.map((e) => issueNode(e)),
+              nodes: issues.map((issue) => issueNode(issue)),
             },
           };
         if (c.op === "TrackerIssue") {
           const n = Number(String(c.variables.number ?? "").replace("#", ""));
-          const hit = existing.find((e) => e.number === n) ?? existing[0];
+          const hit = issues.find((issue) => issue.number === n) ?? issues[0];
           return oneIssue(
             hit === undefined
               ? null
-              : issueNode({ ...hit, extra: { subIssues: conn([]) } }),
+              : issueNode({
+                  ...hit,
+                  extra: {
+                    subIssues: conn([]),
+                    blockedBy: conn([]),
+                    blocking: conn([]),
+                    timelineItems: conn([]),
+                    relatesTo: conn([]),
+                    duplicateOf: null,
+                  },
+                }),
           );
         }
         if (c.op === "TrackerRepository") return { repository: { id: "R_1" } };
-        if (c.op === "TrackerLabels")
-          return repoLabels("pr-followup", ...TYPES_SIZES, ...PRIORITY_LABELS);
+        if (c.op === "TrackerLabels") return repoLabels(...labelNames);
         if (c.op === "TrackerCreate") {
           next += 1;
           return {
@@ -368,6 +428,36 @@ describe("file-deferred.ts files each entry through the tracker", () => {
             },
           };
         }
+        if (c.op === "TrackerUpdate") {
+          const input = c.variables.input as { body?: unknown; id?: unknown };
+          const issue = issues.find(
+            (candidate) => `I_${candidate.number}` === input.id,
+          );
+          if (issue !== undefined && typeof input.body === "string")
+            issue.body = input.body;
+          return { updateIssue: { issue: { id: "I_7" } } };
+        }
+        if (c.op === "TrackerAddLabels") {
+          const input = c.variables;
+          const issue = issues.find(
+            (candidate) => `I_${candidate.number}` === input.id,
+          );
+          if (issue !== undefined)
+            issue.labels.push(
+              ...(Array.isArray(input.labelIds)
+                ? input.labelIds
+                    .map(labelName)
+                    .filter((name): name is string => name !== undefined)
+                : []),
+            );
+          return { addLabelsToLabelable: { clientMutationId: null } };
+        }
+        if (c.op === "TrackerComments")
+          return {
+            repository: {
+              issue: { id: `I_${c.variables.number}`, comments: conn([]) },
+            },
+          };
         throw new Error(`unexpected ${c.op}`);
       },
       { taxonomy: JIG_TAXONOMY },
@@ -457,6 +547,65 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     ]);
     expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
     expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+  });
+
+  async function refileCorrectedHeldBatch(
+    recordedCategory: string | undefined,
+    replacement: [string, string],
+  ) {
+    const body = withDeferredEntry("", {
+      ...REC,
+      ...(recordedCategory === undefined ? {} : { category: recordedCategory }),
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    const forge = fakeForge(body);
+    const [entry] = deferredEntries(body);
+    const { t, calls } = trackerThatFiles([
+      {
+        number: 7,
+        body: `<!-- defer-batch-key: repo=acme/app pr=42 type=bug -->\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
+      },
+    ]);
+    forge.beforeRead.push(
+      () => undefined,
+      (state) => {
+        state.body = state.body.replace(...replacement);
+      },
+    );
+    return {
+      forge,
+      calls,
+      result: await fileDeferred(forge, t, "42", {
+        label: "pr-followup",
+        facets: FACETS,
+        reviewVocabulary: { types: ["bug"], categories: ["correctness"] },
+      }),
+    };
+  }
+
+  test("revalidates a corrected held batch entry before recording it", async () => {
+    const { forge, calls, result } = await refileCorrectedHeldBatch(undefined, [
+      "category=correctness",
+      "category=unrecognized",
+    ]);
+    expect(result.filed).toEqual([]);
+    expect(result.forPerson[0]?.why).toContain("--category must be one of");
+    expect(deferredEntries(forge.state.body)[0]?.filed).toBeUndefined();
+    expect(calls.filter((call) => call.op === "TrackerCreate")).toHaveLength(0);
+  });
+
+  test("accepts a corrected held batch entry after an earlier refusal", async () => {
+    const { forge, calls, result } = await refileCorrectedHeldBatch(
+      "unrecognized",
+      ["category=unrecognized", "category=correctness"],
+    );
+    expect(result.why).toBeNull();
+    expect(result.forPerson).toEqual([]);
+    expect(result.filed.map(({ key }) => key)).toEqual(["#7"]);
+    expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+    expect(calls.filter((call) => call.op === "TrackerUpdate")).toHaveLength(1);
   });
 
   test("an issue filed from an earlier text of a corrected entry does not replace the correction", async () => {

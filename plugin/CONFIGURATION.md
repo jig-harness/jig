@@ -493,8 +493,9 @@ round. When that commit or its file cannot be read (the base is not in the
 clone, git fails, the file does not parse or names an invalid ceiling or
 class list), the policy fails closed: the ceiling is `attended`, the only
 park classes are `escalated`, `human-decision` and `human-thread`, and the
-printed line tells the pass to park every decision under `human-decision`
-until the policy reads. A default class list could be weaker than the
+printed line tells the pass to park every new decision under
+`human-decision` until the policy reads; a deferral already decided is carried
+out without confirmation. A default class list could be weaker than the
 repository's own, so none stands in for it. A session with a person in it
 reads both fields from the working tree.
 
@@ -520,8 +521,8 @@ What each level permits:
 
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
-| File a tracker issue a skill needs | Confirm first | File it; the body says which skill filed it, from which pull request and why | Same |
-| Defer a finding no tracker adapter can file | The pull request's `## Deferred` section | Same | Same |
+| File any other tracker issue a skill needs, such as a follow-up or reflection escalation | Confirm first | File it with the filed-by line | Same |
+| Carry out a deferral ruled by the triage rubric or Review Arbiter | Follow the [deferral protocol](skills/resolve-review-comments/references/deferral-protocol.md#who-decides-a-deferral) without confirmation | Same | Same |
 | A choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
 | A choice `decide` would rule underdetermined | Rule it `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue) | Gather the missing evidence, then apply the ladder, escalating a call it still cannot settle | Same |
 | A choice `decide`'s last row would escalate, with no sensitivity flag, no stakeholder category and no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional |
