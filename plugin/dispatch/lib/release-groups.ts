@@ -45,7 +45,7 @@ export interface ReleasePolicy {
   noReruns: boolean;
 }
 
-export const DEFAULT_RELEASE_POLICY: ReleasePolicy = {
+const DEFAULT_RELEASE_POLICY: ReleasePolicy = {
   personTags: false,
   noReruns: false,
 };
