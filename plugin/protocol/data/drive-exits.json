@@ -1,7 +1,7 @@
 {
   "chapter": "drive-exits",
   "title": "Drive end states and exit codes",
-  "version": 1,
+  "version": 2,
   "status": "stable",
   "fields": {
     "name": {
@@ -127,12 +127,12 @@
     },
     {
       "name": "UNSUPPORTED_CLI",
-      "kind": "state",
+      "kind": "driver-only",
       "exit": 2,
-      "driveStatusExit": 2,
+      "driveStatusExit": null,
       "driveExit": 2,
       "endsDrive": true,
-      "meaning": "A prerequisite is missing. `drive.ts` exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which.",
+      "meaning": "A prerequisite is missing. `drive.ts` exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. `drive-status.ts` also exits `2` on arguments it cannot use, before there is a pull request to report on, and names no state.",
       "stop": "stopped: a usage error, or a gh that cannot report the pull request",
       "cause": "environment",
       "nextOwner": "person",

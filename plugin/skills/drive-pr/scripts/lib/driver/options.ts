@@ -1,4 +1,5 @@
 import { fail, isDigits } from "../cli.ts";
+import { UNSUPPORTED_CLI_EXIT } from "./settings.ts";
 
 interface DriverOptions {
   pr: string;
@@ -24,7 +25,8 @@ interface DriverOptions {
 
 function flagValue(argv: string[], index: number): string {
   const value = argv[index + 1];
-  if (value === undefined) fail(2, `${argv[index]} requires a value`);
+  if (value === undefined)
+    fail(UNSUPPORTED_CLI_EXIT, `${argv[index]} requires a value`);
   return value;
 }
 
@@ -51,7 +53,7 @@ const DRIVER_FLAGS = new Set([
 function passArgsValue(argv: string[], index: number): string {
   const value = flagValue(argv, index);
   if (DRIVER_FLAGS.has(value.split(/\s/)[0] as string))
-    fail(2, `${argv[index]} requires a value`);
+    fail(UNSUPPORTED_CLI_EXIT, `${argv[index]} requires a value`);
   return value;
 }
 
@@ -105,7 +107,8 @@ function parseFlag(
       options.forward.push(flag, flagValue(argv, index));
       return index + 1;
     default:
-      if (flag.startsWith("--")) fail(2, `unknown flag: ${flag}`);
+      if (flag.startsWith("--"))
+        fail(UNSUPPORTED_CLI_EXIT, `unknown flag: ${flag}`);
       options.pr = flag;
       return index;
   }
@@ -137,7 +140,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
   }
   if (options.takeOver && options.dryRun)
     fail(
-      2,
+      UNSUPPORTED_CLI_EXIT,
       "drive.ts: --take-over stops another driver; it cannot be a --dry-run",
     );
   return options;
@@ -148,12 +151,15 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
 export function applyPassTimeout(passTimeout: string): void {
   if (passTimeout === "") return;
   if (!isDigits(passTimeout)) {
-    fail(2, "--pass-timeout takes a whole number of seconds (0 disables)");
+    fail(
+      UNSUPPORTED_CLI_EXIT,
+      "--pass-timeout takes a whole number of seconds (0 disables)",
+    );
   }
   const passTimeoutN = Number.parseInt(passTimeout, 10);
   if (passTimeoutN !== 0 && passTimeoutN * 1000 > 2_147_483_647) {
     fail(
-      2,
+      UNSUPPORTED_CLI_EXIT,
       `--pass-timeout must be 0 or no greater than 2147483 seconds (got '${passTimeout}') — beyond that the millisecond delay overflows a 32-bit timer and fires immediately, inverting the deadline.`,
     );
   }

@@ -1,6 +1,6 @@
 # Drive end states and exit codes
 
-Version 1 · stable
+Version 2 · stable
 
 A [drive](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the
 loop that works a pull request's review rounds until it is ready to merge)
@@ -44,7 +44,7 @@ The same values, for a program in any language:
 | --- | --- | --- | --- | --- | --- |
 | `ROUND_READY` | state | 0 | — | no | Work is left for this round: open review threads or unanswered summary findings. The caller runs a pass; `drive.ts` runs it itself and never ends with this state. |
 | `INDETERMINATE` | state | 1 | 1 | yes | The state could not be read, or a step failed: `drive.ts` also ends with it when a pass fails. Never a settled state; read what the drive printed before re-arming. |
-| `UNSUPPORTED_CLI` | state | 2 | 2 | yes | A prerequisite is missing. `drive.ts` exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. |
+| `UNSUPPORTED_CLI` | driver-only | — | 2 | yes | A prerequisite is missing. `drive.ts` exits `2`, with no report, when it refuses to start: a command line it cannot use, or a working tree or pull request it cannot drive as they stand (uncommitted changes, commits the pull request does not have, a head in a fork). It prints which. `drive-status.ts` also exits `2` on arguments it cannot use, before there is a pull request to report on, and names no state. |
 | `CONVERGED` | state | 3 | 0 | yes | The pull request is ready to merge: the reviewer reviewed this exact head and nothing is left open. `drive.ts` exits `0` for it, once its own working tree is clean. |
 | `HEAD_LAG` | state | 4 | 4 | no | The pull request's head on the forge and the local head disagree, and the reason says how: a local head ahead with no record of a push (push it through `guarded-push.ts`), a push the forge does not show yet (wait), a tree behind (update it), or diverged history (reconcile it). Then read again. |
 | `AWAITING_REVIEWER` | state | 4 | 4 | no | The reviewer has not reviewed this head yet. Wait, then read again. |

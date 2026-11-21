@@ -2229,9 +2229,7 @@ withheld until a sweep has run and succeeded on this invocation**, degrading to
 set once, and a prose copy of its membership goes stale the moment a code
 joins or leaves it.
 Nothing else licenses one, which is deliberate — a guard built as "successful
-sweep, or any of these signals" has a hole per signal. [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) is not one of
-those signals: "an unmet prerequisite is a property no retry clears" ignores that
-a sweep can run, and succeed, before a prerequisite is found missing. [`PR_NOT_OPEN`](../../../protocol/drive-exits.md) has nothing to reconcile; [`NOT_SETTLED`](../../../protocol/drive-exits.md)
+sweep, or any of these signals" has a hole per signal. [`PR_NOT_OPEN`](../../../protocol/drive-exits.md) has nothing to reconcile; [`NOT_SETTLED`](../../../protocol/drive-exits.md)
 does not assert the drive is over, so every caller answers it by coming back
 and that next invocation's pass entry sweeps. (In polling mode a failing sweep
 is additionally re-attempted on every poll, so [`NOT_SETTLED`](../../../protocol/drive-exits.md) returned after the window
@@ -2248,7 +2246,7 @@ then fails to release a stale prior hold for it) — and because the resolved
 thread has already left every future unresolved-thread listing, no later
 sweep ever revisits that cleanup.
 That gap is real, but folding [`CONVERGED`](../../../protocol/drive-exits.md) into `UNRECONCILED_STOPPERS` blanket — the
-way [`UNSUPPORTED_CLI`](../../../protocol/drive-exits.md) is in it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
+way [`HITL_PARKED`](../../../protocol/drive-exits.md) is in it — is NOT the fix: `--no-count`/`--no-reconcile` suppress the
 sweep unconditionally, so blanket membership would make `CONVERGED` unreachable
 through exactly the path built to reach it without a sweep — see the
 `announce-merge-ready.ts` paragraph just below. Nor is "the sweep was not

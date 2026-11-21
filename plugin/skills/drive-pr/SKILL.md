@@ -1899,10 +1899,9 @@ verdicts, the ones the guard below withholds until a sweep succeeds. Not "every
 verdict that does not re-arm", which is wider:
 `PR_NOT_OPEN` ends without re-arming too, and it is not guarded — for the
 reason the next paragraph gives. `UNSUPPORTED_CLI`
-also ends without re-arming, and is guarded for any emitter that reaches it
-after a sweep ran (the status evaluation itself does not report it) — a sweep
-having run is not the same claim as it having *succeeded*, and only the guard
-tells them apart.
+is not in it: it is `drive.ts`'s refusal to start, never a verdict of the
+status evaluation, and `drive-status.ts`'s own argument errors exit before any
+sweep runs.
 `CONVERGED` also ends without re-arming
 and is not in this set, but for a narrower reason than "excluded" — see the
 dedicated paragraph below. What `PR_NOT_OPEN`'s exclusion says about
@@ -2008,9 +2007,7 @@ exhaustion, hands back a stop-and-look rather than a false terminal.
 [`PR_NOT_OPEN`](../../protocol/drive-exits.md) has nothing to reconcile, and
 the [not-settled states](../../protocol/drive-exits.md) do not assert the drive
 is over — every caller answers it by coming back, and that invocation's pass
-entry sweeps. [`UNSUPPORTED_CLI`](../../protocol/drive-exits.md) is not exempt: a sweep can run, and
-succeed, before a missing prerequisite is found, so only a successful sweep
-certifies it.
+entry sweeps.
 `--no-reconcile` and `--no-count` both suppress the sweep, so neither can
 certify an `UNRECONCILED_STOPPERS` verdict.
 

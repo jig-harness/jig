@@ -209,9 +209,9 @@ import { pullUrlMismatch, pullUrlParts } from "./lib/status/pr-url.ts";
  *                       as settled
  *  24  FORGE_RATE_LIMITED [state] a read met the forge's spent rate limit;
  *                       the report names its reset (`rateLimit.until`)
- *   2  UNSUPPORTED_CLI  [state] an unmet prerequisite (the evaluation's REST
- *                       reads need none). Argument errors, before there is
- *                       a PR to describe, exit 2 without a report
+ *   2  UNSUPPORTED_CLI  [drive.ts only, no report] `drive.ts` refuses to
+ *                       start. This script's own argument errors, before
+ *                       there is a PR to describe, exit 2 without a report
  *
  *  12  —  [drive.ts only, no report] converged, but the worktree is not
  *         clean. No named `state` — this exit never reaches `--json` at all
@@ -331,7 +331,7 @@ const MAX_QUERY_ERRORS = 3;
  * loop for the criterion that produces this set, and for why each code NOT in
  * it is absent.
  */
-const UNRECONCILED_STOPPERS = new Set([2, 7, 8, 9, 10, 22]);
+const UNRECONCILED_STOPPERS = new Set([7, 8, 9, 10, 22]);
 
 /** The verdict's optional fields: present only when the read produced them. */
 function optionalVerdictFields(
@@ -1624,17 +1624,16 @@ async function main(): Promise<number> {
     // Every exclusion below is stated against that same criterion, so a future
     // code is classified by reading it rather than by adding a case.
     //
-    // UNSUPPORTED_CLI (2) is IN the set by the same criterion: an unmet
-    // prerequisite ends the drive without re-arming, and a sweep can run, and
-    // succeed, before one is found missing. A successful sweep sets
-    // `sweepReconciled`, so only a genuinely unreconciled pass degrades.
+    // UNSUPPORTED_CLI (2) is NOT in the set: the evaluation never reports it.
+    // It is `drive.ts`'s refusal to start, and this script's own argument
+    // errors exit 2 before any sweep runs, with no report.
     //
     // CONVERGED (3) STAYS out of this set, and that took a false start to
     // learn: a first cut of this fix reasoned "3 needs zero unresolved
     // threads, so a failed sweep cannot be hiding one behind it" is true of
     // the GitHub thread but not of this script's own `held` bookkeeping (see
-    // the next paragraph) and folded 3 in here, blanket, the way 2 is
-    // above. That broke `announce-merge-ready.ts`: its own `--no-count`
+    // the next paragraph) and folded 3 in here, blanket, the way 7 is.
+    // That broke `announce-merge-ready.ts`: its own `--no-count`
     // re-read (SKILL.md §§ 3 and 6) exists SPECIFICALLY to check CONVERGED
     // without spending a round, and CONVERGED is the ONLY verdict that caller
     // ever acts on. `--no-count` sets `sweepSuppressed` exactly like

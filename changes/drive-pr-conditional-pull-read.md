@@ -1,5 +1,5 @@
 ---
-release: patch
+release: minor
 ---
 
 ### Changed
@@ -15,6 +15,13 @@ release: patch
   finished computing still reads as unknown. `drive-status.ts` resolves a
   pull request given as a URL or branch to its number once, before it
   evaluates, and refuses a URL naming another repository.
-- The status evaluation no longer reports `UNSUPPORTED_CLI` for a `gh` too
-  old to report mergeability: every `gh` serves the REST read. The state and
-  its exit `2` stay, for a drive that refuses to start.
+- **Breaking:** [`drive-exits.md`](../plugin/protocol/drive-exits.md), now
+  version 2, lists `UNSUPPORTED_CLI` as a `driver-only` exit: `drive.ts`
+  exits `2` when it refuses to start, and `drive-status.ts` no longer reports
+  it as a state, since every `gh` serves the evaluation's REST read. Its
+  `driveStatusExit` in
+  [data/drive-exits.json](../plugin/protocol/data/drive-exits.json) is now
+  `null`; `drive-status.ts`'s own argument errors still exit `2`, with no
+  report. **Consumer action:** advised at instructions. A program that runs
+  `drive-status.ts` itself reads its exit `2` as an argument error with no
+  report, never as a state. **Detect:** `text:UNSUPPORTED_CLI`.

@@ -246,6 +246,9 @@ export function passExitDisposition(code: number): {
  * hand, verified once by inspection" gap `terminal-states.ts`'s own header
  * used to describe for this whole category.
  */
+/** A command line, working tree or pull request `drive.ts` refuses to start on. */
+export const UNSUPPORTED_CLI_EXIT = driverOnlyExitCode("UNSUPPORTED_CLI");
+
 /** The pass hit its deadline. */
 export const PASS_DEADLINE_EXIT = driverOnlyExitCode("PASS_DEADLINE");
 
