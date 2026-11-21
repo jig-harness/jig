@@ -247,7 +247,7 @@ describe("the notice of skipped account names", () => {
     writeFileSync(file, "accounts: {a: 0, old: 3}");
     expect(await tick(file, elsewhere, { repo: other })).toEqual(["sent"]);
   });
-  it("retires its record once per tick, even when no repository notifies", async () => {
+  it("retires a stale record from every channel when the retirement is asked for", async () => {
     const root = scratch();
     const card = noticesCard(root);
     const file = join(scratch(), "weights.local.yaml");

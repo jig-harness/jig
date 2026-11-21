@@ -73,8 +73,9 @@ import {
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
-  releaseOnEveryChannel,
+  dropStoredRecords,
   storedWeightsKeys,
+  storedWeightsRecords,
   suppress,
   type Suppression,
 } from "../notice-records.ts";
@@ -216,10 +217,13 @@ export function retireStaleWeightsRecords(
 ): void {
   if (standing === null) return;
   const db = stateDb(root);
-  const release = releaseOnEveryChannel(db);
   // Every channel's records, not one channel's: a channel that is no longer configured still holds one.
-  for (const key of storedWeightsKeys(db, WEIGHTS_SKIP_KEY))
-    if (!standing.includes(key)) release.run(key);
+  dropStoredRecords(
+    db,
+    storedWeightsRecords(db, WEIGHTS_SKIP_KEY).filter(
+      (r) => !standing.includes(r.key),
+    ),
+  );
 }
 
 /** The stage a cause is about, for its event row. */
