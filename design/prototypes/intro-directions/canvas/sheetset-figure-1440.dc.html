@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet Set: figure and close, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#1a6444}a:hover{color:#005031}
+.ss-start{color:#251e18}
+.ss-start:hover{color:#1a6444}
+</style>
+</helmet>
+<!-- light tokens: surround sunk #f0ece5 ; sheet card #fffdfa ; field bg #f9f6f1 ; ink #251e18 ; muted #59514a ; accent #1a6444 ; accent-soft #dbf2e4 -->
+<div style="width:1440px; height:880px; box-sizing:border-box; padding:20px; background:#f0ece5; font-family:system-ui,-apple-system,'Segoe UI',Ubuntu,Cantarell,'Noto Sans',sans-serif; color:#251e18; overflow:hidden;">
+
+ <!-- SHEET 1: the recurring figure, step 1 frame -->
+ <section id="sheet-1" aria-labelledby="t1" style="box-sizing:border-box; border:2px solid #251e18; background:#fffdfa; padding:7px;">
+  <div style="border:1px solid #251e18;">
+   <div style="position:relative; height:500px; background:#f9f6f1; display:flex; align-items:center; justify-content:center; border-bottom:2px solid #251e18;">
+    <span style="position:absolute; top:0; left:0; padding:7px 14px; border-right:1px solid #251e18; border-bottom:1px solid #251e18; background:#fffdfa; font-size:14px; font-weight:800; letter-spacing:0.04em; font-variant-numeric:tabular-nums;">1/5</span>
+    <span aria-hidden="true" style="position:absolute; top:0; left:50%; margin-left:-7px; width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:9px solid #251e18;"></span>
+    <span aria-hidden="true" style="position:absolute; bottom:0; left:50%; margin-left:-7px; width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:9px solid #251e18;"></span>
+    <span aria-hidden="true" style="position:absolute; left:0; top:50%; margin-top:-7px; width:0; height:0; border-top:7px solid transparent; border-bottom:7px solid transparent; border-left:9px solid #251e18;"></span>
+    <span aria-hidden="true" style="position:absolute; right:0; top:50%; margin-top:-7px; width:0; height:0; border-top:7px solid transparent; border-bottom:7px solid transparent; border-right:9px solid #251e18;"></span>
+    <img src="/_blob/ab86ece52ca4920c9a94dcd39d56ca28" width="800" height="450" alt="An isometric engraving of the line: seven stations on a looped track (pick up, build, open, drive, repair, merge, follow up), with a person standing at the merge station." style="display:block; width:800px; height:450px;">
+   </div>
+   <div style="display:grid; grid-template-columns:240px 1fr 270px 110px; background:#fffdfa;">
+    <!-- first cell: the figure's caption, which is the step label -->
+    <div style="padding:22px 22px; border-right:1px solid #251e18; box-shadow:inset 5px 0 0 #1a6444;">
+     <p style="margin:0; font-size:14px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#1a6444;">The line</p>
+    </div>
+    <div style="padding:20px 28px 24px; border-right:1px solid #251e18;">
+     <h2 id="t1" style="margin:0 0 10px; font-size:28px; line-height:1.2; font-weight:700;">Seven stations, run as a loop.</h2>
+     <p style="margin:0; font-size:16px; line-height:1.5;">Every change passes the same stations: pick up, build, open, drive, repair, merge, follow up. The follow-up sends what the merge owes back to the first.</p>
+    </div>
+    <!-- the person's moment: double-bordered cell -->
+    <div style="padding:8px; border-right:1px solid #251e18; display:flex;">
+     <p style="flex:1; margin:0; border:5px double #251e18; display:flex; align-items:center; padding:12px 18px; font-size:18px; line-height:1.35; font-weight:700;">A person merges at the sixth.</p>
+    </div>
+    <!-- narrow end cell: the sheet number -->
+    <div style="display:flex; align-items:center; justify-content:center; background:#dbf2e4; font-size:28px; font-weight:800; font-variant-numeric:tabular-nums; color:#1a6444;">1/5</div>
+   </div>
+  </div>
+ </section>
+
+ <!-- the page's end: the closing decision cell, at rest -->
+ <section id="start" aria-label="You merge." style="margin-top:24px; box-sizing:border-box; border:2px solid #251e18; background:#fffdfa; padding:7px;">
+  <div style="display:grid; grid-template-columns:1fr 340px; border:1px solid #251e18;">
+   <div style="padding:10px; border-right:1px solid #251e18;">
+    <p style="margin:0; border:6px double #251e18; padding:14px 28px; font-size:60px; line-height:1.05; font-weight:800; letter-spacing:-0.02em;">You merge.</p>
+   </div>
+   <div style="display:flex; align-items:center; padding:0 32px;">
+    <a class="ss-start" href="#audit" style="display:flex; align-items:center; min-height:48px; font-size:20px; font-weight:700; text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:6px;">Start with an audit</a>
+   </div>
+  </div>
+ </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
