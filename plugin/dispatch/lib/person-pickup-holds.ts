@@ -161,9 +161,11 @@ export function insertPickupHold(
     hold.condition === undefined ? null : JSON.stringify(hold.condition);
   const inserted =
     db
-      .query(`INSERT INTO pickup_holds
+      .query(
+        `INSERT INTO pickup_holds
     (repo, item, held_by, held_at, title, url, wait_condition, resume_record)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (repo, item) DO NOTHING`)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (repo, item) DO NOTHING`,
+      )
       .run(
         repo.toLowerCase(),
         item,
@@ -239,7 +241,14 @@ export function setPersonPickupHold(
     () => {
       const db = stateDb(root);
       const slug = repo.toLowerCase();
-      if (hold !== null) return insertPickupHold(db, slug, item, hold);
+      if (hold !== null)
+        return db.transaction(() => {
+          // A cleared row no longer blocks a launch, so a person's new hold replaces it.
+          db.query(
+            "DELETE FROM pickup_holds WHERE repo = ? AND item = ? AND wait_cleared = 1",
+          ).run(slug, item);
+          return insertPickupHold(db, slug, item, hold);
+        })();
       db.query("DELETE FROM pickup_holds WHERE repo = ? AND item = ?").run(
         slug,
         item,

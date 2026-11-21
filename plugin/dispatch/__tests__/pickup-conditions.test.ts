@@ -12,6 +12,7 @@ import {
 import {
   personPickupHolds,
   setPersonPickupHold,
+  settlePickupHold,
 } from "../lib/person-pickup-holds.ts";
 import { assignedIssue, SLUG, type World, world } from "./fixtures.ts";
 import {
@@ -319,4 +320,23 @@ it("raises the closed-unmerged need for a still-assigned pickup, not for an item
   };
   expect(run("ENG-1")).toBe(1);
   expect(run("ENG-2")).toBe(0);
+});
+
+it("lets a person's new hold replace a cleared conditional hold but not an active one", () => {
+  const w = world();
+  current = w;
+  const root = dispatchState(w);
+  const condition = { kind: "pr-merged", pr: 42 } as const;
+  const hold = { by: "a person", title: "t", url: null, condition };
+  expect(setPersonPickupHold(SLUG, "#12", hold, root).ok).toBe(true);
+  const different = { by: "operator", title: "t", url: null };
+  expect(setPersonPickupHold(SLUG, "#12", different, root).ok).toBe(false);
+  const read = personPickupHolds(SLUG, root);
+  if (!read.ok) throw new Error(read.failure.reason);
+  expect(settlePickupHold(SLUG, read.value[0]!, root, "cleared")).toBe(true);
+  expect(setPersonPickupHold(SLUG, "#12", different, root).ok).toBe(true);
+  const after = personPickupHolds(SLUG, root);
+  if (!after.ok) throw new Error(after.failure.reason);
+  expect(after.value[0]?.settled).toBeUndefined();
+  expect(after.value[0]?.condition).toBeUndefined();
 });

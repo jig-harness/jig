@@ -87,14 +87,14 @@ function supersession(
            WHERE json_extract(member.value, '$.key') = ?
        ))`,
     )
-    .all(
+    .iterate(
       record.repo,
       record.createdAt,
       record.createdAt,
       own.ordinal,
       item,
       item,
-    ) as LaunchRow[];
+    ) as IterableIterator<LaunchRow>;
   for (const row of later) {
     const successor = recordOf(row, root, new Map(), db);
     if (successor === null)
