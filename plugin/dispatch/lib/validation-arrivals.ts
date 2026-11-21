@@ -50,20 +50,43 @@ const ESTIMATED = 1;
 const UNESTIMATED = 2;
 const CANDIDATE = 3;
 
+function precedes(left: Request, right: Request): boolean {
+  return left.at < right.at || (left.at === right.at && left.rank < right.rank);
+}
+
 function earliest(pending: Request[]): Request | undefined {
   let best = 0;
-  for (let index = 1; index < pending.length; index++) {
-    const request = pending[index];
+  pending.forEach((request, index) => {
     const chosen = pending[best];
-    if (
-      request !== undefined &&
-      chosen !== undefined &&
-      (request.at < chosen.at ||
-        (request.at === chosen.at && request.rank < chosen.rank))
-    )
-      best = index;
-  }
+    if (chosen !== undefined && precedes(request, chosen)) best = index;
+  });
   return pending.splice(best, 1)[0];
+}
+
+/** Every request known before the lock serves any: the queue, the estimated and unestimated arrivals, the candidate. */
+function requestsOf(input: ArrivalQueueInput, holding: number): Request[] {
+  const pending: Request[] = [];
+  const add = (count: number, request: Request) => {
+    for (let index = 0; index < count; index++) pending.push({ ...request });
+  };
+  add(input.atLock - holding, { at: 0, rank: QUEUED, next: 0 });
+  for (const { atMs, runs } of input.arrivals)
+    add(runs > 0 ? 1 : 0, {
+      at: Math.max(0, atMs),
+      rank: ESTIMATED,
+      next: Math.ceil(runs) - 1,
+    });
+  add(Math.ceil(input.unknownRuns), {
+    at: input.arriveMs,
+    rank: UNESTIMATED,
+    next: 0,
+  });
+  add(input.candidate ? 1 : 0, {
+    at: input.arriveMs,
+    rank: CANDIDATE,
+    next: 0,
+  });
+  return pending;
 }
 
 /**
@@ -77,36 +100,24 @@ function earliest(pending: Request[]): Request | undefined {
  */
 export function arrivalQueue(input: ArrivalQueueInput): ArrivalQueue {
   const { concurrency, runMs, arriveMs } = input;
-  const releases = Array.from({ length: concurrency }, () => 0);
   const holding = Math.min(input.atLock, concurrency);
-  let ahead = 0;
-  let served = 0;
+  const releases = Array.from({ length: concurrency }, (_, index) =>
+    index < holding ? runMs : 0,
+  );
+  const counts = { ahead: 0, served: 0 };
   const settle = (end: number) => {
-    if (end <= arriveMs) served++;
-    else ahead++;
+    if (end <= arriveMs) counts.served++;
+    else counts.ahead++;
   };
-  for (let index = 0; index < holding; index++) {
-    releases[index] = runMs;
-    settle(runMs);
-  }
-  const pending: Request[] = [];
-  for (let index = holding; index < input.atLock; index++)
-    pending.push({ at: 0, rank: QUEUED, next: 0 });
-  for (const { atMs, runs } of input.arrivals) {
-    const whole = Math.ceil(runs);
-    if (whole > 0)
-      pending.push({ at: Math.max(0, atMs), rank: ESTIMATED, next: whole - 1 });
-  }
-  for (let index = 0; index < Math.ceil(input.unknownRuns); index++)
-    pending.push({ at: arriveMs, rank: UNESTIMATED, next: 0 });
-  if (input.candidate) pending.push({ at: arriveMs, rank: CANDIDATE, next: 0 });
+  releases.slice(0, holding).forEach(settle);
+  const pending = requestsOf(input, holding);
   for (;;) {
     const request = earliest(pending);
     if (request === undefined || request.at > arriveMs)
-      return { acquireMs: arriveMs, ahead, served };
+      return { acquireMs: arriveMs, ...counts };
     releases.sort((left, right) => left - right);
     const start = Math.max(request.at, releases[0] ?? 0);
-    if (request.rank === CANDIDATE) return { acquireMs: start, ahead, served };
+    if (request.rank === CANDIDATE) return { acquireMs: start, ...counts };
     const end = start + runMs;
     releases[0] = end;
     settle(end);
