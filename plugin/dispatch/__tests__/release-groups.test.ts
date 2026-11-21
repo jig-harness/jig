@@ -13,7 +13,9 @@ import {
   recordTagged,
   releaseNeedActions,
   releaseNeeds,
+  releasePolicyOf,
   reserveRelease,
+  type OwedPlanState,
 } from "../lib/release-needs.ts";
 import { RELEASES_ALREADY_TAKEN, stateDb } from "../lib/state.ts";
 import { claimAnswer, finishAnswer } from "../lib/station-answer-store.ts";
@@ -358,6 +360,7 @@ describe("the answer to a group of releases", () => {
     rerun_claimed: 0,
     tagged: 0,
     taken_as: null,
+    plan_state: null,
     next_tag_check: 0,
   }));
 
@@ -486,5 +489,91 @@ describe("the answer to a group of releases", () => {
     expect(report.quiet).toMatchObject([
       { target: "#3", class: "answered-hold" },
     ]);
+  });
+});
+
+describe("what is left to try for an untagged release", () => {
+  const owed = (
+    tag: string,
+    plan_state: OwedPlanState | null,
+    rerun_claimed = 0,
+  ) => ({
+    tag,
+    item: `#${tag.replaceAll(/\D/g, "")}`,
+    launch: "seed",
+    rerun_claimed,
+    tagged: 0,
+    taken_as: null,
+    plan_state,
+    next_tag_check: 0,
+  });
+  const decisionOf = (action: Action | undefined) =>
+    action === undefined
+      ? undefined
+      : stationDecision(
+          action as Action & { cause: "release-owed" },
+          stationContextOf(SLUG, { tracker: { adapter: "github" } }),
+        )?.decision?.call;
+  const recommended = (action: Action | undefined) => {
+    const call = decisionOf(action);
+    if (call === undefined) return undefined;
+    return call.options.find((o) => o.id === call.recommended)?.name;
+  };
+
+  it("keeps the re-run for a release whose releasing commit failed its gates, or that recorded no state", () => {
+    for (const state of ["failed", null] as const) {
+      const [action] = releaseNeedActions([owed("v1.2.0", state)], "v");
+      expect(recommended(action)).toBe("Re-run the failed gates");
+      expect(action?.evidence.noRerun).toBeUndefined();
+    }
+  });
+
+  it("recommends tagging by hand for a release whose required checks all passed", () => {
+    const [action] = releaseNeedActions([owed("v1.2.0", "ready")], "v");
+    expect(recommended(action)).toBe("Tag it by hand");
+    expect(decisionOf(action)?.options.map((o) => o.name)).not.toContain(
+      "Re-run the failed gates",
+    );
+    expect(action?.reason).toBe(
+      "Release v1.2.0 is owed its tag. Every required check passed on the releasing commit of v1.2.0, so no failed gate is left to re-run.",
+    );
+  });
+
+  it("recommends tagging by hand whatever the checks say where the repository makes the tag a person's step", () => {
+    for (const values of [
+      { changelog: { release: { tagged_by: "person" } } },
+      { changelog: { release: { rerun_failed_gates: 0 } } },
+    ]) {
+      const [action] = releaseNeedActions(
+        [owed("v1.2.0", "failed")],
+        "v",
+        releasePolicyOf(values),
+      );
+      expect(recommended(action)).toBe("Tag it by hand");
+      expect(action?.reason).toContain("changelog.release.");
+    }
+  });
+
+  it("does not group releases that differ in what is left to try", () => {
+    const actions = releaseNeedActions(
+      [
+        owed("v1.2.0", "failed"),
+        owed("v1.3.0", "failed"),
+        owed("v1.4.0", "ready"),
+        owed("v1.5.0", "manual"),
+        owed("v1.6.0", "failed", 1),
+      ],
+      "v",
+    );
+    expect(
+      actions.map((a) => [a.evidence.tags ?? a.evidence.tag, recommended(a)]),
+    ).toEqual([
+      ["v1.2.0 v1.3.0", "Re-run the failed gates"],
+      ["v1.6.0", "Investigate"],
+      ["v1.4.0 v1.5.0", "Tag it by hand"],
+    ]);
+    expect(actions[2]?.evidence.noRerun).toBe(
+      "Every required check passed on the releasing commit of v1.4.0, so no failed gate is left to re-run. The tag plan leaves v1.5.0 to a person: older than the newest tag, outside automatic tagging.",
+    );
   });
 });

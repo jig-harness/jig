@@ -600,6 +600,11 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE pickup_holds ADD COLUMN wait_cleared INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE pickup_holds ADD COLUMN wait_linked INTEGER NOT NULL DEFAULT 0;`,
   },
+  {
+    // The tag plan's state a follow-up recorded a release owed under (`release-needs.ts`).
+    additive: true,
+    sql: "ALTER TABLE release_needs ADD COLUMN plan_state TEXT;",
+  },
 ];
 
 /** The schema version this plugin writes. */

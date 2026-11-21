@@ -65,9 +65,11 @@ async function release(
   w: World,
   record: LaunchRecord,
   item?: string,
+  state?: string,
 ): Promise<unknown> {
   const args = ["release-owed", record.id, record.token, TAG];
   if (item !== undefined) args.push(item);
+  if (state !== undefined) args.push("--state", state);
   const result = await w.dispatch(args);
   expectSpawnExit(result, 0);
   return JSON.parse(result.stdout);
@@ -128,6 +130,44 @@ it("keeps one release need while both merged pull requests' follow-ups finish", 
       { name: "Tag it by hand" },
     ],
   });
+});
+
+it("recommends tagging by hand for a release its follow-up recorded with every check passed", async () => {
+  const w = fixture();
+  const first = pass(w, 9);
+  expect(await release(w, first, undefined, "ready")).toEqual({
+    status: "reserved",
+  });
+  expect(await release(w, first, ITEM, "ready")).toEqual({
+    status: "recorded",
+    item: ITEM,
+  });
+  await endPass(w, first);
+  await applyTick(w, false);
+  const [need] = releaseCards(w);
+  expect(need?.reason).toContain("Every required check passed");
+  const [decision] = need?.decisions ?? [];
+  expect(decision?.options?.map((o) => o.name)).toEqual([
+    "Investigate",
+    "Tag it by hand",
+  ]);
+  expect(decision?.options?.find((o) => o.recommended)?.name).toBe(
+    "Tag it by hand",
+  );
+});
+
+it("refuses a tag-plan state a release is never owed under", async () => {
+  const w = fixture();
+  const record = pass(w, 9);
+  const result = await w.dispatch([
+    "release-owed",
+    record.id,
+    record.token,
+    TAG,
+    "--state",
+    "pending",
+  ]);
+  expect(result.exitCode).not.toBe(0);
 });
 
 function git(w: World, ...args: string[]): string {

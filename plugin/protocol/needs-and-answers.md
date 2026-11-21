@@ -252,7 +252,7 @@ the name `hold` had before, still chooses it.
 | Key | Class | Options | Meaning |
 | --- | --- | --- | --- |
 | `followup` | `followup-recovery` | `rerun`, `done`, `hold` | A merged pull request's follow-up whose pass ended without recording done, or whose claim no session is joined to. |
-| `release` | `release` | `gates`, `inspect`, `tag` | An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. |
+| `release` | `release` | `gates`, `inspect`, `tag` | An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. It recommends re-running the failed gates only while the releasing commit has a failed required check and a re-run is left; otherwise it offers only the other two, recommending a person's tag where no failed gate is left to re-run. |
 | `pickup` | `pickup-recovery` | `release`, `hold` | A pickup that stalled, stopped on a question it did not frame, or ended without moving its item on. |
 | `checkout` | `checkout-recovery` | `detach`, `hold` | A launch that waits because a checkout the workspace runtime does not list holds its branch and is in use. |
 | `drive` | `drive-recovery` | `rearm`, `hold` | A drive that stopped and handed its pull request to a person. |

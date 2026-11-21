@@ -1513,6 +1513,13 @@ fields:
     read_by: [changelog]
     repository_only: true
     since: 0.227.2
+  changelog.release.tagged_by:
+    type: enum
+    values: [workflow, person]
+    default: workflow
+    read_by: [changelog, dispatch]
+    repository_only: true
+    since: next
   changelog.consumer_actions:
     type: boolean
     default: false
