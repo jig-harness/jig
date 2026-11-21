@@ -157,7 +157,7 @@ async function attemptConflictRepair(
     return "continue";
   }
   const settlement = await settleMerge();
-  if (settlement !== null)
+  if (settlement !== null || resolveCode !== 0)
     recordConflictSettlement(context.pr, resolveCode, settlement);
   // Same post-pass mailbox precedence as the CI-repair call site
   // above — see its own comment for why.
@@ -193,7 +193,7 @@ async function rejoinConflictTakeover(
 function recordConflictSettlement(
   pr: string,
   code: number,
-  settlement: string,
+  settlement: string | null,
 ): void {
   const launch = launchOf(process.env);
   const stateDir = process.env.DRIVE_PR_STATE_DIR;
@@ -213,6 +213,7 @@ function recordConflictSettlement(
       passRound,
       passStartedAt,
     );
+    if (previous !== null && settlement === null) return;
     const reason =
       previous?.concluded ?? `The conflict-resolution pass exited ${code}.`;
     writeRoundReport(stateDir, {
@@ -231,7 +232,10 @@ function recordConflictSettlement(
           },
           evidence: [`pr:#${pr}`],
         }),
-        concluded: cutTo(`${settlement} ${reason}`, CONCLUDED_MAX),
+        concluded: cutTo(
+          settlement === null ? reason : `${settlement} ${reason}`,
+          CONCLUDED_MAX,
+        ),
       },
     });
   } catch (error) {

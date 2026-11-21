@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { readBlob } from "./git.ts";
@@ -30,8 +31,8 @@ function isJournalEntry(value: unknown): value is JournalEntry {
   );
 }
 
-function drizzleNames(entries: unknown[]): string[] | null {
-  const names = [];
+function drizzleEntries(entries: unknown[]): JournalEntry[] | null {
+  const result: JournalEntry[] = [];
   let previousWhen = -Infinity;
   for (const [idx, entry] of entries.entries()) {
     if (
@@ -40,14 +41,17 @@ function drizzleNames(entries: unknown[]): string[] | null {
       entry.when <= previousWhen
     )
       return null;
-    names.push(`${entry.tag}.sql`);
+    result.push(entry);
     previousWhen = entry.when;
   }
-  return names;
+  return result;
 }
 
 /** An ordered JSON filename list, or legacy Drizzle's ordered tag entries. */
-function journalNames(text: string): string[] | null {
+function decodeJournal(text: string): {
+  names: string[];
+  entries: JournalEntry[] | null;
+} | null {
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -59,9 +63,12 @@ function journalNames(text: string): string[] | null {
     return null;
   }
   if (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
-    return value;
+    return { names: value, entries: null };
   if (!isRecord(value) || !Array.isArray(value.entries)) return null;
-  return drizzleNames(value.entries);
+  const entries = drizzleEntries(value.entries);
+  return entries === null
+    ? null
+    : { names: entries.map(({ tag }) => `${tag}.sql`), entries };
 }
 
 function isRegular(stage: Stage | undefined): stage is Stage {
@@ -72,21 +79,40 @@ function checkJournal(
   root: string,
   plan: MigrationPlan,
   staged: Tree,
+  committed: Stage | undefined,
 ): Problem[] {
   const files = sources(plan.group, staged);
   const problems = duplicateSequences(files, "the staged tree");
   const journal = staged.get(plan.group.journal);
   const actual = isRegular(journal)
-    ? journalNames(readBlob(root, journal.blob))
+    ? decodeJournal(readBlob(root, journal.blob))
     : null;
   if (
-    actual?.length !== files.length ||
-    files.some(({ path }, i) => posix.basename(path) !== actual[i])
+    actual?.names.length !== files.length ||
+    files.some(({ path }, i) => posix.basename(path) !== actual.names[i])
   )
     problems.push({
       path: plan.group.journal,
       message:
         "migration journal must list each staged migration in sequence order: regenerate the journal and snapshots",
+    });
+  // Drizzle uses the applied journal's timestamp as the migration watermark.
+  // Preserve integration's original prefix, then validate the appended
+  // timestamps against it through decodeJournal's strict ordering check.
+  const integration = isRegular(committed)
+    ? decodeJournal(readBlob(root, committed.blob))?.entries
+    : null;
+  if (
+    integration &&
+    !isDeepStrictEqual(
+      integration,
+      actual?.entries?.slice(0, integration.length),
+    )
+  )
+    problems.push({
+      path: plan.group.journal,
+      message:
+        "preserve the integration journal entries and append migrations after their timestamps",
     });
   return problems;
 }
@@ -116,7 +142,8 @@ function checkOutputs(plan: MigrationPlan, staged: Tree, check: Check): void {
         message:
           "integration snapshot was changed: restore its committed version",
       });
-    else if (plan.moves.length > 0) check.verified.add(path);
+    else if (plan.moves.length > 0 || plan.regenerate.includes(path))
+      check.verified.add(path);
   }
 }
 
@@ -129,6 +156,7 @@ export function checkMigrations(
   root: string,
   plans: MigrationPlan[],
   staged: Tree,
+  integration: Tree,
 ): Check {
   const check: Check = { problems: [], verified: new Set() };
   for (const plan of plans) {
@@ -141,7 +169,9 @@ export function checkMigrations(
             "obsolete migration or snapshot still staged after renumbering",
         });
     checkSources(plan, staged, check);
-    check.problems.push(...checkJournal(root, plan, staged));
+    check.problems.push(
+      ...checkJournal(root, plan, staged, integration.get(plan.group.journal)),
+    );
     checkOutputs(plan, staged, check);
   }
   return check;

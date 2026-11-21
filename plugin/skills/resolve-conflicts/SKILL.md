@@ -209,11 +209,18 @@ text.
 
 Decide from the intents, never from which side "looks newer".
 
-- **Sequenced database migration.** Run
-  `bun "${CLAUDE_SKILL_DIR}/scripts/migration-plan.ts"` before handling any
-  paths in the sequence, including its journal and snapshots. The plan also
-  inspects migrations Git merged cleanly. Use the [migration plan](#apply-a-migration-plan)
-  to keep both sides' SQL and rebuild the journal and snapshots.
+Before resolving individual paths, capture the migration plan. It finds
+sequenced SQL and metadata that Git merged cleanly as well as conflicted
+paths. Use an absolute scratch file outside the worktree for `<plan-file>`:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file "<plan-file>" --stdout-exit-code 1 -- bun "${CLAUDE_SKILL_DIR}/scripts/migration-plan.ts"
+```
+
+- **Sequenced database migration.** Apply each [migration plan](#apply-a-migration-plan)
+  before resolving that sequence's SQL, journal or snapshots individually.
+  The `moves` and `regenerate` lists name the work, including cleanly
+  merged paths that need to move or be rebuilt.
 - **Lockfile or generated file.** Take the integration side
   with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git checkout <side-option> -- "<path>"`,
   substituting `--ours` or `--theirs` for `<side-option>` as the map requires. Resolve the
@@ -259,16 +266,42 @@ detected migration directory without a suitable regeneration command needs a
 repository command configured in `resolve_conflicts.sequenced_migrations`
 before renumbering.
 
-Run the plan's `command` from the repository root once the source changes
-are ready. The command reads the resolved migrations and integration
-metadata on disk. Give it the migration plan JSON on standard input using
-the command runner's `--stdin-file`. Its entry is keyed by `directory`,
-and its `regenerate` list names the files to rebuild. Preserve the
-integration side's snapshots. Stage the rebuilt
-files. The journal and snapshots are generated files, so resolve them with
-the command and record `regenerated` for each one that conflicted. For a
-sequence with no moves whose journal or snapshots still conflict, apply the
-same regeneration rule. Never combine a journal or snapshot by hand.
+Once the sources are ready, if `regenerate` lists paths and the sequence
+supplies a `command`, run it from the repository root. Its input is the
+saved JSON plan. Each entry is keyed by
+`directory`, and `regenerate` names the files to rebuild. Use the command
+for the host and pass the configured shell command unchanged as one
+argument to that shell.
+
+On Unix:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file "<plan-file>" -- sh -c "<command>"
+```
+
+On Windows:
+
+```powershell
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file "<plan-file>" -- cmd.exe /d /s /c "<command>"
+```
+
+For a sequence with no moves, start a conflicted metadata path from the
+integration version listed in `integration.paths`. If there is no
+sequence command, the plan's `fallback` lists the existing per-path
+generators from the configuration or change-area catalog. Run those
+commands in their listed directories under the generated-file rule.
+For a path with no declared command, find the repository generator
+that rebuilds it and record `regenerated` with `--command`. If no
+generator can rebuild a required path, report the missing
+capability and go to Step 8. Record `escalate` on an affected mapped
+path when one exists.
+
+Preserve the integration side's existing snapshots when renumbering.
+With a legacy Drizzle journal, preserve the complete committed integration
+entries as the prefix. Append the remaining entries in order with strictly
+increasing timestamps greater than the last integration entry.
+Stage the rebuilt files and record `regenerated` for each one that
+conflicted. Never combine a journal or snapshot by hand.
 
 Record any old migration path kept at the integration content with the
 corresponding side and say where the branch's migration moved. Record
@@ -649,8 +682,8 @@ each question.
 - **Unattended (a drive's repair round):** abort with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git <operation> --abort`, substituting the stopped operation
   (`merge`, `rebase`, `cherry-pick` or `revert`). Then verify the tree is clean:
-  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --porcelain --untracked-files=normal --ignore-submodules=none` must print nothing,
-  and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse -q --verify MERGE_HEAD` must exit non-zero.
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --porcelain --untracked-files=normal --ignore-submodules=none` must exit 0 and print nothing.
+  For a merge, `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse -q --verify MERGE_HEAD` must exit nonzero.
   Report the questions, any abort failure and any paths still present on
   stderr. Under a drive, write the [round report](../drive-pr/SKILL.md#8-report-and-hand-off)
   to `.context/scratch/round-report.json`, with the reason the operation

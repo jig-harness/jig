@@ -298,7 +298,7 @@ export function classifyPaths(
     const pathAttrs = attrs.get(path) ?? {};
     const markerSize = markerSizeOf(pathAttrs);
     const derived =
-      migrationClass(path, groups) ?? regenerateFor(path, entries);
+      migrationClass(path, groups, entries) ?? regenerateFor(path, entries);
     result.set(path, {
       class: derived
         ? derived.class

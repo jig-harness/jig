@@ -419,7 +419,12 @@ export function checkResolution(
       snapshot,
       new Set(unmerged.keys()),
       (staged, proof) =>
-        checkMigrations(root, migrationPlans(root, snapshot, proof), staged),
+        checkMigrations(
+          root,
+          migrationPlans(root, snapshot, proof),
+          staged,
+          proof[snapshot.sides.integration],
+        ),
     ),
   );
   result.exit =

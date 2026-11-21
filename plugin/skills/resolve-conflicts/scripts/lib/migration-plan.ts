@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { configuredMigrations } from "./classify.ts";
 import {
   detectMigrationGroups,
+  isMigrationMetadata,
   type MigrationGroup,
   type MigrationName,
   migrationName,
@@ -11,7 +12,7 @@ import { sameStage, treeEntries } from "./provenance.ts";
 import type { Snapshot, Stage } from "./snapshot.ts";
 
 type Tree = ReadonlyMap<string, Stage>;
-type Inputs = Pick<Snapshot, "operation" | "sides">;
+type Inputs = Pick<Snapshot, "operation" | "sides" | "paths">;
 type Trees = { base: Tree; ours: Tree; theirs: Tree };
 type Problem = { path: string; message: string };
 
@@ -162,21 +163,41 @@ function metadata(
   required: Required[],
   pending: Required[],
   moved: Required[],
+  conflicted: string[],
 ): Pick<MigrationPlan, "outputs" | "regenerate" | "remove"> {
+  const renumbering = moved.length > 0;
   const integrationOutputs = integrationSnapshots(
     group,
     integration,
-    moved.length > 0,
+    renumbering,
   );
   const branchFiles = branchSnapshots(group, branch, pending);
-  const regenerating = branchFiles.outputs.filter(
+  const branchOutputs = branchFiles.outputs.filter(
     (path) => !integrationOutputs.has(path),
   );
   const outputs = new Map([
     [group.journal, null] as const,
     ...integrationOutputs,
-    ...regenerating.map((path) => [path, null] as const),
+    ...branchOutputs.map((path) => [path, null] as const),
   ]);
+  const regenerate = new Set<string>();
+  const hasNewPredecessors =
+    pending.length > 0 &&
+    integration.added.some(
+      ({ path, stage }) => !sameStage(stage, branch.tree.get(path)),
+    );
+  if (renumbering || hasNewPredecessors) {
+    regenerate.add(group.journal);
+    for (const path of branchOutputs) regenerate.add(path);
+  }
+  for (const path of integrationOutputs.keys())
+    if (!integration.tree.has(path)) regenerate.add(path);
+  if (!renumbering)
+    for (const path of conflicted) {
+      regenerate.add(path);
+      outputs.set(path, null);
+    }
+
   const retained = new Set([
     ...outputs.keys(),
     ...required.map(({ target }) => target),
@@ -187,9 +208,7 @@ function metadata(
   ]);
   return {
     outputs,
-    regenerate: [
-      ...new Set([group.journal, ...(moved.length > 0 ? regenerating : [])]),
-    ].sort(),
+    regenerate: [...regenerate].sort(),
     remove: [...obsolete]
       .filter((path) => !integration.tree.has(path) && !retained.has(path))
       .sort(),
@@ -239,24 +258,36 @@ function makePlan(
   const branchSide = integrationSide === "ours" ? "theirs" : "ours";
   const integration = migrationSide(group, trees[integrationSide], trees.base);
   const branch = migrationSide(group, trees[branchSide], trees.base);
-  if (integration.added.length + branch.added.length === 0) return null;
+  const conflicted = Object.entries(inputs.paths)
+    .filter(([path, entry]) => !entry.clean && isMigrationMetadata(group, path))
+    .map(([path]) => path);
+  if (integration.added.length + branch.added.length + conflicted.length === 0)
+    return null;
 
   const pending = branchTargets(group, integration, branch);
   const moved = pending.filter(({ path, target }) => path !== target);
-  const original = moved.length > 0 ? integration.files : integration.added;
+  const renumbering = moved.length > 0;
+  const original = renumbering ? integration.files : integration.added;
   const required = [
     ...original.map((source) => ({ ...source, target: source.path })),
     ...pending,
   ];
+  const steps = metadata(
+    group,
+    integration,
+    branch,
+    required,
+    pending,
+    moved,
+    conflicted,
+  );
   return {
     group,
     integration: {
       commit: inputs.sides[integrationSide].commit,
-      paths: integrationPaths(
-        group,
-        integration,
-        moved.length > 0 ? pending : [],
-      ),
+      paths: renumbering
+        ? integrationPaths(group, integration, pending)
+        : conflicted.filter((path) => integration.tree.has(path)).sort(),
     },
     moves: moved.map(({ path, target }) => ({
       from: path,
@@ -264,8 +295,8 @@ function makePlan(
       commit: inputs.sides[branchSide].commit,
     })),
     required,
-    ...metadata(group, integration, branch, required, pending, moved),
-    problems: planProblems(group, integration, branch, moved.length > 0),
+    ...steps,
+    problems: planProblems(group, integration, branch, renumbering),
   };
 }
 

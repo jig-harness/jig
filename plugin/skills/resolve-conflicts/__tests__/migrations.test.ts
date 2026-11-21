@@ -20,7 +20,7 @@ beforeEach(() => {
     - directory: ${dir}
       journal: ${journal}
       snapshots: ["${dir}/meta/{sequence}.json"]
-      command: bun rebuild-migrations.ts
+      command: bun rebuild-migrations.ts && bun --version
 `);
   s.commit("Start migrations", {
     [`${dir}/001_init.sql`]: "CREATE TABLE root (x INT);\n",
@@ -55,6 +55,18 @@ for (const path of regenerate)
 
 afterEach(() => s.cleanup());
 
+function runGenerator(result: Run): void {
+  const plan = join(s.home, "migration-plan.json");
+  writeFileSync(plan, result.stdout);
+  const wrapper = join(import.meta.dir, "../../../shared/command.ts");
+  const [{ command }] = JSON.parse(result.stdout);
+  const shell =
+    process.platform === "win32"
+      ? ["cmd.exe", "/d", "/s", "/c", command]
+      : ["sh", "-c", command];
+  exit(s.script(wrapper, ["--stdin-file", plan, "--", ...shell]), 0);
+}
+
 test("preserves and renumbers both migrations, then checks the regenerated journal", () => {
   exit(s.script("conflict-map.ts"), 0);
   const result = s.script("migration-plan.ts");
@@ -70,19 +82,7 @@ test("preserves and renumbers both migrations, then checks the regenerated journ
   s.write(nextPath, s.git("show", `HEAD:${branchPath}`));
   s.git("rm", branchPath);
   s.git("checkout", "--theirs", journal, `${dir}/meta/002.json`);
-  const plan = join(s.home, "migration-plan.json");
-  writeFileSync(plan, result.stdout);
-  const wrapper = join(import.meta.dir, "../../../shared/command.ts");
-  exit(
-    s.script(wrapper, [
-      "--stdin-file",
-      plan,
-      "--",
-      "bun",
-      "rebuild-migrations.ts",
-    ]),
-    0,
-  );
+  runGenerator(result);
   s.git("add", dir);
   exit(
     s.script("record.ts", [
@@ -232,4 +232,110 @@ test("checks dropped lines when both sides edit an existing migration", () => {
   } finally {
     existing.cleanup();
   }
+});
+
+test("plans metadata-only legacy conflicts with their existing per-path generators", () => {
+  const legacy = new Scratch();
+  try {
+    const directory = "legacy";
+    const journal = "legacy/meta/_journal.json";
+    const snapshot = "legacy/meta/0001_snapshot.json";
+    legacy.overlay(`resolve_conflicts:
+  generated:
+    - paths: ["${snapshot}"]
+      command: bun rebuild-snapshots.ts
+drive:
+  change_areas_catalog: .config/change-areas.yaml
+`);
+    legacy.commit("Start migration metadata", {
+      ".config/change-areas.yaml": `version: 1
+areas:
+  migrations:
+    paths: ["legacy/**"]
+    generated:
+      - outputs: ["${journal}"]
+        command: bun rebuild-journal.ts
+`,
+      "legacy/0001_existing.sql": "CREATE TABLE root (x INT);\n",
+      [journal]: '["0001_existing.sql"]\n',
+      [snapshot]: "initial snapshot\n",
+    });
+    legacy.git("switch", "-q", "-c", "feature");
+    legacy.commit("Adjust migration metadata", {
+      [journal]: '[ "0001_existing.sql"]\n',
+      [snapshot]: "feature snapshot\n",
+    });
+    legacy.git("switch", "-q", "main");
+    legacy.commit("Refresh metadata", {
+      [journal]: '["0001_existing.sql" ]\n',
+      [snapshot]: "base snapshot\n",
+    });
+    legacy.git("switch", "-q", "feature");
+    exit(legacy.gitTry("merge", "main"), 1);
+    exit(legacy.script("conflict-map.ts"), 0);
+    const result = legacy.script("migration-plan.ts");
+    exit(result, 0);
+    expect(JSON.parse(result.stdout)).toMatchObject([
+      {
+        directory,
+        command: null,
+        moves: [],
+        regenerate: [snapshot, journal],
+        fallback: {
+          [snapshot]: {
+            command: "bun rebuild-snapshots.ts",
+            source: "configuration",
+          },
+          [journal]: { command: "bun rebuild-journal.ts", source: "catalog" },
+        },
+      },
+    ]);
+    expect(legacy.snapshot().paths).toMatchObject({
+      [snapshot]: {
+        class: "generated",
+        regenerate: {
+          command: "bun rebuild-snapshots.ts",
+          source: "configuration",
+        },
+      },
+      [journal]: {
+        class: "generated",
+        regenerate: { command: "bun rebuild-journal.ts", source: "catalog" },
+      },
+    });
+  } finally {
+    legacy.cleanup();
+  }
+});
+
+test("rebuilds changed predecessors and missing snapshots without renumbering", () => {
+  s.git("merge", "--abort");
+  s.git("mv", branchPath, nextPath);
+  s.git("mv", `${dir}/meta/002.json`, `${dir}/meta/004.json`);
+  s.commit("Reserve a later sequence number", {
+    [journal]: '["001_init.sql","004_feature.sql"]\n',
+  });
+  s.git("switch", "-q", "main");
+  const missingSnapshot = `${dir}/meta/003.json`;
+  s.git("rm", missingSnapshot);
+  s.commit("Leave the new integration snapshot to regenerate");
+  s.git("switch", "-q", "feature");
+  exit(s.gitTry("merge", "main"), 1);
+  exit(s.script("conflict-map.ts"), 0);
+
+  const result = s.script("migration-plan.ts");
+  exit(result, 0);
+  expect(JSON.parse(result.stdout)).toMatchObject([
+    {
+      moves: [],
+      regenerate: [journal, missingSnapshot, `${dir}/meta/004.json`],
+    },
+  ]);
+
+  s.git("checkout", "--theirs", journal);
+  runGenerator(result);
+  s.git("add", dir);
+  exit(s.script("record.ts", [journal, "regenerated"]), 0);
+  exit(s.script("check-resolution.ts"), 0);
+  expect(s.read(missingSnapshot)).toBe("resolved snapshot\n");
 });

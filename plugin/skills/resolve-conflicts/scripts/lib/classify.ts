@@ -172,6 +172,7 @@ export function migrationGroups(root: string): MigrationGroup[] {
 export function migrationClass(
   path: string,
   groups: readonly MigrationGroup[],
+  entries: readonly GeneratedEntry[],
 ) {
   for (const group of groups) {
     if (migrationName(group, path) !== null)
@@ -181,7 +182,7 @@ export function migrationClass(
         class: "generated" as const,
         regenerate:
           group.command === null
-            ? null
+            ? (regenerateFor(path, entries)?.regenerate ?? null)
             : {
                 command: group.command,
                 cwd: ".",

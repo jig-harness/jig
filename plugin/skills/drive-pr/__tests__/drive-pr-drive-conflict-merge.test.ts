@@ -120,36 +120,40 @@ describe("the merge a conflict-resolve pass leaves open", () => {
     }
   });
 
-  it("removes files left by a pass that already aborted its own merge", async () => {
-    const dir = conflictingTree();
-    gitIn(dir, "config", "status.showUntrackedFiles", "no");
-    const fixture = writeFixture(CONFLICTING, dir);
-    const launch = "20260101T000000Z-aaaaaaaa";
-    const r = await runDriveIn(
-      fixture.dir,
-      fixture.stateDir,
-      [
-        "--no-head-sync",
-        "--",
-        ...pass(
-          `${STAGES_THE_MERGE}; echo generated > snapshot.json; git merge --abort`,
-          1,
-        ),
-      ],
-      dir,
-      { env: { JIG_LAUNCH: launch, DRIVE_PR_CONFLICT_REPAIR_ROUNDS: "1" } },
-    );
-    const report = readRoundReport(fixture.stateDir, "999", launch, 0);
-    expect(report?.concluded).toContain(
-      "The conflict-resolution pass exited 1.",
-    );
-    expectSpawnExit({ ...r, stdout: null }, 9);
-    expect(mergeIsOpen(dir)).toBe(false);
-    expect(
-      gitIn(dir, "status", "--porcelain", "--untracked-files=normal").stdout,
-    ).toBe("");
-    expect(r.stderr).toContain("verified the worktree is clean");
-  });
+  it.each([true, false])(
+    "reports a pass that aborted its merge (untracked leftovers: %s)",
+    async (leavesUntracked) => {
+      const dir = conflictingTree();
+      gitIn(dir, "config", "status.showUntrackedFiles", "no");
+      const fixture = writeFixture(CONFLICTING, dir);
+      const launch = "20260101T000000Z-aaaaaaaa";
+      const r = await runDriveIn(
+        fixture.dir,
+        fixture.stateDir,
+        [
+          "--no-head-sync",
+          "--",
+          ...pass(
+            `${STAGES_THE_MERGE}; ${leavesUntracked ? "echo generated > snapshot.json; " : ""}git merge --abort`,
+            1,
+          ),
+        ],
+        dir,
+        { env: { JIG_LAUNCH: launch, DRIVE_PR_CONFLICT_REPAIR_ROUNDS: "1" } },
+      );
+      const report = readRoundReport(fixture.stateDir, "999", launch, 0);
+      expect(report?.concluded).toContain(
+        "The conflict-resolution pass exited 1.",
+      );
+      expectSpawnExit({ ...r, stdout: null }, 9);
+      expect(mergeIsOpen(dir)).toBe(false);
+      expect(
+        gitIn(dir, "status", "--porcelain", "--untracked-files=normal").stdout,
+      ).toBe("");
+      if (leavesUntracked)
+        expect(r.stderr).toContain("verified the worktree is clean");
+    },
+  );
 
   it("preserves untracked paths that predate the attempt", async () => {
     const dir = conflictingTree();
