@@ -10,4 +10,5 @@ release: patch
   account's reason in the receipt and the account view names what was
   skipped, and the host raises one notice naming the file, the skipped
   names and the accounts the machine file lists. Every other fault in the
-  file still closes every account.
+  accounts section or the document still closes every account; an invalid
+  `lanes` section does not change account weights.

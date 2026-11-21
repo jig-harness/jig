@@ -1943,7 +1943,7 @@ weights apply: every account's reason names the skipped names, and from the
 first tick that reads them the host raises one notice naming the file, the
 skipped names and the accounts the machine file lists. The notice goes
 where the host's own failures go (the first repository it owns with
-`notify` enabled whose turn is not failing), is told once for each set of
+`notify` enabled whose turn is not failing, else the first it owns with `notify` enabled), is told once for each set of
 skipped names wherever it is told (again after `renotify_after` while the
 set stands), and retires at the first tick that reads none. A host that
 owns no repository with `notify` has only the reasons. Because an account

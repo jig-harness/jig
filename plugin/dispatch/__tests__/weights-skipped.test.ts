@@ -219,4 +219,24 @@ describe("the notice of skipped account names", () => {
       "sent",
     ]);
   });
+
+  it("is told again at a new home after the file was fixed and the name came back", async () => {
+    const root = scratch();
+    const card = noticesCard(root);
+    const elsewhere = noticesCard(root);
+    const file = join(scratch(), "weights.local.yaml");
+    writeFileSync(file, "accounts: {a: 0, old: 3}");
+    const other: RepoTarget = {
+      path: "/other",
+      slug: "o/other",
+      defaultBranch: "main",
+    };
+    expect(await tick(file, card)).toEqual(["sent"]);
+    writeFileSync(file, "accounts: {a: 0}");
+    expect(await tick(file, elsewhere, { repo: other, home: false })).toEqual(
+      [],
+    );
+    writeFileSync(file, "accounts: {a: 0, old: 3}");
+    expect(await tick(file, elsewhere, { repo: other })).toEqual(["sent"]);
+  });
 });

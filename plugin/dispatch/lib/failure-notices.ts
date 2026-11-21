@@ -106,6 +106,9 @@ const RECEIPT =
 /** What the key of a host failure's notice starts with, in place of a repository's slug. */
 export const HOST_NOTICE = "host";
 
+/** What a skipped-names notice key starts with. */
+export const WEIGHTS_SKIP_KEY = `${HOST_NOTICE} weights skip `;
+
 /**
  * The notice keys of this host's own failures that stand: each row's, of
  * its repositories' turns and of its ticks, a quiet row's left out, and

@@ -62,6 +62,7 @@ import {
 import { type ActionBook, readFailures } from "../failures.ts";
 import {
   HOST_NOTICE,
+  WEIGHTS_SKIP_KEY,
   hostNoticeKeys,
   isFailureCause,
 } from "../failure-notices.ts";
@@ -72,9 +73,11 @@ import {
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
+  releaseOnEveryChannel,
   suppress,
   type Suppression,
 } from "../notice-records.ts";
+import { stateDb } from "../state.ts";
 import { unobservedTarget } from "../notices.ts";
 import { logNoticesRead } from "../notices-read.ts";
 import {
@@ -197,6 +200,24 @@ function prune(
       !s.lasting,
   );
   dropSuppressions(channel, gone, root);
+}
+
+/**
+ * A weights notice told at a repository that no longer notifies keeps its
+ * record there when the host's home moves; once the file no longer makes
+ * its key stand, its records go from every repository and channel.
+ */
+function retireStaleWeightsRecords(
+  report: RepoReport,
+  standing: ReadonlySet<string>,
+  hostSent: ReadonlyMap<string, Suppression>,
+  root: string,
+): void {
+  if (!report.records.every((r) => r.ok)) return;
+  const release = releaseOnEveryChannel(stateDb(root));
+  for (const key of hostSent.keys())
+    if (key.startsWith(WEIGHTS_SKIP_KEY) && !standing.has(key))
+      release.run(key);
 }
 
 /** The stage a cause is about, for its event row. */
@@ -626,6 +647,7 @@ function dueThere(
   const sent = readSuppressions(channel, repo.slug, root);
   const hostSent = readHostSuppressions(channel, HOST_NOTICE, root);
   prune(channel, report, standing, sent, root);
+  retireStaleWeightsRecords(report, standing, hostSent, root);
   const nowMs = currentMs();
   const all: Cause[] = [];
   for (const c of causes) {
