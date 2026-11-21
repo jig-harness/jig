@@ -183,6 +183,8 @@ export async function changed(
     key,
     state.records.filter((r) => r.record.repo === repo.slug),
     issue.updatedAt,
+    undefined,
+    issue.assignee?.name,
   );
   if (hold.kind !== "none") return { why: hold.why };
   let sessions: SessionsReport;
