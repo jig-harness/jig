@@ -59,35 +59,11 @@ export function planConditionalClaim(
 ): boolean {
   const stored = input.conditionalHolds?.find((hold) => hold.item === item.key);
   const latest = latestPickupFor(item.key, input.launches);
-  // A person who releases a conditional hold deletes its row; the pickup's
-  // waiting record then still names the condition, and it resumes like a cleared one.
-  const released =
-    stored === undefined &&
-    latest?.result === "waits" &&
-    latest.waitsFor?.condition !== undefined
-      ? latest.waitsFor.condition
-      : undefined;
-  if (stored === undefined && released === undefined) return false;
-  const wait: PersonPickupHold = stored ?? {
-    item: item.key,
-    by: "a person",
-    at: latest?.record.createdAt ?? "",
-    title: item.title,
-    url: null,
-    ...(released === undefined ? {} : { condition: released }),
-    settled: "cleared",
-  };
+  const wait = storedOrReleased(item, stored, latest);
+  if (wait === null) return false;
   if (wait.settled !== "cleared") return true;
   if (latest !== undefined && latest.record.createdAt > wait.at) return false;
-  if (held.kind === "unknown") {
-    plan.idleKeep.push(item.key);
-    plan.unplaced.push({
-      target: item.key,
-      record: "runtime",
-      reason: held.reason,
-    });
-    return true;
-  }
+  if (held.kind === "unknown") return keepUnplaced(item.key, plan, held.reason);
   const record = latest?.record;
   if (
     record === undefined ||
@@ -98,16 +74,9 @@ export function planConditionalClaim(
     return false;
   const pr = readLaunchPr(item, input.launches, input.sessions, input.prOpen);
   if (settledByPr(pr)) return true;
-  if (pr.read.kind === "unread") {
-    // An open pull request may already settle the pickup: wait for a tick that reads it.
-    plan.idleKeep.push(item.key);
-    plan.unplaced.push({
-      target: item.key,
-      record: "runtime",
-      reason: pr.read.why,
-    });
-    return true;
-  }
+  // An open pull request may already settle the pickup: wait for a tick that reads it.
+  if (pr.read.kind === "unread")
+    return keepUnplaced(item.key, plan, pr.read.why);
   const dependency = pickupConditionWords(wait.condition);
   const step = relaunchStep(item, latest, { ...input, dependency });
   if (step.kind === "relaunch") plan.actions.push(step.action);
@@ -146,5 +115,34 @@ function conditionNeed(
       `${wait.item} dependency, hold ${wait.at}`,
       reason,
     ),
+  };
+}
+
+function keepUnplaced(key: string, plan: PickupPlan, reason: string): true {
+  plan.idleKeep.push(key);
+  plan.unplaced.push({ target: key, record: "runtime", reason });
+  return true;
+}
+
+/** The stored hold, or one rebuilt from the waiting record of a hold a person released. */
+function storedOrReleased(
+  item: ClaimedItem,
+  stored: PersonPickupHold | undefined,
+  latest: ReturnType<typeof latestPickupFor>,
+): PersonPickupHold | null {
+  if (stored !== undefined) return stored;
+  // A person who releases a conditional hold deletes its row; the pickup's
+  // waiting record then still names the condition, and it resumes like a cleared one.
+  const condition =
+    latest?.result === "waits" ? latest.waitsFor?.condition : undefined;
+  if (condition === undefined) return null;
+  return {
+    item: item.key,
+    by: "a person",
+    at: latest?.record.createdAt ?? "",
+    title: item.title,
+    url: null,
+    condition,
+    settled: "cleared",
   };
 }
