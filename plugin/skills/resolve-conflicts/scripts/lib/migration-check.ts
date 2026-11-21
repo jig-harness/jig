@@ -33,16 +33,9 @@ function isJournalEntry(value: unknown): value is JournalEntry {
 
 function drizzleEntries(entries: unknown[]): JournalEntry[] | null {
   const result: JournalEntry[] = [];
-  let previousWhen = -Infinity;
   for (const [idx, entry] of entries.entries()) {
-    if (
-      !isJournalEntry(entry) ||
-      entry.idx !== idx ||
-      entry.when <= previousWhen
-    )
-      return null;
+    if (!isJournalEntry(entry) || entry.idx !== idx) return null;
     result.push(entry);
-    previousWhen = entry.when;
   }
   return result;
 }
@@ -77,53 +70,116 @@ function isRegular(stage: Stage | undefined): stage is Stage {
   return stage?.mode === "100644" || stage?.mode === "100755";
 }
 
+function readJournal(root: string, stage: Stage | undefined): Journal | null {
+  return isRegular(stage) ? decodeJournal(readBlob(root, stage.blob)) : null;
+}
+
+/**
+ * The journal the resolution must stage: the integration journal's names as
+ * committed, whatever their order, then every other staged migration in
+ * sequence order. Without an integration journal, every staged migration in
+ * sequence order.
+ */
+function expectedNames(
+  group: MigrationPlan["group"],
+  staged: Tree,
+  integration: { journal: Journal; tree: Tree } | null,
+): string[] {
+  const given = integration?.journal.names ?? [];
+  const listed = new Set(given);
+  const committed = new Set(
+    integration === null
+      ? []
+      : sources(group, integration.tree).map(({ path }) => path),
+  );
+  const rest = sources(group, staged)
+    .filter(({ path }) => !committed.has(path))
+    .map(({ path }) => posix.basename(path))
+    .filter((name) => !listed.has(name));
+  return [...given, ...rest];
+}
+
 function checkJournal(
   root: string,
   plan: MigrationPlan,
   staged: Tree,
-  committed: Stage | undefined,
+  integrationTree: Tree,
 ): Problem[] {
-  const files = sources(plan.group, staged);
+  const { group } = plan;
+  const files = sources(group, staged);
   const problems = duplicateSequences(files, "the staged tree");
-  const journal = staged.get(plan.group.journal);
-  const actual = isRegular(journal)
-    ? decodeJournal(readBlob(root, journal.blob))
-    : null;
-  if (
-    actual?.names.length !== files.length ||
-    files.some(({ path }, i) => posix.basename(path) !== actual.names[i])
-  )
+  const actual = readJournal(root, staged.get(group.journal));
+  const committed = integrationTree.get(group.journal);
+  const integration =
+    committed === undefined ? undefined : readJournal(root, committed);
+  if (integration === null) {
     problems.push({
-      path: plan.group.journal,
+      path: group.journal,
       message:
-        "migration journal must list each staged migration in sequence order: regenerate the journal and snapshots",
+        "cannot verify the committed integration journal: repair its format before resolving the sequence",
     });
-  const problem = committedJournalProblem(root, committed, actual);
+    return problems;
+  }
+  const expected = expectedNames(
+    group,
+    staged,
+    integration === undefined
+      ? null
+      : { journal: integration, tree: integrationTree },
+  );
+  if (!isDeepStrictEqual(actual?.names, expected))
+    problems.push({
+      path: group.journal,
+      message:
+        integration === undefined
+          ? "migration journal must list each staged migration in sequence order: regenerate the journal and snapshots"
+          : "migration journal must keep the integration journal's entries as committed, then list each other staged migration in sequence order: regenerate the journal and snapshots",
+    });
+  const stagedNames = new Set(files.map(({ path }) => posix.basename(path)));
+  const committedNames = new Set(
+    sources(group, integrationTree).map(({ path }) => posix.basename(path)),
+  );
+  for (const name of integration?.names ?? [])
+    if (committedNames.has(name) && !stagedNames.has(name))
+      problems.push({
+        path: posix.join(group.directory, name),
+        message:
+          "migration the integration journal lists is missing: preserve the committed migration",
+      });
+  const problem = timestampProblem(actual, integration);
   if (problem !== null)
-    problems.push({ path: plan.group.journal, message: problem });
+    problems.push({ path: group.journal, message: problem });
   return problems;
 }
 
-function committedJournalProblem(
-  root: string,
-  committed: Stage | undefined,
+/**
+ * Drizzle uses the applied journal's timestamps as the migration watermark.
+ * The integration entries are taken as committed, in their order and with
+ * their timestamps; each appended entry must be later than every one of
+ * them and than the entry before it.
+ */
+function timestampProblem(
   actual: Journal | null,
+  integration: Journal | undefined,
 ): string | null {
-  if (committed === undefined) return null;
-  const integration = isRegular(committed)
-    ? decodeJournal(readBlob(root, committed.blob))
-    : null;
-  if (integration === null)
-    return "cannot verify the committed integration journal: repair its format before resolving the sequence";
-
-  // Drizzle uses the applied journal's timestamp as the migration watermark.
-  // Preserve integration's prefix and require strictly ordered new entries.
-  const entries = integration.entries;
+  const given = integration?.entries ?? null;
   if (
-    entries !== null &&
-    !isDeepStrictEqual(entries, actual?.entries?.slice(0, entries.length))
+    given !== null &&
+    !isDeepStrictEqual(given, actual?.entries?.slice(0, given.length))
   )
     return "preserve the integration journal entries and append migrations after their timestamps";
+  const appended = actual?.entries?.slice(given?.length ?? 0) ?? [];
+  let previous = (given ?? []).reduce(
+    (latest, { when }) => Math.max(latest, when),
+    -Infinity,
+  );
+  for (const { when } of appended) {
+    if (when <= previous)
+      return given === null
+        ? "migration journal timestamps must increase strictly: regenerate the journal and snapshots"
+        : "preserve the integration journal entries and append migrations after their timestamps";
+    previous = when;
+  }
   return null;
 }
 
@@ -179,9 +235,7 @@ export function checkMigrations(
             "obsolete migration or snapshot still staged after renumbering",
         });
     checkSources(plan, staged, check);
-    check.problems.push(
-      ...checkJournal(root, plan, staged, integration.get(plan.group.journal)),
-    );
+    check.problems.push(...checkJournal(root, plan, staged, integration));
     checkOutputs(plan, staged, check);
   }
   return check;

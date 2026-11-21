@@ -44,7 +44,9 @@ keeps the base branch's series and moves the feature branch's migrations
 after it. The repository's own command rebuilds the journal and snapshots.
 The staged check compares the SQL and file mode at each required path to
 its committed input and checks the journal order, even when the conflict
-decision records a deletion.
+decision records a deletion. The base branch's journal is taken as
+committed, in its own order: only the migrations added after it must follow
+in sequence order.
 
 The skill detects the legacy Drizzle journal layout. For a command that
 rebuilds that layout, or to declare a different migration directory, set
