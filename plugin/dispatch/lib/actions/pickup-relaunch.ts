@@ -12,7 +12,11 @@
  * 3. the tree's head is still the one the plan read;
  *
  * then it admits an account under the pickup's own deadline and starts the
- * record. The tick writes nothing to the tracker: the item is already
+ * record. A lock-wait relaunch, of a pickup whose push the host's test lock
+ * held past its wait (`pickup-lock-wait.ts`), is relaunched once per source
+ * record rather than once per head, since its head has not moved, and the
+ * host's validation capacity holds it whatever `load.enforce` says
+ * (`lockWaitGauges`). The tick writes nothing to the tracker: the item is already
  * claimed, and the pass makes no second claim. A pending relaunch whose
  * launch got no answer is retried once under its own record, as a pickup's
  * is.
@@ -35,6 +39,7 @@ import {
   accountBlock,
   admitAccount,
   type ApplyState,
+  loadKindOf,
   outOfTime,
   replay,
   replayable,
@@ -42,6 +47,7 @@ import {
   timeLeftMs,
   waits,
 } from "./launch.ts";
+import { holdsReplay, VALIDATION_GAUGES } from "../load.ts";
 import { holdingRecords } from "./pickup-hold.ts";
 import { currentIso, currentMs } from "../../../shared/time.ts";
 
@@ -102,13 +108,15 @@ function recordsChanged(
     (r) =>
       r.record.id !== own &&
       r.record.item === item &&
-      (relaunch.dependency === undefined
-        ? r.record.relaunchOf !== undefined &&
-          r.record.relaunchHead === relaunch.head
-        : r.record.relaunchOf === relaunch.record),
+      r.record.relaunchOf !== undefined &&
+      (relaunch.dependency !== undefined || relaunch.lockWait === true
+        ? r.record.relaunchOf === relaunch.record
+        : r.record.relaunchHead === relaunch.head),
   );
   if (again !== undefined)
-    return `launch record ${again.record.id} already relaunched it at ${relaunch.head}`;
+    return relaunch.lockWait === true
+      ? `launch record ${again.record.id} already relaunched ${relaunch.record}`
+      : `launch record ${again.record.id} already relaunched it at ${relaunch.head}`;
   const other = holdingRecords(item, records).find((r) => r.record.id !== own);
   return other === undefined
     ? null
@@ -170,7 +178,7 @@ function relaunchRecord(
     vendor,
     configDir: slots.account.configDir,
     createdAt: currentIso(),
-    facts: `${relaunch.fault === undefined ? "stalled" : "host-fault"} pickup relaunch of ${source.id} at ${relaunch.head}`,
+    facts: `${relaunchKind(relaunch)} pickup relaunch of ${source.id} at ${relaunch.head}`,
     workspace: relaunch.workspace,
     replaces: null,
     attempts: [],
@@ -194,6 +202,7 @@ function relaunchRecord(
     "answered",
     "relaunchFault",
     "relaunchDependency",
+    "relaunchLockWait",
     "testLockWait",
     "releasedItems",
     "codexPassArgs",
@@ -202,6 +211,7 @@ function relaunchRecord(
   if (relaunch.fault !== undefined) record.relaunchFault = relaunch.fault;
   if (relaunch.dependency !== undefined)
     record.relaunchDependency = relaunch.dependency;
+  if (relaunch.lockWait === true) record.relaunchLockWait = true;
   // Admission judged the account by this tick's Codex opt-in, not the source's.
   return { ...record, ...codexLaunchFields(state.codexOptIn) };
 }
@@ -246,8 +256,40 @@ function relaunchedDetail(
   relaunch: PickupRelaunch,
   started: { detail: string },
 ): string {
-  const fault = relaunch.fault !== undefined;
-  return `the ${fault ? "host-fault" : "stalled"} pickup ${id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to ${fault ? "resume" : "push and record"} its work: ${started.detail}`;
+  const kind = relaunchKind(relaunch);
+  const to = {
+    stalled: "push and record",
+    "host-fault": "resume",
+    "lock-wait": "push and go on with",
+  }[kind];
+  return `the ${kind} pickup ${id} relaunched in its tree ${relaunch.workspace.path} at ${relaunch.head}, to ${to} its work: ${started.detail}`;
+}
+
+/** Which relaunch it is: of a stall, a host fault, or a push the host's test lock held. */
+function relaunchKind(
+  relaunch: PickupRelaunch,
+): "stalled" | "host-fault" | "lock-wait" {
+  if (relaunch.lockWait === true) return "lock-wait";
+  return relaunch.fault === undefined ? "stalled" : "host-fault";
+}
+
+/** Why the host's mandatory gauges hold a lock-wait relaunch's replay; `null` when they leave room. */
+function lockWaitHold(
+  state: ApplyState,
+  repo: string,
+  action: Action,
+  record: LaunchRecord,
+): string | null {
+  if (state.load === undefined) return null;
+  return holdsReplay(
+    state.load,
+    loadKindOf(action),
+    repo,
+    action.target,
+    (record.passTimeoutSec ?? 0) * 1000,
+    VALIDATION_GAUGES,
+    true,
+  );
 }
 
 /** Retry, once and under its own record, each pending relaunch of `repo` whose launch got no answer. */
@@ -277,12 +319,16 @@ async function retryPending(
       ...(record.relaunchFault === undefined
         ? {}
         : { fault: record.relaunchFault }),
+      ...(record.relaunchLockWait === true ? { lockWait: true as const } : {}),
     };
-    const blocked =
+    let blocked =
       ctx.serialUndecided ??
       (await changed(state, repo, ctx, item, relaunch, record.id)) ??
       (await accountBlock(state, record));
     const action = { target: item, stage: "pickup", relaunch } as Action;
+    // A lock-wait relaunch replays only into room the mandatory gauges still show.
+    if (blocked === null && relaunch.lockWait === true)
+      blocked = lockWaitHold(state, repo.slug, action, record);
     report.launches.push(await replay(state, record, action, blocked));
   }
 }

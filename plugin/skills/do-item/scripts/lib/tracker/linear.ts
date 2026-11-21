@@ -45,6 +45,7 @@ import {
 import * as lf from "./linear-facets.ts";
 import { linearDependencyState, queueOperations } from "./linear-queue.ts";
 import { namedState } from "./config-error.ts";
+import { LINEAR_CREATION_QUIET_MS } from "./assignment-window.ts";
 import {
   type FoundComment,
   type IssueComment,
@@ -77,14 +78,12 @@ export {
   httpTransport,
   LINEAR_API,
   LINEAR_TIMEOUT_MS,
-  LinearApiError,
-  type LinearTransport,
   resolveLinearToken,
   unwrapResponse,
 } from "./linear-transport.ts";
 import { LinearApiError, type LinearTransport } from "./linear-transport.ts";
+export { LinearApiError, type LinearTransport };
 import { isoFromMs, parseMs } from "../../../../../shared/time.ts";
-
 // ── Shape helpers ──────────────────────────────────────────────────────────
 
 export { labelNames } from "./linear-shapes.ts";
@@ -779,6 +778,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     adapter: "linear",
     team,
     commentAuthors: true,
+    creationQuietMs: LINEAR_CREATION_QUIET_MS,
     stateName: stateNameIn(states),
 
     async reach(signal) {

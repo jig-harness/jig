@@ -197,6 +197,25 @@ function describe(state: ValidationLoad, result: ValidationForecast): string {
   return `${ahead} runs ahead, about ${waited} min at ${concurrency} concurrent runs of ${minutes(runMs)} min, capacity ${Number(result.capacity.toFixed(2))} in a ${window}${short}${note}`;
 }
 
+/**
+ * A relaunch told to push at once reaches the lock without the pickup's usual
+ * delay, so its own kind is forecast arriving immediately.
+ */
+function arrivingAt(
+  measured: ValidationMeasurements,
+  kind: ValidationKind,
+  immediate: boolean,
+): ValidationMeasurements {
+  if (!immediate) return measured;
+  return {
+    ...measured,
+    kinds: {
+      ...measured.kinds,
+      [kind]: { ...measured.kinds[kind], timeToValidationMs: 0 },
+    },
+  };
+}
+
 /** Why a pass of `kind` in `repo` waits on validation capacity; `null` when it fits. */
 export function validationHold(
   load: ValidationLoad,
@@ -204,6 +223,7 @@ export function validationHold(
   kind: ValidationKind,
   pickupDeadlineMs: number,
   repo?: string,
+  immediate = false,
 ): string | null {
   // A launch setting the lock refuses fails validation whatever the lock's
   // occupancy, so it is judged before the occupancy reading.
@@ -214,7 +234,7 @@ export function validationHold(
   const state = {
     ...load,
     demand,
-    measured: measurementsFor(load.measured, repo),
+    measured: arrivingAt(measurementsFor(load.measured, repo), kind, immediate),
   };
   const deadline = kind === "pickup" ? pickupDeadlineMs : state.driveDeadlineMs;
   const own = forecast(state, kind, deadline, state.admittedRuns);

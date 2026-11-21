@@ -412,6 +412,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_RATE_LIMIT_WAIT` | Whole seconds, at most 86400 (a day); otherwise the default. How far off a reset of the forge's spent rate limit the drive waits for before it stops with [`FORGE_RATE_LIMITED`](../../protocol/drive-exits.md), which the dispatcher re-drives after the reset | `1800` |
 | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once) | `1` |
 | `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | Elapsed wait for required checks on the final commit, in ten-second units, independent of observation count (`0`: wait forever) | `180` (30 minutes) |
+| `DRIVE_PR_RELEASE_PROOF_ATTEMPTS` | Consecutive unreadable proof or recovery reads while the CI-hold removal's `releasing` record remains (`0`: stop on the first); the record remains for a later drive to reconcile | `3` |
 | `DRIVE_PR_CONVERGED_CI_MINUTES` | How long a drive that stopped `CONVERGED` watches the verified head's CI after its `converged` label write, which can start runs on it, before it parks `converged-ci` (`0`: write the label and watch nothing) | `30` |
 | `DRIVE_PR_FINAL_REGATE_LIMIT` | Re-gates in a row on one commit when the converged round's final status re-read disagrees with the round's own read, before the drive stops with exit `1` (`0`: stop on the first) | `3` |
 | `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with [`STALLED`](../../protocol/drive-exits.md) (`0`: off) | `2` |

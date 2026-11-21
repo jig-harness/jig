@@ -125,6 +125,8 @@ export interface PickupRelaunch {
   /** The host fault the pickup stopped on, when it did (`pickup-host-fault.ts`): the relaunch resumes it rather than only pushing it. */
   fault?: string;
   dependency?: string;
+  /** The pickup's push was refused only because its wait for the host's test lock ran out (`pickup-lock-wait.ts`): the relaunch pushes and goes on, and waits for the host's validation capacity. */
+  lockWait?: true;
 }
 
 /** `dispatch.stalled_relaunch`'s values. */

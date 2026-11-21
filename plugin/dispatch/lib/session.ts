@@ -152,7 +152,7 @@ function continuesClaim(
   return record.stewardResume !== undefined || record.relaunchOf !== undefined;
 }
 
-/** The fixed prompt of a stalled pickup's relaunch (`pickup-relaunch.ts`): push and record what the tree holds, under the earlier pass's claim; for a pickup stopped on a host fault, resume its work. */
+/** The fixed prompt of a stalled pickup's relaunch (`pickup-relaunch.ts`): push and record what the tree holds, under the earlier pass's claim; for a pickup stopped on a host fault, resume its work; for one whose push the host's test lock held, push and go on. */
 function relaunchLines(
   record: Pick<
     LaunchRecord,
@@ -161,12 +161,17 @@ function relaunchLines(
     | "relaunchHead"
     | "relaunchFault"
     | "relaunchDependency"
+    | "relaunchLockWait"
   >,
 ): string[] {
   if (record.relaunchOf === undefined) return [];
   if (record.relaunchDependency !== undefined)
     return [
       `This pass resumes the pickup ${record.relaunchOf} of ${record.item ?? ""} after its recorded dependency cleared. Its work so far is in this workspace's tree. The item is already claimed: make no second claim. Finish its work and record the result as do-item says.`,
+    ];
+  if (record.relaunchLockWait === true)
+    return [
+      `This pass continues the pickup ${record.relaunchOf} of ${record.item ?? ""}, whose push the repository's pre-push hook refused only because its wait for the host's test lock ran out; the dispatcher relaunched it now that the host's validation capacity has room. Its work is committed in this workspace's tree (at ${record.relaunchHead ?? "its head"}). The item is already claimed: make no second claim. Push the branch the way do-item's push step does (the hook runs again; never bypass it), then go on from where the work stands: its validation, the pre-PR review, its pull request and its drive, as do-item says. Should the lock wait run out again, follow do-item's pre-push protocol for it. Either way, record how it ended with one of the result commands below.`,
     ];
   if (typeof record.relaunchFault === "string")
     return [
@@ -232,6 +237,11 @@ function pickupPrompt(
 const UNWRITTEN_LINE =
   "If that command exits 4 (this host could not write the result), stop there: ask no question about the dispatcher's database or host; the dispatcher keeps the attempt and settles it itself.";
 
+/** The wait a pickup of one item records when the host's test lock held its push; a batch's pass, which is never relaunched, records failed instead. */
+function testLockLine(record: Pick<LaunchRecord, "id" | "token">): string {
+  return `- after your claim succeeded, with the work committed, the pre-push hook refused the push only because its wait for the host's test lock ran out (the lock's own "could not acquire lock" refusal, no test having run), and the retries do-item's pre-push protocol allows in this pass did not get through: ${resultCommand(record, "waits")} --reason test-lock; ask no question, the dispatcher relaunches the pickup in this tree to push and go on once the host's validation capacity admits it`;
+}
+
 /** How a pickup records its end, once. */
 function pickupResultLines(
   record: Pick<LaunchRecord, "id" | "token" | "batchItems">,
@@ -252,6 +262,7 @@ function pickupResultLines(
         ]
       : []),
     `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
+    ...(record.batchItems === undefined ? [testLockLine(record)] : []),
     `- you stopped short of that (another refusal, a question, a failure): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
     UNWRITTEN_LINE,
   ];
@@ -333,6 +344,7 @@ function pickupPassPrompt(
     | "relaunchHead"
     | "relaunchFault"
     | "relaunchDependency"
+    | "relaunchLockWait"
   >,
 ): string {
   return [

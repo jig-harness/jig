@@ -11,7 +11,9 @@ import { questionIn } from "./session.ts";
  * logging boundary. A follow-up that waits on an arm still pending is `arm
  * pending`, its reason naming the arm; a pass parked on the decision it
  * framed is `parked for a person`, its reason naming the decision's
- * question. Neither is a stage finishing badly.
+ * question. Neither is a stage finishing badly. A pickup that waits on the
+ * host's test lock is a limit's wall, as a rate limit's wait is: a host
+ * whose lock keeps running out shows as a recurring class.
  */
 export function sessionResultClass(
   result: SessionResult | null,
@@ -29,6 +31,12 @@ export function sessionResultClass(
     return {
       class: "arm pending",
       reason: `result waits: ${armWords(wait)} is still pending, as of the time it named`,
+    };
+  if (result === "waits" && wait?.reason === "test-lock")
+    return {
+      class: "quota wall",
+      reason:
+        "result waits: the host's test lock held its push past the pre-push hook's wait; it is relaunched in its tree once the host's validation capacity admits it",
     };
   if (result === "waits")
     return {

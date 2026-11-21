@@ -20,7 +20,12 @@ export interface ConditionalPickups {
 
 export function planConditionNeeds(input: PickupInput, plan: PickupPlan): void {
   for (const wait of input.conditionalHolds ?? []) {
-    if (wait.settled === "closed-unmerged")
+    // A hold whose item left the line (completed, deleted, reassigned) needs no one;
+    // with no claimed list read, keep it rather than drop a need.
+    const onLine =
+      input.claimed == null ||
+      input.claimed.some((item) => item.key === wait.item);
+    if (wait.settled === "closed-unmerged" && onLine)
       plan.actions.push(conditionNeed(input, wait, pickupHoldReason(wait)));
   }
 }
@@ -50,10 +55,27 @@ export function planConditionalClaim(
   held: Holding,
   settledByPr: (pr: LaunchPrReading) => boolean,
 ): boolean {
-  const wait = input.conditionalHolds?.find((hold) => hold.item === item.key);
-  if (wait === undefined) return false;
-  if (wait.settled !== "cleared") return true;
+  const stored = input.conditionalHolds?.find((hold) => hold.item === item.key);
   const latest = latestPickupFor(item.key, input.launches);
+  // A person who releases a conditional hold deletes its row; the pickup's
+  // waiting record then still names the condition, and it resumes like a cleared one.
+  const released =
+    stored === undefined &&
+    latest?.result === "waits" &&
+    latest.waitsFor?.condition !== undefined
+      ? latest.waitsFor.condition
+      : undefined;
+  if (stored === undefined && released === undefined) return false;
+  const wait: PersonPickupHold = stored ?? {
+    item: item.key,
+    by: "a person",
+    at: latest?.record.createdAt ?? "",
+    title: item.title,
+    url: null,
+    ...(released === undefined ? {} : { condition: released }),
+    settled: "cleared",
+  };
+  if (wait.settled !== "cleared") return true;
   if (latest !== undefined && latest.record.createdAt > wait.at) return false;
   if (held.kind === "unknown") {
     plan.idleKeep.push(item.key);
