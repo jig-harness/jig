@@ -338,4 +338,13 @@ test("rebuilds changed predecessors and missing snapshots without renumbering", 
   exit(s.script("record.ts", [journal, "regenerated"]), 0);
   exit(s.script("check-resolution.ts"), 0);
   expect(s.read(missingSnapshot)).toBe("resolved snapshot\n");
+
+  const preservedSnapshot = `${dir}/meta/002.json`;
+  s.write(preservedSnapshot, "overwritten integration snapshot\n");
+  s.git("add", preservedSnapshot);
+  exit(s.script("record.ts", [preservedSnapshot, "regenerated"]), 0);
+  exit(s.script("check-resolution.ts"), 1);
+  expect(s.script("check-resolution.ts").stdout).toContain(
+    `${preservedSnapshot}: integration snapshot was changed`,
+  );
 });

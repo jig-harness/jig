@@ -500,6 +500,25 @@ other_tool:
     expect(refused("[{check: Inspect, command: bun run gates}]")).toBe(false);
   });
 
+  test("resolve-conflicts validates sequenced migration runtime contracts", () => {
+    const refused = (migrations: string) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `resolve_conflicts:\n  sequenced_migrations: ${migrations}\n`,
+        }).report,
+      ).includes("rejected:resolve-conflicts");
+    expect(
+      refused(
+        "[{directory: db, journal: db/journal.json, snapshots: [db/meta/snapshot.json], command: bun run rebuild}]",
+      ),
+    ).toBe(true);
+    expect(
+      refused(
+        '[{directory: db, journal: db/journal.json, snapshots: ["db/meta/{sequence}.json"], command: bun run rebuild}]',
+      ),
+    ).toBe(false);
+  });
+
   test("the reflect skill's own validation refuses what it would refuse", () => {
     const refused = (reflection: string) =>
       ids(

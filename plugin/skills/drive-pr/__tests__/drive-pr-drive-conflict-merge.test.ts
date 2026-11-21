@@ -172,6 +172,21 @@ describe("the merge a conflict-resolve pass leaves open", () => {
     );
   });
 
+  it("preserves ignored paths that predate the attempt", async () => {
+    const dir = conflictingTree();
+    writeFileSync(join(dir, ".gitignore"), "before.ignored\n");
+    writeFileSync(join(dir, "before.ignored"), "keep me");
+    const r = await drive(
+      dir,
+      pass(`${STAGES_THE_MERGE}; echo generated > snapshot.json`, 1),
+    );
+    expectSpawnExit({ ...r, stdout: null }, 9);
+    expect(mergeIsOpen(dir)).toBe(false);
+    expect(gitIn(dir, "status", "--porcelain", "--ignored").stdout).toContain(
+      "!! before.ignored",
+    );
+  });
+
   it("does not reach the next pass of the budget", async () => {
     const dir = conflictingTree();
     const r = await drive(dir, pass(STAGES_THE_MERGE), "2");

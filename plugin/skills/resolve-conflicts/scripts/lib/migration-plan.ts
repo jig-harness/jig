@@ -116,10 +116,9 @@ function snapshotsFor(group: MigrationGroup, files: Source[]): string[] {
 function integrationSnapshots(
   group: MigrationGroup,
   integration: MigrationSide,
-  renumbering: boolean,
 ): Map<string, Stage | null> {
   const outputs = new Map<string, Stage | null>();
-  const existing = renumbering ? snapshotsFor(group, integration.files) : [];
+  const existing = snapshotsFor(group, integration.files);
   for (const path of existing) {
     const stage = integration.tree.get(path);
     if (stage !== undefined) outputs.set(path, stage);
@@ -166,11 +165,7 @@ function metadata(
   conflicted: string[],
 ): Pick<MigrationPlan, "outputs" | "regenerate" | "remove"> {
   const renumbering = moved.length > 0;
-  const integrationOutputs = integrationSnapshots(
-    group,
-    integration,
-    renumbering,
-  );
+  const integrationOutputs = integrationSnapshots(group, integration);
   const branchFiles = branchSnapshots(group, branch, pending);
   const branchOutputs = branchFiles.outputs.filter(
     (path) => !integrationOutputs.has(path),

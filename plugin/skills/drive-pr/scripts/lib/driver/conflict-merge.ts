@@ -114,10 +114,21 @@ async function listedFiles(
   const args = ["ls-files", "-z", "--others", "--exclude-standard"];
   if (phase === "before") args.push("--cached");
   const result = await git(args, options);
-  if (result.code === 0)
-    return new Set(result.stdout.split("\0").filter(Boolean));
+  if (result.code !== 0) {
+    console.error(
+      `PR #${pr}: git ls-files exited ${result.code} ${phase} the conflict-resolution pass: ${result.stderr.trim()}`,
+    );
+    return null;
+  }
+  // `--ignored` lists only ignored paths, so collect it separately rather than
+  // making a pre-existing ignored path look like pass-created cleanup.
+  const ignored = await git([...args, "--ignored"], options);
+  if (ignored.code === 0)
+    return new Set(
+      `${result.stdout}${ignored.stdout}`.split("\0").filter(Boolean),
+    );
   console.error(
-    `PR #${pr}: git ls-files exited ${result.code} ${phase} the conflict-resolution pass: ${result.stderr.trim()}`,
+    `PR #${pr}: git ls-files --ignored exited ${ignored.code} ${phase} the conflict-resolution pass: ${ignored.stderr.trim()}`,
   );
   return null;
 }
@@ -133,6 +144,10 @@ async function abortUnfinishedMerge(
     ["status", "--short", "--untracked-files=normal"],
     opts,
   );
+  if (held.code !== 0)
+    console.error(
+      `PR #${pr}: the merge inventory failed (git status exit ${held.code}): ${held.stderr.trim()}`,
+    );
   const abort = await git(["merge", "--abort"], opts);
   if (abort.code !== 0) {
     console.error(
@@ -149,10 +164,6 @@ async function abortUnfinishedMerge(
     return false;
   }
   console.error(`${left}; aborted it. It held:\n${held.stdout.trimEnd()}`);
-  if (held.code !== 0)
-    console.error(
-      `PR #${pr}: the merge inventory failed (git status exit ${held.code}): ${held.stderr.trim()}`,
-    );
   return true;
 }
 
