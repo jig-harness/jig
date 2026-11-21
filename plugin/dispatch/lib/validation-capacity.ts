@@ -205,7 +205,9 @@ function countsByRepository(
   for (const pass of finished.filter((own) => own.kind === kind)) {
     const repo = pass.repo ?? null;
     const count = attributed.get(pass)?.count ?? 0;
-    counts.set(repo, [...(counts.get(repo) ?? []), count]);
+    const own = counts.get(repo);
+    if (own) own.push(count);
+    else counts.set(repo, [count]);
   }
   return counts;
 }
