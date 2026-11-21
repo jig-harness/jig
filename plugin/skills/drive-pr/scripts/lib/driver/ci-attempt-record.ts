@@ -6,7 +6,7 @@ export async function recordCiAttempt(
   pr: string,
   action: "rerun" | "repair",
   detail: string,
-): Promise<void> {
+): Promise<boolean> {
   const result = await run(tsArgv(driveState, ["record-event", pr]), {
     stdin: JSON.stringify({ kind: "ci", cause: `${action}: ${detail}` }),
     stderr: "pipe",
@@ -16,4 +16,5 @@ export async function recordCiAttempt(
     console.error(
       `Could not record the CI ${action} in the ledger: ${result.stderr.trim()}`,
     );
+  return result.code === 0;
 }

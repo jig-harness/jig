@@ -140,7 +140,7 @@ describe("drive.ts loop control", () => {
         ": pass for 999; sleep 60",
       ],
       undefined,
-      { env: { DRIVE_PR_CI_REPAIR_ROUNDS: "1" } },
+      { env: { DRIVE_PR_CI_REPAIR_ROUNDS: "2" } },
     );
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toContain("the CI-repair pass failed");

@@ -77,6 +77,7 @@ import {
   type CiAction,
   boundedCiDetail,
   isOptionalCiActions,
+  retainedDiagnosis,
 } from "./ci-actions.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 import {
@@ -404,8 +405,10 @@ export function renderLedger(
   if (bytes(body) <= limit) return { body, ledger: l };
   // This is optional telemetry. It must not prevent the resumable control
   // record, its decisions, or the visible summary from fitting on the forge.
-  if ((l.ciActions ?? []).length > 0) {
-    l = { ...l, ciActions: [], cut: [...l.cut, "CI telemetry"] };
+  const ciActions = l.ciActions ?? [];
+  const diagnosis = retainedDiagnosis(ciActions);
+  if (ciActions.length > diagnosis.length) {
+    l = { ...l, ciActions: diagnosis, cut: [...l.cut, "CI telemetry"] };
     body = ledgerBody(l, true, writer);
     if (bytes(body) <= limit) return { body, ledger: l };
   }

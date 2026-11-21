@@ -366,7 +366,7 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
   [DRIVE_EXIT.PR_CONFLICTING, ["gates failed", "conflicting with its base"]],
   [DRIVE_EXIT.WORKTREE_UNCLEAN, ["gates failed", "worktree unclean"]],
   [DRIVE_EXIT.PASS_DEADLINE, ["gates failed", "pass deadline"]],
-  [DRIVE_EXIT.CI_REPAIR_SPENT, ["gates failed", "CI-repair passes spent"]],
+  [DRIVE_EXIT.CI_REPAIR_SPENT, ["gates failed", "CI repair unresolved"]],
   [
     DRIVE_EXIT.CI_INFRA_PERSISTED,
     ["gates failed", "CI failing on the infrastructure"],
