@@ -388,6 +388,21 @@ in the resolution report. An optional command supplements this review; a
 passing command does not establish that its prose obligation is satisfied.
 Fix violations, stage and record any manual changes, and repeat Step 5.
 
+For a base merge inside a drive, refresh the worktree's dependencies before
+running the validation plan. The command compares the staged resolution with
+the pre-merge branch, so it also sees dependency inputs Git merged cleanly.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/dependency-install.ts"
+```
+
+Keep the JSON outcome for the resolution and round reports. Record each
+attempted install's directory, command and outcome. If it fails, stop before
+validation or committing and name the dependency install failure and its
+diagnostic in the round report. Report a detection or configuration error
+as such if the install never started. If a repair changes staged dependency
+inputs, run the install check again before validation.
+
 Never conclude a merge that does not build. Run the repository's checks over
 the resolved tree:
 
@@ -414,6 +429,10 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git 
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-message.txt
 bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
 ```
+
+When Step 6 ran a dependency install, append its directory and command to
+the prepared commit message after `--commit-message` succeeds and before
+committing, so the resolution record carries the same evidence as the round.
 
 Run these commands in order, starting the next only after the preceding
 command exits `0`; a commit that exits `124` is finished as
