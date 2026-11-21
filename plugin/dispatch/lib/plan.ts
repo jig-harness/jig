@@ -137,6 +137,7 @@ export interface PlanInput {
   unclaimedAfterMs?: number;
   /** What tells a stalled pickup's finished work (`stalled-pr.ts`). */
   prOpen?: StalledPrInput;
+  conditionalHolds?: import("./person-pickup-holds.ts").PersonPickupHold[];
   /** Reads a stalled pickup's tree for the work it left (`pickup-relaunch.ts`). */
   trees?: TreeReader;
   nowMs: number;

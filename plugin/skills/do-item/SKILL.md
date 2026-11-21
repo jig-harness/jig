@@ -1959,6 +1959,17 @@ report. In such a pass:
   `failed`, because no step here finishes a partial claim. After a successful
   claim the item is this pass's: wait for the reset where the deadline
   allows, else record `failed` as for any other stop.
+- **A named dependency can hold a single-item pickup.** After the claim,
+  when the pickup must wait for a pull request in this repository to merge
+  or an item on its configured tracker to close, use the dispatcher's
+  `waits --until-merged <PR>` or `waits --until-closed <KEY>` result command
+  from the prompt. Name the dependency in the closing report and give the
+  line the next step. Quote GitHub item keys as in `--until-closed '#123'`.
+  The dispatcher keeps the claim and resumes the
+  pickup once the condition clears. It raises a need when the pull request
+  closes unmerged. When a person must choose whether to wait for a pull
+  request, name that option `Wait for #123 to merge` with the actual number
+  so choosing it places the same conditional hold.
 - **A claim the repository's preflight command refused** (exit `3` with
   `"why": "preflight"` and an `"updatedAt"` in the JSON) is not a failure
   of the pass. Nothing was written: record it with the `--refused` command

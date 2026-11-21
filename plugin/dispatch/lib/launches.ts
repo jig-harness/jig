@@ -94,7 +94,7 @@ import {
 import { latestPickups } from "./launch-pickups.ts";
 import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
 import { latestDeaths, witnessedState } from "./launch-recovery.ts";
-import { asResult } from "./launch-result.ts";
+import { rowResult } from "./launch-result.ts";
 import { isDrive } from "./launch-kind.ts";
 import type { SessionResult } from "./session-result-types.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
@@ -136,6 +136,7 @@ export interface LaunchRecord {
   relaunchHead?: string;
   /** For the relaunch of a pickup stopped on a fault of its host: that fault, which the relaunch's prompt names (`pickup-host-fault.ts`). */
   relaunchFault?: string;
+  relaunchDependency?: string;
   /** For the relaunch of a claimed pickup whose push the host's test lock held past its wait (`pickup-lock-wait.ts`): its prompt is to push and go on. */
   relaunchLockWait?: true;
   version: 1;
@@ -600,11 +601,7 @@ function answerOf(
   root: string,
 ): Omit<ReadRecord, "record" | "state"> {
   return {
-    result: asResult(
-      row.result,
-      row.result_until ?? null,
-      row.result_decision ?? null,
-    ),
+    result: rowResult(row),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),

@@ -124,6 +124,7 @@ export async function logEnded(
             current.result,
             current.result_until,
             current.result_decision,
+            current.result_wait,
           ),
           ...waitsOf(current),
           ...framedOf(current.result_decision),

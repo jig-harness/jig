@@ -74,24 +74,49 @@ function orderTracked(
   }
 }
 
-/** Plan one observed repository into its report. */
-export function planObserved(
+/** What `planRepo` plans the observed repository from. */
+type ObservedInput = Parameters<typeof planRepo>[3];
+
+/** The parts of the plan's input an observation may lack: each present only where it was read. */
+function optionalInputs(
   context: TickContext,
   observation: RepoObservation,
-): void {
+  onlyLabeled: boolean,
+): Partial<ObservedInput> {
+  const { tracked, forge } = observation;
+  const machine = context.options.machine;
+  return {
+    ...(observation.board === undefined ? {} : { board: observation.board }),
+    ...(tracked.conditionalHolds === undefined
+      ? {}
+      : { conditionalHolds: tracked.conditionalHolds }),
+    ...(tracked.partial === true ? { partial: true as const } : {}),
+    ...(observation.holders === undefined
+      ? {}
+      : { holders: observation.holders }),
+    ...(machine == null ? {} : { unclaimedAfterMs: machine.unclaimedAfterMs }),
+    ...(onlyLabeled ? { inScope: forge.inScope } : {}),
+    ...(observation.armsSettled === undefined
+      ? {}
+      : { armsSettled: observation.armsSettled }),
+  };
+}
+
+/** The plan's input for one observed repository. */
+function observedInput(
+  context: TickContext,
+  observation: RepoObservation,
+  onlyLabeled: boolean,
+): ObservedInput {
   const { opened, tracked, forge, ctx, claims, sessions } = observation;
-  const { repo, section, report } = opened;
-  orderTracked(context, observation);
-  const onlyLabeled = observation.labels?.onlyLabeled === true;
-  planRepo(context, repo.slug, report, {
+  const { repo, section } = opened;
+  return {
     slug: repo.slug,
     values: opened.values,
     root: repo.path,
-    ...(observation.board === undefined ? {} : { board: observation.board }),
     section,
     pickups: tracked.pickups,
     claimed: tracked.claimed,
-    ...(tracked.partial === true ? { partial: true as const } : {}),
     drives: observation.drives,
     merged: forge.merged,
     sessions,
@@ -99,41 +124,46 @@ export function planObserved(
     held: observation.held,
     serialized: afterWait(context, observation.serialized),
     shared: { host: ctx.host, drives: claims, owner: ctx.owner },
-    ...(observation.holders === undefined
-      ? {}
-      : { holders: observation.holders }),
-    ...(context.options.machine == null
-      ? {}
-      : { unclaimedAfterMs: context.options.machine.unclaimedAfterMs }),
-    ...(onlyLabeled ? { inScope: forge.inScope } : {}),
-    ...(observation.armsSettled === undefined
-      ? {}
-      : { armsSettled: observation.armsSettled }),
+    ...optionalInputs(context, observation, onlyLabeled),
     ...withStalledPr(observation, context.nowMs),
     ...withTrees(context, opened.stages.has("pickup")),
+  };
+}
+
+/** On the owner host, read the priorities ranking's inputs for the tick to rank once every repository is planned. */
+function preparePrioritiesOf(
+  context: TickContext,
+  observation: RepoObservation,
+): void {
+  const { opened, tracked } = observation;
+  const { repo, report } = opened;
+  if (!opened.owner) return;
+  const prepared = preparePriorities(report, {
+    slug: repo.slug,
+    path: repo.path,
+    defaultBranch: repo.defaultBranch,
+    scope: tracked.issueRepository ?? repo.slug,
+    pickups: tracked.pickups,
+    unplaced: report.unplaced,
+    trackerComplete: tracked.claimed !== null && tracked.partial !== true,
+    nowMs: context.nowMs,
+    enforce: context.options.machine?.priorities?.enforce === true,
+    ...deadlineField(context),
   });
-  if (onlyLabeled) report.inScope = [...forge.inScope];
-  // Weigh overlap after the priorities ranking so its tiers preserve that rank.
-  context.overlaps ??= [];
-  context.overlaps.push({ observation });
-  if (opened.owner) {
-    const prepared = preparePriorities(report, {
-      slug: repo.slug,
-      path: repo.path,
-      defaultBranch: repo.defaultBranch,
-      scope: tracked.issueRepository ?? repo.slug,
-      pickups: tracked.pickups,
-      unplaced: report.unplaced,
-      trackerComplete: tracked.claimed !== null && tracked.partial !== true,
-      nowMs: context.nowMs,
-      enforce: context.options.machine?.priorities?.enforce === true,
-      ...deadlineField(context),
-    });
-    if (prepared !== null) {
-      context.priorities ??= [];
-      context.priorities.push(prepared);
-    }
+  if (prepared !== null) {
+    context.priorities ??= [];
+    context.priorities.push(prepared);
   }
+}
+
+/** Plan the failure notices and rearm lock needs, held back with every other action. */
+function planFailing(
+  context: TickContext,
+  observation: RepoObservation,
+  onlyLabeled: boolean,
+): void {
+  const { opened, forge } = observation;
+  const { repo, report } = opened;
   // A failure on a held pull request, or one not known to be labelled, stands down with every other action.
   const failing = {
     actions: [
@@ -168,6 +198,29 @@ export function planObserved(
   );
   report.withheld = failing.withheld;
   report.actions.push(...failing.actions);
+}
+
+/** Plan one observed repository into its report. */
+export function planObserved(
+  context: TickContext,
+  observation: RepoObservation,
+): void {
+  const { opened, forge } = observation;
+  const { repo, report } = opened;
+  orderTracked(context, observation);
+  const onlyLabeled = observation.labels?.onlyLabeled === true;
+  planRepo(
+    context,
+    repo.slug,
+    report,
+    observedInput(context, observation, onlyLabeled),
+  );
+  if (onlyLabeled) report.inScope = [...forge.inScope];
+  // Weigh overlap after the priorities ranking so its tiers preserve that rank.
+  context.overlaps ??= [];
+  context.overlaps.push({ observation });
+  preparePrioritiesOf(context, observation);
+  planFailing(context, observation, onlyLabeled);
 }
 
 /**

@@ -1,4 +1,7 @@
-import { expect, it } from "bun:test";
+import { afterEach, expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   changed,
   leftBehindBusy,
@@ -12,7 +15,14 @@ import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { world, SLUG } from "./fixtures.ts";
 import { earlierRecord, dispatchState } from "./launch-fixtures.ts";
 const repo = { path: "/repo", slug: SLUG, defaultBranch: "main" };
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0))
+    rmSync(root, { recursive: true, force: true });
+});
 function guards() {
+  const root = mkdtempSync(join(tmpdir(), "batch-guards-"));
+  roots.push(root);
   const issue = {
     identifier: "#2",
     title: "task",
@@ -52,6 +62,7 @@ function guards() {
     }),
   } as unknown as PickupContext;
   const state = {
+    root,
     records: [],
     machine: {
       serve: [{ name: "Alex", forge: ["alex"], tracker: { github: "alex" } }],

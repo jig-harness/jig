@@ -161,10 +161,15 @@ function relaunchLines(
     | "relaunchOf"
     | "relaunchHead"
     | "relaunchFault"
+    | "relaunchDependency"
     | "relaunchLockWait"
   >,
 ): string[] {
   if (record.relaunchOf === undefined) return [];
+  if (record.relaunchDependency !== undefined)
+    return [
+      `This pass resumes the pickup ${record.relaunchOf} of ${record.item ?? ""} after its recorded dependency cleared. Its work so far is in this workspace's tree. The item is already claimed: make no second claim. Finish its work and record the result as do-item says.`,
+    ];
   if (record.relaunchLockWait === true)
     return [
       `This pass continues the pickup ${record.relaunchOf} of ${record.item ?? ""}, whose push the repository's pre-push hook refused only because its wait for the host's test lock ran out; the dispatcher relaunched it now that the host's validation capacity has room. Its work is committed in this workspace's tree (at ${record.relaunchHead ?? "its head"}). The item is already claimed: make no second claim. Push the branch the way do-item's push step does (the hook runs again; never bypass it), then go on from where the work stands: its validation, the pre-PR review, its pull request and its drive, as do-item says. Should the lock wait run out again, follow do-item's pre-push protocol for it. Either way, record how it ended with one of the result commands below.`,
@@ -254,6 +259,11 @@ function pickupResultLines(
     `- its pull request is open and the drive could not be armed here (the arm script answered spawn, which this pass cannot run, and no drive of the pull request is listed): record the same ${resultCommand(record, "done")} --pr <the pull request number>, and say in the closing report that the drive is unarmed, with the unstarted command`,
     `- no pull request was needed (a duplicate or work already made): ${resultCommand(record, "done")} --none "<why>"`,
     refused,
+    ...(record.batchItems === undefined
+      ? [
+          `- the pickup must wait for a named condition: ${resultCommand(record, "waits")} --until-merged <pr> or --until-closed '<item>'; ask no question. The dispatcher starts it again after the condition clears.`,
+        ]
+      : []),
     `- the tracker refused a request for its rate limit (a tracker script exited 5, naming the time it resets) before your claim of the item succeeded: ${resultCommand(record, "waits")} --until <that time>; ask no question, the dispatcher starts the item again after the reset`,
     ...(record.batchItems === undefined ? [testLockLine(record)] : []),
     `- you stopped short of that (another refusal, a question, a failure): ${resultCommand(record, "failed")}, with --decision <file> when you framed the question`,
@@ -336,6 +346,7 @@ function pickupPassPrompt(
     | "relaunchOf"
     | "relaunchHead"
     | "relaunchFault"
+    | "relaunchDependency"
     | "relaunchLockWait"
   >,
 ): string {
