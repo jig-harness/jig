@@ -251,11 +251,12 @@ export function setPersonPickupHold(
         })();
       // A released conditional hold that names the record to resume keeps its
       // row as cleared, so the pickup resumes whatever result it ended with.
+      // A hold whose dependency closed unmerged (2) is released the same way.
       db.query(
-        "UPDATE pickup_holds SET wait_cleared = 1 WHERE repo = ? AND item = ? AND wait_cleared = 0 AND wait_condition IS NOT NULL AND resume_record IS NOT NULL",
+        "UPDATE pickup_holds SET wait_cleared = 1 WHERE repo = ? AND item = ? AND wait_cleared IN (0, 2) AND wait_condition IS NOT NULL AND resume_record IS NOT NULL",
       ).run(slug, item);
       db.query(
-        "DELETE FROM pickup_holds WHERE repo = ? AND item = ? AND wait_cleared = 0",
+        "DELETE FROM pickup_holds WHERE repo = ? AND item = ? AND wait_cleared IN (0, 2)",
       ).run(slug, item);
       return true;
     },

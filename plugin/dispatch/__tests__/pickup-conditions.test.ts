@@ -372,3 +372,21 @@ it("keeps a released conditional hold that names its resume record as cleared", 
   if (!after.ok) throw new Error(after.failure.reason);
   expect(after.value.map((h) => h.item)).toEqual(["#13"]);
 });
+
+it("releases a conditional hold whose dependency closed unmerged", () => {
+  const w = world();
+  current = w;
+  const root = dispatchState(w);
+  const condition = { kind: "pr-merged", pr: 42 } as const;
+  const plain = { by: "a person", title: "t", url: null, condition };
+  expect(setPersonPickupHold(SLUG, "#15", plain, root).ok).toBe(true);
+  const held = personPickupHolds(SLUG, root);
+  if (!held.ok) throw new Error(held.failure.reason);
+  const hold = held.value.find((h) => h.item === "#15");
+  if (hold === undefined) throw new Error("hold missing");
+  expect(settlePickupHold(SLUG, hold, root, "closed-unmerged")).toBe(true);
+  expect(setPersonPickupHold(SLUG, "#15", null, root).ok).toBe(true);
+  const after = personPickupHolds(SLUG, root);
+  if (!after.ok) throw new Error(after.failure.reason);
+  expect(after.value.map((h) => h.item)).not.toContain("#15");
+});
