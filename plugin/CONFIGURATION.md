@@ -366,8 +366,9 @@ protection) still decide its lane:
    numbers before and after (with the same range operator), `pin` for a
    range made exact with a full version, `lockfile` when only lockfiles
    changed. A change inside a section other than the dependency sections,
-   a decrease, or a range change that moves the operator with the numbers
-   does not read. The branch, title and description are not read:
+   a hunk that does not show which section its lines sit in, a decrease, a
+   prerelease version, or a range change that moves the operator with the
+   numbers does not read. The branch, title and description are not read:
    they are text the bot or the upstream wrote. A manifest other than
    `package.json`, a dependency added or removed, or a range that is not a
    version does not read.
@@ -377,10 +378,14 @@ still be witnessed by the reviewer app's check run, so where
 `review.reviewer_app` names none, a person's approval is still the witness
 and the setting changes nothing for the approval requirement. The list is read from the default branch
 by the board, `jig ask` and the drive's merge-ready announcement alike,
-never from the pull request's own configuration. The commits and files are
-read from the pull request's own commit and file listings, pinned to the
-head, only for a pull request by a listed bot whose condition 8 nothing else
-satisfies; a pull request with a full page of either does not read whole.
+never from the pull request's own configuration; for a listed bot the
+announcement takes the reviewer app from the default branch too. The
+commits and files are read from the pull request's own commit and file
+listings, then the pull request is read again: the read counts only when
+its head and base are unchanged, and the three requests share one deadline.
+They are made only for a pull request by a listed bot whose condition 8
+nothing else satisfies and where a reviewer app is named; a pull request with
+a full page of either does not read whole.
 The dispatcher keeps the read between ticks, keyed by the head and the base
 commit, and the drive's announcement keeps it for the run.
 

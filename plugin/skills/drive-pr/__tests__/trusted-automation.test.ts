@@ -10,6 +10,7 @@ import {
   type AutomationFile,
   authorLogin,
   DEFAULT_TRUSTED_PATHS,
+  LISTING_PAGE,
   parseListings,
   type TrustedAuthor,
   trustedAutomationOf,
@@ -18,7 +19,11 @@ import {
   updateTypeOf,
 } from "../scripts/lib/trusted-automation.ts";
 import { ok, failed } from "../../../shared/outcome.ts";
-import type { ForgeFacts, ReadyRules } from "../scripts/lib/merge-ready.ts";
+import {
+  authorSatisfied,
+  type ForgeFacts,
+  type ReadyRules,
+} from "../scripts/lib/merge-ready.ts";
 import {
   AUTOMATION_CACHE_PREFIX,
   type AutomationCache,
@@ -333,7 +338,15 @@ describe("a listed bot's pull request is the repository's own only when every ru
       fact: "trusted automation renovate[bot]: same repository, 1 commit allowed, 1 file within its paths, minor update",
     });
     const unread = verdict(
-      { automation: { files: [manifest('+    "left-pad": "^1.0.0",')] } },
+      {
+        automation: {
+          files: [
+            manifest(
+              `${'@@ -9,7 +9,7 @@\n   "dependencies": {\n'}+    "left-pad": "^1.0.0",`,
+            ),
+          ],
+        },
+      },
       typed,
     );
     expect(unread.fact).toContain(
@@ -367,7 +380,11 @@ describe("the update type a manifest diff shows", () => {
     ],
     [
       "a dependency added",
-      [manifest('+    "left-pad": "^1.0.0",')],
+      [
+        manifest(
+          `${'@@ -9,7 +9,7 @@\n   "dependencies": {\n'}+    "left-pad": "^1.0.0",`,
+        ),
+      ],
       "added or removed",
     ],
     [
@@ -375,6 +392,12 @@ describe("the update type a manifest diff shows", () => {
       [bump("npm:x@1.0.0", "npm:x@1.0.1")],
       "not a version update",
     ],
+    [
+      "a hunk that does not show its section",
+      [manifest('-    "left-pad": "^1.0.0",\n+    "left-pad": "^1.0.1",')],
+      "does not show its section",
+    ],
+    ["a prerelease", [bump("^1.2.3-rc.1", "^1.2.3")], "not a version update"],
     [
       "a line that is not a key and its version",
       [manifest('-  "scripts": {')],
@@ -554,14 +577,32 @@ describe("the rules a review found open", () => {
     ).toBe(true);
   });
 
-  it("accepts a listing of the commit cap and refuses one past it", () => {
-    const many = Array.from({ length: 99 }, () => ({ sha: EARLIER }));
-    const read = parseListings(
-      [...many, { sha: HEAD }],
-      [{ filename: "pnpm-lock.yaml", status: "modified" }],
-      HEAD,
+  it("accepts a listing below the page and refuses one that fills it", () => {
+    const commits = (n: number) => [
+      ...Array.from({ length: n - 1 }, () => ({ sha: EARLIER })),
+      { sha: HEAD },
+    ];
+    const files = (n: number) =>
+      Array.from({ length: n }, () => ({
+        filename: "pnpm-lock.yaml",
+        status: "modified",
+      }));
+    expect(parseListings(commits(LISTING_PAGE - 1), files(1), HEAD).ok).toBe(
+      true,
     );
-    expect(read.ok).toBe(false);
+    expect(parseListings(commits(LISTING_PAGE), files(1), HEAD).ok).toBe(false);
+    expect(parseListings(commits(1), files(LISTING_PAGE - 1), HEAD).ok).toBe(
+      true,
+    );
+    expect(parseListings(commits(1), files(LISTING_PAGE), HEAD).ok).toBe(false);
+  });
+
+  it("refuses a file with an empty name or a status it does not know", () => {
+    const read = (file: Record<string, unknown>) =>
+      parseListings([{ sha: HEAD }], [file], HEAD).ok;
+    expect(read({ filename: "", status: "modified" })).toBe(false);
+    expect(read({ filename: "a", status: "mystery" })).toBe(false);
+    expect(read({ filename: "pnpm-lock.yaml", status: "modified" })).toBe(true);
   });
 });
 
@@ -579,7 +620,10 @@ describe("the kept read", () => {
       baseOid,
       ...over,
     }) as unknown as ForgeFacts;
-  const rules = { trustedAutomation: ok([entry()]) } as unknown as ReadyRules;
+  const rules = {
+    reviewerApp: "reviewer",
+    trustedAutomation: ok([entry()]),
+  } as unknown as ReadyRules;
   const kept = {
     head: BAD_HEAD,
     baseOid: BASE,
@@ -617,8 +661,33 @@ describe("the kept read", () => {
     expect(read?.ok).toBe(false);
   });
 
-  it("does not read at all where an approval or own association already satisfies condition 8", async () => {
+  it("does not read at all where an own association already satisfies condition 8", async () => {
     const own = forgeFacts(BASE, { authorAssociation: "MEMBER" });
     expect(await automationFor("o/r", own, rules, 5, cache())).toBeUndefined();
+  });
+
+  it("does not read at all where a qualifying approval already satisfies condition 8", async () => {
+    const approved = forgeFacts(BASE, {
+      reviews: [
+        {
+          author: "someone",
+          person: true,
+          association: "MEMBER",
+          state: "APPROVED",
+          commit: BAD_HEAD,
+        },
+      ],
+    });
+    expect(authorSatisfied(approved)).toBe(true);
+    expect(
+      await automationFor("o/r", approved, rules, 5, cache()),
+    ).toBeUndefined();
+  });
+
+  it("does not read where no reviewer app is named", async () => {
+    const none = { ...rules, reviewerApp: null } as unknown as ReadyRules;
+    expect(
+      await automationFor("o/r", forgeFacts(BASE), none, 5, cache()),
+    ).toBeUndefined();
   });
 });

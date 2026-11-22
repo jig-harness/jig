@@ -1,10 +1,10 @@
 /**
  * The forge read behind trusted automation (`trusted-automation.ts`): a
- * listed bot's pull request's commits and files, in one request pinned to
- * its head.
+ * listed bot's pull request's commits and files, pinned to its head and base.
  */
 import { isRecord } from "../../../../shared/guards.ts";
 import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import { currentMs } from "../../../../shared/time.ts";
 import { ghApiJson } from "./merge-facts.ts";
 import {
   authorSatisfied,
@@ -13,12 +13,10 @@ import {
 } from "./merge-ready.ts";
 import {
   type AutomationFacts,
+  LISTING_PAGE,
   parseListings,
   trustedEntryFor,
 } from "./trusted-automation.ts";
-
-/** Entries one listing page holds; a pull request listing as many does not read whole. */
-const PAGE = 100;
 
 /**
  * A pull request's commits and files at `head`, from the forge's listings of
@@ -33,32 +31,53 @@ export async function readAutomationFacts(
   slug: string | null,
   number: number,
   head: string,
+  baseOid: string,
   timeoutSec: number,
 ): Promise<Outcome<AutomationFacts, "unreadable">> {
-  if (!/^[0-9a-f]{40}$/.test(head))
-    return failed("unreadable", "the head is not a commit id");
+  if (!/^[0-9a-f]{40}$/.test(head) || !/^[0-9a-f]{40}$/.test(baseOid))
+    return failed("unreadable", "the head or the base is not a commit id");
   if (!Number.isSafeInteger(number) || number <= 0)
     return failed(
       "unreadable",
       "the pull request's number does not pass its form",
     );
   const repo = slug ?? "{owner}/{repo}";
-  const files = await ghApiJson(
-    [`repos/${repo}/pulls/${number}/files?per_page=${PAGE}`],
-    slug,
-    timeoutSec,
-    "pull files",
+  // One deadline covers the three requests: each gets what is left, and none
+  // starts after it.
+  const deadline = currentMs() + timeoutSec * 1000;
+  const get = (path: string, label: string) => {
+    const left = Math.floor((deadline - currentMs()) / 1000);
+    return left <= 0
+      ? Promise.resolve(
+          failed<"unreadable">(
+            "unreadable",
+            `the read's deadline ended before ${label}`,
+          ),
+        )
+      : ghApiJson([path], slug, left, label, label);
+  };
+  const files = await get(
+    `repos/${repo}/pulls/${number}/files?per_page=${LISTING_PAGE}`,
     "pull request files",
   );
   if (!files.ok) return files;
-  const commits = await ghApiJson(
-    [`repos/${repo}/pulls/${number}/commits?per_page=${PAGE}`],
-    slug,
-    timeoutSec,
-    "pull commits",
+  const commits = await get(
+    `repos/${repo}/pulls/${number}/commits?per_page=${LISTING_PAGE}`,
     "pull request commits",
   );
   if (!commits.ok) return commits;
+  // The listings are separate requests: they describe one comparison only
+  // while the pull request still has the same head and base afterwards.
+  const after = await get(`repos/${repo}/pulls/${number}`, "pull request");
+  if (!after.ok) return after;
+  const pull = isRecord(after.value) ? after.value : {};
+  const headSha = isRecord(pull.head) ? pull.head.sha : undefined;
+  const baseSha = isRecord(pull.base) ? pull.base.sha : undefined;
+  if (headSha !== head || baseSha !== baseOid)
+    return failed(
+      "unreadable",
+      "the pull request's head or base moved while its commits and files were read",
+    );
   return parseListings(commits.value, files.value, head);
 }
 
@@ -102,6 +121,9 @@ function keptOf(value: unknown, head: string, baseOid: string): Kept | null {
 export function needsAutomation(facts: ForgeFacts, rules: ReadyRules): boolean {
   const list = rules.trustedAutomation;
   return (
+    // With no reviewer app a person's approval is the review witness, so the
+    // exception cannot change the lane and the reads are not made.
+    rules.reviewerApp !== null &&
     list?.ok === true &&
     trustedEntryFor(facts.author, list.value) !== null &&
     facts.crossRepository === false &&
@@ -137,6 +159,7 @@ export async function automationFor(
     slug,
     facts.number,
     facts.head,
+    baseOid,
     timeoutSec,
   );
   if (read.ok && cache !== undefined)

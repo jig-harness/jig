@@ -420,7 +420,9 @@ const VERSION =
 
 function versionOf(text: string): Version | null {
   const m = VERSION.exec(text.trim());
-  if (m === null) return null;
+  // A prerelease sorts below its release and its numbers say nothing of
+  // that, so the policy does not classify one.
+  if (m === null || m[5] !== undefined) return null;
   const op = m[1] === "=" ? "" : (m[1] ?? "");
   return {
     op,
@@ -488,7 +490,12 @@ function changedPair(
   const name = m[3] ?? "";
   if (!NESTED.test(m[2] ?? ""))
     return failed("unread", `${name} is not inside a dependency section`);
-  if (section !== null && !DEPENDENCY_SECTIONS.has(section))
+  if (section === null)
+    return failed(
+      "unread",
+      `${name} sits in a hunk that does not show its section, so its containing object is not proven`,
+    );
+  if (!DEPENDENCY_SECTIONS.has(section))
     return failed(
       "unread",
       `${name} is in ${section}, not a dependency section`,
@@ -638,12 +645,25 @@ function compactPatch(patch: string): string {
     .join("\n");
 }
 
+/** The statuses the forge gives a file; another one does not establish which paths the file touches. */
+const FILE_STATUSES: ReadonlySet<string> = /* @__PURE__ */ new Set([
+  "added",
+  "removed",
+  "modified",
+  "renamed",
+  "copied",
+  "changed",
+  "unchanged",
+]);
+
 /** Why a file record's status and previous name do not read; `null` when they do. */
 function statusProblem(
   name: string,
   f: Record<string, unknown>,
 ): string | null {
-  if (typeof f.status !== "string") return `${name} has no status`;
+  if (name === "") return "a file of the listing has an empty name";
+  if (typeof f.status !== "string" || !FILE_STATUSES.has(f.status))
+    return `${name} has no status the policy knows`;
   const moved = f.status === "renamed" || f.status === "copied";
   return moved &&
     (typeof f.previous_filename !== "string" || f.previous_filename === "")

@@ -92,11 +92,18 @@ function trustedBot(
 
 /** Whether a pull request's drive is idle automation under `adoption`; a bot `pull_requests.trusted_automation` lists is never idle. */
 export function idleForAdoption(
-  pr: TroubleFacts & { author?: Author; labels?: readonly string[] },
+  pr: TroubleFacts & {
+    author?: Author;
+    labels?: readonly string[];
+    isCrossRepository?: boolean;
+  },
   adoption: Adoption | null,
   login: string | null,
 ): { automationIdle?: true } {
-  return idleAutomation(pr, ownAuthors(adoption, login), adoption?.trusted);
+  // A trusted bot is exempt from idleness only while its head is known to be
+  // in the repository, as first adoption requires.
+  const trusted = pr.isCrossRepository === false ? adoption?.trusted : [];
+  return idleAutomation(pr, ownAuthors(adoption, login), trusted);
 }
 
 /** The host's own authors, whose pull requests are never automation by their author: the adoption rule's, else the login the dispatcher reads the forge as. */

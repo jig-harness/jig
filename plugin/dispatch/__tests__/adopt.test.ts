@@ -374,6 +374,17 @@ describe("trusted automation and the adoption rule", () => {
     expect(idleAutomation(healthy, [], ["renovate[bot]"])).toEqual({});
   });
 
+  it("exempts a listed bot from idleness only while its head is known to be in the repository", async () => {
+    const { idleForAdoption } = await import("../lib/adopt.ts");
+    const listed = adoptionOf(section(["renovate[bot]"]), "drive-bot");
+    const { isCrossRepository: _own, ...unknown } = healthy;
+    expect(idleForAdoption(healthy, listed, null)).toEqual({});
+    for (const pr of [{ ...healthy, isCrossRepository: true }, unknown])
+      expect(idleForAdoption(pr, listed, null)).toEqual({
+        automationIdle: true,
+      });
+  });
+
   it("takes the listed bots from pull_requests.trusted_automation, and none from a list that does not read", () => {
     const read = (list: unknown) =>
       dispatchSection({

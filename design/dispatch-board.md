@@ -155,8 +155,9 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    `COLLABORATOR`), or a person approved it, or its author is
    [trusted automation](../GLOSSARY.md): a bot the default branch's
    `pull_requests.trusted_automation` lists, whose head is in the
-   repository, whose commits are all the bot's own (signed) or a listed
-   committer's, whose changed files are all within the entry's paths, and,
+   repository, whose commits are all the bot's own or a listed
+   committer's (each signed for its account unless the entry says
+   `signed: false`), whose changed files are all within the entry's paths, and,
    where the entry names update types, whose manifest diff shows one of
    them.
 9. It carries neither the `hold` label nor the

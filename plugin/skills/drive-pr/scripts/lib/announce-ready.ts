@@ -36,7 +36,11 @@ import {
 } from "./overlay.ts";
 import { ghCallTimeoutSeconds } from "./proc.ts";
 import { REVIEWER_CHECK } from "./status/evidence.ts";
-import { type TrustedList, trustedAutomationOf } from "./trusted-automation.ts";
+import {
+  type TrustedList,
+  trustedAutomationOf,
+  trustedEntryFor,
+} from "./trusted-automation.ts";
 import {
   type AutomationCache,
   automationFor,
@@ -57,6 +61,19 @@ function driveRules(): ReadyRules {
     reviewerCheck: REVIEWER_CHECK,
     ciHoldLabel: ciHoldLabelSetting() ?? null,
   };
+}
+
+/** The reviewer app the default branch's configuration names; `null` when it names none or does not read. */
+export function reviewerAppFromDefaultBranch(
+  config: string | null | undefined,
+): string | null {
+  if (typeof config !== "string") return null;
+  const values = attempt("invalid", "unparsed", () =>
+    parseConfigText(config, ".config/jig.yaml"),
+  );
+  if (!values.ok || !isRecord(values.value.review)) return null;
+  const app = values.value.review.reviewer_app;
+  return typeof app === "string" && app.trim() !== "" ? app.trim() : null;
 }
 
 /** The trusted automation list of the default branch's configuration text; one that does not read trusts nobody, with why. */
@@ -121,9 +138,17 @@ export async function announceReady(
     };
   const { facts, config } = live.value;
   const hold = holdLabel();
+  const trusted = trustedFromDefaultBranch(config);
+  const own = driveRules();
+  // What authorizes the exception for a listed bot comes from the default
+  // branch alone, so a pull request's own configuration cannot name the
+  // reviewer app whose check stands in for a person's approval.
+  const listed =
+    trusted.ok && trustedEntryFor(facts.author, trusted.value) !== null;
   const rules: ReadyRules = {
-    ...driveRules(),
-    trustedAutomation: trustedFromDefaultBranch(config),
+    ...own,
+    ...(listed ? { reviewerApp: reviewerAppFromDefaultBranch(config) } : {}),
+    trustedAutomation: trusted,
   };
   const automation = await automationFor(
     null,

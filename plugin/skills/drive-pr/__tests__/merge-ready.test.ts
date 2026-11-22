@@ -694,10 +694,11 @@ describe("condition 8 for trusted automation", () => {
     expect(authorCondition(r)?.fact).toContain("were not read");
   });
 
-  it("changes nothing where no reviewer app is named: a person's approval is still the witness", () => {
+  it("grants nothing where no reviewer app is named: a person's approval is the witness", () => {
     const r = at(bot(), { ...TRUSTED, reviewerApp: null });
     expect(r.lane).toBe("approve-first");
-    expect(authorCondition(r)?.met).toBe(true);
+    expect(authorCondition(r)?.met).toBe(false);
+    expect(authorCondition(r)?.fact).toContain("no reviewer app is named");
   });
 
   it("says why a bot is not trusted when the list does not read", () => {

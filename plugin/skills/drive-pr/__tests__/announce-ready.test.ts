@@ -134,6 +134,7 @@ async function dryRun(
     const answer = more.compare as { commits: unknown; files: unknown };
     writeFileSync(join(dir, "commits.json"), JSON.stringify(answer.commits));
     writeFileSync(join(dir, "files.json"), JSON.stringify(answer.files));
+    writeFileSync(join(dir, "head.txt"), f.head);
   }
   if (more.timeline !== undefined)
     writeFileSync(join(dir, "timeline.json"), JSON.stringify(more.timeline));
@@ -213,7 +214,8 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
 });
 
 describe("announce-merge-ready.ts and trusted automation", () => {
-  const LISTED = 'pull_requests:\n  trusted_automation: ["renovate[bot]"]\n';
+  const LISTED =
+    'pull_requests:\n  trusted_automation: ["renovate[bot]"]\nreview:\n  reviewer_app: example-review\n';
   let converged: Fixture & { head: string };
   let compare: unknown;
   /** A `gh` before the suite's own that answers the pull request's commit and file listings and keeps the path it was asked for. */
@@ -230,6 +232,9 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/files* ]]; then
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
   cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
+fi
+if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
+  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"}}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))"; exit 0
 fi
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
@@ -274,6 +279,21 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
+  });
+
+  it("does not read where the default branch names no reviewer app, whatever the checkout names", async () => {
+    const r = await dryRun(
+      converged,
+      board(converged.head, {
+        association: "NONE",
+        bot: "renovate",
+        config: 'pull_requests:\n  trusted_automation: ["renovate[bot]"]\n',
+      }),
+      { compare, driverEnv: viaWrapper() },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.compared).toBe(false);
+    expect(r.stdout).toContain("An approval is still required");
   });
 
   it("does not trust a bot only the pull request's own checkout lists", async () => {

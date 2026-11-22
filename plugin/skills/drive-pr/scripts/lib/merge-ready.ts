@@ -664,7 +664,13 @@ function trustOf(facts: MergeFacts, rules: ReadyRules): TrustVerdict | null {
       ? { met: false, fact: list.failure.reason }
       : null;
   const entry = trustedEntryFor(facts.author, list.value);
-  return entry === null ? null : trustVerdict(facts, entry);
+  if (entry === null) return null;
+  if (rules.reviewerApp === null)
+    return {
+      met: false,
+      fact: `${entry.login} is trusted automation, but no reviewer app is named, so a person's approval is the review witness and its commits and files were not read`,
+    };
+  return trustVerdict(facts, entry);
 }
 
 /** What every row and condition reads, worked out once. */
