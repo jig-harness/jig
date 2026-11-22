@@ -511,8 +511,9 @@ name the question they reply to, the author and the permission evidence
 recorded when they counted. Resolved parks keep their questions and answer
 metadata available from the drive ledger; source text is shown only when a
 bounded, cancellable read of the configured forge validates the receipt's
-repository and pull request, and older or legacy receipts say what is
-unavailable. The item key, branch and pull request join
+repository and pull request, compares it with the retained body hash, and
+identifies later edits; a legacy receipt without a hash is unverified, and
+older or unavailable receipts say what is unavailable. The item key, branch and pull request join
 addresses on evidence from the repository's own people, and a batch key
 joins its member items. Each join names its evidence. `jig ask` lists
 threads while they hold an open question, a merge action or a follow-up
@@ -592,8 +593,10 @@ prints. Entries keep stable IDs across reads, questions report their
 keys, classes and statuses, and answers identify their questions,
 authors and recorded permission evidence. Resolved parks remain in the thread
 while their bounded receipts remain; source text is retrieved only from the
-authorized forge scope, and the thread marks older, legacy, or unavailable
-receipt history as unavailable. Joins
+authorized forge scope, compared with the retained body hash, and later edits
+are identified without changing the retained verdict; a legacy receipt without
+a hash is unverified, while older or unavailable receipt history is marked
+unavailable. Joins
 expose evidence from the repository's own people, and a batch key joins
 its members into one thread. The waiting list contains only threads that
 still owe a person an answer or action, and hiding a thread writes

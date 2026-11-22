@@ -194,10 +194,10 @@ design round. The visitor-page work must:
   for that evidence.
 - Update navigation, search, Markdown twins, `llms.txt`, repository-link
   routing and anchor tests for moved content, so human and agent readers
-  receive the same message. The [Protocol maintainer reference's source and
-  route table](../tools/protocol/README.md#source-files-and-routes) defines
-  its renderer's source paths and chapter slugs; preserve that contract when
-  adding route mappings.
+  receive the same message. The [Protocol maintainer reference's rendering
+  overview](../tools/protocol/README.md#how-the-site-renders-the-chapters)
+  defines its renderer's source paths and chapter slugs; preserve that contract
+  when adding route mappings.
 - Run the parser tests, site types and build/link checks as well as
   `bun run gates`. `scripts/check-voice.ts` holds the visitor documents;
   review holds the copy in `website/src`. Advance the site's sync record
