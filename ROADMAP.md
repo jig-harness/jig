@@ -335,16 +335,14 @@ Guidelines' minimum contrast, in both modes.
 
 ### 41. Configurable issue attributes: type, priority and size
 
-Every issue records its type, priority and size (an epic needs no size).
-A team chooses where its tracker keeps each one: the tracker's own field, a
-custom field or labels. Each tracker Jig supports has a documented default,
-and the stores for Jira and Linear are built. Still to come are the live
-checks of those stores. A live check of the two ways to file a bug is also owed.
-Run the bug form, then run the report-bug script on a draft that carries the
-`bug` label, with an account and a CLI that can set an issue's type. Each should end with
-the native Bug type and no `bug` label. Last come a person's step on Jig's
-own organization, retiring GitHub's default Task issue type, and a person's
-acceptance of the scope or a waiver.
+Where a team's tracker holds them, an issue records its type, priority and
+size (an epic needs no size), and a new issue may enter triage before all
+three are set. A team chooses where its tracker keeps each one: the tracker's
+own field, a custom field or labels. Each tracker Jig supports has a
+documented default, and the stores for Jira and Linear are built. Live checks
+of those two stores remain open, and so does a live check of the two ways to
+file a bug. A person also retires GitHub's default Task issue type on Jig's
+own organization and accepts the scope or waives it.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
