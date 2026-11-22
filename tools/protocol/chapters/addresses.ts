@@ -154,7 +154,10 @@ export const ADDRESSES: Chapter = {
     "The stations an address names on a piece of work, what each one's key is, and the verbs `jig send` tells a station.",
   version: 1,
   status: "provisional",
-  planItems: [{ item: 42, epic: 541 }],
+  planItems: [
+    { item: 36, epic: 539 },
+    { item: 42, epic: 541 },
+  ],
   module: "tools/protocol/chapters/addresses.ts",
   sections: [
     { source: `${STATIONS_FILE}#STATIONS`, render: stationsTable },

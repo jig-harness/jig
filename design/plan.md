@@ -587,7 +587,9 @@ when a host stopped answering; one piece of work opens as one Work page,
 its item, pull request and follow-up under the same thread that `jig ask`
 prints. Entries keep stable IDs across reads, questions report their
 keys, classes and statuses, and answers identify their questions,
-authors and permissions. Resolved parks remain in the thread. Joins
+authors and permissions. Resolved parks remain in the thread while their
+bounded receipts remain, and the thread marks older receipt history as
+unavailable. Joins
 expose evidence from the repository's own people, and a batch key joins
 its members into one thread. The waiting list contains only threads that
 still owe a person an answer or action, and hiding a thread writes

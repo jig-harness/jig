@@ -28,10 +28,14 @@ through `jig ask` like any other interface and stores none of it. The thread is 
 - **An `answer` carries `inReplyTo`**, the id of the question it answers,
   who answered (their forge login), and the permission the forge gives that
   login on the repository, so a reader sees why the answer counted.
-- **An answered park stays in the thread.** The drive ledger keeps its
-  resolved parks (`resolvedParks[]`, the last 10), each with its key, its
-  question, when it was answered and when the re-arm cleared it. A question
-  and its answer are read from there once the re-arm has cleared the park.
+- **An answered park stays in the thread while its receipt remains.** The
+  drive ledger keeps the last 10 resolved parks (`resolvedParks[]`), each
+  with its key, question, answer metadata and when the re-arm cleared it.
+  The thread reads the answer's original forge record through its recorded
+  URL when it is available. Otherwise it shows the answer's author, time and
+  URL and says that its text is unavailable. A bounded ledger that has cut
+  older receipts says its resolved-park history is incomplete rather than
+  implying that none existed.
 - **One thread per piece of work.** A piece of work has an address at each
   station: `pickup@` for its item, `drive@` and `followup@` for its pull
   request. `ask` folds their entries into one thread by the piece of work's

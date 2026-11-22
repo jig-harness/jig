@@ -481,6 +481,10 @@ See the [distribution design](design/distribution.md).
 
 ## Later
 
+- **Command store for tracker facets.** A repository can supply a command for
+  a facet its tracker cannot represent in fields or labels, when a repository
+  names that need.
+
 - **Scheduled-failure reconciliation.** A reusable reconciler for
   [M11](modules/M11-process-observability/README.md)'s scheduled failures,
   on the tracker interface: one issue per cause, bounded recurrence comments

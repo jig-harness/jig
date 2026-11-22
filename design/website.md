@@ -194,8 +194,9 @@ design round. The visitor-page work must:
   for that evidence.
 - Update navigation, search, Markdown twins, `llms.txt`, repository-link
   routing and anchor tests for moved content, so human and agent readers
-  receive the same message. The Protocol renderer is owned by its design;
-  agree its source paths and chapter slugs before adding route mappings.
+  receive the same message. The [Protocol maintainer reference](../tools/protocol/README.md)
+  defines its renderer's source paths and chapter slugs; preserve that
+  contract when adding route mappings.
 - Run the parser tests, site types and build/link checks as well as
   `bun run gates`. `scripts/check-voice.ts` holds the visitor documents;
   review holds the copy in `website/src`. Advance the site's sync record
@@ -598,8 +599,8 @@ design round and visitor-page work under that epic, in this order:
    position or the status of a capability.
 3. **Build the visitor pages and site together.** Apply the accepted design
    to README.md, FACTORY.md, FEATURES.md and `website/src`, with the parser
-   and test changes above. The Protocol routes follow its design's
-   agreed contract. Keep planned autonomy claims in On the roadmap until
+   and test changes above. The Protocol routes follow the
+   [maintainer reference](../tools/protocol/README.md). Keep planned autonomy claims in On the roadmap until
    item 33's live-host checks are recorded. The direct audit path remains.
 
 When the page work finishes, remove item 52 from the plan and roadmap and

@@ -30,15 +30,18 @@ that can still change it. When the last one finishes, remove it from the
 chapter's list and mark the chapter stable. The gate checks that every
 listed item is open and that stable chapters name none.
 
-For a stable chapter, the gate compares the new chapter with the
-integration branch's data at the merge base. Each value is matched by
+For a chapter that was stable at the merge base, the gate compares the new
+chapter with the integration branch's data at that merge base. A chapter
+that becomes stable in this change has no stable baseline to compare yet.
+Each value is matched by
 its identifying fields, and each field is compared using the base's
 `comparedAs` rule. Within one version, additions may widen the contract
 and withdrawals leave tombstones. Breaking changes require a higher
 chapter version and a [breaking change note](../../changes/README.md)
 that identifies the chapter and explains what its readers need to do.
 To remove a stable chapter, declare it withdrawn in the chapter list
-with a higher version.
+with a higher version and add a `**Breaking:**` change-note entry that names
+the chapter's Markdown filename.
 
 ## The generator and its gate
 

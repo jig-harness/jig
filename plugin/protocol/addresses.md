@@ -1,6 +1,6 @@
 # Addresses and the verbs of `jig send`
 
-Version 1 · provisional, moved by [plan item 42](https://github.com/jig-harness/jig/issues/541)
+Version 1 · provisional, moved by [plan item 36](https://github.com/jig-harness/jig/issues/539), [plan item 42](https://github.com/jig-harness/jig/issues/541)
 
 An [address](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 names one [station](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)

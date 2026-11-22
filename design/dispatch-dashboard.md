@@ -43,7 +43,8 @@ whether they are built is decided once the first is in use
 ([Build order](#build-order)). It grows from today's
 dispatch dashboard and the line it serves
 ([dark-factory-dispatch.md § Control](dark-factory-dispatch.md#control-observe-record-report-steer),
-item 33), from [the address commands and operator skill](../plugin/protocol/addresses.md),
+item 33), from [the address commands](../plugin/protocol/addresses.md) and
+the [operator skill](../plugin/skills/operator/SKILL.md),
 and from the Jig plugin for Orca
 ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca),
 item 34). Most of its status per pull request is the
