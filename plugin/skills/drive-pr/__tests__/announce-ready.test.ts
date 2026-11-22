@@ -219,6 +219,7 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
 
 /** The wrapper's request log is the same sequence once per read the script makes. */
 function expectReads(calls: string[], sequence: string[]) {
+  expect(calls.length).toBeGreaterThanOrEqual(sequence.length);
   expect(calls.length % sequence.length).toBe(0);
   for (let i = 0; i < calls.length; i += sequence.length)
     expect(calls.slice(i, i + sequence.length)).toEqual(sequence);
@@ -247,8 +248,18 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
   cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
+  # A read makes two pull requests (opening, closing); an odd count is the closing one.
+  seen=$(grep -c '^pull$' "$DRIVE_PR_FIXTURES/calls.txt" 2>/dev/null || true)
   echo pull >> "$DRIVE_PR_FIXTURES/calls.txt"
-  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))" "\${FIXTURE_COMMITS:-$(jq length "$DRIVE_PR_FIXTURES/commits.json")}" "\${FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"; exit 0
+  commits="\${FIXTURE_COMMITS:-$(jq length "$DRIVE_PR_FIXTURES/commits.json")}"
+  changed="\${FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"
+  base="$(printf 'b%.0s' $(seq 40))"
+  if [ $(( \${seen:-0} % 2 )) -eq 1 ]; then
+    commits="\${FIXTURE_CLOSING_COMMITS:-$commits}"
+    changed="\${FIXTURE_CLOSING_CHANGED_FILES:-$changed}"
+    base="\${FIXTURE_CLOSING_BASE:-$base}"
+  fi
+  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$base" "$commits" "$changed"; exit 0
 fi
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
@@ -291,6 +302,8 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     expect(r.comparedPath).toBe(
       "repos/{owner}/{repo}/pulls/999/files?per_page=100",
     );
+    // One complete opening-to-closing sequence per read, cache reuse included.
+    expectReads(r.calls, ["pull", "files", "commits", "pull"]);
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
   });
@@ -319,7 +332,6 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     ["files", "100", "FIXTURE_CHANGED_FILES", ["pull"]],
     ["commits", "0", "FIXTURE_COMMITS", ["pull"]],
     ["commits", "100", "FIXTURE_COMMITS", ["pull"]],
-    ["files", "99", "FIXTURE_CHANGED_FILES", ["pull", "files"]],
   ] as const)(
     "reads %s with a count of %s as the page bounds say",
     async (_what, value, name, calls) => {
@@ -337,6 +349,68 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
       expectReads(r.calls, [...calls]);
     },
   );
+
+  it.each([
+    ["commits", { FIXTURE_COMMITS: "2" }, ["pull", "files", "commits"]],
+    [
+      "closing commit count",
+      { FIXTURE_CLOSING_COMMITS: "2" },
+      ["pull", "files", "commits", "pull"],
+    ],
+    [
+      "closing file count",
+      { FIXTURE_CLOSING_CHANGED_FILES: "2" },
+      ["pull", "files", "commits", "pull"],
+    ],
+    [
+      "closing base",
+      { FIXTURE_CLOSING_BASE: "c".repeat(40) },
+      ["pull", "files", "commits", "pull"],
+    ],
+  ] as const)(
+    "withholds the exception when the %s differs, after exactly the requests that reach it",
+    async (_what, env, calls) => {
+      const r = await dryRun(
+        converged,
+        board(converged.head, {
+          association: "NONE",
+          bot: "renovate",
+          config: LISTED,
+        }),
+        { compare, driverEnv: { ...viaWrapper(), ...env } },
+      );
+      expectSpawnExit(r, 0);
+      expect(r.stdout).toContain("An approval is still required");
+      expectReads(r.calls, [...calls]);
+    },
+  );
+
+  it("completes the read with last-allowed listings", async () => {
+    const n = 99;
+    const wide = {
+      commits: Array.from({ length: n }, (_, i) => ({
+        sha: i === n - 1 ? scratchClean.head : String(i).padStart(40, "a"),
+        author: { login: "renovate[bot]" },
+        committer: { login: "renovate[bot]" },
+        commit: { verification: { verified: true } },
+      })),
+      files: Array.from({ length: n }, (_, i) => ({
+        filename: `p${i}/pnpm-lock.yaml`,
+        status: "modified",
+      })),
+    };
+    const r = await dryRun(
+      converged,
+      board(converged.head, {
+        association: "NONE",
+        bot: "renovate",
+        config: LISTED,
+      }),
+      { compare: wide, driverEnv: viaWrapper() },
+    );
+    expectSpawnExit(r, 0);
+    expectReads(r.calls, ["pull", "files", "commits", "pull"]);
+  });
 
   it("refuses, not crashes, on a reviewer check pattern that does not compile", async () => {
     const r = await dryRun(

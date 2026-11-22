@@ -702,12 +702,12 @@ describe("structure, ranges, moves and counts", () => {
   const read = (files: AutomationFile[]) => updateTypeOf(files);
   it("reads a hunk that starts at the file's first line and shows its root object", () => {
     const patch =
-      '@@ -1,6 +1,6 @@\n {\n   "dependencies": {\n-    "a": "^1.0.0",\n+    "a": "^1.0.1",\n   }';
+      '@@ -1,4 +1,4 @@\n {\n   "dependencies": {\n-    "a": "^1.0.0",\n+    "a": "^1.0.1"\n   }';
     expect(read([manifest(patch)])).toEqual(ok("patch"));
   });
   it("reads a hunk whose context holds a whitespace-only line", () => {
     const patch =
-      '@@ -1,7 +1,7 @@\n {\n   "dependencies": {\n \n-    "a": "^1.0.0",\n+    "a": "^1.0.1",\n   }';
+      '@@ -1,5 +1,5 @@\n {\n   "dependencies": {\n \n-    "a": "^1.0.0",\n+    "a": "^1.0.1"\n   }';
     const listed = parseListings(
       [
         {
