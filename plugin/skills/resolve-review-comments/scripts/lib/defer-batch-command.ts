@@ -20,9 +20,10 @@ import {
   validateLabels,
 } from "../../../file-issue/scripts/lib/validate.ts";
 import { entryFacets, identityLine, textLine } from "../file-deferred.ts";
-import { recordedError } from "../defer-in-pr.ts";
+import { recordedError, recordedShapeError } from "../defer-in-pr.ts";
 import { configuredCatalog, entryLabels } from "./deferred-labels.ts";
 import { deferredEntries, withDeferredEntry } from "./deferred-section.ts";
+import { fileDriveDeferral } from "./drive-deferral.ts";
 import { ghPrBodyForge } from "./pr-body.ts";
 import { deferToTracker } from "./tracker-defer-batch.ts";
 
@@ -51,6 +52,15 @@ const USAGE =
 function required(value: string | undefined): string {
   if (!value) fail(2, USAGE);
   return value;
+}
+
+function recorded(a: Input) {
+  return {
+    type: a.type,
+    severity: a.severity,
+    category: a.category,
+    ...(a.size ? { size: a.size } : {}),
+  };
 }
 
 function commandInput(argv: string[], finding: string) {
@@ -109,18 +119,9 @@ function validateSource(a: Input, repo: string): void {
     );
 }
 
-function configured(a: Input) {
+function configured(a: Input, review: Review) {
   const values = readConfig();
-  const review = reviewConfig();
-  const refused = recordedError(
-    {
-      type: a.type,
-      severity: a.severity,
-      category: a.category,
-      ...(a.size ? { size: a.size } : {}),
-    },
-    review.taxonomy ?? {},
-  );
+  const refused = recordedError(recorded(a), review.taxonomy ?? {});
   if (refused) throw new JigError("deferral", refused);
   const adapter = (values.issue_tracker as { adapter?: string } | undefined)
     ?.adapter;
@@ -134,7 +135,7 @@ function configured(a: Input) {
       "deferral",
       "LINEAR_API_TOKEN (or LINEAR_API_KEY) is required for the Linear deferral adapter",
     );
-  return { config: deferralTrackerConfig(values, review, a.team), review };
+  return deferralTrackerConfig(values, review, a.team);
 }
 
 async function filingLabels(
@@ -193,10 +194,7 @@ function findingEntry(a: Input, finding: string) {
     withDeferredEntry("", {
       source: a.source,
       ...(a.fingerprint ? { fingerprint: a.fingerprint } : {}),
-      type: a.type,
-      severity: a.severity,
-      category: a.category,
-      ...(a.size ? { size: a.size } : {}),
+      ...recorded(a),
       reason: a.reason,
       finding: `${finding.trim()}${a.fix ? `\n\nFix sketch: ${a.fix}` : ""}`,
     }).body,
@@ -233,37 +231,28 @@ function printResult(
     );
 }
 
-export async function deferBatchCommand(
-  argv: string[],
+async function fileBatch(
+  a: Input,
   finding: string,
-): Promise<number> {
-  const a = commandInput(argv, finding);
-  const { config, review } = configured(a);
+  config: Config,
+  review: Review,
+  repo: string,
+  forge: ReturnType<typeof ghPrBodyForge>,
+  filedBy?: string,
+) {
   const taxonomy = readTaxonomy(consumerRoot(), config.taxonomy);
-  if (a.severity === "blocker")
-    console.error(
-      "defer-batch: WARNING — a blocker should be fixed or escalated, not deferred; filing at urgent priority so the finding is tracked.",
-    );
   const tracker = openTracker(config);
-  const forge = ghPrBodyForge();
-  const repo =
-    a["repo-slug"] ??
-    review.repo_slug ??
-    new URL((await forge.read(a.pr)).url).pathname
-      .split("/")
-      .slice(1, 3)
-      .join("/");
-  validateSource(a, repo);
   const { originating, origin } = await originFor(tracker, a.originating);
   const entry = findingEntry(a, finding);
   const facets = entryFacets(entry, facetsOf(config, consumerRoot()));
   if ("why" in facets) throw new JigError("deferral", facets.why);
-  const result = await deferToTracker(tracker, {
+  const text = `${entry.text}\n\nSeverity: ${a.severity}. Category: ${a.category}.\n\n${identityLine(entry)}\n${textLine(entry)}`;
+  return deferToTracker(tracker, {
     repo: a["repo-label"] ?? review.repo_label ?? repo,
     pr: a.pr,
     type: facets.type ?? a.type,
     identity: identityLine(entry),
-    text: `${entry.text}\n\nSeverity: ${a.severity}. Category: ${a.category}.\n\n${identityLine(entry)}\n${textLine(entry)}`,
+    text: filedBy === undefined ? text : `${text}\n\n${filedBy}`,
     category: a.category,
     priority: facets.priority ?? 3,
     size: facets.size,
@@ -284,6 +273,62 @@ export async function deferBatchCommand(
     originating,
     dryRun: a["dry-run"] ?? false,
   });
+}
+
+export async function deferBatchCommand(
+  argv: string[],
+  finding: string,
+): Promise<number> {
+  const a = commandInput(argv, finding);
+  const malformed = recordedShapeError(recorded(a));
+  if (malformed !== null) throw new JigError("deferral", malformed);
+  const review = reviewConfig();
+  const driven = process.env.DRIVE_PR_TARGET === a.pr && !a["dry-run"];
+  const config = driven ? undefined : configured(a, review);
+  if (a.severity === "blocker")
+    console.error(
+      "defer-batch: WARNING — a blocker should be fixed or escalated, not deferred; filing at urgent priority so the finding is tracked.",
+    );
+  const forge = ghPrBodyForge();
+  const repo =
+    a["repo-slug"] ??
+    review.repo_slug ??
+    new URL((await forge.read(a.pr)).url).pathname
+      .split("/")
+      .slice(1, 3)
+      .join("/");
+  validateSource(a, repo);
+  const file = (filedBy?: string) =>
+    fileBatch(
+      a,
+      finding,
+      config ?? configured(a, review),
+      review,
+      repo,
+      forge,
+      filedBy,
+    );
+  const result = driven
+    ? await fileDriveDeferral(
+        forge,
+        {
+          pr: a.pr,
+          source: a.source,
+          ...(a.fingerprint ? { fingerprint: a.fingerprint } : {}),
+          recorded: recorded(a),
+          reason: a.reason,
+          finding: a.fix
+            ? `${finding.trim()}\n\nFix sketch: ${a.fix}`
+            : finding,
+        },
+        file,
+      )
+    : await file();
+  if ("link" in result) {
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    console.error(`defer-batch: ${result.why}; recorded at ${result.link}`);
+    return 0;
+  }
   printResult(a, result);
   return 0;
 }
