@@ -2041,8 +2041,8 @@ is never dropped. Every comment the dispatcher writes keeps room for a
 summary entry of the causes that wait: a cause that still finds no room
 waits, which is not a failed delivery, so it neither backs off nor is
 raised as failing, and the summary, keyed by a digest of the keys it
-counts, says how many wait, of which kinds and which ones (as many as fit),
-and points to `jig ask --waiting` for those that need a person. Where the
+counts, says how many wait, of which kinds and which ones (as many as fit).
+Where the
 comment leaves no room for the summary, the waiting causes are not counted in
 it until room opens. A cause that
 waits has no suppression record, so it stays due every tick and goes in
