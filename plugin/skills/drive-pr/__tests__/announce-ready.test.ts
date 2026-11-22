@@ -434,15 +434,21 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
         ...listed,
         baseOid: "c".repeat(40),
       }),
-      secondFiles: [
-        { filename: "pnpm-lock.yaml", status: "modified" },
-        { filename: "src/evil.ts", status: "modified" },
-      ],
+      secondFiles: [{ filename: "src/evil.ts", status: "modified" }],
     });
-    // The fresh read ran, and its evidence, not the old one, decided: the
-    // original merge-now announcement is refused.
+    // The fresh read ran to its end (files, commits, closing pull), and its
+    // evidence, not the old one, decided: the announcement is refused.
     expectSpawnExit(r, 4);
-    expect(r.calls.filter((c) => c === "files")).toHaveLength(2);
+    expect(r.calls).toEqual([
+      "pull",
+      "files",
+      "commits",
+      "pull",
+      "pull",
+      "files",
+      "commits",
+      "pull",
+    ]);
     expect(r.stdout).toBe("");
   });
 
