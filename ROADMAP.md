@@ -343,8 +343,7 @@ checks of those stores, and a live check of the two ways to file a bug: the
 bug form, and the report-bug script run on a draft that carries the `bug` label,
 with an account and a CLI that can set an issue's type. Each should end with
 the native Bug type and no `bug` label. Where the type cannot be set, the
-script retries without it only when it can tell no issue was created, and says
-so; the reporter confirms an issue exists. Last come a person's step on Jig's
+script says so and the type is set when the issue is triaged. Last come a person's step on Jig's
 own organization, retiring GitHub's default Task issue type, and a person's
 acceptance of the scope or a waiver.
 
