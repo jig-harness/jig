@@ -104,6 +104,24 @@ function readDiagnosis(path: string): DiagnosisReport | null {
   }
 }
 
+const STOOD_DOWN = "the pass stood down: its gate no longer matched the task";
+/** Stand-downs one head may take before the drive stops instead of redispatching. */
+const STAND_DOWN_LIMIT = 2;
+
+const STAND_DOWN_COUNT = /\[stood down (\d+)x\]/;
+const standDownTag = (n: number) => (n > 0 ? ` [stood down ${n}x]` : "");
+
+/**
+ * Stand-downs already taken on `head`. Only the latest receipt per head is
+ * kept, so the count rides in that receipt and each reservation carries it on.
+ */
+async function standDownsAt(pr: string, head: string): Promise<number | null> {
+  const state = await readDriveState(pr, true);
+  if (state === null) return null;
+  const last = lastDiagnosisAt(state.ciActions ?? [], head);
+  return Number(STAND_DOWN_COUNT.exec(last?.detail ?? "")?.[1] ?? 0);
+}
+
 const INCOMPLETE =
   "The diagnosing repair report must contain a diagnosis and either a tracker issue key or the key of the filing it parked.";
 
@@ -211,10 +229,12 @@ async function reserveDiagnosis(
   head: string,
   names: string,
 ): Promise<boolean> {
+  const stoodDown = await standDownsAt(pr, head);
+  if (stoodDown === null) return false;
   const marked = await recordCiAttempt(
     pr,
     "repair",
-    `${diagnosisStartedPrefix(head)}CI-repair budget spent for ${names}`,
+    `${diagnosisStartedPrefix(head)}CI-repair budget spent for ${names}${standDownTag(stoodDown)}`,
   );
   if (!marked) return false;
   const mirrored = await mirrorNow(pr, true);
@@ -275,6 +295,14 @@ async function settleDiagnosis(
   receipt: Receipt,
 ): Promise<number | "continue"> {
   if (result.postPassMailboxExit !== null) {
+    if ("standDown" in receipt) {
+      const taken = (await standDownsAt(pr, head)) ?? 0;
+      await recordCiAttempt(
+        pr,
+        "repair",
+        `${diagnosisSkippedPrefix(head)}${STOOD_DOWN}${standDownTag(taken + 1)}`,
+      );
+    }
     if ("text" in receipt)
       await reportOutcome(
         pr,
@@ -312,10 +340,18 @@ async function standDownOutcome(
   pr: string,
   head: string,
 ): Promise<number | "continue"> {
+  const earlier = await standDownsAt(pr, head);
+  if (earlier === null) return 1;
+  if (earlier + 1 >= STAND_DOWN_LIMIT)
+    return await stopWithDiagnosis(
+      pr,
+      head,
+      `The diagnosing pass stood down ${earlier + 1} times on this head without diagnosing it.`,
+    );
   const recorded = await recordCiAttempt(
     pr,
     "repair",
-    `${diagnosisSkippedPrefix(head)}the pass stood down: its gate no longer matched the task`,
+    `${diagnosisSkippedPrefix(head)}${STOOD_DOWN}${standDownTag(earlier + 1)}`,
   );
   return recorded ? "continue" : 1;
 }

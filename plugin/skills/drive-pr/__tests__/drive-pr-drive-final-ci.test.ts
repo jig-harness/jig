@@ -225,6 +225,17 @@ describe("drive.ts loop control", () => {
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
   }, 20_000);
 
+  it("stops when the diagnosing pass keeps standing down on one head", async () => {
+    const r = await diagnoseOnRed(
+      diagnoseOnly(
+        `printf '%s\\n' '{"standDown":true}' > "$DRIVE_PR_CI_DIAGNOSIS_REPORT"`,
+      ),
+    );
+    expect(r.stderr.match(/Running diagnosing CI repair/g)?.length).toBe(2);
+    expect(r.stderr).toContain("stood down 2 times on this head");
+    expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
+  }, 20_000);
+
   const failingHead = (head: string) => ({
     threads: [],
     head,
