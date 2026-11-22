@@ -72,7 +72,8 @@ interface Script {
   rerunnable?: number[];
   rerunOk?: boolean;
   rerunIndeterminate?: boolean;
-  rerunUnsent?: boolean;
+  /** How many leading re-run requests are refused unsent (`true` is every one). */
+  rerunUnsent?: boolean | number;
   /** Each ownership read in turn, the last repeating; `true` and `false` read ours and lost. */
   owned?: boolean | Ownership[] | { afterMs: number; becomes: Ownership };
 }
@@ -126,7 +127,11 @@ function fake(script: Script) {
       asked.push(run);
       if (script.rerunIndeterminate === true)
         return { ok: false, indeterminate: true, detail: "timed out" };
-      if (script.rerunUnsent === true)
+      if (
+        script.rerunUnsent === true ||
+        (typeof script.rerunUnsent === "number" &&
+          asked.length <= script.rerunUnsent)
+      )
         return {
           ok: false,
           unsent: true,
@@ -525,13 +530,14 @@ describe("the converged CI watch", () => {
 
   it("releases an unsent re-run claim so the next poll can retry it", async () => {
     const f = fake({
-      ci: [failing(55), GREEN],
+      ci: [failing(55), failing(55), failing(55)],
       runs: [[workflowRun(55, 2_000)]],
-      rerunUnsent: true,
+      rerunUnsent: 1,
     });
-    const verdict = await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
-    expect(verdict.kind).toBe("stands");
-    expect(f.reruns.size).toBe(0);
+    await watchConvergedCi("999", HEAD, WRITTEN, f.deps);
+    // The first request was refused unsent, its claim released, and a later
+    // poll asked again for the same run.
+    expect(f.asked).toEqual([55, 55]);
   });
 
   it("parks when a requested re-run shows no new attempt a minute on", async () => {
