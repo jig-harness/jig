@@ -45,6 +45,7 @@ function board(
     association?: string;
     bot?: string;
     config?: string;
+    baseOid?: string;
   } = {},
 ): string {
   const contexts =
@@ -89,7 +90,7 @@ function board(
                 author: { __typename: "Bot", login: over.bot },
                 isCrossRepository: false,
                 baseRefName: "main",
-                baseRefOid: "b".repeat(40),
+                baseRefOid: over.baseOid ?? "b".repeat(40),
               }),
           isMergeQueueEnabled: false,
           labels: none,
@@ -343,7 +344,42 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     expectSpawnExit(r, 4);
     expect(r.boardCalls).toEqual(["board", "board"]);
     expect(r.posted).toBe(false);
+    expect(r.stdout).toBe("");
     expect(r.stderr).toContain("not witnessed on this head");
+  });
+
+  it("refuses when the second read no longer trusts the bot, though the review check still passes", async () => {
+    const listed = { association: "NONE", bot: "renovate", config: LISTED };
+    const r = await dryRun(converged, board(converged.head, listed), {
+      compare,
+      driverEnv: viaWrapper(),
+      secondBoard: board(converged.head, {
+        ...listed,
+        config: "pull_requests: {}\n",
+      }),
+    });
+    expectSpawnExit(r, 4);
+    expect(r.boardCalls).toEqual(["board", "board"]);
+    expect(r.posted).toBe(false);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).not.toContain("not witnessed on this head");
+  });
+
+  it("refuses, not reuses the kept read, when the base moves between the two board reads", async () => {
+    const listed = { association: "NONE", bot: "renovate", config: LISTED };
+    const r = await dryRun(converged, board(converged.head, listed), {
+      compare,
+      driverEnv: viaWrapper(),
+      secondBoard: board(converged.head, {
+        ...listed,
+        baseOid: "c".repeat(40),
+      }),
+    });
+    expectSpawnExit(r, 4);
+    expect(r.boardCalls).toEqual(["board", "board"]);
+    // The kept read is not reused for the moved base: the announcement refuses.
+    expect(r.posted).toBe(false);
+    expect(r.stdout).toBe("");
   });
 
   it("withholds the exception when the pull request's file count differs from the listing", async () => {
