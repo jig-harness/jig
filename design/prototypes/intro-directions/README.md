@@ -86,10 +86,13 @@ cannot reach 3:1 against both paper and green, which no palette colour can
 satisfy, and the figure never draws `emphasis`. That needs a change in
 motion-kit.
 
-To regenerate the frames from a motion-kit checkout that has the isometric kit:
+To regenerate the frames from a motion-kit checkout that has the isometric
+kit, run from the repository root and replace `$HOME/src/motion-kit` with the
+path of that checkout:
 
 ```sh
-node figure/render.mjs --motion-kit <path to motion-kit> --no-png
+cd design/prototypes/intro-directions
+node figure/render.mjs --motion-kit "$HOME/src/motion-kit" --no-png
 ```
 
 Without `--no-png` the script also renders a PNG contact sheet and needs Chromium:

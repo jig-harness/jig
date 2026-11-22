@@ -83,7 +83,9 @@ the same promise, then expands the line before its foundations.
 
 ### The home page's one loop
 
-The scenario is a small change to an existing repository: **“You want an
+The page opens on the delivery-line headline and checkable sentence, then
+steps through one item along the line. The scenario is a small change to an
+existing repository: **“You want an
 export to include a missing column.”** A ready work item states the column
 and its acceptance check. You start the pickup. An agent claims it, builds
 the change and opens a draft pull request. Review finds an edge case; the
@@ -271,7 +273,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README.md, FACTORY.md | planned message under item 52: factory headline, checkable sentence and the work-item scenario from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
+| `/` | README.md, FACTORY.md | planned message under item 52: delivery-line headline, checkable sentence and the stepped work-item scenario from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
