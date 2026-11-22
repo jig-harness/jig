@@ -591,16 +591,19 @@ when a host stopped answering; one piece of work opens as one Work page,
 its item, pull request and follow-up under the same thread that `jig ask`
 prints. Entries keep stable IDs across reads, questions report their
 keys, classes and statuses, and answers identify their questions,
-authors and recorded permission evidence. Resolved parks remain in the thread
-while their bounded receipts remain; source text is retrieved only from the
+authors and recorded permission evidence; a legacy receipt remains visible
+with its historical permission marked unknown. An unanswered park that ends
+has an expired question record. Resolved parks remain in the thread while
+their bounded receipts remain; source text is retrieved only from the
 authorized forge scope, compared with the retained body hash, and later edits
 are identified without changing the retained verdict; a legacy receipt without
-a hash is unverified, while older or unavailable receipt history is marked
-unavailable. Joins
+a hash is unverified, while absent, expired or cancelled source text leaves
+the retained metadata visible and its source unavailable, and older or
+unavailable receipt history is marked unavailable. Joins
 expose evidence from the repository's own people, and a batch key joins
-its members into one thread. The waiting list contains only threads that
-still owe a person an answer or action, and hiding a thread writes
-nothing to Jig. Orca's browser opens
+its members into one thread. The waiting list contains every eligible thread
+once, and removes it when its final need for a person's answer or action
+settles; hiding a thread writes nothing to Jig. Orca's browser opens
 the same page; and a phone through the front sees only the repositories
 its grant names. For a stage a person decides to build, stage 3 is done
 when the operator chat proposes and never sends and, once item 40 has

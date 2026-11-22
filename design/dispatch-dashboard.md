@@ -434,8 +434,8 @@ dashboard stores none of it. Its entries grow under `ask`'s version 1:
   receipt without that evidence reports the historical permission as unknown.
 - **An answered park stays.** The ledger keeps recent resolved parks
   (`resolvedParks[]`), so a park stays in the thread after the re-arm clears
-  it. Count-based retention keeps a fresh batch whole, but byte-limit trimming
-  can retain only part of that batch or none of it; the thread marks that
+  it. Count-based retention can evict older receipts, and byte-limit trimming
+  can retain only part of a batch or none of it; either eviction marks that
   history incomplete. It reads source text only from the configured forge after
   validating the receipt URL's repository and pull request, compares it with
   the retained body hash, and shows later edits as later than the retained
