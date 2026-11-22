@@ -131,7 +131,8 @@ async function dryRun(
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
   writeFileSync(join(dir, "board.json"), answer);
-  rmSync(join(dir, "calls.txt"), { force: true });
+  for (const name of ["calls.txt", "other-calls.txt", "last-commits-path.txt"])
+    rmSync(join(dir, name), { force: true });
   if (more.compare !== undefined) {
     const answer = more.compare as { commits: unknown; files: unknown };
     writeFileSync(join(dir, "commits.json"), JSON.stringify(answer.commits));
@@ -174,6 +175,12 @@ async function dryRun(
     calls: existsSync(join(dir, "calls.txt"))
       ? readFileSync(join(dir, "calls.txt"), "utf8").trim().split("\n")
       : [],
+    others: existsSync(join(dir, "other-calls.txt"))
+      ? readFileSync(join(dir, "other-calls.txt"), "utf8").trim().split("\n")
+      : [],
+    commitsPath: existsSync(join(dir, "last-commits-path.txt"))
+      ? readFileSync(join(dir, "last-commits-path.txt"), "utf8")
+      : null,
     comparedPath: existsSync(join(dir, "last-compare-path.txt"))
       ? readFileSync(join(dir, "last-compare-path.txt"), "utf8")
       : null,
@@ -218,12 +225,9 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
   });
 });
 
-/** The wrapper's request log is the same sequence once per read the script makes. */
+/** A refused read is not kept, so the dry run's two Ready evaluations each make the sequence once, and no more. */
 function expectReads(calls: string[], sequence: string[]) {
-  expect(calls.length).toBeGreaterThanOrEqual(sequence.length);
-  expect(calls.length % sequence.length).toBe(0);
-  for (let i = 0; i < calls.length; i += sequence.length)
-    expect(calls.slice(i, i + sequence.length)).toEqual(sequence);
+  expect(calls).toEqual([...sequence, ...sequence]);
 }
 
 describe("announce-merge-ready.ts and trusted automation", () => {
@@ -245,6 +249,7 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/files* ]]; then
   cat "$DRIVE_PR_FIXTURES/files.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
+  printf '%s' "$2" > "$DRIVE_PR_FIXTURES/last-commits-path.txt"
   echo commits >> "$DRIVE_PR_FIXTURES/calls.txt"
   cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
 fi
@@ -252,18 +257,19 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
   # A read makes two pull requests (opening, closing); an odd count is the closing one.
   seen=$(grep -c '^pull$' "$DRIVE_PR_FIXTURES/calls.txt" 2>/dev/null || true)
   echo pull >> "$DRIVE_PR_FIXTURES/calls.txt"
-  commits="\${FIXTURE_COMMITS:-$(jq length "$DRIVE_PR_FIXTURES/commits.json")}"
-  changed="\${FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"
-  base="\${FIXTURE_BASE:-$(printf 'b%.0s' $(seq 40))}"
-  head="\${FIXTURE_HEAD:-$(cat "$DRIVE_PR_FIXTURES/head.txt")}"
+  commits="\${DRIVE_PR_FIXTURE_COMMITS:-$(jq length "$DRIVE_PR_FIXTURES/commits.json")}"
+  changed="\${DRIVE_PR_FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"
+  base="\${DRIVE_PR_FIXTURE_BASE:-$(printf 'b%.0s' $(seq 40))}"
+  head="\${DRIVE_PR_FIXTURE_HEAD:-$(cat "$DRIVE_PR_FIXTURES/head.txt")}"
   if [ $(( \${seen:-0} % 2 )) -eq 1 ]; then
-    head="\${FIXTURE_CLOSING_HEAD:-$head}"
-    commits="\${FIXTURE_CLOSING_COMMITS:-$commits}"
-    changed="\${FIXTURE_CLOSING_CHANGED_FILES:-$changed}"
-    base="\${FIXTURE_CLOSING_BASE:-$base}"
+    head="\${DRIVE_PR_FIXTURE_CLOSING_HEAD:-$head}"
+    commits="\${DRIVE_PR_FIXTURE_CLOSING_COMMITS:-$commits}"
+    changed="\${DRIVE_PR_FIXTURE_CLOSING_CHANGED_FILES:-$changed}"
+    base="\${DRIVE_PR_FIXTURE_CLOSING_BASE:-$base}"
   fi
   printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$head" "$base" "$commits" "$changed"; exit 0
 fi
+echo "$1 $2" >> "$DRIVE_PR_FIXTURES/other-calls.txt"
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
     );
@@ -307,6 +313,14 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     // Exactly one sequence: the dry run's second check reuses the first read.
     expect(r.calls).toEqual(["pull", "files", "commits", "pull"]);
+    expect(r.commitsPath).toBe(
+      `repos/{owner}/{repo}/pulls/999/commits?per_page=${LISTING_PAGE}`,
+    );
+    // Both Ready observations read the forge: the second reuses the kept
+    // automation read, not the Ready facts.
+    expect(
+      r.others.filter((c) => c === "api graphql").length,
+    ).toBeGreaterThanOrEqual(2);
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
   });
@@ -321,7 +335,7 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
       }),
       {
         compare,
-        driverEnv: { ...viaWrapper(), FIXTURE_CHANGED_FILES: "2" },
+        driverEnv: { ...viaWrapper(), DRIVE_PR_FIXTURE_CHANGED_FILES: "2" },
       },
     );
     expectSpawnExit(r, 0);
@@ -331,10 +345,10 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
   });
 
   it.each([
-    ["files", "0", "FIXTURE_CHANGED_FILES", ["pull"]],
-    ["files", String(LISTING_PAGE), "FIXTURE_CHANGED_FILES", ["pull"]],
-    ["commits", "0", "FIXTURE_COMMITS", ["pull"]],
-    ["commits", String(LISTING_PAGE), "FIXTURE_COMMITS", ["pull"]],
+    ["files", "0", "DRIVE_PR_FIXTURE_CHANGED_FILES", ["pull"]],
+    ["files", String(LISTING_PAGE), "DRIVE_PR_FIXTURE_CHANGED_FILES", ["pull"]],
+    ["commits", "0", "DRIVE_PR_FIXTURE_COMMITS", ["pull"]],
+    ["commits", String(LISTING_PAGE), "DRIVE_PR_FIXTURE_COMMITS", ["pull"]],
   ] as const)(
     "reads %s with a count of %s as the page bounds say",
     async (_what, value, name, calls) => {
@@ -354,27 +368,31 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
   );
 
   it.each([
-    ["opening head", { FIXTURE_HEAD: "d".repeat(40) }, ["pull"]],
-    ["opening base", { FIXTURE_BASE: "c".repeat(40) }, ["pull"]],
+    ["opening head", { DRIVE_PR_FIXTURE_HEAD: "d".repeat(40) }, ["pull"]],
+    ["opening base", { DRIVE_PR_FIXTURE_BASE: "c".repeat(40) }, ["pull"]],
     [
       "closing head",
-      { FIXTURE_CLOSING_HEAD: "d".repeat(40) },
+      { DRIVE_PR_FIXTURE_CLOSING_HEAD: "d".repeat(40) },
       ["pull", "files", "commits", "pull"],
     ],
-    ["commits", { FIXTURE_COMMITS: "2" }, ["pull", "files", "commits"]],
+    [
+      "commits",
+      { DRIVE_PR_FIXTURE_COMMITS: "2" },
+      ["pull", "files", "commits"],
+    ],
     [
       "closing commit count",
-      { FIXTURE_CLOSING_COMMITS: "2" },
+      { DRIVE_PR_FIXTURE_CLOSING_COMMITS: "2" },
       ["pull", "files", "commits", "pull"],
     ],
     [
       "closing file count",
-      { FIXTURE_CLOSING_CHANGED_FILES: "2" },
+      { DRIVE_PR_FIXTURE_CLOSING_CHANGED_FILES: "2" },
       ["pull", "files", "commits", "pull"],
     ],
     [
       "closing base",
-      { FIXTURE_CLOSING_BASE: "c".repeat(40) },
+      { DRIVE_PR_FIXTURE_CLOSING_BASE: "c".repeat(40) },
       ["pull", "files", "commits", "pull"],
     ],
   ] as const)(
@@ -420,7 +438,12 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     expectSpawnExit(r, 0);
     expect(r.calls).toEqual(["pull", "files", "commits", "pull"]);
-    expect(r.comparedPath).toContain(`per_page=${LISTING_PAGE}`);
+    expect(r.comparedPath).toBe(
+      `repos/{owner}/{repo}/pulls/999/files?per_page=${LISTING_PAGE}`,
+    );
+    expect(r.commitsPath).toBe(
+      `repos/{owner}/{repo}/pulls/999/commits?per_page=${LISTING_PAGE}`,
+    );
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
   });

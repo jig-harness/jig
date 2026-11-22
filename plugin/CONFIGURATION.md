@@ -315,8 +315,8 @@ produce no warning. A failed history or configured catalog read stops planning.
 
 ### Trusted automation
 
-A dependency bot's pull request (Renovate, Dependabot) is an outside
-author's to the Ready predicate: its association is neither `OWNER`,
+A dependency bot's pull request (Renovate, Dependabot) is usually an
+outside author's to the Ready predicate: its association is typically neither `OWNER`,
 `MEMBER` nor `COLLABORATOR`, so once it converges it waits in **approve
 first**, even where the forge requires no approval. A repository can name
 the bots it trusts, so that their converged pull requests reach **merge
