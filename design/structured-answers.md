@@ -45,8 +45,10 @@ a pick on the board copies the answer line with the decision digest and
 any note. A pick is guarded when its class is not a named `Decide` act or
 its option is irreversible; it takes a confirmation step that shows the
 option's changes and costs. With no pick, Copy leaves every option
-unselected and copies the answer lines the person can complete. See the
-[board keys](dispatch-board.md).
+unselected and copies the answer lines the person can complete. For a card
+with one decision whose class names a `Decide` act and whose recommendation
+is reversible, Copy instead supplies an approval of that recommendation when
+no earlier answer was dropped. See the [board keys](dispatch-board.md).
 
 ## Showing what was decided
 
