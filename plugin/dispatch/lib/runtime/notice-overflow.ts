@@ -104,7 +104,7 @@ export function overflowSummary(
     ),
   ].join("\n");
   const foot = [
-    "The list above may be cut to fit; the dispatch dashboard lists every held notice. `jig ask --waiting` from the repository's checkout lists only what waits on a person.",
+    "The list above may be cut to fit; the counts above are complete.",
     "Each is delivered here in full once there is room: when this workspace is read, or as its other notices settle.",
   ].join("\n");
   // The separator before the entry and the newlines around the list.

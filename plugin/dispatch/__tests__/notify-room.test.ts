@@ -382,7 +382,7 @@ describe("more standing causes than one comment holds", () => {
     expect(summary.listed.length).toBeGreaterThan(0);
     for (const k of summary.listed) expect(held).toContain(k);
     expect(summary.listed.length + summary.more).toBe(held.length);
-    expect(comment).toContain("jig ask --waiting");
+    expect(comment).toContain("the counts above are complete");
     expect(comment).toContain("stalled: ");
   }
 
@@ -528,6 +528,6 @@ describe("more standing causes than one comment holds", () => {
     const summary = summaryOf(card.comment);
     expect(summary.count).toBe(waiting.length - full.length);
     expect(card.comment.length).toBeLessThanOrEqual(MAX_COMMENT);
-    expect(card.comment).toContain("jig ask --waiting");
+    expect(card.comment).toContain("the counts above are complete");
   });
 });
