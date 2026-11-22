@@ -211,6 +211,9 @@ describe("a drive writes its own state label", () => {
     const r = await drive(run, PASS_NOOP, [], {
       ...LEDGER_ON,
       DRIVE_PR_RATE_LIMIT_WAIT: "0",
+      JIG_FORGE_BUDGET: "on",
+      GH_TOKEN: "test-converged-ci-token",
+      XDG_STATE_HOME: run.dir,
     });
     expectSpawnExit({ ...r, stdout: null }, DRIVE_EXIT.FORGE_RATE_LIMITED);
     const events = readState(run.stateDir, "999")?.events as DriveEvent[];
