@@ -314,6 +314,43 @@ export async function diagnoseCi(
   }
 }
 
+/** The mailbox stopped the drive while the diagnosing pass ran: keep what it left. */
+async function settleMailboxExit(
+  pr: string,
+  head: string,
+  exit: number,
+  receipt: Receipt,
+): Promise<number> {
+  if ("standDown" in receipt) {
+    const taken = await standDownsAt(pr, head);
+    if (taken !== null) await recordSkipped(pr, head, STOOD_DOWN, taken + 1);
+  }
+  if ("text" in receipt)
+    await reportOutcome(
+      pr,
+      head,
+      `${receipt.text} The diagnosing pass completed before the mailbox stopped the drive.`,
+    );
+  return exit;
+}
+
+/** The step for a receipt that carries no diagnosis, or null when it carries one. */
+async function settleUndiagnosed(
+  pr: string,
+  head: string,
+  code: number,
+  receipt: Receipt,
+): Promise<number | "continue" | null> {
+  if ("refused" in receipt)
+    return await stopWithDiagnosis(pr, head, receipt.refused);
+  const next = "staleHead" in receipt ? staleHeadOutcome : standDownOutcome;
+  if ("staleHead" in receipt || "standDown" in receipt)
+    return code === 0
+      ? await next(pr, head)
+      : await stopWithDiagnosis(pr, head, INCOMPLETE);
+  return null;
+}
+
 /** The drive's next step once the diagnosing pass ran and left `receipt`. */
 async function settleDiagnosis(
   pr: string,
@@ -321,30 +358,16 @@ async function settleDiagnosis(
   result: { code: number; postPassMailboxExit: number | null },
   receipt: Receipt,
 ): Promise<number | "continue"> {
-  if (result.postPassMailboxExit !== null) {
-    if ("standDown" in receipt) {
-      const taken = await standDownsAt(pr, head);
-      if (taken !== null) await recordSkipped(pr, head, STOOD_DOWN, taken + 1);
-    }
-    if ("text" in receipt)
-      await reportOutcome(
-        pr,
-        head,
-        `${receipt.text} The diagnosing pass completed before the mailbox stopped the drive.`,
-      );
-    return result.postPassMailboxExit;
-  }
+  if (result.postPassMailboxExit !== null)
+    return await settleMailboxExit(
+      pr,
+      head,
+      result.postPassMailboxExit,
+      receipt,
+    );
   if (result.code === 5) return 5;
-  if ("staleHead" in receipt)
-    return result.code === 0
-      ? await staleHeadOutcome(pr, head)
-      : await stopWithDiagnosis(pr, head, INCOMPLETE);
-  if ("standDown" in receipt)
-    return result.code === 0
-      ? await standDownOutcome(pr, head)
-      : await stopWithDiagnosis(pr, head, INCOMPLETE);
-  if ("refused" in receipt)
-    return await stopWithDiagnosis(pr, head, receipt.refused);
+  const undiagnosed = await settleUndiagnosed(pr, head, result.code, receipt);
+  if (undiagnosed !== null || !("text" in receipt)) return undiagnosed ?? 1;
   if (result.code !== 0)
     return await stopWithDiagnosis(
       pr,
@@ -399,6 +422,19 @@ async function staleHeadOutcome(
   );
 }
 
+/** What the forge says of the pass's reported push. */
+function pushedOutcomeText(
+  current: Awaited<ReturnType<typeof readPrSnapshot>>,
+  pushedHead: string,
+  verified: boolean,
+): string {
+  if (!current.ok)
+    return `The pushed head could not be verified: ${current.failure.reason}`;
+  return verified
+    ? `The pull request moved to ${pushedHead}.`
+    : `The pull request is at ${current.value.head}, but the pass reported a push to ${pushedHead}.`;
+}
+
 /** Record the accepted diagnosis beside what the forge says of its push. */
 async function pushedHeadOutcome(
   pr: string,
@@ -414,11 +450,7 @@ async function pushedHeadOutcome(
     );
   const current = await readPrSnapshot(pr, null);
   const verified = current.ok && current.value.head === pushedHead;
-  const outcome = !current.ok
-    ? `The pushed head could not be verified: ${current.failure.reason}`
-    : verified
-      ? `The pull request moved to ${pushedHead}.`
-      : `The pull request is at ${current.value.head}, but the pass reported a push to ${pushedHead}.`;
+  const outcome = pushedOutcomeText(current, pushedHead, verified);
   const recorded = await reportOutcome(
     pr,
     head,
