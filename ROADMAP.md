@@ -336,8 +336,9 @@ Guidelines' minimum contrast, in both modes.
 ### 41. Configurable issue attributes: type, priority and size
 
 Where a team's tracker holds them, an issue records its type, priority and
-size (an epic needs no size). Jig's filing tools refuse an issue missing one
-before they write; only the bug form leaves priority and size for triage.
+size (an epic needs no size). Filing through the tracker interface refuses an issue missing one
+before it writes; the issue forms and `report-bug.ts` leave priority and size
+for triage.
 A team chooses where its tracker keeps each one: the tracker's own field, a
 custom field or labels. Each tracker Jig supports has a documented default,
 and the stores for Jira and Linear are built. Live checks of those two stores
