@@ -344,8 +344,9 @@ custom field or labels. Each tracker Jig supports has a documented default,
 and the stores for Jira and Linear are built. Live checks of those two stores
 remain open. So does a live check of the two ways to file a bug, which needs
 an account and a GitHub CLI that can set an issue's native type. The steps
-are in [the plan](design/plan.md). A person also retires GitHub's default
-Task issue type on Jig's own organization and accepts the scope or waives it.
+are in [the plan](design/plan.md). Each live check needs a recorded result
+or an explicit waiver. A person also retires GitHub's default Task issue
+type on Jig's own organization and accepts the delivered scope.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 

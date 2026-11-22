@@ -1082,7 +1082,7 @@ and each genre's contrast test holds its light and dark pairs.
 
 The stores for an issue's type, priority and size are built
 ([Tracker facets chapter](../plugin/protocol/tracker-facets.md)); the Protocol chapter stays
-provisional until the remaining checks are recorded. What is open:
+provisional until item 41 is done. What is open:
 
 - the live runs of Jira's issue-type and custom-field stores and Linear's
   estimate store ([#892](https://github.com/jig-harness/jig/issues/892));
@@ -1090,20 +1090,29 @@ provisional until the remaining checks are recorded. What is open:
   one filed through `report-bug.ts` from a draft whose labels include `bug`,
   run with an account and a `gh` that can set the native issue type (when
   the typed create fails, the script retries without the type only if the
-  error names the type and an issue listing confirms no matching issue was
-  created; when filing still fails and creation may have occurred, the
-  failure report checks the listing and reports the existing issue's URL if
-  found, offers the bug form if none exists, or reports an unknown outcome
-  to check by hand if that listing is unreadable),
+  error names the type and an issue listing establishes that no matching
+  issue was created; when filing still fails and creation may have occurred,
+  the failure report checks the listing and reports the existing issue's URL
+  if found, offers the bug form only when the listing establishes absence,
+  or reports an unknown outcome to check by hand whenever the listing is
+  inconclusive, including an unreadable response or a window filled with
+  newer issues),
   confirming the filed issue reads back with the native type `Bug` and
   without the `bug` label (the form declares its own type, so it cannot
   stand in for the script);
 - a person's step on Jig's own organization: retiring GitHub's default Task
   issue type ([#1830](https://github.com/jig-harness/jig/issues/1830));
-- a person's acceptance of the delivered scope, or a waiver, on
-  [#518](https://github.com/jig-harness/jig/issues/518).
+- a person's acceptance of the delivered scope on
+  [#518](https://github.com/jig-harness/jig/issues/518), plus an explicit
+  waiver there for any acceptance check above that is waived rather than
+  run.
 
-Done when those are recorded and the chapter is marked stable.
+Done when each acceptance check above has either a recorded result or an
+explicit waiver on [#518](https://github.com/jig-harness/jig/issues/518),
+GitHub's default Task issue type is retired on Jig's own organization
+([#1830](https://github.com/jig-harness/jig/issues/1830)), the delivered
+scope is accepted on [#518](https://github.com/jig-harness/jig/issues/518),
+and the chapter is marked stable.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
