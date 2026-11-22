@@ -19,7 +19,7 @@ the next one. It is a record of directions, not a design bundle landed under
   several accounts. The next design records capacity without either claim (see
   the figure brief).
 - **The headline** leaves out the words "software factory"
-  ([design/website.md](../../website.md#the-message-a-software-factory-first)).
+  ([design/website.md](../../website.md#the-message-the-delivery-line)).
 
 ## The four directions that were rendered
 

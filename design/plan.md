@@ -987,11 +987,11 @@ how it works and what is left. Done when:
 - the adoption page shows an audit sheet of Jig's own audit, with a direct
   link from the home page.
 
-### 52. Present Jig as a software factory, told in three layers
+### 52. Present Jig through its delivery line, told in three layers
 
 A reader should learn in one screen what Jig does for a team and who
-merges. [The website design](website.md#the-message-a-software-factory-first)
-sets the message: the factory comes first; what runs by itself, what a team
+merges. [The website design](website.md#the-message-the-delivery-line)
+sets the message: the delivery line comes first; what runs by itself, what a team
 gets and what it is built from order the site. The home page tells one
 work-item loop, with a direct path to the audit for a team adopting one
 module at a time. The [epic](https://github.com/jig-harness/jig/issues/1019)

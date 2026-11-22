@@ -54,7 +54,8 @@ item finishes nor that every transition starts by itself.
 - **The layout is the Broadside**, with the Strip board as runner-up
   ([the round's record](prototypes/intro-directions/README.md)).
 - **The figure shows how an item changes.** The line is not a closed loop: the
-  follow-up reaches pickup as a minority path. The pickup queue is drawn. The
+  follow-up reaches pickup as a side feed whose visual weight follows evidence.
+  The pickup queue is drawn. The
   item changes form from an issue to a pull request, to one with comments and
   build status, to one with every check green, to merged. The wall is
   capacity, with no number and no mention of several accounts
@@ -177,8 +178,8 @@ table, the existing tokens and components, the parser migration contract
 below. The brief goes to the design session without an outside reference
 site; the settled message and prototype rubric guide its simplicity.
 
-The brief asks the designer how to present the settled message, not whether
-the factory comes first. It leaves layout, illustration and interaction
+The brief asks the designer how to present the settled delivery-line message,
+not whether its promise changes. It leaves layout, illustration and interaction
 choices to the round. It exercises the prototype rubric's First question,
 Above the fold, Keyboard, Contrast, Weight, Truth, Brand, Decisions argued
 and Neutral data blocks at the repository's configured widths and in both
@@ -194,12 +195,12 @@ The copy and the parsers that consume it change together after the accepted
 design round. The visitor-page work must:
 
 - Replace `readme.ts`'s statement-then-bold-tagline assumption with an
-  explicit factory opening: headline and checkable sentence. Adjust
+  explicit delivery-line opening: headline and checkable sentence. Adjust
   `ReadmeOpening`, the `index.astro` consumer and `data.test.ts` together.
   A missing promise fails the parser; the old tagline is not retained just
   to satisfy a test.
-- Replace the shape pinned to “Jig as a software factory”, its colon-ended
-  jobs lead and its scaffolding list with the accepted loop structure.
+- Replace the old factory-first shape, its colon-ended jobs lead and its
+  scaffolding list with the accepted delivery-line structure.
   Tests assert the work item, reviewed pull request, possible decision stop
   and human merge, rather than the previous heading or paragraph count.
 - Move “Ways to use” out of home's contract. Remove the four-entry assertion
