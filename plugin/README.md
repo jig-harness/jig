@@ -1080,7 +1080,9 @@ still finds no room waits, which is not a failed delivery, and the summary at
 the end of the comment says how many wait, of which kinds and which ones (as
 many as fit); each goes in full once the workspace is read or its other entries settle. The summary
 reflects the last write to the comment, so it can still show a count after the
-causes it counted have settled, until the next write. A held repeat of a cause
+causes it counted have settled, until the next write that is allowed to rewrite the
+comment; where a person has added to it, the dispatcher only appends, and the
+summary stays where it is. A held repeat of a cause
 sent earlier keeps that cause's existing suppression record. The summary
 is kept only while the comment has room for it: where an unread comment leaves
 too little, or another summary is already in it, the waiting notices are not

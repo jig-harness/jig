@@ -2045,8 +2045,10 @@ counts, says how many wait, of which kinds and which ones (as many as fit).
 Where the
 comment leaves no room for the summary, the waiting causes are not counted in
 it until room opens. The summary is a record of the last write, not a live
-count: it can outlast the causes it counted, until the next write to the
-comment. A cause that
+count: it can outlast the causes it counted, until the next write that is allowed to
+rewrite the comment. Where a person has added to it, the comment is no longer
+exactly what the dispatcher wrote, so a new notice is appended and the summary
+stays as it is, no longer at the end. A cause that
 waits has no new suppression record (a cause sent earlier keeps its own, and
 holding its repeat removes none), so it stays due every tick and goes in
 full once the workspace is read or its other entries settle. Each cause's text carries its key (the facts its
