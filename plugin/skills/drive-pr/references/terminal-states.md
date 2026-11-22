@@ -81,8 +81,11 @@ measurement, because a zero there is the positive claim "the base has not
 moved". A failed `git fetch` is the one degradation that still produces a
 measurement: it is carried in `drift.fetched: false`, and every line derived
 from it says so, since the numbers were then read off a remote-tracking ref of
-unknown age. What the fields mean, and why `overlapCount` rather than `behind`
-is the predicate a round acts on, is in `scripts/lib/base-drift.ts`.
+unknown age. In an ordinary round, `overlapCount` rather than `behind` is the
+predicate for a piggyback base merge. A CI-repair round instead synchronizes
+any advanced base before reproducing the failure, so its local validation uses
+the same gates and configuration as CI. `scripts/lib/base-drift.ts` defines
+the fields.
 
 Every count under `work` is **`null` when `evaluate()` never measured it**, and a
 number only when it did. The liveness, head-sync and reviewer gates all return
@@ -124,9 +127,9 @@ to read, and a retry before the reset can only be refused again.
 - `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds
   (default 30 minutes, at most a day) and goes on: between rounds it keeps
   its ledger's lease and reads its mailbox while it waits; at the attach,
-  before its first round, it waits and reads the pull request again. Either
-  way it waits for at most three resets in a row; a limit spent again after
-  each stops it.
+  before its first round, it waits and reads the pull request again. During
+  the converged CI watch it waits for the reset before reading again. Each
+  stage waits for at most three resets in a row.
 - A reset further off stops the drive with the same exit. Its `stop` event
   records the reset (`until`), its closing report names it with cause
   `environment` and the line as owner, and `jig dispatch` re-drives the stop
@@ -138,16 +141,14 @@ to read, and a retry before the reset can only be refused again.
 
 ## Repair rounds
 
-These stops name work the loop can do itself, so `drive.ts` spends a bounded
-budget on each before taking the stop: **repair passes** for a red CI verdict and
+These stops name work the loop can do itself, so `drive.ts` applies bounded
+recovery before handing work off: **repair passes** for a red CI verdict and
 a conflict, re-runs and head moves for checks that failed on the
-infrastructure. None changes what `drive-status.ts` returns or what
-any code *means* — this is entirely about whether `drive.ts` hands a given answer
-to a human or to a pass.
+infrastructure. The table describes recovery in `drive.ts` after a verdict from `drive-status.ts`.
 
 | Trigger | Pass | Budget (env, `0` disables) | Falls back to |
 |---|---|---|---|
-| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md), handing the red CI back for repair; [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
+| Converged head, fresh exact-head verdict `failing: …` | `ci-repair` (repair the failing checks) | `drive.ci_repair_rounds` (`DRIVE_PR_CI_REPAIR_ROUNDS` for one run) per head and failing check, default 2 | A `ci-diagnose` session once per head after a positive budget is spent, then [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md) if diagnosis could not complete the repair. [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
 | The same, every failing check a job of a workflow run that concluded `cancelled`, no commit status failing, and a cancelled job that no run has replaced (a failed job in a cancelled run with no cancelled job is repaired instead) | none: the driver's cancelled-run recovery re-runs that run, spending no CI-repair budget | one re-run per head, shared across re-arms, and one more per person's "Re-run safely" answer; a cancellation a label write caused gets one re-run per run attempt outside it | [`HITL_PARKED`](../../../protocol/drive-exits.md), parked `cancelled-ci`; a read of the recovery that keeps failing in a way waiting can clear ends in [`NOT_SETTLED`](../../../protocol/drive-exits.md), naming the read and its failure class |
 | Converged head, a workflow job the runner stopped at its time limit (concluded `cancelled`, its check run annotated "exceeded the maximum execution time"), alone or beside failing checks | `ci-repair`, its detail naming the job, its limit and its run time | the same `drive.ci_repair_rounds` per head and failing check | [`CI_REPAIR_SPENT`](../../../protocol/drive-exits.md); [`INDETERMINATE`](../../../protocol/drive-exits.md) when the budget is `0` |
 | The same, every failing check failed on the infrastructure | the driver re-runs failed jobs, or moves the head when a run cannot be re-run; a local base merge goes through a validated review round before pushing, spending no CI-repair budget | `DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each | [`CI_INFRA_PERSISTED`](../../../protocol/drive-exits.md) |
@@ -155,7 +156,10 @@ to a human or to a pass.
 
 The task reaches the pass in its **environment** (`DRIVE_PR_ROUND_TASK`,
 `DRIVE_PR_ROUND_TASK_DETAIL`, and on a CI repair `DRIVE_PR_ROUND_FAILED_RUNS`,
-`DRIVE_PR_ROUND_FAILED_STATUSES` and `DRIVE_PR_ROUND_REPAIR_SKILL`),
+`DRIVE_PR_ROUND_FAILED_STATUSES` and `DRIVE_PR_ROUND_REPAIR_SKILL`). A
+diagnosing session also receives `DRIVE_PR_CI_DIAGNOSIS_HEAD` and
+`DRIVE_PR_CI_DIAGNOSIS_REPORT` to bind its work and receipt to the failing head.
+The driver passes these fields through the environment,
 never by rewriting the argv after `--`: that argv belongs to whichever agent the
 operator armed the drive with, and a driver editing it would be guessing at
 another tool's command grammar. `SKILL.md` § 0 is the pass-side half.

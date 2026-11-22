@@ -68,7 +68,7 @@ The same values, for a program in any language:
 | `MAILBOX_STOPPED` | driver-only | — | 18 | yes | A person or a tool told the drive to stop through its mailbox, and it stopped at a round boundary. A stop that names this driver's generation ends this driver alone; one that names none stops every later driver too, so resume it before re-arming. |
 | `MAILBOX_PAUSE_TIMEOUT` | driver-only | — | 19 | yes | A pause sent through the drive's mailbox lasted longer than the drive waits. Resume it, then re-arm. |
 | `TAKEN_OVER` | driver-only | — | 20 | yes | Another clone took the drive over and drives it now. Nothing to recover here. |
-| `CI_REPAIR_SPENT` | driver-only | — | 21 | yes | The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again. |
+| `CI_REPAIR_SPENT` | driver-only | — | 21 | yes | The diagnosing CI-repair session could not complete the repair on the failing head. The handoff carries its diagnosis and tracker issue when available. |
 | `REVIEW_SKIPPED` | state | 22 | 22 | yes | The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms. |
 | `CI_INFRA_PERSISTED` | driver-only | — | 23 | yes | The review converged, but checks kept failing on the CI service's own infrastructure after the drive re-ran them. Nothing in the code needs repair; re-arm once the service recovers. |
 | `FORGE_RATE_LIMITED` | state | 24 | 24 | yes | The forge's rate limit for the drive's credential is spent: nothing more is sent before it resets. The report names the reset (`rateLimit.until`). The driver then waits out a reset within its bound (`DRIVE_PR_RATE_LIMIT_WAIT`) and goes on, or stops on one further off. Re-arm after the reset. |
@@ -128,7 +128,7 @@ fall short of its goal.
 | `MAILBOX_STOPPED` | 18 | stopped: a person or a tool told it to stop through its mailbox | — | `none` | — | Nothing until a person re-arms the drive. |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | stopped: a pause sent through its mailbox outlasted its wait | `deadline` | `person` | `Do` | Resume the drive through its mailbox, then re-arm it. |
 | `TAKEN_OVER` | 20 | stopped: another clone took the drive over | — | `line` | — | The clone that took the drive over drives it now. |
-| `CI_REPAIR_SPENT` | 21 | stopped: CI still fails with its CI-repair passes spent | `tool-failed` | `person` | `Investigate` | Look at the failing checks, then re-arm the drive to repair again. |
+| `CI_REPAIR_SPENT` | 21 | stopped: the diagnosing CI-repair session could not complete the repair | `tool-failed` | `person` | `Investigate` | Read the diagnosing session’s handoff and address the blocker it recorded. |
 | `REVIEW_SKIPPED` | 22 | stopped: the reviewer skipped its head and will not review it | `environment` | `person` | `Do` | Have this head reviewed, then re-arm the drive. |
 | `CI_INFRA_PERSISTED` | 23 | stopped: checks kept failing on the CI service's own infrastructure | `environment` | `line` | — | The line re-arms the drive once the CI service recovers. |
 | `FORGE_RATE_LIMITED` | 24 | stopped: the forge's rate limit for its credential is spent | `environment` | `line` | — | The line drives it again once the forge's rate limit resets. |

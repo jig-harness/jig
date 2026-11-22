@@ -208,6 +208,8 @@ describe("validation forecast", () => {
     );
     expect(forecast).toEqual({
       ahead: 2,
+      served: 2,
+      later: 0,
       capacity: 4,
       ownRuns: 1,
       required: 2,
@@ -381,7 +383,9 @@ describe("validation forecast", () => {
       MINUTE,
       HOUR,
     );
-    expect(forecast.ahead).toBeCloseTo(2 / 3);
+    // Both holders still hold the lock when the candidate arrives.
+    expect(forecast.ahead).toBe(2);
+    expect(forecast.served).toBe(0);
     expect(forecast.required).toBeCloseTo(2 / 3);
     expect(forecast.fill).toBeCloseTo(5);
   });

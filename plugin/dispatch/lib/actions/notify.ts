@@ -29,12 +29,15 @@
  *   log (`log.ts`) in the same transaction as the first suppression record
  *   written for it, timed at that record and keyed by the same facts; a
  *   cause about a stage this machine launched has its ended row instead.
- * - **Backed off while it keeps failing.** A cause whose delivery was lost,
- *   or that found no room in its destination's comment, is counted in the failure ledger (`failures.ts`) under its channel's key
+ * - **Backed off while it keeps failing.** A cause whose delivery was lost
+ *   is counted in the failure ledger (`failures.ts`) under its channel's key
  *   (`notice <key>` on `orca-card`, `notice <channel> <key>` on another):
  *   until its next try on that channel it is reported waiting there, and
  *   past `failures.notify_after` lost deliveries in a row it is notified as
- *   failing, through whatever channel still delivers.
+ *   failing, through whatever channel still delivers. A cause that found no
+ *   room in its destination's comment is not a failure: it waits, counted in
+ *   the comment's summary entry (`runtime/notice-overflow.ts`), and goes in
+ *   full once there is room.
  *
  * - **The destination's read state, every tick.** Before it delivers, the
  *   stage records one `notices_read` event with the notices workspace's
@@ -64,6 +67,7 @@ import {
   HOST_NOTICE,
   hostNoticeKeys,
   isFailureCause,
+  WEIGHTS_SKIP_KEY,
 } from "../failure-notices.ts";
 import { holderRecordStands } from "../holder-notices.ts";
 import {
@@ -72,13 +76,17 @@ import {
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
+  dropStoredRecords,
+  storedWeightsKeys,
+  storedWeightsRecords,
   suppress,
   type Suppression,
 } from "../notice-records.ts";
+import { stateDb } from "../state.ts";
 import { unobservedTarget } from "../notices.ts";
 import { logNoticesRead } from "../notices-read.ts";
+import { heldForRoom } from "../runtime/notice-overflow.ts";
 import {
-  NO_ROOM,
   openCard,
   type OrcaCard,
   orcaCard,
@@ -199,6 +207,28 @@ function prune(
   dropSuppressions(channel, gone, root);
 }
 
+/**
+ * A weights notice told at a repository that no longer notifies keeps its
+ * record there when the host's home moves; once the file no longer makes
+ * its key stand, its records go from every repository and channel. Run once
+ * per apply tick from the weights reading, whatever repositories notify;
+ * `standing` is `null` when the file was not read whole, which retires nothing.
+ */
+export function retireStaleWeightsRecords(
+  standing: readonly string[] | null,
+  root: string,
+): void {
+  if (standing === null) return;
+  const db = stateDb(root);
+  // Every channel's records, not one channel's: a channel that is no longer configured still holds one.
+  dropStoredRecords(
+    db,
+    storedWeightsRecords(db, WEIGHTS_SKIP_KEY).filter(
+      (r) => !standing.includes(r.key),
+    ),
+  );
+}
+
 /** The stage a cause is about, for its event row. */
 function stageOf(cause: Cause): string {
   if (isFailureCause(cause.cause)) return "dispatch";
@@ -286,6 +316,8 @@ export interface NoticeSettings {
   channels?: ReadonlyArray<NotificationChannel<Cause>>;
   /** Whether the tick writes the `orca-card` channel and observes its notices workspace; `true` unless the session runtime is the process runtime, which has neither. */
   orcaCard?: boolean;
+  /** Keys of host notices outside the failure ledger that stand this tick wherever they are told (`standingWeightsKeys`). */
+  hostStanding?: readonly string[] | null;
 }
 
 /** The failure ledger's key and kind of a cause's delivery on `channel`. */
@@ -306,9 +338,10 @@ function deliveryOf(
 
 /**
  * Count each delivery the channel attempted in the failure ledger: a lost
- * one or one the destination had no room for fails, a sent or
- * already-carried one succeeds; one that waited for another reason was not
- * attempted.
+ * one fails, a sent or already-carried one succeeds. One the destination
+ * had no room for is not a failure: the channel reached its destination,
+ * so it clears a row an earlier failure left and is told in full once there
+ * is room. One that waited for another reason was not attempted.
  */
 function countDeliveries(
   channel: string,
@@ -316,9 +349,12 @@ function countDeliveries(
   outcomes: ReadonlyArray<{ cause: Cause; answer: Delivery }>,
 ): void {
   for (const { cause: c, answer: o } of outcomes) {
-    if (o.outcome === "lost" || (o.outcome === "waits" && o.detail === NO_ROOM))
-      book.ran(deliveryOf(channel, c), o.detail);
-    else if (o.outcome === "sent" || o.outcome === "already")
+    if (o.outcome === "lost") book.ran(deliveryOf(channel, c), o.detail);
+    else if (
+      o.outcome === "sent" ||
+      o.outcome === "already" ||
+      (o.outcome === "waits" && heldForRoom(o.detail))
+    )
       book.ran(deliveryOf(channel, c), null);
   }
 }
@@ -385,10 +421,17 @@ function dueAgain(
   return Number.isFinite(last) && nowMs - last >= everyMs;
 }
 
-/** The keys that stand: the causes named, and the host failures still standing, whose records stay at the repository that told them wherever they are told now. */
-function standingKeys(causes: readonly Cause[], root: string): Set<string> {
+/** The keys that stand: the causes named, and the host notices still standing, whose records stay at the repository that told them wherever they are told now. */
+function standingKeys(
+  causes: readonly Cause[],
+  root: string,
+  host: readonly string[] | null = [],
+): Set<string> {
   const live = new Set(causes.map((c) => c.notice.key));
   for (const key of hostNoticeKeys(readFailures(undefined, root)))
+    live.add(key);
+  // A weights file that was not read whole leaves what stands unknown: every notice told stays.
+  for (const key of host ?? storedWeightsKeys(stateDb(root), WEIGHTS_SKIP_KEY))
     live.add(key);
   return live;
 }
@@ -452,7 +495,7 @@ export async function applyNotices(
   );
   // The plan named a failing action's notice before the act phase found the action no longer wanted.
   const causes = planned.filter((c) => failureStands(settings.book, c));
-  const standing = standingKeys(causes, root);
+  const standing = standingKeys(causes, root, settings.hostStanding);
   const scope = {
     repo,
     report,

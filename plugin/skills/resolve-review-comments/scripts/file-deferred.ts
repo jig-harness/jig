@@ -60,6 +60,7 @@ import {
   findingIdentityLines,
 } from "./lib/tracker-defer-batch.ts";
 import { leadingKeyLine } from "./lib/batch-description.ts";
+import { recordedError, type RecordedVocabulary } from "./defer-in-pr.ts";
 import { JigError } from "../../../shared/outcome.ts";
 import { createHash } from "node:crypto";
 import { fail, runMain } from "../../../shared/cli.ts";
@@ -472,10 +473,25 @@ async function howToFile(
   initial: Open,
   entry: DeferredEntry,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+  reviewVocabulary: RecordedVocabulary | undefined,
 ): Promise<How | { why: string }> {
   if (initial.held !== null) {
-    if (initial.plan !== null && "why" in initial.plan) return initial.plan;
-    return { held: initial.held, plan: initial.plan };
+    // A person can correct the entry between the initial search and this
+    // fresh read. Validate the current recorded vocabulary before recording a
+    // held issue, so an old acceptance cannot bypass a correction.
+    const recorded = recordedEntryError(entry, reviewVocabulary);
+    if (recorded !== null) return { why: recorded };
+    if (
+      !/^<!-- defer-batch-key: repo=\S+ pr=\d+ type=\S+ -->$/.test(
+        leadingKeyLine(initial.held.issue.description) ?? "",
+      )
+    )
+      return { held: initial.held, plan: null };
+
+    // Batch repair also needs the current facets and labels.
+    const next = await plan(entry);
+    if ("why" in next) return next;
+    return { held: initial.held, plan: next };
   }
   const next = await plan(entry);
   return "why" in next ? next : { held: null, plan: next };
@@ -495,6 +511,7 @@ export async function fileDeferred(
     facets: Facets | null;
     /** The repository's label taxonomy, whose required groups an issue carries a label of; absent or `null` with none. */
     taxonomy?: Taxonomy | null;
+    reviewVocabulary?: RecordedVocabulary;
     /** The change-area catalog those labels are derived from, read only when a group needs one; the configured one by default. */
     catalog?: () => CatalogSource;
     dryRun?: boolean;
@@ -512,7 +529,13 @@ export async function fileDeferred(
     why: null,
   };
   const plan = planner(forge, pr, opts);
-  const open = await fileable(deferredEntries(body), tracker, plan, result);
+  const open = await fileable(
+    deferredEntries(body),
+    tracker,
+    plan,
+    opts.reviewVocabulary,
+    result,
+  );
   const skipped = whyNotFiling(tracker, opts);
   if (tracker === null || skipped !== null) {
     result.remaining = open.map((o) => o.entry);
@@ -522,7 +545,7 @@ export async function fileDeferred(
   for (const [i, initial] of open.entries()) {
     const entry = await stillOpen(forge, pr, initial.entry);
     if (entry === null) continue;
-    const how = await howToFile(initial, entry, plan);
+    const how = await howToFile(initial, entry, plan, opts.reviewVocabulary);
     if ("why" in how) {
       result.forPerson.push({ entry, why: how.why });
       continue;
@@ -559,6 +582,7 @@ function planner(
     label: string;
     facets: Facets | null;
     taxonomy?: Taxonomy | null;
+    reviewVocabulary?: RecordedVocabulary;
     catalog?: () => CatalogSource;
   },
 ): (entry: DeferredEntry) => Promise<Plan | { why: string }> {
@@ -570,6 +594,8 @@ function planner(
     return catalog;
   };
   return async (entry) => {
+    const recorded = recordedEntryError(entry, opts.reviewVocabulary);
+    if (recorded !== null) return { why: recorded };
     const facets = entryFacets(entry, opts.facets);
     if ("why" in facets) return facets;
     let file: FindingFile = { none: "it is a summary finding" };
@@ -618,21 +644,24 @@ async function heldPlan(
   held: Held,
   entry: DeferredEntry,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+  reviewVocabulary?: RecordedVocabulary,
 ): Promise<Plan | { why: string } | null> {
+  const recorded = recordedEntryError(entry, reviewVocabulary);
+  if (recorded !== null) return { why: recorded };
   if (
     !/^<!-- defer-batch-key: repo=\S+ pr=\d+ type=\S+ -->$/.test(
       leadingKeyLine(held.issue.description) ?? "",
     )
   )
     return null;
-  const expected = await plan(entry);
-  return expected;
+  return await plan(entry);
 }
 
 async function fileable(
   entries: DeferredEntry[],
   tracker: Tracker | null,
   plan: (entry: DeferredEntry) => Promise<Plan | { why: string }>,
+  reviewVocabulary: RecordedVocabulary | undefined,
   result: FileDeferredResult,
 ): Promise<Open[]> {
   const open: Open[] = [];
@@ -643,7 +672,7 @@ async function fileable(
       open.push({
         entry,
         held,
-        plan: await heldPlan(held, entry, plan),
+        plan: await heldPlan(held, entry, plan, reviewVocabulary),
       });
       continue;
     }
@@ -652,6 +681,27 @@ async function fileable(
     else open.push({ entry, held: null, plan: found });
   }
   return open;
+}
+
+function recordedEntryError(
+  entry: DeferredEntry,
+  vocabulary: RecordedVocabulary | undefined,
+): string | null {
+  if (
+    vocabulary === undefined ||
+    entry.type === undefined ||
+    entry.severity === undefined
+  )
+    return null;
+  return recordedError(
+    {
+      type: entry.type,
+      severity: entry.severity,
+      category: entry.category ?? "unknown",
+      ...(entry.size === undefined ? {} : { size: entry.size }),
+    },
+    vocabulary,
+  );
 }
 
 /** Why a run files nothing at all, or `null` when it can file. */
@@ -801,18 +851,18 @@ export function configuredTracker(
   label: string;
   facets: Facets | null;
   taxonomy: Taxonomy | null;
+  reviewVocabulary?: RecordedVocabulary;
   why?: string;
 } {
   try {
-    const config = deferralTrackerConfig(
-      values,
-      parseReviewConfig(values.review),
-    );
+    const review = parseReviewConfig(values.review);
+    const config = deferralTrackerConfig(values, review);
     return {
       tracker: openTracker(config),
       label: config.labels.followup,
       facets: facetsOf(config, consumerRoot()),
       taxonomy: readTaxonomy(consumerRoot(), config.taxonomy),
+      reviewVocabulary: review.taxonomy ?? {},
     };
   } catch (err) {
     return {
@@ -869,7 +919,8 @@ async function main(): Promise<number> {
   const pr = rest[0] ?? "";
   if (rest.length !== 1 || !/^\d+$/.test(pr))
     fail(2, "usage: file-deferred.ts <PR> [--dry-run]");
-  const { tracker, label, facets, taxonomy, why } = configuredTracker();
+  const { tracker, label, facets, taxonomy, reviewVocabulary, why } =
+    configuredTracker();
   const forge = ghPrBodyForge();
   let code: number;
   let missing: DeferredReply[];
@@ -878,6 +929,7 @@ async function main(): Promise<number> {
       label,
       facets,
       taxonomy,
+      reviewVocabulary: reviewVocabulary ?? {},
       dryRun,
       ...(why === undefined ? {} : { noTrackerWhy: why }),
       onFiled: (f) =>

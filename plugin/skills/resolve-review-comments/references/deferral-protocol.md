@@ -73,7 +73,9 @@ repo's own evidence cannot answer. Escalations are batched into one question at
 round end and must not stall the rest of the round — proceed with the in-scope
 fixes meanwhile.
 
-Once the deferral is decided, the sequence is fixed and ordered:
+Once the rubric or arbiter rules `deferred`, a drive carries out the
+deferral at every autonomy level without `file-issue` confirmation.
+The sequence is fixed and ordered:
 
 0. **Prepare the issue workflow.** Load the consumer's tracker integration and
    canonical vocabulary before manual issue work. The shipped `defer-batch.ts`
@@ -85,14 +87,19 @@ Once the deferral is decided, the sequence is fixed and ordered:
    the append (§ [Batching is the default](#batching-is-the-default)). Search
    the originating issue's tracker relations for an issue already carrying
    the finding before filing; reuse that issue's link when it exists.
-2. **Reply on the thread**, opening with the `**deferred**` outcome token, then
+2. **Record the filing in a drive.** Use the drive's
+   [decision record](../../drive-pr/SKILL.md#8-report-and-hand-off), with class
+   `file-issue`, the source finding and reason, the issue URL, and how a
+   person can close it. If the tracker filing failed, record the named
+   refusal and Deferred section link as `defer-without-tracker` instead.
+3. **Reply on the thread**, opening with the `**deferred**` outcome token, then
    the reason and the issue link:
 
    ```text
    **deferred** — real, but it needs the connector refactor first; filed the linked follow-up issue.
    ```
 
-3. **Resolve the thread.**
+4. **Resolve the thread and continue to the next finding.**
 
 The issue is filed *before* the reply so the reply can carry its link, and the
 thread resolves *after* the reply so nothing closes without an audit trail. A
@@ -176,7 +183,9 @@ input to the helper; reviewer text is never shell source. The append is idempote
 the inline thread URL, or on the sticky comment plus fingerprint for a
 summary-only finding, so a crashed round re-runs safely and multiple findings
 in one sticky comment remain distinct. `--dry-run` previews without
-writing. Follow-ups never receive a parent.
+writing. In a drive, each filed entry carries the filed-by line naming
+`/jig:drive-pr`, the pull request and the reason. Follow-ups never receive a
+parent.
 
 `--severity` is **required**: silently discarding severity creates follow-ups
 without actionable priority. Pass the reviewer's own severity marker, or
@@ -211,11 +220,14 @@ read where this deferral goes:
 bun "<skill-dir>/scripts/defer-in-pr.ts" route
 ```
 
-`defer-batch` means step 1 files as above. `pr-body: <why>` (the
-configured adapter cannot file) means record
-the finding in the pull request's own `## Deferred` section instead, at every
-autonomy level. Write the reviewer's finding verbatim to `finding.txt` with
-the file-writing tool, then:
+`defer-batch` means step 1 files as above. In a drive, a tracker or label
+refusal falls back to the same pull request's `## Deferred` section. The
+command returns `link`, `added` and `why` in place of the issue result.
+Use that link and record the refusal. When neither write succeeds, keep
+the thread open and report the failure.
+
+`pr-body: <why>` means the adapter cannot file. At every autonomy level,
+write the reviewer's finding verbatim to `finding.txt`, then:
 
 ```bash
 bun "<skill-dir>/../../shared/command.ts" --stdin-file finding.txt -- bun "<skill-dir>/scripts/defer-in-pr.ts" <PR#> --thread-url <url> --type <type> --severity <blocker|high|medium|low|unknown> --category <cat|unknown> [--size <size>] --reason '<why deferred>'

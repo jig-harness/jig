@@ -1,6 +1,6 @@
 # Needs and structured answers
 
-Version 1 · provisional, moved by [plan item 46](https://github.com/jig-harness/jig/issues/693), [plan item 50](https://github.com/jig-harness/jig/issues/940)
+Version 1 · provisional, moved by [plan item 50](https://github.com/jig-harness/jig/issues/940)
 
 Some of the work on Jig's line waits on a person: a decision only a person
 may take, a merge, a step by hand. Each such wait is a
@@ -252,7 +252,7 @@ the name `hold` had before, still chooses it.
 | Key | Class | Options | Meaning |
 | --- | --- | --- | --- |
 | `followup` | `followup-recovery` | `rerun`, `done`, `hold` | A merged pull request's follow-up whose pass ended without recording done, or whose claim no session is joined to. |
-| `release` | `release` | `gates`, `inspect`, `tag` | An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. |
+| `release` | `release` | `gates`, `inspect`, `tag` | An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. It recommends re-running the failed gates unless a re-run was already requested (then it recommends investigating), or no failed gate is left to re-run: the version's follow-up recorded that every required check passed or that the version is outside automatic tagging, the repository disables re-runs (`changelog.release.rerun_failed_gates: 0`), or it leaves the tag to a person (then it recommends a person's tag). In both cases it offers only the other two options. |
 | `pickup` | `pickup-recovery` | `release`, `hold` | A pickup that stalled, stopped on a question it did not frame, or ended without moving its item on. |
 | `checkout` | `checkout-recovery` | `detach`, `hold` | A launch that waits because a checkout the workspace runtime does not list holds its branch and is in use. |
 | `drive` | `drive-recovery` | `rearm`, `hold` | A drive that stopped and handed its pull request to a person. |
@@ -286,8 +286,7 @@ the name `hold` had before, still chooses it.
   ([design/need-classes.md](https://github.com/jig-harness/jig/blob/main/design/need-classes.md)),
   which still adds and regroups causes. They join this chapter once their
   table settles.
-- **How often a recommendation is approved.** The answered park's event in
-  the dispatcher's outcome log, and the report per class built on it, are
-  the last step of plan item 46.
+- **How often a recommendation is approved.** The answer outcome event and
+  the counts by decision class are outside this chapter.
 - **An answer as `jig ask` shows it.** The JSON `jig ask` prints for a
   decision's answers has no schema yet.

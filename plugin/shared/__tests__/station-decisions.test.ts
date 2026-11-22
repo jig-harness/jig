@@ -176,3 +176,60 @@ describe("stationSendCommand", () => {
     );
   });
 });
+
+describe("the release decision", () => {
+  const repo = "example-org/web";
+  const optionNames = (facts: StationFacts) =>
+    frameStationDecision(facts).decision.call.options.map((o) => o.name);
+
+  it("recommends re-running the failed gates while a re-run is left to try", () => {
+    for (const facts of [
+      { kind: "release-owed", repo, tag: "v1.2.3" },
+      {
+        kind: "release-group",
+        repo,
+        tags: ["v1.2.3", "v1.3.0"],
+        rerunSpent: false,
+      },
+    ] satisfies StationFacts[]) {
+      expect(recommendedName(facts)).toBe("Re-run the failed gates");
+      expect(optionNames(facts)).toEqual([
+        "Re-run the failed gates",
+        "Investigate",
+        "Tag it by hand",
+      ]);
+    }
+  });
+
+  it("recommends tagging by hand, with the procedure's reason, where no failed gate is left to re-run", () => {
+    const why =
+      "Every required check passed on the releasing commit of v1.2.3, so no failed gate is left to re-run.";
+    for (const facts of [
+      { kind: "release-owed", repo, tag: "v1.2.3", noRerun: why },
+      {
+        kind: "release-group",
+        repo,
+        tags: ["v1.2.3", "v1.3.0"],
+        rerunSpent: false,
+        noRerun: why,
+      },
+    ] satisfies StationFacts[]) {
+      const { decision } = frameStationDecision(facts);
+      expect(checkParkedDecision(decision, decision.class)).toEqual([]);
+      expect(recommendedName(facts)).toBe("Tag it by hand");
+      expect(optionNames(facts)).toEqual(["Investigate", "Tag it by hand"]);
+      expect(decision.call.why).toContain(why);
+    }
+  });
+
+  it("recommends investigating once its one re-run was requested", () => {
+    const facts: StationFacts = {
+      kind: "release-owed",
+      repo,
+      tag: "v1.2.3",
+      rerunSpent: true,
+    };
+    expect(recommendedName(facts)).toBe("Investigate");
+    expect(optionNames(facts)).toEqual(["Investigate", "Tag it by hand"]);
+  });
+});

@@ -11,6 +11,7 @@ import { rerunnableRuns } from "./failed-runs.ts";
 import { REFUSED } from "./infra-recovery.ts";
 import type { RetryForge } from "./ci-attempts.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { fencedForgeLimit } from "../../../../../shared/outbound/forge-limit-seen.ts";
 
 async function readAttempt(head: string, id: number) {
   const run = await ghCall([
@@ -112,7 +113,7 @@ export const failedCheckForge: RetryForge = {
       if (mayMutate !== undefined && !(await mayMutate()))
         return {
           ok: false,
-          indeterminate: true,
+          unsent: true,
           detail: "the drive no longer owns the pull request",
         };
       const retry = await ghCall(["run", "rerun", String(id), "--failed"]);
@@ -124,7 +125,9 @@ export const failedCheckForge: RetryForge = {
         // it, so the caller must reconcile rather than repair.
         ...(retry.code === 0 || REFUSED.test(detail)
           ? {}
-          : { indeterminate: true }),
+          : fencedForgeLimit() !== null
+            ? { unsent: true }
+            : { indeterminate: true }),
         detail,
         attempt: run.value.attempt,
       };
@@ -135,7 +138,9 @@ export const failedCheckForge: RetryForge = {
       );
       return {
         ok: false,
-        indeterminate: true,
+        ...(fencedForgeLimit() !== null
+          ? { unsent: true }
+          : { indeterminate: true }),
         detail: "the mutation authority or head witness is unreadable",
       };
     } finally {

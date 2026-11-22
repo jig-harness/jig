@@ -4,8 +4,7 @@
  *
  * A failing check whose job failed on the infrastructure (`shared/ci-infra.ts`:
  * a lost runner, or a setup step's network failure, with no code diagnostic)
- * cannot be fixed by a code change, so a repair pass spent on it is wasted and
- * the drive's `CI_REPAIR_SPENT` stop is one only a person used to settle. When
+ * calls for recovering the infrastructure. When
  * every failing check on the head reads that way, the drive:
  *
  * 1. re-runs the failed jobs of each run behind them (`gh run rerun <run>

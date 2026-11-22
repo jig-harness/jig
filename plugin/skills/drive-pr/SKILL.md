@@ -204,7 +204,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `CI_REPAIR_SPENT` | 21 | The review converged, the fresh exact-head CI verdict still names failing checks, and the CI-repair passes per head and failing check (`drive.ci_repair_rounds`; `DRIVE_PR_CI_REPAIR_ROUNDS` for one run) are spent. A CI repair, not a person's decision: repair it with [`/jig:fix-ci`](../fix-ci/SKILL.md), or re-arm, which starts with a fresh budget. Under `jig dispatch` the dispatcher re-drives it once per head commit. With repair disabled (`0`), or a verdict that names no failing check, the stop stays `1` |
 | `CI_INFRA_PERSISTED` | 23 | The review converged, and every failing check on the head failed on the infrastructure (a lost runner, or a setup step's network failure, with no code diagnostic) through the drive's re-runs and head moves (`DRIVE_PR_CI_INFRA_RERUNS` per head and `DRIVE_PR_CI_INFRA_HEAD_MOVES` per drive, default 2 each). No CI-repair pass was spent and nothing in the code needs repair. Under `jig dispatch` the dispatcher re-drives it after a backoff that doubles with each consecutive such stop, and tells a person once the stops outlast its re-drives |
-| `FORGE_RATE_LIMITED` | 24 | A read of the drive met the forge's spent rate limit for its credential: the report names the reset (`rateLimit.until`), and nothing more is sent before it. Never `INDETERMINATE`. `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds (default 30 minutes) and goes on, the attach as well as the rounds; past that it stops with this exit, the reset recorded on its stop, and under `jig dispatch` the dispatcher re-drives it after the reset, on any account, without a person |
+| `FORGE_RATE_LIMITED` | 24 | A read of the drive met the forge's spent rate limit for its credential: the report names the reset (`rateLimit.until`), and nothing more is sent before it. Never `INDETERMINATE`. `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds (default 30 minutes) and goes on, during attach, between rounds and during the converged CI watch; past that it stops with this exit, the reset recorded on its stop, and under `jig dispatch` the dispatcher re-drives it after the reset, on any account, without a person |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 When the driver passes through the status probe's exit, its log, handoff and
@@ -983,7 +983,9 @@ outlives the session that spawned it, so its console is not where you look:
   watches nothing) parks `converged-ci` with a framed decision naming the
   runs, and the stop is settled again as [`HITL_PARKED`](../../protocol/drive-exits.md),
   labelled `parked` (as `INDETERMINATE` when the park cannot be recorded or
-  the watch fails). A head that moved, a pull request no longer open, or a
+  the watch fails for another reason). A spent forge rate limit pauses the
+  watch until a reset within the configured bound or settles the stop as
+  `FORGE_RATE_LIMITED` with the reset time. A head that moved, a pull request no longer open, or a
   window in which the head's CI never read ends the watch with the label as
   written; until it ends, the drive's locks refuse a re-arm. A person's
   stop through `drives.ts` names no exit and is labelled `parked` once it
@@ -1645,15 +1647,15 @@ the integration branch's policy, at `$DRIVE_PR_POLICY_BOUND`, bounds the layer
 below: the lower ceiling and the union of the park classes apply. What this pull
 request changes in `max_level` or `park_classes` does not apply to its own
 drive. When the line says the base branch's policy cannot be read, run at
-`attended` and park every decision on the table below under
+`attended` and park new decisions on the table below under
 `human-decision` (§ 4), naming in the record that the policy could not be
-read; decide nothing yourself until a later read of the line names the
-base branch again. Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND` yourself.
+read. Carry out an already-decided deferral through its protocol.
+Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND` yourself.
 
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
-| File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why | Same |
-| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same | Same |
+| File any other tracker issue a skill needs, such as a follow-up or reflection escalation | `file-issue` confirms first | File it with the filed-by line | Same |
+| Carry out a deferral ruled by the triage rubric or Review Arbiter | Follow the [deferral protocol](../resolve-review-comments/references/deferral-protocol.md#who-decides-a-deferral) without confirmation | Same | Same |
 | A technical choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
 | A technical choice `decide` would rule underdetermined | Rule it `underdetermined`: name the missing evidence in a spike issue, or a comment on the existing issue | Gather the missing evidence within the round's budget, then apply the ladder; a call it still cannot settle is escalated | Same |
 | A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional: record it as `decide-provisional` (§ 8) |
@@ -1715,6 +1717,7 @@ carries the specifics.
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
 | `ci-repair` | the failing check names, as CI reported them, then `; timed out: ` and each job the runner stopped at its time limit, with its limit and run time; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces; `$DRIVE_PR_ROUND_FAILED_STATUSES` the failing commit statuses, a JSON list of `{context, target_url}`; `$DRIVE_PR_ROUND_REPAIR_SKILL` the repository's CI-repair skill (`ci.repair_skill`) | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-diagnose` | the failing check names, as `ci-repair` gives them; `$DRIVE_PR_ROUND_FAILED_RUNS`, `$DRIVE_PR_ROUND_FAILED_STATUSES` and `$DRIVE_PR_ROUND_REPAIR_SKILL` as there; `$DRIVE_PR_CI_DIAGNOSIS_HEAD` the failing head this session is bound to; `$DRIVE_PR_CI_DIAGNOSIS_REPORT` the path of the receipt it writes | The repair budget for this head and these checks is spent and CI is still red. Find why the earlier repairs failed, track the cause, and repair once more. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer [`CONVERGED`](../../protocol/drive-exits.md) on a `ci-repair` round, and
@@ -1723,7 +1726,7 @@ to stop — on a repair round it is the expected reading, because it is exactly
 what the driver saw before dispatching you. Run the gate anyway (it reconciles
 replied threads and refuses on a merged PR, both of which still matter), then
 proceed to the repair **only when the gate's answer matches the dispatched
-task** — a `ci-repair` round proceeds on `CONVERGED`, a `conflict-resolve`
+task** — a `ci-repair` or `ci-diagnose` round proceeds on `CONVERGED`, a `conflict-resolve`
 round proceeds on `PR_CONFLICTING`, and the two are not interchangeable. The
 state can genuinely have moved between dispatch and this fresh read — the
 base merged out from under a conflict, or a competing push turned a converged
@@ -1736,9 +1739,9 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 
 Then:
 
-- **`ci-repair`** — repair CI on this PR. When `$DRIVE_PR_ROUND_REPAIR_SKILL`
-  is set, load that skill first and follow it; otherwise follow
-  [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure. Read the logs of the runs
+- **`ci-repair`** — repair CI on this PR. Read `$DRIVE_PR_ROUND_REPAIR_SKILL`
+  when set, or [`/jig:fix-ci`](../fix-ci/SKILL.md) otherwise. Apply its repair
+  steps after the log triage and base sync below. Read the logs of the runs
   `$DRIVE_PR_ROUND_FAILED_RUNS` names and of the statuses
   `$DRIVE_PR_ROUND_FAILED_STATUSES` names:
   `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
@@ -1750,16 +1753,6 @@ Then:
   own host (never a loopback, internal-network or metadata address, or a
   host the repository does not use for CI), and when that gives none either,
   end the round without a commit and say the log is missing: a fix without it is a guess.
-  Reproduce locally where possible, fix the cause. Fix every failing
-  check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
-  run the round's validation plan over the cumulative tree, and **§ 6** to
-  commit and push. §§ 2–4 have nothing to enumerate — the review converged
-  before you were dispatched.
-
-  When the detail names a timed-out job, find why it ran past its limit (a
-  hang, a step that waits on something that never comes, work that grew
-  slower) and fix that; raise its `timeout-minutes` only when the work
-  legitimately needs longer. Re-running it stops at the same limit.
 
   When the log shows the failure is not in the code (a lost runner, a network
   error), re-run the failed workflow runs instead of committing (a commit
@@ -1774,6 +1767,67 @@ Then:
   the hold again; the variable omits those, and is empty or unset when no run
   could be named safely. Then re-run nothing, and read the failing checks' runs
   from `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --commit <head>`.
+  End the round after an infrastructure rerun.
+
+  For a code repair, run **§ 5**'s base sync and dependency check before
+  reproducing the failure, editing, or validating. CI repair syncs any
+  advanced base so local validation includes the gates and configuration
+  that CI sees. On `fetch-failed`, stop the round. On exit `9`, follow § 5's
+  conflict handoff. Reproduce locally where possible and fix every failing
+  check using the chosen repair skill. Use **§ 5** for cumulative validation
+  and **§ 6** for committing and pushing this round. §§ 2–4 have nothing to
+  enumerate because the review already converged.
+
+  When the detail names a timed-out job, find why it ran past its limit (a
+  hang, a step that waits on something that never comes, work that grew
+  slower) and fix that; raise its `timeout-minutes` only when the work
+  legitimately needs longer. Re-running it stops at the same limit.
+
+- **`ci-diagnose`** — a `ci-repair` whose earlier passes on this head did not
+  fix CI. Work in this order:
+  1. Compare the earlier attempts with the failure: read the driver log and the
+     commits the previous repair passes pushed or left (`git log`,
+     `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" get`), then the logs of the
+     runs and statuses the variables name, as `ci-repair` reads them. Say what
+     each attempt assumed and why the failure survived it.
+  2. Track the recurring cause as one tracker issue through
+     [`/jig:file-issue`](../file-issue/SKILL.md) (search for an existing one
+     first); its key goes in the receipt. Read the autonomy level first
+     (§ Autonomy). At `unattended` or `wide`, nobody is there to answer
+     file-issue's questions, so answer them yourself: the priority is 2 (a
+     recurring CI failure blocks the merge), and a matching open issue is
+     updated with a comment on the new evidence rather than filed again, as
+     the issue-filing row allows. At `attended`, or when the base branch's
+     policy cannot be read, file nothing: park the decision under
+     `human-decision` (§ 4) and still repair the cause.
+  3. Repair the cause as `ci-repair` does, base sync first: when
+     `$DRIVE_PR_ROUND_REPAIR_SKILL` is set load it, else follow
+     [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and § 6, pushing through
+     `finish-round.ts`.
+  4. Write the receipt to the path in `$DRIVE_PR_CI_DIAGNOSIS_REPORT`, at most
+     4096 bytes of JSON, with the file editor:
+     `{"diagnosis": "<why the earlier attempts failed and what this one changes>", "issue": "<tracker key>", "pushedHead": "<sha of the head you pushed>"}`.
+     When you parked the filing (attended, or policy unreadable), give
+     `"parked": "<the key you parked it under>"` in place of `issue`. The
+     driver accepts that receipt only when the drive state holds a
+     `human-decision` park of that key made during this diagnosis; it then
+     records "no issue filed" and still verifies the push. A receipt with
+     neither key, or both, is incomplete.
+     `diagnosis` is prose (400 characters are kept, secrets and addresses
+     redacted); `issue`, when present, is a tracker key of at most 80 characters;
+     `parked`, when present, at most 200 characters on one line;
+     `pushedHead` is the full commit id, omitted when nothing was pushed. When
+     the pull request's head is no longer `$DRIVE_PR_CI_DIAGNOSIS_HEAD` when
+     you start, write only `{"staleHead": true}` and stop without a push. When
+     the fresh gate no longer reads `CONVERGED` (a new finding made the head
+     `ROUND_READY`), write only `{"standDown": true}` and stop without a push:
+     the driver releases the reservation, keeps the head's diagnosis unspent
+     and re-gates.
+
+  A pass that ends without a valid receipt stops the drive with the diagnosis
+  missing, so write it even when the repair needs a person: say so in
+  `diagnosis` and push nothing.
+
 - **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
@@ -2948,6 +3002,7 @@ nothing, naming which one was missing:
    local commit the head branch does not have. A merge riding a round that was
    pushing anyway costs no extra round and no extra reviewer cycle.
 
+CI-repair rounds require only condition 1 and a successful fetch.
 `--check` reports without merging. `--force` drops 2 and 3 — for the case the
 loop cannot see, such as converging and wanting the local gates and the
 `refs/pull/N/merge` CI checkout to agree first. Say why when you use it.

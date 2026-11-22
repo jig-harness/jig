@@ -575,7 +575,7 @@ describe("a driver pass reads its policy from the base branch", () => {
     expect(c).toContain("data-retention");
   });
 
-  test("an unreadable policy fails closed: attended, and every decision parked as a person's", () => {
+  test("an unreadable policy fails closed: attended, and every new decision parked as a person's", () => {
     const c: Case = {
       driver: true,
       unreadable: "no base",
@@ -586,7 +586,7 @@ describe("a driver pass reads its policy from the base branch", () => {
     expect(a.ceiling).toBe("attended");
     expect(a.policy).toEqual({ from: "unreadable", reason: "no base" });
     expect(describeAutonomy(a)).toContain(
-      "every decision is parked under human-decision until it reads",
+      "every new decision is parked under human-decision until the policy can be read",
     );
     const { root, env } = setup(c);
     expect(
@@ -833,7 +833,7 @@ describe("the command line", () => {
     expect(stdout.split("\n")).toContain("data-retention");
   });
 
-  test("a driver pass whose base cannot be read runs attended and parks everything as a person's", async () => {
+  test("a driver pass whose base cannot be read runs attended and parks new decisions as a person's", async () => {
     const c: Case = {
       driver: true,
       unreadable: "unset",

@@ -888,21 +888,20 @@ to discard: the pass finishes it or starts it over (`drive-pr` `SKILL.md` § 0),
 and a tree that holds one behind a moved head refuses the attach, which leaves
 the ledger stopped `9`, so a person is told.
 
-A drive that stopped `14` (stalled: its passes changed nothing for the stall
-threshold and one extra round) or `21` (the review converged, but CI still
-fails with its CI-repair passes spent) stopped on a cause whose next step is
-the drive's own, not a person's decision: a pass that reads why the stalled
-passes did not act, or a CI repair with a fresh budget. So each is re-driven
-once per change, here the pull request's head commit with the exit, on any
-admitted account. The re-armed drive's first pass is told the stop and, for a
-stall, what its passes recorded last, which the drive reads from its own
-state and the ledger, wherever it runs. A stall whose stop recorded work left
-in its tree (uncommitted edits, an open merge, unpushed commits) is re-driven
-in that tree, the one the ledger names, and never in a fresh one, which would
-not carry the work: on another host the tick leaves it to that host's
-dispatcher, and on this host, with no open workspace holding that tree, a
-person is told. A person is told too once a re-drive leaves the same stop at
-the same head, as for a conflict stop; a head that moves is a new attempt.
+A drive stopped for a stall (exit `14`) is re-driven once per head. The
+re-armed drive reads its handoff and ledger to see what the earlier passes
+recorded. A stall that recorded work left in its tree is re-driven there.
+On another host the tick leaves it to that host's dispatcher. If the current
+host has no open workspace holding that tree, or the re-drive leaves the
+same stop on the same head, a person is told.
+
+The drive starts a diagnosing repair session when it spends its CI-repair
+budget. If that session cannot complete the repair, it records its outcome
+on the ledger and stops with exit `21`. The dispatcher sends that outcome
+and the tracker issue, when available, to a person. An exit `21` with no
+diagnosis entry for the current head is eligible for the once-per-head
+re-drive. This covers ledgers written before diagnosing repair and a head
+that moved since the diagnosis.
 
 A drive whose converged head's failing checks all failed on the
 infrastructure (a lost runner, or a setup step's network failure, with no
@@ -1038,8 +1037,9 @@ ordinary budget.
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified                                                                                                                                                         | stale                                                    | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head                                                                                                                                                                                                                                                                                            |
 | stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head                                                                    | stale                                                    | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there                                                                                                                                                                                                                                                         |
 | stopped `9`, this machine or another host already having re-driven that change, however that launch ended                                                                                                                                                                              | needs a person                                           | notifies per stop, with the exit and the drive's handoff                                                                                                                                                                                                                                                                                                                                                             |
-| stopped `14` (stalled) or `21` (CI still failing with its repair passes spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit                                                                           | stale                                                    | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told                                                                                                                                                                               |
-| stopped `14` or `21`, this machine or another host already having re-driven that head with that exit, however that launch ended                                                                                                                                                        | needs a person                                           | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does                                                                                                                                                                                                                                                                                               |
+| stopped `14` (stalled) or `21` without a diagnosis record for the current head, neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit                                                                           | stale                                                    | re-arms on any admitted account; a stall that left work in its tree, or whose stop never measured it, re-arms only in that tree: on another host it is left to that host, and with no open workspace holding it here, a person is told                                                                                                                                                                               |
+| stopped `14` or `21` without a diagnosis record for the current head, this machine or another host already having re-driven that head with that exit, however that launch ended                                                                                                                                                        | needs a person                                           | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does                                                                                                                                                                                                                                                                                               |
+| stopped `21` with a diagnosis record on the current head | needs a person | notifies with the diagnosing session’s outcome and tracker issue when available |
 | stopped `23` (CI still failing on the infrastructure through its re-runs and head moves), its backoff from the stop passed, no re-drive of that stop held or made, fewer than 7 such stops in a row                                                                                    | stale                                                    | re-arms on any admitted account; inside the backoff (15 minutes after the first such stop, doubling with each consecutive one, at most 4 hours) it is reported quiet and nothing is launched                                                                                                                                                                                                                         |
 | stopped `23`, that stop already re-driven however that launch ended, or 7 such stops in a row                                                                                                                                                                                          | needs a person                                           | notifies per stop, with the exit and the drive's handoff, or that the infrastructure has not recovered                                                                                                                                                                                                                                                                                                               |
 | stopped `25` (its head's check-runs listing could not be read whole), neither this machine's records nor another host's launch claims holding a re-drive of that head with that exit | stale | re-arms once per head commit; a stop that left work or was never measured re-arms only in its original tree, and only an explicitly clean measurement permits any admitted account to run it; the cause names the pages read |
@@ -2037,10 +2037,24 @@ that is exactly what the dispatcher wrote gives up the entries whose causes
 are settled (no cause the tick names carries the key, and no suppression
 record that still stands does: the test that retires an unread notices
 workspace) to make room for the new ones; an entry whose cause still stands
-is never dropped. A cause that still finds no room waits, and the failure
-ledger counts it as a failed delivery, so past `failures.notify_after`
-ticks a person is told through whatever destination still delivers (see
-Failures). Each cause's text carries its key (the facts its
+is never dropped. Every comment the dispatcher writes keeps room for a
+summary entry of the causes that wait: a cause that still finds no room
+waits, which is not a failed delivery, so it neither backs off nor is
+raised as failing, and the summary, keyed by a digest of the keys it
+counts, says how many wait, of which kinds and which ones (as many as fit).
+Where the
+comment leaves no room for the summary, the waiting causes are not counted in
+it until room opens. The summary is a record of the last write, not a live
+count: it can outlast the causes it counted, until the next write that is allowed to
+rewrite the comment. Where a person has added to the comment of the workspace
+`dispatch.notices_branch` names, the comment is no longer
+exactly what the dispatcher wrote, so a new notice is appended and the summary
+stays as it is, no longer at the end. The automatic notices workspace keeps no
+such guarantee: once read, its comment is replaced by the next notification write, a
+person's addition and the summary with it; until then they stay. A cause that
+waits has no new suppression record (a cause sent earlier keeps its own, and
+holding its repeat removes none), so it stays due every tick and goes in
+full once the workspace is read or its other entries settle. Each cause's text carries its key (the facts its
 suppression record is keyed by). A cause counts as sent, and its
 suppression record is written, only once the runtime's receipt shows the
 comment carrying its key, so a cause never delivered is never suppressed.

@@ -21,9 +21,16 @@ import { personStopFor } from "./person-stop.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { thisHost } from "../../../../../shared/liveness.ts";
+import { fenceOnForgeLimit } from "../../../../../shared/outbound/forge-limit-seen.ts";
 import { fail } from "../cli.ts";
 import { inspectLock, prLockName } from "../driver/locks.ts";
-import { handoffPath, installNarrative, narrativeOf } from "./handoff.ts";
+import { type ForgeLimit, reportLimit, reportedLimit } from "../forge-limit.ts";
+import {
+  handoffPath,
+  installNarrative,
+  narrativeOf,
+  renderHandoff,
+} from "./handoff.ts";
 import {
   type ClaimComment,
   type Ledger,
@@ -185,6 +192,21 @@ export type MirrorOutcome = "written" | "refused" | "failed";
  */
 export const LEDGER_REFUSED_EXIT = 76;
 export const HANDOFF_TELLS_REFUSED = "DRIVE_PR_HANDOFF_TELLS_REFUSED";
+export const HANDOFF_REPORT_LIMIT = "DRIVE_PR_HANDOFF_REPORT_LIMIT";
+const LIMIT_RECEIPT = "jig handoff rate limit ";
+
+/** The refusal the handoff subprocess reported on its last output line. */
+export function handoffLimit(stdout: string): ForgeLimit | null {
+  const receipt = stdout.trimEnd();
+  if (!receipt.startsWith(LIMIT_RECEIPT)) return null;
+  try {
+    const value: unknown = JSON.parse(receipt.slice(LIMIT_RECEIPT.length));
+    return isRecord(value) ? reportedLimit(value) : null;
+  } catch (error) {
+    swallow(error, "the handoff's rate-limit receipt was malformed");
+    return null;
+  }
+}
 
 /** `handoff`'s exit for what the ledger write did. */
 export function handoffExit(
@@ -195,6 +217,16 @@ export function handoffExit(
   return outcome === "refused" && env[HANDOFF_TELLS_REFUSED] === "1"
     ? LEDGER_REFUSED_EXIT
     : 0;
+}
+
+/** Rewrite the handoff file and publish the driver's ledger, with a receipt when asked. */
+export async function handoff(pr: string, store: StateStore): Promise<number> {
+  await store.locked(async () => {
+    const out = await renderHandoff(pr, store.read().state);
+    if (process.env[HANDOFF_REPORT_LIMIT] !== "1")
+      process.stdout.write(`${out}\n`);
+  });
+  return handoffExit(await mirrorLedger(pr, store));
 }
 
 /**
@@ -254,9 +286,15 @@ export async function mirrorLedger(
   store: StateStore,
 ): Promise<MirrorOutcome> {
   if (ledgerDriverFromEnv() === null) return "refused";
-  return withLedgerWriteLock(store.stateDir, pr, () =>
-    mirrorUnlocked(pr, store),
-  );
+  const mirror = () =>
+    withLedgerWriteLock(store.stateDir, pr, () => mirrorUnlocked(pr, store));
+  if (process.env[HANDOFF_REPORT_LIMIT] !== "1") return mirror();
+  const { value, limit } = await fenceOnForgeLimit(mirror);
+  if (limit !== null)
+    process.stdout.write(
+      `${LIMIT_RECEIPT}${JSON.stringify({ rateLimit: reportLimit(limit) })}\n`,
+    );
+  return value;
 }
 
 async function mirrorUnlocked(

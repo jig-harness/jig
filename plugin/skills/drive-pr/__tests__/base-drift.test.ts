@@ -513,6 +513,20 @@ describe("driftLine", () => {
     expect(line).not.toContain("base-sync.ts");
   });
 
+  it("prescribes merging before CI repair when only the base changed a gate", async () => {
+    const { r } = await probe({
+      behind: "1",
+      prFiles: ["src/app.ts"],
+      baseFiles: ["scripts/gates.ts"],
+    });
+    if (!r.ok) throw new Error(r.why);
+    expect(driftLine(r.drift, true)).toContain(
+      "before reproducing the CI failure",
+    );
+    expect(driftLine(r.drift, true)).toContain("base-sync.ts");
+    expect(driftLine(r.drift)).toContain("nothing to merge in");
+  });
+
   it("prescribes base-sync, before the validation plan, when there IS overlap", () => {
     const line =
       driftLine(

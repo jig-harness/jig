@@ -1042,10 +1042,12 @@ async function main(): Promise<number> {
       ? null
       : fleetHealthLine(Number.parseInt(pr, 10), advisory.fleetHealth);
     if (fh !== null) console.error(fh);
-    // On stderr with the rest of the round's narration, so the non-`--json`
-    // caller — whose stdout is the state name and nothing else — sees it too.
+    // Plain output reserves stdout for the state name.
     if (drift !== null) {
-      const line = driftLine(drift);
+      const line = driftLine(
+        drift,
+        process.env.DRIVE_PR_ROUND_TASK === "ci-repair",
+      );
       if (line !== null) console.error(line);
     }
   }

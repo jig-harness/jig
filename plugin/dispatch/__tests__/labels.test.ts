@@ -454,14 +454,13 @@ describe("jig install dispatch --repo", () => {
     expect(described(ghCalls(w))).toEqual([]);
   }, 60_000);
 
-  it("lists a label whose description changed beside a missing one, updates it with --yes and keeps its color, and lists for a person one the account may not edit", async () => {
+  it("lists a label whose description changed beside a missing one, sets its description alone with --yes, and lists for a person one the account may not edit", async () => {
     const w = fixture(ON);
     const stale = current("jig:stale");
-    // Installed by an earlier release, and recolored by a person since.
+    // Installed by an earlier release that meant something else by it.
     const earlier = {
       ...stale,
       description: "An earlier release's meaning of the label",
-      color: "000000",
     };
     const others = labelSet({ ...DEFAULT_LABELS, enabled: true }).filter(
       (l) => l.name !== stale.name,
@@ -483,6 +482,7 @@ describe("jig install dispatch --repo", () => {
       "these dispatch labels do not exist yet; repeat with --yes to create them:",
     );
     expect(preview.stdout).toContain("  automation: ");
+    expect(preview.stdout).not.toContain("another color");
     expect(described(ghCalls(w, true))).toEqual([]);
 
     writeFileSync(join(w.dir, "label-describe-fail"), "");
@@ -490,7 +490,7 @@ describe("jig install dispatch --repo", () => {
     expectSpawnExit(refused, 1);
     expect(refused.stdout).toContain(`${SLUG}: created automation`);
     expect(refused.stdout).toContain(
-      `gh label edit 'jig:stale' --repo ${SLUG} --description '${stale.description}'`,
+      `gh label edit 'jig:stale' --repo ${SLUG} --description '${stale.description}'   # `,
     );
     expect(repoLabels(w).find((l) => l.name === stale.name)).toEqual(earlier);
 
@@ -510,8 +510,85 @@ describe("jig install dispatch --repo", () => {
     const again = await labelsPart(w, "--yes");
     expectSpawnExit(again, 0);
     expect(again.stdout).toContain(
-      "every dispatch label under 'jig:' exists and says what this release means by it",
+      "every dispatch label under 'jig:' exists, says what this release means by it and has its color",
     );
+    expect(described(ghCalls(w))).toEqual([]);
+  }, 60_000);
+
+  it("lists a label an earlier release colored otherwise, sets its color alone with --yes, and lists for a person one the account may not edit", async () => {
+    const w = fixture(ON);
+    const failed = current("jig:followup-failed");
+    const held = current("jig:held");
+    // followup-failed as an earlier release colored it, held recolored and redescribed since.
+    const earlier = { ...failed, color: "D93F0B" };
+    const recolored = {
+      ...held,
+      description: "An earlier release's meaning of the label",
+      color: "000000",
+    };
+    const others = labelSet({ ...DEFAULT_LABELS, enabled: true }).filter(
+      (l) => l.name !== failed.name && l.name !== held.name,
+    );
+    writeFileSync(
+      labelsFile(w),
+      JSON.stringify([
+        earlier,
+        recolored,
+        ...others,
+        {
+          name: "manual-ops",
+          description: "The repository's own",
+          color: "123456",
+        },
+        { name: "automation", description: "", color: "654321" },
+      ]),
+    );
+
+    const preview = await labelsPart(w);
+    expectSpawnExit(preview, 0);
+    expect(preview.stdout).toContain(
+      "these dispatch labels have another color than this release gives them; repeat with --yes to update them:",
+    );
+    expect(preview.stdout).toContain("  jig:followup-failed: d93f0b -> a40e4c");
+    expect(preview.stdout).toContain(`  jig:held: 000000 -> ${held.color}`);
+    expect(preview.stdout).toContain(`  jig:held: ${held.description}`);
+    expect(preview.stdout).not.toContain("do not exist yet");
+    // A marker label keeps the repository's own color and description.
+    expect(preview.stdout).not.toContain("manual-ops");
+    expect(described(ghCalls(w, true))).toEqual([]);
+
+    writeFileSync(join(w.dir, "label-describe-fail"), "");
+    const refused = await labelsPart(w, "--yes");
+    expectSpawnExit(refused, 1);
+    expect(refused.stdout).toContain(
+      "these labels could not be edited with the signed-in account; a person who may edit labels runs:",
+    );
+    expect(refused.stdout).toContain(
+      `gh label edit 'jig:followup-failed' --repo ${SLUG} --color a40e4c   # `,
+    );
+    expect(refused.stdout).toContain(
+      `gh label edit 'jig:held' --repo ${SLUG} --description '${held.description}' --color ${held.color}   # `,
+    );
+    expect(repoLabels(w).find((l) => l.name === failed.name)).toEqual(earlier);
+
+    rmSync(join(w.dir, "label-describe-fail"));
+    ghCalls(w, true);
+    const updated = await labelsPart(w, "--yes");
+    expectSpawnExit(updated, 0);
+    expect(updated.stdout).toContain(`${SLUG}: updated jig:followup-failed`);
+    expect(described(ghCalls(w, true)).sort()).toEqual([
+      `label edit jig:followup-failed --repo ${SLUG} --color a40e4c`,
+      `label edit jig:held --repo ${SLUG} --description ${held.description} --color ${held.color}`,
+    ]);
+    expect(repoLabels(w).find((l) => l.name === failed.name)).toEqual(failed);
+    expect(repoLabels(w).find((l) => l.name === held.name)).toEqual(held);
+    expect(repoLabels(w).find((l) => l.name === "manual-ops")?.color).toBe(
+      "123456",
+    );
+
+    const again = await labelsPart(w, "--yes");
+    expectSpawnExit(again, 0);
+    expect(again.stdout).toContain("has its color");
     expect(described(ghCalls(w))).toEqual([]);
   }, 60_000);
 

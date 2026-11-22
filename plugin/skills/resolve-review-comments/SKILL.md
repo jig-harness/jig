@@ -520,11 +520,11 @@ not being made. It scores as a true positive carrying a materiality signal.
 [triage rubric](references/triage-rubric.md) or the Review Arbiter; a human
 decides only on arbiter escalation. File an entry in the backlog **batch**
 issue via `scripts/defer-batch.ts`, then reply with its link, then resolve.
-Where no adapter can file
+For a drive, a tracker or label refusal uses the Deferred section link
+returned by the batch command. Where no adapter can file
 (`bun "${CLAUDE_SKILL_DIR}/scripts/defer-in-pr.ts" route` prints `pr-body`),
 record the finding in the pull request's own `## Deferred` section with
-`scripts/defer-in-pr.ts` instead and reply with the section's link: a
-deferral is never a park. Follow
+`scripts/defer-in-pr.ts` and reply with the section's link. Follow
 [deferral-protocol.md](references/deferral-protocol.md) exactly — it specifies
 the `pr-followup` label, the backlog and related-link rule, and the batching
 contract (it, not this line, owns the batch key — restating it here is how the

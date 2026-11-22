@@ -418,10 +418,7 @@ export const NEEDS_AND_ANSWERS: Chapter = {
     "A decision waiting for a person and the answers to it: the decision record's fields, the forms and lines of a structured answer and how it is normalized, the acts a need asks for, and the dispatcher's own framings with the options it carries out.",
   version: 1,
   status: "provisional",
-  planItems: [
-    { item: 46, epic: 693 },
-    { item: 50, epic: 940 },
-  ],
+  planItems: [{ item: 50, epic: 940 }],
   module: "tools/protocol/chapters/needs-and-answers.ts",
   sections: [
     { source: `${VALUES}#PARKED_DECISION_FIELDS`, render: fieldsTable },

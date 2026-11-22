@@ -12,7 +12,8 @@
  * | running, heartbeat past the lease window | silent, read beside whether this host shows its driver gone |
  * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
  * | stopped `PR_CONFLICTING` (`9`) | stale |
- * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`), `PASS_DEADLINE` (`15`) | stale, once per head commit |
+ * | stopped `CI_REPAIR_SPENT` (`21`) with diagnosis on the current head | needs-person, with the diagnosis |
+ * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` without a diagnosis on the current head, `PASS_DEADLINE` (`15`) | stale, once per head commit |
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
  * | stopped `CHECK_RUNS_UNREADABLE` (`25`) | stale, once per head commit, naming the pages read; a second such stop on the head is a person's, as a systematic read failure |
  * | stopped `FORGE_RATE_LIMITED` (`24`) | stale, once per stop from the forge limit's reset (`forge-limit-redrive.ts`) |
@@ -55,10 +56,9 @@
  * could not resolve, such as two requirements that contradict each other, is
  * that person's decision too.
  *
- * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or
- * `CHECK_RUNS_UNREADABLE` is a stop the drive's
- * own next step settles: a pass that finds why the stalled passes did not
- * act, or a CI repair with a fresh budget. Its change is its head commit and
+ * A stall, an unreadable check-runs listing (`CHECK_RUNS_UNREADABLE`), or a
+ * CI stop without a diagnosis on the current head, is
+ * eligible for recovery. Its change is its head commit and
  * its exit, so it is re-driven once for each; once this machine or another
  * host re-drove that change and the ledger still stopped the same way, it is
  * a person's (`settleConflictStops`). A stall whose stop recorded work left
@@ -111,6 +111,7 @@ import type {
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { snapshotFromListing } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { diagnosisOutcome } from "../../../skills/drive-pr/scripts/lib/state/ci-actions.ts";
 import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { ledgerTree } from "../stall-tree.ts";
 import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
@@ -377,6 +378,18 @@ const MECHANICAL_STOPS: ReadonlyMap<
   ],
 ]);
 
+/** Why a `CI_REPAIR_SPENT` stop whose head was diagnosed is a person's, or `null`. */
+function diagnosedStopWhy(
+  ledger: Ledger,
+  exit: number,
+  head: string,
+): string | null {
+  const detail = diagnosisOutcome(ledger.ciActions ?? [], head);
+  return detail === undefined
+    ? null
+    : `stopped ${exit} after escalating CI repair on head ${short(head)}: ${detail}`;
+}
+
 /**
  * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or `PASS_DEADLINE`,
  * read beside its pull request's head: `stale`, keyed on that head and the
@@ -397,6 +410,13 @@ function mechanicalStopClass(
     };
   if (stop.kind === "ci-infra")
     return infraStopClass(ledger, exit, head, stop.words);
+  const diagnosed =
+    stop.kind === "ci-repair" ? diagnosedStopWhy(ledger, exit, head) : null;
+  if (diagnosed !== null)
+    return {
+      class: "needs-person",
+      why: `${diagnosed}${conflictNote(forge.mergeable)}`,
+    };
   if (stop.kind === "forge-limit")
     return forgeLimitStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);

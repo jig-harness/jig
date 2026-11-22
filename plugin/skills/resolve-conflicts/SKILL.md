@@ -297,9 +297,10 @@ capability and go to Step 8. Record `escalate` on an affected mapped
 path when one exists.
 
 Preserve the integration side's existing snapshots when renumbering.
-With a legacy Drizzle journal, preserve the complete committed integration
-entries as the prefix. Append the remaining entries in order with strictly
-increasing timestamps greater than the last integration entry.
+Preserve the committed integration journal as the prefix, its entries in
+their committed order even where that is not sequence order. Append the
+migrations the integration side does not commit, in sequence order; with a legacy Drizzle journal, give
+them strictly increasing timestamps greater than every integration entry's.
 Stage the rebuilt files and record `regenerated` for each one that
 conflicted. Never combine a journal or snapshot by hand.
 
@@ -451,7 +452,9 @@ It fails (exit 1), listing each problem with its file and line, when:
 The check also verifies every sequenced migration added on either side.
 The staged SQL and file mode must match the committed input at the required
 path, even when a decision acknowledges deletion or rewriting. It checks
-that the journal lists every staged migration once in order, that the required
+that the journal keeps the integration journal's entries as committed and
+then lists every staged migration the integration side does not commit
+once in order, that the required
 snapshots are present, and that renumbering preserves the integration side's
 snapshots.
 

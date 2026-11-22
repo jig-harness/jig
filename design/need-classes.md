@@ -24,7 +24,7 @@ there: the dispatcher's re-drives and recovery budget
 ([dark-factory-dispatch.md](dark-factory-dispatch.md)), every need framed
 as a decision the tick carries out on a person's answer
 ([structured-answers.md § Every need framed](structured-answers.md#every-need-framed)),
-the answer sent from the dashboard (item 46), and the
+the structured answers sent from the dashboard, and the
 [steward](../plugin/skills/steward/README.md).
 [ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)
 records the steward's widened remit.
@@ -62,7 +62,7 @@ below is a gap, and its weekly reflection finding proposes a row.
 
 | Class | Shows on the line as | Settled |
 | --- | --- | --- |
-| CI repair spent, or a CI verdict misread | a drive handed to a person (exit `21`, or `1`), a park on a cancelled run | at the source; by the steward; by an answer |
+| Diagnosing CI repair failed, or a CI verdict could not be read | a drive handed to a person with its diagnosis and tracker issue when available (exit `21`), a verdict read failure (exit `1`), or a park on a cancelled run | at the source; by the steward; by an answer |
 | A stage ended without a result | a failed follow-up, a pickup's question, a stage that died | at the source; by the tick |
 | A stalled pickup | `stalled` | at the source; by the tick; by the steward; by an answer |
 | A release blocked | a failed follow-up on every merge after the release | at the source; by an answer under `release`; a stuck deployment by a person alone |
@@ -232,7 +232,7 @@ follow-up then asks the same question.
 A drive parked on a class the registry reserves for a person. These are
 the decisions the line exists to hand over, so they are made cheap to
 answer: framed with a recommendation and answered in a word from the
-dashboard (#693). The acceptance report (`jig dispatch log --acceptance`)
+dashboard. The acceptance report (`jig dispatch log --acceptance`)
 shows how often a class follows its recommendation, and a repository may
 retire a class from `autonomy.park_classes` on that evidence. The steward
 never answers a registry park.
@@ -416,7 +416,7 @@ steward's digest or its words:
 | --- | --- | --- |
 | `settle` with `link` (the item, pull request `#N`) | a stalled pickup whose work is in a pull request no launch opened | the pull request is open, in the same repository, opened by a login the repository trusts (a writer, or one of `dispatch.adopt.authors`), and links the item in the repository's `pull_requests.issue_link` form; the tick moves the item to `pr_open`. A merged pull request is not settled this way: its need is framed with the link named, and an item is never moved to done |
 | `settle` with `release` (the item) | a stale claim | a launch record or claim marker of this host made the claim, no session holds the work, no open pull request carries the item and its tree holds no unpushed commit; the tick moves the item back to the state a pickup starts from |
-| `redrive` (the pull request, class `flake`) | a spent CI re-drive (exit `21`) | the forge shows the failing job passed on the base, or on another run of the same head; one per head, at most three a week per repository, on top of `dispatch.redrive.ci` and within the recovery budget. Reaching the weekly cap records a reflection finding proposing a rule |
+| `redrive` (the pull request, class `flake`) | a spent re-drive of a ledger from before CI diagnosis (exit `21`) | the forge shows the failing job passed on the base, or on another run of the same head; one per head, at most three a week per repository, on top of `dispatch.redrive.ci` and within the recovery budget. Reaching the weekly cap records a reflection finding proposing a rule |
 | `rerun-checks` (the run) | a failed run on a converged head or a releasing commit | the run's commit is the pull request's head or the releasing commit, and `shared/ci-infra.ts` or the job's history on the forge classifies the failure as passing; once per run |
 
 For each widened record it applies, the tick comments on the item or the
@@ -462,6 +462,7 @@ do is what the tick would do anyway on the same facts.
 | `dispatch.stalled_relaunch` | repository | `finish-once` | Whether unpushed pickup work may be finished unattended (`never` turns it off) |
 | `dispatch.followup_routine` | repository | `[local-leftover, person-owed, drafted-items]` | What a follow-up may file unattended in that repository's tracker |
 | `changelog.release.rerun_failed_gates` | repository | `1` | Release policy is the repository's |
+| `changelog.release.tagged_by` | repository | `workflow` | Who tags a release is the repository's release procedure |
 | `steward.remit` | host, capped by each repository's `autonomy.max_level` | `[rearm, resume, need, facet, order, cause]` | The host opts in to `settle`, `redrive` and `rerun-checks`; in a repository whose `max_level` is `attended`, the tick turns such a record into a framed need |
 | `failures.rerun_died` | host | `1` | A host fault is the host's to retry |
 | `failures.group` | host | `cause` (`scope` keeps one need per scope) | One need per host fault |

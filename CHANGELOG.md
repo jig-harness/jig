@@ -404,6 +404,129 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.301.3] - 2026-11-22
+
+### Fixed
+
+- Updated the Protocol and tracker documentation to reflect the current
+  status of structured answers and the available tracker adapters.
+
+## [0.301.2] - 2026-11-22
+
+### Fixed
+
+- A repository with more standing notices than its notices workspace's comment holds no longer fails them one by one. The dispatcher keeps room in every comment it writes for a summary entry that says how many notices wait, of which kinds and which ones, and that its counts are complete although its list of them may be cut to fit. Where the comment leaves no room for the summary, the waiting notices are not counted in it until room opens. A notice that waits for room is not counted as a failed delivery, so it neither backs off nor raises an "action failing" notice of its own, and a failure the old rule recorded for it is cleared. Each goes in full once a person reads the workspace or its other entries settle.
+
+## [0.301.1] - 2026-11-22
+
+### Fixed
+
+- When the forge rate-limits a drive after its stop label is written, the drive
+  waits for a reset within its configured bound or records a rate-limited stop
+  with the reset time so the dispatcher can resume it.
+- When a drive spends its CI-repair budget, it starts one diagnosing session on the failing head. The session compares the earlier repairs with the failed CI run, records the recurring cause in the tracker (or parks that filing for a person, which the drive verifies before accepting the diagnosis), and attempts the repair. Dispatch hands off an unresolved diagnosis with its tracker issue instead of repeating the same repair on that head.
+
+## [0.301.0] - 2026-11-22
+
+### Added
+
+- `changelog.release.tagged_by` says who creates a release's tag:
+  `workflow` (the default) or `person`. Set to `person`, the dispatcher's
+  release decision recommends **Tag it by hand** and offers no re-run of
+  the failed gates.
+- `jig dispatch release-owed` takes `--state`, the version's state in the
+  tag plan. The follow-up passes it when it records a release owed.
+
+### Fixed
+
+- The dispatcher's release decision recommended **Re-run the failed gates**
+  even when no gate had failed. Now it recommends the re-run unless the
+  follow-up recorded that every required check passed or that the version is
+  outside automatic tagging, or a re-run was already requested. It
+  recommends **Tag it by hand**, giving the reason, when every required
+  check passed, the version is outside automatic tagging, the repository
+  allows no re-run (`changelog.release.rerun_failed_gates: 0`), or the
+  repository makes the tag a person's step. Releases that differ in what is
+  left to try are not grouped together.
+- Review drivers file follow-up issues for findings they defer without waiting for confirmation, including at the default autonomy level. If filing fails, the finding stays in the pull request's Deferred section.
+- A host's weights file (`weights.local.yaml`) that names an account the
+  machine file does not list no longer closes every account for new
+  launches. The name is skipped and the file's other weights apply; each
+  account's reason in the receipt and the account view names what was
+  skipped, and the host raises one notice naming the file, the skipped
+  names and the accounts the machine file lists. Every other fault in the
+  accounts section or the document still closes every account; an invalid
+  `lanes` section does not change account weights.
+
+## [0.300.4] - 2026-11-21
+
+### Fixed
+
+- CI-repair rounds sync an advanced pull request base before reproducing
+  failures, so local checks include the gate changes CI runs.
+
+## [0.300.3] - 2026-11-21
+
+### Fixed
+
+- `resolve-conflicts`: the resolution check no longer refuses a merge
+  because the base branch's own migration journal lists its migrations out
+  of sequence order or with timestamps out of order, as a journal does when a
+  long-lived branch's migration merged late. The committed journal is taken
+  as given: the check fails only when the resolution drops or changes one of
+  its entries, or the branch's migrations do not follow it in sequence order
+  with later timestamps. A conflict round on a repository with such a
+  journal, including one whose pull request adds no migration, can conclude
+  again.
+- `jig upgrade` (and the scheduled refresh) no longer fails on every run
+  when several git worktrees of one repository each hold a Claude Code
+  project-scope install of the plugin. `claude plugin update --scope project`
+  updates the first install of the repository, not the worktree it runs
+  from, so the upgrade now runs it once per repository, reports when it
+  refreshed another directory than the one it ran in (naming both), and
+  brings each install it cannot reach to the user-scope version in Claude
+  Code's install record, reported as `rewritten`. Configuration directories
+  sharing one plugins directory then find every install current, so a
+  second one runs no update. An install the upgrade still cannot bring
+  there, or a user-scope install that is missing or disabled, still fails
+  the run. **Consumer action:** none.
+
+## [0.300.2] - 2026-11-21
+
+### Fixed
+
+- The `jig:followup-failed` pull request label has its own crimson
+  (`a40e4c`) instead of `jig:parked`'s red, so a pull request whose
+  follow-up failed is told apart from one waiting on a person's answer.
+  Green stays `jig:converged`'s alone, and a test holds the label set to
+  that rule.
+- `jig dispatch labels` (and the labels part of `jig install dispatch`)
+  now also lists a dispatch label whose color differs from this release's
+  and, with `--yes`, sets it. A label the signed-in account cannot edit is
+  printed with the `gh label edit … --color` command a person runs. Run
+  `jig dispatch labels --yes` once in each repository that installed the
+  labels earlier to bring its colors up to date.
+
+## [0.300.1] - 2026-11-21
+
+### Fixed
+
+- The dispatcher's validation-capacity gauge (`load.validation`) no longer
+  counts a run in flight ahead of a new pass when that run is expected to
+  finish before the new pass reaches the test lock. Each pickup or drive in
+  flight that has yet to make its first run is placed at its launch plus its
+  kind's measured time to validation, its remaining runs follow one another,
+  and the lock's requests are served in arrival order. Passes launched
+  together queue behind each other, and a run reaching the lock between the
+  new pass's own runs counts against its later ones. A pass with no estimate
+  (its kind's time to validation is still the default, its launch time does
+  not read, that time has passed, or it has made a run already) and the runs
+  admitted in the same tick are counted ahead. The gauge's reason, in the
+  receipt and on the dashboard, names the runs served before the pass
+  reaches the lock and the runs arriving after its first run that a later
+  one waits behind, beside the runs ahead, which are whole runs still holding
+  or waiting when the pass arrives, and its minutes are the pass's wait.
+
 ## [0.300.0] - 2026-11-21
 
 ### Added
@@ -10604,7 +10727,15 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.3...HEAD
+[0.301.3]: https://github.com/jig-harness/jig/compare/v0.301.2...v0.301.3
+[0.301.2]: https://github.com/jig-harness/jig/compare/v0.301.1...v0.301.2
+[0.301.1]: https://github.com/jig-harness/jig/compare/v0.301.0...v0.301.1
+[0.301.0]: https://github.com/jig-harness/jig/compare/v0.300.4...v0.301.0
+[0.300.4]: https://github.com/jig-harness/jig/compare/v0.300.3...v0.300.4
+[0.300.3]: https://github.com/jig-harness/jig/compare/v0.300.2...v0.300.3
+[0.300.2]: https://github.com/jig-harness/jig/compare/v0.300.1...v0.300.2
+[0.300.1]: https://github.com/jig-harness/jig/compare/v0.300.0...v0.300.1
 [0.300.0]: https://github.com/jig-harness/jig/compare/v0.299.0...v0.300.0
 [0.299.0]: https://github.com/jig-harness/jig/compare/v0.298.0...v0.299.0
 [0.298.0]: https://github.com/jig-harness/jig/compare/v0.297.0...v0.298.0

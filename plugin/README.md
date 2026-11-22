@@ -33,12 +33,12 @@ runs, what it hands over to.
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
 | [file-issue](skills/file-issue/README.md) | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written; sweeps the open issues for one filed without a type, a priority or a size, and moves those facets from one store to another | `/jig:file-issue` | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator |
-| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
+| [do-item](skills/do-item/SKILL.md) | Picks up one work item from its tracker adapter, routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
 | [work-batch](skills/work-batch/README.md) | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it | `/jig:work-batch` | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it |
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
 | [resolve-conflicts](skills/resolve-conflicts/README.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files (those the repository lists in its configuration or declares in its change-area catalog), records every decision in the commit message, checks that no change was silently dropped, verifies staged work belongs to the operation, and applies repository obligations to the whole resolved diff; replays past merges to report where they conflicted, why, and the change that removes each cause | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
-| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running or its CI-repair budget is spent; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
+| [fix-ci](skills/fix-ci/SKILL.md) | Fetches a failed CI run's log, sorts the errors, fixes them and verifies locally before pushing | `/jig:fix-ci` | The repair by hand when no [drive-pr](skills/drive-pr/README.md) drive is running; [github-actions](skills/github-actions/SKILL.md) reviews the fix when it changes a workflow |
 | [followup](skills/followup/README.md) | After a merge, settles what it still owes, one arm at a time with the evidence that settled it: the tracker item and its epic, deferred review findings, out-of-tree steps, the release and its tags, temporary scaffolding and live drivers, live verification where the change was deployed, the next step, and the arms the repository declares of its own (`followup.arms`); carries out what its fixed authority table allows and files the rest. On an open pull request, previews what the merge will owe and carries out nothing | `/jig:followup` | Started by the dispatcher's follow-up stage where `dispatch.followup_command` names it; moves the item under [do-item](skills/do-item/SKILL.md)'s post-merge status rule and leaves an epic's close to do-item; files through [file-issue](skills/file-issue/README.md) and the deferral step of [resolve-review-comments](skills/resolve-review-comments/README.md); reads the release from [changelog](skills/changelog/README.md) and the post-deploy actions from [change-areas](skills/change-areas/README.md); hands small next items to [work-batch](skills/work-batch/README.md) |
 | [operator](skills/operator/SKILL.md) | Answers a person's question about the line (where a pull request, item or follow-up stands, what waits on a person, what was said to a station) from [`jig ask`](#asking-a-station-where-it-stands), a status as one fixed card and anything else in sentences, and sends their command to a station (hold, release, drive, an answer to a parked question, a mailbox directive) with [`jig send`](#telling-a-station-what-to-do), only on their instruction and after showing them the dry run; holds no state of its own | `/jig:operator` | Reads and writes the records [do-item](skills/do-item/SKILL.md), [drive-pr](skills/drive-pr/README.md) and the follow-up leave and act on; hands the work of a station to that station's skill, and a question about how Jig works to [jig](skills/jig/README.md) |
 | [steward](skills/steward/README.md) | Inspects stopped work and the assigned queue, proposes recoveries and missing facets, frames what still needs a person, and records why a run that left no closing report fell short; the next tick applies its records under existing guards | `/jig:steward` (dispatcher only) | Reads the dispatcher's digest, writes owner-local records, and sends recurring recoveries to [reflect](skills/reflect/README.md) |
@@ -185,9 +185,14 @@ jig run       [COMPONENT...]
   that changes state is printed before it runs (read-only queries, such as
   a version or a plugin list, are not), and `--json` prints what became of each
   harness and job. In Claude Code it also refreshes each project- and
-  local-scope install of the plugin from its directory, and removes from
-  Claude Code's install record each whose directory no longer exists; one it
-  cannot update safely it leaves as it was, saying why. `--jobs-only`
+  local-scope install of the plugin from its directory, once per repository,
+  and removes from Claude Code's install record each whose directory no
+  longer exists. Claude Code's update reaches one install per repository
+  whichever worktree it runs in, so an install it cannot reach (it refreshed
+  another directory, or another worktree of the repository is current) is
+  refreshed in the install record itself, pointed at the user-scope
+  install's version, and reported as `rewritten`; one it cannot bring there
+  safely it leaves as it was, saying why, and the upgrade then exits 1. `--jobs-only`
   refreshes the jobs and the command without updating the plugin, for after a tool updated it on its own. Each tool
   command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).
   `--scheduled` is what the timers run before each job
@@ -810,7 +815,7 @@ The keys, the options and the answer forms are listed in
 | Need | Key | The other options, and what the tick does |
 | --- | --- | --- |
 | a failed follow-up, or a stale claim again | `followup` | **Run it again**: deletes the follow-up's marker, so a later tick starts it again with your note in its prompt; **Record it done**: marks the existing marker done in place |
-| an untagged release that needs a person | `release` | **Re-run the failed gates**: requests failed jobs on the releasing commit again once. **Investigate** and **Tag it by hand** leave the chosen step with the person. Releases of a repository that share a remedy are one need listing every version, and the answer covers them all; a release whose one re-run was requested is offered only the last two options. Answer on the tracker item the need names |
+| an untagged release that needs a person | `release` | **Re-run the failed gates**: requests failed jobs on the releasing commit again once, recommended unless the follow-up recorded that every required check passed or the version is outside automatic tagging, or a re-run was already requested. **Investigate** and **Tag it by hand** leave the chosen step with the person. Releases of a repository that share a remedy are one need listing every version, and the answer covers them all; a release whose one re-run was requested is offered only the last two options, and so is one with no failed gate to re-run (every required check passed, the version is outside automatic tagging, the repository runs no re-run, or its configuration makes the tag a person's step with `changelog.release.tagged_by: person`), which recommends **Tag it by hand**. Answer on the tracker item the need names |
 | a stalled pickup, or a pickup's question it did not frame | `pickup` | **Release the claim**: moves the item back to the first state a pickup starts from, so a later tick picks it up afresh |
 | a checkout the workspace runtime does not list holds the launch's branch | `checkout` | **Detach the checkout**: detaches it at its commit, only when it is idle (clean, its commits on the remote, no drive or process in it) |
 | a drive handed to a person, or stopped with no cause | `drive` | **Re-arm the drive**: adds the `rearm` label |
@@ -1070,8 +1075,21 @@ until `renotify_after` has passed;
 while a workspace is still unread, a new message is appended to its comment
 rather than replacing it, and the entries whose causes are settled (the pull
 request closed, the need answered) leave a comment only the dispatcher wrote
-to make room. A message that still finds no room counts as a failed delivery,
-and past `failures.notify_after` ticks a person is told it is failing. The
+to make room. Each comment keeps room for a summary entry: a message that
+still finds no room waits, which is not a failed delivery, and the summary at
+the end of the comment says how many wait, of which kinds and which ones (as
+many as fit); each goes in full once the workspace is read or its other entries settle. The summary
+reflects the last write to the comment, so it can still show a count after the
+causes it counted have settled, until the next write that is allowed to rewrite the
+comment; where a person has added to the comment of the workspace
+`dispatch.notices_branch` names, the dispatcher only appends, and the summary
+stays where it is. The automatic notices workspace gives no such guarantee: once
+read, its comment is replaced by the next notification write, a person's addition and
+the summary with it; until then they stay. A held repeat of a cause
+sent earlier keeps that cause's existing suppression record. The summary
+is kept only while the comment has room for it: where an unread comment leaves
+too little, or another summary is already in it, the waiting notices are not
+counted in the comment until room opens. The
 answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
@@ -1177,10 +1195,10 @@ that carry a label of the set, which includes one a drive armed by hand
 has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
 creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
 ones, the marker labels with them, and the labels of the set whose
-description is not the one this release gives them, with no job installed,
-and with `--yes` names each it created or updated (the description only: a
-color a person chose stays) and lists the rest with the command a person who
-may create or edit labels runs; `jig install dispatch --repo <path>` does the same
+description or color is not the one this release gives them, with no job
+installed, and with `--yes` names each it created or updated (only what
+differs; a marker label that exists is left as the repository has it) and
+lists the rest with the command a person who may create or edit labels runs; `jig install dispatch --repo <path>` does the same
 beside the timer. A label write the forge refuses is reported (in the
 receipt, or on the drive's or the command's output) and fails nothing, except
 `jig dispatch marker failed`, which exits `1` when it cannot write its enabled
@@ -2206,6 +2224,12 @@ copy, but `claude plugin update jig@jig` without `--scope` updates the most
 specific one, so a forgotten project-scope copy falls behind unseen.
 `jig doctor` lists each and fails one older than the user-scope install or
 left behind by a deleted directory; `jig upgrade` refreshes or removes them.
+`claude plugin update --scope project` updates the first install of the
+repository its directory belongs to, not that worktree's own, so where
+several worktrees of one repository hold an install, `jig upgrade` runs it
+once for the repository and refreshes the others in Claude Code's install
+record. Configuration directories that share one plugins directory share
+that record: after the first upgrade, the others find every install current.
 
 Start a **new** session afterwards. Sessions that were already open load the
 plugin after `/reload-plugins` (Claude Code) or a restart (Codex).
