@@ -53,7 +53,7 @@ with the review.
 
 | Design | Plan items |
 |--------|---------------|
-| [Declared priorities, a progress review and the overview](priorities-and-overview.md) | 58 |
+| [Declared priorities, a progress review and the overview](priorities-and-overview.md) | 58; Later: the overview |
 | [Scheduled-failure reconciliation](scheduled-failure-reconciliation.md) | Later: reusable M11 reconciler |
 | [Reflection stores](reflection.md) | Later: the Jira store |
 | [The audit experience](audit-experience.md) | 8 |
@@ -77,7 +77,6 @@ with the review.
 | [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
 | [Distribution channels](distribution.md) | 45 |
 | [Command store for tracker facets](tracker-facets.md) | Later: the command store |
-| [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 | [The classes of need, and where each is settled](need-classes.md) | 50 |
 | [What a dispatched session leaves and where it runs](dispatched-sessions.md) | 51 |
 | [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 55 |

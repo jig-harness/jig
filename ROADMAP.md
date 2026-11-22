@@ -115,30 +115,7 @@ whoever drives it: coming, picking up, driven, needs you, ready to merge,
 or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
 
-### 46. Structured answers: approving or choosing a parked decision in a word
-
-When a drive stops for a person, it frames the decision with its options
-and the one it recommends. A person will answer `approve` to take the
-recommended option, or `choose` and an option's name to take another. They
-can answer from a terminal, the dashboard, the Orca panel or the forge on a
-phone. The next pass gets the chosen option itself, not words to
-interpret, and an answer in a person's own words still works as before.
-Every answer line Jig offers carries a short code for the version of the
-decision it answers, so an approval of an older version does not count.
-On the dashboard a person moves to a card with `j` and `k` and
-presses `1` to pick the recommendation. A pick stays on the page and can be
-undone, and one comment can answer all of a pull request's decisions.
-Everything else the line waits on a person for comes framed the same way.
-A follow-up or a pickup that stops frames its own question. For what the
-dispatcher finds itself, such as a failed follow-up, a stalled pickup or a
-stopped drive, it offers the steps it can take. It takes the one a person
-chooses, once.
-Jig also reports how often each kind of decision follows the
-recommendation, so a team can see which decisions still need a person.
-Later, decisions that cannot be undone, such as a release, will need proof
-that a person answered.
-
-### 58. Declared priorities, a progress review and the overview
+### 58. Declared priorities and a progress review
 
 A person can see each failure on its own, but not whether the team's goals
 are moving. With this item, a team writes its goals down once, and Jig
@@ -151,18 +128,13 @@ same inputs always give the same ranked list. A person picks from that
 list, and Jig reports the list before it lets the list decide what starts.
 
 A scheduled review reads what the dispatcher and its sessions did, and
-proposes fixes for problems that repeat. It never acts on its own. One
-overview in Jig's dashboard shows the goals, each group of issues beside
-its pull requests, what is running and what waits for a person. A person
-confirms each action from the overview in their own browser. A phone can do
-every action except a merge; its optional local unlock is on by default.
+proposes fixes for problems that repeat. It never acts on its own.
 
 [The design](design/priorities-and-overview.md) says how it works. The goals file and the ranking
 come first, as a report. Then a host can opt in to let the ranking decide
-what starts. The review runs as a trial on Jig and one other repository,
-then the overview and its actions follow. Done when the same inputs always
-give the same list, and every review lists every Urgent issue. The overview
-must explain progress and waiting from recorded facts.
+what starts. The review runs as a trial on Jig and one other repository.
+Done when the same inputs always give the same list, and every review lists
+every Urgent issue.
 
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
@@ -383,11 +355,6 @@ tracker only for what a person approved. A dispatch stage runs the check for
 each repository a machine drives and tells a person once for each new required
 change.
 
-### 12. More tracker adapters
-
-A plan file kept in the repository, beside Linear, GitHub Issues and
-Jira.
-
 ### 27. Work types: depth by kind of work
 
 An item's type (bug, feature, improvement, task, spike) derived from the
@@ -492,6 +459,14 @@ See the [distribution design](design/distribution.md).
 - **Command store for tracker facets.** A repository can supply a command for
   a facet its tracker cannot represent in fields or labels, when a repository
   names that need.
+
+- **Dashboard overview.** Show team goals, issue groups beside their pull
+  requests, running work and decisions waiting for a person. The overview
+  explains progress and waiting from recorded facts. People confirm actions
+  in their browser and can use a phone for actions other than merging.
+  The optional local unlock is on by default.
+  [The design](design/priorities-and-overview.md) covers the overview and its actions.
+  The overview design round waits for the four-week Stage 1 stability review.
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
   [M11](modules/M11-process-observability/README.md)'s scheduled failures,

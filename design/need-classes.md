@@ -24,7 +24,7 @@ there: the dispatcher's re-drives and recovery budget
 ([dark-factory-dispatch.md](dark-factory-dispatch.md)), every need framed
 as a decision the tick carries out on a person's answer
 ([structured-answers.md § Every need framed](structured-answers.md#every-need-framed)),
-the answer sent from the dashboard (item 46), and the
+the structured answers sent from the dashboard, and the
 [steward](../plugin/skills/steward/README.md).
 [ADR-0018](../docs/adr/ADR-0018-the-steward-proposes-within-a-remit-the-host-widens.md)
 records the steward's widened remit.
@@ -232,7 +232,7 @@ follow-up then asks the same question.
 A drive parked on a class the registry reserves for a person. These are
 the decisions the line exists to hand over, so they are made cheap to
 answer: framed with a recommendation and answered in a word from the
-dashboard (#693). The acceptance report (`jig dispatch log --acceptance`)
+dashboard. The acceptance report (`jig dispatch log --acceptance`)
 shows how often a class follows its recommendation, and a repository may
 retire a class from `autonomy.park_classes` on that evidence. The steward
 never answers a registry park.
