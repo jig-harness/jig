@@ -43,7 +43,7 @@ it("sizes failure notices against the ordinary delivery read-back", async () => 
     machine: { runtimeTimeoutMs: 1000 },
   } as unknown as ApplyState;
   const actions = [
-    { cause: "parked", key: "ordinary", size: 12_000 },
+    { cause: "parked", key: "ordinary", size: 11_000 },
     { cause: "action-failing", key: "failure-one", size: 3_000 },
     { cause: "action-failing", key: "failure-two", size: 3_000 },
   ].map(({ cause, key, size }) => ({
