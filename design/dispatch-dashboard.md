@@ -839,8 +839,11 @@ own machine only.
   ledgers a host, about 1 MiB, and 32 MiB only if every ledger were at
   its cap. History is read when the page asks, never sent in a snapshot.
   `changes(since)` derives what changed from the records the hub holds of
-  each host: each record written after the cursor, and the newest line, so
-  a drive or a pickup the line no longer names is sent as gone. A cursor
+  each host: each record written after the cursor, and the newest line. A
+  drive or pickup is sent as `gone` only after a complete authoritative read
+  identifies its occurrence, proves the source's coverage and establishes
+  settlement; an incomplete read, an ordinary record removal or scope removal
+  reports incompleteness and never emits `gone`. A cursor
   names a point in those records, not a connection, so it stays servable
   across reconnects; one from another incarnation gets `reset` and a new
   snapshot. One fold library turns records and forge and tracker reads
