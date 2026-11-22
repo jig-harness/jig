@@ -752,7 +752,7 @@ envelope: the value, or a coded failure with a reason.
 - **`hello`** returns `{protocol {major, minor}, instance, jig {version,
   channel}, now, viewer {login per forge, proof}, front {kind, login,
   capabilities}?, sources[] {host, name, state, since, protocol, jig,
-  clockOffsetMs, capabilities[]}, scope {laptop {revision, expiresAt}, hub {revision, expiresAt}?}}`.
+  clockOffsetMs, capabilities[]}, scope {laptop {instance, revision, expiresAt}, hub {instance, revision, expiresAt}?}}`.
   A source is fresh, overdue,
   unreachable, refused or incompatible. A different major version is
   refused, naming the side to update; minor versions only add, and unknown
@@ -763,7 +763,9 @@ envelope: the value, or a coded failure with a reason.
   binding that authorized its delivery; hub-backed data carries its hub binding
   too. Before display or caching, the page checks every applicable binding
   against its current `hello` scope and the earlier expiry; an older request
-  that finishes after either grant narrows is discarded.
+  that finishes after either grant narrows or either issuing authority instance
+  changes is discarded. Either instance change clears the affected cache and
+  requires a fresh `hello` handshake before another protected result is shown.
 - **Changes**: an opaque cursor that combines one per source. One watch per
   dashboard, shared by every open stream, produces the notices: it checks the
   records' versions (the database's data version, the drive and pickup
@@ -841,8 +843,11 @@ own machine only.
   observation time, [coverage revision](../GLOSSARY.md#coverage-revision) and
   [authority epoch](../GLOSSARY.md#authority-epoch), plus the hub-recorded
   acceptance time and epoch fence, all bound to the exact repository, occurrence
-  and settlement facts; the fold verifies both bindings against the authority
-  record before it settles anything. With no hub, the local source authority
+  and settlement facts; the hub checks the applicable authority record and
+  persists that exact accepted settlement and fence in the same transaction,
+  serialized with handoff. An epoch mismatch rejects the report without
+  replacing an existing accepted settlement; the fold verifies both bindings
+  against the authority record before it settles anything. With no hub, the local source authority
   records and verifies the same evidence; the hub fence applies only to
   hub-backed replay. The incarnation is an id the dispatcher's
   state database gets when it is created, so records from a recreated
@@ -858,8 +863,8 @@ own machine only.
   identifies its occurrence, proves the source's coverage and establishes
   settlement; an incomplete read or ordinary record removal reports
   incompleteness and never emits `gone`, while scope removal emits a distinct
-  scope invalidation that removes the row without settling its occurrence. A
-  Any cursor that can no longer be served gets `reset` and a replacement snapshot that
+  scope invalidation that removes the row without settling its occurrence. Any
+  cursor that can no longer be served gets `reset` and a replacement snapshot that
   either includes authoritative settlement evidence for each previously open
   omitted occurrence or leaves it internally unresolved for the bounded
   `settlement.get(occurrence)` read; the hub retains the evidence for that
@@ -871,8 +876,11 @@ own machine only.
   run it.
 - **Bounded reads besides.** The hub also answers `settlement.get(occurrence)`,
   which returns retained authoritative settlement evidence or `history-unavailable`;
-  a client then keeps the occurrence unresolved and asks the source directly on
-  its next reachable read, `log.rows` (one page
+  a client then keeps the occurrence unresolved and asks the source to reconcile
+  and republish its evidence through the authorized hub feed on its next reachable
+  read. If that reconciliation cannot run or cannot publish, the hub reports a
+  terminal `history-unavailable` state with the reason rather than leaving a
+  settled occurrence unresolved indefinitely. Other bounded reads are `log.rows` (one page
   through a host's reported outcome rows), `receipt.get(run)` and
   `thread.get(address)`, the thread derived with the same fold as
   `jig ask --thread`, each with the views API's envelope and the feed
