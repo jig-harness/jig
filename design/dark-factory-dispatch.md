@@ -2050,8 +2050,8 @@ rewrite the comment. Where a person has added to the comment of the workspace
 `dispatch.notices_branch` names, the comment is no longer
 exactly what the dispatcher wrote, so a new notice is appended and the summary
 stays as it is, no longer at the end. The automatic notices workspace keeps no
-such guarantee: once read, its comment is replaced, a person's addition and the
-summary with it. A cause that
+such guarantee: once read, its comment is replaced by the next notification write, a
+person's addition and the summary with it; until then they stay. A cause that
 waits has no new suppression record (a cause sent earlier keeps its own, and
 holding its repeat removes none), so it stays due every tick and goes in
 full once the workspace is read or its other entries settle. Each cause's text carries its key (the facts its

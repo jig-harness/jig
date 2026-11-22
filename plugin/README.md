@@ -1084,7 +1084,8 @@ causes it counted have settled, until the next write that is allowed to rewrite 
 comment; where a person has added to the comment of the workspace
 `dispatch.notices_branch` names, the dispatcher only appends, and the summary
 stays where it is. The automatic notices workspace gives no such guarantee: once
-read, its comment is replaced, a person's addition and the summary with it. A held repeat of a cause
+read, its comment is replaced by the next notification write, a person's addition and
+the summary with it; until then they stay. A held repeat of a cause
 sent earlier keeps that cause's existing suppression record. The summary
 is kept only while the comment has room for it: where an unread comment leaves
 too little, or another summary is already in it, the waiting notices are not
