@@ -18,6 +18,7 @@
     "**/templates/**",
     "**/vendor/**",
     "seeds/**",
+    "design/prototypes/intro-figure-pass-2/**",
     "dist/**",
     ".context/**"
   ],

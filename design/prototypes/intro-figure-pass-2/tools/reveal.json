@@ -1,0 +1,30 @@
+[
+  {
+    "dir": "a-claude",
+    "family": "Claude",
+    "name": "The bench",
+    "how": "Drawn by Claude: a generator and a small isometric engine written for this round. Fixed stations on one straight belt (jointed arms, a C-frame press, a rail cart, a rover); the item travels.",
+    "trait": "The camera follows the item through the middle steps."
+  },
+  {
+    "dir": "b-astra",
+    "family": "Astra",
+    "name": "The rails",
+    "how": "Astra under a contract: the agents move and the item moves little. Three short fix passes from a located list.",
+    "trait": "One long bench with machines on rails; the whole line in every frame."
+  },
+  {
+    "dir": "c-gemini",
+    "family": "Gemini 4 Neon",
+    "name": "The terraces",
+    "how": "Gemini 4 Neon under a contract: the line climbs a stepped bench, with instrument-maker's machines. One fix pass after its own long polish loop.",
+    "trait": "Progress reads as height; the camera follows the action."
+  },
+  {
+    "dir": "d-astra-open",
+    "family": "Astra, open brief",
+    "name": "Surprise me",
+    "how": "Astra under an open brief: the fixed list and permission to choose everything else. Three short fix passes.",
+    "trait": "A strip of the whole line over a large view of the station that acts."
+  }
+]
