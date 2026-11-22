@@ -708,7 +708,29 @@ describe("structure, ranges, moves and counts", () => {
   it("reads a hunk whose context holds a whitespace-only line", () => {
     const patch =
       '@@ -1,7 +1,7 @@\n {\n   "dependencies": {\n \n-    "a": "^1.0.0",\n+    "a": "^1.0.1",\n   }';
-    expect(read([manifest(patch)])).toEqual(ok("patch"));
+    const listed = parseListings(
+      [
+        {
+          sha: HEAD,
+          author: { login: "renovate[bot]" },
+          committer: { login: "renovate[bot]" },
+          commit: { verification: { verified: true } },
+        },
+      ],
+      [
+        {
+          filename: "package.json",
+          status: "modified",
+          patch,
+          additions: 1,
+          deletions: 1,
+        },
+      ],
+      HEAD,
+    );
+    expect(listed.ok).toBe(true);
+    if (listed.ok)
+      expect(updateTypeOf(listed.value.files)).toEqual(ok("patch"));
   });
   it("does not read a patch whose context has a boundary beside other syntax", () => {
     const patch =

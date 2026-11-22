@@ -130,6 +130,7 @@ async function dryRun(
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
   writeFileSync(join(dir, "board.json"), answer);
+  rmSync(join(dir, "calls.txt"), { force: true });
   if (more.compare !== undefined) {
     const answer = more.compare as { commits: unknown; files: unknown };
     writeFileSync(join(dir, "commits.json"), JSON.stringify(answer.commits));
@@ -216,6 +217,13 @@ describe("announce-merge-ready.ts and the Ready predicate", () => {
   });
 });
 
+/** The wrapper's request log is the same sequence once per read the script makes. */
+function expectReads(calls: string[], sequence: string[]) {
+  expect(calls.length % sequence.length).toBe(0);
+  for (let i = 0; i < calls.length; i += sequence.length)
+    expect(calls.slice(i, i + sequence.length)).toEqual(sequence);
+}
+
 describe("announce-merge-ready.ts and trusted automation", () => {
   const LISTED =
     'pull_requests:\n  trusted_automation: ["renovate[bot]"]\nreview:\n  reviewer_app: example-review\n';
@@ -239,7 +247,8 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
   cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
-  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))" "$(jq length "$DRIVE_PR_FIXTURES/commits.json")" "\${FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"; exit 0
+  echo pull >> "$DRIVE_PR_FIXTURES/calls.txt"
+  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))" "\${FIXTURE_COMMITS:-$(jq length "$DRIVE_PR_FIXTURES/commits.json")}" "\${FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"; exit 0
 fi
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
@@ -301,27 +310,33 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain("An approval is still required");
-    // The mismatch stops the read before the commits are requested.
-    expect(r.calls).not.toContain("commits");
+    // The mismatch stops the read after the opening metadata and the files.
+    expectReads(r.calls, ["pull", "files"]);
   });
 
-  it("requests no listing for a file count no page can hold", async () => {
-    const r = await dryRun(
-      converged,
-      board(converged.head, {
-        association: "NONE",
-        bot: "renovate",
-        config: LISTED,
-      }),
-      {
-        compare,
-        driverEnv: { ...viaWrapper(), FIXTURE_CHANGED_FILES: "0" },
-      },
-    );
-    expectSpawnExit(r, 0);
-    expect(r.stdout).toContain("An approval is still required");
-    expect(r.calls).toEqual([]);
-  });
+  it.each([
+    ["files", "0", "FIXTURE_CHANGED_FILES", ["pull"]],
+    ["files", "100", "FIXTURE_CHANGED_FILES", ["pull"]],
+    ["commits", "0", "FIXTURE_COMMITS", ["pull"]],
+    ["commits", "100", "FIXTURE_COMMITS", ["pull"]],
+    ["files", "99", "FIXTURE_CHANGED_FILES", ["pull", "files"]],
+  ] as const)(
+    "reads %s with a count of %s as the page bounds say",
+    async (_what, value, name, calls) => {
+      const r = await dryRun(
+        converged,
+        board(converged.head, {
+          association: "NONE",
+          bot: "renovate",
+          config: LISTED,
+        }),
+        { compare, driverEnv: { ...viaWrapper(), [name]: value } },
+      );
+      expectSpawnExit(r, 0);
+      expect(r.stdout).toContain("An approval is still required");
+      expectReads(r.calls, [...calls]);
+    },
+  );
 
   it("refuses, not crashes, on a reviewer check pattern that does not compile", async () => {
     const r = await dryRun(
@@ -333,6 +348,7 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
       }),
       { compare, driverEnv: viaWrapper() },
     );
+    expectSpawnExit(r, 4);
     expect(r.posted).toBe(false);
     expect(r.stderr).not.toContain("SyntaxError");
     expect(r.stderr).toContain("do not read");
