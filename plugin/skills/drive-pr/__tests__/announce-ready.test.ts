@@ -131,8 +131,6 @@ async function dryRun(
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
   writeFileSync(join(dir, "board.json"), answer);
-  for (const name of ["calls.txt", "other-calls.txt", "last-commits-path.txt"])
-    rmSync(join(dir, name), { force: true });
   if (more.compare !== undefined) {
     const answer = more.compare as { commits: unknown; files: unknown };
     writeFileSync(join(dir, "commits.json"), JSON.stringify(answer.commits));
@@ -174,6 +172,9 @@ async function dryRun(
     compared: existsSync(join(dir, "last-compare-path.txt")),
     calls: existsSync(join(dir, "calls.txt"))
       ? readFileSync(join(dir, "calls.txt"), "utf8").trim().split("\n")
+      : [],
+    boardCalls: existsSync(join(dir, "board-calls.txt"))
+      ? readFileSync(join(dir, "board-calls.txt"), "utf8").trim().split("\n")
       : [],
     others: existsSync(join(dir, "other-calls.txt"))
       ? readFileSync(join(dir, "other-calls.txt"), "utf8").trim().split("\n")
@@ -269,6 +270,7 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
   fi
   printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$head" "$base" "$commits" "$changed"; exit 0
 fi
+case "$*" in *"query DispatchBoard"*) echo board >> "$DRIVE_PR_FIXTURES/board-calls.txt";; esac
 echo "$1 $2" >> "$DRIVE_PR_FIXTURES/other-calls.txt"
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
@@ -318,9 +320,7 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     // Both Ready observations read the forge: the second reuses the kept
     // automation read, not the Ready facts.
-    expect(
-      r.others.filter((c) => c === "api graphql").length,
-    ).toBeGreaterThanOrEqual(2);
+    expect(r.boardCalls).toEqual(["board", "board"]);
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
   });
