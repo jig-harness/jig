@@ -16,7 +16,7 @@ You render one direction as five artboards in the Design canvas format. Read, in
 |---|---|---|---|
 | `<prefix>-hero-1440.dc.html` | 1440 x 900 | light | Artboard A: first screen. Headline, sentence, "Start with an audit", logo, the figure's place (step 1 frame). The first screen must hold the headline, the sentence and the words "You merge" |
 | `<prefix>-hero-390.dc.html` | 390 x 844 | dark | Artboard A on a phone, first screen |
-| `<prefix>-step-1440.dc.html` | 1440 x (as tall as the layout needs, 900 to 1500) | light | Artboard B: the stepped page showing step 3 "The dispatcher works within capacity" in context: show the position in the five steps (steps 2 and 4 visible as neighbours in their quiet state, at least their numbers/labels/titles), the figure in step 2 frame, the status devices |
+| `<prefix>-step-1440.dc.html` | 1440 x (as tall as the layout needs, 900 to 1500) | light | Artboard B: the stepped page showing step 3 "Two slots per account, and the wall" in context: show the position in the five steps (steps 2 and 4 visible as neighbours in their quiet state, at least their numbers/labels/titles), the figure in step 2 frame, the status devices |
 | `<prefix>-step-390.dc.html` | 390 x (as tall as needed) | dark | Artboard B on a phone |
 | `<prefix>-figure-1440.dc.html` | 1440 x (as needed, 600 to 900) | light | Artboard C: the recurring figure as this direction frames it: crop, scale, caption/labels, and the closing "You merge." with the person's moment device (the page's end). Show step 1 frame |
 

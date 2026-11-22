@@ -47,8 +47,9 @@ Five steps (the page is stepped through these, in this order)
 2. Label "The tick". Title "A timer wakes the dispatcher."
    Body "Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not."
    Status mark: "Machinery ships. Running unattended is planned."
-3. Label "Capacity". Title "The dispatcher works within capacity."
-   Body "The dispatcher respects usage limits. It can also consider processor load, free memory, disk space and the forge budget; load enforcement is configurable and off by default."
+3. Label "The slots". Title "Two slots per account, and the wall."
+   Body "Each subscription account holds two sessions at once. When an account reaches its usage limit, that is the wall: the account stays out of every launch until the wall resets."
+   (This is the copy the round rendered. A later draft replaces it; see "Step 3 after the round" below.)
 4. Label "The ledger". Title "The drive keeps its ledger on the pull request."
    Body "One comment records the round, the last head checked and every parked question. Another machine reads it and picks up where the drive stopped."
 5. Label "The question". Title "A question waits until you answer."
@@ -57,7 +58,7 @@ Close: "You merge." then link "Start with an audit".
 
 ## The three artboards every direction delivers
 A. **Hero**: the opening above, with the figure's place. At 1440x900 and 390x844 (light + dark).
-B. **One step**: step 3 ("The dispatcher works within capacity") in the page, at 1440x900 and 390x844,
+B. **One step**: step 3 ("Two slots per account, and the wall") in the page, at 1440x900 and 390x844,
    showing how the stepped page reads, where the step number/progress sits, how a step differs
    from its neighbours, and the figure in that step's state.
 C. **One frame of the recurring figure**: the isometric engraving of the line, as that direction
@@ -68,3 +69,11 @@ Layout idea of the stepped page (sticky figure vs. scrolling plates vs. full-ble
 a rail/index vs. ...), type scale and heading character, shape language (rules, key caps,
 frames), how the five steps are numbered and shown as steps, how "a person's moment" (merge,
 answer) differs from the agents' steps, how planned is marked, the one motion moment.
+
+## Step 3 after the round (draft, not rendered)
+The round was rendered with the step 3 copy above. After the round the copy was ruled out for
+naming exact numbers and several accounts, and a draft replaces it. The draft is not approved
+and has no artboard; [../figure-brief.md](../figure-brief.md) holds the rules the next session
+writes against.
+- Label "Capacity". Title "The dispatcher works within capacity."
+  Body "The dispatcher respects usage limits. It can also consider processor load, free memory, disk space and the forge budget; load enforcement is configurable and off by default."
