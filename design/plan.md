@@ -614,22 +614,29 @@ a scope-validated receipt URL remains plain text, not an actionable link. Joins
 expose evidence from the repository's own people, and a batch key joins its
 members into one thread. The waiting list contains every
 eligible thread once, and removes it when its final need for a person's answer
-or action settles. Evidence can settle or supersede only the same need
-occurrence, identified before sources are folded, and only when its source is
-entitled to do so; a newer occurrence with the same key remains open. A mixed read keeps each current repository's entries while
+or action settles. Each source row and each settlement receipt carries the
+same source-independent occurrence identifier for that need, so evidence can
+settle or supersede only that occurrence and only when its source is entitled
+to do so; a newer occurrence with the same key remains open. A mixed read keeps each current repository's entries while
 identifying every unread repository as incomplete, so an unread repository's
-missing row never proves its final need settled; a wholly unavailable host is
-shown as unavailable rather than treated as an empty list. Fresh evidence for
+missing row or `gone` event never proves its final need settled; a source emits
+`gone` only after a complete read and otherwise reports the repository as
+incomplete. A wholly unavailable host is shown as unavailable rather than
+treated as an empty list. Fresh evidence for
 the same need supersedes a stale copy from another source, while staleness alone
 leaves an otherwise unread need unresolved. A source that was previously read
 successfully keeps its last rows visible with that timestamp marked stale while
 healthy sources continue to refresh, but only after the server reapplies the
 viewer’s current grant and visibility class; when a grant narrows while the
-page is open and its source is unavailable, reconnect clears the revoked rows
-while retaining rows still in scope. Removed grants hide stale rows too. An
-interrupted forge-ledger publication after the local expiry transition recovers
-by retry or takeover so another host sees one expired occurrence and no active
-copy. Hiding a thread writes nothing to Jig.
+page is open, the page hides revoked cached rows as soon as the previous grant
+expires unless it has confirmed the current grant, while retaining in-scope
+rows only after that confirmation. Removed grants hide stale rows too. An
+interrupted forge-ledger publication after the local expiry transition retains
+the locally durable expired-occurrence receipt for retry or takeover; until a
+successor recovers and publishes that receipt, it leaves the old active park
+unsettled rather than treating its absence as settlement. After recovery,
+another host sees one expired occurrence and no active copy. Hiding a thread
+writes nothing to Jig.
 Orca's browser opens
 the same page; and a phone through the front sees only the repositories
 its grant names. For a stage a person decides to build, stage 3 is done
