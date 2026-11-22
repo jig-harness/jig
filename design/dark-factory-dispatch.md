@@ -2037,10 +2037,14 @@ that is exactly what the dispatcher wrote gives up the entries whose causes
 are settled (no cause the tick names carries the key, and no suppression
 record that still stands does: the test that retires an unread notices
 workspace) to make room for the new ones; an entry whose cause still stands
-is never dropped. A cause that still finds no room waits, and the failure
-ledger counts it as a failed delivery, so past `failures.notify_after`
-ticks a person is told through whatever destination still delivers (see
-Failures). Each cause's text carries its key (the facts its
+is never dropped. Every comment the dispatcher writes keeps room for a
+summary entry of the causes that wait: a cause that still finds no room
+waits, which is not a failed delivery, so it neither backs off nor is
+raised as failing, and the summary, keyed by a digest of the keys it
+counts, says how many wait, of which kinds and which ones, and where to
+read every one (`jig ask --waiting`, the dispatch dashboard). A cause that
+waits has no suppression record, so it stays due every tick and goes in
+full once the workspace is read or its other entries settle. Each cause's text carries its key (the facts its
 suppression record is keyed by). A cause counts as sent, and its
 suppression record is written, only once the runtime's receipt shows the
 comment carrying its key, so a cause never delivered is never suppressed.

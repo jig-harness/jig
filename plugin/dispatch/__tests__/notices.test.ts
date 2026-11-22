@@ -130,7 +130,7 @@ test("a notice that does not fit beside an unread comment waits and a later one 
     ({ notice: { key: `k${n}`, text: "x".repeat(n) } }) as unknown as Cause;
   const workspace = {
     unread: true,
-    comment: `[jig dispatch: old]\n${"y".repeat(15_000)}`,
+    comment: `[jig dispatch: old]\n${"y".repeat(13_500)}`,
   } as unknown as Workspace;
   const { send, later } = fitting(workspace, [cause(2000), cause(500)]);
   expect(send.map((c) => c.notice.key)).toEqual(["k500"]);
@@ -165,7 +165,7 @@ test("a preserved read comment budgets retained text and skips a notice that can
     ({ notice: { key: `k${n}`, text: "x".repeat(n) } }) as unknown as Cause;
   const workspace = {
     unread: false,
-    comment: "y".repeat(15_000),
+    comment: "y".repeat(13_500),
   } as unknown as Workspace;
   const { send, later } = fitting(workspace, [cause(2000), cause(500)], true);
   expect(send.map((c) => c.notice.key)).toEqual(["k500"]);

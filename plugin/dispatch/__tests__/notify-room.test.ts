@@ -1,8 +1,9 @@
 /**
  * Room in the notices comment: an unread comment the dispatcher wrote gives
  * up the entries whose causes are settled so a standing cause still goes,
- * one that finds no room is counted as a failing delivery, and a tick in
- * which every cause waited does not count as having written the workspace.
+ * one that finds no room waits without failing, counted in the comment's
+ * summary entry when that fits, and a tick in which every cause waited does
+ * not count as having written the workspace.
  */
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -17,7 +18,9 @@ import {
   type FailureSettings,
   readFailures,
 } from "../lib/failures.ts";
+import { carries } from "../lib/notices.ts";
 import { noticeComment } from "../lib/runtime/notice-comment.ts";
+import { NO_ROOM } from "../lib/runtime/notice-overflow.ts";
 import {
   MAX_COMMENT,
   NOTICES_BRANCH,
@@ -285,23 +288,18 @@ describe("a cause the comment has no room for", () => {
     return reports;
   }
 
-  it("is raised as a failing delivery once it has waited failures.notify_after ticks", async () => {
+  it("is not raised as a failing delivery however many ticks it waits", async () => {
     const root = newRoot();
-    await heldTicks(root, failures.notifyAfter);
+    const reports = await heldTicks(root, failures.notifyAfter + 1);
+    // Four full parks leave no room for the summary either: it waits as full.
+    expect(
+      reports.at(-1)?.notifications.find((n) => n.key === held)?.detail,
+    ).toBe(NO_ROOM);
     const rows = readFailures(SLUG, root);
-    expect(rows).toMatchObject([
-      { key: `notice ${held}`, kind: "notice", count: failures.notifyAfter },
-    ]);
-    const raised = failureCauses(SLUG, "/repo", rows, {
-      repositories: [],
-      failures,
-    });
-    expect(raised).toMatchObject([
-      { stage: "notify", cause: "action-failing", target: "PR #21" },
-    ]);
-    expect(raised[0]?.notice?.text).toContain(
-      `Delivering the notice ${held} has failed 3 times in a row`,
-    );
+    expect(rows).toEqual([]);
+    expect(
+      failureCauses(SLUG, "/repo", rows, { repositories: [], failures }),
+    ).toEqual([]);
   });
 
   it("leaves a tick in which every cause waited from reporting its notices workspace as written", async () => {
@@ -312,5 +310,149 @@ describe("a cause the comment has no room for", () => {
       outcome: "kept",
       detail: `unread: ${keys[0]} still stands`,
     });
+  });
+});
+
+describe("more standing causes than one comment holds", () => {
+  const failures: FailureSettings = {
+    backoffMs: 0,
+    backoffMaxMs: 0,
+    notifyAfter: 3,
+    rerunDied: 1,
+  };
+  // A hundred causes of 900 characters each, a fifth of them stalled pickups.
+  const many = Array.from({ length: 100 }, (_, i) => {
+    const kind = i % 5 === 0 ? "stalled" : "parked";
+    const c = cause(`${SLUG} PR #${i + 1} ${kind} at now`, 900, `PR #${i + 1}`);
+    return { ...c, cause: kind } as Action;
+  });
+  const keyOf = (a: Action) => (a.notice as { key: string }).key;
+
+  /** Run one tick against the card, the comment the dispatcher last wrote recorded as its own. */
+  async function tick(
+    root: string,
+    card: { comment: string; unread: boolean },
+  ): Promise<RepoReport> {
+    const workspace = noticesWorkspace(root, card.comment);
+    workspace.unread = card.unread;
+    recordComment(workspace, card.comment, root, SLUG);
+    const state = {
+      root,
+      runtime: fakeRuntime(card),
+      machine: { runtimeTimeoutMs: 1000 },
+    } as unknown as ApplyState;
+    const report = reportOf([...many]);
+    await applyNotices(
+      state,
+      REPO,
+      report,
+      { ok: true, source: "test", workspaces: [workspace] },
+      { ...SETTINGS, book: actionBook(SLUG, failures, () => undefined, root) },
+    );
+    return report;
+  }
+
+  /** The comment's summary of the causes that wait: how many it counts, and the keys it lists. */
+  function summaryOf(comment: string): {
+    count: number;
+    listed: string[];
+    more: number;
+  } {
+    const count = /^(\d+) more notices? wait/m.exec(comment);
+    expect(count).not.toBeNull();
+    const listed = [...comment.matchAll(/^- PR #\d+: (.*)$/gm)].map(
+      (m) => m[1] as string,
+    );
+    const more = /^and (\d+) more$/m.exec(comment);
+    return {
+      count: Number(count?.[1]),
+      listed,
+      more: more === null ? 0 : Number(more[1]),
+    };
+  }
+
+  /** Every cause is in the comment in full or counted by its summary, which lists only held ones. */
+  function expectAllVisible(comment: string): void {
+    expect(comment.length).toBeLessThanOrEqual(MAX_COMMENT);
+    const full = many.filter((c) => carries(comment, keyOf(c))).map(keyOf);
+    const held = many.map(keyOf).filter((k) => !full.includes(k));
+    expect(held.length).toBeGreaterThan(0);
+    const summary = summaryOf(comment);
+    expect(summary.count).toBe(held.length);
+    expect(summary.listed.length).toBeGreaterThan(0);
+    for (const k of summary.listed) expect(held).toContain(k);
+    expect(summary.listed.length + summary.more).toBe(held.length);
+    expect(comment).toContain("jig ask --waiting");
+    expect(comment).toContain("stalled: ");
+  }
+
+  it("ends a tick with every one in the notices comment, in full or counted in its summary", async () => {
+    const root = newRoot();
+    const card = { comment: NOTICES_NAME, unread: true };
+    const report = await tick(root, card);
+    expectAllVisible(card.comment);
+    const waits = report.notifications.filter((n) => n.outcome === "waits");
+    expect(waits.length).toBe(summaryOf(card.comment).count);
+    for (const n of waits) expect(n.detail).toContain("summary entry");
+  });
+
+  it("keeps the summary of the same waiting causes as it is on the next tick", async () => {
+    const root = newRoot();
+    const card = { comment: NOTICES_NAME, unread: true };
+    await tick(root, card);
+    const first = card.comment;
+    const report = await tick(root, card);
+    expect(card.comment).toBe(first);
+    expectAllVisible(card.comment);
+    for (const n of report.notifications.filter((o) => o.outcome === "waits"))
+      expect(n.detail).toContain("summary entry");
+  });
+
+  it("counts none held back for room as a failed delivery, however many ticks they wait", async () => {
+    const root = newRoot();
+    const card = { comment: NOTICES_NAME, unread: true };
+    for (let i = 0; i <= failures.notifyAfter; i += 1) await tick(root, card);
+    const rows = readFailures(SLUG, root);
+    expect(rows).toEqual([]);
+    expect(
+      failureCauses(SLUG, "/repo", rows, { repositories: [], failures }),
+    ).toEqual([]);
+  });
+
+  it("clears the failure row an earlier full comment left for a cause still held back", async () => {
+    const root = newRoot();
+    const card = { comment: NOTICES_NAME, unread: true };
+    await tick(root, card);
+    const held = many.map(keyOf).find((k) => !carries(card.comment, k));
+    actionBook(SLUG, failures, () => undefined, root).ran(
+      { key: `notice ${held}`, kind: "notice", target: "PR #99" },
+      "the comment is full",
+    );
+    const rowOf = () =>
+      readFailures(SLUG, root).find((r) => r.key === `notice ${held}`);
+    expect(rowOf()).toBeDefined();
+    await tick(root, card);
+    expect(rowOf()).toBeUndefined();
+    expect(readFailures(SLUG, root)).toEqual([]);
+  });
+
+  it("refills a comment a person read with the causes that wait and a summary of the rest, within the limit", async () => {
+    const root = newRoot();
+    const card = { comment: NOTICES_NAME, unread: true };
+    await tick(root, card);
+    const first = card.comment;
+    card.unread = false;
+    await tick(root, card);
+    expect(card.comment).not.toBe(first);
+    expect(card.unread).toBe(true);
+    // The causes the first comment carried in full were read; the rest are now in full or summarized.
+    const read = many.map(keyOf).filter((k) => carries(first, k));
+    const waiting = many.filter((c) => !read.includes(keyOf(c)));
+    const full = waiting.filter((c) => carries(card.comment, keyOf(c)));
+    expect(full.length).toBeGreaterThan(0);
+    const summary = summaryOf(card.comment);
+    expect(summary.count).toBe(waiting.length - full.length);
+    expect(card.comment.length).toBeLessThanOrEqual(MAX_COMMENT);
+    expect(card.comment).toContain("jig ask --waiting");
   });
 });
