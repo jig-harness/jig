@@ -282,7 +282,9 @@ const DATA = __DATA__;
     try {
       db = await (window.claude && window.claude.use ? window.claude.use("db") : null);
     } catch (e) {
-      db = null;
+      // The API exists but the page database failed to open: treat the store as unavailable, never as local mode.
+      $("#saved").textContent = "Could not open the page database (" + ((e && e.code) || "error") + "). Reload to try again.";
+      return;
     }
     try {
       if (db) { const snap = await db.doc("picks/main").get(); p = snap.exists ? snap.data() : null; }
