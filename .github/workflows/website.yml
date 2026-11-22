@@ -15,13 +15,16 @@ permissions:
   contents: read
 
 concurrency:
-  # Versioned group name: the unversioned `website-deploy` queue is held by a
-  # GitHub Actions run that cannot be cancelled, so deploys serialize here.
+  # The group separates this workflow generation from earlier deployments;
+  # deploys in this generation still serialize with one another.
   group: website-deploy-v2
   cancel-in-progress: false
 
 jobs:
   deploy:
+    # A manual dispatch may select another ref, but production deployments
+    # always build and publish the main branch.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: website
