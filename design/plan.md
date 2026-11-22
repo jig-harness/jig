@@ -1151,9 +1151,10 @@ provisional until the remaining checks are recorded. What is open:
 - the live runs of Jira's issue-type and custom-field stores and Linear's
   estimate store ([#892](https://github.com/jig-harness/jig/issues/892));
 - one issue opened from the bug form, confirming it is filed as a Bug, and
-  one filed through `report-bug.ts`, confirming the script no longer applies
-  the `bug` label (the form declares its own type, so it cannot stand in for
-  the script);
+  one filed through `report-bug.ts` from a draft whose labels include `bug`,
+  confirming the filed issue reads back with the native type `Bug` and
+  without the `bug` label (the form declares its own type, so it cannot
+  stand in for the script);
 - a person's step on Jig's own organization: retiring GitHub's default Task
   issue type ([#1830](https://github.com/jig-harness/jig/issues/1830));
 - a person's acceptance of the delivered scope, or a waiver, on
