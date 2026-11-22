@@ -27,10 +27,11 @@ structured line Jig offers to copy carries it. A saved browser draft belongs
 to that digest and the occurrence when the decision was parked: reframing a
 decision, or parking the same wording again, discards its saved pick, note and
 free answer. A submitted answer is instead read only when its comment is newer
-than the current park; its structured choice must also name the current digest.
-An older copied answer posted after a new park can therefore still be read when
-the framing is unchanged. An answer naming an older digest is stale and leaves
-the current decision waiting. See
+than the current park. A structured choice that names a digest must name the
+current one; a digestless answer is bound by that time check alone for a parked
+question. An older copied answer posted after a new park can therefore still be
+read when the framing is unchanged. An answer naming an older digest is stale
+and leaves the current decision waiting. See
 [answering a decision](../plugin/protocol/needs-and-answers.md#answering-a-decision).
 
 ## Writing an answer
