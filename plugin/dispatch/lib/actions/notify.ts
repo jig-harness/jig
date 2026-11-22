@@ -64,6 +64,7 @@ import {
   HOST_NOTICE,
   hostNoticeKeys,
   isFailureCause,
+  WEIGHTS_SKIP_KEY,
 } from "../failure-notices.ts";
 import { holderRecordStands } from "../holder-notices.ts";
 import {
@@ -72,9 +73,13 @@ import {
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
+  dropStoredRecords,
+  storedWeightsKeys,
+  storedWeightsRecords,
   suppress,
   type Suppression,
 } from "../notice-records.ts";
+import { stateDb } from "../state.ts";
 import { unobservedTarget } from "../notices.ts";
 import { logNoticesRead } from "../notices-read.ts";
 import {
@@ -199,6 +204,28 @@ function prune(
   dropSuppressions(channel, gone, root);
 }
 
+/**
+ * A weights notice told at a repository that no longer notifies keeps its
+ * record there when the host's home moves; once the file no longer makes
+ * its key stand, its records go from every repository and channel. Run once
+ * per apply tick from the weights reading, whatever repositories notify;
+ * `standing` is `null` when the file was not read whole, which retires nothing.
+ */
+export function retireStaleWeightsRecords(
+  standing: readonly string[] | null,
+  root: string,
+): void {
+  if (standing === null) return;
+  const db = stateDb(root);
+  // Every channel's records, not one channel's: a channel that is no longer configured still holds one.
+  dropStoredRecords(
+    db,
+    storedWeightsRecords(db, WEIGHTS_SKIP_KEY).filter(
+      (r) => !standing.includes(r.key),
+    ),
+  );
+}
+
 /** The stage a cause is about, for its event row. */
 function stageOf(cause: Cause): string {
   if (isFailureCause(cause.cause)) return "dispatch";
@@ -286,6 +313,8 @@ export interface NoticeSettings {
   channels?: ReadonlyArray<NotificationChannel<Cause>>;
   /** Whether the tick writes the `orca-card` channel and observes its notices workspace; `true` unless the session runtime is the process runtime, which has neither. */
   orcaCard?: boolean;
+  /** Keys of host notices outside the failure ledger that stand this tick wherever they are told (`standingWeightsKeys`). */
+  hostStanding?: readonly string[] | null;
 }
 
 /** The failure ledger's key and kind of a cause's delivery on `channel`. */
@@ -385,10 +414,17 @@ function dueAgain(
   return Number.isFinite(last) && nowMs - last >= everyMs;
 }
 
-/** The keys that stand: the causes named, and the host failures still standing, whose records stay at the repository that told them wherever they are told now. */
-function standingKeys(causes: readonly Cause[], root: string): Set<string> {
+/** The keys that stand: the causes named, and the host notices still standing, whose records stay at the repository that told them wherever they are told now. */
+function standingKeys(
+  causes: readonly Cause[],
+  root: string,
+  host: readonly string[] | null = [],
+): Set<string> {
   const live = new Set(causes.map((c) => c.notice.key));
   for (const key of hostNoticeKeys(readFailures(undefined, root)))
+    live.add(key);
+  // A weights file that was not read whole leaves what stands unknown: every notice told stays.
+  for (const key of host ?? storedWeightsKeys(stateDb(root), WEIGHTS_SKIP_KEY))
     live.add(key);
   return live;
 }
@@ -452,7 +488,7 @@ export async function applyNotices(
   );
   // The plan named a failing action's notice before the act phase found the action no longer wanted.
   const causes = planned.filter((c) => failureStands(settings.book, c));
-  const standing = standingKeys(causes, root);
+  const standing = standingKeys(causes, root, settings.hostStanding);
   const scope = {
     repo,
     report,

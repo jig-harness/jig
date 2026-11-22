@@ -44,6 +44,7 @@ import {
   adoptReleaseHandoffs,
   releaseNeedActions,
   releaseNeeds,
+  releasePolicyOf,
   tagPrefixOf,
 } from "./release-needs.ts";
 import { readFailureOf } from "./read-failures.ts";
@@ -241,6 +242,7 @@ export async function actTurn(
         ...releaseNeedActions(
           releaseNeeds(opened.repo.slug),
           tagPrefixOf(opened.values),
+          releasePolicyOf(opened.values),
         ),
       );
     });

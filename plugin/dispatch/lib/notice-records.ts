@@ -200,6 +200,65 @@ export function releaseOnEveryChannel(db: Database): {
   return { run: (key) => release.run(key, ORCA_CARD) };
 }
 
+/**
+ * The weights notices recorded on any channel at any repository, each as
+ * the channel and stored key that identify its rows and the notice key.
+ * Each channel is asked for the range of keys that begin with its qualified
+ * prefix, which the (channel, key) index bounds, so the history of other
+ * notices is never scanned.
+ */
+export function storedWeightsRecords(
+  db: Database,
+  prefix: string,
+): Array<{ channel: string; stored: string; key: string }> {
+  // The channels are found by skipping from one to the next through the (channel, key) index, one
+  // seek each, so the cost follows the number of channels and not the history of notices.
+  const next = db.query(
+    "SELECT MIN(channel) AS channel FROM notices WHERE channel > ?",
+  );
+  const channels: string[] = [];
+  for (
+    let row = db.query("SELECT MIN(channel) AS channel FROM notices").get() as {
+      channel: string | null;
+    };
+    row.channel !== null;
+    row = next.get(row.channel) as { channel: string | null }
+  )
+    channels.push(row.channel);
+  const range = db.query(
+    "SELECT DISTINCT key FROM notices WHERE channel = ?1 AND key >= ?2 AND key < ?3",
+  );
+  const found: Array<{ channel: string; stored: string; key: string }> = [];
+  for (const channel of channels) {
+    const from = recordKey(channel, prefix);
+    const rows = range.all(channel, from, `${from}\u{10FFFF}`) as Array<{
+      key: string;
+    }>;
+    for (const r of rows) {
+      const key = noticeKeyOf(channel, r.key);
+      if (key.startsWith(prefix)) found.push({ channel, stored: r.key, key });
+    }
+  }
+  return found;
+}
+
+/** The notice keys of the weights notices recorded on any channel at any repository. */
+export function storedWeightsKeys(db: Database, prefix: string): Set<string> {
+  return new Set(storedWeightsRecords(db, prefix).map((r) => r.key));
+}
+
+/** Drop the rows of these stored keys on their channels, at every repository, through the (channel, key) index. */
+export function dropStoredRecords(
+  db: Database,
+  records: ReadonlyArray<{ channel: string; stored: string }>,
+): void {
+  if (records.length === 0) return;
+  const drop = db.query("DELETE FROM notices WHERE channel = ? AND key = ?");
+  inTransaction(db, () => {
+    for (const r of records) drop.run(r.channel, r.stored);
+  });
+}
+
 /** When each notice of `repo` was first sent, on whichever channel sent it first, by notice key. */
 export function firstSends(db: Database, repo: string): Map<string, string> {
   const rows = db

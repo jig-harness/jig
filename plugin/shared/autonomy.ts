@@ -508,7 +508,7 @@ export function describeAutonomy(a: Autonomy): string {
     parts.push(`; policy from the base branch at ${short(a.policy.commit)}`);
   const line = `${parts.join("")})`;
   return a.policy.from === "unreadable"
-    ? `${line}. The base branch's policy cannot be read (${a.policy.reason}): the ceiling is attended, and every decision is parked under human-decision until it reads`
+    ? `${line}. The base branch's policy cannot be read (${a.policy.reason}): the ceiling is attended, and every new decision is parked under human-decision until the policy can be read`
     : line;
 }
 

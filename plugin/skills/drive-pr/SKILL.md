@@ -1647,15 +1647,15 @@ the integration branch's policy, at `$DRIVE_PR_POLICY_BOUND`, bounds the layer
 below: the lower ceiling and the union of the park classes apply. What this pull
 request changes in `max_level` or `park_classes` does not apply to its own
 drive. When the line says the base branch's policy cannot be read, run at
-`attended` and park every decision on the table below under
+`attended` and park new decisions on the table below under
 `human-decision` (§ 4), naming in the record that the policy could not be
-read; decide nothing yourself until a later read of the line names the
-base branch again. Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND` yourself.
+read. Carry out an already-decided deferral through its protocol.
+Never set `$DRIVE_PR_POLICY_BASE` or `$DRIVE_PR_POLICY_BOUND` yourself.
 
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
-| File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why | Same |
-| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same | Same |
+| File any other tracker issue a skill needs, such as a follow-up or reflection escalation | `file-issue` confirms first | File it with the filed-by line | Same |
+| Carry out a deferral ruled by the triage rubric or Review Arbiter | Follow the [deferral protocol](../resolve-review-comments/references/deferral-protocol.md#who-decides-a-deferral) without confirmation | Same | Same |
 | A technical choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
 | A technical choice `decide` would rule underdetermined | Rule it `underdetermined`: name the missing evidence in a spike issue, or a comment on the existing issue | Gather the missing evidence within the round's budget, then apply the ladder; a call it still cannot settle is escalated | Same |
 | A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional: record it as `decide-provisional` (§ 8) |

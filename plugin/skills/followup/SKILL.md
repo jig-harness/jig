@@ -264,7 +264,9 @@ in the release evidence, replacing `<version>` with the tag from the plan. Inclu
 the releasing commit and what still owes attention.
 
 In a dispatched run, reserve the version with the prompt's `release-owed`
-command. On `recorded`, reuse the returned tracker key. On
+command, passing the version's `state` from the tag plan as `--state`
+(`ready`, `failed`, `manual` or `imported`): it tells the release decision
+whether a re-run of the failed gates is left to try. On `recorded`, reuse the returned tracker key. On
 `reserved-elsewhere`, record the owed evidence and leave filing to the
 follow-up that reserved it. On `delegated`, record the owed evidence and
 leave filing to the repository's owner dispatcher. On `reserved`, search

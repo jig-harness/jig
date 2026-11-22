@@ -63,7 +63,7 @@ export const STATION_KEYS = {
     class: "release",
     options: ["gates", "inspect", "tag"],
     meaning:
-      "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item.",
+      "An untagged release, or the untagged releases of a repository that share a remedy, answered on one tracker item. It recommends re-running the failed gates unless a re-run was already requested (then it recommends investigating), or no failed gate is left to re-run: the version's follow-up recorded that every required check passed or that the version is outside automatic tagging, the repository disables re-runs (`changelog.release.rerun_failed_gates: 0`), or it leaves the tag to a person (then it recommends a person's tag). In both cases it offers only the other two options.",
   },
   pickup: {
     class: "pickup-recovery",
@@ -235,6 +235,8 @@ export type StationFacts =
       tag: string;
       /** Its one re-run of the failed gates was requested; absent while it can be. */
       rerunSpent?: boolean;
+      /** Why it has no failed gate to re-run, as the repository's procedure says; absent while it has one. */
+      noRerun?: string;
     }
   | {
       kind: "release-group";
@@ -243,6 +245,8 @@ export type StationFacts =
       tags: readonly string[];
       /** Whether the one re-run of each one's failed gates was requested. */
       rerunSpent: boolean;
+      /** Why none of them has a failed gate to re-run, as the repository's procedure says; absent while they have one. */
+      noRerun?: string;
     }
   | { kind: "checkout"; target: string; branch: string; path: string }
   | {
@@ -458,11 +462,28 @@ function rerunSpent(question: string, covers: string): StationDecision {
   );
 }
 
+/** A release's decision when it has no failed gate to re-run: a person tags it, for the reason its procedure gives. */
+function noRerun(
+  question: string,
+  why: string,
+  covers: string,
+): StationDecision {
+  return decision(
+    "release",
+    question,
+    "tag",
+    `${why} A re-run of the gates has nothing to change, so a person tags the release.`,
+    `The dispatcher offers no re-run of the gates here. ${covers}`,
+    ["inspect", "tag"],
+  );
+}
+
 function releaseGroup(
   f: Extract<StationFacts, { kind: "release-group" }>,
 ): StationDecision {
   const question = `How should the ${f.tags.length} untagged releases of ${f.repo} get their tags: ${f.tags.join(", ")}?`;
   const covers = "Your answer covers every release listed.";
+  if (f.noRerun !== undefined) return noRerun(question, f.noRerun, covers);
   return f.rerunSpent
     ? rerunSpent(question, covers)
     : decision(
@@ -478,6 +499,12 @@ function releaseGroup(
 export function frameStationDecision(facts: StationFacts): StationDecision {
   switch (facts.kind) {
     case "release-owed":
+      if (facts.noRerun !== undefined)
+        return noRerun(
+          `How should release ${facts.tag} of ${facts.repo} get its tag?`,
+          facts.noRerun,
+          "The merged pull requests' follow-ups leave the release tracked in one item.",
+        );
       if (facts.rerunSpent === true)
         return rerunSpent(
           `How should release ${facts.tag} of ${facts.repo} get its tag?`,
