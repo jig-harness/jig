@@ -530,10 +530,14 @@ export type RepairTask = "ci-repair" | "conflict-resolve";
  */
 export function resolveMaxRounds(flag: string | undefined): number {
   if (flag !== undefined) {
-    if (!isDigits(flag)) fail(2, "--max-rounds takes a whole number");
+    if (!isDigits(flag))
+      fail(UNSUPPORTED_CLI_EXIT, "--max-rounds takes a whole number");
     const n = Number.parseInt(flag, 10);
     if (!Number.isSafeInteger(n) || n < 1)
-      fail(2, "--max-rounds must be a whole number of at least 1");
+      fail(
+        UNSUPPORTED_CLI_EXIT,
+        "--max-rounds must be a whole number of at least 1",
+      );
     return n;
   }
   try {
