@@ -1075,8 +1075,21 @@ until `renotify_after` has passed;
 while a workspace is still unread, a new message is appended to its comment
 rather than replacing it, and the entries whose causes are settled (the pull
 request closed, the need answered) leave a comment only the dispatcher wrote
-to make room. A message that still finds no room counts as a failed delivery,
-and past `failures.notify_after` ticks a person is told it is failing. The
+to make room. Each comment keeps room for a summary entry: a message that
+still finds no room waits, which is not a failed delivery, and the summary at
+the end of the comment says how many wait, of which kinds and which ones (as
+many as fit); each goes in full once the workspace is read or its other entries settle. The summary
+reflects the last write to the comment, so it can still show a count after the
+causes it counted have settled, until the next write that is allowed to rewrite the
+comment; where a person has added to the comment of the workspace
+`dispatch.notices_branch` names, the dispatcher only appends, and the summary
+stays where it is. The automatic notices workspace gives no such guarantee: once
+read, its comment is replaced by the next notification write, a person's addition and
+the summary with it; until then they stay. A held repeat of a cause
+sent earlier keeps that cause's existing suppression record. The summary
+is kept only while the comment has room for it: where an unread comment leaves
+too little, or another summary is already in it, the waiting notices are not
+counted in the comment until room opens. The
 answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
