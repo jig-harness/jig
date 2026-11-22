@@ -48,7 +48,7 @@ Five steps (the page is stepped through these, in this order)
    Body "Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not."
    Status mark: "Machinery ships. Running unattended is planned."
 3. Label "Capacity". Title "The dispatcher works within capacity."
-   Body "The dispatcher considers usage limits, processor load, free memory, disk space and the forge budget when load enforcement is on. It is configurable and off by default."
+   Body "The dispatcher respects usage limits. It can also consider processor load, free memory, disk space and the forge budget; load enforcement is configurable and off by default."
 4. Label "The ledger". Title "The drive keeps its ledger on the pull request."
    Body "One comment records the round, the last head checked and every parked question. Another machine reads it and picks up where the drive stopped."
 5. Label "The question". Title "A question waits until you answer."
