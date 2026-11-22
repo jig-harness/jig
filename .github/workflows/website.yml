@@ -14,17 +14,29 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  # The group separates this workflow generation from earlier deployments;
-  # deploys in this generation still serialize with one another.
-  group: website-deploy-v2
-  cancel-in-progress: false
-
 jobs:
+  reject-ref:
+    # GitHub expressions compare strings case-insensitively, so validate the
+    # raw ref in the runner before allowing a job to use the deploy environment.
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Require the exact main ref
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          if [ "$DISPATCH_REF" != 'refs/heads/main' ]; then
+            echo 'Dispatch website from main.' >&2
+            exit 1
+          fi
   deploy:
-    # A manual dispatch may select another ref, but production deployments
-    # always build and publish the main branch.
-    if: github.ref == 'refs/heads/main'
+    needs: reject-ref
+    # Only the validated production deployment takes this lock. A rejected
+    # dispatch cannot replace a pending main deployment.
+    concurrency:
+      group: website-deploy-v2
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: website
