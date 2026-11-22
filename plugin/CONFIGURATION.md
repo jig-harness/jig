@@ -321,8 +321,9 @@ outside author's to the Ready predicate: its association is typically neither `O
 exception, an outside author adds an approval requirement, so a converged pull
 request waits in **approve first** (when the rest of the predicate permits
 it), even where the forge requires no approval. A repository can name
-the bots it trusts, so that their converged pull requests reach **merge
-now**, where a person still merges:
+the bots it trusts, so that their converged pull requests can reach **merge
+now** when the rest of the predicate permits it (the rules below say what
+else it needs), where a person still merges:
 
 ```yaml
 pull_requests:

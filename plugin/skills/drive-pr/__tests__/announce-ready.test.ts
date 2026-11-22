@@ -126,11 +126,15 @@ async function dryRun(
     env?: Record<string, string>;
     driverEnv?: Record<string, string>;
     compare?: unknown;
+    /** The board's answer from the second query on; the first keeps `answer`. */
+    secondBoard?: string;
   } = {},
 ) {
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
   writeFileSync(join(dir, "board.json"), answer);
+  if (more.secondBoard !== undefined)
+    writeFileSync(join(dir, "board-second.json"), more.secondBoard);
   if (more.compare !== undefined) {
     const answer = more.compare as { commits: unknown; files: unknown };
     writeFileSync(join(dir, "commits.json"), JSON.stringify(answer.commits));
@@ -270,7 +274,11 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
   fi
   printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$head" "$base" "$commits" "$changed"; exit 0
 fi
-case "$*" in *"query DispatchBoard"*) echo board >> "$DRIVE_PR_FIXTURES/board-calls.txt";; esac
+case "$*" in *"query DispatchBoard"*)
+  seenBoard=$(grep -c '^board$' "$DRIVE_PR_FIXTURES/board-calls.txt" 2>/dev/null || true)
+  echo board >> "$DRIVE_PR_FIXTURES/board-calls.txt"
+  if [ "\${seenBoard:-0}" -ge 1 ] && [ -f "$DRIVE_PR_FIXTURES/board-second.json" ]; then cat "$DRIVE_PR_FIXTURES/board-second.json"; exit 0; fi;;
+esac
 echo "$1 $2" >> "$DRIVE_PR_FIXTURES/other-calls.txt"
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
@@ -323,6 +331,19 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     expect(r.boardCalls).toEqual(["board", "board"]);
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
+  });
+
+  it("bases the final check on the second board read, not the first", async () => {
+    const listed = { association: "NONE", bot: "renovate", config: LISTED };
+    const r = await dryRun(converged, board(converged.head, listed), {
+      compare,
+      driverEnv: viaWrapper(),
+      secondBoard: board(converged.head, { ...listed, checked: false }),
+    });
+    expectSpawnExit(r, 4);
+    expect(r.boardCalls).toEqual(["board", "board"]);
+    expect(r.posted).toBe(false);
+    expect(r.stderr).toContain("not witnessed on this head");
   });
 
   it("withholds the exception when the pull request's file count differs from the listing", async () => {
