@@ -1078,8 +1078,11 @@ request closed, the need answered) leave a comment only the dispatcher wrote
 to make room. Each comment keeps room for a summary entry: a message that
 still finds no room waits, which is not a failed delivery, and the summary at
 the end of the comment says how many wait, of which kinds and which ones, and
-that `jig ask --waiting` or the dispatch dashboard shows every one; each goes
-in full once the workspace is read or its other entries settle. The
+that `jig ask --waiting` lists those that need a person; each goes
+in full once the workspace is read or its other entries settle. The summary
+is kept only while the comment has room for it: where an unread comment leaves
+too little, or another summary is already in it, the waiting notices are not
+counted in the comment until room opens. The
 answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.

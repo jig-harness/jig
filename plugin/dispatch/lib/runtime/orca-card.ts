@@ -166,6 +166,8 @@ interface CardContext {
   /** The keys that stand this tick: the causes named, and the host failures still standing. */
   standing: () => ReadonlySet<string>;
   root: string;
+  /** The causes this tick's earlier passes held back for room, by workspace path: one summary counts them all. */
+  heldBefore: Map<string, Cause[]>;
 }
 
 /**
@@ -427,7 +429,7 @@ function afterWrite(
 
 /** One workspace's causes, joined into one message and sent. */
 async function sendTo(
-  { state, root, repo, report, branch, standing }: CardContext,
+  { state, root, repo, report, branch, standing, heldBefore }: CardContext,
   workspace: Workspace,
   causes: Cause[],
   signal: AbortSignal,
@@ -460,10 +462,21 @@ async function sendTo(
       ]
     : [];
   const { send, later } = fitting(workspace, fresh, preserveRead, settled);
+  // The summary counts every cause this tick holds back, from every pass: a later pass never narrows an earlier one's.
+  const sentKeys = new Set(send.map((c) => c.notice.key));
+  const counted = [
+    ...(heldBefore.get(workspace.path) ?? []).filter(
+      (c) =>
+        !sentKeys.has(c.notice.key) &&
+        !later.some((l) => l.notice.key === c.notice.key),
+    ),
+    ...later,
+  ];
+  heldBefore.set(workspace.path, counted);
   const plan = overflowWrite(
     { comment: workspace.comment, unread: workspace.unread !== false },
     messageFor(send),
-    later,
+    counted,
     { slug: repo.slug, preserveRead, settled },
   );
   const held = (counted: boolean) =>
@@ -494,12 +507,22 @@ async function sendTo(
           : answer(c, "lost", workspace.path, receipt.detail),
       ),
     );
-  else
+  else if (
+    plan.summary !== null &&
+    !carries(receipt.comment ?? "", plan.summary)
+  )
+    // A write whose planned summary the read-back does not show did not establish it: a lost delivery, as for a full entry.
     out.push(
-      ...held(
-        plan.summary !== null && carries(receipt.comment ?? "", plan.summary),
+      ...later.map((c) =>
+        answer(
+          c,
+          "lost",
+          workspace.path,
+          "the comment read back does not carry the summary of the notices that wait",
+        ),
       ),
     );
+  else out.push(...held(plan.summary !== null));
   for (const c of send) out.push(delivered(receipt, c, workspace.path, signal));
   return out;
 }
@@ -520,6 +543,7 @@ export function orcaCard(
 ): OrcaCard {
   const root = state.root ?? stateRoot();
   const written = new Set<string>();
+  const heldBefore = new Map<string, Cause[]>();
   return {
     name: ORCA_CARD,
     written,
@@ -535,6 +559,7 @@ export function orcaCard(
         branch,
         standing,
         root,
+        heldBefore,
       };
       // The listing before the destination is opened: the notices workspace is no cause's own.
       const listed = [...sessions.workspaces];

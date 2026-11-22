@@ -9,7 +9,7 @@
  * and are told in full as soon as there is room: once a person reads the
  * workspace, or as the comment's other entries settle. Meanwhile the
  * comment carries a summary entry that says how many wait, of which
- * kinds, which ones, and where to read every one. `SUMMARY_ROOM` characters
+ * kinds and which ones, as many as fit. `SUMMARY_ROOM` characters
  * of every comment the dispatcher writes are kept for it.
  *
  * The summary is an ordinary entry with a key line of its own, keyed by a
@@ -104,7 +104,7 @@ export function overflowSummary(
     ),
   ].join("\n");
   const foot = [
-    "Read every one with `jig ask --waiting` from the repository's checkout, or on the dispatch dashboard.",
+    "The ones that need a person are in `jig ask --waiting` from the repository's checkout; the lines above name the rest.",
     "Each is delivered here in full once there is room: when this workspace is read, or as its other notices settle.",
   ].join("\n");
   // The separator before the entry and the newlines around the list.
