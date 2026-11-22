@@ -63,7 +63,7 @@ import type {
 } from "./runtime/port.ts";
 import { launchClaimer, type SharedContext } from "./shared-launches.ts";
 import { readDrives } from "./sources/ledgers.ts";
-import type { ForgeRead } from "./tick-forge.ts";
+import { type ForgeRead, readsHeadRepository } from "./tick-forge.ts";
 import {
   allRecords,
   bookOf,
@@ -557,7 +557,8 @@ async function freshDriveReading(
   const { repo, login, section } = inputs;
   const view = await openPullRequest(repo.slug, pr, {
     labels: labels !== null || steward,
-    headRepository: inputs.pickupArms.has(pr),
+    // The same-repository guard of first adoption runs on this read too.
+    headRepository: readsHeadRepository(section, inputs.pickupArms),
   });
   if (!view.ok) return view;
   const listed = view.value;

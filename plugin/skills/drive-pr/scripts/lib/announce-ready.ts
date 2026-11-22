@@ -16,6 +16,7 @@ import { reconcileWording } from "./announce-wording.ts";
 import { withdrawAnnouncement } from "./announce.ts";
 import { readMergeFacts } from "./merge-facts.ts";
 import {
+  checkPattern,
   type ForgeFacts,
   type Lane,
   type Readiness,
@@ -31,6 +32,7 @@ import {
 } from "../../../../shared/outcome.ts";
 import {
   ciHoldLabelSetting,
+  defaultReviewerCheckFor,
   readOptionalOverlay,
   reviewerApp,
 } from "./overlay.ts";
@@ -63,17 +65,59 @@ function driveRules(): ReadyRules {
   };
 }
 
-/** The reviewer app the default branch's configuration names; `null` when it names none or does not read. */
-export function reviewerAppFromDefaultBranch(
+/** The default branch's configuration as values; `null` when it is absent or does not read. */
+function defaultBranchValues(
   config: string | null | undefined,
-): string | null {
+): Record<string, unknown> | null {
   if (typeof config !== "string") return null;
   const values = attempt("invalid", "unparsed", () =>
     parseConfigText(config, ".config/jig.yaml"),
   );
-  if (!values.ok || !isRecord(values.value.review)) return null;
-  const app = values.value.review.reviewer_app;
-  return typeof app === "string" && app.trim() !== "" ? app.trim() : null;
+  return values.ok ? values.value : null;
+}
+
+/** A nested non-empty string of the default branch's configuration, `null` when absent. */
+function stringAt(
+  values: Record<string, unknown> | null,
+  section: string,
+  key: string,
+): string | null {
+  const nested = values !== null ? values[section] : undefined;
+  const v = isRecord(nested) ? nested[key] : undefined;
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+}
+
+/** The reviewer app the default branch's configuration names; `null` when it names none or does not read. */
+export function reviewerAppFromDefaultBranch(
+  config: string | null | undefined,
+): string | null {
+  return stringAt(defaultBranchValues(config), "review", "reviewer_app");
+}
+
+/**
+ * The rules a listed bot's pull request is placed under, all from the default
+ * branch's configuration as the board reads them: the reviewer app with its
+ * check pattern (or that app's default), the CI hold label, and the dispatch
+ * hold label.
+ */
+function defaultBranchRules(config: string | null | undefined): {
+  rules: ReadyRules;
+  hold: string;
+} {
+  const values = defaultBranchValues(config);
+  const app = stringAt(values, "review", "reviewer_app");
+  const labels = labelsSection(values?.dispatch);
+  return {
+    rules: {
+      reviewerApp: app,
+      reviewerCheck: checkPattern(
+        stringAt(values, "review", "reviewer_check_pattern") ??
+          defaultReviewerCheckFor(app),
+      ),
+      ciHoldLabel: stringAt(values, "ci", "hold_label"),
+    },
+    hold: labels?.enabled === true ? `${prefixOf(labels)}hold` : "",
+  };
 }
 
 /** The trusted automation list of the default branch's configuration text; one that does not read trusts nobody, with why. */
@@ -137,17 +181,17 @@ export async function announceReady(
       says: `the forge's merge facts did not read: ${live.failure.reason}`,
     };
   const { facts, config } = live.value;
-  const hold = holdLabel();
   const trusted = trustedFromDefaultBranch(config);
-  const own = driveRules();
   // What authorizes the exception for a listed bot comes from the default
   // branch alone, so a pull request's own configuration cannot name the
-  // reviewer app whose check stands in for a person's approval.
+  // reviewer app, its check, or the hold labels that stand in for a person's
+  // approval or its absence.
   const listed =
     trusted.ok && trustedEntryFor(facts.author, trusted.value) !== null;
+  const base = listed ? defaultBranchRules(config) : null;
+  const hold = base?.hold ?? holdLabel();
   const rules: ReadyRules = {
-    ...own,
-    ...(listed ? { reviewerApp: reviewerAppFromDefaultBranch(config) } : {}),
+    ...(base?.rules ?? driveRules()),
     trustedAutomation: trusted,
   };
   const automation = await automationFor(

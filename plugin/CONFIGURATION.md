@@ -364,9 +364,13 @@ protection) still decide its lane:
    shows is one of them, so a pull request grouping a minor and a patch
    update needs both listed: `major`, `minor` or `patch` by the version
    numbers before and after (with the same range operator), `pin` for a
-   range made exact with a full version, `lockfile` when only lockfiles
+   range made exact with a full version (a bare partial version such as
+   `1.3` is a range of its own and never equals an exact one), `lockfile` when only lockfiles
    changed. A change inside a section other than the dependency sections,
-   a hunk that does not show which section its lines sit in, a decrease, a
+   a hunk that does not show the root-level section opener with no closing
+   brace before the line, a patch the forge cut short (its added and
+   removed line counts differ from the file's), a file moved to a lockfile
+   name from another name, a decrease, a
    prerelease version, or a range change that moves the operator with the
    numbers does not read. The branch, title and description are not read:
    they are text the bot or the upstream wrote. A manifest other than
@@ -379,10 +383,14 @@ still be witnessed by the reviewer app's check run, so where
 and the setting changes nothing for the approval requirement. The list is read from the default branch
 by the board, `jig ask` and the drive's merge-ready announcement alike,
 never from the pull request's own configuration; for a listed bot the
-announcement takes the reviewer app from the default branch too. The
+announcement takes the reviewer app, its check pattern and both hold
+labels from the default branch too. The
 commits and files are read from the pull request's own commit and file
-listings, then the pull request is read again: the read counts only when
-its head and base are unchanged, and the three requests share one deadline.
+listings, with the pull request read before and after: the read counts only
+when its head and base are unchanged both times and its commit and file
+counts equal what the listings hold. Each page is checked as it arrives, the
+requests share one deadline, and none starts once the enclosing bound has
+ended.
 They are made only for a pull request by a listed bot whose condition 8
 nothing else satisfies and where a reviewer app is named; a pull request with
 a full page of either does not read whole.
@@ -391,7 +399,11 @@ commit, and the drive's announcement keeps it for the run.
 
 With `dispatch.adopt` on, a listed bot's pull request is adopted whether or
 not `adopt.authors` names the bot, and it is driven to convergence while
-healthy, and again when its head moves, so the board can place it. The
+healthy, and again when its head moves, so the board can place it. Adoption
+needs a head known to be in the repository, a recent update and no hold; the
+commit, path and update-type rules apply only afterwards, when the board
+places it, so a listed pull request can be driven and still not reach merge
+now. The
 review prompt still reads its description as data.
 
 ### Reviewers on a draft

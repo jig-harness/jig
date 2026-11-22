@@ -2990,8 +2990,9 @@ make, use the entry's term instead.
   Dependabot) whose converged pull requests count as the repository's own
   for the *Ready predicate*, so they reach merge now instead of approve
   first, but only while the change stays within what the bot is trusted to
-  change: its head in the repository, every commit the bot's own (signed)
-  or a listed committer's, every file within the entry's paths, and, where
+  change: its head in the repository, every commit by an allowed author (the
+  bot or a listed committer), each signed unless the entry says
+  `signed: false`, every file within the entry's paths, and, where
   set, an allowed update type. The bot's identity is trusted; the
   third-party text it carries is not.
 - **Owed-steps label** — the repository's manual-operations label

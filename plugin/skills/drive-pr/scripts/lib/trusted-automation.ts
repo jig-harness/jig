@@ -423,10 +423,14 @@ function versionOf(text: string): Version | null {
   // A prerelease sorts below its release and its numbers say nothing of
   // that, so the policy does not classify one.
   if (m === null || m[5] !== undefined) return null;
-  const op = m[1] === "=" ? "" : (m[1] ?? "");
+  const full = m[3] !== undefined && m[4] !== undefined;
+  const written = m[1] === "=" ? "" : (m[1] ?? "");
+  // A bare partial version (`1.3`) is a range, not the exact version a bare
+  // full one is, so it carries an operator of its own.
+  const op = written === "" && !full ? "partial" : written;
   return {
     op,
-    full: m[3] !== undefined && m[4] !== undefined,
+    full,
     parts: [Number(m[2]), Number(m[3] ?? 0), Number(m[4] ?? 0)],
   };
 }
@@ -456,7 +460,10 @@ const pinOf = (a: Version, b: Version): UpdateType | null =>
   a.op !== "" && b.op === "" && b.full ? "pin" : null;
 
 const PAIR = /^([-+])(\s*)"([^"]+)"\s*:\s*"([^"]*)"\s*,?\s*$/;
-const OPENER = /^[-+ ](\s*)"([^"]+)"\s*:\s*\{\s*$/;
+const OPENER = /^[-+ ](\s*)"([^"]+)"\s*:\s*[{[]\s*$/;
+/** A line that opens an object or array with no key, or closes one. */
+const ANON_OPENER = /^[-+ ]\s*[{[]\s*$/;
+const CLOSER = /^[-+ ]\s*[}\]],?\s*$/;
 
 /** The manifest sections that hold dependency ranges. */
 const DEPENDENCY_SECTIONS: ReadonlySet<string> = /* @__PURE__ */ new Set([
@@ -515,10 +522,27 @@ function diffPairs(
 ): Outcome<{ removed: Pairs; added: Pairs }, "unread"> {
   const removed: Pairs = new Map();
   const added: Pairs = new Map();
-  let section: string | null = null;
+  // The objects the hunk has opened and not closed; a key counts as a
+  // dependency only as a direct child of a root-level dependency section whose
+  // opener the hunk shows, so a closed section or a nested object named like
+  // one proves nothing.
+  let stack: Array<{ name: string; root: boolean }> = [];
   for (const line of patch.split("\n")) {
-    if (line.startsWith("@@")) section = null;
-    else section = OPENER.exec(line)?.[2] ?? section;
+    if (line.startsWith("@@")) {
+      stack = [];
+      continue;
+    }
+    const opener = OPENER.exec(line);
+    if (opener !== null && !isDiffChangeLine(line))
+      stack.push({
+        name: opener[2] ?? "",
+        root: !NESTED.test(opener[1] ?? ""),
+      });
+    else if (ANON_OPENER.test(line) && !isDiffChangeLine(line))
+      stack.push({ name: "", root: false });
+    else if (CLOSER.test(line) && !isDiffChangeLine(line)) stack.pop();
+    const top = stack.length === 1 ? stack[0] : undefined;
+    const section: string | null = top?.root ? top.name : null;
     if (!isDiffChangeLine(line)) continue;
     const pair = changedPair(line, section);
     if (!pair.ok) return pair;
@@ -560,7 +584,15 @@ function fileUpdateTypes(
   lockfiles: ReadonlySet<string>,
 ): Outcome<Set<UpdateType> | null, "unread"> {
   const name = f.path.split("/").at(-1) ?? "";
-  if (lockfiles.has(name)) return ok(null);
+  if (lockfiles.has(name)) {
+    const was = f.previous?.split("/").at(-1);
+    return was !== undefined && !lockfiles.has(was)
+      ? failed(
+          "unread",
+          `${f.path} was renamed from ${f.previous}, not a lockfile`,
+        )
+      : ok(null);
+  }
   if (name !== MANIFEST)
     return failed("unread", `${f.path} is not a manifest whose diff it reads`);
   if (f.patch === null)
@@ -640,9 +672,20 @@ function compactPatch(patch: string): string {
     .split("\n")
     .filter(
       (line) =>
-        line.startsWith("@@") || isDiffChangeLine(line) || OPENER.test(line),
+        line.startsWith("@@") ||
+        isDiffChangeLine(line) ||
+        OPENER.test(line) ||
+        ANON_OPENER.test(line) ||
+        CLOSER.test(line),
     )
     .join("\n");
+}
+
+/** How many lines of `patch` a hunk adds (`+`) or removes (`-`). */
+function changedLines(patch: string, sign: "+" | "-"): number {
+  return patch
+    .split("\n")
+    .filter((l) => isDiffChangeLine(l) && l.startsWith(sign)).length;
 }
 
 /** The statuses the forge gives a file; another one does not establish which paths the file touches. */
@@ -677,12 +720,20 @@ function parseFile(f: unknown): Outcome<AutomationFile, "unreadable"> {
   const problem = statusProblem(f.filename, f);
   if (problem !== null) return failed("unreadable", problem);
   const manifest = f.filename.split("/").at(-1) === MANIFEST;
+  // The forge cuts a long patch; its own counts of added and removed lines
+  // say whether the patch shows every change.
+  const complete =
+    typeof f.patch === "string" &&
+    changedLines(f.patch, "+") === f.additions &&
+    changedLines(f.patch, "-") === f.deletions;
   return ok({
     path: f.filename,
     previous:
       typeof f.previous_filename === "string" ? f.previous_filename : null,
     patch:
-      manifest && typeof f.patch === "string" ? compactPatch(f.patch) : null,
+      manifest && complete && typeof f.patch === "string"
+        ? compactPatch(f.patch)
+        : null,
   });
 }
 
@@ -699,27 +750,49 @@ function parseList<T>(
   return ok(out);
 }
 
+/** A files page's length when it is whole: not malformed, not full, not empty. */
+export function checkFilePage(
+  fileList: unknown,
+): Outcome<number, "unreadable"> {
+  if (!Array.isArray(fileList))
+    return failed("unreadable", "the file listing holds no files");
+  if (fileList.length >= LISTING_PAGE)
+    return failed("unreadable", "more files than one read holds");
+  if (fileList.length === 0)
+    return failed("unreadable", "the file listing lists no changed file");
+  return ok(fileList.length);
+}
+
+/** A commits page's length when it is whole and ends at `head`. */
+export function checkCommitPage(
+  commitList: unknown,
+  head: string,
+): Outcome<number, "unreadable"> {
+  if (!Array.isArray(commitList))
+    return failed("unreadable", "the commit listing holds no commits");
+  if (commitList.length >= LISTING_PAGE)
+    return failed("unreadable", "more commits than one read holds");
+  const last = commitList.at(-1);
+  if (!isRecord(last) || last.sha !== head)
+    return failed("unreadable", "the commit listing does not end at the head");
+  return ok(commitList.length);
+}
+
 /** The pull request's commit and file listings, or why they do not read whole. */
 export function parseListings(
   commitList: unknown,
   fileList: unknown,
   head: string,
 ): Outcome<AutomationFacts, "unreadable"> {
-  if (!Array.isArray(commitList))
-    return failed("unreadable", "the commit listing holds no commits");
-  if (!Array.isArray(fileList))
-    return failed("unreadable", "the file listing holds no files");
-  if (commitList.length >= LISTING_PAGE)
-    return failed("unreadable", "more commits than one read holds");
-  if (fileList.length >= LISTING_PAGE)
-    return failed("unreadable", "more files than one read holds");
-  if (fileList.length === 0)
-    return failed("unreadable", "the file listing lists no changed file");
-  const commits = parseList(commitList, parseCommit);
+  const filePage = checkFilePage(fileList);
+  if (!filePage.ok) return filePage;
+  const commitPage = checkCommitPage(commitList, head);
+  if (!commitPage.ok) return commitPage;
+  const commits = parseList(commitList as unknown[], parseCommit);
   if (!commits.ok) return commits;
   if (commits.value.at(-1)?.sha !== head)
     return failed("unreadable", "the commit listing does not end at the head");
-  const files = parseList(fileList, parseFile);
+  const files = parseList(fileList as unknown[], parseFile);
   if (!files.ok) return files;
   return ok({ head, commits: commits.value, files: files.value });
 }

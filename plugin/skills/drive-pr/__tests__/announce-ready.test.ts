@@ -234,7 +234,7 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
   cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
-  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"}}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))"; exit 0
+  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))" "$(jq length "$DRIVE_PR_FIXTURES/commits.json")" "$(jq length "$DRIVE_PR_FIXTURES/files.json")"; exit 0
 fi
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,

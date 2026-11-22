@@ -14,6 +14,8 @@ import {
 import {
   type AutomationFacts,
   LISTING_PAGE,
+  checkCommitPage,
+  checkFilePage,
   parseListings,
   trustedEntryFor,
 } from "./trusted-automation.ts";
@@ -33,6 +35,7 @@ export async function readAutomationFacts(
   head: string,
   baseOid: string,
   timeoutSec: number,
+  ended: () => boolean = () => false,
 ): Promise<Outcome<AutomationFacts, "unreadable">> {
   if (!/^[0-9a-f]{40}$/.test(head) || !/^[0-9a-f]{40}$/.test(baseOid))
     return failed("unreadable", "the head or the base is not a commit id");
@@ -42,11 +45,18 @@ export async function readAutomationFacts(
       "the pull request's number does not pass its form",
     );
   const repo = slug ?? "{owner}/{repo}";
-  // One deadline covers the three requests: each gets what is left, and none
-  // starts after it.
+  // One deadline covers every request: each gets what is left, and none
+  // starts after it or after the enclosing bound ended.
   const deadline = currentMs() + timeoutSec * 1000;
   const get = (path: string, label: string) => {
     const left = Math.floor((deadline - currentMs()) / 1000);
+    if (ended())
+      return Promise.resolve(
+        failed<"unreadable">(
+          "unreadable",
+          `the enclosing bound ended before ${label}`,
+        ),
+      );
     return left <= 0
       ? Promise.resolve(
           failed<"unreadable">(
@@ -56,28 +66,52 @@ export async function readAutomationFacts(
         )
       : ghApiJson([path], slug, left, label, label);
   };
+  const pullOf = async (label: string) => {
+    const read = await get(`repos/${repo}/pulls/${number}`, label);
+    if (!read.ok) return read;
+    const pull = isRecord(read.value) ? read.value : {};
+    const headSha = isRecord(pull.head) ? pull.head.sha : undefined;
+    const baseSha = isRecord(pull.base) ? pull.base.sha : undefined;
+    if (headSha !== head || baseSha !== baseOid)
+      return failed<"unreadable">(
+        "unreadable",
+        "the pull request's head or base moved while its commits and files were read",
+      );
+    return ok(pull);
+  };
+  // The pull request's head and base are confirmed before and after the
+  // listings, and its counts must match what the listings hold, so a listing
+  // from another revision or a partial one does not pass.
+  const before = await pullOf("pull request");
+  if (!before.ok) return before;
   const files = await get(
     `repos/${repo}/pulls/${number}/files?per_page=${LISTING_PAGE}`,
     "pull request files",
   );
   if (!files.ok) return files;
+  const filesOk = checkFilePage(files.value);
+  if (!filesOk.ok) return filesOk;
   const commits = await get(
     `repos/${repo}/pulls/${number}/commits?per_page=${LISTING_PAGE}`,
     "pull request commits",
   );
   if (!commits.ok) return commits;
-  // The listings are separate requests: they describe one comparison only
-  // while the pull request still has the same head and base afterwards.
-  const after = await get(`repos/${repo}/pulls/${number}`, "pull request");
+  const commitsOk = checkCommitPage(commits.value, head);
+  if (!commitsOk.ok) return commitsOk;
+  const after = await pullOf("pull request");
   if (!after.ok) return after;
-  const pull = isRecord(after.value) ? after.value : {};
-  const headSha = isRecord(pull.head) ? pull.head.sha : undefined;
-  const baseSha = isRecord(pull.base) ? pull.base.sha : undefined;
-  if (headSha !== head || baseSha !== baseOid)
-    return failed(
-      "unreadable",
-      "the pull request's head or base moved while its commits and files were read",
-    );
+  for (const [pull, label] of [
+    [before.value, "before"],
+    [after.value, "after"],
+  ] as const)
+    if (
+      pull.changed_files !== filesOk.value ||
+      pull.commits !== commitsOk.value
+    )
+      return failed(
+        "unreadable",
+        `the listings do not match the pull request's counts ${label} they were read`,
+      );
   return parseListings(commits.value, files.value, head);
 }
 
@@ -143,6 +177,7 @@ export async function automationFor(
   rules: ReadyRules,
   timeoutSec: number,
   cache?: AutomationCache,
+  ended?: () => boolean,
 ): Promise<Outcome<AutomationFacts, "unreadable"> | undefined> {
   if (!needsAutomation(facts, rules)) return undefined;
   const baseOid = facts.baseOid ?? "";
@@ -161,6 +196,7 @@ export async function automationFor(
     facts.head,
     baseOid,
     timeoutSec,
+    ended,
   );
   if (read.ok && cache !== undefined)
     cache.set(key, {

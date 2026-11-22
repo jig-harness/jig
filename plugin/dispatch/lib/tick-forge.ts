@@ -118,7 +118,7 @@ function prefetch(
 }
 
 /** Whether the listing asks where each head lives: for pickup arms, and for the adoption of a trusted bot's pull request. */
-function readsHeadRepository(
+export function readsHeadRepository(
   section: DispatchSection,
   pickupArms: PickupArms | undefined,
 ): boolean {

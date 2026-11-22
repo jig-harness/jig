@@ -15,8 +15,8 @@ release: minor
   that does not read withholds the exception, and the card's fact names
   the rule. The list is read from the default branch by the board, `jig
   ask` and the drive's merge-ready announcement, never from the pull
-  request's own configuration, and the announcement takes the reviewer app
-  from there too for a listed bot. Where no reviewer app is named, a
+  request's own configuration, and the announcement takes the reviewer app,
+  its check pattern and both hold labels from there too for a listed bot. Where no reviewer app is named, a
   person's approval is the witness and the exception grants nothing. A person still merges.
 - With `dispatch.adopt` on, a listed bot's pull request is adopted and
   driven to convergence while healthy, and again when its head moves,

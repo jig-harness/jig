@@ -428,6 +428,8 @@ describe("the pull request's listings", () => {
       filename: "package.json",
       status: "modified",
       patch: '@@ x\n+  "a": "1",',
+      additions: 1,
+      deletions: 0,
       previous_filename: null,
     },
     { filename: "pnpm-lock.yaml", status: "modified", patch: "@@ lock" },
@@ -689,5 +691,55 @@ describe("the kept read", () => {
     expect(
       await automationFor("o/r", forgeFacts(BASE), none, 5, cache()),
     ).toBeUndefined();
+  });
+});
+
+describe("structure, ranges, moves and counts", () => {
+  const read = (files: AutomationFile[]) => updateTypeOf(files);
+  it("does not read an edit after the dependency section closed", () => {
+    const patch =
+      '@@ -9,7 +9,7 @@\n   "dependencies": {\n     "a": "^1.0.0"\n   },\n-  "version": "1.0.0",\n+  "version": "1.0.1",';
+    expect(read([manifest(patch)]).ok).toBe(false);
+    const closed =
+      '@@ -9,7 +9,7 @@\n   "dependencies": {\n     "a": "^1.0.0"\n   },\n-    "x": "1.0.0",\n+    "x": "1.0.1",';
+    expect(read([manifest(closed)]).ok).toBe(false);
+  });
+  it("does not read a nested object named like a dependency section", () => {
+    const patch =
+      '@@ -9,7 +9,7 @@\n   "config": {\n     "dependencies": {\n-      "a": "^1.0.0",\n+      "a": "^1.0.1",';
+    expect(read([manifest(patch)]).ok).toBe(false);
+  });
+  it("tells a bare partial range from an exact version", () => {
+    expect(read([bump("1.2", "1.3")])).toEqual(ok("minor"));
+    expect(read([bump("1.2.3", "1.3")]).ok).toBe(false);
+    expect(read([bump("1.2", "1.2.0")])).toEqual(ok("pin"));
+  });
+  it("does not read a file moved to a lockfile name from another name", () => {
+    expect(
+      read([{ path: "pnpm-lock.yaml", previous: "notes.txt", patch: null }]).ok,
+    ).toBe(false);
+  });
+  it("withholds a manifest patch whose line counts differ from the file's", () => {
+    const listed = parseListings(
+      [
+        {
+          sha: HEAD,
+          author: { login: "renovate[bot]" },
+          committer: { login: "renovate[bot]" },
+          commit: { verification: { verified: true } },
+        },
+      ],
+      [
+        {
+          filename: "package.json",
+          status: "modified",
+          patch: '@@ x\n+  "a": "1",',
+          additions: 2,
+          deletions: 0,
+        },
+      ],
+      HEAD,
+    );
+    expect(listed.ok && listed.value.files[0]?.patch).toBeNull();
   });
 });

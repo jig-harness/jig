@@ -1225,7 +1225,9 @@ or re-armed of the dispatcher's own accord only while it needs work: a
 failed check (not a cancelled one or one waiting for approval), a conflict
 with its base, or an unresolved review thread. A healthy one is left for a
 person to merge, unless `pull_requests.trusted_automation` lists the bot
-that opened it: that one is adopted and driven to convergence, so the board
+that opened it: that one is adopted and driven to convergence (when its
+head is known to be in the repository, it was updated recently and carries no
+hold; the commit, path and update-type rules apply later, at placement), so the board
 can place it (see `pull_requests.trusted_automation` in
 [CONFIGURATION.md](CONFIGURATION.md#pull_requests)). A person can still ask
 the dispatcher to drive it. Each

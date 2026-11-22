@@ -135,6 +135,7 @@ export interface BoardIo {
     facts: ForgeFacts,
     rules: ReadyRules,
     timeoutSec: number,
+    ended?: () => boolean,
   ) => ReturnType<typeof automationFor>;
   /** Drop the kept reads of pull requests outside `numbers`. */
   keepAutomation?: (slug: string, numbers: readonly number[]) => void;
@@ -144,8 +145,8 @@ export interface BoardIo {
 
 const realIo: BoardIo = {
   read: readMergeFacts,
-  automation: (slug, facts, rules, timeoutSec) =>
-    automationFor(slug, facts, rules, timeoutSec, pickupReads),
+  automation: (slug, facts, rules, timeoutSec, ended) =>
+    automationFor(slug, facts, rules, timeoutSec, pickupReads, ended),
   keepAutomation: (slug, numbers) => {
     const prefix = `${AUTOMATION_CACHE_PREFIX}${slug}:`;
     pickupReads.prune(
@@ -277,6 +278,7 @@ async function boardAutomation(
   facts: ForgeFacts,
   rules: ReadyRules,
   startedMs: number,
+  ended?: () => boolean,
 ): Promise<{
   automation?: NonNullable<Awaited<ReturnType<typeof automationFor>>>;
 }> {
@@ -287,6 +289,7 @@ async function boardAutomation(
     facts,
     rules,
     Math.floor(left / 1000),
+    ended,
   );
   return automation === undefined ? {} : { automation };
 }
@@ -380,6 +383,7 @@ export async function readBoard(
       facts,
       rules,
       startedMs,
+      input.ended,
     );
     const answer = readiness(
       {
