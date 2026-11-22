@@ -140,6 +140,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "changelog.release.push",
   "changelog.release.branch",
   "changelog.release.rerun_failed_gates",
+  "changelog.release.tagged_by",
   "changelog.consumer_actions",
   "changelog.consumer_actions_record",
   // How a repository's files are classified describes that repository.

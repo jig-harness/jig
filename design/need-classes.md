@@ -462,6 +462,7 @@ do is what the tick would do anyway on the same facts.
 | `dispatch.stalled_relaunch` | repository | `finish-once` | Whether unpushed pickup work may be finished unattended (`never` turns it off) |
 | `dispatch.followup_routine` | repository | `[local-leftover, person-owed, drafted-items]` | What a follow-up may file unattended in that repository's tracker |
 | `changelog.release.rerun_failed_gates` | repository | `1` | Release policy is the repository's |
+| `changelog.release.tagged_by` | repository | `workflow` | Who tags a release is the repository's release procedure |
 | `steward.remit` | host, capped by each repository's `autonomy.max_level` | `[rearm, resume, need, facet, order, cause]` | The host opts in to `settle`, `redrive` and `rerun-checks`; in a repository whose `max_level` is `attended`, the tick turns such a record into a framed need |
 | `failures.rerun_died` | host | `1` | A host fault is the host's to retry |
 | `failures.group` | host | `cause` (`scope` keeps one need per scope) | One need per host fault |

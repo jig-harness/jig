@@ -46,6 +46,7 @@ describe("the section", () => {
         push: "direct",
         branch: "changelog-release",
         rerunFailedGates: 1,
+        taggedBy: "workflow",
       },
       consumerActions: false,
       consumerActionsRecord: null,
@@ -92,6 +93,17 @@ describe("the section", () => {
     for (const value of [-1, 1.5, "1", true, Number.MAX_SAFE_INTEGER + 1])
       expect(refused({ release: { rerun_failed_gates: value } })).toContain(
         "changelog.release.rerun_failed_gates",
+      );
+  });
+
+  test("who tags a release is the workflow or a person", () => {
+    expect(parse({})?.release.taggedBy).toBe("workflow");
+    expect(parse({ release: { tagged_by: "person" } })?.release.taggedBy).toBe(
+      "person",
+    );
+    for (const value of ["someone", 1, true])
+      expect(refused({ release: { tagged_by: value } })).toContain(
+        "changelog.release.tagged_by",
       );
   });
 
