@@ -24,7 +24,7 @@
  *   this tick names, no record that still stands) to make room; an entry
  *   whose cause stands is never dropped. Every comment keeps room for a
  *   summary entry (`notice-overflow.ts`): a cause that still finds no room
- *   waits, which is not a failed delivery, and the summary at the end of the
+ *   waits, which is not a failed delivery, and the summary entry in the
  *   comment counts it and says where to read it until it goes in full.
  * - **Sent on its read-back.** A cause counts as sent only once the
  *   runtime's receipt shows the comment carrying its key; a cause whose key
@@ -485,13 +485,21 @@ async function sendTo(
     }),
   );
   afterWrite(workspace, receipt, root, repo.slug, mayHaveWritten);
-  out.push(
-    ...held(
-      plan.summary !== null &&
-        receipt.ok &&
-        carries(receipt.comment ?? "", plan.summary),
-    ),
-  );
+  // A write that failed is the destination's failure, not a want of room: the held causes take its answer.
+  if (!receipt.ok)
+    out.push(
+      ...later.map((c) =>
+        receipt.lost !== true && signal.aborted
+          ? answer(c, "waits", null, receipt.detail)
+          : answer(c, "lost", workspace.path, receipt.detail),
+      ),
+    );
+  else
+    out.push(
+      ...held(
+        plan.summary !== null && carries(receipt.comment ?? "", plan.summary),
+      ),
+    );
   for (const c of send) out.push(delivered(receipt, c, workspace.path, signal));
   return out;
 }

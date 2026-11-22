@@ -8,7 +8,7 @@
  * are not sent, so they get no suppression record and stay due every tick)
  * and are told in full as soon as there is room: once a person reads the
  * workspace, or as the comment's other entries settle. Meanwhile the
- * comment ends with a summary entry that says how many wait, of which
+ * comment carries a summary entry that says how many wait, of which
  * kinds, which ones, and where to read every one. `SUMMARY_ROOM` characters
  * of every comment the dispatcher writes are kept for it.
  *
