@@ -123,7 +123,8 @@ async function recordSkipped(
   text: string,
   taken?: number,
 ): Promise<boolean> {
-  const count = taken ?? (await standDownsAt(pr, head)) ?? 0;
+  const count = taken ?? (await standDownsAt(pr, head));
+  if (count === null) return false;
   return await recordCiAttempt(
     pr,
     "repair",
@@ -298,7 +299,12 @@ export async function diagnoseCi(
     );
     if (driverRuntime.compromised !== "") return await afterTakeover(context);
     if (!result.dispatched) {
-      await recordSkipped(context.pr, head, "the pass was not dispatched");
+      const recorded = await recordSkipped(
+        context.pr,
+        head,
+        "the pass was not dispatched",
+      );
+      if (!recorded) return 1;
       return result.resumed ? "continue" : result.code;
     }
     const receipt = await judgeReceipt(context.pr, head, readDiagnosis(report));
@@ -317,8 +323,8 @@ async function settleDiagnosis(
 ): Promise<number | "continue"> {
   if (result.postPassMailboxExit !== null) {
     if ("standDown" in receipt) {
-      const taken = (await standDownsAt(pr, head)) ?? 0;
-      await recordSkipped(pr, head, STOOD_DOWN, taken + 1);
+      const taken = await standDownsAt(pr, head);
+      if (taken !== null) await recordSkipped(pr, head, STOOD_DOWN, taken + 1);
     }
     if ("text" in receipt)
       await reportOutcome(
@@ -377,12 +383,12 @@ async function staleHeadOutcome(
   const current = await readPrSnapshot(pr, null);
   if (current.ok && current.value.state !== "OPEN") return 5;
   if (current.ok && current.value.head !== head) {
-    await recordSkipped(
+    const recorded = await recordSkipped(
       pr,
       head,
       `the pull request moved to ${current.value.head}`,
     );
-    return "continue";
+    return recorded ? "continue" : 1;
   }
   return await stopWithDiagnosis(
     pr,
