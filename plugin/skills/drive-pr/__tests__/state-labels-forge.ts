@@ -94,6 +94,7 @@ if (fs.existsSync(explicitLimit) && read().includes("jig:converged") &&
     args[0] === "api" && args.some((arg) => arg.includes("/check-runs"))) {
   const reset = Math.ceil(${currentMs()} / 1000) + 24 * 60 * 60;
   fs.unlinkSync(explicitLimit);
+  fs.writeFileSync(path.join(dir, "explicit-ci-reset"), String(reset));
   process.stdout.write("HTTP/2.0 429 Too Many Requests\\r\\nx-ratelimit-remaining: 0\\r\\nx-ratelimit-reset: " + reset + "\\r\\n\\r\\n{\\"message\\":\\"API rate limit exceeded\\"}");
   process.stderr.write("HTTP 429: rate limit exceeded\\n");
   process.exit(1);
