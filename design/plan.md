@@ -670,9 +670,10 @@ that authorized it; hub-backed delivery carries both the laptop and hub bindings
 and the browser compares every applicable binding with its current grant before
 displaying or caching it. A change to either issuing authority instance clears
 the affected cache and requires a fresh handshake before another protected result
-is shown. The page binds each handshake to its request and connection generation,
-retires prior instances before installing a replacement grant, and accepts a
-response only for the live generation; an old instance's delayed response cannot
+is shown. The page serializes each binding's handshakes, so a new request
+supersedes every outstanding earlier request before it can install a grant;
+it retires prior instances before installing a replacement grant, and accepts a
+response only for the live handshake and generation. An old instance's delayed response cannot
 restore either laptop or hub access. Acceptance covers that ordering for both
 grants as well as an offline phone resuming with
 its existing page after expiry, an open Work page whose thread is revoked, and
@@ -693,16 +694,21 @@ winner at that final boundary, and records the occurrence-bound terminal decisio
 durably before it publishes a terminal receipt. An answer admitted before that
 fence is the decision and is recorded as an answered receipt; if expiry wins the
 fence, the decision is the explicit `expired` result rather than a missing winner.
-A later forge comment remains visible but does not alter either receipt. Readers
+An answer after the reader snapshot is recorded only when it was admitted before
+the fence; one after an expiry fence remains visible without changing the expired
+decision. A later forge comment remains visible but does not alter either receipt. Readers
 treat expiry as terminal only after that decision is read back. Pending expiry is
 enabled only after a compatibility fence rejects an older writer that cannot
 preserve its separate record before it mutates anything; acceptance exercises that
 rejection, then an ordinary rewrite and takeover by a compatible successor after a
 pending record exists and requires both to preserve the complete record and produce
-exactly one terminal outcome. If it crashes after the patch, a
+exactly one terminal outcome. The compatibility transition drains or fences every
+legacy write admitted before it takes effect; acceptance exercises that in-flight
+legacy write alongside the rewrite and takeover cases. If it crashes after the patch, a
 successor resumes that pending state and repeats the reconciliation before any
-reader treats it as terminal. An answer written after the reader's snapshot is
-never overwritten, and the resulting terminal receipt records that answer.
+reader treats it as terminal. An answer written after the reader's snapshot but
+admitted before the fence is never overwritten, and the resulting terminal receipt
+records that answer; an answer after an expiry fence does not replace its expired receipt.
 Until a successor recovers and publishes a pending
 receipt, it leaves the old active park unsettled rather than treating its
 absence as settlement. A successor whose original host and disk are unavailable
@@ -713,7 +719,10 @@ same key open. It records exactly one terminal outcome for the expired
 occurrence: an unanswered recovery yields one expired receipt, while recovery
 with a racing accepted answer yields one answered terminal receipt and no
 expired duplicate. Acceptance replays settlement observations on both sides of
-a coverage change, exercises a ledger-at-capacity recovery, races an answer after
+a coverage change, exercises a ledger-at-capacity recovery, receives a retryable
+`history-pending` result that later reconciles, and exhausts a recovery window
+without evidence while keeping the occurrence unresolved and recording the
+host-facing outcome. It races an answer after
 the final comparison with expiry publication, and covers a crash after a patch
 before reconciliation, to prove those rules. After recovery, another host sees
 the terminal status appropriate to each case — one expired occurrence when

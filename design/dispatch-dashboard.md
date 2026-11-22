@@ -765,8 +765,10 @@ envelope: the value, or a coded failure with a reason.
   against its current `hello` scope and the earlier expiry; an older request
   that finishes after either grant narrows or either issuing authority instance
   changes is discarded. The page binds each `hello` to the request and
-  connection generation that issued it. A response is usable only by that live
-  generation; accepting a replacement authority instance retires every prior
+  connection generation that issued it. The page serializes handshakes per
+  binding: starting one supersedes every earlier outstanding handshake for that
+  binding. A response is usable only by that live handshake and generation;
+  accepting a replacement authority instance retires every prior
   instance for that binding before it installs the new grant. Either instance
   change clears the affected cache and requires a fresh `hello` handshake
   before another protected result is shown. A delayed response from a retired
@@ -887,12 +889,16 @@ own machine only.
   for either non-evidence result; `history-pending` is retryable, while
   `history-exhausted` is terminal for the lookup rather than evidence of
   settlement. The hub places the reconciliation obligation on the affected
-  host's authenticated poll path, with the occurrence, deadline and required
-  completion result. That host recovers the exact original accepted record and
+  current authorized host's authenticated poll path, with the occurrence,
+  deadline and required completion result. On authority handoff the hub moves
+  an unfinished observation obligation to the successor while retaining any
+  exact original accepted record for replay. That host recovers that record and
   republishes it when it remains available; otherwise its current authority
   takes a fresh authoritative observation. A successor never attests to its
   predecessor's observation under a new epoch. The hub records the outcome on
-  that host-facing path before it reports `history-exhausted`; a dashboard only
+  that host-facing path before it reports `history-exhausted`. If no admissible
+  completion arrives by the deadline, the hub itself records the terminal
+  timeout outcome rather than continuing to return `history-pending`; a dashboard only
   reads that result through the viewer feed. Other bounded reads are `log.rows` (one page
   through a host's reported outcome rows), `receipt.get(run)` and
   `thread.get(address)`, the thread derived with the same fold as
