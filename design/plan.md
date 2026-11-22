@@ -485,23 +485,6 @@ must explain progress and waiting from recorded facts.
 
 Its build steps are issues under epic #1177, in the design's order.
 
-### 41. Configurable issue attributes: type, priority and size
-
-The stores for an issue's type, priority and size are built
-([design](tracker-facets.md#build-order)); the Protocol chapter stays
-provisional until the remaining checks are recorded. What is open:
-
-- the live runs of Jira's issue-type and custom-field stores and Linear's
-  estimate store ([#892](https://github.com/jig-harness/jig/issues/892));
-- one issue opened from the bug form, confirming it is filed as a Bug and that
-  `report-bug.ts` no longer applies the `bug` label;
-- a person's step on Jig's own organization: retiring GitHub's default Task
-  issue type ([#1830](https://github.com/jig-harness/jig/issues/1830));
-- a person's acceptance of the delivered scope, or a waiver, on
-  [#518](https://github.com/jig-harness/jig/issues/518).
-
-Done when those are recorded and the chapter is marked stable.
-
 ### 42. The dispatch dashboard: one place to watch and steer the line
 
 Where a piece of work stands is spread over machines and tools: the
@@ -1158,6 +1141,23 @@ colours agree. One pull request, the design's first step.
 Done when every page Jig's tooling draws takes its colours from
 `theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
 and each genre's contrast test holds its light and dark pairs.
+
+### 41. Configurable issue attributes: type, priority and size
+
+The stores for an issue's type, priority and size are built
+([design](tracker-facets.md#build-order)); the Protocol chapter stays
+provisional until the remaining checks are recorded. What is open:
+
+- the live runs of Jira's issue-type and custom-field stores and Linear's
+  estimate store ([#892](https://github.com/jig-harness/jig/issues/892));
+- one issue opened from the bug form, confirming it is filed as a Bug and that
+  `report-bug.ts` no longer applies the `bug` label;
+- a person's step on Jig's own organization: retiring GitHub's default Task
+  issue type ([#1830](https://github.com/jig-harness/jig/issues/1830));
+- a person's acceptance of the delivered scope, or a waiver, on
+  [#518](https://github.com/jig-harness/jig/issues/518).
+
+Done when those are recorded and the chapter is marked stable.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
