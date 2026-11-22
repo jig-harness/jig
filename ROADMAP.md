@@ -339,7 +339,7 @@ and the audit results a team marks as wrong reaching the
 [reflection store](plugin/skills/reflect/README.md), so the audit learns
 from them.
 
-### 52. Present Jig as a software factory, told in three layers
+### 52. Present Jig through its delivery line, told in three layers
 
 The home page will say what Jig does for a team through one work-item
 loop: an agent builds the change and works through review. A person merges.
