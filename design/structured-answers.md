@@ -23,8 +23,11 @@ a different note or another person's free answer leaves it disputed.
 ## Binding an answer to its framing
 
 A decision digest identifies the framing that a person read. Every
-structured line Jig offers to copy carries it. An answer naming an older
-digest is stale and leaves the current decision waiting. See
+structured line Jig offers to copy carries it. An answer belongs to that
+digest and the occurrence when the decision was parked: reframing a decision,
+or parking the same wording again, discards its saved pick, note and free
+answer. An answer naming an older digest is stale and leaves the current
+decision waiting. See
 [answering a decision](../plugin/protocol/needs-and-answers.md#answering-a-decision).
 
 ## Writing an answer
@@ -44,11 +47,13 @@ the recommendation is first, and its number is only a shortcut. Committing
 a pick on the board copies the answer line with the decision digest and
 any note. A pick is guarded when its class is not a named `Decide` act or
 its option is irreversible; it takes a confirmation step that shows the
-option's changes and costs. With no pick, Copy leaves every option
-unselected and copies the answer lines the person can complete. For a card
-with one decision whose class names a `Decide` act and whose recommendation
-is reversible, Copy instead supplies an approval of that recommendation when
-no earlier answer was dropped. See the [board keys](dispatch-board.md).
+option's changes and costs. With no pick, Copy keeps a person's free-text
+answer when one is present; otherwise it leaves every option unselected and
+copies the answer lines the person can complete. For a card with one decision
+whose class names a `Decide` act and whose recommendation is reversible, Copy
+instead supplies an approval of that recommendation only when no answer is
+present and no earlier answer was dropped. See the [board
+keys](dispatch-board.md).
 
 ## Showing what was decided
 
