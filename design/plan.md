@@ -1145,13 +1145,15 @@ and each genre's contrast test holds its light and dark pairs.
 ### 41. Configurable issue attributes: type, priority and size
 
 The stores for an issue's type, priority and size are built
-([design](tracker-facets.md#build-order)); the Protocol chapter stays
+([Tracker facets chapter](../plugin/protocol/tracker-facets.md)); the Protocol chapter stays
 provisional until the remaining checks are recorded. What is open:
 
 - the live runs of Jira's issue-type and custom-field stores and Linear's
   estimate store ([#892](https://github.com/jig-harness/jig/issues/892));
-- one issue opened from the bug form, confirming it is filed as a Bug and that
-  `report-bug.ts` no longer applies the `bug` label;
+- one issue opened from the bug form, confirming it is filed as a Bug, and
+  one filed through `report-bug.ts`, confirming the script no longer applies
+  the `bug` label (the form declares its own type, so it cannot stand in for
+  the script);
 - a person's step on Jig's own organization: retiring GitHub's default Task
   issue type ([#1830](https://github.com/jig-harness/jig/issues/1830));
 - a person's acceptance of the delivered scope, or a waiver, on
