@@ -764,8 +764,14 @@ envelope: the value, or a coded failure with a reason.
   too. Before display or caching, the page checks every applicable binding
   against its current `hello` scope and the earlier expiry; an older request
   that finishes after either grant narrows or either issuing authority instance
-  changes is discarded. Either instance change clears the affected cache and
-  requires a fresh `hello` handshake before another protected result is shown.
+  changes is discarded. The page binds each `hello` to the request and
+  connection generation that issued it. A response is usable only by that live
+  generation; accepting a replacement authority instance retires every prior
+  instance for that binding before it installs the new grant. Either instance
+  change clears the affected cache and requires a fresh `hello` handshake
+  before another protected result is shown. A delayed response from a retired
+  instance therefore cannot restore its grant, whether it is the laptop or hub
+  grant.
 - **Changes**: an opaque cursor that combines one per source. One watch per
   dashboard, shared by every open stream, produces the notices: it checks the
   records' versions (the database's data version, the drive and pickup
@@ -875,12 +881,19 @@ own machine only.
   into the work and host views, and every dashboard and a shared control plane
   run it.
 - **Bounded reads besides.** The hub also answers `settlement.get(occurrence)`,
-  which returns retained authoritative settlement evidence or `history-unavailable`;
-  a client then keeps the occurrence unresolved and asks the source to reconcile
-  and republish its evidence through the authorized hub feed on its next reachable
-  read. If that reconciliation cannot run or cannot publish, the hub reports a
-  terminal `history-unavailable` state with the reason rather than leaving a
-  settled occurrence unresolved indefinitely. Other bounded reads are `log.rows` (one page
+  which returns retained authoritative settlement evidence, `history-pending`
+  when the source can still reconcile it, or `history-exhausted` with a reason
+  when that recovery window is over. A client keeps the occurrence unresolved
+  for either non-evidence result; `history-pending` is retryable, while
+  `history-exhausted` is terminal for the lookup rather than evidence of
+  settlement. The hub places the reconciliation obligation on the affected
+  host's authenticated poll path, with the occurrence, deadline and required
+  completion result. That host recovers the exact original accepted record and
+  republishes it when it remains available; otherwise its current authority
+  takes a fresh authoritative observation. A successor never attests to its
+  predecessor's observation under a new epoch. The hub records the outcome on
+  that host-facing path before it reports `history-exhausted`; a dashboard only
+  reads that result through the viewer feed. Other bounded reads are `log.rows` (one page
   through a host's reported outcome rows), `receipt.get(run)` and
   `thread.get(address)`, the thread derived with the same fold as
   `jig ask --thread`, each with the views API's envelope and the feed

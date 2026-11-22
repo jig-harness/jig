@@ -670,7 +670,11 @@ that authorized it; hub-backed delivery carries both the laptop and hub bindings
 and the browser compares every applicable binding with its current grant before
 displaying or caching it. A change to either issuing authority instance clears
 the affected cache and requires a fresh handshake before another protected result
-is shown. Acceptance covers an offline phone resuming with
+is shown. The page binds each handshake to its request and connection generation,
+retires prior instances before installing a replacement grant, and accepts a
+response only for the live generation; an old instance's delayed response cannot
+restore either laptop or hub access. Acceptance covers that ordering for both
+grants as well as an offline phone resuming with
 its existing page after expiry, an open Work page whose thread is revoked, and
 late confirmations or protected responses from an earlier grant; the first visible
 render keeps expired content hidden. It retains in-scope rows only after the
@@ -685,15 +689,17 @@ write fails, local state leaves the park active and retryable. Publication uses
 one atomic compare-and-set fence shared by answer acceptance and terminal expiry,
 or a durable pending reconciliation state with the same ordering: the writer
 records the pending occurrence, closes answer admission or atomically chooses its
-winner at that final boundary, and records the occurrence-bound winning answer
-durably before it publishes a terminal receipt. Only an answer recorded before
-that fence can settle the occurrence; a later forge comment remains visible but
-does not alter the terminal receipt. Readers treat expiry as terminal only after
-that winner is read back. Pending expiry is enabled only after a compatibility fence
-excludes older writers that cannot preserve its separate record across ordinary
-rewrites and mixed-version takeover; acceptance exercises an ordinary rewrite
-and takeover by an older writer after a pending record exists and requires both
-to preserve the complete record and produce exactly one terminal outcome. If it crashes after the patch, a
+winner at that final boundary, and records the occurrence-bound terminal decision
+durably before it publishes a terminal receipt. An answer admitted before that
+fence is the decision and is recorded as an answered receipt; if expiry wins the
+fence, the decision is the explicit `expired` result rather than a missing winner.
+A later forge comment remains visible but does not alter either receipt. Readers
+treat expiry as terminal only after that decision is read back. Pending expiry is
+enabled only after a compatibility fence rejects an older writer that cannot
+preserve its separate record before it mutates anything; acceptance exercises that
+rejection, then an ordinary rewrite and takeover by a compatible successor after a
+pending record exists and requires both to preserve the complete record and produce
+exactly one terminal outcome. If it crashes after the patch, a
 successor resumes that pending state and repeats the reconciliation before any
 reader treats it as terminal. An answer written after the reader's snapshot is
 never overwritten, and the resulting terminal receipt records that answer.
