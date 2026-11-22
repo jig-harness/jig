@@ -1,3 +1,4 @@
+import { readsBaseHead } from "../../dispatch/lib/sources/ledger-stop-evidence.ts";
 import { derivedNext } from "../../dispatch/lib/next-owner.ts";
 /**
  * The `drive` station of a pull request: who drives it, the state of its
@@ -53,7 +54,6 @@ import {
   type Classified,
   classifyLedger,
   type PrFacts,
-  readsBaseHead,
 } from "../../dispatch/lib/sources/ledgers.ts";
 import {
   type DriverPresence,
@@ -493,7 +493,7 @@ function lastOfClaim(r: DriveReads, ended: ReadClaim): Last | null {
     at: end.at,
     reason: placed.reason,
     from: "launch claim",
-    next: derivedNext("rearm", placed.class, placed.reason),
+    next: derivedNext("rearm", placed.class, placed.reason, end.exit),
   };
 }
 

@@ -215,21 +215,24 @@ describe("jig dispatch --apply re-drives a drive that stopped on a conflict", ()
     });
   }, 90_000);
 
-  it("gives a converged re-drive that stops 9 one more attempt under the new key, then tells a person", async () => {
+  it("re-drives a converged conflict once per pair of heads, then tells a person", async () => {
     const w = fixture({ mergeable: "CONFLICTING" }, { exit: 0 });
     const first = await redrive(w);
-    expect(readRecord(first, dispatchState(w))?.redrive?.change).toBe(
-      `head ${HEAD_SHA}, conflicting`,
-    );
+    expect(readRecord(first, dispatchState(w))?.redrive).toMatchObject({
+      change: CHANGE,
+      conflictStop: true,
+    });
     w.setComments(7, [ledgerComment(701, stop(9, 4))]);
 
-    const second = await redrive(w);
-    expect(readRecord(second, dispatchState(w))?.redrive?.change).toBe(CHANGE);
-    w.setComments(7, [ledgerComment(701, stop(9, 5))]);
+    const settled = await tick(w);
+    expect(launches(settled)).toEqual([]);
+    expect(notified(settled)).toEqual([["PR #7", "needs-person", "sent"]]);
 
-    const third = await tick(w);
-    expect(launches(third)).toEqual([]);
-    expect(notified(third)).toEqual([["PR #7", "needs-person", "sent"]]);
+    w.setBaseHead(BASE_MOVED);
+    const second = await redrive(w);
+    expect(readRecord(second, dispatchState(w))?.redrive?.change).toBe(
+      `head ${HEAD_SHA}, base ${BASE_MOVED}`,
+    );
     expect(driveRuns(w)).toHaveLength(2);
   }, 120_000);
 

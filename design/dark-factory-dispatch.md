@@ -2989,18 +2989,16 @@ One pull request each, in this order; each is usable on its own.
    pickup and follow-up expectations on steps 4 and 5; the nudge on
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
-7. **Re-drive a stale converged pull request.** The forge read carries each
-   open pull request's mergeability and current head commit, compared with the ledger's `verifiedSha`; the
-   ledger classification the
-   `stale` class (converged, and conflicting or past the verified head),
-   and the plan re-arms it through step 3's launch, on any admitted
-   account. Tests: a converged ledger on a conflicting pull request is
-   re-armed once; one whose head moved is re-armed once; one still at the
-   verified head and mergeable is left alone; a mergeability still being
-   computed leaves it unplaced. Waits on step 3 only. Usable alone: a
-   pull request that converged and then conflicted no longer waits for a
-   person to notice. A drive that stopped `9` is re-driven through the same
-   launch, keyed on its head and its base branch's head.
+7. **Settle a converged pull request whose head moves.** A mergeable pull
+   request at the verified head waits for a person's merge. When the
+   dispatcher proves a clean merge of the base preserved the reviewed
+   change, it holds the re-drive while required checks run and refreshes
+   the verified head and merge-ready claim once they pass. A change to
+   the pull request's contribution or an unreadable proof re-arms it on
+   an admitted account. A conflict re-arms it once per pair of heads, as
+   for a drive that stopped `9`. A conflict that remains at that pair
+   goes to a person. Mergeability that the forge is still computing
+   leaves the pull request unplaced.
 8. **Admit Codex accounts.** The drive skill documents the Codex pass
    command beside Claude Code's, with the pass model read per vendor from
    `routing.models`; the dispatcher admits `vendor: codex` accounts, on a
