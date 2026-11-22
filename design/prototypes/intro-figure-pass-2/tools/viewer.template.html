@@ -232,10 +232,10 @@ const DATA = __DATA__;
   $("#first").insertAdjacentHTML("beforeend", radios("first", false));
   $("#second").insertAdjacentHTML("beforeend", radios("second", true));
   const val = (n) => ($(`input[name="${n}"]:checked`) || {}).value || "";
-  function syncLock() { $("#lock").disabled = !val("first") || !!st.locked || val("first") === val("second"); }
+  function syncLock() { $("#lock").disabled = !ready || !val("first") || !!st.locked || val("first") === val("second"); }
   $("#pick").addEventListener("change", syncLock);
 
-  let db = null;
+  let db = null, ready = false;
   function showReveal(pick) {
     st.locked = pick;
     const info = JSON.parse(decodeURIComponent(escape(atob(DATA.reveal))));
@@ -276,18 +276,25 @@ const DATA = __DATA__;
   });
 
   render();
+  syncLock();
   (async () => {
+    let p = null;
     try {
       db = await (window.claude && window.claude.use ? window.claude.use("db") : null);
       const snap = db ? await db.doc("picks/main").get() : null;
-      const p = snap ? (snap.exists ? snap.data() : null) : local.get();
-      if (p) {
-        const f = $(`input[name="first"][value="${p.first}"]`); if (f) f.checked = true;
-        const s2 = $(`input[name="second"][value="${p.second || ""}"]`); if (s2) s2.checked = true;
-        $("#note").value = p.note || "";
-        showReveal(p);
-      }
-    } catch (e) { /* the page works without the store */ }
+      p = snap ? (snap.exists ? snap.data() : null) : local.get();
+    } catch (e) {
+      db = null;
+      p = local.get();
+    }
+    ready = true;
+    if (p) {
+      const f = $(`input[name="first"][value="${p.first}"]`); if (f) f.checked = true;
+      const s2 = $(`input[name="second"][value="${p.second || ""}"]`); if (s2) s2.checked = true;
+      $("#note").value = p.note || "";
+      showReveal(p);
+    }
+    syncLock();
   })();
 })();
 </script>
