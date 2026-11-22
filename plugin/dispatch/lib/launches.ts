@@ -215,6 +215,8 @@ export interface LaunchRecord {
   launchCalled?: boolean;
   /** Explicit re-arm request consumed after a successful launch. */
   rearmLabel?: string | null;
+  /** A re-arm a person or the steward asked for, which grants a spent round budget once (`--rearm-budget`). */
+  rearm?: boolean;
   rearmRequestId?: number;
   /** The request label was successfully removed after this launch was accepted. */
   rearmConsumed?: boolean;

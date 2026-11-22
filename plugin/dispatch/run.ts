@@ -242,6 +242,11 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     script,
     pr,
     ...(record.action === "takeover" ? ["--take-over"] : []),
+    // A re-arm a person or the steward asked for: a drive stopped on its
+    // round budget is granted one more instead of stopping on its first check.
+    ...(record.rearm === true || record.rearmLabel != null
+      ? ["--rearm-budget"]
+      : []),
     "--bots-only",
     ...(settleTree ? ["--settle-worktree"] : []),
     ...(pinned ? ["--pass-args", ""] : []),

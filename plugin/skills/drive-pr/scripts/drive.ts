@@ -85,6 +85,13 @@
  *   --window-reopened  a person's statement that a quota-parked drive's
  *                    window is open again: admits the re-arm on any account
  *                    (`lib/driver/rearm.ts`).
+ *   --rearm-budget   this launch re-arms a stopped drive: when its durable
+ *                    counters have spent the round budget (it stopped on
+ *                    MAX_ROUNDS), grant one more, `--max-rounds` past the
+ *                    rounds spent, recorded in the drive state so a later
+ *                    restart keeps it (`lib/driver/rearm-budget.ts`). The
+ *                    dispatcher passes it on a re-arm a person or the
+ *                    steward asked for.
  *
  * The pass command is given as ARGV after `--`, and is executed directly —
  * with Windows batch shims adapted through cmd.exe by the process runner.

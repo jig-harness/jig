@@ -140,6 +140,7 @@
  *                                     # stamp progress — parking is its opposite.
  *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
  *   drive-state.ts deadline-retries [PR] --set bump|clear  # the drive's pass-deadline restarts
+ *   drive-state.ts grant-rounds [PR] --set N      # raise the rounds a re-arm added to the budget
  *   drive-state.ts handoff      [PR]                 # (re)write the handoff file, and the ledger under a driver
  *   drive-state.ts seed-ledger  [PR]                 # lay a newer ledger over this state (its body on stdin)
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
@@ -230,6 +231,7 @@ import {
 } from "./lib/state/ladder-verdicts.ts";
 import { setReflected } from "./lib/state/reflected.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
+import { grantRounds } from "./lib/state/round-grant.ts";
 import { unparkCommand } from "./lib/state/unpark.ts";
 import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
 import {
@@ -393,6 +395,8 @@ function usage(): void {
   deadline-retries [PR] --set bump|clear
                                     count a pass-deadline restart (prints the
                                     count), or clear it when the drive ends
+  grant-rounds [PR] --set N         raise the rounds a re-arm added to the round
+                                    budget to N (never lowers it; prints the grant)
   handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
   seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
@@ -766,6 +770,7 @@ async function main(): Promise<number> {
     "takeover",
     "seed-ledger",
     "deadline-retries",
+    "grant-rounds",
     "reset",
     "claim-ready-mark",
     "renew-ready-mark",
@@ -2718,6 +2723,9 @@ async function main(): Promise<number> {
 
     case "deadline-retries":
       return deadlineRetries(store, a.phaseName);
+
+    case "grant-rounds":
+      return grantRounds(store, a.phaseName);
 
     case "handoff":
       return handoff(pr, store);

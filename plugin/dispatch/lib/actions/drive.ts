@@ -710,6 +710,7 @@ function driveRecord(
       pr.evidence.rearm === true && typeof pr.evidence.rearmLabel === "string"
         ? pr.evidence.rearmLabel
         : null,
+    ...(pr.evidence.rearm === true ? { rearm: true } : {}),
     mark: named.mark,
   };
 }

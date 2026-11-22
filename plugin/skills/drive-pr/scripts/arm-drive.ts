@@ -9,7 +9,7 @@
  * Usage:
  *   arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M]
  *                [--pass-args "WORDS"] [--max-rounds N] [--keep-draft]
- *                [--handoff-at V]
+ *                [--handoff-at V] [--rearm-budget]
  *
  *   --mode        overrides `do_item.arm_drive` (default `auto`) for this arm;
  *                 `print` where a human checkpoint withholds the drive
@@ -26,7 +26,9 @@
  *                 run's environment may set, else none. The words are written
  *                 into the pass command before `-p`, and the flag is
  *                 forwarded to `drive.ts`, as `--pass-model` is
- *   --max-rounds, --keep-draft, --handoff-at  forwarded to `drive.ts`
+ *   --max-rounds, --keep-draft, --handoff-at, --rearm-budget  forwarded to
+ *                 `drive.ts`; `--rearm-budget` grants a drive stopped on
+ *                 `MAX_ROUNDS` one more round budget
  *
  * The pass command is the session's own agent tool's (`lib/arm.ts`): in a
  * Codex session it is Codex's, on the standard tier of
@@ -110,7 +112,7 @@ import {
 import { currentMs } from "../../../shared/time.ts";
 
 const USAGE =
-  'usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--pass-args "WORDS"] [--max-rounds N] [--keep-draft] [--handoff-at V]';
+  'usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--pass-args "WORDS"] [--max-rounds N] [--keep-draft] [--handoff-at V] [--rearm-budget]';
 
 interface Args {
   pr: string;
@@ -133,7 +135,7 @@ const VALUE_FLAGS = new Set([
 const DASHED_VALUES = new Set(["--pass-args"]);
 
 /** The flags of this command line, which a dashed value may not be mistaken for. */
-const OWN_FLAGS = new Set([...VALUE_FLAGS, "--keep-draft"]);
+const OWN_FLAGS = new Set([...VALUE_FLAGS, "--keep-draft", "--rearm-budget"]);
 
 function value(argv: string[], index: number): string {
   const v = argv[index + 1];
@@ -185,7 +187,8 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i] as string;
     if (VALUE_FLAGS.has(flag)) takeValue(args, flag, value(argv, i++));
-    else if (flag === "--keep-draft") args.forward.push(flag);
+    else if (flag === "--keep-draft" || flag === "--rearm-budget")
+      args.forward.push(flag);
     else if (flag.startsWith("-") || args.pr !== "") fail(2, USAGE);
     else args.pr = flag;
   }

@@ -48,6 +48,8 @@ interface PullFacts {
   url: string;
   tree?: string;
   stop?: RearmStop;
+  /** The stop spent the drive's round budget (`MAX_ROUNDS`), which the re-arm extends. */
+  budgetSpent?: boolean;
 }
 
 /** The repository's dispatch labels as the tick reads them, or why they cannot be told. */
@@ -145,6 +147,9 @@ async function rearmFacts(
     url: doc.url,
     tree: tree.value,
     stop: { comment: ledgerCommentId, generation: ledger.generation },
+    ...(ledger.driver.exit === DRIVE_EXIT.MAX_ROUNDS
+      ? { budgetSpent: true }
+      : {}),
   });
 }
 
@@ -259,6 +264,15 @@ function treeNotice(tree: string | undefined): string | null {
   return tree === undefined
     ? null
     : `The drive will use the existing worktree ${tree}. Account admission and the tree are checked again by the tick before launch.`;
+}
+
+/** What a re-arm tells the person: the tree it uses and, after a spent round budget, the budget it grants. */
+function rearmNotice(facts: PullFacts): string | null {
+  const tree = treeNotice(facts.tree);
+  if (facts.budgetSpent !== true) return tree;
+  const budget =
+    "The drive stopped on its round budget (MAX_ROUNDS): the re-armed drive is granted one more round budget, as many rounds past those it spent as its drive.max_rounds, and stops on MAX_ROUNDS again if it spends them without converging.";
+  return tree === null ? budget : `${tree} ${budget}`;
 }
 
 /** Re-read the forge immediately before changing a re-arm request. */
@@ -417,7 +431,7 @@ export async function planLabel(
     reader: tick.reader(NEXT_TICK),
     tick,
     undo: labelUndo(ctx.name, verb, label),
-    notice: treeNotice(facts.value.tree),
+    notice: rearmNotice(facts.value),
     write: async () => {
       let boundUrl: string | null = null;
       if (rearm) {
