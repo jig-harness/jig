@@ -196,9 +196,12 @@ export async function announceReady(
         defaultBranchRules(config),
       )
     : null;
+  // The default branch's configuration was read, so an invalid pattern is
+  // confirmed policy loss, not a transient failure: it moves the lane off
+  // merge now (exit 4) so a standing announcement is withdrawn.
   if (baseRead !== null && !baseRead.ok)
     return {
-      rc: 1,
+      rc: 4,
       lane: null,
       says: `the default branch's review rules do not read: ${baseRead.failure.reason}`,
     };

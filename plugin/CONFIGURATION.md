@@ -388,9 +388,12 @@ labels from the default branch too. The
 commits and files are read from the pull request's own commit and file
 listings, with the pull request read before and after: the read counts only
 when its head and base are unchanged both times and its commit and file
-counts equal what the listings hold. Each page is checked as it arrives, the
-requests share one deadline, and none starts once the enclosing bound has
-ended.
+counts equal what the listings hold. Each page is checked as it arrives for
+its shape, its count, duplicates and the final commit's head; the records
+themselves are parsed once the closing read is confirmed, so a malformed
+record is refused after the listings are read. A count no single listing page
+can hold is refused before any listing is requested. The requests share one
+deadline, and none starts once the enclosing bound has ended.
 They are made only for a pull request by a listed bot whose condition 8
 nothing else satisfies and where a reviewer app is named; a pull request with
 a full page of either does not read whole.

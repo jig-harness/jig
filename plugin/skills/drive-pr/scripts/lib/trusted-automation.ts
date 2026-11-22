@@ -699,7 +699,7 @@ function compactPatch(patch: string): string | null {
     // cannot see, so the structure is not established. A plain key and
     // value, a blank line and the diff's own markers carry no boundary.
     if (
-      line === "" ||
+      /^\s*$/.test(line) ||
       line.startsWith("\\") ||
       /^ \s*"[^"]+"\s*:\s*("[^"]*"|-?\d[\d.eE+-]*|true|false|null)\s*,?\s*$/.test(
         line,

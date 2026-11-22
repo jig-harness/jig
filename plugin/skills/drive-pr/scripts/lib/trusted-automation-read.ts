@@ -84,6 +84,21 @@ export async function readAutomationFacts(
   // from another revision or a partial one does not pass.
   const before = await pullOf("pull request");
   if (!before.ok) return before;
+  // A count no listing page can match refuses before any listing is requested.
+  for (const [count, what] of [
+    [before.value.changed_files, "files"],
+    [before.value.commits, "commits"],
+  ] as const)
+    if (
+      typeof count !== "number" ||
+      !Number.isInteger(count) ||
+      count < 1 ||
+      count >= LISTING_PAGE
+    )
+      return failed(
+        "unreadable",
+        `the pull request's ${what} count is not one a single listing page holds`,
+      );
   const files = await get(
     `repos/${repo}/pulls/${number}/files?per_page=${LISTING_PAGE}`,
     "pull request files",

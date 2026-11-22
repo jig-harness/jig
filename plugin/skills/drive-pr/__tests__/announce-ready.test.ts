@@ -169,6 +169,9 @@ async function dryRun(
     exitCode,
     posted: existsSync(join(dir, "posted.jsonl")),
     compared: existsSync(join(dir, "last-compare-path.txt")),
+    calls: existsSync(join(dir, "calls.txt"))
+      ? readFileSync(join(dir, "calls.txt"), "utf8").trim().split("\n")
+      : [],
     comparedPath: existsSync(join(dir, "last-compare-path.txt"))
       ? readFileSync(join(dir, "last-compare-path.txt"), "utf8")
       : null,
@@ -228,9 +231,11 @@ describe("announce-merge-ready.ts and trusted automation", () => {
       `#!/usr/bin/env bash
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/files* ]]; then
   printf '%s' "$2" > "$DRIVE_PR_FIXTURES/last-compare-path.txt"
+  echo files >> "$DRIVE_PR_FIXTURES/calls.txt"
   cat "$DRIVE_PR_FIXTURES/files.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
+  echo commits >> "$DRIVE_PR_FIXTURES/calls.txt"
   cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
@@ -296,6 +301,26 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain("An approval is still required");
+    // The mismatch stops the read before the commits are requested.
+    expect(r.calls).not.toContain("commits");
+  });
+
+  it("requests no listing for a file count no page can hold", async () => {
+    const r = await dryRun(
+      converged,
+      board(converged.head, {
+        association: "NONE",
+        bot: "renovate",
+        config: LISTED,
+      }),
+      {
+        compare,
+        driverEnv: { ...viaWrapper(), FIXTURE_CHANGED_FILES: "0" },
+      },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("An approval is still required");
+    expect(r.calls).toEqual([]);
   });
 
   it("refuses, not crashes, on a reviewer check pattern that does not compile", async () => {
