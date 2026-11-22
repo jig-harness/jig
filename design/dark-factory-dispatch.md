@@ -2044,8 +2044,11 @@ raised as failing, and the summary, keyed by a digest of the keys it
 counts, says how many wait, of which kinds and which ones (as many as fit).
 Where the
 comment leaves no room for the summary, the waiting causes are not counted in
-it until room opens. A cause that
-waits has no suppression record, so it stays due every tick and goes in
+it until room opens. The summary is a record of the last write, not a live
+count: it can outlast the causes it counted, until the next write to the
+comment. A cause that
+waits has no new suppression record (a cause sent earlier keeps its own, and
+holding its repeat removes none), so it stays due every tick and goes in
 full once the workspace is read or its other entries settle. Each cause's text carries its key (the facts its
 suppression record is keyed by). A cause counts as sent, and its
 suppression record is written, only once the runtime's receipt shows the
