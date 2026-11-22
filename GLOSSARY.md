@@ -2993,8 +2993,9 @@ make, use the entry's term instead.
   change: its head in the repository, every commit by an allowed author (the
   bot or a listed committer), each signed unless the entry says
   `signed: false`, every file within the entry's paths, and, where
-  set, an allowed update type. The bot's identity is trusted; the
-  third-party text it carries is not.
+  set, an allowed update type. With `dispatch.adopt` on, the dispatcher also
+  adopts its same-repository pull requests while healthy. The bot's identity
+  is trusted; the third-party text it carries is not.
 - **Owed-steps label** — the repository's manual-operations label
   (`issue_tracker.labels.manual_ops`, `manual-ops` by default) on a pull
   request: its description's `## Out-of-tree follow-ups` section lists a

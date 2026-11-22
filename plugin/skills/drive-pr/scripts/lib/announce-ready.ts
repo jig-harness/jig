@@ -84,7 +84,9 @@ function stringAt(
 ): string | null {
   const nested = values !== null ? values[section] : undefined;
   const v = isRecord(nested) ? nested[key] : undefined;
-  return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+  // The value is kept as written, as the board keeps it, so a quoted
+  // pattern with a deliberate space reads the same in both.
+  return typeof v === "string" && v.trim() !== "" ? v : null;
 }
 
 /** The reviewer app the default branch's configuration names; `null` when it names none or does not read. */
@@ -188,7 +190,19 @@ export async function announceReady(
   // approval or its absence.
   const listed =
     trusted.ok && trustedEntryFor(facts.author, trusted.value) !== null;
-  const base = listed ? defaultBranchRules(config) : null;
+  // A malformed pattern is an unread rule, as it is on the board.
+  const baseRead = listed
+    ? attempt("unreadable", "the default branch's rules are invalid", () =>
+        defaultBranchRules(config),
+      )
+    : null;
+  if (baseRead !== null && !baseRead.ok)
+    return {
+      rc: 1,
+      lane: null,
+      says: `the default branch's review rules do not read: ${baseRead.failure.reason}`,
+    };
+  const base = baseRead?.value ?? null;
   const hold = base?.hold ?? holdLabel();
   const rules: ReadyRules = {
     ...(base?.rules ?? driveRules()),

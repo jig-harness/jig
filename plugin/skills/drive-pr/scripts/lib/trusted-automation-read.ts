@@ -91,6 +91,17 @@ export async function readAutomationFacts(
   if (!files.ok) return files;
   const filesOk = checkFilePage(files.value);
   if (!filesOk.ok) return filesOk;
+  // Each page is held to the first snapshot as it arrives, so a mismatch
+  // refuses without the requests that cannot change the answer.
+  const counts = (pull: Record<string, unknown>, what: string) =>
+    pull.changed_files !== filesOk.value
+      ? failed<"unreadable">(
+          "unreadable",
+          `the file listing does not match the pull request's count ${what}`,
+        )
+      : null;
+  const early = counts(before.value, "at the start");
+  if (early !== null) return early;
   const commits = await get(
     `repos/${repo}/pulls/${number}/commits?per_page=${LISTING_PAGE}`,
     "pull request commits",
@@ -98,6 +109,11 @@ export async function readAutomationFacts(
   if (!commits.ok) return commits;
   const commitsOk = checkCommitPage(commits.value, head);
   if (!commitsOk.ok) return commitsOk;
+  if (before.value.commits !== commitsOk.value)
+    return failed(
+      "unreadable",
+      "the commit listing does not match the pull request's count at the start",
+    );
   const after = await pullOf("pull request");
   if (!after.ok) return after;
   for (const [pull, label] of [
@@ -198,7 +214,8 @@ export async function automationFor(
     timeoutSec,
     ended,
   );
-  if (read.ok && cache !== undefined)
+  // A read that finished after the enclosing bound ended is not kept.
+  if (read.ok && cache !== undefined && ended?.() !== true)
     cache.set(key, {
       head: facts.head,
       baseOid,

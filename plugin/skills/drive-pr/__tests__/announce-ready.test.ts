@@ -234,7 +234,7 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
   cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
-  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))" "$(jq length "$DRIVE_PR_FIXTURES/commits.json")" "$(jq length "$DRIVE_PR_FIXTURES/files.json")"; exit 0
+  printf '{"head":{"sha":"%s"},"base":{"sha":"%s"},"commits":%s,"changed_files":%s}' "$(cat "$DRIVE_PR_FIXTURES/head.txt")" "$(printf 'b%.0s' $(seq 40))" "$(jq length "$DRIVE_PR_FIXTURES/commits.json")" "\${FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"; exit 0
 fi
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
@@ -279,6 +279,38 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
+  });
+
+  it("withholds the exception when the pull request's file count differs from the listing", async () => {
+    const r = await dryRun(
+      converged,
+      board(converged.head, {
+        association: "NONE",
+        bot: "renovate",
+        config: LISTED,
+      }),
+      {
+        compare,
+        driverEnv: { ...viaWrapper(), FIXTURE_CHANGED_FILES: "2" },
+      },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("An approval is still required");
+  });
+
+  it("refuses, not crashes, on a reviewer check pattern that does not compile", async () => {
+    const r = await dryRun(
+      converged,
+      board(converged.head, {
+        association: "NONE",
+        bot: "renovate",
+        config: `${LISTED}  reviewer_check_pattern: "["\n`,
+      }),
+      { compare, driverEnv: viaWrapper() },
+    );
+    expect(r.posted).toBe(false);
+    expect(r.stderr).not.toContain("SyntaxError");
+    expect(r.stderr).toContain("do not read");
   });
 
   it("does not read where the default branch names no reviewer app, whatever the checkout names", async () => {

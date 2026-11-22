@@ -82,7 +82,7 @@ export function adoptionOf(
 }
 
 /** Whether `pull_requests.trusted_automation` names the bot that opened the pull request. */
-function trustedBot(
+export function trustedBot(
   author: Author | undefined,
   adoption: Pick<Adoption, "trusted"> | null,
 ): boolean {

@@ -11,6 +11,8 @@ import {
   authorLogin,
   DEFAULT_TRUSTED_PATHS,
   LISTING_PAGE,
+  checkCommitPage,
+  checkFilePage,
   parseListings,
   type TrustedAuthor,
   trustedAutomationOf,
@@ -581,12 +583,14 @@ describe("the rules a review found open", () => {
 
   it("accepts a listing below the page and refuses one that fills it", () => {
     const commits = (n: number) => [
-      ...Array.from({ length: n - 1 }, () => ({ sha: EARLIER })),
+      ...Array.from({ length: n - 1 }, (_, i) => ({
+        sha: `${i}`.padStart(40, "d"),
+      })),
       { sha: HEAD },
     ];
     const files = (n: number) =>
-      Array.from({ length: n }, () => ({
-        filename: "pnpm-lock.yaml",
+      Array.from({ length: n }, (_, i) => ({
+        filename: `dir${i}/pnpm-lock.yaml`,
         status: "modified",
       }));
     expect(parseListings(commits(LISTING_PAGE - 1), files(1), HEAD).ok).toBe(
@@ -696,6 +700,48 @@ describe("the kept read", () => {
 
 describe("structure, ranges, moves and counts", () => {
   const read = (files: AutomationFile[]) => updateTypeOf(files);
+  it("reads a hunk that starts at the file's first line and shows its root object", () => {
+    const patch =
+      '@@ -1,6 +1,6 @@\n {\n   "dependencies": {\n-    "a": "^1.0.0",\n+    "a": "^1.0.1",\n   }';
+    expect(read([manifest(patch)])).toEqual(ok("patch"));
+  });
+  it("does not read a patch whose context has a boundary beside other syntax", () => {
+    const patch =
+      '@@ -9,7 +9,7 @@\n   "dependencies": {\n   }, "other": {\n-    "a": "^1.0.0",\n+    "a": "^1.0.1",';
+    const listed = parseListings(
+      [
+        {
+          sha: HEAD,
+          author: { login: "renovate[bot]" },
+          committer: { login: "renovate[bot]" },
+          commit: { verification: { verified: true } },
+        },
+      ],
+      [
+        {
+          filename: "package.json",
+          status: "modified",
+          patch,
+          additions: 1,
+          deletions: 1,
+        },
+      ],
+      HEAD,
+    );
+    expect(listed.ok).toBe(true);
+    if (listed.ok) expect(updateTypeOf(listed.value.files).ok).toBe(false);
+  });
+  it("does not pin an exclusive range to its own bound", () => {
+    expect(read([bump(">1.2.3", "1.2.3")]).ok).toBe(false);
+    expect(read([bump("<1.2.3", "1.2.3")]).ok).toBe(false);
+    expect(read([bump("^1.2.3", "1.2.3")])).toEqual(ok("pin"));
+  });
+  it("refuses a listing that repeats a file or a commit", () => {
+    const f = { filename: "a", status: "modified" };
+    expect(checkFilePage([f, f]).ok).toBe(false);
+    const c = { sha: HEAD };
+    expect(checkCommitPage([c, c], HEAD).ok).toBe(false);
+  });
   it("does not read an edit after the dependency section closed", () => {
     const patch =
       '@@ -9,7 +9,7 @@\n   "dependencies": {\n     "a": "^1.0.0"\n   },\n-  "version": "1.0.0",\n+  "version": "1.0.1",';

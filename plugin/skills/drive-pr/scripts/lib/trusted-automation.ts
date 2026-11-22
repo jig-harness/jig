@@ -455,9 +455,13 @@ function typeOfChange(before: string, after: string): UpdateType | null {
   return a.parts[1] !== b.parts[1] ? "minor" : "patch";
 }
 
-/** A range made exact at the same numbers, with all three parts written. */
+/** A range made exact at the same numbers, with all three parts written, where the range allowed that version. */
 const pinOf = (a: Version, b: Version): UpdateType | null =>
-  a.op !== "" && b.op === "" && b.full ? "pin" : null;
+  // An exclusive bound does not allow its own number, so pinning to it is a
+  // different version than any the old range allowed.
+  a.op !== "" && a.op !== ">" && a.op !== "<" && b.op === "" && b.full
+    ? "pin"
+    : null;
 
 const PAIR = /^([-+])(\s*)"([^"]+)"\s*:\s*"([^"]*)"\s*,?\s*$/;
 const OPENER = /^[-+ ](\s*)"([^"]+)"\s*:\s*[{[]\s*$/;
@@ -527,9 +531,19 @@ function diffPairs(
   // opener the hunk shows, so a closed section or a nested object named like
   // one proves nothing.
   let stack: Array<{ name: string; root: boolean }> = [];
+  // Whether the hunk starts at the file's first line, so its first unindented
+  // `{` is the manifest's own root object.
+  let rootShown = false;
   for (const line of patch.split("\n")) {
     if (line.startsWith("@@")) {
       stack = [];
+      rootShown = /^@@ -1[ ,]/.test(line);
+      continue;
+    }
+    if (rootShown && stack.length === 0 && /^[-+ ]\{\s*$/.test(line)) {
+      // The root object is the hunk's own frame, not a nested one.
+      rootShown = false;
+      stack.push({ name: "", root: true });
       continue;
     }
     const opener = OPENER.exec(line);
@@ -541,8 +555,10 @@ function diffPairs(
     else if (ANON_OPENER.test(line) && !isDiffChangeLine(line))
       stack.push({ name: "", root: false });
     else if (CLOSER.test(line) && !isDiffChangeLine(line)) stack.pop();
-    const top = stack.length === 1 ? stack[0] : undefined;
-    const section: string | null = top?.root ? top.name : null;
+    const framed = stack[0]?.name === "" && stack[0].root;
+    const top = stack.length === (framed ? 2 : 1) ? stack.at(-1) : undefined;
+    const section: string | null =
+      top !== undefined && top.root && top.name !== "" ? top.name : null;
     if (!isDiffChangeLine(line)) continue;
     const pair = changedPair(line, section);
     if (!pair.ok) return pair;
@@ -667,18 +683,32 @@ function parseCommit(c: unknown): Outcome<AutomationCommit, "unreadable"> {
  * A manifest patch reduced to what the rules read: hunk markers, changed
  * lines and the lines that open an object, so the raw diff is not kept.
  */
-function compactPatch(patch: string): string {
-  return patch
-    .split("\n")
-    .filter(
-      (line) =>
-        line.startsWith("@@") ||
-        isDiffChangeLine(line) ||
-        OPENER.test(line) ||
-        ANON_OPENER.test(line) ||
-        CLOSER.test(line),
+function compactPatch(patch: string): string | null {
+  const kept: string[] = [];
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("@@") || isDiffChangeLine(line)) {
+      kept.push(line);
+      continue;
+    }
+    if (OPENER.test(line) || ANON_OPENER.test(line) || CLOSER.test(line)) {
+      kept.push(line);
+      continue;
+    }
+    // A context line that is none of those (a boundary beside other syntax,
+    // or a line the parser does not model) may open or close an object it
+    // cannot see, so the structure is not established. A plain key and
+    // value, a blank line and the diff's own markers carry no boundary.
+    if (
+      line === "" ||
+      line.startsWith("\\") ||
+      /^ \s*"[^"]+"\s*:\s*("[^"]*"|-?\d[\d.eE+-]*|true|false|null)\s*,?\s*$/.test(
+        line,
+      )
     )
-    .join("\n");
+      continue;
+    return null;
+  }
+  return kept.join("\n");
 }
 
 /** How many lines of `patch` a hunk adds (`+`) or removes (`-`). */
@@ -750,7 +780,11 @@ function parseList<T>(
   return ok(out);
 }
 
-/** A files page's length when it is whole: not malformed, not full, not empty. */
+/** Whether `values` holds one value twice. */
+const repeats = (values: readonly unknown[]): boolean =>
+  new Set(values).size !== values.length;
+
+/** A files page's length when it is whole: not malformed, not full, not empty, no file twice. */
 export function checkFilePage(
   fileList: unknown,
 ): Outcome<number, "unreadable"> {
@@ -760,6 +794,8 @@ export function checkFilePage(
     return failed("unreadable", "more files than one read holds");
   if (fileList.length === 0)
     return failed("unreadable", "the file listing lists no changed file");
+  if (repeats(fileList.map((f) => (isRecord(f) ? f.filename : undefined))))
+    return failed("unreadable", "the file listing repeats a file");
   return ok(fileList.length);
 }
 
@@ -775,6 +811,8 @@ export function checkCommitPage(
   const last = commitList.at(-1);
   if (!isRecord(last) || last.sha !== head)
     return failed("unreadable", "the commit listing does not end at the head");
+  if (repeats(commitList.map((c) => (isRecord(c) ? c.sha : undefined))))
+    return failed("unreadable", "the commit listing repeats a commit");
   return ok(commitList.length);
 }
 
