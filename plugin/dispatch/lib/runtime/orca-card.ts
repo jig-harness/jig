@@ -22,8 +22,10 @@
  *   exactly what the dispatcher wrote gives up the entries whose causes are
  *   settled (the test that retires an unread notices workspace: no cause
  *   this tick names, no record that still stands) to make room; an entry
- *   whose cause stands is never dropped. A cause that still finds no room
- *   waits, counted as a failed delivery (`NO_ROOM`).
+ *   whose cause stands is never dropped. Every comment keeps room for a
+ *   summary entry (`notice-overflow.ts`): a cause that still finds no room
+ *   waits, which is not a failed delivery, and the summary entry in the
+ *   comment counts it and says where to read it until it goes in full.
  * - **Sent on its read-back.** A cause counts as sent only once the
  *   runtime's receipt shows the comment carrying its key; a cause whose key
  *   the comment already carries is answered as already there. A repeat goes
@@ -65,6 +67,13 @@ import { failureText } from "../text.ts";
 import { currentMs } from "../../../shared/time.ts";
 import type { NoticeCause, RepoReport, RepoTarget } from "../types.ts";
 import { noticeComment } from "./notice-comment.ts";
+import {
+  COUNTED_IN_SUMMARY,
+  NO_ROOM,
+  overflowWrite,
+  SUMMARY_ROOM,
+  summaryKeys,
+} from "./notice-overflow.ts";
 import {
   MAX_COMMENT,
   NOTICES_BRANCH,
@@ -157,6 +166,8 @@ interface CardContext {
   /** The keys that stand this tick: the causes named, and the host failures still standing. */
   standing: () => ReadonlySet<string>;
   root: string;
+  /** The causes this tick's earlier passes held back for room, by workspace path: one summary counts them all. */
+  heldBefore: Map<string, Cause[]>;
 }
 
 /**
@@ -237,7 +248,12 @@ async function noticesWorkspace({
   return noticesBlocked(read) ?? read;
 }
 
-/** The causes that fit one comment after the unread text, which is kept whole but for its `settled` entries; one that does not fit waits until there is room, and a later one that fits still goes. */
+/**
+ * The causes that fit one comment after the unread text, which is kept
+ * whole but for its `settled` entries, with `SUMMARY_ROOM` left for the
+ * summary of those that wait; one that does not fit waits until there is
+ * room, and a later one that fits still goes.
+ */
 export function fitting(
   workspace: Workspace,
   causes: Cause[],
@@ -254,7 +270,7 @@ export function fitting(
       preserveRead,
       gone,
     );
-    if (next !== null && next.length > MAX_COMMENT) {
+    if (next !== null && next.length > MAX_COMMENT - SUMMARY_ROOM) {
       later.push(c);
       continue;
     }
@@ -361,13 +377,6 @@ function delivered(
 
 const SPENT = "the delivery time was spent before the write";
 
-/**
- * Why a cause waits for room: the unread comment, less the entries whose
- * causes are settled, leaves too little. It counts as a failed delivery.
- */
-export const NO_ROOM =
-  "the comment is full: its unread entries still stand, or a person added to it; read the unread notices or shorten personal additions so a later tick can deliver it";
-
 /** What one workspace's write is allowed to replace, and how it reads the comment it finds. */
 function writePolicy(
   workspace: Workspace,
@@ -420,7 +429,7 @@ function afterWrite(
 
 /** One workspace's causes, joined into one message and sent. */
 async function sendTo(
-  { state, root, repo, report, branch, standing }: CardContext,
+  { state, root, repo, report, branch, standing, heldBefore }: CardContext,
   workspace: Workspace,
   causes: Cause[],
   signal: AbortSignal,
@@ -437,32 +446,83 @@ async function sendTo(
   if (signal.aborted)
     return [...out, ...fresh.map((c) => answer(c, "waits", null, SPENT))];
   const preserveRead = dispatcherOnly && !owned;
-  // Only a comment known to be the dispatcher's alone gives up its settled entries.
+  // Only a comment known to be the dispatcher's alone gives up its settled
+  // entries; its summary of the causes that waited is never a cause's.
   const settled = owned
-    ? settledEntries(
-        workspace.comment,
-        report,
-        standing(),
-        retirementRecords(repo.slug, root),
-      )
+    ? [
+        ...new Set([
+          ...settledEntries(
+            workspace.comment,
+            report,
+            standing(),
+            retirementRecords(repo.slug, root),
+          ),
+          ...summaryKeys(workspace.comment, repo.slug),
+        ]),
+      ]
     : [];
   const { send, later } = fitting(workspace, fresh, preserveRead, settled);
-  out.push(...later.map((c) => answer(c, "waits", null, NO_ROOM)));
-  if (send.length === 0) return out;
+  // The summary counts every cause this tick holds back, from every pass: a later pass never narrows an earlier one's.
+  const sentKeys = new Set(send.map((c) => c.notice.key));
+  const counted = [
+    ...(heldBefore.get(workspace.path) ?? []).filter(
+      (c) =>
+        !sentKeys.has(c.notice.key) &&
+        !later.some((l) => l.notice.key === c.notice.key),
+    ),
+    ...later,
+  ];
+  heldBefore.set(workspace.path, counted);
+  const plan = overflowWrite(
+    { comment: workspace.comment, unread: workspace.unread !== false },
+    messageFor(send),
+    counted,
+    { slug: repo.slug, preserveRead, settled },
+  );
+  const held = (counted: boolean) =>
+    later.map((c) =>
+      answer(c, "waits", null, counted ? COUNTED_IN_SUMMARY : NO_ROOM),
+    );
+  if (plan.message === "") return [...out, ...held(plan.summary !== null)];
   const receipt = await write(
     state,
     workspace,
-    messageFor(send),
+    plan.message,
     signal,
     writePolicy(workspace, {
       root,
       slug: repo.slug,
       dispatcherOnly,
       owned,
-      settled,
+      settled: plan.settled,
     }),
   );
   afterWrite(workspace, receipt, root, repo.slug, mayHaveWritten);
+  // A write that failed is the destination's failure, not a want of room: the held causes take its answer.
+  if (!receipt.ok)
+    out.push(
+      ...later.map((c) =>
+        receipt.lost !== true && signal.aborted
+          ? answer(c, "waits", null, receipt.detail)
+          : answer(c, "lost", workspace.path, receipt.detail),
+      ),
+    );
+  else if (
+    plan.summary !== null &&
+    !carries(receipt.comment ?? "", plan.summary)
+  )
+    // A write whose planned summary the read-back does not show did not establish it: a lost delivery, as for a full entry.
+    out.push(
+      ...later.map((c) =>
+        answer(
+          c,
+          "lost",
+          workspace.path,
+          "the comment read back does not carry the summary of the notices that wait",
+        ),
+      ),
+    );
+  else out.push(...held(plan.summary !== null));
   for (const c of send) out.push(delivered(receipt, c, workspace.path, signal));
   return out;
 }
@@ -483,6 +543,7 @@ export function orcaCard(
 ): OrcaCard {
   const root = state.root ?? stateRoot();
   const written = new Set<string>();
+  const heldBefore = new Map<string, Cause[]>();
   return {
     name: ORCA_CARD,
     written,
@@ -498,6 +559,7 @@ export function orcaCard(
         branch,
         standing,
         root,
+        heldBefore,
       };
       // The listing before the destination is opened: the notices workspace is no cause's own.
       const listed = [...sessions.workspaces];
