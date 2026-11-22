@@ -2,7 +2,13 @@
   "chapter": "tracker-facets",
   "title": "Tracker facets: type, priority and size",
   "version": 1,
-  "status": "stable",
+  "status": "provisional",
+  "planItems": [
+    {
+      "item": 41,
+      "epic": 518
+    }
+  ],
   "fields": {
     "kind": {
       "type": "string",

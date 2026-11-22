@@ -1,6 +1,6 @@
 # Tracker facets: type, priority and size
 
-Version 1 · stable
+Version 1 · provisional, moved by [plan item 41](https://github.com/jig-harness/jig/issues/518)
 
 Every issue carries facts beside its labels: what kind of work it is
 (its type), how soon it matters (its priority) and how much work it is (its

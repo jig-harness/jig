@@ -208,8 +208,8 @@ export const TRACKER_FACETS: Chapter = {
   summary:
     "The facts every issue carries beside its labels, the numbers of the priorities, the stores a facet may be kept in and which each tracker adapter holds, and why a facet's store is the one in force.",
   version: 1,
-  status: "stable",
-  planItems: [],
+  status: "provisional",
+  planItems: [{ item: 41, epic: 518 }],
   module: "tools/protocol/chapters/tracker-facets.ts",
   sections: [
     { source: `${FILE}#FACET_TABLE`, render: named("facet") },
