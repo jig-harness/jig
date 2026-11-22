@@ -1088,6 +1088,8 @@ provisional until the remaining checks are recorded. What is open:
   estimate store ([#892](https://github.com/jig-harness/jig/issues/892));
 - one issue opened from the bug form, confirming it is filed as a Bug, and
   one filed through `report-bug.ts` from a draft whose labels include `bug`,
+  run with an account and a `gh` that can set the native issue type (an
+  older `gh`, or an account that cannot, files without the Bug type),
   confirming the filed issue reads back with the native type `Bug` and
   without the `bug` label (the form declares its own type, so it cannot
   stand in for the script);
