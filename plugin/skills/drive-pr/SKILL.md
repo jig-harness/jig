@@ -1084,7 +1084,7 @@ stops admit it on a mechanical state:
 - **[`MAX_ROUNDS`](../../protocol/drive-exits.md).** A re-arm with `--rearm-budget` (`arm-drive.ts`
   forwards it; the dispatcher passes it on a re-arm a person or the steward
   asked for) grants one more round budget when the durable counters spent
-  it: `drive-state.ts grant-rounds` records the rounds spent as
+  it: the drive state records the rounds spent as
   `roundsGranted`, and the budget becomes those plus `--max-rounds`, on
   both `rounds` and the per-head `attempts`. The grant survives a restart
   and is never renewed without the flag, so the drive stops on
