@@ -618,11 +618,13 @@ or action settles. Each source row and each settlement receipt carries the
 same source-independent occurrence identifier for that need, so evidence can
 settle or supersede only that occurrence and only when its source is entitled
 to do so; a newer occurrence with the same key remains open. Settlement evidence
-is a trusted binding of the occurrence, source, observation time, coverage
-revision and authority epoch. Replay accepts it after a later handoff only when
-the binding proves that the observation was made while that revision and epoch
-covered the repository; it never accepts evidence produced after the handoff
-merely because older membership did. A source input
+is an attestation by the source's then-current authority, binding the occurrence,
+source, observation time, coverage revision and authority epoch; replay verifies
+the attestation against the authority record for that epoch. Replay accepts it
+after a later handoff only when the attestation proves that the observation was
+made while that revision and epoch covered the repository. A delayed delivery of
+such an attestation remains valid, but a former owner cannot create a new report
+after handoff with an old observation time or revision. A source input
 without one occurrence identifier stays unresolved unless authoritative
 evidence identifies it, including a legacy park whose timestamp is absent. A
 mixed read keeps each current repository's entries while
@@ -631,36 +633,49 @@ missing row or `gone` event never proves its final need settled; a source emits
 `gone` only after a complete read that identifies the occurrence and proves the
 source's coverage, and otherwise reports the repository as incomplete. A
 consumer distinguishes a complete authoritative settlement from an incomplete
-read, a scope removal, or a legacy row whose occurrence cannot be established;
-the latter cases remain unresolved. A source can settle an occurrence only
-while its coverage still includes that occurrence. Scope removal hides a row
-without recording settlement. A
+read, a scope invalidation, or a legacy row whose occurrence cannot be
+established; the latter cases remain unresolved. A scope invalidation tells the
+consumer to discard the row without recording settlement, whereas an incomplete
+read retains an authorized stale row. A source can settle an occurrence only
+while its coverage still includes that occurrence. On a cursor reset, the
+replacement snapshot either carries authoritative settlement evidence for every
+previously open omitted occurrence or leaves that occurrence visible and
+unsettled until such a read completes. A
 wholly unavailable host is shown as unavailable rather than treated as an empty
 list. Fresh evidence for
 the same need supersedes a stale copy from another source, while staleness alone
 leaves an otherwise unread need unresolved. A source that was previously read
 successfully keeps its last rows visible with that timestamp marked stale while
 healthy sources continue to refresh, but only after the server reapplies the
-viewer’s current grant and visibility class. Every successful scope confirmation
-starts a bounded authorization lifetime, whether or not the grant changed. At
-that deadline the browser hides every cached protected view — lists, an open
-Work thread and an open receipt — unless a renewal succeeds; this holds when the
-front is unreachable and the page stays open. Renewal with a narrower grant may
-retain only rows that pass that grant and their visibility check. Acceptance
-covers an offline phone that remains disconnected through expiry, and an open
-Work page whose thread is revoked. It retains in-scope rows only after the
-confirmation. Removed grants hide stale rows too. An interrupted forge-ledger
+viewer’s current grant and visibility class. Every authoritative scope
+confirmation carries its grant revision and expiry and starts a bounded
+authorization lifetime, whether or not the grant changed. The browser accepts a
+confirmation only when its revision is at least the one already applied; a late
+broader confirmation cannot renew or restore content after a narrower grant. At
+the documented revocation bound the browser hides every cached protected view —
+lists, an open Work thread and an open receipt — unless a current renewal
+succeeds; this holds when the front is unreachable and the page stays open.
+Renewal with a narrower grant may retain only rows that pass that grant and their
+visibility check. Acceptance covers an offline phone resuming with its existing
+page after expiry, an open Work page whose thread is revoked, and late
+confirmations or protected responses from an earlier grant; the first visible
+render keeps expired content hidden. It retains in-scope rows only after the
+current confirmation. Removed grants hide stale rows too. An interrupted forge-ledger
 publication first writes a pending expiry record, keyed by the park occurrence,
-to a non-evictable authoritative shared ledger location and confirms that the
-record contains that occurrence before local state clears the active park. The
-record contains the original question time, expiry and occurrence id and
-survives a lost disk, so a successor can distinguish a published expiry, a
+to a non-evictable authoritative shared ledger location and reads back the
+complete recovery record before local state clears the active park. That record
+contains the occurrence id, key, class, original question, question time and
+expiry and survives a lost disk, so a successor can distinguish a published expiry, a
 pending publication and an active park that never expired. If that first shared
 write fails, local state leaves the park active and retryable. Publication uses
-an atomic version fence, or a reconciliation protocol that re-reads and
-preserves a competing answer at the final write boundary: an answer written
-after the reader's snapshot is never overwritten, and the resulting terminal
-receipt records that answer. Until a successor recovers and publishes a pending
+an atomic compare-and-set fence, or a durable pending reconciliation state: the
+writer records the pending occurrence, re-reads both the ledger and the active
+answer after the final write boundary, and publishes a terminal receipt only
+after it preserves any competing answer. If it crashes after the patch, a
+successor resumes that pending state and repeats the reconciliation before any
+reader treats it as terminal. An answer written after the reader's snapshot is
+never overwritten, and the resulting terminal receipt records that answer.
+Until a successor recovers and publishes a pending
 receipt, it leaves the old active park unsettled rather than treating its
 absence as settlement. A successor whose original host and disk are unavailable
 reconstructs that pending expiry from the authoritative ledger before replay;
@@ -670,9 +685,12 @@ same key open. It records exactly one terminal outcome for the expired
 occurrence: an unanswered recovery yields one expired receipt, while recovery
 with a racing accepted answer yields one answered terminal receipt and no
 expired duplicate. Acceptance replays settlement observations on both sides of
-a coverage change, exercises a ledger-at-capacity recovery, and races an answer
-after the final comparison with expiry publication, to prove those rules. After
-recovery, another host sees one expired occurrence and no active copy. Hiding a thread writes nothing to
+a coverage change, exercises a ledger-at-capacity recovery, races an answer after
+the final comparison with expiry publication, and covers a crash after a patch
+before reconciliation, to prove those rules. After recovery, another host sees
+the terminal status appropriate to each case — one expired occurrence when
+unanswered or one answered receipt when an accepted answer raced — and no active
+copy. Hiding a thread writes nothing to
 Jig.
 Orca's browser opens
 the same page; and a phone through the front sees only the repositories

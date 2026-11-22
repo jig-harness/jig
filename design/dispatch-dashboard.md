@@ -752,7 +752,7 @@ envelope: the value, or a coded failure with a reason.
 - **`hello`** returns `{protocol {major, minor}, instance, jig {version,
   channel}, now, viewer {login per forge, proof}, front {kind, login,
   capabilities}?, sources[] {host, name, state, since, protocol, jig,
-  clockOffsetMs, capabilities[]}, scope}`. A source is fresh, overdue,
+  clockOffsetMs, capabilities[]}, scope {revision, expiresAt}}`. A source is fresh, overdue,
   unreachable, refused or incompatible. A different major version is
   refused, naming the side to update; minor versions only add, and unknown
   fields are ignored. Version 1's scope is what the person's machine
@@ -830,7 +830,10 @@ own machine only.
 
 - **`snapshot()` and `changes(since)`** return records in their
   [envelope](../GLOSSARY.md), each with `{host, incarnation, kind, key,
-  generation, at, visibility}`. The incarnation is an id the dispatcher's
+  generation, at, visibility}`. A settlement record also carries the source
+  authority's attestation of its occurrence, observation time, coverage
+  revision and authority epoch; the fold verifies that attestation against the
+  authority record for the epoch before it settles anything. The incarnation is an id the dispatcher's
   state database gets when it is created, so records from a recreated
   database are told apart. A snapshot holds the live work the newest line
   names: the line, each live drive's ledger (at most 64 KiB, about 2 KiB on
@@ -842,11 +845,14 @@ own machine only.
   each host: each record written after the cursor, and the newest line. A
   drive or pickup is sent as `gone` only after a complete authoritative read
   identifies its occurrence, proves the source's coverage and establishes
-  settlement; an incomplete read, an ordinary record removal or scope removal
-  reports incompleteness and never emits `gone`. A cursor
+  settlement; an incomplete read or ordinary record removal reports
+  incompleteness and never emits `gone`, while scope removal emits a distinct
+  scope invalidation that removes the row without settling its occurrence. A
+  cursor from another incarnation gets `reset` and a replacement snapshot that
+  either includes authoritative settlement evidence for each previously open
+  omitted occurrence or leaves it unresolved for a settlement read. A cursor
   names a point in those records, not a connection, so it stays servable
-  across reconnects; one from another incarnation gets `reset` and a new
-  snapshot. One fold library turns records and forge and tracker reads
+  across reconnects. One fold library turns records and forge and tracker reads
   into the work and host views, and every dashboard and a shared control plane
   run it.
 - **Bounded reads besides.** The hub also answers `log.rows` (one page
