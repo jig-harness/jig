@@ -129,6 +129,8 @@ async function dryRun(
     compare?: unknown;
     /** The board's answer from the second query on; the first keeps `answer`. */
     secondBoard?: string;
+    /** The files listing from the second files request on; the first keeps `compare.files`. */
+    secondFiles?: unknown;
   } = {},
 ) {
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
@@ -142,6 +144,11 @@ async function dryRun(
     writeFileSync(join(dir, "files.json"), JSON.stringify(answer.files));
     writeFileSync(join(dir, "head.txt"), f.head);
   }
+  if (more.secondFiles !== undefined)
+    writeFileSync(
+      join(dir, "files-second.json"),
+      JSON.stringify(more.secondFiles),
+    );
   if (more.timeline !== undefined)
     writeFileSync(join(dir, "timeline.json"), JSON.stringify(more.timeline));
   const proc = Bun.spawn(
@@ -251,7 +258,9 @@ describe("announce-merge-ready.ts and trusted automation", () => {
       `#!/usr/bin/env bash
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/files* ]]; then
   printf '%s' "$2" > "$DRIVE_PR_FIXTURES/last-compare-path.txt"
+  seenFiles=$(grep -c '^files$' "$DRIVE_PR_FIXTURES/calls.txt" 2>/dev/null || true)
   echo files >> "$DRIVE_PR_FIXTURES/calls.txt"
+  if [ "\${seenFiles:-0}" -ge 1 ] && [ -f "$DRIVE_PR_FIXTURES/files-second.json" ]; then cat "$DRIVE_PR_FIXTURES/files-second.json"; exit $?; fi
   cat "$DRIVE_PR_FIXTURES/files.json"; exit $?
 fi
 if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
@@ -361,7 +370,7 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     expectSpawnExit(r, 4);
     expect(r.boardCalls).toEqual(["board", "board"]);
     // The first observation made the complete evidence read before the list went.
-    expect(r.calls.slice(0, 4)).toEqual(["pull", "files", "commits", "pull"]);
+    expect(r.calls).toEqual(["pull", "files", "commits", "pull"]);
     expect(r.stdout).toBe("");
     expect(r.stderr).not.toContain("not witnessed on this head");
   });
@@ -409,6 +418,32 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
       "pull",
     ]);
     expect(r.stdout).toContain(OPENER);
+    expect(r.stdout).not.toContain("An approval is still required");
+  });
+
+  it("refuses the merge-now announcement when the fresh read after a moved base lists a path outside the allowlist", async () => {
+    const listed = { association: "NONE", bot: "renovate", config: LISTED };
+    const r = await dryRun(converged, board(converged.head, listed), {
+      compare,
+      driverEnv: {
+        ...viaWrapper(),
+        DRIVE_PR_FIXTURE_LATER_BASE: "c".repeat(40),
+        DRIVE_PR_FIXTURE_CHANGED_FILES: "1",
+      },
+      secondBoard: board(converged.head, {
+        ...listed,
+        baseOid: "c".repeat(40),
+      }),
+      secondFiles: [
+        { filename: "pnpm-lock.yaml", status: "modified" },
+        { filename: "src/evil.ts", status: "modified" },
+      ],
+    });
+    // The fresh read ran, and its evidence, not the old one, decided: the
+    // original merge-now announcement is refused.
+    expectSpawnExit(r, 4);
+    expect(r.calls.filter((c) => c === "files")).toHaveLength(2);
+    expect(r.stdout).toBe("");
   });
 
   it("withholds the exception when the pull request's file count differs from the listing", async () => {
