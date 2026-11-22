@@ -54,7 +54,9 @@ a pick on the board copies the answer line with the decision digest and
 any note. A pick is guarded when its class is not a named `Decide` act or
 its option is irreversible; it takes a confirmation step that shows the
 option's changes and costs. With no pick, Copy keeps a person's free-text
-answer when one is present; otherwise it leaves every option unselected and
+answer when one is present, unless the words would read as approving or
+choosing an option: the person must pick that option instead; otherwise it
+leaves every option unselected and
 copies the answer lines the person can complete. For a card with one decision
 whose class names a `Decide` act and whose recommendation is reversible, Copy
 instead supplies an approval of that recommendation only when no answer is
