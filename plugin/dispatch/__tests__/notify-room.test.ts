@@ -437,7 +437,12 @@ describe("more standing causes than one comment holds", () => {
   });
 
   // A new cause changes the summary; the runtime answers the write of it as given.
-  async function writeSummary(notify: SessionRuntime["notify"]) {
+  async function writeSummary(
+    notifyFor: (card: {
+      comment: string;
+      unread: boolean;
+    }) => SessionRuntime["notify"],
+  ) {
     const root = newRoot();
     const card = { comment: NOTICES_NAME, unread: true };
     await tick(root, card);
@@ -446,7 +451,7 @@ describe("more standing causes than one comment holds", () => {
     recordComment(workspace, card.comment, root, SLUG);
     const state = {
       root,
-      runtime: { notify } satisfies Partial<SessionRuntime>,
+      runtime: { notify: notifyFor(card) } satisfies Partial<SessionRuntime>,
       machine: { runtimeTimeoutMs: 1000 },
     } as unknown as ApplyState;
     const report = reportOf([...many, extra]);
@@ -466,7 +471,7 @@ describe("more standing causes than one comment holds", () => {
   }
 
   it("counts the causes it held back as lost when the write that carries their summary fails", async () => {
-    const { notification, row } = await writeSummary(async () => ({
+    const { notification, row } = await writeSummary(() => async () => ({
       ok: false,
       lost: true,
       detail: "the write timed out",
@@ -479,8 +484,8 @@ describe("more standing causes than one comment holds", () => {
   });
 
   it("counts the causes it held back as lost when the write succeeds but its read-back lacks their summary", async () => {
-    const card = { comment: NOTICES_NAME, unread: true };
-    const { notification, row } = await writeSummary(async () => ({
+    // The read-back is the first tick's comment, carrying the old summary, not the planned one.
+    const { notification, row } = await writeSummary((card) => async () => ({
       ok: true,
       detail: "written",
       comment: card.comment,
