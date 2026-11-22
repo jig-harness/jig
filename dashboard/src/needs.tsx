@@ -29,6 +29,7 @@ import { Mark } from "./marks.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { type NeedRow, type NeedView, needRows } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
+import { GroupNeedItem } from "./question-group-card.tsx";
 import { NoSend, SendSettings, SendSettingsToggle } from "./send.tsx";
 import { useKeptToken } from "./forge-token.ts";
 import { usePicking } from "./use-picking.ts";
@@ -235,6 +236,10 @@ function needFacetAttrs(
   clock: Clock,
 ): Record<string, string> {
   const card = row.type === "need" ? row.need : row.slot;
+  // A question group's card is found by any of its targets' repositories and stages.
+  const members = row.type === "need" ? (row.need.group?.members ?? []) : [];
+  const each = (of: (c: { repo: string; stage: string }) => string) =>
+    members.length === 0 ? [of(card)] : [...new Set(members.map(of))];
   const since = Date.parse(row.since);
   const hours = (clock.nowMs - since) / 3_600_000;
   const age =
@@ -242,9 +247,9 @@ function needFacetAttrs(
   return {
     ...facetAttrs({
       act: [row.type === "need" ? row.need.act : "Investigate"],
-      repo: [card.repo],
+      repo: each((c) => c.repo),
       person: row.type === "need" ? row.need.people : [],
-      stage: [card.stage],
+      stage: each((c) => c.stage),
       age: [age],
     }),
     "data-facet-since": row.since,
@@ -425,6 +430,15 @@ function groupRows(rows: NeedRow[]): NeedGroupView[] {
 
 const INITIAL_GROUP_SIZE = 10;
 
+/** How many needs the cards hold: a question group's card holds one per target. */
+function needsIn(cards: NeedCardRow[]): number {
+  return cards.reduce(
+    (n, row) =>
+      n + (row.type === "need" ? (row.need.group?.members.length ?? 1) : 1),
+    0,
+  );
+}
+
 function NeedGroup({
   group,
   clock,
@@ -463,7 +477,7 @@ function NeedGroup({
               ·
             </span>{" "}
             <span className="m" data-group-count="">
-              {cards.length}
+              {needsIn(cards)}
             </span>{" "}
             <span className="sm mut" data-group-oldest="">
               {oldest === undefined
@@ -479,7 +493,14 @@ function NeedGroup({
         {cards.map((row, i) => {
           const rest = i >= INITIAL_GROUP_SIZE;
           const facets = needFacetAttrs(row, clock);
-          return row.type === "need" ? (
+          return row.type === "need" && row.need.group !== undefined ? (
+            <GroupNeedItem
+              key={row.need.rowKey}
+              need={row.need}
+              rest={rest}
+              facets={facets}
+            />
+          ) : row.type === "need" ? (
             <NeedItem
               key={row.need.rowKey}
               need={row.need}
@@ -514,7 +535,11 @@ function NeedGroup({
 /** The repositories of the cards that can send, for the token's scope. */
 function sendableRepos(rows: NeedRow[]): string[] {
   const repos = rows.flatMap((row) =>
-    row.type === "need" && "to" in row.need.send ? [row.need.send.to.repo] : [],
+    row.type !== "need"
+      ? []
+      : (row.need.group?.members ?? [row.need]).flatMap((n) =>
+          "to" in n.send ? [n.send.to.repo] : [],
+        ),
   );
   return [...new Set(repos)].sort((a, b) => a.localeCompare(b));
 }

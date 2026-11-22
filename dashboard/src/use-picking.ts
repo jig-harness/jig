@@ -7,7 +7,7 @@
  * cannot be sent.
  */
 import { type RefObject, useEffect, useRef, useState } from "react";
-import { answerId, currentAnswers, useAnswers } from "./answers.ts";
+import { cardAnswerIds, currentAnswers, useAnswers } from "./answers.ts";
 import { confirmationSignature, needsConfirmation } from "./confirmation.ts";
 import { tokenGeneration, useKeptToken } from "./forge-token.ts";
 import { announce, copyText } from "./copy.tsx";
@@ -18,6 +18,7 @@ import {
   cardCommit,
   currentIndex,
   type Held,
+  type KeptAnswer,
   lastPicked,
   nextOpen,
   type RowAnswer,
@@ -27,6 +28,7 @@ import {
   withPick,
   withText,
 } from "./picking.ts";
+import { groupCommit } from "./question-group-commit.ts";
 
 export type Field = "note" | "free";
 
@@ -70,15 +72,29 @@ interface Armed {
   commit: Commit;
 }
 
+const NONE_LEFT: ReadonlySet<string> = new Set();
+
+/**
+ * The card's picking. On a question group's card, `left` names the targets
+ * the person left out (by their own card's key), which its commits skip.
+ */
 export function usePicking(
   need: NeedView,
   card: RefObject<HTMLElement | null>,
+  left: ReadonlySet<string> = NONE_LEFT,
 ): Picking {
   useKeptToken();
-  const ids = need.rows.map((row) => answerId(need.repo, need.target, row.key));
+  const ids = cardAnswerIds(need);
   const [kept, change, saved] = useAnswers(ids);
   const answers = need.rows.map((row, i) => rowAnswer(row, kept[i] ?? null));
-  const commit = cardCommit(need.rows, answers);
+  const commitOf = (from: ReadonlyArray<KeptAnswer | null>): CardCommit =>
+    need.group === undefined
+      ? cardCommit(
+          need.rows,
+          need.rows.map((row, i) => rowAnswer(row, from[i] ?? null)),
+        )
+      : groupCommit(need.group, need.rows, from, left);
+  const commit = commitOf(kept);
   const [held, setHeld] = useState<Held | null>(null);
   // Keys can come faster than the card draws, so they read the held decision and the kept answers as they are now.
   const heldNow = useRef<Held | null>(null);
@@ -96,7 +112,12 @@ export function usePicking(
     setArmedState(to);
   };
   const current = currentIndex(need.rows, answers, held);
-  const signature = confirmationSignature(need, answers, tokenGeneration());
+  const signature = confirmationSignature(
+    need,
+    answers,
+    tokenGeneration(),
+    left,
+  );
   const confirming =
     armed !== null &&
     armed.sign === signature &&
@@ -171,7 +192,7 @@ export function usePicking(
   /** What to commit now, or `null` when a row holds it back, nothing is picked to send, or its first step is still to show. */
   const commitNow = (how: Commit): CardCommit | null => {
     const fresh = answersNow();
-    const now = cardCommit(need.rows, fresh);
+    const now = commitOf(currentAnswers(ids));
     const [fault] = now.faults;
     const not = how === "copy" ? "Not copied" : "Not sent";
     if (fault !== undefined) {
@@ -187,7 +208,7 @@ export function usePicking(
       );
       return null;
     }
-    const sign = confirmationSignature(need, fresh, tokenGeneration());
+    const sign = confirmationSignature(need, fresh, tokenGeneration(), left);
     const held = armedNow.current;
     if (
       needsConfirmation(how, now.guarded.length) &&

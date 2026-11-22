@@ -70,7 +70,12 @@ function applyGroupFilter(root: HTMLElement, active: boolean): void {
     ].filter((card) => !card.hidden);
     const hide = active && visible.length === 0;
     if (group.hidden !== hide) group.hidden = hide;
-    textIn(group, "[data-group-count]", String(visible.length));
+    // A question group's card counts each target it holds (`data-needs`).
+    const needs = visible.reduce(
+      (n, card) => n + (Number(card.dataset.needs) || 1),
+      0,
+    );
+    textIn(group, "[data-group-count]", String(needs));
     const oldest = oldestOf(visible);
     textIn(
       group,
