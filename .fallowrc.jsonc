@@ -18,8 +18,8 @@
     "**/templates/**",
     "**/vendor/**",
     "seeds/**",
-    "design/prototypes/*/figure/**",
-    "design/prototypes/*/canvas/**",
+    "design/prototypes/intro-directions/figure/**",
+    "design/prototypes/intro-directions/canvas/**",
     "dist/**",
     ".context/**"
   ],

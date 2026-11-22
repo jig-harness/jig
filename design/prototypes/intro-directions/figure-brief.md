@@ -47,8 +47,11 @@ dispatcher takes capacity into account. Rules:
 
 - No exact number: no count of slots, minutes or limits.
 - No mention of more than one account.
-- Capacity is the subject: token budgets, memory, processor load, disk and
-  rate limits, as far as each is true.
+- Capacity is the subject: host memory, processor load, disk space, forge
+  budget and account limits, as far as each is true. Tracker budgets govern
+  outbound calls separately; do not present them as dispatcher load gauges.
+- Load enforcement is configurable and off by default, so do not imply every
+  full gauge makes a launch wait.
 
 What is verified in the checkout, to write against (check again at the build):
 
@@ -58,8 +61,9 @@ What is verified in the checkout, to write against (check again at the build):
 | A usage limit, the wall, after which an account is left out of every launch | GLOSSARY.md, "Wall" | read today |
 | A cap on sessions at once | GLOSSARY.md, "Slot" | read today; do not state the count |
 | Disk | `plugin/dispatch/lib/load-read.ts`, read by the dispatcher's load reading | read today |
+| Forge budget | `plugin/dispatch/lib/load-read.ts`, read by the dispatcher's load reading | read today |
+| Tracker budgets | `design/outbound-calls.md`, shared across governed outbound calls | read today; not a dispatcher load gauge |
 | A token budget as such | not found as a separate signal; the usage limit is the nearest | unverified: find it or leave it out |
-| Rate limits of a tracker or forge | `design/outbound-calls.md`, the shared budget | read today |
 
 A claim the checkout does not support stays out of the copy until it does, as
 the capability table requires

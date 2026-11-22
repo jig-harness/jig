@@ -1,12 +1,12 @@
 # Task: write four direction contracts (issue #1066 design round)
 
-Read `../brief.md` first: it states what is fixed and the copy. Then write four contracts of
+Read `../briefs/brief.md` first: it states what is fixed and the copy. Then write four contracts of
 about 200 words each, into one result file (path given by the coordinator).
 
 ## You may not open
 The current site's source or its design documents (anything under a `website/` or `design/`
-directory of the Jig repository, README.md, FACTORY.md). Use only `../brief.md`, `../images/`
-(to see the engraving manner) and `../logo.svg`. Independence from what exists is the point.
+directory of the Jig repository, README.md, FACTORY.md). Use only `../briefs/brief.md`, `../figure/`
+(to see the engraving manner) and `../canvas/logo.svg`. Independence from what exists is the point.
 
 ## Each contract gets one assigned reference world and one assigned constraint
 You stay inside both. Select the matching row from `astra-assignments.md` or
