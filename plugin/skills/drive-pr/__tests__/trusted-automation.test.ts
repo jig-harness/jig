@@ -18,6 +18,12 @@ import {
   updateTypeOf,
 } from "../scripts/lib/trusted-automation.ts";
 import { ok, failed } from "../../../shared/outcome.ts";
+import type { ForgeFacts, ReadyRules } from "../scripts/lib/merge-ready.ts";
+import {
+  AUTOMATION_CACHE_PREFIX,
+  type AutomationCache,
+  automationFor,
+} from "../scripts/lib/trusted-automation-read.ts";
 
 const HEAD = "a".repeat(40);
 const EARLIER = "c".repeat(40);
@@ -556,5 +562,63 @@ describe("the rules a review found open", () => {
       HEAD,
     );
     expect(read.ok).toBe(false);
+  });
+});
+
+describe("the kept read", () => {
+  const BASE = "b".repeat(40);
+  const BAD_HEAD = "z".repeat(40);
+  const forgeFacts = (baseOid: string, over: Record<string, unknown> = {}) =>
+    ({
+      number: 7,
+      head: BAD_HEAD,
+      author: "renovate[bot]",
+      authorAssociation: "NONE",
+      crossRepository: false,
+      reviews: [],
+      baseOid,
+      ...over,
+    }) as unknown as ForgeFacts;
+  const rules = { trustedAutomation: ok([entry()]) } as unknown as ReadyRules;
+  const kept = {
+    head: BAD_HEAD,
+    baseOid: BASE,
+    facts: { ...automation(), head: BAD_HEAD },
+  };
+  const cache = (): AutomationCache => {
+    const rows = new Map<string, unknown>([
+      [`${AUTOMATION_CACHE_PREFIX}o/r:7`, kept],
+    ]);
+    return {
+      get: <T>(key: string) => (rows.get(key) ?? null) as T | null,
+      set: (key, value) => void rows.set(key, value),
+    };
+  };
+
+  it("reuses a read for the same head and base commit", async () => {
+    const read = await automationFor(
+      "o/r",
+      forgeFacts(BASE),
+      rules,
+      5,
+      cache(),
+    );
+    expect(read).toEqual(ok(kept.facts));
+  });
+
+  it("does not reuse it once the base commit moved", async () => {
+    const read = await automationFor(
+      "o/r",
+      forgeFacts("c".repeat(40)),
+      rules,
+      5,
+      cache(),
+    );
+    expect(read?.ok).toBe(false);
+  });
+
+  it("does not read at all where an approval or own association already satisfies condition 8", async () => {
+    const own = forgeFacts(BASE, { authorAssociation: "MEMBER" });
+    expect(await automationFor("o/r", own, rules, 5, cache())).toBeUndefined();
   });
 });

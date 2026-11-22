@@ -6,8 +6,11 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
+  mkdirSync,
+  readFileSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -165,6 +168,9 @@ async function dryRun(
     exitCode,
     posted: existsSync(join(dir, "posted.jsonl")),
     compared: existsSync(join(dir, "last-compare-path.txt")),
+    comparedPath: existsSync(join(dir, "last-compare-path.txt"))
+      ? readFileSync(join(dir, "last-compare-path.txt"), "utf8")
+      : null,
   };
 }
 
@@ -263,29 +269,38 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     );
     expectSpawnExit(r, 0);
     expect(r.compared).toBe(true);
+    expect(r.comparedPath).toBe(
+      "repos/{owner}/{repo}/pulls/999/files?per_page=100",
+    );
     expect(r.stdout).toContain(OPENER);
     expect(r.stdout).not.toContain("An approval is still required");
   });
 
   it("does not trust a bot only the pull request's own checkout lists", async () => {
-    const r = await dryRun(
-      converged,
-      board(converged.head, {
-        association: "NONE",
-        bot: "renovate",
-        config: "pull_requests: {}\n",
-      }),
-      {
-        compare,
-        env: {
-          JIG__PULL_REQUESTS__TRUSTED_AUTOMATION: '["renovate[bot]"]',
-        },
-        driverEnv: viaWrapper(),
-      },
+    const own = join(scratchClean.dir, ".config");
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, "jig.yaml"), LISTED);
+    // The checkout's own copy must not make the tree unclean.
+    appendFileSync(
+      join(scratchClean.dir, ".git", "info", "exclude"),
+      "\n.config/\n",
     );
-    expectSpawnExit(r, 0);
-    expect(r.compared).toBe(false);
-    expect(r.stdout).toContain("An approval is still required");
+    try {
+      const r = await dryRun(
+        converged,
+        board(converged.head, {
+          association: "NONE",
+          bot: "renovate",
+          config: "pull_requests: {}\n",
+        }),
+        { compare, driverEnv: viaWrapper() },
+      );
+      expectSpawnExit(r, 0);
+      expect(r.compared).toBe(false);
+      expect(r.stdout).toContain("An approval is still required");
+    } finally {
+      rmSync(own, { recursive: true, force: true });
+    }
   });
 });
 
