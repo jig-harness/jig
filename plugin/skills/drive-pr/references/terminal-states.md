@@ -81,8 +81,11 @@ measurement, because a zero there is the positive claim "the base has not
 moved". A failed `git fetch` is the one degradation that still produces a
 measurement: it is carried in `drift.fetched: false`, and every line derived
 from it says so, since the numbers were then read off a remote-tracking ref of
-unknown age. What the fields mean, and why `overlapCount` rather than `behind`
-is the predicate a round acts on, is in `scripts/lib/base-drift.ts`.
+unknown age. In an ordinary round, `overlapCount` rather than `behind` is the
+predicate for a piggyback base merge. A CI-repair round instead synchronizes
+any advanced base before reproducing the failure, so its local validation uses
+the same gates and configuration as CI. `scripts/lib/base-drift.ts` defines
+the fields.
 
 Every count under `work` is **`null` when `evaluate()` never measured it**, and a
 number only when it did. The liveness, head-sync and reviewer gates all return
