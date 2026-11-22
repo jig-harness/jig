@@ -404,6 +404,15 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.301.1] - 2026-11-22
+
+### Fixed
+
+- When the forge rate-limits a drive after its stop label is written, the drive
+  waits for a reset within its configured bound or records a rate-limited stop
+  with the reset time so the dispatcher can resume it.
+- When a drive spends its CI-repair budget, it starts one diagnosing session on the failing head. The session compares the earlier repairs with the failed CI run, records the recurring cause in the tracker (or parks that filing for a person, which the drive verifies before accepting the diagnosis), and attempts the repair. Dispatch hands off an unresolved diagnosis with its tracker issue instead of repeating the same repair on that head.
+
 ## [0.301.0] - 2026-11-22
 
 ### Added
@@ -10705,7 +10714,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.1...HEAD
+[0.301.1]: https://github.com/jig-harness/jig/compare/v0.301.0...v0.301.1
 [0.301.0]: https://github.com/jig-harness/jig/compare/v0.300.4...v0.301.0
 [0.300.4]: https://github.com/jig-harness/jig/compare/v0.300.3...v0.300.4
 [0.300.3]: https://github.com/jig-harness/jig/compare/v0.300.2...v0.300.3
