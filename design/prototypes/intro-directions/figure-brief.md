@@ -23,10 +23,8 @@ layout ([README.md](README.md)).
 
 1. **The line is not a loop.** Draw seven stations in order, from Pick up to
    Follow up. Follow up reaches Pick up as a short side feed, not a closed track.
-   It is the minority path, so it is drawn lighter than the main line. Ophir
-   hopes most pickups come from elsewhere; check the claim against the
-   dispatcher's records before the page states a proportion, and state none
-   unless a check derives it.
+   Its relative visual weight is conditional on evidence from the dispatcher's
+   records. Do not state or imply a proportion until a check derives one.
 2. **Draw the pickup queue.** Items wait in front of Pick up. The queue is
    where work enters; the dispatcher takes from it as capacity allows.
 3. **The item morphs.** The box becomes a drawing whose form shows its state, in
@@ -59,7 +57,7 @@ What is verified in the checkout, to write against (check again at the build):
 | Processor load and free memory of the host | `plugin/shared/host-load.ts`, read by the resource lock and the dispatcher's load factor | read today |
 | A usage limit, the wall, after which an account is left out of every launch | GLOSSARY.md, "Wall" | read today |
 | A cap on sessions at once | GLOSSARY.md, "Slot" | read today; do not state the count |
-| Disk | not found in `plugin/dispatch` or `plugin/shared` in the first search | unverified: find it or leave it out |
+| Disk | `plugin/dispatch/lib/load-read.ts`, read by the dispatcher's load reading | read today |
 | A token budget as such | not found as a separate signal; the usage limit is the nearest | unverified: find it or leave it out |
 | Rate limits of a tracker or forge | `design/outbound-calls.md`, the shared budget | read today |
 
@@ -77,14 +75,9 @@ loop." and "The follow-up sends what the merge owes back to the first." Both
 need rewording once the line is not a loop; the follow-up still reaches pickup,
 as a side path.
 
-## motion-kit state, as of 2026-11-21
+## Figure-tool compatibility
 
-- motion-kit issue 70 is fixed by pull request 77 (merged 2026-11-21 12:11 UTC):
-  built pages now get the isometric helpers of the isometric kit (pull request
-  64). Build the figure for the page against a motion-kit release that has it.
-- Issue 72 asks the contrast gate to check only the pairs a scene draws. Its
-  pull request 79 is not merged. Until it is, the style's `emphasis` pair still
-  fails the gate and the CLI's export, build and video refuse the scene, so
-  `figure/render.mjs` calls the renderer directly
-  ([README.md](README.md#the-figure)). Check whether 79 has merged before
-  working around the gate again.
+Build the figure against a release whose built pages include the isometric
+helpers. Check contrast only for colour pairs the scene draws. If the tool
+cannot export the scene because of an unused palette pair, use the documented
+renderer path in `figure/render.mjs` and record the compatibility limitation.

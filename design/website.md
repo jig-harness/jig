@@ -19,32 +19,26 @@ that work from item 18's remaining site work.
 
 ## How it works
 
-### The message: a software factory first
+### The message: the delivery line
 
-Jig is a [software factory](../GLOSSARY.md): a work item passes through
-fixed steps, each with an input, checks and an output. Agents carry it to a
-merge-ready pull request. A person decides what to build, answers questions
-the agents cannot settle and merges. The rules, checks and kept knowledge
-that guide each session, Jig's [scaffolding](../GLOSSARY.md), are what the
-factory stands on. They explain how the factory works after the reader
-knows what it does.
+Jig helps a team take a work item to a merge-ready pull request, or stop with
+a question when a person must decide. A person decides what to build, answers
+questions the agents cannot settle and merges. The rules, checks and kept
+knowledge that guide each session, Jig's [scaffolding](../GLOSSARY.md), explain
+how that delivery line works.
 
-The home page's headline is **“Jig is a software factory.”** Beside it is
-the sentence a reader can check: **“Give an agent a work item; it builds the
-change, runs the checks and works through review until the pull request is
-ready or needs your decision. You merge.”** This describes the shipped
-pickup and drive skills. It promises neither that every item finishes nor
-that every transition starts by itself. The headline links the glossary;
-the sentence links the line. A count of modules does not lead either.
+The home page's headline is **“A work item goes in. A pull request you can
+merge, or a question for you, comes out.”** Its sentence is **“Give an agent a
+work item; it builds the change, runs the checks and works through review until
+the pull request is ready or needs your decision. You merge.”** The page leads
+with the line's stations, the dispatcher's tick, capacity, the drive's ledger
+and a question parked until a person answers it. It promises neither that every
+item finishes nor that every transition starts by itself.
 
-**Ophir's decisions on the introduction and the site's look.** They come from
-the program plan of 2026-11-19 and 2026-11-20 (its decisions D8 to D10 and
-D15) and the verdict of 2026-11-21.
+**Introduction and site direction.**
 
-- **One round.** The round of
-  [#1066](https://github.com/jig-harness/jig/issues/1066) covers both the
-  overhaul of jig-harness.dev and a new introduction to Jig. There is no
-  second round.
+- **One round.** The design round covers both the overhaul of jig-harness.dev
+  and a new introduction to Jig.
 - **The figures are isometric engravings in the plate style.** They are ink on
   warm paper, with hatching and the green accent, drawn as scenes of motion-kit's
   isometric kit. The jig model's hatching shader is their 3D
@@ -52,16 +46,11 @@ D15) and the verdict of 2026-11-21.
   style, or the jig model.
 - **The introduction is one stepped page** on jig-harness.dev. The same scenes
   give a talk deck and a short video.
-- **“Software factory” is not a headline.** Ophir calls it an overhyped
-  buzzword. It leaves the home page's headline and the introduction's opening
-  and stays internal vocabulary: the glossary, this design and the code. Both
-  lead with Jig's concrete machinery: the line's seven stations, the
-  dispatcher's tick, how the dispatcher takes capacity into account (the
-  wall), the drive's ledger on the pull request, and a question parked until a
-  person answers it. This reopens the factory-first position above on
-  purpose. The build ([#1067](https://github.com/jig-harness/jig/issues/1067))
-  replaces the headline and sentence quoted above. The person-merges boundary
-  and the capability table stay as they are.
+- **The introduction is concrete.** It leads with the line's seven stations,
+  the dispatcher's tick, how the dispatcher takes capacity into account, the
+  drive's ledger on the pull request, and a question parked until a person
+  answers it. The person-merges boundary and the capability table stay as they
+  are.
 - **The layout is the Broadside**, with the Strip board as runner-up
   ([the round's record](prototypes/intro-directions/README.md)).
 - **The figure shows how an item changes.** The line is not a closed loop: the

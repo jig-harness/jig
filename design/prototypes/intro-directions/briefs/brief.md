@@ -21,9 +21,9 @@ named actors, short absolute boundaries, no selling adjectives, no sentence over
   No new hue. Both themes are designed.
 - **Type:** no web fonts. System stacks only: serif (Iowan Old Style, Palatino, Georgia),
   sans (system-ui), mono (ui-monospace). Headings are serif today.
-- **Figure style (D9):** the intro's figures are isometric engravings in the site's plate
+- **Figure style:** the intro's figures are isometric engravings in the site's plate
   style: ink on warm paper, hatching, the green accent. They are drawn as motion-kit `SVG`
-  scenes (isometric kit, liqweed/motion-kit#60, PR #64). The jig model's hatching shader is
+  scenes using the isometric helpers available to built pages. The jig model's hatching shader is
   their 3D counterpart. The figure is shared across all directions; directions differ in
   how the page uses it (placement, scale, framing, caption, stepping), not in its drawing.
 - **Status:** shipped vs planned must survive greyscale (shape/line style/words, not hue).
@@ -47,8 +47,8 @@ Five steps (the page is stepped through these, in this order)
 2. Label "The tick". Title "A timer wakes the dispatcher."
    Body "Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not."
    Status mark: "Machinery ships. Running unattended is planned."
-3. Label "The slots". Title "Two slots per account, and the wall."
-   Body "Each subscription account holds two sessions at once. When an account reaches its usage limit, that is the wall: the account stays out of every launch until the wall resets."
+3. Label "Capacity". Title "The dispatcher works within capacity."
+   Body "The dispatcher considers usage limits, processor load, free memory, disk space and tracker or forge rate limits before it starts work. When capacity is unavailable, it waits."
 4. Label "The ledger". Title "The drive keeps its ledger on the pull request."
    Body "One comment records the round, the last head checked and every parked question. Another machine reads it and picks up where the drive stopped."
 5. Label "The question". Title "A question waits until you answer."
@@ -57,11 +57,11 @@ Close: "You merge." then link "Start with an audit".
 
 ## The three artboards every direction delivers
 A. **Hero**: the opening above, with the figure's place. At 1440x900 and 390x844 (light + dark).
-B. **One step**: step 3 ("Two slots per account, and the wall") in the page, at 1440x900 and 390x844,
+B. **One step**: step 3 ("The dispatcher works within capacity") in the page, at 1440x900 and 390x844,
    showing how the stepped page reads, where the step number/progress sits, how a step differs
    from its neighbours, and the figure in that step's state.
 C. **One frame of the recurring figure**: the isometric engraving of the line, as that direction
-   frames it (crop, scale, caption, labels). The figure itself is supplied (see figure/).
+   frames it (crop, scale, caption, labels). The figure source is in `../figure/`.
 
 ## What differs between directions (the open decisions)
 Layout idea of the stepped page (sticky figure vs. scrolling plates vs. full-bleed chapters vs.

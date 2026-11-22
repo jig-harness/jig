@@ -15,9 +15,9 @@ the next one. It is a record of directions, not a design bundle landed under
 - **The figure is not final.** The graphics drew praise overall, and the figure
   needs a second drawing before the page is built. [figure-brief.md](figure-brief.md)
   is that brief.
-- **Step 3 changes.** The step "Two slots per account, and the wall." named exact
-  numbers and several accounts. It is rewritten around capacity, with no number
-  and no account (see the figure brief).
+- **Step 3 changes.** The original capacity treatment named exact numbers and
+  several accounts. The next design records capacity without either claim (see
+  the figure brief).
 - **The headline** leaves out the words "software factory"
   ([design/website.md](../../website.md#the-message-a-software-factory-first)).
 
@@ -26,7 +26,8 @@ the next one. It is a record of directions, not a design bundle landed under
 Eight contracts were written, four by Claude and four by Astra
 ([contracts/](contracts/)). Four were rendered as artboards in a Design canvas
 ([canvas/](canvas/)): a first screen, one step in the page and the figure frame,
-each on desktop in light and on a phone in dark.
+each on desktop in light and on a phone in dark. They preserve the direction
+comparison as it was rendered; they are not the current copy or figure brief.
 
 | Row | Direction | Made by | Idea |
 |-----|-----------|---------|------|
@@ -49,7 +50,8 @@ bear on the build; they are an assessment from the renders, not Ophir's:
 - A person's moments (merge, answer) are a key cap, a shape no agent step wears,
   so they survive greyscale.
 - Planned work is a dagger with a footnote, also greyscale-proof.
-- Its layout stacks to one column on a phone with no loss.
+- Its desktop and phone hero and step frames were assessed in the round. The
+  closing figure frame was assessed on desktop only.
 
 ## Token plan for the Broadside
 

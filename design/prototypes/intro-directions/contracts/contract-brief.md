@@ -9,7 +9,8 @@ directory of the Jig repository, README.md, FACTORY.md). Use only `../brief.md`,
 (to see the engraving manner) and `../logo.svg`. Independence from what exists is the point.
 
 ## Each contract gets one assigned reference world and one assigned constraint
-You stay inside both. (Table below.) The reference world is a source of layout, typographic
+You stay inside both. Select the matching row from `astra-assignments.md` or
+`claude-assignments.md`. The reference world is a source of layout, typographic
 and shape ideas, never a pastiche of its content.
 
 ## Fields, in this order, for every contract
