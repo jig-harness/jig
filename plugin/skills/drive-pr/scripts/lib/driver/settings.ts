@@ -518,7 +518,7 @@ function wholeEnv(raw: string | undefined, fallback: number): number {
  *
  * `SKILL.md` § "Repair rounds" is the pass-side half of this contract.
  */
-export type RepairTask = "ci-repair" | "conflict-resolve";
+export type RepairTask = "ci-repair" | "ci-diagnose" | "conflict-resolve";
 
 /**
  * The round budget: `--max-rounds` when given, else the repository's

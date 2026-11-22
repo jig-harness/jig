@@ -96,6 +96,36 @@ describe("classifyLedger", () => {
     ).not.toContain("conflicts");
   });
 
+  it("hands off a diagnosed CI failure and only re-drives a different head", () => {
+    const head = "c".repeat(40);
+    const ledger = stoppedLedger(7, 21);
+    const action = {
+      at: new Date(NOW).toISOString(),
+      round: 3,
+      action: "repair" as const,
+      detail: `diagnosis: head ${head}: #42 — local validation skipped the failing gate`,
+    };
+    ledger.ciActions = [action];
+    const classify = (sha: string) =>
+      classifyLedger(ledger, NOW, WINDOW, undefined, {
+        head: sha,
+        mergeable: "MERGEABLE",
+      });
+    const placed = classify(head);
+    expect(placed.class).toBe("needs-person");
+    expect(placed.why).toContain("#42");
+    expect(placed.why).toContain("local validation skipped the failing gate");
+    expect(placed.stale).toBeUndefined();
+    expect(classify("d".repeat(40)).class).toBe("stale");
+
+    action.detail = `diagnose: head ${head}: CI-repair budget spent for gates`;
+    expect(classify(head).class).toBe("needs-person");
+    expect(classify(head).why).toContain("recorded no outcome");
+
+    action.detail = `diagnose-skipped: head ${head}: the pass was not dispatched`;
+    expect(classify(head).class).toBe("stale");
+  });
+
   it("re-drives a check-runs listing cut short once per head, naming the pages it read", () => {
     const head = "c".repeat(40);
     const ledger = stoppedLedger(7, DRIVE_EXIT.CHECK_RUNS_UNREADABLE);

@@ -129,7 +129,7 @@ export async function readDriveState(
   if (res.code !== 0) {
     if (report)
       console.error(
-        `Cannot read drive state for advisory CI (exit ${res.code}): ${res.stderr}`,
+        `Cannot read drive state (exit ${res.code}): ${res.stderr}`,
       );
     return null;
   }
@@ -137,7 +137,7 @@ export async function readDriveState(
   if (isUsableState(state, Number.parseInt(pr, 10))) return state;
   if (report)
     console.error(
-      `Cannot read drive state for advisory CI: ${state === null ? "response is not a JSON state object" : "response does not satisfy the drive-state schema"}. ${res.stderr}`,
+      `Cannot read drive state: ${state === null ? "response is not a JSON state object" : "response does not satisfy the drive-state schema"}. ${res.stderr}`,
     );
   return null;
 }

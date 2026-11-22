@@ -35,17 +35,13 @@ import { span } from "./../../../../../shared/trace.ts";
 
 import { ciPolicy } from "./../ci-policy.ts";
 
-import { failedRunsToTell, failedStatusesToTell } from "./failed-runs.ts";
-import { ciRepairSkillSetting } from "./../overlay.ts";
-
-import { type RepairCi, runRepairPass } from "./repair.ts";
 import { announcePolicyBase } from "./policy-base.ts";
 
 import type { FailingChecks } from "./infra-recovery.ts";
 
 import { attempt } from "../../../../../shared/outcome.ts";
 import { driverRuntime } from "./runtime.ts";
-import { attemptsFor, chargeRepair, repairSelection } from "./ci-attempts.ts";
+import { attemptsFor, repairSelection } from "./ci-attempts.ts";
 import {
   beforeRepairRecovery,
   cancelledRunRecovery,
@@ -53,7 +49,8 @@ import {
   freshTimedOutInputs,
   withTimedOut,
 } from "./ci-recovery.ts";
-import { recordCiAttempt } from "./ci-attempt-record.ts";
+import { diagnoseCi, diagnosedHeadStop } from "./ci-diagnosis.ts";
+import { repairChannel, runChargedRepair } from "./ci-repair-pass.ts";
 
 /**
  * Why a CI-hold release failed when it printed nothing: what ended it, the
@@ -478,49 +475,6 @@ export async function requiredFailureMayBeStale(
 }
 
 /**
- * What a CI-repair pass is told beside its detail: the failed runs, the
- * failing commit statuses and the repository's CI-repair skill. `null` once
- * an invalid `ci.repair_skill` has been reported: the drive stops.
- */
-async function repairChannel(
-  pr: string,
-  failing: FailingChecks,
-): Promise<RepairCi | null> {
-  const skill = ciRepairSkillSetting();
-  if (!skill.ok) {
-    console.error(
-      `could not read the CI-repair skill: ${skill.failure.reason}`,
-    );
-    return null;
-  }
-  if (skill.value !== undefined)
-    console.error(`  The pass loads the CI-repair skill ${skill.value}.`);
-  return {
-    failedRuns: await failedRunsToTell(pr, failing.runs),
-    failedStatuses: failedStatusesToTell(failing.statuses),
-    ...(skill.value === undefined ? {} : { repairSkill: skill.value }),
-  };
-}
-
-/**
- * A lock takeover ended the repair pass. Re-join the SAME witness the
- * ordinary-pass path joins on its own `compromised` branch: the takeover
- * stopped this repair pass from a TIMER callback, which could not wait, so
- * `passStopWitness` is the only place that wait is still live. Clearing
- * `held` on an unwitnessed termination is what keeps the loop-top
- * `compromised` check from releasing a lock over a repair descendant that
- * may still be running.
- */
-async function afterTakeover(context: DriveRoundContext): Promise<"continue"> {
-  if (
-    driverRuntime.passStopWitness !== null &&
-    !(await driverRuntime.passStopWitness)
-  )
-    context.held.length = 0;
-  return "continue";
-}
-
-/**
  * Repair a job the runner stopped at its time limit. It is a failing check
  * like any other, so the advisory policy applies first: a timed-out check the
  * repository lists as advisory parks for a person's choice instead of being
@@ -572,102 +526,82 @@ async function repairConvergedCi(
     attempts,
     context.ciRepairBudget,
   );
-  failing = selection.failing;
-  if (selection.names.length === 0) return selection.exhaustedExit;
-  finalVerdict = `failing: ${selection.names.join(", ")}`;
-  const failingNames = repairDetail(selection.names, timedOut);
-  if (context.dryRun || context.agent.length === 0) {
+  // A spent budget on this head escalates to one diagnosing pass over every
+  // failing check, instead of an ordinary repair of the checks still owed one.
+  const diagnosis = selection.names.length === 0;
+  const failingNames = repairDetail(
+    diagnosis ? allFailingNames(failing) : selection.names,
+    timedOut,
+  );
+  const held = await beforeCiRepair(
+    context,
+    head,
+    finalVerdict,
+    failingNames,
+    diagnosis,
+  );
+  if (held !== null) return held;
+  console.error(
+    `review converged, but the fresh non-reviewer CI verdict is 'failing: ${failingNames}'.`,
+  );
+  if (!diagnosis)
+    // A peek, not a charge: `runChargedRepair` charges only once the pass
+    // dispatched, so this line shows the number that dispatch will become.
     console.error(
-      `(dry-run) would run a CI-repair pass for: ${failingNames || "<unnamed checks>"}`,
+      `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (drive.ci_repair_rounds, or DRIVE_PR_CI_REPAIR_ROUNDS for one run; 0 stops here instead).`,
     );
-    return 1;
-  }
-  const mailboxBeforeCiRepair = await context.mailboxCheckpoint();
-  if (typeof mailboxBeforeCiRepair === "number") return mailboxBeforeCiRepair;
-  if (mailboxBeforeCiRepair === "resumed") return "continue";
-  console.error(
-    `review converged, but the fresh non-reviewer CI verdict is '${finalVerdict}'.`,
-  );
-  console.error(
-    // A peek, not a charge — `ciRepairs` is committed only once
-    // `runRepairPass` confirms it actually dispatched, below: an
-    // earlier revision charged before the call and refunded on an
-    // abort path, which is exactly the charge-then-compensate shape
-    // whose ABA gap this class of finding kept re-finding on the
-    // durable `attempts` counter.
-    // "Never charge until certain" needs no compensating action at
-    // all — this line only has to DISPLAY the attempt number the
-    // dispatch below, if it happens, will actually become.
-    `  Running CI-repair pass ${selection.used + 1}/${context.ciRepairBudget} for ${selection.names.join(", ")} on head ${head} (drive.ci_repair_rounds, or DRIVE_PR_CI_REPAIR_ROUNDS for one run; 0 stops here instead).`,
-  );
   // The repair dispatches ahead of the round's own refresh: resolve the
   // policy base again, for a pull request retargeted since.
   await announcePolicyBase(context.pr);
-  const told = await repairChannel(context.pr, failing);
+  const repaired = diagnosis ? failing : selection.failing;
+  const told = await repairChannel(context.pr, repaired);
   if (told === null) return 1;
-  const repair = await runRepairPass(
-    context.agent,
-    context.held,
-    "ci-repair",
+  if (diagnosis) return await diagnoseCi(context, head, failingNames, told);
+  return await runChargedRepair(
+    context,
+    head,
+    repaired,
+    attempts,
     failingNames,
-    context.mailboxCheckpoint,
     told,
   );
-  if (!repair.dispatched) {
-    // The repair pass's OWN pre-spawn checkpoint (inside
-    // runRepairPass, after its identity refresh) resumed a pause
-    // without ever dispatching — re-gate from the top rather than
-    // trusting this branch's now-stale snapshot.
-    // Nothing to refund: `ciRepairs` was never charged for this
-    // attempt in the first place.
-    if (repair.resumed) return "continue";
-    // Same checkpoint reporting stop/pause-timeout/unreadable/a lock
-    // takeover: those are driver-ending answers, not repair-pass
-    // failures, so return them as-is rather than falling into the
-    // generic "pass failed" branch below.
-    return repair.code;
-  }
-  // Confirmed dispatch — NOW commit the charge.
-  context.ciRepairs += 1;
-  const charges = chargeRepair(head, failing, attempts);
-  const charged = `head ${head}: ${charges.map((charge) => `${charge}/${context.ciRepairBudget}`).join(", ")}`;
-  console.error(`  Charged CI repair for ${charged}.`);
-  await recordCiAttempt(context.pr, "repair", charged);
-  const repairCode = repair.code;
-  // Checked before `postPassMailboxExit` — a lock takeover means
-  // this driver has already lost authority over the PR, which
-  // outranks any exit code the mailbox checkpoint might report.
-  if (driverRuntime.compromised !== "") return await afterTakeover(context);
-  // A directive observed immediately after this pass completed —
-  // outranks reporting the pass's own result, same as the
-  // ordinary-pass path's own post-pass checkpoint. The charge above
-  // already stands: the pass DID run.
-  if (repair.postPassMailboxExit !== null) return repair.postPassMailboxExit;
-  // Preserve PR_NOT_OPEN: `guarded-push.ts` exits 5 inside the pass
-  // exactly like the ordinary-pass path's own push does, and
-  // reporting a CI stop over a PR that already merged or closed sends
-  // an operator to fix code nobody can push to anymore —
-  // `passExitDisposition` exists to prevent exactly this for the
-  // ordinary path, so the repair path must not silently drop the same
-  // signal.
-  if (repairCode === 5) {
+}
+
+const allFailingNames = (failing: FailingChecks): string[] => [
+  ...(failing.checkRunNames ?? []),
+  ...(failing.statusNames ?? []),
+];
+
+/**
+ * Why no CI repair dispatches now, or `null` when one may: no budget or no
+ * named check, a dry run, a mailbox directive, or a diagnosis this head
+ * already recorded.
+ */
+async function beforeCiRepair(
+  context: DriveRoundContext,
+  head: string,
+  finalVerdict: string,
+  failingNames: string,
+  diagnosis: boolean,
+): Promise<number | "continue" | null> {
+  if (context.ciRepairBudget === 0 || failingNames === "") {
     console.error(
-      `PR #${context.pr} stopped being open during the CI-repair pass; stopping.`,
+      `The fresh non-reviewer CI verdict is '${finalVerdict}', stopping for /fix-ci.`,
     );
-    return 5;
-  }
-  if (repairCode !== 0) {
-    console.error("the CI-repair pass failed; stopping for /fix-ci by hand.");
     return 1;
   }
-  // Re-gate rather than re-check CI here. A repair that pushed moved
-  // the head, which makes `reviewedHead` — and every piece of
-  // evidence gathered under it, including the reviewer's own stamp —
-  // stale. The top of the loop is the only place entitled to rebuild
-  // all of it. A repair that pushed NOTHING lands back on this same
-  // branch with the same verdict and spends the next unit of budget,
-  // which is what the budget is for.
-  return "continue";
+  if (context.dryRun || context.agent.length === 0) {
+    console.error(
+      diagnosis
+        ? `(dry-run) would start a diagnosing CI repair for: ${failingNames}`
+        : `(dry-run) would run a CI-repair pass for: ${failingNames}`,
+    );
+    return 1;
+  }
+  const mailbox = await context.mailboxCheckpoint();
+  if (typeof mailbox === "number") return mailbox;
+  if (mailbox === "resumed") return "continue";
+  return await diagnosedHeadStop(context, head);
 }
 
 /** Count one poll against the witness bound; `true` once it has run out. */
@@ -822,7 +756,7 @@ async function settleFinalCiVerdict(
   if (
     finalVerdict.startsWith("failing:") &&
     !staleRequiredFailure &&
-    selection.names.length > 0
+    (selection.names.length > 0 || context.ciRepairBudget > 0)
   ) {
     return await repairConvergedCi(
       finalVerdict,

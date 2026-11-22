@@ -8,6 +8,7 @@
  * `report.stop` says for it.
  */
 import type { DriveState } from "../state/schema.ts";
+import { diagnosisDetail } from "../state/ci-actions.ts";
 import { lastStopEvent, stopInstant } from "../state/events.ts";
 import {
   DRIVE_EXIT,
@@ -89,6 +90,11 @@ export function stopText(
 ): string {
   if (code === exitOf("HITL_PARKED")) return parkStop(pr, code, state);
   if (code === exitOf("QUOTA_PARKED")) return quotaStop(pr, code, state);
+  if (code === exitOf("CI_REPAIR_SPENT")) {
+    const diagnosis = diagnosisDetail(state?.ciActions ?? []);
+    if (diagnosis !== undefined)
+      return `PR #${pr} stopped after diagnosing CI (exit ${code}): ${diagnosis}`;
+  }
   if (code === exitOf("STALLED") && stall !== null)
     return `PR #${pr}'s drive stalled: every stalled pass's round ended ${stall.state}: ${oneLine(stall.reason)} (exit ${code})`;
   if (code === exitOf("FORGE_RATE_LIMITED"))

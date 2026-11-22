@@ -210,7 +210,9 @@ export async function beforeRepairRecovery(
     failing,
     attemptsFor(context),
     failedCheckForge,
-    (detail) => recordCiAttempt(context.pr, "rerun", detail),
+    async (detail) => {
+      await recordCiAttempt(context.pr, "rerun", detail);
+    },
   );
   if (retried === "indeterminate") {
     console.error(
