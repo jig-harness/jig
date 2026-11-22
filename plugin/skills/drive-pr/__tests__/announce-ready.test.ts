@@ -267,6 +267,7 @@ if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/999 ]]; then
   changed="\${DRIVE_PR_FIXTURE_CHANGED_FILES:-$(jq length "$DRIVE_PR_FIXTURES/files.json")}"
   base="\${DRIVE_PR_FIXTURE_BASE:-$(printf 'b%.0s' $(seq 40))}"
   head="\${DRIVE_PR_FIXTURE_HEAD:-$(cat "$DRIVE_PR_FIXTURES/head.txt")}"
+  if [ "\${seen:-0}" -ge 2 ]; then base="\${DRIVE_PR_FIXTURE_LATER_BASE:-$base}"; fi
   if [ $(( \${seen:-0} % 2 )) -eq 1 ]; then
     head="\${DRIVE_PR_FIXTURE_CLOSING_HEAD:-$head}"
     commits="\${DRIVE_PR_FIXTURE_CLOSING_COMMITS:-$commits}"
@@ -343,7 +344,6 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     });
     expectSpawnExit(r, 4);
     expect(r.boardCalls).toEqual(["board", "board"]);
-    expect(r.posted).toBe(false);
     expect(r.stdout).toBe("");
     expect(r.stderr).toContain("not witnessed on this head");
   });
@@ -355,12 +355,13 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
       driverEnv: viaWrapper(),
       secondBoard: board(converged.head, {
         ...listed,
-        config: "pull_requests: {}\n",
+        config: "review:\n  reviewer_app: example-review\n",
       }),
     });
     expectSpawnExit(r, 4);
     expect(r.boardCalls).toEqual(["board", "board"]);
-    expect(r.posted).toBe(false);
+    // The first observation made the complete evidence read before the list went.
+    expect(r.calls.slice(0, 4)).toEqual(["pull", "files", "commits", "pull"]);
     expect(r.stdout).toBe("");
     expect(r.stderr).not.toContain("not witnessed on this head");
   });
@@ -377,9 +378,37 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
     });
     expectSpawnExit(r, 4);
     expect(r.boardCalls).toEqual(["board", "board"]);
-    // The kept read is not reused for the moved base: the announcement refuses.
-    expect(r.posted).toBe(false);
+    // The kept read is not reused for the moved base: a fresh opening read
+    // is made, finds the old base, and the announcement refuses.
+    expect(r.calls).toEqual(["pull", "files", "commits", "pull", "pull"]);
     expect(r.stdout).toBe("");
+  });
+
+  it("qualifies on a fresh read when the base moves and the forge agrees with the new base", async () => {
+    const listed = { association: "NONE", bot: "renovate", config: LISTED };
+    const r = await dryRun(converged, board(converged.head, listed), {
+      compare,
+      driverEnv: {
+        ...viaWrapper(),
+        DRIVE_PR_FIXTURE_LATER_BASE: "c".repeat(40),
+      },
+      secondBoard: board(converged.head, {
+        ...listed,
+        baseOid: "c".repeat(40),
+      }),
+    });
+    expectSpawnExit(r, 0);
+    expect(r.calls).toEqual([
+      "pull",
+      "files",
+      "commits",
+      "pull",
+      "pull",
+      "files",
+      "commits",
+      "pull",
+    ]);
+    expect(r.stdout).toContain(OPENER);
   });
 
   it("withholds the exception when the pull request's file count differs from the listing", async () => {
