@@ -24,11 +24,8 @@
 import { parseArgs } from "node:util";
 import { describeAutonomy, currentAutonomy } from "../../../shared/autonomy.ts";
 import { fail, runMain } from "../../../shared/cli.ts";
-
-/** The line an issue body carries when a skill filed it without asking. */
-export function filedByLine(skill: string, pr: string, why: string): string {
-  return `Filed by \`/jig:${skill}\` from ${pr}, without a person's confirmation: ${why}`;
-}
+import { filedByLine } from "../../../shared/issue-provenance.ts";
+export { filedByLine };
 
 const isSkillName = (v: unknown): boolean =>
   typeof v === "string" && /^[a-z][a-z0-9-]*$/.test(v);

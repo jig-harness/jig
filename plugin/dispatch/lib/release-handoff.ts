@@ -20,6 +20,7 @@ import {
   nextReleaseHandoff,
   recordTagged,
   releaseNeedActions,
+  releasePolicyOf,
   tagPrefixOf,
   releaseNeeds,
   reserveRelease,
@@ -105,6 +106,7 @@ export async function settleReleaseHandoff({
         ...releaseNeedActions(
           releaseNeeds(repo.slug, root),
           tagPrefixOf(values),
+          releasePolicyOf(values),
         ),
       ];
   } catch (error) {

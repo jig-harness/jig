@@ -160,12 +160,15 @@ const FACTS: Partial<
   "followup-failed": followupFailedFacts,
   "release-owed": (action, ctx) => {
     const tags = groupTags(action.evidence);
+    const why = text(action.evidence, "noRerun");
+    const noRerun = why === null ? {} : { noRerun: why };
     if (tags.length > 0)
       return {
         kind: "release-group",
         repo: ctx.slug,
         tags,
         rerunSpent: action.evidence.rerunSpent === true,
+        ...noRerun,
       };
     const tag = text(action.evidence, "tag");
     return tag === null
@@ -175,6 +178,7 @@ const FACTS: Partial<
           repo: ctx.slug,
           tag,
           ...(action.evidence.rerunSpent === true ? { rerunSpent: true } : {}),
+          ...noRerun,
         };
   },
   "followup-stale": followupStaleFacts,

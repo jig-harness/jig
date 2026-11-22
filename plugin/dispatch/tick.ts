@@ -109,6 +109,8 @@ import { processRuntime } from "./lib/runtime/process.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type { SessionRuntime } from "./lib/runtime/port.ts";
 import { signInFallbackReport } from "./lib/actions/account-sign-in.ts";
+import { retireStaleWeightsRecords } from "./lib/actions/notify.ts";
+import { standingWeightsKeys } from "./lib/failure-notices.ts";
 import { applyState } from "./lib/tick-apply.ts";
 import { loadReport } from "./lib/load.ts";
 import { readTickLoad } from "./lib/tick-load.ts";
@@ -216,6 +218,8 @@ interface StartedTick {
   withheld: string | undefined;
   /** Whether settling the launch records' follow-up outcomes failed; each repository's turn settles its own again, and the close retries. */
   settleFailed: boolean;
+  /** Retiring the stale weights notice records failed: the tick ran, but its exit says it did not run whole. */
+  retireFailed: boolean;
 }
 
 /**
@@ -292,7 +296,13 @@ async function startTick(
     world: tickWorld(options, reads, bound),
     rerunsHeld: rerunsHeld(),
   };
-  return { receipt, context, withheld: undefined, settleFailed: false };
+  return {
+    receipt,
+    context,
+    withheld: undefined,
+    settleFailed: false,
+    retireFailed: false,
+  };
 }
 
 /** A repository's observation that was made, as opposed to one another tick held. */
@@ -470,7 +480,8 @@ async function startAct(started: StartedTick): Promise<void> {
     receipt.defect = defectOf("start", error);
     logDefect("the follow-up outcomes", receipt.defect, error);
   }
-  context.drivers = readHostInputs(options).drivers;
+  // Read again under the lock, so retirement, planning and admission share one reading of the host.
+  Object.assign(context, readHostInputs(options));
   const attempt = applyState(
     options,
     runtime,
@@ -488,6 +499,19 @@ async function startAct(started: StartedTick): Promise<void> {
   context.launches = read.records;
   context.apply = apply;
   receipt.apply = apply !== null;
+  // Host-local weights notice records are retired once per apply tick, whichever repositories notify.
+  if (apply !== null) {
+    try {
+      retireStaleWeightsRecords(
+        standingWeightsKeys(context.weights, options.machine),
+        stateRoot(),
+      );
+    } catch (error) {
+      started.retireFailed = true;
+      receipt.defect = defectOf("start", error);
+      logDefect("the weights notice records", receipt.defect, error);
+    }
+  }
   if (started.withheld !== undefined) receipt.applyWithheld = started.withheld;
   Object.assign(
     receipt,
@@ -627,7 +651,7 @@ async function closeTick(
   started: StartedTick,
   timer: PhaseTimer<TickPhase>,
 ): Promise<void> {
-  const { receipt, context, withheld, settleFailed } = started;
+  const { receipt, context, withheld, settleFailed, retireFailed } = started;
   const machine = context.options.machine ?? null;
   // A tracker the tick had no credential for is named once, not as each repository's failure.
   settleNoCredential(receipt);
@@ -653,7 +677,7 @@ async function closeTick(
   await routeReflection(receipt, context);
   // Anything else that failed keeps its exit; with nothing else, a missing tracker credential has its class's.
   receipt.exitStatus =
-    failed || !copied || settleFailed || withheld !== undefined
+    failed || !copied || settleFailed || retireFailed || withheld !== undefined
       ? 1
       : (noCredentialExit(receipt) ?? 0);
   Object.assign(receipt, signInFallbackReport(context.apply?.signInChecks));

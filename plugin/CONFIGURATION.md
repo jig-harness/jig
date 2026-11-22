@@ -493,8 +493,9 @@ round. When that commit or its file cannot be read (the base is not in the
 clone, git fails, the file does not parse or names an invalid ceiling or
 class list), the policy fails closed: the ceiling is `attended`, the only
 park classes are `escalated`, `human-decision` and `human-thread`, and the
-printed line tells the pass to park every decision under `human-decision`
-until the policy reads. A default class list could be weaker than the
+printed line tells the pass to park every new decision under
+`human-decision` until the policy reads; a deferral already decided is carried
+out without confirmation. A default class list could be weaker than the
 repository's own, so none stands in for it. A session with a person in it
 reads both fields from the working tree.
 
@@ -520,8 +521,8 @@ What each level permits:
 
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
-| File a tracker issue a skill needs | Confirm first | File it; the body says which skill filed it, from which pull request and why | Same |
-| Defer a finding no tracker adapter can file | The pull request's `## Deferred` section | Same | Same |
+| File any other tracker issue a skill needs, such as a follow-up or reflection escalation | Confirm first | File it with the filed-by line | Same |
+| Carry out a deferral ruled by the triage rubric or Review Arbiter | Follow the [deferral protocol](skills/resolve-review-comments/references/deferral-protocol.md#who-decides-a-deferral) without confirmation | Same | Same |
 | A choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
 | A choice `decide` would rule underdetermined | Rule it `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue) | Gather the missing evidence, then apply the ladder, escalating a call it still cannot settle | Same |
 | A choice `decide`'s last row would escalate, with no sensitivity flag, no stakeholder category and no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional |
@@ -1016,7 +1017,8 @@ changelog:
 | `changelog.tag_prefix` | text | `v` | changelog | What a version's tag puts before it |
 | `changelog.release.push` | `direct`, `pull-request` | `direct` | changelog | How the release reaches the integration branch: the workflow template's `push` job pushes the release commit onto it (`direct`) or force-pushes it to `release.branch` and opens or updates the release pull request (`pull-request`, which refuses `unreleased: write`). The branch check reads it from the base to recognise a release pull request; `release-access.ts` checks what the mode needs of the branch rules; `release.ts --json` prints it for the workflow |
 | `changelog.release.branch` | branch name | `changelog-release` | changelog | `pull-request` mode: the branch the release pull request comes from, regenerated from scratch on every push to the integration branch. A pull request from it is checked as a release pull request (the base's value counts); `release-access.ts` checks that the App can create and force-push it |
-| `changelog.release.rerun_failed_gates` | nonnegative integer | `1` | changelog | How many times `tag.ts --rerun` may re-run failed required checks on each releasing commit, using the workflow run attempt as its budget. `0` disables failed-check retries. Cancelled checks retain their single retry. Read from the integration branch's repository configuration |
+| `changelog.release.rerun_failed_gates` | nonnegative integer | `1` | changelog, dispatch | How many times `tag.ts --rerun` may re-run failed required checks on each releasing commit, using the workflow run attempt as its budget. `0` disables failed-check retries, and also makes the dispatcher's release decision offer no re-run and recommend **Tag it by hand**. Cancelled checks retain their single retry. Read from the integration branch's repository configuration |
+| `changelog.release.tagged_by` | `workflow`, `person` | `workflow` | changelog, dispatch | Who creates a release's tag under the repository's release procedure: the workflow template's tag job (`workflow`), or a person (`person`). The dispatcher's release decision reads it: under `person` it offers no re-run of the failed gates and recommends **Tag it by hand**, whatever the releasing commit's checks say. Unset, the dispatcher recommends the re-run only for a version whose follow-up recorded it `failed` in the tag plan (or recorded no state), and `changelog.release.rerun_failed_gates: 0` offers no re-run either. The tag plan (`tag.ts`) lists the versions owed a tag either way, and `person` does not stop the workflow's tag job from tagging `ready` versions. Read from the repository's own configuration |
 | `changelog.consumer_actions` | `true`, `false` | `false` | changelog | `true`: the branch check requires every breaking entry of a note the branch adds (one marked `**Breaking:**`, `**Breaking**` or `**Breaking.**`, in any case) to declare a [consumer action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) with `**Consumer action:**`, `none` included ([the form](skills/changelog/README.md#consumer-actions)). It also refuses a near-miss marker (`**Consumer Action:**`, `**Consumer action**:`) and a `**Detect:**` with no declaration, which a repository with the field off reads as text. A declaration's form is checked wherever a note carries one, whatever this field says |
 | `changelog.consumer_actions_record` | path of a file, relative to the root | No record | changelog | Where the consumer-actions record is derived: the JSON list of every consumer action the changelog's released sections declare, with its id. The release step rewrites it in the release commit, and the skill's `scripts/consumer-actions-record.ts --check` fails when the committed file is not what the changelog derives (`--write` regenerates it). Keep a Changelog only: Common Changelog appends a reference and authors to each entry, so the field is refused there. It may not be the changelog, a version file or a workflow, and a placeholder's globs may not reach it |
 
@@ -1902,7 +1904,10 @@ restarted has died and frees its slot.
 ### The host-local account launch weights file
 
 The dispatcher reads `$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml`
-by default) once at the start of every tick. This optional file belongs to the
+by default) at the start of every tick and again once the tick holds the
+act lock; the second reading is the one that governs the tick's retirement of
+stale notices, its planning and its admission, so an edit made while the tick
+observed still applies to that tick. This optional file belongs to the
 host, beside `dispatch.yaml`; it is not repository configuration and requires
 no restart, install or commit. If `JIG_HOME` is inside a Git repository, add
 `weights.local.yaml` to that repository's `.gitignore` or local
@@ -1937,11 +1942,23 @@ this count fall back to the retained launch count. Equal weights retain the exis
 
 The receipt, terminal report and dashboard account view show each configured
 and effective weight with its reason. An unreadable or malformed file, an
-unknown section, an invalid `accounts` mapping, an unknown account name or a weight outside the
-range closes every account for new launches, and reports why. This prevents
-a broken file from resuming an account the host paused. Fix or remove the
-file to resume admission on the next tick. The shared document can also hold
-`lanes`; each reader validates only its own section, so an invalid `lanes`
+unknown section, an invalid `accounts` mapping or a weight outside the
+range on an account the machine file lists closes every account for new
+launches, and reports why. This prevents a broken file from resuming an
+account the host paused; fix or remove the file to resume admission on the
+next tick. An `accounts` name the machine file does not list
+gives no listed account a weight, so it is skipped and the file's other
+weights apply: every account's reason names the skipped names, and from the
+first tick that reads them the host raises one notice naming the file, the
+skipped names and the accounts the machine file lists. The notice goes
+where the host's own failures go (the first repository it owns with
+`notify` enabled whose turn is not failing, else the first it owns with `notify` enabled), is told once for each set of
+skipped names wherever it is told (again after `renotify_after` while the
+set stands), and retires at the first tick that reads none. A host that
+owns no repository with `notify` has only the reasons. Because an account
+the file does not name has weight 100, a misspelt name for an account meant
+to be paused leaves that account taking launches; the notice is how a
+person learns of it. The shared document can also hold `lanes`; each reader validates only its own section, so an invalid `lanes`
 section does not change the account weights.
 
 ### When an outside system refuses or does not answer
@@ -2446,6 +2463,7 @@ changelog:
     push: direct                         # direct | pull-request
     branch: changelog-release
     rerun_failed_gates: 1                 # 0 disables failed-check retries
+    tagged_by: workflow                  # workflow | person: who creates the tags
   consumer_actions: true                 # a breaking entry declares a consumer action
   consumer_actions_record: consumer-actions.json  # Keep a Changelog only
 code_stats:

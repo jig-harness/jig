@@ -4,7 +4,7 @@ import { stateRoot } from "../receipts.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 import { inTransaction, stateDb } from "./state.ts";
 import { SHARED_RELEASE_LIMIT } from "../../shared/records/release-tags.ts";
-import { releaseActions } from "./release-groups.ts";
+import { releaseActions, type ReleasePolicy } from "./release-groups.ts";
 import type { Action, MarkedPr } from "./types.ts";
 
 /** The prefix of the repository's release tags, as the changelog skill reads it: `changelog.tag_prefix`, else `v`. */
@@ -13,11 +13,37 @@ export function tagPrefixOf(values: Record<string, unknown>): string {
   return typeof prefix === "string" ? prefix : "v";
 }
 
+/** What the repository's configuration says of its tags: `changelog.release.tagged_by` and `changelog.release.rerun_failed_gates`, each its default when unset or unreadable. */
+export function releasePolicyOf(
+  values: Record<string, unknown>,
+): ReleasePolicy {
+  return {
+    personTags: valueAt(values, "changelog.release.tagged_by") === "person",
+    noReruns: valueAt(values, "changelog.release.rerun_failed_gates") === 0,
+  };
+}
+
+/**
+ * The tag plan's states (`tag.ts`) a follow-up records a version owed under:
+ * every required check passed (`ready`), one failed with no retry left
+ * (`failed`), or the version is outside automatic tagging (`manual`,
+ * `imported`).
+ */
+export const OWED_PLAN_STATES = [
+  "ready",
+  "failed",
+  "manual",
+  "imported",
+] as const;
+export type OwedPlanState = (typeof OWED_PLAN_STATES)[number];
+
 export interface ReleaseNeed {
   tag: string;
   item: string | null;
   launch: string;
   rerun_claimed: number;
+  /** The version's state in the tag plan when its follow-up recorded it owed; `null` when none said. */
+  plan_state: OwedPlanState | null;
   tagged: number;
   /** The decision a person took the release under (`release-groups.ts`); `null` when none did. */
   taken_as: string | null;
@@ -61,38 +87,51 @@ export function reserveRelease(
   launch: string,
   item: string | undefined,
   root = stateRoot(),
+  state?: OwedPlanState,
 ): Outcome<ReleaseReservation, "refused"> {
   const db = stateDb(root);
   return inTransaction(db, () => {
-    const prior = readNeed(db, repo, tag);
-    if (prior?.item != null)
-      return ok({ status: "recorded", item: prior.item });
-    if (item === undefined) {
-      reserveReleaseIn(db, repo, tag, launch);
-      return ok({
-        status:
-          readNeed(db, repo, tag)?.launch === launch
-            ? "reserved"
-            : "reserved-elsewhere",
-      });
-    }
-    if (prior?.launch !== launch)
-      return failed(
-        "refused",
-        "this follow-up must reserve the release before recording its tracker item",
-      );
-    const written = db
-      .query(
-        "UPDATE OR IGNORE release_needs SET item = ? WHERE repo = ? AND tag = ?",
-      )
-      .run(item, repo, tag);
-    return written.changes === 1
-      ? ok({ status: "recorded", item })
-      : failed(
-          "refused",
-          "this tracker item already belongs to another release",
-        );
+    const reserved = reserveIn(db, repo, tag, launch, item);
+    // The state of the last follow-up to record one is kept, whichever follow-up files the release.
+    if (reserved.ok && state !== undefined)
+      db.query(
+        "UPDATE release_needs SET plan_state = ? WHERE repo = ? AND tag = ? AND tagged = 0",
+      ).run(state, repo, tag);
+    return reserved;
   });
+}
+
+function reserveIn(
+  db: ReturnType<typeof stateDb>,
+  repo: string,
+  tag: string,
+  launch: string,
+  item: string | undefined,
+): Outcome<ReleaseReservation, "refused"> {
+  const prior = readNeed(db, repo, tag);
+  if (prior?.item != null) return ok({ status: "recorded", item: prior.item });
+  if (item === undefined) {
+    reserveReleaseIn(db, repo, tag, launch);
+    return ok({
+      status:
+        readNeed(db, repo, tag)?.launch === launch
+          ? "reserved"
+          : "reserved-elsewhere",
+    });
+  }
+  if (prior?.launch !== launch)
+    return failed(
+      "refused",
+      "this follow-up must reserve the release before recording its tracker item",
+    );
+  const written = db
+    .query(
+      "UPDATE OR IGNORE release_needs SET item = ? WHERE repo = ? AND tag = ?",
+    )
+    .run(item, repo, tag);
+  return written.changes === 1
+    ? ok({ status: "recorded", item })
+    : failed("refused", "this tracker item already belongs to another release");
 }
 
 export function releaseNeeds(repo: string, root = stateRoot()): ReleaseNeed[] {
@@ -106,12 +145,14 @@ export function releaseNeeds(repo: string, root = stateRoot()): ReleaseNeed[] {
 export function releaseNeedActions(
   needs: readonly ReleaseNeed[],
   tagPrefix: string,
+  policy?: ReleasePolicy,
 ): Action[] {
   return releaseActions(
     needs.flatMap((need) =>
       need.item === null ? [] : [{ ...need, item: need.item }],
     ),
     tagPrefix,
+    policy,
   );
 }
 
