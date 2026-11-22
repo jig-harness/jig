@@ -127,9 +127,9 @@ to read, and a retry before the reset can only be refused again.
 - `drive.ts` waits for a reset within `DRIVE_PR_RATE_LIMIT_WAIT` seconds
   (default 30 minutes, at most a day) and goes on: between rounds it keeps
   its ledger's lease and reads its mailbox while it waits; at the attach,
-  before its first round, it waits and reads the pull request again. Either
-  way it waits for at most three resets in a row; a limit spent again after
-  each stops it.
+  before its first round, it waits and reads the pull request again. During
+  the converged CI watch it waits for the reset before reading again. Each
+  stage waits for at most three resets in a row.
 - A reset further off stops the drive with the same exit. Its `stop` event
   records the reset (`until`), its closing report names it with cause
   `environment` and the line as owner, and `jig dispatch` re-drives the stop

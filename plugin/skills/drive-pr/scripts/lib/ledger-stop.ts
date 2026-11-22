@@ -136,6 +136,19 @@ export function recordPendingExit(
   );
 }
 
+/** Keep a stop for recovery, reporting when this acquisition's record is gone. */
+export function rememberPendingExit(
+  stateDir: string,
+  pr: string,
+  started: string,
+  code: number,
+): void {
+  if (started !== "" && !recordPendingExit(stateDir, pr, started, code))
+    console.error(
+      `ledger: PR #${pr}'s final exit could not be saved because this acquisition's driver record is absent.`,
+    );
+}
+
 /** Remove this acquisition; normal cleanup retains operator intent that its payload may have missed. */
 export function removeDriverRecord(
   stateDir: string,
