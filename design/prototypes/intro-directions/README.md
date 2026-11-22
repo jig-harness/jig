@@ -89,8 +89,11 @@ motion-kit.
 To regenerate the frames from a motion-kit checkout that has the isometric kit:
 
 ```sh
-node figure/render.mjs --motion-kit <path to motion-kit>
+node figure/render.mjs --motion-kit <path to motion-kit> --no-png
 ```
+
+Without `--no-png` the script also renders a PNG contact sheet and needs Chromium:
+pass `--chromium <path>` or set `JIG_CHROMIUM`.
 
 ## Files
 

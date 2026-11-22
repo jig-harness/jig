@@ -32,8 +32,8 @@ named actors, short absolute boundaries, no selling adjectives, no sentence over
 - No stock photography, invented statistics, customer names or logos, emoji, decorative
   gradients, feature grids, icon rows, "trusted by" strips, glassmorphism.
 - Every page reads without JavaScript; motion respects reduced motion; widths 320, 390, 1440.
-- Logo: logo.svg beside this file. Existing plates in images/ show the engraving manner
-  (hall, line, lever, slab, jig-still .webp; they are line drawings masked onto ink).
+- Logo: `../canvas/logo.svg`. The engraving-manner plates the original session used are not
+  part of this archived round; the canvas files show the manner as drawn.
 
 ## The page: copy (verbatim; direction workers may drop a secondary line, never extend)
 Opening
@@ -48,7 +48,7 @@ Five steps (the page is stepped through these, in this order)
    Body "Every few minutes the dispatcher reads the tracker, the pull requests and the running sessions. Then it starts what should be running and is not."
    Status mark: "Machinery ships. Running unattended is planned."
 3. Label "Capacity". Title "The dispatcher works within capacity."
-   Body "The dispatcher considers usage limits, processor load, free memory, disk space and tracker or forge rate limits before it starts work. When capacity is unavailable, it waits."
+   Body "The dispatcher considers usage limits, processor load, free memory, disk space and the forge budget when load enforcement is on. It is configurable and off by default."
 4. Label "The ledger". Title "The drive keeps its ledger on the pull request."
    Body "One comment records the round, the last head checked and every parked question. Another machine reads it and picks up where the drive stopped."
 5. Label "The question". Title "A question waits until you answer."
