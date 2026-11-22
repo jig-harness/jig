@@ -214,7 +214,7 @@ import {
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
 import {
-  handoffExit,
+  handoff,
   mirrorLedger,
   removeStateKeepingLedgerGeneration,
   seedLedgerCommand,
@@ -250,7 +250,7 @@ import {
 } from "./lib/state/claims.ts";
 import { holdLabelName, readCiHoldTimeline } from "./lib/state/hold-label.ts";
 import { setVerified } from "./lib/state/set-verified.ts";
-import { removeHandoff, renderHandoff } from "./lib/state/handoff.ts";
+import { removeHandoff } from "./lib/state/handoff.ts";
 import {
   acquireIdentifiedTreeGuardNow,
   acquireSessionlessTreeGuardNow,
@@ -3072,17 +3072,6 @@ async function main(): Promise<number> {
     default:
       return otherCommand(a, store, pr);
   }
-}
-
-/** `handoff`: (re)write the handoff file, and the ledger under a driver. */
-async function handoff(pr: string, store: StateStore): Promise<number> {
-  await store.locked(async () => {
-    const out = await renderHandoff(pr, store.read().state);
-    process.stdout.write(`${out}\n`);
-  });
-  // A ledger write that was attempted and did not land is told apart
-  // from success: a stop's last write keeps its recovery record on it.
-  return handoffExit(await mirrorLedger(pr, store));
 }
 
 /** A review round verb (`review-rounds.ts`), a command whose record arrives on standard input, or the usage refusal. */

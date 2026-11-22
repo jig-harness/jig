@@ -31,6 +31,9 @@ import { finishDriverPassRegistrations, touchLock } from "./lifecycle.ts";
 import type { FailingStatus } from "./../../../../../shared/ci-status.ts";
 import { isoOf } from "../../../../../shared/time.ts";
 
+export const DIAGNOSIS_REPORT_VARIABLE = "DRIVE_PR_CI_DIAGNOSIS_REPORT";
+export const DIAGNOSIS_HEAD_VARIABLE = "DRIVE_PR_CI_DIAGNOSIS_HEAD";
+
 // `drive.ts` is itself very often launched from inside a live Claude Code
 // session (do-item's "Arm the drive" step spawns it in the background), and
 // a spawned child inherits that session's env by default — including
@@ -59,6 +62,8 @@ export function passEnv(
   delete env.DRIVE_PR_ROUND_FAILED_RUNS;
   delete env.DRIVE_PR_ROUND_FAILED_STATUSES;
   delete env.DRIVE_PR_ROUND_REPAIR_SKILL;
+  delete env[DIAGNOSIS_REPORT_VARIABLE];
+  delete env[DIAGNOSIS_HEAD_VARIABLE];
   // The same for the notice of a recovered stop: only the driver that
   // recovered it may say so, and only to the review pass it spawns next.
   delete env.DRIVE_PR_PASS_NOTICE;
@@ -66,18 +71,32 @@ export function passEnv(
   // dispatcher's report file is the driver's alone to write.
   delete env[ROUND_VARIABLE];
   delete env[DRIVER_REPORT_VARIABLE];
-  if (task !== undefined) {
-    env.DRIVE_PR_ROUND_TASK = task.task;
-    env.DRIVE_PR_ROUND_TASK_DETAIL = task.detail;
-    if ((task.failedRuns ?? []).length > 0)
-      env.DRIVE_PR_ROUND_FAILED_RUNS = (task.failedRuns ?? []).join(" ");
-    // JSON, one `{context, target_url}` per status: the form
-    // `ci.log_command` reads, so a pass can hand an entry on unchanged.
-    if ((task.failedStatuses ?? []).length > 0)
-      env.DRIVE_PR_ROUND_FAILED_STATUSES = JSON.stringify(task.failedStatuses);
-    if (task.repairSkill !== undefined)
-      env.DRIVE_PR_ROUND_REPAIR_SKILL = task.repairSkill;
-  }
+  if (task !== undefined) Object.assign(env, repairTaskEnv(task));
+  return env;
+}
+
+/** The variables that tell a repair pass its task and what failed. */
+function repairTaskEnv(
+  task: { task: RepairTask; detail: string } & RepairCi,
+): Record<string, string> {
+  const env: Record<string, string> = {
+    DRIVE_PR_ROUND_TASK: task.task,
+    DRIVE_PR_ROUND_TASK_DETAIL: task.detail,
+  };
+  const runs = task.failedRuns ?? [];
+  if (runs.length > 0) env.DRIVE_PR_ROUND_FAILED_RUNS = runs.join(" ");
+  // JSON, one `{context, target_url}` per status: the form
+  // `ci.log_command` reads, so a pass can hand an entry on unchanged.
+  const statuses = task.failedStatuses ?? [];
+  if (statuses.length > 0)
+    env.DRIVE_PR_ROUND_FAILED_STATUSES = JSON.stringify(statuses);
+  if (task.repairSkill !== undefined)
+    env.DRIVE_PR_ROUND_REPAIR_SKILL = task.repairSkill;
+  if (task.task !== "ci-diagnose") return env;
+  if (task.diagnosisReport !== undefined)
+    env[DIAGNOSIS_REPORT_VARIABLE] = task.diagnosisReport;
+  if (task.diagnosisHead !== undefined)
+    env[DIAGNOSIS_HEAD_VARIABLE] = task.diagnosisHead;
   return env;
 }
 
@@ -89,6 +108,10 @@ export interface RepairCi {
   failedStatuses?: readonly FailingStatus[];
   /** The skill it loads first: `ci.repair_skill`. */
   repairSkill?: string;
+  /** The isolated file a diagnosing pass writes after filing its finding. */
+  diagnosisReport?: string;
+  /** The exact head the diagnosing pass may act on. */
+  diagnosisHead?: string;
 }
 
 /**

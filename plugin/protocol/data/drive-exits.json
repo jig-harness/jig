@@ -429,12 +429,12 @@
       "driveStatusExit": null,
       "driveExit": 21,
       "endsDrive": true,
-      "meaning": "The review converged, but required checks still fail after the drive's CI-repair passes were spent. A re-armed drive repairs again.",
-      "stop": "stopped: CI still fails with its CI-repair passes spent",
+      "meaning": "The diagnosing CI-repair session could not complete the repair on the failing head. The handoff carries its diagnosis and tracker issue when available.",
+      "stop": "stopped: the diagnosing CI-repair session could not complete the repair",
       "cause": "tool-failed",
       "nextOwner": "person",
       "nextAct": "Investigate",
-      "nextStep": "Look at the failing checks, then re-arm the drive to repair again."
+      "nextStep": "Read the diagnosing session’s handoff and address the blocker it recorded."
     },
     {
       "name": "REVIEW_SKIPPED",
