@@ -404,6 +404,38 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.301.0] - 2026-11-22
+
+### Added
+
+- `changelog.release.tagged_by` says who creates a release's tag:
+  `workflow` (the default) or `person`. Set to `person`, the dispatcher's
+  release decision recommends **Tag it by hand** and offers no re-run of
+  the failed gates.
+- `jig dispatch release-owed` takes `--state`, the version's state in the
+  tag plan. The follow-up passes it when it records a release owed.
+
+### Fixed
+
+- The dispatcher's release decision recommended **Re-run the failed gates**
+  even when no gate had failed. Now it recommends the re-run unless the
+  follow-up recorded that every required check passed or that the version is
+  outside automatic tagging, or a re-run was already requested. It
+  recommends **Tag it by hand**, giving the reason, when every required
+  check passed, the version is outside automatic tagging, the repository
+  allows no re-run (`changelog.release.rerun_failed_gates: 0`), or the
+  repository makes the tag a person's step. Releases that differ in what is
+  left to try are not grouped together.
+- Review drivers file follow-up issues for findings they defer without waiting for confirmation, including at the default autonomy level. If filing fails, the finding stays in the pull request's Deferred section.
+- A host's weights file (`weights.local.yaml`) that names an account the
+  machine file does not list no longer closes every account for new
+  launches. The name is skipped and the file's other weights apply; each
+  account's reason in the receipt and the account view names what was
+  skipped, and the host raises one notice naming the file, the skipped
+  names and the accounts the machine file lists. Every other fault in the
+  accounts section or the document still closes every account; an invalid
+  `lanes` section does not change account weights.
+
 ## [0.300.4] - 2026-11-21
 
 ### Fixed
@@ -10673,7 +10705,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.0...HEAD
+[0.301.0]: https://github.com/jig-harness/jig/compare/v0.300.4...v0.301.0
 [0.300.4]: https://github.com/jig-harness/jig/compare/v0.300.3...v0.300.4
 [0.300.3]: https://github.com/jig-harness/jig/compare/v0.300.2...v0.300.3
 [0.300.2]: https://github.com/jig-harness/jig/compare/v0.300.1...v0.300.2

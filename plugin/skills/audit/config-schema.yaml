@@ -1519,7 +1519,7 @@ fields:
     default: workflow
     read_by: [changelog, dispatch]
     repository_only: true
-    since: next
+    since: 0.301.0
   changelog.consumer_actions:
     type: boolean
     default: false
