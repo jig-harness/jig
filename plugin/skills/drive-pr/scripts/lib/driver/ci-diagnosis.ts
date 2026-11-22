@@ -108,8 +108,28 @@ const STOOD_DOWN = "the pass stood down: its gate no longer matched the task";
 /** Stand-downs one head may take before the drive stops instead of redispatching. */
 const STAND_DOWN_LIMIT = 2;
 
-const STAND_DOWN_COUNT = /\[stood down (\d+)x\]/;
-const standDownTag = (n: number) => (n > 0 ? ` [stood down ${n}x]` : "");
+/**
+ * The count leads the free-form detail, right after the receipt's own prefix,
+ * so the detail's 1024-character bound can never cut it and no check name
+ * after it can imitate it.
+ */
+const STAND_DOWN_COUNT = /^\[stood down (\d+)x\] /;
+const standDownTag = (n: number) => (n > 0 ? `[stood down ${n}x] ` : "");
+
+/** A skipped receipt for `head` that keeps the stand-downs already taken. */
+async function recordSkipped(
+  pr: string,
+  head: string,
+  text: string,
+  taken?: number,
+): Promise<boolean> {
+  const count = taken ?? (await standDownsAt(pr, head)) ?? 0;
+  return await recordCiAttempt(
+    pr,
+    "repair",
+    `${diagnosisSkippedPrefix(head)}${standDownTag(count)}${text}`,
+  );
+}
 
 /**
  * Stand-downs already taken on `head`. Only the latest receipt per head is
@@ -119,7 +139,11 @@ async function standDownsAt(pr: string, head: string): Promise<number | null> {
   const state = await readDriveState(pr, true);
   if (state === null) return null;
   const last = lastDiagnosisAt(state.ciActions ?? [], head);
-  return Number(STAND_DOWN_COUNT.exec(last?.detail ?? "")?.[1] ?? 0);
+  const prefix = last?.detail.startsWith(diagnosisSkippedPrefix(head))
+    ? diagnosisSkippedPrefix(head)
+    : diagnosisStartedPrefix(head);
+  const rest = (last?.detail ?? "").slice(prefix.length);
+  return Number(STAND_DOWN_COUNT.exec(rest)?.[1] ?? 0);
 }
 
 const INCOMPLETE =
@@ -234,7 +258,7 @@ async function reserveDiagnosis(
   const marked = await recordCiAttempt(
     pr,
     "repair",
-    `${diagnosisStartedPrefix(head)}CI-repair budget spent for ${names}${standDownTag(stoodDown)}`,
+    `${diagnosisStartedPrefix(head)}${standDownTag(stoodDown)}CI-repair budget spent for ${names}`,
   );
   if (!marked) return false;
   const mirrored = await mirrorNow(pr, true);
@@ -242,10 +266,11 @@ async function reserveDiagnosis(
   console.error(
     `Could not publish the CI diagnosis reservation (exit ${mirrored}).`,
   );
-  await recordCiAttempt(
+  await recordSkipped(
     pr,
-    "repair",
-    `${diagnosisSkippedPrefix(head)}the reservation could not be published before dispatch`,
+    head,
+    "the reservation could not be published before dispatch",
+    stoodDown,
   );
   return false;
 }
@@ -273,11 +298,7 @@ export async function diagnoseCi(
     );
     if (driverRuntime.compromised !== "") return await afterTakeover(context);
     if (!result.dispatched) {
-      await recordCiAttempt(
-        context.pr,
-        "repair",
-        `${diagnosisSkippedPrefix(head)}the pass was not dispatched`,
-      );
+      await recordSkipped(context.pr, head, "the pass was not dispatched");
       return result.resumed ? "continue" : result.code;
     }
     const receipt = await judgeReceipt(context.pr, head, readDiagnosis(report));
@@ -297,11 +318,7 @@ async function settleDiagnosis(
   if (result.postPassMailboxExit !== null) {
     if ("standDown" in receipt) {
       const taken = (await standDownsAt(pr, head)) ?? 0;
-      await recordCiAttempt(
-        pr,
-        "repair",
-        `${diagnosisSkippedPrefix(head)}${STOOD_DOWN}${standDownTag(taken + 1)}`,
-      );
+      await recordSkipped(pr, head, STOOD_DOWN, taken + 1);
     }
     if ("text" in receipt)
       await reportOutcome(
@@ -348,11 +365,7 @@ async function standDownOutcome(
       head,
       `The diagnosing pass stood down ${earlier + 1} times on this head without diagnosing it.`,
     );
-  const recorded = await recordCiAttempt(
-    pr,
-    "repair",
-    `${diagnosisSkippedPrefix(head)}${STOOD_DOWN}${standDownTag(earlier + 1)}`,
-  );
+  const recorded = await recordSkipped(pr, head, STOOD_DOWN, earlier + 1);
   return recorded ? "continue" : 1;
 }
 
@@ -364,10 +377,10 @@ async function staleHeadOutcome(
   const current = await readPrSnapshot(pr, null);
   if (current.ok && current.value.state !== "OPEN") return 5;
   if (current.ok && current.value.head !== head) {
-    await recordCiAttempt(
+    await recordSkipped(
       pr,
-      "repair",
-      `${diagnosisSkippedPrefix(head)}the pull request moved to ${current.value.head}`,
+      head,
+      `the pull request moved to ${current.value.head}`,
     );
     return "continue";
   }
