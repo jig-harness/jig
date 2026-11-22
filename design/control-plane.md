@@ -1305,8 +1305,8 @@ hub as its source and serves the page; the hub's front routes the page to
 that server, never to the hub's host-facing protocol port, so the page
 still talks only to its own dashboard server. The front also routes one
 more path, `/feed`, to the hub's feed endpoint, which serves only the
-source feed's reads (`hello`, `snapshot`, `changes`, `log.rows`,
-`receipt.get`, `thread.get`) to a viewer the front names: a laptop's dashboard reaches
+  source feed's reads (`hello`, `snapshot`, `changes`, `settlement.get`,
+  `log.rows`, `receipt.get`, `thread.get`) to a viewer the front names: a laptop's dashboard reaches
 the hub there. The hub reads the viewer and its grant from the headers on
 the front's own socket, as the dashboard does, and filters every answer
 by that grant; the endpoint takes no host calls, which stay on the

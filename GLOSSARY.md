@@ -9,24 +9,36 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+<a id="occurrence-identity"></a>
+
 - **Occurrence identity** — the stable identifier for one specific need for
   attention or action. It lets a later report settle that need without also
   settling a newer need that has the same display key.
+
+<a id="coverage-revision"></a>
 
 - **Coverage revision** — the version of a source's declared authority scope
   that covered an observation. It is checked with the observation and the
   hub's acceptance fence so an earlier owner cannot relabel a later report as
   historical evidence.
 
+<a id="authority-epoch"></a>
+
 - **Authority epoch** — one uninterrupted interval in which a source is
   authorized to report for a repository. A handoff starts a new epoch; evidence
   from an earlier epoch remains usable only when its observation and recorded
   acceptance both fall within that epoch.
 
+<a id="grant-revision"></a>
+
 - **Grant revision** — the monotonically increasing version of a viewer's
   access grant. A protected response names the revision and expiry that
   authorized it, allowing the browser to reject a late response from an older
-  or broader grant.
+  or broader grant. Its policy authority assigns revisions in policy-update
+  order and persists that sequence across restart; a changed authority instance
+  requires a fresh authorization handshake.
+
+<a id="scope-invalidation"></a>
 
 - **Scope invalidation** — a feed event that tells a consumer to remove a row
   because its current access no longer permits it. It is not settlement

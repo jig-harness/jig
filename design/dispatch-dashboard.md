@@ -752,16 +752,18 @@ envelope: the value, or a coded failure with a reason.
 - **`hello`** returns `{protocol {major, minor}, instance, jig {version,
   channel}, now, viewer {login per forge, proof}, front {kind, login,
   capabilities}?, sources[] {host, name, state, since, protocol, jig,
-  clockOffsetMs, capabilities[]}, scope {revision, expiresAt}}`. A source is fresh, overdue,
+  clockOffsetMs, capabilities[]}, scope {laptop {revision, expiresAt}, hub {revision, expiresAt}?}}`.
+  A source is fresh, overdue,
   unreachable, refused or incompatible. A different major version is
   refused, naming the side to update; minor versions only add, and unknown
   fields are ignored. Version 1's scope is what the person's machine
   reads, narrowed, for a viewer a front names, by that viewer's grant
   ([A front on a private network](#a-front-on-a-private-network)). Every
-  protected response and stream event also carries the viewer, scope revision
-  and expiry that authorized its delivery. Before display or caching, the page
-  checks that binding against its current `hello` scope; an older request that
-  finishes after a narrower confirmation is discarded.
+  protected response and stream event also carries the viewer and the laptop
+  binding that authorized its delivery; hub-backed data carries its hub binding
+  too. Before display or caching, the page checks every applicable binding
+  against its current `hello` scope and the earlier expiry; an older request
+  that finishes after either grant narrows is discarded.
 - **Changes**: an opaque cursor that combines one per source. One watch per
   dashboard, shared by every open stream, produces the notices: it checks the
   records' versions (the database's data version, the drive and pickup
@@ -838,8 +840,11 @@ own machine only.
   authority's attestation of its [occurrence identity](../GLOSSARY.md#occurrence-identity),
   observation time, [coverage revision](../GLOSSARY.md#coverage-revision) and
   [authority epoch](../GLOSSARY.md#authority-epoch), plus the hub-recorded
-  acceptance time and epoch fence; the fold verifies both against the authority
-  record before it settles anything. The incarnation is an id the dispatcher's
+  acceptance time and epoch fence, all bound to the exact repository, occurrence
+  and settlement facts; the fold verifies both bindings against the authority
+  record before it settles anything. With no hub, the local source authority
+  records and verifies the same evidence; the hub fence applies only to
+  hub-backed replay. The incarnation is an id the dispatcher's
   state database gets when it is created, so records from a recreated
   database are told apart. A snapshot holds the live work the newest line
   names: the line, each live drive's ledger (at most 64 KiB, about 2 KiB on
@@ -854,7 +859,7 @@ own machine only.
   settlement; an incomplete read or ordinary record removal reports
   incompleteness and never emits `gone`, while scope removal emits a distinct
   scope invalidation that removes the row without settling its occurrence. A
-  cursor from another incarnation gets `reset` and a replacement snapshot that
+  Any cursor that can no longer be served gets `reset` and a replacement snapshot that
   either includes authoritative settlement evidence for each previously open
   omitted occurrence or leaves it internally unresolved for the bounded
   `settlement.get(occurrence)` read; the hub retains the evidence for that
@@ -864,7 +869,10 @@ own machine only.
   across reconnects. One fold library turns records and forge and tracker reads
   into the work and host views, and every dashboard and a shared control plane
   run it.
-- **Bounded reads besides.** The hub also answers `log.rows` (one page
+- **Bounded reads besides.** The hub also answers `settlement.get(occurrence)`,
+  which returns retained authoritative settlement evidence or `history-unavailable`;
+  a client then keeps the occurrence unresolved and asks the source directly on
+  its next reachable read, `log.rows` (one page
   through a host's reported outcome rows), `receipt.get(run)` and
   `thread.get(address)`, the thread derived with the same fold as
   `jig ask --thread`, each with the views API's envelope and the feed
