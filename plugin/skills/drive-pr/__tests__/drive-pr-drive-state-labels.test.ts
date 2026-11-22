@@ -219,7 +219,12 @@ describe("a drive writes its own state label", () => {
     const events = readState(run.stateDir, "999")?.events as DriveEvent[];
     const stop = events.findLast(({ kind }) => kind === "stop");
     expect(stop?.cause).toBe(String(DRIVE_EXIT.FORGE_RATE_LIMITED));
-    expect(parseMs(stopInstant(stop) ?? "")).toBeGreaterThan(before);
+    // The fixture's reset is one day ahead; the outbound transport's own
+    // fallback is 15 minutes, so a window around the day tells them apart.
+    const day = 24 * 60 * 60 * 1000;
+    const recorded = parseMs(stopInstant(stop) ?? "");
+    expect(recorded).toBeGreaterThan(before + day - 60_000);
+    expect(recorded).toBeLessThan(before + day + 10 * 60_000);
   });
 
   it("records the reset when the stopped-ledger helper's comment read is rate-limited", async () => {
