@@ -11,6 +11,76 @@ export interface CiAction {
   action: "rerun" | "repair";
   detail: string;
 }
+export const diagnosisPrefix = (head: string) => `diagnosis: head ${head}: `;
+export const diagnosisStartedPrefix = (head: string) =>
+  `diagnose: head ${head}: `;
+export const diagnosisSkippedPrefix = (head: string) =>
+  `diagnose-skipped: head ${head}: `;
+
+/** The latest escalation at `head`: a started, recorded or skipped diagnosis. */
+export function lastDiagnosisAt(
+  actions: readonly CiAction[],
+  head: string,
+): CiAction | undefined {
+  return actions.findLast(
+    (a) =>
+      a.action === "repair" &&
+      (a.detail.startsWith(diagnosisPrefix(head)) ||
+        a.detail.startsWith(diagnosisStartedPrefix(head)) ||
+        a.detail.startsWith(diagnosisSkippedPrefix(head))),
+  );
+}
+
+/**
+ * What the escalation at `head` left: its recorded diagnosis, a note that the
+ * session recorded none, or `undefined` when none ran or it was skipped.
+ */
+export function diagnosisOutcome(
+  actions: readonly CiAction[],
+  head: string,
+): string | undefined {
+  const last = lastDiagnosisAt(actions, head);
+  if (
+    last === undefined ||
+    last.detail.startsWith(diagnosisSkippedPrefix(head))
+  )
+    return undefined;
+  return last.detail.startsWith(diagnosisPrefix(head))
+    ? last.detail.slice(diagnosisPrefix(head).length)
+    : "the diagnosing session recorded no outcome";
+}
+
+function diagnosisHead(action: CiAction): string | undefined {
+  if (action.action !== "repair") return undefined;
+  const match = /^diagnos(?:is|e(?:-skipped)?): head (\S+): /.exec(
+    action.detail,
+  );
+  return match?.[1];
+}
+
+export function diagnosisDetail(
+  actions: readonly CiAction[],
+): string | undefined {
+  return actions
+    .findLast(
+      (a) => a.action === "repair" && a.detail.startsWith("diagnosis: head "),
+    )
+    ?.detail.replace(/^diagnosis: head \S+: /, "");
+}
+
+/** Keep the latest diagnosis receipt for every head when telemetry is trimmed. */
+export function retainedDiagnosis(actions: readonly CiAction[]): CiAction[] {
+  const latest = new Map<string, CiAction>();
+  for (const action of actions) {
+    const head = diagnosisHead(action);
+    if (head !== undefined) {
+      latest.delete(head);
+      latest.set(head, action);
+    }
+  }
+  return [...latest.values()];
+}
+
 const ACTION_LIMIT = 10;
 const DETAIL_LIMIT = 1024;
 
@@ -31,6 +101,19 @@ function isCiAction(v: unknown): v is CiAction {
     v.detail.length > 0 &&
     v.detail.length <= DETAIL_LIMIT
   );
+}
+
+/** Preserve per-head diagnosis control receipts ahead of disposable telemetry. */
+export function boundedCiActions(actions: readonly CiAction[]): CiAction[] {
+  const diagnoses = retainedDiagnosis(actions).slice(-ACTION_LIMIT);
+  const telemetry = actions.filter(
+    (action) => diagnosisHead(action) === undefined,
+  );
+  const telemetryAllowance = ACTION_LIMIT - diagnoses.length;
+  return [
+    ...diagnoses,
+    ...(telemetryAllowance === 0 ? [] : telemetry.slice(-telemetryAllowance)),
+  ];
 }
 
 export function isOptionalCiActions(v: unknown): boolean {
@@ -59,7 +142,7 @@ export async function recordCiAction(
     if (!isCiAction(action)) fail(2, "CI action needs a nonempty detail");
     return {
       ...s,
-      ciActions: [...(s.ciActions ?? []), action].slice(-ACTION_LIMIT),
+      ciActions: boundedCiActions([...(s.ciActions ?? []), action]),
     };
   });
   return 0;

@@ -2,7 +2,6 @@
 import type { FailingChecks } from "./infra-recovery.ts";
 import { failedRunsField, failedStatusesField } from "./failed-runs.ts";
 import type { FailedRun } from "../status/workflow-runs.ts";
-import { CI_REPAIR_SPENT_EXIT } from "./settings.ts";
 
 export interface CiAttempts {
   repairs: Map<string, number>;
@@ -71,7 +70,6 @@ export function repairSelection(
     names,
     used,
     failing: selected,
-    exhaustedExit: budget === 0 ? 1 : CI_REPAIR_SPENT_EXIT,
   };
 }
 

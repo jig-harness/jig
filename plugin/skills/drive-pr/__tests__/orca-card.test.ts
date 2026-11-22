@@ -8,6 +8,7 @@ import {
   stopComment,
 } from "../scripts/lib/driver/orca-card.ts";
 import {
+  CI_REPAIR_SPENT_EXIT,
   CHECK_RUNS_UNREADABLE_EXIT,
   MAX_ROUNDS_EXIT,
   MAILBOX_STOPPED_EXIT,
@@ -48,6 +49,20 @@ function parkedState(...questions: string[]): DriveState {
       reason,
       round: 2,
     })),
+  };
+}
+
+function diagnosedState(): DriveState {
+  return {
+    ...freshState(42),
+    ciActions: [
+      {
+        at: "2026-11-20T00:00:00Z",
+        round: 2,
+        action: "repair",
+        detail: "diagnosis: head abc123: issue #123 tracks the failing check",
+      },
+    ],
   };
 }
 
@@ -200,6 +215,26 @@ describe("in an Orca terminal", () => {
     });
     await cardOnStop("42", REVIEWER_FAILED_EXIT, d);
     expect(reads).toEqual([]);
+    expect(calls[2]).toBe(setArgs("--unread", "--comment", comment));
+  });
+
+  test("a spent CI-repair stop reads the diagnosis for its card comment", async () => {
+    const comment =
+      "PR #42 stopped after diagnosing CI (exit 21): issue #123 tracks the failing check";
+    const {
+      calls,
+      reads,
+      deps: d,
+    } = deps(
+      {
+        "worktree current --json": current,
+        [showArgs]: readCard,
+        [setArgs("--unread", "--comment", comment)]: set,
+      },
+      diagnosedState(),
+    );
+    await cardOnStop("42", CI_REPAIR_SPENT_EXIT, d);
+    expect(reads).toEqual(["42"]);
     expect(calls[2]).toBe(setArgs("--unread", "--comment", comment));
   });
 

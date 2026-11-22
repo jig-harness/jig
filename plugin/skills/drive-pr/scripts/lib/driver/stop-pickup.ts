@@ -1,11 +1,11 @@
 /**
  * A drive armed after a stop whose next step is the drive's own: a stall
- * (`STALLED`, exit `14`), an unreadable check-runs listing (exit `25`), CI still red with its repair passes spent
+ * (`STALLED`, exit `14`), an unreadable check-runs listing (exit `25`), an unresolved CI repair
  * (`CI_REPAIR_SPENT`, exit `21`), checks still failing on the infrastructure
  * after their re-runs (`CI_INFRA_PERSISTED`, exit `23`) or a pass deadline the driver did not
- * restart from (`PASS_DEADLINE`, exit `15`). The dispatcher re-drives each once per head
- * commit (the infrastructure stop once per stop, after a backoff), and a person
- * may re-arm any. The stop is the drive state's last
+ * restart from (`PASS_DEADLINE`, exit `15`). A person may re-arm any. The
+ * dispatcher hands a diagnosed head to a person and can re-drive a legacy
+ * CI stop or a stop whose head changed. The stop is the drive state's last
  * `stop` event, which the ledger carries to another clone, so the new drive
  * reads it wherever it runs.
  *
@@ -43,8 +43,8 @@ const CI_STOPS: ReadonlyMap<number, (round: string) => string[]> = new Map([
   [
     CI_REPAIR_SPENT_EXIT,
     (round: string) => [
-      `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT: the drive before this one stopped with exit ${CI_REPAIR_SPENT_EXIT} (CI_REPAIR_SPENT) at round ${round}: the review had converged, and CI on its head still failed after its CI-repair passes.`,
-      "This drive has its own CI-repair passes: work the round as usual, and the driver dispatches the repair once the review converges again.",
+      `RE-ARMED AFTER THE CI-REPAIR BUDGET WAS SPENT: the drive before this one stopped with exit ${CI_REPAIR_SPENT_EXIT} (CI_REPAIR_SPENT) at round ${round}: the review had converged, and CI repair on its head was unresolved.`,
+      "Read the prior handoff and any tracker issue it records before working on this head.",
     ],
   ],
   [
