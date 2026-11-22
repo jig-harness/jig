@@ -2,7 +2,6 @@
 // What Jig provides to build the scaffolding, and how it fits an organization: the configuration layers and the tracker interface.
 import "../../styles/factory.css";
 import ActorChip from "../ActorChip.astro";
-import ActorLine from "../ActorLine.astro";
 import Arrow from "../Arrow.astro";
 import SectionHead from "../SectionHead.astro";
 import { factory, layers, trackerInterface } from "../../lib/data/index.ts";
@@ -65,9 +64,6 @@ const layerRows = await Promise.all(
             <div class="adapter">
               <span class="adapter-name">Jira Cloud</span>
               <span class="muted">chosen with <code>adapter: jira</code></span>
-            </div>
-            <div class="adapter todo">
-              <ActorLine actor={{ kind: "todo", item: "12", text: "a plan file kept in the repository" }} />
             </div>
           </div>
         </div>

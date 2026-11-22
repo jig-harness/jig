@@ -1,0 +1,53 @@
+{
+  "steps": [
+    {
+      "n": 1,
+      "name": "Queue",
+      "what": "Several issues wait in front of Pick up. Every agent is at rest. Nothing is on the line yet."
+    },
+    {
+      "n": 2,
+      "name": "Pick up",
+      "what": "The Pick up agent lifts the first issue out of the queue and onto the line. The item is an issue."
+    },
+    {
+      "n": 3,
+      "name": "Build and open",
+      "what": "The pull request appears. The Open agent acts. The item is the issue with its pull request."
+    },
+    {
+      "n": 4,
+      "name": "Drive",
+      "what": "The Drive agent inspects the pull request. The item shows comments and build status, some pending and one failed. A question waits on the person's desk."
+    },
+    {
+      "n": 5,
+      "name": "Repair, then green",
+      "what": "The Repair agent acts on the failed check. Every check is green."
+    },
+    { "n": 6, "name": "Merge", "what": "A person merges. The item is merged." },
+    {
+      "n": 7,
+      "name": "Follow up",
+      "what": "A small new issue travels the short side feed back to the queue's tail. The merged item rests at the end of the line."
+    },
+    {
+      "n": 8,
+      "name": "Capacity",
+      "what": "The dispatcher reads Memory, Processor, Disk and Forge budget as gauges. The Usage limit is a wall, and work waits in front of it."
+    }
+  ],
+  "prompt": {
+    "intro": "Each candidate was asked to draw one work item travelling through Jig's line of seven stations, as stills in jig-harness.dev's plate style: ink on paper, hatching, one green accent. Stations are moving agents (robotic arms or other machines with a tool fitted to the job); the item changes form from an issue to a merged pull request; a person is a person, shown where a question waits and where they merge. This is a design round, not a build.",
+    "fixed": [
+      "The line is not a loop. Follow up reaches Pick up as a short side feed.",
+      "The pickup queue is drawn. A person merges; agents never do.",
+      "The item is never a plain box, and each of its five forms reads in greyscale.",
+      "Green is only for a person's moments and for checks turning green. Agents are ink, paper and grey.",
+      "Capacity shows no numbers and no mention of more than one account. Only the wall stops work.",
+      "Colours are the site's tokens, so light and dark both work. Text is a fixed list of words in the system sans stack.",
+      "Each agent is drawn in three still poses: rest, reach, act."
+    ],
+    "words": "Words in the drawings: Queue, Pick up, Build, Open, Drive, Repair, Merge, Follow up, Dispatcher, Question, Issue, Pull request, Comments, Checks, Merged, Memory, Processor, Disk, Forge budget, Usage limit."
+  }
+}

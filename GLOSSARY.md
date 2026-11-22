@@ -2365,8 +2365,7 @@ make, use the entry's term instead.
   offers: an upload, the file in a comment, or a link to a hosted copy.
   [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists what
   still assumes Linear. Adapters for Linear, GitHub
-  Issues and Jira are built; an adapter for a plan file kept in the
-  repository is planned ([ROADMAP.md](ROADMAP.md) item 12).
+  Issues and Jira are built.
 - **Governed transport** — the one module through which Jig's code calls
   one outside system: a *forge*, an issue tracker, a reflection store. It
   reuses an answer it holds before it sends, asks the machine's *budget
@@ -3306,6 +3305,11 @@ make, use the entry's term instead.
   three-dimensional models on the web: one file holding a model's parts,
   their placement, their materials and its animations, which a browser can
   load and draw ([design/website.md](design/website.md)).
+- **SVG (scalable vector graphics)** — an image format made of shapes and
+  lines described in text, which a browser draws at any size without losing
+  sharpness and which a program can write. The line figure's candidates are
+  SVG files written by a script from one description
+  ([intro figure pass 2](design/prototypes/intro-figure-pass-2/README.md)).
 - **UV map** — the flat layout a three-dimensional model's surface is
   unfolded onto, giving every point on it two coordinates (called U and V)
   so that a pattern or an image can be drawn across the surface; the website

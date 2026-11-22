@@ -891,9 +891,8 @@ constraints:
   and fields, or a GitHub organization's fields, stay out of reach. Overruled
   by the person accepting this design.
 - **A whole adapter as an external script.** The interface has an
-  operation for every read and write the skills make, and the next adapter
-  is planned as code ([plan.md](plan.md) item 12); the command per facet,
-  when a repository needs it, covers what no store expresses.
+  operation for every read and write the skills make. A per-facet command
+  covers values the tracker's store cannot express.
 - **Every field shown as a label**, as `jira.field_labels` does, so no
   caller changes. It leaves type and size with no defined value in the
   interface.

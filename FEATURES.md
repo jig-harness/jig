@@ -419,8 +419,8 @@ repository's own names left out, for a person to confirm.
 - **Skills:** [`jig`](plugin/skills/jig/README.md)
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M9](modules/M9-tasks-memory/)
-- **On the roadmap:** a plan-file tracker adapter (roadmap item 12); the
-  values the skills still assume (roadmap item 10), and an `init` command
+- **On the roadmap:** the values the skills still assume (roadmap item 10),
+  and an `init` command
   that writes this file (roadmap item 26)
 
 ## Documents that say what is true now

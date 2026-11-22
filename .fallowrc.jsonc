@@ -20,6 +20,7 @@
     "seeds/**",
     "design/prototypes/intro-directions/figure/**",
     "design/prototypes/intro-directions/canvas/**",
+    "design/prototypes/intro-figure-pass-2/**",
     "dist/**",
     ".context/**"
   ],
