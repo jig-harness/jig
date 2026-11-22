@@ -10,8 +10,8 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 ## Now
 
 First comes what lets a team's pull requests reach merge-ready with nobody
-watching. An agent working alone cannot get past a person, the dispatcher
-leaves no work stranded, and a person sees and steers the work from one
+watching. An agent working alone cannot get past a person. The dispatcher
+leaves no work stranded. A person sees and steers the work from one
 place, with each piece of work and its correspondence together. Every run
 the dispatcher starts says what it concluded. Last, a host
 can run the line on its own model-provider accounts and on a choice of agent
@@ -335,13 +335,13 @@ Guidelines' minimum contrast, in both modes.
 
 ### 41. Configurable issue attributes: type, priority and size
 
-Every issue records its type, priority and size (an epic needs no size), and
-a team chooses where its tracker keeps each one: the tracker's own field, a
+Every issue records its type, priority and size (an epic needs no size).
+A team chooses where its tracker keeps each one: the tracker's own field, a
 custom field or labels. Each tracker Jig supports has a documented default,
 and the stores for Jira and Linear are built. Still to come are the live
-checks of those stores, and a live check of the two ways to file a bug: the
-bug form, and the report-bug script run on a draft that carries the `bug` label,
-with an account and a CLI that can set an issue's type. Each should end with
+checks of those stores. A live check of the two ways to file a bug is also owed.
+Run the bug form, then run the report-bug script on a draft that carries the
+`bug` label, with an account and a CLI that can set an issue's type. Each should end with
 the native Bug type and no `bug` label. Last come a person's step on Jig's
 own organization, retiring GitHub's default Task issue type, and a person's
 acceptance of the scope or a waiver.
