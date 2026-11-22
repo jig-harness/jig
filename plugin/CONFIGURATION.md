@@ -330,27 +330,44 @@ pull_requests:
     - dependabot[bot]
 ```
 
-A listed bot's pull request meets condition 8 only when all of these hold;
-any fact that does not read leaves it in approve first, and the card's
-fact names the rule:
+A listed bot's pull request meets condition 8 only when all of these hold.
+Any fact that does not read withholds the exception, and the card's fact
+names the rule. Where an own author association or a person's qualifying
+approval already satisfies condition 8, the pull request is placed on that
+evidence, and the other rows (a draft, a branch behind its base, branch
+protection) still decide its lane:
 
 1. Its head is in the repository, not a fork.
-2. Every commit's author, as the forge links it, is the bot, with a valid
-   signature unless `signed: false`, or one of `committers` (by default
-   the people `dispatch.adopt.authors` names, whose sessions push a
-   drive's repairs). The forge signs the commits a bot makes through its
-   API; set `signed: false` for a self-hosted bot that commits unsigned.
+2. Every commit's author, as the forge links it, is the bot or one of
+   `committers` (by default the people `dispatch.adopt.authors` names,
+   whose sessions push a drive's repairs). Unless `signed: false`, each
+   such commit must also carry a valid signature and name the same account
+   as its committer, so a signature is bound to the account the commit is
+   attributed to. The forge verifies the commits an app makes through its
+   API only when the request is authenticated as that app and sets no
+   custom author, committer or signature: confirm that your bot's commits
+   show as verified before you list it, or set `signed: false` for a bot
+   that commits unsigned, which trusts the author attribution alone.
 3. Every changed file, and a renamed file's old path, matches one of
    `paths`. By default those are `package.json` and the JavaScript
    lockfiles (`bun.lock`, `bun.lockb`, `pnpm-lock.yaml`, `yarn.lock`,
    `package-lock.json`, `npm-shrinkwrap.json`) anywhere in the repository;
-   a repository in another ecosystem lists its own. Listing CI definitions
-   (`.github/workflows/**`) lets a merged change run with the repository's
-   secrets: do it only on purpose.
-4. Where `update_types` is set, the update type shows in the manifest
-   diff and is one of them: `major`, `minor` or `patch` by the version
-   numbers before and after, `pin` for a range made exact, `lockfile` when
-   only lockfiles changed. The branch, title and description are not read:
+   a repository in another ecosystem lists its own. The default gives a bot
+   authority over executable configuration and dependency resolution:
+   `package.json` can declare lifecycle scripts that run on install, and a
+   lockfile decides which packages resolve. Without `update_types`, a bare
+   login is not restricted to the dependency fields of those files, so set
+   `update_types` to bind the manifest diff to dependency updates. Listing
+   CI definitions (`.github/workflows/**`) lets a merged change run with the
+   repository's secrets: do it only on purpose.
+4. Where `update_types` is set, every dependency change the manifest diff
+   shows is one of them, so a pull request grouping a minor and a patch
+   update needs both listed: `major`, `minor` or `patch` by the version
+   numbers before and after (with the same range operator), `pin` for a
+   range made exact with a full version, `lockfile` when only lockfiles
+   changed. A change inside a section other than the dependency sections,
+   a decrease, or a range change that moves the operator with the numbers
+   does not read. The branch, title and description are not read:
    they are text the bot or the upstream wrote. A manifest other than
    `package.json`, a dependency added or removed, or a range that is not a
    version does not read.
@@ -358,13 +375,14 @@ fact names the rule:
 Everything else in the predicate is unchanged: the review of the head must
 still be witnessed by the reviewer app's check run, so where
 `review.reviewer_app` names none, a person's approval is still the witness
-and the setting changes nothing. The list is read from the default branch
+and the setting changes nothing for the approval requirement. The list is read from the default branch
 by the board, `jig ask` and the drive's merge-ready announcement alike,
 never from the pull request's own configuration. The commits and files are
-read in one request pinned to the head (the forge's compare of the base
-branch with the head), only for a pull request by a listed bot; the
-dispatcher keeps the read between ticks, since a head's commits and files
-never change.
+read from the pull request's own commit and file listings, pinned to the
+head, only for a pull request by a listed bot whose condition 8 nothing else
+satisfies; a pull request with a full page of either does not read whole.
+The dispatcher keeps the read between ticks, keyed by the head and the base
+commit, and the drive's announcement keeps it for the run.
 
 With `dispatch.adopt` on, a listed bot's pull request is adopted whether or
 not `adopt.authors` names the bot, and it is driven to convergence while

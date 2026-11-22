@@ -291,23 +291,56 @@ async function boardAutomation(
   return automation === undefined ? {} : { automation };
 }
 
+/** Why a converged pull request cannot be placed this tick; `null` when it can. */
+function unreadReason(
+  number: number,
+  input: BoardInput,
+  read: FactsRead,
+  retryUnread: ReadonlyMap<number, string>,
+): string | null {
+  const retryFailure = retryUnread.get(number);
+  if (retryFailure !== undefined) return retryFailure;
+  const facts = read.pulls.get(number);
+  if (facts === undefined) return "the board read did not give it";
+  const listed = input.heads.get(number);
+  if (facts.head !== listed)
+    return `its head moved between the tick's reads (${String(listed).slice(0, 7)}, then ${facts.head.slice(0, 7)})`;
+  if (input.ended?.() === true)
+    return "the tick's bound ended before its commits and files were read";
+  return null;
+}
+
+/** A population read that finds no converged pull request: nothing to place, and every kept read retired. */
+function emptyRead(slug: string, io: BoardIo): BoardRead {
+  io.keepAutomation?.(slug, []);
+  return {
+    ok: true,
+    reason: null,
+    cards: [],
+    unread: [],
+    pending: [],
+    ms: 0,
+    cost: 0,
+    remaining: null,
+  };
+}
+
+/** A read whose last request ended past the deadline places nothing. */
+function pastDeadline(numbers: number[], ms: number): BoardRead {
+  return notRead(
+    `the board read ran past its ${BOARD_DEADLINE_MS / 1000} s deadline`,
+    numbers,
+    ms,
+  );
+}
+
 /** One repository's board read (see the module comment). */
 export async function readBoard(
   input: BoardInput,
   io: BoardIo = realIo,
 ): Promise<BoardRead> {
   const converged = convergedDrives(input.drives);
-  if (converged.length === 0)
-    return {
-      ok: true,
-      reason: null,
-      cards: [],
-      unread: [],
-      pending: [],
-      ms: 0,
-      cost: 0,
-      remaining: null,
-    };
+  if (converged.length === 0) return emptyRead(input.slug, io);
   const numbers = converged.map((d) => d.number);
   const floor = budgetFloor(input.budget);
   if (floor !== null) return notRead(floor, numbers);
@@ -322,12 +355,7 @@ export async function readBoard(
     );
   const read = facts.value;
   const ms = io.now() - startedMs;
-  if (ms > BOARD_DEADLINE_MS)
-    return notRead(
-      `the board read ran past its ${BOARD_DEADLINE_MS / 1000} s deadline`,
-      numbers,
-      ms,
-    );
+  if (ms > BOARD_DEADLINE_MS) return pastDeadline(numbers, ms);
   const checkedRules = attempt(
     "unreadable",
     "the board review rules are invalid",
@@ -339,27 +367,12 @@ export async function readBoard(
   const cards: BoardCard[] = [];
   const unread: BoardRead["unread"] = [];
   for (const drive of converged) {
-    const retryFailure = retryUnread.get(drive.number);
-    if (retryFailure !== undefined) {
-      unread.push({ number: drive.number, reason: retryFailure });
+    const why = unreadReason(drive.number, input, read, retryUnread);
+    if (why !== null) {
+      unread.push({ number: drive.number, reason: why });
       continue;
     }
-    const facts = read.pulls.get(drive.number);
-    const listed = input.heads.get(drive.number);
-    if (facts === undefined) {
-      unread.push({
-        number: drive.number,
-        reason: "the board read did not give it",
-      });
-      continue;
-    }
-    if (facts.head !== listed) {
-      unread.push({
-        number: drive.number,
-        reason: `its head moved between the tick's reads (${String(listed).slice(0, 7)}, then ${facts.head.slice(0, 7)})`,
-      });
-      continue;
-    }
+    const facts = read.pulls.get(drive.number) as ForgeFacts;
     const verifiedSha = String(drive.evidence.verifiedSha ?? "");
     const automation = await boardAutomation(
       io,
@@ -400,6 +413,8 @@ export async function readBoard(
       since: String(drive.evidence.heartbeat ?? ""),
     });
   }
+  const total = io.now() - startedMs;
+  if (total > BOARD_DEADLINE_MS) return pastDeadline(numbers, total);
   io.keepAutomation?.(input.slug, numbers);
   return {
     ok: true,
@@ -410,7 +425,7 @@ export async function readBoard(
       ...unread.map((u) => u.number),
       ...cards.filter((c) => c.place === "stay").map((c) => c.number),
     ],
-    ms,
+    ms: total,
     cost: read.cost,
     remaining: read.remaining,
   };

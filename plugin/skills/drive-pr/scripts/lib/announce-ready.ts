@@ -37,7 +37,10 @@ import {
 import { ghCallTimeoutSeconds } from "./proc.ts";
 import { REVIEWER_CHECK } from "./status/evidence.ts";
 import { type TrustedList, trustedAutomationOf } from "./trusted-automation.ts";
-import { automationFor } from "./trusted-automation-read.ts";
+import {
+  type AutomationCache,
+  automationFor,
+} from "./trusted-automation-read.ts";
 
 /** What the predicate says of the announced head: `rc` `0` with its lane, `4` placed elsewhere, `1` unread. */
 export interface AnnounceReady {
@@ -97,6 +100,13 @@ function rcOf(answer: Readiness): AnnounceReady["rc"] {
   return answer.place === "stay" ? 1 : 4;
 }
 
+/** The run's kept commit and file reads: a recheck of the same head and base commit reuses them. */
+const runReads = new Map<string, unknown>();
+const runCache: AutomationCache = {
+  get: <T>(key: string) => (runReads.get(key) ?? null) as T | null,
+  set: (key, value) => void runReads.set(key, value),
+};
+
 /** Ask the predicate about PR `pr` at `head`, read live from the forge. */
 export async function announceReady(
   pr: string,
@@ -120,6 +130,7 @@ export async function announceReady(
     facts,
     rules,
     ghCallTimeoutSeconds(),
+    runCache,
   );
   const answer = readiness(
     {

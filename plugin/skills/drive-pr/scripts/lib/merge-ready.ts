@@ -125,6 +125,8 @@ export interface ForgeFacts {
   crossRepository?: boolean | null;
   /** The branch it merges into; absent when not read. */
   base?: string;
+  /** The commit that branch pointed at when the forge computed the pull request's diff; absent when not read. */
+  baseOid?: string;
   labels: string[];
   /** A truncated label connection cannot prove a pull request is outside the dispatch scope. */
   labelsPartial?: boolean;
@@ -330,6 +332,11 @@ function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
     .map((c) => c.name);
 }
 
+/** Whether condition 8 already holds without trusted automation: an own author association, or a qualifying approval. */
+export function authorSatisfied(facts: ForgeFacts): boolean {
+  return OWN.has(facts.authorAssociation) || approvedHere(facts);
+}
+
 /** What every row and condition reads of one pull request. */
 interface Read {
   facts: MergeFacts;
@@ -352,9 +359,10 @@ function protection(r: Read): boolean | null {
 
 /** Who wrote it, and who approved it. */
 function authorFact(r: Read): string {
-  if (r.trusted !== null && (r.trusted.met || !r.approved))
-    return r.trusted.fact;
-  if (r.own) return `author is ${r.facts.authorAssociation}`;
+  if (r.trusted?.met === true) return r.trusted.fact;
+  if (OWN.has(r.facts.authorAssociation))
+    return `author is ${r.facts.authorAssociation}`;
+  if (r.trusted !== null && !r.approved) return r.trusted.fact;
   return r.approved
     ? "outside author, approved by a person"
     : `outside author (${r.facts.authorAssociation})`;

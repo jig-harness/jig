@@ -61,9 +61,10 @@ export async function policyFindings(
 /**
  * What `pull_requests.trusted_automation` does in this configuration: a list
  * that does not read trusts nobody; with no `review.reviewer_app` a person's
- * approval is still the review witness, so the list changes no placement;
- * and with `dispatch.adopt` off a listed bot's healthy pull request is never
- * driven, so it reaches the board only on a person's `drive` label.
+ * approval is still the review witness, so the list changes no approval
+ * requirement; and with `dispatch.adopt` off a listed bot's healthy pull
+ * request is not adopted on its own, so it is driven only where a person
+ * labels it `drive` or arms a drive by hand.
  */
 export function trustedFit(config: Config): Finding[] {
   if (at(config, "pull_requests.trusted_automation") === undefined) return [];
@@ -73,7 +74,7 @@ export function trustedFit(config: Config): Finding[] {
       {
         id: "rule:pull_requests.trusted_automation",
         severity: "error",
-        message: `${list.failure.reason}: every bot's pull request stays in approve first`,
+        message: `${list.failure.reason}. The trusted automation exception is disabled.`,
       },
     ];
   if (list.value.length === 0) return [];
@@ -84,14 +85,14 @@ export function trustedFit(config: Config): Finding[] {
       id: "derivation:pull_requests.trusted_automation:witness",
       severity: "warning",
       message:
-        "pull_requests.trusted_automation changes nothing without review.reviewer_app: a person's approval is then the witness of every review, so a listed bot's pull request still waits in approve first",
+        "pull_requests.trusted_automation does not change the approval requirement for merge now without review.reviewer_app: a person's approval is then the witness of every review and also satisfies the author condition",
     });
   if (at(config, "dispatch.adopt.enabled") !== true)
     findings.push({
       id: "derivation:pull_requests.trusted_automation:adopt",
       severity: "info",
       message:
-        "dispatch.adopt is off, so a listed bot's healthy pull request is not driven and reaches Ready to merge only once a person labels it drive",
+        "dispatch.adopt is off, so a listed bot's healthy pull request is not adopted automatically: a person labels it drive or arms a drive by hand before it can reach Ready to merge",
     });
   return findings;
 }

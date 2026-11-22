@@ -117,6 +117,17 @@ function prefetch(
   for (const p of prs) comments.read(slug, p.number).catch(() => undefined);
 }
 
+/** Whether the listing asks where each head lives: for pickup arms, and for the adoption of a trusted bot's pull request. */
+function readsHeadRepository(
+  section: DispatchSection,
+  pickupArms: PickupArms | undefined,
+): boolean {
+  return (
+    (pickupArms?.size ?? 0) > 0 ||
+    (section.adopt.enabled && (section.adopt.trusted?.length ?? 0) > 0)
+  );
+}
+
 /** The forge's part of a repository's tick; `shared` opens the shared records as the login the forge names. */
 export async function readForge(
   repo: RepoTarget,
@@ -130,7 +141,7 @@ export async function readForge(
 ): Promise<ForgeRead> {
   const read = {
     labels: labels !== null,
-    headRepository: (pickupArms?.size ?? 0) > 0,
+    headRepository: readsHeadRepository(section, pickupArms),
   };
   const managed = <T extends { labels?: string[] }>(prs: T[]): T[] =>
     labels?.onlyLabeled === true

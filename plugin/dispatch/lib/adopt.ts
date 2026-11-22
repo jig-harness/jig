@@ -55,6 +55,8 @@ export interface Author {
 /** What the rule reads of an open pull request. */
 export interface Adoptable extends TroubleFacts {
   author?: Author;
+  /** Whether its head is in a fork; a trusted bot's pull request is adopted healthy only when this is `false`. */
+  isCrossRepository?: boolean;
   updatedAt?: string;
   labels?: string[];
 }
@@ -112,10 +114,16 @@ export function adoptionNote(
   drives: ReadonlyArray<{ evidence: Record<string, unknown> }>,
 ): string {
   if (adoption === null) return "";
-  if (adoption.authors.length === 0)
+  if (adoption.authors.length === 0 && adoption.trusted.length === 0)
     return "; dispatch.adopt names no author and the dispatcher's forge login does not read, so it adopts none";
   const adopted = drives.filter((d) => typeof d.evidence.adopted === "string");
-  return `; ${adopted.length} adopted by dispatch.adopt (authors ${adoption.authors.join(", ")}, within ${shownWindow(adoption.withinMs)})`;
+  const who = [
+    ...adoption.authors,
+    ...adoption.trusted.map(
+      (t) => `${t} (trusted automation, same-repository only)`,
+    ),
+  ];
+  return `; ${adopted.length} adopted by dispatch.adopt (authors ${who.join(", ")}, within ${shownWindow(adoption.withinMs)})`;
 }
 
 /** A window in the duration grammar the section takes (`168h`, `90m`, `30s`). */
@@ -155,7 +163,8 @@ export function adopts(
   const author = pr.author;
   if (author === undefined || author.login === "") return null;
   if (labels !== null && hasCommand(labels, pr.labels, "hold")) return null;
-  const trusted = trustedBot(author, adoption);
+  const trusted =
+    pr.isCrossRepository === false && trustedBot(author, adoption);
   if (!eligibleAuthor(author, adoption, trusted)) return null;
   const updated = parseMs(pr.updatedAt ?? "");
   if (!Number.isFinite(updated) || nowMs - updated > adoption.withinMs)

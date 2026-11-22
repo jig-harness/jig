@@ -83,6 +83,7 @@ function authored(
         : { headRefOid: extra.headRefOid }),
     }),
     author: { login, is_bot: extra.bot === true },
+    isCrossRepository: false,
     isDraft: extra.isDraft === true,
     updatedAt,
   };
@@ -337,6 +338,7 @@ describe("trusted automation and the adoption rule", () => {
   const bot = { login: "app/renovate", bot: true };
   const healthy = {
     author: bot,
+    isCrossRepository: false,
     updatedAt: new Date().toISOString(),
     failingChecks: false,
     unresolvedThreads: 0,
@@ -357,6 +359,13 @@ describe("trusted automation and the adoption rule", () => {
     );
     const unlisted = adoptionOf(section(), "drive-bot");
     expect(adopts(healthy, unlisted as Adoption, null, Date.now())).toBeNull();
+  });
+
+  it("does not use the healthy exception for a listed bot's pull request from a fork or of unknown origin", () => {
+    const listed = adoptionOf(section(["renovate[bot]"]), "drive-bot");
+    const { isCrossRepository: _own, ...unknown } = healthy;
+    for (const pr of [{ ...healthy, isCrossRepository: true }, unknown])
+      expect(adopts(pr, listed as Adoption, null, Date.now())).toBeNull();
   });
 
   it("never reads a listed bot's pull request as idle, so its moved head is re-driven", async () => {

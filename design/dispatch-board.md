@@ -189,13 +189,15 @@ dependency bot's identity is trusted, while the third-party text it
 carries (release notes, upstream code) is not, so the rules bound what the
 change may touch rather than what it says. A commit by anyone else, a path
 outside the entry, a fork, or a fact that does not read leaves the pull
-request in approve first, and the card's fact names the rule. The list is
+request without the exception, and the card's fact names the rule; an
+own association or a person's approval can still satisfy condition 8, and
+the other rows decide the lane. The list is
 read from the default branch by every caller, the drive's announcement
 included, never from the pull request's own configuration, which could
-otherwise list its own author. The commits and files are read in one
-request pinned to the head (the forge's compare of the base branch with
-the head), only for a pull request by a listed bot, and kept between ticks
-by head.
+otherwise list its own author. The commits and files are read from the
+pull request's own listings, pinned to the head, only for a pull request
+by a listed bot that nothing else already satisfies, and kept between ticks
+by head and base commit.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".

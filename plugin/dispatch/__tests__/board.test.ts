@@ -401,6 +401,34 @@ it("a known reviewer app brings its check name when the repository names none", 
   expect(rulesOf({ review: {} }).reviewerCheck.test("AI review")).toBe(true);
 });
 
+describe("the board read and its kept reads", () => {
+  it("retires every kept read when no pull request has converged", async () => {
+    const kept: number[][] = [];
+    const empty: BoardIo = {
+      ...io([]),
+      keepAutomation: (_slug, numbers) => kept.push([...numbers]),
+    };
+    const read = await readBoard(input([]), empty);
+    expect(read.ok).toBe(true);
+    expect(kept).toEqual([[]]);
+  });
+
+  it("does not place a card once its last read ran past the deadline", async () => {
+    let now = 0;
+    const slow: BoardIo = {
+      ...io([new Map([[7, forge(7)]])]),
+      now: () => now,
+      automation: async () => {
+        now += BOARD_DEADLINE_MS + 1;
+        return undefined;
+      },
+    };
+    const read = await readBoard(input([converged(7)]), slow);
+    expect(read.ok).toBe(false);
+    expect(read.reason).toContain("deadline");
+  });
+});
+
 describe("the board read and trusted automation", () => {
   const listed = {
     review: { reviewer_app: "example-review" },
@@ -415,7 +443,14 @@ describe("the board read and trusted automation", () => {
     });
   const allowed = {
     head: HEAD,
-    commits: [{ sha: HEAD, login: "renovate[bot]", verified: true }],
+    commits: [
+      {
+        sha: HEAD,
+        login: "renovate[bot]",
+        committer: "renovate[bot]",
+        verified: true,
+      },
+    ],
     files: [{ path: "pnpm-lock.yaml", previous: null, patch: null }],
   };
 

@@ -10,7 +10,7 @@ import {
   type AutomationFile,
   authorLogin,
   DEFAULT_TRUSTED_PATHS,
-  parseCompare,
+  parseListings,
   type TrustedAuthor,
   trustedAutomationOf,
   trustedEntryFor,
@@ -57,7 +57,14 @@ const bump = (before: string, after: string, key = "left-pad") =>
 function automation(over: Partial<AutomationFacts> = {}): AutomationFacts {
   return {
     head: HEAD,
-    commits: [{ sha: HEAD, login: "renovate[bot]", verified: true }],
+    commits: [
+      {
+        sha: HEAD,
+        login: "renovate[bot]",
+        committer: "renovate[bot]",
+        verified: true,
+      },
+    ],
     files: [bump("^1.2.3", "^1.2.4"), lockfile],
     ...over,
   };
@@ -210,21 +217,39 @@ describe("a listed bot's pull request is the repository's own only when every ru
       "a commit by someone else",
       {
         automation: {
-          commits: [{ sha: HEAD, login: "outsider", verified: true }],
+          commits: [
+            {
+              sha: HEAD,
+              login: "outsider",
+              committer: "outsider",
+              verified: true,
+            },
+          ],
         },
       },
       "commit aaaaaaa is by outsider",
     ],
     [
       "a commit with no linked author",
-      { automation: { commits: [{ sha: HEAD, login: "", verified: true }] } },
+      {
+        automation: {
+          commits: [{ sha: HEAD, login: "", committer: "", verified: true }],
+        },
+      },
       "commit aaaaaaa has no linked author",
     ],
     [
       "an unsigned commit by the bot",
       {
         automation: {
-          commits: [{ sha: HEAD, login: "renovate[bot]", verified: false }],
+          commits: [
+            {
+              sha: HEAD,
+              login: "renovate[bot]",
+              committer: "renovate[bot]",
+              verified: false,
+            },
+          ],
         },
       },
       "carries no valid signature",
@@ -265,8 +290,18 @@ describe("a listed bot's pull request is the repository's own only when every ru
 
   it("allows a commit by a listed committer, such as a drive's repair, and an unsigned bot commit where signed is off", () => {
     const commits = [
-      { sha: EARLIER, login: "renovate[bot]", verified: false },
-      { sha: HEAD, login: "Host-Person", verified: false },
+      {
+        sha: EARLIER,
+        login: "renovate[bot]",
+        committer: "renovate[bot]",
+        verified: false,
+      },
+      {
+        sha: HEAD,
+        login: "Host-Person",
+        committer: "host-person",
+        verified: false,
+      },
     ];
     expect(
       verdict({ automation: { commits } }, entry({ signed: false })).met,
@@ -281,7 +316,7 @@ describe("a listed bot's pull request is the repository's own only when every ru
     const refused = verdict({ automation: major }, typed);
     expect(refused.met).toBe(false);
     expect(refused.fact).toContain(
-      "its update type is major, outside patch, minor",
+      "it holds a major update, outside patch, minor",
     );
     const minor = verdict(
       { automation: { files: [bump("^1.2.3", "^1.3.0")] } },
@@ -289,7 +324,7 @@ describe("a listed bot's pull request is the repository's own only when every ru
     );
     expect(minor).toEqual({
       met: true,
-      fact: "trusted automation renovate[bot]: same repository, 1 commit allowed, 1 file within its paths, a minor update",
+      fact: "trusted automation renovate[bot]: same repository, 1 commit allowed, 1 file within its paths, minor update",
     });
     const unread = verdict(
       { automation: { files: [manifest('+    "left-pad": "^1.0.0",')] } },
@@ -351,30 +386,42 @@ describe("the update type a manifest diff shows", () => {
   });
 });
 
-describe("the compare answer", () => {
-  const answer = (over: Record<string, unknown> = {}) => ({
-    total_commits: 1,
-    commits: [
-      {
-        sha: HEAD,
-        author: { login: "renovate[bot]", type: "Bot" },
-        commit: { verification: { verified: true } },
-      },
-    ],
-    files: [
-      { filename: "package.json", patch: "@@ x", previous_filename: null },
-      { filename: "pnpm-lock.yaml", patch: "@@ lock" },
-    ],
+describe("the pull request's listings", () => {
+  const commit = (over: Record<string, unknown> = {}) => ({
+    sha: HEAD,
+    author: { login: "renovate[bot]", type: "Bot" },
+    committer: { login: "renovate[bot]" },
+    commit: { verification: { verified: true } },
     ...over,
   });
+  const fileList = () => [
+    {
+      filename: "package.json",
+      status: "modified",
+      patch: '@@ x\n+  "a": "1",',
+      previous_filename: null,
+    },
+    { filename: "pnpm-lock.yaml", status: "modified", patch: "@@ lock" },
+  ];
 
-  it("reads each commit's linked author and signature, and keeps a manifest's diff only", () => {
-    expect(parseCompare(answer(), HEAD)).toEqual(
+  it("reads each commit's linked author, committer and signature, and keeps a manifest's changed lines only", () => {
+    expect(parseListings([commit()], fileList(), HEAD)).toEqual(
       ok({
         head: HEAD,
-        commits: [{ sha: HEAD, login: "renovate[bot]", verified: true }],
+        commits: [
+          {
+            sha: HEAD,
+            login: "renovate[bot]",
+            committer: "renovate[bot]",
+            verified: true,
+          },
+        ],
         files: [
-          { path: "package.json", previous: null, patch: "@@ x" },
+          {
+            path: "package.json",
+            previous: null,
+            patch: '@@ x\n+  "a": "1",',
+          },
           { path: "pnpm-lock.yaml", previous: null, patch: null },
         ],
       }),
@@ -382,31 +429,132 @@ describe("the compare answer", () => {
   });
 
   it.each([
-    ["more commits than it lists", { total_commits: 2 }, "more commits"],
     [
       "a last commit that is not the head",
-      { commits: [{ sha: EARLIER, author: null, commit: {} }] },
+      [commit({ sha: EARLIER })],
+      fileList(),
       "does not end at the head",
     ],
     [
-      "as many files as one answer can hold",
-      { files: Array.from({ length: 300 }, (_, i) => ({ filename: `f${i}` })) },
+      "a full page of files",
+      [commit()],
+      Array.from({ length: 100 }, (_, i) => ({
+        filename: `f${i}`,
+        status: "added",
+      })),
       "more files",
     ],
-    ["no files", { files: null }, "holds no files"],
-  ])("does not read %s", (_what, over, why) => {
-    const read = parseCompare(answer(over), HEAD);
+    ["no files", [commit()], [], "lists no changed file"],
+    ["no file listing", [commit()], null, "holds no files"],
+    [
+      "a rename with no previous name",
+      [commit()],
+      [{ filename: "package.json", status: "renamed" }],
+      "no previous name",
+    ],
+  ])("does not read %s", (_what, commits, files, why) => {
+    const read = parseListings(commits, files, HEAD);
     expect(read.ok).toBe(false);
     if (!read.ok) expect(read.failure.reason).toContain(why);
   });
 
   it("reads a commit with no linked author as an empty login", () => {
-    const read = parseCompare(
-      answer({ commits: [{ sha: HEAD, author: null, commit: {} }] }),
+    const read = parseListings(
+      [{ sha: HEAD, author: null, commit: {} }],
+      fileList(),
       HEAD,
     );
     expect(read.ok && read.value.commits).toEqual([
-      { sha: HEAD, login: "", verified: false },
+      { sha: HEAD, login: "", committer: "", verified: false },
     ]);
+  });
+});
+
+describe("the rules a review found open", () => {
+  it("refuses a signed commit whose committer is another account", () => {
+    const commits = [
+      {
+        sha: HEAD,
+        login: "renovate[bot]",
+        committer: "someone",
+        verified: true,
+      },
+    ];
+    const v = verdict({ automation: { commits } });
+    expect(v.met).toBe(false);
+    expect(v.fact).toContain("signed for another committer");
+  });
+
+  it("refuses an unsigned repair commit by a listed committer unless signed is off", () => {
+    const commits = [
+      {
+        sha: HEAD,
+        login: "host-person",
+        committer: "host-person",
+        verified: false,
+      },
+    ];
+    expect(verdict({ automation: { commits } }).met).toBe(false);
+  });
+
+  it("refuses present null list values", () => {
+    for (const field of ["paths", "committers", "update_types"]) {
+      const list = trustedAutomationOf(
+        values([{ login: "renovate[bot]", [field]: null }]),
+      );
+      expect(list.ok).toBe(false);
+    }
+  });
+
+  it("does not read the package's own version as a dependency", () => {
+    const own = manifest(
+      '@@ -1,5 +1,5 @@\n-  "version": "1.2.3",\n+  "version": "1.2.4",',
+    );
+    expect(updateTypeOf([own]).ok).toBe(false);
+  });
+
+  it("does not read a change outside the dependency sections", () => {
+    const engines = manifest(
+      '@@ -1,5 +1,5 @@\n   "engines": {\n-    "node": ">=18.1.0",\n+    "node": ">=18.1.1",',
+    );
+    expect(updateTypeOf([engines]).ok).toBe(false);
+  });
+
+  it("does not read a package changed in two sections without their headings", () => {
+    const twice = manifest(
+      '@@ -9,3 +9,3 @@\n-    "x": "1.0.0",\n+    "x": "1.0.1",\n@@ -20,3 +20,3 @@\n-    "x": "1.0.0",\n+    "x": "2.0.0",',
+    );
+    const read = updateTypeOf([twice]);
+    expect(read.ok).toBe(false);
+  });
+
+  it("classifies ranges the policy can read and refuses the rest", () => {
+    expect(updateTypeOf([bump("^1.0.0", "1")]).ok).toBe(false);
+    expect(updateTypeOf([bump("^1.2.3", "~1.2.4")]).ok).toBe(false);
+    expect(updateTypeOf([bump("1.2.4", "1.2.3")]).ok).toBe(false);
+  });
+
+  it("enforces update types per change, not by the largest", () => {
+    const mixed = {
+      files: [bump("^1.2.3", "^1.3.0"), bump("^2.0.0", "^2.0.1", "other")],
+    };
+    const minorOnly = entry({ updateTypes: ["minor"] });
+    const v = verdict({ automation: mixed }, minorOnly);
+    expect(v.met).toBe(false);
+    expect(v.fact).toContain("patch update, outside minor");
+    expect(
+      verdict({ automation: mixed }, entry({ updateTypes: ["minor", "patch"] }))
+        .met,
+    ).toBe(true);
+  });
+
+  it("accepts a listing of the commit cap and refuses one past it", () => {
+    const many = Array.from({ length: 99 }, () => ({ sha: EARLIER }));
+    const read = parseListings(
+      [...many, { sha: HEAD }],
+      [{ filename: "pnpm-lock.yaml", status: "modified" }],
+      HEAD,
+    );
+    expect(read.ok).toBe(false);
   });
 });

@@ -637,7 +637,14 @@ describe("condition 8 for trusted automation", () => {
     base: "main",
     automation: ok({
       head: HEAD,
-      commits: [{ sha: HEAD, login: "renovate[bot]", verified: true }],
+      commits: [
+        {
+          sha: HEAD,
+          login: "renovate[bot]",
+          committer: "renovate[bot]",
+          verified: true,
+        },
+      ],
       files: [{ path: "pnpm-lock.yaml", previous: null, patch: null }],
     }),
     ...over,
@@ -660,7 +667,14 @@ describe("condition 8 for trusted automation", () => {
       bot({
         automation: ok({
           head: HEAD,
-          commits: [{ sha: HEAD, login: "outsider", verified: true }],
+          commits: [
+            {
+              sha: HEAD,
+              login: "outsider",
+              committer: "outsider",
+              verified: true,
+            },
+          ],
           files: [],
         }),
       }),

@@ -85,6 +85,7 @@ function board(
                 author: { __typename: "Bot", login: over.bot },
                 isCrossRepository: false,
                 baseRefName: "main",
+                baseRefOid: "b".repeat(40),
               }),
           isMergeQueueEnabled: false,
           labels: none,
@@ -126,8 +127,11 @@ async function dryRun(
   const { dir, stateDir } = writeFixture(f, scratchClean.dir);
   writeVerifiedSha(stateDir, f.head);
   writeFileSync(join(dir, "board.json"), answer);
-  if (more.compare !== undefined)
-    writeFileSync(join(dir, "compare.json"), JSON.stringify(more.compare));
+  if (more.compare !== undefined) {
+    const answer = more.compare as { commits: unknown; files: unknown };
+    writeFileSync(join(dir, "commits.json"), JSON.stringify(answer.commits));
+    writeFileSync(join(dir, "files.json"), JSON.stringify(answer.files));
+  }
   if (more.timeline !== undefined)
     writeFileSync(join(dir, "timeline.json"), JSON.stringify(more.timeline));
   const proc = Bun.spawn(
@@ -206,7 +210,7 @@ describe("announce-merge-ready.ts and trusted automation", () => {
   const LISTED = 'pull_requests:\n  trusted_automation: ["renovate[bot]"]\n';
   let converged: Fixture & { head: string };
   let compare: unknown;
-  /** A `gh` before the suite's own that answers the compare read from compare.json and keeps the path it was asked for. */
+  /** A `gh` before the suite's own that answers the pull request's commit and file listings and keeps the path it was asked for. */
   let wrapper: string;
   beforeAll(() => {
     wrapper = mkdtempSync(join(tmpdir(), "trusted-gh-"));
@@ -214,9 +218,12 @@ describe("announce-merge-ready.ts and trusted automation", () => {
     writeFileSync(
       gh,
       `#!/usr/bin/env bash
-if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */compare/* ]]; then
+if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/files* ]]; then
   printf '%s' "$2" > "$DRIVE_PR_FIXTURES/last-compare-path.txt"
-  cat "$DRIVE_PR_FIXTURES/compare.json"; exit $?
+  cat "$DRIVE_PR_FIXTURES/files.json"; exit $?
+fi
+if [ "\${1:-}" = "api" ] && [[ "\${2:-}" == */pulls/*/commits* ]]; then
+  cat "$DRIVE_PR_FIXTURES/commits.json"; exit $?
 fi
 exec ${JSON.stringify(join(binDir, "gh"))} "$@"
 `,
@@ -228,15 +235,15 @@ exec ${JSON.stringify(join(binDir, "gh"))} "$@"
       head: scratchClean.head,
     };
     compare = {
-      total_commits: 1,
       commits: [
         {
           sha: scratchClean.head,
           author: { login: "renovate[bot]" },
+          committer: { login: "renovate[bot]" },
           commit: { verification: { verified: true } },
         },
       ],
-      files: [{ filename: "pnpm-lock.yaml" }],
+      files: [{ filename: "pnpm-lock.yaml", status: "modified" }],
     };
   });
   afterAll(() => rmSync(wrapper, { recursive: true, force: true }));

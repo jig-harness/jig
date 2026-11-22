@@ -20,8 +20,8 @@
  *
  * The list is read from the repository's configuration on its default
  * branch, never from the pull request's own copy: every caller passes the
- * default branch's values. The commits and files are read in one request
- * pinned to the head (`trusted-automation-read.ts`), only for a pull request
+ * default branch's values. The commits and files are read from the pull
+ * request's own listings, pinned to the head (`trusted-automation-read.ts`), only for a pull request
  * whose author is listed.
  */
 import { isRecord, isStringArray } from "../../../../shared/guards.ts";
@@ -111,7 +111,7 @@ function listField(
   at: string,
 ): Outcome<string[] | null, "invalid"> {
   const value = raw[key];
-  if (value === undefined || value === null) return ok(null);
+  if (value === undefined) return ok(null);
   if (
     !isStringArray(value) ||
     value.length === 0 ||
@@ -244,6 +244,8 @@ export interface AutomationCommit {
   sha: string;
   /** The author's login, `""` where the forge links none. */
   login: string;
+  /** The committer's login, `""` where the forge links none. */
+  committer: string;
   verified: boolean;
 }
 
@@ -292,7 +294,12 @@ export function trustedEntryFor(
 
 const short = (sha: string) => sha.slice(0, 7);
 
-/** The first commit no rule allows, in words; `null` when every commit is allowed. */
+/**
+ * The first commit no rule allows, in words; `null` when every commit is allowed.
+ * A signature binds a commit to its account only when the forge also links the
+ * committer to that account, so a signed commit counts for a login only when
+ * it is verified and its committer is that login.
+ */
 function foreignCommit(
   commits: readonly AutomationCommit[],
   entry: TrustedAuthor,
@@ -300,13 +307,14 @@ function foreignCommit(
   for (const c of commits) {
     const login = trustedLogin(c.login);
     if (login === "") return `commit ${short(c.sha)} has no linked author`;
-    if (login === entry.login) {
-      if (entry.signed && !c.verified)
-        return `commit ${short(c.sha)} by ${entry.login} carries no valid signature`;
-      continue;
-    }
-    if (!entry.committers.includes(login))
+    const own = login === entry.login;
+    if (!own && !entry.committers.includes(login))
       return `commit ${short(c.sha)} is by ${c.login}`;
+    if (!entry.signed) continue;
+    if (!c.verified)
+      return `commit ${short(c.sha)} by ${c.login} carries no valid signature`;
+    if (trustedLogin(c.committer) !== login)
+      return `commit ${short(c.sha)} by ${c.login} is signed for another committer (${c.committer === "" ? "none linked" : c.committer})`;
   }
   return null;
 }
@@ -356,18 +364,22 @@ function updateKind(
   allowed: readonly UpdateType[] | null,
 ): Outcome<string, "fail"> {
   if (allowed === null) return ok("");
-  const type = updateTypeOf(files);
-  if (!type.ok)
+  const types = updateTypeSetOf(files);
+  if (!types.ok)
     return failed(
       "fail",
-      `its update type does not read: ${type.failure.reason}`,
+      `its update type does not read: ${types.failure.reason}`,
     );
-  if (!allowed.includes(type.value))
+  const outside = UPDATE_TYPES.find(
+    (t) => types.value.has(t) && !allowed.includes(t),
+  );
+  if (outside !== undefined)
     return failed(
       "fail",
-      `its update type is ${type.value}, outside ${allowed.join(", ")}`,
+      `it holds a ${outside} update, outside ${allowed.join(", ")}`,
     );
-  return ok(`, a ${type.value} update`);
+  const shown = UPDATE_TYPES.filter((t) => types.value.has(t));
+  return ok(`, ${shown.join(" and ")} update${shown.length === 1 ? "" : "s"}`);
 }
 
 /** Whether a pull request by a listed bot is the repository's own (see the module comment). */
@@ -396,9 +408,10 @@ export function trustVerdict(
   };
 }
 
-/** A version range's numbers: an operator, and major, minor and patch. */
+/** A version range's numbers: its operator, whether all three parts are written, and major, minor and patch. */
 interface Version {
-  ranged: boolean;
+  op: string;
+  full: boolean;
   parts: [number, number, number];
 }
 
@@ -408,27 +421,51 @@ const VERSION =
 function versionOf(text: string): Version | null {
   const m = VERSION.exec(text.trim());
   if (m === null) return null;
-  const op = m[1] ?? "";
+  const op = m[1] === "=" ? "" : (m[1] ?? "");
   return {
-    ranged: op !== "" && op !== "=",
+    op,
+    full: m[3] !== undefined && m[4] !== undefined,
     parts: [Number(m[2]), Number(m[3] ?? 0), Number(m[4] ?? 0)],
   };
 }
 
-/** One dependency's update type, from its range before and after. */
+const compareParts = (a: Version, b: Version): number =>
+  a.parts[0] - b.parts[0] || a.parts[1] - b.parts[1] || a.parts[2] - b.parts[2];
+
+/**
+ * One dependency's update type, from its range before and after: `null`
+ * where the change is not one the policy can classify (a range operator that
+ * changes with the numbers, a decrease, a pin to a partial version).
+ */
 function typeOfChange(before: string, after: string): UpdateType | null {
   const a = versionOf(before);
   const b = versionOf(after);
   if (a === null || b === null) return null;
-  const [a1, a2, a3] = a.parts;
-  const [b1, b2, b3] = b.parts;
-  if (a1 !== b1) return "major";
-  if (a2 !== b2) return "minor";
-  if (a3 !== b3) return "patch";
-  return a.ranged && !b.ranged ? "pin" : null;
+  const order = compareParts(a, b);
+  if (order > 0) return null;
+  if (order === 0) return pinOf(a, b);
+  if (a.op !== b.op) return null;
+  if (a.parts[0] !== b.parts[0]) return "major";
+  return a.parts[1] !== b.parts[1] ? "minor" : "patch";
 }
 
-const PAIR = /^([-+])\s*"([^"]+)"\s*:\s*"([^"]*)"\s*,?\s*$/;
+/** A range made exact at the same numbers, with all three parts written. */
+const pinOf = (a: Version, b: Version): UpdateType | null =>
+  a.op !== "" && b.op === "" && b.full ? "pin" : null;
+
+const PAIR = /^([-+])(\s*)"([^"]+)"\s*:\s*"([^"]*)"\s*,?\s*$/;
+const OPENER = /^[-+ ](\s*)"([^"]+)"\s*:\s*\{\s*$/;
+
+/** The manifest sections that hold dependency ranges. */
+const DEPENDENCY_SECTIONS: ReadonlySet<string> = /* @__PURE__ */ new Set([
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+]);
+
+/** The indentation at which a key sits inside a section: deeper than the top level's two spaces or one tab. */
+const NESTED = /^( {3,}|\t{2,}| +\t|\t+ )/;
 
 function isDiffChangeLine(line: string): boolean {
   return (
@@ -438,21 +475,55 @@ function isDiffChangeLine(line: string): boolean {
   );
 }
 
-/** Removed and added key-version maps from a manifest patch. */
+type Pairs = Map<string, string>;
+
+/** One changed line as a dependency's key and version, or why it is not one. */
+function changedPair(
+  line: string,
+  section: string | null,
+): Outcome<{ side: string; name: string; version: string }, "unread"> {
+  const m = PAIR.exec(line);
+  if (m === null)
+    return failed("unread", "a changed line is not a key and its version");
+  const name = m[3] ?? "";
+  if (!NESTED.test(m[2] ?? ""))
+    return failed("unread", `${name} is not inside a dependency section`);
+  if (section !== null && !DEPENDENCY_SECTIONS.has(section))
+    return failed(
+      "unread",
+      `${name} is in ${section}, not a dependency section`,
+    );
+  return ok({ side: m[1] ?? "", name, version: m[4] ?? "" });
+}
+
+/**
+ * Removed and added key-version maps from a manifest patch. A key counts only
+ * as a dependency: nested below the manifest's top level, and, where the
+ * patch shows the section it sits in, in one of the dependency sections.
+ * Keys are kept apart by that section, and a key the patch changes twice in
+ * one section, or twice with the section unseen, is ambiguous.
+ */
 function diffPairs(
   patch: string,
-): Outcome<
-  { removed: Map<string, string>; added: Map<string, string> },
-  "unread"
-> {
-  const removed = new Map<string, string>();
-  const added = new Map<string, string>();
+): Outcome<{ removed: Pairs; added: Pairs }, "unread"> {
+  const removed: Pairs = new Map();
+  const added: Pairs = new Map();
+  let section: string | null = null;
   for (const line of patch.split("\n")) {
+    if (line.startsWith("@@")) section = null;
+    else section = OPENER.exec(line)?.[2] ?? section;
     if (!isDiffChangeLine(line)) continue;
-    const m = PAIR.exec(line);
-    if (m === null)
-      return failed("unread", "a changed line is not a key and its version");
-    (m[1] === "-" ? removed : added).set(m[2] ?? "", m[3] ?? "");
+    const pair = changedPair(line, section);
+    if (!pair.ok) return pair;
+    const { side, name, version } = pair.value;
+    const target = side === "-" ? removed : added;
+    const key = `${section ?? ""}\u0000${name}`;
+    if (target.has(key))
+      return failed(
+        "unread",
+        `${name} changes more than once and is ambiguous`,
+      );
+    target.set(key, version);
   }
   return ok({ removed, added });
 }
@@ -466,24 +537,21 @@ function changesOf(
   const { removed, added } = parsed.value;
   const changes: Array<[string, string, string]> = [];
   for (const key of new Set([...removed.keys(), ...added.keys()])) {
+    const name = key.split("\u0000")[1] ?? key;
     const before = removed.get(key);
     const after = added.get(key);
     if (before === undefined || after === undefined)
-      return failed("unread", `${key} is added or removed, not updated`);
-    if (before !== after) changes.push([key, before, after]);
+      return failed("unread", `${name} is added or removed, not updated`);
+    if (before !== after) changes.push([name, before, after]);
   }
   return ok(changes);
 }
 
-function largerType(a: UpdateType, b: UpdateType): UpdateType {
-  return UPDATE_TYPES.indexOf(b) > UPDATE_TYPES.indexOf(a) ? b : a;
-}
-
-/** One manifest file's largest update type, or `null` for a lockfile. */
-function fileUpdateType(
+/** One manifest file's update types, or `null` for a lockfile. */
+function fileUpdateTypes(
   f: AutomationFile,
   lockfiles: ReadonlySet<string>,
-): Outcome<UpdateType | null, "unread"> {
+): Outcome<Set<UpdateType> | null, "unread"> {
   const name = f.path.split("/").at(-1) ?? "";
   if (lockfiles.has(name)) return ok(null);
   if (name !== MANIFEST)
@@ -495,64 +563,106 @@ function fileUpdateType(
     return failed("unread", `${f.path}: ${changes.failure.reason}`);
   if (changes.value.length === 0)
     return failed("unread", `${f.path} changes no dependency's version`);
-  let largest: UpdateType = "lockfile";
+  const types = new Set<UpdateType>();
   for (const [key, before, after] of changes.value) {
     const type = typeOfChange(before, after);
     if (type === null)
       return failed(
         "unread",
-        `${f.path}: ${key} goes from ${before} to ${after}, which is not a version update`,
+        `${f.path}: ${key} goes from ${before} to ${after}, which is not a version update the policy can classify`,
       );
-    largest = largerType(largest, type);
+    types.add(type);
   }
-  return ok(largest);
+  return ok(types);
 }
 
 /**
- * The largest update type a change shows: from each manifest diff's
- * dependency ranges, or `lockfile` when only lockfiles changed. Anything
- * else (another manifest, a range that is not a version, a dependency added
- * or removed, a manifest with no diff) does not read.
+ * Every update type a change shows: each dependency's, from the manifest
+ * diffs, or `lockfile` when only lockfiles changed. Anything else (another
+ * manifest, a range that is not a version, a dependency added or removed, a
+ * manifest with no diff) does not read.
  */
+export function updateTypeSetOf(
+  files: readonly AutomationFile[],
+): Outcome<Set<UpdateType>, "unread"> {
+  const lockfiles = new Set(LOCKFILE_NAMES);
+  const types = new Set<UpdateType>();
+  for (const f of files) {
+    const own = fileUpdateTypes(f, lockfiles);
+    if (!own.ok) return own;
+    for (const t of own.value ?? []) types.add(t);
+  }
+  return ok(types.size === 0 ? new Set<UpdateType>(["lockfile"]) : types);
+}
+
+/** The largest update type a change shows (`updateTypeSetOf`). */
 export function updateTypeOf(
   files: readonly AutomationFile[],
 ): Outcome<UpdateType, "unread"> {
-  const lockfiles = new Set(LOCKFILE_NAMES);
-  let largest: UpdateType = "lockfile";
-  for (const f of files) {
-    const type = fileUpdateType(f, lockfiles);
-    if (!type.ok) return type;
-    if (type.value !== null) largest = largerType(largest, type.value);
-  }
-  return ok(largest);
+  const types = updateTypeSetOf(files);
+  if (!types.ok) return types;
+  return ok(
+    UPDATE_TYPES.filter((t) => types.value.has(t)).at(-1) ?? "lockfile",
+  );
 }
 
-/** The most commits and files one compare answer lists; a longer pull request does not read whole. */
-const COMPARE_COMMITS = 250;
-const COMPARE_FILES = 300;
+/** The entries one listing page holds; a pull request with as many does not read whole. */
+export const LISTING_PAGE = 100;
 
 function parseCommit(c: unknown): Outcome<AutomationCommit, "unreadable"> {
   if (!isRecord(c) || typeof c.sha !== "string")
-    return failed("unreadable", "a commit of the compare answer has no sha");
+    return failed("unreadable", "a commit of the listing has no sha");
   const author = isRecord(c.author) ? c.author.login : undefined;
+  const committer = isRecord(c.committer) ? c.committer.login : undefined;
   const commit = isRecord(c.commit) ? c.commit : {};
   const verification = isRecord(commit.verification) ? commit.verification : {};
   return ok({
     sha: c.sha,
     login: typeof author === "string" ? author : "",
+    committer: typeof committer === "string" ? committer : "",
     verified: verification.verified === true,
   });
 }
 
+/**
+ * A manifest patch reduced to what the rules read: hunk markers, changed
+ * lines and the lines that open an object, so the raw diff is not kept.
+ */
+function compactPatch(patch: string): string {
+  return patch
+    .split("\n")
+    .filter(
+      (line) =>
+        line.startsWith("@@") || isDiffChangeLine(line) || OPENER.test(line),
+    )
+    .join("\n");
+}
+
+/** Why a file record's status and previous name do not read; `null` when they do. */
+function statusProblem(
+  name: string,
+  f: Record<string, unknown>,
+): string | null {
+  if (typeof f.status !== "string") return `${name} has no status`;
+  const moved = f.status === "renamed" || f.status === "copied";
+  return moved &&
+    (typeof f.previous_filename !== "string" || f.previous_filename === "")
+    ? `${name} is ${f.status} with no previous name`
+    : null;
+}
+
 function parseFile(f: unknown): Outcome<AutomationFile, "unreadable"> {
   if (!isRecord(f) || typeof f.filename !== "string")
-    return failed("unreadable", "a file of the compare answer has no name");
+    return failed("unreadable", "a file of the listing has no name");
+  const problem = statusProblem(f.filename, f);
+  if (problem !== null) return failed("unreadable", problem);
   const manifest = f.filename.split("/").at(-1) === MANIFEST;
   return ok({
     path: f.filename,
     previous:
       typeof f.previous_filename === "string" ? f.previous_filename : null,
-    patch: manifest && typeof f.patch === "string" ? f.patch : null,
+    patch:
+      manifest && typeof f.patch === "string" ? compactPatch(f.patch) : null,
   });
 }
 
@@ -569,29 +679,27 @@ function parseList<T>(
   return ok(out);
 }
 
-/** The compare answer's commits and files, or why they do not read whole. */
-export function parseCompare(
-  answer: unknown,
+/** The pull request's commit and file listings, or why they do not read whole. */
+export function parseListings(
+  commitList: unknown,
+  fileList: unknown,
   head: string,
 ): Outcome<AutomationFacts, "unreadable"> {
-  if (!isRecord(answer) || !Array.isArray(answer.commits))
-    return failed("unreadable", "the compare answer holds no commits");
-  if (!Array.isArray(answer.files))
-    return failed("unreadable", "the compare answer holds no files");
-  const total = answer.total_commits;
-  if (
-    typeof total !== "number" ||
-    total !== answer.commits.length ||
-    total >= COMPARE_COMMITS
-  )
+  if (!Array.isArray(commitList))
+    return failed("unreadable", "the commit listing holds no commits");
+  if (!Array.isArray(fileList))
+    return failed("unreadable", "the file listing holds no files");
+  if (commitList.length >= LISTING_PAGE)
     return failed("unreadable", "more commits than one read holds");
-  if (answer.files.length >= COMPARE_FILES)
+  if (fileList.length >= LISTING_PAGE)
     return failed("unreadable", "more files than one read holds");
-  const commits = parseList(answer.commits, parseCommit);
+  if (fileList.length === 0)
+    return failed("unreadable", "the file listing lists no changed file");
+  const commits = parseList(commitList, parseCommit);
   if (!commits.ok) return commits;
   if (commits.value.at(-1)?.sha !== head)
-    return failed("unreadable", "the compare answer does not end at the head");
-  const files = parseList(answer.files, parseFile);
+    return failed("unreadable", "the commit listing does not end at the head");
+  const files = parseList(fileList, parseFile);
   if (!files.ok) return files;
   return ok({ head, commits: commits.value, files: files.value });
 }

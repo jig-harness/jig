@@ -8,11 +8,11 @@ release: minor
   Dependabot, whose converged pull requests count as the repository's own
   for the Ready predicate, so they reach merge now instead of approve
   first. A listed bot's pull request qualifies only when its head is in the
-  repository, every commit is the bot's own signed commit or a listed
-  committer's, every changed file is within the entry's paths (by default
+  repository, every commit is the bot's own or a listed committer's, signed for
+  the account it names, every changed file is within the entry's paths (by default
   `package.json` and the JavaScript lockfiles), and, where the entry sets
   `update_types`, its manifest diff shows an allowed update type. Any fact
-  that does not read leaves it in approve first, and the card's fact names
+  that does not read withholds the exception, and the card's fact names
   the rule. The list is read from the default branch by the board, `jig
   ask` and the drive's merge-ready announcement, never from the pull
   request's own configuration. A person still merges.

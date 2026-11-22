@@ -44,7 +44,7 @@ export const FACTS_PAGE = 20;
 function pullFields(n: number): string {
   return `pr${n}: pullRequest(number: ${n}) {
       number headRefOid isDraft mergeable mergeStateStatus reviewDecision authorAssociation isMergeQueueEnabled
-      author { __typename login } isCrossRepository baseRefName
+      author { __typename login } isCrossRepository baseRefName baseRefOid
       labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
       reviewThreads(first: ${THREADS}) { pageInfo { hasNextPage } nodes { isResolved } }
       reviewRequests(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } } } }
@@ -194,6 +194,7 @@ function states(
   | "author"
   | "crossRepository"
   | "base"
+  | "baseOid"
 > {
   const cross = node.isCrossRepository;
   return {
@@ -209,6 +210,7 @@ function states(
     ),
     crossRepository: typeof cross === "boolean" ? cross : null,
     base: str(node.baseRefName),
+    baseOid: str(node.baseRefOid),
   };
 }
 
