@@ -436,21 +436,17 @@ describe("more standing causes than one comment holds", () => {
     expect(readFailures(SLUG, root)).toEqual([]);
   });
 
-  it("counts the causes it held back as lost when the write that carries their summary fails", async () => {
+  // A new cause changes the summary; the runtime answers the write of it as given.
+  async function writeSummary(notify: SessionRuntime["notify"]) {
     const root = newRoot();
     const card = { comment: NOTICES_NAME, unread: true };
     await tick(root, card);
-    // A new cause changes the summary, and the runtime's write of it fails.
     const extra = cause(`${SLUG} PR #101 parked at now`, 900, "PR #101");
     const workspace = noticesWorkspace(root, card.comment);
     recordComment(workspace, card.comment, root, SLUG);
     const state = {
       root,
-      runtime: {
-        async notify() {
-          return { ok: false, lost: true, detail: "the write timed out" };
-        },
-      } satisfies Partial<SessionRuntime>,
+      runtime: { notify } satisfies Partial<SessionRuntime>,
       machine: { runtimeTimeoutMs: 1000 },
     } as unknown as ApplyState;
     const report = reportOf([...many, extra]);
@@ -462,53 +458,39 @@ describe("more standing causes than one comment holds", () => {
       { ...SETTINGS, book: actionBook(SLUG, failures, () => undefined, root) },
     );
     const key = keyOf(extra);
-    expect(report.notifications.find((n) => n.key === key)).toMatchObject({
+    return {
+      notification: report.notifications.find((n) => n.key === key),
+      row: readFailures(SLUG, root).find((r) => r.key === `notice ${key}`),
+      card,
+    };
+  }
+
+  it("counts the causes it held back as lost when the write that carries their summary fails", async () => {
+    const { notification, row } = await writeSummary(async () => ({
+      ok: false,
+      lost: true,
+      detail: "the write timed out",
+    }));
+    expect(notification).toMatchObject({
       outcome: "lost",
       detail: "the write timed out",
     });
-    expect(
-      readFailures(SLUG, root).find((r) => r.key === `notice ${key}`),
-    ).toBeDefined();
+    expect(row).toBeDefined();
   });
 
   it("counts the causes it held back as lost when the write succeeds but its read-back lacks their summary", async () => {
-    const root = newRoot();
     const card = { comment: NOTICES_NAME, unread: true };
-    await tick(root, card);
-    // A new cause changes the summary, and the runtime's write of it fails.
-    const extra = cause(`${SLUG} PR #101 parked at now`, 900, "PR #101");
-    const workspace = noticesWorkspace(root, card.comment);
-    recordComment(workspace, card.comment, root, SLUG);
-    const state = {
-      root,
-      runtime: {
-        async notify() {
-          return {
-            ok: true,
-            detail: "written",
-            comment: card.comment,
-            unread: card.unread,
-          };
-        },
-      } satisfies Partial<SessionRuntime>,
-      machine: { runtimeTimeoutMs: 1000 },
-    } as unknown as ApplyState;
-    const report = reportOf([...many, extra]);
-    await applyNotices(
-      state,
-      REPO,
-      report,
-      { ok: true, source: "test", workspaces: [workspace] },
-      { ...SETTINGS, book: actionBook(SLUG, failures, () => undefined, root) },
-    );
-    const key = keyOf(extra);
-    expect(report.notifications.find((n) => n.key === key)).toMatchObject({
+    const { notification, row } = await writeSummary(async () => ({
+      ok: true,
+      detail: "written",
+      comment: card.comment,
+      unread: card.unread,
+    }));
+    expect(notification).toMatchObject({
       outcome: "lost",
       detail: expect.stringContaining("does not carry the summary"),
     });
-    expect(
-      readFailures(SLUG, root).find((r) => r.key === `notice ${key}`),
-    ).toBeDefined();
+    expect(row).toBeDefined();
   });
 
   it("refills a comment a person read with the causes that wait and a summary of the rest, within the limit", async () => {
