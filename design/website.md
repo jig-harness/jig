@@ -84,28 +84,29 @@ the same promise, then expands the line before its foundations.
 ### The home page's one loop
 
 The page opens on the delivery-line headline and checkable sentence, then
-steps through one item along the line. The scenario is a small change to an
-existing repository: **“You want an
-export to include a missing column.”** A ready work item states the column
-and its acceptance check. You start the pickup. An agent claims it, builds
-the change and opens a draft pull request. Review finds an edge case; the
-agent repairs it and runs the checks again. If the item needs a choice
-about the export's meaning, the agent stops with options for you. Once the
-review and checks settle, you inspect the pull request and merge. The
-repository's follow-up records what the merge owes and sends any remaining
-work back to the tracker. That is the loop, with the merge as its human
-boundary, rather than a second tour of the architecture.
+steps through five short steps, in this order: the line (seven stations, run
+as a loop, with the person merging at the sixth and the follow-up sending
+what the merge owes back to the first); the tick (a timer wakes the
+dispatcher, which starts what should be running and is not); the slots (two
+sessions per account, and the wall, the usage limit that keeps an account out
+of every launch until it resets); the ledger (the drive keeps its round, last
+head checked and parked questions in one comment on the pull request); and
+the question (when only a person can settle something, the drive parks a
+question with its options and the next tick re-arms it once answered). The
+exact copy is in the round's brief. The page closes on “You merge.” That is
+the loop, with the merge as its human boundary, rather than a second tour of
+the architecture.
 
-This is an illustrative scenario, labelled as such. A recorded run used as
+The steps are illustrative, labelled as such. A recorded run used as
 evidence carries its source and date and lives on the line page. It must not
 be presented as evidence of unattended starts unless the recording shows
-them. The home page ends the scenario with paths to the line and to adoption.
+them. The home page ends the steps with paths to the line and to adoption.
 The audit remains one step from home: a visible **“Start with an audit”**
 link goes to the adoption page's audit instructions, for a team adopting
 one module at a time.
 
 The first screen answers what Jig does and who merges. The rest of the
-home page explains the scenario, gives the short human boundary, and offers
+home page explains the five steps, gives the short human boundary, and offers
 the adoption path. It does not inventory the features. These parts move
 down a level:
 
@@ -174,7 +175,7 @@ the module catalog rather than becoming another home-page feature grid.
 
 After this amendment merges, `design-brief-builder` prepares the external
 [Claude Design](../GLOSSARY.md) session. Its bundle carries the headline,
-checkable sentence, scenario, layer inventory, human boundary, destination
+checkable sentence, five steps, layer inventory, human boundary, destination
 table and the source documents at a named commit. It includes the page
 table, the existing tokens and components, the parser migration contract
 below. The brief goes to the design session without an outside reference
@@ -273,7 +274,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README.md, FACTORY.md | planned message under item 52: delivery-line headline, checkable sentence and the stepped work-item scenario from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
+| `/` | README.md, FACTORY.md | planned message under item 52: delivery-line headline, checkable sentence and the five-step introduction from § The home page's one loop; the human merge boundary and direct paths to the line, adoption and its audit instructions; the accepted design round chooses the presentation |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
