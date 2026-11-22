@@ -15,7 +15,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: website-deploy
+  # Versioned group name: the unversioned `website-deploy` queue is held by a
+  # GitHub Actions run that cannot be cancelled, so deploys serialize here.
+  group: website-deploy-v2
   cancel-in-progress: false
 
 jobs:
