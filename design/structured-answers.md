@@ -42,18 +42,21 @@ and the [operator commands](../plugin/skills/operator/SKILL.md).
 A pick selects an option in the browser and can be undone. On the board,
 the recommendation is first, and its number is only a shortcut. Committing
 a pick on the board copies the answer line with the decision digest and
-any note. A guarded pick takes a confirmation step that shows the
-option's changes and costs. See the [board keys](dispatch-board.md).
+any note. A pick is guarded when its class is not a named `Decide` act or
+its option is irreversible; it takes a confirmation step that shows the
+option's changes and costs. With no pick, Copy leaves every option
+unselected and copies the answer lines the person can complete. See the
+[board keys](dispatch-board.md).
 
 ## Showing what was decided
 
-The thread shows the question's options and the answer it received, and
-the dashboard indicates stale or disputed answers. When the drive re-arms
-on an answer, its ledger records a resolution receipt for the park
-occurrence, with the consumed answers and outcome. The dispatcher's
-outcome log counts approvals from those receipts. For a park removed
-from an open ledger, the absence of a receipt records a removal when the
-ledger has no indication that receipts were lost.
+Today, `jig ask --thread` shows a trusted answer as its raw `answer <key>:`
+line. It does not show the question's options or a resolved choice. When
+the drive re-arms on an answer, its ledger records a resolution receipt for
+the park occurrence, with the consumed answers and outcome. The
+dispatcher’s outcome log counts approvals from those receipts. For a park
+removed from an open ledger, the absence of a receipt records a removal
+when the ledger has no indication that receipts were lost.
 
 ## Who may answer
 
