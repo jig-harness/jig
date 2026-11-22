@@ -12,6 +12,3 @@ release: patch
   ownership from plan items 39 and 42
   to items 36 and 42, in the Protocol index, in the chapter's own status line and in its data file: item 36 owns
   the remaining merge-station work and item 42 the thread work.
-- The Needs and structured answers chapter (`plugin/protocol/needs-and-answers.md`)
-  drops plan item 46 from its published ownership, in the Protocol index and in
-  the chapter's own status line: plan item 50 alone moves it now.
