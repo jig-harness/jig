@@ -757,7 +757,11 @@ envelope: the value, or a coded failure with a reason.
   refused, naming the side to update; minor versions only add, and unknown
   fields are ignored. Version 1's scope is what the person's machine
   reads, narrowed, for a viewer a front names, by that viewer's grant
-  ([A front on a private network](#a-front-on-a-private-network)).
+  ([A front on a private network](#a-front-on-a-private-network)). Every
+  protected response and stream event also carries the viewer, scope revision
+  and expiry that authorized its delivery. Before display or caching, the page
+  checks that binding against its current `hello` scope; an older request that
+  finishes after a narrower confirmation is discarded.
 - **Changes**: an opaque cursor that combines one per source. One watch per
   dashboard, shared by every open stream, produces the notices: it checks the
   records' versions (the database's data version, the drive and pickup
@@ -831,9 +835,11 @@ own machine only.
 - **`snapshot()` and `changes(since)`** return records in their
   [envelope](../GLOSSARY.md), each with `{host, incarnation, kind, key,
   generation, at, visibility}`. A settlement record also carries the source
-  authority's attestation of its occurrence, observation time, coverage
-  revision and authority epoch; the fold verifies that attestation against the
-  authority record for the epoch before it settles anything. The incarnation is an id the dispatcher's
+  authority's attestation of its [occurrence identity](../GLOSSARY.md#occurrence-identity),
+  observation time, [coverage revision](../GLOSSARY.md#coverage-revision) and
+  [authority epoch](../GLOSSARY.md#authority-epoch), plus the hub-recorded
+  acceptance time and epoch fence; the fold verifies both against the authority
+  record before it settles anything. The incarnation is an id the dispatcher's
   state database gets when it is created, so records from a recreated
   database are told apart. A snapshot holds the live work the newest line
   names: the line, each live drive's ledger (at most 64 KiB, about 2 KiB on
@@ -850,7 +856,10 @@ own machine only.
   scope invalidation that removes the row without settling its occurrence. A
   cursor from another incarnation gets `reset` and a replacement snapshot that
   either includes authoritative settlement evidence for each previously open
-  omitted occurrence or leaves it unresolved for a settlement read. A cursor
+  omitted occurrence or leaves it internally unresolved for the bounded
+  `settlement.get(occurrence)` read; the hub retains the evidence for that
+  lookup window. The page displays an omitted unresolved row only when its
+  current grant and visibility class still permit it. A cursor
   names a point in those records, not a connection, so it stays servable
   across reconnects. One fold library turns records and forge and tracker reads
   into the work and host views, and every dashboard and a shared control plane

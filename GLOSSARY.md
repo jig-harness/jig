@@ -9,6 +9,29 @@ make, use the entry's term instead.
 
 ## Core ideas
 
+- **Occurrence identity** — the stable identifier for one specific need for
+  attention or action. It lets a later report settle that need without also
+  settling a newer need that has the same display key.
+
+- **Coverage revision** — the version of a source's declared authority scope
+  that covered an observation. It is checked with the observation and the
+  hub's acceptance fence so an earlier owner cannot relabel a later report as
+  historical evidence.
+
+- **Authority epoch** — one uninterrupted interval in which a source is
+  authorized to report for a repository. A handoff starts a new epoch; evidence
+  from an earlier epoch remains usable only when its observation and recorded
+  acceptance both fall within that epoch.
+
+- **Grant revision** — the monotonically increasing version of a viewer's
+  access grant. A protected response names the revision and expiry that
+  authorized it, allowing the browser to reject a late response from an older
+  or broader grant.
+
+- **Scope invalidation** — a feed event that tells a consumer to remove a row
+  because its current access no longer permits it. It is not settlement
+  evidence, so the consumer keeps the underlying occurrence unresolved.
+
 - **Preflight** — a small check that runs before a stage starts, to prove a
   condition the stage needs. For example, the dispatcher checks whether an
   account can reach a tracker before launching work that must use it.
