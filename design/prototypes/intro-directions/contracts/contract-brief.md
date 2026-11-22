@@ -6,7 +6,8 @@ about 200 words each, into one result file (path given by the coordinator).
 ## You may not open
 The current site's source or its design documents (anything under a `website/` or `design/`
 directory of the Jig repository, README.md, FACTORY.md). Use only `../briefs/brief.md`, `../figure/`
-(to see the engraving manner) and `../canvas/logo.svg`. Independence from what exists is the point.
+(to see the engraving manner), `../canvas/logo.svg` and the applicable assignment file
+(`astra-assignments.md` or `claude-assignments.md`). Independence from what exists is the point.
 
 ## Each contract gets one assigned reference world and one assigned constraint
 You stay inside both. Select the matching row from `astra-assignments.md` or
