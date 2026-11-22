@@ -342,8 +342,8 @@ and the stores for Jira and Linear are built. Still to come are the live
 checks of those stores, and a live check of the two ways to file a bug: the
 bug form, and the report-bug script run with an account and a CLI that can set
 an issue's type. Each should end with the native Bug type and no `bug` label;
-where the type cannot be set, the script files the bug untyped and leaves the
-typing to triage. Last, a person accepts the scope or waives it.
+where the type cannot be set, the script tries once more without it and says
+so, and the reporter confirms an issue was created. Last, a person accepts the scope or waives it.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
