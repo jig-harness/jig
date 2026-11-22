@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { rearmGrant } from "../scripts/lib/state/round-grant";
+import { TERMINAL_STATES } from "../scripts/lib/status/terminal-states";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   HEAD,
@@ -110,6 +111,16 @@ describe("rearmGrant", () => {
 
   it("extends an earlier grant once that is spent too", () => {
     expect(rearmGrant({ rounds: 21, attempts: 1, granted: 10 }, 10)).toBe(20);
+  });
+});
+
+describe("the MAX_ROUNDS report", () => {
+  it("tells the person a re-arm grants one more round budget", () => {
+    const entry = TERMINAL_STATES.MAX_ROUNDS;
+    if (entry === undefined) throw new Error("MAX_ROUNDS has no entry");
+    expect(entry.meaning).toContain("grants one more round budget");
+    expect(entry.report?.next.step).toContain("one more round budget");
+    expect(entry.report?.next.step).toContain("rearm");
   });
 });
 
