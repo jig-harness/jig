@@ -171,6 +171,26 @@ describe("drive.ts attaches under both its locks", () => {
   });
 });
 
+test("CI repair merges an advanced base before checking the branch", () => {
+  const c = fresh();
+  c.pr({ baseRefName: "main" });
+  c.env.FAKE_GH_REPO = "example/app";
+  const baseTip = c.commit(c.primary, "gate.sh");
+  c.git(c.primary, "push", "-q", "origin", "main");
+  const tree = c.tree("wt1");
+  c.git(tree, "switch", "-q", "feature");
+
+  const ordinary = c.script(tree, "base-sync.ts", "42", "--json");
+  expectSpawnExit(ordinary, 0, "ordinary base-sync");
+  expect(JSON.parse(ordinary.stdout)).toMatchObject({ reason: "no-overlap" });
+
+  c.env.DRIVE_PR_ROUND_TASK = "ci-repair";
+  const repair = c.script(tree, "base-sync.ts", "42", "--json");
+  expectSpawnExit(repair, 0, "CI-repair base-sync");
+  expect(JSON.parse(repair.stdout)).toMatchObject({ action: "merged" });
+  expect(c.git(tree, "rev-parse", "HEAD^2")).toBe(baseTip);
+});
+
 describe("base-sync.ts over a merge left open", () => {
   /** A tree on the PR's head branch holding a staged merge, and `base-sync.ts` run in it. */
   function baseSync(env: Record<string, string>) {

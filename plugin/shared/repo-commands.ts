@@ -238,7 +238,7 @@ export const REPO_COMMANDS = {
     given:
       "Runs from the repository root after the planned migration source files and integration metadata are in place. Standard input is migration-plan.ts JSON, with an entry for each directory and its regenerate paths.",
     answers:
-      "Exit 0 once the journal and required snapshots are rebuilt and integration snapshots are preserved.",
+      "Exit 0 once the journal and required snapshots are rebuilt, the integration journal's entries kept first as committed and integration snapshots preserved.",
     commandStore: false,
     deadline: null,
     exits: {},
