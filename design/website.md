@@ -89,7 +89,7 @@ dispatcher, which starts what should be running and is not); the capacity step (
 head checked and parked questions in one comment on the pull request); and
 the question (when only a person can settle something, the drive parks a
 question with its options and the next tick re-arms it once answered). The
-round's brief (`design/prototypes/intro-directions/briefs/brief.md`) is the historical render: its loop wording and its capacity draft are superseded, so the build follows the figure brief (`design/prototypes/intro-directions/figure-brief.md`) and the newly approved copy. The page closes on “You merge.” That is
+round's brief (`design/prototypes/intro-directions/briefs/brief.md`) is the historical render: its loop wording and its capacity draft are superseded, so the build follows the figure brief (`design/prototypes/intro-directions/figure-brief.md`). No step copy is approved yet: the step 1 loop wording and the capacity step's copy are both pending, and the build waits for a person to approve them rather than reusing either draft. The page closes on “You merge.” That is
 the line, with the merge as its human boundary, rather than a second tour of
 the architecture.
 
