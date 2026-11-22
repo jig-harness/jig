@@ -340,10 +340,13 @@ a team chooses where its tracker keeps each one: the tracker's own field, a
 custom field or labels. Each tracker Jig supports has a documented default,
 and the stores for Jira and Linear are built. Still to come are the live
 checks of those stores, and a live check of the two ways to file a bug: the
-bug form, and the report-bug script run with an account and a CLI that can set
-an issue's type. Each should end with the native Bug type and no `bug` label;
-where the type cannot be set, the script tries once more without it and says
-so, and the reporter confirms an issue was created. Last, a person accepts the scope or waives it.
+bug form, and the report-bug script run on a draft that carries the `bug` label,
+with an account and a CLI that can set an issue's type. Each should end with
+the native Bug type and no `bug` label. Where the type cannot be set, the
+script retries without it only when it can tell no issue was created, and says
+so; the reporter confirms an issue exists. Last come a person's step on Jig's
+own organization, retiring GitHub's default Task issue type, and a person's
+acceptance of the scope or a waiver.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
