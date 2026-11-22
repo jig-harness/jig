@@ -1904,7 +1904,10 @@ restarted has died and frees its slot.
 ### The host-local account launch weights file
 
 The dispatcher reads `$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml`
-by default) once at the start of every tick. This optional file belongs to the
+by default) at the start of every tick and again once the tick holds the
+act lock; the second reading is the one that governs the tick's retirement of
+stale notices, its planning and its admission, so an edit made while the tick
+observed still applies to that tick. This optional file belongs to the
 host, beside `dispatch.yaml`; it is not repository configuration and requires
 no restart, install or commit. If `JIG_HOME` is inside a Git repository, add
 `weights.local.yaml` to that repository's `.gitignore` or local
@@ -1939,11 +1942,23 @@ this count fall back to the retained launch count. Equal weights retain the exis
 
 The receipt, terminal report and dashboard account view show each configured
 and effective weight with its reason. An unreadable or malformed file, an
-unknown section, an invalid `accounts` mapping, an unknown account name or a weight outside the
-range closes every account for new launches, and reports why. This prevents
-a broken file from resuming an account the host paused. Fix or remove the
-file to resume admission on the next tick. The shared document can also hold
-`lanes`; each reader validates only its own section, so an invalid `lanes`
+unknown section, an invalid `accounts` mapping or a weight outside the
+range on an account the machine file lists closes every account for new
+launches, and reports why. This prevents a broken file from resuming an
+account the host paused; fix or remove the file to resume admission on the
+next tick. An `accounts` name the machine file does not list
+gives no listed account a weight, so it is skipped and the file's other
+weights apply: every account's reason names the skipped names, and from the
+first tick that reads them the host raises one notice naming the file, the
+skipped names and the accounts the machine file lists. The notice goes
+where the host's own failures go (the first repository it owns with
+`notify` enabled whose turn is not failing, else the first it owns with `notify` enabled), is told once for each set of
+skipped names wherever it is told (again after `renotify_after` while the
+set stands), and retires at the first tick that reads none. A host that
+owns no repository with `notify` has only the reasons. Because an account
+the file does not name has weight 100, a misspelt name for an account meant
+to be paused leaves that account taking launches; the notice is how a
+person learns of it. The shared document can also hold `lanes`; each reader validates only its own section, so an invalid `lanes`
 section does not change the account weights.
 
 ### When an outside system refuses or does not answer

@@ -60,8 +60,16 @@ export interface AccountWeight {
   /** Null means the accounts section could not be trusted, so admission closes. */
   configured: number | null;
   reason: string;
+  /** The names in the accounts section the machine file does not list, skipped, and the file's path; absent when there are none. */
+  skipped?: SkippedNames;
 }
 export type AccountWeights = ReadonlyMap<string, AccountWeight>;
+
+/** Account names a weights file names that the machine file does not list, in code-unit order (the notice key is built from it). */
+export interface SkippedNames {
+  names: readonly string[];
+  path: string;
+}
 
 /** Report the original failure before reducing it to the account view's diagnostic. */
 function weightsProblem({ document }: LocalWeights): string | null {
@@ -73,46 +81,96 @@ function weightsProblem({ document }: LocalWeights): string | null {
   return document.failure.reason;
 }
 
-/** A bad accounts section closes every account: no partially read file can resume a paused one. */
+/** Whether `value` is a weight an account may carry. */
+function isWeight(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 100
+  );
+}
+
+/** The accounts section's fault, if any, and the names it carries that the machine file does not list, in code-unit order (the notice key is built from it). */
+function checkSection(
+  section: unknown,
+  accounts: readonly MachineAccount[],
+  path: string,
+): { problem: string | null; skipped: string[] } {
+  if (section === undefined) return { problem: null, skipped: [] };
+  if (!isMapping(section))
+    return { problem: `${path}: accounts must be a mapping`, skipped: [] };
+  let problem: string | null = null;
+  const skipped: string[] = [];
+  for (const [name, value] of Object.entries(section))
+    if (!accounts.some((a) => a.name === name)) skipped.push(name);
+    else if (!isWeight(value))
+      problem = `${path}: accounts.${name} must be a finite weight from 0 to 100`;
+  return {
+    problem,
+    skipped: skipped.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+  };
+}
+
+/** Why an account the section gives no weight has weight 100. */
+function defaultReason({ document, path }: LocalWeights): string {
+  return document.ok && document.value === null
+    ? `default 100; ${path} absent`
+    : `default 100; ${path} does not name this account`;
+}
+
+/** What every account's reason adds for the skipped names. */
+function skipNote(skipped: readonly string[], path: string): string {
+  if (skipped.length === 0) return "";
+  const which =
+    skipped.length === 1 ? "an unknown account" : "unknown accounts";
+  return `; skipped ${which} ${skipped.join(", ")} in ${path}`;
+}
+
+/**
+ * A bad accounts section closes every account: no partially read file can
+ * resume a paused one. A name the machine file does not list gives no
+ * account a weight, so it is skipped, and every account's reason names it.
+ */
 export function readAccountWeights(
   accounts: readonly MachineAccount[],
   reading = readLocalWeights(),
 ): AccountWeights {
   const { document, path } = reading;
-  let problem = weightsProblem(reading);
   const section = document.ok ? document.value?.accounts : undefined;
-  if (section !== undefined) {
-    if (!isMapping(section)) problem = `${path}: accounts must be a mapping`;
-    else
-      for (const [name, value] of Object.entries(section)) {
-        if (!accounts.some((a) => a.name === name))
-          problem = `${path}: accounts names unknown account ${name}`;
-        else if (
-          typeof value !== "number" ||
-          !Number.isFinite(value) ||
-          value < 0 ||
-          value > 100
-        )
-          problem = `${path}: accounts.${name} must be a finite weight from 0 to 100`;
-      }
-  }
+  const checked = checkSection(section, accounts, path);
+  const problem = weightsProblem(reading) ?? checked.problem;
+  const { skipped } = checked;
+  const note = skipNote(skipped, path);
+  const skip =
+    skipped.length === 0 ? {} : { skipped: { names: skipped, path } };
   return new Map<string, AccountWeight>(
-    accounts.map((account) => {
+    accounts.map((account): [string, AccountWeight] => {
       if (problem !== null)
         return [account.name, { configured: null, reason: problem }];
       const value = isMapping(section) ? section[account.name] : undefined;
       return [
         account.name,
-        {
-          configured: typeof value === "number" ? value : 100,
-          reason:
-            typeof value === "number"
-              ? `${path}: accounts.${account.name}`
-              : document.ok && document.value === null
-                ? `default 100; ${path} absent`
-                : `default 100; ${path} does not name this account`,
-        },
+        typeof value === "number"
+          ? {
+              configured: value,
+              reason: `${path}: accounts.${account.name}${note}`,
+              ...skip,
+            }
+          : {
+              configured: 100,
+              reason: `${defaultReason(reading)}${note}`,
+              ...skip,
+            },
       ];
     }),
   );
+}
+
+/** The names the weights file's accounts section names that the machine file does not list; `null` when there are none. */
+export function skippedAccountNames(
+  weights: AccountWeights | undefined,
+): SkippedNames | null {
+  const first = weights?.values().next();
+  return first?.done === false ? (first.value.skipped ?? null) : null;
 }
