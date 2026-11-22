@@ -228,7 +228,7 @@ behind them. [design/need-classes.md](need-classes.md) has how it works:
 every need belongs to a class, and each class is settled at the first place
 that applies: at its source, by the tick's own rule, by a steward record,
 by a person's answer to a framed decision, or by a person alone. It builds
-on item 46's framed needs and answers. What it will build, one pull request
+on [framed decisions and structured answers](../plugin/protocol/needs-and-answers.md). What it will build, one pull request
 per issue in the design's order:
 
 - **Host faults.** One host need per cause (`failures.group`); a
@@ -462,66 +462,7 @@ thread with its answer and status; and a pick-up, the drive of the pull
 request it opened and that pull request's follow-up read as one thread,
 which leaves the thread list once nothing in it waits on a person.
 
-### 46. Structured answers: approving or choosing a parked decision in a word
-
-A parked decision is framed with its options and a recommended one, but a
-person answers it in their own words and the next pass works out which
-option they meant: no reader can tell which option was chosen, nothing ties
-an answer to the framing it answers, and nobody can see how often a kind of
-decision just follows the recommendation.
-[design/structured-answers.md](structured-answers.md) has how it works.
-What it will build: two answer forms, `approve` (the recommended option)
-and `choose <option>`, read wherever an answer is read today (an
-`answer <key>:` line or a reply on the item's thread) and only when they
-are the comment's whole answer, normalized so a phone's typography still
-matches; any other text a free answer, read as today; each person's latest
-answer theirs (its time the comment's last edit), and two people's
-answers that are not the same option leaving the item disputed and
-waiting; a decision digest stored with each park and published in the
-ledger, carried by every line Jig offers to copy, so an answer to an
-earlier framing is stale and does not count; the pass handed the chosen
-option, the record and any note the person added; every reader of answers (the re-arm, the tick,
-`jig send`, `jig ask`) moved to one parser at once; `jig send … answer
---approve | --choose | --all` (Decide items only for `--all`), a
-correcting answer, the operator's verbs, the notification's answer lines,
-the dashboard's copy buttons and the Orca panel's buttons, all writing the
-same line; `jig ask`'s question and answer fields and an answered-park
-event in the outcome log, with a per-class report of how often the
-recommendation is approved; one decision model shared by a park
-and a `/jig:decide` decision sheet, moved out of `decide`, whose options can
-say what they keep, when they are right, what they oblige and whether they
-can be undone; a card with a row per
-decision, where `j`, `1`, `c` picks the recommendation and copies it, a
-pick staying local and undoable until it is committed; then, with item
-40's first proof that a person answered, the attested classes (`destructive`, `release`, `legal` by
-default); every need on the dispatch dashboard framed as a decision, the
-one its follow-up's or pickup's pass recorded with its result or one the
-tick frames for a cause it detects (a failed follow-up, a stalled pickup, a
-checkout an unlisted tree holds, a drive handed to a person, a stuck launch
-record) with options it carries out once on a person's answer, sent through
-`jig send` to the follow-up's, the pickup's or the drive's station; and the
-same forms for a loosened ratchet's evidence and a pickup only a person
-may start. One pull request per
-step, in the design's order; the first moves the shared
-model.
-
-Done when a park answered `approve` hands its pass the recommended option
-and a park answered `choose <option>` that option; an answer that is not
-exactly a form reaches the pass as a free answer and `jig ask` labels it
-free; an answer naming an earlier framing's digest leaves the drive parked
-and the next notification says why; two people choosing different options
-leave the item waiting; the panel, `jig ask` and the dashboard show the
-same options and choice for one park; a sheet and a park use the same
-option type, every existing sheet renders unchanged, and a field added to
-the model shows on the card and in `jig ask`; a card of two decisions copies
-one comment answering both; every need but a double claim, an unanswered
-nudge and an item assigned by someone who cannot write carries a framed
-decision, and an answer to a decision the tick framed has its step carried
-out once, or refused with why; and `jig dispatch log` reports, per
-class, how many parks were approved as recommended and how long they
-waited.
-
-### 58. Declared priorities, a progress review and the overview
+### 58. Declared priorities and a progress review
 
 A person can see each failure on its own, but not whether the team's goals
 are moving. With this item, a team writes its goals down once, and Jig
@@ -534,18 +475,13 @@ same inputs always give the same ranked list. A person picks from that
 list, and Jig reports the list before it lets the list decide what starts.
 
 A scheduled review reads what the dispatcher and its sessions did, and
-proposes fixes for problems that repeat. It never acts on its own. One
-overview in Jig's dashboard shows the goals, each group of issues beside
-its pull requests, what is running and what waits for a person. A person
-confirms each action from the overview in their own browser. A phone can do
-every action except a merge; its optional local unlock is on by default.
+proposes fixes for problems that repeat. It never acts on its own.
 
 [The design](priorities-and-overview.md) says how it works. The goals file and the ranking
 come first, as a report. Then a host can opt in to let the ranking decide
-what starts. The review runs as a trial on Jig and one other repository,
-then the overview and its actions follow. Done when the same inputs always
-give the same list, and every review lists every Urgent issue. The overview
-must explain progress and waiting from recorded facts.
+what starts. The review runs as a trial on Jig and one other repository.
+Done when the same inputs always give the same list, and every review lists
+every Urgent issue.
 
 Its build steps are issues under epic #1177, in the design's order.
 
@@ -1146,13 +1082,6 @@ dispatch tick notifies once per new required entry, the consumer arm of Jig's
 follow-up no longer needs to be told which consumers are affected, and `/jig:jig` no longer sends a reader to read
 the changelog by hand.
 
-### 12. More tracker adapters
-
-A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
-It waits on the open decisions below.
-[plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
-still assumes Linear.
-
 ### 27. Work types: depth by kind of work
 
 Every item runs the same stations at the same depth, and the kinds of work
@@ -1423,6 +1352,15 @@ conditions for considering a tap without adopting one ahead of that evidence.
 
 ## Later
 
+- **Dashboard overview.** Show team goals, issue groups beside their pull
+  requests, running work and decisions waiting for a person. The overview
+  explains progress and waiting from recorded facts. People confirm actions
+  in their browser and can use a phone for actions other than merging.
+  The optional local unlock is on by default.
+  [The design](priorities-and-overview.md) covers the overview and its actions.
+  The [overview design round (#1182)](https://github.com/jig-harness/jig/issues/1182)
+  waits for the four-week Stage 1 stability review (#541).
+
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
   existing tracker interface, following the
   [design](scheduled-failure-reconciliation.md). M11 states the per-cause
@@ -1596,9 +1534,6 @@ in that consumer's configuration.
 
 These need a human decision before the work that depends on them starts.
 
-- **Plan-file tracker format**: one file for the whole plan, or one per item.
-- **Optional tracker operations**: whether the tracker interface's reporting
-  operations may be optional for an adapter that cannot answer them.
 - **Resilience copies of critical rules**: whether a tool-specific instruction
   file may keep a checked copy of a few named critical rules, so they still
   bind when its import of the universal file is missing, or whether M0's

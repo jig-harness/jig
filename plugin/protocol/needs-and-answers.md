@@ -1,6 +1,6 @@
 # Needs and structured answers
 
-Version 1 · provisional, moved by [plan item 46](https://github.com/jig-harness/jig/issues/693), [plan item 50](https://github.com/jig-harness/jig/issues/940)
+Version 1 · provisional, moved by [plan item 50](https://github.com/jig-harness/jig/issues/940)
 
 Some of the work on Jig's line waits on a person: a decision only a person
 may take, a merge, a step by hand. Each such wait is a
@@ -286,8 +286,7 @@ the name `hold` had before, still chooses it.
   ([design/need-classes.md](https://github.com/jig-harness/jig/blob/main/design/need-classes.md)),
   which still adds and regroups causes. They join this chapter once their
   table settles.
-- **How often a recommendation is approved.** The answered park's event in
-  the dispatcher's outcome log, and the report per class built on it, are
-  the last step of plan item 46.
+- **How often a recommendation is approved.** The answer outcome event and
+  the counts by decision class are outside this chapter.
 - **An answer as `jig ask` shows it.** The JSON `jig ask` prints for a
   decision's answers has no schema yet.
