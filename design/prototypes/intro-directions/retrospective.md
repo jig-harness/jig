@@ -1,8 +1,7 @@
 # Retrospective: the introduction page's direction round
 
-Written for needle-eye's log: copy it there as
-`2026-11-21-jig-intro-directions.md` and amend the skills named below. It follows
-that repository's template.
+Record of what the round's method asked for, what happened, what worked, what
+did not, and what to adjust in future rounds.
 
 - **Surface:** the introduction page and the site's look, issue
   [#1066](https://github.com/jig-harness/jig/issues/1066); the artefacts are in
@@ -10,21 +9,21 @@ that repository's template.
 - **Date:** 2026-11-21.
 - **Written by:** the session that ran the round (Claude). Ophir picked the
   Broadside, with the Strip board as runner-up.
-- **Skills used:** `needle-eye:direction`, `needle-eye:model-routing` and
-  `needle-eye:checks`, version 0.1.0; `needle-eye:astra-drawing` was not run,
-  Astra wrote contracts only.
+- **Method used:** independent direction contracts, a multi-model authoring
+  split (Claude and Astra; Astra wrote contracts only and did not draw), and
+  layered checks (structural gate, rendered visual check, human sign-off).
 
-## What the method said, and what happened
+## What the method asked for, and what happened
 
-| Skill and section | What it said | What happened | Evidence |
+| Stage | What the method asked for | What happened | Evidence |
 |---|---|---|---|
-| direction, The round, steps 1-2 | Eight contracts, then a person picks four | The issue asked to show rendered directions before asking, so the coordinator chose four of eight for spread in layout, type and motion. Ophir saw four rendered directions only | [contracts/](contracts/) |
-| direction, Write a contract | Forbid opening the current surface; assign a reference world and a constraint; fixed field order; difference in kind | Both writers kept to it; the eight differ in layout, type and motion | [contracts/claude-contracts.md](contracts/claude-contracts.md), [contracts/astra-contracts.md](contracts/astra-contracts.md) |
-| direction, Render one direction | Three artboards, verbatim copy, workers do not render | Each worker wrote five artboards (a first screen and a step at two widths, and the figure frame); none rendered, as told. The coordinator rendered them | [briefs/render-brief.md](briefs/render-brief.md), [canvas/](canvas/) |
-| model-routing, Who does what | Claude writes, Astra writes contracts too, a person picks | Astra ran on a Codex home as `gpt-6.2-astra` and wrote four contracts in one pass | [contracts/astra-contracts.md](contracts/astra-contracts.md) |
-| checks, Layer 1 | The motion-kit gate checks structure | It passed every scene rule and refused the style on one contrast pair no palette can satisfy | [README.md](README.md#the-figure) |
-| checks, Layer 2 | Look at the output | The coordinator rendered every artboard in Chromium and found a clipped label in the Strip board hero, which was fixed | [canvas/stripboard-hero-1440.dc.html](canvas/stripboard-hero-1440.dc.html) |
-| checks, Layer 3 | A person signs off | Ophir picked on 2026-11-21 and sent figure feedback the gate and the looks had not raised | [figure-brief.md](figure-brief.md) |
+| Selecting directions to render | Eight contracts, then a person picks four | The issue asked to show rendered directions before asking, so the coordinator chose four of eight for spread in layout, type and motion. Ophir saw four rendered directions only | [contracts/](contracts/) |
+| Writing contracts | Forbid opening the current surface; assign a reference world and a constraint; fixed field order; difference in kind | Both writers kept to it; the eight differ in layout, type and motion | [contracts/claude-contracts.md](contracts/claude-contracts.md), [contracts/astra-contracts.md](contracts/astra-contracts.md) |
+| Rendering directions | Three artboards, verbatim copy, workers do not render | Each worker wrote five artboards (a first screen and a step at two widths, and the figure frame); none rendered, as told. The coordinator rendered them | [briefs/render-brief.md](briefs/render-brief.md), [canvas/](canvas/) |
+| Authoring split | Claude writes, Astra writes contracts too, a person picks | Astra ran as `gpt-6.2-astra` and wrote four contracts in one pass | [contracts/astra-contracts.md](contracts/astra-contracts.md) |
+| Structural gate | The figure gate checks structure and style rules | It passed every scene rule and refused the style on one contrast pair no palette can satisfy | [README.md](README.md#the-figure) |
+| Visual check | Look at the rendered output | The coordinator rendered every artboard in Chromium and found a clipped label in the Strip board hero, which was repaired before review | [canvas/stripboard-hero-1440.dc.html](canvas/stripboard-hero-1440.dc.html) |
+| Human sign-off | A person signs off | Ophir picked on 2026-11-21 and sent figure feedback the gate and the looks had not raised | [figure-brief.md](figure-brief.md) |
 
 ## What worked
 
@@ -51,11 +50,11 @@ that repository's template.
   ("Two slots per account") that Ophir ruled out. Copy that a person has not
   approved was rendered into every direction.
 - The Design canvas type told the coordinator not to check its own work; the
-  method's Layer 2 says to look. The coordinator looked anyway, locally. The
+  visual check step says to look. The coordinator looked anyway, locally. The
   canvas renders only in its own runtime, so a local check needs the artboards
   converted first.
 - A render worker's artboard (Strip board, step 2 on the 1440 board) cut off a
-  neighbour; the worker flagged it, and it was not fixed.
+  neighbour; the worker flagged it, and it was not resolved in the render.
 
 ## What the checks caught, and what they missed
 
@@ -63,15 +62,13 @@ that repository's template.
   render found a clipped label.
 - Missed by every check: the figure's story. A person saw it in one look.
 
-## Amendments made
+## Process changes for future rounds
 
-None here. The amendments below go into needle-eye in its own pull request.
-
-| Skill and section | Change | The practice behind it |
+| Stage | Change | The practice behind it |
 |---|---|---|
-| direction, The round | Add a step before contracts: a person approves the figure's story and the copy as text, or a rough storyboard of the figure, so directions are not rendered around content that is wrong | [figure-brief.md](figure-brief.md) |
-| direction, Render one direction | Say that a coordinator may choose the rendered four when the task asks to show before asking, and name the criterion (spread in layout, type, motion) | [README.md](README.md#the-four-directions-that-were-rendered) |
-| checks, Layer 2 | Add the way to render a Design canvas artboard locally: strip the wrapper, swap image addresses for local files, screenshot in Chromium | this round, the coordinator's conversion script (not kept; the steps are in the sentence) |
+| Before contracts | Add a step before contracts: a person approves the figure's story and the copy as text, or a rough storyboard of the figure, so directions are not rendered around content that is wrong | [figure-brief.md](figure-brief.md) |
+| Rendering directions | Say that a coordinator may choose the rendered four when the task asks to show before asking, and name the criterion (spread in layout, type, motion) | [README.md](README.md#the-four-directions-that-were-rendered) |
+| Visual check | Document how to render a Design canvas artboard locally: strip the wrapper, swap image addresses for local files, screenshot in Chromium | this round, the coordinator's conversion script (not kept; the steps are in the sentence) |
 
 ## Candidates, not yet practice
 
@@ -84,5 +81,5 @@ None here. The amendments below go into needle-eye in its own pull request.
 
 - Whether the next round renders the Broadside alone with the new figure or the
   Broadside and the Strip board side by side.
-- Whether motion-kit's style gate should let a style mark a token unused, so the
-  `emphasis` pair does not block export.
+- Whether the figure tool's style gate should let a style mark a token unused,
+  so the `emphasis` pair does not block export.
