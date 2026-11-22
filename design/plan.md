@@ -1089,9 +1089,12 @@ provisional until the remaining checks are recorded. What is open:
 - one issue opened from the bug form, confirming it is filed as a Bug, and
   one filed through `report-bug.ts` from a draft whose labels include `bug`,
   run with an account and a `gh` that can set the native issue type (when
-  the typed create fails, the script retries without the type only if it can
-  establish that no matching issue was created; an unreadable issue listing
-  stops it with an unknown outcome, and then the tracker is checked by hand),
+  the typed create fails, the script retries without the type only if the
+  error names the type and an issue listing confirms no matching issue was
+  created; when filing still fails and creation may have occurred, the
+  failure report checks the listing and reports the existing issue's URL if
+  found, offers the bug form if none exists, or reports an unknown outcome
+  to check by hand if that listing is unreadable),
   confirming the filed issue reads back with the native type `Bug` and
   without the `bug` label (the form declares its own type, so it cannot
   stand in for the script);

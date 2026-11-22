@@ -336,14 +336,14 @@ Guidelines' minimum contrast, in both modes.
 ### 41. Configurable issue attributes: type, priority and size
 
 Where a team's tracker holds them, an issue records its type, priority and
-size (an epic needs no size). Filing through the tracker interface refuses an issue missing one
-before it writes; the issue forms and `report-bug.ts` leave priority and size
-for triage.
+size. Filing through the tracker interface refuses an issue lacking a
+required attribute before it writes. The issue forms and `report-bug.ts`
+leave priority and size for triage.
 A team chooses where its tracker keeps each one: the tracker's own field, a
 custom field or labels. Each tracker Jig supports has a documented default,
 and the stores for Jira and Linear are built. Live checks of those two stores
 remain open. So does a live check of the two ways to file a bug, which needs
-an account and a GitHub CLI that can set an issue's native type; the steps
+an account and a GitHub CLI that can set an issue's native type. The steps
 are in [the plan](design/plan.md). A person also retires GitHub's default
 Task issue type on Jig's own organization and accepts the scope or waives it.
 
