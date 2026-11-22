@@ -1,4 +1,5 @@
 import { JigError } from "../../../shared/outcome.ts";
+import { TrackerConfigError } from "../../do-item/scripts/lib/tracker/config-error.ts";
 import { describe, expect, test } from "bun:test";
 import type {
   Issue,
@@ -9,6 +10,7 @@ import type {
 import { deferToTracker } from "../scripts/lib/tracker-defer-batch.ts";
 import { fileDeferred } from "../scripts/file-deferred.ts";
 import { withDeferredEntry } from "../scripts/lib/deferred-section.ts";
+import { fileDriveDeferral } from "../scripts/lib/drive-deferral.ts";
 import { fakeForge, PR_URL } from "./deferred-forge.ts";
 import {
   conn,
@@ -95,6 +97,84 @@ function fixture(adapter: string) {
 }
 
 describe("tracker-independent deferral batches", () => {
+  const deferral = {
+    pr: "42",
+    source: `${PR_URL}#discussion_r1`,
+    recorded: { type: "bug", severity: "high", category: "correctness" },
+    reason: "Needs a separate refactor",
+    finding: "A finding",
+  };
+
+  test("an attended drive files a decided deferral directly with provenance", async () => {
+    const f = fixture("github");
+    const forge = fakeForge("");
+    const result = await fileDriveDeferral(forge, deferral, (filedBy) =>
+      deferToTracker(f.tracker, {
+        repo: "example/project",
+        pr: deferral.pr,
+        type: deferral.recorded.type,
+        identity: `Deferred finding: ${deferral.source}`,
+        text: `${deferral.finding}\n\n${filedBy}`,
+        category: deferral.recorded.category,
+        priority: 2,
+        labels: ["pr-followup"],
+      }),
+    );
+    expect(result).toMatchObject({ identifier: "NEW-1", created: true });
+    expect(f.created[0]?.description).toContain(
+      "Filed by `/jig:drive-pr` from https://github.com/example/project/pull/42, without a person's confirmation: Needs a separate refactor",
+    );
+    expect(forge.writes).toBe(0);
+  });
+
+  test("a tracker refusal leaves a linked Deferred entry and names the refusal", async () => {
+    const forge = fakeForge("");
+    const result = await fileDriveDeferral(forge, deferral, async () => {
+      throw new JigError("deferral", "The tracker refused the write");
+    });
+    expect(result).toEqual({
+      link: `${PR_URL}#deferred`,
+      added: true,
+      why: "The tracker refused the write",
+    });
+    expect(forge.state.body).toContain(deferral.finding);
+    expect(forge.state.body).toContain(deferral.reason);
+  });
+
+  test("a tracker configuration refusal leaves a linked Deferred entry", async () => {
+    const forge = fakeForge("");
+    const result = await fileDriveDeferral(forge, deferral, async () => {
+      throw new TrackerConfigError("issue_tracker.team", "team is invalid");
+    });
+    expect(result).toMatchObject({
+      link: `${PR_URL}#deferred`,
+      why: "team is invalid",
+    });
+    expect(forge.state.body).toContain(deferral.finding);
+  });
+
+  test("retrospective filing leaves a category outside the review taxonomy for a person", async () => {
+    const f = fixture("github");
+    const forge = fakeForge(
+      withDeferredEntry("", {
+        source: deferral.source,
+        ...deferral.recorded,
+        finding: deferral.finding,
+        reason: deferral.reason,
+      }).body,
+    );
+    const result = await fileDeferred(forge, f.tracker, deferral.pr, {
+      label: "pr-followup",
+      facets: null,
+      reviewVocabulary: { categories: ["security"] },
+    });
+    expect(result.forPerson).toMatchObject([
+      { why: expect.stringContaining("review.taxonomy.categories") },
+    ]);
+    expect(f.created).toHaveLength(0);
+    expect(forge.writes).toBe(0);
+  });
+
   test("fallback retry repairs an issue created before its related link failed", async () => {
     const f = fixture("github");
     const relate = f.tracker.relate;

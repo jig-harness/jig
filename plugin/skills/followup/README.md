@@ -36,8 +36,14 @@ A release that still owes a tag and needs a person gets one tracker item
 per version. Dispatched follow-ups refer to that item and finish once their
 remaining checks settle. The dispatcher presents one decision for the
 release with the options **Re-run the failed gates**, **Investigate**, and
-**Tag it by hand**. Untagged releases of a repository that share a remedy
-share that decision, which lists every version it covers.
+**Tag it by hand**. It recommends the re-run unless a re-run was already
+requested (then it recommends Investigate and offers no re-run) or no failed
+gate is left to re-run: the follow-up recorded that every required check
+passed or that the version is outside automatic tagging, the repository
+disables re-runs (`changelog.release.rerun_failed_gates: 0`), or it makes the
+tag a person's step (`changelog.release.tagged_by: person`). Then it offers
+only the last two and recommends tagging by hand. Untagged releases of a repository
+that share a remedy share that decision, which lists every version it covers.
 When another host runs the follow-up, it passes the owed release to the
 repository's owner dispatcher, which finds or files the tracker item.
 An owner with only the notification stage can process this handoff when

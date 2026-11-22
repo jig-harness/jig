@@ -53,11 +53,13 @@ The confirmation follows the repository's
 [autonomy level](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#autonomy).
 Under `attended`, the default and every session a person runs unless they
 chose otherwise, you see the plan first. Under `unattended`, which a drive's
-pass reads where the repository allows it, an issue another skill needs (a
-deferral, a follow-up, a reflection escalation) is filed without the
+pass reads where the repository allows it, a follow-up or reflection
+escalation is filed without the
 confirmation, and its body ends with a line saying which skill filed it,
 from which pull request and why, so you can find it and close it. Planning
-an existing issue always asks.
+an existing issue always asks. A drive files a decided review deferral
+directly at every level through the
+[deferral protocol](../resolve-review-comments/references/deferral-protocol.md#who-decides-a-deferral).
 
 Every tracker read and write goes through the
 [do-item](https://github.com/jig-harness/jig/blob/main/plugin/skills/do-item/SKILL.md)
