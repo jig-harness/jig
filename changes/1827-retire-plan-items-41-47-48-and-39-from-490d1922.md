@@ -11,3 +11,5 @@ release: patch
 - The Addresses chapter's published ownership moves from plan items 39 and 42
   to items 36 and 42, in the Protocol index, in the chapter's own status line and in its data file: item 36 owns
   the remaining merge-station work and item 42 the thread work.
+- The Needs and structured answers chapter's published ownership drops plan
+  item 46 and keeps item 50, in the Protocol index.

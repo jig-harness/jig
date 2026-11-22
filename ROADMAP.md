@@ -339,9 +339,9 @@ Every issue records its type, priority and size (an epic needs no size), and
 a team chooses where its tracker keeps each one: the tracker's own field, a
 custom field or labels. Each tracker Jig supports has a documented default,
 and the stores for Jira and Linear are built. Still to come are the live
-checks of those stores, a check that filing a bug through the bug form and
-through the report-bug script gives the issue the right type, and a person's
-acceptance of the scope or a waiver.
+checks of those stores. A bug filed through the bug form or the report-bug
+script must also get the native Bug type, with no `bug` label left on it.
+Last, a person accepts the scope or waives it.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
