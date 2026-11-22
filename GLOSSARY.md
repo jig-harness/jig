@@ -3305,6 +3305,11 @@ make, use the entry's term instead.
   three-dimensional models on the web: one file holding a model's parts,
   their placement, their materials and its animations, which a browser can
   load and draw ([design/website.md](design/website.md)).
+- **SVG (scalable vector graphics)** — an image format made of shapes and
+  lines described in text, which a browser draws at any size without losing
+  sharpness and which a program can write. The line figure's candidates are
+  SVG files written by a script from one description
+  ([intro figure pass 2](design/prototypes/intro-figure-pass-2/README.md)).
 - **UV map** — the flat layout a three-dimensional model's surface is
   unfolded onto, giving every point on it two coordinates (called U and V)
   so that a pattern or an image can be drawn across the surface; the website
