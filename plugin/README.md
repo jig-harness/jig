@@ -33,7 +33,7 @@ runs, what it hands over to.
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
 | [file-issue](skills/file-issue/README.md) | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written; sweeps the open issues for one filed without a type, a priority or a size, and moves those facets from one store to another | `/jig:file-issue` | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator |
-| [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
+| [do-item](skills/do-item/SKILL.md) | Picks up one work item from its tracker adapter, routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
 | [work-batch](skills/work-batch/README.md) | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it | `/jig:work-batch` | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it |
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
@@ -1075,8 +1075,21 @@ until `renotify_after` has passed;
 while a workspace is still unread, a new message is appended to its comment
 rather than replacing it, and the entries whose causes are settled (the pull
 request closed, the need answered) leave a comment only the dispatcher wrote
-to make room. A message that still finds no room counts as a failed delivery,
-and past `failures.notify_after` ticks a person is told it is failing. The
+to make room. Each comment keeps room for a summary entry: a message that
+still finds no room waits, which is not a failed delivery, and the summary at
+the end of the comment says how many wait, of which kinds and which ones (as
+many as fit); each goes in full once the workspace is read or its other entries settle. The summary
+reflects the last write to the comment, so it can still show a count after the
+causes it counted have settled, until the next write that is allowed to rewrite the
+comment; where a person has added to the comment of the workspace
+`dispatch.notices_branch` names, the dispatcher only appends, and the summary
+stays where it is. The automatic notices workspace gives no such guarantee: once
+read, its comment is replaced by the next notification write, a person's addition and
+the summary with it; until then they stay. A held repeat of a cause
+sent earlier keeps that cause's existing suppression record. The summary
+is kept only while the comment has room for it: where an unread comment leaves
+too little, or another summary is already in it, the waiting notices are not
+counted in the comment until room opens. The
 answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
