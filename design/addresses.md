@@ -26,14 +26,22 @@ through `jig ask` like any other interface and stores none of it. The thread is 
   The status is `open`, `answered`, `acted` (the drive acted on the answer)
   or `expired` (the park ended unanswered).
 - **An `answer` carries `inReplyTo`**, the id of the question it answers,
-  who answered (their forge login), and the permission the forge gives that
-  login on the repository, so a reader sees why the answer counted.
+  who answered (their forge login), and the permission evidence recorded when
+  the answer was accepted. Existing receipts without that evidence say that
+  the historical permission is unknown; a later permission lookup does not
+  rewrite why an earlier answer counted.
 - **An answered park stays in the thread while its receipt remains.** The
-  drive ledger keeps the last 10 resolved parks (`resolvedParks[]`), each
-  with its key, question, answer metadata and when the re-arm cleared it.
-  The thread reads the answer's original forge record through its recorded
-  URL when it is available. Otherwise it shows the answer's author, time and
-  URL and says that its text is unavailable. A bounded ledger that has cut
+  drive ledger keeps recent resolved parks (`resolvedParks[]`), each with its
+  key, question, answer metadata and when the re-arm cleared it. A fresh batch
+  is kept whole even when it exceeds the retention target, and later ledger
+  trimming can leave fewer receipts. The thread reads an answer only from the
+  configured forge endpoint after confirming that its recorded URL belongs to
+  this repository and pull request. It compares the fetched body with the
+  receipt's retained body hash: an edit is shown as later than the retained
+  verdict, and a legacy receipt without a hash reports its source text as
+  unverified. A missing, unauthorized, expired or cancelled source read shows
+  the answer's author, time and URL with its text unavailable. The read shares
+  the thread's cancellation signal and deadline. A bounded ledger that has cut
   older receipts says its resolved-park history is incomplete rather than
   implying that none existed.
 - **One thread per piece of work.** A piece of work has an address at each

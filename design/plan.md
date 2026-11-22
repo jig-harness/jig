@@ -507,9 +507,12 @@ up card shows the last phase and its age; [a thread per piece of
 work](addresses.md) in `jig ask` and on the dashboard, extending version 1
 of the answer. Each entry has a stable ID. Questions carry a key, a
 registry class and a status (open, answered, acted or expired); answers
-name the question they reply to, the author and their repository
-permission. Resolved parks keep their questions and answers available
-from the drive ledger. The item key, branch and pull request join
+name the question they reply to, the author and the permission evidence
+recorded when they counted. Resolved parks keep their questions and answer
+metadata available from the drive ledger; source text is shown only when a
+bounded, cancellable read of the configured forge validates the receipt's
+repository and pull request, and older or legacy receipts say what is
+unavailable. The item key, branch and pull request join
 addresses on evidence from the repository's own people, and a batch key
 joins its member items. Each join names its evidence. `jig ask` lists
 threads while they hold an open question, a merge action or a follow-up
@@ -587,9 +590,10 @@ when a host stopped answering; one piece of work opens as one Work page,
 its item, pull request and follow-up under the same thread that `jig ask`
 prints. Entries keep stable IDs across reads, questions report their
 keys, classes and statuses, and answers identify their questions,
-authors and permissions. Resolved parks remain in the thread while their
-bounded receipts remain, and the thread marks older receipt history as
-unavailable. Joins
+authors and recorded permission evidence. Resolved parks remain in the thread
+while their bounded receipts remain; source text is retrieved only from the
+authorized forge scope, and the thread marks older, legacy, or unavailable
+receipt history as unavailable. Joins
 expose evidence from the repository's own people, and a batch key joins
 its members into one thread. The waiting list contains only threads that
 still owe a person an answer or action, and hiding a thread writes

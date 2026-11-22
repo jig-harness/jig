@@ -430,10 +430,19 @@ dashboard stores none of it. Its entries grow under `ask`'s version 1:
 
 - **Each entry gets a stable id.** A question gets its key, its class and a
   status (open, answered, acted on, expired); an answer gets `inReplyTo`,
-  who answered and that person's permission on the repository.
-- **An answered park stays.** The ledger keeps resolved parks
-  (`resolvedParks[]`, the last 10), so a park stays in the thread, with its
-  answer, after the re-arm clears it.
+  who answered and the permission evidence recorded when it counted. A legacy
+  receipt without that evidence reports the historical permission as unknown.
+- **An answered park stays.** The ledger keeps recent resolved parks
+  (`resolvedParks[]`), so a park stays in the thread after the re-arm clears
+  it. A fresh batch stays whole even when it exceeds the retention target, and
+  later ledger trimming can leave fewer receipts; the thread marks that history
+  incomplete. It reads source text only from the configured forge after
+  validating the receipt URL's repository and pull request, compares it with
+  the retained body hash, and shows later edits as later than the retained
+  verdict. A legacy receipt without a hash, an absent source, or a read that
+  expires or is cancelled leaves the retained metadata visible and the source
+  text unavailable. That lookup shares the thread read's deadline and
+  cancellation signal.
 - **One thread per piece of work.** Its addresses fold by the aliases the
   source feed joins, and a work-batch's batch key is its members' thread.
 
@@ -1431,9 +1440,10 @@ phone measurement and acceptance fixture follows 3 and precedes 5; 5 needs
 that fixture; 8 needs 3, 6 and 7; 9 needs 8's fixtures; 10 needs 9.
 
 1. **Rounds and resolved parks in the drive ledger**, under its current
-   version, the last 10 of each, cut first as the ledger nears its
-   65,536-byte cap. A reader takes a missing field as unknown, never as zero
-   rounds, and the previous release's takeover keeps the drive running.
+   version, with the newest retained receipts cut first as the ledger nears
+   its 65,536-byte cap while a fresh receipt batch remains whole. A reader
+   takes a missing field as unknown, never as zero rounds, and the previous
+   release's takeover keeps the drive running.
 2. **The Orca plugin reads any line whose `minReader` it meets**, ignoring
    fields it does not know, and otherwise says to update the plugin.
 3. **The board read, with the marks**: item 36's step 2
