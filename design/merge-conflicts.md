@@ -255,8 +255,7 @@ the plan from the roadmap, which one file per item would not have prevented.
 The split is therefore decided by the measure: when the report shows
 `append` or `adjacent` hotspots in the plan or the roadmap, one file per
 item, holding both the plan's text and the roadmap's, becomes a plan item of
-its own. It would also settle the open decision on the plan-file tracker
-format (one file for the whole plan, or one per item).
+its own.
 
 ## Build order
 
