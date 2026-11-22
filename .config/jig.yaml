@@ -77,6 +77,10 @@ issue_tracker:
     in_review: "state:in-review"
     ops_pending: "state:ops-pending"
   file_command: /jig:file-issue
+  # The standing person-checks list: the epic closure sweep moves an epic's
+  # person-only tails here and posts the operator steps the epic still owes,
+  # so the epic can close while the check stays owed. The issue stays open.
+  person_checks: "#1826"
   # The work types do-item derives from an issue's native type: the taxonomy's
   # types, the docs, chore, infra and epic ones all being Task work.
   types:
