@@ -38,7 +38,7 @@ item 33), its shared records ([plugin/RECORDS.md](../plugin/RECORDS.md)),
 the dispatch dashboard's source feed
 ([dispatch-dashboard.md § The source feed](dispatch-dashboard.md#the-source-feed-from-a-host-to-a-dashboard),
 item 42), the addresses that `jig ask` and `jig send` derive
-([addresses.md](addresses.md), item 39), and the governed transports for
+([Addresses chapter](../plugin/protocol/addresses.md)), and the governed transports for
 outbound calls ([outbound-calls.md](outbound-calls.md), item 55).
 
 ## How it works
@@ -1264,7 +1264,7 @@ strategy the built-ins lack can be added without changing them.
   with no change to the others or to the hub's callers. Likely ones:
   - `age`, longest waiting first (a work ranker);
   - `facet`, by a priority or size the tracker keeps
-    ([tracker-facets.md](tracker-facets.md));
+    ([Tracker facets chapter](../plugin/protocol/tracker-facets.md));
   - `repository-share`, so one repository's long queue does not starve
     the others;
   - `host-preference`, hosts a repository or an item asks for (a host

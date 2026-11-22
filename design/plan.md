@@ -20,7 +20,8 @@ here have a design in this folder ([README.md](README.md)).
 Now is the line that runs with nobody watching: a team's pull requests
 driven to merge-ready while a person keeps every decision that is theirs.
 First what keeps an unattended pass from getting past a person, then what
-keeps the line from stranding work, then one place to see and steer it,
+keeps the line from stranding work, then one place to see and steer it
+with the related work and its correspondence together,
 then what a dispatched run leaves behind and where it runs, then Orca, the
 dispatcher's first session runtime, then the accounts and agent programs a
 dispatched run may use.
@@ -397,71 +398,6 @@ merge now, and the history view filtered to yesterday shows how many
 pull requests became ready, were merged, are still waiting, and were lost
 to waiting.
 
-### 39. Addresses: asking and telling the stations of the line
-
-Where a piece of work stands is read from many places (the dispatcher's
-report, receipts and log, the dashboard, the ledger comment, the drive's
-doctor), and a person steers the line with a different gesture for each
-case: an assignment, a label, an `answer` comment, a mailbox directive.
-Every session and interface that shows or steers the line reads those
-records its own way. [design/addresses.md](addresses.md) has how it works.
-What it will build: an address for every station on a piece of work,
-`station@repository#key` (`drive@jig#456`), resolved from the records the
-line already keeps and declared nowhere; `jig ask <address>`, which answers
-who holds the station, its state, what it waits on and its last outcome,
-names every record it could not read, with `--thread` adds the address's
-correspondence (requests, questions, answers, launches and outcomes, each
-linked to its record) in one shape the command line and a panel both
-read, and with `--waiting` lists every address that waits on a person,
-from the newest tick's line; `jig send <address> <verb>`, which writes the one record
-the line already acts on, from a closed list of verbs, and refuses a
-person's commands inside a session the line started; an operator skill
-that turns a person's sentence into those commands and holds no state;
-a launch's result naming what follows it; and a park naming the person it
-waits on. No agent stays resident to hold an address, and no daemon or
-queue holds a request
-([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). One pull
-request per step, in the design's order; built so far: `jig ask`, with its
-thread and the list of what waits on a person, the outcome log's key column
-and the rule it rests on,
-[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)
-([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands));
-`jig send`, its verbs, their checks and the refusal of a person's
-commands in a session the line started
-([plugin/README.md § Telling a station what to do](../plugin/README.md#telling-a-station-what-to-do));
-the operator skill, `/jig:operator`
-([plugin/skills/operator/](../plugin/skills/operator/SKILL.md)); a
-launch's result naming its next owner, in the outcome row and `last.next`;
-and a park naming the person it waits on, in `waitsOn` and
-`jig ask --waiting --person`. Still
-open, for the dashboard (item 42), which builds them as its stage 2's first
-step: the thread grows under `ask`'s version 1, each entry with a stable
-id, a question with its key, its class and a status (open, answered, acted
-on, expired), an answer with the question it replies to, who answered and
-that person's permission on the repository, and an answered park kept from
-the drive ledger's resolved parks; the addresses of one piece of work fold
-into one thread by its aliases (the item key, the branch, the pull
-request), each join with its evidence and only on evidence the
-repository's own people wrote, and a work-batch's batch key makes
-its members one thread; and `ask` lists the threads that hold something
-for a person (an open question, an act a merge waits on, a follow-up's
-question) only while they hold it, storing nothing when a reader hides
-one.
-
-Done when `jig ask` answers the address of a pick-up, a drive and a
-follow-up on the machine that dispatched them and, from the forge and the
-tracker alone, on a machine that did not, saying what it could not read;
-an address nobody holds answers with its last outcome; the thread a panel
-shows for an address is the one `jig ask --thread` prints; each verb of
-`jig send` writes a record its reader acts on at its next run, and a
-session the line started is refused the verbs that are a person's; the
-operator answers "where does this stand" and "what waits on me" from those
-commands alone; every ended launch names what follows it; every parked
-question names the person it waits on; an answered park stays in its
-thread with its answer and status; and a pick-up, the drive of the pull
-request it opened and that pull request's follow-up read as one thread,
-which leaves the thread list once nothing in it waits on a person.
-
 ### 46. Structured answers: approving or choosing a parked decision in a word
 
 A parked decision is framed with its options and a recommended one, but a
@@ -567,8 +503,18 @@ read and none of them stored; marks on item 36's status row (the
 drive's round and its time, the unresolved threads by bot and not a bot,
 and the CI hold, which reads held and never failing); a `pickup-progress`
 record that `do-item` and `work-batch` write at each phase, so a Picking
-up card shows the last phase and its age; item 39's thread grown under
-`ask`'s version 1 into one thread per piece of work; the views API from a
+up card shows the last phase and its age; [a thread per piece of
+work](addresses.md) in `jig ask` and on the dashboard, extending version 1
+of the answer. Each entry has a stable ID. Questions carry a key, a
+registry class and a status (open, answered, acted or expired); answers
+name the question they reply to, the author and their repository
+permission. Resolved parks keep their questions and answers available
+from the drive ledger. The item key, branch and pull request join
+addresses on evidence from the repository's own people, and a batch key
+joins its member items. Each join names its evidence. `jig ask` lists
+threads while they hold an open question, a merge action or a follow-up
+question, with any hiding kept by the reader. The dashboard also builds
+the views API from a
 page to its own server and the source feed, which the hub (item 49)
 serves for every host it serves, every fact stamped with its host and a
 visibility class; a host's dashboard read-only on loopback, answering only
@@ -614,8 +560,8 @@ repository's tick refreshes, pickup progress, then one design round for the
 whole dashboard and the Running, Queue and Work views), with phone support part of
 each view's acceptance and the resident dashboard install, URL sharing and
 private-network front guidance filed as items that do not wait on the later
-stages ([dispatch-dashboard.md § Phone scope and access](dispatch-dashboard.md#phone-scope-and-access)); then each piece of work across machines (item 39's thread
-additions, `jig send --json` with `--expect`, the `jig dashboard` server, its
+stages ([dispatch-dashboard.md § Phone scope and access](dispatch-dashboard.md#phone-scope-and-access)); then each piece of work across machines (the shared thread and the list
+of threads waiting on a person, `jig send --json` with `--expect`, the `jig dashboard` server, its
 Needs you across every source, Hosts and History views and its install,
 the private-network front, the Orca plugin's "Open the dashboard" command and its install from a catalog);
 then the chat, and writes once item 40 settles. Stages 2 and 3 are
@@ -638,7 +584,14 @@ for byte. For a stage a person decides to build, stage 2 is done when a
 laptop's dashboard shows each host's work, read through the hub, beside its own in any
 browser, with the host's dashboard listening on loopback only, and says since
 when a host stopped answering; one piece of work opens as one Work page,
-its item, pull request and follow-up under one thread; Orca's browser opens
+its item, pull request and follow-up under the same thread that `jig ask`
+prints. Entries keep stable IDs across reads, questions report their
+keys, classes and statuses, and answers identify their questions,
+authors and permissions. Resolved parks remain in the thread. Joins
+expose evidence from the repository's own people, and a batch key joins
+its members into one thread. The waiting list contains only threads that
+still owe a person an answer or action, and hiding a thread writes
+nothing to Jig. Orca's browser opens
 the same page; and a phone through the front sees only the repositories
 its grant names. For a stage a person decides to build, stage 3 is done
 when the operator chat proposes and never sends and, once item 40 has
@@ -743,10 +696,10 @@ report states its verdict; and the default-harness ruling is recorded.
 ## Next
 
 Next starts with delegated merge, once item 40 holds. Then come what lets a
-second team adopt Jig, the hub for a team on several hosts, the line in a
-team's chat, work that
-arrives complete, reviews that catch what gates cannot, and doctrine and
-measurement. Last come the developer machine and the runs a person owes.
+second team adopt Jig, including a reference reviewer and the hub for a
+team on several hosts. The hub brings the line to a team's chat. Then come
+work that arrives complete, reviews that catch what gates cannot, doctrine,
+measurement and tooling for the developer machine.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -770,40 +723,6 @@ ships, the design must guarantee that:
 - the doctrine (M7 invariant, the human-in-the-loop registry's Merge row, the
   maturity criteria) changes in the same pull request, in the direction the
   decision picks.
-
-### 47. A repository's own rules for starting, reviewing and finishing work
-
-A team that runs agents on its tracker has rules for that work: work starts
-only from a validated ready state and only on an item for this repository,
-the item shows "in review" while its pull request waits, only a person or
-the release tooling closes it, and the board shows stopped work as blocked,
-with a reason. `do-item`, `work-batch` and the dispatcher claim, move and
-close items by one fixed rule, so a team whose rules differ keeps them in
-hooks and scripts outside Jig, where an agent can skip them. This item
-lets a repository state those rules as configuration that every skill which
-claims, moves or closes an item honours. Every setting is optional, and an
-unset one keeps today's behaviour. Its settings are built
-([CHANGELOG.md](../CHANGELOG.md)); what remains is a run on a working
-repository, owed by a person.
-
-Done when a repository on Jira with all of these set runs an item from its
-ready pool to a merged pull request without a hook or script of its own,
-and an item that fails a rule is refused before anything is written.
-
-### 48. Fitting the drive to a repository's reviewer
-
-The drive reads a reviewer that reviews through the forge's own [review
-objects](../GLOSSARY.md) (CodeRabbit, for one) from its latest review and
-its check run on the head. It counts inline threads and findings in every
-review body whose format the built-in reviewer profile names; CodeRabbit
-is the first. Each body finding must be answered before convergence.
-
-What remains is a run on a working repository, owed by a person: a drive to
-merge-ready on a repository whose reviewer is CodeRabbit, with no bridge of
-its own.
-
-Done when a repository whose AI reviewer is CodeRabbit runs a drive to
-merge-ready with no bridge of its own.
 
 ### 60. A reference reviewer for pull requests
 
@@ -1074,50 +993,6 @@ colours agree. One pull request, the design's first step.
 Done when every page Jig's tooling draws takes its colours from
 `theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
 and each genre's contrast test holds its light and dark pairs.
-
-### 41. Configurable issue attributes: type, priority and size
-
-The [tracker interface](../GLOSSARY.md) carries an issue's type, priority
-and size as canonical values. Its callers read those values, and every
-filing through the interface checks them inside the write, refusing when
-a required value is missing (an epic needs no size). A repository chooses where each is kept through
-`issue_tracker.facets`: the tracker's own field, a named custom field or
-labels, with a documented default per adapter:
-
-- **GitHub Issues**: the issue type; the organization's Priority field; the
-  Effort field when its options carry the size names, else size labels;
-  each only for a repository that keeps no labels for it.
-- **Jira**: type labels, with every new issue filed as the configured
-  `issue_tracker.jira.issue_type` until a type store is named; the priority
-  field; size as labels until a size field is named.
-- **Linear**: labels for type and size; its priority field; the estimate as
-  an option for size.
-
-GitHub detects an unnamed store, keeps a facet's existing labels and refuses
-conflicting label and field evidence. A named store never waits on detection.
-Jig keeps type and priority in GitHub's issue type and Priority field, and
-size in its Effort field. The issue forms and `report-bug.ts`,
-which file around the interface, set the type and leave priority and size
-to triage; `report-bug.ts` still also applies the `bug` label.
-
-Jira's issue-type and custom-field stores and Linear's estimate store are
-built. What remains is their live runs, one issue opened from the bug form
-to confirm it is filed as a Bug, `report-bug.ts` no longer applying the
-`bug` label, and a person's step on Jig's own
-organization: retiring GitHub's default Task issue type, so the web
-interface offers no type that names nothing. These are the remaining steps
-of [the design's build order](tracker-facets.md#build-order).
-A store kept by the repository's own command waits until a repository names
-a facet that needs it.
-
-Changes to the design follow from a Jira team's use. An issue of a
-listed native type (`issue_tracker.labels.epic_types`) reads as an epic on
-every adapter with issue types, replacing the non-goal that kept the epic a
-label.
-
-Done when a repository on each adapter files and reads all three in its
-configured store, and Jig's own repository keeps them in GitHub's fields
-with no type, priority or size labels.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 
@@ -1422,6 +1297,11 @@ and the install guide names the validated setup path. The design records the
 conditions for considering a tap without adopting one ahead of that evidence.
 
 ## Later
+
+- **Command store for tracker facets.** Let a repository supply a command
+  per facet when the tracker cannot represent that facet in its own fields
+  or labels. Build it when a repository names the facet it needs, following
+  the [command store design](tracker-facets.md#later-the-command-store).
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
   existing tracker interface, following the

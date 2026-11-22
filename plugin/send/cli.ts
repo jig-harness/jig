@@ -1,6 +1,6 @@
 /**
  * `jig send <address> <verb> [arguments]`: write one record of a kind the
- * line already reads, and exit (`design/addresses.md`). It types nothing
+ * line already reads, and exit (`plugin/protocol/addresses.md`). It types nothing
  * into a session; the record's reader acts on it at its next run. The verbs
  * are a closed list (`lib/verbs.ts`), and each record is written by the
  * writer of the component that owns it.

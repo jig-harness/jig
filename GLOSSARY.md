@@ -917,7 +917,7 @@ make, use the entry's term instead.
   issue; where the tracker keeps the value is its *facet store*. The skills
   read the value, never the label or field behind it, and every filing
   through the interface is checked for all three
-  ([design](design/tracker-facets.md)).
+  ([Tracker facets chapter](plugin/protocol/tracker-facets.md)).
 - **Facet store** (store) — where a tracker keeps one *issue facet*: the
   tracker's own field for it (`native`, such as GitHub's or Jira's issue
   type), a custom field the repository names (`field`), or a label per
@@ -926,7 +926,7 @@ make, use the entry's term instead.
   the repository's issues carry them, else the organization's matching
   field, read by detection. A repository names its own in
   `issue_tracker.facets`, and no repository's store moves unless its
-  configuration says so ([design](design/tracker-facets.md)).
+  configuration says so ([Tracker facets chapter](plugin/protocol/tracker-facets.md)).
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
@@ -2076,7 +2076,7 @@ make, use the entry's term instead.
   values are generated from the code and a gate fails the build when a
   chapter and the code disagree; only the meaning of each value and the
   chapter's prose are written by hand
-  ([design/protocol.md](design/protocol.md)). *Avoid*: spec, specification
+  ([Protocol chapters](plugin/protocol/README.md)). *Avoid*: spec, specification
   (a spec is what a work item links).
 - **Rule matcher** — the one piece of the plugin that decides whether a rule
   in a repository's configuration matches a tracker item or a change, for

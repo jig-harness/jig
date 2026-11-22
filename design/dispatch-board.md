@@ -125,7 +125,7 @@ One predicate decides it, a pure function in
 `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`. The tick calls it to
 place a card, `announce-merge-ready.ts` calls it before it posts, and
 `jig ask` calls it for what a converged drive waits on and for the `merge`
-station ([addresses](addresses.md#an-address-names-a-station-on-a-piece-of-work)),
+station ([addresses](../plugin/protocol/addresses.md#stations)),
 so the board, the drive's announcement and the answer a person gets about
 one pull request cannot disagree. It takes the facts
 of one pull request and returns its lane and, for each condition not met,

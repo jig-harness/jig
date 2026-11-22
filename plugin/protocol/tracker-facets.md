@@ -1,6 +1,6 @@
 # Tracker facets: type, priority and size
 
-Version 1 · provisional, moved by [plan item 41](https://github.com/jig-harness/jig/issues/518)
+Version 1 · stable
 
 Every issue carries facts beside its labels: what kind of work it is
 (its type), how soon it matters (its priority) and how much work it is (its
@@ -36,8 +36,10 @@ These answers carry the facets:
 - **The dispatcher's tick record** carries each facet's store and why, and
   the assigned items that lack a facet the repository keeps.
 
-How the stores are read and written, detected and moved:
-[the design of the issue facets](https://github.com/jig-harness/jig/blob/main/design/tracker-facets.md).
+[Configuration](../CONFIGURATION.md#issue_tracker) explains how to set a
+store, how Jig detects it, and what makes a read or write fail. The
+[file-issue reference](../skills/file-issue/README.md) covers checking
+facet values and moving them between stores.
 
 ## The facets
 

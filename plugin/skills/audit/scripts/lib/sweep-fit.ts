@@ -1,7 +1,7 @@
 /**
  * Whether a repository that keeps its issues' type, priority and size on a
  * tracker runs the weekly sweep that catches an issue filed without them
- * (design/tracker-facets.md, "The weekly sweep"): the tracker refuses such a
+ * (plugin/skills/file-issue/README.md, "The weekly sweep"): the tracker refuses such a
  * filing through its own scripts, but an issue form or a filing by hand goes
  * around them, and only the sweep finds what no pool reads.
  *

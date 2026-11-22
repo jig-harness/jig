@@ -70,16 +70,15 @@ with the review.
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
-| [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
+| [Threads for the dispatch dashboard](addresses.md) | 42 |
 | [The dispatch dashboard, including required phone access](dispatch-dashboard.md) | 42 |
 | [The hub, a shared control plane for many dispatchers](control-plane.md) | 49 |
 | [The line in a team's chat](chat.md) | 54 |
 | [Consumer actions, which Jig changes a repository must act on](consumer-actions.md) | 43 |
 | [Distribution channels](distribution.md) | 45 |
-| [Issue facets: type, priority and size wherever the tracker keeps them](tracker-facets.md) | 41; Later: the command store |
+| [Command store for tracker facets](tracker-facets.md) | Later: the command store |
 | [Structured answers, approving or choosing a parked decision in a word](structured-answers.md) | 46 |
 | [The classes of need, and where each is settled](need-classes.md) | 50 |
-| [The Jig Protocol, chapters generated from the code and held to it by a gate](protocol.md) | Backlog: #1039 (the epic's acceptance) |
 | [What a dispatched session leaves and where it runs](dispatched-sessions.md) | 51 |
 | [Outbound calls, one governed transport for every system Jig calls](outbound-calls.md) | 55 |
 | [The epic planner, every epic planned and its plan kept current](epic-planner.md) | 56 |

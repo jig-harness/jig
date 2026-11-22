@@ -12,7 +12,8 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 First comes what lets a team's pull requests reach merge-ready with nobody
 watching. An agent working alone cannot get past a person, the dispatcher
 leaves no work stranded, and a person sees and steers the work from one
-place. Every run the dispatcher starts says what it concluded. Last, a host
+place, with each piece of work and its correspondence together. Every run
+the dispatcher starts says what it concluded. Last, a host
 can run the line on its own model-provider accounts and on a choice of agent
 programs.
 
@@ -113,20 +114,6 @@ waiting. Then the page places every piece of work the dispatcher knows,
 whoever drives it: coming, picking up, driven, needs you, ready to merge,
 or merged. Work moves in any direction, and a pull request
 that was ready and moved back says why. Merging stays a person's.
-
-### 39. Addresses: asking and telling the stations of the line
-
-Every station on a piece of work has an address, such as
-`drive@jig#456`: the drive of pull request 456. `jig ask <address>` says
-who holds the station, what state it is in and what it waits on. It also
-shows what was said to the station and by it. It reads the tracker, the
-pull request and the dispatching machine's records.
-`jig send <address> <verb>` writes the assignment, label, comment or
-mailbox directive the line already acts on, from a closed list of verbs,
-and checks first that the station can take it. The operator skill,
-`/jig:operator`, turns a question such as "what is waiting on me" into
-those commands. Nothing new is stored, and no agent has to keep running for an
-address to answer.
 
 ### 46. Structured answers: approving or choosing a parked decision in a word
 
@@ -269,11 +256,10 @@ and nothing switches until the measurement says it should.
 
 Next comes delegated merge, once an agent cannot push or merge by any other
 path. Then come what lets a second team adopt Jig: one control plane for a
-team on several machines and one trusted statement of what Jig writes. The
-line comes to a team's chat with the control plane. Then come work that arrives complete, and reviews that
-catch what checks cannot. Last come the practices
-the modules and skills lack, measurement, the developer machine and the runs
-that wait on a person.
+team on several machines and a reference reviewer for pull requests. The
+control plane brings the line to a team's chat. Then come work that arrives
+complete, reviews that catch what checks cannot, practices the modules and
+skills lack, measurement and tooling for the developer machine.
 
 ### 9. Delegated merge (`pull_requests.merge: auto-on-converged`)
 
@@ -285,22 +271,6 @@ until [the pass trust boundary](#40-the-pass-trust-boundary-as-mechanisms)
 holds, so an agent that may arm a merge has no other way to push or merge.
 Jig itself keeps a person merging
 ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
-
-### 47. A repository's own rules for starting, reviewing and finishing work
-
-A team states the rules its agent work follows, and every Jig skill that
-claims, moves or closes an item keeps them. Work starts only when a check
-the team supplies passes and only from the states the team allows, and the
-dispatcher can pick up from an unassigned ready pool. Every rule is
-optional, and a team that sets none keeps today's behaviour. The rules are
-built; what remains is proving them on a team's own Jira project, from its
-ready pool to a merged pull request.
-
-### 48. Fitting the drive to a repository's reviewer
-
-Some AI reviewers, CodeRabbit for one, write findings in the text of their
-review rather than as comments on lines. The drive reads those findings too,
-so it never finishes with them unanswered.
 
 ### 60. A reference reviewer for pull requests
 
@@ -390,22 +360,6 @@ the decision, explainer and audit sheets, and the code-stats report. Each
 will follow the reader's light or dark setting and carry Jig's mark as its
 icon. Every text colour will meet WCAG AA, the Web Content Accessibility
 Guidelines' minimum contrast, in both modes.
-
-### 41. Configurable issue attributes: type, priority and size
-
-Every issue records its type, priority and size (an epic needs no size), so a
-team can sort and filter its tracker by them. A team chooses where its
-tracker keeps each one: the tracker's own field, a custom field or labels.
-Each tracker Jig supports has a documented default. On GitHub Issues that is
-the issue type and the organization's own issue fields, for a repository that
-does not already keep them in labels. No repository's store moves unless it
-asks. Every way Jig's tools file an issue through the tracker sets all three
-(an epic needs no size) and checks them. The issue forms set the type and
-leave priority and size to triage. The weekly check can move an issue missing an attribute back to
-triage while it has not been started, or only comment on it. Jira's
-issue-type and custom-field stores and Linear's estimate are built; still to
-come are live checks of those stores. Also to come: an epic recognised by its
-issue type as well as its label.
 
 ### 43. Consumer actions: which Jig changes a repository must act on
 

@@ -43,8 +43,8 @@ whether they are built is decided once the first is in use
 ([Build order](#build-order)). It grows from today's
 dispatch dashboard and the line it serves
 ([dark-factory-dispatch.md § Control](dark-factory-dispatch.md#control-observe-record-report-steer),
-item 33), from `jig ask`, `jig send` and `/jig:operator`
-([addresses.md](addresses.md), item 39), and from the Jig plugin for Orca
+item 33), from [the address commands and operator skill](../plugin/protocol/addresses.md),
+and from the Jig plugin for Orca
 ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca),
 item 34). Most of its status per pull request is the
 [dispatch board](dispatch-board.md), item 36, partly built, which
@@ -424,7 +424,7 @@ until stage 2, a host's page sees only the pickups that host runs.
 
 A **thread** is one piece of work's correspondence: the entries
 `jig ask --thread` derives for each of its addresses, in one list
-([addresses.md § The thread](addresses.md#the-thread-of-an-address)). The
+([thread design](addresses.md#what-the-thread-gains-for-the-dashboard)). The
 dashboard stores none of it. Its entries grow under `ask`'s version 1:
 
 - **Each entry gets a stable id.** A question gets its key, its class and a

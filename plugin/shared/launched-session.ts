@@ -11,7 +11,7 @@
  * (`send/lib/verbs.ts`). That stops a skill's mistake. It does not stop a
  * session that sets out to act as its person, which can clear the variable
  * or call the forge itself with the credentials it holds
- * ([design/addresses.md](../../design/addresses.md)).
+ * ([Addresses chapter](../protocol/addresses.md)).
  *
  * A drive a dispatched session armed also knows that launch when it does not
  * run under it: a terminal tab's login shell does not inherit `JIG_LAUNCH`,
