@@ -1,8 +1,7 @@
 # Retrospective: the introduction's line figure, second pass
 
-Written for needle-eye's log: copy it there as `2026-11-22-jig-intro-figure-pass-2.md`
-and make the amendments it proposes in the skills it names, in that repository's
-own pull request. It follows that repository's template. It also holds the notes
+A record of what the design method said and what happened in this round, with the
+amendments it proposes to that method. It also holds the notes
 on the three trials the video-techniques retrospective left open: (a) one open
 "surprise me" brief, (b) a render-and-look loop on every candidate, (c) the blind
 side-by-side pick viewer, and on Gemini 4 Neon as a third model family.
@@ -13,10 +12,9 @@ side-by-side pick viewer, and on Gemini 4 Neon as a third model family.
 - **Date:** 2026-11-22 (the pick is Ophir's and was not made when this was written).
 - **Written by:** the session that ran the round (Claude, Sonnet 5.5, in Claude
   Code). Ophir picks.
-- **Skills used:** `needle-eye:model-routing`, `needle-eye:direction` (the
-  contract and render rules; the round of variations did not run),
-  `needle-eye:astra-drawing`, `needle-eye:one-description-many-renderers` and
-  `needle-eye:checks`, version 0.1.0.
+- **Method steps used:** model routing, direction (the contract and render rules;
+  the round of variations did not run), drawing with the second model family,
+  one description for many renderers, and the layered checks.
 
 ## What the method said, and what happened
 
@@ -105,7 +103,7 @@ side-by-side pick viewer, and on Gemini 4 Neon as a third model family.
 
 ## Amendments made
 
-None here. They go into needle-eye in its own pull request.
+None here. The proposals below are for whoever maintains the method.
 
 | Skill and section | Change | The practice behind it |
 | --- | --- | --- |

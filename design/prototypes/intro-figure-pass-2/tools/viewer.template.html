@@ -246,26 +246,42 @@ const DATA = __DATA__;
     $("#saved").textContent = pick.at ? "Locked " + pick.at.replace("T", " ").slice(0, 16) + " UTC" : "Locked";
     $("#revealed").scrollIntoView({ block: "nearest" });
   }
-  $("#lock").addEventListener("click", async () => {
-    const pick = { first: val("first"), second: val("second"), note: $("#note").value.trim(), at: new Date().toISOString() };
-    showReveal(pick);
-    if (db) { try { await db.doc("picks/main").set(pick); $("#saved").textContent += " \u00b7 saved to the page"; } catch (e) { $("#saved").textContent += " \u00b7 not saved to the page (" + (e.code || "error") + ")"; } }
-    else $("#saved").textContent += " \u00b7 not saved to the page (no store in this view)";
-  });
-  $("#reopen").addEventListener("click", async () => {
+  const LS = "intro-figure-pass-2:pick";
+  const local = { get: () => { try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } }, set: (p) => localStorage.setItem(LS, JSON.stringify(p)), del: () => localStorage.removeItem(LS) };
+  function unlockUi() {
     st.locked = null; $("#revealed").hidden = true; $("#lock").hidden = false; $("#reopen").hidden = true; $("#saved").textContent = "";
     $$("#pick input, #note").forEach((i) => (i.disabled = false)); syncLock();
-    if (db) { try { await db.doc("picks/main").delete(); } catch {} }
+  }
+  $("#lock").addEventListener("click", async () => {
+    const pick = { first: val("first"), second: val("second"), note: $("#note").value.trim(), at: new Date().toISOString() };
+    let where = "";
+    try {
+      if (db) { await db.doc("picks/main").set(pick); where = "saved to the page"; }
+      else { local.set(pick); where = "saved in this browser only"; }
+    } catch (e) {
+      $("#saved").textContent = "Not locked: the pick could not be saved (" + ((e && e.code) || "error") + "). Try again.";
+      return;
+    }
+    showReveal(pick);
+    $("#saved").textContent += " \u00b7 " + where;
+  });
+  $("#reopen").addEventListener("click", async () => {
+    try {
+      if (db) await db.doc("picks/main").delete(); else local.del();
+    } catch (e) {
+      $("#saved").textContent += " \u00b7 not reopened: the saved pick could not be deleted (" + ((e && e.code) || "error") + ")";
+      return;
+    }
+    unlockUi();
   });
 
   render();
   (async () => {
     try {
       db = await (window.claude && window.claude.use ? window.claude.use("db") : null);
-      if (!db) return;
-      const snap = await db.doc("picks/main").get();
-      if (snap.exists) {
-        const p = snap.data();
+      const snap = db ? await db.doc("picks/main").get() : null;
+      const p = snap ? (snap.exists ? snap.data() : null) : local.get();
+      if (p) {
         const f = $(`input[name="first"][value="${p.first}"]`); if (f) f.checked = true;
         const s2 = $(`input[name="second"][value="${p.second || ""}"]`); if (s2) s2.checked = true;
         $("#note").value = p.note || "";

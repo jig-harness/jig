@@ -77,7 +77,7 @@ one.
 
 - **Claude** wrote the shared brief, the four contracts, the checking tools, the
   viewer, candidate A and the review of every candidate
-  ([needle-eye model-routing](https://github.com/liqweed/needle-eye)).
+  (the design method's model routing).
 - **Astra** drew B and D from their briefs, each in a fresh Codex session with
   its caches inside the workspace, then took bounded fix lists
   ([briefs/fix-pass-b.md](briefs/fix-pass-b.md) and the passes after it).

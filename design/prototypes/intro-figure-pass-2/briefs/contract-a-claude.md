@@ -1,7 +1,7 @@
 # Contract A (Claude): the bench
 
-Made by Claude. Drawn with the motion-kit isometric kit's solids (`box`, `prism`,
-`drawSolids`) from one description; no model family drew it.
+Made by Claude. Drawn by the candidate's own isometric engine (`World` and
+`renderWorld` in `candidates/a-claude/`) from one description.
 
 - **Reference world:** the plan of a machine-shop bench and a catalogue of
   industrial manipulators: pedestal-mounted arms with a single fitted tool.
