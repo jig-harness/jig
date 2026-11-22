@@ -84,17 +84,13 @@ the same promise, then expands the line before its foundations.
 ### The home page's one loop
 
 The page opens on the delivery-line headline and checkable sentence, then
-steps through five short steps, in this order: the line (seven stations, run
-as a loop, with the person merging at the sixth and the follow-up sending
-what the merge owes back to the first); the tick (a timer wakes the
-dispatcher, which starts what should be running and is not); the slots (two
-sessions per account, and the wall, the usage limit that keeps an account out
-of every launch until it resets); the ledger (the drive keeps its round, last
+steps through five short steps, in this order: the line (seven stations in order, with the person merging at the sixth and the follow-up reaching the first as a short side feed, not a closed track); the tick (a timer wakes the
+dispatcher, which starts what should be running and is not); the capacity step (how the dispatcher takes capacity into account, with no exact count of slots, minutes or limits; its copy is not yet approved and is left to the next session); the ledger (the drive keeps its round, last
 head checked and parked questions in one comment on the pull request); and
 the question (when only a person can settle something, the drive parks a
 question with its options and the next tick re-arms it once answered). The
 exact copy is in the round's brief. The page closes on “You merge.” That is
-the loop, with the merge as its human boundary, rather than a second tour of
+the line, with the merge as its human boundary, rather than a second tour of
 the architecture.
 
 The steps are illustrative, labelled as such. A recorded run used as
