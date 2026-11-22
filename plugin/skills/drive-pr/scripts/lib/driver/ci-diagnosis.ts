@@ -304,7 +304,7 @@ export async function diagnoseCi(
         head,
         "the pass was not dispatched",
       );
-      if (!recorded) return 1;
+      if (!recorded) return result.resumed ? 1 : result.code;
       return result.resumed ? "continue" : result.code;
     }
     const receipt = await judgeReceipt(context.pr, head, readDiagnosis(report));
