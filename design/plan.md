@@ -592,20 +592,29 @@ its item, pull request and follow-up under the same thread that `jig ask`
 prints. Entries keep stable IDs across reads, questions report their
 keys, classes and statuses, and answers identify their questions,
 authors and recorded permission evidence; a legacy receipt remains visible
-with its historical permission marked unknown. The retained thread record
-keeps an unanswered park's expired question after the active park clears.
-Resolved parks remain in the thread while their bounded receipts remain;
-the view shows every surviving receipt and marks the history incomplete,
-including when trimming leaves none. Source text is retrieved only from the
-authorized forge scope, compared with the retained body hash, and later edits
-are identified without changing the retained verdict; a legacy receipt without
-a hash is unverified, while an absent, unauthorized, expired or cancelled
-source read leaves its retained author, time and URL visible with its text
-unavailable. Joins expose evidence from the repository's own people, and a
-batch key joins its members into one thread. The waiting list contains every
+with its historical permission marked unknown. When an unanswered park ends,
+the drive ledger writes its expired-park receipt (key, question, expiry and
+the ledger occurrence id) before clearing the active park, so the thread keeps
+that question and distinguishes expiry from absent history. Resolved parks
+remain in the thread while their bounded receipts remain; the view marks
+history incomplete when count eviction or byte trimming removed any receipt,
+including a trim with no survivors, but not for an intact known-empty history.
+The Work page initially shows the newest 20 retained thread entries, names the
+omitted count, and lets the reader reveal the older retained entries. Source
+text and a source link are rendered only after the configured forge scope
+validates the receipt URL's repository and pull request and the body is
+compared with the retained hash; a legacy receipt without a hash is unverified.
+An absent, unauthorized, expired or cancelled source read leaves its retained
+author and time visible while both source text and link are unavailable. Joins
+expose evidence from the repository's own people, and a batch key joins its
+members into one thread. The waiting list contains every
 eligible thread once, and removes it when its final need for a person's answer
-or action settles; a host whose waiting read is unavailable is shown as
-unavailable rather than treated as an empty list. Hiding a thread writes
+or action settles. A mixed read keeps each current repository's entries while
+identifying every unread repository as incomplete, so an unread repository's
+missing row never proves its final need settled; a wholly unavailable host is
+shown as unavailable rather than treated as an empty list. A source that was
+previously read successfully keeps its last rows visible with that timestamp
+marked stale while healthy sources continue to refresh. Hiding a thread writes
 nothing to Jig. Orca's browser opens
 the same page; and a phone through the front sees only the repositories
 its grant names. For a stage a person decides to build, stage 3 is done
