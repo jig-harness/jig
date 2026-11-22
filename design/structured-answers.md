@@ -24,9 +24,11 @@ a different note or another person's free answer leaves it disputed.
 
 A decision digest identifies the framing that a person read. Every
 structured line Jig offers to copy carries it. A saved browser draft belongs
-to that digest and the occurrence when the decision was parked: reframing a
-decision, or parking the same wording again, discards its saved pick, note and
-free answer. A submitted answer is instead read only when its comment is newer
+to that digest and, when both framings record a park time, the occurrence when
+the decision was parked: reframing a decision, or parking the same wording
+again, discards its saved pick, note and free answer. A draft from a legacy
+line without a park time instead falls back to the digest, so it can survive an
+identical re-park while that time is unavailable. A submitted answer is instead read only when its comment is newer
 than the current park. A structured choice that names a digest must name the
 current one; a digestless answer is bound by that time check alone for a parked
 question. An older copied answer posted after a new park can therefore still be

@@ -495,10 +495,10 @@ fields, the fold by aliases and the list of threads in its stage 2. A
 parked question's answer is not part of a plan: the dashboard posts it as a
 comment, and the `drive-answer` record carries no plan id, dry-run digest
 or proof of presence for it
-([structured-answers.md](structured-answers.md)). Today the thread exposes
-the raw answer line; carrying the decision digest and chosen option in an
-answer payload, and showing the question's options and the answer's choice,
-are planned dashboard additions
+([structured-answers.md](structured-answers.md)). The answer payload already
+carries the decision digest and chosen option. Today the thread exposes the raw
+answer line; showing the question's options and the answer's choice are planned
+dashboard additions
 ([structured-answers.md](structured-answers.md)).
 
 ## Left out
