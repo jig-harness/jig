@@ -43,6 +43,7 @@ import {
   type ValueParser,
   withDefault,
 } from "../shared/vendor/optique.mjs";
+import { pickupConditionOptions } from "../shared/pickup-condition-options.ts";
 import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
 import { dashboardAccess } from "./dashboard-access.ts";
 import {
@@ -217,7 +218,7 @@ const result = command(
       description: message`The record's token, named in the session's prompt.`,
     }),
     outcome: argument(string({ metavar: "done|failed|waits" }), {
-      description: message`How the session ended; waits is a pickup or a follow-up a rate limit stopped, or a follow-up whose arm is still pending.`,
+      description: message`How the session ended; waits is a pickup or a follow-up a rate limit stopped, a follow-up whose arm is still pending, or a claimed pickup whose push the host's test lock held past its wait.`,
     }),
     pr: optional(
       option("--pr", countValue("PR"), {
@@ -241,14 +242,18 @@ const result = command(
     ),
     reasons: multiple(
       option("--reason", string({ metavar: "REASON" }), {
-        description: message`The reason the refused claim printed: once, or once per --key. With waits: what it waits for, rate-limit (the default) or pending, a follow-up's arm still pending.`,
+        description: message`The reason the refused claim printed: once, or once per --key. With waits: what it waits for, rate-limit (the default), pending, a follow-up's arm still pending, or test-lock, a claimed pickup whose push the pre-push hook refused only because its wait for the host's test lock ran out.`,
       }),
     ),
     until: optional(
       option("--until", string({ metavar: "TIME" }), {
-        description: message`With waits: when the rate limit resets, or when to look at the pending arm again (ISO 8601, at most a day ahead); the item or the follow-up starts again after it.`,
+        description: message`With waits: when the rate limit resets, or when to look at the pending arm again (ISO 8601, at most a day ahead); the item or the follow-up starts again after it. Optional with --reason test-lock, whose relaunch waits for the host's validation capacity.`,
       }),
     ),
+    ...pickupConditionOptions({
+      merged: message`With waits: resume the single-item pickup after the pull request merges.`,
+      closed: message`With waits: resume the single-item pickup after the tracker item closes.`,
+    }),
     arm: optional(
       option("--arm", string({ metavar: "NAME" }), {
         description: message`With waits --reason pending: the arm still pending and what it waits for, in one line, which a person is told if it stays pending past dispatch.followup_within.`,
@@ -649,27 +654,45 @@ async function decisionResult(
   return framedResultMain(args.record, args.token, args.outcome, text);
 }
 
-/** `waits --until <time> [--reason rate-limit|pending] [--arm <name>]`: no handoff, refusal or decision beside it. */
-function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
-  if (
+/** Whether a `waits` result names anything it does not take: a handoff, a refusal, a decision or a second reason. */
+function waitsOverreach(
+  args: Extract<Subcommand, { action: "result" }>,
+): boolean {
+  return (
     [args.pr, args.none, args.decision].some((v) => v !== undefined) ||
     args.refused.length > 0 ||
     args.keys.length > 0 ||
     args.reasons.length > 1
-  ) {
+  );
+}
+
+/** The `waits` options given, as the command line `resultMain` reads. */
+function waitsArgv(args: Extract<Subcommand, { action: "result" }>): string[] {
+  const named: Array<[string, string | undefined]> = [
+    ["--until", args.until],
+    ["--reason", args.reasons[0]],
+    ["--arm", args.arm],
+    ["--until-merged", args.untilMerged],
+    ["--until-closed", args.untilClosed],
+  ];
+  return named.flatMap(([flag, value]) =>
+    value === undefined ? [] : [flag, value],
+  );
+}
+
+/** `waits --until <time> [--reason rate-limit|pending|test-lock] [--arm <name>]`: no handoff, refusal or decision beside it. */
+function waitsResult(args: Extract<Subcommand, { action: "result" }>): number {
+  if (waitsOverreach(args)) {
     console.error(
-      "jig dispatch result: waits takes --until, and at most one --reason and one --arm; no --pr, --none, --decision, --refused or --key",
+      "jig dispatch result: waits takes --until (optional with --reason test-lock), and at most one --reason and one --arm; no --pr, --none, --decision, --refused or --key",
     );
     return 2;
   }
-  const reason = args.reasons[0];
   return resultMain([
     args.record,
     args.token,
     args.outcome,
-    ...(args.until === undefined ? [] : ["--until", args.until]),
-    ...(reason === undefined ? [] : ["--reason", reason]),
-    ...(args.arm === undefined ? [] : ["--arm", args.arm]),
+    ...waitsArgv(args),
   ]);
 }
 
@@ -678,8 +701,15 @@ function waitsRoute(
   args: Extract<Subcommand, { action: "result" }>,
 ): number | null {
   if (args.outcome === "waits") return waitsResult(args);
-  if (args.arm === undefined) return null;
-  console.error("jig dispatch result: --arm goes only with waits");
+  if (
+    [args.arm, args.untilMerged, args.untilClosed].every(
+      (value) => value === undefined,
+    )
+  )
+    return null;
+  console.error(
+    "jig dispatch result: --arm, --until-merged and --until-closed go only with waits",
+  );
   return 2;
 }
 

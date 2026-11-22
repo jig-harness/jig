@@ -1,7 +1,6 @@
 /**
- * Launch records, in the state database's `launches` table (`state.ts`):
- * one row per session, written before launch, so a lost launch answer still
- * holds the stage and account slot. Each column has one writer:
+ * The `launches` table (`state.ts`) holds one row per session, written before
+ * launch so a lost answer still holds the stage and slot. Each column has one writer:
  *
  * - `record`, the tick's: the action, the pull request, the account, the
  *   random token, the workspace, the dispatched mark its workspace carries
@@ -16,8 +15,7 @@
  *   wins, and only its bounded output (`context`) is ever taken out again,
  *   with the run's transcript copy (`transcript-copy.ts`);
  * - `result`, a pickup's session's or a follow-up pass's own answer
- *   (`done` or `failed`), written once by `jig dispatch result` under the
- *   record's token.
+ *   (`done` or `failed`), written once by `jig dispatch result` under its token.
  *
  * A record's state is read from those columns and the process table, the
  * claim judged by the shared rules (`shared/liveness.ts`):
@@ -65,7 +63,7 @@ import {
 } from "./pickup-refusal.ts";
 export type { PickupRefusal, RefusedMember };
 import type { WaitFor } from "./wait-for.ts";
-import { unsettledStartups } from "./session-startup.ts";
+import * as startups from "./session-startup.ts";
 import type { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -96,7 +94,7 @@ import {
 import { latestPickups } from "./launch-pickups.ts";
 import { removeUnwritten, unwrittenOf } from "./unwritten-result.ts";
 import { latestDeaths, witnessedState } from "./launch-recovery.ts";
-import { asResult } from "./launch-result.ts";
+import { rowResult } from "./launch-result.ts";
 import { isDrive } from "./launch-kind.ts";
 import type { SessionResult } from "./session-result-types.ts";
 import { type ControlRows, controlRows, EMPTY } from "./launch-control-rows.ts";
@@ -113,10 +111,8 @@ export type LaunchAction =
 export { isDrive, isInteractive } from "./launch-kind.ts";
 
 /**
- * A pickup's session's or a follow-up pass's own answer, recorded through
- * `jig dispatch result`: `waits` is a pickup the tracker's rate limit
- * stopped, or a follow-up a rate limit or an arm still pending stopped, to
- * be started again once its time has come (`waitsUntil`, `waitsFor`).
+ * A pickup's or follow-up pass's own answer, recorded through `jig dispatch
+ * result`: `waits` is one a rate limit, a pending arm or the host's test lock stopped (`waitsUntil`).
  */
 export type { SessionResult } from "./session-result-types.ts";
 
@@ -138,6 +134,11 @@ export interface LaunchRecord {
   relaunchOf?: string;
   /** For a stalled pickup's relaunch: the tree's head when it was relaunched; one relaunch per item and head. */
   relaunchHead?: string;
+  /** For the relaunch of a pickup stopped on a fault of its host: that fault, which the relaunch's prompt names (`pickup-host-fault.ts`). */
+  relaunchFault?: string;
+  relaunchDependency?: string;
+  /** For the relaunch of a claimed pickup whose push the host's test lock held past its wait (`pickup-lock-wait.ts`): its prompt is to push and go on. */
+  relaunchLockWait?: true;
   version: 1;
   id: string;
   token: string;
@@ -159,6 +160,7 @@ export interface LaunchRecord {
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
+  startupFailureThreshold?: number;
   /** For a headless pass (a drive's, a follow-up's, a pickup's): the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`, or the wrapper's own deadline on a follow-up's or a pickup's pass, which for a pickup is `dispatch.pickup_deadline`); absent on a record written before it was kept. */
   passTimeoutSec?: number | null;
   /** For a pickup: it runs as a headless pass of `do-item` through the wrapper. Absent on an interactive pickup an earlier release started. */
@@ -218,12 +220,7 @@ export interface LaunchRecord {
   rearmConsumed?: boolean;
   /** The vendor session id the tick minted for a Claude Code session or follow-up pass and passed to its agent; `null` when none was. */
   sessionId?: string | null;
-  /**
-   * The dispatched mark the launch's workspace was named and marked with
-   * (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this
-   * record's id. It joins a workspace renamed since to its launch.
-   * `null` on a record written before the mark was kept.
-   */
+  /** The dispatched mark the launch's workspace was named and marked with (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this record's id, which join a workspace renamed since to its launch; `null` on a record written before the mark was kept. */
   mark?: string | null;
   /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round (the `thread_samples` table). */
   samples?: ThreadSample[];
@@ -282,7 +279,8 @@ export interface LaunchClaim extends ProcessIdentity {
 
 export interface LaunchExit {
   context?: string;
-  startup?: "quota" | "unstarted"; // headless stop before any result or transcript
+  startup?: startups.StartupFailure;
+  signInPhrase?: startups.SignInPhrase; // only the recognised phrase
   beforeStage?: true; // process owner publication refused before spawning a stage
   at: string;
   /** The stage's exit code; `null` when it ended on a signal. */
@@ -603,11 +601,7 @@ function answerOf(
   root: string,
 ): Omit<ReadRecord, "record" | "state"> {
   return {
-    result: asResult(
-      row.result,
-      row.result_until ?? null,
-      row.result_decision ?? null,
-    ),
+    result: rowResult(row),
     next: readNext(row.result_next),
     ...waitsOf(row),
     refusal: readRefusal(row.refusal),
@@ -858,7 +852,7 @@ export function pruneLaunches(
   for (const id of ordinalAnchors(records)) kept.add(id);
   for (const id of relaunchAnchors(records)) kept.add(id);
   const settled = settledEnds(root);
-  for (const id of unsettledStartups(records, settled)) kept.add(id);
+  for (const id of startups.unsettledStartups(records, settled)) kept.add(id);
   for (const latest of [
     latestPickups,
     latestRedrives,

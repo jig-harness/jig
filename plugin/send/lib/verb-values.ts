@@ -60,7 +60,7 @@ export const SEND_VERBS = {
   hold: {
     stations: ["drive", "followup", "pickup"],
     person: true,
-    args: "",
+    args: "[--until-merged <PR> | --until-closed <ITEM>] (pickup only)",
     meaning:
       "Keep the line off a pull request with the hold command label, or keep a tracker item out of pickups and batches with a hold on its dispatcher host",
   },

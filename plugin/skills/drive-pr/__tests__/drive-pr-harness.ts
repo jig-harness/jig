@@ -221,6 +221,12 @@ export interface Fixture {
    * every consumer of it is skipped, so it must not block `PR_CONFLICTING`.
    */
   checkRunsUnreadable?: boolean;
+  /** The check-runs read never answers, so its deadline cuts it short. */
+  checkRunsHang?: boolean;
+  /** The check-runs read answers this many times, then never again. */
+  checkRunsHangAfter?: number;
+  /** The check-runs listing's first page links a second that never answers. */
+  checkRunsSecondPageHangs?: boolean;
   /**
    * The mergeability GitHub reports changes between the first `gh pr view`
    * read and later ones — the window `announce-merge-ready.ts` closes with its
@@ -914,6 +920,9 @@ set -euo pipefail
 if [ -n "\${DRIVE_PR_STUB_GH_LOG:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ]; then
   printf '%s\\n' "\${1:-} \${2:-}" >> "$DRIVE_PR_STUB_GH_LOG"
 fi
+if [ -n "\${DRIVE_PR_STUB_GH_TIMES:-}" ] && [ -z "\${DRIVE_PR_STUB_GH_NESTED:-}" ] && [ "\${1:-} \${2:-}" = "pr view" ]; then
+  date +%s%N >> "$DRIVE_PR_STUB_GH_TIMES"
+fi
 export DRIVE_PR_STUB_GH_NESTED=1
 (
   # Model gh's flag parser before any fixture response. A newly misspelled
@@ -1417,6 +1426,17 @@ if [ -f "$F/transient-failure" ]; then
   esac
 fi
 
+# The removal mutation and its timeline proof succeeded, but the confirmation
+# snapshot immediately after them timed out. This is distinct from a timeline
+# failure: recovery must retain the release-proof-pending signal.
+if [ -f "$F/recovery-snapshot-timeout" ] && [ "\${1:-}" = "pr" ] &&
+  [ "\${2:-}" = "view" ] &&
+  jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+  rm "$F/recovery-snapshot-timeout"
+  echo "gh-stub: simulated recovery snapshot timeout" >&2
+  exit 124
+fi
+
 # A transient failure of the sweep's liveness probe ALONE. Matched on an
 # argument that is EXACTLY \`state\` — the sweep's probe asks for that one field
 # and nothing else, while evaluate()'s opening snapshot and still_on_head()
@@ -1824,6 +1844,10 @@ if [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "edit" ]; then
     [ "$a" = "--remove-label" ] && action="unlabeled"
   done
   [ -n "$action" ] || { echo "gh-stub: unsupported pr edit" >&2; exit 1; }
+  remove_failed=0
+  if [ "$action" = "unlabeled" ] && [ -f "$F/remove-label-fails" ]; then
+    remove_failed=1
+  fi
   if [ "$action" = "labeled" ]; then
     jq '.labels = ((.labels + [{name:"ci:hold"}]) | unique_by(.name))' "$F/pr-view.json" > "$F/pr-view.json.tmp"
   else
@@ -1832,11 +1856,23 @@ if [ "\${1:-}" = "pr" ] && [ "\${2:-}" = "edit" ]; then
     mv "$F/check-runs.json.tmp" "$F/check-runs.json"
   fi
   mv "$F/pr-view.json.tmp" "$F/pr-view.json"
+  if [ "$action" = "unlabeled" ] && [ -f "$F/omit-unlabel-event" ]; then exit 0; fi
   n=$(jq 'length + 1' "$F/timeline.json")
   jq --arg event "$action" --arg node "LE_$n" \
     '. + [{node_id:$node,event:$event,label:{name:"ci:hold"},actor:{login:"drive-user"},created_at:"2026-09-10T10:00:00Z"}]' \
     "$F/timeline.json" > "$F/timeline.json.tmp"
   mv "$F/timeline.json.tmp" "$F/timeline.json"
+  if [ "$action" = "unlabeled" ] && [ -f "$F/intervening-release-race" ]; then
+    jq '. + [
+      {node_id:"LE_human_readd",event:"labeled",label:{name:"ci:hold"},actor:{login:"human-user"},created_at:"2026-09-10T10:00:01Z"},
+      {node_id:"LE_drive_remove",event:"unlabeled",label:{name:"ci:hold"},actor:{login:"drive-user"},created_at:"2026-09-10T10:00:02Z"}
+    ]' "$F/timeline.json" > "$F/timeline.json.tmp"
+    mv "$F/timeline.json.tmp" "$F/timeline.json"
+  fi
+  if [ "$remove_failed" -eq 1 ]; then
+    echo "gh-stub: simulated remove-label failure" >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -2006,11 +2042,44 @@ for a in "$@"; do
     graphql)             emit "$F/threads.json"; exit 0 ;;
     *issues/*/timeline*)
       # The forge timing out on the timeline read, while every other read answers.
+      if [ -f "$F/timeline-timeout-after-unlabel-count" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+        remaining=$(< "$F/timeline-timeout-after-unlabel-count")
+        if [ "$remaining" -gt 0 ]; then
+          printf '%s' "$(( remaining - 1 ))" > "$F/timeline-timeout-after-unlabel-count"
+          echo "gh-stub: simulated proof timeline timeout" >&2; exit 124
+        fi
+      fi
+      if [ -f "$F/timeline-timeout-after-unlabel" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+        rm "$F/timeline-timeout-after-unlabel"
+        echo "gh-stub: simulated proof timeline timeout" >&2; exit 124
+      fi
+      if [ -f "$F/timeline-malformed-after-unlabel" ] && jq -e 'last.event == "unlabeled"' "$F/timeline.json" >/dev/null; then
+        rm "$F/timeline-malformed-after-unlabel"
+        printf '%s' '{'
+        exit 0
+      fi
       if [ -f "$F/timeline-unreachable" ]; then
         echo "gh-stub: simulated timeline timeout" >&2; exit 1
       fi
       emit "$F/timeline.json"; exit 0 ;;
-    *check-runs*)        emit "$F/check-runs.json"; exit 0 ;;
+    *check-runs*)
+      if [ -f "$F/check-runs-hang" ]; then sleep 60; fi
+      # A listing whose first page names a second one that never answers: the
+      # paged read is cut short after exactly one page.
+      if [ -f "$F/check-runs-second-page-hangs" ]; then
+        case "$*" in
+          *page=2*) sleep 60 ;;
+          *--include*)
+            printf 'HTTP/2.0 200 OK\r\nLink: <https://api.github.com/repos/o/r/commits/c/check-runs?page=2>; rel="next"\r\n\r\n'
+            emit "$F/check-runs.json"; exit 0 ;;
+        esac
+      fi
+      if [ -f "$F/check-runs-hang-after" ]; then
+        left=$(cat "$F/check-runs-hang-after")
+        if [ "$left" -le 0 ]; then sleep 60; fi
+        echo $((left - 1)) > "$F/check-runs-hang-after"
+      fi
+      emit "$F/check-runs.json"; exit 0 ;;
     *actions/runs*)
       [ -f "$F/hold-read-seen" ] && fail_counted "$F/runs-read-fails"
       emit "$F/workflow-runs.json"; exit 0 ;;
@@ -2186,6 +2255,14 @@ export function writeFixture(
     writeFileSync(join(dir, "dirty-on-final-verify"), "");
   }
   if (f.mergeabilityUnreadable) writeFileSync(join(dir, "no-mergeability"), "");
+  if (f.checkRunsHang) writeFileSync(join(dir, "check-runs-hang"), "");
+  if (f.checkRunsSecondPageHangs)
+    writeFileSync(join(dir, "check-runs-second-page-hangs"), "");
+  if (f.checkRunsHangAfter !== undefined)
+    writeFileSync(
+      join(dir, "check-runs-hang-after"),
+      String(f.checkRunsHangAfter),
+    );
   if (f.transientMergeabilityFailure) {
     writeFileSync(join(dir, "transient-failure"), "");
   }
@@ -2547,7 +2624,7 @@ export async function probeIn(
     ),
     {
       env: {
-        ...process.env,
+        ...gitCleanEnv(),
         PATH: `${binDir}${delimiter}${process.env.PATH}`,
         DRIVE_PR_FIXTURES: dir,
         DRIVE_PR_STATE_DIR: stateDir,

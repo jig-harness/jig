@@ -6,8 +6,9 @@
  * markers it carries on the forge or tracker, or the drive state family or
  * the table it is), the schema version writers write now, and what the
  * record means to a reader that meets it. The entries are kept by medium
- * beside this file: `registry-machine.ts`, `registry-tree.ts` and
- * `registry-forge.ts` (the forge and the tracker), each entry of the shape
+ * beside this file: `registry-machine.ts`, `registry-tree.ts`,
+ * `registry-forge.ts` (the forge and the tracker) and `registry-hub.ts`
+ * (the hub's storage), each entry of the shape
  * `registry-kind.ts` declares.
  *
  * The registry declares and `scripts/check-records-registry.ts` derives: the
@@ -25,6 +26,7 @@
  */
 import type { RecordKind } from "./registry-kind.ts";
 import { FORGE, TRACKER } from "./registry-forge.ts";
+import { HUB } from "./registry-hub.ts";
 import { DISPATCHER, DRIVE_STATE, MACHINE } from "./registry-machine.ts";
 import { TREE } from "./registry-tree.ts";
 
@@ -39,6 +41,7 @@ export const RECORD_KINDS: readonly RecordKind[] = [
   ...TREE,
   ...FORGE,
   ...TRACKER,
+  ...HUB,
 ];
 
 const BY_NAME = new Map(RECORD_KINDS.map((kind) => [kind.name, kind]));

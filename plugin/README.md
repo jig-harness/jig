@@ -126,6 +126,8 @@ install, remove, report on and run each of them; `jig upgrade` and
 `jig doctor` keep the plugin itself current and check it,
 [`jig ask`](#asking-a-station-where-it-stands) says where a piece of work
 stands, and [`jig send`](#telling-a-station-what-to-do) tells it what to do.
+`jig hub` belongs to the hub, an optional control plane many hosts'
+dispatchers can share; it has no commands yet and prints its help.
 The first install runs
 from the installed plugin copy, with trusted Bun startup, and puts `jig` on
 `PATH`:
@@ -183,9 +185,14 @@ jig run       [COMPONENT...]
   that changes state is printed before it runs (read-only queries, such as
   a version or a plugin list, are not), and `--json` prints what became of each
   harness and job. In Claude Code it also refreshes each project- and
-  local-scope install of the plugin from its directory, and removes from
-  Claude Code's install record each whose directory no longer exists; one it
-  cannot update safely it leaves as it was, saying why. `--jobs-only`
+  local-scope install of the plugin from its directory, once per repository,
+  and removes from Claude Code's install record each whose directory no
+  longer exists. Claude Code's update reaches one install per repository
+  whichever worktree it runs in, so an install it cannot reach (it refreshed
+  another directory, or another worktree of the repository is current) is
+  refreshed in the install record itself, pointed at the user-scope
+  install's version, and reported as `rewritten`; one it cannot bring there
+  safely it leaves as it was, saying why, and the upgrade then exits 1. `--jobs-only`
   refreshes the jobs and the command without updating the plugin, for after a tool updated it on its own. Each tool
   command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).
   `--scheduled` is what the timers run before each job
@@ -293,7 +300,9 @@ allowlisted environment for its account. A pickup hands its first drive
 back to the dispatcher, which admits it when the pickup has ended. With
 `dispatch.labels.only_labeled` enabled, the pull request needs a dispatch
 label before the dispatcher can admit the drive.
-The dashboard shows causes that need attention.
+The dashboard shows causes that need attention, and the `notify` stage
+sends them through a notification channel the machine file names, such
+as a webhook to a phone.
 
 A person follows a process run, or takes it over, from any shell on the
 host:
@@ -378,7 +387,15 @@ its base. A drive whose failing checks kept failing on the CI service's
 infrastructure through its re-runs and head moves (exit `23`) is re-driven
 once per stop, after a backoff from the stop that doubles with each such stop
 in a row (15 minutes, at most 4 hours), and a person is told once 7 stand in a
-row. A pass deadline that recurred past the drive's restarts (exit `15`)
+row. When the configured reviewer reports that its review did not complete
+and the drive stops (exit `7`), the dispatcher counts the failures on that
+pull request's head. At
+[`dispatch.reviewer_failures_before_escalation`](CONFIGURATION.md#dispatch)
+it raises one need naming the reviewer and waits for a review of that head
+or a new head. A drive that could not read its head's check-runs listing whole (exit
+`25`) is re-driven once per head commit, and a second such stop on that head
+goes to a person as a systematic read failure, with the pages read. A pass
+deadline that recurred past the drive's restarts (exit `15`)
 is re-driven once per head commit too, one that left work in its tree only in
 that tree, and a failure (exit `1`) while the
 pull request conflicts with its base once per pair of its head and its base
@@ -448,6 +465,14 @@ people the host's machine file names under `serve:`. A served person's
 open, not-started assignments need no dispatch state. Unassigned items
 under an epic assigned to them inherit that person, including nested
 epics. Only assignments made by a repository writer qualify.
+
+Who made an assignment is read from the tracker's history, and Linear
+leaves changes made in an issue's first three minutes out of it: an item
+assigned then is never started. Assign a Linear item at least three minutes
+after its creation, or unassign it and assign it again after them; the
+dispatcher considers it at its next tick after an assignment the history
+shows, subject to the usual holds and admission checks. `jig send … assign` and `/jig:file-issue`'s hand-off wait for that
+window themselves.
 
 A repository whose lane is a ready pool sets `dispatch.pool.states`: an
 unassigned open item in one of those states is a pickup too, ranked by the
@@ -555,11 +580,15 @@ The [cost ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) reco
 system, hashed credential, operation and caller in the same budget database.
 The tick report shows each system's known balance, this tick's spending and
 its costliest operations. `jig budget` shows the last 24 hours grouped by
-operation and caller; use `--hours 1` through `--hours 168` to choose the
+operation, caller and repository; use `--hours 1` through `--hours 168` to choose the
 window, or `--json` for its rows and balances. Linear complexity comes from
 `x-complexity`; GitHub query points are recorded where the answer includes
 them. Unknown costs and estimates are marked rather than presented as measured
-points. No query body, token or item content is kept.
+points. No query body, token or item content is kept. A call made with no
+credential at all (no Linear key, and a `linear` client that is not logged
+in) spends nothing and is listed apart under "no Linear key configured",
+with its callers; a logged-in client's calls are labelled as that client's
+own login.
 
 A `low-quota` need names the operations spending a quota when the last hour's
 rate would empty it before its refill. It appears once per quota and clears
@@ -586,6 +615,13 @@ tracker's rate limit stopped before it claimed the item (a tracker script
 exits `5`) records `waits --until <time>` instead (after the claim the pass
 waits for the reset within its deadline, else records `failed`): the item is held until that time, with no
 question for a person, and the first tick after it launches the item again. A pickup
+whose push, after its claim, the repository's pre-push hook refused only because
+its wait for the host's test lock ran out, and whose retries in the pass did not
+get through, records `waits --reason test-lock`: nothing asks a person, and the
+dispatcher relaunches it in its own tree to push and go on, holding the relaunch
+while the host's validation capacity has no room, whether or not `load.enforce`
+is set. After three such waits in a row it is one need, for the steward or a
+person to find why the lock keeps running out. A pickup
 whose claim the repository's start rules (`do_item.preflight_command`)
 refused records `failed --refused <updated-at> --reason <reason>`, and the dispatcher
 shows the item as held with that reason until the item changes. A batch
@@ -667,6 +703,7 @@ never held by it.
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed [--pr <number> | --none <reason>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> waits --reason test-lock [--until <time>]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> failed --decision <file>
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch report <record> <token> <file>
 ```
@@ -931,12 +968,14 @@ limit's three. The outcome log classes such a pass `arm pending`, which
 the dashboard shows as held back, not as finishing badly. A pass that still finds the arm pending once
 `dispatch.followup_within` has passed since the first pass that found it so
 is notified as a failed follow-up that names the arm. That window starts
-again when a pass names other release tags than the ones it started on (a
-newer release), up to three windows after the first pending pass; an arm
-that names no tag keeps its window. Before a pass past its window goes to a
-person, the tick reads the release tags its arm names once more, within
-15 minutes of the pass's end: when they all exist, it releases the marker
-instead and the follow-up runs again as a new run. An arm a run of the pull
+again when a pass names other release tags or deploy runs than the ones it
+started on (a newer release, or a newer deploy run that contains the
+merge), up to three windows after the first pending pass; an arm that names
+neither keeps its window. Before a pass past its window goes to a person,
+the tick reads the release tags and the deploy runs its arm names once
+more, within 15 minutes of the pass's end: when every tag exists and every
+run has finished (a cancelled run has not), it releases the marker instead and the follow-up runs
+again as a new run. An arm a run of the pull
 request already went past its window on is not read again, so a follow-up
 that keeps finding it pending reaches a person. `--reason` absent is
 `rate-limit`.
@@ -1001,7 +1040,14 @@ visit: the workspace on the branch `dispatch.notices_branch` names, when the
 repository names one (the tick never opens or removes that one, and a
 message waits while it is not open), else the repository's notices
 workspace. With Orca the message becomes that workspace's comment, and the
-workspace is marked unread, which Orca's phone app shows. A message that
+workspace is marked unread, which Orca's phone app shows. It also goes
+through each notification channel the machine file names under
+[`notify.channels`](CONFIGURATION.md#the-machines-dispatch-file), the
+only way out on `runtime: process`, which has no notices workspace: a
+`webhook` channel posts it to an incoming webhook (an ntfy topic a phone
+subscribes to, a Slack or Discord channel), whose address the file names
+by the environment variable that holds it, never by the address. A
+message that
 still stands `dispatch.renotify_after` (a day by default) after it was last
 sent is sent again, saying since when it has waited, until its cause goes;
 `0s` sends each one once. The dispatch dashboard lists the same causes,
@@ -1136,10 +1182,10 @@ that carry a label of the set, which includes one a drive armed by hand
 has labelled `jig:driving`; `jig:hold` keeps such a pull request out. The labels must exist first, and no writer
 creates one: `jig dispatch labels [--repo <path>] [--yes]` lists the missing
 ones, the marker labels with them, and the labels of the set whose
-description is not the one this release gives them, with no job installed,
-and with `--yes` names each it created or updated (the description only: a
-color a person chose stays) and lists the rest with the command a person who
-may create or edit labels runs; `jig install dispatch --repo <path>` does the same
+description or color is not the one this release gives them, with no job
+installed, and with `--yes` names each it created or updated (only what
+differs; a marker label that exists is left as the repository has it) and
+lists the rest with the command a person who may create or edit labels runs; `jig install dispatch --repo <path>` does the same
 beside the timer. A label write the forge refuses is reported (in the
 receipt, or on the drive's or the command's output) and fails nothing, except
 `jig dispatch marker failed`, which exits `1` when it cannot write its enabled
@@ -1705,7 +1751,7 @@ whose configuration names the tracker.
 | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, whether its process is alive, dead or unknown, why, and when its launch began (`since`); the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
 | `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](protocol/drive-exits.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `held` (a person's pickup hold on the dispatching host, shown even when the item already has a holder or an open need, which stay in `holder` and `waitsOn`), `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
-| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `inspect the quota spending`, `inspect Jig state storage`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it, one of `answer`, `re-arm`, `release the CI hold`, `merge`, `approve`, `request a review`, `update the branch`, `re-run a check`, `mark it ready`, `remove the label`, `open the pull request`, `re-run the follow-up`, `choose the session that keeps the item`, `look at the stalled pickup`, `settle the pickup's question, then return the item to the dispatch states`, `pick the item up again or leave it`, `answer the waiting session`, `assign the item as someone who can write`, `authorize the account's tracker credential`, `sign in to the account again`, `investigate the account's startup failures`, `inspect the quota spending`, `inspect Jig state storage`, `settle the launch that holds the drive` or `release the pickup hold`; and `needAct`, what the person does as the dispatch dashboard groups it, one of [the acts](protocol/needs-and-answers.md#what-a-need-asks-of-a-person) (a park's comes from its decision class) |
 | `overlap`, `footprint` | for a pick-up still assigned, when the newest tick found it so: why it waits on [overlap](https://github.com/jig-harness/jig/blob/main/design/overlap-aware-admission.md#the-reason-a-person-sees) with the work in flight (the relation, `waits on overlap` or `waits on the overlap bound`; each pull request or pickup it waits on with its state and link; how many; and the sentence its `waitsOn` repeats), and the note on a footprint unknown or derived from area labels alone (`footprint unknown: …`). The dispatcher uses these tiers to order its pickup attempts |
 | `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim; from the outcome log, its stage and its [closing report](#the-closing-report) (`last.report`: who wrote it, what it concluded, the next step it suggests and its cause, and for a run that left none the path of its transcript's copy, `transcript`), which the text prints as `last.run`: the stage, when it ended, what it concluded and the suggested next step, or that it ended without a report, naming the copy |
 | `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
@@ -1925,6 +1971,17 @@ and `jig ask` show who held the item and when. Use `release` at the same
 address to withdraw the host's hold. Tracker labels can still hold the item
 independently.
 
+Add `--until-merged 123` to hold the pickup until pull request #123 in the
+same repository merges, or `--until-closed <KEY>` to wait for another item
+on the configured tracker to close. Quote a GitHub item key, as in
+`--until-closed '#123'`. The tick also records the item dependency as a
+blocker on trackers that support it. To cancel a linked dependency before
+it closes, release the local hold and remove the blocker on the tracker.
+Approving or choosing a pickup's framed option named `Wait for #123 to
+merge` without a note also places a conditional hold. The tick clears the
+hold after the dependency is satisfied and raises a need if the pull
+request closes unmerged.
+
 **What it refuses outright.** A verb whose record the repository has
 switched off is refused with the setting named. The dispatch label verbs
 (`drive`, `rearm` and the pull request forms of `hold` and `release`)
@@ -1980,11 +2037,15 @@ a moment to list a new comment, so that link, not a `jig ask` right after
 it, shows the request landed.
 
 **What can be taken back.** Use `jig send 'drive@owner/repository#123' withdraw-rearm`
-to withdraw a pending rearm. A request lapses when the drive leaves the stop
-it named or when the pull request closes. The tick removes the label and records
-what happened. A missing or reused worktree, or a request still waiting after
-30 minutes, raises a need. Re-send an older request with `jig send` to bind it
-to a stop after the tick removes its unbound label.
+to withdraw a pending rearm. The tick clears requests when the pull request
+closes or the drive converges. A request waits for capacity with its binding
+and label intact. The dispatcher gives queued requests a slot before new
+automatic retries, including when they are in different repositories.
+After four hours of waiting for
+capacity, the request appears in the line's capacity view. A missing or
+reused worktree, or a newer stopped drive, raises a need after the dispatcher
+has observed the same problem for 30 minutes. Re-send an older request with
+`jig send` to bind it to a stop after the tick removes its unbound label.
 
 `release` undoes a `hold`, and `hold` a `release`. A `drive` label can be
 removed by hand until the tick has armed the drive. `resume` withdraws a
@@ -2150,6 +2211,12 @@ copy, but `claude plugin update jig@jig` without `--scope` updates the most
 specific one, so a forgotten project-scope copy falls behind unseen.
 `jig doctor` lists each and fails one older than the user-scope install or
 left behind by a deleted directory; `jig upgrade` refreshes or removes them.
+`claude plugin update --scope project` updates the first install of the
+repository its directory belongs to, not that worktree's own, so where
+several worktrees of one repository hold an install, `jig upgrade` runs it
+once for the repository and refreshes the others in Claude Code's install
+record. Configuration directories that share one plugins directory share
+that record: after the first upgrade, the others find every install current.
 
 Start a **new** session afterwards. Sessions that were already open load the
 plugin after `/reload-plugins` (Claude Code) or a restart (Codex).

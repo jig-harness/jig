@@ -1,5 +1,6 @@
 /** Read every place an answer can be, then classify it through one parser. */
 import { ghCall, ghRepoEnv } from "../proc.ts";
+import { ghRepoEnvFor } from "../../../../../shared/gh-repo-env.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { currentMs } from "../../../../../shared/time.ts";
@@ -35,18 +36,25 @@ const THREAD_QUERY =
  * A review thread's comments; `null` when they did not read, the failed
  * call's class told to `failed`. An incomplete thread can hide a dispute,
  * so never certify its answers.
+ *
+ * A node-id query names no repository, so a caller that runs outside the
+ * pull request's checkout passes `repo` (`owner/name`): it goes to the forge
+ * client as `GH_REPO`, where the account-routing wrapper and the governed
+ * quota find which owner the call is for. Without it the call runs as the
+ * default login, which cannot see another owner's private repository.
  */
 export async function threadComments(
   key: string,
   timeoutSec?: number,
   failed?: (failure: OutboundFailure) => void,
+  repo?: string,
 ): Promise<CommentLike[] | null> {
   const began = currentMs();
   const res = await ghCall(
     ["api", "graphql", "-f", `query=${THREAD_QUERY}`, "-f", `id=${key}`],
     {
       stderr: "pipe",
-      env: ghRepoEnv(),
+      env: repo === undefined ? ghRepoEnv() : ghRepoEnvFor(repo),
       ...(timeoutSec === undefined ? {} : { timeoutSec }),
     },
   );
@@ -225,7 +233,10 @@ export async function parkAnswers(
   for (const item of parked) {
     const thread =
       item.kind === "thread"
-        ? await (loaders.threadComments ?? threadComments)(item.key)
+        ? await (
+            loaders.threadComments ??
+            ((key) => threadComments(key, undefined, undefined, repo))
+          )(item.key)
         : [];
     if (thread === null && conversation === null)
       return { unreadable: `${item.kind} ${item.key}` };

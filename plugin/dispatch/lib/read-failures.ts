@@ -17,6 +17,12 @@
  *   carry their call's class on the item's `unplaced` row, and follow the
  *   same policy; a read that answered but does not parse carries none and
  *   fails the turn.
+ * - A parked drive's review thread the forge answered `not-found` is an
+ *   absence, and an absence is an answer (`answeredByAbsence`, in
+ *   `absence.ts`): it stays on the item's row with its class, and fails
+ *   neither the repository's turn, the tick nor the failure ledger, and
+ *   nobody is told. Any other `not-found` (a base branch's head, a
+ *   repository's own record) fails the turn.
  * - A refused credential is told at once: its row
  *   counts as `failures.notify_after` failures (`toldAtOnce`).
  * - The forge's reading of a repository is kept with its time
@@ -31,6 +37,7 @@ import {
   POLICIES,
 } from "../../shared/outbound/failure.ts";
 import type { Failure } from "../../shared/outcome.ts";
+import { answeredByAbsence } from "./absence.ts";
 import type { FailureSettings } from "./failures.ts";
 import { type PickupReads, pickupReads } from "./pickup-reads.ts";
 import type { ReadFailure, RepoReport } from "./types.ts";
@@ -45,6 +52,7 @@ function readFailure(outbound: OutboundFailure): ReadFailure {
       ? {}
       : { until: isoFromMs(outbound.until) }),
     ...(outbound.quota === undefined ? {} : { quota: outbound.quota }),
+    ...(outbound.noCredential === true ? { noCredential: true } : {}),
   };
 }
 
@@ -74,6 +82,18 @@ export function readFailureOf(failure: Failure): ReadFailure | undefined {
  * that counts in the failure ledger over a rate limit, else the later reset.
  */
 export function combinedFailure(
+  failures: readonly (ReadFailure | undefined)[],
+): ReadFailure | undefined {
+  const chosen = chooseFailure(failures);
+  if (chosen?.noCredential !== true) return chosen;
+  // The no-credential mark discharges a record only when every failed read carries it.
+  if (failures.every((f) => f?.noCredential === true)) return chosen;
+  const { noCredential: _mark, ...unmarked } = chosen;
+  return unmarked;
+}
+
+/** The failure `combinedFailure` selects, before the no-credential mark is judged over every read. */
+function chooseFailure(
   failures: readonly (ReadFailure | undefined)[],
 ): ReadFailure | undefined {
   const known = failures.filter((f): f is ReadFailure => f !== undefined);
@@ -119,12 +139,12 @@ export function waitingFailures(report: RepoReport): ReadFailure[] | null {
   return waiting.length === failed.length ? waiting : null;
 }
 
-/** The class of each failed read of the turn, a repository's record's or one item's; `undefined` for one no call's class explains. */
+/** The class of each failed read of the turn, a repository's record's or one item's; `undefined` for one no call's class explains. An item's read answered by an absence is no failure of the turn. */
 function failedReads(report: RepoReport): (ReadFailure | undefined)[] {
   return [
     ...report.records.filter((r) => !r.ok).map((r) => r.failure),
     ...report.unplaced
-      .filter((u) => u.readFailed === true)
+      .filter((u) => u.readFailed === true && !answeredByAbsence(u))
       .map((u) => u.failure),
   ];
 }

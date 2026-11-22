@@ -336,6 +336,26 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("'ci:hold' is still present");
   });
 
+  // The re-confirming proof reports any stale evidence as exit 1, as it always has.
+  for (const [proof, reads, exit] of [
+    ["first", 1, 4],
+    ["re-confirming", 5, 1],
+  ] as const)
+    it(`withdraws a same-head announcement when the ${proof} final proof's check-runs listing is cut short`, async () => {
+      const r = await announce(
+        { ...CONVERGED, checkRunsHangAfter: reads },
+        false,
+        {
+          staleAnnouncementFor: CONVERGED.head,
+          env: { GH_CALL_TIMEOUT: "1" },
+        },
+      );
+      expect(r.stderr).toContain("check-runs listing");
+      expectSpawnExit({ ...r, stdout: "" }, exit);
+      expect(r.posted).toBe(false);
+      expect(r.deleted).toContain("7");
+    }, 60_000);
+
   it("withdraws a same-head announcement while 'ci:hold' is present", async () => {
     const r = await announce({ ...CONVERGED, ciHeld: true }, false, {
       staleAnnouncementFor: CONVERGED.head,
@@ -1573,21 +1593,25 @@ describe("announce-merge-ready.ts", () => {
 
 describe("summary-findings marker overrides", () => {
   it("reads the SAME sticky and reviewed-SHA markers drive-status.ts is configured with", async () => {
-    // The markers are read at module load, so this has to be a subprocess.
-    // Hard-coding the defaults here means a configured DRIVE_PR_STICKY_MARKER
-    // sends drive-status.ts to a custom sticky while this parser finds no
-    // sticky at all — and "no sticky" reads as zero summary findings, so a
-    // custom-marker repo converges over every unanchored finding ever posted.
+    // The parser exports stable defaults; its selection helpers read overrides
+    // lazily. Run in a subprocess so the environment belongs to the import.
     const src = join(SCRIPTS, "summary-findings.ts");
+    const overlay = join(SCRIPTS, "lib", "overlay.ts");
     const proc = Bun.spawn(
       [
         "bun",
         "-e",
         `const m = await import(${JSON.stringify(src)});
+         const o = await import(${JSON.stringify(overlay)});
          console.log(JSON.stringify({
-           sticky: m.STICKY_MARKER,
-           sha: m.SHA_MARKER,
+           defaultSticky: m.STICKY_MARKER,
+           defaultSha: m.SHA_MARKER,
+           sticky: o.stickyMarker(),
            parsed: m.reviewedShaFrom('<!-- custom-sha: abc1234 -->'),
+           selected: m.reviewerSticky([
+             { id: 1, user: { login: 'reviewer[bot]' }, body: '<!-- other-review -->\\n- custom-marker finding' },
+             { id: 2, user: { login: 'reviewer[bot]' }, body: '<!-- ai-code-review -->\\n- default-marker finding' },
+           ], false)?.id,
          }));`,
       ],
       {
@@ -1595,6 +1619,7 @@ describe("summary-findings marker overrides", () => {
           ...process.env,
           DRIVE_PR_STICKY_MARKER: "<!-- other-review -->",
           DRIVE_PR_SHA_MARKER: "custom-sha",
+          DRIVE_PR_REVIEWER_APP: "reviewer",
         },
         stdout: "pipe",
         stderr: "pipe",
@@ -1606,8 +1631,10 @@ describe("summary-findings marker overrides", () => {
     ]);
     expect(exitCode).toBe(0);
     const got = JSON.parse(out);
+    expect(got.defaultSticky).toBe("<!-- ai-code-review -->");
+    expect(got.defaultSha).toBe("ai-reviewed-sha");
     expect(got.sticky).toBe("<!-- other-review -->");
-    expect(got.sha).toBe("custom-sha");
+    expect(got.selected).toBe(1);
     // And the reviewed SHA is actually extracted under the custom name — it
     // scopes the unaccounted-slot keys, so failing to read it degrades every
     // slot to the shared `nohead` scope, where an answer given on one head

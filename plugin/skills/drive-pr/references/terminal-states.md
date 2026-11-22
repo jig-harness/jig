@@ -81,8 +81,11 @@ measurement, because a zero there is the positive claim "the base has not
 moved". A failed `git fetch` is the one degradation that still produces a
 measurement: it is carried in `drift.fetched: false`, and every line derived
 from it says so, since the numbers were then read off a remote-tracking ref of
-unknown age. What the fields mean, and why `overlapCount` rather than `behind`
-is the predicate a round acts on, is in `scripts/lib/base-drift.ts`.
+unknown age. In an ordinary round, `overlapCount` rather than `behind` is the
+predicate for a piggyback base merge. A CI-repair round instead synchronizes
+any advanced base before reproducing the failure, so its local validation uses
+the same gates and configuration as CI. `scripts/lib/base-drift.ts` defines
+the fields.
 
 Every count under `work` is **`null` when `evaluate()` never measured it**, and a
 number only when it did. The liveness, head-sync and reviewer gates all return
@@ -1985,13 +1988,15 @@ and no sticky comment:
 | the same draft skip, on a pull request already Ready | `AWAITING_REVIEWER`: the skip predates the Ready mark |
 | completed, any other title `Review skipped…` | `REVIEW_SKIPPED`, the reason naming the skip and quoting the title |
 | completed `success` or `neutral`, the newest review naming the head | reviewed (`reviewedShaSource: "review-object"`) |
+| completed `neutral`, titled `Review did not complete`, no current-head review | [`REVIEWER_FAILED`](../../../protocol/drive-exits.md), with the failed check named |
 | completed `success` or `neutral`, no newer review naming another commit | reviewed, with nothing new to say (`reviewedShaSource: "review-check-run"`) |
 | completed, but a review of another commit was submitted after the run completed | `STALE_REVIEW` |
 | completed `skipped` with another title, or another conclusion | `AWAITING_REVIEWER`, or [`REVIEWER_FAILED`](../../../protocol/drive-exits.md) as for any reviewer |
 
 The completed run counts on its own because such a reviewer posts no review
 of a head it found nothing new on: a run on the head with no review object is
-the only trace that review leaves. An unreadable review list is
+the only trace that review leaves unless its title says it did not complete.
+An unreadable review list is
 `INDETERMINATE`. `arm-drive.ts` refuses a configuration whose reviewer
 evidence the drive cannot read, rather than arm a drive that waits until
 `--timeout`: `review_object` with no `review.reviewer_app`, where a reviewer is expected (the reviews are

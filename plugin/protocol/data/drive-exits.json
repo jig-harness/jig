@@ -242,8 +242,8 @@
       "driveStatusExit": 7,
       "driveExit": 7,
       "endsDrive": true,
-      "meaning": "The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming.",
-      "stop": "stopped: the posting reviewer's check did not pass",
+      "meaning": "The reviewer's check failed or says the review did not complete. The drive stops. The dispatcher can retry a neutral check that reports an incomplete review and escalate repeated stops on that head.",
+      "stop": "stopped: the posting reviewer's check reported a failure",
       "cause": "tool-failed",
       "nextOwner": "person",
       "nextAct": "Investigate",
@@ -475,6 +475,19 @@
       "cause": "environment",
       "nextOwner": "line",
       "nextStep": "The line drives it again once the forge's rate limit resets."
+    },
+    {
+      "name": "CHECK_RUNS_UNREADABLE",
+      "kind": "state",
+      "exit": 25,
+      "driveStatusExit": 25,
+      "driveExit": 25,
+      "endsDrive": true,
+      "meaning": "The head's check-runs listing could not be read whole: a page or the whole listing ran out of time, or it has more pages than a read may take. The reason names the pages read. Nothing about the pull request was judged; run the drive again, and treat a second such stop on the same head as a systematic read failure.",
+      "stop": "stopped: its head's check-runs listing could not be read whole",
+      "cause": "tool-failed",
+      "nextOwner": "line",
+      "nextStep": "The line re-drives it once for this head; a second such stop on the head is a systematic read failure for a person."
     }
   ]
 }

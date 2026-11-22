@@ -149,10 +149,26 @@ export function mergeLine(
           ...(before?.readyOmitted === undefined
             ? {}
             : { readyOmitted: before.readyOmitted }),
+          ...keptTracker(now, before),
           triedAt: now.triedAt ?? fresh.startedAt,
         },
       ];
     }),
+  };
+}
+
+/** The tracker part a retained entry keeps: the one `trackerKept` dates, and the tracker its kept cards were read from, which a keyless tick compares. */
+function keptTracker(
+  now: LineRepo,
+  before: LineRepo | undefined,
+): Partial<LineRepo> {
+  return {
+    ...(before?.trackerKept === undefined
+      ? {}
+      : { trackerKept: before.trackerKept }),
+    ...(now.tracker == null && before?.tracker != null
+      ? { tracker: before.tracker }
+      : {}),
   };
 }
 

@@ -42,6 +42,8 @@ import { admittedVendor, codexLaunchFields } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
 import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
+import { personPickupHolds, pickupHoldReason } from "../person-pickup-holds.ts";
+import { conditionalRecords } from "../plan-pickup-conditions.ts";
 import { pickupRoute } from "../route.ts";
 import {
   type Dispatched,
@@ -51,6 +53,7 @@ import {
 } from "../runtime/port.ts";
 import { freshServedPickup } from "../sources/served.ts";
 import { freshPickup } from "../sources/tracker.ts";
+import { unrankedHold } from "../pickup-priority.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -58,6 +61,7 @@ import type {
   LaunchOutcome,
   RepoReport,
   RepoTarget,
+  WantedItem,
 } from "../types.ts";
 import {
   accountBlock,
@@ -67,6 +71,7 @@ import {
   openedFor,
   openWithinBudget,
   outOfTime,
+  type ReplayBlock,
   replay,
   rotated,
   replayable,
@@ -145,6 +150,27 @@ export async function leftBehindBusy(
     : null;
 }
 
+/** The missing-priority hold, read again from the issue as the tracker holds it now; `null` when the item may start. */
+function heldForPriority(
+  ctx: PickupContext,
+  issue: PoolIssue,
+  key: string,
+  blockingFor: string | undefined,
+): string | null {
+  return (
+    unrankedHold(
+      {
+        key,
+        title: issue.title,
+        url: issue.url ?? null,
+        blockingFor,
+        queueIssue: issue,
+      } as WantedItem,
+      ctx.section,
+    )?.reason ?? null
+  );
+}
+
 /** Why the item must not be started now; `null` when nothing changed. */
 export async function changed(
   state: ApplyState,
@@ -178,11 +204,26 @@ export async function changed(
           served.blockingFor,
         );
   if (typeof issue === "string") return { why: issue };
+  const unranked = heldForPriority(ctx, issue, key, served?.blockingFor);
+  if (unranked !== null) return { why: unranked };
   // Item keys repeat across repositories: only this repository's records hold it.
+  const local = personPickupHolds(repo.slug, state.root);
+  if (!local.ok) return { why: local.failure.reason };
+  const conditional = local.value.find((row) => row.item === key);
+  if (conditional !== undefined && conditional.settled !== "cleared")
+    return { why: pickupHoldReason(conditional) };
+  const launches = state.records.filter((r) => r.record.repo === repo.slug);
+  const eligible = conditionalRecords(
+    { launches, conditionalHolds: local.value },
+    key,
+  );
+  if (eligible === null) return { why: "a pickup hold still applies" };
   const hold = pickupHold(
     key,
-    state.records.filter((r) => r.record.repo === repo.slug),
+    eligible,
     issue.updatedAt,
+    undefined,
+    issue.assignee?.name,
   );
   if (hold.kind !== "none") return { why: hold.why };
   let sessions: SessionsReport;
@@ -230,6 +271,14 @@ async function workspaceFor(
     tracker: ctx.tracker.adapter,
     dispatched: named,
   });
+}
+
+/** The machine file's startup-failure threshold, carried on the record when set. */
+function startupThresholdField(machine: ApplyState["machine"]): {
+  startupFailureThreshold?: number;
+} {
+  const threshold = machine.failures?.startupThreshold;
+  return threshold === undefined ? {} : { startupFailureThreshold: threshold };
 }
 
 /** One planned pickup, through its fresh reads, admission, workspace and launch. */
@@ -323,6 +372,7 @@ async function launchOne(
     vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    ...startupThresholdField(state.machine),
     passTimeoutSec: deadlineSec(ctx),
     ...codexLaunchFields(state.codexOptIn),
     headless: true,
@@ -433,6 +483,22 @@ async function competing(
     : `a session started for it elsewhere since: ${rivals.map((w) => w.path).join(", ")}`;
 }
 
+/** What holds a pending pickup whose item was read again: the read's own refusal, its missing priority, a competitor or the account. */
+async function freshBlock(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: PickupContext,
+  record: Parameters<typeof competing>[3],
+  fresh: Awaited<ReturnType<typeof freshPickup>>,
+): Promise<string | ReplayBlock | null> {
+  if (typeof fresh === "string") return fresh;
+  return (
+    heldForPriority(ctx, fresh, record.item as string, record.blockingFor) ??
+    (await competing(state, repo, ctx, record)) ??
+    (await accountBlock(state, record))
+  );
+}
+
 /** Retry, once and under its own key, each pending pickup of `repo` whose launch got no answer. */
 async function retryPending(
   state: ApplyState,
@@ -468,10 +534,7 @@ async function retryPending(
       ctx.serialUndecided ??
       unauthorized ??
       batchBlock ??
-      (typeof fresh === "string"
-        ? fresh
-        : ((await competing(state, repo, ctx, record)) ??
-          (await accountBlock(state, record))));
+      (await freshBlock(state, repo, ctx, record, fresh));
     const action = { target: item, stage: "pickup" } as Action;
     report.launches.push(
       headless(await replay(state, record, action, blocked), record),
@@ -577,10 +640,16 @@ export async function pendingBatchBlock(
       member.ancestor,
       ctx.servedPolicy,
     );
+    const unranked =
+      typeof check === "string"
+        ? null
+        : heldForPriority(ctx, check, member.key, undefined);
     batchBlock =
       typeof check === "string"
         ? `${member.key}: ${check}`
-        : await competing(state, repo, ctx, { ...record, item: member.key });
+        : unranked !== null
+          ? `${member.key}: ${unranked}`
+          : await competing(state, repo, ctx, { ...record, item: member.key });
     if (batchBlock !== null) break;
   }
   return batchBlock;

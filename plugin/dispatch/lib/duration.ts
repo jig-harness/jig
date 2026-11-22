@@ -1,4 +1,4 @@
-/** A duration setting of the machine file or a repository's `dispatch` section, read into milliseconds. */
+/** A duration setting of the machine file or a repository's `dispatch` section, read into milliseconds, and a span written in whole minutes. */
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 
 const UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000 };
@@ -19,4 +19,9 @@ export function duration(
       `${where} must be a positive duration such as 90s, 5m or 1h, at most 24d`,
     );
   return ok(ms);
+}
+
+/** A span as the reports write it: whole minutes, rounded down (`90m`). */
+export function minutes(ms: number): string {
+  return `${Math.floor(ms / 60_000)}m`;
 }

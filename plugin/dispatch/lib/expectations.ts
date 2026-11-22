@@ -43,6 +43,7 @@ import type {
 } from "./types.ts";
 import { currentIso, parseMs } from "../../shared/time.ts";
 import { testLockNote } from "./test-lock-waits.ts";
+import { minutes } from "./duration.ts";
 
 /** A drive record still running: its wrapper alive. */
 function runningDrive(r: ReadRecord): boolean {
@@ -170,10 +171,6 @@ interface Broken {
   expectation: string;
   why: string;
   evidence: Evidence;
-}
-
-function minutes(ms: number): string {
-  return `${Math.floor(ms / 60_000)}m`;
 }
 
 function counts(samples: ThreadSample[]): string {

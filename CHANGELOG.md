@@ -376,6 +376,9 @@ changes are marked **Breaking** and say what a consumer changes.
   tactical and peripheral goals), set in a host-local weights file read on
   every tick. Defined the priority lane, peripheral floor and weights file
   terms.
+- [M7](modules/M7-pr-lifecycle-review/README.md) no longer lists a reviewer runtime as left out by design. It now names the reviewer-evidence contract that the drive reads and a reference reviewer that implements it, planned as `jig-harness/ai-review` in its own repository. The Standard level says the automated reviewer can be any reviewer that meets the contract. Decision record: [ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md).
+- M7's [mappings](modules/M7-pr-lifecycle-review/mappings.md) gain a table of the reviewers a team can add today, most with its own model key: PR-Agent, openai/codex-action, anthropics/claude-code-action, the opencode GitHub Action, CodeRabbit for public repositories and the reference reviewer. Each row says what the reviewer posts of the evidence the drive reads and whether drive-pr has a built-in profile for it.
+- The [glossary](GLOSSARY.md) defines *reviewer-evidence contract* and *reference reviewer*.
 
 ### Fixed
 
@@ -400,6 +403,371 @@ changes are marked **Breaking** and say what a consumer changes.
   under it.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
+
+## [0.300.4] - 2026-11-21
+
+### Fixed
+
+- CI-repair rounds sync an advanced pull request base before reproducing
+  failures, so local checks include the gate changes CI runs.
+
+## [0.300.3] - 2026-11-21
+
+### Fixed
+
+- `resolve-conflicts`: the resolution check no longer refuses a merge
+  because the base branch's own migration journal lists its migrations out
+  of sequence order or with timestamps out of order, as a journal does when a
+  long-lived branch's migration merged late. The committed journal is taken
+  as given: the check fails only when the resolution drops or changes one of
+  its entries, or the branch's migrations do not follow it in sequence order
+  with later timestamps. A conflict round on a repository with such a
+  journal, including one whose pull request adds no migration, can conclude
+  again.
+- `jig upgrade` (and the scheduled refresh) no longer fails on every run
+  when several git worktrees of one repository each hold a Claude Code
+  project-scope install of the plugin. `claude plugin update --scope project`
+  updates the first install of the repository, not the worktree it runs
+  from, so the upgrade now runs it once per repository, reports when it
+  refreshed another directory than the one it ran in (naming both), and
+  brings each install it cannot reach to the user-scope version in Claude
+  Code's install record, reported as `rewritten`. Configuration directories
+  sharing one plugins directory then find every install current, so a
+  second one runs no update. An install the upgrade still cannot bring
+  there, or a user-scope install that is missing or disabled, still fails
+  the run. **Consumer action:** none.
+
+## [0.300.2] - 2026-11-21
+
+### Fixed
+
+- The `jig:followup-failed` pull request label has its own crimson
+  (`a40e4c`) instead of `jig:parked`'s red, so a pull request whose
+  follow-up failed is told apart from one waiting on a person's answer.
+  Green stays `jig:converged`'s alone, and a test holds the label set to
+  that rule.
+- `jig dispatch labels` (and the labels part of `jig install dispatch`)
+  now also lists a dispatch label whose color differs from this release's
+  and, with `--yes`, sets it. A label the signed-in account cannot edit is
+  printed with the `gh label edit … --color` command a person runs. Run
+  `jig dispatch labels --yes` once in each repository that installed the
+  labels earlier to bring its colors up to date.
+
+## [0.300.1] - 2026-11-21
+
+### Fixed
+
+- The dispatcher's validation-capacity gauge (`load.validation`) no longer
+  counts a run in flight ahead of a new pass when that run is expected to
+  finish before the new pass reaches the test lock. Each pickup or drive in
+  flight that has yet to make its first run is placed at its launch plus its
+  kind's measured time to validation, its remaining runs follow one another,
+  and the lock's requests are served in arrival order. Passes launched
+  together queue behind each other, and a run reaching the lock between the
+  new pass's own runs counts against its later ones. A pass with no estimate
+  (its kind's time to validation is still the default, its launch time does
+  not read, that time has passed, or it has made a run already) and the runs
+  admitted in the same tick are counted ahead. The gauge's reason, in the
+  receipt and on the dashboard, names the runs served before the pass
+  reaches the lock and the runs arriving after its first run that a later
+  one waits behind, beside the runs ahead, which are whole runs still holding
+  or waiting when the pass arrives, and its minutes are the pass's wait.
+
+## [0.300.0] - 2026-11-21
+
+### Added
+
+- Pickup passes can wait for a pull request to merge or a tracker item to
+  close. The dispatcher shows the dependency and resumes the pickup when
+  it clears. A pull request that closes unmerged raises a need.
+- Set a conditional pickup hold with `jig send … hold --until-merged` or
+  `--until-closed`. Choosing a pickup's framed option to wait for a pull
+  request to merge also places a hold.
+
+## [0.299.0] - 2026-11-21
+
+### Added
+
+- The hub's storage: its tables, declared once with Drizzle and kept in
+  partitions (one per repository, one per host, and one directory), and the
+  one implementation of the storage port every adapter runs, over a
+  synchronous SQLite database. Each change runs in one transaction with its
+  statements prepared first, and the port gains an atomic batch of changes in
+  one partition. The first tables hold the in-flight read row, so one unit at
+  a time reads a target through, taken over 30 seconds after it was taken,
+  and the job lease row, so two runs of one scheduled job never overlap.
+  `drizzle-kit` generates the migrations from the schema; the hub has no
+  command yet that opens the store.
+- The hub's job helper and the trimming job's framework: a scheduled job runs
+  its steps under a deadline and a lease that outlives it, storing its
+  progress after each step, so a run that stops is resumed by the next one.
+  The trimming job runs hourly and deletes, in chunks, the expired rows of
+  each table that declares a retention rule. Only the in-flight reads have
+  one so far; each later table declares its own as it arrives, by the
+  periods [design/control-plane.md](design/control-plane.md#how-long-it-keeps-things)
+  sets.
+- The plugin vendors Drizzle (`drizzle-orm` 0.45.4, Apache License 2.0) under
+  `plugin/shared/vendor/`, built from the pinned package and listed in
+  `NOTICE`.
+- The records registry gains the hub medium, whose kinds are its
+  tables ([RECORDS.md](plugin/RECORDS.md#in-the-hub)).
+
+### Fixed
+
+- A follow-up of a merged pull request no longer waits on a person when a
+  checkout the workspace runtime does not list still holds the merged
+  branch and its commits are already in the squash merge. The idle check
+  counts as unpushed only the commits whose change the remote's default
+  branch lacks (by tree, by patch, or because merging the checkout into it
+  would change nothing, with merge attributes and drivers neutralized or refused; the merge proof needs git 2.43), so such a checkout is detached, its
+  local branch kept, and the follow-up's launch outcome names the checkout
+  and the branch. A checkout that is still busy for its commits names them
+  in its reason. On a host with git older than 2.43 a checkout whose commits only
+  the merge proof can clear stays busy; the tree and patch checks work on any
+  git. **Consumer action:** none.
+- Drive rounds refresh dependencies before validating a base merge that
+  changed a package manifest or lockfile. They use a frozen install and report
+  its command and outcome, so an install failure is distinguishable from a
+  validation failure.
+- **Breaking:** The dispatcher no longer starts an item that has no priority, assigned or from the ready pool, which it used to place after every low-priority item. The line lists the item in its queue with the priority it lacks; once a person sets one, or the steward's `facet` record fills it for an assigned item, the next tick ranks and starts it. A repository that wants such items started anyway sets `dispatch.missing_priority: start` ([configuration](plugin/CONFIGURATION.md#dispatch)). **Consumer action:** advised at configuration. Give the items the dispatcher starts a priority, or set `dispatch.missing_priority: start` where the repository does not rank its items. **Detect:** `config:!dispatch.missing_priority`.
+- A served batch no longer stops on a question about a member's priority. The dispatcher leaves an item with no priority out of the batches it forms, as `work-batch` already does, and a batch's pass leaves a member whose priority was cleared after the batch formed for its own pickup.
+- The missing-priority hold is read again when a pickup launches and when a pending pickup is retried, so clearing an item's priority after planning no longer starts it. A Jira priority the configuration maps to none of Jig's is treated as ranked, not as missing, so list every priority the project uses under `issue_tracker.jira.priorities` to order its items. A pending batch pickup is checked for each member's priority too, and a batch that ends with no member claimed because priorities were cleared holds each member only until it changes.
+
+## [0.298.0] - 2026-11-21
+
+### Added
+
+- `followup.ts deploy-run <run-id>` reads a workflow run a deploy arm waits
+  for and says whether it will settle by itself: `finished`, `moving`, or
+  `stuck` when the queue has waited on that holder past a bound (30 minutes, `--stuck-after`)
+  and an older run of its workflow is still running while every run since
+  ended cancelled, the sign of a held concurrency group; the reading names
+  that holder. The follow-up records a stuck deploy as
+  a step owed by a person and finishes its other arms, instead of waiting
+  until the dispatcher hands the whole follow-up to a person.
+
+### Fixed
+
+- Drives stop promptly when the configured reviewer reports that it gave up
+  on the current head. While a review is pending, the drive backs off its
+  forge polls. After repeated reviewer failures on the same head, the
+  dispatcher raises one need and waits for a review or a new head.
+- A malformed optional reviewer-evidence field no longer makes an otherwise
+  usable drive ledger unreadable during recovery.
+- A requested drive restart stays queued while the dispatcher waits for capacity.
+  Waiting requests get the next available slot ahead of automatic retries.
+- A dispatched follow-up whose deploy arm stayed pending past
+  `dispatch.followup_within` was raised for a person even when the deploy
+  had since finished, because only release tags were read again. A pending
+  arm that links to its deploy run
+  (`https://github.com/<owner>/<repo>/actions/runs/<id>`) now has that run
+  read again before a person is told: a run that finished, other than
+  cancelled, runs the follow-up once more, and a pass naming a newer run
+  starts a fresh window, as a newer release tag does.
+- A drive whose review pass stops on an unreadable check-runs listing now records that stop as it records its own listing stop: the stop line names the pages the pass read (`pass reported CHECK_RUNS_UNREADABLE after <n> page(s) on round <r>; stopping`), and the handoff file and the ledger's stop event carry the class and the pages as a status probe stop. A page count in the pass's finish record that is not a whole number reads as unknown.
+- `jig dispatch`: after a person answers **Release the claim** on a stalled
+  pickup, the dispatcher releases it at the tick and the next launch is an
+  ordinary fresh pickup. That launch is no longer handed the answer as an
+  option to carry out, which could make it only re-confirm the release, end
+  without claiming the item and raise the same card again.
+- The ended-pickup card now says what holds the item: the named launch
+  record ended and has not been released. It says the item is still assigned
+  only when it is.
+- A release answer an earlier version already kept for the next session is
+  passed over, so that launch is an ordinary fresh pickup too.
+- Conflict resolution keeps both sides' sequenced migrations when their numbers collide and checks the staged result for missing migrations and changes to the integration journal's applied entries.
+- Configuration audit now rejects sequenced-migration settings that conflict resolution cannot read at runtime.
+- An unfinished pull request conflict repair preserves pre-existing ignored files, clears new untracked files and reports unavailable inventory before cleanup.
+
+## [0.297.0] - 2026-11-20
+
+### Fixed
+
+- A dispatched pickup whose push the repository's pre-push hook refused only
+  because its wait for the host's test lock ran out no longer stops on a
+  question for a person. The `do-item` skill tells that lock-wait timeout
+  (the lock's own `could not acquire lock` message, no test having run) from
+  a hook that ran and failed, and pushes again after a short, growing pause
+  while it has time, never bypassing the hook. A dispatched pass that still
+  cannot get through records `jig dispatch result <record> <token> waits --reason test-lock`;
+  the dispatcher relaunches the pickup in its own tree to push and carry on,
+  holding the relaunch while the host's validation capacity has no room,
+  whether or not `load.enforce` is set. After three such waits in a row it
+  raises one need for the steward or a person to find why the lock keeps
+  running out.
+- A converged drive retries when GitHub times out while verifying removal of the CI hold label. It keeps the removal record so the next read can verify the event and wait for full CI, then stops after the configured consecutive proof-read limit instead of retrying forever.
+- CI hold release recovery now emits its retry marker once and refuses a proven ownership race before an unreadable confirmation can hide it.
+
+## [0.296.0] - 2026-11-20
+
+### Added
+
+- `/jig:file-issue` hands a newly filed issue to the line when the filing
+  names who takes it: `jig send pickup@<owner>/<name>#<KEY> assign` for the
+  repository's factory identity, and the skill's `hand-off.ts` for a served
+  person. Each writes the assignment only once the tracker's history records
+  it, and the filing report says when the history confirmed it (`hand-off.ts`; the
+  `jig send` route confirms the current assignee only and says so), or, when
+  it was not, the command to run and the earliest time to run it. An issue already
+  assigned is never changed. **Consumer action:** none.
+- The dispatcher's `notify` stage works without Orca: a machine file can
+  name notification channels under `notify.channels`, and a `webhook`
+  channel posts each notification to an incoming webhook, an ntfy topic a
+  phone subscribes to (`format: text`), a Slack channel (`slack`) or a
+  Discord channel (`discord`). Each channel is sent once per cause, again
+  after `dispatch.renotify_after`, and backs off in the failure ledger
+  under `notice <channel> <key>` while its deliveries fail. The webhook's
+  address is a credential: the machine file names the environment variable
+  that holds it (`url_env`), and the address appears in no notification,
+  receipt, log row or cost-ledger row
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+  A 429 holds the address in the host's budget record until its
+  `Retry-After`, and every repository's notifications to it wait until
+  then; a channel whose variable is unset is reported in each tick's
+  receipt.
+- A machine file with `runtime: process` now accepts `notify` among a
+  repository's stages once it names a channel under `notify.channels`; the
+  process runtime writes no Orca card. On `runtime: orca` a named channel is
+  sent through beside the card, and with none named nothing changes.
+
+### Fixed
+
+- On Linear, an issue assigned within three minutes of its creation was
+  never started: Linear leaves changes made in an issue's first three
+  minutes out of its history, so the dispatcher found no assignment and
+  refused the item on every tick. `jig send … assign` now waits until that
+  window has passed before writing, and for an item already assigned to the
+  factory identity whose history shows no assignment it refuses with the
+  remedy (unassign it, then send again) instead of the bare "already
+  assigned". The served-queue documentation and the operator skill say the
+  same. **Consumer action:** advised at instructions. A runbook that assigns
+  a Linear item to the factory identity or a served person right after
+  filing it should wait three minutes, or unassign and assign it again
+  after them.
+
+## [0.295.0] - 2026-11-20
+
+### Fixed
+
+- The dispatcher's validation-capacity gauge (`load.validation`) no longer
+  holds every pickup and drive on an idle test lock. Its wait window is now
+  the wait a pass's test stage gives the lock: `LOCK_TIMEOUT` from the
+  environment a pass is launched with (for a process launch, retained only where
+  `process.env_keep` names it; an Orca launch is given the dispatcher's `LOCK_TIMEOUT`, and its lock root (made absolute) and name, always), or the test stage's hour
+  when it is unset, rather than the bare lock's one-minute default. A pass's
+  own runs, made one after another, no longer count as waiting behind each
+  other, so a pass always fits a lock with nothing ahead of it. The runs
+  still to come from passes in flight still count ahead of a new pass. The
+  gauge's reason, in the receipt and on the dashboard, names the wait window
+  and where it came from, and says when a window shorter than one run
+  admits a pass only while a slot is free for its first run. A `LOCK_TIMEOUT` the lock
+  refuses holds the pass, with the reason, rather than counting as an hour. The same environment
+  places the lock's holders and waiters. A refused `LOCK_TIMEOUT` takes
+  precedence over the lock's reading: the pass is held with the reason, and
+  the refusal shows in the gauge's fill.
+- A parked drive's review thread is now read with its pull request's
+  repository named, by the dispatcher's tick and by `jig ask`. On a host
+  where the GitHub account is chosen by the repository a call addresses, the
+  read used to run as the default login and was answered `not-found` for a
+  repository owned by another account, so every timer tick exited 1 for as long
+  as such a drive stayed parked, and a person's answer to its park was never
+  read.
+- A parked drive's review thread that the forge answers `not-found`, such as
+  one the credential cannot see, no longer fails the repository's turn or the
+  tick. The item's row in the report still carries the class, the failure
+  ledger counts nothing and nobody is told. Any other `not-found` read of one
+  item, such as a base branch that is gone, and a `not-found` of a repository's
+  own record, still fail the turn.
+- The dispatcher backs off an account when the vendor refuses its sign-in,
+  shows one sign-in request for the account, and lets another available
+  account retry the work. Repeated startup failures also trigger account
+  backoff so a recurring problem stops consuming new work.
+
+## [0.294.0] - 2026-11-20
+
+### Added
+
+- A dispatcher tick's receipt records what started it (`startedBy`): `timer`, `wake` for Jig's wake waiter, `command` for the `jig` command, or the name another launcher sets in the new `JIG_STARTED_BY` variable ([CONFIGURATION.md](plugin/CONFIGURATION.md#environment-variables)). The launcher passes it to the dispatcher's job.
+- `jig doctor` checks the dispatcher's tracker credential (`dispatch:tracker-credential`): it fails when ticks of the last 24 hours ran with no Linear key, naming each repository, how many ticks and which callers had no key, and what to set, and warns instead once the newest tick since read the repository with a credential. `jig doctor` checks may now warn (`WARN`), which does not fail the run.
+
+### Fixed
+
+- A process with no Linear key whose `linear` client is not logged in (or not installed) now learns it at its first call and asks Linear nothing more: every call fails as `unauthorized` with "no Linear key configured" and the variables it looked for. A dispatcher tick in that state names the missing key once on its receipt (`noCredential`) and its log instead of on every read, card and account; the issue preflight probes and holds no account for that tracker; no repository's turn fails for it; each repository the tracker serves keeps its tracker part of the line (its item cards and needs) from the last reading that had a credential, marked with that reading's time and the reason (`trackerKept`); and, when nothing else failed, the tick exits 9, the `unauthorized` class's status, with its own failure-ledger row told at once and naming the missing key, so a person hears of it. Calls through a client whose credential is not known yet go out one at a time, so concurrent reads ask it once, and the process asks again after five minutes. A tick whose client was logged in again part-way marks that incident `recovered` on its receipt, and it no longer sets the exit or keeps the line's tracker part, only when no repository's reading was cut before the login returned: a later login does not repair a reading already cut, so that tick still exits 9 and keeps the previous tracker part of those repositories alone, until a later tick reads them with a credential. A repository read before the credential was lost keeps its fresh reading. A caller waiting for the first call stops at one call's deadline and leaves no listener behind.
+- `jig budget` no longer shows calls made with no credential as spending of a credential that keeps failing: they are kept under no credential, with no requests, and listed apart under "no Linear key configured" with their callers (`noCredential` in `--json`). A logged-in `linear` client's calls are labelled as the client's own login (`credentialLabel`) rather than a bare hash.
+
+## [0.293.0] - 2026-11-20
+
+### Added
+
+- A drive end state, `CHECK_RUNS_UNREADABLE` (exit `25`), for a listing that still runs into a deadline or the page bound. Its reason, the drive's closing report and the stop recorded in the drive ledger name the pages read. `jig dispatch` re-drives it once per head commit and reports a second such stop on the same head to a person as a systematic read failure. A program that reads `drive-status.ts` or `drive.ts` exits sees the new code where it saw `1` for this failure.
+
+### Changed
+
+- With `JIG_FORGE_BUDGET=off`, a fresh check-runs listing or a fallback whole read is paged by `gh` itself, under the whole-read bound (four times `GH_CALL_TIMEOUT`) and no page bound, while a listing read through the cache still goes a page at a time; the configuration reference and the drive-pr README now say so. A listing past the page bound is read once, not asked again.
+
+### Fixed
+
+- Preserve check-run listing recovery when a review-pass wrapper does not return the finisher's exit status. **Consumer action:** none.
+- A drive no longer stops on a pull request whose head has many check runs. Each page of the head's check-runs listing now has its own `GH_CALL_TIMEOUT`, and the whole listing has four times that, at most 100 pages. Before, every page shared one deadline, so a long listing read as unreadable and the drive exited `1`.
+
+## [0.292.0] - 2026-11-20
+
+### Added
+
+- The hub's portable core (`plugin/hub/core/`): the ports through which
+  the hub reaches its platform (storage, serving, scheduling, outbound calls
+  and observability), each method returning an `Outcome`, and `runUnit`, the
+  one defect boundary around a unit of work, which hands every port call the
+  unit's deadline and its single `AbortSignal`. Nothing serves yet: the
+  storage and scheduling implementations and the process adapter follow.
+- `jig hub` is a command; for now it prints its help.
+- A GitHub transport over `fetch` (`plugin/shared/outbound/github-fetch.ts`),
+  beside the `gh` transport the dispatcher and the skills keep using. It
+  follows the outbound calls' obligations: it asks the shared budget, bounds
+  each call by its deadline, records what it cost, fails as one of the closed
+  failure classes, and charges nothing for a conditional request answered
+  "not modified". Nothing calls it yet.
+- The cost ledger records which repository a call was for, in a table beside
+  the hourly rows, so rows written before this release read unchanged.
+  `jig budget` shows the spend by repository (`--json` adds a `repositories`
+  array); spend that names no repository is grouped as `(no repository)`.
+
+### Changed
+
+- The outbound library's portable parts (the failure classes, retry,
+  paging, the conditional request and the budget's arithmetic) are split from
+  the parts that open the machine's budget database or run `gh`. The
+  library's callers are unchanged and behave as before.
+- `jig dispatch` now says why it refuses a Linear issue whose history holds no
+  assignment: Linear omits property changes made in an issue's first three
+  minutes, so the refusal names that window and says to wait until the issue is
+  older than that, then unassign it and assign it again to start a pickup.
+
+### Fixed
+
+- The dispatcher's validation forecast (`load.validation`) no longer holds every pickup on an idle host. Runs at once is now the most runs that held the test lock together, which is what its admission allowed, instead of the holders counted only while a run waited. Runs per pass is now the median over finished passes, those that made no run included and never under one, measured per repository once it has three finished passes; a repository with no measure of its own, such as one whose lock records no samples, is charged every repository's median. **Consumer action:** none.
+- A dispatched pickup stopped by a fault of its host rather than of its
+  work (its result could not be written, the question it stopped on
+  reports space or inodes run out or a file system or state directory that
+  cannot be written, or its closing report gives the cause `environment`
+  and it asked nothing else) no longer waits on a person. While the host's
+  health check fails, the item is held with the fault named; once it
+  passes, the tick relaunches the pickup in its own tree to resume the
+  work, or picks the item up afresh when the pass never claimed it. A restart that stops on a host fault again raises
+  one need for the steward or a person to diagnose, never a second restart.
+- Waiting drives list pull request comments for takeover checks once a
+  minute after a complete round-boundary read, reducing GitHub quota use.
+  An unread listing is retried at the next checkpoint. Claim checks before
+  dispatching a pass and writing the ledger still read fresh.
+
+## [0.291.2] - 2026-11-20
+
+### Fixed
+
+- A waiting pull request status probe backs off when the pull request stays
+  unchanged or the shared GitHub GraphQL balance is low. It pauses before
+  spending the last of the balance, leaving room for the dispatcher and for
+  review rounds, and still respects its wait deadline.
 
 ## [0.291.1] - 2026-11-20
 
@@ -10305,7 +10673,21 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.291.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.300.4...HEAD
+[0.300.4]: https://github.com/jig-harness/jig/compare/v0.300.3...v0.300.4
+[0.300.3]: https://github.com/jig-harness/jig/compare/v0.300.2...v0.300.3
+[0.300.2]: https://github.com/jig-harness/jig/compare/v0.300.1...v0.300.2
+[0.300.1]: https://github.com/jig-harness/jig/compare/v0.300.0...v0.300.1
+[0.300.0]: https://github.com/jig-harness/jig/compare/v0.299.0...v0.300.0
+[0.299.0]: https://github.com/jig-harness/jig/compare/v0.298.0...v0.299.0
+[0.298.0]: https://github.com/jig-harness/jig/compare/v0.297.0...v0.298.0
+[0.297.0]: https://github.com/jig-harness/jig/compare/v0.296.0...v0.297.0
+[0.296.0]: https://github.com/jig-harness/jig/compare/v0.295.0...v0.296.0
+[0.295.0]: https://github.com/jig-harness/jig/compare/v0.294.0...v0.295.0
+[0.294.0]: https://github.com/jig-harness/jig/compare/v0.293.0...v0.294.0
+[0.293.0]: https://github.com/jig-harness/jig/compare/v0.292.0...v0.293.0
+[0.292.0]: https://github.com/jig-harness/jig/compare/v0.291.2...v0.292.0
+[0.291.2]: https://github.com/jig-harness/jig/compare/v0.291.1...v0.291.2
 [0.291.1]: https://github.com/jig-harness/jig/compare/v0.291.0...v0.291.1
 [0.291.0]: https://github.com/jig-harness/jig/compare/v0.290.0...v0.291.0
 [0.290.0]: https://github.com/jig-harness/jig/compare/v0.289.0...v0.290.0

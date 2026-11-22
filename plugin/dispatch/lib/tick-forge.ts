@@ -212,6 +212,12 @@ export async function readForge(
         admit: (read) => reads.pool.run(read),
         bound: reads.bound,
         pickupArms,
+        reviewer: {
+          cwd: repo.path,
+          ...(section.reviewerFailures === undefined
+            ? {}
+            : { policy: section.reviewerFailures }),
+        },
       },
     );
     forgetClosedParkThreads(

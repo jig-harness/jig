@@ -46,6 +46,7 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-tracker-boundary.ts",
     "bun scripts/check-records-registry.ts",
     "bun scripts/check-throws.ts",
+    "bun scripts/check-portability.ts",
     "bun scripts/check-licences.ts",
     "bun scripts/check-workflow-safety.ts",
     "bun scripts/check-workflow-conventions.ts",
@@ -152,7 +153,9 @@ afterAll(() => {
 });
 
 test("only an opted-in dispatch launch runs the targeted form", async () => {
-  const { gateRun, testStage } = await import("./gates.ts");
+  const { gateRun, omittedDispatchChecks, testStage } = await import(
+    "./gates.ts"
+  );
   const on = changedRepository("gates:\n  dispatch_fast: true\n");
   const off = changedRepository("gates:\n  command: bun run gates\n");
   const full = testStage([], () => []).name;
@@ -161,6 +164,10 @@ test("only an opted-in dispatch launch runs the targeted form", async () => {
   const targeted = gateRun(false, undefined, on, launch);
   expect(targeted.dispatch).toBe(true);
   expect(names(targeted)).not.toContain(full);
+  expect(names(targeted)).toContain("bun run audit");
+  expect(omittedDispatchChecks(targeted.stages)).toBe(
+    "CI checks omitted: bun run deadcode, bun run quality, bun run build",
+  );
   expect(targeted.stages.at(-1)?.name).toBe(
     "RESOURCE_LOCK_BYPASS=1 bun scripts/test.ts --parallel=1 --timeout 60000 ./lib/bare.test.ts ./lib/plain.test.ts ./lib/thing.test.ts ./other/dollar.test.ts ./other/escaped.test.ts ./other/late.test.ts ./other/widget.test.ts",
   );
@@ -391,7 +398,10 @@ test("a change that selects no test adds no test stage", async () => {
     true,
     testStage([], () => []),
   ).map((stage) => stage.name);
-  expect(dispatchPlan([], {}).map((stage) => stage.name)).toEqual(quick);
+  expect(dispatchPlan([], {}).map((stage) => stage.name)).toEqual([
+    ...quick,
+    "bun run audit",
+  ]);
 });
 
 test("targeted gates select changed tests and nearby tests named for changed sources", async () => {

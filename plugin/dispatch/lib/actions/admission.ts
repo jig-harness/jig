@@ -12,13 +12,18 @@ import {
   admitHostDriverTakeover,
   admitTakeover,
   type CodexOptIn,
+  hasFullAccount,
   type Slots,
   slotsOf,
 } from "../accounts.ts";
 import { unrecordedDrivers, type HostDrivers } from "../host-drivers.ts";
 import { serves, type ServedStage } from "../account-stages.ts";
 import type { ReadRecord } from "../launches.ts";
-import type { Action } from "../types.ts";
+import type { Action, LaunchOutcome } from "../types.ts";
+
+export type AccountAdmission =
+  | { slots: Slots }
+  | { outcome: LaunchOutcome; capacity?: "accounts" | "load" };
 
 /** What admission reads of a tick's state. */
 export interface AdmissionState {
@@ -54,6 +59,27 @@ export function keepsTakeoverAccount(
   return (
     (action.takeover !== undefined && !takeoverMoves(state, action)) ||
     holderAccount === account
+  );
+}
+
+/** Which wait a bound rearm may attribute to account-slot capacity. */
+export function waitsForRearmSlot(
+  state: AdmissionState,
+  action: Action,
+  excluded: ReadonlySet<string>,
+): boolean {
+  return (
+    action.evidence?.rearm === true &&
+    hasFullAccount(
+      state.table,
+      {
+        kind: "pass",
+        deadlineSec: state.passDeadlineSec,
+        codex: state.codexOptIn,
+        stage: "rearm",
+      },
+      excluded,
+    )
   );
 }
 

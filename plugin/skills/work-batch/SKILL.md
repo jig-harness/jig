@@ -91,12 +91,13 @@ eligibility checks permit. This flag does not claim an item: the live claim
 below still checks its state, assignment, holds and assignment provenance.
 Read the full issues and assess their independence as for any batch.
 
-The dispatcher keeps the most expensive batchable size out of the batches it
-forms, but a size can change after the tick. **A member's size is never a
-question here.** The proposal lists each member of that size, and each whose
-size no longer fits a batch (too large, cleared, or two at once), under
-**Left for their own pickups** (`leftOut` in the JSON form), and no verdict
-prompt appears:
+The dispatcher keeps the most expensive batchable size, and every item with
+no priority, out of the batches it forms, but a size or a priority can change
+after the tick. **A member's size or missing priority is never a question
+here.** The proposal lists each member of that size, each whose size no
+longer fits a batch (too large, cleared, or two at once), and each whose
+priority was cleared, under **Left for their own pickups** (`leftOut` in the
+JSON form), and no verdict prompt appears:
 
 - Claim no member left out, except as the third bullet says when fewer than
   two members are kept. Name each one and the reason in the pull
@@ -107,9 +108,20 @@ prompt appears:
 - With two or more members kept, go on with them as the batch.
 - With fewer than two kept, the pass still has to claim one, or its launch
   record keeps holding every member. Run `/jig:do-item` for the member kept,
-  or, when none is, for the first member left out, passing that item's
-  `--for` and `--ancestor` to its claim. Every other member stays unclaimed
-  for its own pickup.
+  or, when none is, for the first member left out whose priority is set,
+  passing that item's `--for` and `--ancestor` to its claim. Every other
+  member stays unclaimed for its own pickup. Where `dispatch.missing_priority`
+  is `start`, a member with no priority is an ordinary left-out member: it
+  counts as one whose priority is set here, and is never refused for it.
+  Where it is `hold` and no member is kept and
+  every one left out lost its priority, claim none and start no item: end
+  the pass with the launch's result command as `failed`, naming each member
+  and that its priority is missing, and pass `--refused <that member's
+  updatedAt> --key <that member>` once for each, with one `--reason "priority
+  is missing"` (or one `--reason` per member) in the same invocation, since
+  the result is refused without it, so the dispatcher holds each only until
+  the member changes: setting a priority moves its
+  `updatedAt` and makes the next tick pick it up again.
 - The workspace opened under the first named key, on that key's branch. When
   that member is left out, work on the branch named for the member you claim
   (step 4, or `/jig:do-item`'s), so the member's own pickup can use its branch.

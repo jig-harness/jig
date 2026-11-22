@@ -54,7 +54,7 @@ The same values, for a program in any language:
 | `NOT_SETTLED` | class-label | 4 | 4 | no | The name of every state that shares exit `4`: the pull request is not ready to judge yet. Never itself a `state`; the caller waits and runs the drive again. `drive.ts` also exits `4` after the review converged when another driver holds the mark-Ready lease, when the head moved, the CI hold label changed or the forge could not be read as the hold was released, when a read of the cancelled-run recovery kept failing in a way waiting can clear, when no fresh result of a required check came in time (where a skipped or cancelled check means waiting cannot help: re-run the check, then re-arm), and when the drive keeps a draft that the reviewer skips (mark it Ready, then re-arm). |
 | `PR_NOT_OPEN` | state | 5 | 5 | yes | The pull request was merged or closed. Stop, and push nothing to it. |
 | `MAX_ROUNDS` | driver-only | — | 6 | yes | The drive spent its round budget (`--max-rounds`) without converging. Read the handoff file before re-arming. |
-| `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's own check did not pass, so the absence of findings proves nothing. A person looks at the reviewer before re-arming. |
+| `REVIEWER_FAILED` | state | 7 | 7 | yes | The reviewer's check failed or says the review did not complete. The drive stops. The dispatcher can retry a neutral check that reports an incomplete review and escalate repeated stops on that head. |
 | `HITL_PARKED` | state | 8 | 8 | yes | Everything left waits on a person's decision, each framed on its thread. The drive does not wake itself: once every one is answered, re-arm it. |
 | `PR_CONFLICTING` | state | 9 | 9 | yes | The pull request conflicts with its base and has nothing else to work on; `drive.ts` ends with it once its conflict-repair passes are spent. Merge the base in, then re-arm. |
 | `RETIRED` | tombstone | — | — | — | Withdrawn: it once stopped a drive on a draft pull request, which is now driven like any other. Never exited, and never given another meaning. |
@@ -72,6 +72,7 @@ The same values, for a program in any language:
 | `REVIEW_SKIPPED` | state | 22 | 22 | yes | The reviewer skipped this head and its review of an earlier head does not cover it, so no review will come. A person has this head reviewed, then re-arms. |
 | `CI_INFRA_PERSISTED` | driver-only | — | 23 | yes | The review converged, but checks kept failing on the CI service's own infrastructure after the drive re-ran them. Nothing in the code needs repair; re-arm once the service recovers. |
 | `FORGE_RATE_LIMITED` | state | 24 | 24 | yes | The forge's rate limit for the drive's credential is spent: nothing more is sent before it resets. The report names the reset (`rateLimit.until`). The driver then waits out a reset within its bound (`DRIVE_PR_RATE_LIMIT_WAIT`) and goes on, or stops on one further off. Re-arm after the reset. |
+| `CHECK_RUNS_UNREADABLE` | state | 25 | 25 | yes | The head's check-runs listing could not be read whole: a page or the whole listing ran out of time, or it has more pages than a read may take. The reason names the pages read. Nothing about the pull request was judged; run the drive again, and treat a second such stop on the same head as a systematic read failure. |
 
 <!-- /protocol:generated -->
 
@@ -115,7 +116,7 @@ fall short of its goal.
 | `NOT_SETTLED` | 4 | stopped before the pull request could be judged: it has not settled yet | — | `line` | — | The line drives it again once the pull request settles. |
 | `PR_NOT_OPEN` | 5 | ended: the pull request was merged or closed | — | `none` | — | Nothing is left for the drive; a merge's follow-up settles what the merge owes. |
 | `MAX_ROUNDS` | 6 | used its round budget without converging | `deadline` | `person` | `Investigate` | Read the handoff file for what keeps the review open, then re-arm the drive or take the work over. |
-| `REVIEWER_FAILED` | 7 | stopped: the posting reviewer's check did not pass | `tool-failed` | `person` | `Investigate` | Look at the reviewer's failed check, then re-arm the drive. |
+| `REVIEWER_FAILED` | 7 | stopped: the posting reviewer's check reported a failure | `tool-failed` | `person` | `Investigate` | Look at the reviewer's failed check, then re-arm the drive. |
 | `HITL_PARKED` | 8 | parked: a decision waits for a person | `needs-person` | `person` | `Decide` | Answer each parked decision on its thread, then re-arm the drive. |
 | `PR_CONFLICTING` | 9 | stopped: it conflicts with its base and has nothing left to work | `needs-person` | `person` | `Do` | Merge the base in and resolve the conflicts, then re-arm the drive. |
 | `SINGLE_INSTANCE_LOCK` | 11 | refused: another driver already holds this pull request's or this working tree's lock | `refused` | `line` | — | The driver that holds the lock goes on driving. |
@@ -131,5 +132,6 @@ fall short of its goal.
 | `REVIEW_SKIPPED` | 22 | stopped: the reviewer skipped its head and will not review it | `environment` | `person` | `Do` | Have this head reviewed, then re-arm the drive. |
 | `CI_INFRA_PERSISTED` | 23 | stopped: checks kept failing on the CI service's own infrastructure | `environment` | `line` | — | The line re-arms the drive once the CI service recovers. |
 | `FORGE_RATE_LIMITED` | 24 | stopped: the forge's rate limit for its credential is spent | `environment` | `line` | — | The line drives it again once the forge's rate limit resets. |
+| `CHECK_RUNS_UNREADABLE` | 25 | stopped: its head's check-runs listing could not be read whole | `tool-failed` | `line` | — | The line re-drives it once for this head; a second such stop on the head is a systematic read failure for a person. |
 
 <!-- /protocol:generated -->

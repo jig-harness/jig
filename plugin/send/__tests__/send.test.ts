@@ -188,11 +188,13 @@ describe("jig send refuses before it writes", () => {
     const unknown = await w.send([ADDRESS, "merge"]);
     expectSpawnExit(unknown, 2);
     expect(unknown.stderr).toContain(
-      "drive takes drive, rearm, withdraw-rearm, hold, release, answer <key> <text>",
+      "drive takes drive, rearm, withdraw-rearm, hold [--until-merged <PR> | --until-closed <ITEM>] (pickup only), release, answer <key> <text>",
     );
     const wrong = await w.send([`followup@${REPO}#12`, "pause"]);
     expectSpawnExit(wrong, 2);
-    expect(wrong.stderr).toContain("followup takes hold, release");
+    expect(wrong.stderr).toContain(
+      "followup takes hold [--until-merged <PR> | --until-closed <ITEM>] (pickup only), release",
+    );
     const twoLines = await w.send([
       ADDRESS,
       "answer",

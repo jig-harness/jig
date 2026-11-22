@@ -14,6 +14,7 @@
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` (`21`), `PASS_DEADLINE` (`15`) | stale, once per head commit |
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
+ * | stopped `CHECK_RUNS_UNREADABLE` (`25`) | stale, once per head commit, naming the pages read; a second such stop on the head is a person's, as a systematic read failure |
  * | stopped `FORGE_RATE_LIMITED` (`24`) | stale, once per stop from the forge limit's reset (`forge-limit-redrive.ts`) |
  * | stopped `INDETERMINATE` (`1`), the pull request conflicting with its base | stale, once per head and base head |
  * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
@@ -54,7 +55,8 @@
  * could not resolve, such as two requirements that contradict each other, is
  * that person's decision too.
  *
- * A ledger that stopped `STALLED` or `CI_REPAIR_SPENT` is a stop the drive's
+ * A ledger that stopped `STALLED`, `CI_REPAIR_SPENT` or
+ * `CHECK_RUNS_UNREADABLE` is a stop the drive's
  * own next step settles: a pass that finds why the stalled passes did not
  * act, or a CI repair with a fresh budget. Its change is its head commit and
  * its exit, so it is re-driven once for each; once this machine or another
@@ -113,11 +115,17 @@ import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events
 import { ledgerTree } from "../stall-tree.ts";
 import { exitClass as stopClass } from "../../../skills/drive-pr/scripts/lib/status/exit-classes.ts";
 import { infraStopClass } from "../infra-backoff.ts";
+import {
+  reviewerFailureDisposition,
+  reviewerFailurePolicy,
+  type ReviewerFailurePolicy,
+} from "../reviewer-failure.ts";
 import { forgeLimitStopClass } from "../forge-limit-redrive.ts";
 import { type DriverPresence, driverPresence } from "./silent-driver.ts";
-import { type Adoption, adopts, type Author, ownAuthors } from "../adopt.ts";
+import { type Adoption, type Author, ownAuthors } from "../adopt.ts";
 import { idleAutomation } from "../automation.ts";
-import { pickupAsked, type PickupArms } from "../pickup-arms.ts";
+import type { PickupArms } from "../pickup-arms.ts";
+import { unarmed } from "./ledger-arming.ts";
 import { type Admit, type BaseHead, baseHeads, classed } from "./base-heads.ts";
 export type { Admit } from "./base-heads.ts";
 import { ended, passedBefore, type TickBound } from "./bounded.ts";
@@ -130,15 +138,15 @@ import {
 import type { Listing } from "../tick-comments.ts";
 import { minutesBetween } from "../text.ts";
 import { readPark, type ParkReading } from "./park-reading.ts";
+import { failedRead } from "./ledger-read-failure.ts";
 import { ledgerParks } from "../park-events.ts";
-import { combinedFailure, readFailureOf } from "../read-failures.ts";
+import { readFailureOf } from "../read-failures.ts";
 import { listComments } from "../../../shared/records/forge-claims.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
   Evidence,
   LedgerClass,
-  ReadFailure,
   StaleCause,
   WaitingPark,
 } from "../types.ts";
@@ -354,6 +362,13 @@ const MECHANICAL_STOPS: ReadonlyMap<
     },
   ],
   [
+    DRIVE_EXIT.CHECK_RUNS_UNREADABLE,
+    {
+      kind: "check-runs",
+      words: "its head's check-runs listing could not be read whole",
+    },
+  ],
+  [
     DRIVE_EXIT.FORGE_RATE_LIMITED,
     {
       kind: "forge-limit",
@@ -386,11 +401,15 @@ function mechanicalStopClass(
     return forgeLimitStopClass(ledger, exit, head, stop.words);
   const last = lastStopEvent(ledger.events ?? []);
   const tree = boundToTree(stop.kind, exit, last) ? ledgerTree(ledger) : null;
+  const words =
+    stop.kind === "check-runs" && Number.isSafeInteger(last?.listingPages)
+      ? `${stop.words} after ${last?.listingPages} page(s)`
+      : stop.words;
   return {
     class: "stale",
-    why: `stopped ${exit} (${stop.words}): re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
+    why: `stopped ${exit} (${words}): re-drive ${rearmTree(tree, last?.leftWork)}, once for head ${short(head)}`,
     stale: {
-      cause: `stopped ${exit}, ${stop.words}`,
+      cause: `stopped ${exit}, ${words}`,
       change: `head ${head}, stopped ${exit}`,
       mechanicalStop: stop.kind,
       ...(stop.recovery === true ? { recovery: true as const } : {}),
@@ -401,8 +420,8 @@ function mechanicalStopClass(
 
 /**
  * Whether a mechanical stop's re-drive must run in the tree it stopped in: a
- * stall that left work there or never measured it, and a pass deadline whose
- * stop measured work left. A deadline stop that never measured comes from a
+ * stall or listing stop that left work there or never measured it, and a pass
+ * deadline whose stop measured work left. A deadline stop that never measured comes from a
  * driver that did not record it, so it re-drives on any account.
  */
 function boundToTree(
@@ -411,7 +430,8 @@ function boundToTree(
   last: ReturnType<typeof lastStopEvent>,
 ): boolean {
   const own = last === undefined || last.cause === String(exit);
-  if (kind === "stall") return own && last?.leftWork !== false;
+  if (kind === "stall" || kind === "check-runs")
+    return own && last?.leftWork !== false;
   return kind === "deadline" && own && last?.leftWork === true;
 }
 
@@ -671,57 +691,6 @@ function unreadable(snapshot: LedgerSnapshot): string | null {
     : `its drive ledger does not read: ${canonical.parsed.reason}`;
 }
 
-/**
- * A pull request with no ledger whose `drive` label asks for one, or which
- * the repository's adoption rule adopts: the plan arms it once per head
- * commit.
- */
-function unarmed(
-  pr: OpenPr,
-  base: Omit<DrivenPr, "class" | "why" | "evidence">,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
-): DrivenPr | null {
-  const asked = askedToArm(pr, r);
-  if (asked === null) return null;
-  // The once-per-head rule needs the commit it arms: without one nothing starts.
-  if (typeof pr.headRefOid !== "string" || pr.headRefOid === "")
-    return {
-      ...base,
-      class: "unplaced",
-      why: `no drive ledger, and ${asked.asks}, but the pull request's head commit does not read, so the once-per-head rule cannot be kept; nothing is armed`,
-      evidence: {},
-    };
-  return {
-    ...base,
-    class: "unarmed",
-    why: `no drive ledger, and ${asked.asks}: arm a drive on any account`,
-    evidence: { ledger: "none", headSha: pr.headRefOid, ...asked.evidence },
-  };
-}
-
-/** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
-function askedToArm(
-  pr: OpenPr,
-  r: Pick<Reading, "labels" | "adoption" | "nowMs" | "pickupArms">,
-): { asks: string; evidence: { adopted?: string; pickupArm?: true } } | null {
-  const { labels, adoption } = r;
-  if (labels !== null && hasCommand(labels, pr.labels, "drive"))
-    return { asks: "a person's drive label asks for one", evidence: {} };
-  if (pickupAsked(r.pickupArms, pr))
-    return {
-      asks: "its completed process pickup handed off the first drive",
-      evidence: { pickupArm: true },
-    };
-  const adopted =
-    adoption === null ? null : adopts(pr, adoption, labels, r.nowMs);
-  return adopted === null
-    ? null
-    : {
-        asks: "the repository's adoption rule (dispatch.adopt) adopts it",
-        evidence: { adopted },
-      };
-}
-
 /** What every drive of a pull request carries: the pull request, and its labels where they are read. */
 function baseOf(
   pr: OpenPr,
@@ -754,6 +723,9 @@ interface Reading {
   presence: (pr: number, ledger: Ledger) => Promise<DriverPresence>;
   /** The tick's bound, where it has one: no park thread is read once it has ended. */
   bound?: TickBound;
+  reviewerFailures: ReviewerFailurePolicy;
+  cwd?: string;
+  admit: Admit;
 }
 
 /** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger whose stop a conflict re-drives. */
@@ -867,7 +839,22 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     r.bound,
   );
   const forge = await factsOf(pr, ledger, r);
-  let classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
+  const reviewer = await r.admit(() =>
+    reviewerFailureDisposition(
+      slug,
+      pr.number,
+      ledger,
+      forge.head,
+      listing.value,
+      r.reviewerFailures,
+      pr.isDraft === true,
+      r.cwd,
+      r.bound,
+    ),
+  );
+  let classified =
+    reviewer?.classified ??
+    classifyLedger(ledger, nowMs, windowMs, park, forge);
   const stop = rearmableStop(ledger)
     ? { comment: snapshot.canonical.comment.id, generation: ledger.generation }
     : null;
@@ -894,6 +881,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...(classified.class === "unplaced" ? failedRead(ledger, park, forge) : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
+      ...reviewer?.evidence,
       ...request,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),
       ...idleAutomation(pr, ownAuthors(r.adoption, r.login)),
@@ -901,28 +889,6 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...waitingOf(classified, park, pr.author?.login),
     parks: ledgerParks(ledger),
   };
-}
-
-/**
- * The read that failed beside an unplaced ledger, its park's answers or its
- * base branch's head, with the class of the call that failed it; nothing
- * when neither failed.
- */
-function failedRead(
-  ledger: Ledger,
-  park: ParkReading | undefined,
-  forge: PrFacts,
-): { readFailed?: true; failure?: ReadFailure } {
-  const failed: (ReadFailure | undefined)[] = [];
-  if (
-    ledger.driver.exit === DRIVE_EXIT.HITL_PARKED &&
-    (park === undefined || "unreadable" in park)
-  )
-    failed.push(park?.failure);
-  if (forge.base !== undefined && "unreadable" in forge.base)
-    failed.push(forge.base.failure);
-  if (failed.length === 0) return {};
-  return { readFailed: true, ...classed(combinedFailure(failed)) };
 }
 
 /** The unanswered decisions a parked ledger carries into its notification, its conflict's re-drive included. */
@@ -969,9 +935,16 @@ export async function readDrives(
     admit?: Admit;
     bound?: TickBound | undefined;
     pickupArms?: PickupArms | undefined;
+    reviewer?: { policy?: ReviewerFailurePolicy; cwd: string } | undefined;
   } = {},
 ): Promise<DrivenPr[]> {
-  const { comments, admit = (read) => read(), bound, pickupArms } = options;
+  const {
+    comments,
+    admit = (read) => read(),
+    bound,
+    pickupArms,
+    reviewer,
+  } = options;
   const reading: Reading = {
     slug,
     login,
@@ -989,6 +962,9 @@ export async function readDrives(
           })
         : driverPresence(pr, ledger),
     comments: comments ?? ((pr) => listComments({ repo: slug, number: pr })),
+    reviewerFailures: reviewer?.policy ?? reviewerFailurePolicy({}),
+    ...(reviewer === undefined ? {} : { cwd: reviewer.cwd }),
+    admit,
     ...(bound === undefined ? {} : { bound }),
   };
   const out: DrivenPr[] = [];

@@ -1,7 +1,8 @@
 /**
  * `jig doctor`: whether this machine can run what Jig installs, and whether
  * the repository it runs in fits its configuration. Each check has a stable
- * name and passes, fails, or is skipped where it does not apply; a failure
+ * name and passes, fails, warns (what a person should look at, which does
+ * not fail the machine), or is skipped where it does not apply; a failure
  * names the command that fixes it. It changes nothing.
  *
  * The machine's checks: Bun's version; `claude` and `codex` resolving
@@ -669,7 +670,9 @@ async function doctorChecks(options: {
 
 /** One check for people: its status, name and detail, and a failure's fix. */
 function formatCheck(check: DoctorCheck): string {
-  const label = { pass: "pass", fail: "FAIL", skip: "skip" }[check.status];
+  const label = { pass: "pass", fail: "FAIL", skip: "skip", warn: "WARN" }[
+    check.status
+  ];
   return `${label}  ${check.id}: ${check.detail}${check.fix === undefined ? "" : `\n      fix: ${check.fix}`}`;
 }
 

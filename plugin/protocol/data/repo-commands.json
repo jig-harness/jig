@@ -146,6 +146,20 @@
     },
     {
       "kind": "command",
+      "name": "drive.dependency_install",
+      "setting": "drive.dependency_install",
+      "exit": null,
+      "runBy": "drive-pr, resolve-conflicts",
+      "shell": true,
+      "given": "Nothing on standard input. Each command runs in its lockfile's directory in the merged worktree.",
+      "answers": "Exit 0 when the pinned dependencies are available without changing the dependency inputs. Any other exit stops the round before validation.",
+      "commandStore": false,
+      "deadlineSec": 1200,
+      "deadlineChangedBy": "fixed per merge",
+      "meaning": "Overrides the frozen dependency install command for a recognized lockfile. A drive round reads overrides from its trusted policy."
+    },
+    {
+      "kind": "command",
       "name": "ci.log_command",
       "setting": "ci.log_command",
       "exit": null,
@@ -269,6 +283,20 @@
       "deadlineSec": null,
       "deadlineChangedBy": null,
       "meaning": "Rebuilds files that are regenerated, never merged by hand, when they conflict; each entry pairs `paths` with the `command` that rebuilds them."
+    },
+    {
+      "kind": "command",
+      "name": "resolve_conflicts.sequenced_migrations",
+      "setting": "resolve_conflicts.sequenced_migrations",
+      "exit": null,
+      "runBy": "resolve-conflicts",
+      "shell": true,
+      "given": "Runs from the repository root after the planned migration source files and integration metadata are in place. Standard input is migration-plan.ts JSON, with an entry for each directory and its regenerate paths.",
+      "answers": "Exit 0 once the journal and required snapshots are rebuilt, the integration journal's entries kept first as committed and integration snapshots preserved.",
+      "commandStore": false,
+      "deadlineSec": null,
+      "deadlineChangedBy": null,
+      "meaning": "Rebuilds the sequenced migration journal and snapshots after the sides' migrations are combined."
     },
     {
       "kind": "command",

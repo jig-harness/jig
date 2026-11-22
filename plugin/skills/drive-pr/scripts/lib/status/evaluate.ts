@@ -67,7 +67,7 @@ import { withObservedEvaluation } from "../gh-conditional.ts";
 import { summaryReport } from "../../summary-findings.ts";
 import {
   type CiReport,
-  checkRunsFor,
+  checkRunListing,
   ciReportFor,
   type ReviewerSticky,
   reviewerRun,
@@ -84,7 +84,11 @@ import {
 } from "./inherited-head.ts";
 import { resolveMarkerSha, reviewedShaGate, skipNote } from "./reviewed-sha.ts";
 import { readHeldEvidence, isFindingHoldCurrent } from "./held-evidence.ts";
-import { judgeReviewObject, latestReviewBy } from "./review-object.ts";
+import {
+  incompleteReviewReason,
+  judgeReviewObject,
+  latestReviewBy,
+} from "./review-object.ts";
 import { missingReviewerVerdict } from "./comment-draft-skip.ts";
 import { strandedRunNote } from "./stranded-run.ts";
 import { readFailure, type ProbeFailure } from "./probe-stop.ts";
@@ -107,7 +111,13 @@ export interface StatusReport extends CiReport {
    * PR is Ready for review", and every gate ahead of the snapshot returns
    * without having asked. */
   isDraft: boolean | null;
+  /** On `CHECK_RUNS_UNREADABLE`: the pages read, `null` when gh did not say. */
+  listingPagesRead?: number | null;
+  /** On `CHECK_RUNS_UNREADABLE`: the listing has more pages than a read takes. */
+  listingAtBound?: boolean;
   reviewerPresent: boolean;
+  /** Check-run changes observed even while the aggregate CI state stays the same. */
+  checkProgress?: string;
   reviewerStatus: string;
   reviewerConclusion: string;
   reviewedSha: string;
@@ -765,15 +775,23 @@ async function evaluateFresh(
   // or a 403 on evidence this path does not use block `PR_CONFLICTING` from
   // ever being reported. The verdict
   // degrades to "unknown" instead, which is what the reporter prints and what
-  // announce-merge-ready already refuses to announce on.
-  let runs = await checkRunsFor(
+  // announce-merge-ready already refuses to announce on. A listing cut short
+  // by a deadline or its page bound has its own state: reading it again can
+  // succeed, and the reason says how far it got.
+  const listing = await checkRunListing(
     ctx.owner,
     ctx.repo,
     report.apiHead,
     "observed",
   );
+  let runs = listing.runs;
   let runsUnreadable = false;
   if (runs === null) {
+    if (!conflicting && listing.cutShort !== null) {
+      report.listingPagesRead = listing.cutShort.pagesRead;
+      report.listingAtBound = listing.cutShort.atBound;
+      return terminal(report, "CHECK_RUNS_UNREADABLE", listing.cutShort.reason);
+    }
     if (!conflicting) {
       return readFailure(
         report,
@@ -784,10 +802,12 @@ async function evaluateFresh(
     runsUnreadable = true;
   }
 
-  // Bound to the app slug AND a check name, not the app alone: an app may
-  // publish several checks on one SHA, and picking "the newest run from this
-  // app" would let an unrelated sibling check attest that the review completed.
-  // Newest wins within that pair (a re-run, or a cancelled first attempt).
+  report.checkProgress = JSON.stringify(
+    runs
+      .map((r) => `${r.id}:${r.status}:${r.conclusion}`)
+      .sort((a, b) => a.localeCompare(b)),
+  );
+  // The newest check matching both the reviewer app and check name is its witness.
   const reviewer = reviewerRun(runs);
 
   const awaitReviewer = reviewerGatesApply(conflicting);
@@ -804,11 +824,7 @@ async function evaluateFresh(
     ),
   );
 
-  // A conflicting head SKIPS every reviewer gate below. Each of them returns
-  // AWAITING_REVIEWER (exit 4, "becomes something else with time"), and on a
-  // conflicting PR that state polls until `--timeout`. The work enumeration
-  // further down still runs, so findings the poller DID post are picked up
-  // rather than discarded.
+  // Conflicting heads still enumerate review findings without waiting for a reviewer.
   const byObject = reviewerEvidence() === "review_object";
   if (awaitReviewer && reviewer === null) {
     const verdict = await missingReviewerVerdict(
@@ -945,25 +961,10 @@ async function evaluateFresh(
     }
   }
 
-  // A conflicting head skips the reviewed-SHA GATE — every return inside it is
-  // STALE_REVIEW (exit 4), the same poll-to-timeout stall as the reviewer gate
-  // above, for the same reason: the marker only advances when the reviewer
-  // publishes, and nothing here becomes true with time while the conflict sits.
-  //
-  // It does NOT skip READING the marker. Skipping the read as well threw away
-  // the one piece of evidence that says whether a conflicting head's findings
-  // are current or left over from an earlier review, so the report claimed
-  // nothing either way and a caller could not tell. Gating on it is the wrong
-  // answer — that reinstates exactly the stall that ordering mergeability ahead
-  // of the reviewer exists to remove, and an unresolved thread is open work
-  // regardless of which head it was posted on — so the marker is read,
-  // published in the report, and named in the ROUND_READY `reason`. Report, do
-  // not gate.
-  //
-  // Reuses `earlySticky` when the stranded-check-run bypass above already
-  // fetched it, rather than issuing a second `issues/{pr}/comments` call —
-  // see that variable's own doc comment for why this is about correctness
-  // (one snapshot, not two that could disagree), not merely avoiding a call.
+  // Report the sticky on a conflicting head so callers can tell whether
+  // open threads are current. Skip gating on it there: unresolved threads
+  // are work regardless of their head, and gating would stall conflict repair.
+  // Reuse the stranded-check-run bypass's read when available.
   const sticky = await reviewerStamp(ctx, earlySticky);
   let marker: string;
   if (sticky === null) {
@@ -989,6 +990,16 @@ async function evaluateFresh(
   const markerFull = await resolveMarkerSha(marker);
 
   if (awaitReviewer && !byObject) {
+    const failure = incompleteReviewReason(
+      reviewer,
+      report.apiHead,
+      reviewerLabel(),
+    );
+    if (failure !== null && markerFull !== report.apiHead) {
+      const rc = await stillOnHead();
+      if (rc !== 0) return rc;
+      return terminal(report, "REVIEWER_FAILED", failure);
+    }
     // Second witness: the reviewer's stamp must name THIS head, or the head
     // it reviewed before skipping this one unchanged (`reviewed-sha.ts`).
     const stop = await reviewedShaGate(

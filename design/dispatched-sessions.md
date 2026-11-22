@@ -286,7 +286,7 @@ in the tick changes but the new `endRun`. The implementation is
 | `sessions(repo)` | Every worktree of the repository's checkout (`git worktree list --porcelain`), joined to items and pull requests by branch as Orca's are. An agent in state `working` is each launch record that names the worktree and has any recorded process alive under its identity: the wrapper's, or a pass's (below). Any other process with its working directory in a worktree (a person's shell or session, by the idle-holder test the opener uses) counts as one terminal whose state cannot be told, so the tick reads that worktree's target as unknown, never as "no session" |
 | `openWorkspace` | A git worktree under the runs root, opened by the workspace rules Orca's open uses today (branch choice, an existing checkout first, an idle holder detached, the repository's create hook run once), moved from `plugin/shared/orca-workspace/` to a shared opener both runtimes call |
 | `launch` | The wrapper, `run.ts <record> <token>`, started as a run of its own (below) |
-| `notify` | None: refused, saying the dashboard lists the cause. A machine file that enables the `notify` stage on this runtime is refused, naming the field |
+| `notify` | None: refused, saying the dashboard lists the cause. The `notify` stage writes no Orca card on this runtime and sends its notices through the [notification channels](chat.md#notification-channels) the machine file names under `notify.channels`; a machine file that enables the stage here with no channel is refused, naming the field |
 | `steer` | None: a headless pass has no input prompt to nudge, and this runtime starts no interactive session (`interactiveBinding` answers no) |
 | `retire` | Nothing to retire: there is no notices workspace |
 | `endRun` | Reports whether any of the run's recorded processes is alive; never kills one |
@@ -449,19 +449,31 @@ person. The dashboard, which a person reaches from a phone
 needs you* lists every cause the tick finds, whether or not any notice was
 sent.
 
-The `notify` stage is a different thing: the tick, not a session, writes a
-cause (a park, a stuck record, a failed follow-up) into the repository's
-notices workspace on Orca and marks it unread. It stays on Orca, unchanged,
-as a stage a host may enable, and the process runtime refuses it. It retires
-on Orca too once the outcome log shows it unused: when, over 30 days on a
-host that enables it, at least nine in ten of the needs a person answered
-were answered before the tick found the notices workspace read. The log
-holds that observation: the `notify` stage's own tick records one
-`notices_read` event per tick with the workspace's read state, and a need
-counts as answered first when its answer lands before the first tick that
-recorded the workspace read after its notice was written; the one shared
-workspace's read state is thus compared with each notice's write time, not
-with a per-need mark.
+The `notify` stage is a different thing: the tick, not a session, sends a
+cause (a park, a stuck record, a failed follow-up) through each
+[notification channel](chat.md#notification-channels) the host enables.
+On Orca the first is the Orca card: the cause is written into the
+repository's notices workspace, which is marked unread. The process
+runtime has no notices workspace, so it writes no card, and the stage runs
+there only through a channel that works without Orca: a `webhook` channel
+the machine file names under `notify.channels`, posting to an incoming
+webhook (an ntfy topic a phone subscribes to, a Slack or Discord channel).
+A machine file that enables the stage on the process runtime with no such
+channel is refused, naming the field. On Orca a named channel is sent
+through beside the card.
+
+The card retires on Orca once the outcome log shows it unused: when, over
+30 days on a host that enables it, at least nine in ten of the needs a
+person answered were answered before the tick found the notices workspace
+read. The log holds that observation: the `notify` stage's own tick
+records one `notices_read` event per tick with the workspace's read state,
+and a need counts as answered first when its answer lands before the first
+tick that recorded the workspace read after its notice was written; the
+one shared workspace's read state is thus compared with each notice's
+write time, not with a per-need mark. The observation is the card's alone:
+a webhook cannot report whether a notice was read, so a tick that writes
+no card records no `notices_read` event, and a host on the process runtime
+is not part of the measure.
 
 ### Proof before the default changes
 

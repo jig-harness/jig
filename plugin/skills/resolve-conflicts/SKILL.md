@@ -108,6 +108,7 @@ from this side before they are regenerated.
 | Script | What it does | Exit codes |
 |--------|--------------|------------|
 | `bun "${CLAUDE_SKILL_DIR}/scripts/conflict-map.ts" [--json] [--integration <side>]` | Maps the stopped operation and writes the snapshot. The integration side is `ours` or `theirs`; read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/migration-plan.ts"` | Prints the migration sequence, renames and regeneration inputs as JSON from the current map and committed trees | 0 planned; 1 a sequence needs attention; 2 usage or invalid configuration; 3 nothing in progress or no current map |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" "<path>" <decision> [--reason "<reason>"] [--command "<command>"] [--dropped "<reason>"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" [<output-option>]` | Verifies the resolution; prints the commit-message section. Output options are `--json`, `--message` and `--commit-message` | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/events.ts" [--json]` | Records the conflicts of the operation just concluded in the [live record](#the-live-record) | 0 recorded, already recorded, or nothing to record; 1 the record could not be written (the conclusion stands); 2 usage or not in a git work tree; 3 the operation is still in progress |
@@ -171,8 +172,9 @@ integration side and the merge base, and for every conflicted path:
 - its **kind**: `both-modified`, `both-added`, `deleted-by-ours`,
   `deleted-by-theirs`, `added-by-ours`, `added-by-theirs` or `both-deleted`;
 - its **class**: `lockfile` (by file name), `generated` (by the
-  repository's configuration or its change-area catalog), `binary` or `text`,
-  with the regeneration command for the derived classes;
+  repository's configuration or its change-area catalog), `migration` (a
+  sequenced SQL file), `binary` or `text`, with the regeneration command for
+  the derived classes;
 - its conflict regions (line ranges);
 - the **intent** of each side: the commits that changed the path since the
   merge base (at most 20 per side), and, for a path one side deleted, where
@@ -207,6 +209,18 @@ text.
 
 Decide from the intents, never from which side "looks newer".
 
+Before resolving individual paths, capture the migration plan. It finds
+sequenced SQL and metadata that Git merged cleanly as well as conflicted
+paths. Use an absolute scratch file outside the worktree for `<plan-file>`:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file "<plan-file>" --stdout-exit-code 1 -- bun "${CLAUDE_SKILL_DIR}/scripts/migration-plan.ts"
+```
+
+- **Sequenced database migration.** Apply each [migration plan](#apply-a-migration-plan)
+  before resolving that sequence's SQL, journal or snapshots individually.
+  The `moves` and `regenerate` lists name the work, including cleanly
+  merged paths that need to move or be rebuilt.
 - **Lockfile or generated file.** Take the integration side
   with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git checkout <side-option> -- "<path>"`,
   substituting `--ours` or `--theirs` for `<side-option>` as the map requires. Resolve the
@@ -233,6 +247,68 @@ or changed the signature of, and fix them as part of the resolution.
 
 Stage every resolved path with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git add -- "<path>"`,
 or record its removal with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git rm -- "<path>"`.
+
+### Apply a migration plan
+
+A migration runs in the order its filename's leading number names. A
+different migration on the same number must run after the integration
+side's migrations. When a branch addition would run within the
+integration history, the plan keeps that history and assigns the pending
+branch migrations the next numbers in their original order.
+
+For a plan with `moves`, read each move's committed `from` from its recorded
+`commit`, so a shared filename or a chain of renames cannot overwrite a
+source. Restore the files in `integration.paths` from `integration.commit`,
+remove the obsolete paths listed in `remove`, and write the committed
+migration bytes and executable bit at each move's `to`. Stage those paths.
+If the plan reports a problem, resolve its cause before proceeding. A
+detected migration directory without a suitable regeneration command needs a
+repository command configured in `resolve_conflicts.sequenced_migrations`
+before renumbering.
+
+Once the sources are ready, if `regenerate` lists paths and the sequence
+supplies a `command`, run it from the repository root. Its input is the
+saved JSON plan. Each entry is keyed by
+`directory`, and `regenerate` names the files to rebuild. Use the command
+for the host and pass the configured shell command unchanged as one
+argument to that shell.
+
+On Unix:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file "<plan-file>" -- sh -c "<command>"
+```
+
+On Windows:
+
+```powershell
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file "<plan-file>" -- cmd.exe /d /s /c "<command>"
+```
+
+For a sequence with no moves, start a conflicted metadata path from the
+integration version listed in `integration.paths`. If there is no
+sequence command, the plan's `fallback` lists the existing per-path
+generators from the configuration or change-area catalog. Run those
+commands in their listed directories under the generated-file rule.
+For a path with no declared command, find the repository generator
+that rebuilds it and record `regenerated` with `--command`. If no
+generator can rebuild a required path, report the missing
+capability and go to Step 8. Record `escalate` on an affected mapped
+path when one exists.
+
+Preserve the integration side's existing snapshots when renumbering.
+Preserve the committed integration journal as the prefix, its entries in
+their committed order even where that is not sequence order. Append the
+migrations the integration side does not commit, in sequence order; with a legacy Drizzle journal, give
+them strictly increasing timestamps greater than every integration entry's.
+Stage the rebuilt files and record `regenerated` for each one that
+conflicted. Never combine a journal or snapshot by hand.
+
+Record any old migration path kept at the integration content with the
+corresponding side and say where the branch's migration moved. Record
+an old path removed by renumbering as `deleted`, with the new path as
+the reason. The check verifies the exact committed migration at each planned
+destination and accepts verified new paths as part of the operation.
 
 ## Step 4: Record each decision
 
@@ -373,6 +449,15 @@ It fails (exit 1), listing each problem with its file and line, when:
    hand counts only with a nonempty `why`. A side's own lines under
    its own decision always fail.
 
+The check also verifies every sequenced migration added on either side.
+The staged SQL and file mode must match the committed input at the required
+path, even when a decision acknowledges deletion or rewriting. It checks
+that the journal keeps the integration journal's entries as committed and
+then lists every staged migration the integration side does not commit
+once in order, that the required
+snapshots are present, and that renumbering preserves the integration side's
+snapshots.
+
 Fix what it reports and run it again. Exit 4 means a path is recorded as
 `escalate`: go to Step 8. Exit 3 means the snapshot is missing or belongs to
 another operation: run `bun "${CLAUDE_SKILL_DIR}/scripts/conflict-map.ts"`,
@@ -387,6 +472,21 @@ merged automatically. Record the evidence and outcome for each obligation
 in the resolution report. An optional command supplements this review; a
 passing command does not establish that its prose obligation is satisfied.
 Fix violations, stage and record any manual changes, and repeat Step 5.
+
+For a base merge inside a drive, refresh the worktree's dependencies before
+running the validation plan. The command compares the staged resolution with
+the pre-merge branch, so it also sees dependency inputs Git merged cleanly.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/dependency-install.ts"
+```
+
+Keep the JSON outcome for the resolution and round reports. Record each
+attempted install's directory, command and outcome. If it fails, stop before
+validation or committing and name the dependency install failure and its
+diagnostic in the round report. Report a detection or configuration error
+as such if the install never started. If a repair changes staged dependency
+inputs, run the install check again before validation.
 
 Never conclude a merge that does not build. Run the repository's checks over
 the resolved tree:
@@ -414,6 +514,10 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git 
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-message.txt
 bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
 ```
+
+When Step 6 ran a dependency install, append its directory and command to
+the prepared commit message after `--commit-message` succeeds and before
+committing, so the resolution record carries the same evidence as the round.
 
 Run these commands in order, starting the next only after the preceding
 command exits `0`; a commit that exits `124` is finished as
@@ -600,10 +704,19 @@ each question.
 - **Unattended (a drive's repair round):** abort with
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git <operation> --abort`, substituting the stopped operation
   (`merge`, `rebase`, `cherry-pick` or `revert`). Then verify the tree is clean:
-  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --porcelain --untracked-files=no` must print nothing,
-  and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse -q --verify MERGE_HEAD` must exit non-zero.
-  Print the questions on stderr and exit non-zero. That is
-  how drive-pr's `conflict-resolve` round hands a conflict to a human.
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --porcelain --untracked-files=normal --ignore-submodules=none` must exit 0 and print nothing.
+  For a merge, `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse -q --verify MERGE_HEAD` must exit nonzero.
+  Report the questions, any abort failure and any paths still present on
+  stderr. Under a drive, write the [round report](../drive-pr/SKILL.md#8-report-and-hand-off)
+  to `.context/scratch/round-report.json`, with the reason the operation
+  could not conclude, then record it before returning a nonzero exit:
+
+  ```bash
+  bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/round-report.ts" .context/scratch/round-report.json
+  ```
+
+  The driver checks for files the round created even if the pass already
+  aborted its merge.
 
 ## The live record
 
@@ -684,7 +797,19 @@ resolve_conflicts:
   generated:
     - paths: ["docs/index.md", "src/generated/**"]
       command: bun run generate
+  sequenced_migrations:
+    - directory: db/migrations
+      journal: db/migrations/journal.json
+      snapshots: ["db/migrations/meta/{sequence}.json"]
+      command: bun run rebuild:migrations
 ```
+
+`sequenced_migrations` declares directory-specific migration sequences and
+the commands that rebuild their metadata. A tracked legacy Drizzle
+`meta/_journal.json` supplies the directory, journal and snapshot template
+when no entry declares that directory. The
+[configuration reference](../../CONFIGURATION.md#procedure-skills) defines
+the supported paths and journal formats.
 
 `obligations` defaults to an empty list. Each entry has nonempty `check`
 text and an optional nonempty `command`, run from the repository root with
@@ -715,9 +840,10 @@ class `generated` and the source `catalog` in the map. The catalog states what
 a generator writes once; `resolve_conflicts.generated` is for the files it does
 not declare. A path is classified by the first of these that matches:
 
-1. `resolve_conflicts.generated`, in the order written;
-2. the catalog's `generated[].outputs`, in the catalog's order;
-3. the built-in lockfile table below.
+1. a declared or detected migration sequence;
+2. `resolve_conflicts.generated`, in the order written;
+3. the catalog's `generated[].outputs`, in the catalog's order;
+4. the built-in lockfile table below.
 
 An entry in the list above therefore overrides the catalog and the table, and
 the catalog overrides the table. The following problems are reported, never

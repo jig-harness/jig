@@ -110,9 +110,12 @@ describe("the label set", () => {
     expect(color("jig:parked")).not.toBe(color("jig:converged"));
   });
 
-  it("colors a failed follow-up the parked red: a person acts on both", () => {
+  it("colors a failed follow-up its own alert color, apart from parked", () => {
     const failed = labelSet(ON).find((l) => l.name === "jig:followup-failed");
-    expect(failed?.color).toBe("d93f0b");
+    expect(failed?.color).toBe("a40e4c");
+    expect(failed?.color).not.toBe(
+      labelSet(ON).find((l) => l.name === "jig:parked")?.color,
+    );
     expect(failed?.description).toBe(
       "Merged, and its follow-up failed: a person acts",
     );

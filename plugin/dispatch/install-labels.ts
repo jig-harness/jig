@@ -7,19 +7,22 @@
  * it) turns the labels on, the labels of the set it does not have yet are
  * listed, with the marker labels the tick keeps beside them (the
  * repository's manual-operations label and `automation`, `pr-markers.ts`),
- * and so are the labels of the set it has whose description is not the
- * one this release gives them (a release that changes what a label means
- * changes its description). With `--yes` each one created or updated is
- * named, and those the signed-in account may not create or edit are listed
- * for a person, each with the command that does it. An update sets the
- * description alone: a color a person chose stays, and so does a marker
- * label's description, which is the repository's own. A repository with
- * the labels off needs none.
+ * and so are the labels of the set it has whose description or color is
+ * not the one this release gives them (a release that changes what a label
+ * means changes its description, and one that settles the colors changes
+ * its color, so every repository that installed the labels earlier comes
+ * to the same scheme). With `--yes` each one created or updated is named,
+ * and those the signed-in account may not create or edit are listed for a
+ * person, each with the command that does it. An update sets only what
+ * differs. A marker label is created when it is missing and otherwise left
+ * as it is: its description and color are the repository's own. A
+ * repository with the labels off needs none.
  */
 import {
   createLabel,
   defaultBranchConfig,
-  describeLabel,
+  editLabel,
+  type RepositoryLabel,
   repoTarget,
   repositoryLabels,
 } from "./lib/forge.ts";
@@ -37,9 +40,58 @@ function createCommand(slug: string, label: LabelSpec): string {
   return `gh label create ${quote(label.name)} --repo ${slug} --color ${label.color} --description ${quote(label.description)}`;
 }
 
-/** How a person gives one label this release's description by hand. */
-function describeCommand(slug: string, label: LabelSpec): string {
-  return `gh label edit ${quote(label.name)} --repo ${slug} --description ${quote(label.description)}`;
+/** What of one label of the set the repository has differs from this release's. */
+interface Outdated extends LabelSpec {
+  /** The description it has, when it is not this release's. */
+  oldDescription?: string;
+  /** The color it has, when it is not this release's. */
+  oldColor?: string;
+}
+
+/** The flags that give one outdated label this release's description and color, and nothing else. */
+function editOf(label: Outdated): {
+  name: string;
+  description?: string;
+  color?: string;
+} {
+  return {
+    name: label.name,
+    ...(label.oldDescription === undefined
+      ? {}
+      : { description: label.description }),
+    ...(label.oldColor === undefined ? {} : { color: label.color }),
+  };
+}
+
+/** How a person gives one label this release's description and color by hand. */
+function editCommand(slug: string, label: Outdated): string {
+  const edit = editOf(label);
+  return [
+    `gh label edit ${quote(label.name)} --repo ${slug}`,
+    ...(edit.description === undefined
+      ? []
+      : [`--description ${quote(edit.description)}`]),
+    ...(edit.color === undefined ? [] : [`--color ${edit.color}`]),
+  ].join(" ");
+}
+
+/** The labels of the set the repository has with another description or color than this release gives them. */
+function outdatedOf(
+  set: readonly LabelSpec[],
+  have: ReadonlyMap<string, RepositoryLabel>,
+): Outdated[] {
+  const outdated: Outdated[] = [];
+  for (const spec of set) {
+    const now = have.get(spec.name);
+    if (now === undefined) continue;
+    const label: Outdated = { ...spec };
+    if (now.description !== spec.description)
+      label.oldDescription = now.description;
+    if (now.color !== spec.color.toLowerCase()) label.oldColor = now.color;
+    if (label.oldDescription !== undefined || label.oldColor !== undefined)
+      outdated.push(label);
+  }
+  return outdated;
 }
 
 /** Say why one repository's labels cannot be checked; it still misses what it needs. */
@@ -48,16 +100,16 @@ function unchecked(path: string, reason: string): true {
   return true;
 }
 
-type Refused = Array<{ label: LabelSpec; why: string }>;
+type Refused<L> = Array<{ label: L; why: string }>;
 
 /** Writes each label in turn, naming each one written; the labels the signed-in account could not write, each with why. */
-async function writeEach(
+async function writeEach<L extends LabelSpec>(
   slug: string,
-  labels: LabelSpec[],
-  write: typeof createLabel,
+  labels: L[],
+  write: (slug: string, label: L) => ReturnType<typeof createLabel>,
   done: string,
-): Promise<Refused> {
-  const refused: Refused = [];
+): Promise<Refused<L>> {
+  const refused: Refused<L> = [];
   for (const label of labels) {
     let written: Awaited<ReturnType<typeof createLabel>>;
     try {
@@ -73,11 +125,11 @@ async function writeEach(
 }
 
 /** The labels a person must write, each with its command; whether there was any. */
-function forPerson(
+function forPerson<L extends LabelSpec>(
   slug: string,
-  refused: Refused,
+  refused: Refused<L>,
   what: string,
-  command: (slug: string, label: LabelSpec) => string,
+  command: (slug: string, label: L) => string,
 ): boolean {
   if (refused.length === 0) return false;
   console.log(
@@ -109,32 +161,38 @@ async function repoLabels(path: string, confirm: boolean): Promise<boolean> {
   if (!manualOps.ok) return unchecked(path, manualOps.failure.reason);
   const labels = await repositoryLabels(repo.slug);
   if (!labels.ok) return unchecked(path, labels.failure.reason);
-  const have = new Map(labels.value.map((l) => [l.name, l.description]));
+  const have = new Map(labels.value.map((l) => [l.name, l]));
   const missing = [...labelSet(config), ...markerSet(manualOps.value)].filter(
     (l) => !have.has(l.name),
   );
-  const outdated = labelSet(config).filter(
-    (l) => have.has(l.name) && have.get(l.name) !== l.description,
-  );
+  const outdated = outdatedOf(labelSet(config), have);
   if (missing.length === 0 && outdated.length === 0) {
     console.log(
-      `${repo.slug}: every dispatch label under '${config.prefix}' exists and says what this release means by it, with ${manualOps.value} and automation`,
+      `${repo.slug}: every dispatch label under '${config.prefix}' exists, says what this release means by it and has its color, with ${manualOps.value} and automation`,
     );
     return false;
   }
   if (!confirm) {
-    const list = (heading: string, specs: LabelSpec[]) => {
-      if (specs.length === 0) return;
+    const list = (heading: string, lines: string[]) => {
+      if (lines.length === 0) return;
       console.log(`${repo.slug}: ${heading}`);
-      for (const l of specs) console.log(`  ${l.name}: ${l.description}`);
+      for (const line of lines) console.log(`  ${line}`);
     };
     list(
       "these dispatch labels do not exist yet; repeat with --yes to create them:",
-      missing,
+      missing.map((l) => `${l.name}: ${l.description}`),
     );
     list(
       "these dispatch labels say what an earlier release meant by them; repeat with --yes to update them:",
-      outdated,
+      outdated
+        .filter((l) => l.oldDescription !== undefined)
+        .map((l) => `${l.name}: ${l.description}`),
+    );
+    list(
+      "these dispatch labels have another color than this release gives them; repeat with --yes to update them:",
+      outdated
+        .filter((l) => l.oldColor !== undefined)
+        .map((l) => `${l.name}: ${l.oldColor} -> ${l.color}`),
     );
     return false;
   }
@@ -147,15 +205,15 @@ async function repoLabels(path: string, confirm: boolean): Promise<boolean> {
   const notUpdated = await writeEach(
     repo.slug,
     outdated,
-    describeLabel,
+    (slug, label) => editLabel(slug, editOf(label)),
     "updated",
   );
   const created = forPerson(repo.slug, notCreated, "created", createCommand);
-  const updated = forPerson(repo.slug, notUpdated, "edited", describeCommand);
+  const updated = forPerson(repo.slug, notUpdated, "edited", editCommand);
   return created || updated;
 }
 
-/** Exit `1` when a repository still misses a label or its description after `--yes`, or cannot be read; `0` otherwise. */
+/** Exit `1` when a repository still misses a label, or its description or color, after `--yes`, or cannot be read; `0` otherwise. */
 export async function installLabels(
   paths: readonly string[],
   confirm: boolean,

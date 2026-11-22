@@ -454,7 +454,13 @@ export async function recordDriveEvent(
   pr: string,
   kind: "restart" | "rearm" | "stop",
   cause: string,
-  measured: { leftWork: boolean; tree: string } | null = null,
+  measured: {
+    leftWork?: boolean;
+    tree?: string;
+    reviewerHead?: string;
+    reviewerApp?: string;
+  } | null = null,
+  listingPages: number | null = null,
   until: string | null = null,
   probe: ProbeStop | null = null,
 ): Promise<boolean> {
@@ -463,6 +469,7 @@ export async function recordDriveEvent(
       kind,
       cause,
       ...measured,
+      ...(listingPages === null ? {} : { listingPages }),
       ...(until === null ? {} : { until }),
       ...(probe === null ? {} : { probe }),
     }),

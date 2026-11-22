@@ -91,12 +91,12 @@ claim marker is.
 
 **What it holds**, beside the envelope:
 
-| Field | Meaning |
-| --- | --- |
-| `paths` | Files, and directories ending in `/`, inside the repository |
-| `areas` | Areas of the [change-area catalog](../GLOSSARY.md) the item reaches |
-| `source` | Who predicted it: `pickup`, `scout`, `planner` or `filing` |
-| `base` | The commit of the default branch the prediction read |
+| Field    | Meaning                                                             |
+| -------- | ------------------------------------------------------------------- |
+| `paths`  | Files, and directories ending in `/`, inside the repository         |
+| `areas`  | Areas of the [change-area catalog](../GLOSSARY.md) the item reaches |
+| `source` | Who predicted it: `pickup`, `scout`, `planner` or `filing`          |
+| `base`   | The commit of the default branch the prediction read                |
 
 A path is the precise form, an area the coarse one: an area expands to its
 own globs (its seeds, never the `impliedBy` closure, as serialized areas
@@ -110,7 +110,7 @@ read them).
   good: the work already in flight is what every later admission compares
   against.
 - **A `do-item` scout** (`scout`). The scout form (`/jig:do-item scout
-  <KEY>`) gains a footprint scout that reads the code and writes the
+<KEY>`) gains a footprint scout that reads the code and writes the
   record beside its findings comment, without claiming the item.
 - **The planner** (`planner`). When it decomposes an epic, the planner
   that #1180 moves into Jig writes a footprint for each child it files, from
@@ -376,13 +376,23 @@ kept for 7 days. From them the tick reads:
 
 - **Run time**: the 90th percentile of how long one run held the lock; 15
   minutes until there are samples.
-- **Runs at once**: the median number of runs that held the lock together
-  while another waited. Before any run has waited, the most runs that held
-  it together; with no samples at all, 1. The lock admits by load, so the
-  number is measured, not configured.
-- **Runs per pass**: for each kind of pass, the mean number of runs a pass
-  made, from the samples whose worktree is a pass's workspace; 1 until a
-  kind has samples.
+- **Runs at once**: the most runs that held the lock together, which is
+  what its admission allowed; with no samples at all, 1. The lock admits by
+  load, so the number is measured, not configured. Runs that waited do not
+  lower it: a wait behind one holder on a day with few runs says when runs
+  arrived, not how many the lock admits. It errs toward admitting: one
+  moment of high overlap sets it for the samples' seven days, while the
+  lock's own load check still decides each run.
+- **Runs per pass**: for each kind of pass, the median number of runs a
+  finished pass made, from the samples whose worktree is a pass's
+  workspace, never under 1. A pass that made no run counts, so one pass of
+  many short targeted runs does not set the figure for every pass. It is
+  measured per repository once it has three finished passes, and charged
+  to that repository's passes; a repository with no measure of its own (a
+  new one, or one whose lock wrapper records no samples) is charged every
+  repository's median. Passes of a repository whose runs the lock never
+  recorded are left out of that median, as are passes that ended before
+  the oldest kept sample. 1 until a kind has samples.
 - **Time to validation**: for each kind, the median time from a pass's
   launch to its first run's request; one hour until a kind has samples.
 
@@ -400,31 +410,81 @@ that is a default.
   lock now, which is counted at the lock. Follow-ups and the steward do not run
   the test stage.
 
-**The measure.** A new pass reaches the lock after its kind's time to
-validation, `T`. Until then the lock can work only on the runs at the lock
-now, and clears at most `runs at once × T ÷ run time` of them; the passes
-still implementing give it nothing to do. Once there, the new pass can wait
-at most the **wait window** `W`: the shorter of the lock's wait
-(`LOCK_TIMEOUT`) and the pass deadline less `T` and one run time. So the
-host can take a new pass while
+**When each run reaches the lock.** A new pass reaches the lock after its
+kind's time to validation, `T`. A pass in flight that has yet to make its
+first run is placed the same way: its first run asks for the lock at its
+launch plus its kind's time to validation, and its remaining runs follow one
+another. Where the forecast cannot see, a pass has no estimate: its kind's
+time to validation is still the default, its launch time does not read, that
+time has passed without a run, or it has made a run already (nothing
+measures the gap between a pass's runs). The runs of a pass without an
+estimate, and the runs a tick admits, which reach validation together with
+the new pass, are counted at the lock when the new pass arrives, as if due
+with it.
+
+**The measure.** The forecast serves the lock's requests in the order they
+arrive, each on the slot that frees first, from the runs at the lock now
+(a holder may have just begun) through every run with an estimate, until the
+new pass's last run takes a slot. A run the
+lock has released by the time the new pass arrives is served before
+arrival and not ahead of it; a run still holding or waiting then is
+ahead; a run that asks later queues behind the new pass's first run,
+but can still be ahead of its later ones, and is counted only when its slot delays one of them. Passes launched
+together arrive together and contend for the same slots, so those a slot
+cannot take in time stay ahead rather than each being credited as served.
+Once there, each of the new pass's
+runs can wait at most the **wait window** `W`: the shorter of the wait the
+pass's test stage gives the lock and the pass deadline less `T`. That wait
+is the `LOCK_TIMEOUT` of the pass's launch environment: a process launch
+keeps only what `process.env_keep` names, and an Orca launch is given the
+dispatcher's own `LOCK_TIMEOUT`, `LOCK_ROOT` and `LOCK_NAME`, resolved. The
+lock occupancy is read from that same environment. Unset, it is the test stage's own hour (3600 seconds in
+`scripts/test.ts`), not the bare lock's minute, and the reason says that
+default stands in. A pass makes its runs one after another, each asking for
+the lock when the one before it has released, so its own earlier runs are
+never a wait for its later ones; each run's wait for a slot is bounded by
+`W` on its own, and the measure takes the longest of them. The pass deadline still bounds the
+last of its sequential runs, so a pass whose later runs would ask for the lock
+after the deadline waits. So the host can take a new pass
+while
 
 ```text
-runs ahead = runs still to arrive + max(0, runs at the lock now − runs at once × T ÷ run time)
 validation capacity = runs at once × W ÷ run time
-runs ahead + the new pass's own runs ≤ validation capacity
+each of the new pass's acquisitions, after the runs ahead of it when it asks, falls within W
 ```
 
-For example, with one run at a time, runs of 12 minutes and an hour to
-wait, the capacity is 5 runs: of 10 passes started together, 5 are taken
-and 5 wait for a later tick, where on 2026-11-14 all of them would have
-started and half would have run out their wait. The measure is
-conservative: it assumes every pass ahead reaches the lock no later than
-the new one, and credits the lock with no run of a pass that has not
-arrived yet.
+A measured concurrency is a whole number of slots; a fractional one (only a
+hand-set figure) keeps the aggregate measure, which counts every run still to
+arrive ahead and credits the runs at the lock with at most
+`runs at once × T ÷ run time` of service.
+
+For example, with nothing at the lock now, a negligible time to
+validation, one run at a time, runs of 12 minutes, an hour to
+wait and one run per pass, the capacity is 5 runs. Successive passes have
+their first acquisitions at minutes 0, 12, 24, 36, 48 and 60, and a pass fits
+while its first acquisition falls within the window: of 10 passes started
+together, 6 are taken and 4 wait for a later tick, where on 2026-11-14 all of
+them would have started and half would have run out their wait. With more runs
+per pass the result differs, since each admitted pass reserves all its runs
+ahead of the next candidate. The measure stays conservative where it
+cannot see: a run without an estimate is counted ahead, and a pass admitted
+this tick counts all of its runs ahead of the next candidate. The reason
+names the runs served before arrival, and those arriving after its first run
+that a later one waits behind, beside the runs ahead, so a person
+can see why a pass was admitted or held. On a lock with nothing ahead and nothing arriving later that its later runs
+wait behind, the new pass always fits, whatever its runs per pass, even with a
+wait of zero; a wait window
+shorter than one run admits a pass only while a slot is free, or about to
+be, for its first run, and the reason says so with the window, its source,
+the run time and the runs per pass.
 
 **The gauge.** Validation capacity joins the load factor as one more gauge,
-`validation`, whose fill is the runs ahead, with the launch's own runs
-counted, against the capacity. It is set in the machine file's `load:` section
+`validation`, whose fill is the longest wait of any of the candidate's runs
+before it takes a slot, in runs of service, divided by the capacity; the gauge then
+reads that fill as a share of `load.validation`. The launch's own runs
+add nothing to the numerator: they follow one another, so only the runs
+reserved ahead of later candidates (those of passes admitted this tick and
+those still to arrive) make the first acquisition wait. It is set in the machine file's `load:` section
 beside the other gauges, since the lock is the host's. It holds only
 pickups and drive passes, as the lock gauge does, and a new pickup keeps
 room for one drive pass after it, as it keeps memory and an account slot
@@ -458,13 +518,13 @@ the tick's report, as a structured reason the overview renders: a relation
 word, the item, the work it waits on (each with its kind, pull request or
 pickup, its link and its state) and a count. The texts:
 
-| Waits on | Reason |
-| --- | --- |
-| Overlap | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; first when a slot is free after work that does not overlap, or from 16:40` |
-| The overlap bound | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790); starts when no other work can take a slot` |
-| Validation capacity | `waits on validation capacity: 9 runs are ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5` |
-| A serialized area | `held: serialized behind #123 in dispatch` |
-| A conflict edge | `waits on conflict edge #12 → #14: #12's pull request #20 has not merged` |
+| Waits on            | Reason                                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Overlap             | `waits on overlap: shares plugin/dispatch/lib/load.ts (+2) with #123 (pull request) and #456 (pickup); 0.8 rounds expected; first when a slot is free after work that does not overlap, or from 16:40` |
+| The overlap bound   | `waits on the overlap bound: 4 in flight already change plugin/dispatch/lib/load.ts (#123, #456, #789, #790); starts when no other work can take a slot`                                               |
+| Validation capacity | `waits on validation capacity: 9 runs are ahead of it, about 1 h 50 min at 1 run at a time of 12 min; capacity 5 in a 60 min wait window (LOCK_TIMEOUT)`                                               |
+| A serialized area   | `held: serialized behind #123 in dispatch`                                                                                                                                                             |
+| A conflict edge     | `waits on conflict edge #12 → #14: #12's pull request #20 has not merged`                                                                                                                              |
 
 An item whose footprint is unknown, or only derived from labels, says so
 beside its rank (`footprint unknown: no footprint record and no area
@@ -542,11 +602,6 @@ One pull request each, in this order.
 - **Reading an unpushed branch** of a running pickup. Its footprint record
   stands for it until its pull request opens; reading every workspace's
   working tree would tie the tick to one host's disk.
-- **Modelling when each pass ahead reaches the lock.** The measure counts
-  every run still to arrive as if it were due when the new pass is; a finer
-  model, one that places each pass's arrival at its launch plus its kind's
-  time to validation, waits for the receipts to show the conservative one
-  holds back work the host could have taken.
 - **Raising the number of suites that may run at once**, the lock's
   waiting order and its holder reporting (#608).
 - **Overlap across repositories.** Files collide only within one

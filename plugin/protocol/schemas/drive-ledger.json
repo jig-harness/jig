@@ -560,6 +560,8 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "reviewerHead": true,
+                      "reviewerApp": true,
                       "until": true,
                       "probe": true
                     },
@@ -1403,6 +1405,8 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "reviewerHead": true,
+                  "reviewerApp": true,
                   "until": true,
                   "probe": true
                 },

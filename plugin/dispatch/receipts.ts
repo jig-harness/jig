@@ -79,6 +79,7 @@ export interface TickReceipt {
   applyWithheld?: string;
   /** The machine file's accounts a drive's pass is never admitted on, and why: a vendor with no documented pass command, a Codex account while the pass deadline is `0`. */
   accountsNotAdmitted?: NotAdmitted[];
+  signInFallbacks?: { account: string; failure: string }[];
   accountWeights?: import("./lib/account-report.ts").AccountWeightReport[];
   /** The accounts that serve each launching stage; absent from older receipts and runs without a machine file. */
   stageAccounts?: Record<
@@ -99,6 +100,10 @@ export interface TickReceipt {
   busy?: { path: string; heldBy: string }[];
   /** The outside systems that did not answer in this tick, so no further request went to them in it; the next tick probes each once before it reads on. */
   unanswered?: { system: string; class: string; reason: string }[];
+  /** The trackers this tick had no credential for, each named once: it sent such a tracker nothing after its first call, and exits with the `unauthorized` class's status (`lib/no-credential.ts`). */
+  noCredential?: import("./lib/no-credential.ts").NoCredential[];
+  /** What started the tick: `timer`, `wake` (Jig's wake waiter), `command` (the `jig` command), or the name another launcher gave in `JIG_STARTED_BY`; absent when nothing said (`lib/tick-starter.ts`). */
+  startedBy?: string;
   /** The forge's budget as the tick started, when it was low enough that the optional reads (thread samples, serialization's reads) were skipped. */
   lowBudget?: { remaining: number; limit: number; skipped: string[] };
   /** The host's gauges as the act phase read them, the load factor, each kind's reservation and the launches the load factor held or would hold (`lib/load.ts`); absent from a tick with no machine file. */

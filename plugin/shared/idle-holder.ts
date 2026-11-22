@@ -6,7 +6,8 @@
  * holds it is a leftover (an agent's isolation worktree from the session that
  * built the pull request, say), opening the branch somewhere else waits on
  * that tree forever. Detaching an idle holder loses nothing: its commit stays
- * where it is, and the branch it gives up is on the remote. A holder is idle
+ * where it is, the branch it gives up keeps every commit, and their change
+ * is on the remote. A holder is idle
  * only when every one of these holds, each read again on every call:
  *
  * | Check | Busy when |
@@ -15,7 +16,7 @@
  * | `git status` | it reports a change, an untracked file or a submodule change |
  * | the index flags | an assume-unchanged or skip-worktree flag hides a change from `git status` |
  * | the git directory | a merge, cherry-pick, revert, bisect, rebase or sequencer is unfinished |
- * | the remote | `HEAD` has a commit `<remote>/<branch>` lacks, or, with no such branch, one no `<remote>` branch has |
+ * | the remote | `HEAD` has a commit `<remote>/<branch>` lacks, or, with no such branch, one no `<remote>` branch has whose change the remote's default branch lacks too: neither it nor a later commit has the tree of a commit there, its patch is not there, and merging `HEAD` into that branch would change it |
  * | drives and sessions | the caller's `drivers` reader names a live driver or session lease on the tree |
  * | processes | a process of this user has its working directory in the tree |
  *
@@ -40,6 +41,9 @@
  *   container), whose working directories it cannot read or compare.
  * - Anything on a host whose git is older than 2.31, which cannot print
  *   absolute paths as the check asks; there the tree reads as busy.
+ * - A change the base branch holds only in another form: patch-id matching
+ *   ignores whitespace, and an empty commit changes nothing, so either counts
+ *   as merged. The branch keeps such a commit after the detach.
  *
  * Whoever detaches a holder does so right after the check, and only while
  * `HEAD` is still at the commit the check read (`git update-ref` with that
@@ -114,7 +118,263 @@ export type HolderVerdict =
 /** The deadline of one probe. */
 const PROBE_TIMEOUT_MS = 30_000;
 
-/** Commits on `HEAD` the remote's copy of the branch lacks, or a reason it cannot be told. */
+/** How many tips of the unmerged commits are tried as a merged prefix. */
+const MERGE_PROBES = 12;
+
+/**
+ * The oldest git whose `merge-tree` reads `--attr-source` without crashing
+ * (the floor the conflict replay keeps too).
+ */
+const MERGE_PROOF_GIT = [2, 43] as const;
+
+/** How many unmerged commits a busy reason names, newest first; the rest are counted. */
+const NAMED_COMMITS = 5;
+
+/** The remote's default branch, as the remote names it now, or a reason it cannot be read. */
+function defaultBranch(
+  git: (args: string[]) => RunResult,
+  remote: string,
+): { branch: string } | { unreadable: string } {
+  const listed = git(["ls-remote", "--symref", remote, "HEAD"]);
+  const named = /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(listed.stdout);
+  return listed.status === 0 && named?.[1] !== undefined
+    ? { branch: named[1] }
+    : {
+        unreadable: `${remote}'s default branch cannot be read: ${output(listed) || `exit ${listed.status}`}`,
+      };
+}
+
+/** Lines of a git answer, or why git gave none. */
+function lines(answer: RunResult): string[] | { unreadable: string } {
+  return answer.status === 0
+    ? answer.stdout.split("\n").filter(Boolean)
+    : { unreadable: output(answer) || `exit ${answer.status}` };
+}
+
+/** Most paths the merge's attribute check names; a change touching more reads as unprovable. */
+const ATTRIBUTE_PATHS = 200;
+
+/** Why a `merge` attribute may apply to a path `ref` and `tip` differ in, or why that cannot be read; `null` when none does. */
+function mergeAttributes(
+  git: (args: string[]) => RunResult,
+  ref: string,
+  tip: string,
+  emptyTree: string,
+): string | null {
+  const differing = git(["diff", "--name-only", "-z", ref, tip]);
+  if (differing.status !== 0)
+    return `${ref} and ${tip} cannot be compared: ${output(differing) || `exit ${differing.status}`}`;
+  const paths = differing.stdout.split("\0").filter(Boolean);
+  if (paths.length > ATTRIBUTE_PATHS)
+    return `${tip} differs from ${ref} in too many files`;
+  if (paths.length === 0) return null;
+  const checked = git([
+    "--attr-source",
+    emptyTree,
+    "-c",
+    "core.attributesFile=/dev/null",
+    "check-attr",
+    "merge",
+    "--",
+    ...paths,
+  ]);
+  if (checked.status !== 0)
+    return `merge attributes cannot be read: ${output(checked) || `exit ${checked.status}`}`;
+  const set = checked.stdout
+    .split("\n")
+    .some((line) => line !== "" && !line.endsWith(": unspecified"));
+  return set ? "a merge attribute applies outside the tree" : null;
+}
+
+/** Why the merge proof cannot run here (an old git, or a configured merge driver); `null` when it can. */
+function proofUnavailable(git: (args: string[]) => RunResult): string | null {
+  const version = git(["--version"]);
+  if (version.status !== 0)
+    return `the git version cannot be read: ${output(version) || `exit ${version.status}`}`;
+  const parsed = /git version (\d+)\.(\d+)/.exec(version.stdout);
+  if (parsed === null)
+    return `the git version cannot be read: ${output(version) || "unrecognized output"}`;
+  const current: [number, number] = [Number(parsed[1]), Number(parsed[2])];
+  const [major, minor] = MERGE_PROOF_GIT;
+  if (current[0] < major || (current[0] === major && current[1] < minor))
+    return `the merge proof needs git ${MERGE_PROOF_GIT.join(".")} or newer`;
+  const drivers = git(["config", "--get-regexp", "^merge\\..*\\.driver$"]);
+  if (drivers.status === 0) return "a custom merge driver is configured";
+  if (drivers.status !== 1)
+    return `merge drivers cannot be read: ${output(drivers) || `exit ${drivers.status}`}`;
+  return null;
+}
+
+/**
+ * Whether merging `tip` into `ref` changes nothing: the base branch already
+ * holds that history's whole change, as after a squash merge of several
+ * commits once the base had moved on. The merge ignores tracked attributes
+ * files, the user's attributes file and the default merge driver
+ * (`merge.default`), and is not trusted when the repository configures a
+ * custom merge driver or any attribute source it cannot neutralize (the
+ * clone's `info/attributes`, the system attributes) assigns a `merge`
+ * attribute to a path the two sides differ in: a driver can resolve
+ * conflicting edits to either side, and an unchanged result would then prove
+ * nothing. `git merge-tree --write-tree` needs git 2.38 and `--attr-source`
+ * without a crash git 2.43; an older git is reported, never read as merged. A merge that
+ * conflicts answers no.
+ */
+function mergesToNothing(
+  git: (args: string[]) => RunResult,
+  ref: string,
+  tip: string,
+): boolean | { unreadable: string } {
+  const unready = proofUnavailable(git);
+  if (unready !== null) return { unreadable: unready };
+  const empty = git(["hash-object", "-t", "tree", "/dev/null"]);
+  const emptyTree = empty.stdout.trim();
+  if (empty.status !== 0 || emptyTree === "")
+    return {
+      unreadable: `the empty tree cannot be read: ${output(empty) || `exit ${empty.status}`}`,
+    };
+  const attributes = mergeAttributes(git, ref, tip, emptyTree);
+  if (attributes !== null) return { unreadable: attributes };
+  const merged = git([
+    "--attr-source",
+    emptyTree,
+    "-c",
+    "core.attributesFile=/dev/null",
+    "-c",
+    "merge.default=text",
+    "-c",
+    "merge.renormalize=false",
+    "merge-tree",
+    "--write-tree",
+    ref,
+    tip,
+  ]);
+  if (merged.status !== 0 && merged.status !== 1)
+    return {
+      unreadable: `merging ${tip} into ${ref} failed: ${output(merged) || `exit ${merged.status}`}`,
+    };
+  if (merged.status === 1) return false;
+  const tree = git(["rev-parse", `${ref}^{tree}`]);
+  if (tree.status !== 0)
+    return {
+      unreadable: `${ref}'s tree cannot be read: ${output(tree) || `exit ${tree.status}`}`,
+    };
+  const [result] = merged.stdout.split("\n");
+  return result === tree.stdout.trim();
+}
+
+/**
+ * The commits on `HEAD` no `remote` branch has whose change the remote's
+ * base branch lacks too, newest first, each as `<short hash> <subject>`; or
+ * why that cannot be told. A squash merge holds a branch's change under a
+ * new commit, so a commit is merged when it, or a commit after it, has the
+ * tree of a commit on the base branch, or when its own patch is on the base
+ * branch (`git cherry`'s patch-id equivalence); and every commit is merged
+ * when merging `HEAD` into the base branch changes nothing.
+ */
+function unmerged(
+  git: (args: string[]) => RunResult,
+  remote: string,
+): { base: string; commits: string[] } | { unreadable: string } {
+  const found = defaultBranch(git, remote);
+  if ("unreadable" in found) return found;
+  const base = `${remote}/${found.branch}`;
+  const ref = `refs/remotes/${base}`;
+  const reads = [
+    git(["log", "--format=%H %T", "HEAD", "--not", `--remotes=${remote}`]),
+    git(["log", "--format=%T", ref, "--not", "HEAD"]),
+    git(["cherry", ref, "HEAD"]),
+  ].map(lines);
+  const failed = reads.find((read) => !Array.isArray(read));
+  if (failed !== undefined && !Array.isArray(failed))
+    return {
+      unreadable: `its commits cannot be compared with ${base}: ${failed.unreadable}`,
+    };
+  const [ours, theirs, cherry] = reads as string[][];
+  const trees = new Set(theirs);
+  const merged = (ours ?? [])
+    .map((line) => line.split(" "))
+    .filter(([, tree]) => tree !== undefined && trees.has(tree))
+    .map(([commit]) => commit as string);
+  const patched = new Set(
+    (cherry ?? [])
+      .filter((line) => line.startsWith("- "))
+      .map((line) => line.slice(2)),
+  );
+  const left = lines(
+    git([
+      "log",
+      "--format=%H %h %s",
+      "--abbrev=12",
+      "HEAD",
+      "--not",
+      `--remotes=${remote}`,
+      ...merged,
+    ]),
+  );
+  if (!Array.isArray(left))
+    return {
+      unreadable: `its commits cannot be compared with ${base}: ${left.unreadable}`,
+    };
+  const rows = left
+    .map((line) => line.split(" "))
+    .filter(([commit]) => commit !== undefined && !patched.has(commit));
+  const commits = withoutMergedPrefix(git, remote, ref, rows);
+  return Array.isArray(commits)
+    ? { base, commits }
+    : {
+        unreadable: `its commits cannot be compared with ${base}: ${commits.unreadable}`,
+      };
+}
+
+/**
+ * The unmerged commits (`[hash, short hash, ...subject]`, newest first) left
+ * once the history merged into the base is taken off, as `<short hash>
+ * <subject>`. Merging a tip into the base changes nothing when the base holds
+ * that tip's whole history; the newest such tip settles it and every commit
+ * before it, so work left on top of a merged prefix stays named.
+ */
+function withoutMergedPrefix(
+  git: (args: string[]) => RunResult,
+  remote: string,
+  ref: string,
+  rows: string[][],
+): string[] | { unreadable: string } {
+  const named = (list: string[][]) => list.map((row) => row.slice(1).join(" "));
+  const head = git(["rev-parse", "--verify", "HEAD^{commit}"]);
+  const tips = [
+    ...new Set([
+      head.status === 0 ? head.stdout.trim() : "HEAD",
+      ...rows.map(([commit]) => commit as string),
+    ]),
+  ];
+  for (const tip of tips.slice(0, MERGE_PROBES)) {
+    if (rows.length === 0) break;
+    const proof = mergesToNothing(git, ref, tip);
+    if (typeof proof === "object") return proof;
+    if (!proof) continue;
+    const covered = lines(
+      git(["log", "--format=%H", tip, "--not", `--remotes=${remote}`]),
+    );
+    if (!Array.isArray(covered)) return covered;
+    const gone = new Set(covered);
+    return named(rows.filter(([commit]) => !gone.has(commit as string)));
+  }
+  return named(rows);
+}
+
+/** The commits, the first few by hash and subject and the rest counted. */
+function named(commits: string[]): string {
+  const shown = commits.slice(0, NAMED_COMMITS).join(", ");
+  const more = commits.length - NAMED_COMMITS;
+  return more > 0 ? `${shown} and ${more} more` : shown;
+}
+
+/**
+ * Commits on `HEAD` the remote's copy of the branch lacks, or a reason it
+ * cannot be told. With no such branch on the remote, as after a pull
+ * request's branch was merged and deleted, only the commits whose change
+ * the remote's base branch lacks count (`unmerged`), and they are named.
+ */
 function unpushed(
   git: (args: string[]) => RunResult,
   remote: string,
@@ -148,9 +408,13 @@ function unpushed(
   if (counted.status !== 0 || !Number.isSafeInteger(count))
     return `its commits cannot be compared with ${remote}: ${output(counted)}`;
   if (count === 0) return null;
-  return onRemote
-    ? `${count} commit(s) not on ${remote}/${branch}`
-    : `${count} commit(s) on no ${remote} branch, and ${remote} has no ${branch}`;
+  if (onRemote) return `${count} commit(s) not on ${remote}/${branch}`;
+  const left = unmerged(git, remote);
+  if ("unreadable" in left)
+    return `${count} commit(s) on no ${remote} branch, and ${remote} has no ${branch}; whether the base branch holds their change cannot be told: ${left.unreadable}`;
+  const { base, commits } = left;
+  if (commits.length === 0) return null;
+  return `${commits.length} commit(s) on no ${remote} branch whose change ${base} lacks, and ${remote} has no ${branch}: ${named(commits)}`;
 }
 
 /** Which operation markers the git directory `admin` holds, or a reason they cannot be read. */

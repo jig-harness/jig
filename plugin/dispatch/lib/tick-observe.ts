@@ -408,6 +408,8 @@ export async function observeRepo(
                 nowMs,
                 root: stateRoot(),
                 headroom: pickupHeadroom(context, records),
+                settleConditions:
+                  context.options.apply === true && opened.owner,
                 records,
                 preparedTracker: opened.tracker,
               }),

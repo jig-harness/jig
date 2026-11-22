@@ -141,7 +141,7 @@
       "key": null,
       "stations": "drive, followup, pickup",
       "person": true,
-      "args": null,
+      "args": "[--until-merged <PR> | --until-closed <ITEM>] (pickup only)",
       "meaning": "Keep the line off a pull request with the hold command label, or keep a tracker item out of pickups and batches with a hold on its dispatcher host"
     },
     {

@@ -40,4 +40,6 @@ export const REARM_REQUEST_PAYLOAD_SHAPE = s.object({
   requestId: s.optional(s.unknown()),
   reason: s.optional(s.unknown()),
   needsPerson: s.optional(s.unknown()),
+  failureStop: s.optional(s.unknown()),
+  failureGeneration: s.optional(s.unknown()),
 });

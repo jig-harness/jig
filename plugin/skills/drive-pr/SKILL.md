@@ -197,6 +197,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed. A re-arm unparks items once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive). A conflicting PR reports `PR_CONFLICTING` before the park, allowing conflict repair while the questions remain parked; `jig dispatch` re-drives it once per pair of its head and its base branch's head |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `REVIEW_SKIPPED` | 22 | The reviewer's skip notice names this head, and its review of an earlier head does not cover it: the pull request's diff changed; or a review-object reviewer's check run on the head reads `Review paused…` or `Review skipped…` (a draft skip is not one: on a draft it converges provisionally, on a Ready PR it waits for the review), the reason naming which and quoting the title. No review of this head will come; a person reviews the change and has the reviewer review the head (or resume its reviews), or pushes a commit it reviews, then re-arms. A skipped head whose diff is unchanged converges on the earlier review instead ([terminal-states.md § The reviewer skips a head](references/terminal-states.md)) |
+| `CHECK_RUNS_UNREADABLE` | 25 | The head's check-runs listing ran into a deadline or its page bound: each page may take `GH_CALL_TIMEOUT`, the whole listing four times that, and a read at most 100 pages (with `JIG_FORGE_BUDGET=off`, `gh` pages a fresh listing itself under the whole-read bound, with no page bound). Nothing was judged, and the reason names the pages read. `drive-status.ts` retries it as it retries `INDETERMINATE`, except at the page bound; `drive.ts` also ends with it when the cancelled-run recovery, the CI hold's release or the final CI proof cannot read the listing, and when a review pass's `finish-round.ts` reports it in the finish record bound to that pass's launch and round, whatever the pass process exited (except a pass the driver's own timeout ended, whose earlier record never masks the cancellation). Under `jig dispatch` the dispatcher re-drives it once per head commit, and a second such stop on that head goes to a person as a systematic read failure |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget. Under `jig dispatch` the dispatcher re-drives this stop once per head commit, in the tree it stopped in when it left work there, and a drive re-armed in that tree inherits those edits as its own to finish |
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
@@ -489,9 +490,12 @@ forever. This is elapsed time on one head, independent of poll count; a new
 head or a fresh required-check witness starts a new wait. Unchanged final-CI
 signal probes back off from ten seconds through twenty and forty to sixty
 seconds between observation starts. Activity or an unreadable signal clears
-the wait cache and restores responsive probing. Local mailbox controls and
-remote takeover/provisional checks keep their ten-second idle cadence, with
-the mailbox checked before remote work. These are scheduling bounds: an
+the wait cache and restores responsive probing. The mailbox runs first and keeps
+its ten-second idle cadence, as does the provisional-decision sweep. A
+complete round-boundary takeover read defers the next to the first checkpoint
+at least sixty seconds later. An unread listing is retried at the next
+checkpoint. The pre-pass and ledger-write claim checks still read fresh.
+These are scheduling bounds: an
 in-flight helper adds its configured deadline and a GitHub rate-limit hold
 remains authoritative. Age and witness expiry force fresh evidence before
 any terminal verdict; no cached wait authorizes success, a push or a launch.
@@ -512,6 +516,13 @@ re-read on the reviewed head that is not `CONVERGED` re-gates at most
 `DRIVE_PR_FINAL_REGATE_LIMIT` times in a row (default 3), then stops with exit
 `1` naming what the re-read saw ([terminal-states.md](references/terminal-states.md)
 § The final status re-read). A moved head re-gates uncounted.
+
+**An unproven CI-hold removal is bounded too.** When GitHub accepted the
+removal but a proof or recovery read remains unreadable while its `releasing`
+record remains, the driver retries at most `DRIVE_PR_RELEASE_PROOF_ATTEMPTS`
+times in a row (default 3; `0` stops on the first). It then stops with exit
+`1`, retaining the record so a later drive can reconcile the removal without
+assuming it happened.
 
 If another actor removes the hold, the drive preserves the strongest
 check-run watermark it can prove and treats the removal as external. GitHub
@@ -1725,9 +1736,9 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 
 Then:
 
-- **`ci-repair`** — repair CI on this PR. When `$DRIVE_PR_ROUND_REPAIR_SKILL`
-  is set, load that skill first and follow it; otherwise follow
-  [`/jig:fix-ci`](../fix-ci/SKILL.md)'s procedure. Read the logs of the runs
+- **`ci-repair`** — repair CI on this PR. Read `$DRIVE_PR_ROUND_REPAIR_SKILL`
+  when set, or [`/jig:fix-ci`](../fix-ci/SKILL.md) otherwise. Apply its repair
+  steps after the log triage and base sync below. Read the logs of the runs
   `$DRIVE_PR_ROUND_FAILED_RUNS` names and of the statuses
   `$DRIVE_PR_ROUND_FAILED_STATUSES` names:
   `bun "${CLAUDE_SKILL_DIR}/../fix-ci/scripts/parse-ci-log.ts" --pr <PR>`
@@ -1739,16 +1750,6 @@ Then:
   own host (never a loopback, internal-network or metadata address, or a
   host the repository does not use for CI), and when that gives none either,
   end the round without a commit and say the log is missing: a fix without it is a guess.
-  Reproduce locally where possible, fix the cause. Fix every failing
-  check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
-  run the round's validation plan over the cumulative tree, and **§ 6** to
-  commit and push. §§ 2–4 have nothing to enumerate — the review converged
-  before you were dispatched.
-
-  When the detail names a timed-out job, find why it ran past its limit (a
-  hang, a step that waits on something that never comes, work that grew
-  slower) and fix that; raise its `timeout-minutes` only when the work
-  legitimately needs longer. Re-running it stops at the same limit.
 
   When the log shows the failure is not in the code (a lost runner, a network
   error), re-run the failed workflow runs instead of committing (a commit
@@ -1763,6 +1764,21 @@ Then:
   the hold again; the variable omits those, and is empty or unset when no run
   could be named safely. Then re-run nothing, and read the failing checks' runs
   from `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --commit <head>`.
+  End the round after an infrastructure rerun.
+
+  For a code repair, run **§ 5**'s base sync and dependency check before
+  reproducing the failure, editing, or validating. CI repair syncs any
+  advanced base so local validation includes the gates and configuration
+  that CI sees. On `fetch-failed`, stop the round. On exit `9`, follow § 5's
+  conflict handoff. Reproduce locally where possible and fix every failing
+  check using the chosen repair skill. Use **§ 5** for cumulative validation
+  and **§ 6** for committing and pushing this round. §§ 2–4 have nothing to
+  enumerate because the review already converged.
+
+  When the detail names a timed-out job, find why it ran past its limit (a
+  hang, a step that waits on something that never comes, work that grew
+  slower) and fix that; raise its `timeout-minutes` only when the work
+  legitimately needs longer. Re-running it stops at the same limit.
 - **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
@@ -1771,8 +1787,9 @@ Then:
   the branch's own changelog edits into a change note. It maps
   both sides and why each changed, regenerates derived files rather than
   hand-merging them, checks that no change was silently dropped, records
-  every decision in the merge commit message, and validates with this round's
-  plan (§ 5) before concluding the merge, and records the conflicts it
+  every decision in the merge commit message, refreshes dependencies when the
+  resolved merge changes their inputs, validates with this round's plan (§ 5)
+  before concluding the merge, and records the conflicts it
   resolved in the clone's live record, marked as this drive's
   (`$DRIVE_PR_ROUND_TASK` and `$DRIVE_PR_TARGET` are how it knows). Then the
   rest of § 5 and § 6 as normal. A conflict it records as `escalate` is the human hand-off below: it
@@ -1784,8 +1801,11 @@ Then:
   resolved, so go on from its Step 6 (`round-plan.ts` plans an open merge
   whose conflicts are resolved). Otherwise abort it as its Step 8 does,
   verify the tree is clean, and start from its Step 1. A merge this round
-  started and does not conclude is aborted for you when the pass ends, and the
-  round has achieved nothing.
+  started and does not conclude is aborted when the pass ends, while the
+  driver still holds its locks and the tree's fence. The driver removes new
+  untracked files from the unfinished attempt and checks the worktree with
+  untracked files included. The stop reports any merge it could not abort
+  or worktree it could not verify clean.
 
 Either way **push, or the round achieved nothing the driver can observe** —
 the driver re-gates from the top afterwards and reads the remote head, not
@@ -1937,6 +1957,11 @@ That `ROUND_READY` is the one where the reviewer gates did **not** run, so its
 head, or last reviewed an earlier commit and these predate it, or never stamped
 this PR at all. It is evidence, not a gate: work the findings either way, and
 read it as what to expect after the push rather than as permission to start.
+
+**Reviewer waits back off on the same head.** Start at `--interval` and
+double the spacing up to `review.reviewer_poll_max_seconds` (default 300
+seconds). A completed neutral check titled `Review did not complete` with
+no review of the current head ends the wait with `REVIEWER_FAILED`.
 
 **Unchanged waiting polls use conditional REST detectors.**
 `evaluate()` reuses only an `AWAITING_REVIEWER` observation with a reviewer
@@ -2874,7 +2899,7 @@ changes nothing the note says leaves it alone. Where the check prints
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR] --json
 ```
 
 **Before the plan is resolved, not after** — the plan describes a tree, and a
@@ -2885,17 +2910,20 @@ that was planned for.
 work no earlier pass shipped (uncommitted edits, a merge left open, local
 commits), finish that work before this command, in this order:
 
-1. A merge left open (`MERGE_HEAD`) with every conflict resolved: run
-   `round-plan.ts` below and what it prints. It plans an open merge against
-   the merge base its commit will have, so the plan is the change's files,
-   not the base's. Then conclude the merge with a commit, by
+1. A merge left open (`MERGE_HEAD`) with every conflict resolved: use
    [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md) Steps 5 to 7
-   where the repository uses it. With a conflict still unresolved, resolve it
-   by that skill from its Step 2, or abort the merge and start from its
-   Step 1.
-2. Uncommitted edits with no merge open: run the plan over the dirty tree,
+   where the repository uses it. Otherwise run the dependency install check
+   below without `--before`, run `round-plan.ts` and its checks, and commit.
+   The plan compares the open merge against the base its commit will have.
+   With a conflict still unresolved, resolve it by that skill from Step 2,
+   or abort the merge and start from Step 1.
+2. A clean base merge already at HEAD with no successful install outcome
+   in this worktree, including a merge inherited from the driver's CI
+   infrastructure recovery: run the dependency install check below with
+   `--before "HEAD^1"` before validation.
+3. Uncommitted edits with no merge open: run the plan over the dirty tree,
    and commit what is sound; discard what is not on purpose.
-3. Then run this command, which now meets a clean tree, and the rest of the
+4. Then run this command, which now meets a clean tree, and the rest of the
    round. `finish-round.ts` pushes the inherited commits with the round's own.
 
 Each of `base-sync.ts`, the plan and `finish-round.ts` refuses the partial
@@ -2925,13 +2953,14 @@ nothing, naming which one was missing:
    local commit the head branch does not have. A merge riding a round that was
    pushing anyway costs no extra round and no extra reviewer cycle.
 
+CI-repair rounds require only condition 1 and a successful fetch.
 `--check` reports without merging. `--force` drops 2 and 3 — for the case the
 loop cannot see, such as converging and wanting the local gates and the
 `refs/pull/N/merge` CI checkout to agree first. Say why when you use it.
 
 | Exit | Means | What to do |
 |---|---|---|
-| `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
+| `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which. On `merged`, run the dependency install step below before validation |
 | `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For an open merge the round inherited, finish it as **A tree the round inherits** above says; in a `conflict-resolve` round, § 0 says what to do. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
@@ -2961,6 +2990,25 @@ that merge ref. Drift left alone until it becomes a conflict is a required-check
 blackout that widens for as long as the drive runs, and the round's own local
 gates were meanwhile validating a tree CI never sees. Full argument, and what
 was measured: `scripts/lib/base-drift.ts`.
+
+**Refresh dependencies after a base merge.** When `base-sync.ts` reports
+`action: "merged"`, run this before resolving or running the validation plan:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/dependency-install.ts" --before "HEAD^1"
+```
+
+For an open merge with every conflict staged, use the same command without
+`--before`, as [resolve-conflicts Step 6](../resolve-conflicts/SKILL.md#step-6-validate)
+does. The command compares the merged tree with the branch tip before the
+merge and runs the frozen install in each affected directory with a
+recognized lockfile. Keep its JSON outcome for the round report.
+
+If the install fails, stop before validation or push. Name the directory,
+command and diagnostic in the round report. Report a detection or
+configuration error as such if an install never started. Retry a clean
+merge's install against the same first parent before validating or pushing
+that merge in a later round.
 
 Then resolve the plan over the tree you just settled:
 
@@ -3251,6 +3299,7 @@ returned, which is the case this rule covers.
 | `13` | Another live **working tree** is driving this PR | Stop. It names the tree, and its session pid when it has one |
 | `7` | Refused *before* pushing: an unresolved, unparked thread anchors a file this round's own non-merge commits touch, and its triage state isn't complete and current — never triaged at all, a current accepted/fix-dependent-moot reply with no hold recorded (a crash between `reply-to-thread.ts` and the hold), an unmarked merit reply on a thread that was never actually resolved (the identical crash, on the resolve side), or an existing hold that's gone stale (a newer comment superseded it, or the *same* comment was edited in place to a different outcome) | Each offending thread is named (id, path, url) in the reason **with its own remedy** — the cases above are not interchangeable, and the command names which one applies to each thread rather than leaving that for you to work out. Follow the printed remedy (re-run `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"` with no new post for a stale/crash-recovered hold or resolve, post a fresh reply first for a genuinely superseded one), or park it (§ 4) if `triage-thread.ts` itself refuses, then re-run |
 | `9` | Refused *before* pushing (`REFUSED_COMMIT_PREFIX`): `pull_requests.commit_prefix` is set and the commit-prefix check could not put it on the unpushed commits: the head branch carries no key, a git operation is open, or the configuration, the repository or the pull request could not be read. Nothing was pushed, but a reword may already have landed locally when the refusal came from the check after the rewrite, so read `git log` before relying on unchanged history | Fix what the reason names (conclude or abort the git operation, correct the configuration), then re-run. A head branch that carries no key needs a person: the prefix cannot be rendered for it |
+| `25` | Refused *before* pushing (`CHECK_RUNS_UNREADABLE`): the head's check-runs listing, read for the CI hold, ran into a deadline or its page bound, so nothing was judged and nothing was pushed. The report's `listingPagesRead` is the number of pages read before it stopped (`null` when none was reported) | Re-run once. A second such stop on the same head is a systematic read failure: stop and report it for a person |
 | `1` | A step failed: the push, the stamp, the head-sync wait, an unreadable batch, or the untriaged-thread check's own infra reads (`TRIAGE_CHECK_FAILED` — an unusable round base, an unreadable `held` batch, an unreadable `parked-keys` set, or a failed `list-unresolved-threads.ts` call) | If the failure is the push, the stamp, or the head-sync wait, nothing downstream ran. An unreadable batch can instead be a **re-read** after a stale item mid-drain — in that case earlier items in the same drain may already be dispatched; the report's `items` list is the record of what actually happened, not the summary line. A `TRIAGE_CHECK_FAILED` means nothing was pushed either — the check fails closed rather than guessing at whether a thread is triaged. Read the step's own diagnostic and re-run once it is addressed |
 
 If you are refused by `11` or `13`, the right response is almost never to clear
@@ -4023,7 +4072,7 @@ unattended loop has nobody to notice it has stopped (mode 13 in
 
 | Knob | Default | Bounds |
 |------|---------|--------|
-| `GH_CALL_TIMEOUT` | 30s | one `gh` call |
+| `GH_CALL_TIMEOUT` | 30s | one `gh` call, and one page of a head's check-runs listing (the whole listing: four times this) |
 | `DRIVE_PR_HELPER_TIMEOUT` | 120s | one helper subprocess (`bun "${CLAUDE_SKILL_DIR}/scripts/drive-status.ts" --once`, `list-unresolved-threads.ts`, `summary-findings.ts`, `resolve-thread.ts`) |
 | `DRIVE_PR_PUSH_TIMEOUT` | 3600s | the `git push` itself, pre-push gates included |
 | `DRIVE_PR_PASS_TIMEOUT` | 5400s | one whole pass (`--pass-timeout`; `0` disables) |

@@ -22,6 +22,16 @@
  * `--arm <name>` names; a follow-up that finds its arm still pending once
  * `dispatch.followup_within` has passed since it first did is a person's.
  *
+ * `waits --reason test-lock [--until <time>]` is a claimed pickup whose
+ * committed work the repository's pre-push hook refused only because its
+ * wait for the host's test lock ran out, and whose retries in the pass did
+ * not get through. It asks no person: the tick relaunches the pickup in its
+ * tree to push and go on once the host's validation capacity admits it
+ * (`lib/pickup-lock-wait.ts`), not before `time` when one is given. Without
+ * `--until` the recording time stands in its place, so no time holds it. It
+ * is a pickup's only, as `pending` is a follow-up's only, and not a batch's,
+ * whose stop stays a person's.
+ *
  * `failed --decision <file>` (`-` for standard input) is a pass that stopped
  * for a person and framed what it asks: a `parked-decision/v1` record, the
  * decision a drive's park holds, checked by the same checker and kept with
@@ -47,6 +57,7 @@ import { derivedNext, type NextOwner, parkedNext } from "./lib/next-owner.ts";
 import { stateDbFailure } from "./lib/state.ts";
 import { writeUnwritten } from "./lib/unwritten-result.ts";
 import { stateRoot } from "./receipts.ts";
+import { recordConditionalResult } from "./lib/launch-conditional-result.ts";
 import { framedResultOf } from "./lib/framed-result.ts";
 import { timingSafeEqual } from "node:crypto";
 import {
@@ -68,8 +79,15 @@ import {
   type WaitReason,
 } from "./lib/wait-for.ts";
 
+import {
+  parsePickupPr,
+  pickupConditionWords,
+  readPickupCondition,
+  type PickupCondition,
+} from "./lib/pickup-condition.ts";
+
 const USAGE =
-  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>]";
+  "usage: jig dispatch result <record> <token> done|failed [--pr <number> | --none <reason>] | failed --decision <file|-> | failed (--refused <updated-at> [--key <item>])... --reason <reason>... | waits --until <time> [--reason rate-limit|pending] [--arm <name>] | waits --until-merged <pr> | waits --until-closed <item> | waits --reason test-lock [--until <time>]";
 /** The host could not write the result: the evidence is kept, and the dispatcher settles the stage. */
 const UNWRITTEN = 4;
 /** The longest a pass may wait on a rate limit: a tracker's or the forge's window is an hour or less. */
@@ -285,16 +303,21 @@ interface WaitsArgs {
 const WAITS_FLAGS = ["--until", "--reason", "--arm"];
 
 /**
- * `--until <time> [--reason rate-limit|pending] [--arm <name>]`, each at
- * most once and in any order: `--reason` absent is a rate limit's, and
+ * `--until <time> [--reason rate-limit|pending|test-lock] [--arm <name>]`,
+ * each at most once and in any order: `--reason` absent is a rate limit's,
  * `--arm`, one line of at most `ARM_MAX` characters, goes only with
- * `pending`; `null` when they do not read.
+ * `pending`, and `--until` may be left out only with `test-lock`, whose
+ * wait then stands at the recording time; `null` when they do not read.
  */
 function waitsArgs(rest: readonly string[]): WaitsArgs | null {
   const named = waitsFlags(rest);
   if (named === null) return null;
-  const until = waitsUntil(named.get("--until"));
   const wait = waitFor(named.get("--reason"), named.get("--arm"));
+  const given = named.get("--until");
+  const until =
+    given === undefined && wait?.reason === "test-lock"
+      ? currentIso()
+      : waitsUntil(given);
   return until === null || wait === null ? null : { until, wait };
 }
 
@@ -320,17 +343,97 @@ function waitFor(reason = "rate-limit", raw?: string): WaitFor | null {
   return { reason: "pending", arm };
 }
 
+function conditionArgs(rest: readonly string[]): PickupCondition | null {
+  const [flag, value] = rest;
+  if (rest.length !== 2 || value === undefined) return null;
+  if (flag === "--until-closed")
+    return readPickupCondition({ kind: "item-closed", item: value });
+  if (flag !== "--until-merged") return null;
+  const pr = parsePickupPr(value);
+  return pr === null ? null : { kind: "pr-merged", pr };
+}
+
+/** Why `record` cannot wait on `condition`, or `null` when it can: only a single-item pickup waits, on another item in its tracker's key format or on a pull request. */
+function conditionalWaitRefusal(
+  record: LaunchRecord,
+  condition: PickupCondition,
+): string | null {
+  const item = record.item;
+  if (
+    record.action !== "pickup" ||
+    record.batchItems !== undefined ||
+    item === null ||
+    (condition.kind === "item-closed" && condition.item === item.toUpperCase())
+  )
+    return "a single-item pickup can wait on another item or on a pull request";
+  if (
+    condition.kind === "item-closed" &&
+    item.startsWith("#") !== condition.item.startsWith("#")
+  )
+    return "the dependency must use the pickup's tracker key format";
+  return null;
+}
+
+function recordConditionalWait(
+  record: LaunchRecord,
+  condition: PickupCondition,
+  root?: string,
+): number {
+  const refusal = conditionalWaitRefusal(record, condition);
+  if (refusal !== null) {
+    console.error(`jig dispatch result: ${refusal}`);
+    return 2;
+  }
+  const item = record.item as string;
+  const next = { none: `waiting for ${pickupConditionWords(condition)}` };
+  const written = recordConditionalResult(
+    record,
+    item,
+    {
+      by: "pickup",
+      title: item,
+      url: null,
+      condition,
+      resumeRecord: record.id,
+    },
+    next,
+    root,
+  );
+  if (!written.ok) {
+    console.error(`jig dispatch result: ${written.failure.reason}`);
+    return 2;
+  }
+  if (!written.value) return already(record.id, root);
+  console.log(
+    JSON.stringify({
+      record: record.id,
+      item,
+      result: "waits",
+      condition,
+      next,
+    }),
+  );
+  return 0;
+}
+
 /** A command line this command takes: `done|failed` with their options, or `waits` with its own. */
 function wellFormed(argv: string[]): boolean {
   const [id, token, result] = argv;
   if (id === undefined || token === undefined) return false;
-  if (result === "waits") return waitsArgs(argv.slice(3)) !== null;
+  if (result === "waits")
+    return (
+      waitsArgs(argv.slice(3)) !== null || conditionArgs(argv.slice(3)) !== null
+    );
   if (argv.length !== 3 && argv.length !== 5) return false;
   return result === "done" || result === "failed";
 }
 
 /** The handoff a `waits` result records: nobody's, until the time it names. */
 function waitsNext(waited: WaitsArgs): NextOwner {
+  if (waited.wait.reason === "test-lock")
+    return {
+      none: "waits for the host's test lock: the dispatcher relaunches the pickup in its tree to push once the host's validation capacity admits it",
+    };
   return waited.wait.reason === "pending"
     ? {
         none: `waits for ${armWords(waited.wait)} still pending until ${waited.until}`,
@@ -352,35 +455,31 @@ function answerable(
   return record;
 }
 
-export function resultMain(argv: string[], root?: string): number {
-  if (!wellFormed(argv)) {
-    console.error(USAGE);
-    return 2;
-  }
-  const [id, token, result, flag, value] = argv as [
-    string,
-    string,
-    string,
-    string?,
-    string?,
-  ];
-  const record = answerable(id, token, root);
-  if (typeof record === "string") {
-    console.error(`jig dispatch result: ${record}`);
-    return 2;
-  }
-  const waited = result === "waits" ? waitsArgs(argv.slice(3)) : null;
-  if (waited?.wait.reason === "pending" && record.action !== "followup") {
-    console.error(
-      "jig dispatch result: --reason pending is a follow-up's; a pickup waits only on a rate limit",
-    );
-    return 2;
-  }
-  const next =
-    waited === null
-      ? nextForResult(record, result, flag, value)
-      : waitsNext(waited);
-  if (next === null) return 2;
+/** Why `record` cannot wait as `waited` says, or `null` when it can: `pending` is a follow-up's, `test-lock` a single-item pickup's. */
+function waitRefusal(
+  waited: WaitsArgs | null,
+  record: LaunchRecord,
+): string | null {
+  const reason = waited?.wait.reason;
+  if (reason === "pending" && record.action !== "followup")
+    return "--reason pending is a follow-up's; a pickup waits on a rate limit or the host's test lock";
+  if (reason !== "test-lock") return null;
+  if (record.action !== "pickup")
+    return "--reason test-lock is a claimed pickup's; a follow-up waits on a rate limit or an arm still pending";
+  if (record.batchItems !== undefined)
+    return "--reason test-lock is a pickup's of one item; a batch's pass is never relaunched, so it records failed";
+  return null;
+}
+
+/** Record `result` on `record` with its handoff `next`, and print what was recorded. */
+function recordAndPrint(
+  id: string,
+  record: LaunchRecord,
+  result: string,
+  next: NextOwner,
+  waited: WaitsArgs | null,
+  root?: string,
+): number {
   if (
     !recordResult(
       id,
@@ -405,6 +504,40 @@ export function resultMain(argv: string[], root?: string): number {
     }),
   );
   return 0;
+}
+
+export function resultMain(argv: string[], root?: string): number {
+  if (!wellFormed(argv)) {
+    console.error(USAGE);
+    return 2;
+  }
+  const [id, token, result, flag, value] = argv as [
+    string,
+    string,
+    string,
+    string?,
+    string?,
+  ];
+  const record = answerable(id, token, root);
+  if (typeof record === "string") {
+    console.error(`jig dispatch result: ${record}`);
+    return 2;
+  }
+  const waits = result === "waits";
+  const condition = waits ? conditionArgs(argv.slice(3)) : null;
+  if (condition !== null) return recordConditionalWait(record, condition, root);
+  const waited = waits ? waitsArgs(argv.slice(3)) : null;
+  const refusal = waitRefusal(waited, record);
+  if (refusal !== null) {
+    console.error(`jig dispatch result: ${refusal}`);
+    return 2;
+  }
+  const next =
+    waited === null
+      ? nextForResult(record, result, flag, value)
+      : waitsNext(waited);
+  if (next === null) return 2;
+  return recordAndPrint(id, record, result, next, waited, root);
 }
 
 /**

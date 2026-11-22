@@ -11,8 +11,15 @@ interface DriverRuntime {
    * (`events.ts`). `null` for a stop that measured nothing.
    */
   stopLeftWork: { leftWork: boolean; tree: string } | null;
+  /** The reviewer failure the status probe measured on this drive's stop. */
+  reviewerFailure: { reviewerHead: string; reviewerApp?: string } | null;
   /**
-   * The `finish-round.ts` state every stalled pass ended on, with the last
+   * The pages a check-runs listing cut short had read, for the stop that
+   * reports it (`CHECK_RUNS_UNREADABLE`); `null` when none was or gh did not
+   * say.
+   */
+  stopListingPages: number | null;
+  /** The `finish-round.ts` state every stalled pass ended on, with the last
    * one's reason: set by the stall stop when they all agree
    * (`state/round-finish.ts`), and named by its line and closing report.
    * `null` for any other stop.
@@ -107,6 +114,8 @@ interface DriverRuntime {
 export const driverRuntime: DriverRuntime = {
   stopProbe: null,
   stopLeftWork: null,
+  reviewerFailure: null,
+  stopListingPages: null,
   stallFinish: null,
   stopLimitedUntil: null,
   forgeLimitWaits: 0,

@@ -10,6 +10,7 @@ import {
   finalCiWitnessPolls,
   FINAL_CI_POLL_SECONDS,
   finalRegateLimit,
+  releaseProofAttempts,
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
@@ -26,7 +27,11 @@ import { runRoundIteration } from "./round-step.ts";
 
 import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
 
-import { ledgerRenewal, standDownOnNewerClaim } from "./ledger.ts";
+import { ledgerRenewal } from "./ledger.ts";
+import {
+  roundBoundaryTakeoverCheck,
+  standDownOnNewerClaim,
+} from "./takeover-check.ts";
 
 interface DriverRoundOptions {
   pr: string;
@@ -144,6 +149,11 @@ export async function runDriverRounds({
   // The head `witnessWaits` is counting against — see the reset at its own
   // branch for why the count is per-head rather than per-drive.
   const witnessWaitHead = "";
+  // A successful unlabel whose timeline witness stays unreadable otherwise
+  // re-enters convergence forever without charging a round or witness poll.
+  const releaseProofWaits = 0;
+  const releaseProofKey = "";
+  const releaseProofWaitLimit = releaseProofAttempts();
   const finalCiWait = new FinalCiWait(
     pr,
     undefined,
@@ -180,6 +190,9 @@ export async function runDriverRounds({
     readyFlippedToDraftBeforeRecord,
     finalCiWait,
     witnessWaits,
+    releaseProofWaits,
+    releaseProofKey,
+    releaseProofWaitLimit,
     ciRepairs,
     ciRepairBudget,
     ciInfra,
@@ -187,6 +200,7 @@ export async function runDriverRounds({
     agent,
     passIdentity: null,
     mailboxCheckpoint,
+    roundBoundaryTakeoverCheck: roundBoundaryTakeoverCheck(pr),
     held,
     witnessWaitHead,
     witnessWaitLimit,

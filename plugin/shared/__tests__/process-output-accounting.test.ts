@@ -7,13 +7,12 @@ it.each(["overflow", "timeout"])(
   async (stop) => {
     const script = `
       import { PassThrough } from "node:stream";
-      import { captureProcessOutput } from ${JSON.stringify(join(import.meta.dir, "../process-output.ts"))};
+      import { captureRun } from ${JSON.stringify(join(import.meta.dir, "../process-output.ts"))};
       import { FORGE_ACCOUNTING_UNAVAILABLE as marker } from ${JSON.stringify(join(import.meta.dir, "../trace.ts"))};
       const child = { stdout: new PassThrough(), stderr: new PassThrough() };
       let timedOut = false;
-      const timers = {};
-      const output = captureProcessOutput(child, {maxBufferBytes: ${stop === "overflow" ? 1 : 1024}}, {
-        timedOut: () => timedOut, timers, signalTree: () => {}, settle: () => {},
+      const { timers, output } = captureRun(child, {maxBufferBytes: ${stop === "overflow" ? 1 : 1024}}, {
+        timedOut: () => timedOut, signalTree: () => {}, settle: () => {},
       });
       child.stderr.emit("data", "before");
       if (${JSON.stringify(stop)} === "timeout") timedOut = true;

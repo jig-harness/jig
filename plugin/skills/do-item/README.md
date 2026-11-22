@@ -16,6 +16,16 @@ base snapshot of its own: each lens the diff triggers runs with fresh
 context, the gate's summary says why it skipped the others, and the lenses'
 warnings go into the pull request body under Review Notes.
 
+## Waiting for a dependency
+
+A dispatched single-item pickup can record a hold while a pull request in
+the same repository is open or another item on the configured tracker is
+still active. The dispatcher keeps the pickup's claim and resumes it in
+its worktree after the pull request merges or the item closes. If the
+pull request closes unmerged, the dispatcher asks a person to resolve
+the dependency. A person can place a conditional hold from the line.
+See [pickup holds](../../README.md#telling-a-station-what-to-do).
+
 ## The epic closure sweep
 
 A coordinator can propose closure for open epics on demand. The sweep reads
@@ -419,6 +429,18 @@ drive cannot start in a tab, it records the pull request as its result, says
 in its closing report that the drive is unarmed and gives the command; the
 dispatcher then drives the pull request only where `dispatch.adopt` is
 enabled or you put the `drive` label on it.
+
+When your pre-push hook runs its tests under the host's shared test lock,
+a push can be refused only because the hook's wait for that lock ran out:
+the hook prints the lock's `could not acquire lock` message and runs no
+test. The skill tells that apart from a hook that ran and failed, and
+pushes again after a short, growing pause while it has time, the hook
+running every time; it never bypasses the hook. A pass `jig dispatch`
+started that still cannot get through records a wait for the test lock
+rather than asking you anything: the dispatcher starts it again in the
+same tree once the host has room to validate it, to push and carry on, and
+only after a few such waits in a row asks a repair session or you to find
+why the lock keeps running out.
 
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,

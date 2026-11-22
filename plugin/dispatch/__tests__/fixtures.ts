@@ -44,6 +44,7 @@ import {
 import { freshState } from "../../skills/drive-pr/scripts/lib/state/schema.ts";
 import { releaseTrackerAnswer } from "./fixtures/release-fake.ts";
 import { orcaInstalledName } from "../../shared/orca.ts";
+import { FAKE_CLAUDE } from "./claude-fake.ts";
 import { footprintBatch } from "./footprint-fake.ts";
 
 export const SLUG = "example-org/example-repo";
@@ -91,7 +92,7 @@ if (fs.existsSync(F + "/gh-hold.json")) {
   if (args.join(" ").includes(hold.match)) Bun.sleepSync(hold.ms);
 }
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
-// The repository's labels as labels-repo.json lists them: a name alone is a label with no description.
+// The repository's labels as labels-repo.json lists them: a name alone is a label with no description and the forge's gray.
 const repoLabels = () => (fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [])
   .map((l) => (typeof l === "string" ? { name: l, description: "", color: "ededed" } : l));
 const release = require(${JSON.stringify(RELEASE_FAKE)}).releaseForgeAnswer(F, args);
@@ -193,7 +194,7 @@ if (args[0] === "pr" && args[1] === "edit") {
   out("https://github.com/${SLUG}/pull/" + n + "\\n");
 }
 if (args[0] === "label" && args[1] === "list")
-  out(repoLabels().map(({ name, description }) => ({ name, description })));
+  out(repoLabels().map(({ name, description, color }) => ({ name, description, color })));
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 if (args[0] === "label" && args[1] === "create") {
   // One label added to labels-repo.json; refused while label-create-fail exists.
@@ -419,48 +420,6 @@ fs.appendFileSync(F + "/codex-runs.jsonl", JSON.stringify({
 const until = Date.now() + 60000;
 while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
 process.exit(0);
-`;
-
-/**
- * The Claude Code a wrapper starts in tests: it records how it was started
- * and runs until \`claude-exit\` appears, then prints \`claude-said\` when
- * there is one and exits with the code \`claude-exit\` holds (0 when empty).
- * With \`claude-stubborn\` present it ignores SIGTERM and leaves a tool
- * command running, whose pid it writes to \`claude-tool-pid\`.
- */
-const FAKE_CLAUDE = `#!/usr/bin/env bun
-const fs = require("node:fs");
-const F = process.env.DISPATCH_FAKE_DIR;
-fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
-  argv: process.argv.slice(2),
-  cwd: process.cwd(),
-  configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
-  token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
-  backgroundTasksOff: process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ?? null,
-}) + "\\n");
-if (fs.existsSync(F + "/claude-stubborn")) {
-  process.on("SIGTERM", () => {});
-  const tool = require("node:child_process").spawn("sleep", ["300"], { stdio: "ignore" });
-  fs.writeFileSync(F + "/claude-tool-pid", String(tool.pid));
-}
-const until = Date.now() + 60000;
-while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
-if (fs.existsSync(F + "/claude-said")) {
-  const said = fs.readFileSync(F + "/claude-said");
-  // With \`claude-split\` present, the first multi-byte character is cut between two writes.
-  const stream = fs.existsSync(F + "/claude-stderr") ? process.stderr : process.stdout;
-  const cut = fs.existsSync(F + "/claude-split") ? said.findIndex((b) => b >= 0xc0) + 1 : 0;
-  if (cut > 0) {
-    stream.write(said.subarray(0, cut));
-    if (fs.existsSync(F + "/claude-interleave")) {
-      Bun.sleepSync(150);
-      (stream === process.stderr ? process.stdout : process.stderr).write("diagnostic\\n");
-    }
-    Bun.sleepSync(300);
-  }
-  stream.write(said.subarray(cut));
-}
-process.exit(Number(fs.existsSync(F + "/claude-exit") ? fs.readFileSync(F + "/claude-exit", "utf8") : 0) || 0);
 `;
 
 export interface OrcaAgent {
@@ -984,13 +943,25 @@ function noFacetStores(query: string): Record<string, unknown> {
   };
 }
 
-/** An open issue of the tracker, assigned to `login`, in GitHub node form. */
-export function assignedIssue(number: number, login: string, labels: string[]) {
+/**
+ * An open issue of the tracker, assigned to `login`, in GitHub node form:
+ * ranked medium unless `labels` names its priority or `ranked` is false,
+ * since the dispatcher holds an item with none (`dispatch.missing_priority`).
+ */
+export function assignedIssue(
+  number: number,
+  login: string,
+  labels: string[],
+  ranked = true,
+) {
   return issueNode({
     number,
     repo: SLUG,
     assignee: login,
-    labels,
+    labels:
+      !ranked || labels.some((l) => l.startsWith("priority:"))
+        ? labels
+        : [...labels, "priority: medium"],
     extra: { subIssues: { pageInfo: { hasNextPage: false }, nodes: [] } },
   });
 }

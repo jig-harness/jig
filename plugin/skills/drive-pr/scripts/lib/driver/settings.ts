@@ -3,7 +3,7 @@ import { readRemoteName } from "../../../../../shared/consumer.ts";
 
 import { isDigits, fail, shellQuote, testPacing } from "../cli.ts";
 
-import { driverOnlyExitCode } from "../status/terminal-states.ts";
+import { DRIVE_EXIT, driverOnlyExitCode } from "../status/terminal-states.ts";
 
 import {
   maxRoundsSetting,
@@ -289,6 +289,9 @@ export const CI_REPAIR_SPENT_EXIT = driverOnlyExitCode("CI_REPAIR_SPENT");
 /** Every failing check failed on the infrastructure, and its re-runs and head moves are spent. */
 export const CI_INFRA_PERSISTED_EXIT = driverOnlyExitCode("CI_INFRA_PERSISTED");
 
+/** The head's check-runs listing could not be read whole. */
+export const CHECK_RUNS_UNREADABLE_EXIT = DRIVE_EXIT.CHECK_RUNS_UNREADABLE;
+
 /**
  * The result of one `runRepairPass` call, kept apart from a raw process exit
  * code: the spawned command is caller-supplied and its exit space is its
@@ -395,6 +398,21 @@ const FINAL_CI_WITNESS_POLLS_DEFAULT = 180;
  */
 export const UNLABEL_SETTLE_SECONDS =
   testPacing("DRIVE_PR_UNLABEL_SETTLE_MS", 5_000, 10) / 1000;
+
+const RELEASE_PROOF_ATTEMPTS_DEFAULT = 3;
+
+/**
+ * Consecutive reads allowed while a successful CI-hold removal still lacks
+ * its timeline proof. The releasing record remains durable when this is
+ * spent, so a later drive can reconcile the transition without guessing.
+ * `0` stops on the first unproven release.
+ */
+export function releaseProofAttempts(): number {
+  return wholeEnv(
+    process.env.DRIVE_PR_RELEASE_PROOF_ATTEMPTS,
+    RELEASE_PROOF_ATTEMPTS_DEFAULT,
+  );
+}
 
 /**
  * How often a paused drive, and a drive waiting out a usage wall, re-reads

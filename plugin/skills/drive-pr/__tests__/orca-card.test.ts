@@ -8,6 +8,7 @@ import {
   stopComment,
 } from "../scripts/lib/driver/orca-card.ts";
 import {
+  CHECK_RUNS_UNREADABLE_EXIT,
   MAX_ROUNDS_EXIT,
   MAILBOX_STOPPED_EXIT,
   PASS_DEADLINE_EXIT,
@@ -114,7 +115,7 @@ describe("the stop's comment", () => {
       [MAX_ROUNDS_EXIT, "used its round budget without converging"],
       [
         REVIEWER_FAILED_EXIT,
-        "stopped: the posting reviewer's check did not pass",
+        "stopped: the posting reviewer's check reported a failure",
       ],
       [9, "stopped: it conflicts with its base and has nothing left to work"],
       [22, "stopped: the reviewer skipped its head and will not review it"],
@@ -124,6 +125,10 @@ describe("the stop's comment", () => {
       ],
       [STALLED_EXIT, "stalled: its passes changed nothing"],
       [PASS_DEADLINE_EXIT, "stopped: its passes kept running out of time"],
+      [
+        CHECK_RUNS_UNREADABLE_EXIT,
+        "stopped: its head's check-runs listing could not be read whole",
+      ],
     ];
     for (const [code, cause] of causes)
       expect(stopComment("42", code, null)).toBe(
@@ -183,7 +188,7 @@ describe("in an Orca terminal", () => {
 
   test("a failure stop marks the card unread without reading the drive state", async () => {
     const comment =
-      "PR #42's drive stopped: the posting reviewer's check did not pass (exit 7)";
+      "PR #42's drive stopped: the posting reviewer's check reported a failure (exit 7)";
     const {
       calls,
       reads,

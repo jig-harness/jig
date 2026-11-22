@@ -50,6 +50,7 @@ import { checkSkillShellNeutrality } from "./check-skill-shell-neutrality.ts";
 import { checkSkillFallbacks } from "./check-skill-fallbacks.ts";
 import { checkVoice } from "./check-voice.ts";
 import { checkThrows } from "./check-throws.ts";
+import { checkPortability } from "./check-portability.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -226,6 +227,7 @@ export const CHECKS: Stage[] = [
   check("check-tracker-boundary.ts", checkTrackerBoundary),
   check("check-records-registry.ts", checkRecordsRegistry),
   check("check-throws.ts", checkThrows),
+  check("check-portability.ts", checkPortability),
   check("check-licences.ts", checkLicences),
   check("check-workflow-safety.ts", checkWorkflowSafety),
   check("check-workflow-conventions.ts", checkWorkflowConventions),
@@ -270,11 +272,13 @@ export function testStage(
   return command(...testArgs(skipped, configured, part));
 }
 
-/** The stages `--fast` leaves out: the ones that take minutes. */
+const auditStage = command("run", "audit");
+
+/** The stages `--fast` leaves out. */
 export function heavyStages(test: Stage): Stage[] {
   return [
     command("run", "deadcode"),
-    command("run", "audit"),
+    auditStage,
     command("run", "quality"),
     test,
     command("run", "build"),
@@ -416,7 +420,7 @@ export function summary(
 }
 
 /**
- * A dispatched pass's stages: the fast ones, then the tests the change
+ * A dispatched pass's stages: the fast ones, the change-scoped audit, then the tests the change
  * reaches. Those go through the suite's own runner, which refuses a run that
  * executed nothing, one file at a time and outside the machine-wide lock,
  * whose admission is sized for full suites.
@@ -437,7 +441,11 @@ export function dispatchPlan(
     name: `RESOURCE_LOCK_BYPASS=1 ${run.name}`,
     env: dispatchTestEnv(env),
   };
-  return [...plan(true, targeted), ...(tests.length ? [targeted] : [])];
+  return [
+    ...plan(true, targeted),
+    auditStage,
+    ...(tests.length ? [targeted] : []),
+  ];
 }
 
 /** What one run of the gates does: its stages and what it says first. */
@@ -529,6 +537,18 @@ export function gateRun(
   };
 }
 
+export function omittedDispatchChecks(stages: Stage[]): string {
+  const ran = new Set(stages.map((stage) => stage.name));
+  const omitted = plan(
+    false,
+    testStage([], () => []),
+    "checks",
+  )
+    .filter((stage) => !ran.has(stage.name))
+    .map((stage) => stage.name);
+  return `CI checks omitted: ${omitted.join(", ") || "none"}`;
+}
+
 async function gates(fast: boolean): Promise<number> {
   let part: Part | undefined;
   try {
@@ -544,10 +564,12 @@ async function gates(fast: boolean): Promise<number> {
   for (const note of run.notes) console.log(note);
   const outcomes = await runStages(run.stages, root);
   const status = verdict(outcomes);
-  (status ? console.error : console.log)(
+  const result =
     run.dispatch && !status
       ? "dispatch gates passed"
-      : summary(outcomes, fast || run.dispatch, part),
+      : summary(outcomes, fast || run.dispatch, part);
+  (status ? console.error : console.log)(
+    run.dispatch ? `${result} (${omittedDispatchChecks(run.stages)})` : result,
   );
   return status;
 }

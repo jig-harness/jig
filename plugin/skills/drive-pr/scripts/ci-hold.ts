@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { retryAttempts } from "../../../shared/retry.ts";
 import { waitOnUnobserved } from "./lib/ci-hold-unobserved.ts";
+import { refuseRace, releaseHeldLabel } from "./lib/ci-hold-release.ts";
 
 /**
  * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
@@ -46,20 +46,26 @@ import { lockHeartbeatMs } from "./lib/state/lock.ts";
 import {
   adopt,
   confirmLiveHold,
-  checkRuns,
+  exactReleaseOf,
   headWatermark,
   readCiState,
   type HoldReadFailure,
   readBeforeMutation,
   readHoldTransitions,
   readPrSnapshot,
+  releasedBy,
+  settleInterruptedRelease,
+  transitionAfter,
   valueOrNull,
   writeCiState,
+  checkRunsRead,
 } from "./lib/ci-hold-state.ts";
+import { listingStopExit, type ProofRead } from "./lib/ci-proof.ts";
+import type { ListingCutShort } from "./lib/paged-read.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
 import {
   attributeStatuses,
-  checkRunsFor,
+  checkRunListing,
   ciVerdictOf,
   commitStatusesFor,
   hasNonReviewerCi,
@@ -98,6 +104,20 @@ const snapshot = async (pr: string) =>
 const transitions = async (pr: string) =>
   valueOrNull(await readHoldTransitions(pr, holdLabel()));
 
+/** What final-ready answers for a proof that failed: wait, unless its listing was cut short. */
+function proofStop(proof: { cutShort?: ListingCutShort }): number {
+  return proof.cutShort === undefined ? 4 : listingStop(proof.cutShort);
+}
+
+/**
+ * A check-runs listing cut short: its reason on stderr, its pages on stdout
+ * for the driver's stop record, and the drive's own exit for it.
+ */
+function listingStop(cut: ListingCutShort): number {
+  console.error(`ci-hold: ${cut.reason}`);
+  return listingStopExit(cut.pagesRead);
+}
+
 /** A forge that was not reached is retried later; an answer that does not read stops. */
 function unread(failure: HoldReadFailure): number {
   if (failure.code === "malformed") fail(1, `ci-hold: ${failure.reason}`);
@@ -107,6 +127,8 @@ function unread(failure: HoldReadFailure): number {
 
 const latestOf = (values: readonly LabelTransition[]): LabelTransition | null =>
   values.at(-1) ?? null;
+
+type ReleasingState = Extract<CiHoldState, { phase: "releasing" }>;
 
 /** Where the transitions after `previousId` begin, or null when it is not in the timeline. */
 function firstIndexAfter(
@@ -134,112 +156,6 @@ function transitionsFollowing(
 ): LabelTransition[] | null {
   const start = firstIndexAfter(values, previousId);
   return start === null ? null : values.slice(start);
-}
-
-type HeldState = Extract<CiHoldState, { phase: "held" }>;
-type ReleasingState = Extract<CiHoldState, { phase: "releasing" }>;
-type ReleasedState = Extract<CiHoldState, { phase: "released" }>;
-
-/** The released record a removal transition proves. */
-const releasedBy = (
-  transition: LabelTransition,
-  head: string,
-  checkRunWatermark: number,
-  source: ReleasedState["source"],
-): ReleasedState => ({
-  phase: "released",
-  eventId: transition.id,
-  head,
-  actor: transition.actor,
-  createdAt: transition.createdAt,
-  checkRunWatermark,
-  source,
-});
-
-const exactReleaseOf = (
-  successor: LabelTransition,
-  head: string,
-  persisted: ReleasingState,
-): ReleasedState =>
-  releasedBy(
-    successor,
-    head,
-    persisted.checkRunWatermark,
-    successor.actor === persisted.actor ? "drive" : "external",
-  );
-
-/** The held record an interrupted release leaves standing while the label is still live. */
-const heldAgain = (persisted: ReleasingState): HeldState => ({
-  phase: "held",
-  adopted: persisted.adopted === true,
-  eventId: persisted.heldEventId,
-  addedAtHead: persisted.addedAtHead,
-  actor: persisted.heldActor,
-  createdAt: persisted.heldCreatedAt,
-  checkRunWatermark: persisted.checkRunWatermark,
-});
-
-type SettledRelease =
-  | { outcome: "held"; persisted: HeldState }
-  | { outcome: "released" | "adopt" | "invisible" };
-
-/**
- * What the live label and the newest transition say about an interrupted
- * release that no exact successor explains: the hold still stands, a removal
- * we cannot attribute to this drive proves an external release (persisted so
- * fresh full CI can authorize another hold), another transition followed and
- * the live label is adopted by the caller, or the timeline has not caught up.
- */
-async function settleInterruptedRelease(
-  pr: string,
-  persisted: ReleasingState,
-  live: NonNullable<Awaited<ReturnType<typeof snapshot>>>,
-  latest: LabelTransition | null,
-  head: string,
-  sameHead: boolean,
-): Promise<SettledRelease> {
-  if (live.held && sameHead && latest?.id === persisted.heldEventId) {
-    const held = heldAgain(persisted);
-    await writeCiState(pr, held);
-    return { outcome: "held", persisted: held };
-  }
-  if (!live.held && latest?.event === "unlabeled") {
-    await writeCiState(
-      pr,
-      releasedBy(latest, head, persisted.checkRunWatermark, "external"),
-    );
-    return { outcome: "released" };
-  }
-  return { outcome: live.held ? "adopt" : "invisible" };
-}
-
-async function transitionAfter(
-  pr: string,
-  beforeId: string,
-  event: "labeled" | "unlabeled",
-  actor: string,
-): Promise<{ event: LabelTransition; intervening: boolean } | null> {
-  // GitHub's timeline can trail the label mutation briefly. Bound the retry;
-  // an unobserved event is not ownership and must never be persisted as one.
-  for await (const attempt of retryAttempts({
-    attempts: 4,
-    baseMs: 2_000,
-    maxMs: 2_000,
-    random: () => 1,
-  })) {
-    void attempt;
-    const all = await transitions(pr);
-    if (all === null) return null;
-    const beforeIndex =
-      beforeId === "" ? -1 : all.findIndex((item) => item.id === beforeId);
-    if (beforeId !== "" && beforeIndex < 0) return null;
-    const after = all.slice(beforeIndex + 1);
-    const observed = after.at(-1);
-    if (observed?.event === event && observed.actor === actor) {
-      return { event: observed, intervening: after.length !== 1 };
-    }
-  }
-  return null;
 }
 
 /** The label transition a recorded hold names, if its phase names one. */
@@ -285,7 +201,7 @@ async function assertRecordedHoldMatchesLabel(
   return null;
 }
 
-async function ensure(pr: string, expectedPushHead: string): Promise<number> {
+async function localHeadMatches(expectedPushHead: string): Promise<boolean> {
   const local = await git(["rev-parse", "HEAD"], {
     stderr: "ignore",
     timeoutSec: gitCallTimeoutSeconds(),
@@ -294,8 +210,13 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     console.error(
       `ci-hold: local HEAD is ${local.stdout.trim() || "<unreadable>"}, not expected push head ${expectedPushHead}`,
     );
-    return 4;
+    return false;
   }
+  return true;
+}
+
+async function ensure(pr: string, expectedPushHead: string): Promise<number> {
+  if (!(await localHeadMatches(expectedPushHead))) return 4;
   const live = await snapshot(pr);
   if (live === null) fail(1, "ci-hold: cannot read the PR state");
   if (live.state !== "OPEN") return 5;
@@ -307,6 +228,13 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   const latest = latestOf(timeline);
 
   if (persisted?.phase === "releasing") {
+    const raceRecovery = await reconcileRacedRelease(
+      pr,
+      persisted,
+      holdLabel(),
+      (failure) => unreadDuringReleasingState(failure, persisted),
+    );
+    if (raceRecovery !== null) return raceRecovery;
     const successor = exactSuccessor(timeline, persisted.heldEventId);
     if (!live.held && successor?.event === "unlabeled") {
       await writeCiState(pr, exactReleaseOf(successor, head, persisted));
@@ -429,7 +357,9 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     await writeCiState(pr, persisted);
   }
 
-  const runs = await checkRuns(head);
+  const listed = await checkRunsRead(head);
+  if (listed.cutShort !== null) return listingStop(listed.cutShort);
+  const runs = valueOrNull(listed.runs);
   if (runs === null) fail(1, "ci-hold: cannot read check-runs");
   const watermark =
     persisted?.phase === "released" &&
@@ -490,7 +420,9 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     checkRunWatermark: preHoldWatermark,
   });
   const add = await ghCall(["pr", "edit", pr, "--add-label", holdLabel()]);
-  const mutation = await transitionAfter(pr, beforeId, "labeled", login);
+  const mutation = valueOrNull(
+    await transitionAfter(pr, holdLabel(), beforeId, "labeled", login),
+  );
   const confirmed = await snapshot(pr);
   if (mutation?.intervening === true) {
     await writeCiState(pr, null);
@@ -528,20 +460,32 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   return 0;
 }
 
+function unreadDuringReleasingState(
+  failure: HoldReadFailure,
+  persisted: CiHoldState | null,
+): number {
+  const code = unread(failure);
+  if (persisted?.phase === "releasing")
+    process.stdout.write("release-proof-pending\n");
+  return code;
+}
+
 async function release(
   pr: string,
   head: string,
   expectedTransition?: string,
 ): Promise<number> {
   let persisted = await readCiState(pr);
+  const unreadDuringReleaseRecovery = (failure: HoldReadFailure): number =>
+    unreadDuringReleasingState(failure, persisted);
   // Nothing has changed yet, so a forge timing out here is retried later.
   const read = await readPrSnapshot(pr, policy.holdLabel);
-  if (!read.ok) return unread(read.failure);
+  if (!read.ok) return unreadDuringReleaseRecovery(read.failure);
   const live = read.value;
   if (live.state !== "OPEN") return 5;
   if (live.head !== head) return 4;
   const timeline = await readHoldTransitions(pr, holdLabel());
-  if (!timeline.ok) return unread(timeline.failure);
+  if (!timeline.ok) return unreadDuringReleaseRecovery(timeline.failure);
   const initialTimeline = timeline.value;
   const latest = latestOf(initialTimeline);
   if (
@@ -557,6 +501,17 @@ async function release(
   }
 
   if (persisted?.phase === "releasing") {
+    if (persisted.raceDetected === true)
+      return refuseRace(
+        pr,
+        head,
+        persisted.actor,
+        holdLabel(),
+        () => transitions(pr),
+        ghCall,
+        unreadDuringReleaseRecovery,
+        persisted,
+      );
     const successor = exactSuccessor(initialTimeline, persisted.heldEventId);
     if (
       !live.held &&
@@ -633,7 +588,10 @@ async function release(
   )
     return 4;
   const watermarkRead = await headWatermark(head, "before the unlabel");
-  if (!watermarkRead.ok) return unread(watermarkRead.failure);
+  if (!watermarkRead.ok)
+    return "cutShort" in watermarkRead
+      ? listingStop(watermarkRead.cutShort)
+      : unread(watermarkRead.failure);
   const watermark = watermarkRead.value;
   if (watermark === null) {
     console.error(
@@ -641,7 +599,7 @@ async function release(
     );
     return 4;
   }
-  await writeCiState(pr, {
+  const releasing: ReleasingState = {
     phase: "releasing",
     adopted: persisted.adopted === true,
     heldEventId: persisted.eventId,
@@ -652,96 +610,19 @@ async function release(
     actor: login,
     createdAt: currentIso(),
     checkRunWatermark: watermark,
-  });
-  const remove = await ghCall([
-    "pr",
-    "edit",
+  };
+  await writeCiState(pr, releasing);
+  persisted = releasing;
+  return releaseHeldLabel(
     pr,
-    "--remove-label",
-    holdLabel(),
-  ]);
-  const mutation = await transitionAfter(
-    pr,
-    persisted.eventId,
-    "unlabeled",
-    login,
-  );
-  const confirmed = await snapshot(pr);
-  if (mutation?.intervening === true) {
-    if (
-      confirmed?.state === "OPEN" &&
-      confirmed.head === head &&
-      confirmed.held === false
-    ) {
-      const restoreBefore = await transitions(pr);
-      const restoreBeforeId = latestOf(restoreBefore ?? [])?.id ?? "";
-      const restore = await ghCall([
-        "pr",
-        "edit",
-        pr,
-        "--add-label",
-        holdLabel(),
-      ]);
-      const restoreMutation =
-        restoreBefore === null
-          ? null
-          : await transitionAfter(pr, restoreBeforeId, "labeled", login);
-      const restored = await snapshot(pr);
-      const restoreProven = mutationProven(
-        restore.code,
-        restoreMutation?.event ?? null,
-        restored !== null &&
-          restored.state === "OPEN" &&
-          restored.head === head &&
-          restored.held &&
-          restoreMutation?.intervening === false,
-      );
-      // The original event is no longer newest regardless of whether our
-      // best-effort restoration can be proven. Erase ownership before any
-      // refusal so a restart never removes the replacement label.
-      await writeCiState(pr, null);
-      if (!restoreProven) {
-        fail(
-          1,
-          `ci-hold: ownership changed during removal; add-label exited ${restore.code} and restoration could not be proven from the timeline and live label, so reconcile '${holdLabel()}' manually`,
-        );
-      }
-    } else {
-      await writeCiState(pr, null);
-    }
-    console.error(
-      `ci-hold: ownership changed during removal; preserved the live label state and refused the release`,
-    );
-    return 4;
-  }
-  if (
-    !mutationProven(
-      remove.code,
-      mutation?.event ?? null,
-      confirmed !== null &&
-        confirmed.state === "OPEN" &&
-        confirmed.head === head &&
-        !confirmed.held &&
-        mutation?.intervening === false,
-    )
-  ) {
-    fail(
-      1,
-      `ci-hold: remove-label exited ${remove.code}, and the unlabeled transition could not be proven on the unchanged open head`,
-    );
-  }
-  if (mutation === null) fail(1, "ci-hold: unlabeled transition disappeared");
-  await writeCiState(pr, {
-    phase: "released",
-    eventId: mutation.event.id,
     head,
-    actor: mutation.event.actor,
-    createdAt: mutation.event.createdAt,
-    checkRunWatermark: watermark,
-    source: "drive",
-  });
-  process.stdout.write("removed\n");
-  return 0;
+    releasing,
+    login,
+    holdLabel(),
+    () => transitions(pr),
+    ghCall,
+    unreadDuringReleaseRecovery,
+  );
 }
 
 /**
@@ -772,8 +653,14 @@ async function finalCiProofGreen(
   head: string,
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
   requireSuccess: boolean,
-): Promise<{ ok: true; startedAt: string | null } | { ok: false }> {
-  const allRuns = await checkRuns(head);
+): Promise<
+  | { ok: true; startedAt: string | null }
+  | { ok: false; cutShort?: ListingCutShort }
+> {
+  const listing = await checkRunsRead(head);
+  if (listing.cutShort !== null)
+    return { ok: false, cutShort: listing.cutShort };
+  const allRuns = valueOrNull(listing.runs);
   if (allRuns === null) return { ok: false };
   // A cancelled run another run replaced proves nothing about a required
   // check, however its check-run ids interleave with the replacement's.
@@ -836,43 +723,69 @@ async function finalCiProofGreen(
           { apps },
         );
   if (!requiredFresh) return { ok: false };
-  if (requireSuccess && !(await requiredCiAggregateIsGreen(head)))
-    return { ok: false };
-  // Branch protection names no check: the overall verdict decides, and it
-  // reads green before any workflow has registered on the head.
-  if (required.length === 0 && policy.derived && !(await anyCiOnHead(head)))
-    return { ok: false };
+  const overall = await overallCiProof(head, requireSuccess);
+  if (!overall.ok) return overall;
   return {
     ok: true,
     startedAt: requiredCiStartedAt(runs, required, head, apps),
   };
 }
 
-/** Strict success requires both check runs and attributed legacy statuses to be green. */
-async function requiredCiAggregateIsGreen(head: string): Promise<boolean> {
-  const [allRuns, statuses] = await Promise.all([
-    checkRunsFor("{owner}", "{repo}", head),
+/** The overall verdict: strict success where asked, and CI registered where no check is named. */
+async function overallCiProof(
+  head: string,
+  requireSuccess: boolean,
+): Promise<ProofRead> {
+  if (requireSuccess) {
+    const aggregate = await requiredCiAggregateIsGreen(head);
+    if (!aggregate.ok) return aggregate;
+  }
+  // Branch protection names no check: the overall verdict decides, and it
+  // reads green before any workflow has registered on the head.
+  return policy.requiredChecks.length === 0 && policy.derived
+    ? anyCiOnHead(head)
+    : { ok: true };
+}
+
+/** A head's check runs and commit statuses, or the refusal that read ended in. */
+async function readHeadCi(head: string): Promise<
+  | ProofRead
+  | {
+      allRuns: NonNullable<Awaited<ReturnType<typeof checkRunListing>>["runs"]>;
+      statuses: NonNullable<Awaited<ReturnType<typeof commitStatusesFor>>>;
+    }
+> {
+  const [{ runs: allRuns, cutShort }, statuses] = await Promise.all([
+    checkRunListing("{owner}", "{repo}", head),
     commitStatusesFor("{owner}", "{repo}", head),
   ]);
-  if (allRuns === null || statuses === null) return false;
+  if (cutShort !== null) return { ok: false, cutShort };
+  if (allRuns === null || statuses === null) return { ok: false };
+  return { allRuns, statuses };
+}
+
+/** Strict success requires both check runs and attributed legacy statuses to be green. */
+async function requiredCiAggregateIsGreen(head: string): Promise<ProofRead> {
+  const read = await readHeadCi(head);
+  if ("ok" in read) return read;
+  const { allRuns, statuses } = read;
   const workflowRuns = await workflowRunsBehind(
     "{owner}",
     "{repo}",
     head,
     allRuns,
   );
-  return ciVerdictOf(allRuns, statuses, false, head, workflowRuns) === "green";
+  return ciVerdictOf(allRuns, statuses, false, head, workflowRuns) === "green"
+    ? { ok: true }
+    : { ok: false };
 }
 
 /** Has any non-reviewer check run or commit status registered on `head`? */
-async function anyCiOnHead(head: string): Promise<boolean> {
-  const [allRuns, statuses] = await Promise.all([
-    checkRunsFor("{owner}", "{repo}", head),
-    commitStatusesFor("{owner}", "{repo}", head),
-  ]);
-  return (
-    allRuns !== null && statuses !== null && hasNonReviewerCi(allRuns, statuses)
-  );
+async function anyCiOnHead(head: string): Promise<ProofRead> {
+  const read = await readHeadCi(head);
+  if ("ok" in read) return read;
+  const { allRuns, statuses } = read;
+  return hasNonReviewerCi(allRuns, statuses) ? { ok: true } : { ok: false };
 }
 
 /**
@@ -903,10 +816,10 @@ async function stillCurrentForFinalReady(
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
   expectation: { emptyTimeline: true } | { latestTransitionId: string } | null,
   requireSuccess: boolean,
-): Promise<boolean> {
+): Promise<ProofRead> {
   if (requireSuccess) {
     const proof = await finalCiProofGreen(head, persisted, true);
-    if (!proof.ok) return false;
+    if (!proof.ok) return proof;
   }
   // Timeline BEFORE head/state/held — putting the CI proof first and this
   // snapshot last is not enough if `snapshot()` (the head check) still runs
@@ -921,20 +834,20 @@ async function stillCurrentForFinalReady(
   // ordering puts that irreducible tail on the one fact worth protecting most.
   if (expectation !== null) {
     const finalTimeline = await transitions(pr);
-    if (finalTimeline === null) return false;
+    if (finalTimeline === null) return { ok: false };
     const timelineMatches =
       "emptyTimeline" in expectation
         ? finalTimeline.length === 0
         : latestOf(finalTimeline)?.id === expectation.latestTransitionId;
-    if (!timelineMatches) return false;
+    if (!timelineMatches) return { ok: false };
   }
   const finalLive = await snapshot(pr);
-  return (
-    finalLive !== null &&
+  return finalLive !== null &&
     finalLive.state === "OPEN" &&
     finalLive.head === head &&
     !finalLive.held
-  );
+    ? { ok: true }
+    : { ok: false };
 }
 
 async function finalReady(
@@ -950,11 +863,15 @@ async function finalReady(
     // No hold exists: every push ran full CI, so the required checks on this
     // exact head are the witness.
     const proof = await finalCiProofGreen(head, null, requireSuccess);
-    if (!proof.ok) return 4;
-    if (
-      !(await stillCurrentForFinalReady(pr, head, null, null, requireSuccess))
-    )
-      return 4;
+    if (!proof.ok) return proofStop(proof);
+    const current = await stillCurrentForFinalReady(
+      pr,
+      head,
+      null,
+      null,
+      requireSuccess,
+    );
+    if (!current.ok) return proofStop(current);
     process.stdout.write(`${proof.startedAt ?? ""}\n`);
     return 0;
   }
@@ -966,34 +883,30 @@ async function finalReady(
     // No intermediate hold was ever applied: the PR-open run of the required
     // checks is the full-CI witness for this exact head.
     const initialProof = await finalCiProofGreen(head, null, requireSuccess);
-    if (!initialProof.ok) return 4;
-    if (
-      !(await stillCurrentForFinalReady(
-        pr,
-        head,
-        null,
-        { emptyTimeline: true },
-        requireSuccess,
-      ))
-    )
-      return 4;
+    if (!initialProof.ok) return proofStop(initialProof);
+    const current = await stillCurrentForFinalReady(
+      pr,
+      head,
+      null,
+      { emptyTimeline: true },
+      requireSuccess,
+    );
+    if (!current.ok) return proofStop(current);
     process.stdout.write(`${initialProof.startedAt ?? ""}\n`);
     return 0;
   }
   if (persisted.phase !== "released" || persisted.head !== head) return 4;
   if (latestOf(timeline)?.id !== persisted.eventId) return 4;
   const initialProof = await finalCiProofGreen(head, persisted, requireSuccess);
-  if (!initialProof.ok) return 4;
-  if (
-    !(await stillCurrentForFinalReady(
-      pr,
-      head,
-      persisted,
-      { latestTransitionId: persisted.eventId },
-      requireSuccess,
-    ))
-  )
-    return 4;
+  if (!initialProof.ok) return proofStop(initialProof);
+  const current = await stillCurrentForFinalReady(
+    pr,
+    head,
+    persisted,
+    { latestTransitionId: persisted.eventId },
+    requireSuccess,
+  );
+  if (!current.ok) return proofStop(current);
   process.stdout.write(`${persisted.createdAt}\n`);
   return 0;
 }
@@ -1035,6 +948,91 @@ function takeExpectedTransition(
     usage();
   argv.splice(index, 2);
   return id;
+}
+
+function releaseProofPending(command: string, releasing: boolean): boolean {
+  return (command === "ensure" || command === "release") && releasing;
+}
+
+async function checkRecordedHold(
+  pr: string,
+  command: string,
+): Promise<number | null> {
+  if (policy.holdLabel === null) return null;
+  // A successful removal can leave the durable record in `releasing` while
+  // the timeline proof is temporarily unreadable. Keep that retry signal
+  // across the recovery check below: otherwise a second transient timeline
+  // failure loses the disposition that lets the convergence loop retry.
+  const releasing = isReleasing(await readCiState(pr));
+  const unreadable = await assertRecordedHoldMatchesLabel(pr);
+  if (unreadable === null) return null;
+  if (releaseProofPending(command, releasing))
+    process.stdout.write("release-proof-pending\n");
+  return unreadable;
+}
+
+function isReleasing(recorded: CiHoldState | null): boolean {
+  return recorded?.phase === "releasing";
+}
+
+async function reconcileRacedRelease(
+  pr: string,
+  recorded: CiHoldState | null,
+  label: string,
+  onUnread: (failure: HoldReadFailure) => number,
+): Promise<number | null> {
+  if (recorded?.phase !== "releasing" || recorded.raceDetected !== true)
+    return null;
+  return refuseRace(
+    pr,
+    // This record names the remote head the interrupted release observed.
+    // A command can name a local, not-yet-pushed head, which is not the head
+    // on which a replacement label must be restored.
+    recorded.head,
+    recorded.actor,
+    label,
+    () => transitions(pr),
+    ghCall,
+    onUnread,
+    recorded,
+  );
+}
+
+// The fence's lifetime brackets every mutation outcome.
+async function runMutationCommand(
+  command: "ensure" | "release" | "rollback",
+  pr: string,
+  head: string,
+  expectedTransition?: string,
+): Promise<number> {
+  const fence = await resolveFenceContext("ci-hold.ts");
+  const remoteLock =
+    fence === null
+      ? null
+      : await assertRemoteMutationAllowed(fence, pr, "ci-hold.ts");
+  const heartbeat =
+    remoteLock === null
+      ? null
+      : setInterval(() => remoteLock.touch(), lockHeartbeatMs());
+  try {
+    const recorded = await readCiState(pr);
+    const unreadable = await checkRecordedHold(pr, command);
+    if (unreadable !== null) return unreadable;
+    const raceRecovery = await reconcileRacedRelease(
+      pr,
+      recorded,
+      holdLabel() ?? LEGACY_CI_HOLD_LABEL,
+      (failure) => unreadDuringReleasingState(failure, recorded),
+    );
+    if (raceRecovery !== null) return raceRecovery;
+    if (command === "ensure") return await ensure(pr, head);
+    if (command === "rollback") return await rollback(pr, head);
+    return await release(pr, head, expectedTransition);
+  } finally {
+    if (heartbeat !== null) clearInterval(heartbeat);
+    remoteLock?.release();
+    remoteLock?.dispose();
+  }
 }
 
 async function main(): Promise<number> {
@@ -1091,30 +1089,10 @@ async function main(): Promise<number> {
   } catch (error) {
     configError(error);
   }
-  if (policy.holdLabel !== null) {
-    const unreadable = await assertRecordedHoldMatchesLabel(pr);
-    if (unreadable !== null) return unreadable;
-  }
-  if (command === "ensure" || command === "release" || command === "rollback") {
-    const fence = await resolveFenceContext("ci-hold.ts");
-    const remoteLock =
-      fence === null
-        ? null
-        : await assertRemoteMutationAllowed(fence, pr, "ci-hold.ts");
-    const heartbeat =
-      remoteLock === null
-        ? null
-        : setInterval(() => remoteLock.touch(), lockHeartbeatMs());
-    try {
-      if (command === "ensure") return await ensure(pr, head);
-      if (command === "rollback") return await rollback(pr, head);
-      return await release(pr, head, expectedTransition);
-    } finally {
-      if (heartbeat !== null) clearInterval(heartbeat);
-      remoteLock?.release();
-      remoteLock?.dispose();
-    }
-  }
+  if (command === "ensure" || command === "release" || command === "rollback")
+    return runMutationCommand(command, pr, head, expectedTransition);
+  const unreadable = await checkRecordedHold(pr, command);
+  if (unreadable !== null) return unreadable;
   return finalReady(pr, head, requireSuccess);
 }
 

@@ -53,11 +53,13 @@ import {
   refusedPassArgs,
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
+import { DEFAULT_REVIEWER_POLL_MAX_SECONDS } from "../../drive-pr/scripts/lib/status/reviewer-poll.ts";
 import {
   CODEX_PASS_ARG_PATTERN,
   codexPassArgsProblem,
   DEFAULT_CODEX_PASS_ARGS,
 } from "../../drive-pr/scripts/lib/codex-pass-args.ts";
+import { readStatusPolling } from "../../drive-pr/scripts/lib/status/poll-pacing.ts";
 import { CI_REPAIR_ROUNDS_DEFAULT } from "../../drive-pr/scripts/lib/driver/settings.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { SKILL_NAME_PATTERN } from "../../../shared/ci-status.ts";
@@ -151,6 +153,8 @@ import {
   LOAD_DEFAULTS,
   loadSettings,
 } from "../../../dispatch/lib/load-config.ts";
+import { notifyChannels } from "../../../dispatch/lib/notify-config.ts";
+import { WEBHOOK_FORMATS } from "../../../chat/webhook.ts";
 
 const schema = loadSchema();
 const field = (path: string) => schema.fields.find((f) => f.path === path);
@@ -226,6 +230,31 @@ test("documents the dispatch machine file's validation share in the audit schema
   expect(loadSettings({ validation: 0 }).ok).toBe(false);
 });
 
+test("documents the dispatch machine file's notification channels in the audit schema", () => {
+  const channels = schema.machineFields?.find(
+    ({ path }) => path === "notify.channels",
+  );
+  expect(channels).toMatchObject({
+    type: "list",
+    items: {
+      fields: {
+        name: "string",
+        kind: { type: "enum", values: ["webhook"] },
+        url_env: "string",
+        format: { type: "enum", values: [...WEBHOOK_FORMATS] },
+      },
+      optional: ["format"],
+    },
+    read_by: ["dispatch"],
+  });
+  for (const format of WEBHOOK_FORMATS)
+    expect(
+      notifyChannels({
+        channels: [{ name: "phone", kind: "webhook", url_env: "HOOK", format }],
+      }).ok,
+    ).toBe(true);
+});
+
 describe("CONFIGURATION.md", () => {
   const documented = documentedFields();
 
@@ -275,6 +304,7 @@ describe("CONFIGURATION.md", () => {
     expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
+    expect(() => readStatusPolling(example)).not.toThrow();
     expect(() => parseWorkTypes(example)).not.toThrow();
     expect(() => parseRouting(example, parseWorkTypes(example))).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
@@ -459,6 +489,7 @@ describe("the reading skills", () => {
 
   test("use the defaults the schema lists", () => {
     const policy = parsePrPolicy({});
+    const statusPolling = readStatusPolling({});
     const dispatch = dispatchSection({});
     if (!dispatch.ok) throw new Error(dispatch.failure.reason);
     const defaults = Object.fromEntries(
@@ -472,6 +503,9 @@ describe("the reading skills", () => {
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
+      "drive.status_poll.waiting_share": statusPolling.waitingShare,
+      "drive.status_poll.max_interval_seconds":
+        statusPolling.maxIntervalSeconds,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
       "drive.ci_repair_rounds": CI_REPAIR_ROUNDS_DEFAULT,
       "drive.pass_model": DEFAULT_PASS_MODEL,
@@ -509,6 +543,7 @@ describe("the reading skills", () => {
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "file_issue.sweep.move": sweepSettings({}).move,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "review.reviewer_poll_max_seconds": DEFAULT_REVIEWER_POLL_MAX_SECONDS,
       "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
       "specs.body_section": DEFAULT_BODY_SECTION,
@@ -527,6 +562,8 @@ describe("the reading skills", () => {
       "dispatch.overlap.file_rate": dispatch.value.overlap?.fileRate,
       "dispatch.overlap.area_rate": dispatch.value.overlap?.areaRate,
       "dispatch.overlap.unknown_cost": dispatch.value.overlap?.unknownCost,
+      "dispatch.reviewer_failures_before_escalation":
+        dispatch.value.reviewerFailures?.threshold,
     });
   });
 

@@ -10,11 +10,16 @@ with its context and nobody notices.
 
 **What it does.** `/jig:drive-pr` is a [PR drive loop](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): it runs a PR's [review rounds](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) unattended until the PR reaches exactly one [terminal state](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Each round it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the validation plan for the change, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long drive never depends on one session surviving.
 
+When a round merges the base and changes dependency inputs, it runs a [frozen
+install](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) before
+validation. The round report records the command and outcome so an install
+failure can be diagnosed independently of a validation failure.
+
 A few behaviours worth knowing before you arm one:
 
 - **Drafts.** It works [draft PRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) from the start and marks them Ready for review after its first completed round (or the round, or the convergence, `pull_requests.mark_ready` names), so reviewers that skip drafts (often billed per review) see an already-cleaned head.
 - **CI.** Before reporting success it waits for the repository's [required checks](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in continuous integration (CI) to pass on the exact final commit. A repository whose CI is expensive can opt into a [CI hold](#ci-hold), which skips the heavy jobs between review rounds and runs them in full once at the end.
-- **Repairs.** When that final CI comes back red, or the PR conflicts with its base and no findings are left, it runs a bounded **repair round** (a CI repair, or a base merge with conflict resolution) and checks again, stopping only once that budget is spent. A repair pass is told the failed workflow runs and, for a CI service that reports as commit statuses, each failing status with the page it links to. A cancelled check is not red, nor is a commit status in state `error` whose description says the build was aborted: the drive waits for a replacement and spends no repair pass on it. With no active replacement after a 30-second grace period, it requests one re-run per head, recorded durably across re-arms. Runs that a label write started, the drive's own state labels included, and that the workflow's concurrency cancelled, are re-run once per run attempt outside that budget, as is a run, such as a person's re-run, that they cancelled. For the head's budgeted re-run, or one a person's answer grants, the drive then judges the runs it re-ran, not the cancelled runs it finds again, and waits up to ten minutes for each to show a new attempt or result (a label-caused re-run keeps its own one-minute window); a refused request, or a re-run that never shows one, parks with the runs and recovery for a person; once the person answers the park ("Re-run safely", or an approval), the re-arm grants that head one more re-run, after the same head and CI-hold checks, and waits for its replacement. A failure that only cancelled runs carry, such as an always-run aggregator failing because a job it needs was cancelled, takes the same recovery first, provided no commit status fails and a cancelled job in those runs is unreplaced; a failed job in a cancelled run with no cancelled job is repaired. It never replays a run created under the CI hold, and never counts cancellation as passing. A job the runner stopped at its time limit (`timeout-minutes`) also reads as cancelled, but its check run's annotation says it exceeded the maximum execution time: that is a [timed-out job](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), repaired as a failure rather than re-run, and the repair pass is told the job, its limit and how long it ran. An aborted build has no run for it to request: it waits for a new status for as long as the final-CI witness wait allows (`DRIVE_PR_FINAL_CI_WITNESS_POLLS`), then stops with [`NOT_SETTLED`](../../protocol/drive-exits.md).
+- **Repairs.** When that final CI comes back red, or the PR conflicts with its base and no findings are left, it runs a bounded **repair round** (a CI repair, or a base merge with conflict resolution) and checks again, stopping only once that budget is spent. A CI repair first synchronizes any advanced base before reproducing the failure, so local validation includes the gates and configuration CI uses. A repair pass is told the failed workflow runs and, for a CI service that reports as commit statuses, each failing status with the page it links to. A cancelled check is not red, nor is a commit status in state `error` whose description says the build was aborted: the drive waits for a replacement and spends no repair pass on it. With no active replacement after a 30-second grace period, it requests one re-run per head, recorded durably across re-arms. Runs that a label write started, the drive's own state labels included, and that the workflow's concurrency cancelled, are re-run once per run attempt outside that budget, as is a run, such as a person's re-run, that they cancelled. For the head's budgeted re-run, or one a person's answer grants, the drive then judges the runs it re-ran, not the cancelled runs it finds again, and waits up to ten minutes for each to show a new attempt or result (a label-caused re-run keeps its own one-minute window); a refused request, or a re-run that never shows one, parks with the runs and recovery for a person; once the person answers the park ("Re-run safely", or an approval), the re-arm grants that head one more re-run, after the same head and CI-hold checks, and waits for its replacement. A failure that only cancelled runs carry, such as an always-run aggregator failing because a job it needs was cancelled, takes the same recovery first, provided no commit status fails and a cancelled job in those runs is unreplaced; a failed job in a cancelled run with no cancelled job is repaired. It never replays a run created under the CI hold, and never counts cancellation as passing. A job the runner stopped at its time limit (`timeout-minutes`) also reads as cancelled, but its check run's annotation says it exceeded the maximum execution time: that is a [timed-out job](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), repaired as a failure rather than re-run, and the repair pass is told the job, its limit and how long it ran. An aborted build has no run for it to request: it waits for a new status for as long as the final-CI witness wait allows (`DRIVE_PR_FINAL_CI_WITNESS_POLLS`), then stops with [`NOT_SETTLED`](../../protocol/drive-exits.md).
 - **Stops.** It stops on a state it names precisely — convergence verified against the exact commit, a merged or closed PR, a conflict it could not resolve, findings that need a human decision ([HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) — or on one of the operational stops in [the exit table](#the-exit-states--what-you-do-now).
 - **Limits.** It never approves, never merges, and never bypasses a hook.
 
@@ -27,6 +32,10 @@ The [cost report](../../CONFIGURATION.md#outbound-cost-reports) counts
 The practice it implements is Jig's [M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md); its loop-cost reports belong to [M11 — Process observability](https://github.com/jig-harness/jig/blob/main/modules/M11-process-observability/README.md).
 
 This page is for **you, the human** — the operator contract agents follow is the skill itself: [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
+
+When a conflict repair leaves a merge it started unfinished, the driver aborts
+it, removes the repair's new untracked files and verifies that the worktree is
+clean. The stop reports any merge or files it could not clear.
 
 ## Installation
 
@@ -98,6 +107,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `repository.remote` | The git remote the drive pushes to and fetches from, and whose `HEAD` names the integration branch. Its fetch and push addresses must name the pull request's repository, or the drive refuses to fetch the base or to push | `origin` |
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
 | `drive.load_guard_command` | A command `round-plan.ts` runs (in text mode) before printing the plan, which waits until the machine's load allows heavy checks | Unset: no load guard |
+| `drive.dependency_install` | Frozen install overrides keyed by lockfile name. See [configuration](../../CONFIGURATION.md#drive) for the command contract | Built-in command for each recognized lockfile |
 | `drive.change_areas_catalog` | Path, relative to the repository root or absolute, to a [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys, and refuses (exit 2, naming the field) a catalog whose `paths`, `generated[].source`, `labels` or `tracker` fields are malformed; the rest of the catalog schema is not checked | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
 | `drive.reviews_drafts` | `true` or `false`: does the AI reviewer review draft PRs. The drive uses it only to explain a draft PR that has no reviewer check run yet (`/jig:do-item` also reads it to decide whether new PRs open as drafts) | Unset: unknown, and no hint is given |
 | `ci.required_checks` | The exact check names that must complete on the converged head before the drive certifies it (and, with a hold, that must run again after the hold is removed). `[]` means none: the drive relies on the overall CI verdict alone, which is green even when no CI has registered on the head. Without a hold, the drive judges each required check as branch protection does: a skipped or neutral result passes, and a legacy commit status of that name can stand in for a check run. With a hold, required checks must be check runs, since only a run's id proves it ran after the hold was removed. Unrelated to `review.required_checks`, which names the review skill's reviewer checks | Derived: the checks the pull request's base branch requires, from classic branch protection and active rulesets together. For a stacked layer, whose base is a feature branch, the checks of the branch the stack's bottom layer targets are added to the base's own. A check that protection pins to a GitHub App counts only when that app publishes it, as a check run or a commit status; a check pinned to several apps (classic protection to one, a ruleset to another) needs a passing result from each. When the base requires none, the drive also waits until some non-reviewer CI has registered on the head; where a reviewer is expected, a commit status named like the reviewer's check does not count. A base branch, integration branch, stack or protection that cannot be read is an error that asks for this field; the drive never falls back to another branch's protection |
@@ -374,9 +384,13 @@ window it closes.
 While final CI stays unchanged, its conditional signal observations back off
 from ten seconds through twenty and forty to sixty seconds between starts.
 A changed head, check, review or pull signal restores responsive probing.
-Local mailbox stop, hold and resume and remote takeover/provisional checks
-retain a ten-second idle cadence, independent of bulk CI observation. The
-mailbox runs before remote reads. In-flight work adds its helper deadline;
+Local mailbox stop, hold and resume and the provisional-decision sweep
+retain a ten-second idle cadence, independent of bulk CI observation.
+After a complete round-boundary takeover read, the drive waits at least
+sixty seconds between read starts. If the listing cannot be read, the next
+round checkpoint retries it. The drive still reads claims fresh before
+dispatching a pass and before writing the ledger. The mailbox runs before
+remote reads. In-flight work adds its helper deadline;
 GitHub's Retry-After and primary reset holds still take precedence. These
 bounds describe scheduling while requests can be admitted, not a guarantee
 that an unavailable forge will answer. Terminal verdicts, launches and pushes
@@ -408,6 +422,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_RATE_LIMIT_WAIT` | Whole seconds, at most 86400 (a day); otherwise the default. How far off a reset of the forge's spent rate limit the drive waits for before it stops with [`FORGE_RATE_LIMITED`](../../protocol/drive-exits.md), which the dispatcher re-drives after the reset | `1800` |
 | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once) | `1` |
 | `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | Elapsed wait for required checks on the final commit, in ten-second units, independent of observation count (`0`: wait forever) | `180` (30 minutes) |
+| `DRIVE_PR_RELEASE_PROOF_ATTEMPTS` | Consecutive unreadable proof or recovery reads while the CI-hold removal's `releasing` record remains (`0`: stop on the first); the record remains for a later drive to reconcile | `3` |
 | `DRIVE_PR_CONVERGED_CI_MINUTES` | How long a drive that stopped `CONVERGED` watches the verified head's CI after its `converged` label write, which can start runs on it, before it parks `converged-ci` (`0`: write the label and watch nothing) | `30` |
 | `DRIVE_PR_FINAL_REGATE_LIMIT` | Re-gates in a row on one commit when the converged round's final status re-read disagrees with the round's own read, before the drive stops with exit `1` (`0`: stop on the first) | `3` |
 | `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with [`STALLED`](../../protocol/drive-exits.md) (`0`: off) | `2` |
@@ -417,12 +432,18 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_PAUSE_MAX_SEC` | How long a mailbox `pause` may last before [`MAILBOX_PAUSE_TIMEOUT`](../../protocol/drive-exits.md) | `1800` (30 minutes) |
 | `DRIVE_PR_PUSH_TIMEOUT` | One `git push`, pre-push hooks included, in seconds | `3600` |
 | `DRIVE_PR_HELPER_TIMEOUT` | One helper script the drive spawns, in seconds | `120` |
-| `GH_CALL_TIMEOUT` | One `gh` call, in seconds | `30` |
+| `GH_CALL_TIMEOUT` | One `gh` call, in seconds; one page of a head's check-runs listing, whose whole read may take four times this before the drive stops with [`CHECK_RUNS_UNREADABLE`](../../protocol/drive-exits.md); with `JIG_FORGE_BUDGET=off`, a fresh listing or a fallback whole read is paged by `gh` itself, under that same whole-read bound and with no page bound; a listing read through the cache still goes a page at a time | `30` |
 | `DRIVE_PR_STALL_MIN` | Minutes without progress before `bun "<skill-dir>/scripts/drives.ts" --doctor` calls a live drive wedged (never below the default) | `240` |
 
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 `drive.ts` sets for its own passes) are documented where they act, in
 [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
+
+While waiting for a reviewer on the same pull request head, the drive doubles
+the poll interval up to `review.reviewer_poll_max_seconds` (300 seconds by
+default). A completed neutral check titled `Review did not complete` stops
+the drive with [`REVIEWER_FAILED`](../../protocol/drive-exits.md) if the
+reviewer has no review of that head.
 
 ### The background time limit
 

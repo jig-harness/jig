@@ -2,8 +2,8 @@
 import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
- * Merge the PR's base branch into this round — when, and only when, doing so
- * costs no round the drive would not otherwise have spent.
+ * Merge the PR's base branch into a round. CI repair syncs any advanced base
+ * before reproducing a failure, so local validation sees the merged tree.
  *
  * The rule this mechanizes is a PIGGYBACK, not a cadence. "Pull from develop
  * occasionally to keep the branch fresh" sounds cheap and is not: every base
@@ -11,7 +11,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  * reviewer's own wind-down ceiling, and it re-arms the expensive validation
  * tier (see lib/base-drift.ts for the Testbox-decay mechanics). A merge that
  * rides a round which was pushing a commit anyway costs neither. So every
- * precondition below is necessary:
+ * precondition below applies to ordinary rounds:
  *
  *   1. the base has actually advanced;
  *   2. it advanced over a file THIS PR also touches (`lib/base-drift.ts`
@@ -27,11 +27,9 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  * — a stale `origin/<base>` can both overlap and miss a real divergence, and
  * merging it would report success without having synchronized anything.
  *
- * `--force` drops 2 and 3 (never 1 or the fetch-freshness gate — merging a
- * base that has not moved, or that this measurement cannot vouch for, is not
- * something a flag should override). It exists for the case the loop cannot
- * see: a human who knows the drive is about to converge and wants the local
- * gates and the `refs/pull/N/merge` CI checkout to agree first.
+ * CI repair and `--force` require an advanced base and a successful fetch.
+ * Use `--force` when an ordinary round needs the current base, for example to
+ * match the `refs/pull/N/merge` CI checkout before convergence.
  *
  * Before any of that, the checkout itself is verified against the PR: an
  * explicit PR argument that disagrees with `$DRIVE_PR_TARGET`, or a worktree
@@ -175,12 +173,12 @@ export function resolveReadReason(
   check: boolean,
   verdict: DriftVerdict,
   fetched: boolean,
-  force: boolean,
+  requireCurrentBase: boolean,
 ): Exclude<Reason, "nothing-to-piggyback" | "merged"> | null {
   if (check) return "check-only";
   if (!fetched) return "fetch-failed";
   if (verdict === "in-sync") return "in-sync";
-  if (verdict === "no-overlap" && !force) return "no-overlap";
+  if (verdict === "no-overlap" && !requireCurrentBase) return "no-overlap";
   return null;
 }
 
@@ -745,12 +743,14 @@ async function main(): Promise<number> {
   if (!probe.ok) fail(1, `base-sync: ${probe.why}`);
   const drift = probe.drift;
   const verdict = driftVerdict(drift);
+  const ciRepair = process.env.DRIVE_PR_ROUND_TASK === "ci-repair";
+  const requireCurrentBase = force || ciRepair;
 
   const emit = (report: Report): void => {
     if (json) {
       process.stdout.write(`${JSON.stringify(report)}\n`);
     } else {
-      const line = driftLine(drift);
+      const line = driftLine(drift, ciRepair);
       if (line !== null) process.stdout.write(`${line}\n`);
       process.stdout.write(`base-sync: ${report.action} (${report.reason})\n`);
     }
@@ -764,25 +764,20 @@ async function main(): Promise<number> {
     mergeCommit: null,
   };
 
-  // A mutating merge may not proceed off a measurement the fetch never
-  // confirmed: `probeBaseDrift` deliberately degrades to a MARKED
-  // measurement on a failed fetch rather than failing outright (so `--check`
-  // can still report it), but a stale `origin/<base>` can both overlap and
-  // miss a real, currently-unmergeable divergence — merging it would report
-  // `action: "merged"` while the actual base remains ahead, and can spend a
-  // reviewer cycle without achieving the synchronization this exists to
-  // provide. `--force`
-  // drops the overlap and already-pushing preconditions, never this one —
-  // same rule as never dropping precondition 1. `resolveReadReason` checks
-  // this ahead of every verdict branch, `--check` aside, so a stale fetch
-  // never gets reported as a confirmed `in-sync`/`no-overlap` verdict.
-  const readReason = resolveReadReason(check, verdict, drift.fetched, force);
+  // Even forced sync and CI repair need a successful fetch. A stale ref
+  // can hide divergence or trigger a merge that cannot synchronize the base.
+  const readReason = resolveReadReason(
+    check,
+    verdict,
+    drift.fetched,
+    requireCurrentBase,
+  );
   if (readReason !== null) {
     emit({ ...base, reason: readReason });
     return 0;
   }
   await ignoreDriveContext(root, false, "base-sync.ts");
-  if (!force) {
+  if (!requireCurrentBase) {
     const pushing = await alreadyPushing(git, root, headOid, identityEnv);
     if (!pushing.ok) {
       fail(
@@ -1025,7 +1020,7 @@ async function main(): Promise<number> {
           "The worktree was restored — nothing is half-merged. Fix or bypass the hook, then re-run.",
         );
       }
-      // `--force` proceeds on a `no-overlap` verdict too (it drops that
+      // CI repair and `--force` proceed on a `no-overlap` verdict (they drop that
       // precondition, never the fetch-freshness one), where `overlapCount` is
       // genuinely 0 — yet the merge above still failed, so a conflict exists
       // outside the measured file-level overlap (content conflicts, directory

@@ -5,6 +5,9 @@
  * refuses still starts and is reported as one the load factor would hold;
  * with it, the launch waits, and a pickup keeps room for a drive.
  */
+import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { lockEnv } from "../lib/runtime/orca-launch.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,7 +29,7 @@ import type { ReadRecord } from "../lib/launches.ts";
 import { loadState } from "../lib/load.ts";
 import { LOAD_DEFAULTS } from "../lib/load-config.ts";
 import type { LoadReading } from "../lib/load-read.ts";
-import { outstandingReservations } from "../lib/tick-load.ts";
+import { outstandingReservations, withHostOverride } from "../lib/tick-load.ts";
 import { readValidationLoad } from "../lib/validation-load.ts";
 
 const CONFIG = `issue_tracker:
@@ -125,6 +128,34 @@ function windowsReading(): LoadReading {
 }
 
 describe("jig dispatch reads the host's load each tick", () => {
+  it("keeps the dispatcher's host-reading override beside a filtered launch environment", () => {
+    const own = { JIG_DISPATCH_LOAD_READING: "/fixture.json", LOCK_ROOT: "/a" };
+    expect(withHostOverride({ LOCK_TIMEOUT: "7" }, own)).toEqual({
+      LOCK_TIMEOUT: "7",
+      JIG_DISPATCH_LOAD_READING: "/fixture.json",
+    });
+    const bare = { LOCK_TIMEOUT: "7" };
+    expect(withHostOverride(bare, {})).toBe(bare);
+  });
+
+  it("gives an Orca launch every lock setting, resolved, so the terminal's own cannot replace them", () => {
+    expect(lockEnv({})).toEqual([
+      "LOCK_TIMEOUT=",
+      `LOCK_ROOT=${resolve(tmpdir())}`,
+      "LOCK_NAME=heavy",
+    ]);
+    expect(
+      lockEnv({ LOCK_TIMEOUT: "", LOCK_ROOT: "locks", LOCK_NAME: "n" }),
+    ).toEqual([
+      "LOCK_TIMEOUT=",
+      `LOCK_ROOT=${resolve("locks")}`,
+      "LOCK_NAME=n",
+    ]);
+    expect(lockEnv({ TMPDIR: "/t", LOCK_TIMEOUT: "60" })).toContain(
+      "LOCK_ROOT=/t",
+    );
+  });
+
   it("retains a pending Windows launch reservation until a process can represent it", () => {
     const reading = windowsReading();
     const load = loadState(
@@ -211,7 +242,7 @@ describe("jig dispatch reads the host's load each tick", () => {
       0,
       90 * 60_000,
     );
-    expect(reading.demand).toEqual({ atLock: 2, toArrive: 0 });
+    expect(reading.demand).toEqual({ atLock: 2, toArrive: 0, arrivals: [] });
   });
 
   it("admits a pickup on an idle host with enforcement and the default deadlines", async () => {

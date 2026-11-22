@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -427,8 +428,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
       // This probe needs strictly more than MAX_QUERY_ERRORS attempts, so the
       // window must hold at least three polls even when each iteration's
       // spawns take seconds: 1s polls (the `--interval` floor lowered through
-      // its test pacing seam) in an 8s window.
-      ["--timeout", "8", "--interval", "1"],
+      // its test pacing seam) in a 12s window.
+      ["--timeout", "12", "--interval", "1"],
       {
         reconcile: true,
         once: false,
@@ -454,8 +455,8 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     // Explicit per-test budget, far above the suite's 30s default: this
     // probe is the most expensive one in the file under load.
     //
-    // Its logic is only ~8s (`--timeout 8`, and the run ends with the gate's
-    // own "gave up after 8s"). The rest is subprocess fan-out: >
+    // Its logic is only ~12s (`--timeout 12`, and the run ends with the gate's
+    // own "gave up after 12s"). The rest is subprocess fan-out: >
     // MAX_QUERY_ERRORS poll iterations is the irreducible floor for the
     // assertion below, and EACH iteration spawns a real sweep —
     // `reconcile-replied-threads.ts`, which spawns `list-unresolved-threads.ts`,
@@ -589,6 +590,23 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
     expect(r.state).toBe("INDETERMINATE");
     expect(r.exitCode).toBe(1);
     expect(resolvedIn(dir)).toEqual([]);
+  });
+
+  it("keeps a check-runs listing stop when the finished-skip snapshot disagrees", async () => {
+    // A listing cut short is an unreadable evaluation, not evidence that the
+    // PR reopened. Retraction would re-run the listing even though its page
+    // bound is already known to be exhausted, losing the named diagnostic.
+    const { dir, stateDir } = writeFixture({
+      checkRunsHang: true,
+      liveProbeSaysClosedOnce: true,
+    });
+    const r = await probeIn(dir, stateDir, HEAD, [], {
+      env: { GH_CALL_TIMEOUT: "1" },
+    });
+
+    expect(r.state).toBe("CHECK_RUNS_UNREADABLE");
+    expectSpawnExit({ ...r, stdout: "" }, 25);
+    expect(r.stderr).not.toContain("retracting the skip");
   });
 
   it("degrade() stops at the poll DEADLINE, not only at the retry count", async () => {

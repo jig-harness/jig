@@ -20,6 +20,10 @@ the role of each side, maps the conflicts, regenerates derived files, records
 decisions, and checks for dropped changes. The
 [agent procedure](SKILL.md) gives the commands and exit codes.
 
+When resolving a base merge inside a drive, the skill refreshes dependencies
+before validation if the staged merge changes a package manifest or lockfile.
+The resolution record includes the frozen install command.
+
 ## Staged changes belong to the operation
 
 `check-resolution.ts` checks every staged path against the operation's
@@ -32,6 +36,22 @@ must match Git's automatic result. A manual change needs a recorded decision,
 even in a file that merged cleanly. Inspect the output of `bun "<skill-dir>/../../shared/command.ts" -- git diff --cached` to confirm the
 hunks belong to the resolution. Blob contents, file modes and deletions all
 matter; merely appearing on a changed-file list does not establish ownership.
+
+## Sequenced database migrations
+
+When two branches add migrations at the same sequence number, the plan
+keeps the base branch's series and moves the feature branch's migrations
+after it. The repository's own command rebuilds the journal and snapshots.
+The staged check compares the SQL and file mode at each required path to
+its committed input and checks the journal order, even when the conflict
+decision records a deletion. The base branch's journal is taken as
+committed, in its own order: only the migrations added after it must follow
+in sequence order.
+
+The skill detects the legacy Drizzle journal layout. For a command that
+rebuilds that layout, or to declare a different migration directory, set
+[`resolve_conflicts.sequenced_migrations`](../../CONFIGURATION.md#procedure-skills).
+The [agent procedure](SKILL.md#apply-a-migration-plan) gives the steps.
 
 ## Repository obligations
 

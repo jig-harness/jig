@@ -366,7 +366,9 @@ make, use the entry's term instead.
   flow.
 - **Defect boundary** — the one place a *defect* is caught, around the work
   it stops: one stage of a dispatcher tick, one repository's turn, the tick
-  itself. It records the defect where a person reads it, with its stack on
+  itself; on the *hub*, one unit of work (a request, a webhook delivery, a
+  scheduled job's run), which also carries the unit's deadline and the one
+  cancellation signal every *port* call it makes receives. It records the defect where a person reads it, with its stack on
   the error output only, and lets the work beside it go on. In Jig's plugin
   an expected failure travels as an `Outcome`, the plugin's *result type*,
   so a throw that reaches a defect boundary is a bug
@@ -1024,6 +1026,24 @@ make, use the entry's term instead.
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
   workspace is what a *workspace provider* opens around a worktree.
+- **Local loop** — planned: the dispatcher's fastest refresh, which reads
+  only the host it runs on (the load and memory, whether a recorded run's
+  processes are still alive, whether a session ended), calls nothing outside
+  it and so spends no *budget*. It would show what it read on the dashboard
+  and wake a repository's tick when a run ended or memory freed, and never
+  start a stage, since a launch is admitted only under the tick's own lock
+  ([the dispatcher's refresh cadences](design/dark-factory-dispatch.md#refresh-cadences)).
+- **Local view** — planned: the one record the *local loop* writes in the
+  dispatcher's state database: each gauge's fill, whether each recorded run's
+  processes are alive, and each session's state, every value stamped with the
+  time it was read. The dashboard shows it beside the last tick's record; it
+  is for showing and waking, never an input to admitting a launch
+  ([the dispatcher's refresh cadences](design/dark-factory-dispatch.md#refresh-cadences)).
+- **Probe share** — planned: the part of a limit's hourly allowance (default
+  a tenth) that the dispatcher's change probes together may spend, counted
+  from the cost ledger, so probes that run whether or not anything changed
+  leave room for the woken ticks and the passes. It puts a floor under each
+  probe's interval ([outbound calls](design/outbound-calls.md#probes-in-the-budget)).
 - **Load admission** — letting one more heavy run start on a machine only
   while it has room for it: the predicted load (the recent load average plus
   the cost of runs started too recently to show in it) stays under a share
@@ -1746,6 +1766,29 @@ make, use the entry's term instead.
 - **Reviewer evidence mode** — which record of the forge the drive reads to
   learn that the AI reviewer reviewed the head commit: the reviewer's summary
   comment marker, or its latest *review object* together with its check run.
+- **Reviewer-evidence contract** — what the drive reads to learn that an AI
+  reviewer reviewed the head commit: a check run whose name matches
+  `review.reviewer_check_pattern` (from the configured reviewer app, when one
+  is named), and either a *sticky comment* that the reviewer's own bot account
+  posts, that carries `review.sticky_marker` and that stamps the reviewed
+  commit as an HTML comment, `<!-- <review.reviewed_sha_marker>: <commit SHA> -->`
+  (and may carry a *skip notice*), or, in the `review_object` *reviewer
+  evidence mode*, the commit that the newest *review object* names, or a
+  successful or neutral check run on the head when the reviewer posts nothing
+  for a push with no new findings. This is completion evidence only: the
+  drive reads findings from unresolved review threads, and from summary or
+  review bodies only in a format it has a profile for. Any reviewer that
+  produces the evidence and posts its findings as review threads works with
+  the drive, whoever wrote it
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md),
+  [drive-pr](plugin/skills/drive-pr/README.md)).
+- **Reference reviewer** — the reviewer Jig ships to implement the
+  *reviewer-evidence contract*, so a team with no AI reviewer of its own has
+  one to drive against. It is ai-review, planned as `jig-harness/ai-review`
+  and not yet published, and it lives in its own repository, never in the
+  plugin. It is one implementation of the contract beside the reviewers
+  [M7's mappings](modules/M7-pr-lifecycle-review/mappings.md) name
+  ([ADR-0027](docs/adr/ADR-0027-jig-ships-a-reference-reviewer.md)).
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
   equals that head, and no unresolved thread or *summary-only finding* remains.
@@ -2350,8 +2393,9 @@ make, use the entry's term instead.
 - **Cost ledger** — the record of what Jig's calls to outside systems
   cost: for each hour, system, credential, named operation and caller, the
   requests sent, the cost in the system's own unit (a tracker's complexity
-  points, a forge's query points) and the time taken. It answers "what
-  spent this quota" without probing the system. Hourly totals stay 7 days
+  points, a forge's query points) and the time taken, with each known
+  repository's part of it. It answers "what spent this quota" without
+  probing the system. Hourly totals stay 7 days
   in the budget database; `jig budget` and each tick report read them, and
   a low-quota need names the operations projected to empty a quota.
   [Plugin README](plugin/README.md#the-dispatcher).
@@ -2380,6 +2424,45 @@ make, use the entry's term instead.
   outside system is then bounded when the query is written, and a gate can
   check it.
   Planned ([ROADMAP.md](ROADMAP.md) item 55).
+- **Provider account** — an account of the *dispatcher* that pays for model
+  use by what the model provider charges, with the host's own key, where a
+  subscription account pays a flat fee. It names a harness, a provider, a
+  base URL, a reference to its credential and a *spend cap*. A launch on a
+  provider account carries that credential and no other, and the account is
+  parked when the provider says its credit is spent. Planned
+  ([design/provider-accounts.md](design/provider-accounts.md), ROADMAP.md
+  item 59).
+- **Agent harness** — the program that runs an AI model as an agent: it
+  reads the prompt, calls the tools, edits files and ends with a result.
+  Claude Code and Codex are the harnesses Jig supports. Jig
+  reaches a harness through one interface, whose operations are what the
+  *dispatcher* and the skills need of it: the command that starts a
+  pass, the name a model has there, what a launch carries, what a run cost
+  and how a stop is classified
+  ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)).
+  Not the *session runtime*, which says where a session runs and not which
+  program runs in it. Planned.
+- **Spend cap** — the amount of money per day against which the
+  *dispatcher* admits a *provider account*'s launches, with an optional
+  ceiling for one run. A launch the day's remaining amount does not cover
+  is refused before it starts, and the cost the harness reports goes into
+  the *cost ledger*. It bounds what is admitted, and a pass that finishes
+  over its reservation is not stopped. Planned
+  ([design/provider-accounts.md](design/provider-accounts.md)).
+- **Harness profile** — the configuration a stage's *agent harness* runs
+  with, kept apart from the host's own configuration of that harness: its
+  instructions, system-prompt text, skills and the extensions it may load.
+  A repository may add instructions, prompt text and skills to a profile,
+  and an extension that runs code loads only from the host's allowlist.
+  Planned ([design/provider-accounts.md](design/provider-accounts.md)).
+- **Provider allow list** — the model providers a repository's code may be
+  sent to, named in the repository's own *dispatch* configuration and read
+  from its default branch. The *dispatcher* starts no pass for the
+  repository on an account of another provider.
+  Planned ([design/provider-accounts.md](design/provider-accounts.md)).
+- **BYOK (bring your own key)** — paying a model provider with a key the
+  team or the host already holds, in place of a subscription the agent
+  program's vendor sells. In Jig that is a *provider account*.
 - **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
@@ -2672,6 +2755,16 @@ make, use the entry's term instead.
   platform and runs the core there: a Bun process with SQLite (also a
   container image), or Cloudflare Workers with Durable Objects.
   Unrelated to a *tracker adapter*.
+- **Portability gate** — the check `bun run gates` runs
+  (`scripts/check-portability.ts`) that keeps the *hub*'s *portable core*
+  portable: starting from every file of the core and of its storage
+  implementation and every shared module declared portable, it follows each
+  import and fails on a `bun:` or `node:` module, a package not on its
+  allowlist, or a reference to a runtime's own global (`Bun`, `process`,
+  `Deno`), which the vendored bundles may not make either: only their
+  `Buffer` references are accepted. It names the chain of
+  imports that brought a shared module's use in. A type-only import is not
+  followed, since it never runs.
 - **World view** — what the *dispatcher* knows of the forge and the
   tracker (pull requests, checks, threads, queues, items), as opposed to
   what it knows of its own machine (its *machine view*). A tick reads it
@@ -2730,14 +2823,37 @@ make, use the entry's term instead.
   against them, with drivers for SQLite, PostgreSQL and serverless
   databases, and `drizzle-kit`, its tool that writes migrations. The *hub*
   keeps its tables through it.
+- **Partition (hub)** — the unit the *hub*'s storage keeps apart and
+  changes atomically: one per repository, one per host, and one directory
+  of what the hub knows. Every row sits in exactly one, every key starts
+  with it, and no change spans two, so an adapter may keep each partition
+  in a store of its own.
+- **In-flight read** — the row that lets one unit of the *hub*'s work at a
+  time read a target (a pull request, an issue) through from its source: a
+  unit takes it before reading, with a deadline 30 seconds away, and
+  another unit that finds it held waits for the result in storage instead
+  of reading again; once the deadline has passed, it is taken over.
+- **Job lease** — the row that keeps two runs of one of the *hub*'s
+  scheduled jobs from overlapping: a run takes it before its first step,
+  renews it as it stores its progress after each step, and gives it up
+  when the job is done. A run that finds it held does not run; one that
+  stopped leaves it to lapse, and the next run resumes from the progress
+  it stored.
 - **OpenTelemetry and OTLP** — OpenTelemetry is an open standard for a
   program's telemetry (logs, metrics and spans); OTLP, the OpenTelemetry
   Protocol, is the protocol that sends it to any collector that speaks it. The *hub*'s process adapter exports its
   signals this way.
 - **Notification channel** — one way the *dispatcher*'s notices reach a
-  person: a workspace card in Orca, a team's chat. The tick sends each
-  notice through every channel a machine enables and keeps a record per
-  channel of what was delivered ([design/chat.md](design/chat.md)).
+  person: a workspace card in Orca, an *incoming webhook*, a team's chat.
+  The tick sends each notice through every channel a machine enables and
+  keeps a record per channel of what was delivered
+  ([design/chat.md](design/chat.md)).
+- **Incoming webhook** — an address a chat tool or a push service (Slack,
+  Discord, ntfy) gives out so that a program can post a message to one
+  channel or topic with a single web request. Whoever holds the address
+  can post, so the address is a credential. The *dispatcher*'s `webhook`
+  *notification channel* posts to one; it is the opposite direction of a
+  *webhook*, which a system sends to a receiver.
 - **Chat bridge** — the one process that turns a person's click or command
   in a team's chat into one `jig send` request. It runs inside the *hub* or
   on a host that is not enrolled, connects out to the chat tool and listens
@@ -3167,6 +3283,8 @@ make, use the entry's term instead.
   every dependency. When a merge conflicts in one, Jig's conflict tooling
   regenerates it from the manifests instead of merging it by hand, and the CI
   fixer reinstalls from it ([resolve-conflicts](plugin/skills/resolve-conflicts/SKILL.md)).
+- **Frozen install** — a dependency installation that uses the versions pinned
+  in its lockfile and refuses inputs that would require rewriting that file.
 - **WCAG (Web Content Accessibility Guidelines)** — the W3C's standard for
   making web pages usable by people with disabilities. Its levels A, AA and
   AAA are increasingly strict.
@@ -3328,6 +3446,14 @@ make, use the entry's term instead.
   immutable. Jig's helpers write a moment as an ISO 8601 string in UTC to
   the millisecond
   ([ADR-0018](docs/adr/ADR-0018-time-is-temporal.md)).
+<a id="creation-window"></a>
+- **Creation window** — how long after an issue's creation a tracker's
+  history leaves out a change made to it. An assignment made inside the
+  window is never read by the dispatcher's assigner check, so the item is
+  never started; Linear's is the issue's first three minutes, and GitHub
+  Issues has none. A hand-off or a send waits until the window has passed
+  before writing an assignment. See
+  [file-issue § Hand it over](plugin/skills/file-issue/SKILL.md).
 
 ## External precondition
 

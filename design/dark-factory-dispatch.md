@@ -17,8 +17,10 @@ settle. It never merges: that stays a person's
 ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)).
 
 This is the design of [plan.md](plan.md) item 33. Every step of its
-[build order](#build-order) is built, and the documents that describe it are
-the current truth; the item stays open on the roadmap until its "Done when"
+[build order](#build-order) through step 12 is built, and the documents that
+describe it are the current truth; steps 13 to 20, which split the refresh
+into [cadences](#refresh-cadences), are a plan waiting for a
+person's review; the item stays open on the roadmap until its "Done when"
 checks run on a host running Orca, each named at its own build step. It
 builds on driving any pull request from anywhere: the
 [drive ledger](../plugin/skills/drive-pr/README.md#where-its-state-lives)
@@ -682,6 +684,13 @@ relaunched once per head in that tree, with a fixed prompt to push and
 record the work, rather than reported (`dispatch.stalled_relaunch`,
 `finish-once` by default, `never` to turn it off); a second stall at the
 same head, or a tree no open workspace on the host holds, is reported. A
+pickup whose push the pre-push hook refused only because its wait for the
+host's test lock ran out records `waits --reason test-lock` and is
+relaunched in its tree without waiting for `dispatch.stalled_after`, to
+push and go on; the relaunch waits while the host's validation and
+test-lock gauges have no room, whatever `load.enforce` says, and is counted
+along its chain of relaunches rather than per head, so the third such wait
+in a row is one need for the steward or a person. A
 claimed item with no running session whose
 launch already opened its pull request is finished work, not a stall: when
 an open pull request whose head is the branch the runtime reports in the
@@ -907,6 +916,15 @@ consecutive `23` the ledger's stop events record (15 minutes, at most 4
 hours); a tick inside the backoff reports it quiet. A person is told once 7
 such stops stand in a row, or when a re-drive leaves the same stop standing.
 
+A drive that stopped `25` (its head's check-runs listing ran into a deadline
+or its page bound) is re-driven once per head commit. A listing that timed out
+can read whole on the next attempt. When it left work or was never measured,
+its re-drive is bound to the original tree; another host leaves that tree to
+its own dispatcher, and a missing local workspace needs a person. Only an
+explicitly clean measurement permits any admitted account to run it. The stop's
+event records the pages read, and the re-drive's cause names them. A re-drive that leaves the same stop standing on that head goes to a
+person as a systematic read failure, not a third attempt.
+
 A drive that stopped `15` (a pass reached its deadline again after the
 driver spent its restarts, `drive.pass_deadline_retries`) is re-driven the
 same way, once per head commit on any admitted account: the tree keeps what
@@ -1024,6 +1042,8 @@ ordinary budget.
 | stopped `14` or `21`, this machine or another host already having re-driven that head with that exit, however that launch ended                                                                                                                                                        | needs a person                                           | notifies per stop, with the exit, the drive's handoff and, when the pull request conflicts with its base, that it does                                                                                                                                                                                                                                                                                               |
 | stopped `23` (CI still failing on the infrastructure through its re-runs and head moves), its backoff from the stop passed, no re-drive of that stop held or made, fewer than 7 such stops in a row                                                                                    | stale                                                    | re-arms on any admitted account; inside the backoff (15 minutes after the first such stop, doubling with each consecutive one, at most 4 hours) it is reported quiet and nothing is launched                                                                                                                                                                                                                         |
 | stopped `23`, that stop already re-driven however that launch ended, or 7 such stops in a row                                                                                                                                                                                          | needs a person                                           | notifies per stop, with the exit and the drive's handoff, or that the infrastructure has not recovered                                                                                                                                                                                                                                                                                                               |
+| stopped `25` (its head's check-runs listing could not be read whole), neither this machine's records nor another host's launch claims holding a re-drive of that head with that exit | stale | re-arms once per head commit; a stop that left work or was never measured re-arms only in its original tree, and only an explicitly clean measurement permits any admitted account to run it; the cause names the pages read |
+| stopped `25`, that head already re-driven with that exit, however that launch ended | needs a person | notifies per head as a systematic read failure, with the exit and the drive's handoff |
 | stopped `15` (a pass reached its deadline with its restarts spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head with that exit, budget available                                                                     | stale                                                    | re-arms on any admitted account; a stop that measured work left in its tree re-arms only in that tree, and with no open workspace holding it here, a person is told. A tree on another host is left to that host: with no dispatcher there, nothing re-drives it and no host notifies; this host reports it quiet, and `jig ask` names the re-drive it waits on, or, where no dispatcher is known, a person's re-arm |
 | stopped `1`, the pull request conflicting with its base, neither this machine's records nor another host's launch claims holding a re-drive of its head and its base branch's head, budget available                                                                                   | stale                                                    | re-arms on any admitted account, so the drive's conflict-resolve round runs                                                                                                                                                                                                                                                                                                                                          |
 | stopped `15`, or `1` on a conflicting pull request, already re-driven at that change however that launch ended, or the budget spent                                                                                                                                                    | needs a person                                           | notifies per stop, with the exit and the drive's handoff, or that the recovery budget is spent                                                                                                                                                                                                                                                                                                                       |
@@ -1289,6 +1309,7 @@ jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
 jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
 jig dispatch result <record> <token> waits --until <time> [--reason rate-limit|pending] [--arm <name>]  # a pickup or follow-up a rate limit stopped, or a follow-up whose arm is still pending
+jig dispatch result <record> <token> waits --reason test-lock [--until <time>]  # a claimed pickup whose push the host's test lock held past the pre-push hook's wait
 jig dispatch result <record> <token> failed --decision <file>  # a pass that stopped on the decision it framed for a person
 jig dispatch result <record> <token> failed --refused <updated-at> --reason <reason>  # a pickup the start rules refused
 jig dispatch result <record> <token> failed --refused <updated-at> --key <item> --reason <reason>  # one refused batch member; repeat --refused and --key per member
@@ -1434,11 +1455,12 @@ Every reader (the tick, the outcome log, the dashboard, the steward and a
 follow-up's outcome) takes a recorded answer as one of these launch
 results: `done`; `waits`, a pass that recorded a wait (a rate limit's
 reset, or a follow-up's arm still pending) and starts again once its time
-has come; `parked`, a pass that recorded `failed --decision <file>` and so
+has come, or a claimed pickup whose push the host's test lock held, which
+is relaunched in its tree once the host's validation capacity has room; `parked`, a pass that recorded `failed --decision <file>` and so
 stopped on the decision it framed for a person; and `failed`, a pass that
 recorded `failed` with neither, or ended with none. A `waits` on a pending arm and a
-`parked` do not count as a failure; a `waits` on a rate limit is logged
-as a quota wall. The `launches` table keeps only `done` and
+`parked` do not count as a failure; a `waits` on a rate limit or on the
+test lock is logged as a quota wall. The `launches` table keeps only `done` and
 `failed`: `waits` is kept as `failed` with the time in `result_until`, and
 `parked` as `failed` with the decision in `result_decision`, so a host
 that rolls back to a release that knows neither reads a failed pass, which
@@ -2395,13 +2417,13 @@ replaced by a takeover is stalled, not refused.
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | converged           | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done`                                                                                         |
 | merged              | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge                                                          |
-| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood; a pass that recorded `waits` on a rate limit    |
+| quota wall          | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood; a pass that recorded `waits` on a rate limit or the test lock    |
 | parked for a person | a park (exit `8`); a pickup or follow-up pass that stopped on a question for a person, or recorded the launch result `parked`                                                         |
 | arm pending         | a follow-up pass that recorded the launch result `waits` on an arm still pending                                                                                                      |
 | stalled             | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over`                                                         |
 | died                | a process gone without an exit; an interactive session that ended with no result                                                                                                      |
 | refused             | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
-| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`; the launch result `failed`                                                             |
+| gates failed        | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`, `21`, `23`, `25`; the launch result `failed`                                                             |
 | double claim        | used by event rows only                                                                                                                                                               |
 | unknown             | anything not placed above, with its last state                                                                                                                                        |
 
@@ -2709,7 +2731,8 @@ run so an update reaches the timer without a new install. It runs on the
 host that runs the sessions (with Orca, the Orca server's host). An event
 from the tracker or the forge could only start a tick early; the timer
 stays the reconcile, so a missed event would cost one interval, and no
-route into the host is opened for events (see Left out).
+route into the host is opened for events (see Left out). The tick's timer is
+the sweep, one of the [refresh cadences](#refresh-cadences).
 
 Things on the host wake one repository's tick early, both by running
 `jig dispatch --apply --repo <path>`, the invocation the timer makes, so
@@ -2760,6 +2783,140 @@ file's `change_probe: false` turns it off. A change the line makes itself
 (a drive's comment, a label the tick writes) wakes a tick too, at most one
 a minute for the repository; that tick finds the records as the sweep
 would.
+
+### Refresh cadences
+
+The dispatcher reads what is local and what is outside, and they cost
+differently. **The local machine** (the host's load and memory, whether the processes of a
+recorded run are alive, whether a session ended) costs nothing outside the
+host: no credential's allowance is spent by reading it. **Outside systems**
+(the forge, the tracker) cost a share of a credential's budget that every
+process on the machine shares
+([outbound-calls.md](outbound-calls.md), [ADR-0021](../docs/adr/ADR-0021-outbound-calls-are-governed.md)).
+One cadence for both forces a choice between a dashboard that shows a run
+that ended only at the next sweep and a sweep fast enough to spend budget on
+repositories where nothing changed. So the dispatcher refreshes on separate
+cadences, each reading only what it may and each starting only what it may:
+
+| | Reads | May call | Triggers | Default interval | How a host changes it |
+| --- | --- | --- | --- | --- | --- |
+| **The local loop** | The host's gauges, the process of each recorded run, the session runtime's list of sessions | Nothing outside the host | Writes the local view the dashboard's line shows; wakes a repository's tick | 30 seconds | `local_loop.interval` in the machine file, or `jig dispatch install --local-interval`; `local_loop: false` removes it |
+| **A change probe, one per service** | One service's own question: what changed since the last answer | That service, through its transport and the budget record, and nothing else | Wakes the tick of each repository whose served items changed | 1 minute for GitHub and Linear, 5 for Jira | `change_probe` in the machine file, a service to a duration or `false`; below the floor the budget allows, the interval is raised to it and says so |
+| **The timer sweep** | Everything, as a tick reads it today | Everything a tick may call | Everything a tick starts | 5 minutes | `interval` in the machine file, or `jig dispatch install --interval` |
+
+The sweep is the reconcile of the other two: it finds what a probe or the
+local loop missed, and a missed change costs at most one sweep interval. The
+two faster cadences only start a tick earlier. Neither adds a way to act:
+what a tick may start is still decided by the tick alone.
+
+**The local loop.** Every interval its own timer runs `jig dispatch local
+--apply`, which reads this host and writes one record, the **local view**
+(in the dispatcher's state database): each gauge's fill and which gauge
+binds, each recorded run's process alive or gone, and each session's
+state, every value stamped with the time it was read. The dashboard's line
+shows the local view beside the last tick's record, each with its age, so a
+run that ended or memory that freed up shows within one local interval, not
+one sweep. The loop makes no outbound call and spends no headroom, and it
+never launches: a launch is admitted only under the act lock, where the
+tick reads the gauges once so that two ticks never spend the same headroom
+(see the load factor above). The local view is for showing and waking and
+is never an input to admission: a tick under the act lock reads the gauges
+again. Two things the loop writes to nothing a tick owns: not a launch
+record, not a receipt, not a ledger.
+
+The loop wakes a repository's tick, under the wake rule above (one tick at
+a time, no sooner than a minute after the last, a request inside that
+minute taken by one trailing tick), when it sees what a tick would act on:
+
+- a recorded run whose processes are gone and whose end no record shows;
+- a session that ended while its launch record stays open;
+- a gauge that fell back under its line while a launch for that repository
+  waits on it (a launch held for load). A tick now judges a held pickup's
+  load and slots before it reads the tracker, so the wake costs a tick's
+  reads only when the launch can start.
+
+The Orca plugin's wake-ups ([Waking the dispatcher](orca-integration.md))
+are the same events told by the runtime; the loop is their reconcile on the
+host, for a host without the plugin and for an event the plugin missed. A
+wake requested by both is one tick.
+
+**The change probes.** The forge's probe is the one described under The installed timer
+(`plugin/dispatch/lib/change-probe.ts`): one GraphQL
+search for pull requests and a listing of updated issues, waking the
+repositories where something changed. Linear and Jira get a probe of the
+same shape:
+
+- **Linear.** One request per tracker scope (adapter, instance, credential
+  and team), the shape of the tracker's `changedSince` read: which of the
+  issues assigned to the scope's served people, of the issues the kept
+  reading names, and of their children were updated after a time, plus the
+  comments updated after it, as a second selection in the same request. A
+  comment, an assignment, a state change or a label on an item the
+  dispatcher serves is a positive answer. The request asks for one record,
+  since the probe only needs to know whether anything changed, so the
+  answer cannot name every changed item: a positive answer wakes every
+  repository of the scope, and the tick that follows finds which items
+  changed. A probe's time is never a changed-since mark: the tick keeps its
+  own mark, which advances only from a complete change read or a full
+  refresh, as the tracker's change answer already requires, so changes the
+  one record did not show are not skipped.
+- **Jira.** One search per scope (instance, credential and project) for the
+  served people's and the named items' issues updated since the last probe,
+  maximum one result. Comments move an issue's update time in Jira, so the
+  one question covers comments, assignments and states. As for Linear, a
+  positive answer wakes every repository of the scope and never moves a
+  tick's changed-since mark.
+
+Both probes keep their last answer in the probe's state directory beside the
+forge's, wake under the same rule, and say nothing and wake nothing when the
+service does not answer: a failed probe is logged, the sweep still runs.
+Each service's probe is its own instance of the probe job, with its own
+timer at that service's interval, and the instance is the waiter of the ticks
+it woke. An interval is whole minutes, and on a host whose scheduler is cron
+it is also an interval a crontab line can express (one that divides an hour,
+or a whole number of hours that divides a day): the floor rounds up to the
+next such interval, so 432 seconds becomes 10 minutes there, and `jig
+dispatch install` prints the interval it installed beside the configured
+one. A tick that runs for minutes therefore delays only the next probe of
+the service that woke it, never another service's, and an interval is the
+least time between two of a service's probes: a probe whose woken ticks
+outlast the interval starts when they end, since the scheduler never overlaps
+two runs of one job.
+
+What each probe costs per run, how it is admitted against the budget and
+the floor under its interval are in
+[outbound-calls.md § Probes in the budget](outbound-calls.md#probes-in-the-budget).
+
+**The timer sweep.** The sweep's work is unchanged. What changes is what its
+interval is for. While nothing else started ticks, the interval had to be
+short enough to react; with the probes and the local loop reacting, it only
+bounds how long a change they missed stays unseen. It grows only on
+evidence: each tick's receipt names what started it (`sweep`, a probe's
+service, `local`, a wake's requester), so a tick that ends no launch is
+counted too, and each outcome-log row, one for each ended launch, names
+what started the launch, which is not the tick that later observed its end;
+a sweep counts the actions it started that no earlier wake or probe had already
+brought. A host lengthens its interval, to 15 minutes at first, after a
+week in which that count is low enough that a quarter-hour of delay would
+have mattered to nobody, and shortens it again when the count rises. The
+dispatcher never changes the interval on its own: the report prints the
+count and the interval it supports, and a person changes the machine file.
+
+**A host enrolled in a hub.** The hub ([ADR-0016](../docs/adr/ADR-0016-an-optional-hub-for-hosts-that-keep-authority.md),
+[control-plane.md](control-plane.md#the-change-feed)) takes the forge's and
+the tracker's webhooks and serves a change feed. The rule that keeps the two
+from duplicating each other is by what each reads:
+
+| Cadence | Host with no hub | Host enrolled, the hub answering | Host enrolled, the hub not answering |
+| --- | --- | --- | --- |
+| Local loop | Runs | Runs: the hub cannot see this host's processes | Runs |
+| Per-service probes | Run, each on its interval | **Replaced**: the probe job waits on the hub's change feed and wakes the repositories it names; it asks no service. Where the hub itself reads a tracker it cannot verify deliveries from (Jira, for now), that question is the hub's | Run again, each within this host's share of any budget the hosts share, and pausing while that share is spent, the ticks reading at their interval ([control-plane.md](control-plane.md#the-world-view-events-first-reconciled)) |
+| Timer sweep | Runs | Runs on the hub's world view: ordinary reads of it cost no forge or tracker budget, and its facts are as fresh as the hub's freshness classes; a fact that gates a write is still confirmed on the forge or tracker at use, and that confirmation is budgeted | Runs, reading for itself |
+
+A probe never asks a service for a scope the hub's feed covers while the
+hub answers, so nothing is read twice; and a hub that stops costs a host
+one probe interval, as it costs a drive pass one poll. No route into the
+host is opened by any of this (see Left out).
 
 ## Build order
 
@@ -2915,6 +3072,86 @@ One pull request each, in this order; each is usable on its own.
     nothing. Waits on steps 7 and 10. Usable alone: a night of pull
     requests that all touch the migrations no longer re-drives each of them
     after every merge.
+The steps below are the plan for the refresh cadences. They are
+listed in the order they are built; none is filed for pickup until a person
+has reviewed the plan.
+
+13. **Name what started a tick.** Each tick's receipt carries its cause
+    (`sweep`, a probe's service, `local`, or a wake's requester), and each
+    outcome-log row the cause of the tick that started its launch, kept
+    apart from the tick that observed the launch end; a sweep counts the actions it started that no earlier
+    wake or probe had brought, reported with the interval the count
+    supports. Tests: a wake's tick, a probe's tick and a timer's tick each
+    record their cause; a sweep that starts a pickup no wake saw counts one,
+    and one that starts only what a wake had already brought counts none.
+    Usable alone: a host sees what its sweeps still find that nothing woke,
+    which is what step 20 reads.
+14. **The local loop.** `jig dispatch local --apply` and its timer,
+    `local_loop` in the machine file and `--local-interval` on install; the
+    scheduler takes an interval in seconds (cron keeps a minute); the local
+    view and its record; the dashboard's line showing it with its age; the
+    wakes. Tests: a run whose processes are killed shows as gone
+    within one local interval and wakes its repository once; a gauge back
+    under its line wakes only a repository with a launch waiting on it; the
+    loop makes no outbound call and writes no launch record, receipt or
+    ledger row; a tick under the act lock reads the gauges itself whatever
+    the view says. Usable alone: the dashboard shows an ended run or freed
+    memory within seconds, for no budget.
+15. **Probes in the budget.** A `probe` caller in the ledger on every
+    probe request; the probe share (a setting beside `outbound_share`) and
+    the floor it puts under each service's interval; `change_probe` as a
+    map of service to duration beside its boolean form; `jig dispatch
+    install` printing each floor. Tests: a request over the share is
+    refused and the probe skips that run, saying why; an interval under the
+    floor is raised to it and says so; on the cron backend a floor that no
+    crontab line expresses (30 Linear scopes on one allowance: 432 seconds)
+    installs at the next interval that one does, and says so; `change_probe: true` and `false`
+    read as before. Usable alone: the forge's probe is bounded by its
+    share, and a host can set its interval without a timer override.
+16. **A Linear change probe.** The scope-level probe described above, its
+    state, and its wake of every repository of the scope, the tick keeping
+    its own changed-since mark. Checks `X-Complexity` against the derived cost on
+    the first live answer. Tests: a comment, an assignment and a state
+    change on a served item each wake the scope's repositories; several
+    changes between two probes, in different repositories, are all found by
+    the tick that follows and none is skipped by the mark; an unrelated
+    team's change wakes nothing; a rate-limited answer wakes
+    nothing and holds the probe until the reset. Waits on step 15. Usable
+    alone: a Linear item's comment reaches the tick in a minute, not a
+    sweep.
+17. **A Jira change probe.** The same for Jira: the JQL search, and the
+    transport's profile reading Jira's limit headers into a window of the
+    budget record, which is what lets the floor under Jira's interval be
+    computed rather than fixed. Tests: a comment, an assignment and a
+    transition each wake; a 429 holds the probe until its `Retry-After`;
+    with no window read, the interval's floor is 5 minutes. Waits on step 15.
+    Usable alone: as step 16, for Jira.
+18. **The forge's issue changes in the search.** The updated-issues
+    listing, one request per repository, replaced by the same GraphQL
+    search the pull-request probe makes (issues and pull requests, one
+    point for every repository), if a measured run on a host shows the
+    search reports an issue's change as the listing does. Tests: an
+    issue's comment, label and close each wake; the probe's cost does not
+    grow with a repository added. Waits on step 15 and on #1659's live
+    check. Usable alone: the forge's probe returns toward one minute at a
+    fixed cost.
+19. **The hub's feed replaces the probes.** For an enrolled host, the probe
+    job waits on the change feed and wakes what it names, asks no service
+    while the hub answers, and runs the per-service probes again when it
+    does not, each within the host's share of any budget the hosts share
+    and pausing while that share is spent, the ticks reading at their
+    interval. Tests: with a fake hub answering, no forge or tracker request
+    is sent by the probe job; with the hub stopped, the next run probes
+    within the share and pauses when it is spent;
+    the local loop is the same either way. Waits on step 15 and on the
+    hub's change feed (epic #865). Usable alone: an enrolled host's
+    probes spend no budget.
+20. **Grow the sweep.** The report prints the interval step 13's count
+    supports; the first host to lengthen its interval does so by hand, and
+    the plan's live check is a week of its sweeps at the longer interval
+    with the count still low. No code changes the interval. Waits on steps
+    13, 16 and 17. Usable alone: a host with its probes covering the common
+    changes reads its outside systems less often.
 
 ## Left out
 
@@ -2926,12 +3163,12 @@ One pull request each, in this order; each is usable on its own.
   ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
   A Herdr implementation of the session runtime interface comes when Herdr
   can supply one.
-- **Webhooks.** The tick polls, and the change probe polls the forge once
-  a minute for what changed. An outbound wake-up channel (a relay that
-  takes the tracker's and forge's events and that the host holds a
-  connection to) can start ticks early later; the sources stay behind
-  interfaces such a channel can replace, and no inbound route to the host
-  is ever opened.
+- **Webhooks to the host.** The tick polls, and each service's change
+  probe asks for what changed (Refresh cadences). An enrolled host's
+  probes are replaced by the hub's change feed, the outbound wake-up channel
+  the host holds a connection to ([control-plane.md](control-plane.md#the-change-feed));
+  the sources stay behind interfaces such a channel can replace, and no
+  inbound route to the host is ever opened.
 - **Pre-emptive quota pacing.** Admission reacts to walls already met;
   spreading load before a wall is reached needs usage telemetry Jig does
   not read yet.
