@@ -722,9 +722,19 @@ expired duplicate. Acceptance replays settlement observations on both sides of
 a coverage change, exercises a ledger-at-capacity recovery, receives a retryable
 `history-pending` result that later reconciles, and exhausts a recovery window
 without evidence while keeping the occurrence unresolved and recording the
-host-facing outcome. It races an answer after
-the final comparison with expiry publication, and covers a crash after a patch
-before reconciliation, to prove those rules. After recovery, another host sees
+host-facing outcome. It pauses a legacy writer after its final read, attempts
+the compatibility transition, then releases that writer and proves verified
+drainage or no effect before checking the complete recovery record and sole
+terminal outcome through a fresh read. Answer admission binds a comment to the
+exact park occurrence the person saw; an ambiguous legacy `answer <key>:`
+line never settles a later occurrence with the same key. It forces an answer
+admitted after the snapshot but before the fence to produce one answered
+receipt, then forces expiry to win and leaves the later answer visible only as
+correspondence beside one expired receipt. It also keeps an assigned host
+silent through the deadline and proves that the hub records the timeout,
+returns `history-exhausted` on later reads, and leaves the occurrence
+unresolved. It covers a crash after a patch before reconciliation, to prove
+those rules. After recovery, another host sees
 the terminal status appropriate to each case — one expired occurrence when
 unanswered or one answered receipt when an accepted answer raced — and no active
 copy. Hiding a thread writes nothing to

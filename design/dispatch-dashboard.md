@@ -767,7 +767,11 @@ envelope: the value, or a coded failure with a reason.
   changes is discarded. The page binds each `hello` to the request and
   connection generation that issued it. The page serializes handshakes per
   binding: starting one supersedes every earlier outstanding handshake for that
-  binding. A response is usable only by that live handshake and generation;
+  binding. A response is usable only by that live handshake and generation. A
+  combined `hello` response that updates more than one binding is usable only
+  when the handshake for every binding it updates is still live; a separately
+  renewed hub scope is bound again to the current viewer and laptop
+  authorization before it can be installed;
   accepting a replacement authority instance retires every prior
   instance for that binding before it installs the new grant. Either instance
   change clears the affected cache and requires a fresh `hello` handshake
@@ -895,10 +899,15 @@ own machine only.
   exact original accepted record for replay. That host recovers that record and
   republishes it when it remains available; otherwise its current authority
   takes a fresh authoritative observation. A successor never attests to its
-  predecessor's observation under a new epoch. The hub records the outcome on
+  predecessor's observation under a new epoch. The hub admits every completion,
+  including a no-evidence completion, only in the transaction that still names
+  the current obligation assignment; a delayed former host therefore cannot
+  settle its successor's obligation. The hub records the outcome on
   that host-facing path before it reports `history-exhausted`. If no admissible
   completion arrives by the deadline, the hub itself records the terminal
-  timeout outcome rather than continuing to return `history-pending`; a dashboard only
+  timeout outcome rather than continuing to return `history-pending`. The
+  deadline belongs durably to the occurrence, so reassignment, repeated lookups,
+  and hub restart do not start a new recovery window; a dashboard only
   reads that result through the viewer feed. Other bounded reads are `log.rows` (one page
   through a host's reported outcome rows), `receipt.get(run)` and
   `thread.get(address)`, the thread derived with the same fold as
