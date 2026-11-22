@@ -32,7 +32,7 @@ import { OptionText } from "./option-text.tsx";
 import { GroupNeedItem } from "./question-group-card.tsx";
 import { NoSend, SendSettings, SendSettingsToggle } from "./send.tsx";
 import { useKeptToken } from "./forge-token.ts";
-import { usePicking } from "./use-picking.ts";
+import { disarmOnLeave, usePicking } from "./use-picking.ts";
 import type { Clock, SlotView } from "./view.ts";
 
 /** A step's text with its `code` spans set as code; nothing else in it is read as Markdown. */
@@ -280,17 +280,7 @@ function NeedItem({
       cardRef={card}
       attrs={{ ...attrs, ...facets }}
       label={`${need.foldLabel} for ${need.target}`}
-      onBlur={(event) => {
-        // Copy's first step lasts while focus stays on the card, or in the palette that copies it.
-        const to = event.relatedTarget;
-        if (
-          to instanceof Element &&
-          (event.currentTarget.contains(to) ||
-            to.closest(".palette, .clip") !== null)
-        )
-          return;
-        picking.disarm();
-      }}
+      onBlur={disarmOnLeave(picking)}
       face={
         <>
           <div className="rowTop">

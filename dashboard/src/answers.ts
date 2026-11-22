@@ -66,7 +66,7 @@ function parsed(raw: string | null): unknown {
 }
 
 /** The answers kept for one decision, by its repository, target and key. */
-export function answerId(repo: string, target: string, key: string): string {
+function answerId(repo: string, target: string, key: string): string {
   return `${PREFIX}${repo} ${target} ${key}`;
 }
 

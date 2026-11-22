@@ -9,7 +9,7 @@
  * target's own evidence: what was already done, and the reason.
  */
 import { Send } from "lucide-react";
-import { type FocusEvent, useRef } from "react";
+import { useRef } from "react";
 import { needCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { DecisionRows } from "./decision-rows.tsx";
@@ -32,7 +32,7 @@ import {
 } from "./question-group-send.ts";
 import type { GroupMember, QuestionGroupView } from "./question-group-view.ts";
 import { useSentHere } from "./sent.ts";
-import { type Picking, usePicking } from "./use-picking.ts";
+import { disarmOnLeave, type Picking, usePicking } from "./use-picking.ts";
 
 /** What the line says the tick did with a target's answer. */
 function actedWords(member: GroupMember): string | null {
@@ -49,7 +49,27 @@ function actedWords(member: GroupMember): string | null {
   return `${a.author} chose ${a.option}: ${did}${a.detail === null ? "." : ` — ${a.detail}`}`;
 }
 
-/** What became of a target's answer: the tick's outcome, else this page's send, else an earlier send from this browser. */
+/** What a target's row says of its answer: the tick's outcome, else this page's send, else an earlier send from this browser. */
+function targetWords(
+  member: GroupMember,
+  outcome: TargetOutcome | undefined,
+  sent: boolean,
+): { text: string; fault: boolean } | null {
+  const acted = actedWords(member);
+  if (acted !== null) return { text: acted, fault: false };
+  if (outcome?.kind === "refused")
+    return {
+      text: `Not sent: ${outcome.reason}${outcome.uncertain ? " It may have posted: open it and check before listing it again." : ""}`,
+      fault: true,
+    };
+  if (outcome?.kind === "not attempted")
+    return { text: `Not sent: ${outcome.reason}.`, fault: false };
+  return outcome?.kind === "sent" || sent
+    ? { text: "Sent here; the next tick reads it.", fault: false }
+    : null;
+}
+
+/** What became of a target's answer, and whether it is left out. */
 function TargetState({
   member,
   outcome,
@@ -59,24 +79,15 @@ function TargetState({
   outcome: TargetOutcome | undefined;
   listed: boolean;
 }) {
-  const sent = useSentHere(member.repo, member.target);
-  const acted = actedWords(member);
-  const said =
-    acted ??
-    (outcome?.kind === "refused"
-      ? `Not sent: ${outcome.reason}${outcome.uncertain ? " It may have posted: open it and check before listing it again." : ""}`
-      : outcome?.kind === "not attempted"
-        ? `Not sent: ${outcome.reason}.`
-        : outcome?.kind === "sent" || sent !== null
-          ? "Sent here; the next tick reads it."
-          : null);
+  const sent = useSentHere(member.repo, member.target) !== null;
+  const said = targetWords(member, outcome, sent);
   return (
     <>
       {said === null ? null : (
         <span
-          className={`sm ${outcome?.kind === "refused" && acted === null ? "decFault" : "mut"} groupTargetState`}
+          className={`sm ${said.fault ? "decFault" : "mut"} groupTargetState`}
         >
-          {said}
+          {said.text}
         </span>
       )}
       {listed ? null : (
@@ -379,16 +390,7 @@ export function GroupNeedItem({
       cardRef={card}
       attrs={{ ...attrs, ...facets }}
       label={`Each target's evidence for ${need.target}`}
-      onBlur={(event: FocusEvent<HTMLElement>) => {
-        const to = event.relatedTarget;
-        if (
-          to instanceof Element &&
-          (event.currentTarget.contains(to) ||
-            to.closest(".palette, .clip") !== null)
-        )
-          return;
-        picking.disarm();
-      }}
+      onBlur={disarmOnLeave(picking)}
       face={
         <>
           <div className="rowTop">

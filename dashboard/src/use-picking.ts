@@ -6,7 +6,13 @@
  * a guarded pick is among the answers, and is held back while a row's answer
  * cannot be sent.
  */
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type FocusEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { cardAnswerIds, currentAnswers, useAnswers } from "./answers.ts";
 import { confirmationSignature, needsConfirmation } from "./confirmation.ts";
 import { tokenGeneration, useKeptToken } from "./forge-token.ts";
@@ -73,6 +79,22 @@ interface Armed {
 }
 
 const NONE_LEFT: ReadonlySet<string> = new Set();
+
+/** A card's blur handler: Copy's or Send's first step lasts while focus stays on the card, or in the palette that copies it. */
+export function disarmOnLeave(
+  picking: Pick<Picking, "disarm">,
+): (event: FocusEvent<HTMLElement>) => void {
+  return (event) => {
+    const to = event.relatedTarget;
+    if (
+      to instanceof Element &&
+      (event.currentTarget.contains(to) ||
+        to.closest(".palette, .clip") !== null)
+    )
+      return;
+    picking.disarm();
+  };
+}
 
 /**
  * The card's picking. On a question group's card, `left` names the targets
