@@ -29,12 +29,15 @@
  *   log (`log.ts`) in the same transaction as the first suppression record
  *   written for it, timed at that record and keyed by the same facts; a
  *   cause about a stage this machine launched has its ended row instead.
- * - **Backed off while it keeps failing.** A cause whose delivery was lost,
- *   or that found no room in its destination's comment, is counted in the failure ledger (`failures.ts`) under its channel's key
+ * - **Backed off while it keeps failing.** A cause whose delivery was lost
+ *   is counted in the failure ledger (`failures.ts`) under its channel's key
  *   (`notice <key>` on `orca-card`, `notice <channel> <key>` on another):
  *   until its next try on that channel it is reported waiting there, and
  *   past `failures.notify_after` lost deliveries in a row it is notified as
- *   failing, through whatever channel still delivers.
+ *   failing, through whatever channel still delivers. A cause that found no
+ *   room in its destination's comment is not a failure: it waits, counted in
+ *   the comment's summary entry (`runtime/notice-overflow.ts`), and goes in
+ *   full once there is room.
  *
  * - **The destination's read state, every tick.** Before it delivers, the
  *   stage records one `notices_read` event with the notices workspace's
@@ -82,8 +85,8 @@ import {
 import { stateDb } from "../state.ts";
 import { unobservedTarget } from "../notices.ts";
 import { logNoticesRead } from "../notices-read.ts";
+import { heldForRoom } from "../runtime/notice-overflow.ts";
 import {
-  NO_ROOM,
   openCard,
   type OrcaCard,
   orcaCard,
@@ -335,9 +338,10 @@ function deliveryOf(
 
 /**
  * Count each delivery the channel attempted in the failure ledger: a lost
- * one or one the destination had no room for fails, a sent or
- * already-carried one succeeds; one that waited for another reason was not
- * attempted.
+ * one fails, a sent or already-carried one succeeds. One the destination
+ * had no room for is not a failure: the channel reached its destination,
+ * so it clears a row an earlier failure left and is told in full once there
+ * is room. One that waited for another reason was not attempted.
  */
 function countDeliveries(
   channel: string,
@@ -345,9 +349,12 @@ function countDeliveries(
   outcomes: ReadonlyArray<{ cause: Cause; answer: Delivery }>,
 ): void {
   for (const { cause: c, answer: o } of outcomes) {
-    if (o.outcome === "lost" || (o.outcome === "waits" && o.detail === NO_ROOM))
-      book.ran(deliveryOf(channel, c), o.detail);
-    else if (o.outcome === "sent" || o.outcome === "already")
+    if (o.outcome === "lost") book.ran(deliveryOf(channel, c), o.detail);
+    else if (
+      o.outcome === "sent" ||
+      o.outcome === "already" ||
+      (o.outcome === "waits" && heldForRoom(o.detail))
+    )
       book.ran(deliveryOf(channel, c), null);
   }
 }

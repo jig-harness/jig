@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.301.2] - 2026-11-22
+
+### Fixed
+
+- A repository with more standing notices than its notices workspace's comment holds no longer fails them one by one. The dispatcher keeps room in every comment it writes for a summary entry that says how many notices wait, of which kinds and which ones, and that its counts are complete although its list of them may be cut to fit. Where the comment leaves no room for the summary, the waiting notices are not counted in it until room opens. A notice that waits for room is not counted as a failed delivery, so it neither backs off nor raises an "action failing" notice of its own, and a failure the old rule recorded for it is cleared. Each goes in full once a person reads the workspace or its other entries settle.
+
 ## [0.301.1] - 2026-11-22
 
 ### Fixed
@@ -10714,7 +10720,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.2...HEAD
+[0.301.2]: https://github.com/jig-harness/jig/compare/v0.301.1...v0.301.2
 [0.301.1]: https://github.com/jig-harness/jig/compare/v0.301.0...v0.301.1
 [0.301.0]: https://github.com/jig-harness/jig/compare/v0.300.4...v0.301.0
 [0.300.4]: https://github.com/jig-harness/jig/compare/v0.300.3...v0.300.4
