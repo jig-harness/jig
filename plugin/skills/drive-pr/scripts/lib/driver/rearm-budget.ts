@@ -60,12 +60,44 @@ async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
   // gate reads them; an unreadable head keeps the stored figures.
   const head = rearm ? await currentHead(pr) : null;
   const rec = isRecord(state) ? state : {};
+  const spentHeads = Number.parseInt(roundsRaw, 10);
+  // A head already in the review history is not counted again, whether or
+  // not it is the last counted one.
+  let headCounted = head === null || rec.lastCountedHead === head;
+  if (!headCounted && head !== null) {
+    const next = await run(
+      tsArgv(driveState, ["prospective-round", pr, "--head", head]),
+      opts,
+    );
+    headCounted = next.code === 0 && next.stdout.trim() === String(spentHeads);
+  }
   return {
-    rounds: Number.parseInt(roundsRaw, 10),
+    rounds: spentHeads,
     attempts: head === null || rec.attemptsHead === head ? stored : 0,
     granted,
-    headCounted: head === null || rec.lastCountedHead === head,
+    headCounted,
+    headKnown: head !== null || !rearm,
   };
+}
+
+/** Publishes the stored grant to the drive ledger, so a takeover keeps it; a refusal stops the drive. */
+async function publishGrant(pr: string): Promise<void> {
+  const published = await run(tsArgv(driveState, ["handoff", pr]), {
+    stdout: "ignore",
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+    // A drive run without the ledger has nothing to publish to, so a
+    // refused write is not a failure there.
+    env:
+      (process.env.DRIVE_PR_LEDGER ?? "") === "off"
+        ? process.env
+        : { ...process.env, [HANDOFF_TELLS_REFUSED]: "1" },
+  });
+  if (published.code !== 0)
+    fail(
+      1,
+      `drive.ts: could not publish the re-arm's round grant for PR #${pr} to the drive ledger (drive-state.ts handoff exited ${published.code}, a refused write included); re-arm again`,
+    );
 }
 
 /** The limits a drive enforces on its two counters. */
@@ -95,8 +127,17 @@ export async function roundBudget(
   });
   if (!rearm) return limits(spent.granted);
   const grant = rearmGrant(spent, base);
-  if (grant.granted === spent.granted && !grant.resetAttempts)
+  if (grant.granted === spent.granted && !grant.resetAttempts) {
+    // A grant applied by an earlier launch whose publication failed is
+    // published again before this drive relies on it.
+    if (spent.granted > 0 && !dryRun) await publishGrant(pr);
     return limits(spent.granted);
+  }
+  if (spent.headKnown === false)
+    return fail(
+      1,
+      `drive.ts: cannot read the head of PR #${pr}, so the re-arm's round grant cannot be fixed; re-arm again`,
+    );
   const was = base + spent.granted;
   const budget = base + grant.granted;
   if (dryRun) {
@@ -120,24 +161,7 @@ export async function roundBudget(
       1,
       `drive.ts: could not record the re-arm's round grant for PR #${pr} (drive-state.ts exited ${res.code}); the drive would stop on its spent budget`,
     );
-  // The grant reaches the ledger before the drive relies on it: a takeover
-  // seeds from the ledger, and a drive that died first would lose it.
-  const published = await run(tsArgv(driveState, ["handoff", pr]), {
-    stdout: "ignore",
-    stderr: "inherit",
-    timeoutSec: helperTimeoutSeconds(),
-    // A drive run without the ledger has nothing to publish to, so a
-    // refused write is not a failure there.
-    env:
-      (process.env.DRIVE_PR_LEDGER ?? "") === "off"
-        ? process.env
-        : { ...process.env, [HANDOFF_TELLS_REFUSED]: "1" },
-  });
-  if (published.code !== 0)
-    return fail(
-      1,
-      `drive.ts: could not publish the re-arm's round grant for PR #${pr} to the drive ledger (drive-state.ts handoff exited ${published.code}, a refused write included); re-arm again`,
-    );
+  await publishGrant(pr);
   console.error(
     `re-arm: PR #${pr} had spent its round budget of ${was}; the budget is now ${budget} heads (${base} more, counting the head it resumes on) and ${base} passes on a head, and the drive stops on MAX_ROUNDS again when it spends them`,
   );

@@ -56,6 +56,8 @@ export interface SpentRounds {
   granted: number;
   /** The head being driven is the one the last counted round belongs to, so resuming does not count a further one. */
   headCounted: boolean;
+  /** The head read; an unread one cannot fix the grant. */
+  headKnown?: boolean;
 }
 
 /** What a re-arm leaves: the grant on the distinct heads, and whether the head's pass count restarts. */
