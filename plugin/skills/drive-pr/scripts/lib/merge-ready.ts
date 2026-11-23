@@ -365,6 +365,8 @@ interface Read {
   requiredFailing: boolean;
   /** The names of those required failures. */
   requiredFailingNames: string[];
+  /** The names of the failing checks that are not required, partitioned by record so a name two apps share stays on each side it belongs to. */
+  optionalFailingNames: string[];
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
   own: boolean;
@@ -585,7 +587,13 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
     ];
   },
-  ({ failing, state, requiredFailing, requiredFailingNames }) =>
+  ({
+    failing,
+    state,
+    requiredFailing,
+    requiredFailingNames,
+    optionalFailingNames,
+  }) =>
     failing.length > 0 &&
     (state === null ||
       state === "BLOCKED" ||
@@ -596,7 +604,7 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
           "needs-you",
           person("re-run-check"),
           requiredFailing
-            ? `a required check failed after the drive converged (${requiredFailingNames.join(", ")})${failing.length > requiredFailingNames.length ? `; other failing checks: ${failing.filter((n) => !requiredFailingNames.includes(n)).join(", ")}` : ""}: re-run it, or re-arm the drive`
+            ? `a required check failed after the drive converged (${requiredFailingNames.join(", ")})${optionalFailingNames.length > 0 ? `; other failing checks: ${optionalFailingNames.join(", ")}` : ""}: re-run it, or re-arm the drive`
             : `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
         ]
       : null,
@@ -698,10 +706,14 @@ function trustOf(facts: MergeFacts, rules: ReadyRules): TrustVerdict | null {
 /** What every row and condition reads, worked out once. */
 function readOf(facts: MergeFacts, rules: ReadyRules): Read {
   facts = { ...facts, checks: latestChecks(facts, rules) };
-  const requiredFailingNames = facts.checks
-    .filter(
-      (c) => c.required && c.state === "failure" && !isReviewerCheck(c, rules),
-    )
+  const failingRecords = facts.checks.filter(
+    (c) => c.state === "failure" && !isReviewerCheck(c, rules),
+  );
+  const requiredFailingNames = failingRecords
+    .filter((c) => c.required)
+    .map((c) => c.name);
+  const optionalFailingNames = failingRecords
+    .filter((c) => !c.required)
     .map((c) => c.name);
   const trusted = trustOf(facts, rules);
   return {
@@ -712,6 +724,7 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
     failing: failingChecks(facts, rules),
     requiredFailing: requiredFailingNames.length > 0,
     requiredFailingNames,
+    optionalFailingNames,
     state: facts.mergeQueue ? null : facts.mergeState,
     own: OWN.has(facts.authorAssociation) || trusted?.met === true,
     trusted,

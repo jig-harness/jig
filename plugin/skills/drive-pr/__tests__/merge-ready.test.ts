@@ -667,10 +667,22 @@ describe("required checks and reviewer attempts", () => {
     ];
     const r = readiness(f, RULES);
     expect(r.place).toBe("needs-you");
-    expect(r.says).toContain(
-      "required check failed after the drive converged (test)",
+    expect(r.says).toBe(
+      "a required check failed after the drive converged (test); other failing checks: lint: re-run it, or re-arm the drive",
     );
-    expect(r.says).toContain("other failing checks: lint");
+  });
+  it("keeps a failing optional check that shares its name with a required one", () => {
+    const f = facts({ mergeState: "CLEAN" });
+    const [review, ci] = f.checks as [HeadCheck, HeadCheck];
+    f.checks = [
+      review,
+      { ...ci, id: 11, app: "ci-a", required: true, state: "failure" },
+      { ...ci, id: 12, app: "ci-b", required: false, state: "failure" },
+    ];
+    const r = readiness(f, RULES);
+    expect(r.says).toBe(
+      `a required check failed after the drive converged (${ci.name}); other failing checks: ${ci.name}: re-run it, or re-arm the drive`,
+    );
   });
   it("does not let an optional pending check hide an approval request", () => {
     const f = facts({
