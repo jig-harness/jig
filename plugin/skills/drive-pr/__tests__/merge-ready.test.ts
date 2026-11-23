@@ -673,8 +673,43 @@ describe("the forge's facts", () => {
       { isRequired: "true" },
       { status: undefined },
       { databaseId: undefined },
+      { databaseId: "1" },
+      { status: "ODD" },
+      { conclusion: null },
+      { conclusion: "ODD" },
+      { status: "IN_PROGRESS", conclusion: "SUCCESS" },
     ])
       expect(partial({ ...good, ...bad })).toContain("could not be classified");
+    // A run whose identity GitHub left null is still whole; the predicate asks
+    // for ordering evidence only where several attempts compete.
+    expect(partial({ ...good, databaseId: null })).toBeNull();
+    // The same attempt listed twice is not a whole page.
+    const dup = pull({
+      contexts: {
+        nodes: [good, { ...good, conclusion: "FAILURE" }],
+        pageInfo: { hasNextPage: false },
+      },
+    })?.partial;
+    expect(dup).toContain("listed twice");
+    // A commit status is read by its own variant.
+    const status = {
+      __typename: "StatusContext",
+      context: "deploy",
+      state: "SUCCESS",
+      isRequired: false,
+    };
+    expect(partial(status)).toBeNull();
+    for (const bad of [
+      { context: "" },
+      { context: undefined },
+      { state: undefined },
+      { state: "ODD" },
+      { isRequired: undefined },
+      { isRequired: "false" },
+    ])
+      expect(partial({ ...status, ...bad })).toContain(
+        "could not be classified",
+      );
   });
 
   it("reads check runs and commit statuses with their app and state", () => {

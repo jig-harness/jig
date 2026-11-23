@@ -124,12 +124,12 @@ Coming has not started.
 One predicate decides it, a pure function in
 `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`. The tick calls it to
 place a card, `announce-merge-ready.ts` calls it before it posts, and
-`jig ask` calls it for what a converged drive waits on and for the `merge`
-station ([addresses](../plugin/protocol/addresses.md#stations)),
+`jig ask` calls it for what a converged drive waits on,
 so the board, the drive's announcement and the answer a person gets about
 one pull request cannot disagree about the same facts and rules; the
-rules each caller reads can differ (condition 3 below). The existing `drive` answer uses this
-predicate; the planned `merge` station will use it when that station is built.
+rules each caller reads can differ (condition 3 below). The `merge`
+station ([addresses](../plugin/protocol/addresses.md#stations)) is planned
+and will call the same predicate when it is built.
 It takes the facts
 of one pull request and returns its lane and, for each condition not met,
 whether waiting settles it or which person's act does. A pull request is in
@@ -247,7 +247,7 @@ this order:
 | a draft                                                                                                                                      | Needs you                             | converged as a draft: marking it ready summons the reviewers that skip drafts                                                                                                                    | a person: mark it ready                                                                 |
 | the CI hold label                                                                                                                            | Needs you                             | held, never "failing"; the drive removes the label as it converges, so it was added again after                                                                                                  | a person: remove the label (the checks run again on the same head), or re-arm the drive |
 | an unresolved thread                                                                                                                         | Needs you                             | a thread was opened after the drive converged                                                                                                                                                    | a person: answer it, or re-arm the drive                                                |
-| the reviewer app's check on the head is missing, failed or skipped                                                                           | Needs you                             | the review the ledger reports is not witnessed on this head                                                                                                                                      | a person: re-arm the drive                                                              |
+| no qualifying review witness: the reviewer app's check on the head is missing, failed or skipped, and no earlier review carries over (condition 3) | Needs you                             | the review the ledger reports is not witnessed on this head                                                                                                                                      | a person: re-arm the drive                                                              |
 | `reviewDecision` `CHANGES_REQUESTED`                                                                                                         | Needs you                             | who requested changes, and when                                                                                                                                                                  | a person: that reviewer re-reviews, or the drive is re-armed to address it              |
 | `BLOCKED` or `UNSTABLE`, a check failing                                                                                                     | Needs you                             | a check failed after the drive converged, by name; a check still running beside it does not change this                                                                                          | a person: re-run it, or re-arm the drive                                                |
 | `BLOCKED`, a required check running, none failing                                                                                            | the column it was in                  | the required checks still running                                                                                                                                                                | waiting                                                                                 |

@@ -104,6 +104,33 @@ function checkState(node: Record<string, unknown>): HeadCheck["state"] {
   return "failure";
 }
 
+const STATUS_STATES = new Set([
+  "SUCCESS",
+  "PENDING",
+  "EXPECTED",
+  "FAILURE",
+  "ERROR",
+]);
+const RUN_STATUSES = new Set([
+  "QUEUED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "WAITING",
+  "PENDING",
+  "REQUESTED",
+]);
+const RUN_CONCLUSIONS = new Set([
+  "SUCCESS",
+  "FAILURE",
+  "NEUTRAL",
+  "CANCELLED",
+  "SKIPPED",
+  "TIMED_OUT",
+  "ACTION_REQUIRED",
+  "STALE",
+  "STARTUP_FAILURE",
+]);
+
 /**
  * Whether a rollup node carries, in its own JSON types, every field the
  * decision reads from its variant: an explicit `CheckRun` or `StatusContext`,
@@ -118,7 +145,7 @@ function wellFormedCheck(node: unknown): boolean {
     return (
       typeof node.context === "string" &&
       node.context !== "" &&
-      typeof node.state === "string"
+      STATUS_STATES.has(node.state as string)
     );
   if (node.__typename !== "CheckRun") return false;
   const suite = node.checkSuite;
@@ -131,12 +158,13 @@ function wellFormedCheck(node: unknown): boolean {
     appOk &&
     typeof node.name === "string" &&
     node.name !== "" &&
-    typeof node.databaseId === "number" &&
-    Number.isSafeInteger(node.databaseId) &&
-    typeof node.status === "string" &&
-    (node.conclusion === null ||
-      node.conclusion === undefined ||
-      typeof node.conclusion === "string")
+    (node.databaseId === null ||
+      (typeof node.databaseId === "number" &&
+        Number.isSafeInteger(node.databaseId))) &&
+    RUN_STATUSES.has(node.status as string) &&
+    (node.status === "COMPLETED"
+      ? RUN_CONCLUSIONS.has(node.conclusion as string)
+      : node.conclusion === null || node.conclusion === undefined)
   );
 }
 
@@ -281,9 +309,23 @@ function partialOf(
       why.push("its checks did not read as a page");
     else if (page.some((c) => !wellFormedCheck(c) || checkOf(c) === null))
       why.push("a check on its head could not be classified");
+    else if (hasDuplicateRunId(page))
+      why.push("a check run on its head was listed twice");
   } else if (at(commit, "commit", "statusCheckRollup") !== null)
     why.push("its checks did not read");
   return why.length === 0 ? null : why.join("; ");
+}
+
+/** Whether two check runs on one page carry the same identity. */
+function hasDuplicateRunId(page: unknown[]): boolean {
+  const seen = new Set<number>();
+  for (const c of page) {
+    const id = at(c, "databaseId");
+    if (typeof id !== "number") continue;
+    if (seen.has(id)) return true;
+    seen.add(id);
+  }
+  return false;
 }
 
 /** What one query read: each pull request's facts, and what the forge charged. */

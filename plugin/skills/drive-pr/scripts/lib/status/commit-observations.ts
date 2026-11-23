@@ -114,7 +114,9 @@ export async function checkRunsFor(
   env?: Record<string, string | undefined>,
 ): Promise<CheckRun[] | null> {
   const pages = await commitPages(owner, repo, sha, "check-runs", read, env);
-  if (pages === null) return null;
+  // A listing always has a first page, even an empty one that reports
+  // `total_count: 0`; no page at all is not a read.
+  if (pages === null || pages.length === 0) return null;
   const runs: CheckRun[] = [];
   const seen = new Set<number>();
   let total: number | null = null;
