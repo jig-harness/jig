@@ -521,6 +521,48 @@ function changedPair(
  * Keys are kept apart by that section, and a key the patch changes twice in
  * one section, or twice with the section unseen, is ambiguous.
  */
+type StackFrame = { name: string; root: boolean };
+
+/** Advance a manifest hunk's object stack on a non-change context line. */
+function stepHunkStack(stack: StackFrame[], line: string): void {
+  if (isDiffChangeLine(line)) return;
+  const opener = OPENER.exec(line);
+  if (opener !== null) {
+    stack.push({
+      name: opener[2] ?? "",
+      root: !NESTED.test(opener[1] ?? ""),
+    });
+    return;
+  }
+  if (ANON_OPENER.test(line)) stack.push({ name: "", root: false });
+  else if (CLOSER.test(line)) stack.pop();
+}
+
+/** The root-level section open at the top of `stack`, or `null` if unproven. */
+function activeSection(stack: readonly StackFrame[]): string | null {
+  const framed = stack[0]?.name === "" && stack[0].root;
+  const top = stack.length === (framed ? 2 : 1) ? stack.at(-1) : undefined;
+  return top?.root && top.name !== "" ? top.name : null;
+}
+
+/** Record one changed dependency line, refusing duplicate keys in a section. */
+function recordChangedPair(
+  line: string,
+  section: string | null,
+  removed: Pairs,
+  added: Pairs,
+): Outcome<void, "unread"> {
+  const pair = changedPair(line, section);
+  if (!pair.ok) return pair;
+  const { side, name, version } = pair.value;
+  const target = side === "-" ? removed : added;
+  const key = `${section ?? ""}\u0000${name}`;
+  if (target.has(key))
+    return failed("unread", `${name} changes more than once and is ambiguous`);
+  target.set(key, version);
+  return ok(undefined);
+}
+
 function diffPairs(
   patch: string,
 ): Outcome<{ removed: Pairs; added: Pairs }, "unread"> {
@@ -530,7 +572,7 @@ function diffPairs(
   // dependency only as a direct child of a root-level dependency section whose
   // opener the hunk shows, so a closed section or a nested object named like
   // one proves nothing.
-  let stack: Array<{ name: string; root: boolean }> = [];
+  let stack: StackFrame[] = [];
   // Whether the hunk starts at the file's first line, so its first unindented
   // `{` is the manifest's own root object.
   let rootShown = false;
@@ -546,31 +588,15 @@ function diffPairs(
       stack.push({ name: "", root: true });
       continue;
     }
-    const opener = OPENER.exec(line);
-    if (opener !== null && !isDiffChangeLine(line))
-      stack.push({
-        name: opener[2] ?? "",
-        root: !NESTED.test(opener[1] ?? ""),
-      });
-    else if (ANON_OPENER.test(line) && !isDiffChangeLine(line))
-      stack.push({ name: "", root: false });
-    else if (CLOSER.test(line) && !isDiffChangeLine(line)) stack.pop();
-    const framed = stack[0]?.name === "" && stack[0].root;
-    const top = stack.length === (framed ? 2 : 1) ? stack.at(-1) : undefined;
-    const section: string | null =
-      top !== undefined && top.root && top.name !== "" ? top.name : null;
+    stepHunkStack(stack, line);
     if (!isDiffChangeLine(line)) continue;
-    const pair = changedPair(line, section);
-    if (!pair.ok) return pair;
-    const { side, name, version } = pair.value;
-    const target = side === "-" ? removed : added;
-    const key = `${section ?? ""}\u0000${name}`;
-    if (target.has(key))
-      return failed(
-        "unread",
-        `${name} changes more than once and is ambiguous`,
-      );
-    target.set(key, version);
+    const recorded = recordChangedPair(
+      line,
+      activeSection(stack),
+      removed,
+      added,
+    );
+    if (!recorded.ok) return recorded;
   }
   return ok({ removed, added });
 }
