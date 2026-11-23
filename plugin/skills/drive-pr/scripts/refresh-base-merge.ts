@@ -387,6 +387,15 @@ async function refresh(request: Request): Promise<number> {
   const { pr, head, verified } = request;
   const standing = await freshAnnouncements(pr);
   if (standing === null) return FALLBACK;
+  // A current-head announcement never supplies evidence for a replacement,
+  // so retire older claims even when this PR is no longer publishable. An
+  // advanced head keeps its verified-head announcement until the replacement
+  // and ledger handoff below complete.
+  if (
+    head === verified &&
+    (await cleanStaleAnnouncements(pr, head, standing)) !== 0
+  )
+    return FALLBACK;
   const candidate = await readCandidate(request);
   if (typeof candidate === "number") return candidate;
   // An advanced head needs the verified-head announcement as durable evidence
