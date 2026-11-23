@@ -208,7 +208,8 @@ describe("a channel new to the host", () => {
     await tick(h, [phone], causes(2), h.state(), h.repo, 4 * HOUR);
     expect(phone.calls.flat()).toHaveLength(2);
     expect(phone.calls.flat().every((c) => c.repeat === true)).toBe(true);
-    expect(phone.calls.flat()[0]?.notice.text).toContain("Sent again");
+    expect(phone.calls.flat()[0]?.notice.text).toContain("Sent now");
+    expect(phone.calls.flat()[0]?.notice.text).not.toContain("first sent");
   });
 
   it("sends a cause on a repository that first runs after the channel started: the start is the host's", async () => {

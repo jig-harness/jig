@@ -147,7 +147,10 @@ function asRepeat(
   nowMs: number,
 ): Cause {
   const [head = "", ...rest] = cause.notice.text.split("\n");
-  const again = `Sent again: this still waits on a person as of ${isoFromMs(nowMs)}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
+  const again =
+    record.workspace === SILENT_START
+      ? `Sent now: this has waited on a person since ${record.at}, when it was recorded as known without a send (dispatch.renotify_after ${hours(everyMs)}).`
+      : `Sent again: this still waits on a person as of ${isoFromMs(nowMs)}, first sent ${record.at} (dispatch.renotify_after ${hours(everyMs)}).`;
   const repeated = {
     ...cause,
     repeat: true as const,
