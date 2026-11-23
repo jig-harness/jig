@@ -204,7 +204,7 @@ function sourceNotes(
   });
 }
 
-/** A note its author followed with an answer of their own is settled by that answer; others still stand. */
+/** A note its author followed with a strictly later answer of their own is settled by that answer; others, ties included, still stand. */
 function standingNotes(
   notes: readonly ParkNote[],
   answers: readonly PendingAnswer[],
@@ -214,7 +214,7 @@ function standingNotes(
     return !answers.some(
       (a) =>
         a.author.toLowerCase() === n.author.toLowerCase() &&
-        Date.parse(a.at) >= at,
+        Date.parse(a.at) > at,
     );
   });
 }
