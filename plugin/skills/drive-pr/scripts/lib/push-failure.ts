@@ -102,7 +102,7 @@ export function outputTail(): {
       if (pending.length > PENDING_MAX) {
         // Cut at a character boundary: back over UTF-8 continuation bytes.
         let cut = pending.length - PENDING_KEEP;
-        while (cut > 0 && (pending[cut]! & 0xc0) === 0x80) cut--;
+        while (cut > 0 && ((pending[cut] ?? 0) & 0xc0) === 0x80) cut--;
         settle(pending.subarray(0, cut));
         pending = pending.subarray(cut);
       }
