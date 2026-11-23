@@ -431,3 +431,20 @@ export function SendSettingsToggle({
     </button>
   );
 }
+
+/**
+ * Local credential recovery for a page the server refused: the kept tokens can
+ * be forgotten here, with no read and no way to add one, since nothing on this
+ * page can send. Nothing shows when no token is kept and no stored list was refused.
+ */
+export function KeptTokenRecovery() {
+  const { tokens } = useKeptTokens();
+  const head = useId();
+  if (tokens.length === 0 && !storedListUntrusted()) return null;
+  return (
+    <section className="sendSettings" aria-labelledby={head}>
+      <h3 id={head}>Tokens kept in this browser</h3>
+      <KeptTokens repos={[]} />
+    </section>
+  );
+}

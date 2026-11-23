@@ -14,6 +14,7 @@ import { PanelBoundary } from "./boundary.tsx";
 import { ReadyBadge } from "./badge.ts";
 import { tabCounts } from "./cards.ts";
 import { ClipParts, CopyButton, KeyToast } from "./copy.tsx";
+import { KeptTokenRecovery } from "./send-settings.tsx";
 import { KeyBar } from "./key-bar.tsx";
 import { FacetControls } from "./facet-controls.tsx";
 import {
@@ -118,6 +119,9 @@ export function App() {
         Fold={Fold}
         copyCommand={<CopyButton text={COMMAND} idle="Copy command" />}
       >
+        <div className="main">
+          <KeptTokenRecovery />
+        </div>
         <ClipParts />
       </Refused>
     );
