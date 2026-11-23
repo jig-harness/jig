@@ -1134,7 +1134,9 @@ describe("claude adapter: the weekly notice", () => {
     writeClaude(`${sid}.jsonl`, [weekly(WEEKLY, AT, "another-session")]);
     process.env.DRIVE_PR_QUOTA_MAX_SCAN_MS = "0";
     const realError = console.error;
-    console.error = () => {};
+    console.error = () => {
+      // The discard diagnostic is expected here; keep the output quiet.
+    };
     try {
       expect(
         claudeAdapter.detect({
