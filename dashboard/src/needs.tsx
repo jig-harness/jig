@@ -30,8 +30,10 @@ import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.
 import { type NeedRow, type NeedView, needRows } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
 import { GroupNeedItem } from "./question-group-card.tsx";
-import { NoSend, SendSettings, SendSettingsToggle } from "./send.tsx";
-import { useKeptToken } from "./forge-token.ts";
+import { SettledRecently } from "./settled.tsx";
+import { NoSend } from "./send.tsx";
+import { SendSettings, SendSettingsToggle } from "./send-settings.tsx";
+import { storedListUntrusted, useKeptTokens } from "./forge-token.ts";
 import { disarmOnLeave, usePicking } from "./use-picking.ts";
 import type { Clock, SlotView } from "./view.ts";
 
@@ -542,7 +544,7 @@ function NeedGroup({
   );
 }
 
-/** The repositories of the cards that can send, for the token's scope. */
+/** The repositories of the cards that can send, for the tokens' scope. */
 function sendableRepos(rows: NeedRow[]): string[] {
   const repos = rows.flatMap((row) =>
     row.type !== "need"
@@ -554,19 +556,21 @@ function sendableRepos(rows: NeedRow[]): string[] {
   return [...new Set(repos)].sort((a, b) => a.localeCompare(b));
 }
 
-/** Send's settings: the toggle in the panel's head, shown while a card can send or a token is kept, and the panel it opens. */
+/** Send's settings: the toggle in the panel's head, shown while a card can send, a token is kept or a stored list was refused, and the panel it opens. */
 function useSendSettings(rows: NeedRow[]): {
   toggle: ReactNode;
   panel: ReactNode;
 } {
-  // Every card the line holds, whoever it waits on: the token covers them all.
+  // Every card the line holds, whoever it waits on: the tokens cover them all.
   const sendable = sendableRepos(rows);
-  const { kept } = useKeptToken();
+  const { tokens } = useKeptTokens();
   const [open, setOpen] = useState(false);
   const id = useId();
   return {
     toggle:
-      sendable.length === 0 && kept === null ? null : (
+      sendable.length === 0 &&
+      tokens.length === 0 &&
+      !storedListUntrusted() ? null : (
         <SendSettingsToggle
           open={open}
           onToggle={() => setOpen(!open)}
@@ -585,13 +589,14 @@ export function NeedsPanel({
   filterActive = false,
   filterKey = "",
 }: {
-  line: LineSnapshot;
+  /** Null before any tick has run: the panel then holds only the token settings. */
+  line: LineSnapshot | null;
   clock: Clock;
   filterActive?: boolean;
   /** Changes whenever the card filter does, reopening matching groups. */
   filterKey?: string;
 }) {
-  const allRows = needRows(line, clock);
+  const allRows = line === null ? [] : needRows(line, clock);
   const [everyone, setEveryone] = useState("any");
   const rows = filterAnswerStates(allRows, everyone);
   const groups = groupRows(rows);
@@ -632,7 +637,7 @@ export function NeedsPanel({
       </div>
       <DecisionCounts rows={rows} />
       {send.panel}
-      <AnsweredHolds line={line} />
+      {line === null ? null : <AnsweredHolds line={line} />}
       <div className="needList">
         {groups.map((group) => (
           <NeedGroup
@@ -646,6 +651,7 @@ export function NeedsPanel({
           />
         ))}
       </div>
+      {line === null ? null : <SettledRecently line={line} clock={clock} />}
     </section>
   );
 }

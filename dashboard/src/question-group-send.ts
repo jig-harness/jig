@@ -19,7 +19,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { announce } from "./copy.tsx";
-import { keptToken, tokenGeneration, useKeptToken } from "./forge-token.ts";
+import { credentialFor, useKeptTokens } from "./forge-token.ts";
 import type { NeedView } from "./needs-view.ts";
 import { cardAnswerIds, currentAnswers, forgetAnswers } from "./answers.ts";
 import {
@@ -208,7 +208,8 @@ export function useGroupSend(
   need: NeedView,
   picking: Picking,
 ): GroupSending | null {
-  const { kept } = useKeptToken();
+  const { tokens } = useKeptTokens();
+  const kept = tokens[0] ?? null;
   const group = need.group;
   const id = group?.id ?? "";
   const state = useGroupState(id);
@@ -222,8 +223,7 @@ export function useGroupSend(
     if (stateOf(id).sending) return;
     const commit = picking.sendGate();
     if (commit === null || !isGroupCommit(commit)) return;
-    const token = keptToken();
-    if (token === null) return;
+    const token = kept;
     const { sends, unsendable } = groupSends(
       commit,
       token.login,
@@ -242,8 +242,12 @@ export function useGroupSend(
       );
       return;
     }
-    const generation = tokenGeneration();
-    const held = () => tokenGeneration() === generation;
+    const credentials = group.members
+      .map((member) => credentialFor(member.repo))
+      .join("\n");
+    const held = () =>
+      group.members.map((member) => credentialFor(member.repo)).join("\n") ===
+      credentials;
     // What the person had picked and written when they pressed Send: a change made while the send runs is newer work.
     const answerIds = cardAnswerIds(need);
     const snapshot = currentAnswers(answerIds).map((a) =>

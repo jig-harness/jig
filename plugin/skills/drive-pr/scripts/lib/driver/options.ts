@@ -20,6 +20,8 @@ interface DriverOptions {
   takeOver: boolean;
   /** `--window-reopened`: a person says a quota wall's window is open again. */
   windowReopened: boolean;
+  /** `--rearm-budget`: this launch re-arms a stopped drive; a spent round budget is extended once (`rearm-budget.ts`). */
+  rearmBudget: boolean;
 }
 
 function flagValue(argv: string[], index: number): string {
@@ -40,6 +42,7 @@ const DRIVER_FLAGS = new Set([
   "--settle-worktree",
   "--take-over",
   "--window-reopened",
+  "--rearm-budget",
   "--bots-only",
   "--no-head-sync",
   "--timeout",
@@ -93,6 +96,9 @@ function parseFlag(
     case "--window-reopened":
       options.windowReopened = true;
       return index;
+    case "--rearm-budget":
+      options.rearmBudget = true;
+      return index;
     case "--bots-only":
       options.botsOnly = true;
       options.forward.push(flag);
@@ -127,6 +133,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     agent: [],
     takeOver: false,
     windowReopened: false,
+    rearmBudget: false,
   };
   let sawDdash = false;
   for (let index = 0; index < argv.length; index++) {

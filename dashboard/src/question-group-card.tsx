@@ -15,7 +15,7 @@ import { CopyButton } from "./copy.tsx";
 import { DecisionRows } from "./decision-rows.tsx";
 import { InlineDecisionText } from "./decision-text.tsx";
 import { Evidence } from "./fold.tsx";
-import { useKeptToken } from "./forge-token.ts";
+import { useKeptTokens } from "./forge-token.ts";
 import { GutterCard } from "./gutter.tsx";
 import { ActPill, BareWord, Glyph } from "./icon-word.tsx";
 import { CARD_ICONS, CAUSE_ICONS, iconOf } from "./icons.ts";
@@ -269,7 +269,8 @@ function GroupControls({
   picking: Picking;
   sending: GroupSending | null;
 }) {
-  const { kept } = useKeptToken();
+  const { tokens } = useKeptTokens();
+  const kept = tokens[0] ?? null;
   const { commit } = picking;
   const perTarget = targetsOf(picking);
   const total = need.group?.members.length ?? 0;

@@ -400,6 +400,7 @@ export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
     line !== null &&
     (line.needs.length > 0 ||
       (line.answeredHolds?.length ?? 0) > 0 ||
+      (line.settled?.length ?? 0) > 0 ||
       notMoving(line, nowMs).length > 0)
   );
 }

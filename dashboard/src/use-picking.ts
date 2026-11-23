@@ -15,7 +15,7 @@ import {
 } from "react";
 import { cardAnswerIds, currentAnswers, useAnswers } from "./answers.ts";
 import { confirmationSignature, needsConfirmation } from "./confirmation.ts";
-import { tokenGeneration, useKeptToken } from "./forge-token.ts";
+import { credentialFor, useKeptTokens } from "./forge-token.ts";
 import { announce, copyText } from "./copy.tsx";
 import { CARD_COMMIT, CARD_KEY, type CardKey, PALETTE_DONE } from "./keys.ts";
 import type { NeedView } from "./needs-view.ts";
@@ -66,6 +66,11 @@ export interface Picking {
   disarm: () => void;
 }
 
+/** Which token the card's Send would post with now; a card with no Send has none. */
+function sendCredential(need: NeedView): string {
+  return "to" in need.send ? credentialFor(need.send.to.repo) : "";
+}
+
 /** Where a decision is, as a pick announces it. */
 function placeOf(need: NeedView, index: number): string {
   const total = need.rows.length;
@@ -105,7 +110,7 @@ export function usePicking(
   card: RefObject<HTMLElement | null>,
   left: ReadonlySet<string> = NONE_LEFT,
 ): Picking {
-  useKeptToken();
+  useKeptTokens();
   const ids = cardAnswerIds(need);
   const [kept, change, saved] = useAnswers(ids);
   const answers = need.rows.map((row, i) => rowAnswer(row, kept[i] ?? null));
@@ -134,12 +139,8 @@ export function usePicking(
     setArmedState(to);
   };
   const current = currentIndex(need.rows, answers, held);
-  const signature = confirmationSignature(
-    need,
-    answers,
-    tokenGeneration(),
-    left,
-  );
+  const credential = sendCredential(need);
+  const signature = confirmationSignature(need, answers, credential, left);
   const confirming =
     armed !== null &&
     armed.sign === signature &&
@@ -230,7 +231,7 @@ export function usePicking(
       );
       return null;
     }
-    const sign = confirmationSignature(need, fresh, tokenGeneration(), left);
+    const sign = confirmationSignature(need, fresh, sendCredential(need), left);
     const held = armedNow.current;
     if (
       needsConfirmation(how, now.guarded.length) &&
@@ -311,6 +312,14 @@ export function usePicking(
       document.removeEventListener(PALETTE_DONE, onPaletteDone);
     };
   }, [card, picks]);
+
+  // A confirmation does not survive its card's token changing, even if the same token comes back.
+  const credentialSeen = useRef(credential);
+  useEffect(() => {
+    if (credentialSeen.current === credential) return;
+    credentialSeen.current = credential;
+    latest.current.disarm();
+  }, [credential]);
 
   // A field `r` or its button opened takes focus once it is drawn.
   useEffect(() => {

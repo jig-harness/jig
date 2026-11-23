@@ -73,6 +73,10 @@ export interface DriveRoundContext {
   /** `DRIVE_PR_FINAL_REGATE_LIMIT`, read once at the start of the drive. */
   finalRegateLimit: number;
   maxRoundsN: number;
+  /** The passes allowed on one head (`rearm-budget.ts`). */
+  maxAttemptsN: number;
+  /** This round spent the last head or the last pass on a head the budget allows: no further attempt remains after it. */
+  budgetAtLimit: boolean;
   /** `drive.pass_deadline_retries`, read once at the start of the drive. */
   deadlineRetryBudget: number;
   /** The stall stop already granted its one extra round in this streak. */
