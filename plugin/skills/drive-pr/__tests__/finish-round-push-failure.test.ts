@@ -219,6 +219,26 @@ describe("the push output's tail", () => {
     expect(tail.text()).not.toContain("hunter2secret");
   });
 
+  it("masks a credential whose key a colon-form colour or an OSC sequence splits", () => {
+    const tail = outputTail();
+    const esc = String.fromCharCode(27);
+    const bel = String.fromCharCode(7);
+    tail.observe(Buffer.from(`pass${esc}[38:2:255:0:0mword=hunter2secret\n`));
+    tail.observe(Buffer.from(`pass${esc}]0;title${bel}word=osc2secret\n`));
+    const out = tail.text();
+    expect(out).not.toContain("hunter2secret");
+    expect(out).not.toContain("osc2secret");
+  });
+
+  it("holds an unfinished escape only up to a bound", () => {
+    const tail = outputTail();
+    const esc = String.fromCharCode(27);
+    tail.observe(Buffer.from(`${esc}[`));
+    for (let i = 0; i < 1000; i++) tail.observe(Buffer.from("1234567890"));
+    tail.observe(Buffer.from("\nnext line\n"));
+    expect(tail.text()).toContain("next line");
+  });
+
   it("reads a quote after a terminal escape as opening a value, across an overflow", () => {
     const tail = outputTail();
     const esc = String.fromCharCode(27);

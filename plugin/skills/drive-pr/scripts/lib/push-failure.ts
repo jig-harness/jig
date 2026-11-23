@@ -57,11 +57,30 @@ function isUnconfirmedPush(line: string): boolean {
   );
 }
 
-/** The escape sequences terminals colour with: a gate's output is often coloured. */
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+
+/** The longest escape sequence read as one; a longer run is not an escape. */
+const ESCAPE_MAX = 256;
+
+/**
+ * The escape sequences a terminal reads (ECMA-48): a control sequence (any
+ * parameter bytes, then intermediates, then a final byte, so the colon form
+ * of a colour is one), an operating-system command up to its terminator, and
+ * a two-byte escape. A gate's output is often coloured.
+ */
+const ANSI = new RegExp(
+  `${ESC}(?:\\[[0-?]{0,${ESCAPE_MAX}}[ -/]{0,${ESCAPE_MAX}}[@-~]|\\][^${ESC}${BEL}]{0,${ESCAPE_MAX}}(?:${BEL}|${ESC}\\\\)|[@-Z\\\\-_])`,
+  "g",
+);
 
 /** An escape sequence the end of a chunk cut short. */
-const CUT_ESCAPE = new RegExp(`${String.fromCharCode(27)}(\\[[0-9;?]*)?$`);
+const CUT_ESCAPE = new RegExp(
+  `${ESC}(?:\\[[0-?]*[ -/]*|\\][^${ESC}${BEL}]*${ESC}?)?$`,
+);
+
+/** Strip the terminal escapes from `text`. */
+const stripEscapes = (text: string): string => text.replace(ANSI, "");
 
 /** What stands where output too long to read whole was dropped. */
 const OMITTED = "[over-long output omitted]\n";
@@ -180,9 +199,11 @@ export function outputTail(): {
   const normalize = (input: Uint8Array): Buffer => {
     const text = carry + Buffer.from(input).toString("latin1");
     const cut = CUT_ESCAPE.exec(text);
-    carry = cut ? cut[0] : "";
+    // A cut sequence is held only up to the longest escape; a longer one is
+    // dropped, so the held text stays bounded and nothing of it is published.
+    carry = cut && cut[0].length <= ESCAPE_MAX ? cut[0] : "";
     const whole = cut ? text.slice(0, cut.index) : text;
-    return Buffer.from(whole.replace(ANSI, ""), "latin1");
+    return Buffer.from(stripEscapes(whole), "latin1");
   };
 
   /** Drop what a drop left unsafe from the front of `buf`. */
@@ -224,7 +245,7 @@ export function outputTail(): {
         while (key >= 0 && isSpace(raw[key])) key--;
         bytes = raw.subarray(0, key < 0 ? 0 : raw.lastIndexOf(10, key) + 1);
       }
-      const masked = redactReportText(bytes.toString("utf8").replace(ANSI, ""));
+      const masked = redactReportText(stripEscapes(bytes.toString("utf8")));
       const kept =
         masked.length > TAIL_BYTES
           ? masked.slice(masked.length - TAIL_BYTES)
@@ -260,8 +281,7 @@ export function pushFailureKind(output: string): PushFailureKind {
  * excerpt reaches the ledger, a pull request comment.
  */
 export function failureExcerpt(output: string): string {
-  const lines = output
-    .replace(ANSI, "")
+  const lines = stripEscapes(output)
     .split(/\r?\n|\r/)
     .map((line) => line.trim())
     .filter((line) => line !== "" && !/^guarded-push: push to PR/.test(line))
