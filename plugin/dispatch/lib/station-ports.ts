@@ -35,7 +35,9 @@ import { readMarkers } from "./followup-marker.ts";
 import { openPullRequest, pullRequestLabels } from "./forge.ts";
 import { holding } from "./holding.ts";
 import { commandLabel, hasCommand } from "./labels.ts";
+import { wholeBatchQuestion } from "./batch-question.ts";
 import { holdsItem } from "./launch-pickups.ts";
+import { pickupClaimed } from "./actions/pickup-hold.ts";
 import {
   inspectRow,
   readEnded,
@@ -230,7 +232,7 @@ function startState(section: DispatchSection): CanonicalState | null {
 }
 
 /** Mark the ended pickup record `id` released, so the item is launched again; why it could not be, or `null`. */
-function releaseRecord(
+export function releaseRecord(
   inputs: StationInputs,
   item: string,
   id: string,
@@ -247,8 +249,13 @@ function releaseRecord(
   if (!members.includes(item))
     return `launch record ${id} is not a pickup of ${item}`;
   if (!holdsItem(record, item)) return null;
-  // Only the member answered is released; its siblings keep the question they wait on.
-  const released = [...(record.releasedItems ?? []), item];
+  // The member answered is released, and with it the members a whole-batch
+  // question held that the pass never claimed; otherwise its siblings keep
+  // the question they wait on.
+  const settled = wholeBatchQuestion(ended)
+    ? members.filter((m) => m === item || !pickupClaimed(record, m))
+    : [item];
+  const released = [...new Set([...(record.releasedItems ?? []), ...settled])];
   record.releasedItems = released;
   if (members.every((m) => released.includes(m))) record.released = true;
   writeRecord(record, root);

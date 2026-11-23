@@ -44,8 +44,9 @@
  * - a batch pass that ended after claiming some of its members holds only
  *   those: it worked them, whether it recorded `done` or `failed`, and the
  *   members it never claimed are wanted again under the queue's usual
- *   rules; a pass that ended on a question for a person keeps every member
- *   until the person answers it.
+ *   rules; a pass that ended on a question holds the members the question
+ *   names (claimed or not) and releases the unclaimed rest, and one whose
+ *   question names no member holds every member until the person answers it.
  */
 import {
   holds,
@@ -55,6 +56,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../launches.ts";
+import { namedMembers } from "../batch-question.ts";
 import { holdsItem } from "../launch-pickups.ts";
 import { testLockNote } from "../test-lock-waits.ts";
 import { refusalOf } from "../pickup-refusal.ts";
@@ -287,22 +289,24 @@ function endedWhy(
 }
 
 /**
- * Whether `item` is a member an ended batch pickup never claimed while it
- * claimed a sibling: the pass worked its claimed members, so this one is
- * no longer its. A record that claimed none, or that only a legacy
- * `claimedSeen` describes, keeps every member, and so does a pass that
- * ended on a question: the answer may be about the members it left.
+ * Whether `item` is a member an ended batch pickup never claimed and its
+ * pass has no claim on: the pass worked the members it claimed, so this one
+ * is no longer its. Without a question that holds once the pass claimed a
+ * sibling; a record that claimed none, or that only a legacy `claimedSeen`
+ * describes, keeps every member. A pass that ended on a question keeps the
+ * members the question names, and releases the others, whether it claimed
+ * any or not: the question is not about them. A question that names no
+ * member is about the whole batch and keeps every member until it is
+ * answered, which settles them all (`releaseRecord`).
  */
 function leftUnclaimed(r: ReadRecord, item: string): boolean {
   const { record } = r;
   const members = record.batchItems?.map((i) => i.key) ?? [];
   const claimed = record.claimedItems ?? [];
-  return (
-    endedQuestion(r) === null &&
-    members.length > 1 &&
-    claimed.some((key) => members.includes(key)) &&
-    !claimed.includes(item)
-  );
+  if (members.length < 2 || claimed.includes(item)) return false;
+  const named = namedMembers(r);
+  if (named === null) return claimed.some((key) => members.includes(key));
+  return named.length > 0 && !named.includes(item);
 }
 
 /**

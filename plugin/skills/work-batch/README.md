@@ -27,10 +27,10 @@ assignee. The claim checks inherited assignment and writer provenance live;
 a refused item stops the batch. A question needing a person stops the
 headless pass and is recorded with the launch result. When it concerns
 particular members, include their exact tracker keys in the question, so the
-dispatcher places it on those members. Leave keys out for a batch-wide
-question, which is shown once on the batch anchor; siblings can still receive
-a release control for their own hold without receiving another member's
-question.
+dispatcher places it on those members. Members the question does
+not name are picked up again by the usual rules. Leave keys out for a
+batch-wide question, which is shown once on the batch anchor; the siblings
+wait on it with no need of their own, and answering it releases them all.
 
 Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
 [solo-only issues](#solo-only-issues) · [batch size](#batch-size) ·

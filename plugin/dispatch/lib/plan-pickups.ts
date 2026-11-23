@@ -86,7 +86,7 @@ import {
   hostFault,
   latestPickupFor,
 } from "./pickup-host-fault.ts";
-import { ANY_KEY_SOURCE } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
+import { namedMembers, wholeBatchQuestion } from "./batch-question.ts";
 import { relaunched, relaunchStep } from "./pickup-relaunch.ts";
 import { lockWaitStop } from "./pickup-lock-wait.ts";
 import type { TreeReader } from "./pickup-tree.ts";
@@ -343,6 +343,18 @@ function planStopped(
   const asked = questionAsked(input, item, hold.record);
   if (asked !== null) {
     plan.actions.push(asked);
+    return;
+  }
+  // A question about the whole batch is one need, on its anchor: the siblings wait on it.
+  if (
+    wholeBatchQuestion(hold.record) &&
+    batchQuestionForSibling(hold.record, item.key)
+  ) {
+    plan.quiet.push({
+      target: item.key,
+      class: "pickup-ended",
+      why: `waits on the question its batch's pass asked on ${hold.record.record.item}, which names no member; the answer releases every member the record holds (launch record ${hold.record.record.id})`,
+    });
     return;
   }
   plan.actions.push(endedNeed(input.slug, item, hold.record, why));
@@ -824,18 +836,9 @@ function settledByPr(
  * so an answered question cannot reappear on a sibling.
  */
 function batchQuestionForSibling(latest: ReadRecord, item: string): boolean {
-  const members = latest.record.batchItems;
-  if (members === undefined || members.length < 2) return false;
-  const asked = endedQuestion(latest);
-  if (asked === null) return false;
-  const question = reportQuestion(latest.report, asked);
-  const keys = new Set(
-    question.toUpperCase().match(new RegExp(ANY_KEY_SOURCE, "gi")),
-  );
-  const named = members.filter(({ key }) => keys.has(key.toUpperCase()));
-  return named.length > 0
-    ? !named.some(({ key }) => key === item)
-    : latest.record.item !== item;
+  const named = namedMembers(latest);
+  if (named === null) return false;
+  return named.length > 0 ? !named.includes(item) : latest.record.item !== item;
 }
 
 /**
