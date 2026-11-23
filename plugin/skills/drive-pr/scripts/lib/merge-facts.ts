@@ -41,7 +41,7 @@ export const FACTS_PAGE = 20;
 /** One pull request's part of the query, aliased by its number. */
 function pullFields(n: number): string {
   return `pr${n}: pullRequest(number: ${n}) {
-      number headRefOid isDraft mergeable mergeStateStatus reviewDecision authorAssociation isMergeQueueEnabled
+      number headRefOid baseRefOid isDraft mergeable mergeStateStatus reviewDecision authorAssociation isMergeQueueEnabled
       labels(first: 100) { pageInfo { hasNextPage } nodes { name } }
       reviewThreads(first: ${THREADS}) { pageInfo { hasNextPage } nodes { isResolved } }
       reviewRequests(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Team { slug } ... on Mannequin { login } } } }
@@ -155,6 +155,7 @@ export function parsePull(
   return {
     number: node.number,
     head,
+    ...(typeof node.baseRefOid === "string" ? { base: node.baseRefOid } : {}),
     ...states(node),
     labels: nodes(at(node, "labels"))
       .map((l) => str(at(l, "name")))

@@ -2,7 +2,7 @@
  * The closed lists of the issue facets, each entry with what it means: the
  * facets, the priorities, the stores a facet may be kept in, the stores each
  * adapter holds per facet, and why `facetStores` reports a facet's store as
- * the one in force (design/tracker-facets.md in the Jig repository).
+ * the one in force (plugin/protocol/tracker-facets.md).
  *
  * The code reads its lists from these tables: `values.ts` its priorities,
  * `config.ts` the stores and what each adapter holds; the facets and the

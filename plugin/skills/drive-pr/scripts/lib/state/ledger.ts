@@ -140,6 +140,8 @@ export interface Ledger {
   phase: string;
   lastCountedHead: string;
   verifiedSha: string;
+  /** The previously reviewed head whose change a clean base merge preserved. */
+  reviewCarriedFrom?: string;
   readyMarkedRound: number;
   parked: ParkedItem[];
   held: LedgerHeld[];
@@ -565,6 +567,11 @@ export function parseLedger(body: string): ParsedLedger | null {
   if (fault !== "")
     return { kind: "malformed", reason: `ill-formed field(s): ${fault}` };
   const ledger = read.fields as unknown as Ledger;
+  if (
+    typeof ledger.reviewCarriedFrom !== "string" ||
+    !/^[a-f0-9]{40}$/.test(ledger.reviewCarriedFrom)
+  )
+    delete ledger.reviewCarriedFrom;
   const { probe, ...driver } = ledger.driver;
   const clean = probeStopOf(probe);
   ledger.driver =
