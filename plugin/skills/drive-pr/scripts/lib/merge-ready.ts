@@ -342,17 +342,35 @@ function witness(
 
 /** The checks failing on the head, the reviewer's own left to the witness. */
 function failingChecks(facts: ForgeFacts, rules: ReadyRules): string[] {
-  return facts.checks
-    .filter(
-      (c) =>
-        c.state === "failure" &&
-        !(
-          rules.reviewerApp !== null &&
-          c.app === rules.reviewerApp &&
-          rules.reviewerCheck.test(c.name)
-        ),
-    )
-    .map((c) => c.name);
+  return failingRecords(facts, rules).map((c) => c.name);
+}
+
+/** The check records that fail ordinarily: the reviewer's own are left to the witness. */
+function failingRecords(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+  return facts.checks.filter(
+    (c) =>
+      c.state === "failure" &&
+      !(
+        rules.reviewerApp !== null &&
+        c.app === rules.reviewerApp &&
+        rules.reviewerCheck.test(c.name)
+      ),
+  );
+}
+
+/** Checks that still block: a reviewer check counts by its latest attempt only, as the witness reads it; unread attempt order keeps every attempt. */
+function standingChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+  const latest = reviewerRuns(facts, rules);
+  return facts.checks.filter(
+    (c) =>
+      latest === null ||
+      !(
+        rules.reviewerApp !== null &&
+        c.app === rules.reviewerApp &&
+        rules.reviewerCheck.test(c.name)
+      ) ||
+      latest.includes(c),
+  );
 }
 
 /** Whether condition 8 already holds without trusted automation: an own author association, or a qualifying approval. */
@@ -366,6 +384,10 @@ interface Read {
   seen: ReturnType<typeof witness>;
   ciHeld: boolean;
   failing: string[];
+  /** Whether a required ordinary check fails, read from the records that qualify as failing. */
+  requiredFailing: boolean;
+  /** Whether a required check still runs, by each reviewer check's latest attempt. */
+  requiredPending: boolean;
   /** The forge's merge state, `null` where a merge queue decides instead. */
   state: string | null;
   own: boolean;
@@ -586,23 +608,21 @@ const BLOCKERS: Array<(r: Read) => Row | null> = [
       `changes were requested${by}: that reviewer re-reviews, or the drive is re-armed to address them`,
     ];
   },
-  ({ facts, failing, state }) =>
+  ({ failing, state, requiredFailing }) =>
     failing.length > 0 &&
     (state === null ||
       state === "BLOCKED" ||
       state === "UNSTABLE" ||
       // A stale CLEAN merge state cannot override a current required failure.
-      facts.checks.some(
-        (c) => c.required && c.state === "failure" && failing.includes(c.name),
-      ))
+      requiredFailing)
       ? [
           "needs-you",
           person("re-run-check"),
           `a check failed after the drive converged (${failing.join(", ")}): re-run it, or re-arm the drive`,
         ]
       : null,
-  ({ facts }) =>
-    facts.checks.some((c) => c.required && c.state === "pending")
+  ({ requiredPending }) =>
+    requiredPending
       ? ["stay", waiting("the checks running"), "the checks are still running"]
       : null,
   ({ facts, state }) =>
@@ -706,6 +726,10 @@ function readOf(facts: MergeFacts, rules: ReadyRules): Read {
     ciHeld:
       rules.ciHoldLabel !== null && facts.labels.includes(rules.ciHoldLabel),
     failing: failingChecks(facts, rules),
+    requiredFailing: failingRecords(facts, rules).some((c) => c.required),
+    requiredPending: standingChecks(facts, rules).some(
+      (c) => c.required && c.state === "pending",
+    ),
     state: facts.mergeQueue ? null : facts.mergeState,
     own: OWN.has(facts.authorAssociation) || trusted?.met === true,
     trusted,

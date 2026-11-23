@@ -715,6 +715,16 @@ describe("the forge's facts", () => {
       ],
       // Distinct node identities sharing one run identity are listed twice too.
       [good, { ...good, id: "CR_other" }],
+      // One node identity under another name and app is still one entry.
+      [
+        good,
+        {
+          ...good,
+          name: "other",
+          databaseId: 2,
+          checkSuite: { app: { slug: "other-app" } },
+        },
+      ],
     ])
       expect(
         pull({
@@ -939,6 +949,60 @@ it("requires every distinct reviewer check and reduces retries within each name"
   const base = f.checks.find((c) => c.app === "example-review");
   if (base === undefined) throw new Error("fixture has no reviewer check");
   f.checks.push({ ...base, name: "AI review (security)" });
+  expect(readiness(f, RULES).lane).toBe("merge-now");
+});
+
+it("judges a required reviewer check by its latest attempt only", () => {
+  const f = facts();
+  const base = f.checks.find((c) => c.app === "example-review");
+  if (base === undefined) throw new Error("fixture has no reviewer check");
+  f.checks = [
+    { ...base, id: 10, required: true, state: "pending" },
+    { ...base, id: 12, required: true, state: "success" },
+  ];
+  expect(readiness(f, RULES).place).toBe("ready");
+  expect(readiness(f, RULES).lane).toBe("merge-now");
+  f.checks = [
+    { ...base, id: 10, required: true, state: "success" },
+    { ...base, id: 12, required: true, state: "pending" },
+  ];
+  expect(readiness(f, RULES).place).not.toBe("ready");
+});
+
+it("does not let an optional failing check borrow a failed reviewer attempt's required flag", () => {
+  const f = facts({ mergeState: "CLEAN" });
+  const base = f.checks.find((c) => c.app === "example-review");
+  if (base === undefined) throw new Error("fixture has no reviewer check");
+  f.checks = [
+    { ...base, id: 10, required: true, state: "failure" },
+    { ...base, id: 12, required: true, state: "success" },
+    {
+      name: base.name,
+      app: "github-actions",
+      required: false,
+      state: "failure",
+      startedAt: "2026-11-08T10:00:00Z",
+    },
+  ];
+  expect(readiness(f, RULES).lane).toBe("merge-now");
+});
+
+it("keeps a clean review-required merge in merge-now while an optional check is pending", () => {
+  const f = facts({
+    mergeQueue: false,
+    mergeState: "CLEAN",
+    reviewDecision: "REVIEW_REQUIRED",
+  });
+  f.checks = [
+    ...f.checks,
+    {
+      name: "lint",
+      app: "github-actions",
+      required: false,
+      state: "pending",
+      startedAt: "2026-11-08T10:00:00Z",
+    },
+  ];
   expect(readiness(f, RULES).lane).toBe("merge-now");
 });
 
