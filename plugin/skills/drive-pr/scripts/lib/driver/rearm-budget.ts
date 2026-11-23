@@ -69,7 +69,19 @@ async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
       tsArgv(driveState, ["prospective-round", pr, "--head", head]),
       opts,
     );
-    headCounted = next.code === 0 && next.stdout.trim() === String(spentHeads);
+    const answer = next.stdout.trim();
+    // Only the head's current round (already counted) or the next one (new)
+    // is an answer; a failed or malformed probe proves neither.
+    if (
+      next.code !== 0 ||
+      !isDigits(answer) ||
+      ![spentHeads, spentHeads + 1].includes(Number.parseInt(answer, 10))
+    )
+      return fail(
+        1,
+        `cannot read the review round of PR #${pr}'s head; refusing to grant rounds on an unknown head history; re-arm again`,
+      );
+    headCounted = answer === String(spentHeads);
   }
   return {
     rounds: spentHeads,
@@ -125,12 +137,18 @@ export async function roundBudget(
     rounds: base + granted,
     attempts: base,
   });
-  if (!rearm) return limits(spent.granted);
+  if (!rearm) {
+    // A plain restart relies on a stored grant only once it is published.
+    if (spent.granted > 0 && !dryRun) await publishGrant(pr);
+    return limits(spent.granted);
+  }
   const grant = rearmGrant(spent, base);
   if (grant.granted === spent.granted && !grant.resetAttempts) {
     // A grant applied by an earlier launch whose publication failed is
     // published again before this drive relies on it.
-    if (spent.granted > 0 && !dryRun) await publishGrant(pr);
+    // A re-arm publishes whatever an earlier launch left, an attempt-only
+    // reset included, which no counter shows.
+    if (!dryRun) await publishGrant(pr);
     return limits(spent.granted);
   }
   if (spent.headKnown === false)
