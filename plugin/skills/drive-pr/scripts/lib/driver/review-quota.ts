@@ -127,7 +127,7 @@ async function handleSleepableQuota(
   // driver exits 6 having run no further pass. Sleeping first would
   // hold its locks for hours to reach that same exit
   // — check now instead.
-  if (round >= context.maxRoundsN) {
+  if (context.budgetAtLimit) {
     console.error(
       `  round ${round} was already the last of --max-rounds (${context.maxRoundsN}) — not sleeping ${Math.ceil(plan.ms / 60000)} minute(s) for an attempt that cannot happen.`,
     );

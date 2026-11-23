@@ -11,6 +11,7 @@ import { parseMs } from "../../shared/time.ts";
 import type { Ledger } from "../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import type { Classified } from "./sources/ledgers.ts";
 import type { Evidence } from "./types.ts";
 
 export const REARM_REQUEST: ClaimKind = {
@@ -211,4 +212,27 @@ function latestRequest(
   return records.findLast(
     ({ record }) => !record.ok || record.value.payload.stopComment !== null,
   );
+}
+
+/** What the request changes about the stop, leaving unresolved parks on the notification path. */
+export function classifyRearm(
+  classified: Classified,
+  request: Evidence,
+): Classified {
+  if (classified.class === "unplaced") return classified;
+  if (classified.class === "parked")
+    return request.rearm === true
+      ? {
+          ...classified,
+          why: `${classified.why}. The explicit re-arm request ${String(request.rearmRequestId ?? "unknown")} cannot proceed while a park still needs a current answer`,
+        }
+      : classified;
+  if (typeof request.rearmFailure === "string")
+    return { class: "needs-person", why: request.rearmFailure };
+  if (request.rearm === true)
+    return {
+      class: "re-armable",
+      why: "a person's rearm request asks to restart this stopped drive in its existing tree",
+    };
+  return classified;
 }

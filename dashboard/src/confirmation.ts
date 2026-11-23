@@ -1,11 +1,11 @@
-/** A confirmation is valid only for the destination, credential generation and exact answers the person saw. */
+/** A confirmation is valid only for the destination, the token that sends to it (`credentialOf`) and the exact answers the person saw. */
 import type { NeedView } from "./needs-view.ts";
 import type { RowAnswer } from "./picking.ts";
 
 export function confirmationSignature(
   need: NeedView,
   answers: RowAnswer[],
-  credential: number,
+  credential: string,
 ): string {
   return JSON.stringify({
     repo: need.repo,

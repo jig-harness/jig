@@ -297,27 +297,32 @@ describe("classifyLedger", () => {
     expect(converged({ head: verified, mergeable: "MERGEABLE" }).class).toBe(
       "done",
     );
-    expect(converged({ head: verified, mergeable: "CONFLICTING" })).toEqual({
+    const base = { oid: "c".repeat(40) };
+    const conflict = { head: verified, mergeable: "CONFLICTING", base };
+    expect(converged(conflict)).toEqual({
       class: "stale",
-      why: "stopped 0 (converged), and now conflicting with its base: re-drive on any account",
+      why: "stopped 0 (converged), and now conflicting with its base: re-drive on any account, once for head aaaaaaa and base ccccccc",
       stale: {
-        cause: "conflicting with its base",
-        change: `head ${verified}, conflicting`,
+        cause: "stopped 0 (converged), and now conflicting with its base",
+        change: `head ${verified}, base ${base.oid}`,
+        conflictStop: true,
       },
+    });
+    expect(
+      converged({ head: verified, mergeable: "CONFLICTING" }),
+    ).toMatchObject({
+      class: "unplaced",
+      forgeUndecided: true,
     });
     expect(converged({ head: moved, mergeable: "MERGEABLE" }).stale).toEqual({
       cause: "head bbbbbbb past the verified head aaaaaaa",
       change: `head ${moved}, mergeable`,
     });
-    expect(
-      converged({ head: moved, mergeable: "CONFLICTING" }).stale?.cause,
-    ).toBe(
-      "conflicting with its base, and head bbbbbbb past the verified head aaaaaaa",
+    expect(converged({ ...conflict, head: moved }).stale?.change).toBe(
+      `head ${moved}, base ${base.oid}`,
     );
     // A conflict needs no verified head; a moved head does.
-    expect(
-      converged({ head: verified, mergeable: "CONFLICTING" }, "").class,
-    ).toBe("stale");
+    expect(converged(conflict, "").class).toBe("stale");
     expect(
       converged({ head: verified, mergeable: "MERGEABLE" }, "").class,
     ).toBe("unplaced");

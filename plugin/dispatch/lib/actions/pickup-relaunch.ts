@@ -82,7 +82,7 @@ async function changed(
 ): Promise<string | null> {
   return (
     recordsChanged(state, repo, ctx, { item, relaunch, own }) ??
-    (await runtimeChanged(ctx, item, relaunch.workspace.path)) ??
+    (await runtimeChanged(ctx, item, relaunch.workspace)) ??
     treeChanged(state, ctx, relaunch)
   );
 }
@@ -150,12 +150,13 @@ function recordsChanged(
     : `launch record ${other.record.id} holds the item`;
 }
 
-/** Why the runtime no longer leaves the tree's workspace open and free; `null` when it does. */
-async function runtimeChanged(
+/** Why the runtime no longer leaves the tree's workspace open, free and on the branch the plan read; `null` when it does. */
+export async function runtimeChanged(
   ctx: RelaunchContext,
   item: string,
-  path: string,
+  workspace: PickupRelaunch["workspace"],
 ): Promise<string | null> {
+  const { path } = workspace;
   const { sessions, held } = await holdingAgain(
     ctx.sessions,
     (w) => w.path === path || w.items.includes(item),
@@ -168,7 +169,16 @@ async function runtimeChanged(
   if (held.kind === "unknown") return held.reason;
   if (held.kind === "running")
     return `a session started since the plan read it: ${held.workspaces.map((w) => w.path).join(", ")}`;
-  return null;
+  const open =
+    sessions?.ok === true
+      ? sessions.workspaces.find((w) => w.path === path)
+      : undefined;
+  // A record the previous version wrote keeps no branch: nothing was read to compare against, so only a record that has one can see it move.
+  return open !== undefined &&
+    workspace.branch !== undefined &&
+    open.branch !== workspace.branch
+    ? `its tree's branch moved from ${workspace.branch} to ${open.branch} since the plan read it`
+    : null;
 }
 
 /** Why the tree no longer stands at the head the plan read; `null` when it does. */
@@ -188,8 +198,8 @@ function treeChanged(
     : `its tree moved from ${relaunch.head} to ${tree.head} since the plan read it`;
 }
 
-/** The relaunch's record: the pickup it finishes, under a record, token and account of its own. */
-function relaunchRecord(
+/** The relaunch's record: the pickup it finishes, in the workspace the plan read (its branch included), under a record, token and account of its own. */
+export function relaunchRecord(
   state: ApplyState,
   source: LaunchRecord,
   relaunch: PickupRelaunch,
@@ -319,6 +329,26 @@ function lockWaitHold(
   );
 }
 
+/** The relaunch a pending relaunch record replays, rebuilt from that record: its workspace, branch included, as the record keeps it. */
+export function pendingRelaunch(
+  record: LaunchRecord,
+  of: string,
+  at: { head: string; workspace: NonNullable<LaunchRecord["workspace"]> },
+): PickupRelaunch {
+  return {
+    record: of,
+    workspace: at.workspace,
+    head: at.head,
+    ...(record.relaunchDependency === undefined
+      ? {}
+      : { dependency: record.relaunchDependency }),
+    ...(record.relaunchFault === undefined
+      ? {}
+      : { fault: record.relaunchFault }),
+    ...(record.relaunchLockWait === true ? { lockWait: true as const } : {}),
+  };
+}
+
 /** Retry, once and under its own record, each pending relaunch of `repo` whose launch got no answer. */
 async function retryPending(
   state: ApplyState,
@@ -336,18 +366,10 @@ async function retryPending(
     )
       continue;
     const item = record.item as string;
-    const relaunch: PickupRelaunch = {
-      record: record.relaunchOf,
-      workspace: record.workspace,
+    const relaunch = pendingRelaunch(record, record.relaunchOf, {
       head: record.relaunchHead,
-      ...(record.relaunchDependency === undefined
-        ? {}
-        : { dependency: record.relaunchDependency }),
-      ...(record.relaunchFault === undefined
-        ? {}
-        : { fault: record.relaunchFault }),
-      ...(record.relaunchLockWait === true ? { lockWait: true as const } : {}),
-    };
+      workspace: record.workspace,
+    });
     let blocked =
       ctx.serialUndecided ??
       (await changed(state, repo, ctx, item, relaunch, record.id)) ??

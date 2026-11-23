@@ -62,7 +62,7 @@ import {
   settledEntries,
   type Suppression,
 } from "../notice-records.ts";
-import { carries, holdsNotice } from "../notices.ts";
+import { carries, holdsNotice, workspaceLabel } from "../notices.ts";
 import { failureText } from "../text.ts";
 import { currentMs } from "../../../shared/time.ts";
 import type { NoticeCause, RepoReport, RepoTarget } from "../types.ts";
@@ -115,6 +115,9 @@ function joins(cause: Cause, w: Workspace): boolean {
     : w.prs.includes(Number(pr[1]));
 }
 
+/** The most characters of workspace paths a notice appends. */
+const WORKSPACES_BUDGET = 1500;
+
 /**
  * The cause with the workspaces joined to its target named at the end of
  * its message: where its stage ran and its handoff is, since the message
@@ -130,7 +133,17 @@ function located(
     .map((w) => w.path)
     .sort((a, b) => a.localeCompare(b));
   if (joined.length === 0) return cause;
-  const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${joined.join(", ")}`;
+  // Each path is shown whole or not at all, within one total budget, so the appended text stays bounded; the rest are counted.
+  const shown: string[] = [];
+  let used = 0;
+  for (const p of joined) {
+    const label = workspaceLabel(p);
+    if (shown.length > 0 && used + label.length + 2 > WORKSPACES_BUDGET) break;
+    shown.push(label);
+    used += label.length + 2;
+  }
+  const more = joined.length - shown.length;
+  const named = `${joined.length === 1 ? "Its workspace" : "Its workspaces"}: ${shown.join(", ")}${more > 0 ? `, and ${more} more not shown (list them with the orca CLI)` : ""}`;
   return {
     ...cause,
     notice: { ...cause.notice, text: `${cause.notice.text}\n${named}` },

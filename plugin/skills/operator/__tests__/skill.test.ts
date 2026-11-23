@@ -171,7 +171,7 @@ describe("the commands it names", () => {
       const args = parsed.value;
       // --person is refused until a park records whom it waits on.
       expect(args.person, line).toBeUndefined();
-      if (args.waiting) {
+      if (args.waiting || args.settled) {
         expect(args.address, line).toBeUndefined();
         continue;
       }

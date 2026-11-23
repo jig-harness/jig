@@ -5,8 +5,8 @@
  * (`shared/decisions/answer-record.ts`): the answer line Copy takes for it,
  * any note line, and the hidden record naming the person's login and
  * `BROWSER_HOST` as its writer. It posts through GitHub's API with the token
- * the person pasted here (`forge-token.ts`, `github.ts`); the dashboard's
- * server never sees the token or the comments.
+ * the person pasted here for the target's owner (`forge-token.ts`,
+ * `github.ts`); the dashboard's server never sees the tokens or the comments.
  *
  * Send posts only once an option is picked on the card: an approval nobody
  * picked is Copy's alone. Every Send confirms its target and text on the second step.
@@ -14,17 +14,15 @@
  * is not on github.com, or a page served over plain HTTP outside
  * loopback (`transportFault`) has no Send and says why.
  *
- * The settings panel takes the token, tests it by asking GitHub who it signs
- * in as, and forgets it.
+ * The page keeps one token per GitHub account, each naming the repository
+ * owners it answers for, and a card sends with the token for its target
+ * repository's owner (`token-owners.ts`); a card whose owner no token answers
+ * for has no Send and says so. The settings panel (`send-settings.tsx`) takes
+ * the tokens, tests each by asking GitHub who it signs in as, and forgets
+ * each on its own.
  */
-import { KeyRound, Send } from "lucide-react";
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { Send } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
 import { cardAnswerComments } from "../../plugin/shared/decisions/answer-record.ts";
 import {
   type CardAnswer,
@@ -32,29 +30,22 @@ import {
 } from "../../plugin/shared/decision-card.ts";
 import { BROWSER_HOST } from "../../plugin/shared/records/writer-shape.ts";
 import { announce } from "./copy.tsx";
-import {
-  keepToken,
-  keptToken,
-  tokenGeneration,
-  useKeptToken,
-} from "./forge-token.ts";
-import {
-  postComment,
-  sendRefusal,
-  tokenLogin,
-  tokenRefusal,
-} from "./github.ts";
+import { credentialFor, tokenForRepo, useKeptTokens } from "./forge-token.ts";
+import { postComment, sendRefusal } from "./github.ts";
 import type { NeedView } from "./needs-view.ts";
 import { type SendTarget, transportFault } from "./send-target.ts";
 import { watchAnswer } from "./send-watch.ts";
 import { keepSent, useSentHere } from "./sent.ts";
+import {
+  credentialOf,
+  type KeptToken,
+  ownerOf,
+  tokenFor,
+} from "./token-owners.ts";
 import type { Picking } from "./use-picking.ts";
 
-/** Where a fine-grained token is made, on GitHub. */
-const NEW_TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
-
 /** Why this page cannot send from the address it was served at; `null` when it can. */
-function pageTransportFault(): string | null {
+export function pageTransportFault(): string | null {
   return transportFault(window.location);
 }
 
@@ -112,22 +103,13 @@ function finishSend(
   changedSends();
 }
 
-/** Invalidates a callback once its settings component no longer exists. */
-function useRequestGeneration(): () => boolean {
-  const live = useRef(true);
-  useEffect(
-    () => () => {
-      live.current = false;
-    },
-    [],
-  );
-  return () => live.current;
-}
-
 /** A card's Send: how to start it, and what it is doing; `null` when the card has none. */
 export interface Sending {
   to: SendTarget;
+  /** The login of the token that answers for the target's owner; empty when none does now. */
   login: string;
+  /** Whether a kept token answers for the target's owner now, so Send can start; what an earlier send did shows either way. */
+  available: boolean;
   phase: Phase;
   /** Whether an option is picked, so a press sends. */
   ready: boolean;
@@ -164,7 +146,8 @@ function partialNote(
  * Posts each comment in order, into `urls` so the links posted survive a
  * failure; why the first refused one was not, and whether that one may
  * nevertheless have been posted. It stops before the next comment once
- * `held` says the token it holds was forgotten or replaced.
+ * `held` says the token it sends with was forgotten, replaced or no longer
+ * answers for the target's owner.
  */
 export async function postAll(
   token: string,
@@ -181,7 +164,7 @@ export async function postAll(
   for (const comment of comments) {
     if (!held())
       return {
-        refused: `The token was forgotten or replaced, so the rest was not attempted: ${comments
+        refused: `The token was forgotten, replaced or now answers for another owner, so the rest was not attempted: ${comments
           .slice(urls.length)
           .map((c) => c.key)
           .join(", ")}.`,
@@ -205,31 +188,30 @@ export async function postAll(
   return { refused: null, uncertain: false, uncertainKey: null };
 }
 
-/** The card's Send with a kept token, a station-readable github.com target and a safe page transport. */
+/** The card's Send with a kept token for its target's owner, a station-readable github.com target and a safe page transport. */
 export function useSend(need: NeedView, picking: Picking): Sending | null {
-  const { kept } = useKeptToken();
+  const { tokens } = useKeptTokens();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const key = sendKey(need);
   const sending = useSendState(key);
-  if (kept === null || !("to" in need.send) || pageTransportFault() !== null)
-    return null;
+  if (!("to" in need.send) || pageTransportFault() !== null) return null;
   const to = need.send.to;
+  const chosen = tokenFor(tokens, ownerOf(to.repo));
   const send = () => {
     if (phase.kind === "sending" || sending === "sending") return;
     const commit = picking.sendGate();
+    // The token may have been forgotten, replaced or remapped in another tab since the card drew.
+    const token = tokenForRepo(to.repo);
+    if (commit === null || token === null) return;
     if (
-      commit !== null &&
       sending !== null &&
       commit.answers.some((a) =>
         sending.texts
-          .get(uncertainKeyOf(kept.login, a.key))
+          .get(uncertainKeyOf(token.login, a.key))
           ?.includes(answerFingerprint(a)),
       )
     )
       return;
-    // The token may have been forgotten in another tab since the card drew.
-    const token = keptToken();
-    if (commit === null || token === null) return;
     const comments = cardAnswerComments(
       commit.answers,
       to.number,
@@ -237,7 +219,7 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       new Date().toISOString(),
     );
     const urls: string[] = [];
-    const generation = tokenGeneration();
+    const credential = credentialOf(token);
     const earlier = sends.get(key);
     const earlierUncertain =
       earlier !== undefined && earlier !== "sending" ? earlier : null;
@@ -261,6 +243,7 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
           text: sentText(urls.length),
           urls,
           at: Date.now(),
+          login: token.login,
         });
       }
       // Earlier uncertainty stays until a comment posted for the same
@@ -296,7 +279,7 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
       to,
       comments,
       urls,
-      () => tokenGeneration() === generation,
+      () => credentialFor(to.repo) === credential,
     ).then(
       ({ refused, uncertainKey }) => settle(refused, uncertainKey),
       () =>
@@ -320,7 +303,8 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
         : { kind: "failed", reason: uncertainReason };
   return {
     to,
-    login: kept.login,
+    login: chosen?.login ?? "",
+    available: chosen !== null,
     phase: currentPhase,
     ready: picking.commit.picked > 0,
     uncertain: uncertainReason !== null,
@@ -394,23 +378,29 @@ export function SendSaid({
 }) {
   const sent = useSentHere(need.repo, need.target);
   const other =
+    sending.available &&
     need.people.length > 0 &&
     !need.people.some((p) => p.toLowerCase() === sending.login.toLowerCase());
   if (
     sent === null &&
     sending.phase.kind !== "failed" &&
     sending.ready &&
-    !other
+    !other &&
+    !sending.uncertain
   )
     return null;
   return (
     <div className="sendSaid sm">
       {sent === null ? null : (
         <p className="sentHere">
-          {sent.text === text
-            ? "Sent here: "
-            : "An earlier answer was sent here: "}
-          <SentLinks urls={sent.urls} />. The next tick reads it.
+          {sent.text === text ? "Sent here" : "An earlier answer was sent here"}
+          {sent.login === undefined ? null : (
+            <>
+              {" "}
+              as <span className="m">{sent.login}</span>
+            </>
+          )}
+          : <SentLinks urls={sent.urls} />. The next tick reads it.
         </p>
       )}
       {sending.phase.kind === "failed" ? (
@@ -450,249 +440,37 @@ export function SendSaid({
 
 /** A card explains its missing Send and points to the token settings before a person picks. */
 export function NoSend({ need }: { need: NeedView }) {
-  const { kept } = useKeptToken();
+  const { tokens } = useKeptTokens();
   return (
-    <NoSendReason
-      need={need}
-      hasToken={kept !== null}
-      fault={pageTransportFault()}
-    />
+    <NoSendReason need={need} tokens={tokens} fault={pageTransportFault()} />
   );
 }
 
 export function NoSendReason({
   need,
-  hasToken,
+  tokens,
   fault,
 }: {
   need: NeedView;
-  hasToken: boolean;
+  tokens: readonly KeptToken[];
   fault: string | null;
 }) {
   const absent = "absent" in need.send ? need.send.absent : fault;
   if (absent !== null) return <p className="sm mut noSend">{absent}</p>;
-  return hasToken || need.rows.length === 0 ? null : (
+  if (need.rows.length === 0 || !("to" in need.send)) return null;
+  if (tokens.length === 0)
+    return (
+      <p className="sm mut noSend">
+        Paste a GitHub token to send from this browser: open “Send from here”
+        above, then Test and keep.
+      </p>
+    );
+  const owner = ownerOf(need.send.to.repo);
+  return tokenFor(tokens, owner) !== null ? null : (
     <p className="sm mut noSend">
-      Paste a GitHub token to send from this browser: open “Send from here”
-      above, then Test and keep.
+      No Send here: none of the tokens kept in this browser answers for{" "}
+      <span className="m">{owner}</span>. Open the Send settings above and name{" "}
+      {owner} on a token, or add a token for it; Copy works.
     </p>
-  );
-}
-
-type Test =
-  | { kind: "idle" }
-  | { kind: "testing" }
-  | { kind: "refused"; reason: string };
-
-/** The token's field, Test and keep, and what the test found. */
-function TokenField() {
-  const [draft, setDraft] = useState("");
-  const [test, setTest] = useState<Test>({ kind: "idle" });
-  const id = useId();
-  const alive = useRequestGeneration();
-  const run = () => {
-    const token = draft.trim();
-    if (token === "" || test.kind === "testing") return;
-    const generation = tokenGeneration();
-    setTest({ kind: "testing" });
-    void tokenLogin(token).then((answer) => {
-      if (!alive()) return;
-      if (tokenGeneration() !== generation) {
-        // The token changed under the test: drop its result, not its busy state.
-        setTest({ kind: "idle" });
-        return;
-      }
-      if (!answer.ok) {
-        setTest({ kind: "refused", reason: tokenRefusal(answer) });
-        return;
-      }
-      keepToken({ token, login: answer.value, at: Date.now() });
-      setDraft("");
-      setTest({ kind: "idle" });
-      announce(`The token signs in as ${answer.value}; Send is on`);
-    });
-  };
-  return (
-    <form
-      className="tokenForm"
-      onSubmit={(event) => {
-        event.preventDefault();
-        run();
-      }}
-    >
-      <label className="reply" htmlFor={id}>
-        <span className="sm mut">GitHub token</span>
-        <input
-          id={id}
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          autoCapitalize="none"
-          value={draft}
-          placeholder="github_pat_…"
-          onChange={(event) => setDraft(event.currentTarget.value)}
-        />
-      </label>
-      <div className="copyRow">
-        <button
-          type="submit"
-          className="fbtn"
-          aria-disabled={draft.trim() === ""}
-        >
-          {test.kind === "testing" ? "Testing…" : "Test and keep"}
-        </button>
-      </div>
-      {test.kind === "refused" ? (
-        <p className="sm decFault" role="alert">
-          {test.reason}
-        </p>
-      ) : null}
-    </form>
-  );
-}
-
-/** The kept token: who it signs in as, test it again, forget it. */
-function KeptTokenRow() {
-  const { kept, saved } = useKeptToken();
-  const [test, setTest] = useState<Test>({ kind: "idle" });
-  const alive = useRequestGeneration();
-  if (kept === null) return null;
-  const again = () => {
-    if (test.kind === "testing") return;
-    const generation = tokenGeneration();
-    setTest({ kind: "testing" });
-    void tokenLogin(kept.token).then((answer) => {
-      if (!alive()) return;
-      if (tokenGeneration() !== generation) {
-        // The token changed under the test: drop its result, not its busy state.
-        setTest({ kind: "idle" });
-        return;
-      }
-      if (!answer.ok) {
-        setTest({ kind: "refused", reason: tokenRefusal(answer) });
-        return;
-      }
-      setTest({ kind: "idle" });
-      if (answer.value !== kept.login)
-        keepToken({ ...kept, login: answer.value, at: Date.now() });
-      announce(`The token signs in as ${answer.value}`);
-    });
-  };
-  return (
-    <>
-      <p className="sm">
-        Send is on: it posts as <span className="m">{kept.login}</span>, the
-        login GitHub named for the token.
-        {saved
-          ? " The token is kept in this browser only."
-          : " This browser stores nothing, so the token lasts only while this page stays open."}
-      </p>
-      <div className="copyRow">
-        <button type="button" className="fbtn" onClick={again}>
-          {test.kind === "testing" ? "Testing…" : "Test again"}
-        </button>
-        <button
-          type="button"
-          className="fbtn"
-          onClick={() => {
-            keepToken(null);
-            setTest({ kind: "idle" });
-            announce("The token is forgotten; Send is off");
-          }}
-        >
-          Forget the token
-        </button>
-      </div>
-      {test.kind === "refused" ? (
-        <p className="sm decFault" role="alert">
-          {test.reason}
-        </p>
-      ) : null}
-    </>
-  );
-}
-
-/** The settings panel: what Send does, how to make the token, and the token itself. */
-export function SendSettings({
-  id,
-  repos,
-  onClose,
-}: {
-  id: string;
-  /** The repositories whose cards can send, for the token's scope. */
-  repos: string[];
-  onClose: () => void;
-}) {
-  const { kept } = useKeptToken();
-  const head = useId();
-  return (
-    <section className="sendSettings" id={id} aria-labelledby={head}>
-      <h3 id={head}>Send answers from this page</h3>
-      <p className="sm">
-        Send posts a card's answers as you, from this browser straight to
-        GitHub, one comment on its pull request for each decision it answers, so
-        a card with several decisions can be sent in part and says which went.
-        The token you paste stays in this browser; the dashboard's host never
-        receives it, and anyone who can open this page in this browser can send
-        with it.
-      </p>
-      <p className="sm">
-        Make a{" "}
-        <a href={NEW_TOKEN_URL} target="_blank" rel="noreferrer noopener">
-          fine-grained token
-        </a>{" "}
-        for{" "}
-        {repos.length === 0
-          ? "the repositories here"
-          : "only these repositories"}
-        {repos.length === 0 ? null : (
-          <>
-            {" "}
-            (<span className="m">{repos.join(", ")}</span>)
-          </>
-        )}
-        , with Issues and Pull requests set to read and write and a short
-        expiry. Forget it here when you are done.
-      </p>
-      {pageTransportFault() === null ? null : (
-        <p className="sm decNote">{pageTransportFault()}</p>
-      )}
-      {kept !== null ? (
-        <KeptTokenRow />
-      ) : pageTransportFault() === null ? (
-        <TokenField />
-      ) : null}
-      <div className="copyRow">
-        <button type="button" className="fbtn" onClick={onClose}>
-          Close
-        </button>
-      </div>
-    </section>
-  );
-}
-
-/** The button that opens the settings panel, saying whether Send is on. */
-export function SendSettingsToggle({
-  open,
-  onToggle,
-  controls,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  controls: string;
-}) {
-  const { kept } = useKeptToken();
-  const words = kept === null ? "Send from here" : `Sending as ${kept.login}`;
-  return (
-    <button
-      type="button"
-      className="fbtn sendToggle"
-      aria-expanded={open}
-      aria-controls={controls}
-      onClick={onToggle}
-    >
-      <KeyRound size={14} aria-hidden="true" />
-      <span>{words}</span>
-    </button>
   );
 }
