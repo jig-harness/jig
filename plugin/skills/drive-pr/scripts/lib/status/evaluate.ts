@@ -54,7 +54,7 @@ import { readPrState } from "../pr-state.ts";
 import {
   readParkedSets,
   standingProvisionalKeys,
-  unlistedReversals,
+  unlistedParkDetails,
 } from "../provisional.ts";
 import {
   reviewerApp,
@@ -1092,7 +1092,11 @@ async function evaluateFresh(
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
-  const reversalParked = unlistedReversals(parked.reversals, threads, summary);
+  const { reversalParked, standaloneNote } = unlistedParkDetails(
+    parked,
+    report.openThreadKeys,
+    report.summaryUnaddressedKeys,
+  );
 
   // A thread/finding held for `resolve-held-thread.ts` /
   // `answer-summary-finding.ts` to dispatch (an `accepted` or `moot`
@@ -1207,25 +1211,21 @@ async function evaluateFresh(
   // Over unpushed inherited commits only a conflict stops; else push them.
   const liveWork = Math.max(liveThreads, 0) + Math.max(liveSummary, 0);
   if (mayEndWithoutWork(liveWork, sync, conflicting)) {
-    // A conflict with NOTHING left to work is unconvergeable: no round can be
-    // reviewed, and no amount of waiting changes that. Checked before
-    // HITL_PARKED because a merge is a concrete command and a parked item is a
-    // question — an operator handed both should be told the mechanical one, and
-    // the parked items are named in the reason so nothing is hidden by the
-    // precedence.
+    // Resolve a conflict before handing back the parked decisions.
+    // The conflict reason also names any parked review findings.
     if (conflicting) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;
       return terminal(
         report,
         "PR_CONFLICTING",
-        `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
+        `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)${standaloneNote}). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
       );
     }
-    if (report.threadsParked + summaryParked + reversalParked > 0) {
+    if (parkedKeys.size > 0) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;
-      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s), ${reversalParked} other reversed provisional decision(s)) — handing back rather than re-arming`;
+      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s), ${reversalParked} other reversed provisional decision(s)${standaloneNote}) — handing back rather than re-arming`;
       if (stalledCheckRunNote !== "") hitlReason += ` — ${stalledCheckRunNote}`;
       return terminal(report, "HITL_PARKED", hitlReason);
     }

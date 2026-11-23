@@ -148,6 +148,8 @@ export function standingProvisionalKeys(
 const lines = (text: string): string[] =>
   text.split("\n").filter((k) => k !== "");
 
+type ParkedSets = { keys: Set<string>; reversals: Set<string> };
+
 /**
  * The round gate's parked keys, and those of them that hold a reversed
  * provisional decision; `null` when either could not be read, which the
@@ -159,7 +161,7 @@ export async function readParkedSets(ctx: {
   driveStateScript: string;
   pr: string;
   helperTimeoutSec: number;
-}): Promise<{ keys: Set<string>; reversals: string[] } | null> {
+}): Promise<ParkedSets | null> {
   const read = (cmd: string) =>
     run(tsArgv(ctx.driveStateScript, [cmd, ctx.pr]), {
       stderr: "inherit",
@@ -171,26 +173,27 @@ export async function readParkedSets(ctx: {
   if (reversals.code !== 0) return null;
   return {
     keys: new Set(lines(all.stdout)),
-    reversals: lines(reversals.stdout),
+    reversals: new Set(lines(reversals.stdout)),
   };
 }
 
-/**
- * How many reversed provisional decisions are parked on no live thread or
- * summary finding: a `decide` ruling's key is neither, and a reopened thread
- * may be resolved again, yet each awaits a person and keeps the drive from
- * converging.
- */
-export function unlistedReversals(
-  reversals: readonly string[],
-  threads: ReadonlyArray<{ threadId?: unknown }>,
-  summary: { unaddressed: ReadonlyArray<{ fingerprint: string }> },
-): number {
-  const counted = new Set([
-    ...threads.map((t) => String(t.threadId)),
-    ...summary.unaddressed.map((f) => f.fingerprint),
-  ]);
-  return reversals.filter((k) => !counted.has(k)).length;
+/** Describe parks that have no live review thread or summary finding. */
+export function unlistedParkDetails(
+  parked: ParkedSets,
+  threadKeys: readonly string[],
+  summaryKeys: readonly string[],
+): { reversalParked: number; standaloneNote: string } {
+  const listedKeys = new Set([...threadKeys, ...summaryKeys]);
+  const unlisted = [...parked.keys].filter((key) => !listedKeys.has(key));
+  const reversalParked = unlisted.filter((key) =>
+    parked.reversals.has(key),
+  ).length;
+  const standalone = unlisted.length - reversalParked;
+  return {
+    reversalParked,
+    standaloneNote:
+      standalone === 0 ? "" : `, ${standalone} standalone park(s)`,
+  };
 }
 
 /** The first comment a person wrote after a thread's last provisional reply. */

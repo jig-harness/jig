@@ -2662,24 +2662,21 @@ export async function park(
   stateDir: string,
   key: string,
   kind: "thread" | "finding",
+  parkClass?: string,
 ) {
-  const proc = Bun.spawn(
-    scriptArgv(join(SCRIPTS, "drive-state.ts"), ...parkArgs(key, kind)),
-    {
-      cwd: fixtureStateTree(stateDir),
-      env: {
-        ...gitCleanEnv(),
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
-        JIG__dispatch__person: "maintainer",
-      },
-      stdin: new TextEncoder().encode(
-        parkRecord("Did the arbiter escalate it"),
-      ),
-      stdout: "pipe",
-      stderr: "pipe",
+  const args = parkArgs(key, kind, parkClass);
+  const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
+    cwd: fixtureStateTree(stateDir),
+    env: {
+      ...gitCleanEnv(),
+      DRIVE_PR_STATE_DIR: stateDir,
+      DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+      JIG__dispatch__person: "maintainer",
     },
-  );
+    stdin: Buffer.from(parkRecord("Did the arbiter escalate it", parkClass)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   await expectSpawnExited(proc, 0);
 }
 

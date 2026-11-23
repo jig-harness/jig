@@ -15,6 +15,7 @@ import {
   diagnosisStartedPrefix,
   lastDiagnosisAt,
 } from "../state/ci-actions.ts";
+import { DRIVE_EXIT } from "../status/terminal-states.ts";
 import { recordCiAttempt } from "./ci-attempt-record.ts";
 import { afterTakeover } from "./ci-repair-pass.ts";
 import { mirrorNow } from "./ledger.ts";
@@ -23,8 +24,6 @@ import { type RepairCi, runRepairPass } from "./repair.ts";
 import type { DriveRoundContext } from "./round-context.ts";
 import { driverRuntime } from "./runtime.ts";
 import { CI_REPAIR_SPENT_EXIT } from "./settings.ts";
-import { HUMAN_DECISION_CLASS } from "../state/rulings.ts";
-import { parseMs } from "../../../../../shared/time.ts";
 
 const REPORT_BYTES = 4096;
 const DIAGNOSIS_CHARS = 400;
@@ -53,8 +52,8 @@ function isParkKey(value: unknown): value is string {
 const isMarker = (value: unknown, key: string): boolean =>
   isRecord(value) && value[key] === true && Object.keys(value).length === 1;
 
-/** Whether a receipt names a well-formed issue key or a parked filing, one of the two. */
-function namesIssueOrFiling(value: Record<string, unknown>): boolean {
+/** Whether a receipt names exactly one well-formed issue or park key. */
+function namesIssueOrPark(value: Record<string, unknown>): boolean {
   if ((value.issue === undefined) === (value.parked === undefined))
     return false;
   if (value.issue !== undefined)
@@ -66,12 +65,12 @@ function namesIssueOrFiling(value: Record<string, unknown>): boolean {
   return isParkKey(value.parked);
 }
 
-/** The full receipt: a diagnosis, its issue or parked filing, an optional pushed head. */
+/** The full receipt: a diagnosis, its issue or park, and an optional pushed head. */
 function fullReport(value: unknown): DiagnosisReport | null {
   if (
     !isRecord(value) ||
     typeof value.diagnosis !== "string" ||
-    !namesIssueOrFiling(value) ||
+    !namesIssueOrPark(value) ||
     (value.pushedHead !== undefined &&
       (typeof value.pushedHead !== "string" || !isGitSha(value.pushedHead)))
   )
@@ -148,53 +147,47 @@ async function standDownsAt(pr: string, head: string): Promise<number | null> {
 }
 
 const INCOMPLETE =
-  "The diagnosing repair report must contain a diagnosis and either a tracker issue key or the key of the filing it parked.";
+  "The diagnosing repair report must contain a diagnosis and either a tracker issue key or an open park key.";
 
 /** A receipt the driver accepted, a refused one, or a report of a moved head. */
 type Receipt =
-  | { text: string; pushedHead: string | undefined }
+  | { text: string; pushedHead: string | undefined; parked: boolean }
   | { refused: string }
   | { staleHead: true }
   | { standDown: true };
 
 /**
- * Judge the pass's receipt. Its diagnosis is prefixed with the tracker issue,
- * or with the filing the pass parked: a receipt that names no issue is
- * accepted only when the drive state holds a `human-decision` park of the key
- * it names, recorded after this diagnosis was reserved.
+ * Judge the pass's receipt against the current parked set. A park can be
+ * recorded before the diagnosis and still block the repair.
  */
 async function judgeReceipt(
   pr: string,
-  head: string,
   answer: DiagnosisReport | null,
 ): Promise<Receipt> {
   if (answer === null) return { refused: INCOMPLETE };
   if ("staleHead" in answer || "standDown" in answer) return answer;
   const { diagnosis, pushedHead } = answer;
   if (answer.issue !== undefined)
-    return { text: `issue ${answer.issue}. ${diagnosis}`, pushedHead };
+    return {
+      text: `issue ${answer.issue}. ${diagnosis}`,
+      pushedHead,
+      parked: false,
+    };
   const state = await readDriveState(pr, true);
   if (state === null)
     return {
       refused:
-        "The diagnosing repair report names a parked filing, but the drive state could not be read to verify it.",
+        "The diagnosing repair report names an open park, but the drive state could not be read to verify it.",
     };
-  const started = state.ciActions?.findLast(
-    (a) =>
-      a.action === "repair" &&
-      a.detail.startsWith(diagnosisStartedPrefix(head)),
-  );
-  const since = started === undefined ? Number.NaN : parseMs(started.at);
-  const parked = state.parked.some(
-    (p) =>
-      p.key === answer.parked &&
-      p.class === HUMAN_DECISION_CLASS &&
-      parseMs(p.at ?? "") >= since,
-  );
+  const parked = state.parked.some((p) => p.key === answer.parked);
   return parked
-    ? { text: `no issue filed (parked for a person). ${diagnosis}`, pushedHead }
+    ? {
+        text: `no issue filed (parked for a person). ${diagnosis}`,
+        pushedHead,
+        parked,
+      }
     : {
-        refused: `The diagnosing repair report names the filing park ${redactReportText(answer.parked ?? "")}, but this diagnosis parked no ${HUMAN_DECISION_CLASS} under that key; it must name a tracker issue key or a filing parked during this diagnosis.`,
+        refused: `The diagnosing repair report names park ${redactReportText(answer.parked ?? "")}, but that key is not open in the drive's parked set.`,
       };
 }
 
@@ -307,7 +300,7 @@ export async function diagnoseCi(
       if (!recorded) return result.resumed ? 1 : result.code;
       return result.resumed ? "continue" : result.code;
     }
-    const receipt = await judgeReceipt(context.pr, head, readDiagnosis(report));
+    const receipt = await judgeReceipt(context.pr, readDiagnosis(report));
     return await settleDiagnosis(context.pr, head, result, receipt);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -374,7 +367,7 @@ async function settleDiagnosis(
       head,
       `${receipt.text} (pass exit ${result.code})`,
     );
-  return await pushedHeadOutcome(pr, head, receipt.text, receipt.pushedHead);
+  return await pushedHeadOutcome(pr, head, receipt);
 }
 
 /**
@@ -439,15 +432,18 @@ function pushedOutcomeText(
 async function pushedHeadOutcome(
   pr: string,
   head: string,
-  diagnosis: string,
-  pushedHead: string | undefined,
+  receipt: Extract<Receipt, { text: string }>,
 ): Promise<number | "continue"> {
-  if (pushedHead === undefined || pushedHead === head)
-    return await stopWithDiagnosis(
+  const { text: diagnosis, pushedHead, parked } = receipt;
+  const exit = parked ? DRIVE_EXIT.HITL_PARKED : CI_REPAIR_SPENT_EXIT;
+  if (pushedHead === undefined || pushedHead === head) {
+    const recorded = await reportOutcome(
       pr,
       head,
       `${diagnosis} The pass reported no replacement head pushed.`,
     );
+    return recorded ? exit : 1;
+  }
   const current = await readPrSnapshot(pr, null);
   const verified = current.ok && current.value.head === pushedHead;
   const outcome = pushedOutcomeText(current, pushedHead, verified);

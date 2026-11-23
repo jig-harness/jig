@@ -1798,8 +1798,9 @@ Then:
      recurring CI failure blocks the merge), and a matching open issue is
      updated with a comment on the new evidence rather than filed again, as
      the issue-filing row allows. At `attended`, or when the base branch's
-     policy cannot be read, file nothing: park the decision under
-     `human-decision` (§ 4) and still repair the cause.
+     policy cannot be read, file nothing. Use an open park that explains
+     what blocks the repair, or park the filing decision under
+     `human-decision` (§ 4). Carry on with any repair the park allows.
   3. Repair the cause as `ci-repair` does, base sync first: when
      `$DRIVE_PR_ROUND_REPAIR_SKILL` is set load it, else follow
      [`/jig:fix-ci`](../fix-ci/SKILL.md); then § 5 and § 6, pushing through
@@ -1807,12 +1808,13 @@ Then:
   4. Write the receipt to the path in `$DRIVE_PR_CI_DIAGNOSIS_REPORT`, at most
      4096 bytes of JSON, with the file editor:
      `{"diagnosis": "<why the earlier attempts failed and what this one changes>", "issue": "<tracker key>", "pushedHead": "<sha of the head you pushed>"}`.
-     When you parked the filing (attended, or policy unreadable), give
-     `"parked": "<the key you parked it under>"` in place of `issue`. The
-     driver accepts that receipt only when the drive state holds a
-     `human-decision` park of that key made during this diagnosis; it then
-     records "no issue filed" and still verifies the push. A receipt with
-     neither key, or both, is incomplete.
+     When you parked the filing, or an existing park explains why CI repair
+     still needs a person's decision, give `"parked": "<the open park's key>"`
+     in place of `issue`. The driver verifies that the key is still parked and
+     records the diagnosis. A verified push of a replacement head returns to
+     the gate on that head. With no replacement head reported, the driver
+     hands the open decision back as `HITL_PARKED`. A receipt must name
+     exactly one key.
      `diagnosis` is prose (400 characters are kept, secrets and addresses
      redacted); `issue`, when present, is a tracker key of at most 80 characters;
      `parked`, when present, at most 200 characters on one line;
@@ -2899,8 +2901,9 @@ falls in.
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/scratch/park-decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
 ```
 
-`<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
-summary finding's fingerprint for `--kind finding`.
+`<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread`. For
+`--kind finding`, use the summary finding's fingerprint or a stable key
+for a decision that has no summary finding, such as a CI repair blocker.
 
 Pass `--path <repository-relative-path>` for a finding anchored to a file;
 the script reads a thread's anchor from the forge when no path is given.
