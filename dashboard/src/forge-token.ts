@@ -18,6 +18,7 @@ import { isRecord } from "../../plugin/shared/guards.ts";
 import { readKept, writeKept } from "./kept.ts";
 import {
   credentialOf,
+  hasAmbiguousMapping,
   isOwnerName,
   type KeptToken,
   ownerOf,
@@ -29,6 +30,8 @@ export type { KeptToken } from "./token-owners.ts";
 const KEY = "github-tokens";
 /** Where a browser kept its one token before it could keep several. */
 const EARLIER_KEY = "github-token";
+/** A stamp every write of the list renews, so an add and a forget that leave the same list still differ. */
+const STAMP_KEY = "github-tokens-stamp";
 
 const isText = (v: unknown): v is string => typeof v === "string" && v !== "";
 
@@ -83,13 +86,16 @@ export function tokensFrom(
     // Two entries for one account that disagree leave no mapping to trust.
     else if (same.owners.join(",") !== token.owners.join(",")) return [];
   }
-  return tokens;
+  // Overlapping owners, or two catch-alls, would leave `tokenFor` choosing between accounts.
+  return hasAmbiguousMapping(tokens) ? [] : tokens;
 }
 
 // What this page holds: read from storage once, then whatever the person kept or forgot.
 let held: { tokens: KeptToken[]; saved: boolean } | null = null;
 const listeners = new Set<() => void>();
 let revision = 0;
+// Writes this page made, for a browser that refuses storage and keeps no stamp.
+let writes = 0;
 
 /** The record kept under `key`: `null` when none is, `UNTRUSTED` when something is there that is not one. */
 function readRecord(key: string): Record<string, unknown> | null | "untrusted" {
@@ -124,9 +130,13 @@ export function freshTokens(): KeptToken[] {
   return now().tokens;
 }
 
-/** What the kept tokens are, as a string that differs whenever they do. */
+/**
+ * What the kept tokens are, as a string that differs whenever they or any
+ * write to them do: a token added and forgotten between two reads changes it,
+ * though the list is the same, including one made in another tab.
+ */
 export function tokensSignature(): string {
-  return JSON.stringify(freshTokens());
+  return JSON.stringify([freshTokens(), readKept(STAMP_KEY), writes]);
 }
 
 function changed(): void {
@@ -141,7 +151,8 @@ export function keptTokens(): KeptToken[] {
 
 /** The token kept now that answers for `repo`'s owner, or `null`. */
 export function tokenForRepo(repo: string): KeptToken | null {
-  return tokenFor(keptTokens(), ownerOf(repo));
+  // Decides a send, so it reads storage again rather than the list this page last drew.
+  return tokenFor(freshTokens(), ownerOf(repo));
 }
 
 /** Which token a card sending to `repo` would send with now, for its confirmation. */
@@ -151,6 +162,8 @@ export function credentialFor(repo: string): string {
 
 /** Keeps `tokens` in place of those kept; whether this browser stored them rather than holding them only while the page is open. */
 export function keepTokens(tokens: KeptToken[]): boolean {
+  writes++;
+  writeKept(STAMP_KEY, `${Date.now()}-${Math.random()}`);
   const saved = writeKept(
     KEY,
     tokens.length === 0 ? null : JSON.stringify({ tokens }),
@@ -173,6 +186,7 @@ export function useKeptTokens(): { tokens: KeptToken[]; saved: boolean } {
         if (
           event.key !== null &&
           !event.key.endsWith(`:${KEY}`) &&
+          !event.key.endsWith(`:${STAMP_KEY}`) &&
           !event.key.endsWith(`:${EARLIER_KEY}`)
         )
           return;

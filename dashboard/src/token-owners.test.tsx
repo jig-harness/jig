@@ -208,6 +208,17 @@ describe("what a browser has stored", () => {
   });
 });
 
+describe("a stored list whose mappings overlap", () => {
+  test("is untrusted when two accounts name one owner or two answer for every owner", () => {
+    const shared = { ...B, owners: ["EXAMPLE-ORG", ...B.owners] };
+    for (const list of [
+      [{ ...A, owners: ["example-org"] }, shared],
+      [ANY, { ...B, owners: [] }],
+    ])
+      expect(tokensFrom({ tokens: list }, null)).toEqual([]);
+  });
+});
+
 describe("a list that is stored but unreadable", () => {
   const earlier = { token: "pat-old", login: "old", at: 1 };
 

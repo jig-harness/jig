@@ -80,6 +80,20 @@ export function parseOwners(text: string): Mapped<string[]> {
   return { ok: true, value: owners };
 }
 
+/** Whether two distinct tokens answer for one owner, or two answer for every owner no other names: `tokenFor` would silently choose between them. */
+export function hasAmbiguousMapping(tokens: readonly KeptToken[]): boolean {
+  const seen = new Set<string>();
+  let catchAlls = 0;
+  for (const t of tokens) {
+    if (t.owners.length === 0) catchAlls++;
+    for (const owner of new Set(t.owners.map((o) => o.toLowerCase()))) {
+      if (seen.has(owner)) return true;
+      seen.add(owner);
+    }
+  }
+  return catchAlls > 1;
+}
+
 /** Why `kept` cannot sit beside `others`, or `null` when it can. */
 function mappingRefusal(
   others: readonly KeptToken[],

@@ -276,8 +276,10 @@ export function usePicking(
   }, [card, picks]);
 
   // A confirmation does not survive its card's token changing, even if the same token comes back.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the credential is the trigger
+  const credentialSeen = useRef(credential);
   useEffect(() => {
+    if (credentialSeen.current === credential) return;
+    credentialSeen.current = credential;
     latest.current.disarm();
   }, [credential]);
 
