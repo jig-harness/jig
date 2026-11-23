@@ -31,7 +31,9 @@ const WAITS = new Map([
 function refreshArgs(drive: DrivenPr): string[] | null {
   const { exit, mergeable, headSha, verifiedSha, generation } = drive.evidence;
   if (
-    (drive.class !== "stale" && drive.class !== "done") ||
+    (drive.class !== "stale" &&
+      (drive.class !== "done" ||
+        drive.evidence.staleMergeReadyAnnouncement !== true)) ||
     exit !== DRIVE_EXIT.CONVERGED ||
     mergeable !== "MERGEABLE" ||
     typeof headSha !== "string" ||

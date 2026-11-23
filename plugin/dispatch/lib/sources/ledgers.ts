@@ -148,7 +148,14 @@ import { readPark, type ParkReading } from "./park-reading.ts";
 import { failedRead } from "./ledger-read-failure.ts";
 import { ledgerParks } from "../park-events.ts";
 import { readFailureOf } from "../read-failures.ts";
-import { listComments } from "../../../shared/records/forge-claims.ts";
+import {
+  listComments,
+  listedFrom,
+} from "../../../shared/records/forge-claims.ts";
+import {
+  announcementsOf,
+  MERGE_READY,
+} from "../../../skills/drive-pr/scripts/lib/announce.ts";
 export type { ParkReading } from "./park-reading.ts";
 import type {
   DrivenPr,
@@ -805,6 +812,26 @@ async function presenceEvidence(
   return { driverGone: seen.gone, driverCheck: seen.why };
 }
 
+/** Whether the tick's already-read comments show a merge-ready announcement for another head. */
+function announcementEvidence(
+  comments: readonly unknown[],
+  slug: string,
+  pr: number,
+  login: string | null,
+  head: string | null,
+): Evidence {
+  if (head === null) return {};
+  const announcements = announcementsOf(
+    listedFrom(MERGE_READY, comments, { repo: slug, number: pr }, login),
+  );
+  return announcements.some(
+    (announcement) =>
+      announcement.unreadable !== undefined || announcement.head !== head,
+  )
+    ? { staleMergeReadyAnnouncement: true }
+    : {};
+}
+
 /** One pull request's drive; `null` when it carries no ledger and no label asks for one. */
 async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   const { slug, login, nowMs, windowMs, labels } = r;
@@ -882,6 +909,13 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
     ...(classified.class === "unplaced" ? failedRead(ledger, park, forge) : {}),
     evidence: {
       ...ledgerEvidence(ledger, nowMs, forge),
+      ...announcementEvidence(
+        listing.value,
+        slug,
+        pr.number,
+        login,
+        forge.head,
+      ),
       ...reviewer?.evidence,
       ...request,
       ...(await presenceEvidence(pr.number, ledger, classified, r)),

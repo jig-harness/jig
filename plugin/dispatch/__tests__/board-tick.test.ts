@@ -427,6 +427,19 @@ describe("refreshing convergence after a base merge", () => {
     ]);
   }, 90_000);
 
+  it("does not refresh a clean converged drive without stale announcement evidence", async () => {
+    const { w, head } = afterBaseMerge();
+    checkEvidence(w, head, "success");
+    await apply(w);
+
+    writeFileSync(join(w.dir, "gh-calls.log"), "");
+    await apply(w);
+
+    expect(readFileSync(join(w.dir, "gh-calls.log"), "utf8")).not.toContain(
+      "pr view 7 --json state,headRefOid,baseRefOid,mergeable,isDraft",
+    );
+  }, 90_000);
+
   it("re-drives once when the head moved by a base merge and a PR edit", async () => {
     const { w, verified, head } = afterBaseMerge(true);
     checkEvidence(w, head, "success");
