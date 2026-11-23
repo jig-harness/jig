@@ -279,9 +279,13 @@ function planWanted(
     });
     return;
   }
-  // A stopped pickup's need is only a notification: it goes out where the
-  // runtime cannot vouch for the item's workspace, as beside a running one.
-  if (held.kind === "unknown" && hold.kind === "none") {
+  // A stopped pickup's need is only a notification: it goes out where a
+  // workspace joined to the item has terminals the runtime cannot report, as
+  // beside a running one.
+  if (
+    held.kind === "unknown" &&
+    (hold.kind === "none" || held.workspace === undefined)
+  ) {
     plan.unplaced.push({
       target: item.key,
       record: "runtime",
@@ -634,9 +638,9 @@ function planClaimed(
   if (held.kind === "unknown") {
     plan.idleKeep.push(item.key);
     // The question its ended pickup asked is only a notification: it still
-    // reaches a person.
+    // reaches a person where only a workspace's terminals are unreported.
     const asked =
-      pickup.kind === "ended"
+      pickup.kind === "ended" && held.workspace !== undefined
         ? questionAsked(input, item, pickup.record)
         : null;
     if (asked !== null) {

@@ -190,9 +190,11 @@ export function planTick(input: PlanInput): Plan {
 
   /**
    * One wanted stage for one target, minus what is running. Where the
-   * runtime cannot vouch for a workspace joined to it, a notification still
-   * goes out, as beside a running session, and a launch becomes the need
-   * `recover` frames, when one is given; anything else is unplaced.
+   * listing read but a workspace joined to the target has terminals the
+   * runtime cannot report, a notification still goes out, as beside a
+   * running session, and a launch becomes the need `recover` frames, when
+   * one is given; anything else, and anything while the listing itself does
+   * not read, is unplaced.
    */
   function want(
     action: Action,
@@ -202,11 +204,11 @@ export function planTick(input: PlanInput): Plan {
     const held = holding(sessions, joined);
     if (held.kind === "unknown") {
       const need =
-        action.stage === "notify"
-          ? action
-          : held.workspace === undefined || recover === undefined
-            ? null
-            : recover(held.workspace, held.reason);
+        held.workspace === undefined
+          ? null
+          : action.stage === "notify"
+            ? action
+            : (recover?.(held.workspace, held.reason) ?? null);
       if (need !== null) {
         plan.actions.push({
           ...need,

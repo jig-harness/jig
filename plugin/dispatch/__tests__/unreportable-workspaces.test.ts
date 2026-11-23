@@ -102,13 +102,17 @@ function wanted(key: string): WantedItem {
   };
 }
 
-function plan(launches: ReadRecord[], workspaces: Workspace[]) {
+function plan(
+  launches: ReadRecord[],
+  workspaces: Workspace[],
+  sessions: SessionsReport = listed(...workspaces),
+) {
   return planPickups({
     slug: SLUG,
     section: { stalledAfterMs: 3_600_000 } as DispatchSection,
     pickups: [wanted("#7")],
     claimed: [],
-    sessions: listed(...workspaces),
+    sessions,
     launches,
     idleSince: new Map(),
     nowMs: NOW,
@@ -132,6 +136,18 @@ describe("a pickup whose workspace the runtime cannot vouch for", () => {
     expect(result.actions).toEqual([]);
     expect(result.unplaced).toEqual([
       { target: "#7", record: "runtime", reason: REASON },
+    ]);
+  });
+
+  it("leaves a stopped pickup unplaced while the listing itself does not read", () => {
+    const result = plan([endedPickup("#7")], [], {
+      ok: false,
+      source: "test",
+      reason: "the runtime did not answer",
+    });
+    expect(result.actions).toEqual([]);
+    expect(result.unplaced).toEqual([
+      { target: "#7", record: "runtime", reason: "the runtime did not answer" },
     ]);
   });
 });
