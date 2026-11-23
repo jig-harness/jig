@@ -4130,7 +4130,7 @@ vouches for a head such a reviewer has not looked at since.
 
 `--timeout` bounds the waiting **between** `drive-status.ts` polls and, from a
 poll's second evaluation on, its opening and terminal pull-request requests
-(the first evaluation's opening read and terminal recheck keep each call's own deadline); nothing else. A connection that is accepted but never completes is only ever noticed
+(every request of a poll's first evaluation keeps its own call deadline); nothing else. A connection that is accepted but never completes is only ever noticed
 *between* calls, so it outlives every deadline the driver advertises — and an
 unattended loop has nobody to notice it has stopped (mode 13 in
 `references/terminal-states.md`). Every outbound call therefore carries its own:
@@ -4173,7 +4173,7 @@ that is not a whole pull document, is followed by one full read (not after a
 rate limit, an auth failure or a missing pull request, which a second request
 cannot clear). From the second evaluation on, the opening read and the terminal recheck
 each run within what remains of the invocation's `--timeout`, and either is refused
-once it is spent; the first evaluation's opening read and terminal recheck keep each call's own deadline. A `null`
+once it is spent; every request of the first evaluation keeps its own call deadline. A `null`
 `mergeable`, which GitHub sends while it computes mergeability, reads as
 `UNKNOWN`. `drive-status.ts` resolves a URL or branch argument to its number
 once, before the first evaluation. `await-round.ts`
