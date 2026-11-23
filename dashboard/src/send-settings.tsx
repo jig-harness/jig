@@ -196,7 +196,13 @@ function TokenField({ more }: { more: boolean }) {
 }
 
 /** One kept token: who it signs in as, the owners it answers for, test it again, forget it. */
-function KeptTokenRow({ kept }: { kept: KeptToken }) {
+function KeptTokenRow({
+  kept,
+  forgetOnly = false,
+}: {
+  kept: KeptToken;
+  forgetOnly?: boolean;
+}) {
   const [test, setTest] = useState<Test>({ kind: "idle" });
   const [owners, setOwners] = useState(kept.owners.join(", "));
   const alive = useRequestGeneration();
@@ -251,6 +257,29 @@ function KeptTokenRow({ kept }: { kept: KeptToken }) {
       `${login}'s token answers for ${saved === undefined ? "its owners" : ownersSaid(saved)}`,
     );
   };
+  const forget = (
+    <button
+      type="button"
+      className="fbtn"
+      aria-label={`Forget the token for ${login}`}
+      onClick={() => {
+        keepTokens(withoutToken(freshTokens(), login));
+        announce(`The token for ${login} is forgotten`);
+      }}
+    >
+      Forget this token
+    </button>
+  );
+  // Recovery has no read and no write besides forgetting: no test, no owners.
+  if (forgetOnly)
+    return (
+      <li>
+        <p className="sm">
+          A token kept for <span className="m">{login}</span>.
+        </p>
+        <div className="copyRow">{forget}</div>
+      </li>
+    );
   return (
     <li>
       <p className="sm">
@@ -280,17 +309,7 @@ function KeptTokenRow({ kept }: { kept: KeptToken }) {
         >
           {test.kind === "testing" ? "Testing…" : "Test again"}
         </button>
-        <button
-          type="button"
-          className="fbtn"
-          aria-label={`Forget the token for ${login}`}
-          onClick={() => {
-            keepTokens(withoutToken(freshTokens(), login));
-            announce(`The token for ${login} is forgotten`);
-          }}
-        >
-          Forget this token
-        </button>
+        {forget}
       </div>
       <Refused test={test} />
     </li>
@@ -301,7 +320,13 @@ const UNTRUSTED_NOTE =
   "The kept tokens could not be read in full, so none is used and no token can be added over them. Forget them, then paste the tokens again.";
 
 /** The kept tokens, and the owners of sendable repositories none answers for. */
-function KeptTokens({ repos }: { repos: string[] }) {
+function KeptTokens({
+  repos,
+  forgetOnly = false,
+}: {
+  repos: string[];
+  forgetOnly?: boolean;
+}) {
   const { tokens, saved } = useKeptTokens();
   if (tokens.length === 0 && storedListUntrusted())
     return (
@@ -318,7 +343,7 @@ function KeptTokens({ repos }: { repos: string[] }) {
   return (
     <>
       <p className="sm">
-        Send is on.
+        {forgetOnly ? "" : "Send is on."}
         {saved
           ? " The tokens are kept in this browser only."
           : " This browser stores nothing, so the tokens last only while this page stays open."}
@@ -328,6 +353,7 @@ function KeptTokens({ repos }: { repos: string[] }) {
           <KeptTokenRow
             key={`${credentialOf(t)} ${t.owners.join(",")}`}
             kept={t}
+            forgetOnly={forgetOnly}
           />
         ))}
       </ul>
@@ -444,7 +470,7 @@ export function KeptTokenRecovery() {
   return (
     <section className="sendSettings" aria-labelledby={head}>
       <h3 id={head}>Tokens kept in this browser</h3>
-      <KeptTokens repos={[]} />
+      <KeptTokens repos={[]} forgetOnly />
     </section>
   );
 }

@@ -26,5 +26,9 @@ test("a refused page offers to forget a kept token, and nothing when none is kep
   const html = renderToStaticMarkup(<KeptTokenRecovery />);
   expect(html).toContain("Forget this token");
   expect(html).not.toContain("GitHub token</span>");
+  // Recovery is forget-only: nothing that reads the token or rewrites its owners.
+  expect(html).not.toContain("Test again");
+  expect(html).not.toContain("Save owners");
+  expect(html).not.toContain("Send is on");
   keepTokens([]);
 });
