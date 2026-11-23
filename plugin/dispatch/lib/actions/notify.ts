@@ -61,11 +61,7 @@
  * through the notification.
  */
 import { probeStopOf } from "../../../skills/drive-pr/scripts/lib/status/probe-stop.ts";
-import {
-  channelNameFault,
-  type Delivery,
-  type NotificationChannel,
-} from "../../../chat/channel.ts";
+import type { Delivery, NotificationChannel } from "../../../chat/channel.ts";
 import { stateRoot } from "../../receipts.ts";
 import {
   driveClass,
@@ -122,6 +118,7 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import { type ApplyState, timeLeftMs } from "./launch.ts";
+import { namedChannels, reportUnreachable } from "./notify-channel-faults.ts";
 
 /** A notification the plan names, with its cause and message; `repeat` once it is sent again after `renotify_after`. */
 export type Cause = NoticeCause;
@@ -591,59 +588,6 @@ interface SendScope {
   timeLeftMs: () => number | null;
   /** The longest one channel delivery may take without a tick deadline: its preparation and its write. */
   deliveryTimeoutMs: number;
-}
-
-/**
- * Report each named channel that cannot be reached (its address unset or
- * refused) as the host's fault, once a tick, whether or not anything is due
- * on it: otherwise a channel that is never configured would wait silently.
- * A reachability check that throws is reported where the causes are decided.
- */
-function reportUnreachable(
-  state: ApplyState,
-  channels: ReadonlyArray<NotificationChannel<Cause>>,
-  report: RepoReport,
-): void {
-  state.channelFaults ??= new Set();
-  const reported = state.channelFaults;
-  for (const channel of channels) {
-    if (reported.has(channel.name)) continue;
-    let why: string | null;
-    try {
-      why = channel.unreachable();
-    } catch {
-      continue;
-    }
-    if (why === null) continue;
-    reported.add(channel.name);
-    report.unplaced.push({
-      target: `the ${channel.name} notification channel`,
-      record: "runtime",
-      reason: `${why}, so every notification on it waits; this host's machine file or the tick's environment must be corrected`,
-    });
-  }
-}
-
-/** The channels whose names hold to the port's rule (`channelNameFault`); another is reported, and nothing goes through it. */
-function namedChannels(
-  channels: ReadonlyArray<NotificationChannel<Cause>>,
-  report: RepoReport,
-): Array<NotificationChannel<Cause>> {
-  const kept: Array<NotificationChannel<Cause>> = [];
-  for (const channel of channels) {
-    const fault = channelNameFault(
-      channel.name,
-      kept.map((c) => c.name),
-    );
-    if (fault === null) kept.push(channel);
-    else
-      report.unplaced.push({
-        target: "a notification channel",
-        record: "runtime",
-        reason: `${fault}, so nothing was sent through it`,
-      });
-  }
-  return kept;
 }
 
 /** The causes due on `channel` and tried this tick; the rest reported suppressed, backing off, or waiting on a channel that cannot be reached. */
