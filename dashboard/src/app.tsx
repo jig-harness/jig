@@ -55,7 +55,7 @@ import { Refused } from "./refused.tsx";
 import { type Steering, useSteering, ViewFilter } from "./steering.tsx";
 import { TicksPanel } from "./ticks.tsx";
 import { bindAnswersToPark, forgetOldAnswers } from "./answers.ts";
-import { useKeptTokens } from "./forge-token.ts";
+import { storedListUntrusted, useKeptTokens } from "./forge-token.ts";
 import { forgetOldSends } from "./sent.ts";
 import { decisionRows } from "./picking.ts";
 import {
@@ -600,7 +600,9 @@ function CardView({
   return (
     <>
       {line !== null &&
-      (hasNeedRows(line, clock.nowMs) || tokens.length > 0) ? (
+      (hasNeedRows(line, clock.nowMs) ||
+        tokens.length > 0 ||
+        storedListUntrusted()) ? (
         <PanelBoundary name="What needs you" className="pNeeds" reads={line}>
           <NeedsPanel
             line={line}
