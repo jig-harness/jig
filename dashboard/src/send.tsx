@@ -22,12 +22,8 @@
  * each on its own.
  */
 import { Send } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { cardAnswerComments } from "../../plugin/shared/decisions/answer-record.ts";
-import {
-  type CardAnswer,
-  cardAnswerLines,
-} from "../../plugin/shared/decision-card.ts";
 import { BROWSER_HOST } from "../../plugin/shared/records/writer-shape.ts";
 import { announce } from "./copy.tsx";
 import { credentialFor, tokenForRepo, useKeptTokens } from "./forge-token.ts";
@@ -36,6 +32,14 @@ import type { NeedView } from "./needs-view.ts";
 import { type SendTarget, transportFault } from "./send-target.ts";
 import { watchAnswer } from "./send-watch.ts";
 import { keepSent, useSentHere } from "./sent.ts";
+import {
+  finishSend,
+  heldBack,
+  sendKeyOf,
+  settleSend,
+  startSend,
+  useSendState,
+} from "./send-record.ts";
 import {
   credentialOf,
   type KeptToken,
@@ -54,53 +58,8 @@ type Phase =
   | { kind: "sending" }
   | { kind: "failed"; reason: string };
 
-/** A send in flight, or one whose decisions may have posted: `texts` holds every answer of each such decision that may have posted, by writer and key (`uncertainKeyOf`), so only a send of one of those same answers to that decision by that writer is held back. */
-type SendState =
-  | "sending"
-  | { uncertain: string; texts: Map<string, string[]> };
-
-/** One decision's whole answer as posted: its answer line and its note line, so a changed condition is a changed answer. */
-function answerFingerprint(a: {
-  key: string;
-  digest?: string;
-  answer: CardAnswer;
-}): string {
-  return cardAnswerLines(a.key, a.answer, a.digest).join("\n");
-}
-/** The key an answer's uncertainty is kept under: the writer too (by the readers' case-insensitive identity), since another writer's comment does not supersede it. */
-function uncertainKeyOf(login: string, key: string): string {
-  return `${login.toLowerCase()}\n${key}`;
-}
-
-const sends = new Map<string, SendState>();
-const sendListeners = new Set<() => void>();
-
 function sendKey(need: NeedView): string {
-  return `${need.repo} ${need.target}`;
-}
-
-function changedSends(): void {
-  for (const listener of sendListeners) listener();
-}
-
-function useSendState(key: string): SendState | null {
-  return useSyncExternalStore(
-    (listener) => {
-      sendListeners.add(listener);
-      return () => sendListeners.delete(listener);
-    },
-    () => sends.get(key) ?? null,
-    () => null,
-  );
-}
-
-function finishSend(
-  key: string,
-  uncertain: { reason: string; texts: Map<string, string[]> } | null,
-): void {
-  if (uncertain === null || uncertain.texts.size === 0) sends.delete(key);
-  else sends.set(key, { uncertain: uncertain.reason, texts: uncertain.texts });
-  changedSends();
+  return sendKeyOf(need.repo, need.target);
 }
 
 /** A card's Send: how to start it, and what it is doing; `null` when the card has none. */
@@ -203,15 +162,7 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
     // The token may have been forgotten, replaced or remapped in another tab since the card drew.
     const token = tokenForRepo(to.repo);
     if (commit === null || token === null) return;
-    if (
-      sending !== null &&
-      commit.answers.some((a) =>
-        sending.texts
-          .get(uncertainKeyOf(token.login, a.key))
-          ?.includes(answerFingerprint(a)),
-      )
-    )
-      return;
+    if (heldBack(sending, token.login, commit.answers)) return;
     const comments = cardAnswerComments(
       commit.answers,
       to.number,
@@ -220,11 +171,7 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
     );
     const urls: string[] = [];
     const credential = credentialOf(token);
-    const earlier = sends.get(key);
-    const earlierUncertain =
-      earlier !== undefined && earlier !== "sending" ? earlier : null;
-    sends.set(key, "sending");
-    changedSends();
+    const earlierUncertain = startSend(key);
     setPhase({ kind: "sending" });
     announce(`Sending the answers for ${need.target} as ${token.login}`);
     // What was posted: the whole answer, or only the comments that went, so a
@@ -246,26 +193,15 @@ export function useSend(need: NeedView, picking: Picking): Sending | null {
           login: token.login,
         });
       }
-      // Earlier uncertainty stays until a comment posted for the same
-      // decision supersedes it; a decision this send refused or never
-      // attempted keeps what it had, and the one that may have posted adds
-      // its answer beside it.
-      const priorReason = earlierUncertain?.uncertain ?? "";
-      const texts = new Map(
-        [...(earlierUncertain?.texts ?? [])].map(([k, v]) => [k, [...v]]),
+      settleSend(
+        key,
+        earlierUncertain,
+        token.login,
+        commit.answers,
+        urls.length,
+        uncertainKey,
+        refused,
       );
-      for (const a of commit.answers.slice(0, urls.length))
-        texts.delete(uncertainKeyOf(token.login, a.key));
-      const unsure = commit.answers.find((a) => a.key === uncertainKey);
-      if (unsure !== undefined) {
-        const mineKey = uncertainKeyOf(token.login, unsure.key);
-        const said = texts.get(mineKey) ?? [];
-        const mine = answerFingerprint(unsure);
-        texts.set(mineKey, said.includes(mine) ? said : [...said, mine]);
-      }
-      const reason =
-        uncertainKey !== null && refused !== null ? refused : priorReason;
-      finishSend(key, { reason, texts });
       if (refused === null) {
         setPhase({ kind: "idle" });
         announce(`Sent the answers for ${need.target} as ${token.login}`);

@@ -1545,6 +1545,13 @@ make, use the entry's term instead.
   facts that identify it, with a fixed set of options that are steps the
   tick carries out once a person chooses one
   ([design](design/structured-answers.md#every-need-framed)).
+- **Question group** — needs on one host's line whose *framed decisions*
+  are identical apart from the target each is about: the same act, class,
+  question, options and recommended option once the need's own item
+  or pull request is replaced. The dashboard's Needs you shows a question
+  group as one card, and one answer on it is sent to each target as that
+  target's own answer; `jig ask --waiting` names each need's group
+  ([design](design/need-classes.md#identical-questions-fold)).
 - **Decision class** — one row of the *HITL* registry, named by a short
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in

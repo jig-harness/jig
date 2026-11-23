@@ -26,6 +26,7 @@ import {
 } from "../../dispatch/lib/line-unread.ts";
 import { ANSWER_VERSION, type PersonAct } from "./answer.ts";
 import { actOfLineNeed, type NeedAct } from "../../shared/acts.ts";
+import { questionGroupId } from "../../shared/question-group.ts";
 import { HOST_NEED_REPO } from "../../dispatch/lib/preflight.ts";
 
 /** The act that settles each cause the tick finds waiting on a person. */
@@ -73,6 +74,8 @@ export interface WaitingEntry {
   questions: string[];
   /** Why its notice has not reached a person this tick (held for room in the comment, lost, its destination unreachable); `null` otherwise. */
   notice: string | null;
+  /** The question group the need is in (`shared/question-group.ts`): entries that share it are one card on the dashboard's Needs you, settled by one answer; `null` for a need that is always a card of its own. */
+  questionGroup: string | null;
 }
 
 /** What `--waiting` answers. */
@@ -113,6 +116,7 @@ function shared(need: LineNeed): Omit<WaitingEntry, "address" | "questions"> {
     url: need.url,
     title: need.title,
     notice: need.notified?.detail ?? null,
+    questionGroup: questionGroupId(need),
   };
 }
 
@@ -157,6 +161,7 @@ function heldPickupEntry(entry: LineQueued): WaitingEntry | null {
     title: entry.title,
     questions: [],
     notice: null,
+    questionGroup: null,
   };
 }
 

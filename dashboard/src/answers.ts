@@ -22,6 +22,8 @@ import {
   keptAnswerOf,
   rowAnswer,
 } from "./picking.ts";
+import { groupCommit } from "./question-group-commit.ts";
+import type { QuestionGroupView } from "./question-group-view.ts";
 
 const PREFIX = "answer:";
 /** Where reply drafts were kept before a card had rows; read only to forget them. */
@@ -64,8 +66,30 @@ function parsed(raw: string | null): unknown {
 }
 
 /** The answers kept for one decision, by its repository, target and key. */
-export function answerId(repo: string, target: string, key: string): string {
+function answerId(repo: string, target: string, key: string): string {
   return `${PREFIX}${repo} ${target} ${key}`;
+}
+
+/** A card's decisions as `cardAnswerIds` and `keptCommit` read them. */
+interface CardDecisions {
+  repo: string;
+  target: string;
+  rows: DecisionRow[];
+  group?: QuestionGroupView;
+}
+
+/**
+ * Where a card's answers are kept: under each decision of its need, or, on
+ * a question group's card, under the group's identity and the decision's
+ * place, so a pick stays while targets join or leave the group.
+ */
+export function cardAnswerIds(card: CardDecisions): string[] {
+  const { group } = card;
+  return card.rows.map((row) =>
+    group === undefined
+      ? answerId(card.repo, card.target, row.key)
+      : `${PREFIX}group ${group.id} ${row.place}`,
+  );
 }
 
 function read(id: string, nowMs: number): KeptAnswer | null {
@@ -104,6 +128,11 @@ function keep(id: string, kept: KeptAnswer | null): boolean {
   held.set(id, { kept, saved });
   changed();
   return saved;
+}
+
+/** Forgets the answers kept under `ids`: a question group's pick, once every target it covered has its answer. */
+export function forgetAnswers(ids: readonly string[]): void {
+  for (const id of ids) keep(id, null);
 }
 
 /**
@@ -147,17 +176,20 @@ export function bindAnswersToPark(
     }
 }
 
-/** What a need's Copy takes, from the answers kept for its decisions now: what the palette offers to copy. */
+/**
+ * What a card's Copy takes, from the answers kept for its decisions now:
+ * what the palette offers to copy. A question group's card leaves out the
+ * targets in `left`.
+ */
 export function keptCommit(
-  repo: string,
-  target: string,
-  rows: DecisionRow[],
+  card: CardDecisions,
+  left: ReadonlySet<string> = new Set(),
 ): CardCommit {
-  const kept = currentAnswers(
-    rows.map((row) => answerId(repo, target, row.key)),
-  );
+  const kept = currentAnswers(cardAnswerIds(card));
+  if (card.group !== undefined)
+    return groupCommit(card.group, card.rows, kept, left);
   return cardCommit(
-    rows,
-    rows.map((row, i) => rowAnswer(row, kept[i] ?? null)),
+    card.rows,
+    card.rows.map((row, i) => rowAnswer(row, kept[i] ?? null)),
   );
 }

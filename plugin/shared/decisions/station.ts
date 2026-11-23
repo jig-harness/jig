@@ -558,7 +558,7 @@ export interface StationAnswer {
 }
 
 /** A word for a shell: as it is when it needs no quoting, else in single quotes. */
-function shellWord(word: string): string {
+export function shellWord(word: string): string {
   return /^[A-Za-z0-9._@#/:=+-]+$/.test(word)
     ? word
     : `'${word.replaceAll("'", `'\\''`)}'`;
