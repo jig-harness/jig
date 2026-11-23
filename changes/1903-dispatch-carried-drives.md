@@ -10,3 +10,8 @@ release: patch
   request, shown with its drive waiting to be armed, instead of raised as a
   stalled pickup whose pull request "has no drive" once it idles past
   `dispatch.stalled_after`.
+- `jig dispatch`: a stalled pickup relaunched in its own tree
+  (`dispatch.stalled_relaunch: finish-once`) now keeps its workspace's
+  branch on its launch record, a retried relaunch included, so a relaunched
+  process pickup that opens its pull request and hands off the first drive
+  (`drive@`) gets that drive armed, as a first launch does.

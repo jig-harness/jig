@@ -188,8 +188,8 @@ function treeChanged(
     : `its tree moved from ${relaunch.head} to ${tree.head} since the plan read it`;
 }
 
-/** The relaunch's record: the pickup it finishes, under a record, token and account of its own. */
-function relaunchRecord(
+/** The relaunch's record: the pickup it finishes, in the workspace the plan read (its branch included), under a record, token and account of its own. */
+export function relaunchRecord(
   state: ApplyState,
   source: LaunchRecord,
   relaunch: PickupRelaunch,
@@ -319,6 +319,26 @@ function lockWaitHold(
   );
 }
 
+/** The relaunch a pending relaunch record replays, rebuilt from that record: its workspace, branch included, as the record keeps it. */
+export function pendingRelaunch(
+  record: LaunchRecord,
+  of: string,
+  at: { head: string; workspace: NonNullable<LaunchRecord["workspace"]> },
+): PickupRelaunch {
+  return {
+    record: of,
+    workspace: at.workspace,
+    head: at.head,
+    ...(record.relaunchDependency === undefined
+      ? {}
+      : { dependency: record.relaunchDependency }),
+    ...(record.relaunchFault === undefined
+      ? {}
+      : { fault: record.relaunchFault }),
+    ...(record.relaunchLockWait === true ? { lockWait: true as const } : {}),
+  };
+}
+
 /** Retry, once and under its own record, each pending relaunch of `repo` whose launch got no answer. */
 async function retryPending(
   state: ApplyState,
@@ -336,18 +356,10 @@ async function retryPending(
     )
       continue;
     const item = record.item as string;
-    const relaunch: PickupRelaunch = {
-      record: record.relaunchOf,
-      workspace: record.workspace,
+    const relaunch = pendingRelaunch(record, record.relaunchOf, {
       head: record.relaunchHead,
-      ...(record.relaunchDependency === undefined
-        ? {}
-        : { dependency: record.relaunchDependency }),
-      ...(record.relaunchFault === undefined
-        ? {}
-        : { fault: record.relaunchFault }),
-      ...(record.relaunchLockWait === true ? { lockWait: true as const } : {}),
-    };
+      workspace: record.workspace,
+    });
     let blocked =
       ctx.serialUndecided ??
       (await changed(state, repo, ctx, item, relaunch, record.id)) ??

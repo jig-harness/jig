@@ -15,7 +15,15 @@ import {
   readRecord,
   writeRecord,
 } from "../lib/launches.ts";
+import type { Slots } from "../lib/accounts.ts";
+import type { ApplyState } from "../lib/actions/launch.ts";
+import {
+  pendingRelaunch,
+  relaunchRecord,
+} from "../lib/actions/pickup-relaunch.ts";
+import { pickupArms } from "../lib/pickup-arms.ts";
 import { type PickupInput, planPickups } from "../lib/plan-pickups.ts";
+import { unarmed } from "../lib/sources/ledger-arming.ts";
 import { type PickupTree, readPickupTree } from "../lib/pickup-tree.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
 import { dispatchSection } from "../lib/section.ts";
@@ -23,6 +31,7 @@ import { pickupPassArgv } from "../lib/session.ts";
 import type {
   ClaimedItem,
   DispatchSection,
+  RepoTarget,
   StalledRelaunch,
 } from "../lib/types.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -185,7 +194,7 @@ describe("a stalled pickup's relaunch", () => {
         target: "#12",
         relaunch: {
           record: "20261118T060000Z-aaaaaaaa",
-          workspace: { id: "w12", path: PATH },
+          workspace: { id: "w12", path: PATH, branch: "12-task" },
           head: HEAD,
         },
       }),
@@ -203,6 +212,15 @@ describe("a stalled pickup's relaunch", () => {
       expect.stringContaining(
         "relaunched once at that head (launch record 20261118T070000Z-bbbbbbbb)",
       ),
+    ]);
+  });
+
+  it("relaunches a workspace whose runtime reports no branch, keeping it empty", () => {
+    const plan = planPickups(
+      input([ended()], { workspaces: [{ ...open, branch: "" }] }),
+    );
+    expect(relaunches(plan).map((a) => a.relaunch?.workspace)).toEqual([
+      { id: "w12", path: PATH, branch: "" },
     ]);
   });
 
@@ -281,6 +299,87 @@ describe("a stalled pickup's relaunch", () => {
       batchItems: [{ key: "#12", person: "p" }],
     } as Partial<LaunchRecord>);
     expect(relaunches(planPickups(input([batch])))).toEqual([]);
+  });
+});
+
+describe("a relaunch's workspace branch", () => {
+  const REPO: RepoTarget = {
+    path: "/repos/web",
+    slug: SLUG,
+    defaultBranch: "main",
+  };
+  const SOURCE = ended({ runtime: "process", repoPath: REPO.path }).record;
+  const state = { codexOptIn: { on: false } } as unknown as ApplyState;
+  const slots = {
+    account: { name: "a", vendor: "claude", configDir: "/home/a/.claude" },
+  } as unknown as Slots;
+
+  /** The relaunch record the planned relaunch of the stalled pickup starts. */
+  function relaunchedRecord(): LaunchRecord {
+    const [action] = relaunches(planPickups(input([ended()])));
+    if (action?.relaunch === undefined) throw new Error("no relaunch planned");
+    return relaunchRecord(state, SOURCE, action.relaunch, slots);
+  }
+
+  it("is kept by the relaunch's launch record and by a retry rebuilt from it", () => {
+    const record = relaunchedRecord();
+    expect(record.workspace).toEqual({
+      id: "w12",
+      path: PATH,
+      branch: "12-task",
+    });
+    expect(record.relaunchOf).toBe(SOURCE.id);
+    const retried = pendingRelaunch(record, SOURCE.id, {
+      head: HEAD,
+      workspace: record.workspace as NonNullable<LaunchRecord["workspace"]>,
+    });
+    expect(retried.workspace).toEqual({
+      id: "w12",
+      path: PATH,
+      branch: "12-task",
+    });
+  });
+
+  it("lets a relaunched process pickup that ends done with a drive@ handoff ask for its pull request's first drive", () => {
+    const done: ReadRecord = {
+      record: relaunchedRecord(),
+      state: {
+        kind: "ended",
+        exit: { at: "2026-11-18T07:30:00Z", code: 0, signal: null },
+        process: null,
+      },
+      result: "done",
+      next: { address: `drive@${SLUG}#42` },
+    };
+    const pr = {
+      number: 42,
+      url: `https://github.com/${SLUG}/pull/42`,
+      title: "task",
+      headRefName: "12-task",
+      headRefOid: HEAD,
+      isCrossRepository: false,
+    };
+    const base = {
+      number: 42,
+      url: pr.url,
+      title: pr.title,
+      head: pr.headRefName,
+    };
+    const drive = unarmed(pr, base, {
+      labels: null,
+      adoption: null,
+      nowMs: NOW,
+      pickupArms: pickupArms([done], REPO),
+    });
+    expect(drive).toEqual(
+      expect.objectContaining({
+        class: "unarmed",
+        why: expect.stringContaining(
+          "its completed process pickup handed off the first drive",
+        ),
+        evidence: expect.objectContaining({ pickupArm: true }),
+      }),
+    );
   });
 });
 
@@ -497,7 +596,7 @@ dispatch:
     expect(record).toEqual(
       expect.objectContaining({
         relaunchOf: id,
-        workspace: expect.objectContaining({ path }),
+        workspace: expect.objectContaining({ path, branch: BRANCH }),
       }),
     );
     expect(record?.runEndedAt).toBeUndefined();
