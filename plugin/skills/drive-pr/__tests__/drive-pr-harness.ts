@@ -2387,9 +2387,6 @@ export function writeFixture(
   });
   if (!f.checkRunsUnreadable)
     w("check-runs.json", {
-      total_count:
-        (f.checkRuns ?? [REVIEWER_RUN, DORMANT_ARM]).length +
-        REQUIRED_CI_RUNS.length,
       check_runs: [
         ...(f.checkRuns ?? [REVIEWER_RUN, DORMANT_ARM]),
         ...REQUIRED_CI_RUNS,

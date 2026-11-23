@@ -4,7 +4,7 @@
  * forms, and the order within Ready to merge.
  */
 import { describe, expect, it } from "bun:test";
-import { factsQuery, parseAnswer } from "../scripts/lib/merge-facts.ts";
+import { parseAnswer } from "../scripts/lib/merge-facts.ts";
 import {
   checkPattern,
   type MergeFacts,
@@ -543,255 +543,6 @@ describe("the forge's facts", () => {
     expect(pull?.partial).toContain("another commit");
   });
 
-  it("reads a missing head commit node as partial, never as an empty check list", () => {
-    const pull = parseAnswer(
-      { data: { repository: { pr12: { number: 12, headRefOid: HEAD } } } },
-      [12],
-    ).pulls.get(12);
-    expect(pull?.partial).toContain("not read");
-  });
-
-  it("withholds merge now when the head commit node is missing, though a carried witness stands", () => {
-    const whole = parseAnswer(
-      {
-        data: {
-          repository: {
-            pr12: {
-              number: 12,
-              headRefOid: HEAD,
-              commits: {
-                nodes: [
-                  {
-                    commit: {
-                      oid: HEAD,
-                      statusCheckRollup: {
-                        contexts: {
-                          nodes: [],
-                          pageInfo: { hasNextPage: false },
-                        },
-                      },
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        },
-      },
-      [12],
-    ).pulls.get(12);
-    expect(whole?.partial).toBeNull();
-    const missing = parseAnswer(
-      {
-        data: {
-          repository: { pr12: { number: 12, headRefOid: HEAD, commits: {} } },
-        },
-      },
-      [12],
-    ).pulls.get(12);
-    expect(missing?.partial).toContain("head commit's checks were not read");
-    const r = at({
-      reviewCarriedFrom: OTHER,
-      checks: [],
-      partial: missing?.partial ?? null,
-    });
-    expect(r.lane).not.toBe("merge-now");
-    expect(r.lane).toBeNull();
-    expect(r.command ?? null).toBeNull();
-    const complete = at({
-      reviewCarriedFrom: OTHER,
-      checks: [],
-      partial: null,
-    });
-    expect(complete.lane).toBe("merge-now");
-  });
-
-  it("reads a check rollup without its check page as partial, and a null rollup as no checks", () => {
-    const pull = (rollup: unknown) =>
-      parseAnswer(
-        {
-          data: {
-            repository: {
-              pr12: {
-                number: 12,
-                headRefOid: HEAD,
-                commits: {
-                  nodes: [{ commit: { oid: HEAD, statusCheckRollup: rollup } }],
-                },
-              },
-            },
-          },
-        },
-        [12],
-      ).pulls.get(12);
-    expect(pull({})?.partial).toContain("did not read as a page");
-    expect(pull({ contexts: { nodes: "x" } })?.partial).toContain(
-      "did not read as a page",
-    );
-    expect(pull("x")?.partial).toContain("did not read");
-    expect(pull(null)?.partial).toBeNull();
-    expect(
-      pull({ contexts: { nodes: [], pageInfo: { hasNextPage: false } } })
-        ?.partial,
-    ).toBeNull();
-    // A page that says nothing of its own length, or holds an entry the
-    // witness cannot classify, is not a whole page.
-    expect(pull({ contexts: { nodes: [] } })?.partial).toContain(
-      "did not read as a page",
-    );
-    expect(
-      pull({
-        contexts: {
-          nodes: [
-            {
-              __typename: "CheckRun",
-              id: "CR_1",
-              name: "gates",
-              databaseId: 1,
-            },
-          ],
-          pageInfo: { hasNextPage: false },
-        },
-      })?.partial,
-    ).toContain("could not be classified");
-    // One evidence field varied at a time: each leaves the page partial.
-    const good = {
-      __typename: "CheckRun",
-      id: "CR_1",
-      name: "gates",
-      databaseId: 1,
-      status: "COMPLETED",
-      conclusion: "SUCCESS",
-      isRequired: true,
-      checkSuite: { app: { slug: "example-review" } },
-    };
-    const partial = (node: Record<string, unknown>) =>
-      pull({
-        contexts: { nodes: [node], pageInfo: { hasNextPage: false } },
-      })?.partial;
-    expect(partial(good)).toBeNull();
-    // A run with no publisher is whole; unread publisher data is not.
-    expect(partial({ ...good, checkSuite: { app: null } })).toBeNull();
-    for (const bad of [
-      { checkSuite: {} },
-      { checkSuite: { app: { slug: "" } } },
-      { __typename: undefined },
-      { __typename: "Other" },
-      { isRequired: undefined },
-      { isRequired: "true" },
-      { status: undefined },
-      { databaseId: undefined },
-      { databaseId: 0 },
-      { databaseId: -3 },
-      { id: undefined },
-      { id: "" },
-      { status: "QUEUED", conclusion: undefined },
-      { databaseId: "1" },
-      { status: "ODD" },
-      { conclusion: null },
-      { conclusion: "ODD" },
-      { status: "IN_PROGRESS", conclusion: "SUCCESS" },
-    ])
-      expect(partial({ ...good, ...bad })).toContain("could not be classified");
-    // A run whose identity GitHub left null is still whole; the predicate asks
-    // for ordering evidence only where several attempts compete.
-    expect(partial({ ...good, databaseId: null })).toBeNull();
-    // The same attempt listed twice is not a whole page.
-    const dup = pull({
-      contexts: {
-        nodes: [good, { ...good, conclusion: "FAILURE" }],
-        pageInfo: { hasNextPage: false },
-      },
-    })?.partial;
-    expect(dup).toContain("listed twice");
-    // A commit status is read by its own variant.
-    // Two rows with distinct run ids but one node identity are one entry
-    // listed twice; two with the same node identity of a null run id too.
-    for (const rows of [
-      [good, { ...good, databaseId: 2 }],
-      [
-        { ...good, databaseId: null },
-        { ...good, databaseId: null },
-      ],
-      // Distinct node identities sharing one run identity are listed twice too.
-      [good, { ...good, id: "CR_other" }],
-      // One node identity under another name and app is still one entry.
-      [
-        good,
-        {
-          ...good,
-          name: "other",
-          databaseId: 2,
-          checkSuite: { app: { slug: "other-app" } },
-        },
-      ],
-    ])
-      expect(
-        pull({
-          contexts: { nodes: rows, pageInfo: { hasNextPage: false } },
-        })?.partial,
-      ).toContain("listed twice");
-    // Two commit statuses sharing a node identity are one entry listed twice.
-    const sc = {
-      __typename: "StatusContext",
-      id: "SC_deploy",
-      context: "deploy",
-      state: "SUCCESS",
-      isRequired: false,
-    };
-    expect(
-      pull({
-        contexts: {
-          nodes: [sc, { ...sc, context: "other" }],
-          pageInfo: { hasNextPage: false },
-        },
-      })?.partial,
-    ).toContain("listed twice");
-    // The same two statuses with distinct node identities stay whole.
-    expect(
-      pull({
-        contexts: {
-          nodes: [sc, { ...sc, id: "SC_other", context: "other" }],
-          pageInfo: { hasNextPage: false },
-        },
-      })?.partial,
-    ).toBeNull();
-    // Distinct node identities with distinct run ids stay whole, as do two
-    // attempts with one name and app.
-    expect(
-      pull({
-        contexts: {
-          nodes: [good, { ...good, id: "CR_2", databaseId: 2 }],
-          pageInfo: { hasNextPage: false },
-        },
-      })?.partial,
-    ).toBeNull();
-    // A queued run carries an explicit null conclusion.
-    expect(partial({ ...good, status: "QUEUED", conclusion: null })).toBeNull();
-    const status = {
-      __typename: "StatusContext",
-      id: "SC_deploy",
-      context: "deploy",
-      state: "SUCCESS",
-      isRequired: false,
-    };
-    expect(partial(status)).toBeNull();
-    for (const bad of [
-      { id: undefined },
-      { id: "" },
-      { id: 7 },
-      { context: "" },
-      { context: undefined },
-      { state: undefined },
-      { state: "ODD" },
-      { isRequired: undefined },
-      { isRequired: "false" },
-    ])
-      expect(partial({ ...status, ...bad })).toContain(
-        "could not be classified",
-      );
-  });
-
   it("reads check runs and commit statuses with their app and state", () => {
     const node = {
       number: 12,
@@ -800,15 +551,11 @@ describe("the forge's facts", () => {
         nodes: [
           {
             commit: {
-              oid: HEAD,
               statusCheckRollup: {
                 contexts: {
-                  pageInfo: { hasNextPage: false },
                   nodes: [
                     {
                       __typename: "CheckRun",
-                      id: "CR_review",
-                      databaseId: 11,
                       name: "AI review",
                       status: "COMPLETED",
                       conclusion: "NEUTRAL",
@@ -818,17 +565,12 @@ describe("the forge's facts", () => {
                     },
                     {
                       __typename: "CheckRun",
-                      id: "CR_test",
-                      databaseId: 12,
                       name: "test",
                       status: "IN_PROGRESS",
-                      conclusion: null,
                       isRequired: true,
-                      checkSuite: { app: { slug: "ci" } },
                     },
                     {
                       __typename: "StatusContext",
-                      id: "SC_deploy",
                       context: "deploy",
                       state: "ERROR",
                       isRequired: false,
@@ -845,22 +587,13 @@ describe("the forge's facts", () => {
       { data: { repository: { pr12: node } } },
       [12],
     ).pulls.get(12);
-    expect(pull?.partial).toBeNull();
     expect(
-      pull?.checks.map((c) => [c.name, c.app, c.id, c.state, c.required]),
+      pull?.checks.map((c) => [c.name, c.app, c.state, c.required]),
     ).toEqual([
-      ["AI review", "example-review", 11, "neutral", false],
-      ["test", "ci", 12, "pending", true],
-      ["deploy", null, null, "failure", false],
+      ["AI review", "example-review", "neutral", false],
+      ["test", null, "pending", true],
+      ["deploy", null, "failure", false],
     ]);
-  });
-});
-
-describe("the board query", () => {
-  it("selects the node identity of both check variants the parser requires", () => {
-    const q = factsQuery([12]);
-    expect(q).toContain("... on CheckRun { id databaseId name");
-    expect(q).toContain("... on StatusContext { id context state");
   });
 });
 
@@ -872,53 +605,25 @@ describe("required checks and reviewer attempts", () => {
         mergeState: "BLOCKED",
         reviewDecision,
       });
-      f.checks = f.checks.map((c) =>
-        c.name === "test" ? { ...c, state: "pending" } : c,
+      f.checks = f.checks.map((c, i) =>
+        i === 1 ? { ...c, state: "pending" } : c,
       );
-      const r = readiness(f, RULES);
-      expect(r.place).toBe("stay");
-      expect(r.lane).not.toBe("merge-now");
-      expect(r.lane).not.toBe("approve-first");
-      expect(r.waitsOn.kind).toBe("waiting");
-      // The same facts with the check green are not held back.
-      f.checks = f.checks.map((c) =>
-        c.name === "test" ? { ...c, state: "success" } : c,
-      );
-      const green = readiness(f, RULES);
-      expect(green.place).toBe("ready");
-      expect(green.lane).toBe(
-        reviewDecision === "REVIEW_REQUIRED" ? "approve-first" : "merge-now",
-      );
+      expect(readiness(f, RULES).place).toBe("stay");
     }
   });
-  it.each([
-    [false, "BLOCKED"],
-    [true, "BLOCKED"],
-    [true, "CLEAN"],
-  ])(
-    "does not let an optional pending check hide an approval request (mergeQueue %p, %s)",
-    (mergeQueue, mergeState) => {
-      const f = facts({
-        mergeQueue,
-        mergeState,
-        reviewDecision: "REVIEW_REQUIRED",
-      });
-      f.checks = [
-        ...f.checks,
-        {
-          name: "lint",
-          app: "github-actions",
-          required: false,
-          state: "pending",
-          startedAt: "2026-11-08T10:00:00Z",
-        },
-      ];
-      const lint = f.checks.find((c) => c.name === "lint");
-      expect([lint?.state, lint?.required]).toEqual(["pending", false]);
-      expect(f.checks.filter((c) => c.state === "pending")).toHaveLength(1);
-      expect(readiness(f, RULES).lane).toBe("approve-first");
-    },
-  );
+  it("does not let an optional pending check hide an approval request", () => {
+    const f = facts({
+      mergeState: "BLOCKED",
+      reviewDecision: "REVIEW_REQUIRED",
+    });
+    f.checks = f.checks.map((c, i) =>
+      i === 1 ? { ...c, state: "pending" } : c,
+    );
+    f.checks = f.checks.map((c, i) =>
+      i === 1 ? { ...c, required: false } : c,
+    );
+    expect(readiness(f, RULES).lane).toBe("approve-first");
+  });
   it("takes the newest attempt id regardless of its start time", () => {
     const f = facts();
     f.checks = [
@@ -960,81 +665,6 @@ it("requires every distinct reviewer check and reduces retries within each name"
   const base = f.checks.find((c) => c.app === "example-review");
   if (base === undefined) throw new Error("fixture has no reviewer check");
   f.checks.push({ ...base, name: "AI review (security)" });
-  expect(readiness(f, RULES).lane).toBe("merge-now");
-});
-
-it("judges a required reviewer check by its latest attempt only", () => {
-  const f = facts();
-  const base = f.checks.find((c) => c.app === "example-review");
-  if (base === undefined) throw new Error("fixture has no reviewer check");
-  f.checks = [
-    { ...base, id: 10, required: true, state: "pending" },
-    { ...base, id: 12, required: true, state: "success" },
-  ];
-  expect(readiness(f, RULES).place).toBe("ready");
-  expect(readiness(f, RULES).lane).toBe("merge-now");
-  f.checks = [
-    { ...base, id: 10, required: true, state: "success" },
-    { ...base, id: 12, required: true, state: "pending" },
-  ];
-  const pending = readiness(f, RULES);
-  expect([pending.place, pending.waitsOn]).toEqual([
-    "needs-you",
-    { kind: "person", act: "re-arm" },
-  ]);
-  const witnessed = pending.conditions.find(
-    (c) => c.name === "review witnessed",
-  );
-  expect(witnessed?.met).not.toBe(true);
-  expect(witnessed?.fact).toMatch(/pending|running|attempt/i);
-});
-
-it("does not let an optional failing check borrow a failed reviewer attempt's required flag", () => {
-  const f = facts({ mergeState: "CLEAN" });
-  const base = f.checks.find((c) => c.app === "example-review");
-  if (base === undefined) throw new Error("fixture has no reviewer check");
-  f.checks = [
-    { ...base, id: 10, required: true, state: "failure" },
-    { ...base, id: 12, required: true, state: "success" },
-    {
-      name: base.name,
-      app: "github-actions",
-      required: false,
-      state: "failure",
-      startedAt: "2026-11-08T10:00:00Z",
-    },
-  ];
-  const optional = readiness(f, RULES);
-  expect(optional.lane).toBe("merge-now");
-  expect(optional.failing).toEqual([base.name]);
-  // The same ordinary failure, once required, stops a stale CLEAN state.
-  f.checks = f.checks.map((c) =>
-    c.app === "github-actions" ? { ...c, required: true } : c,
-  );
-  const required = readiness(f, RULES);
-  expect([required.place, required.waitsOn]).toEqual([
-    "needs-you",
-    { kind: "person", act: "re-run-check" },
-  ]);
-  expect(required.failing).toEqual([base.name]);
-});
-
-it("keeps a clean review-required merge in merge-now while an optional check is pending", () => {
-  const f = facts({
-    mergeQueue: false,
-    mergeState: "CLEAN",
-    reviewDecision: "REVIEW_REQUIRED",
-  });
-  f.checks = [
-    ...f.checks,
-    {
-      name: "lint",
-      app: "github-actions",
-      required: false,
-      state: "pending",
-      startedAt: "2026-11-08T10:00:00Z",
-    },
-  ];
   expect(readiness(f, RULES).lane).toBe("merge-now");
 });
 

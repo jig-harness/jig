@@ -42,14 +42,11 @@ export async function commitPages(
   sha: string,
   listing: "check-runs" | "statuses",
   read: PagedRead = "fresh",
-  env?: Record<string, string | undefined>,
 ): Promise<unknown[] | null> {
   const r = await slurpPages(
-    `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100${
-      listing === "check-runs" ? "&filter=all" : ""
-    }`,
+    `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
     read,
-    env === undefined ? { stderr: "pipe" } : { stderr: "pipe", env },
+    { stderr: "pipe" },
   );
   return r.code === 0 ? parsePages(r.stdout) : null;
 }
@@ -79,27 +76,6 @@ function checkRunOf(c: Record<string, unknown>): CheckRun {
 }
 
 /**
- * Whether a check-run carries, in their own JSON types, the fields that give
- * it authority: its identity, its name, its status and its outcome. A record
- * missing one, or holding one of another type, is not read as a run.
- */
-function identified(c: Record<string, unknown>): boolean {
-  const app = c.app as { slug?: unknown } | null | undefined;
-  return (
-    typeof c.id === "number" &&
-    Number.isSafeInteger(c.id) &&
-    typeof c.name === "string" &&
-    c.name !== "" &&
-    typeof c.status === "string" &&
-    (c.conclusion === null || typeof c.conclusion === "string") &&
-    (app === null ||
-      (typeof app === "object" &&
-        typeof app.slug === "string" &&
-        app.slug !== ""))
-  );
-}
-
-/**
  * Every check-run on `sha`, across every page (`--paginate --slurp`), reduced
  * to the fields the decision reads. `null` when the API could not be read —
  * the caller decides whether that is INDETERMINATE (a MERGEABLE head) or a
@@ -111,36 +87,14 @@ export async function checkRunsFor(
   repo: string,
   sha: string,
   read: PagedRead = "fresh",
-  env?: Record<string, string | undefined>,
 ): Promise<CheckRun[] | null> {
-  const pages = await commitPages(owner, repo, sha, "check-runs", read, env);
-  // A listing always has a first page, even an empty one that reports
-  // `total_count: 0`; no page at all is not a read.
-  if (pages === null || pages.length === 0) return null;
-  const runs: CheckRun[] = [];
-  const seen = new Set<number>();
-  let total: number | null = null;
-  for (const page of pages) {
-    const count = (page as { total_count?: unknown } | null)?.total_count;
-    // Every page reports the whole listing's count, and they must agree.
-    if (typeof count !== "number" || !Number.isSafeInteger(count)) return null;
-    if (total !== null && total !== count) return null;
-    total = count;
-    const list = (page as { check_runs?: unknown } | null)?.check_runs;
-    // A missing field, a list that is not one, or entries that are not
-    // records, is not a read.
-    if (!Array.isArray(list)) return null;
-    for (const c of list) {
-      if (typeof c !== "object" || c === null || Array.isArray(c)) return null;
-      if (!identified(c as Record<string, unknown>)) return null;
-      const run = checkRunOf(c as Record<string, unknown>);
-      // A repeated id means pages overlapped, so the set is not the listing.
-      if (seen.has(run.id)) return null;
-      seen.add(run.id);
-      runs.push(run);
-    }
-  }
-  // Fewer records than the listing reports means an attempt went unread.
-  if (total !== null && runs.length !== total) return null;
-  return runs;
+  const pages = await commitPages(owner, repo, sha, "check-runs", read);
+  if (pages === null) return null;
+  return pages.flatMap((page) =>
+    (
+      ((page as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<
+        Record<string, unknown>
+      >
+    ).map(checkRunOf),
+  );
 }

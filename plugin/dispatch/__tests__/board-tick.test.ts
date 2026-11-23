@@ -102,8 +102,6 @@ function boardAnswer(
                     ? [
                         {
                           __typename: "CheckRun",
-                          id: "CR_106",
-                          databaseId: 106,
                           name: "AI review",
                           status: "COMPLETED",
                           conclusion: "SUCCESS",
@@ -118,8 +116,6 @@ function boardAnswer(
                     : [
                         {
                           __typename: "CheckRun",
-                          id: "CR_107",
-                          databaseId: 107,
                           name: "test",
                           status:
                             ci === "pending" ? "IN_PROGRESS" : "COMPLETED",

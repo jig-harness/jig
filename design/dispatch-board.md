@@ -81,14 +81,14 @@ pure function (`plugin/dispatch/lib/board.ts`), so a column is a fact the
 line carries, never a guess the page makes. The columns, in the order work
 passes through them:
 
-| Column         | What is in it                                                                                                                                                                                                                                                                                                                                                                   | Read from                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Coming         | an item assigned to the factory identity or to a [served person](../GLOSSARY.md) and not started, in rank order with each held item's reason; a drive the tick re-arms or re-drives when a slot frees; a pull request held behind another in a serialized area; a pull request labelled `drive`; a converged pull request behind its base, updated after the one in update next | the queue the line holds today, and the board read                                                   |
-| Picking up     | an item a pickup session is working on, with no pull request yet                                                                                                                                                                                                                                                                                                                | the pickup's launch record and the assigned items the tick already reads; no tracker read of its own |
-| Driven         | a pull request whose drive runs: its ledger says running, on any machine                                                                                                                                                                                                                                                                                                        | the ledger (`driven`, and `silent` marked as such)                                                   |
-| Needs you      | a pull request or item stopped on something only a person settles: a park, a drive stopped on a failure, a stalled pickup, a double claim, a converged pull request the forge refuses to merge for a reason no drive fixes                                                                                                                                                      | the needs the line holds today, and the board read                                                   |
-| Ready to merge | a converged pull request grouped by its next known act, with merge readiness confirmed only in merge now ([§ Ready, exactly](#ready-exactly))                                                                                                                                                                                                                                   | the ledger and the board read                                                                        |
-| Merged         | a pull request merged since the start of the host's day, with its follow-up's state                                                                                                                                                                                                                                                                                             | the merged listing, the follow-up's launch record and marker                                         |
+| Column | What is in it | Read from |
+| --- | --- | --- |
+| Coming | an item assigned to the factory identity or to a [served person](../GLOSSARY.md) and not started, in rank order with each held item's reason; a drive the tick re-arms or re-drives when a slot frees; a pull request held behind another in a serialized area; a pull request labelled `drive`; a converged pull request behind its base, updated after the one in update next | the queue the line holds today, and the board read |
+| Picking up | an item a pickup session is working on, with no pull request yet | the pickup's launch record and the assigned items the tick already reads; no tracker read of its own |
+| Driven | a pull request whose drive runs: its ledger says running, on any machine | the ledger (`driven`, and `silent` marked as such) |
+| Needs you | a pull request or item stopped on something only a person settles: a park, a drive stopped on a failure, a stalled pickup, a double claim, a converged pull request the forge refuses to merge for a reason no drive fixes | the needs the line holds today, and the board read |
+| Ready to merge | a converged pull request grouped by its next known act, with merge readiness confirmed only in merge now ([§ Ready, exactly](#ready-exactly)) | the ledger and the board read |
+| Merged | a pull request merged since the start of the host's day, with its follow-up's state | the merged listing, the follow-up's launch record and marker |
 
 A drive a person stopped (`stopped-by-person`), and a pull request a person
 labelled `hold`, are in Needs you, in a group of their own named "stood
@@ -124,12 +124,11 @@ Coming has not started.
 One predicate decides it, a pure function in
 `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`. The tick calls it to
 place a card, `announce-merge-ready.ts` calls it before it posts, and
-`jig ask` calls it for what a converged drive waits on,
+`jig ask` calls it for what a converged drive waits on and for the `merge`
+station ([addresses](../plugin/protocol/addresses.md#stations)),
 so the board, the drive's announcement and the answer a person gets about
-one pull request cannot disagree about the same facts and rules; the
-rules each caller reads can differ (condition 3 below). The `merge`
-station ([addresses](../plugin/protocol/addresses.md#stations)) is planned
-and will call the same predicate when it is built.
+one pull request cannot disagree. The existing `drive` answer uses this
+predicate; the planned `merge` station will use it when that station is built.
 It takes the facts
 of one pull request and returns its lane and, for each condition not met,
 whether waiting settles it or which person's act does. A pull request is in
@@ -147,24 +146,6 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    repository sets one), completed and neither failed nor was skipped; any
    other check the app published on the head does not count; where the
    repository names none, a person's approving review stands on the head.
-   One route keeps an earlier witness: after a clean merge of the base the
-   drive verifies the live head and records the earlier reviewed commit
-   apart from it. That earlier witness stands when the live head is the
-   verified one, the verified head is that earlier commit plus only a clean
-   merge of the base, the pull request's own contribution is identical
-   against the live base and the earlier one, `.config/jig.yaml` is
-   unchanged in the base and pull-request comparisons, and the same app's
-   check completed green on the earlier commit. Where the app has attempts on the live head, the latest
-   matching attempt of each reviewer check name must be successful or
-   neutral, so a running or skipped replacement blocks the witness, and
-   competing attempts whose order cannot be read block it too; other checks
-   the app published do not count. The head's commit and its checks must have been read whole.
-   The proof is made again under the live rules by each caller, never taken
-   on a caller's word. The callers do not all read the same reviewer rules:
-   the announcement takes the reviewer and check pattern from the default
-   branch for a listed bot and from the checkout's overlay otherwise, while
-   the board and `jig ask` read the default branch, so the same head can
-   place differently between them.
 4. The forge reports it mergeable with its base (`mergeable` is
    `MERGEABLE`).
 5. It is not a draft.
@@ -178,14 +159,9 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    `pull_requests.trusted_automation` lists, whose head is in the
    repository, whose commits are all the bot's own or a listed
    committer's (each signed for its account unless the entry says
-   `signed: false`), whose changed files are all within the entry's paths (a
-   renamed file's previous path too), and, where the entry names update
-   types, whose manifest diff classifies every dependency change as one of
-   them (a change to a lockfile alone classifies as the single type
-   `lockfile`, so an entry that names update types admits it only when it
-   lists `lockfile`; a lockfile renamed from a file that is not a lockfile
-   does not classify, so its update type is unread even when its paths pass
-   the `paths` allowlist).
+   `signed: false`), whose changed files are all within the entry's paths, and,
+   where the entry names update types, whose manifest diff shows one of
+   them.
 9. It carries neither the `hold` label nor the
    [CI hold](../GLOSSARY.md) label (`ci.hold_label`), under which its
    required checks fail on purpose.
@@ -222,14 +198,9 @@ the other rows decide the lane. The list is
 read from the default branch by every caller, the drive's announcement
 included, never from the pull request's own configuration, which could
 otherwise list its own author. The commits and files are read from the
-pull request's own listings, only for a pull request by a listed bot that
-nothing else already satisfies, and kept between ticks by head and base
-commit. The listings are fetched by pull request number, not by an
-immutable revision; the read brackets them with metadata reads and refuses
-when the head, the base or a count differs before and after, so the
-evidence establishes that the head, base and counts agreed at the two
-reads, not that the forge froze the listing: a change made and restored
-between them would go undetected.
+pull request's own listings, pinned to the head, only for a pull request
+by a listed bot that nothing else already satisfies, and kept between ticks
+by head and base commit.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".
@@ -246,29 +217,23 @@ The board reads the facts conditions 3 to 8 need with its own query
 ledger the tick already reads. A converged pull request that fails a
 condition goes where its reason says. The forge reports `BLOCKED` without
 saying why, so the predicate reads the reason from the facts behind it, in
-this order. The table lists the rows a reader most often needs, not every
-blocker: the predicate also places a dispatch `hold` label after the CI
-hold and before unresolved threads, lets a failing required check override a
-stale `CLEAN` state, applies failures on the merge-queue path too, and
-makes a pending required check wait whatever the merge state says, once the earlier blockers (a draft, a hold, a confirmed failure, a missing review witness) have not claimed the card. Ordinary checks are first reduced to the latest attempt per name and app: an attempt that a later non-skipped attempt of the same name and app replaced (by their timestamps) is dropped, and a pending attempt still waits when no such replacement is established. The reviewer app's matching checks are not reduced that way: the witness picks the highest attempt id, and when that attempt is still pending the missing-witness row sends the card to Needs you before the wait row is reached.
-Where the card names a hold, a failing check or a wait, that reason
-comes before the approval and merge rows below:
+this order:
 
-| The facts                                                                                                                                                                                                                                                                                                                                                                | Column, lane                          | What the card says                                                                                                                                                                              | Waits on                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| a draft                                                                                                                                                                                                                                                                                                                                                                  | Needs you                             | converged as a draft: marking it ready summons the reviewers that skip drafts                                                                                                                   | a person: mark it ready                                                                 |
-| the CI hold label                                                                                                                                                                                                                                                                                                                                                        | Needs you                             | held, never "failing"; the drive removes the label as it converges, so it was added again after                                                                                                 | a person: remove the label (the checks run again on the same head), or re-arm the drive |
-| an unresolved thread                                                                                                                                                                                                                                                                                                                                                     | Needs you                             | a thread was opened after the drive converged                                                                                                                                                   | a person: answer it, or re-arm the drive                                                |
-| condition 3 has no qualifying app witness: no qualifying current-head app review exists and no earlier review carries over: the latest attempt of a matching check name, when it does not qualify (failed, skipped, still running, or attempts that cannot be ordered) blocks the carry-over, while a head with no matching current attempt may rest on a carried review | Needs you                             | the review the ledger reports is not witnessed on this head                                                                                                                                     | a person: re-arm the drive                                                              |
-| `reviewDecision` `CHANGES_REQUESTED`                                                                                                                                                                                                                                                                                                                                     | Needs you                             | who requested changes, and when                                                                                                                                                                 | a person: that reviewer re-reviews, or the drive is re-armed to address it              |
-| `BLOCKED` or `UNSTABLE`, a check failing                                                                                                                                                                                                                                                                                                                                 | Needs you                             | a check failed after the drive converged, by name; a check still running beside it does not change this                                                                                         | a person: re-run it, or re-arm the drive                                                |
-| `BLOCKED`, a required check running, none failing                                                                                                                                                                                                                                                                                                                        | the column it was in                  | the required checks still running                                                                                                                                                               | waiting                                                                                 |
-| `UNKNOWN`, or mergeability `UNKNOWN`                                                                                                                                                                                                                                                                                                                                     | the column it was in, marked not read | the forge is still computing                                                                                                                                                                    | waiting                                                                                 |
-| `BEHIND`, the first in Ready order of its repository                                                                                                                                                                                                                                                                                                                     | Ready to merge, update next           | the repository requires an up-to-date branch; updating moves its head, which costs a re-drive (a review round and a CI run); where an approval is also required, the card says it is still owed | a person: update the branch                                                             |
-| `BEHIND`, any other                                                                                                                                                                                                                                                                                                                                                      | Coming                                | behind its base, updated after the one in update next                                                                                                                                           | waiting                                                                                 |
-| an approval is required (`REVIEW_REQUIRED` with `BLOCKED`, or `REVIEW_REQUIRED` on a merge-queue pull request whatever its merge state; or condition 3 or 8 asks for one and condition 7 holds) and a review is requested                                                                                                                                                | Ready to merge, approve first         | waits on an approval, and says the board has not read the repository's other protection rules (signatures, deployments); the reviewers or teams requested are named as requested                | a person: an approval                                                                   |
-| an approval is required, as in the row above, and no review is requested                                                                                                                                                                                                                                                                                                 | Ready to merge, approve first         | needs a review and approval from someone other than its author, and nobody is asked                                                                                                             | a person: request a review                                                              |
-| `BLOCKED` for none of these                                                                                                                                                                                                                                                                                                                                              | Needs you                             | the forge blocks the merge on a rule the board cannot tell (signed commits, a deployment): open the pull request                                                                                | a person                                                                                |
+| The facts | Column, lane | What the card says | Waits on |
+| --- | --- | --- | --- |
+| a draft | Needs you | converged as a draft: marking it ready summons the reviewers that skip drafts | a person: mark it ready |
+| the CI hold label | Needs you | held, never "failing"; the drive removes the label as it converges, so it was added again after | a person: remove the label (the checks run again on the same head), or re-arm the drive |
+| an unresolved thread | Needs you | a thread was opened after the drive converged | a person: answer it, or re-arm the drive |
+| the reviewer app's check on the head is missing, failed or skipped | Needs you | the review the ledger reports is not witnessed on this head | a person: re-arm the drive |
+| `reviewDecision` `CHANGES_REQUESTED` | Needs you | who requested changes, and when | a person: that reviewer re-reviews, or the drive is re-armed to address it |
+| `BLOCKED` or `UNSTABLE`, a check failing | Needs you | a check failed after the drive converged, by name; a check still running beside it does not change this | a person: re-run it, or re-arm the drive |
+| `BLOCKED`, a required check running, none failing | the column it was in | the required checks still running | waiting |
+| `UNKNOWN`, or mergeability `UNKNOWN` | the column it was in, marked not read | the forge is still computing | waiting |
+| `BEHIND`, the first in Ready order of its repository | Ready to merge, update next | the repository requires an up-to-date branch; updating moves its head, which costs a re-drive (a review round and a CI run); where an approval is also required, the card says it is still owed | a person: update the branch |
+| `BEHIND`, any other | Coming | behind its base, updated after the one in update next | waiting |
+| an approval is required (`REVIEW_REQUIRED` with `BLOCKED`; or condition 3 or 8 asks for one and condition 7 holds) and a review is requested | Ready to merge, approve first | waits on an approval, and says the board has not read the repository's other protection rules (signatures, deployments); the reviewers or teams requested are named as requested, and since when | a person: an approval |
+| an approval is required, as in the row above, and no review is requested | Ready to merge, approve first | needs a review and approval from someone other than its author, and nobody is asked | a person: request a review |
+| `BLOCKED` for none of these | Needs you | the forge blocks the merge on a rule the board cannot tell (signed commits, a deployment): open the pull request | a person |
 
 The rows are first match, and every row that names a blocker other than an
 approval (a CI hold, a failed or running check, a thread, an unread or
@@ -358,14 +323,14 @@ the same place on the card, whatever its column or list, so a person
 learns to read them once. Each mark is a short symbol and word, and opens a
 hint with its detail on hover, tap or focus, as the page's other hints do:
 
-| Mark      | On the card                                                                                                                                               | In its hint                                                                                                                                                                    |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Round     | the round and its time, as "round 4 · 18 min": how long the current round has run, or the last round's length once the drive stopped; none before a drive | each round the ledger keeps, with its start, its end and its unresolved threads at the end                                                                                     |
-| Conflicts | none, conflicting, behind, or not known yet                                                                                                               | the forge's mergeability and merge state, and the base branch                                                                                                                  |
-| Checks    | running, green, failing, held, or none                                                                                                                    | for a failing pull request, each failing check by name with its app, "required" or "not required", and its run; for the others, the state                                      |
-| CI hold   | "held: not built since `a1b2c3d`", "held: not built at this head", or none                                                                                | the label, that its required checks fail on purpose while it stays, and that removing it runs them again on the same head                                                      |
-| Threads   | the unresolved review threads: "2 bot · 1 not a bot" for a pull request in the detail set whose authors were read, the total for the others               | the count, each thread's author for the split, linked to the pull request's conversation                                                                                       |
-| Merge     | merge now, approve first, update next, or not ready                                                                                                       | the [Ready conditions](#ready-exactly) as a checklist, each met or not with the fact behind it, and for each one not met whether waiting settles it or which person's act does |
+| Mark | On the card | In its hint |
+| --- | --- | --- |
+| Round | the round and its time, as "round 4 · 18 min": how long the current round has run, or the last round's length once the drive stopped; none before a drive | each round the ledger keeps, with its start, its end and its unresolved threads at the end |
+| Conflicts | none, conflicting, behind, or not known yet | the forge's mergeability and merge state, and the base branch |
+| Checks | running, green, failing, held, or none | for a failing pull request, each failing check by name with its app, "required" or "not required", and its run; for the others, the state |
+| CI hold | "held: not built since `a1b2c3d`", "held: not built at this head", or none | the label, that its required checks fail on purpose while it stays, and that removing it runs them again on the same head |
+| Threads | the unresolved review threads: "2 bot · 1 not a bot" for a pull request in the detail set whose authors were read, the total for the others | the count, each thread's author for the split, linked to the pull request's conversation |
+| Merge | merge now, approve first, update next, or not ready | the [Ready conditions](#ready-exactly) as a checklist, each met or not with the fact behind it, and for each one not met whether waiting settles it or which person's act does |
 
 The merge mark is the one derived state among them: the predicate's
 answer, so "why is this not ready" is answered on the card. Every hint ends
@@ -523,17 +488,17 @@ Nothing on the board is moved by hand: each tick places every card again
 from the records, so a card goes wherever they say, backwards as readily as
 forwards. The moves a person meets:
 
-| Move                              | Cause the card shows                                                                                                                                                                   |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Driven → Ready to merge           | the drive converged, the review is witnessed on its head and the forge allows the merge                                                                                                |
-| Ready to merge → Coming or Driven | the base came to conflict, or its head moved past the verified head: the dispatcher re-drives it                                                                                       |
-| Ready to merge → Coming           | another pull request merged and this one is now behind its base                                                                                                                        |
-| Ready to merge → Needs you        | a check failed after convergence, a reviewer requested changes or opened a thread, the CI hold label was added, the forge blocks the merge, it became a draft, or its re-drive stopped |
-| Approve first → Merge now         | a requested reviewer approved                                                                                                                                                          |
-| Ready to merge → Merged           | a person merged it                                                                                                                                                                     |
-| Driven → Needs you                | the drive parked or stopped                                                                                                                                                            |
-| Needs you → Coming → Driven       | the park was answered and the drive is re-armed                                                                                                                                        |
-| any → off the board               | the pull request closed unmerged; the history view keeps it                                                                                                                            |
+| Move | Cause the card shows |
+| --- | --- |
+| Driven → Ready to merge | the drive converged, the review is witnessed on its head and the forge allows the merge |
+| Ready to merge → Coming or Driven | the base came to conflict, or its head moved past the verified head: the dispatcher re-drives it |
+| Ready to merge → Coming | another pull request merged and this one is now behind its base |
+| Ready to merge → Needs you | a check failed after convergence, a reviewer requested changes or opened a thread, the CI hold label was added, the forge blocks the merge, it became a draft, or its re-drive stopped |
+| Approve first → Merge now | a requested reviewer approved |
+| Ready to merge → Merged | a person merged it |
+| Driven → Needs you | the drive parked or stopped |
+| Needs you → Coming → Driven | the park was answered and the drive is re-armed |
+| any → off the board | the pull request closed unmerged; the history view keeps it |
 
 When each card entered its column and its lane, and where it was before,
 is kept in a table of the state database (`board_seen`), keyed by
@@ -575,13 +540,13 @@ The page's views are one per question a person brings to it, each a tab
 with its count and each one column of full-width cards, with Help beside
 them as the page that explains them:
 
-| View          | It answers                         | Its cards                                                                                                                        |
-| ------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Merge**     | What can I merge now?              | Ready to merge's lanes: merge now, approve first, update next                                                                    |
-| **Needs you** | What waits on me?                  | the Needs you column, grouped by act, each card naming the person it waits on                                                    |
-| **Running**   | What is being worked on?           | Driven and Picking up, under the host's load gauge ([load factor](../plugin/CONFIGURATION.md#the-machines-dispatch-file))        |
-| **Queue**     | What starts next, and why not yet? | Coming, with the served people's ranked queue and each held item's reason ([served pickups](../plugin/README.md#the-dispatcher)) |
-| **History**   | What ended, and why?               | Merged, the outcome log and the tick strip                                                                                       |
+| View | It answers | Its cards |
+| --- | --- | --- |
+| **Merge** | What can I merge now? | Ready to merge's lanes: merge now, approve first, update next |
+| **Needs you** | What waits on me? | the Needs you column, grouped by act, each card naming the person it waits on |
+| **Running** | What is being worked on? | Driven and Picking up, under the host's load gauge ([load factor](../plugin/CONFIGURATION.md#the-machines-dispatch-file)) |
+| **Queue** | What starts next, and why not yet? | Coming, with the served people's ranked queue and each held item's reason ([served pickups](../plugin/README.md#the-dispatcher)) |
+| **History** | What ended, and why? | Merged, the outcome log and the tick strip |
 
 The columns of [§ One card per piece of work](#one-card-per-piece-of-work-in-one-column)
 stay the tick's placement of each card; the views are how the page shows
@@ -614,17 +579,17 @@ no number is shown; every key has a button
 **The keys.** Every view is driven from the keyboard, and the keys never
 fire inside a text field:
 
-| Key                     | Does                                                                                                                                                                                                                                                                                                            |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ⌘K or Ctrl-K            | the palette: go to a view, jump to `#N` or an item, run a card's command                                                                                                                                                                                                                                        |
-| j / k                   | the next or previous card (roving focus, so Tab still works)                                                                                                                                                                                                                                                    |
-| Enter or o              | expand or collapse the card                                                                                                                                                                                                                                                                                     |
-| p / i                   | open its pull request or its issue                                                                                                                                                                                                                                                                              |
-| 1 to 9, h, l, u, r      | on a parked need, pick an option of the current decision (1 is the recommended one) and move to the next with no pick, move between its decisions, clear the last pick, or write a note beside a pick or an answer in the person's own words ([structured-answers.md](structured-answers.md#picking-an-answer)) |
-| Escape                  | leave the note or answer field, so the card's keys work again                                                                                                                                                                                                                                                   |
-| c                       | copy its primary command: the pinned merge command, or the need's answers as one comment with their digests (with no picks, as [picking an answer](structured-answers.md#picking-an-answer) says); a guarded pick copies on the second step, from the key, the card's Copy and the palette alike                |
-| g, then m, n, r, q or h | go to Merge, Needs you, Running, Queue or History                                                                                                                                                                                                                                                               |
-| / and ?                 | filter the view; list the keys                                                                                                                                                                                                                                                                                  |
+| Key | Does |
+| --- | --- |
+| ⌘K or Ctrl-K | the palette: go to a view, jump to `#N` or an item, run a card's command |
+| j / k | the next or previous card (roving focus, so Tab still works) |
+| Enter or o | expand or collapse the card |
+| p / i | open its pull request or its issue |
+| 1 to 9, h, l, u, r | on a parked need, pick an option of the current decision (1 is the recommended one) and move to the next with no pick, move between its decisions, clear the last pick, or write a note beside a pick or an answer in the person's own words ([structured-answers.md](structured-answers.md#picking-an-answer)) |
+| Escape | leave the note or answer field, so the card's keys work again |
+| c | copy its primary command: the pinned merge command, or the need's answers as one comment with their digests (with no picks, as [picking an answer](structured-answers.md#picking-an-answer) says); a guarded pick copies on the second step, from the key, the card's Copy and the palette alike |
+| g, then m, n, r, q or h | go to Merge, Needs you, Running, Queue or History |
+| / and ? | filter the view; list the keys |
 
 The palette is a dialog with `aria-activedescendant`, so a screen reader
 follows its choice. The rest of the visual design comes from the dashboard's
@@ -798,11 +763,11 @@ step 4.
 1. **Measure the waiting loss with what the log holds** (built: the counts
    are in plan item 36). No code: on the
    host that dispatches a working repository, `jig dispatch log --since
-<30 days ago> --jsonl` gives the re-drives of a stale converged pull
+   <30 days ago> --jsonl` gives the re-drives of a stale converged pull
    request with their cause (the ended rows' reason names them), and, per
    pull request, the time from its drive's converged row to the forge's
    `mergedAt`, read per pull request with `gh pr view <number> --repo <repository>
---json mergedAt` for each repository and number the log names, since a
+   --json mergedAt` for each repository and number the log names, since a
    `gh pr list` read stops at 30 pull requests unless given a larger
    `--limit`, which would leave part of the log without a merge time.
    A follow-up's launch is not used as the merge time: a follow-up can be

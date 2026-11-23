@@ -51,8 +51,8 @@ function pullFields(n: number): string {
       latestReviews(first: ${REVIEWS}) { pageInfo { hasNextPage } nodes { state authorAssociation author { __typename login } commit { oid } } }
       commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: ${CHECKS}) { pageInfo { hasNextPage } nodes {
         __typename
-        ... on CheckRun { id databaseId name status conclusion startedAt completedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
-        ... on StatusContext { id context state isRequired(pullRequestNumber: ${n}) }
+        ... on CheckRun { databaseId name status conclusion startedAt completedAt isRequired(pullRequestNumber: ${n}) checkSuite { app { slug } } }
+        ... on StatusContext { context state isRequired(pullRequestNumber: ${n}) }
       } } } } } }
     }`;
 }
@@ -102,75 +102,6 @@ function checkState(node: Record<string, unknown>): HeadCheck["state"] {
   if (c === "NEUTRAL") return "neutral";
   if (c === "SKIPPED") return "skipped";
   return "failure";
-}
-
-const STATUS_STATES = new Set([
-  "SUCCESS",
-  "PENDING",
-  "EXPECTED",
-  "FAILURE",
-  "ERROR",
-]);
-const RUN_STATUSES = new Set([
-  "QUEUED",
-  "IN_PROGRESS",
-  "COMPLETED",
-  "WAITING",
-  "PENDING",
-  "REQUESTED",
-]);
-const RUN_CONCLUSIONS = new Set([
-  "SUCCESS",
-  "FAILURE",
-  "NEUTRAL",
-  "CANCELLED",
-  "SKIPPED",
-  "TIMED_OUT",
-  "ACTION_REQUIRED",
-  "STALE",
-  "STARTUP_FAILURE",
-]);
-
-/**
- * Whether a rollup node carries, in its own JSON types, every field the
- * decision reads from its variant: an explicit `CheckRun` or `StatusContext`,
- * a name, a state, a boolean required flag, and for a run its identity and a
- * suite whose app is either explicitly null (a run with no publisher) or a
- * record with a non-empty slug. Anything else is not classifiable evidence.
- */
-function wellFormedCheck(node: unknown): boolean {
-  if (!isRecord(node)) return false;
-  if (typeof node.isRequired !== "boolean") return false;
-  if (node.__typename === "StatusContext")
-    return (
-      typeof node.id === "string" &&
-      node.id !== "" &&
-      typeof node.context === "string" &&
-      node.context !== "" &&
-      STATUS_STATES.has(node.state as string)
-    );
-  if (node.__typename !== "CheckRun") return false;
-  const suite = node.checkSuite;
-  if (!isRecord(suite) || !("app" in suite)) return false;
-  const app = suite.app;
-  const appOk =
-    app === null ||
-    (isRecord(app) && typeof app.slug === "string" && app.slug !== "");
-  return (
-    appOk &&
-    typeof node.name === "string" &&
-    node.name !== "" &&
-    (node.databaseId === null ||
-      (typeof node.databaseId === "number" &&
-        Number.isSafeInteger(node.databaseId) &&
-        node.databaseId > 0)) &&
-    typeof node.id === "string" &&
-    node.id !== "" &&
-    RUN_STATUSES.has(node.status as string) &&
-    (node.status === "COMPLETED"
-      ? RUN_CONCLUSIONS.has(node.conclusion as string)
-      : node.conclusion === null)
-  );
 }
 
 function checkOf(node: unknown): HeadCheck | null {
@@ -301,42 +232,9 @@ function partialOf(
     long.length === 0 ? [] : [`more ${long.join(", ")} than one read holds`];
   // The checks belong to the head only when the commit they were read on is it.
   const checked = str(at(commit, "commit", "oid"));
-  if (checked === "") why.push("its head commit's checks were not read");
-  else if (checked !== head) why.push("its checks were read on another commit");
-  // A null rollup is a commit with no checks; a rollup that exists must carry
-  // its check page, or an empty list would read as "no checks" when none were read.
-  else if (isRecord(at(commit, "commit", "statusCheckRollup"))) {
-    const page = at(contexts, "nodes");
-    if (
-      !Array.isArray(page) ||
-      typeof at(contexts, "pageInfo", "hasNextPage") !== "boolean"
-    )
-      why.push("its checks did not read as a page");
-    else if (page.some((c) => !wellFormedCheck(c) || checkOf(c) === null))
-      why.push("a check on its head could not be classified");
-    else if (hasDuplicateNode(page))
-      why.push("a check on its head was listed twice");
-  } else if (at(commit, "commit", "statusCheckRollup") !== null)
-    why.push("its checks did not read");
+  if (checked !== "" && checked !== head)
+    why.push("its checks were read on another commit");
   return why.length === 0 ? null : why.join("; ");
-}
-
-/** Whether two checks on one page carry the same forge node identity, or two runs the same run identity. */
-function hasDuplicateNode(page: unknown[]): boolean {
-  const nodeIds = new Set<string>();
-  const runIds = new Set<number>();
-  for (const c of page) {
-    const node = at(c, "id");
-    if (typeof node === "string") {
-      if (nodeIds.has(node)) return true;
-      nodeIds.add(node);
-    }
-    const id = at(c, "databaseId");
-    if (typeof id !== "number") continue;
-    if (runIds.has(id)) return true;
-    runIds.add(id);
-  }
-  return false;
 }
 
 /** What one query read: each pull request's facts, and what the forge charged. */

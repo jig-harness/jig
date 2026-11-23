@@ -149,7 +149,7 @@ it("withdraws standing wording when the final readiness read changes", async () 
         reviewThreads: { ...none, nodes: ${JSON.stringify(changed === "thread" ? [{ isResolved: false }] : [])} },
         reviewRequests: none,
         latestReviews: { ...none, nodes: [{ state: "APPROVED", authorAssociation: "MEMBER", author: { __typename: "User", login: "maintainer" }, commit: { oid: head } }] },
-        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [{ __typename: "CheckRun", id: "CR_review", databaseId: 11, name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", isRequired: false, checkSuite: { app: { slug: "example-review" } } }] } } } }] }
+        commits: { nodes: [{ commit: { oid: head, statusCheckRollup: { contexts: { ...none, nodes: [{ __typename: "CheckRun", name: "AI review", status: "COMPLETED", conclusion: "SUCCESS", checkSuite: { app: { slug: "example-review" } } }] } } } }] }
       } } } }));
       `,
     );

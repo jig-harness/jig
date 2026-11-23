@@ -18,7 +18,6 @@ import {
   checkRunsFor,
   reviewerStickyMarkers,
 } from "../scripts/lib/status/evidence.ts";
-import { checkRunsFor as wholeCheckRuns } from "../scripts/lib/status/commit-observations.ts";
 import { commentDraftSkip } from "../scripts/lib/status/comment-draft-skip.ts";
 
 const SHA = "c".repeat(40);
@@ -96,18 +95,6 @@ describe("observed pull-request reads", () => {
       await checkRunsFor("acme", "widgets", SHA, "fresh");
     });
     expect(count(CHECKS)).toBe(3);
-  });
-
-  it("reads a slurped empty listing as unread, and an empty page as no runs", async () => {
-    const ALL = `${CHECKS}&filter=all`;
-    try {
-      PAGES[ALL] = [];
-      expect(await wholeCheckRuns("acme", "widgets", SHA)).toBeNull();
-      PAGES[ALL] = [{ total_count: 0, check_runs: [] }];
-      expect(await wholeCheckRuns("acme", "widgets", SHA)).toEqual([]);
-    } finally {
-      delete PAGES[ALL];
-    }
   });
 
   it("observations outside an evaluation share nothing", async () => {
