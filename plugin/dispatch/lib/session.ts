@@ -19,11 +19,11 @@
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../shared/cli.ts";
-import type { AccountVendor } from "../../skills/drive-pr/scripts/lib/identity.ts";
 import {
-  CODEX_BYPASS,
-  skillPrompt,
-} from "../../skills/drive-pr/scripts/lib/pass-command.ts";
+  type HarnessName,
+  harnessFor,
+} from "../../shared/agent-harness/index.ts";
+import { skillPrompt } from "../../skills/drive-pr/scripts/lib/pass-command.ts";
 import type { LaunchRecord, LaunchState } from "./launches.ts";
 import type { BatchItem } from "./queue-batch.ts";
 import type { RecordedResult } from "./session-result-types.ts";
@@ -53,12 +53,14 @@ const JIG = resolve(import.meta.dir, "../../jig.ts");
 
 /**
  * The vendor session id a launch on `vendor` mints, so the quota adapters
- * can read that session's own wall: Claude Code takes one
- * (`--session-id`); Codex takes none, so its session gets none, records no
- * wall and gets no nudge.
+ * can read that session's own wall: a harness that takes one (Claude Code's
+ * `--session-id`) gets one; one that prints its own (Codex) gets none, so
+ * its session records no wall and gets no nudge.
  */
-export function sessionIdFor(vendor: AccountVendor): string | null {
-  return vendor === "claude" ? crypto.randomUUID() : null;
+export function sessionIdFor(vendor: HarnessName): string | null {
+  return harnessFor(vendor).capabilities.sessionId === "minted"
+    ? crypto.randomUUID()
+    : null;
 }
 
 /** `jig dispatch <args>`, under the same trusted startup as the tick. */
@@ -485,27 +487,6 @@ function stewardResumeLines(
   ];
 }
 
-/** The model and effort words of a record's route, in `vendor`'s grammar. */
-function routeArgs(record: LaunchRecord): string[] {
-  if (record.vendor === "codex")
-    return [
-      ...(record.model === null ? [] : ["-m", record.model]),
-      ...(record.effort === null
-        ? []
-        : ["-c", `model_reasoning_effort="${record.effort}"`]),
-    ];
-  return [
-    ...(record.model === null ? [] : ["--model", record.model]),
-    ...(record.effort === null ? [] : ["--effort", record.effort]),
-  ];
-}
-
-/** Claude Code's `--session-id` with the id the tick minted, so the quota adapters can read this session's own wall. */
-function sessionArgs(record: LaunchRecord): string[] {
-  const session = record.sessionId ?? null;
-  return session === null ? [] : ["--session-id", session];
-}
-
 /**
  * An interactive pickup session's command line, for the account's vendor,
  * as an earlier release started it: Claude Code
@@ -514,9 +495,12 @@ function sessionArgs(record: LaunchRecord): string[] {
  * (its `model_reasoning_effort` setting), on the prompt.
  */
 export function sessionArgv(record: LaunchRecord): string[] {
-  const prompt = pickupPrompt(record);
-  if (record.vendor === "codex") return ["codex", ...routeArgs(record), prompt];
-  return ["claude", ...sessionArgs(record), ...routeArgs(record), prompt];
+  return harnessFor(record.vendor).interactiveCommand({
+    prompt: pickupPrompt(record),
+    model: record.model,
+    effort: record.effort,
+    sessionId: record.sessionId ?? null,
+  });
 }
 
 /**
@@ -542,24 +526,18 @@ function headlessArgv(
   prompt: string,
   routed: boolean,
 ): string[] {
-  const route = routed ? routeArgs(record) : [];
-  if (record.vendor === "codex")
-    return [
-      "codex",
-      "exec",
-      ...(record.codexBypass === true ? [CODEX_BYPASS] : []),
-      ...(record.codexPassArgs ?? []),
-      ...route,
-      prompt,
-    ];
-  return [
-    "claude",
-    ...sessionArgs(record),
-    ...route,
-    ...passArgs,
-    "-p",
+  const harness = harnessFor(record.vendor);
+  return harness.passCommand({
     prompt,
-  ];
+    model: routed ? record.model : null,
+    effort: routed ? record.effort : null,
+    sessionId: record.sessionId ?? null,
+    bypass: harness.capabilities.bypassOptIn && record.codexBypass === true,
+    hostArgs:
+      harness.capabilities.hostArgsAt === "admission"
+        ? (record.codexPassArgs ?? [])
+        : passArgs,
+  });
 }
 
 /**

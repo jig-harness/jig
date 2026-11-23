@@ -18,6 +18,7 @@
  */
 import { resolve } from "node:path";
 import { run } from "../../shared/proc.ts";
+import { harnessFor } from "../../shared/agent-harness/index.ts";
 import { passEnvironment } from "./accounts.ts";
 import { agentOf } from "./actions/pickup-hold.ts";
 import {
@@ -84,7 +85,7 @@ function readable(r: ReadRecord): boolean {
   return (
     isInteractive(record) &&
     r.state.kind === "alive" &&
-    record.vendor === "claude" &&
+    harnessFor(record.vendor).capabilities.sessionId === "minted" &&
     typeof record.sessionId === "string"
   );
 }

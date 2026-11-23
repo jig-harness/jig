@@ -66,6 +66,7 @@ import { laggingAnswerPublication } from "./answer-publication.ts";
 
 import { pinsEmptyPassArgs } from "./../pass-args.ts";
 import { passPrompt } from "./../pass-command.ts";
+import { defaultHarness } from "../../../../../shared/agent-harness/index.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
@@ -95,8 +96,16 @@ export function armCommand(
   const pass =
     agent.length > 0
       ? agent.map(shellQuote).join(" ")
-      : `claude -p "${passPrompt("claude", pr, botsOnly)}"`;
+      : defaultPass(pr, botsOnly);
   return `bun ${shellQuote(driveTs)} ${pr}${extra}${pinned}${mode} -- ${pass}`;
+}
+
+/** The default harness's documented pass command, as a printed command line (`claude -p "<prompt>"`). */
+function defaultPass(pr: string, botsOnly: boolean): string {
+  const harness = defaultHarness();
+  const prompt = passPrompt(harness.name, pr, botsOnly);
+  const words = harness.passCommand({ prompt }).slice(0, -1);
+  return `${words.join(" ")} "${prompt}"`;
 }
 
 /** Whether a pass command is scoped to bot threads, as `drive.ts` checks it. */

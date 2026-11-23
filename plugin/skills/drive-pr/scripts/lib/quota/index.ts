@@ -23,6 +23,7 @@ import type {
   QuotaAdapter,
   QuotaBlock,
 } from "./types.ts";
+import { harnesses } from "../../../../../shared/agent-harness/index.ts";
 import { isoOf } from "../../../../../shared/time.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 
@@ -43,7 +44,25 @@ export type {
  * on a path that is already handling a failure, and an absent vendor's state
  * dir simply yields nothing.
  */
-const ADAPTERS: readonly QuotaAdapter[] = [claudeAdapter, codexAdapter];
+/**
+ * The wall readers, by the key a harness names in its `wallReader`. The
+ * adapters run in the order the harness registry lists their harnesses, and
+ * a harness that names no reader (or one not here) contributes none.
+ */
+const READERS: ReadonlyMap<string, QuotaAdapter> = new Map(
+  [claudeAdapter, codexAdapter].map((adapter) => [adapter.vendor, adapter]),
+);
+
+/** The adapters of every registered harness's wall reader. */
+function adapters(): QuotaAdapter[] {
+  const found: QuotaAdapter[] = [];
+  for (const harness of harnesses()) {
+    const adapter =
+      harness.wallReader === null ? undefined : READERS.get(harness.wallReader);
+    if (adapter !== undefined && !found.includes(adapter)) found.push(adapter);
+  }
+  return found;
+}
 
 /**
  * The longest a drive may sleep waiting for a window to reopen.
@@ -76,7 +95,7 @@ export function maxSleepMs(): number {
  * Which of two EQUALLY-recent blocks to keep. The adapters normalize evidence
  * to whole-second precision, so a genuine tie across vendors is reachable —
  * e.g. a Claude short-window wall and a Codex weekly wall observed in the same
- * second — and array order in `ADAPTERS` is not a signal about which one
+ * second — and array order in `adapters()` is not a signal about which one
  * actually still blocks the account. Resolved by asking `planFor` itself:
  * whichever block it would refuse to sleep through wins, and between two
  * sleepable blocks the longer wait wins.
@@ -110,7 +129,7 @@ export function detectQuotaBlock(
   truncatedByVendor?: ReadonlyMap<string, boolean>,
 ): QuotaBlock | null {
   let best: QuotaBlock | null = null;
-  for (const adapter of ADAPTERS) {
+  for (const adapter of adapters()) {
     const truncated =
       truncatedByVendor?.get(adapter.vendor) ??
       opts.preexistingSessionsTruncated;
@@ -188,7 +207,7 @@ export interface QuotaSnapshot {
 export function snapshotQuotaSessions(): QuotaSnapshot {
   const files = new Set<string>();
   const truncatedByVendor = new Map<string, boolean>();
-  for (const adapter of ADAPTERS) {
+  for (const adapter of adapters()) {
     try {
       const scan = adapter.snapshotSessions();
       for (const path of scan.files) files.add(path);
@@ -232,7 +251,7 @@ export function prepareQuotaSpawn(
   env: NodeJS.ProcessEnv,
 ): PreparedSpawn | null {
   if (process.env.DRIVE_PR_QUOTA_NO_SPAWN_PREP === "1") return null;
-  for (const adapter of ADAPTERS) {
+  for (const adapter of adapters()) {
     if (adapter.prepareSpawn === undefined) continue;
     let prepared: PreparedSpawn | null;
     try {

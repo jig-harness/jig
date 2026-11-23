@@ -41,6 +41,11 @@ import {
   RoutingError,
   tierNamed,
 } from "../../../do-item/scripts/lib/routing.ts";
+import { codex } from "../../../../shared/agent-harness/codex.ts";
+import {
+  defaultHarness,
+  harnessOfProgram,
+} from "../../../../shared/agent-harness/index.ts";
 import { passVendor } from "./identity.ts";
 import {
   DEFAULT_PASS_MODEL,
@@ -141,11 +146,9 @@ export function configuredCodexModel(
   };
 }
 
-/** The words that take the model as the next word: `--model` for both tools, and Codex's `-m`. */
+/** The words that take the model as the next word: the pass command's harness's (`--model` for both tools, and Codex's `-m`). */
 function modelFlags(argv: readonly string[]): ReadonlySet<string> {
-  return passVendor(argv) === "codex"
-    ? new Set(["--model", "-m"])
-    : new Set(["--model"]);
+  return new Set(harnessOfProgram(argv[0])?.modelFlags ?? ["--model"]);
 }
 
 /** Where the model option sits in a `claude` or `codex` argv, and its value. */
@@ -180,6 +183,25 @@ export function withoutModel(argv: readonly string[]): string[] {
 }
 
 /**
+ * `argv` with its model set to `model` in its harness's form: every own
+ * model option removed, then the harness's own placement (Claude Code's
+ * `--model` where the first was, else after `claude`; Codex's `-m` after
+ * `exec`, after `codex` when it has none). A command no harness starts takes
+ * the default harness's form.
+ */
+export function withHarnessModel(
+  argv: readonly string[],
+  model: string,
+): string[] {
+  const harness = harnessOfProgram(argv[0]) ?? defaultHarness();
+  return harness.withModel(
+    withoutModel(argv),
+    model,
+    modelOption(argv)?.index ?? null,
+  );
+}
+
+/**
  * `argv` with its `--model` set to `model`: every own `--model` removed and
  * one put where the first was, else added after `claude`.
  */
@@ -194,9 +216,7 @@ export function withCodexModel(
   argv: readonly string[],
   model: string,
 ): string[] {
-  const rest = withoutModel(argv);
-  const at = rest[1] === "exec" ? 2 : 1;
-  return [...rest.slice(0, at), "-m", model, ...rest.slice(at)];
+  return codex.withModel(withoutModel(argv), model, null);
 }
 
 /** The pass command the driver runs, and the model it runs on. */

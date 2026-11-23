@@ -135,6 +135,7 @@ import { captureIdentity, type ProcessIdentity } from "../shared/liveness.ts";
 import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { LAUNCH_VARIABLE } from "../shared/launched-session.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
+import { harnessFor, harnessNamed } from "../shared/agent-harness/index.ts";
 import {
   NO_BACKGROUND_TASKS,
   passCommand,
@@ -198,7 +199,6 @@ import {
   recordWorkingStartup,
 } from "./lib/account-startup.ts";
 import { forgetClaudeSignIn } from "./lib/claude-sign-in.ts";
-import { codexSessionIn } from "./lib/transcript-copy.ts";
 import {
   currentIso,
   currentMs,
@@ -231,7 +231,7 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     record.codexBypass === true,
     words,
   );
-  const pinned = record.vendor === "codex" && words.length === 0;
+  const pinned = !readsLaunchArgs(record) && words.length === 0;
   if (settleTree)
     pass[pass.length - 1] +=
       "\nThe original tree holds uncommitted work. Inspect it: commit and push edits that belong to this change, or discard edits only when they are known disposable. Stop if ownership is unclear. Settle the existing tree before reporting convergence.";
@@ -251,6 +251,11 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     "--",
     ...pass,
   ];
+}
+
+/** Whether the record's harness reads the host's extra pass words as the pass starts; one that fixed them at admission pins them. */
+function readsLaunchArgs(record: LaunchRecord): boolean {
+  return harnessFor(record.vendor).capabilities.hostArgsAt === "launch";
 }
 
 /** The drive script: `drive-pr`'s, unless a test names another. */
@@ -334,7 +339,7 @@ async function tryWriteWall(
 function stageArgv(record: LaunchRecord): string[] {
   // `drive.pass_args` is Claude Code's: a Codex pass never reads it, so a bad value cannot stop one.
   const claudeWords = (): readonly string[] =>
-    record.vendor === "codex" ? [] : configuredPassArgs().words;
+    readsLaunchArgs(record) ? configuredPassArgs().words : [];
   if (record.action === "steward")
     return stewardPassArgv(record, claudeWords());
   if (isDrive(record)) return driveCommand(record, driveScript());
@@ -600,7 +605,7 @@ function startupOf(
 } {
   if (
     !ownPass(record) ||
-    record.vendor !== "claude" ||
+    !harnessFor(record.vendor).capabilities.signInProbe ||
     ran.started === undefined ||
     ran.exited === undefined
   )
@@ -657,10 +662,11 @@ function startupOutputOf(ran: Ran): string {
   return ran.startupOutput ?? ran.output ?? "";
 }
 
-/** The session id a Codex pass printed at its start; Claude Code's is the one the tick minted (`sessionId`). */
+/** The session id a pass printed at its start (Codex's); Claude Code's is the one the tick minted (`sessionId`). */
 function sessionOf(record: LaunchRecord, ran: Ran): string | null {
-  return record.vendor === "codex" && ownPass(record)
-    ? codexSessionIn(ran.head)
+  const harness = harnessFor(record.vendor);
+  return harness.capabilities.sessionId === "printed" && ownPass(record)
+    ? harness.sessionIdIn(ran.head)
     : null;
 }
 
@@ -933,7 +939,10 @@ async function trackerMain(slug: string, deadline: string): Promise<number> {
 /** The wrapper's command line; `jig dispatch run` reaches it too. */
 export async function runMain(argv: string[]): Promise<number> {
   if (argv[0] === "identity" && argv.length === 2) {
-    console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
+    const named = harnessNamed(argv[1])?.accountIdentity(process.env);
+    console.log(
+      JSON.stringify(named ?? resolveAccountIdentity([argv[1] as string])),
+    );
     return 0;
   }
   if (argv[0] === "quota" && argv.length === 4) {
@@ -954,7 +963,7 @@ export async function runMain(argv: string[]): Promise<number> {
   const supervising = argv[0] === "supervise" && argv.length === 3;
   if (!supervising && argv.length !== 2) {
     console.error(
-      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
+      "usage: run.ts <record> <token> | run.ts identity <harness> | run.ts quota <session-id> <cwd> <since> | run.ts tracker <slug> <deadline-ms>",
     );
     return 2;
   }

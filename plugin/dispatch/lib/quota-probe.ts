@@ -12,6 +12,7 @@
  */
 import { detectQuotaBlock } from "../../skills/drive-pr/scripts/lib/quota/index.ts";
 import { readBoundedTail } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
+import { defaultHarness } from "../../shared/agent-harness/index.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { isoOf, parseMs } from "../../shared/time.ts";
@@ -72,7 +73,9 @@ export function probeWall(
     cwd,
     since,
     now,
-    correlation: { vendor: "claude", sessionId },
+    // The probe's command line names no harness: it reads sessions whose id
+    // the launch minted, which is the default harness's (Claude Code's) form.
+    correlation: { vendor: defaultHarness().wallReader ?? "", sessionId },
   });
   if (block === null) return null;
   return {
