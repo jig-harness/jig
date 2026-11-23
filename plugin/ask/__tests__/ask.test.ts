@@ -440,7 +440,7 @@ describe("jig ask", () => {
         class: "stalled",
         next: {
           person: "repository maintainer",
-          act: "Investigate: Read the handoff file for what keeps the review open, then re-arm the drive or take the work over.",
+          act: "Investigate: Read the handoff file for what keeps the review open, then re-arm the drive, which grants it one more round budget (`jig send drive@<repo> <PR> rearm`, or `--rearm-budget` on the arm command), or take the work over.",
         },
       });
       expect(answer.last?.next).toEqual(row.next);
