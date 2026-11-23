@@ -57,6 +57,12 @@ function isUnconfirmedPush(line: string): boolean {
   );
 }
 
+/** The escape sequences terminals colour with: a gate's output is often coloured. */
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
+
+/** What stands where a line too long to read whole was dropped. */
+const OMITTED = "[over-long line omitted]\n";
+
 /** The most bytes of the push's stderr kept to read the cause from. */
 const TAIL_BYTES = 16 * 1024;
 
@@ -76,7 +82,7 @@ const PENDING_MAX = 256 * 1024;
  * Keeps the last `TAIL_BYTES` of a stream observed chunk by chunk. Bytes are
  * held raw until their line is complete, and masked and decoded whole: a
  * credential or a multi-byte character split between chunks is never read in
- * halves. A line longer than `PENDING_MAX` is masked and flushed, and the rest of that line is discarded unread: a continuation without its key could not be masked.
+ * halves. Terminal escapes are stripped before masking, so one inside a credential's key cannot hide it. A line longer than `PENDING_MAX` is dropped whole, with a marker: any part of it could have lost the key or quote its value hangs on.
  */
 export function outputTail(): {
   observe: (bytes: Uint8Array) => void;
@@ -86,7 +92,7 @@ export function outputTail(): {
   let pending: Buffer = Buffer.alloc(0);
   let skipping = false;
   const settle = (raw: Buffer): void => {
-    done += redactReportText(raw.toString("utf8"));
+    done += redactReportText(raw.toString("utf8").replace(ANSI, ""));
     if (done.length > TAIL_BYTES) done = done.slice(done.length - TAIL_BYTES);
   };
   return {
@@ -105,17 +111,17 @@ export function outputTail(): {
         pending = pending.subarray(end + 1);
       }
       if (pending.length > PENDING_MAX) {
-        settle(pending);
+        // Cut anywhere, a line could lose the quote or key its value hangs
+        // on, so none of it is kept.
+        done += OMITTED;
         pending = Buffer.alloc(0);
         skipping = true;
       }
     },
-    text: () => done + redactReportText(pending.toString("utf8")),
+    text: () =>
+      done + redactReportText(pending.toString("utf8").replace(ANSI, "")),
   };
 }
-
-/** The escape sequences terminals colour with: a gate's output is often coloured. */
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
 
 /**
  * The kind of a push failure, from the output that came with it. That output

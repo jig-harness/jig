@@ -140,6 +140,26 @@ describe("the push output's tail", () => {
     expect(out).not.toContain("TOPSECRETVALUE");
     expect(out).toContain("next line");
   });
+
+  it("drops an over-long line with an unclosed quoted value whole", () => {
+    const tail = outputTail();
+    const enc = new TextEncoder();
+    tail.observe(enc.encode('password="first '));
+    tail.observe(enc.encode("s".repeat(300 * 1024)));
+    tail.observe(enc.encode("LATERSECRET\nnext line\n"));
+    const out = tail.text();
+    expect(out).not.toContain("LATERSECRET");
+    expect(out).not.toContain("first");
+    expect(out).toContain("[over-long line omitted]");
+    expect(out).toContain("next line");
+  });
+
+  it("masks a credential whose key a terminal escape splits", () => {
+    const tail = outputTail();
+    const esc = String.fromCharCode(27);
+    tail.observe(Buffer.from(`pass${esc}[1mword=hunter2secret\n`));
+    expect(tail.text()).not.toContain("hunter2secret");
+  });
 });
 
 describe("finish-round.ts on a failed push", () => {
