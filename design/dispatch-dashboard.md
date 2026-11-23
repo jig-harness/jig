@@ -307,6 +307,24 @@ Needs you is read again at each request: nothing is queued in it, and
 acting on an entry writes the record its station reads. Every card ends
 with the tick and the host it was read at.
 
+**Settled recently.** What left Needs you does not vanish without a trace.
+Below the open cards, a section folded to one line with its count ("12
+settled in the last 24 hours · show") lists each need that left the line in
+the window, newest first: its target, repository and link, the question or
+act it carried, when it left, by whom and how, and a link to its History
+rows. *By whom* is the person (their login, and the comment they answered
+in), the tick (naming the rule), the steward (naming its record), or no one
+because the need's facts changed (its pull request is no longer open).
+An answer a station took and did not carry out shows with its outcome, held
+or refused, and its reason, while its card stays open above; one answer that
+settled several targets is one entry listing them. The tick writes one
+`need_leaves` row for every need that the line it writes no longer holds
+that the line before held, whatever its notify stage did, so a need that
+leaves and returns is two entries, and the line's `settled` list is the last
+day of those rows with the unsettled answers. The section adds no forge or
+tracker call. `jig ask --settled --json` answers the same list for the
+panel's inbox and for an agent.
+
 **Marks on every pull request card.** To item 36's status row (conflicts,
 checks, threads, merge;
 [dispatch-board.md](dispatch-board.md#the-status-row-on-every-pull-request-card))
