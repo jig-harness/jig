@@ -131,7 +131,7 @@ describe("drive.ts loop control", () => {
       "a diagnosis and either a tracker issue key or an open park key",
     );
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 120_000);
+  }, 40_000);
 
   // A pass that omits the issue key must name an open park in drive state.
   const FILING_KEY = "ci-diagnosis-filing";
@@ -183,7 +183,7 @@ describe("drive.ts loop control", () => {
       "no issue filed (parked for a person). the local gate ran no tests",
     );
     expectSpawnExit({ ...r, stdout: null }, 8);
-  }, 120_000);
+  }, 40_000);
 
   it("hands back a diagnosis that names an open rules park older than the reservation", async () => {
     const { dir, stateDir } = writeFixture({ threads: [] });
@@ -249,7 +249,7 @@ describe("drive.ts loop control", () => {
     );
     expect(r.stderr).not.toContain("parked for a person");
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 120_000);
+  }, 40_000);
 
   it("rejects a diagnosis report naming a filing park the drive does not hold", async () => {
     const r = await diagnoseOnRed(
@@ -263,7 +263,7 @@ describe("drive.ts loop control", () => {
     );
     expect(r.stderr).not.toContain("parked for a person");
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 120_000);
+  }, 40_000);
 
   it("re-gates without stopping when the diagnosing pass stands down", async () => {
     const r = await diagnoseOnRed(
@@ -278,7 +278,7 @@ describe("drive.ts loop control", () => {
     );
     expect(r.stderr).toContain("issue #42. second try");
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 120_000);
+  }, 40_000);
 
   it("stops when the diagnosing pass keeps standing down on one head", async () => {
     const r = await diagnoseOnRed(
@@ -289,7 +289,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr.match(/Running diagnosing CI repair/g)?.length).toBe(2);
     expect(r.stderr).toContain("stood down 2 times on this head");
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 120_000);
+  }, 40_000);
 
   const failingHead = (head: string) => ({
     threads: [],
@@ -332,7 +332,7 @@ describe("drive.ts loop control", () => {
         }),
       ]),
     );
-  }, 120_000);
+  }, 40_000);
 
   it("continues the drive on the head pushed by the diagnosing repair", async () => {
     const tree = makeScratchRepo("ci-diagnosis-push");
@@ -405,7 +405,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("Running CI-repair pass 1/1");
     expect(r.stderr).toContain("TASK=ci-diagnose");
     expectSpawnExit({ ...r, stdout: null }, CI_REPAIR_SPENT_EXIT);
-  }, 120_000);
+  }, 40_000);
 
   it("lets DRIVE_PR_CI_REPAIR_ROUNDS override drive.ci_repair_rounds for one run", async () => {
     const r = await driveWithRepairSetting(NO_REPAIR);

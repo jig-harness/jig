@@ -2474,8 +2474,10 @@ make, use the entry's term instead.
   pass, the name a model has there, what a launch carries, what a run cost
   and how a stop is classified
   ([ADR-0026](docs/adr/ADR-0026-the-agent-harness-is-an-interface.md)).
-  Not the *session runtime*, which says where a session runs and not which
-  program runs in it. Planned.
+  Claude Code and Codex are behind that interface today; a third harness
+  and the skills' harness-neutral wording are planned. Not the *session
+  runtime*, which says where a session runs and not which program runs in
+  it.
 - **Spend cap** — the amount of money per day against which the
   *dispatcher* admits a *provider account*'s launches, with an optional
   ceiling for one run. A launch the day's remaining amount does not cover

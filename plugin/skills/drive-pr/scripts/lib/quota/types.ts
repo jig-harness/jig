@@ -587,6 +587,13 @@ export interface QuotaAdapter {
    */
   detect(opts: DetectOpts): QuotaBlock | null;
   /**
+   * Whether the session's last record is still the wall `block` names, for a
+   * reader whose records are not Claude Code's. Optional: without it the
+   * dispatch probe reads the record as Claude Code's rate-limit error.
+   * MUST NOT THROW.
+   */
+  isStillWall?(block: QuotaBlock, sessionId: string): boolean;
+  /**
    * Every session file this adapter would consider evidence, RIGHT NOW —
    * unfiltered by mtime, because the question is "what already exists", not
    * "what changed recently". A file untouched for a month is still one this

@@ -631,6 +631,7 @@ export function endedRow(
       framed: r.framed,
       class: placed.class,
       reason,
+      driveExit: r.state.kind === "ended" ? r.state.exit.code : null,
       ...(placed.probeStopped ? { probeStopped: true } : {}),
     }),
     ...aboutFields(about),
