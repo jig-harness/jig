@@ -25,6 +25,14 @@ import { type DecisionRow, decisionRows } from "./picking.ts";
 import { noLinkText } from "./links.ts";
 import { itemWords, trackerOf, type Tracker } from "./tracker-name.ts";
 import { type SendTarget, sendTargetOf } from "./send-target.ts";
+import {
+  questionGroupId,
+  questionGroups,
+} from "../../plugin/shared/question-group.ts";
+import {
+  groupedNeedView,
+  type QuestionGroupView,
+} from "./question-group-view.ts";
 import { ROLES, type Role } from "./status.ts";
 import {
   type Clock,
@@ -90,6 +98,8 @@ export interface NeedView {
   keyText: string | null;
   foldLabel: string;
   evidence: EvidenceRow[];
+  /** For the one card of a question group: every target it covers (`question-group-view.ts`); absent on a need's own card. */
+  group?: QuestionGroupView;
 }
 
 /** The act a need asks for, as `jig ask` names it. */
@@ -319,10 +329,30 @@ export type NeedRow =
   | { type: "need"; need: NeedView; since: string }
   | { type: "stuck"; slot: SlotView; since: string };
 
+/** A need's card, or the one card of a question group of two or more, where its oldest need would be. */
+function needCardOf(
+  first: LineNeed,
+  more: LineNeed[],
+  line: LineSnapshot,
+  clockNow: Clock,
+): NeedView {
+  const viewed = (n: LineNeed) => ({
+    need: n,
+    view: needView(n, clockNow, trackerOf(line, n.repo)),
+  });
+  const lead = viewed(first);
+  const id = questionGroupId(first);
+  return more.length === 0 || id === null
+    ? lead.view
+    : groupedNeedView(lead, more.map(viewed), id);
+}
+
 /**
  * The rows of Needs you: one group per act, in the acts' order, then the
- * sessions not moving. Filtered to one person, only the needs that wait on
- * them stay; a session not moving names nobody, so it goes too.
+ * sessions not moving. Needs whose decisions are identical apart from their
+ * own target are one card (`shared/question-group.ts`). Filtered to one
+ * person, only the needs that wait on them stay; a session not moving names
+ * nobody, so it goes too.
  */
 export function needRows(
   line: LineSnapshot,
@@ -335,12 +365,13 @@ export function needRows(
     const list = ordered.filter((n) => needAct(n) === act);
     if (list.length === 0) continue;
     rows.push({ type: "head", head: act });
-    for (const n of list)
-      rows.push({
-        type: "need",
-        need: needView(n, clockNow, trackerOf(line, n.repo)),
-        since: n.since,
-      });
+    for (const [first, ...more] of questionGroups(list))
+      if (first !== undefined)
+        rows.push({
+          type: "need",
+          need: needCardOf(first, more, line, clockNow),
+          since: first.since,
+        });
   }
   if (person !== null) return rows;
   const stuck = notMoving(line, clockNow.nowMs).sort(

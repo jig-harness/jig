@@ -404,6 +404,25 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.305.0] - 2026-11-23
+
+### Added
+
+- The dispatch dashboard's Needs you shows needs whose decisions are identical apart from their own target as one card: the question once, how many targets it covers, and each target with its repository, link, age and its own evidence. One pick on the card answers every target listed, and Send posts each target's own answer, as you, so every station still checks it; leave out the targets you mean to settle differently, and they stay open. A target whose answer the tick refused, or whose facts changed, becomes its own card again. See [design/need-classes.md](design/need-classes.md#identical-questions-fold). **Consumer action:** none.
+- `jig ask --waiting --json` names each entry's `questionGroup`, the identity the dashboard's card carries, so another reader of Needs you's rules can show the same groups. **Consumer action:** none.
+
+## [0.304.5] - 2026-11-23
+
+### Fixed
+
+- Merge-readiness facts preserve a final fractional-second budget, reject malformed first check pages, and retain continuation-query diagnostics. **Consumer action:** none.
+- Merge-readiness facts keep a pull request out of the Ready lane when a null check rollup is not tied to its current head commit. **Consumer action:** none.
+- The Ready board, merge-ready announcement and `jig ask` read additional
+  pages of checks on the verified pull request head. A pull request with
+  more than 100 checks can reach the merge lane once all required checks
+  pass. The shared reader leaves the pull request partial if it cannot
+  read the full connection within four pages or its deadline.
+
 ## [0.304.4] - 2026-11-23
 
 ### Fixed
@@ -10829,7 +10848,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.4...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.305.0...HEAD
+[0.305.0]: https://github.com/jig-harness/jig/compare/v0.304.5...v0.305.0
+[0.304.5]: https://github.com/jig-harness/jig/compare/v0.304.4...v0.304.5
 [0.304.4]: https://github.com/jig-harness/jig/compare/v0.304.3...v0.304.4
 [0.304.3]: https://github.com/jig-harness/jig/compare/v0.304.2...v0.304.3
 [0.304.2]: https://github.com/jig-harness/jig/compare/v0.304.1...v0.304.2

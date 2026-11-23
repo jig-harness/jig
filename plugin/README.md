@@ -1833,7 +1833,11 @@ stage and parked questions in `questions` in JSON and as `question:` lines
 in text; parks without a separate question use their recorded decision lines.
 An entry whose notice did not reach a person at that tick (held for room in
 the notices comment, lost, or its destination out of reach) says why in
-`notice`, and as a `notice not delivered:` line in text. When the newest
+`notice`, and as a `notice not delivered:` line in text. In JSON,
+`questionGroup` names the [question group](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) the need is in:
+entries that share it are one card on the dispatch dashboard's Needs you,
+settled by one answer that goes to each of them; it is `null` for a need
+that is always a card of its own. When the newest
 tick could not read a repository (the forge refused it, or its configuration
 did not read), the line keeps what the tick that last read it found, and the
 answer lists the repository in `incomplete` (`repo`, `refused` and `readAt`,

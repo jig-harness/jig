@@ -249,9 +249,7 @@ export function useSteering(
       setBack(activeElement());
       setEntries(
         paletteEntries(
-          allCards(o.line, o.clock, (need) =>
-            keptCommit(need.repo, need.target, need.rows),
-          ),
+          allCards(o.line, o.clock, (need) => keptCommit(need)),
           o.counts,
         ),
       );
@@ -286,9 +284,9 @@ export function useSteering(
       return;
     }
     // The entry was read when the palette opened; a tick since may have reframed, reparked or removed its decision.
-    const card = allCards(o.line, o.clock, (need) =>
-      keptCommit(need.repo, need.target, need.rows),
-    ).find((c) => c.key === run.card.key);
+    const card = allCards(o.line, o.clock, (need) => keptCommit(need)).find(
+      (c) => c.key === run.card.key,
+    );
     if (card === undefined) {
       announce(
         `Not copied: ${run.card.target} is not on the line now. Find it and copy again.`,
