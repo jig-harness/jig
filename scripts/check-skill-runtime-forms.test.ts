@@ -13,7 +13,11 @@ const DIR = "$" + "{CLAUDE_SKILL_DIR}";
 const run = DIR + "/scripts/run.ts";
 const explained = `${DIR} in the commands below stands for the absolute path of the directory containing this \`SKILL.md\`. Claude Code fills it in. In any other harness, replace it with that path yourself before running a command.`;
 const rules = (source: string, file = "plugin/skills/x/SKILL.md") =>
-  formFindings(file, source).map((finding) => finding.rule);
+  formFindings(
+    file,
+    source,
+    /^plugin\/skills\/[^/]+\/SKILL\.md$/.test(file),
+  ).map((finding) => finding.rule);
 
 test("a skill that uses the skill-directory variable with no harness-neutral form fails", () => {
   expect(rules(`Run:\n\n\`\`\`bash\nbun "${run}"\n\`\`\`\n`)).toEqual([
@@ -90,7 +94,7 @@ test("a path under the variable must exist once the directory is filled in", () 
     writeFileSync(join(dir, "scripts", "run.ts"), "");
     const source = `${explained}\n\nbun "${DIR}/scripts/run.ts"\n\nbun "${DIR}/scripts/gone.ts"\n`;
     expect(
-      formFindings("plugin/skills/x/SKILL.md", source, dir).map(
+      formFindings("plugin/skills/x/SKILL.md", source, true, dir).map(
         (finding) => finding.problem,
       ),
     ).toEqual([expect.stringContaining("/scripts/gone.ts does not exist")]);
@@ -137,7 +141,9 @@ test("a sentence's closing period is not part of the path it ends", () => {
   try {
     mkdirSync(join(dir, "scripts"));
     const source = `${explained}\n\nThe scripts live under ${DIR}/scripts.\n`;
-    expect(formFindings("plugin/skills/x/SKILL.md", source, dir)).toEqual([]);
+    expect(formFindings("plugin/skills/x/SKILL.md", source, true, dir)).toEqual(
+      [],
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -234,9 +240,9 @@ test("the recipient is the exact agent, through links, and also after `go to`", 
 });
 
 test("a long run of asterisks before a missing agent fails fast", () => {
-  const started = Date.now();
+  const started = performance.now();
   expect(rules(`Send it to ${"*".repeat(60)}x\n`)).toEqual([]);
-  expect(Date.now() - started).toBeLessThan(1000);
+  expect(performance.now() - started).toBeLessThan(1000);
 });
 
 test("an open comment stays opaque across a fence-like line", () => {
@@ -302,4 +308,40 @@ test("the gate entry point exits 1 on a violation and 2 with no pages", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+const arbiter = (text: string) => rules(text, "plugin/skills/x/SKILL.md");
+
+test("the recipient is recognised through links, emphasis and descriptive labels", () => {
+  for (const text of [
+    "Send the finding to the [Review Arbiter](../../GLOSSARY.md#review-arbiter) agent `jig:review-arbiter`.\n",
+    "Hand it to [agent for contested reviews](../../agents/review-arbiter.md).\n",
+    "Hand it to the [Review Arbiter](../how-to-review.md) **`jig:review-arbiter`**.\n",
+  ])
+    expect(arbiter(text)).toEqual(["subagent-form"]);
+});
+
+test("a clause that only mentions the arbiter hands nothing to it", () => {
+  for (const text of [
+    "Ask the maintainer whether `jig:review-arbiter` already ruled.\n",
+    "Send the finding to the maintainer if `jig:review-arbiter` is unavailable.\n",
+    "Invoke `jig:review-arbiter_sandbox`.\n",
+    "Invoke `archived_review-arbiter.md`.\n",
+    "Ask `review-arbiter.md`'s maintainer.\n",
+  ])
+    expect(arbiter(text)).toEqual([]);
+});
+
+test("a comment opener in inline code or after an escape hides nothing", () => {
+  const instruction = "Ask with AskUserQuestion.\n";
+  for (const opener of ["`<!--`", "\\<!--"])
+    expect(
+      arbiter(`Write ${opener} to start a comment. ${instruction}`),
+    ).toEqual(["question-form"]);
+});
+
+test("a reference page named SKILL.md is judged as a reference", () => {
+  expect(
+    formFindings("plugin/skills/x/references/SKILL.md", "Plain.\n", false),
+  ).toEqual([]);
 });

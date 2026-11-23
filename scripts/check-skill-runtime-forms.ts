@@ -38,6 +38,33 @@ interface Paragraph {
 }
 
 /**
+ * Where a comment opens in a line of prose: the first `<!--` that is neither
+ * backslash-escaped nor inside an inline code span (a backtick run closed by
+ * a run of the same length on the line; an unpaired run is literal text).
+ */
+function commentStart(line: string): number {
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] === "\\") i += 2;
+    else if (line[i] === "`") i = afterCodeSpan(line, i);
+    else if (line.startsWith("<!--", i)) return i;
+    else i += 1;
+  }
+  return -1;
+}
+
+/** The index after the backtick run at `at` and the code span it opens, if any. */
+function afterCodeSpan(line: string, at: number): number {
+  let n = 1;
+  while (line[at + n] === "`") n += 1;
+  const run = "`".repeat(n);
+  let close = line.indexOf(run, at + n);
+  while (close >= 0 && line[close + n] === "`")
+    close = line.indexOf(run, close + n + 1);
+  return close < 0 ? at + n : close + n;
+}
+
+/**
  * Blank out HTML comments, which no reader sees, keeping every line break.
  * A comment stays opaque until it closes, even across a fence-like line;
  * fenced code outside a comment is left whole, since inside it `<!--` and
@@ -66,7 +93,7 @@ function withoutComments(source: string): string {
           rest = rest.slice(end + 3);
           open = false;
         } else {
-          const start = rest.indexOf("<!--");
+          const start = commentStart(rest);
           if (start < 0) return out + rest;
           out += rest.slice(0, start) + "    ";
           rest = rest.slice(start + 4);
@@ -268,13 +295,14 @@ function questionFindings(file: string, blocks: Paragraph[]): Finding[] {
 }
 
 // The exact agent: its ID, or the basename of its file, never a longer name
-// (`jig:review-arbiter-sandbox`, `archived-review-arbiter.md`,
+// (`jig:review-arbiter-sandbox`, `review-arbiter_sandbox`, `archived-review-arbiter.md`,
 // `review-arbiter.md.bak`) and never a possessive (`jig:review-arbiter's`).
-const AGENT = String.raw`(?<![A-Za-z0-9-])(?:jig:review-arbiter(?![A-Za-z0-9-]|[\x60*_]*['\u2019]s\b)|review-arbiter\.md(?![A-Za-z0-9]|\.\w|-))`;
-// What may stand between the preposition and the agent's name: a short run of
-// one sentence's own words, with no clause break. Bounded and unambiguous, so
-// a failed match cannot backtrack exponentially.
-const LEAD = String.raw`(?:(?!\b(?:about|on|of|for|with|to)\b)(?:[^.!?,;\n]|\.(?=\S))){0,100}?`;
+// Run on text `recipientText` has already reduced to plain words.
+const AGENT = String.raw`(?<![\w-])(?:jig:review-arbiter|review-arbiter\.md)(?![\w-]|\.\w|['\u2019]s\b)`;
+// The words that may name the recipient before its ID: an article, and the
+// words agent or Review Arbiter. Anything else (a maintainer, a clause such as
+// `whether` or `if`) means the ID is only mentioned, not handed to.
+const LEAD = String.raw`\(?(?:(?:the|a|an|our|this|fresh|new|configured|plugin's|plugin|jig|review[- ]arbiter|arbiter|agent|subagent)\s+\(?){0,6}`;
 // A sentence's own words: a period inside a path or a name is not its end.
 const GAP = String.raw`(?:[^.!?]|\.(?=\S)){0,80}?`;
 // The agent is the recipient: it follows the verb directly (`invoke`), or the
@@ -283,11 +311,30 @@ const HANDS_OVER = new RegExp(
   String.raw`\b(?:(?:spawn|invoke|ask)\s+|(?:delegate|hand|give|send|route|pass)\b${GAP}\bto\s+|delegate\s+to\s+|request\b${GAP}\bfrom\s+|go(?:es)?\s+to\s+)${LEAD}${AGENT}`,
   "i",
 );
+
+/**
+ * A paragraph reduced to the words a reader sees, for recognising a recipient:
+ * a link to the agent's own file becomes that file's name (its label is
+ * prose), any other link keeps its label and loses its destination, and code
+ * ticks and emphasis marks around a token are dropped, so none of them
+ * breaks the phrase between a verb and its recipient.
+ */
+export function recipientText(text: string): string {
+  return text
+    .replace(
+      /\[[^\]]*\]\(\s*<?[^)\s>]*?review-arbiter\.md(?:#[^)\s>]*)?>?[^)]*\)/gi,
+      " review-arbiter.md ",
+    )
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[`*]/g, "")
+    .replace(/(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g, "");
+}
+
 const NO_SUBAGENTS = /\bno subagents?\b/i;
 const CALLING_SESSION = /\bcalling session\b/i;
 
 function subagentFindings(file: string, blocks: Paragraph[]): Finding[] {
-  const hands = blocks.find(({ text }) => HANDS_OVER.test(text));
+  const hands = blocks.find(({ text }) => HANDS_OVER.test(recipientText(text)));
   if (!hands) return [];
   const covered = blocks.some(
     ({ text }) => NO_SUBAGENTS.test(text) && CALLING_SESSION.test(text),
@@ -350,8 +397,8 @@ function pathFindings(
 export function formFindings(
   file: string,
   source: string,
+  isEntryPage: boolean,
   skillDir?: string,
-  isEntryPage = basename(file) === "SKILL.md",
 ): Finding[] {
   const blocks = paragraphs(withoutFrontmatter(source));
   return [
@@ -384,8 +431,8 @@ export function checkSkillRuntimeForms(root = "."): number {
       return formFindings(
         repoPath(root, join(base, file)),
         readFileSync(join(base, file), "utf8"),
-        skillDir,
         isEntry(file),
+        skillDir,
       );
     });
     if (findings.length) {
