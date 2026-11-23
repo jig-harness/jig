@@ -86,6 +86,7 @@ import {
   dropSuppressions,
   ledgerKey,
   markChannelStarted,
+  SILENT_START,
   ORCA_CARD,
   readHostSuppressions,
   readSuppressions,
@@ -653,7 +654,7 @@ function dueOn(
   isCard: boolean,
 ): Cause[] {
   const name = channel.name;
-  const starting = !isCard && startingChannel(name, scope.root, state);
+  const starting = !isCard && startingChannel(name, scope, state);
   const due = dueThere(name, scope, starting);
   if (due.length === 0 && !starting) return due;
   let why: string | null;
@@ -673,22 +674,29 @@ function dueOn(
   return [];
 }
 
-/** Whether `channel` has yet to send on this host, or started this tick and so starts alike on every repository of it. */
+/** Whether `channel` has yet to begin on this repository, or started this tick and so starts alike on every repository of it. A repository the channel already holds records for gets its start row now. */
 function startingChannel(
   channel: string,
-  root: string,
+  { repo, root, report }: SendScope,
   state: ApplyState,
 ): boolean {
-  return (
-    state.channelStarts?.has(channel) === true || !channelStarted(channel, root)
-  );
+  if (state.channelStarts?.has(channel) === true) return true;
+  try {
+    if (!channelStarted(channel, repo.slug, root)) return true;
+    markChannelStarted(channel, repo.slug, currentIso(), root);
+  } catch (error) {
+    outcomeLogFailed(report, `the start of the ${channel} channel`, error);
+  }
+  return false;
 }
 
 /**
  * Start `channel` from the causes that already stand: record each as known
  * without sending it, so only a cause that appears or changes afterwards is
  * sent, and tell the receipt once how many. The channel's start row goes in
- * after the records, so a tick that fails part way starts it again.
+ * after the records, per repository, and only once every record is in, so a
+ * tick that fails part way starts it again. The records are silent: they
+ * are no send's history.
  */
 function startFrom(
   channel: string,
@@ -703,8 +711,12 @@ function startFrom(
     state.channelStarts.set(channel, start);
     scope.report.channelStarts = [...(scope.report.channelStarts ?? []), start];
   }
+  let complete = true;
   for (const c of due) {
-    recordSent(channel, c, "", scope);
+    if (!recordSent(channel, c, "", scope, true)) {
+      complete = false;
+      continue;
+    }
     start.causes++;
     scope.report.notifications.push(
       outcomeFor(
@@ -716,8 +728,9 @@ function startFrom(
       ),
     );
   }
+  if (!complete) return [];
   try {
-    markChannelStarted(channel, currentIso(), scope.root);
+    markChannelStarted(channel, scope.repo.slug, currentIso(), scope.root);
   } catch (error) {
     outcomeLogFailed(
       scope.report,
@@ -767,7 +780,8 @@ function recordSent(
   c: Cause,
   place: string,
   { repo, report, root, settings }: SendScope,
-): void {
+  silent = false,
+): boolean {
   const at = currentIso();
   try {
     suppress(
@@ -777,7 +791,7 @@ function recordSent(
         target: c.target,
         key: c.notice.key,
         at,
-        workspace: place,
+        workspace: silent ? SILENT_START : place,
         lasting:
           c.cause === "drifting" ||
           c.cause === "ready" ||
@@ -787,16 +801,20 @@ function recordSent(
           typeof c.evidence.usageRefusal === "string",
       },
       // A cause about a stage this machine launched has its ended row instead.
-      c.launched === true ? null : eventRow(repo.slug, c, at, settings.about),
+      silent || c.launched === true
+        ? null
+        : eventRow(repo.slug, c, at, settings.about),
       root,
       c.repeat === true,
     );
+    return true;
   } catch (error) {
     outcomeLogFailed(
       report,
       `the suppression record of ${c.notice.key}`,
       error,
     );
+    return false;
   }
 }
 

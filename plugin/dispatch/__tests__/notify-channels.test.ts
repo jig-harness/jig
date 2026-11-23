@@ -156,7 +156,7 @@ async function tick(
   report.actions.push(...extra);
   // The channels have already begun sending on this host; one that has not starts from what stands (notify-channel-start.test.ts).
   for (const c of Array.isArray(channel) ? channel : [channel])
-    markChannelStarted(c.name, "2026-01-01T00:00:00.000Z", h.root);
+    markChannelStarted(c.name, h.repo.slug, "2026-01-01T00:00:00.000Z", h.root);
   await applyNotices(
     h.state,
     h.repo,
