@@ -303,6 +303,14 @@ async function answeredParks(
     );
     return null;
   }
+  // A condition note without an answer is a person's word on the item too:
+  // nothing decides it provisionally over that.
+  if (waiting.some((p) => found.notes.some((n) => n.item.key === p.key))) {
+    console.error(
+      "re-arm: a parked item carries a condition note without an answer; leaving every item parked for the person who wrote it.",
+    );
+    return null;
+  }
   const duties = provisionalDuties(waiting);
   if (duties !== null) return { verdicts: [...answered, ...duties], resolved };
   console.error(

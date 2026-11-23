@@ -235,7 +235,15 @@ export function ledgerFromState(
       detail: boundedCiDetail(redact(action.detail)),
     })),
     rulings: s.rulings ?? [],
-    resolvedParks: (s.resolvedParks ?? []).map(redactedReceipt),
+    // Readers of earlier releases accept only `answered` and `provisional`
+    // outcomes and drop the whole field on another, so a park the forge
+    // already resolved travels as an answerless `answered` receipt.
+    resolvedParks: (s.resolvedParks ?? []).map((r) => {
+      const receipt = redactedReceipt(r);
+      return receipt.outcome === "resolved-thread"
+        ? { ...receipt, outcome: "answered" as const }
+        : receipt;
+    }),
     driver: ledgerDriverWithProbe(s, opts.driver),
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: s.resolvedParksLost === true ? [OLDER_PARKS_CUT] : [],

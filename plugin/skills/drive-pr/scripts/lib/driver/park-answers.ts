@@ -3,7 +3,7 @@ import { ghCall, ghRepoEnv } from "../proc.ts";
 import { ghRepoEnvFor } from "../../../../../shared/gh-repo-env.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { swallow } from "../../../../../shared/errors.ts";
-import { currentMs } from "../../../../../shared/time.ts";
+import { currentMs, parseMs } from "../../../../../shared/time.ts";
 import type { OutboundFailure } from "../../../../../shared/outbound/failure.ts";
 import { ghRunFailure } from "../../../../../shared/outbound/github.ts";
 import type { ParkedItem } from "../state/schema.ts";
@@ -62,8 +62,10 @@ export function parseThreadComments(value: unknown): ThreadComments | null {
       typeof comment.authorAssociation !== "string" ||
       typeof comment.createdAt !== "string" ||
       typeof comment.body !== "string" ||
+      Number.isNaN(parseMs(comment.createdAt)) ||
       (comment.lastEditedAt !== null &&
-        typeof comment.lastEditedAt !== "string")
+        (typeof comment.lastEditedAt !== "string" ||
+          Number.isNaN(parseMs(comment.lastEditedAt))))
     )
       return null;
     parsed.push({

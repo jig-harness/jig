@@ -102,6 +102,6 @@ test("rearm refuses both sides of a lagging publication and accepts matching bou
     if (lag) {
       expect(stderr).toContain("the ledger has not yet caught up");
       expect(stderr).not.toContain("would unpark");
-    } else expect(stderr).toContain("would unpark 1 answered item");
+    } else expect(stderr).toContain("would unpark 1 settled item");
   }
 });

@@ -222,6 +222,36 @@ describe("one park interpretation for local state and the published ledger", () 
     ).toBeNull();
   });
 
+  it("refuses a thread history with an unparseable timestamp", () => {
+    const read = (
+      lastEditedAt: string | null,
+      createdAt = "2026-11-10T10:00:00Z",
+    ) =>
+      parseThreadComments({
+        data: {
+          node: {
+            isResolved: true,
+            comments: {
+              pageInfo: { hasNextPage: false },
+              nodes: [
+                {
+                  url: "https://example.test/c",
+                  author: { login: "alice" },
+                  authorAssociation: "OWNER",
+                  createdAt,
+                  lastEditedAt,
+                  body: "answer PRRT_a: approve",
+                },
+              ],
+            },
+          },
+        },
+      });
+    expect(read(null)).not.toBeNull();
+    expect(read("not a time")).toBeNull();
+    expect(read(null, "garbage")).toBeNull();
+  });
+
   it("keeps a resolved thread parked when its answer evidence is disputed", async () => {
     const result = await parkAnswers(
       12,
