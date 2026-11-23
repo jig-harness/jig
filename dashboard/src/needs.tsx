@@ -17,7 +17,7 @@ import { DecisionCounts, filterAnswerStates } from "./decision-counts.tsx";
 import { needCard, slotCard } from "./cards.ts";
 import { CopyButton } from "./copy.tsx";
 import { CommitControls, DecisionRows } from "./decision-rows.tsx";
-import { facetAttrs } from "./facets.ts";
+import { facetAttrs, memberAttrs } from "./facets.ts";
 import { answerCommentUrl, cardAttrs } from "./keys.ts";
 import { DecisionText, InlineDecisionText } from "./decision-text.tsx";
 import { Evidence, PanelHelp, StageHint } from "./fold.tsx";
@@ -236,10 +236,8 @@ function needFacetAttrs(
   clock: Clock,
 ): Record<string, string> {
   const card = row.type === "need" ? row.need : row.slot;
-  // A question group's card is found by any of its targets' repositories and stages.
+  // A question group's card is found by any of its targets' repositories, stages and ages; one target holds each combination.
   const members = row.type === "need" ? (row.need.group?.members ?? []) : [];
-  const each = (of: (c: { repo: string; stage: string }) => string) =>
-    members.length === 0 ? [of(card)] : [...new Set(members.map(of))];
   const since = Date.parse(row.since);
   const bucket = (iso: string) => {
     const hours = (clock.nowMs - Date.parse(iso)) / 3_600_000;
@@ -249,7 +247,8 @@ function needFacetAttrs(
         ? "1–24 hours"
         : "1 day or more";
   };
-  // A group's card is found by the age of any of its targets.
+  const each = (of: (c: { repo: string; stage: string }) => string) =>
+    members.length === 0 ? [of(card)] : [...new Set(members.map(of))];
   const ages = [
     ...new Set(
       members.length === 0
@@ -265,6 +264,13 @@ function needFacetAttrs(
       stage: each((c) => c.stage),
       age: ages,
     }),
+    ...memberAttrs(
+      members.map((m) => ({
+        repo: [m.repo],
+        stage: [m.stage],
+        age: [bucket(m.since)],
+      })),
+    ),
     "data-facet-since": row.since,
     "data-facet-age-label":
       row.type === "need" ? row.need.age : ago(since, clock.nowMs),

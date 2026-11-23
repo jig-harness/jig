@@ -97,3 +97,42 @@ test("the people facet unifies login casing in cards and shared links", () => {
   expect(projection.matching).toEqual([true, true]);
   expect(projection.counts.person).toEqual([{ value: "alice", count: 2 }]);
 });
+
+test("a group card's selections on its targets' facts are met by one target", () => {
+  const group = {
+    text: "Group",
+    values: {
+      repo: ["org/a", "org/b"],
+      age: ["Under 1 hour", "1 day or more"],
+    },
+    members: [
+      { repo: ["org/a"], age: ["Under 1 hour"] },
+      { repo: ["org/b"], age: ["1 day or more"] },
+    ],
+  };
+  const filter = (repo: string, age: string) => ({
+    query: "",
+    values: { repo: [repo], age: [age] },
+  });
+  const facets = ["repo", "age"] as const;
+  const match = (repo: string, age: string) =>
+    projectFilters([group], filter(repo, age), facets).matching[0];
+  // Each pair is held by one target, or by none.
+  expect(match("org/a", "Under 1 hour")).toBe(true);
+  expect(match("org/b", "1 day or more")).toBe(true);
+  expect(match("org/a", "1 day or more")).toBe(false);
+  expect(match("org/b", "Under 1 hour")).toBe(false);
+  // The age chips count only ages a target in the selected repository holds.
+  const counts = projectFilters(
+    [group],
+    { query: "", values: { repo: ["org/a"] } },
+    facets,
+  ).counts.age;
+  expect(counts).toEqual([{ value: "Under 1 hour", count: 1 }]);
+  const withAge = projectFilters(
+    [group],
+    { query: "", values: { repo: ["org/a"], age: ["Under 1 hour"] } },
+    facets,
+  ).counts.age;
+  expect(withAge).toEqual([{ value: "Under 1 hour", count: 1 }]);
+});

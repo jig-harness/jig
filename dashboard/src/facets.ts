@@ -171,6 +171,31 @@ export function readFacetAttrs(
 export interface FacetCard {
   text: string;
   values: FacetValues;
+  /** A question group's targets, each with the facts that belong together: a selection must be met by one of them. */
+  members?: readonly FacetValues[];
+}
+
+/** The facts each target of a question group holds, kept apart so a selection is met by one target. */
+export const MEMBER_ATTR = "data-facet-members";
+
+export function memberAttrs(
+  members: readonly FacetValues[],
+): Record<string, string> {
+  return members.length === 0 ? {} : { [MEMBER_ATTR]: JSON.stringify(members) };
+}
+
+export function readMemberAttrs(card: HTMLElement): FacetValues[] {
+  const encoded = card.getAttribute(MEMBER_ATTR);
+  if (encoded === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(encoded);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (m): m is FacetValues => typeof m === "object" && m !== null,
+    );
+  } catch {
+    return [];
+  }
 }
 
 export interface FacetCount {
@@ -216,27 +241,56 @@ export function projectFilters(
       ),
     ]),
   );
+  const holds = (values: FacetValues, facet: Facet): boolean => {
+    const selected = filter.values[facet] ?? [];
+    return (
+      selected.length === 0 ||
+      selected.some((value) =>
+        values[facet]?.some(
+          (option) => facetId(facet, value) === facetId(facet, option),
+        ),
+      )
+    );
+  };
   const matching = cards.map((card) => {
     const text = card.text.toLowerCase();
     const textMatches = words.every((word) => text.includes(word));
-    const misses = facets.filter((facet) => {
-      const selected = filter.values[facet] ?? [];
-      return (
-        selected.length > 0 &&
-        !selected.some((value) =>
-          card.values[facet]?.some(
-            (option) => facetId(facet, value) === facetId(facet, option),
-          ),
-        )
-      );
-    });
+    const members = card.members ?? [];
+    const memberFacets = facets.filter((facet) =>
+      members.some((m) => m[facet] !== undefined),
+    );
+    // A facet a card's targets hold is met by one target, so the selections on those facets must meet in the same target.
+    const own = facets.filter((facet) => !memberFacets.includes(facet));
+    const ownMisses = own.filter((facet) => !holds(card.values, facet));
+    const memberMisses = (skip: Facet | null) =>
+      members.length === 0
+        ? 1
+        : members.filter((m) =>
+            memberFacets.every((facet) => facet === skip || holds(m, facet)),
+          ).length;
+    const misses = [
+      ...ownMisses,
+      ...(memberFacets.length > 0 && memberMisses(null) === 0
+        ? memberFacets
+        : []),
+    ];
     for (const [facet, options] of byFacet) {
+      const others = ownMisses.filter((f) => f !== facet);
+      const isMember = memberFacets.includes(facet);
       const reachable =
         textMatches &&
-        (misses.length === 0 || (misses.length === 1 && misses[0] === facet));
+        others.length === 0 &&
+        (isMember ? memberMisses(facet) > 0 : memberMisses(null) > 0);
       const ids = new Set(
-        card.values[facet]?.map((value) => facetId(facet, value)),
+        isMember
+          ? members.flatMap((m) =>
+              memberFacets.every((f) => f === facet || holds(m, f))
+                ? (m[facet] ?? []).map((v) => facetId(facet, v))
+                : [],
+            )
+          : card.values[facet]?.map((value) => facetId(facet, value)),
       );
+      // A value the card's targets hold counts only when a target holding it also meets the rest of the selection.
       for (const value of ids) {
         options.set(value, (options.get(value) ?? 0) + Number(reachable));
       }

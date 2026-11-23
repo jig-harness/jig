@@ -33,6 +33,7 @@ import {
   heldBack,
   sendKeyOf,
   sendStateOf,
+  finishSend,
   settleSend,
   startSend,
 } from "./send-record.ts";
@@ -139,14 +140,24 @@ export async function sendToTarget(
   token: { token: string; login: string },
   s: TargetSend,
   held: () => boolean,
+  /** What the target's record held when the group's send reserved it, when it did. */
+  reserved?: ReturnType<typeof startSend> | undefined,
 ): Promise<TargetOutcome> {
-  if (!held())
+  const record = sendKeyOf(s.member.repo, s.member.target);
+  if (!held()) {
+    if (reserved !== undefined)
+      finishSend(
+        record,
+        reserved === null
+          ? null
+          : { reason: reserved.uncertain, texts: reserved.texts },
+      );
     return {
       kind: "not attempted",
       reason: "the token was forgotten or replaced",
     };
-  const record = sendKeyOf(s.member.repo, s.member.target);
-  const earlier = startSend(record);
+  }
+  const before = reserved !== undefined ? reserved : startSend(record);
   const urls: string[] = [];
   let refused: string | null;
   let uncertainKey: string | null;
@@ -163,7 +174,7 @@ export async function sendToTarget(
   }
   settleSend(
     record,
-    earlier,
+    before,
     token.login,
     s.answers,
     urls.length,
@@ -238,22 +249,21 @@ export function useGroupSend(
     const snapshot = currentAnswers(answerIds).map((a) =>
       a === null ? null : JSON.stringify(a),
     );
+    // Every target is reserved now, in this same step as the check above: its own card, or another group's, cannot start a send to it while this one runs.
+    const reservations = new Map(
+      sends.map((s) => [
+        s.member.rowKey,
+        startSend(sendKeyOf(s.member.repo, s.member.target)),
+      ]),
+    );
     update(id, (was) => ({ ...was, sending: true, outcomes: new Map() }));
     announce(`Sending the answers for ${need.target} as ${token.login}`);
     void (async () => {
       const outcomes = new Map<string, TargetOutcome>();
       for (const s of sends) {
-        // The target may have been answered, or its send started from its own card, since the check above.
-        const taken = uncheckedTargets([s], token.login);
         outcomes.set(
           s.member.rowKey,
-          taken.length > 0
-            ? {
-                kind: "not attempted",
-                reason:
-                  "its card started a send or holds an unchecked one; open it and check",
-              }
-            : await sendToTarget(token, s, held),
+          await sendToTarget(token, s, held, reservations.get(s.member.rowKey)),
         );
         update(id, (was) => ({ ...was, outcomes: new Map(outcomes) }));
       }

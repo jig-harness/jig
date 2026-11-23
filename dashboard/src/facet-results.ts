@@ -6,8 +6,10 @@ import {
   type FilterProjection,
   FACETS,
   facetsFor,
+  MEMBER_ATTR,
   projectFilters,
   readFacetAttrs,
+  readMemberAttrs,
 } from "./facets.ts";
 import { rove } from "./keys.ts";
 import { reasonCounts } from "./queue-view.ts";
@@ -100,6 +102,7 @@ function applyFilters(
     cards.map((card) => ({
       text: card.textContent ?? "",
       values: readFacetAttrs(card, facets),
+      members: readMemberAttrs(card),
     })),
     filter,
     facets,
@@ -150,6 +153,7 @@ export function useFilterResults(
       characterData: true,
       attributeFilter: [
         ...FACETS.map((facet) => `data-facet-${facet}`),
+        MEMBER_ATTR,
         "data-facet-since",
         "data-facet-age-label",
         "data-group-why",
