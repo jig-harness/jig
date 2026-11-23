@@ -631,8 +631,10 @@ describe("foreground-wait.ts", () => {
           "the deadline ended the command while snapshots failed",
           () => alive(command).then((isAlive) => !isAlive),
         );
-        rmSync(flag);
+        // Keep the enumerator outage continuous: the shim must never fall
+        // through to a successful native snapshot between its two failures.
         writeFileSync(nativeFailure, "");
+        rmSync(flag);
         await sleepMs(200);
         expect(existsSync(restored)).toBe(false);
         rmSync(nativeFailure);
@@ -652,7 +654,12 @@ describe("foreground-wait.ts", () => {
         expect(
           JSON.parse(readFileSync(join(latestGen(), "result.json"), "utf8"))
             .treeWitnessed,
-        ).toBe(true);
+        ).toBe(
+          byPlatform(
+            "Windows cannot witness descendants after its unresolved-child fallback",
+            { windows: "false", posix: "true" },
+          ) === "true",
+        );
       } finally {
         rmSync(flag, { force: true });
         rmSync(nativeFailure, { force: true });
