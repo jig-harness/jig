@@ -212,7 +212,7 @@ function fullyDecoded(text: string): string {
   return layer;
 }
 
-/** The one traversal both secret checks share: `hit` is asked of the text and of each layer as its JSON escapes are decoded, up to `LOOK_DEPTH` decodes. Where the last layer still holds a decodable escape (unless nothing but literal backslashes is left) the text counts as holding a secret, one policy for every check. */
+/** The one traversal both secret checks share: `hit` is asked of the text and of each layer as its JSON escapes are decoded, up to `LOOK_DEPTH` decodes, so `LOOK_DEPTH + 1` forms in all: the loop's final `hit` call checks the form one decode past the advertised bound, and lowering the bound by one must keep that check. Where the last layer still holds a decodable escape (unless nothing but literal backslashes is left) the text counts as holding a secret, one policy for every check. */
 function walkLayers(text: string, hit: (layer: string) => boolean): boolean {
   let layer = text;
   for (let i = 0; i <= LOOK_DEPTH; i++) {
@@ -225,7 +225,7 @@ function walkLayers(text: string, hit: (layer: string) => boolean): boolean {
   return hit(layer) || (DECODABLE_ESCAPE.test(layer) && !/^\\+$/.test(layer));
 }
 
-/** Whether `text`, with JSON escapes of any spelling decoded up to `LOOK_DEPTH` times, holds one of `secrets`: wrapped JSON that does not parse as a whole is still looked into. */
+/** Whether `text`, with JSON escapes of any spelling decoded up to `LOOK_DEPTH` times (and the form one decode past that, as `walkLayers` checks it), holds one of `secrets`: wrapped JSON that does not parse as a whole is still looked into. */
 function holdsAfterUnescaping(
   text: string,
   secrets: readonly string[],
@@ -237,12 +237,19 @@ function holdsAfterUnescaping(
   );
 }
 
-/** Whether the value written at `at` is one the masking left: `"<redacted>"`, `""` or `null`. A text that ends at `at` holds no value. */
+/** Where a value ends: the text's end, whitespace, `,`, `}` or `]`. A marker followed by anything else is the start of a longer value, not a masked one. */
+const VALUE_END = /^(?:$|[\s,}\]])/;
+
+/** Whether the value written at `at` is one the masking left: `"<redacted>"`, `""` or `null`, each ending where a value ends. A text that ends at `at` holds no value. */
 function isMaskedValue(layer: string, at: number): boolean {
   if (at >= layer.length) return true;
-  if (layer.startsWith('"<redacted>"', at) || layer.startsWith('""', at))
-    return true;
-  return /^null(?![A-Za-z0-9_])/.test(layer.slice(at, at + 5));
+  for (const marker of ['"<redacted>"', '""', "null"])
+    if (
+      layer.startsWith(marker, at) &&
+      VALUE_END.test(layer.slice(at + marker.length, at + marker.length + 1))
+    )
+      return true;
+  return false;
 }
 
 /** Whether `layer` holds a quoted member named like a credential whose value is not masked. Each quoted span is read once, left to right: a span that never closes ends the scan, since every later quote is escaped inside it and would never close either. */

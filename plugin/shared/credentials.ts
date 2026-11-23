@@ -14,9 +14,12 @@
 /** The names a key carries when its value is a secret. */
 const SECRET_KEY =
   "[A-Za-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|authorization)[A-Za-z0-9_.-]*";
+const KEY_CHARS = /^[A-Za-z0-9_.-]*$/;
+const KEY_FRAGMENT = /token|secret|password|passwd|api[_-]?key|authorization/i;
 /** Whether a structured field's name identifies a credential. */
 export function isCredentialKey(key: string): boolean {
-  return new RegExp(`^${SECRET_KEY}$`, "i").test(key);
+  // One pass over the allowed characters, then a plain fragment search: the single pattern backtracks over the whole name.
+  return KEY_CHARS.test(key) && KEY_FRAGMENT.test(key);
 }
 
 /** A quoted value, either quote, with its escapes. */

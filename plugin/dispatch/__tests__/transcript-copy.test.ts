@@ -476,6 +476,9 @@ describe("keeping a run's transcript copy", () => {
       { out: '{"token": "", "x": "<redacted>"}' },
       { out: '{"token": "<redacted>"}' },
       { out: '{"token":' },
+      { out: '{"token": null-opaque-tail}' },
+      { out: '{"token": ""opaque-tail}' },
+      { out: '{"token": "<redacted>"opaque-tail}' },
       { out: layer('{"token":"opaque-nine"}', 9) },
       { out: layer('{"token":"opaque-three"}', 3) },
       { out: '\\"'.repeat(16000) },
@@ -496,8 +499,24 @@ describe("keeping a run's transcript copy", () => {
       expect(text).not.toContain("opaque-");
       expect(text).toContain('\\"other\\": 1');
       expect(text).toContain('{\\"token\\":"}');
-      expect(text).toContain("kept-a");
-      expect(text).toContain("kept-b");
+      const kept = text
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l));
+      expect(kept[0]).toEqual({ type: "assistant", message: "kept-a" });
+      expect(kept.at(-1)).toEqual({ type: "assistant", message: "kept-b" });
+      expect(kept.map((l) => l.out ?? l.type)).toEqual([
+        "assistant",
+        '{"token": "<redacted>", "other": 1}',
+        '{"token": "<redacted>", "x": "<redacted>"}',
+        '{"token": "<redacted>"}',
+        '{"token":',
+        '{"token": "<redacted>"}',
+        "jig-omitted",
+        kept[7].out,
+        "assistant",
+      ]);
+      expect(text).toContain("jig-omitted");
     } finally {
       holdCredential("none", "unused-placeholder");
     }
