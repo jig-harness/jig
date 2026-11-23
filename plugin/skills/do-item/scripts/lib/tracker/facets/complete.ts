@@ -1,5 +1,5 @@
 /**
- * The filing check (design/tracker-facets.md, "Checked inside the write"):
+ * The filing check (plugin/CONFIGURATION.md, "issue_tracker.facets"):
  * a new issue carries a type, a priority (1 to 4) and a size, for each facet
  * the repository has, with no size asked of an epic (one carrying the epic
  * label, or filed as an issue type `issue_tracker.labels.epic_types` lists),

@@ -1,0 +1,3 @@
+A rolling bridge lifts the leading issue with a pair of tongs. Build carries an inking roller. Open carries a folding blade that opens a second leaf. Drive rolls a magnifying lens over the proof. Repair carries a correction stamp. At Merge a person closes the proof at a green desk. A small wheeled feeder at the queue end prints the follow-up slip onto a short siding. The dispatcher reads the instruments through a travelling optical head.
+
+The issue is a corner-clipped proof slip with a punched filing hole. The pull request is a second leaf opened beside it. Review adds speech-shaped margin marks and a column of hollow circles with one cross. The corrected leaf carries ticks. The merged proof folds shut under a band marked with two joining strokes.

@@ -1,7 +1,7 @@
 /**
  * `jig ask <address>`: who holds a station of the line, its state, what it
  * waits on and how its last launch ended, from the records alone
- * (`design/addresses.md`). `--thread` adds the address's correspondence,
+ * (`plugin/README.md, "Asking a station where it stands"`). `--thread` adds the address's correspondence,
  * `--json` prints the answer as one object, and `--waiting` lists every
  * address that waits on a person from the newest tick's line.
  *

@@ -1,5 +1,5 @@
 # Weekly, the issue-fields sweep (file-issue's check-fields.ts check,
-# design/tracker-facets.md "The weekly sweep"): every open issue outside
+# plugin/skills/file-issue/README.md, "The weekly sweep"): every open issue outside
 # triage that lacks a type, a priority or a size, or carries the label of a
 # facet the configuration keeps elsewhere, is moved back to triage with a
 # comment naming what it lacks; one already started is listed and left where

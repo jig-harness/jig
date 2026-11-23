@@ -18,7 +18,7 @@ notifies ([dark-factory-dispatch.md](dark-factory-dispatch.md)), sorted by
 where each is settled ([need-classes.md](need-classes.md)), framed as
 decisions with named options and a digest
 ([structured-answers.md](structured-answers.md)), asked and told through
-`jig ask` and `jig send` ([addresses.md](addresses.md)), and served for
+`jig ask` and `jig send` ([addresses.md](../plugin/protocol/addresses.md)), and served for
 several hosts by the [hub](../GLOSSARY.md)
 ([control-plane.md](control-plane.md)).
 [ADR-0022](../docs/adr/ADR-0022-a-chat-bridge-turns-a-click-into-one-request.md)
@@ -104,7 +104,7 @@ failure ledger under `notice <channel> <key>` while delivery fails
 
 A notice becomes structured, so each channel renders it in its own way.
 Beside today's text and key it carries the piece of work's
-[address](addresses.md), the cause, the links (the pull request, the item,
+[address](../plugin/protocol/addresses.md), the cause, the links (the pull request, the item,
 the dashboard's Work page), the acts that settle it, and for a framed
 decision its digest, its recommendation and each option with what it
 changes and costs: the fields the tick's line already carries for the
@@ -157,7 +157,7 @@ request opens, the pull request's link to the item records the pull request's
 identity as an alias of the item's, and the thread opened under the item
 carries on under the pull request; a lookup by either identity finds the
 same thread. Station addresses
-([addresses.md](addresses.md)) identify individual requests, never the
+([addresses.md](../plugin/protocol/addresses.md)) identify individual requests, never the
 thread. A piece of work gets one top-level message in its channel, the
 first time anything about it is posted, and every later notice about it is a reply in
 that thread. The top-level message says where the work stands now, in the

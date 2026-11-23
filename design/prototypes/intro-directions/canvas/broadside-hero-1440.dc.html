@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Broadside hero, light, 1440</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f9f6f1}
+a{color:#1a6444}a:hover{color:#251e18}
+a:focus-visible{outline:2px solid #0267c7;outline-offset:3px}
+</style>
+</helmet>
+<!-- tokens (light): bg #f9f6f1, ink #251e18, muted #59514a, line-strong #867f77, accent #1a6444, accent-soft #dbf2e4 -->
+<div style="width:1440px; height:900px; box-sizing:border-box; position:relative; overflow:hidden; background:#f9f6f1; color:#251e18; font-family:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua','URW Palladio L',Georgia,serif; font-variant-numeric:oldstyle-nums;">
+
+  <!-- site nav: the only sans on the page, 14px -->
+  <nav aria-label="Site" style="position:absolute; left:72px; right:72px; top:0; height:64px; display:flex; align-items:center; justify-content:space-between;">
+    <a href="#top" style="display:flex; align-items:center; gap:10px; text-decoration:none; color:#251e18;">
+      <img src="./logo.svg" width="30" height="30" alt="" style="display:block; width:30px; height:30px;">
+      <span style="font-weight:700; font-size:22px; letter-spacing:0.01em;">Jig</span>
+    </a>
+    <a href="#audit" style="font-family:system-ui,-apple-system,'Segoe UI',Ubuntu,Cantarell,'Noto Sans',sans-serif; font-size:14px; line-height:44px;">Start with an audit</a>
+  </nav>
+
+  <!-- thick-thin rule -->
+  <div aria-hidden="true" style="position:absolute; left:72px; right:72px; top:64px; height:3px; border-top:2px solid #251e18; border-bottom:0.5px solid #251e18;"></div>
+
+  <!-- headline: two sentences in falling sizes -->
+  <h1 style="position:absolute; left:72px; right:72px; top:104px; margin:0; font-weight:700; letter-spacing:-0.012em;">
+    <span style="display:block; font-size:72px; line-height:1.02;">A work item goes in.</span>
+    <span style="display:block; margin-top:14px; font-size:48px; line-height:1.04;">A pull request you can merge,<br>or a question for you, comes out.</span>
+  </h1>
+
+  <!-- thin rule closing the headline block -->
+  <div aria-hidden="true" style="position:absolute; left:72px; width:508px; top:322px; border-top:0.5px solid #251e18;"></div>
+
+  <!-- entry: the sentence and the link -->
+  <div style="position:absolute; left:72px; width:508px; top:352px;">
+    <p style="margin:0; font-size:24px; line-height:1.45;">Give an agent a work item; it builds the change, runs the checks and works through review until the pull request is ready or needs your decision. <span style="display:inline-block; padding:0 9px 1px; border:1.5px solid #1a6444; border-bottom-width:4px; border-radius:6px; background:#dbf2e4; color:#251e18; font-weight:700; font-variant-caps:small-caps; letter-spacing:0.03em; line-height:1.25;">You merge.</span></p>
+    <p style="margin:36px 0 0;"><a id="audit" href="#audit" style="display:inline-block; padding:8px 0; font-size:24px; font-weight:700; font-style:italic; text-decoration-thickness:2px; text-underline-offset:6px;">Start with an audit</a></p>
+  </div>
+
+  <!-- the cut: step 1 frame, on bare bg, bleeding off the right edge -->
+  <figure style="position:absolute; left:640px; top:336px; margin:0; width:900px;">
+    <img src="../figure/line-step1-light.svg" width="900" height="506" alt="Isometric engraving of the line: seven stations on a loop, pick up, build, open, drive, repair, merge and follow up, with a person at the merge station." style="display:block; width:900px; height:506px;">
+    <figcaption style="margin:8px 0 0 40px; font-size:18px; font-style:italic; color:#59514a;">No. 1 &#183; The line</figcaption>
+  </figure>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -56,7 +56,7 @@ mapping below; it does not add stations.
 `plugin/skills/do-item/scripts/determine_type.ts` reads the issue JSON
 `get_issue.ts` returns and prints `{type, evidence, depth}`, trying in order:
 
-1. The issue's type, its type [facet](tracker-facets.md) (a type of the
+1. The issue's type, its type [facet](../plugin/protocol/tracker-facets.md#the-facets) (a type of the
    taxonomy's `types` family, wherever the tracker keeps it), mapped to a
    work type through `issue_tracker.types`
    (`{bug: [bug, type:bug], feature: [feature, type:feature], …}`), which
