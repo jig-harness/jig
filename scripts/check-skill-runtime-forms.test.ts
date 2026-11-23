@@ -215,6 +215,10 @@ test("the recipient is the exact agent, through links, and also after `go to`", 
     "Contested findings go to `jig:review-arbiter`.\n",
     "Contested findings goes to `jig:review-arbiter`.\n",
     "Send the finding to the [arbiter](../x.md) agent `jig:review-arbiter`.\n",
+    "Spawn a fresh `jig:review-arbiter` for the thread.\n",
+    "Invoke the configured `jig:review-arbiter` agent.\n",
+    "Hand the finding to the __jig:review-arbiter__ agent.\n",
+    "Send the finding to the [Review Arbiter](../../GLOSSARY.md#review-arbiter) agent (`jig:review-arbiter`).\n",
   ])
     expect(rules(text)).toEqual(["subagent-form"]);
   for (const text of [
@@ -223,8 +227,39 @@ test("the recipient is the exact agent, through links, and also after `go to`", 
     "Ask the maintainer to review `review-arbiter.md`.\n",
     "Invoke `jig:review-arbiter-sandbox`.\n",
     "Invoke `archived-review-arbiter.md`.\n",
+    "Invoke `review-arbiter.md.bak`.\n",
+    "Send [the transcript](transcript.md) to `jig:review-arbiter`'s maintainer.\n",
   ])
     expect(rules(text)).toEqual([]);
+});
+
+test("a long run of asterisks before a missing agent fails fast", () => {
+  const started = Date.now();
+  expect(rules(`Send it to ${"*".repeat(60)}x\n`)).toEqual([]);
+  expect(Date.now() - started).toBeLessThan(1000);
+});
+
+test("an open comment stays opaque across a fence-like line", () => {
+  const source = "<!--\n```\nbun a.ts\n```\n-->\nvisible\n";
+  expect(withoutFrontmatter(source)).toBe(
+    `    \n${" ".repeat(3)}\n${" ".repeat(8)}\n${" ".repeat(3)}\n${" ".repeat(3)}\nvisible\n`,
+  );
+});
+
+test("a nested references/SKILL.md is a reference page, not an entry page", () => {
+  const root = mkdtempSync(join(tmpdir(), "skill-forms-role-"));
+  try {
+    const skill = join(root, "plugin", "skills", "x");
+    mkdirSync(join(skill, "references"), { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), `${explained}\n`);
+    writeFileSync(
+      join(skill, "references", "SKILL.md"),
+      `Write <skill-dir>, the directory of the skill; ${DIR} is only named here.\n`,
+    );
+    expect(checkSkillRuntimeForms(root)).toBe(0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("HTML comment delimiters inside a fence are literal text", () => {

@@ -39,31 +39,42 @@ interface Paragraph {
 
 /**
  * Blank out HTML comments, which no reader sees, keeping every line break.
- * Fenced code is left whole: inside it `<!--` and `-->` are literal text.
+ * A comment stays opaque until it closes, even across a fence-like line;
+ * fenced code outside a comment is left whole, since inside it `<!--` and
+ * `-->` are literal text.
  */
 function withoutComments(source: string): string {
-  const out: string[] = [];
-  let prose: string[] = [];
-  const flushProse = (): void => {
-    if (prose.length)
-      out.push(
-        prose
-          .join("\n")
-          .replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\n]/g, " ")),
-      );
-    prose = [];
-  };
   let fence: string | undefined;
-  for (const line of source.split("\n")) {
-    const after = fenceAfter(fence, unquote(line).content);
-    if (fence !== undefined || after !== undefined) {
-      if (fence === undefined) flushProse();
-      out.push(line);
-      fence = after;
-    } else prose.push(line);
-  }
-  flushProse();
-  return out.join("\n");
+  let open = false;
+  return source
+    .split("\n")
+    .map((line) => {
+      if (!open) {
+        const after = fenceAfter(fence, unquote(line).content);
+        if (fence !== undefined || after !== undefined) {
+          fence = after;
+          return line;
+        }
+      }
+      let out = "";
+      let rest = line;
+      for (;;) {
+        if (open) {
+          const end = rest.indexOf("-->");
+          if (end < 0) return out + " ".repeat(rest.length);
+          out += " ".repeat(end + 3);
+          rest = rest.slice(end + 3);
+          open = false;
+        } else {
+          const start = rest.indexOf("<!--");
+          if (start < 0) return out + rest;
+          out += rest.slice(0, start) + "    ";
+          rest = rest.slice(start + 4);
+          open = true;
+        }
+      }
+    })
+    .join("\n");
 }
 
 /**
@@ -257,11 +268,13 @@ function questionFindings(file: string, blocks: Paragraph[]): Finding[] {
 }
 
 // The exact agent: its ID, or the basename of its file, never a longer name
-// (`jig:review-arbiter-sandbox`, `archived-review-arbiter.md`).
-const AGENT = String.raw`(?<![\w-])(?:jig:review-arbiter(?![\w-])|review-arbiter\.md(?!\w))`;
-// What may stand between the preposition and the agent's name: an article, the
-// words "agent" or "Review Arbiter", emphasis, a link's destination, a bracket.
-const LEAD = String.raw`(?:\s|\*+|\(|\[|\x60|\]\((?:[^)\s]*\/)?|\]\([^)\s]*\)|\b(?:the|an?|agent|subagent|(?:review )?arbiter)\b)*`;
+// (`jig:review-arbiter-sandbox`, `archived-review-arbiter.md`,
+// `review-arbiter.md.bak`) and never a possessive (`jig:review-arbiter's`).
+const AGENT = String.raw`(?<![A-Za-z0-9-])(?:jig:review-arbiter(?![A-Za-z0-9-]|[\x60*_]*['\u2019]s\b)|review-arbiter\.md(?![A-Za-z0-9]|\.\w|-))`;
+// What may stand between the preposition and the agent's name: a short run of
+// one sentence's own words, with no clause break. Bounded and unambiguous, so
+// a failed match cannot backtrack exponentially.
+const LEAD = String.raw`(?:(?!\b(?:about|on|of|for|with|to)\b)(?:[^.!?,;\n]|\.(?=\S))){0,100}?`;
 // A sentence's own words: a period inside a path or a name is not its end.
 const GAP = String.raw`(?:[^.!?]|\.(?=\S)){0,80}?`;
 // The agent is the recipient: it follows the verb directly (`invoke`), or the
@@ -338,10 +351,11 @@ export function formFindings(
   file: string,
   source: string,
   skillDir?: string,
+  isEntryPage = basename(file) === "SKILL.md",
 ): Finding[] {
   const blocks = paragraphs(withoutFrontmatter(source));
   return [
-    ...skillDirFindings(file, blocks, basename(file) === "SKILL.md"),
+    ...skillDirFindings(file, blocks, isEntryPage),
     ...questionFindings(file, blocks),
     ...subagentFindings(file, blocks),
     ...(skillDir ? pathFindings(file, skillDir, blocks) : []),
@@ -361,11 +375,9 @@ export function checkSkillRuntimeForms(root = "."): number {
     if (!readdirSync(base).length)
       return couldNotCheck("skill-runtime-forms", "no skills found");
     const pages = agentPages(base);
-    if (
-      !pages.some(
-        (file) => file.split(sep).length === 2 && basename(file) === "SKILL.md",
-      )
-    )
+    const isEntry = (file: string): boolean =>
+      file.split(sep).length === 2 && basename(file) === "SKILL.md";
+    if (!pages.some(isEntry))
       return couldNotCheck("skill-runtime-forms", "no skill pages found");
     const findings = pages.flatMap((file) => {
       const skillDir = join(base, file.split(sep)[0] as string);
@@ -373,6 +385,7 @@ export function checkSkillRuntimeForms(root = "."): number {
         repoPath(root, join(base, file)),
         readFileSync(join(base, file), "utf8"),
         skillDir,
+        isEntry(file),
       );
     });
     if (findings.length) {
