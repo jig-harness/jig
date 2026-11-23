@@ -187,15 +187,11 @@ export function memberAttrs(
 export function readMemberAttrs(card: HTMLElement): FacetValues[] {
   const encoded = card.getAttribute(MEMBER_ATTR);
   if (encoded === null) return [];
-  try {
-    const parsed: unknown = JSON.parse(encoded);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (m): m is FacetValues => typeof m === "object" && m !== null,
-    );
-  } catch {
-    return [];
-  }
+  const parsed: unknown = JSON.parse(encoded);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (m): m is FacetValues => typeof m === "object" && m !== null,
+  );
 }
 
 export interface FacetCount {
