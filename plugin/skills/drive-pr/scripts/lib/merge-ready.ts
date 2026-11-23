@@ -235,7 +235,10 @@ function latestChecks(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
 }
 
 /** The latest attempt per reviewer check name; unread attempt order withholds the witness. */
-function reviewerRuns(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
+function reviewerRuns(
+  facts: ForgeFacts,
+  rules: ReadyRules,
+): HeadCheck[] | null {
   const grouped = new Map<string, HeadCheck[]>();
   for (const check of facts.checks) {
     if (
@@ -249,7 +252,7 @@ function reviewerRuns(facts: ForgeFacts, rules: ReadyRules): HeadCheck[] {
   }
   const latest: HeadCheck[] = [];
   for (const attempts of grouped.values()) {
-    if (attempts.length > 1 && attempts.some((r) => r.id == null)) return [];
+    if (attempts.length > 1 && attempts.some((r) => r.id == null)) return null;
     attempts.sort((a, b) => (b.id ?? -1) - (a.id ?? -1));
     latest.push(...attempts.slice(0, 1));
   }
@@ -284,19 +287,22 @@ function witness(
   if (
     facts.reviewCarriedFrom !== undefined &&
     facts.verifiedSha === facts.head &&
-    runs.every((run) => run.state === "success" || run.state === "neutral")
+    runs?.every((run) => run.state === "success" || run.state === "neutral")
   )
     return {
       met: true,
       fact: `the clean base merge preserved the change reviewed at ${facts.reviewCarriedFrom.slice(0, 7)}`,
       byApp: true,
     };
-  if (runs.length === 0)
+  if (runs === null || runs.length === 0)
     return {
       met: false,
-      fact: facts.reviewCarriedUnavailable
-        ? "the carried review could not be verified without a checkout"
-        : `${rules.reviewerApp} posted no review check on this head`,
+      fact:
+        runs === null
+          ? `${rules.reviewerApp}'s review attempt order on this head could not be read`
+          : facts.reviewCarriedUnavailable
+            ? "the carried review could not be verified without a checkout"
+            : `${rules.reviewerApp} posted no review check on this head`,
       byApp: true,
     };
   const met = runs.every(

@@ -198,6 +198,30 @@ describe("the review witness, run by run", () => {
     expect(r.place).toBe("needs-you");
   });
 
+  it("does not carry a review when duplicate reviewer attempts have unreadable ordering", () => {
+    const r = at({
+      reviewCarriedFrom: OTHER,
+      checks: [
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "success",
+          startedAt: "2026-11-08T09:00:00Z",
+        },
+        {
+          name: "AI review",
+          app: "example-review",
+          required: false,
+          state: "pending",
+          startedAt: null,
+        },
+      ],
+    });
+    expect(r.place).toBe("needs-you");
+    expect(r.says).toContain("attempt order on this head could not be read");
+  });
+
   it("keeps a required review owed under a merge queue", () => {
     const r = at({ mergeQueue: true, reviewDecision: "REVIEW_REQUIRED" });
     expect(r.lane).toBe("approve-first");

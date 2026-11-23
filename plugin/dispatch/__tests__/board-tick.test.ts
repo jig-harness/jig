@@ -411,6 +411,22 @@ describe("refreshing convergence after a base merge", () => {
     ]);
   }, 90_000);
 
+  it("withdraws a stale announcement after the refreshed ledger is already current", async () => {
+    const { w, verified, head } = afterBaseMerge();
+    checkEvidence(w, head, "success");
+    await apply(w);
+    w.setComments(7, [
+      ...comments(w),
+      forgeComment(704, `${OPENER}\n\n${headMarker(verified)}`, "drive-bot"),
+    ]);
+
+    await apply(w);
+
+    expect(commentBodies(w).filter((body) => body.startsWith(OPENER))).toEqual([
+      expect.stringContaining(headMarker(head)),
+    ]);
+  }, 90_000);
+
   it("re-drives once when the head moved by a base merge and a PR edit", async () => {
     const { w, verified, head } = afterBaseMerge(true);
     checkEvidence(w, head, "success");
