@@ -1731,6 +1731,7 @@ changes nothing on the forge or the tracker
 ```sh
 jig ask <station>@<owner>/<name>#<key> [--json] [--thread [--since <date> | --all]]
 jig ask --waiting [--person <login>] [--json]
+jig ask --settled [--person <login>] [--json]
 ```
 
 In a session, [`/jig:operator`](skills/operator/SKILL.md) runs `jig ask`
@@ -1840,6 +1841,17 @@ the start of the tick its entries are from, `null` when no tick has read it),
 and in text as a `the line is incomplete:` block. Its entries are then as of
 that reading, and an empty `waiting` with a non-empty `incomplete` does not
 mean nothing waits.
+
+**`--settled`** lists what left the line in the last 24 hours and how, the
+list the dashboard shows as Settled recently, from the newest tick's line and
+with no forge or tracker call. Each entry in `settled` names its repository
+and `targets` (several when one answer settled them), the `cause` and
+question the need carried, when it left (`at`), `by` whom (`person`, `tick`,
+`steward` or `facts`, with the login, the rule or the steward's record in
+`who`), the `option` chosen, and `how` it was settled. An answer a station
+held or refused is listed with that `outcome` and its reason, while its card
+stays open. `--person <login>` lists only entries a person with that login
+settled.
 
 **`--json`** prints the answer as one object carrying its version, `v` (1):
 later versions add fields and never rename one. The fields only this

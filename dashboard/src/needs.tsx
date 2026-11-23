@@ -29,6 +29,7 @@ import { Mark } from "./marks.tsx";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { type NeedRow, type NeedView, needRows } from "./needs-view.ts";
 import { OptionText } from "./option-text.tsx";
+import { SettledRecently } from "./settled.tsx";
 import { NoSend } from "./send.tsx";
 import { SendSettings, SendSettingsToggle } from "./send-settings.tsx";
 import { storedListUntrusted, useKeptTokens } from "./forge-token.ts";
@@ -615,6 +616,7 @@ export function NeedsPanel({
           />
         ))}
       </div>
+      {line === null ? null : <SettledRecently line={line} clock={clock} />}
     </section>
   );
 }

@@ -5,6 +5,7 @@
  * launches are admitted against built from both (`load.ts`).
  */
 import { attempt, type Outcome } from "../../shared/outcome.ts";
+import { defaultHarness } from "../../shared/agent-harness/index.ts";
 import { passTimeoutSeconds } from "../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import {
   type CodexOptIn,
@@ -110,7 +111,7 @@ export function readTickLoad(input: {
     const launchEnv: NodeJS.ProcessEnv =
       machine.runtime === "process"
         ? processEnvironment(process.env, machine.process ?? { envKeep: [] }, {
-            vendor: "claude",
+            vendor: defaultHarness().name,
             configDir: "",
           })
         : process.env;

@@ -641,7 +641,7 @@ async function readInputs(
     hitl: settings.labels.hitl,
     knownSizes: settings.sizes,
     batchSizes: settings.labels.batchSizes,
-    runtime: detectHarness()?.name ?? null,
+    runtime: process.env.JIG_ROUTE_RUNTIME || (detectHarness()?.name ?? null),
   };
   return settings.sizeFacet === null
     ? { facts: base, rules: settings.rules }

@@ -8,13 +8,15 @@
  * known session id on the launch record, round by round.
  */
 import { recordRoundSession } from "../../../../../dispatch/lib/round-sessions.ts";
-import { codexSessionIn } from "../../../../../dispatch/lib/transcript-copy.ts";
+import {
+  type AgentHarness,
+  harnessOfProgram,
+} from "../../../../../shared/agent-harness/index.ts";
 import { driverReportPath } from "../../../../../shared/driver-report.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { launchOf } from "../../../../../shared/launched-session.ts";
 import { currentIso } from "../../../../../shared/time.ts";
 import { runObservedPass } from "../driver-observation.ts";
-import { passVendor } from "../identity.ts";
 import type { RunOptions, RunResult } from "../proc.ts";
 import { readDriveState } from "./rearm.ts";
 import { driverRuntime } from "./runtime.ts";
@@ -73,16 +75,16 @@ function recordSession(
   }
 }
 
-/** Codex writes its session id in its startup header. Inspect a bounded prefix of each stream. */
+/** A harness that prints its session id (Codex) writes it in its startup header. Inspect a bounded prefix of each stream. */
 const STARTUP_BYTES = 16 * 1024;
 
-function codexStartup(keep: (id: string) => void) {
+function printedSession(harness: AgentHarness, keep: (id: string) => void) {
   const prefix = { stdout: "", stderr: "" };
   const remaining = { stdout: STARTUP_BYTES, stderr: STARTUP_BYTES };
   let found = false;
   const inspect = (text: string) => {
     if (found) return;
-    const session = codexSessionIn(text);
+    const session = harness.sessionIdIn(text);
     if (session === null) return;
     found = true;
     keep(session);
@@ -118,8 +120,11 @@ export async function runRoundPass(
     if (launch !== null && startedAt !== null)
       recordSession(launch, pr, round, id, startedAt);
   };
+  const harness = harnessOfProgram(argv[0]);
   const startup =
-    launch !== null && passVendor(argv) === "codex" ? codexStartup(keep) : null;
+    launch !== null && harness?.capabilities.sessionId === "printed"
+      ? printedSession(harness, keep)
+      : null;
   const result = await runObservedPass(argv, {
     ...options,
     stdout: "inherit",
