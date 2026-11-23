@@ -140,3 +140,20 @@ test("a sentence's closing period is not part of the path it ends", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("each variable needs its own explanation, and + and 1) items are separate blocks", () => {
+  const root = "$" + "{CLAUDE_PLUGIN_ROOT}";
+  expect(rules(`${explained}\n\nbun "${root}/x.ts"\n`)).toEqual([
+    "skill-dir-form",
+  ]);
+  const q = "AskUserQuestion";
+  const fallback =
+    "a plain-text numbered question, the recommended option marked as the default";
+  for (const marker of ["+", "1)"])
+    expect(rules(`${marker} Use ${q}.\n${marker} Also ${fallback}.\n`)).toEqual(
+      ["question-form"],
+    );
+  expect(
+    rules("Delegate contested findings to `jig:review-arbiter`.\n"),
+  ).toEqual(["subagent-form"]);
+});

@@ -138,7 +138,7 @@ here reaches every repository at once.
   a step. A slash command for a sibling skill (`/jig:<name>`) needs none
   beside it: [README.md](README.md) says how each runtime runs an installed
   skill, and reading the sibling's `SKILL.md` (`../<name>/SKILL.md`) works in
-  any of them. Any other capability names its fallback beside it. Three
+  any of them. Any other capability names its fallback beside it. These
   forms are held by `scripts/check-skill-runtime-forms.ts`, which
   `bun run gates` runs over every skill page the agent reads:
   - **The skill's directory.** `SKILL.md` writes it as `${CLAUDE_SKILL_DIR}`

@@ -3,7 +3,8 @@
  * skill-directory variable, its structured-question tool, the plugin's
  * review-arbiter agent) when it names the fallback beside it, so a harness
  * without the form can still run the skill
- * ([plugin/AGENTS.md](../plugin/AGENTS.md#rules), ADR-0026). Four rules:
+ * ([plugin/AGENTS.md](../plugin/AGENTS.md#rules), ADR-0026). It is a heuristic
+ * over the shapes the plugin writes, not a proof of every phrasing. Its rules:
  *
  * - `skill-dir-form`: a file that names `${CLAUDE_SKILL_DIR}` (or the plugin
  *   root variable) says in one paragraph that another harness fills it in by
@@ -60,14 +61,22 @@ function paragraphs(source: string): Paragraph[] {
   };
   let fence: string | null = null;
   source.split(/\r?\n/).forEach((raw, index) => {
-    const marker = /^\s*(`{3,}|~{3,})/.exec(raw);
+    const marker = /^\s*(`{3,}(?![^`]*`)|~{3,})/.exec(raw);
     if (marker) {
       // A fence is one block of its own: its blank lines and list-like
       // lines do not split it, and its text never joins a neighbour.
       if (fence === null) {
         flush();
         fence = marker[1] as string;
-      } else if (marker[1]?.startsWith(fence)) fence = null;
+      } else if (
+        marker[1]?.startsWith(fence) &&
+        raw.trim() === (marker[1] as string)
+      )
+        fence = null;
+      else if (fence !== null) {
+        current.push(raw.trim());
+        return;
+      }
       if (current.length === 0) start = index + 1;
       current.push(raw.trim());
       if (fence === null) flush();
@@ -81,7 +90,7 @@ function paragraphs(source: string): Paragraph[] {
       flush();
       return;
     }
-    if (/^\s*(?:[-*]|\d+\.)\s/.test(raw)) flush();
+    if (/^\s*(?:[-*+]|\d+[.)])\s|^\s*#{1,6}\s|^\s*\|/.test(raw)) flush();
     if (current.length === 0) start = index + 1;
     current.push(raw.trim());
   });
@@ -109,26 +118,27 @@ function skillDirFindings(
   blocks: Paragraph[],
   isSkillPage: boolean,
 ): Finding[] {
-  const uses = blocks.find(
-    ({ text }) => text.includes(SKILL_DIR) || text.includes(PLUGIN_ROOT),
-  );
-  if (!uses) return [];
-  const explained = blocks.some(
-    ({ text }) =>
-      (text.includes(SKILL_DIR) || text.includes(PLUGIN_ROOT)) &&
-      explainsDirectory(text, isSkillPage),
-  );
-  return explained
-    ? []
-    : [
-        {
-          rule: "skill-dir-form",
-          file,
-          line: uses.line,
-          problem: `names ${SKILL_DIR} but no paragraph says that, in another harness, the agent replaces it with the skill's directory`,
-          remedy: `in SKILL.md add the paragraph every skill opens its commands with: "${SKILL_DIR} in the commands below stands for the absolute path of the directory containing this SKILL.md. Claude Code fills it in. In any other harness, replace it with that path yourself before running a command"; in a reference page write <skill-dir> and say which directory it is (plugin/AGENTS.md)`,
-        },
-      ];
+  const out: Finding[] = [];
+  for (const [name, variable] of [
+    ["skill directory", SKILL_DIR],
+    ["plugin root", PLUGIN_ROOT],
+  ] as const) {
+    const uses = blocks.find(({ text }) => text.includes(variable));
+    if (!uses) continue;
+    const explained = blocks.some(
+      ({ text }) =>
+        text.includes(variable) && explainsDirectory(text, isSkillPage),
+    );
+    if (!explained)
+      out.push({
+        rule: "skill-dir-form",
+        file,
+        line: uses.line,
+        problem: `names ${variable} (the ${name}) but no paragraph naming it says that, in another harness, the agent replaces it by hand`,
+        remedy: `in SKILL.md add a paragraph naming ${variable}: it stands for the absolute path of the ${name === "plugin root" ? "plugin's root directory" : "directory containing this SKILL.md"}, Claude Code fills it in, and in any other harness the agent replaces it with that path before running a command; in a reference page write <skill-dir> and say which directory it is (plugin/AGENTS.md)`,
+      });
+  }
+  return out;
 }
 
 const PLAIN_QUESTION = /plain[- ]text numbered/i;
@@ -151,7 +161,8 @@ function questionFindings(file: string, blocks: Paragraph[]): Finding[] {
 }
 
 const AGENT_ID = /jig:review-arbiter/;
-const HANDS_OVER = /\b(?:spawn|invoke|hand|give|goes to|go to|route)\b/i;
+const HANDS_OVER =
+  /\b(?:spawn|invoke|hand|give|goes to|go to|route|delegate|ask)\b/i;
 const NO_SUBAGENTS = /\bno subagents?\b/i;
 const CALLING_SESSION = /\bcalling session\b/i;
 
@@ -185,7 +196,10 @@ function skillDirPaths(blocks: Paragraph[]): { path: string; line: number }[] {
     for (const match of text.matchAll(
       /\$\{CLAUDE_SKILL_DIR\}((?:\/[\w.-]+)+)(?=$|["'`\s),;:])/g,
     ))
-      found.push({ path: (match[1] as string).replace(/\.+$/, ""), line });
+      found.push({
+        path: (match[1] as string).replace(/(?<=\w)\.$/, ""),
+        line,
+      });
   return found;
 }
 
@@ -232,7 +246,10 @@ export function checkSkillRuntimeForms(root = "."): number {
     const base = join(root, "plugin", "skills");
     if (!readdirSync(base).length)
       return couldNotCheck("skill-runtime-forms", "no skills found");
-    const findings = agentPages(base).flatMap((file) => {
+    const pages = agentPages(base);
+    if (!pages.length)
+      return couldNotCheck("skill-runtime-forms", "no skill pages found");
+    const findings = pages.flatMap((file) => {
       const skillDir = join(base, file.split(sep)[0] as string);
       return formFindings(
         repoPath(root, join(base, file)),

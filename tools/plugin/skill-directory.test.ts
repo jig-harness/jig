@@ -83,5 +83,6 @@ test("a skill command runs from the plugin copy once its directory is filled in 
     { cwd: consumer, env, encoding: "utf8" },
   );
   expectSpawnExit({ ...run, exitCode: run.status }, 0);
-  expect(() => JSON.parse(run.stdout)).not.toThrow();
+  const report = JSON.parse(run.stdout);
+  expect(JSON.stringify(report)).toContain("README");
 });

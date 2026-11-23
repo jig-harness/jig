@@ -2,14 +2,16 @@
 release: minor
 ---
 
-Skills now name a fallback for every form only one agent program provides, and
-`bun run gates` fails a skill that does not, so a program without Claude Code's
+Skills now name a fallback for the forms only one agent program provides that
+the gate recognizes (the skill directory variable, the structured question and
+the review-arbiter hand-over), and `bun run gates` fails a skill page that does not, so a program without Claude Code's
 conveniences can run them.
 
 ### Added
 
-- A gate (`scripts/check-skill-runtime-forms.ts`) over every skill page an
-  agent reads. It fails a page that uses `${CLAUDE_SKILL_DIR}` without saying
+- A gate (`scripts/check-skill-runtime-forms.ts`) over the `SKILL.md` and
+  reference pages under `plugin/skills` (not READMEs, tests, fixtures or templates).
+  It is a heuristic over the phrasings the plugin uses. It fails a page that uses `${CLAUDE_SKILL_DIR}` without saying
   that another program's agent replaces it with the skill's directory, a path
   under it that does not exist once the directory is filled in by hand, a
   mention of `AskUserQuestion` with no plain-text numbered fallback and its

@@ -523,8 +523,8 @@ reads [`agents/review-arbiter.md`](../../../agents/review-arbiter.md) and rules
 each contested thread with the inputs and verdicts below, before it replies to
 any thread.
 
-For threads the rubric does not decide, spawn the **Review Arbiter** agent
-(`jig:review-arbiter`) — one invocation can take a batch of
+For threads the rubric does not decide, where subagents are available, spawn
+the **Review Arbiter** agent (`jig:review-arbiter`) — one invocation can take a batch of
 contested threads. Give it, per thread: the thread body, `path`/`line`, the
 finding's diff hunk — or an explicit note that it anchors to pre-existing code
 the PR did not touch (the arbiter has no `git`/`gh` access, so this is how it
