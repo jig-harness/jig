@@ -143,6 +143,8 @@ export interface LaunchRecord {
   id: string;
   token: string;
   runtime?: "process";
+  /** A provider account's launch: its provider and what its wrapper adds to the pass's environment beside the credential it resolves (`provider-launch.ts`); absent for a subscription account's. */
+  provider?: import("./provider-environment.ts").ProviderRecord;
   action: LaunchAction;
   /** The repository's `owner/name` and its local checkout. */
   repo: string;

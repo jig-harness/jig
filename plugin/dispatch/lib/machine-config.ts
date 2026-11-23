@@ -3,8 +3,11 @@
  * `~/.jig/dispatch.yaml`): what this machine dispatches and on whose
  * accounts. A repository's own `dispatch` section says what it wants; this
  * file says which repositories this machine starts stages for, which
- * stages, and which subscription accounts it may bill. Nothing a
- * repository holds can widen it.
+ * stages, and which accounts it may bill: subscription accounts, and
+ * provider accounts that bill a model provider with the host's own key
+ * (`provider-account.ts`, `machine-accounts.ts`). Nothing a repository
+ * holds can widen it, and a repository's own `dispatch.allowed_providers`
+ * narrows which of these accounts its passes may use (`provider-allow.ts`).
  *
  * ```yaml
  * serve_defaults:          # a tracker namespace's repository for items no repository label places
@@ -21,6 +24,15 @@
  *     identity: me@example.com
  *     max_per_account: 2
  *     # stages: [pickup, followup] # the launching stages it serves; every one when left out
+ *   - name: router           # a provider account: provider-account.ts has every key
+ *     kind: provider
+ *     harness: claude-code
+ *     provider: openrouter
+ *     credential: op://Jig/router/credential   # a reference, never the key
+ *     spend_cap: {daily: "20.00"}
+ * credential_command: [op, read, --no-newline]  # resolves a provider account's reference
+ * credential_timeout: 10s
+ * credential_env: [OP_SERVICE_ACCOUNT_TOKEN]    # the host's variables that command needs; no pass carries them
  * interval: 5m
  * wall_backoff: 1h
  * runtime_timeout: 1m
@@ -59,8 +71,7 @@
  * default.
  */
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
@@ -87,15 +98,23 @@ import { duration } from "./duration.ts";
 import {
   type Checked,
   count,
+  distinct,
   each,
   flag,
   invalid,
   list,
   only,
+  path,
   text,
 } from "./machine-values.ts";
+import { machineAccounts } from "./machine-accounts.ts";
 import {
-  accountStages,
+  type CredentialSettings,
+  credentialSettings,
+  type ProviderAccount,
+} from "./provider-account.ts";
+import { withholdFromPasses } from "./provider-environment.ts";
+import {
   type MachineStage,
   machineStages,
   type ServedStage,
@@ -121,16 +140,20 @@ export interface MachineAccount {
    * The agent tool the account bills (`claude`, `codex`): it chooses the
    * agent every session on the account runs in. Any name is accepted; one
    * the drive documents no pass command for is reported and never admitted.
+   * A provider account's is its harness's program (`claude` for
+   * `claude-code`).
    */
   vendor: string;
   /** The account's Orca profile configuration directory (`CLAUDE_CONFIG_DIR` or `CODEX_HOME`). */
   configDir: string;
-  /** What the drive's identity resolver reads from that directory: an email address or an account id. */
+  /** What the drive's identity resolver reads from that directory: an email address or an account id; a provider account's derived `provider:<provider>:<fingerprint>`. */
   identity: string;
   /** Sessions the dispatcher may hold on it at once. */
   maxPerAccount: number;
   /** The launching stages it serves (`account-stages.ts`); absent, every one. */
   stages?: ServedStage[];
+  /** A provider account's fields (`kind: provider`); absent for a subscription account, whose vendor is its provider. */
+  provider?: ProviderAccount;
 }
 
 export interface MachineRepository {
@@ -205,6 +228,8 @@ export interface MachineConfig {
   preflight?: PreflightProbe[];
   /** The notification channels the tick sends through beside the Orca card (`notify.channels`); none when absent. */
   notifyChannels?: NotifyChannelConfig[];
+  /** How a provider account's credential reference is resolved (`credential_command`, `credential_timeout`, `provider_hosts`); absent where a test builds a configuration by hand. */
+  credentials?: CredentialSettings;
 }
 
 const DEFAULTS = {
@@ -248,6 +273,10 @@ const TOP_KEYS = [
   "tracker_share",
   "preflight",
   "notify",
+  "credential_command",
+  "credential_timeout",
+  "credential_env",
+  "provider_hosts",
 ];
 const DASHBOARD_KEYS = ["listen", "require_token", "allowed_hosts", "front"];
 const FAILURES_KEYS = [
@@ -260,14 +289,6 @@ const FAILURES_KEYS = [
 ];
 const RECORDS_KEYS = ["shared"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
-const ACCOUNT_KEYS = [
-  "name",
-  "vendor",
-  "config_dir",
-  "identity",
-  "max_per_account",
-  "stages",
-];
 
 /**
  * Why the machine file, or one of its values, is refused: `unreadable` for a
@@ -280,18 +301,6 @@ export function machineConfigPath(
   env: Record<string, string | undefined> = process.env,
 ): string {
   return join(jigHome(env), "dispatch.yaml");
-}
-
-/** A path, `~/` expanded; relative paths are refused, since a timer has no working directory to read them against. */
-function path(value: unknown, where: string): Checked<string> {
-  const raw = text(value, where);
-  if (!raw.ok) return raw;
-  const expanded = raw.value.startsWith("~/")
-    ? join(homedir(), raw.value.slice(2))
-    : raw.value;
-  if (!isAbsolute(expanded))
-    return invalid(`${where} must be an absolute path: ${raw.value}`);
-  return ok(resolve(expanded));
 }
 
 function optionalDuration(
@@ -340,59 +349,6 @@ function repository(value: unknown, i: number): Checked<MachineRepository> {
     followupSince: followupSince.value,
     owner: owner.value,
   });
-}
-
-function account(value: unknown, i: number): Checked<MachineAccount> {
-  const where = `accounts[${i}]`;
-  if (!isMapping(value)) return invalid(`${where} must be a mapping`);
-  const known = only(value, ACCOUNT_KEYS, where);
-  if (!known.ok) return known;
-  const vendor = text(value.vendor, `${where}.vendor`);
-  if (!vendor.ok) return vendor;
-  if (!/^[a-z][a-z0-9-]*$/.test(vendor.value))
-    return invalid(
-      `${where}.vendor must be an agent tool's name in lowercase letters, digits and dashes (claude, codex): ${vendor.value}`,
-    );
-  const name = text(value.name, `${where}.name`);
-  if (!name.ok) return name;
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name.value))
-    return invalid(
-      `${where}.name must be letters, digits, dot, dash or underscore: ${name.value}`,
-    );
-  const configDir = path(value.config_dir, `${where}.config_dir`);
-  if (!configDir.ok) return configDir;
-  const identity = text(value.identity, `${where}.identity`);
-  if (!identity.ok) return identity;
-  const maxPerAccount = count(
-    value.max_per_account,
-    `${where}.max_per_account`,
-    DEFAULTS.maxPerAccount,
-  );
-  if (!maxPerAccount.ok) return maxPerAccount;
-  const served = accountStages(value.stages, `${where}.stages (${name.value})`);
-  if (!served.ok) return served;
-  return ok({
-    name: name.value,
-    vendor: vendor.value,
-    configDir: configDir.value,
-    identity: identity.value,
-    maxPerAccount: maxPerAccount.value,
-    ...(served.value === undefined ? {} : { stages: served.value }),
-  });
-}
-
-function distinct<T>(
-  items: T[],
-  key: (t: T) => string,
-  what: string,
-): Checked<T[]> {
-  const seen = new Set<string>();
-  for (const item of items) {
-    const k = key(item);
-    if (seen.has(k)) return invalid(`${what} listed twice: ${k}`);
-    seen.add(k);
-  }
-  return ok(items);
 }
 
 /** The longest a timer holds: the tick's overall deadline is armed with it. */
@@ -527,27 +483,6 @@ function serveDefaults(
   return ok(out);
 }
 
-/** The accounts, each name, identity and configuration directory listed once. */
-function accounts(value: unknown): Checked<MachineAccount[]> {
-  const raw = list(value, "accounts");
-  if (!raw.ok) return raw;
-  const read = each(raw.value, account);
-  if (!read.ok) return read;
-  const named = distinct(read.value, (a) => a.name, "an account");
-  if (!named.ok) return named;
-  const identities = distinct(
-    named.value,
-    (a) => `${a.vendor}:${a.identity.toLowerCase()}`,
-    "an account identity",
-  );
-  if (!identities.ok) return identities;
-  return distinct(
-    identities.value,
-    (a) => `${a.vendor}:${a.configDir}`,
-    "an account configuration directory",
-  );
-}
-
 /** Read repository stages together with the machine's session runtime. */
 function machineRepositories(
   top: Record<string, unknown>,
@@ -592,7 +527,13 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
   if (!repos.ok) return repos;
   const defaults = serveDefaults(top.serve_defaults, repos.value.repositories);
   if (!defaults.ok) return defaults;
-  const accountList = accounts(top.accounts);
+  const credentials = credentialSettings(top);
+  if (!credentials.ok) return credentials;
+  const accountList = machineAccounts(
+    top.accounts,
+    credentials.value,
+    DEFAULTS.maxPerAccount,
+  );
   if (!accountList.ok) return accountList;
   const timing = limits(top);
   if (!timing.ok) return timing;
@@ -613,12 +554,25 @@ function parseValues(values: unknown, where: string): Checked<MachineConfig> {
     serve: serve.value,
     serveDefaults: defaults.value,
     accounts: accountList.value,
+    credentials: credentials.value,
+    ...withCredentialEnv(repos.value.process, credentials.value.credentialEnv),
     ...timing.value,
     ...shared.value,
     load: host.value,
     steward: steward.value,
     priorities: priorities.value,
   });
+}
+
+/** The process runtime's settings, given the credential command's variables to hand to a provider account's wrapper. */
+function withCredentialEnv(
+  settings: ProcessSettings,
+  names: string[],
+): { process: ProcessSettings } {
+  return {
+    process:
+      names.length === 0 ? settings : { ...settings, credentialEnv: names },
+  };
 }
 
 /** The tick's share of each credential's budget, and the checks run on each account before a tracker stage. */
@@ -979,7 +933,10 @@ export function parseMachineConfigText(
     );
   }
   const config = parseMachineConfig(values, file);
-  return config.ok ? config : invalid(`${file}: ${config.failure.reason}`);
+  if (!config.ok) return invalid(`${file}: ${config.failure.reason}`);
+  // No pass this process starts carries the credential command's variables.
+  withholdFromPasses(config.value.credentials?.credentialEnv ?? []);
+  return config;
 }
 
 /** The machine file's entry for a repository path, if any. */

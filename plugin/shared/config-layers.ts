@@ -106,6 +106,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.overlap.ignore",
   "dispatch.overlap.quiet_after",
   "dispatch.overlap.bound_patience",
+  "dispatch.allowed_providers",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",

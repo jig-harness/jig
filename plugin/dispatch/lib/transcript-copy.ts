@@ -15,10 +15,12 @@
  *
  * The copy is the end of the transcript, at most `COPY_BYTES`, each line
  * with email addresses, account identifiers, tokens and other
- * credential-shaped values and the record's own token replaced with
- * `<redacted>`, in `<dispatch>/runs/<record>/transcript.jsonl`, beside
- * `copy.json`, which says when the copy was made, from which session, and,
- * when there is none, why. The directory and its files are readable only by
+ * credential-shaped values, the record's own token and a provider account's
+ * resolved credential replaced with `<redacted>` (a provider account's run
+ * is copied only by the process that holds that credential), in
+ * `<dispatch>/runs/<record>/transcript.jsonl`, beside `copy.json`, which
+ * says when the copy was made, from which session, and, when there is none,
+ * why. The directory and its files are readable only by
  * their owner. The copy is removed `KEPT_AFTER_CAUSE_DAYS` after the
  * steward's cause for the run is applied, and at the latest after the
  * machine file's `receipts_days`; the run's bounded output on its launch
@@ -36,6 +38,7 @@ import {
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { isCredentialKey, maskCredentials } from "../../shared/credentials.ts";
+import { holdsCredentialOf } from "./provider-held.ts";
 import { swallow } from "../../shared/errors.ts";
 import { redactStrings } from "../../shared/redact.ts";
 import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
@@ -254,7 +257,7 @@ function writePrivate(path: string, body: string): void {
 export function keepTranscriptCopy(
   record: Pick<
     LaunchRecord,
-    "id" | "token" | "vendor" | "configDir" | "createdAt"
+    "id" | "token" | "vendor" | "configDir" | "createdAt" | "provider"
   >,
   session: string | null,
   root = stateRoot(),
@@ -266,7 +269,14 @@ export function keepTranscriptCopy(
   try {
     mkdirSync(join(root, "runs"), { recursive: true, mode: 0o700 });
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const found = findTranscript(record, session);
+    // A provider account's transcript may hold its key, which only the process that resolved it can mask.
+    const found =
+      record.provider !== undefined && !holdsCredentialOf(record)
+        ? {
+            missing:
+              "a provider account's transcript is copied only by the wrapper that holds its credential",
+          }
+        : findTranscript(record, session);
     let copy: TranscriptCopy = {
       version: 1,
       record: record.id,

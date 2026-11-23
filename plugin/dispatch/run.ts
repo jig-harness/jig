@@ -145,7 +145,7 @@ import {
   driveState,
   driveTs,
 } from "../skills/drive-pr/scripts/lib/driver/paths.ts";
-import { passEnvironment } from "./lib/accounts.ts";
+import * as providerLaunch from "./lib/provider-launch.ts";
 import {
   claimRecord,
   isDrive,
@@ -485,12 +485,22 @@ async function wrap(id: string, token: string): Promise<number> {
     return CLAIMED;
   }
   if (!(await publishOwner(record, identity.value))) return 3;
+  // A provider account's credential is resolved here, before anything starts.
+  if (
+    !(await providerLaunch.launchCredential(record, () => endSharedClaim(id)))
+  )
+    return 2;
   process.chdir(record.workspace.path);
   let code: number;
   if (isInteractive(record)) {
     code = await executeStage(id, record);
   } else {
-    code = await spawnSupervisor(id, token, record.runtime === "process");
+    code = await spawnSupervisor(
+      id,
+      token,
+      record.runtime === "process",
+      providerLaunch.supervisorEnvironment(record),
+    );
     enterAfterStage();
   }
   await finishWrapper(record);
@@ -533,7 +543,9 @@ async function executeStage(
     // it starts is a session the line started, named by its launch record.
     // A pass of its own starts no background task, as a drive's passes do.
     {
-      ...withoutRunTabMarker(passEnvironment(process.env, record)),
+      ...withoutRunTabMarker(
+        providerLaunch.stageEnvironment(process.env, record),
+      ),
       ...(ownPass(record) ? NO_BACKGROUND_TASKS : {}),
       [LAUNCH_VARIABLE]: id,
       JIG_OUTBOUND_CALLER: `pass:${record.action}:${record.id}`,
@@ -543,11 +555,12 @@ async function executeStage(
     },
     { ...runOptions(record), ...(owner === undefined ? {} : { owner }) },
   );
-  return finishRun(id, record, ran);
+  return finishRun(id, record, providerLaunch.redactedRan(ran));
 }
 
 /** A separate process owns the stage and its exit, surviving wrapper death to stop it. */
 async function supervise(id: string, token: string): Promise<number> {
+  providerLaunch.takeHandedCredential(id);
   const record = readRecord(id);
   const wrapper = readStageClaim(id, token);
   if (

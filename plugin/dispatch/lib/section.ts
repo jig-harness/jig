@@ -18,6 +18,7 @@ import { parseLabelConfig } from "../../shared/pr-labels/config.ts";
 import type { LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import { parseOverlap, unknownKeys } from "./overlap-config.ts";
+import { allowedProviders } from "./provider-allow.ts";
 import {
   DEFAULT_REVIEWER_FAILURES_BEFORE_ESCALATION,
   reviewerFailurePolicy,
@@ -71,6 +72,7 @@ const KEYS = [
   "pool",
   "epic_width",
   "overlap",
+  "allowed_providers",
 ];
 const ADOPT_KEYS = ["enabled", "authors", "within"];
 /** `adopt.within`'s default: a week. */
@@ -438,10 +440,15 @@ function timings(section: Record<string, unknown>): Checked<Timings> {
   });
 }
 
-/** What bounds and gates a launch: its deadline, and what a priority-less item does. */
+/** What bounds and gates a launch: its deadline, what a priority-less item does, and the providers it may run on. */
 function launchPolicy(
   section: Record<string, unknown>,
-): Checked<Pick<DispatchSection, "pickupDeadlineMs" | "missingPriority">> {
+): Checked<
+  Pick<
+    DispatchSection,
+    "pickupDeadlineMs" | "missingPriority" | "allowedProviders"
+  >
+> {
   const pickupDeadlineMs = wait(
     section.pickup_deadline,
     "pickup_deadline",
@@ -450,9 +457,12 @@ function launchPolicy(
   if (!pickupDeadlineMs.ok) return pickupDeadlineMs;
   const unranked = missingPriority(section.missing_priority);
   if (!unranked.ok) return unranked;
+  const providers = allowedProviders(section.allowed_providers);
+  if (!providers.ok) return providers;
   return ok({
     pickupDeadlineMs: pickupDeadlineMs.value,
     missingPriority: unranked.value,
+    ...(providers.value === null ? {} : { allowedProviders: providers.value }),
   });
 }
 

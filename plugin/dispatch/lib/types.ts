@@ -75,6 +75,8 @@ export interface DispatchSection {
   retiredEpicWidth?: string;
   /** How the tick weighs a pickup's overlap with the work in flight (`dispatch.overlap`, `overlap-config.ts`); absent reads as the defaults (`overlapOf`). */
   overlap?: import("./overlap-config.ts").OverlapSettings;
+  /** The providers the repository's code may be sent to (`dispatch.allowed_providers`, `provider-allow.ts`); `null` or absent when it names none, which admits its Claude and OpenAI subscription accounts only. */
+  allowedProviders?: string[] | null;
   /** The ready pool (`dispatch.pool`): unassigned items in these states are pickups too; absent = no pool. */
   pool?: {
     states: import("../../skills/do-item/scripts/lib/tracker/port.ts").CanonicalState[];

@@ -5,7 +5,10 @@
  * (`ghp_…`, `github_pat_…`, `sk-…`, `xox…-`, `lin_api_…`) and a JSON Web
  * Token. One list serves every record that must name no secret: the steward
  * digest's durable output summary (`dispatch/lib/pass-output.ts`) and the
- * closing report (`closing-report.ts`), each with its own mark.
+ * closing report (`closing-report.ts`), each with its own mark. Beside the
+ * patterns, every exact secret this process holds is replaced: a provider
+ * account's resolved credential (`rememberSecret`), and inside a pass the
+ * values of the variables its launch names in `JIG_SECRET_VARIABLES`.
  */
 
 /** The names a key carries when its value is a secret. */
@@ -72,10 +75,59 @@ function maskValues(
   return out + text.slice(last);
 }
 
-/** Replace every credential-shaped value in `text` with `mark`. */
+/**
+ * Exact secret values this process holds, such as a provider account's
+ * credential resolved for a launch. Pattern masking cannot recognise an
+ * opaque value printed alone, so every value here is replaced wherever
+ * `maskCredentials` runs in this process. Values are kept in memory only.
+ */
+const remembered = new Set<string>();
+
+/**
+ * The variable a launch names the environment variables in that hold a
+ * resolved secret, comma-separated (`ANTHROPIC_API_KEY`). A Jig script that
+ * runs inside the pass reads their values from its own environment and
+ * masks them as it masks a remembered value.
+ */
+export const SECRET_VARIABLES = "JIG_SECRET_VARIABLES";
+
+/** The shortest value replaced exactly: a shorter one would mask ordinary words. */
+const SHORTEST_EXACT = 8;
+
+/** Remember `value` as a secret this process holds, so every mask replaces it. */
+export function rememberSecret(value: string): void {
+  if (value.length >= SHORTEST_EXACT) remembered.add(value);
+}
+
+/** The exact secrets this process masks: the remembered ones and the values of the variables `SECRET_VARIABLES` names. */
+function exactSecrets(): string[] {
+  const env = typeof process === "undefined" ? {} : process.env;
+  const named = (env[SECRET_VARIABLES] ?? "")
+    .split(",")
+    .map((name) => env[name.trim()] ?? "")
+    .filter((value) => value.length >= SHORTEST_EXACT);
+  // The longest first, so a secret that contains another is replaced whole.
+  return [...new Set([...remembered, ...named])].sort(
+    (a, b) => b.length - a.length,
+  );
+}
+
+/** Replace every occurrence of each of `values` (and of every secret this process holds) in `text` with `mark`. */
+export function redactExact(
+  text: string,
+  mark: string,
+  values: readonly string[] = [],
+): string {
+  let out = text;
+  for (const value of [...values, ...exactSecrets()])
+    if (value.length >= SHORTEST_EXACT) out = out.split(value).join(mark);
+  return out;
+}
+
+/** Replace every credential-shaped value in `text`, and every exact secret this process holds, with `mark`. */
 export function maskCredentials(text: string, mark: string): string {
   const keyed = maskValues(
-    text,
+    redactExact(text, mark),
     new RegExp(`(["'])(${SECRET_KEY})\\1\\s*[:=]\\s*`, "gi"),
     /[^\s,}\]]+/,
     (m) => `${m[1]}${m[2]}${m[1]}: "${mark}"`,

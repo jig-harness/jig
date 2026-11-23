@@ -1,4 +1,6 @@
 /** Scalar and list readers used by the dispatcher's machine configuration. */
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { failed, ok, type Outcome } from "../../shared/outcome.ts";
 
 export type Checked<T> = Outcome<T, "invalid">;
@@ -24,6 +26,18 @@ export function text(value: unknown, where: string): Checked<string> {
   if (typeof value !== "string" || value.trim() === "")
     return invalid(`${where} must be a nonempty string`);
   return ok(value.trim());
+}
+
+/** A path, `~/` expanded; relative paths are refused, since a timer has no working directory to read them against. */
+export function path(value: unknown, where: string): Checked<string> {
+  const raw = text(value, where);
+  if (!raw.ok) return raw;
+  const expanded = raw.value.startsWith("~/")
+    ? join(homedir(), raw.value.slice(2))
+    : raw.value;
+  if (!isAbsolute(expanded))
+    return invalid(`${where} must be an absolute path: ${raw.value}`);
+  return ok(resolve(expanded));
 }
 
 export function count(
@@ -65,4 +79,19 @@ export function flag(
   if (typeof value !== "boolean")
     return invalid(`${where} must be true or false`);
   return ok(value);
+}
+
+/** `items`, refused when two share a `key`; `what` names one in the reason. */
+export function distinct<T>(
+  items: T[],
+  key: (t: T) => string,
+  what: string,
+): Checked<T[]> {
+  const seen = new Set<string>();
+  for (const item of items) {
+    const k = key(item);
+    if (seen.has(k)) return invalid(`${what} listed twice: ${k}`);
+    seen.add(k);
+  }
+  return ok(items);
 }

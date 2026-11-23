@@ -388,6 +388,9 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   launch: process.env.JIG_LAUNCH ?? null,
   report: process.env.JIG_DRIVER_REPORT ?? null,
 }) + "\\n");
+// A test of what a pass may carry reads the whole environment the drive ran with.
+if (fs.existsSync(F + "/drive-env")) fs.writeFileSync(F + "/drive-env.json", JSON.stringify(process.env));
+if (fs.existsSync(F + "/drive-echo-key")) { console.log("key " + process.env.ANTHROPIC_API_KEY); console.error("key " + process.env.ANTHROPIC_API_KEY); }
 const until = Date.now() + 60000;
 if (fs.existsSync(F + "/drive-stderr")) process.stderr.write(fs.readFileSync(F + "/drive-stderr"));
 while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);

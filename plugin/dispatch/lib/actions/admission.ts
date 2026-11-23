@@ -19,6 +19,7 @@ import {
 import { unrecordedDrivers, type HostDrivers } from "../host-drivers.ts";
 import { serves, type ServedStage } from "../account-stages.ts";
 import type { ReadRecord } from "../launches.ts";
+import type { AllowList } from "../provider-allow.ts";
 import type { Action, LaunchOutcome } from "../types.ts";
 
 export type AccountAdmission =
@@ -89,8 +90,10 @@ export function admission(
   excluded: ReadonlySet<string>,
   pickupDeadlineSec: number,
   clone?: string | null,
+  allowed?: AllowList,
 ): Admission {
   const codex = state.codexOptIn;
+  const scope = allowed === undefined ? {} : { allowed };
   const stage = action.stage as ServedStage;
   if (
     action.takeoverHolder !== undefined &&
@@ -124,6 +127,7 @@ export function admission(
         state.passDeadlineSec,
         codex,
         stage,
+        allowed,
       );
   }
   // A pickup is a headless pass under its own deadline (`dispatch.pickup_deadline`).
@@ -131,7 +135,7 @@ export function admission(
     return admitRearm(
       state.table,
       state.last,
-      { kind: "pass", deadlineSec: pickupDeadlineSec, codex, stage },
+      { kind: "pass", deadlineSec: pickupDeadlineSec, codex, stage, ...scope },
       excluded,
       state.records,
     );
@@ -140,12 +144,24 @@ export function admission(
     return admitRearm(
       state.table,
       state.last,
-      { kind: "pass", deadlineSec: state.passDeadlineSec, codex, stage },
+      {
+        kind: "pass",
+        deadlineSec: state.passDeadlineSec,
+        codex,
+        stage,
+        ...scope,
+      },
       excluded,
       state.records,
     );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
     ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
+    : admitTakeover(
+        state.table,
+        replaced,
+        state.passDeadlineSec,
+        codex,
+        allowed,
+      );
 }

@@ -179,6 +179,7 @@ export function settleUnreported(
     | "configDir"
     | "createdAt"
     | "passTimeoutSec"
+    | "provider"
   >,
   seen: SeenEnd | null,
   session: string | null,

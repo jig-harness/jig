@@ -1,0 +1,206 @@
+/** A provider account's credential, resolved through the host's command, and what a refusal holds. */
+import { describe, expect, it } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { accountStartupNeeds } from "../lib/account-startup.ts";
+import type { ApplyState } from "../lib/actions/launch.ts";
+import {
+  allowListOf,
+  prelaunchCredential,
+} from "../lib/actions/provider-check.ts";
+import { providerRefusal } from "../lib/provider-allow.ts";
+import type { MachineAccount } from "../lib/machine-config.ts";
+import {
+  type CredentialSettings,
+  providerIdentity,
+} from "../lib/provider-account.ts";
+import { resolveCredential } from "../lib/provider-credential.ts";
+import { existingStateDb } from "../lib/state.ts";
+import { accountWall } from "../lib/walls.ts";
+
+/** A credential command that runs `script` with Bun, the reference its last argument. */
+function command(script: string, timeoutMs = 10_000): CredentialSettings {
+  return {
+    credentialCommand: [process.execPath, "-e", script],
+    credentialTimeoutMs: timeoutMs,
+    credentialEnv: [],
+    providerHosts: {},
+  };
+}
+
+const ECHO_REFERENCE =
+  "process.stdout.write('value-for:' + process.argv.at(-1) + '\\n')";
+const REFUSE =
+  "process.stdout.write('half-printed-secret-0123'); process.stderr.write('vault says no for half-printed-secret-0123\\n'); process.exit(1)";
+
+const ROUTER: MachineAccount = {
+  name: "router",
+  vendor: "claude",
+  configDir: "/accounts/router",
+  identity: providerIdentity("openrouter", "op://Jig/router/credential", null),
+  maxPerAccount: 2,
+  provider: {
+    harness: "claude-code",
+    provider: "openrouter",
+    baseUrl: null,
+    credential: "op://Jig/router/credential",
+    billing: "pay-per-token",
+    spendCap: { daily: "20.00", perRun: null, timezone: "UTC" },
+    models: null,
+  },
+};
+
+describe("resolving a credential reference", () => {
+  it("prints the value for the reference appended as one argument, one trailing newline removed", async () => {
+    const value = await resolveCredential(
+      command(ECHO_REFERENCE),
+      "op://Vault/an item/a 'field'",
+      process.env,
+    );
+    expect(value).toEqual({
+      ok: true,
+      value: "value-for:op://Vault/an item/a 'field'",
+    });
+  });
+
+  it("is unauthorized for a non-zero exit, an empty value, a value with a line break or one over 4 KiB", async () => {
+    const cases: Array<[string, string]> = [
+      [REFUSE, "the credential command exited 1"],
+      ["process.stdout.write('\\n')", "printed no value"],
+      ["process.stdout.write('one\\ntwo')", "line break inside it"],
+      ["process.stdout.write('x'.repeat(4097))", "over 4 KiB"],
+      ["process.stdout.write('short')", "under 8 bytes"],
+      [
+        "process.stdout.write('half-printed-secret-line-one\\nhalf-printed-secret-line-two'); process.stderr.write('refused half-printed-secret-line-two\\n'); process.exit(1)",
+        "the credential command exited 1: refused <redacted>",
+      ],
+    ];
+    for (const [script, why] of cases) {
+      const value = await resolveCredential(
+        command(script),
+        "op://a/b/c",
+        process.env,
+      );
+      expect(value.ok).toBe(false);
+      if (value.ok) continue;
+      expect(value.failure.code).toBe("unauthorized");
+      expect(value.failure.reason).toContain(why);
+      expect(value.failure.reason).not.toContain("half-printed-secret");
+    }
+    expect(
+      await resolveCredential(
+        { ...command(ECHO_REFERENCE), credentialCommand: null },
+        "op://a/b/c",
+        process.env,
+      ),
+    ).toMatchObject({ ok: false, failure: { code: "unauthorized" } });
+  });
+
+  it("is unreachable when the command does not answer in time", async () => {
+    const value = await resolveCredential(
+      command("await Bun.sleep(10_000)", 1000),
+      "op://a/b/c",
+      process.env,
+    );
+    expect(value).toMatchObject({
+      ok: false,
+      failure: { code: "unreachable" },
+    });
+  });
+});
+
+describe("a provider account's credential before a launch", () => {
+  function state(settings: CredentialSettings, root: string): ApplyState {
+    return {
+      machine: { credentials: settings, wallBackoffMs: 3_600_000 },
+      root,
+    } as unknown as ApplyState;
+  }
+
+  it("starts nothing when the command fails: unauthorized, the account held, and one need however often it fails", async () => {
+    const root = mkdtempSync(join(tmpdir(), "provider-credential-"));
+    const refused = state(command(REFUSE), root);
+    for (let i = 0; i < 2; i++) {
+      const answer = await prelaunchCredential(
+        refused,
+        ROUTER,
+        { ok: true },
+        true,
+      );
+      expect(answer).toEqual({
+        ok: false,
+        reason: expect.stringMatching(
+          /^unauthorized: the credential command exited 1/,
+        ),
+      });
+    }
+    expect(accountWall(ROUTER, Date.now(), root)?.source).toContain(
+      "the credential was refused (unauthorized)",
+    );
+    const needs = accountStartupNeeds([ROUTER], root);
+    expect(needs).toHaveLength(1);
+    expect(needs[0]).toMatchObject({
+      cause: "account-sign-in",
+      repo: "host",
+      target: "account router",
+      reason: expect.stringContaining(
+        "make its reference op://Jig/router/credential resolve",
+      ),
+    });
+    const launches = existingStateDb(root)
+      ?.query("SELECT COUNT(*) AS n FROM launches")
+      .get() as { n: number } | undefined;
+    expect(launches?.n ?? 0).toBe(0);
+    // A resolution that succeeds again lifts the need.
+    const answered = await prelaunchCredential(
+      state(command(ECHO_REFERENCE), root),
+      ROUTER,
+      { ok: true },
+      true,
+    );
+    expect(answered).toEqual({ ok: true });
+    expect(accountStartupNeeds([ROUTER], root)).toEqual([]);
+  });
+
+  it("waits for the next tick when the command does not answer, holding nothing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "provider-credential-"));
+    const answer = await prelaunchCredential(
+      state(command("await Bun.sleep(10_000)", 1000), root),
+      ROUTER,
+      { ok: true },
+      true,
+    );
+    expect(answer).toMatchObject({
+      waits: expect.stringContaining("unreachable"),
+      waitsOn: "accounts",
+    });
+    expect(accountWall(ROUTER, Date.now(), root)).toBeNull();
+    expect(accountStartupNeeds([ROUTER], root)).toEqual([]);
+  });
+});
+
+describe("the allow list a launch is checked against", () => {
+  it("refuses every account for a repository a tick read no list for, and applies none where it read no lists", () => {
+    const read = {
+      allowedProviders: new Map([["example-org/alpha", ["anthropic"]]]),
+    } as unknown as ApplyState;
+    expect(allowListOf(read, "example-org/alpha")).toEqual({
+      repo: "example-org/alpha",
+      providers: ["anthropic"],
+    });
+    const missing = allowListOf(read, "example-org/beta");
+    expect(missing).toEqual({
+      repo: "example-org/beta",
+      providers: null,
+      unread: true,
+    });
+    expect(
+      providerRefusal({ name: "work", vendor: "claude" }, missing),
+    ).toContain("was not read this tick");
+    expect(allowListOf({} as ApplyState, "example-org/beta")).toEqual({
+      repo: "example-org/beta",
+      providers: null,
+    });
+  });
+});

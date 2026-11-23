@@ -1455,6 +1455,7 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
 | `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
 | `dispatch.pickup_deadline` | duration | `3h`: the deadline a pickup's headless `do-item` pass runs under; the wrapper stops the pass when it passes, as a follow-up's pass is stopped at the pass deadline. An implementation outruns a review pass, so a pickup has a deadline of its own | dispatch |
+| `dispatch.allowed_providers` | list of provider names (lowercase letters, digits and dashes), each once | None: the repository's passes may run on its Claude and OpenAI subscription accounts only. The model providers this repository's code and tracker text may be sent to, spelled as a [provider account](#provider-accounts)'s `provider` is, with `anthropic` for Claude Code's subscription accounts and `openai` for Codex's. Read with the rest of this section from the default branch, so a checkout, a pull request's branch, the user file and the environment cannot set or widen it, and the machine file cannot add a provider it lacks. Before every launch that sends the repository's text to a provider (a pickup, a re-arm or takeover, a follow-up, a steward pass), the dispatcher checks the chosen account's provider against it: an account it refuses is passed over for the next one, and with none left the launch starts nothing, reserves nothing and is reported with the reason `provider-not-allowed`, naming the repository, the account and the provider; no need is raised per launch. A provider account is never admitted by an absent list, even one whose provider is `anthropic` or `openai`, and a list that leaves out `anthropic` keeps the repository off its Claude subscription accounts too. A provider that routes onward (OpenRouter forwards to the model's own provider) is allowed by the name the list holds | dispatch |
 | `dispatch.epic_width` | retired | Accepted with any value and ignored. The dispatch receipt points to `dispatch.overlap`. For one child at a time, use execution plan dependency edges or a serialized area | dispatch |
 | `dispatch.overlap.max_per_file` | whole number, `0` or more | `4`: the [overlap bound](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A planned pickup is in tier 3 when starting it would put more than this many pieces of work in flight (open pull requests and pickups with no pull request yet) that change one of its files; only files count, never a directory or an area, a quiet pull request (`quiet_after`) does not, nor does an ignored or generated path. `0` turns the bound off. The tick tries tier 3 after tiers 1 and 2, and promotes an aged tier-3 pickup ahead of new tier-1 work | dispatch |
 | `dispatch.overlap.patience` | mapping of `urgent`, `high`, `medium`, `low` and `none` to a duration, or `0` | urgent `0`, high `30m`, medium `2h`, low and none `6h`: how long a planned pickup of that priority that overlaps the work in flight waits, for each conflict resolution round it is expected to cause, before it returns to tier 1, counted from the first tick that put it in tier 2 or 3 (the state database's `overlap_waits`). A key left out keeps its default | dispatch |
@@ -1738,6 +1739,20 @@ accounts:
     identity: me@example.com
     max_per_account: 2
     # stages: [pickup, followup]     # the launching stages it serves; every one when left out
+  - name: router                     # a provider account: the host's own key with a model provider
+    kind: provider
+    harness: claude-code             # the program its passes run in: claude-code or codex
+    provider: openrouter             # as a repository's dispatch.allowed_providers spells it
+    base_url: https://openrouter.ai/api
+    credential: op://Jig/router/credential   # a reference, never the key
+    billing: pay-per-token           # or flat-rate, which takes no spend_cap
+    spend_cap: {daily: "20.00", per_run: "2.50", timezone: UTC}
+    stages: [rearm]
+credential_command: [op, read, --no-newline]   # prints a provider account's credential for its reference
+credential_timeout: 10s
+credential_env: [OP_SERVICE_ACCOUNT_TOKEN]   # the host's variables that command needs; no pass gets them
+provider_hosts:                      # hosts a base_url may name beyond the provider's own API
+  openrouter: [llm-proxy.internal.example]
 serve:
   - name: maintainer
     forge: [maintainer-login, maintainer-work-login]
@@ -1811,10 +1826,16 @@ rejects any other form.
 | `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
 | `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
 | `accounts[].vendor` | Required; the agent tool the account bills, which every session on it runs in: `claude` (Claude Code) or `codex` (Codex), the tools the drive documents a pass command for. A drive's pass on a `codex` account runs Codex's pass command, on the standard tier of the repository's `routing.models.codex` (by default `terra`, given as `gpt-5.6-terra`), and it and a follow-up's pass are admitted only while the pass deadline the run reads (`DRIVE_PR_PASS_TIMEOUT`, else 90 minutes) is positive, since a Codex pass has no turn cap of its own. A `codex` account is admitted for any launch only on a host that set [`drive.codex_bypass`](#a-hosts-opt-in-to-bypass), since a pass needs that bypass to push and to write its worktree's git directory, a pickup's session goes on to arm such a pass, and nobody is there to approve; every run reports why otherwise. Any other name (lowercase letters, digits and dashes) is accepted, reported on every run as accepted and not admitted, and never launched on |
-| `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (`claude`) or `CODEX_HOME` (`codex`) for each session it bills. The session starts with the other variable and `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
-| `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported. For Claude Code, the dispatcher then checks the sign-in with a bounded Haiku request. It asks the shared budget first and records any cost in the outbound ledger. A successful answer is reused for ten minutes. A refused login backs off the account for `wall_backoff` and raises one host need to sign in again. If the check cannot answer, the tick reports the fallback and keeps the identity check and startup breaker in effect |
+| `accounts[].kind` | `subscription`; what the account bills. A `subscription` account is a vendor's plan, signed in inside `config_dir`, with the `accounts[]` keys this table lists. A `provider` account bills a model provider with the host's own key: see [provider accounts](#provider-accounts) for its keys, which leave out `vendor` and `identity` |
+| `accounts[].harness` | The vendor's own program; on a subscription account, the program its sessions run in, which may only be the vendor's own (`claude-code` for `claude`, `codex` for `codex`), so a Claude login never reaches another program. On a provider account, required: `claude-code` or `codex` |
+| `accounts[].config_dir` | Required on a subscription account, and on a provider account `~/.local/state/jig/harness/<name>`; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (`claude`) or `CODEX_HOME` (`codex`) for each session it bills. The session starts with the other variable and `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, whatever their letter case, so only this directory decides the account. A provider account's directory is its own: no other account of either kind may name it |
+| `accounts[].identity` | Required on a subscription account, and never written on a provider account, whose identity is derived ([account identities](#account-identities)); the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported. For Claude Code, the dispatcher then checks the sign-in with a bounded Haiku request. It asks the shared budget first and records any cost in the outbound ledger. A successful answer is reused for ten minutes. A refused login backs off the account for `wall_backoff` and raises one host need to sign in again. If the check cannot answer, the tick reports the fallback and keeps the identity check and startup breaker in effect |
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Every live driver on the host counts against the account its passes bill, whoever started it (the dispatcher, a pickup, a person or a repair session); other sessions a person starts on the same account are not counted, so lower it when you share the account |
 | `accounts[].stages` | Every launching stage; the stages whose sessions the account takes, a list of distinct names from `pickup`, `rearm`, `followup` and `steward`. A re-arm, a takeover and a re-drive (a conflict re-drive among them) are the `rearm` stage's. Admission passes over an account that does not serve an action's stage before it weighs anything else, as it does an account the preflight holds back, and the account is not probed for that action; weights, turns, walls and slots then decide among the accounts that remain. A takeover runs in the slot of the launch record it replaces only while that record's account serves `rearm`; otherwise it is admitted as a new re-arm would be, on a free slot of an account that serves `rearm`, where it holds a slot of its own beside the replaced record's until that record ends, and it waits with the usual reasons when none has one. A launch already recorded and retried after a lost answer stays on its own account. The load factor's accounts gauge (`load.enforce`) still counts the slots of every listed account, whatever stages each serves, so the free slot it keeps for a drive or a follow-up may be on an account that serves neither. When no listed account serves a stage, its launches wait with a reason that names the stage and says no account serves it, not that no account has a free slot. The receipt, the terminal report and the dashboard's account view show an account's stages when this narrows them, and a run without `--apply` names, under each planned launch, the accounts that serve its stage. The file is refused, naming the account and the value, for an unknown stage, a stage written twice, an empty list, or `notify` or `steer`, which launch no session |
+| `credential_command` | None; the argument list that prints a [provider account](#provider-accounts)'s credential for its reference, run without a shell, the reference appended as one last argument (so a space or a quote in it is never interpreted). It runs with a small base of the host's environment (`PATH`, the home, the user, the locale and the temporary directory) and the variables `credential_env` names, never the pass's, the same in the dispatcher's check before a launch and in the launch's wrapper. Its standard output is the value, one trailing newline removed; an empty value, one with a line break inside it, one under 8 bytes (too short to be replaced reliably wherever text is recorded) or one over 4 KiB is refused. 1Password's `op read --no-newline` is one implementation; any command that prints a value for a reference is another. Read only from this file, so a repository cannot choose what runs on the host; a provider account with no command is refused when the file loads |
+| `credential_timeout` | `10s`; how long the credential command may take. A command that does not answer in time is `unreachable` and nothing is held: in the dispatcher's check before a launch, the launch waits for the next tick; in the launch's wrapper, the launch ends without starting its pass (exit 2) and its claim is settled |
+| `credential_env` | None; the names of the host's environment variables the credential command needs beside its base, such as a vault's session or service-account token (`OP_SERVICE_ACCOUNT_TOKEN`). They reach the command and no pass: every pass's environment, a subscription account's included, removes them whatever their letter case, and under `runtime: process` the runtime hands them only to a provider account's wrapper. A base variable, or a name `process.env_keep` keeps, is refused |
+| `provider_hosts` | None; a mapping from a provider's name to the host names a provider account's `base_url` may name beyond the provider's own API. A loopback or private-network address is never a provider's own, so it needs an entry here too |
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on [`QUOTA_PARKED`](protocol/drive-exits.md) when the drive recorded no reset, and after an unsuccessful Claude Code follow-up, pickup or steward startup that writes no transcript, result or question within its first minute. A startup whose output holds a recognized usage-limit notice is walled until the reset the notice states instead, read in the zone it names (the host's when it names none) and at most eight days out; the backoff applies when that reset cannot be read, and to a startup with no such notice |
 | `runtime` | `orca`; on Linux and macOS, set `process` to dispatch headless runs through the host's service manager and open plain git worktrees. The machine file is the only runtime selector. The process runtime writes no Orca card, so a repository's `notify` stage on it needs a channel under `notify.channels`, and a file that enables the stage with none is refused, naming the field; it starts the first drive for a finished pickup through the usual drive admission checks, including `dispatch.labels.only_labeled`. A person follows a process run, or takes it over, with `jig dispatch attach <record> [--take-over]` ([README.md](README.md)) |
@@ -1901,6 +1922,67 @@ holds its account's slot until a person clears it with
 `jig dispatch clear <record>`; one claimed on this host before it last
 restarted has died and frees its slot.
 
+### Provider accounts
+
+A **provider account** (`kind: provider`) bills a model provider with the
+host's own key, beside the subscription accounts; its passes run in the
+harness it names. Its keys are below; any other key is refused, as anywhere
+in the file. Until the dispatcher enforces its spend cap, a provider account
+is read, checked and reported as configured and not admitted, and nothing
+is launched on it.
+
+| Key | Default / meaning |
+|-----|-------------------|
+| `accounts[].name`, `accounts[].max_per_account`, `accounts[].stages` | As for a subscription account |
+| `accounts[].kind` | Required: `provider` |
+| `accounts[].harness` | Required; the program its passes run in: `claude-code` or `codex` |
+| `accounts[].provider` | Required; the provider it bills, in lowercase letters, digits and dashes, spelled as a repository's [`dispatch.allowed_providers`](#dispatch) spells it (`openrouter`, `gemini`, `anthropic`) |
+| `accounts[].base_url` | The harness program's own default; where the harness sends its requests. An `https://` URL (plain `http://` only on a loopback address) with no user name, password, query or fragment, on a host the provider's own API answers on (`api.anthropic.com` for `anthropic`, `api.openai.com` for `openai`, `openrouter.ai` for `openrouter`, `generativelanguage.googleapis.com` for `gemini`) or one `provider_hosts` names for the provider |
+| `accounts[].credential` | Required; a **credential reference**, never the credential: a scheme, `://` and a path with no whitespace (`op://Vault/item/field`), in which nothing reads as a credential. A key written here is refused when the file loads, and the reason withholds it |
+| `accounts[].billing` | `pay-per-token`; how the account is billed. A `pay-per-token` key carries `spend_cap`. A `flat-rate` plan (one whose vendor sells usage windows for a fixed fee) takes no `spend_cap`: its own windows bound it, through the account's [wall](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and `max_per_account`, as a subscription account's do |
+| `accounts[].spend_cap.daily` | Required for `pay-per-token`; the day's spend cap in US dollars, written as a quoted decimal string (`"20.00"`), more than zero |
+| `accounts[].spend_cap.per_run` | None; the ceiling of one pass, in the same form |
+| `accounts[].spend_cap.timezone` | `UTC`; the time zone name (`Europe/Amsterdam`) whose midnight starts the cap's day |
+| `accounts[].models` | None, any model the harness accepts; the models the account may run, a list of `{id, price}`, `price.input` and `price.output` being what each costs in US dollars per million tokens, as quoted decimal strings, where the provider reports no cost |
+
+At each launch on a provider account the dispatcher resolves its credential
+through `credential_command`, first before it reserves anything and again in
+the launch's wrapper, which keeps the value in its own memory and the pass's
+environment only. A command that exits non-zero, or prints a value it
+refuses, is `unauthorized`: nothing starts, the account is held for
+`wall_backoff` with the reason, and one host need asks a person to make the
+reference resolve, which clears once it does; an account on another
+provider keeps launching. The pass's environment starts from the one a
+subscription account's pass starts from, has every other model provider's
+key and endpoint variable removed (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` and the like, whatever their
+letter case and whatever `process.env_keep` keeps), and gains the account's
+credential under the variable its harness reads (`ANTHROPIC_API_KEY` for
+`claude-code`, `OPENAI_API_KEY` for `codex`), its base URL
+(`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`) where it names one, and its
+identity (`JIG_PROVIDER_IDENTITY`). The value never reaches a launch record,
+a receipt, the outcome log, the state database, an error message or a
+command line: the wrapper masks the exact value in everything it keeps of
+the pass's output, and a provider account's transcript is copied only by the
+process that holds its credential.
+
+### Account identities
+
+An account's identity is what the dispatcher compares a launch's account
+with before it starts anything, and what a drive's lock and quota records
+name. The drive's identity resolver gives each kind of account one form:
+
+| Account | Identity |
+|---------|----------|
+| Claude subscription | The login email in `config_dir`'s `.claude.json` |
+| Codex subscription | The login email in the `id_token` of `config_dir`'s `auth.json`, else its `account_id` |
+| Codex with a key | `api-key:<fingerprint>`, from `OPENAI_API_KEY`, or from `auth.json` written by `codex login --with-api-key` (`auth_mode: apikey`). The fingerprint is the first 12 hexadecimal characters of the SHA-256 of the key: it names the key, and the key cannot be recovered from it. Claude Code has the same form for `ANTHROPIC_API_KEY`, and `token:<fingerprint>` for `CLAUDE_CODE_OAUTH_TOKEN`; a dispatched launch never meets these, since it removes those variables |
+| Provider account | `provider:<provider>:<fingerprint>`, derived and never written in the file: the first 12 hexadecimal characters of the SHA-256 of the credential reference and the base URL (empty when the entry names none), joined by a newline. Rotating the key behind a reference keeps the identity, and resolving it needs no secret |
+
+A drive keys a quota wall by a hash of the identity, except for a
+`token:` or `api-key:` fingerprint, which never proves which account a wall
+belongs to; a provider account's identity is the account the file declares,
+so it is hashed.
 ### The host-local account launch weights file
 
 The dispatcher reads `$JIG_HOME/weights.local.yaml` (`~/.jig/weights.local.yaml`
@@ -2128,6 +2210,7 @@ dispatch:
   drive_rounds_flat: 3
   pickup_within: 2h
   pickup_deadline: 3h
+  allowed_providers: [anthropic, openai]
   overlap:
     max_per_file: 4
     patience: { urgent: 0, high: 30m, medium: 2h, low: 6h, none: 6h }

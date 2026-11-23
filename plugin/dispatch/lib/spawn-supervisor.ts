@@ -6,10 +6,12 @@ import { failureText } from "./text.ts";
 
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
+/** `env` is the supervisor's environment: the wrapper's own, or what `supervisorEnvironment` makes of it for a provider account's launch (`provider-launch.ts`). */
 export function spawnSupervisor(
   id: string,
   token: string,
   processRuntime = false,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<number> {
   return new Promise((settle) => {
     let spool: ReturnType<typeof openSpool> | undefined;
@@ -58,6 +60,7 @@ export function spawnSupervisor(
       {
         stdio: processRuntime ? ["ignore", "pipe", "pipe"] : "inherit",
         detached: true,
+        env,
       },
     );
     child.stdout?.on("data", save);

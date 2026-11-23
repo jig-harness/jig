@@ -25,7 +25,9 @@ model providers under the rule for outbound calls. How a provider's limits,
 failures and costs are governed is in
 [outbound-calls.md § Model providers](outbound-calls.md#model-providers); this
 page holds the account schema and everything else the build steps read.
-Nothing here is built yet.
+The account kind, the credential command, the identity forms and the
+provider allow list are built; a provider account is reported as configured
+and not admitted until the spend cap is enforced. The rest is not built yet.
 
 ## How it works
 
@@ -58,7 +60,8 @@ unknown key in the file is.
 | `provider` | lowercase name, `^[a-z][a-z0-9-]*$` | required | The provider the account bills, spelled as a repository's allow list spells it (`openrouter`, `gemini`, `anthropic`) |
 | `base_url` | an `https://` URL | the harness's default for the provider | Where the harness sends its requests. A non-HTTPS URL is refused, except a loopback address. The host must be one the provider's profile names, or be named in the machine file's `provider_hosts` for that provider. Redirects to another host are refused, and a loopback or private-network address is admitted only when the machine file names it for the account |
 | `credential` | a [credential reference](#the-credential-reference) | required | Never the credential itself |
-| `spend_cap.daily` | decimal US dollars, as a string | required | The day's [spend cap](#the-spend-cap) |
+| `billing` | `pay-per-token` or `flat-rate` | `pay-per-token` | A `flat-rate` plan has no `spend_cap`: its own usage windows bound it, through the account's wall and `max_per_account` |
+| `spend_cap.daily` | decimal US dollars, as a string | required for `pay-per-token` | The day's [spend cap](#the-spend-cap) |
 | `spend_cap.per_run` | decimal US dollars, as a string | none | The ceiling of one pass |
 | `spend_cap.timezone` | a time zone name such as `Europe/Amsterdam` | `UTC` | Where the day starts |
 | `models` | list of `{id, price}` | none: any model the harness accepts | The models the account may run. A launch whose route names a model outside a given list is refused with that reason. Where the provider reports no cost, `price.input` and `price.output` give what each costs in dollars per million tokens |

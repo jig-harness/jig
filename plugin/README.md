@@ -412,6 +412,21 @@ host id, so a renamed host is still this one. A record whose process cannot
 be checked (claimed on another host, or the process table cannot be read)
 holds its slot until a person clears it:
 
+The machine file lists two kinds of account. A subscription account bills
+a vendor's plan through its signed-in configuration directory; a
+[provider account](CONFIGURATION.md#provider-accounts) bills a model
+provider with the host's own key, named by a credential reference that the
+host's `credential_command` resolves at each launch, and its pass carries
+that one key and no other provider's. A provider account is reported as
+configured and not admitted until the dispatcher enforces its spend cap.
+Every launch for a repository, of either kind, needs the account's provider
+on the repository's own
+[`dispatch.allowed_providers`](CONFIGURATION.md#dispatch), read from its
+default branch; with no list, only its Claude and OpenAI subscription
+accounts are used. A launch the list refuses starts nothing and is reported
+as `provider-not-allowed`, naming the repository, the account and the
+provider.
+
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch clear <record>
 ```
