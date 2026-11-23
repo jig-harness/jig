@@ -107,6 +107,29 @@ describe("a provider account", () => {
     }
   });
 
+  it("refuses a reference with a NUL, and an empty query or fragment on the base URL", () => {
+    expect(
+      refusal([router({ credential: "op://Jig/a\u0000b/field" })]),
+    ).toContain("never the credential itself");
+    for (const url of [
+      "https://openrouter.ai/api?",
+      "https://openrouter.ai/api#",
+    ])
+      expect(refusal([router({ base_url: url })])).toContain(
+        "no query or fragment",
+      );
+  });
+
+  it("keeps a base URL's path as written, dropping only the root slash", () => {
+    const url = (base_url: string) => {
+      const parsed = load([router({ base_url })]);
+      expect(parsed.ok).toBe(true);
+      return parsed.ok ? JSON.stringify(parsed.value) : "";
+    };
+    expect(url("https://openrouter.ai/api/")).toContain("openrouter.ai/api/");
+    expect(url("https://openrouter.ai/")).toContain('"https://openrouter.ai"');
+  });
+
   it("loads a flat-rate plan with no spend cap, and refuses one given a cap", () => {
     const flat = load(
       [

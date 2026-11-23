@@ -82,6 +82,13 @@ export const PROVIDER_KEYS = [
   SECRET_VARIABLES,
 ] as const;
 
+/** Name prefixes a provider account's launch removes whatever follows them. */
+export const PROVIDER_PREFIXES = [
+  "OPENAI_",
+  "ANTHROPIC_",
+  "AZURE_OPENAI_",
+] as const;
+
 /** The variables no pass carries on this host (`credential_env`), as the machine file read here names them. */
 let withheld: readonly string[] = [];
 
@@ -159,7 +166,8 @@ export function withProviderVariables(
   launch: ProviderLaunch,
   credential: string | null,
 ): Record<string, string> {
-  withoutVariables(env, PROVIDER_KEYS);
+  // The prefixes also catch variables the list does not name, such as a vendor's workload identity settings, which a harness selects ahead of an injected key.
+  withoutVariables(env, PROVIDER_KEYS, PROVIDER_PREFIXES);
   const names = HARNESS_VARIABLES[launch.harness];
   env[PROVIDER_IDENTITY_VARIABLE] = launch.identity;
   if (launch.baseUrl !== null) env[names.baseUrl] = launch.baseUrl;

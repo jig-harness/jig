@@ -2464,8 +2464,8 @@ make, use the entry's term instead.
   provider, a base URL, a *credential reference* and, for a key billed by
   the token, a *spend cap*. A launch on a provider account carries that
   credential and no other provider's key. The machine file accepts it
-  today, and the dispatcher reports it as configured and not admitted until
-  it enforces the spend cap; parking the account when the provider says its
+  today, and the dispatcher reports it as configured and not admitted while
+  the provider admission hold stands, which comes off with the spend-cap work; parking the account when the provider says its
   credit is spent is planned
   ([plugin/CONFIGURATION.md](plugin/CONFIGURATION.md#provider-accounts),
   [design/provider-accounts.md](design/provider-accounts.md)).

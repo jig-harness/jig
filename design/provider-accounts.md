@@ -26,9 +26,11 @@ failures and costs are governed is in
 [outbound-calls.md § Model providers](outbound-calls.md#model-providers); this
 page holds the account schema and everything else the build steps read.
 The account kind, the credential command, the identity forms and the
-provider allow list are built; a provider account is reported as configured
-and not admitted until the spend cap is enforced. The rest is not built yet:
-the credential command still runs with the host's environment, redirect
+provider allow list are built, the list applying to dispatch launches; a
+provider account is reported as configured and not admitted while the
+provider admission hold stands, which comes off with the spend-cap work. The
+rest is not built yet: the allow list's reach over the measurement's replays
+and the repository need when no allowed account exists, redirect
 refusal and a minimum length beyond 8 characters are not enforced, and the
 spend cap below is the design, not a shipped control.
 
@@ -139,10 +141,13 @@ The contract of the command:
 - It is an argument list, run without a shell. Jig appends the reference as
   the last argument, as one argument, so a reference with a space or a quote
   in it is not interpreted.
-- It runs with the host's environment (the 1Password session it needs is
-  there), not the pass's.
+- It runs with a small base of the host's environment (`PATH`, the home, the
+  user, the locale and the temporary directory) and the variables
+  `credential_env` names, such as a vault's session or service-account token
+  (`OP_SERVICE_ACCOUNT_TOKEN`), never the pass's. A host whose vault needs a
+  variable lists it there.
 - Its standard output is the value. One trailing newline is removed. A value
-  that is empty, holds a newline or a null character inside it, is under 8 characters or is over 4 KiB is refused.
+  that is empty, holds a newline or a null character inside it, is under 8 characters (UTF-16 code units, as the masking counts them) or is over 4 KiB is refused.
 - It succeeds with exit 0 within `credential_timeout` (10 seconds by
   default). A non-zero exit or an empty value is `unauthorized` for that
   account: the credential is missing, expired or refused. The account is held
@@ -297,16 +302,17 @@ dispatch:
   only.
 - **Its reach.** Every launch that sends the repository's code or its tracker
   text to a provider: pickups, re-arms, follow-ups, steward passes and the
-  [measurement's](#measuring-a-fast-decision-model) replays. A session a person
+  [measurement's](#measuring-a-fast-decision-model) replays (planned: the
+  measurement is built later, and the list applies to dispatch launches now). A session a person
   starts is the person's. A harness that routes onward (OpenRouter forwards to
   the model's own provider) is allowed by the name the list holds; the list does
   not name the providers behind it.
 - **A refused launch.** The launch does not start and nothing is reserved. Its
   receipt and the dashboard line give the reason `provider-not-allowed`, naming
   the provider and the repository, as any other hold does. It raises no need
-  per launch. A repository that has work ready and no account on the host that
-  its list allows raises one need for the repository, which clears when the
-  list or the accounts change.
+  per launch. Planned, not built: a repository that has work ready and no
+  account on the host that its list allows raises one need for the
+  repository, which clears when the list or the accounts change.
 
 ### The harness profile of a stage
 

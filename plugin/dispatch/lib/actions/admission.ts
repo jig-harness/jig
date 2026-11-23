@@ -70,10 +70,21 @@ export function waitsForRearmSlot(
   excluded: ReadonlySet<string>,
   allowed?: AllowList,
 ): boolean {
+  // A takeover that keeps its replaced record's slot is admitted on that account alone, so only that account's capacity is the wait.
+  let table = state.table;
+  if (action.takeover !== undefined && !takeoverMoves(state, action)) {
+    const replaced = state.records.find((r) => r.record.id === action.takeover);
+    const own =
+      replaced === undefined
+        ? undefined
+        : slotsOf(state.table, replaced.record);
+    if (own === undefined) return false;
+    table = [own];
+  }
   return (
     action.evidence?.rearm === true &&
     hasFullAccount(
-      state.table,
+      table,
       {
         kind: "pass",
         deadlineSec: state.passDeadlineSec,

@@ -76,8 +76,18 @@ export async function resolveCredential(
   const done = await run([...command, reference], {
     timeoutSec,
     env,
-    stderr: "pipe",
+    // Error output is never recorded, so it is not captured; standard output is bounded to the longest value plus a line ending and one byte to tell an overlong value apart.
+    stderr: "ignore",
+    maxBufferBytes: LONGEST_VALUE + 3,
+    reapGroup: true,
   });
+  if (done.bufferExceeded) {
+    learnPrinted(done.stdout);
+    return failed(
+      "unauthorized",
+      "the credential command printed a value over 4 KiB",
+    );
+  }
   if (done.timedOut)
     return failed(
       "unreachable",
@@ -90,6 +100,11 @@ export async function resolveCredential(
       `the credential command ${done.spawnFailed === true ? "could not start" : `exited ${done.code}`}; its error output is not recorded`,
     );
   }
+  if (done.groupSurvived === true)
+    return failed(
+      "unauthorized",
+      "the credential command left a background process running; it was stopped, and its value is not used",
+    );
   const value = done.stdout.replace(/\r?\n$/, "");
   if (value === "")
     return failed("unauthorized", "the credential command printed no value");

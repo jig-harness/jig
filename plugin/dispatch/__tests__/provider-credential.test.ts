@@ -140,7 +140,7 @@ describe("a provider account's credential before a launch", () => {
     } as unknown as ApplyState;
   }
 
-  it("starts nothing when the command fails: unauthorized, the account held, and one need however often it fails", async () => {
+  it("refuses when the command fails: unauthorized, the account held, and one need however often it fails", async () => {
     const root = mkdtempSync(join(tmpdir(), "provider-credential-"));
     const refused = state(command(REFUSE), root);
     for (let i = 0; i < 2; i++) {
@@ -170,6 +170,7 @@ describe("a provider account's credential before a launch", () => {
         "make its reference op://Jig/router/credential resolve",
       ),
     });
+    // The refusal itself is what is asserted; the caller's reservation (`holdRecord`) is not exercised here, so an empty table shows only that this function writes no launch.
     const launches = existingStateDb(root)
       ?.query("SELECT COUNT(*) AS n FROM launches")
       .get() as { n: number } | undefined;

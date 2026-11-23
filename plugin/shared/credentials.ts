@@ -131,8 +131,13 @@ export function redactExact(
 
 /** Replace every credential-shaped value in `text`, and every exact secret this process holds, with `mark`. */
 export function maskCredentials(text: string, mark: string): string {
+  return maskCredentialShapes(redactExact(text, mark), mark);
+}
+
+/** Replace every credential-shaped value in `text` with `mark`, by pattern alone: no remembered secret or variable value takes part. */
+export function maskCredentialShapes(text: string, mark: string): string {
   const keyed = maskValues(
-    redactExact(text, mark),
+    text,
     new RegExp(`(["'])(${SECRET_KEY})\\1\\s*[:=]\\s*`, "gi"),
     /[^\s,}\]]+/,
     (m) => `${m[1]}${m[2]}${m[1]}: "${mark}"`,

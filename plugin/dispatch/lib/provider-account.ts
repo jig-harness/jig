@@ -45,7 +45,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
-import { maskCredentials } from "../../shared/credentials.ts";
+import { maskCredentialShapes } from "../../shared/credentials.ts";
 import { ok } from "../../shared/outcome.ts";
 import { isTimeZone } from "../../shared/time.ts";
 import { accountName, slotsAndStages } from "./account-fields.ts";
@@ -160,7 +160,7 @@ const PROVIDER_KEYS = [
 const SPEND_CAP_KEYS = ["daily", "per_run", "timezone"];
 
 /** A credential reference: a scheme, `://` and a path without whitespace. */
-const REFERENCE = /^[a-z][a-z0-9+.-]*:\/\/\S+$/;
+const REFERENCE = /^[a-z][a-z0-9+.-]*:\/\/[^\s\0]+$/;
 const LONGEST_REFERENCE = 1024;
 
 /** A provider account's identity, from its reference and base URL. */
@@ -180,7 +180,7 @@ function isCredentialReference(reference: string): boolean {
   return (
     reference.length <= LONGEST_REFERENCE &&
     REFERENCE.test(reference) &&
-    maskCredentials(reference, "\u0000") === reference
+    maskCredentialShapes(reference, "\u0000") === reference
   );
 }
 
@@ -260,7 +260,7 @@ function isLoopbackHost(host: string): boolean {
 function urlFormRefusal(url: URL, where: string): string | null {
   if (url.username !== "" || url.password !== "")
     return `${where} must carry no user name or password (its value is withheld)`;
-  if (url.search !== "" || url.hash !== "")
+  if (url.search !== "" || url.hash !== "" || /[?#]/.test(url.href))
     return `${where} must carry no query or fragment (its value is withheld)`;
   const loopbackHttp =
     url.protocol === "http:" && isLoopbackHost(url.hostname.toLowerCase());
@@ -307,7 +307,8 @@ function baseUrl(
     return invalid(
       `${where} names the host ${host}, which is not ${provider}'s own API; name it under provider_hosts.${provider} to allow it`,
     );
-  return ok(url.href.replace(/\/$/, ""));
+  // Only the root path's slash is dropped (`https://host/` is `https://host`); any other path is kept as written, since a server may tell `/api` from `/api/`.
+  return ok(url.pathname === "/" ? url.origin : url.href);
 }
 
 /** Decimal US dollars written as a string; `positive` refuses zero. */

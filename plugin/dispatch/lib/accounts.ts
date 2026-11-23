@@ -646,7 +646,10 @@ function unallowed(
     candidates.some((s) => providerRefusal(s.account, allowed) === null)
   )
     return null;
-  return `${PROVIDER_NOT_ALLOWED}: ${allowed.repo}'s provider allow list admits none of the accounts that serve this launch`;
+  const refusals = candidates
+    .map((s) => `${s.account.name}: ${providerRefusal(s.account, allowed)}`)
+    .join("; ");
+  return `${PROVIDER_NOT_ALLOWED}: ${allowed.repo}'s provider allow list admits none of the accounts that serve this launch (${refusals})`;
 }
 
 /** A takeover uses the replaced record's account and slot only with a positive readable weight, no wall and an admitted vendor. */
