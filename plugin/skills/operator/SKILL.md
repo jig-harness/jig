@@ -19,9 +19,10 @@ round, to resolve threads or fix a branch, hand over to `/jig:drive-pr` or
 the skill it names; for a question about how Jig works, to `/jig:jig`.
 
 `<plugin>` below is the installed plugin's root, two directories up from
-this file (`${CLAUDE_SKILL_DIR}/../..`; Claude Code fills in
-`${CLAUDE_SKILL_DIR}`, and in another harness it is the directory holding
-this `SKILL.md`). `<plugin>/README.md`, sections "Asking a station where it
+this file (`${CLAUDE_SKILL_DIR}/../..`). `${CLAUDE_SKILL_DIR}` stands for the
+absolute path of the directory containing this `SKILL.md`; Claude Code fills
+it in, and in any other harness, replace it with that path yourself before
+reading a file or running a command. `<plugin>/README.md`, sections "Asking a station where it
 stands" and "Telling a station what to do", is the reference for every
 field, verb, refusal and exit code named here; read it when an answer needs
 more than this page says.
@@ -71,7 +72,7 @@ are listed in the Jig Protocol's [Addresses chapter](../../protocol/addresses.md
   repository, which question to answer. Never guess a pull request's
   number, never search for one, and never take it from a title that only
   looks like the one meant. Ask with `AskUserQuestion` where the session
-  can use it, as a plain-text question anywhere else; with nobody there to
+  can use it, as a plain-text numbered question anywhere else (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes); with nobody there to
   answer, stop and state the question.
 - **A usage error** (exit `2`) names what is wrong: an unknown station
   lists the valid ones, a short name that fits two repositories lists

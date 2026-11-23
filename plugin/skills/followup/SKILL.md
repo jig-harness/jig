@@ -443,7 +443,7 @@ table in force:
 | Merge a pull request | never |
 
 Ask first with Claude Code's `AskUserQuestion` where the session can use it,
-a plain-text numbered question in any other interactive runtime, and, with
+a plain-text numbered question in any other interactive runtime (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes), and, with
 nobody there to answer, report the act as owed and go on. **A step only a
 person can take** (a live check that needs credentials or access the
 session lacks, or whose environment is not read-only, a rollout to another

@@ -518,6 +518,11 @@ adds round cost, so:
 
 ## The Review Arbiter
 
+Where the harness has no subagents, the calling session is the arbiter: it
+reads [`agents/review-arbiter.md`](../../../agents/review-arbiter.md) and rules
+each contested thread with the inputs and verdicts below, before it replies to
+any thread.
+
 For threads the rubric does not decide, spawn the **Review Arbiter** agent
 (`jig:review-arbiter`) — one invocation can take a batch of
 contested threads. Give it, per thread: the thread body, `path`/`line`, the

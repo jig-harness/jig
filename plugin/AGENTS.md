@@ -138,7 +138,26 @@ here reaches every repository at once.
   a step. A slash command for a sibling skill (`/jig:<name>`) needs none
   beside it: [README.md](README.md) says how each runtime runs an installed
   skill, and reading the sibling's `SKILL.md` (`../<name>/SKILL.md`) works in
-  any of them. Any other capability names its fallback beside it.
+  any of them. Any other capability names its fallback beside it. Three
+  forms are held by `scripts/check-skill-runtime-forms.ts`, which
+  `bun run gates` runs over every skill page the agent reads:
+  - **The skill's directory.** `SKILL.md` writes it as `${CLAUDE_SKILL_DIR}`
+    (a page that names `CLAUDE_PLUGIN_ROOT` explains that one the same way)
+    and, in a paragraph before its commands, says that Claude Code
+    fills it in and that in any other harness the agent replaces it with the
+    absolute path of the directory containing that `SKILL.md`; a reference
+    page is never substituted, so it writes `<skill-dir>` and says which
+    directory that is. Every path written under it exists once it is filled
+    in by hand.
+  - **The structured question.** A paragraph that names `AskUserQuestion`
+    also names its fallback: a plain-text numbered question, one numbered
+    line per option, the recommended one first and marked as the default
+    where there is one (the reply `default` takes it), the turn ending until
+    the person answers.
+  - **The review arbiter.** A page that hands a contested finding to
+    `jig:review-arbiter` says that where the harness has no subagents the
+    calling session rules with the same rubric, following
+    `agents/review-arbiter.md`.
 - **A hook** lives in `hooks/<name>.ts`, is registered in `hooks/hooks.json`
   through `${CLAUDE_PLUGIN_ROOT}` (the file Claude Code reads; the Codex plugin
   ships an empty `hooks/codex-hooks.json`, and a hook Codex needs is

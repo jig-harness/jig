@@ -110,7 +110,7 @@ copy of its findings: move it out of `.context/scratch/` (to
 Where this skill says "ask the user", use `AskUserQuestion` under Claude
 Code where the session can use it; in any interactive harness where it
 cannot (another harness, or a permission mode that denies the tool), ask a
-plain-text numbered question and end the turn. With nobody to answer, stop and state the question rather
+plain-text numbered question and end the turn (one numbered line per option, the recommended one first and marked as the default where there is one, which the reply `default` takes). With nobody to answer, stop and state the question rather
 than write anything. Never pick on the user's behalf. The one exception is
 the confirmation of [step 9](#9-confirm) under the `unattended` autonomy
 level, which the level itself answers.

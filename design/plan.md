@@ -663,7 +663,7 @@ the credential reference, the spend cap, the open model vocabulary and the
 per-stage profile rule. What it will build, one pull request per step: the
 open model vocabulary; the provider account kind; the spend cap, cost
 ledger and provider failure classes; the harness interface with Claude Code
-and Codex behind it, and harness-neutral skill forms; an offline
+and Codex behind it; an offline
 measurement of a fast model against the steward's recorded decisions; then
 pi as an opt-in third harness on one stage, per-stage profiles, and the
 default-harness ruling from the trial.

@@ -251,8 +251,10 @@ no synonyms. Materiality and scope calls follow the
 [triage rubric](references/triage-rubric.md); a thread the rubric does not
 decide goes to the [**Review Arbiter**](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) agent
 (`jig:review-arbiter`, shipped with the plugin; in Codex, see the
-[Codex notes](../../README.md#codex-notes)), and only an arbiter escalation
-interrupts the user. An `escalate` ruling carries a `class:`, the decision
+[Codex notes](../../README.md#codex-notes)); where the harness has no
+subagents, the calling session rules in its own context with the same rubric,
+following [`agents/review-arbiter.md`](../../agents/review-arbiter.md). Only an
+arbiter escalation interrupts the user. An `escalate` ruling carries a `class:`, the decision
 class of the repository's human-in-the-loop registry that keeps the call a
 person's (`human-decision` for a value the pull request records as a person's
 decision, else the registry row, else `escalated`); under a drive it is the
@@ -313,8 +315,10 @@ obligatory finding that fails the bar must come back `deferred`, not
 For a finding that clears the bar: make the *minimal* fix, then reply stating
 what changed and where. **Do not resolve the thread here** — accepted threads
 are held until step 5, after the gates pass. Apply the consumer's minimal-change, type-validation, and branch conventions.
-If no Review Arbiter is available in this harness, preserve an undecided thread
-and batch genuine policy or scope questions for the human at round end.
+If no Review Arbiter agent is available in this harness, the calling session
+rules the contested threads itself (see above); a call that hinges on
+information it cannot obtain is an `escalate` ruling, and the escalations are
+batched for the human at round end.
 
 > **Sweep the class, not the instance — and show the sweep.** A reviewer
 > reports the instance they happened to construct; its siblings are almost
