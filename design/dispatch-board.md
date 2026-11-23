@@ -150,13 +150,19 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    drive verifies the live head and records the earlier reviewed commit
    apart from it. That earlier witness stands when the live head is the
    verified one, the verified head is that earlier commit plus only a clean
-   merge of the base, and the same app's check completed green on the
-   earlier commit. Where the app has attempts on the live head, the latest
+   merge of the base, the pull request's own contribution is identical
+   against the live base and the earlier one, `.config/jig.yaml` is
+   unchanged in the base and pull-request comparisons, and the same app's
+   check completed green on the earlier commit. Where the app has attempts on the live head, the latest
    of each must be successful or neutral, so a running or skipped
    replacement blocks the witness, and attempts whose order cannot be read
    block it too. The head's commit and its checks must have been read whole.
    The proof is made again under the live rules by each caller, never taken
-   on a caller's word.
+   on a caller's word. The callers do not all read the same reviewer rules:
+   the announcement takes the reviewer and check pattern from the default
+   branch for a listed bot and from the checkout's overlay otherwise, while
+   the board and `jig ask` read the default branch, so the same head can
+   place differently between them.
 4. The forge reports it mergeable with its base (`mergeable` is
    `MERGEABLE`).
 5. It is not a draft.

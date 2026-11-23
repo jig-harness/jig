@@ -237,8 +237,20 @@ function partialOf(
   // A null rollup is a commit with no checks; a rollup that exists must carry
   // its check page, or an empty list would read as "no checks" when none were read.
   else if (isRecord(at(commit, "commit", "statusCheckRollup"))) {
-    if (!Array.isArray(at(contexts, "nodes")))
+    const page = at(contexts, "nodes");
+    if (
+      !Array.isArray(page) ||
+      typeof at(contexts, "pageInfo", "hasNextPage") !== "boolean"
+    )
       why.push("its checks did not read as a page");
+    else if (
+      page.some(
+        (c) =>
+          checkOf(c)?.app === null && at(c, "__typename") !== "StatusContext",
+      ) ||
+      page.some((c) => checkOf(c) === null)
+    )
+      why.push("a check on its head could not be classified");
   } else if (at(commit, "commit", "statusCheckRollup") !== null)
     why.push("its checks did not read");
   return why.length === 0 ? null : why.join("; ");

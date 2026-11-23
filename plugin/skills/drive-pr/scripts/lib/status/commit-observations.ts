@@ -45,7 +45,9 @@ export async function commitPages(
   env?: Record<string, string | undefined>,
 ): Promise<unknown[] | null> {
   const r = await slurpPages(
-    `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100`,
+    `repos/${owner}/${repo}/commits/${sha}/${listing}?per_page=100${
+      listing === "check-runs" ? "&filter=all" : ""
+    }`,
     read,
     env === undefined ? { stderr: "pipe" } : { stderr: "pipe", env },
   );
@@ -77,6 +79,24 @@ function checkRunOf(c: Record<string, unknown>): CheckRun {
 }
 
 /**
+ * Whether a check-run carries, in their own JSON types, the fields that give
+ * it authority: its identity, its name, its status and its outcome. A record
+ * missing one, or holding one of another type, is not read as a run.
+ */
+function identified(c: Record<string, unknown>): boolean {
+  const app = c.app as { slug?: unknown } | null | undefined;
+  return (
+    typeof c.id === "number" &&
+    Number.isSafeInteger(c.id) &&
+    typeof c.name === "string" &&
+    c.name !== "" &&
+    typeof c.status === "string" &&
+    (c.conclusion === null || typeof c.conclusion === "string") &&
+    (app === null || app === undefined || typeof app.slug === "string")
+  );
+}
+
+/**
  * Every check-run on `sha`, across every page (`--paginate --slurp`), reduced
  * to the fields the decision reads. `null` when the API could not be read —
  * the caller decides whether that is INDETERMINATE (a MERGEABLE head) or a
@@ -94,11 +114,13 @@ export async function checkRunsFor(
   if (pages === null) return null;
   const runs: CheckRun[] = [];
   for (const page of pages) {
-    const list = (page as { check_runs?: unknown } | null)?.check_runs ?? [];
-    // A list that is not one, or entries that are not records, is not a read.
+    const list = (page as { check_runs?: unknown } | null)?.check_runs;
+    // A missing field, a list that is not one, or entries that are not
+    // records, is not a read.
     if (!Array.isArray(list)) return null;
     for (const c of list) {
-      if (typeof c !== "object" || c === null) return null;
+      if (typeof c !== "object" || c === null || Array.isArray(c)) return null;
+      if (!identified(c as Record<string, unknown>)) return null;
       runs.push(checkRunOf(c as Record<string, unknown>));
     }
   }

@@ -564,7 +564,12 @@ describe("the forge's facts", () => {
                   {
                     commit: {
                       oid: HEAD,
-                      statusCheckRollup: { contexts: { nodes: [] } },
+                      statusCheckRollup: {
+                        contexts: {
+                          nodes: [],
+                          pageInfo: { hasNextPage: false },
+                        },
+                      },
                     },
                   },
                 ],
@@ -591,6 +596,14 @@ describe("the forge's facts", () => {
       partial: missing?.partial ?? null,
     });
     expect(r.lane).not.toBe("merge-now");
+    expect(r.lane).toBeNull();
+    expect(r.command ?? null).toBeNull();
+    const complete = at({
+      reviewCarriedFrom: OTHER,
+      checks: [],
+      partial: null,
+    });
+    expect(complete.lane).toBe("merge-now");
   });
 
   it("reads a check rollup without its check page as partial, and a null rollup as no checks", () => {
@@ -617,7 +630,23 @@ describe("the forge's facts", () => {
     );
     expect(pull("x")?.partial).toContain("did not read");
     expect(pull(null)?.partial).toBeNull();
-    expect(pull({ contexts: { nodes: [] } })?.partial).toBeNull();
+    expect(
+      pull({ contexts: { nodes: [], pageInfo: { hasNextPage: false } } })
+        ?.partial,
+    ).toBeNull();
+    // A page that says nothing of its own length, or holds an entry the
+    // witness cannot classify, is not a whole page.
+    expect(pull({ contexts: { nodes: [] } })?.partial).toContain(
+      "did not read as a page",
+    );
+    expect(
+      pull({
+        contexts: {
+          nodes: [{ __typename: "CheckRun", name: "gates", databaseId: 1 }],
+          pageInfo: { hasNextPage: false },
+        },
+      })?.partial,
+    ).toContain("could not be classified");
   });
 
   it("reads check runs and commit statuses with their app and state", () => {
