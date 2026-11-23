@@ -93,7 +93,7 @@ async function spentRounds(pr: string, rearm: boolean): Promise<SpentRounds> {
 }
 
 /** Publishes the stored grant to the drive ledger, so a takeover keeps it; a refusal stops the drive. */
-async function publishGrant(pr: string): Promise<void> {
+async function publishGrant(pr: string, required = true): Promise<void> {
   const published = await run(tsArgv(driveState, ["handoff", pr]), {
     stdout: "ignore",
     stderr: "inherit",
@@ -105,7 +105,11 @@ async function publishGrant(pr: string): Promise<void> {
         ? process.env
         : { ...process.env, [HANDOFF_TELLS_REFUSED]: "1" },
   });
-  if (published.code !== 0)
+  if (published.code !== 0 && !required)
+    console.error(
+      `drive.ts: could not publish PR #${pr}'s stored round state to the drive ledger (exit ${published.code}); the drive retries at its round boundaries`,
+    );
+  else if (published.code !== 0)
     fail(
       1,
       `drive.ts: could not publish the re-arm's round grant for PR #${pr} to the drive ledger (drive-state.ts handoff exited ${published.code}, a refused write included); re-arm again`,
@@ -140,7 +144,10 @@ export async function roundBudget(
   if (!rearm) {
     // A plain restart relies on what an earlier re-arm stored (a grant, or an
     // attempt-only reset no counter shows) only once it is published.
-    if (!dryRun) await publishGrant(pr);
+    // Nothing visible to preserve means a failed publication is retried at
+    // the round boundaries, as the startup publication is; a stored grant
+    // is relied on only once published.
+    if (!dryRun) await publishGrant(pr, spent.granted > 0);
     return limits(spent.granted);
   }
   const grant = rearmGrant(spent, base);
