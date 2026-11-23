@@ -150,7 +150,16 @@ describe("the push output's tail", () => {
     const out = tail.text();
     expect(out).not.toContain("LATERSECRET");
     expect(out).not.toContain("first");
-    expect(out).toContain("[over-long line omitted]");
+    expect(out).toContain("[over-long output omitted]");
+    expect(out).toContain("next line");
+  });
+
+  it("masks the continuation of a quoted value that spans lines", () => {
+    const tail = outputTail();
+    tail.observe(Buffer.from('password="first\n'));
+    tail.observe(Buffer.from('SECONDSECRET"\nnext line\n'));
+    const out = tail.text();
+    expect(out).not.toContain("SECONDSECRET");
     expect(out).toContain("next line");
   });
 

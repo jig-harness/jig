@@ -60,8 +60,8 @@ function isUnconfirmedPush(line: string): boolean {
 /** The escape sequences terminals colour with: a gate's output is often coloured. */
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
 
-/** What stands where a line too long to read whole was dropped. */
-const OMITTED = "[over-long line omitted]\n";
+/** What stands where output too long to read whole was dropped. */
+const OMITTED = "[over-long output omitted]\n";
 
 /** The most bytes of the push's stderr kept to read the cause from. */
 const TAIL_BYTES = 16 * 1024;
@@ -75,26 +75,25 @@ const LINE_MAX = 200;
 /** The longest quoted excerpt. */
 const EXCERPT_MAX = 600;
 
-/** The longest unfinished line held raw, so a credential or a character split across chunks is still read whole. */
-const PENDING_MAX = 256 * 1024;
+/** The most raw bytes held before the whole of them is dropped, so a stream that never ends cannot grow without bound. */
+const RAW_MAX = 256 * 1024;
 
 /**
- * Keeps the last `TAIL_BYTES` of a stream observed chunk by chunk. Bytes are
- * held raw until their line is complete, and masked and decoded whole: a
- * credential or a multi-byte character split between chunks is never read in
- * halves. Terminal escapes are stripped before masking, so one inside a credential's key cannot hide it. A line longer than `PENDING_MAX` is dropped whole, with a marker: any part of it could have lost the key or quote its value hangs on.
+ * Keeps the last `TAIL_BYTES` of a stream observed chunk by chunk. The raw
+ * bytes are held whole and masked and decoded once, when the text is read: a
+ * credential, a multi-byte character or a quoted value that spans lines is
+ * never read in pieces, and terminal escapes are stripped before masking, so
+ * one inside a credential's key cannot hide it. Past `RAW_MAX` the held bytes
+ * are dropped with a marker, together with the rest of the line they end in,
+ * since any part of them could have lost the key or quote a value hangs on.
  */
 export function outputTail(): {
   observe: (bytes: Uint8Array) => void;
   text: () => string;
 } {
-  let done = "";
-  let pending: Buffer = Buffer.alloc(0);
+  let raw: Buffer = Buffer.alloc(0);
+  let omitted = false;
   let skipping = false;
-  const settle = (raw: Buffer): void => {
-    done += redactReportText(raw.toString("utf8").replace(ANSI, ""));
-    if (done.length > TAIL_BYTES) done = done.slice(done.length - TAIL_BYTES);
-  };
   return {
     observe(input) {
       let bytes = input;
@@ -104,22 +103,21 @@ export function outputTail(): {
         skipping = false;
         bytes = bytes.subarray(nl + 1);
       }
-      pending = Buffer.concat([pending, bytes]);
-      const end = pending.lastIndexOf(10);
-      if (end >= 0) {
-        settle(pending.subarray(0, end + 1));
-        pending = pending.subarray(end + 1);
-      }
-      if (pending.length > PENDING_MAX) {
-        // Cut anywhere, a line could lose the quote or key its value hangs
-        // on, so none of it is kept.
-        done += OMITTED;
-        pending = Buffer.alloc(0);
+      raw = Buffer.concat([raw, bytes]);
+      if (raw.length > RAW_MAX) {
+        raw = Buffer.alloc(0);
+        omitted = true;
         skipping = true;
       }
     },
-    text: () =>
-      done + redactReportText(pending.toString("utf8").replace(ANSI, "")),
+    text: () => {
+      const masked = redactReportText(raw.toString("utf8").replace(ANSI, ""));
+      const kept =
+        masked.length > TAIL_BYTES
+          ? masked.slice(masked.length - TAIL_BYTES)
+          : masked;
+      return omitted ? OMITTED + kept : kept;
+    },
   };
 }
 
