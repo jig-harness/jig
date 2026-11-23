@@ -208,6 +208,22 @@ describe("what a browser has stored", () => {
   });
 });
 
+describe("a list that is stored but unreadable", () => {
+  const earlier = { token: "pat-old", login: "old", at: 1 };
+
+  test("never yields to the earlier single token", () => {
+    expect(tokensFrom("untrusted", earlier)).toEqual([]);
+    expect(tokensFrom({ tokens: "bad" }, earlier)).toEqual([]);
+  });
+
+  test("a stored owner that is not a bare account name makes the list untrusted", () => {
+    for (const owner of ["example-org/*", "example-org/web", "-x", "a b"])
+      expect(
+        tokensFrom({ tokens: [{ ...A, owners: [owner] }, ANY] }, null),
+      ).toEqual([]);
+  });
+});
+
 describe("a card whose owner no kept token answers for", () => {
   const n = fixture("loud").line?.needs[0];
   assert(n);

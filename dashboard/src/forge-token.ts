@@ -15,9 +15,10 @@
  */
 import { useSyncExternalStore } from "react";
 import { isRecord } from "../../plugin/shared/guards.ts";
-import { readKeptRecord, writeKept } from "./kept.ts";
+import { readKept, writeKept } from "./kept.ts";
 import {
   credentialOf,
+  isOwnerName,
   type KeptToken,
   ownerOf,
   tokenFor,
@@ -54,15 +55,18 @@ function storedToken(
   }
   // Any list entry that cannot be read in full may have carried a mapping.
   if (!credentials) return UNTRUSTED;
-  if (!Array.isArray(owners) || !owners.every(isText)) return UNTRUSTED;
+  if (!Array.isArray(owners) || !owners.every(isOwnerName)) return UNTRUSTED;
   return { token, login, at, owners };
 }
 
 /** The tokens what storage holds stands for: the list, else the earlier single token, each account once. */
 export function tokensFrom(
-  list: Record<string, unknown> | null,
+  list: Record<string, unknown> | null | typeof UNTRUSTED,
   earlier: Record<string, unknown> | null,
 ): KeptToken[] {
+  // A list that is there but unreadable never yields to the earlier key, which may predate the mappings it held.
+  if (list === UNTRUSTED) return [];
+  if (list !== null && !Array.isArray(list.tokens)) return [];
   const read =
     list !== null && Array.isArray(list.tokens)
       ? list.tokens.map((t) => storedToken(t))
@@ -87,22 +91,47 @@ let held: { tokens: KeptToken[]; saved: boolean } | null = null;
 const listeners = new Set<() => void>();
 let revision = 0;
 
+/** The record kept under `key`: `null` when none is, `UNTRUSTED` when something is there that is not one. */
+function readRecord(key: string): Record<string, unknown> | null | "untrusted" {
+  const raw = readKept(key);
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    return isRecord(value) ? value : UNTRUSTED;
+  } catch (cause) {
+    if (!(cause instanceof SyntaxError)) throw cause;
+    return UNTRUSTED;
+  }
+}
+
+function fromStorage(): KeptToken[] {
+  const earlier = readRecord(EARLIER_KEY);
+  return tokensFrom(readRecord(KEY), earlier === UNTRUSTED ? null : earlier);
+}
+
 function now(): { tokens: KeptToken[]; saved: boolean } {
-  held ??= {
-    tokens: tokensFrom(readKeptRecord(KEY), readKeptRecord(EARLIER_KEY)),
-    saved: true,
-  };
+  held ??= { tokens: fromStorage(), saved: true };
   return held;
+}
+
+/**
+ * The tokens kept now, read from storage again when this browser stores them,
+ * so a change another tab made that this one has not yet been told of counts.
+ * A change a callback decides on must start from this, never from `keptTokens`.
+ */
+export function freshTokens(): KeptToken[] {
+  if (held?.saved !== false) held = null;
+  return now().tokens;
+}
+
+/** What the kept tokens are, as a string that differs whenever they do. */
+export function tokensSignature(): string {
+  return JSON.stringify(freshTokens());
 }
 
 function changed(): void {
   revision++;
   for (const listener of listeners) listener();
-}
-
-/** Counts every change to the kept tokens, from this tab or another. */
-export function tokensRevision(): number {
-  return revision;
 }
 
 /** The tokens kept now. */

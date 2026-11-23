@@ -55,6 +55,11 @@ export function credentialOf(token: KeptToken | null): string {
 /** A GitHub account or organization name. */
 const OWNER = /^[a-z\d](?:[a-z\d-]{0,38})$/i;
 
+/** Whether `name` is an owner as `parseOwners` keeps it: a bare account or organization name. */
+export function isOwnerName(name: unknown): name is string {
+  return typeof name === "string" && OWNER.test(name);
+}
+
 /** The owners the person wrote, by commas or spaces, `owner/*` read as `owner`. */
 export function parseOwners(text: string): Mapped<string[]> {
   const owners: string[] = [];

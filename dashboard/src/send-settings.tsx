@@ -10,9 +10,9 @@ import { KeyRound } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { announce } from "./copy.tsx";
 import {
+  freshTokens,
   keepTokens,
-  keptTokens,
-  tokensRevision,
+  tokensSignature,
   useKeptTokens,
 } from "./forge-token.ts";
 import { tokenLogin, tokenRefusal } from "./github.ts";
@@ -101,17 +101,16 @@ function TokenField({ more }: { more: boolean }) {
       return;
     }
     setTest({ kind: "testing" });
-    const before = tokensRevision();
+    const before = tokensSignature();
     void tokenLogin(token).then((answer) => {
       if (!alive()) return;
       if (!answer.ok) {
         setTest({ kind: "refused", reason: tokenRefusal(answer) });
         return;
       }
-      // Checked against the tokens kept when GitHub answered, which another tab may have changed.
+      // Checked against what storage holds when GitHub answers: another tab's change may not have reached this one as an event yet.
       const login = answer.value;
-      // Any change to the kept tokens while the test ran, even one that ends where it began.
-      if (tokensRevision() !== before) {
+      if (tokensSignature() !== before) {
         setTest({
           kind: "refused",
           reason: `The kept tokens changed while this one was tested. Test it again.`,
@@ -119,7 +118,7 @@ function TokenField({ more }: { more: boolean }) {
         return;
       }
       const next = withToken(
-        keptTokens(),
+        freshTokens(),
         { token, login, at: Date.now() },
         named.value,
       );
@@ -196,7 +195,7 @@ function KeptTokenRow({ kept }: { kept: KeptToken }) {
     setTest({ kind: "testing" });
     void tokenLogin(kept.token).then((answer) => {
       if (!alive()) return;
-      const tokens = keptTokens();
+      const tokens = freshTokens();
       const now = tokens.find((t) => credentialOf(t) === credential);
       // The token changed under the test: drop its result, not its busy state.
       if (now === undefined) return setTest({ kind: "idle" });
@@ -230,7 +229,7 @@ function KeptTokenRow({ kept }: { kept: KeptToken }) {
   const save = () => {
     const named = parseOwners(owners);
     const next = named.ok
-      ? withOwners(keptTokens(), login, named.value)
+      ? withOwners(freshTokens(), login, named.value)
       : named;
     if (!next.ok) return setTest({ kind: "refused", reason: next.reason });
     keepTokens(next.value);
@@ -274,7 +273,7 @@ function KeptTokenRow({ kept }: { kept: KeptToken }) {
           className="fbtn"
           aria-label={`Forget the token for ${login}`}
           onClick={() => {
-            keepTokens(withoutToken(keptTokens(), login));
+            keepTokens(withoutToken(freshTokens(), login));
             announce(`The token for ${login} is forgotten`);
           }}
         >
