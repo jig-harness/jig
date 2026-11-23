@@ -631,7 +631,8 @@ a pre-push gate, a remote's rejection, a connection, the push's timeout, an
 unconfirmed head) and quotes the last lines `guarded-push.ts` wrote; a stall
 whose every pass ended `PUSH_FAILED` sends a person to fix what refuses the
 push before re-arming, and the dispatcher hands it to that person rather than
-re-driving it onto the same refusal.
+re-driving it onto the same refusal, until a push moves the pull request's
+head.
 
 What that rule turns on, each clause measured as a stall stop
 firing over a pass that *had* worked:

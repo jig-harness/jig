@@ -13,7 +13,7 @@
  * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
  * | stopped `PR_CONFLICTING` (`9`) | stale |
  * | stopped `CI_REPAIR_SPENT` (`21`) with diagnosis on the current head | needs-person, with the diagnosis |
- * | stopped `STALLED` (`14`), its stop recording that every stalled pass ended `PUSH_FAILED` | needs-person, with why the push failed |
+ * | stopped `STALLED` (`14`), its stop recording that every stalled pass ended `PUSH_FAILED`, at the head its rounds were counted on | needs-person, with why the push failed |
  * | stopped `STALLED` (`14`), `CI_REPAIR_SPENT` without a diagnosis on the current head, `PASS_DEADLINE` (`15`) | stale, once per head commit |
  * | stopped `CI_INFRA_PERSISTED` (`23`) | stale, once per stop after a backoff (`infra-backoff.ts`); needs-person past its re-drives |
  * | stopped `CHECK_RUNS_UNREADABLE` (`25`) | stale, once per head commit, naming the pages read; a second such stop on the head is a person's, as a systematic read failure |
@@ -404,7 +404,7 @@ function mechanicalStopClass(
 ): Classified | null {
   const stop = MECHANICAL_STOPS.get(exit);
   if (stop === undefined) return null;
-  const pushFailed = pushFailedStallClass(ledger, exit, forge.mergeable);
+  const pushFailed = pushFailedStallClass(ledger, exit, forge);
   if (pushFailed !== null) return pushFailed;
   const head = forge.head;
   if (head === null || head === "")

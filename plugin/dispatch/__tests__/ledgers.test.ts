@@ -202,6 +202,7 @@ describe("classifyLedger", () => {
       finish: { state, reason },
     });
     ledger.events = [stall("PUSH_FAILED")];
+    ledger.lastCountedHead = forge.head;
     const pushed = classifyLedger(ledger, NOW, WINDOW, undefined, forge);
     expect(pushed.class).toBe("needs-person");
     expect(pushed.stale).toBeUndefined();
@@ -215,6 +216,13 @@ describe("classifyLedger", () => {
         mergeable: null,
       }).class,
     ).toBe("needs-person");
+    // A push to the pull request since the stall is what a person's fix looks like: it is re-driven once for that head.
+    const moved = classifyLedger(ledger, NOW, WINDOW, undefined, {
+      ...forge,
+      head: "d".repeat(40),
+    });
+    expect(moved.class).toBe("stale");
+    expect(moved.stale?.change).toContain("d".repeat(40));
     // A stall held by another finish, or a push failure an earlier stop recorded, is re-driven as before.
     ledger.events = [stall("CI_HOLD_WAIT")];
     expect(classifyLedger(ledger, NOW, WINDOW, undefined, forge).class).toBe(

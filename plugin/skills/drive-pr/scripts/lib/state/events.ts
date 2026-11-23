@@ -38,7 +38,7 @@
  * state: a file written before the field existed reads as no events.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
-import { redact } from "../../../../../shared/redact.ts";
+import { redactReportText } from "../../../../../shared/closing-report.ts";
 import { fail } from "../cli.ts";
 import type { StateStore } from "./store.ts";
 import { currentIso, parseMs } from "../../../../../shared/time.ts";
@@ -68,8 +68,8 @@ export interface DriveEvent {
   until?: unknown;
   /** A status probe report on a stop whose exit was passed through. */
   probe?: unknown;
-  /** On a stall's `stop`: the `finish-round.ts` state every stalled pass ended on, with the last reason. */
-  finish?: StopFinish;
+  /** On a stall's `stop`: the `finish-round.ts` state every stalled pass ended on, with the last reason. The ledger's shape leaves it open, so a reader takes it only when it is one (`stopFinish`) and a malformed value never makes the ledger unreadable. */
+  finish?: unknown;
 }
 
 /** The finish a stall's passes shared (`round-finish.ts`'s `sharedFinish`). */
@@ -107,24 +107,45 @@ export function stopFinishOf(
   return isStopFinish(kept) ? kept : undefined;
 }
 
-/** The finish the drive's last stop recorded, when that stop is the one with `exit`; `null` otherwise. */
+/** The finish the drive's last stop recorded, when that stop is the one with `exit` and the finish reads as one; `null` otherwise. */
 export function stopFinish(
   events: readonly DriveEvent[] | undefined,
   exit: number | null | undefined,
 ): StopFinish | null {
   const stop = lastStopEvent(events ?? []);
-  if (stop?.finish === undefined || exit === null || exit === undefined)
+  if (exit === null || exit === undefined || stop?.cause !== String(exit))
     return null;
-  return stop.cause === String(exit) ? stop.finish : null;
+  return isStopFinish(stop.finish) ? stop.finish : null;
 }
 
-/** `event` with its stall finish's reason redacted, as every reason the ledger carries is. */
+/**
+ * The ledger summary's line for a stopped drive whose last stop recorded a
+ * finish, a `@` in its reason kept from mentioning anyone where the forge
+ * renders it; `null` when there is none.
+ */
+export function stopFinishSummary(
+  events: readonly DriveEvent[] | undefined,
+  driver: { state: string; exit?: number | null },
+): string | null {
+  const finish =
+    driver.state === "stopped" ? stopFinish(events, driver.exit) : null;
+  if (finish === null) return null;
+  return `Every stalled pass ended \`${finish.state}\`: ${withoutMentions(finish.reason)}`;
+}
+
+/** `text` with each `@` that would mention a forge login or team broken by a zero-width space. */
+export function withoutMentions(text: string): string {
+  return text.replace(/@(?=[A-Za-z0-9])/g, "@\u200B");
+}
+
+/** `event` with its stall finish's reason redacted as a report's is, and cut back to the kept length; a finish that does not read as one is dropped. */
 export function redactedFinish(event: DriveEvent): DriveEvent {
   if (event.finish === undefined) return event;
-  return {
-    ...event,
-    finish: { ...event.finish, reason: redact(event.finish.reason) },
-  };
+  const { finish, ...rest } = event;
+  const kept = isStopFinish(finish)
+    ? stopFinishOf({ ...finish, reason: redactReportText(finish.reason) })
+    : undefined;
+  return kept === undefined ? rest : { ...rest, finish: kept };
 }
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
@@ -156,7 +177,7 @@ export function isDriveEvent(v: unknown): v is DriveEvent {
     ) &&
     stopOnly(v.kind, v.leftWork, typeof v.leftWork === "boolean") &&
     stopOnly(v.kind, v.tree, typeof v.tree === "string" && v.tree !== "") &&
-    stopOnly(v.kind, v.finish, isStopFinish(v.finish))
+    stopOnly(v.kind, v.finish, true)
   );
 }
 

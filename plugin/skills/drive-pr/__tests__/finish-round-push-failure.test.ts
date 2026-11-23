@@ -9,12 +9,13 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   failureExcerpt,
+  observedPush,
   pushFailureKind,
   pushFailureReason,
 } from "../scripts/lib/push-failure.ts";
 import { readRoundFinishes } from "../scripts/lib/state/round-finish.ts";
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
-import { useDrivePrSuite } from "./drive-pr-harness.ts";
+import { tmpRoot, useDrivePrSuite } from "./drive-pr-harness.ts";
 
 useDrivePrSuite();
 
@@ -51,6 +52,25 @@ describe("a failed push's reason", () => {
       ),
     ).toBe("unconfirmed");
     expect(pushFailureKind("")).toBe("unknown");
+    // A gate whose own output reads like git's transport errors is still a gate.
+    expect(
+      pushFailureKind(
+        [
+          "fatal: not a git repository (or any of the parent directories): .git",
+          "  ✗ test: connection refused by the fixture server",
+          "error: failed to push some refs to 'origin'",
+        ].join("\n"),
+      ),
+    ).toBe("pre-push-gate");
+  });
+
+  it("quotes why a push that never started could not start", async () => {
+    const { res, failure } = await observedPush([
+      join(tmpRoot, "no-such-program-here"),
+    ]);
+    expect(res.code).not.toBe(0);
+    expect(failure()).toContain("(unknown)");
+    expect(failure()).not.toContain("it wrote nothing on stderr");
   });
 
   it("quotes the output's last lines, uncoloured and bounded, never guarded-push's own generic line", () => {

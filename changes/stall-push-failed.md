@@ -13,4 +13,5 @@ release: patch
   and its closing report carry that reason, and the closing report's next
   step sends a person to fix what refuses the push before re-arming. The
   dispatcher reads the stop as a person's need, with that reason, instead of
-  re-driving it once per head. **Consumer action:** none.
+  re-driving it on the same head; a push to the pull request re-drives it
+  once for the new head. **Consumer action:** none.

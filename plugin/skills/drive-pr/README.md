@@ -664,7 +664,8 @@ follows from it (`environment` for `CI_HOLD_WAIT`) instead of `unknown`; the
 drive's ledger names them too. A failed push's reason says why it failed (a
 pre-push gate, the remote's rejection, the connection, a timeout) with the
 last lines the push wrote, and a stall whose every push failed is handed to a
-person to fix that before re-arming, never re-driven onto it. A short usage
+person to fix that before re-arming, never re-driven onto it until a push
+moves the pull request's head. A short usage
 limit is slept through, as before.
 
 The driver disables Claude Code's background tasks in its spawned passes

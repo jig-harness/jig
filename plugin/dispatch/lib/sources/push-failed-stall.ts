@@ -7,7 +7,10 @@
  * push too, so a re-drive would only spend another stall's passes on it.
  */
 import type { Ledger } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
-import { lastStopEvent } from "../../../skills/drive-pr/scripts/lib/state/events.ts";
+import {
+  stopFinish,
+  withoutMentions,
+} from "../../../skills/drive-pr/scripts/lib/state/events.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { LedgerClass } from "../types.ts";
 import { conflictNote } from "./ledger-probe.ts";
@@ -17,24 +20,29 @@ const PUSH_REASON_QUOTED = 400;
 
 /**
  * The class of a ledger that stopped `exit` on a stall whose every pass's
- * push failed: `needs-person`, naming why; `null` for any other stop.
+ * push failed: `needs-person`, naming why; `null` for any other stop, and
+ * once the pull request's head has moved past the head the stalled rounds
+ * were counted on, since a push to it is what a person's fix looks like: the
+ * stall is then re-driven once for that head like any other.
  */
 export function pushFailedStallClass(
   ledger: Ledger,
   exit: number,
-  mergeable: unknown,
+  forge: { head: string | null; mergeable: unknown },
 ): { class: LedgerClass; why: string } | null {
   if (exit !== DRIVE_EXIT.STALLED) return null;
-  const last = lastStopEvent(ledger.events ?? []);
-  if (last?.cause !== String(exit) || last.finish?.state !== "PUSH_FAILED")
+  const finish = stopFinish(ledger.events, exit);
+  if (finish?.state !== "PUSH_FAILED") return null;
+  const stalledOn = ledger.lastCountedHead;
+  if (forge.head !== null && stalledOn !== "" && forge.head !== stalledOn)
     return null;
-  const reason = last.finish.reason.replace(/\s+/g, " ").trim();
+  const reason = withoutMentions(finish.reason.replace(/\s+/g, " ").trim());
   const quoted =
     reason.length > PUSH_REASON_QUOTED
       ? `${reason.slice(0, PUSH_REASON_QUOTED - 1)}…`
       : reason;
   return {
     class: "needs-person",
-    why: `stopped ${exit} (stalled: every stalled pass's push failed: ${quoted}); a re-drive fails the same push, so fix what refuses it (the base branch first when its gates fail there too), then re-arm${conflictNote(mergeable)}`,
+    why: `stopped ${exit} (stalled: every stalled pass's push failed: ${quoted}); a re-drive fails the same push, so fix what refuses it (the base branch first when its gates fail there too) and push the fix or re-arm${conflictNote(forge.mergeable)}`,
   };
 }

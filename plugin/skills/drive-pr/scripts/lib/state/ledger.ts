@@ -72,7 +72,7 @@ import {
   isOptionalEvents,
   lastStopEvent,
   redactedFinish,
-  stopFinish,
+  stopFinishSummary,
 } from "./events.ts";
 import { probeStopOf } from "../status/probe-stop.ts";
 import {
@@ -362,12 +362,8 @@ function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   ];
   if (d.personStop !== undefined)
     lines.push("", stopSummary(d.personStop, d.state));
-  const held = d.state === "stopped" ? stopFinish(l.events, d.exit) : null;
-  if (held !== null)
-    lines.push(
-      "",
-      `Every stalled pass ended \`${held.state}\`: ${summaryText(held.reason)}`,
-    );
+  const held = stopFinishSummary(l.events, d);
+  if (held !== null) lines.push("", summaryText(held));
   lines.push(...ciEventLines(l.ciActions));
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");

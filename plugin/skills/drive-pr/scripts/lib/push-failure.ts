@@ -5,16 +5,17 @@
  * ledger and its closing report carry that finish, so whoever reads the
  * stop learns what refused the push without the pass's log.
  *
- * The kind is read from the output's own markers, first match wins:
+ * The kind is read from the output's own markers, each a line of its own,
+ * first match wins:
  *
  * | Kind | Marker |
  * | --- | --- |
  * | `timeout` | `guarded-push.ts` killed the push at `$DRIVE_PR_PUSH_TIMEOUT` |
- * | `unconfirmed` | the push ran, and the pull request never reported the pushed head |
- * | `remote-rejected` | git's `! [rejected]` or `! [remote rejected]` line, or a remote hook that declined |
- * | `transport` | git's `fatal:` line, or a connection that failed |
+ * | `unconfirmed` | `guarded-push.ts` pushed, and the pull request never reported the pushed head |
+ * | `remote-rejected` | git's `! [rejected]` or `! [remote rejected]` line |
+ * | `transport` | git's `fatal:` line for a remote it could not reach or that hung up, ssh's refused connection, or a failed RPC |
  * | `pre-push-gate` | git's `failed to push some refs` with none of the above: the local pre-push hook refused |
- * | `unknown` | anything else |
+ * | `unknown` | anything else, a child that never started included, whose error is quoted |
  */
 import { redactReportText } from "../../../../shared/closing-report.ts";
 import { run } from "./proc.ts";
@@ -69,23 +70,26 @@ export function outputTail(): {
 /** The escape sequences terminals colour with: a gate's output is often coloured. */
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
 
-/** The kind of a push failure, from the output that came with it. */
+/**
+ * The kind of a push failure, from the output that came with it. That output
+ * holds the pre-push hook's own lines before git's, so each marker but the
+ * last is one only `guarded-push.ts` or git writes, on a line of its own: a
+ * gate whose output says `fatal:` or "connection refused" is still a gate.
+ */
 export function pushFailureKind(output: string): PushFailureKind {
-  if (/and was killed/.test(output)) return "timeout";
-  if (/still reports \S+\.?\s*$/m.test(output)) return "unconfirmed";
+  if (/^\d+s and was killed\.$/m.test(output)) return "timeout";
   if (
-    /!\s*\[(remote )?rejected\]/.test(output) ||
-    /pre-receive hook declined/i.test(output)
+    /^guarded-push: pushed \S+ to \S+, but PR #\d+ still reports /m.test(output)
   )
-    return "remote-rejected";
+    return "unconfirmed";
+  if (/^\s*!\s*\[(remote )?rejected\]/m.test(output)) return "remote-rejected";
   if (
-    /^fatal:/m.test(output) ||
-    /could not resolve host|connection (timed out|refused|reset)|unable to access|remote end hung up/i.test(
+    /^(fatal: (unable to access|the remote end hung up|could not read from remote repository)|ssh: connect to host|error: RPC failed)/im.test(
       output,
     )
   )
     return "transport";
-  if (/failed to push some refs/.test(output)) return "pre-push-gate";
+  if (/^error: failed to push some refs/m.test(output)) return "pre-push-gate";
   return "unknown";
 }
 
@@ -134,5 +138,10 @@ export async function observedPush(argv: string[]): Promise<{
       if (stream === "stderr") tail.observe(bytes);
     },
   });
-  return { res, failure: () => pushFailureReason(res.code, tail.text()) };
+  // A child that never started wrote nothing to observe: its spawn error is
+  // in the result instead.
+  return {
+    res,
+    failure: () => pushFailureReason(res.code, tail.text() || res.stderr),
+  };
 }
