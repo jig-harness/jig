@@ -346,6 +346,7 @@ describe("keeping a run's transcript copy", () => {
         out: `note \`${JSON.stringify(secret).replace(/e/g, "\\u0065")}\` end`,
       },
       { deep },
+      { out: "\\".repeat(512) },
       { type: "jig-omitted", marker: "source-marker-xyz" },
     ]);
     holdCredential(ID, secret);
@@ -361,6 +362,7 @@ describe("keeping a run's transcript copy", () => {
       expect(text).toContain("kept-evidence");
       expect(text).not.toContain("opaque value");
       expect(text).not.toContain("ef-credential");
+      expect(text).not.toContain("note ");
       expect(text).toContain("9007199254740993");
       expect(text).not.toContain("source-marker-xyz");
       expect(text).not.toContain("trailing");

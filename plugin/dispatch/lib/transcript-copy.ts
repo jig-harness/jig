@@ -173,11 +173,25 @@ function embeddedJson(text: string): unknown {
   }
 }
 
+const escapedForms = new Map<string, string>();
+
+/** `secret` as `JSON.stringify` writes it inside a string, computed once per secret. */
+function escapedForm(secret: string): string {
+  let form = escapedForms.get(secret);
+  if (form === undefined) {
+    form = JSON.stringify(secret).slice(1, -1);
+    escapedForms.set(secret, form);
+  }
+  return form;
+}
+
 /** Whether `text`, with JSON escapes of any spelling decoded up to `LOOK_DEPTH` times, holds one of `secrets`: wrapped JSON that does not parse as a whole is still looked into. */
 function holdsAfterUnescaping(
   text: string,
   secrets: readonly string[],
 ): boolean {
+  // A canonically escaped credential is found at any offset, whatever surrounds it and however the surrounding backslashes would pair when decoding.
+  if (secrets.some((secret) => text.includes(escapedForm(secret)))) return true;
   let layer = text;
   for (let i = 0; i <= LOOK_DEPTH; i++) {
     if (secrets.some((secret) => layer.includes(secret))) return true;
@@ -193,8 +207,8 @@ function holdsAfterUnescaping(
     if (next === layer) return false;
     layer = next;
   }
-  // Escaped deeper than is looked into: counts as holding a secret.
-  return true;
+  // Escaped deeper than is looked into counts as holding a secret, unless only a run of literal backslashes is left, which holds no encoding to look into.
+  return /\\[u"/bfnrt]/.test(layer);
 }
 
 /** The deepest structural nesting of arrays and objects that is walked; anything deeper counts as holding a secret. */
