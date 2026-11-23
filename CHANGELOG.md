@@ -404,6 +404,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.304.2] - 2026-11-23
+
+### Fixed
+
+- The drive-pr suite's diagnosing CI repair tests no longer time out under a
+  loaded CI shard: the receipt rules (a tracker issue key or a filing parked
+  during the diagnosis) are unit tests against the driver's receipt reader,
+  and the end-to-end drives that remain have the 120-second headroom of the suite's
+  other multi-round drives. A drive behaves as before. **Consumer action:**
+  none.
+
 ## [0.304.1] - 2026-11-23
 
 ### Fixed
@@ -10796,7 +10807,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.304.2...HEAD
+[0.304.2]: https://github.com/jig-harness/jig/compare/v0.304.1...v0.304.2
 [0.304.1]: https://github.com/jig-harness/jig/compare/v0.304.0...v0.304.1
 [0.304.0]: https://github.com/jig-harness/jig/compare/v0.303.1...v0.304.0
 [0.303.1]: https://github.com/jig-harness/jig/compare/v0.303.0...v0.303.1
