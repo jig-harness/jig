@@ -64,7 +64,14 @@ function unTagged(text: string): string {
 }
 
 /** The most of a workspace's path a message shows; the notify step names the workspace whole. */
-const MAX_WORKSPACE = 300;
+const MAX_WORKSPACE = 1000;
+
+/** A workspace as a key names it: the path with the key line's opening broken, and a digest of the original when breaking it changed the path, so two paths stay two keys. */
+function workspaceKey(workspace: string): string {
+  const safe = unTagged(workspace);
+  if (safe === workspace) return workspace;
+  return `${safe} #${createHash("sha256").update(workspace).digest("hex").slice(0, 12)}`;
+}
 
 /**
  * A workspace as a message shows it: the path itself when it is short and
@@ -350,7 +357,7 @@ export function unreportedNotice(
   const shown = workspaceLabel(workspace);
   return {
     ...notice(
-      `${slug} PR #${pr.number} workspace ${unTagged(workspace)} unreportable, ledger generation ${generation(pr)}`,
+      `${slug} PR #${pr.number} workspace ${workspaceKey(workspace)} unreportable, ledger generation ${generation(pr)}`,
       [
         `PR #${pr.number} (${compact(pr.title, 120)}): the dispatcher would act on it (${compact(wanted, 200)}), but ${compact(reason, 300)}, so it cannot tell whether a session still works on it and starts nothing.`,
       ],
@@ -374,7 +381,7 @@ export function withUnreported(
   workspace: string,
   reason: string,
 ): Notice {
-  const key = boundedKey(`${n.key} unreportable in ${unTagged(workspace)}`);
+  const key = boundedKey(`${n.key} unreportable in ${workspaceKey(workspace)}`);
   const head = keyLine(key);
   const rest = n.text.slice(keyLine(n.key).length + 1);
   const shown = workspaceLabel(workspace);
@@ -395,7 +402,7 @@ export function withUnreported(
   // What cannot fit loses its middle: its opening names the cause and the
   // question, its end carries the instruction and the link. The note says
   // so, since the question may sit in the cut part.
-  const note = `${extra} The original notice is shortened; read the full question on the item.`;
+  const note = `${extra} The original notice is shortened and its question may be cut; ask the line for the full question (jig ask) or read the launch's closing report.`;
   const left = MAX_TEXT - head.length - note.length - 3;
   const keepStart = Math.ceil(left / 2);
   const keepEnd = Math.max(0, left - keepStart);

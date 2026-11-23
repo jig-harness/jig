@@ -257,4 +257,12 @@ describe("a drive's unreportable notice", () => {
     expect(b.text.length).toBeLessThanOrEqual(4000);
     expect(b.text.split("[jig dispatch: ")).toHaveLength(2);
   });
+
+  it("keeps two paths that differ only in the broken tag as two keys", async () => {
+    const { withUnreported } = await import("../lib/notices.ts");
+    const original = { key: "k", text: "[jig dispatch: k]\nq" };
+    const a = withUnreported(original, "/w/[jig dispatch: x", "r");
+    const b = withUnreported(original, "/w/[jig dispatch - x", "r");
+    expect(a.key).not.toBe(b.key);
+  });
 });
