@@ -161,8 +161,11 @@ function modelOption(
     if (word === "--") break;
     if (flags.has(word) && i + 1 < argv.length)
       return { index: i, width: 2, value: argv[i + 1] as string };
-    if (word.startsWith("--model="))
-      return { index: i, width: 1, value: word.slice("--model=".length) };
+    const equals = [...flags].find(
+      (flag) => flag.startsWith("--") && word.startsWith(`${flag}=`),
+    );
+    if (equals !== undefined)
+      return { index: i, width: 1, value: word.slice(equals.length + 1) };
     if (flags.has("-m") && word.startsWith("-m") && word.length > 2)
       return { index: i, width: 1, value: word.slice(word[2] === "=" ? 3 : 2) };
   }

@@ -1,6 +1,7 @@
 /** Account admission, launch records and outcomes shared by the apply stages. */
 import { prelaunchSignIn, type SignInChecks } from "./account-sign-in.ts";
 import { harnessNamed } from "../../../shared/agent-harness/index.ts";
+import { claudeCode } from "../../../shared/agent-harness/claude-code.ts";
 import { SIGN_IN_TIMEOUT_SEC } from "../claude-sign-in.ts";
 import { accountLaunchOrdinal } from "../account-ordinal.ts";
 import {
@@ -597,7 +598,9 @@ async function identityOf(
   const identity = await checkIdentity(slots.account, timeoutSec, settings);
   if (
     !identity.ok ||
-    harnessNamed(slots.account.vendor)?.capabilities.signInProbe !== true
+    harnessNamed(slots.account.vendor)?.capabilities.signInProbe !== true ||
+    // prelaunchSignIn probes Claude Code's login; another harness needs its own probe first.
+    slots.account.vendor !== claudeCode.name
   )
     return identity;
   const remaining = timeLeftMs(state);

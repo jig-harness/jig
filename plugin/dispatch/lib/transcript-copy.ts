@@ -64,6 +64,8 @@ const PRUNE_ENTRIES = 1000;
 const SESSION =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const SAFE_SESSION = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
 /** What `copy.json` says of one run's copy. */
 export interface TranscriptCopy {
   version: 1;
@@ -114,7 +116,10 @@ function findTranscript(
           ? `the ${harness.label} pass printed no session id`
           : "the run has no session id",
     };
-  if (!SESSION.test(session))
+  // Claude Code mints UUIDs; another harness prints its own shape, so only a path-safe id is required of it.
+  if (
+    !(harness.name === claudeCode.name ? SESSION : SAFE_SESSION).test(session)
+  )
     return { missing: "the run's session id is not one" };
   const path = harness.transcript({
     configDir: record.configDir,
