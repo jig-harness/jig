@@ -27,7 +27,7 @@ import type { LineNeed, LineSettled } from "./dashboard-contract.ts";
 import type { ParkLeft } from "./park-events.ts";
 
 /** How far back the line's settled list reaches. */
-const SETTLED_WINDOW_MS = 24 * 3_600_000;
+export const SETTLED_WINDOW_MS = 24 * 3_600_000;
 /** The most entries the line carries, newest first. */
 const SETTLED_LIMIT = 100;
 /** How long a leave row is kept. */
@@ -203,17 +203,19 @@ export function leaveOf(
   ev: LeaveEvidence,
   at: string,
 ): LineSettled {
-  // Only an answer to a decision this need carried settled it: another need on the target may have been answered.
+  // Only an answer or a park of a decision this need carried settled it: another need on the target may have been answered, and a need with no decision has no answer to credit.
   const keys = need.decisions.map((d) => d.key);
   const answered = ev
     .answers(need.repo, need.target, need.since)
-    .find(
-      (a) =>
-        a.outcome === "done" && (keys.length === 0 || keys.includes(a.key)),
-    );
+    .find((a) => a.outcome === "done" && keys.includes(a.key));
   const park =
     need.cause === "parked"
-      ? ev.parks.find((p) => p.repo === need.repo && p.target === need.target)
+      ? ev.parks.find(
+          (p) =>
+            p.repo === need.repo &&
+            p.target === need.target &&
+            keys.includes(p.key),
+        )
       : undefined;
   const open = ev.open.get(need.repo);
   const gone = need.pr !== null && open != null && !open.includes(need.pr);
@@ -310,7 +312,11 @@ function grouped(entries: readonly LineSettled[]): LineSettled[] {
   const out: LineSettled[] = [];
   const byAnswer = new Map<string, LineSettled>();
   for (const e of entries) {
-    const key = e.answer === null ? null : `${e.repo} ${e.answer} ${e.outcome}`;
+    // One answer: the same comment, the same choice, taken at the same time.
+    const key =
+      e.answer === null
+        ? null
+        : `${e.repo} ${e.answer} ${e.outcome} ${e.option ?? ""} ${e.at}`;
     const same = key === null ? undefined : byAnswer.get(key);
     if (same === undefined) {
       const copy = { ...e, targets: [...e.targets] };
@@ -325,18 +331,17 @@ function grouped(entries: readonly LineSettled[]): LineSettled[] {
 /** An answer a station took and could not carry out, as an entry; its need, when it is still on the line, gives the rest. */
 function unsettledEntry(
   a: AnswerSeen & { repo: string; target: string },
-  needs: readonly LineNeed[],
+  need: LineNeed,
 ): LineSettled {
-  const need = needs.find((n) => n.repo === a.repo && n.target === a.target);
   const outcome = a.outcome === "refused" ? "refused" : "held";
   return {
     repo: a.repo,
     targets: [a.target],
-    cause: need?.cause ?? null,
-    ...(need === undefined ? {} : { act: actOfLineNeed(need) }),
-    title: need?.title ?? null,
-    url: need?.url ?? null,
-    question: need === undefined ? null : questionOf(need),
+    cause: need.cause,
+    act: actOfLineNeed(need),
+    title: need.title,
+    url: need.url,
+    question: questionOf(need),
     at: a.claimedAt,
     outcome,
     by: "person",
@@ -372,24 +377,28 @@ export function readSettled(
   const unsettled = (
     db
       .query(
-        `SELECT repo, target, author, option, answer, claimed_at AS claimedAt, outcome, detail
+        `SELECT repo, target, key, author, option, answer, claimed_at AS claimedAt, outcome, detail
          FROM station_answers a
          WHERE claimed_at >= ? AND outcome IN ('held', 'refused')
            AND NOT EXISTS (
              SELECT 1 FROM station_answers b
              WHERE b.repo = a.repo AND b.target = a.target AND b.key = a.key
                AND b.outcome = 'done' AND b.claimed_at > a.claimed_at)
-         ORDER BY claimed_at DESC, rowid DESC LIMIT ?`,
+         ORDER BY claimed_at DESC, rowid DESC`,
       )
-      .all(isoFromMs(since), SETTLED_LIMIT) as Array<
+      .all(isoFromMs(since)) as Array<
       AnswerSeen & { repo: string; target: string }
     >
-  )
-    // Its card stays open: an answer whose need has left the line is not listed as unsettled.
-    .filter((a) =>
-      needs.some((n) => n.repo === a.repo && n.target === a.target),
-    )
-    .map((a) => unsettledEntry(a, needs));
+  ).flatMap((a) => {
+    // Its card stays open: an answer to a decision no open need carries is not listed as unsettled. The window bounds the rows, so the limit applies after this filter.
+    const need = needs.find(
+      (n) =>
+        n.repo === a.repo &&
+        n.target === a.target &&
+        n.decisions.some((d) => d.key === a.key),
+    );
+    return need === undefined ? [] : [unsettledEntry(a, need)];
+  });
   return grouped(
     [...left, ...unsettled].sort((a, b) => parseMs(b.at) - parseMs(a.at)),
   ).slice(0, SETTLED_LIMIT);

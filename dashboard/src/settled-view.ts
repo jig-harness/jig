@@ -50,10 +50,28 @@ export function outcomeWords(e: LineSettled): string {
     : "Held, card still open";
 }
 
-/** The address that opens History on an entry's target, keeping the page's other parameters (its token among them). */
-export function historyQuery(search: string, e: LineSettled): string {
-  let query = withParam(search, "view", "history");
+/** The History filters that would narrow or contradict a link to one target's recent rows. */
+const HISTORY_FILTERS = [
+  "from",
+  "to",
+  "stage",
+  "account",
+  "class",
+  "reason",
+  "cause",
+  "by",
+] as const;
+
+/** The address that opens History on one target of an entry, keeping the page's token and clearing the filters of an earlier History visit. */
+export function historyQuery(
+  search: string,
+  e: Pick<LineSettled, "repo">,
+  target: string,
+): string {
+  let query = search;
+  for (const name of HISTORY_FILTERS) query = withParam(query, name, null);
+  query = withParam(query, "view", "history");
   query = withParam(query, "window", "7d");
   query = withParam(query, "repo", e.repo);
-  return withParam(query, "target", e.targets[0] ?? "");
+  return withParam(query, "target", target);
 }

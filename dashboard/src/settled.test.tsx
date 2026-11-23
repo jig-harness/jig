@@ -66,12 +66,19 @@ describe("the settled list", () => {
   });
 
   it("links an entry to the History rows of its target, keeping the token", () => {
-    const q = historyQuery("?token=t&view=needs", entry());
+    const q = historyQuery(
+      "?token=t&view=needs&from=2026-01-01&class=scope",
+      entry(),
+      "PR #7",
+    );
     const found = new URLSearchParams(q);
     expect(found.get("token")).toBe("t");
     expect(found.get("view")).toBe("history");
     expect(found.get("repo")).toBe("example-org/web");
     expect(found.get("target")).toBe("PR #7");
+    expect(found.get("from")).toBeNull();
+    expect(found.get("class")).toBeNull();
+    expect(found.get("window")).toBe("7d");
   });
 });
 

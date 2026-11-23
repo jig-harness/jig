@@ -18,6 +18,8 @@ import type {
   NeedCause,
 } from "../../dispatch/lib/dashboard-contract.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
+import { SETTLED_WINDOW_MS } from "../../dispatch/lib/need-leaves.ts";
+import { currentMs, parseMs } from "../../shared/time.ts";
 import {
   type RefusedRepo,
   refusedRepos,
@@ -218,15 +220,18 @@ export function settledAnswer(
   const found = newestLine(root);
   if (typeof found === "string")
     return { v: ANSWER_VERSION, tick: null, settled: [], unread: found };
+  // The tick wrote the list windowed to its own clock: window it again to this one.
+  const since = currentMs() - SETTLED_WINDOW_MS;
   return {
     v: ANSWER_VERSION,
     tick: { runId: found.runId, finishedAt: found.finishedAt },
     settled: (found.settled ?? []).filter(
       (e) =>
-        person === undefined ||
-        (e.who ?? "")
-          .split(", ")
-          .some((p) => p.toLowerCase() === person.toLowerCase()),
+        parseMs(e.at) >= since &&
+        (person === undefined ||
+          (e.who ?? "")
+            .split(", ")
+            .some((p) => p.toLowerCase() === person.toLowerCase())),
     ),
     unread: null,
   };

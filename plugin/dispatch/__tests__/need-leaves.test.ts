@@ -39,7 +39,16 @@ function need(fields: Partial<LineNeed> = {}): LineNeed {
     since: SINCE,
     reason: "its pickup stalled",
     question: "Release the pickup or leave it?",
-    decisions: [],
+    decisions: [
+      {
+        key: "k",
+        kind: "finding",
+        lines: [],
+        question: null,
+        recommendation: null,
+        decisionClass: null,
+      },
+    ],
     notified: null,
     workspaces: [],
     ...fields,
@@ -126,6 +135,17 @@ describe("how a need left", () => {
     });
   });
 
+  it("does not credit an answer to a decision the need did not carry", () => {
+    answer("ENG-4", "Release the pickup", "done", "moved ENG-4 to todo");
+    const entry = leaveOf(
+      need({ decisions: [] }),
+      [],
+      { ...nothing, answers: answersFrom(stateDb(root)) },
+      NOW,
+    );
+    expect(entry.by).toBe("facts");
+  });
+
   it("attributes a park to the people its receipt names and the option they chose", () => {
     const parked = need({
       cause: "parked",
@@ -142,6 +162,7 @@ describe("how a need left", () => {
           {
             repo: REPO,
             target: "PR #7",
+            key: "k",
             outcome: "answered",
             at: "2026-11-23T09:59:00.000Z",
             people: ["maintainer-b"],

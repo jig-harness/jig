@@ -79,9 +79,21 @@ export function SettledRecently({
             </p>
             <p>{e.how}</p>
             <p>
-              <a href={`${here().path}${historyQuery(here().search, e)}`}>
-                History rows
-              </a>
+              {e.answer === null ? null : (
+                <>
+                  <a href={e.answer} target="_blank" rel="noreferrer">
+                    the answer
+                  </a>{" "}
+                </>
+              )}
+              {e.targets.map((t) => (
+                <a
+                  key={t}
+                  href={`${here().path}${historyQuery(here().search, e, t)}`}
+                >
+                  History rows{e.targets.length > 1 ? ` for ${t}` : ""}{" "}
+                </a>
+              ))}
             </p>
           </li>
         ))}

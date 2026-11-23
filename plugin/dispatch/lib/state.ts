@@ -620,6 +620,14 @@ export const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX need_leaves_at ON need_leaves (at_ms);
   `,
   },
+  {
+    // The settled list's read of answers a station held or refused, by time (`readSettled`): without it each tick scans every answer taken.
+    additive: true,
+    sql: `
+  CREATE INDEX station_answers_unsettled ON station_answers (claimed_at)
+    WHERE outcome IN ('held', 'refused');
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

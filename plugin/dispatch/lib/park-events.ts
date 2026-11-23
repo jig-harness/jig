@@ -91,6 +91,8 @@ export interface ParkLeft {
   repo: string;
   /** `PR #7`. */
   target: string;
+  /** The park's key: the decision a need on the target carried. */
+  key: string;
   outcome: ParkFacts["outcome"];
   /** When it left: the receipt's time, else the tick's. */
   at: string;
@@ -209,6 +211,7 @@ function receiptLeft(slug: string, pr: number, r: ResolutionReceipt): ParkLeft {
   return {
     repo: slug,
     target: `PR #${pr}`,
+    key: r.key,
     outcome: r.outcome,
     at: r.resolvedAt,
     people: [...new Set(r.answers.map((a) => a.author))],
@@ -332,6 +335,7 @@ function repoOutcomes(
       left.push({
         repo: p.repo,
         target: `PR #${p.pr}`,
+        key: p.key,
         outcome: "removed",
         at: nowIso,
         people: [],
