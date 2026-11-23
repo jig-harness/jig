@@ -117,10 +117,11 @@ pick-up's or a follow-up's thread is `--thread` on its own address. Write a
   `--waiting`, run it with `--json` and read the fields: when `unread` is
   non-null or `tick` is null, relay why the line is unavailable and never
   report an empty day. Otherwise say the tick's time, and say the list is the
-  settlements recorded as of that tick: an empty list means none recorded,
-  not that every repository was read, and a snapshot written before
-  settlements were kept has no history to report, so say that instead of
-  "nothing". When `incomplete` lists repositories, name them as unread.
+  entries recorded in that tick that still fall within the query's last day:
+  an empty list means none recorded there, not that nothing was settled,
+  because the response cannot tell a snapshot written before settlements
+  were kept from one that recorded none. The response carries no list of
+  repositories the tick could not read, so say the coverage is unknown.
 - **A pick-up** is answered only on a machine with a checkout of its
   repository; elsewhere `ask` refuses and says why. Relay that.
 - **Exit `1`** means the key names nothing: no such pull request or item.
