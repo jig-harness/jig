@@ -184,7 +184,7 @@ export function credentialFor(repo: string): string {
 /** Keeps `tokens` in place of those kept; whether this browser stored them rather than holding them only while the page is open. */
 export function keepTokens(tokens: KeptToken[]): boolean {
   writes++;
-  writeKept(STAMP_KEY, `${Date.now()}-${Math.random()}`);
+  writeKept(STAMP_KEY, crypto.randomUUID());
   const saved = writeKept(
     KEY,
     tokens.length === 0 ? null : JSON.stringify({ tokens }),
