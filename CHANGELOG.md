@@ -404,6 +404,19 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.301.4] - 2026-11-23
+
+### Changed
+
+- The Jig Protocol's Tracker facets chapter stays provisional until plan
+  item 41 is done: a recorded result or explicit waiver for the live adapter
+  and bug-filing checks, retirement of Jig's default Task issue type, and a
+  person's acceptance of the delivered scope.
+- The Addresses chapter (`plugin/protocol/addresses.md`) moves its published
+  ownership from plan items 39 and 42
+  to items 36 and 42, in the Protocol index, in the chapter's own status line and in its data file: item 36 owns
+  the remaining merge-station work and item 42 the thread work.
+
 ## [0.301.3] - 2026-11-22
 
 ### Fixed
@@ -10727,7 +10740,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.3...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.301.4...HEAD
+[0.301.4]: https://github.com/jig-harness/jig/compare/v0.301.3...v0.301.4
 [0.301.3]: https://github.com/jig-harness/jig/compare/v0.301.2...v0.301.3
 [0.301.2]: https://github.com/jig-harness/jig/compare/v0.301.1...v0.301.2
 [0.301.1]: https://github.com/jig-harness/jig/compare/v0.301.0...v0.301.1
