@@ -404,6 +404,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - M0's skill-invocation fallback gate recognizes generated-file exemption banners
   within the first 5 lines after a leading frontmatter block of any length.
 
+## [0.303.1] - 2026-11-23
+
+### Fixed
+
+- `jig dispatch` no longer drops a stopped or parked pull request off the line's needs when a workspace joined to it has a terminal whose agent the session runtime cannot report, such as an idle shell or an editor. Its notification still goes out; a re-arm or takeover it cannot safely start becomes a need that names the workspace, and closing the terminals that run no agent lets the next tick act on it. A stopped pickup's need goes out the same way, and an agent the runtime reports working now holds its target even beside such a terminal. **Consumer action:** none.
+
 ## [0.303.0] - 2026-11-23
 
 The dispatch dashboard's Needs you view now shows what left it: who settled each need and how.
@@ -10769,7 +10775,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.303.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.303.1...HEAD
+[0.303.1]: https://github.com/jig-harness/jig/compare/v0.303.0...v0.303.1
 [0.303.0]: https://github.com/jig-harness/jig/compare/v0.302.0...v0.303.0
 [0.302.0]: https://github.com/jig-harness/jig/compare/v0.301.5...v0.302.0
 [0.301.5]: https://github.com/jig-harness/jig/compare/v0.301.4...v0.301.5
